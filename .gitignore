@@ -1,0 +1,7 @@
+data/
+.idea/
+**/*.xlsx
+**/*.pyc
+*.csv
+*.png
+*.json
