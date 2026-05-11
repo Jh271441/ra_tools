@@ -1,0 +1,79 @@
+runs_dir: ~/.ra_tools_runs
+onnx_file_name: vectorized_scenario_remote_assist_model.onnx
+
+luban:
+  host_alias: luban_2_card
+  python_bin: /home/luban/miniconda3/bin/conda run -n scen_dnn python
+  remote_python_bin: /home/luban/miniconda3/bin/conda run -n scen_dnn python
+  train_repo: /nfs/dataset-ofs-remote-assist-stuck/user/jasperchen/stuck_assist_model
+  export_script: scenario_dnn/export/export_scenario_dnn.py
+  offboard_config_path: configs/scenario_dnn_finetune_test.yaml
+  offboard_entry_script: scenario_dnn/train_test/ra_model_pipeline.py
+
+ifx:
+  enabled: true
+  method: jenkins
+  truck_module: planner.model-files
+  truck_cmd: truck.py
+  jenkins_base_url: http://10.79.18.51:8088
+  jenkins_job_name: voyager_ifxruntime_trt_cached_engines_generator_ov23_trt10_dev
+  jenkins_token: ""
+  username: jasperchen
+  max_batch: 1
+  x86_convert: native
+  precision_convert: FP16
+  label_prefix: scenario_dnn_release_
+  precision_test_truck_arg: ""
+  precision_test_local_path: ~/utils/ifx/ifx_fp32_after_scaling_pos1e1_5.zip
+  precision_test_module: ifx-precision-test
+  expected_platforms:
+    - fp32_x86
+    - fp16_6000
+    - fp16_3060
+    - fp16_gen4
+    - fp16_thor
+  poll_interval_sec: 30
+  timeout_sec: 1800
+  extra_params: {}
+
+picker:
+  policy: precision_first
+  top_n: 3
+  loss_tolerance_pct: 0.05
+
+voyager:
+  manifest_path: onboard/model_files/MANIFEST.txt
+  commit_prefix: V
+  manifest_entries:
+    - platform: onnx
+      expected_name: vectorized_scenario_remote_assist_model.onnx
+      target_path: ./planner_models/vectorized_scenario_remote_assist_model.onnx
+      description: Vectorized scenario assist stuck model.
+    - platform: fp32_x86
+      expected_name: vectorized_scenario_remote_assist_model_bs0_fp32_x86.ifxmodel
+      target_path: ./planner_models/vectorized_scenario_remote_assist_model_x86.ifxmodel
+    - platform: fp16_6000
+      expected_name: vectorized_scenario_remote_assist_model_bs0_fp16_6000_trt109.ifxmodel
+      target_path: ./planner_models/vectorized_scenario_remote_assist_model_fp16_6000.ifxmodel
+    - platform: fp16_3060
+      expected_name: vectorized_scenario_remote_assist_model_bs0_fp16_3060_trt109.ifxmodel
+      target_path: ./planner_models/vectorized_scenario_remote_assist_model_fp16_3060.ifxmodel
+    - platform: fp16_gen4
+      expected_name: vectorized_scenario_remote_assist_model_bs0_fp16_gen4_trt109.ifxmodel
+      target_path: ./planner_models/vectorized_scenario_remote_assist_model_fp16_gen4.ifxmodel
+    - platform: fp16_thor
+      expected_name: vectorized_scenario_remote_assist_model_bs0_fp16_thor_trt1013.ifxmodel
+      target_path: ./planner_models/vectorized_scenario_remote_assist_model_fp16_thor.ifxmodel
+  branches:
+    - name: master
+      checkout_branch: jasperchen/2026Q1_test_scenario_dnn_dev
+      update_diff_id: 5716859
+      sim_plan: topic_ra_auto_trigger
+    - name: gen4_release_20260403
+      checkout_branch: jasperchen/gen4_release_20260403/scenario_dnn_dev
+      update_diff_id: 6076711
+      sim_plan: lxh_ra_stuck_release_20260403-openloop
+    - name: gen4_release_20260327
+      checkout_branch: jasperchen/gen4_release_20260327/scenario_dnn_dev
+      update_diff_id: 6076959
+      sim_plan: lxh_ra_stuck_release_20260327-openloop
