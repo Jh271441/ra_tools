@@ -31,6 +31,10 @@ python -m model_release_pipeline.cli release --remote luban_2_card --experiment 
 
 By default, `pick` prints a compact report similar to the legacy pick scripts: per-task Top-N by `roc_auc`, `pr_auc`, precision/recall, selected combined epochs, and the final `Recommended epoch`. Use `--json` only when you need the full machine-readable payload.
 
+`inspect`, `export`, `release`, `resume`, `ifx`, `handoff`, and `offboard` also default to a compact human-readable summary. Use `--json` only for debugging or automation that needs the full `release_record.json` payload.
+
+Long-running commands print progress to stderr using wide terminal-width separators, a task title, `step: current/total`, and `tasks_remaining: N`. Remote export streams raw stdout/stderr live while the SSH command is running, and still emits a heartbeat every 30 seconds if no log line is produced. The default Luban Python command includes `conda run --no-capture-output` so export logs are not buffered by conda. JSON output remains on stdout when `--json` is used.
+
 If the training log is incomplete, the report also prints a `TensorBoard Val-Loss Tolerance Fallback` section. In that case the final `Recommended epoch` comes from the primary head's TensorBoard validation-loss fallback, not from the incomplete log ranking. The default tolerance is 5%, meaning epochs with `val_loss <= min_val_loss * 1.05` are considered and the highest-precision epoch in that band is selected.
 
 If you intentionally want to use one head's standalone recommendation instead of the combined recommendation, pass `--task`. If you have already decided an epoch manually, pass `--epoch`.
@@ -52,24 +56,24 @@ python -m model_release_pipeline.cli export \
   --remote luban_2_card \
   --experiment "$EXP" \
   --epoch 5 \
-  --dry-run \
-  --json
+  --dry-run
 
 python -m model_release_pipeline.cli release \
   --remote luban_2_card \
   --experiment "$EXP" \
   --epoch 5 \
   --desc "scenario dnn release" \
-  --dry-run \
-  --json
+  --dry-run
 ```
 
 Use `--dry-run` first. Removing `--dry-run` allows the tool to create the temporary remote hparams file, export ONNX on Luban, run IFX conversion, and generate the Voyager handoff files.
 
+The remote export command runs from `stuck_assist_model`, sets `PYTHONPATH` to that repo root, and then invokes the configured export script. This is required because `scenario_dnn/export/export_scenario_dnn.py` imports top-level modules such as `utils.random_util`.
+
 If the remote host needs a specific conda environment, set it in config or override it per command:
 
 ```bash
-python -m model_release_pipeline.cli inspect --remote luban_2_card --remote-python "/home/luban/miniconda3/bin/conda run -n scen_dnn python" --experiment /nfs/.../experiment
+python -m model_release_pipeline.cli inspect --remote luban_2_card --remote-python "/home/luban/miniconda3/bin/conda run --no-capture-output -n scen_dnn python" --experiment /nfs/.../experiment
 ```
 
 Copy the editable config template:

@@ -17,8 +17,14 @@ DEFAULT_TEMPLATE_PATH = PACKAGE_ROOT / "templates" / "release_config.example.yam
 @dataclass
 class LubanConfig:
     host_alias: str = "luban_2_card"
-    python_bin: str = "/home/luban/miniconda3/bin/conda run -n scen_dnn python"
-    remote_python_bin: str = "/home/luban/miniconda3/bin/conda run -n scen_dnn python"
+    python_bin: str = (
+        "/home/luban/miniconda3/bin/conda run --no-capture-output "
+        "-n scen_dnn python"
+    )
+    remote_python_bin: str = (
+        "/home/luban/miniconda3/bin/conda run --no-capture-output "
+        "-n scen_dnn python"
+    )
     train_repo: str = (
         "/nfs/dataset-ofs-remote-assist-stuck/user/jasperchen/stuck_assist_model"
     )

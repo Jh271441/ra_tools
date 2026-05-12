@@ -3,8 +3,8 @@ onnx_file_name: vectorized_scenario_remote_assist_model.onnx
 
 luban:
   host_alias: luban_2_card
-  python_bin: /home/luban/miniconda3/bin/conda run -n scen_dnn python
-  remote_python_bin: /home/luban/miniconda3/bin/conda run -n scen_dnn python
+  python_bin: /home/luban/miniconda3/bin/conda run --no-capture-output -n scen_dnn python
+  remote_python_bin: /home/luban/miniconda3/bin/conda run --no-capture-output -n scen_dnn python
   train_repo: /nfs/dataset-ofs-remote-assist-stuck/user/jasperchen/stuck_assist_model
   export_script: scenario_dnn/export/export_scenario_dnn.py
   offboard_config_path: configs/scenario_dnn_finetune_test.yaml

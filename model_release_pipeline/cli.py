@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -24,11 +25,43 @@ from model_release_pipeline.state_store import StateStore
 _DISPLAY_METRICS = ("roc_auc", "pr_auc", "accuracy", "f1_score", "precision", "recall")
 
 
+def _separator(char: str = "=") -> str:
+    columns = shutil.get_terminal_size((100, 20)).columns
+    width = max(40, int(columns * 0.9))
+    return char * width
+
+
 def _print(payload: Any, as_json: bool = False) -> None:
-    if as_json or isinstance(payload, dict):
+    if as_json:
         print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
         return
     print(payload)
+
+
+def _progress(
+    args: argparse.Namespace,
+    title: str,
+    step: Optional[int] = None,
+    total: Optional[int] = None,
+    blank_before: bool = True,
+    icon: str = "▶",
+    detail: Optional[str] = None,
+) -> None:
+    if not getattr(args, "json", False):
+        title = title.strip().rstrip(".")
+        spacer = "\n" if blank_before else ""
+        print(f"{spacer}{_separator('=')}", file=sys.stderr, flush=True)
+        print(f"{icon} {title}", file=sys.stderr, flush=True)
+        if step is not None and total is not None:
+            print(f"step: {step}/{total}", file=sys.stderr, flush=True)
+            print(
+                f"tasks_remaining: {max(total - step, 0)}",
+                file=sys.stderr,
+                flush=True,
+            )
+        if detail:
+            print(detail, file=sys.stderr, flush=True)
+        print(_separator("="), file=sys.stderr, flush=True)
 
 
 def _format_number(value: Any) -> str:
@@ -206,6 +239,148 @@ def _format_pick_result(pick_result: Dict[str, Any]) -> str:
     return "\n".join(line for line in lines if line is not None)
 
 
+def _command_state(result: Optional[Dict[str, Any]]) -> str:
+    if not result:
+        return "NA"
+    returncode = result.get("returncode")
+    stderr = str(result.get("stderr") or "")
+    if returncode == 0:
+        return "OK"
+    if returncode is None and stderr.startswith("Skipped"):
+        return "SKIPPED"
+    if returncode is None:
+        return "DRY-RUN"
+    return f"FAILED({returncode})"
+
+
+def _tail_text(text: Any, max_lines: int = 8) -> list[str]:
+    lines = str(text or "").strip().splitlines()
+    if len(lines) > max_lines:
+        return ["..."] + lines[-max_lines:]
+    return lines
+
+
+def _append_command_result(
+    lines: list[str],
+    label: str,
+    result: Optional[Dict[str, Any]],
+    show_error: bool = True,
+) -> None:
+    state = _command_state(result)
+    if state == "OK":
+        icon = "✅"
+    elif state.startswith("FAILED"):
+        icon = "❌"
+    elif state == "SKIPPED":
+        icon = "⏭"
+    elif state == "DRY-RUN":
+        icon = "🧪"
+    else:
+        icon = "ℹ"
+    lines.append(f"{icon} {label}: {state}")
+    if not result:
+        return
+    if show_error and state.startswith("FAILED"):
+        stderr_tail = _tail_text(result.get("stderr"))
+        if stderr_tail:
+            lines.append("  stderr:")
+            lines.extend(f"  {line}" for line in stderr_tail)
+
+
+def _format_record_result(record: Dict[str, Any]) -> str:
+    lines = [
+        f"release_id: {record.get('release_id')}",
+        f"stage/status: {record.get('stage')} / {record.get('status')}",
+    ]
+    experiment = record.get("experiment") or {}
+    if experiment.get("name"):
+        lines.append(f"experiment: {experiment.get('name')}")
+    selection = record.get("selection") or {}
+    if selection.get("selected_epoch") is not None:
+        lines.append(
+            f"selected epoch: {_format_epoch(selection.get('selected_epoch'))} "
+            f"({selection.get('selection_source') or 'unknown'})"
+        )
+
+    export = record.get("export") or {}
+    if export:
+        _append_command_result(lines, "remote export", export.get("export"))
+        _append_command_result(lines, "scp onnx", export.get("scp"), show_error=False)
+        if export.get("remote_onnx_file"):
+            lines.append(f"  remote onnx: {export.get('remote_onnx_file')}")
+        if export.get("local_onnx_file"):
+            lines.append(f"  local onnx: {export.get('local_onnx_file')}")
+
+    ifx = record.get("ifx") or {}
+    if ifx:
+        label = ifx.get("label")
+        mapping = ifx.get("ifx_mapping") or {}
+        lines.append(f"ifx: label={label or 'NA'} platforms={len(mapping)}")
+        onnx = ifx.get("onnx") or {}
+        if onnx.get("version") is not None:
+            lines.append(f"  onnx version: {onnx.get('version')}")
+
+    handoff = record.get("handoff") or {}
+    if handoff:
+        if handoff.get("manifest_snippet"):
+            lines.append(f"manifest snippet: {handoff.get('manifest_snippet')}")
+        if handoff.get("commands_file"):
+            lines.append(f"handoff commands: {handoff.get('commands_file')}")
+
+    offboard = record.get("offboard") or {}
+    if offboard:
+        _append_command_result(lines, "offboard", offboard)
+
+    errors = record.get("errors") or []
+    if errors:
+        lines.append("errors:")
+        for error in errors[-3:]:
+            if isinstance(error, dict):
+                lines.append(f"  {error.get('message')}")
+            else:
+                lines.append(f"  {error}")
+    return "\n".join(lines)
+
+
+def _format_inspect_result(experiment: Dict[str, Any]) -> str:
+    lines = [
+        f"experiment: {experiment.get('name')}",
+        f"path: {experiment.get('experiment_path')}",
+        f"version: {experiment.get('version_name')}",
+        f"tasks: {', '.join(experiment.get('tasks') or []) or '<none>'}",
+        f"checkpoints: {len(experiment.get('checkpoints') or [])}",
+    ]
+    if experiment.get("current_trained_model_relative_path"):
+        lines.append(
+            "hparams checkpoint: "
+            f"{experiment.get('current_trained_model_relative_path')}"
+        )
+    if experiment.get("log_file"):
+        lines.append(f"train log: {experiment.get('log_file')}")
+    if experiment.get("tensorboard_files"):
+        lines.append(
+            f"tensorboard files: {len(experiment.get('tensorboard_files') or [])}"
+        )
+    return "\n".join(lines)
+
+
+def _print_record(record: Dict[str, Any], as_json: bool = False) -> None:
+    if as_json:
+        _print(record, as_json=True)
+    else:
+        print("\n" + _format_record_result(record))
+
+
+def _record_failed(record: Dict[str, Any]) -> bool:
+    return record.get("status") == "failed"
+
+
+def _export_failed(export_result: Dict[str, Any]) -> bool:
+    remote_returncode = (export_result.get("export") or {}).get("returncode")
+    scp_returncode = (export_result.get("scp") or {}).get("returncode")
+    return remote_returncode not in (0, None) or scp_returncode not in (0, None)
+
+
 
 def _confirm(prompt: str, assume_yes: bool) -> bool:
     if assume_yes:
@@ -315,6 +490,15 @@ def _command_export(
     store: StateStore,
     record: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    _progress(
+        args,
+        "Inspect Experiment",
+        step=1,
+        total=3,
+        blank_before=False,
+        icon="🔎",
+        detail=f"experiment: {args.experiment}",
+    )
     experiment = ExperimentInspector(
         remote_python_bin=getattr(args, "remote_python", None)
         or config.luban.remote_python_bin
@@ -382,15 +566,40 @@ def _command_export(
     checkpoint = experiment.checkpoint_for_epoch(selected["epoch"])
     if checkpoint is None:
         raise RuntimeError(f"Checkpoint for epoch {selected['epoch']} not found.")
+    _progress(
+        args,
+        "Remote ONNX Export",
+        step=2,
+        total=3,
+        icon="📤",
+        detail=(
+            f"epoch: {_format_epoch(selected['epoch'])}; "
+            f"host: {experiment.remote_host or config.luban.host_alias}"
+        ),
+    )
     export_result = LubanRunner(config.luban).export_onnx(
         experiment=experiment,
         checkpoint_path=checkpoint,
         onnx_file_name=config.onnx_file_name,
         local_output_dir=store.run_dir(record["release_id"]) / "artifacts",
         dry_run=args.dry_run,
+        show_progress=not getattr(args, "json", False),
     )
     record["export"] = export_result
-    record["stage"] = "exported"
+    if _export_failed(export_result):
+        record["stage"] = "export_failed"
+        record["status"] = "failed"
+        record["errors"] = list(record.get("errors", [])) + [
+            {
+                "message": "Remote ONNX export failed. See export.export.stderr in release_record.json.",
+            }
+        ]
+    elif args.dry_run:
+        record["stage"] = "export_dry_run"
+        record["status"] = "dry_run"
+    else:
+        record["stage"] = "exported"
+        record["status"] = "running"
     store.save(record)
     return record
 
@@ -413,6 +622,7 @@ def _command_ifx(
 
     if not _confirm(f"Push {local_onnx_file} and trigger IFX conversion?", args.yes):
         raise RuntimeError("IFX stage cancelled by user.")
+    _progress(args, "IFX Conversion", icon="🚚")
     record["stage"] = "ifx_running"
     record["status"] = "running"
     store.save(record)
@@ -439,6 +649,7 @@ def _command_handoff(
         ifx_mapping = record.get("ifx", {}).get("dry_run_mapping", {})
     if not ifx_mapping:
         raise RuntimeError("No IFX mapping found in release record.")
+    _progress(args, "Voyager Handoff", icon="🧾")
     result = VoyagerHandoffService(config.voyager).generate(
         run_dir=store.run_dir(record["release_id"]),
         ifx_mapping=ifx_mapping,
@@ -463,6 +674,14 @@ def _command_offboard(
     if record is None:
         if not args.experiment:
             raise RuntimeError("Provide --experiment or --run-id.")
+        _progress(
+            args,
+            "Inspect Experiment",
+            step=1,
+            total=2,
+            icon="🔎",
+            detail=f"experiment: {args.experiment}",
+        )
         experiment = ExperimentInspector(
             remote_python_bin=getattr(args, "remote_python", None)
             or config.luban.remote_python_bin
@@ -474,6 +693,14 @@ def _command_offboard(
         epoch = args.epoch
         record = store.create(args.experiment, args.desc or "")
     else:
+        _progress(
+            args,
+            "Inspect Experiment",
+            step=1,
+            total=2,
+            icon="🔎",
+            detail=f"experiment: {record['experiment_path']}",
+        )
         experiment = ExperimentInspector(
             remote_python_bin=getattr(args, "remote_python", None)
             or config.luban.remote_python_bin
@@ -488,13 +715,26 @@ def _command_offboard(
         raise RuntimeError(f"Checkpoint for epoch {epoch} not found.")
     if not _confirm(f"Run offboard test with {checkpoint.name}?", args.yes):
         raise RuntimeError("Offboard test cancelled by user.")
+    _progress(
+        args,
+        "Offboard Test",
+        step=2,
+        total=2,
+        icon="🧪",
+        detail=f"host: {experiment.remote_host or config.luban.host_alias}",
+    )
     result = LubanRunner(config.luban).run_offboard_test(
         checkpoint_path=checkpoint,
         remote_host=experiment.remote_host,
         dry_run=args.dry_run,
+        show_progress=not getattr(args, "json", False),
     )
     record["offboard"] = result
-    record["stage"] = "offboard_complete"
+    if result.get("returncode") not in (0, None):
+        record["stage"] = "offboard_failed"
+        record["status"] = "failed"
+    else:
+        record["stage"] = "offboard_complete"
     store.save(record)
     return record
 
@@ -510,6 +750,8 @@ def _resume(
     if not record.get("export", {}).get("local_onnx_file"):
         args.experiment = record["experiment_path"]
         record = _command_export(args, config, store, record=record)
+    if _record_failed(record):
+        return record
     if not record.get("ifx", {}).get("ifx_mapping"):
         record = _command_ifx(args, config, store, record=record)
     if not record.get("handoff", {}).get("commands_file"):
@@ -631,15 +873,32 @@ def main(argv: Optional[list[str]] = None) -> int:
     store = _build_store(config)
     try:
         if args.command == "inspect":
+            _progress(
+                args,
+                "Inspect Experiment",
+                blank_before=False,
+                icon="🔎",
+                detail=f"experiment: {args.experiment}",
+            )
             experiment, _ = _inspect_and_pick(
                 args.experiment,
                 config,
                 remote=args.remote,
                 remote_python=args.remote_python,
             )
-            _print(experiment, as_json=args.json)
+            if args.json:
+                _print(experiment, as_json=True)
+            else:
+                print(_format_inspect_result(experiment))
             return 0
         if args.command == "pick":
+            _progress(
+                args,
+                "Inspect And Rank Epochs",
+                blank_before=False,
+                icon="🏁",
+                detail=f"experiment: {args.experiment}",
+            )
             _, pick_result = _inspect_and_pick(
                 args.experiment,
                 config,
@@ -655,29 +914,37 @@ def main(argv: Optional[list[str]] = None) -> int:
                 print(_format_pick_result(pick_result))
             return 0
         if args.command == "export":
-            _print(_command_export(args, config, store), as_json=args.json)
-            return 0
+            record = _command_export(args, config, store)
+            _print_record(record, as_json=args.json)
+            return 1 if _record_failed(record) else 0
         if args.command == "ifx":
             record = store.load(args.run_id) if args.run_id else None
-            _print(_command_ifx(args, config, store, record), as_json=args.json)
+            _print_record(_command_ifx(args, config, store, record), as_json=args.json)
             return 0
         if args.command == "handoff":
             record = store.load(args.run_id)
-            _print(_command_handoff(args, config, store, record), as_json=args.json)
+            _print_record(
+                _command_handoff(args, config, store, record), as_json=args.json
+            )
             return 0
         if args.command == "release":
             record = _command_export(args, config, store)
+            if _record_failed(record):
+                _print_record(record, as_json=args.json)
+                return 1
             record = _command_ifx(args, config, store, record)
             record = _command_handoff(args, config, store, record)
-            _print(record, as_json=args.json)
+            _print_record(record, as_json=args.json)
             return 0
         if args.command == "resume":
-            _print(_resume(args, config, store), as_json=args.json)
-            return 0
+            record = _resume(args, config, store)
+            _print_record(record, as_json=args.json)
+            return 1 if _record_failed(record) else 0
         if args.command == "offboard":
             record = store.load(args.run_id) if args.run_id else None
-            _print(_command_offboard(args, config, store, record), as_json=args.json)
-            return 0
+            record = _command_offboard(args, config, store, record)
+            _print_record(record, as_json=args.json)
+            return 1 if _record_failed(record) else 0
         if args.command == "print-config":
             if args.copy:
                 target = Path.cwd() / "scenario_dnn_release.yaml"

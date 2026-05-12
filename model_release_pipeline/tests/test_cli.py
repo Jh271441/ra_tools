@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 
 from model_release_pipeline.cli import (
     _format_pick_result,
+    _format_record_result,
     _select_candidate,
     _select_manual_epoch_candidate,
 )
@@ -108,6 +109,39 @@ class CliSelectionTest(unittest.TestCase):
             self.assertEqual(selected["epoch"], 7)
             self.assertEqual(selected["sources"], ["manual_epoch"])
             self.assertEqual(selected["checkpoint_path"], checkpoint)
+
+    def test_formats_export_record_as_human_summary(self) -> None:
+        record = {
+            "release_id": "run123",
+            "stage": "export_failed",
+            "status": "failed",
+            "experiment": {"name": "exp_a"},
+            "selection": {
+                "selected_epoch": 7,
+                "selection_source": "manual_epoch",
+            },
+            "export": {
+                "local_onnx_file": "/tmp/vectorized_scenario_remote_assist_model.onnx",
+                "remote_onnx_file": "/nfs/exp/export/epoch=007/model.onnx",
+                "export": {
+                    "returncode": 1,
+                    "stderr": "line1\nModuleNotFoundError: No module named 'utils'",
+                },
+                "scp": {
+                    "returncode": None,
+                    "stderr": "Skipped because remote export failed.",
+                },
+            },
+        }
+
+        text = _format_record_result(record)
+
+        self.assertIn("release_id: run123", text)
+        self.assertIn("selected epoch: 007", text)
+        self.assertIn("remote export: FAILED(1)", text)
+        self.assertIn("scp onnx: SKIPPED", text)
+        self.assertIn("ModuleNotFoundError", text)
+        self.assertNotIn('"checkpoints"', text)
 
 
 if __name__ == "__main__":
