@@ -366,6 +366,23 @@ def _format_record_result(record: Dict[str, Any]) -> str:
                 f"  {command}" for command in apply_handoff.get("dcl_commands", [])
             )
 
+    dcl = record.get("dcl") or {}
+    if dcl:
+        _append_command_result(lines, "dcl", dcl)
+        if dcl.get("results"):
+            lines.append("  branches: " f"{len(dcl.get('results') or [])} attempted")
+            for item in dcl.get("results", []):
+                state = _command_state(item)
+                lines.append(
+                    "  "
+                    f"{item.get('branch')} -> {item.get('checkout_branch')}: {state}"
+                )
+        else:
+            lines.append(
+                "  branch: "
+                f"{dcl.get('branch')} -> {dcl.get('checkout_branch')}"
+            )
+
     offboard = record.get("offboard") or {}
     if offboard:
         _append_command_result(lines, "offboard", offboard)
@@ -705,6 +722,14 @@ def _upload_description(args: argparse.Namespace, record: Dict[str, Any]) -> str
 def _validate_upload_binding(args: argparse.Namespace, record: Dict[str, Any]) -> None:
     existing_onnx = record.get("ifx", {}).get("onnx") or {}
     existing_version = existing_onnx.get("version")
+    truck_runner = record.get("ifx", {}).get("truck_runner") or {}
+    existing_is_dry_run = (
+        existing_version == 0
+        or truck_runner.get("selected") == "dry_run"
+        or record.get("stage") == "ifx_upload_dry_run"
+    )
+    if existing_is_dry_run:
+        return
     if existing_version is None or getattr(args, "replace_upload", False):
         return
 
@@ -770,16 +795,20 @@ def _command_upload(
         progress=ifx_progress if not getattr(args, "json", False) else None,
         step_offset=step_offset,
     )
-    existing_ifx = {
-        key: value
-        for key, value in record.get("ifx", {}).items()
-        if key not in {"jenkins", "ifx_mapping", "label"}
-    }
-    record["ifx"] = {**existing_ifx, **result}
     if args.dry_run:
+        record["ifx"] = {
+            **record.get("ifx", {}),
+            "dry_run_upload": result,
+        }
         record["stage"] = "ifx_upload_dry_run"
         record["status"] = "dry_run"
     else:
+        existing_ifx = {
+            key: value
+            for key, value in record.get("ifx", {}).items()
+            if key not in {"jenkins", "ifx_mapping", "label", "dry_run_upload"}
+        }
+        record["ifx"] = {**existing_ifx, **result}
         record["stage"] = "ifx_uploaded"
         record["status"] = "running"
     store.save(record)
@@ -952,6 +981,69 @@ def _command_apply_handoff(
         record["status"] = "dry_run"
     else:
         record["stage"] = "apply_handoff_complete"
+        record["status"] = "completed"
+    store.save(record)
+    return record
+
+
+def _command_dcl(
+    args: argparse.Namespace,
+    config: ReleaseConfig,
+    store: StateStore,
+    record: Dict[str, Any],
+) -> Dict[str, Any]:
+    branches = [args.branch] if args.branch else [branch.name for branch in config.voyager.branches]
+    branch_text = args.branch or f"all-configured ({len(branches)})"
+    if not _confirm(
+        f"Run DCL diff for {branch_text}?",
+        args.yes,
+    ):
+        raise RuntimeError("dcl cancelled by user.")
+    service = VoyagerHandoffService(config.voyager)
+    results = []
+    failed = None
+    for index, branch_name in enumerate(branches, start=1):
+        _progress(
+            args,
+            "Run DCL Diff",
+            step=index,
+            total=len(branches),
+            icon="🧾",
+            detail=f"mode: docker; branch: {branch_name}",
+        )
+        result = service.dcl_to_docker(
+            ifx_config=config.ifx,
+            branch=branch_name,
+            container=args.docker or "",
+            dry_run=args.dry_run,
+            lint=args.lint,
+            allow_dirty=args.allow_dirty,
+        )
+        results.append(result)
+        if result.get("returncode") not in (0, None):
+            failed = result
+            break
+    result = (
+        results[0]
+        if args.branch
+        else {
+            "mode": "docker",
+            "returncode": failed.get("returncode") if failed else 0,
+            "stdout": "\n".join(item.get("stdout") or "" for item in results),
+            "stderr": "\n".join(item.get("stderr") or "" for item in results),
+            "results": results,
+        }
+    )
+    record["dcl"] = result
+    if failed:
+        record["stage"] = "dcl_failed"
+        record["status"] = "failed"
+        store.add_error(record, "DCL diff failed. See dcl.stderr.")
+    elif args.dry_run:
+        record["stage"] = "dcl_dry_run"
+        record["status"] = "dry_run"
+    else:
+        record["stage"] = "dcl_complete"
         record["status"] = "completed"
     store.save(record)
     return record
@@ -1210,6 +1302,32 @@ def build_parser() -> argparse.ArgumentParser:
         help="Append missing MANIFEST targets instead of failing.",
     )
 
+    dcl_parser = subparsers.add_parser(
+        "dcl",
+        parents=[common],
+        help="Run Voyager DCL diff in docker for applied handoff commits",
+    )
+    dcl_parser.add_argument("--run-id", required=True)
+    dcl_parser.add_argument(
+        "--branch",
+        help="Configured branch name or checkout branch. If omitted, run all configured branches in order.",
+    )
+    dcl_parser.add_argument(
+        "--docker",
+        help="Voyager docker container. Defaults to CONTAINER_NAME_GEN4 or config.",
+    )
+    dcl_parser.add_argument("--dry-run", action="store_true")
+    dcl_parser.add_argument(
+        "--lint",
+        action="store_true",
+        help="Run dcl lint before dcl diff. Default is --nolint.",
+    )
+    dcl_parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help="Allow running when the Voyager worktree already has changes.",
+    )
+
     release_parser = subparsers.add_parser(
         "release", parents=[common], help="Run export -> ifx -> handoff"
     )
@@ -1376,6 +1494,13 @@ def main(argv: Optional[list[str]] = None) -> int:
             record = store.load(args.run_id)
             _print_record(
                 _command_apply_handoff(args, config, store, record),
+                as_json=args.json,
+            )
+            return 0
+        if args.command == "dcl":
+            record = store.load(args.run_id)
+            _print_record(
+                _command_dcl(args, config, store, record),
                 as_json=args.json,
             )
             return 0

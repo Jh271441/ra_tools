@@ -119,6 +119,11 @@ class VoyagerHandoffService:
             ifx_config.truck_docker_container_env, ""
         )
 
+    def _return_branch_trap(self) -> str:
+        branch = self.config.return_branch
+        cleanup = f"echo '[cleanup] return to {branch}'; git checkout {shlex.quote(branch)} || true"
+        return f"trap {shlex.quote(cleanup)} EXIT"
+
     def _apply_script(self) -> str:
         return r"""
 import base64
@@ -265,6 +270,7 @@ else:
         script = self._apply_script()
         shell_parts = [
             f"cd {shlex.quote(ifx_config.truck_docker_workdir)}",
+            self._return_branch_trap(),
         ]
         if ifx_config.truck_docker_setup:
             shell_parts.append(f"{ifx_config.truck_docker_setup} >/tmp/model_release_handoff_setup.log 2>&1 || true")
@@ -303,6 +309,52 @@ else:
                     f"else git commit -m {shlex.quote(commit_message)}; fi",
                 ]
             )
+        return [
+            "docker",
+            "exec",
+            container,
+            ifx_config.truck_docker_shell,
+            "-lc",
+            "; ".join(shell_parts),
+        ]
+
+    def _docker_dcl_command(
+        self,
+        ifx_config: IfxConfig,
+        container: str,
+        branch: BranchConfig,
+        lint: bool,
+        allow_dirty: bool,
+        dry_run: bool,
+    ) -> List[str]:
+        shell_parts = [
+            f"cd {shlex.quote(ifx_config.truck_docker_workdir)}",
+            self._return_branch_trap(),
+        ]
+        if ifx_config.truck_docker_setup:
+            shell_parts.append(
+                f"{ifx_config.truck_docker_setup} >/tmp/model_release_dcl_setup.log 2>&1 || true"
+            )
+        shell_parts.append("set -e")
+        if not allow_dirty:
+            shell_parts.append(
+                "test -z \"$(git status --porcelain)\" || "
+                "(echo 'Voyager worktree is dirty; commit/stash it or pass --allow-dirty.' >&2; git status --short >&2; exit 2)"
+            )
+        shell_parts.append(f"git checkout {shlex.quote(branch.checkout_branch)}")
+        if not allow_dirty:
+            shell_parts.append(
+                "test -z \"$(git status --porcelain)\" || "
+                "(echo 'Voyager worktree is dirty after checkout.' >&2; git status --short >&2; exit 2)"
+            )
+        diff_command = f"dcl diff -n -u {branch.update_diff_id} --nolint"
+        if dry_run:
+            shell_parts.append(f"echo '[dry-run] {diff_command}'")
+        else:
+            if lint:
+                shell_parts.append("dcl lint")
+                diff_command = f"dcl diff -n -u {branch.update_diff_id}"
+            shell_parts.append(diff_command)
         return [
             "docker",
             "exec",
@@ -372,6 +424,48 @@ else:
             "dry_run": dry_run,
             "no_commit": no_commit,
             "dcl_commands": dcl_commands,
+            "sim_plan": chosen_branch.sim_plan,
+        }
+
+    def dcl_to_docker(
+        self,
+        ifx_config: IfxConfig,
+        branch: Optional[str] = None,
+        container: str = "",
+        dry_run: bool = False,
+        lint: bool = False,
+        allow_dirty: bool = False,
+    ) -> Dict[str, Any]:
+        """Run DCL diff inside a Voyager docker checkout and return to base branch."""
+        chosen_branch = self._branch_by_name_or_checkout(branch)
+        docker_container = self._docker_container(ifx_config, container)
+        if not docker_container:
+            raise RuntimeError(
+                "dcl docker mode requires a container. Set "
+                f"{ifx_config.truck_docker_container_env} or pass --docker."
+            )
+        command = self._docker_dcl_command(
+            ifx_config=ifx_config,
+            container=docker_container,
+            branch=chosen_branch,
+            lint=lint,
+            allow_dirty=allow_dirty,
+            dry_run=dry_run,
+        )
+        result = self.command_runner(command)
+        return {
+            "mode": "docker",
+            "container": docker_container,
+            "workdir": ifx_config.truck_docker_workdir,
+            "branch": chosen_branch.name,
+            "checkout_branch": chosen_branch.checkout_branch,
+            "update_diff_id": chosen_branch.update_diff_id,
+            "command": " ".join(shlex.quote(part) for part in command),
+            "returncode": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "dry_run": dry_run,
+            "lint": lint,
             "sim_plan": chosen_branch.sim_plan,
         }
 

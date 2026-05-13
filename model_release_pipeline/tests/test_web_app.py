@@ -8,7 +8,13 @@ from pathlib import Path
 
 from model_release_pipeline.config import default_config
 from model_release_pipeline.state_store import StateStore
-from model_release_pipeline.web_app import JobManager, ReleaseWebApp, _timeline
+from model_release_pipeline.web_app import (
+    JobManager,
+    ReleaseWebApp,
+    _logs,
+    _record_summary,
+    _timeline,
+)
 
 
 class WebAppTest(unittest.TestCase):
@@ -116,6 +122,223 @@ class WebAppTest(unittest.TestCase):
         self.assertIn("7", command)
         self.assertIn("--remote", command)
         self.assertNotIn("--run-id", command)
+
+    def test_upload_job_command_uses_form_payload(self) -> None:
+        manager = JobManager()
+
+        command = manager.build_command(
+            "run123",
+            "upload",
+            dry_run=True,
+            payload={
+                "desc": "demo upload",
+                "version": "67",
+                "replace_upload": True,
+            },
+        )
+
+        self.assertIn("upload", command)
+        self.assertIn("--run-id", command)
+        self.assertIn("run123", command)
+        self.assertIn("--desc", command)
+        self.assertIn("demo upload", command)
+        self.assertIn("--onnx-version", command)
+        self.assertIn("67", command)
+        self.assertIn("--replace-upload", command)
+
+    def test_dcl_action_is_exposed_and_logged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = default_config()
+            config.runs_dir = Path(tmp_dir)
+            store = StateStore(config.runs_dir)
+            record = store.create("/nfs/exp_d", "demo")
+            record["apply_handoff"] = {"returncode": 0}
+            record["dcl"] = {
+                "returncode": 0,
+                "stdout": "DCL OK",
+                "stderr": "",
+            }
+            record["stage"] = "dcl_complete"
+            store.save(record)
+
+            payload = ReleaseWebApp(config).get_run(record["release_id"])
+
+            self.assertTrue(any(action["key"] == "dcl" for action in payload["actions"]))
+            self.assertEqual(
+                {step["key"]: step["status"] for step in payload["timeline"]}["dcl"],
+                "done",
+            )
+            self.assertIn("DCL OK", "\n".join(payload["logs"]["dcl_stdout"]))
+
+    def test_logs_include_upload_channels(self) -> None:
+        record = {
+            "stage": "ifx_uploaded",
+            "ifx": {
+                "onnx": {
+                    "module": "planner.model-files",
+                    "name": "model.onnx",
+                    "version": 67,
+                    "local_path": "/tmp/model.onnx",
+                },
+                "truck_runner": {"configured": "auto", "selected": "docker"},
+                "upload_description": "demo",
+                "precision_test_arg": "ifx-test test.zip -v 1",
+            },
+        }
+
+        logs = _logs(record)
+
+        self.assertIn("upload_stdout", logs)
+        self.assertIn("upload_stderr", logs)
+        self.assertTrue(any("model.onnx" in line for line in logs["upload_stdout"]))
+
+    def test_logs_include_ifx_channels(self) -> None:
+        record = {
+            "stage": "ifx_complete",
+            "ifx": {
+                "onnx": {
+                    "module": "planner.model-files",
+                    "name": "model.onnx",
+                    "version": 68,
+                },
+                "precision_test_arg": "ifx-test test.zip -v 1",
+                "ifx_mapping": {
+                    "onnx": {"name": "model.onnx", "version": 68},
+                    "fp32_x86": {"name": "model_bs0_fp32_x86.ifxmodel", "version": 79},
+                    "fp16_thor": {"name": "model_bs0_fp16_thor.ifxmodel", "version": 44},
+                },
+                "jenkins": {
+                    "queue_url": "http://jenkins/queue/item/1/",
+                    "build_url": "http://jenkins/job/demo/1/",
+                    "build_number": 1,
+                    "result": "SUCCESS",
+                    "console_tail": ["\x1b[32mFinished: SUCCESS\x1b[0m"],
+                },
+            },
+        }
+
+        logs = _logs(record)
+
+        self.assertIn("ifx_stdout", logs)
+        self.assertIn("ifx_stderr", logs)
+        self.assertTrue(any("model.onnx" in line for line in logs["ifx_stdout"]))
+        self.assertTrue(any("fp32_x86" in line for line in logs["ifx_stdout"]))
+        self.assertTrue(any("Finished: SUCCESS" in line for line in logs["ifx_stdout"]))
+
+    def test_later_failure_does_not_mark_successful_export_failed(self) -> None:
+        record = {
+            "stage": "exported",
+            "status": "failed",
+            "experiment": {"name": "exp"},
+            "selection": {"selected_epoch": 4},
+            "export": {
+                "export": {"returncode": 0},
+                "scp": {"returncode": 0},
+            },
+            "errors": [{"message": "No uploaded ONNX found in release record."}],
+        }
+        statuses = {step["key"]: step["status"] for step in _timeline(record)}
+
+        self.assertEqual(statuses["export"], "done")
+        self.assertEqual(statuses["ifx"], "pending")
+
+    def test_upload_failure_does_not_mark_ifx_failed(self) -> None:
+        record = {
+            "stage": "ifx_upload_dry_run",
+            "status": "failed",
+            "ifx": {
+                "onnx": {"name": "model.onnx", "version": 0},
+                "truck_runner": {"selected": "dry_run"},
+            },
+            "errors": [{"message": "upload failed"}],
+        }
+        statuses = {step["key"]: step["status"] for step in _timeline(record)}
+
+        self.assertEqual(statuses["upload"], "dry_run")
+        self.assertEqual(statuses["ifx"], "pending")
+
+    def test_later_dry_run_does_not_downgrade_completed_export(self) -> None:
+        record = {
+            "stage": "apply_handoff_dry_run",
+            "status": "dry_run",
+            "experiment": {"name": "exp"},
+            "selection": {"selected_epoch": 4},
+            "export": {
+                "export": {"returncode": 0},
+                "scp": {"returncode": 0},
+            },
+            "apply_handoff": {"returncode": 0, "dcl_commands": ["dcl diff -n -u 1"]},
+        }
+        statuses = {step["key"]: step["status"] for step in _timeline(record)}
+
+        self.assertEqual(statuses["export"], "done")
+        self.assertEqual(statuses["handoff"], "dry_run")
+        self.assertEqual(statuses["dcl"], "pending")
+
+    def test_upload_dry_run_log_does_not_replace_actual_onnx_summary(self) -> None:
+        record = {
+            "stage": "ifx_upload_dry_run",
+            "status": "dry_run",
+            "ifx": {
+                "onnx": {"name": "model.onnx", "version": 68},
+                "dry_run_upload": {
+                    "onnx": {"name": "model.onnx", "version": 99},
+                    "truck_runner": {"selected": "dry_run"},
+                },
+            },
+        }
+
+        logs = _logs(record)
+        summary = _record_summary(record)
+
+        self.assertTrue(any("-v 99" in line for line in logs["upload_stdout"]))
+        self.assertEqual(summary["onnx_version"], 68)
+
+    def test_summary_ignores_legacy_dry_run_onnx_version(self) -> None:
+        record = {
+            "stage": "ifx_upload_dry_run",
+            "status": "dry_run",
+            "ifx": {
+                "onnx": {"name": "model.onnx", "version": 0},
+                "truck_runner": {"selected": "dry_run"},
+                "ifx_mapping": {
+                    "onnx": {"name": "model.onnx", "version": 68},
+                },
+            },
+        }
+
+        summary = _record_summary(record)
+
+        self.assertEqual(summary["onnx_version"], 68)
+
+    def test_draft_export_action_does_not_require_existing_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = default_config()
+            config.runs_dir = Path(tmp_dir)
+            app = ReleaseWebApp(config)
+            captured = {}
+
+            def fake_start(**kwargs):
+                captured.update(kwargs)
+                return {"job_id": "job1", "status": "running"}
+
+            app.jobs.start = fake_start  # type: ignore[method-assign]
+
+            result = app.start_action(
+                "__draft__",
+                "export",
+                {
+                    "dry_run": True,
+                    "experiment": "/nfs/exp",
+                    "epoch": "004",
+                    "remote": "luban_2_card",
+                },
+            )
+
+            self.assertEqual(result["job_id"], "job1")
+            self.assertEqual(captured["release_id"], "__draft__")
+            self.assertEqual(captured["action"], "export")
+            self.assertTrue(captured["dry_run"])
 
     def test_real_action_requires_release_id_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

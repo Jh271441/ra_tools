@@ -70,6 +70,7 @@ picker:
 voyager:
   manifest_path: onboard/model_files/MANIFEST.txt
   commit_prefix: V
+  return_branch: master-Release_CN-a6d66b30c89
   manifest_entries:
     - platform: onnx
       expected_name: vectorized_scenario_remote_assist_model.onnx

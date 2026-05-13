@@ -25,30 +25,25 @@
       <main class="workspace app-workspace">
         <aside id="sideRail" class="side-rail" aria-label="Primary navigation">
           <button id="railToggle" class="rail-toggle" title="Collapse toolbar">
-            <span class="rail-icon">⌘</span>
-            <span class="rail-label">Collapse</span>
-          </button>
-          <button id="sidebarToggle" class="rail-item active" title="Release Runs">
-            <span class="rail-icon">R</span>
-            <span class="rail-label">Release Runs</span>
+            <span class="rail-icon">‹</span>
           </button>
           <button class="rail-item view-tab active" data-view="workflow" title="Workflow">
             <span class="rail-icon">W</span>
             <span class="rail-label">Workflow</span>
           </button>
-          <button class="rail-item view-tab" data-view="release" title="Release Details">
+          <button id="releaseDetailsNav" class="rail-item view-tab" data-view="release" title="Release Details">
             <span class="rail-icon">D</span>
             <span class="rail-label">Release Details</span>
+            <span id="sidebarToggle" class="rail-disclosure active" title="Toggle Release Runs">⌄</span>
           </button>
-        </aside>
-
-        <aside id="runSidebar" class="panel run-list">
-          <div class="panel-title split-title">
-            <span>Release Runs</span>
-            <button id="newReleaseBtn" class="ghost compact">+ New Release</button>
-          </div>
-          <input id="runFilter" placeholder="Filter run / experiment" style="margin-bottom: 12px; width: 100%; max-width: 100%;" />
-          <div id="runs" class="runs"></div>
+          <aside id="runSidebar" class="run-list">
+            <div class="panel-title split-title">
+              <span>Release Runs</span>
+              <button id="newReleaseBtn" class="ghost compact">+ New Release</button>
+            </div>
+            <input id="runFilter" placeholder="Filter run / experiment" style="margin-bottom: 12px; width: 100%; max-width: 100%;" />
+            <div id="runs" class="runs"></div>
+          </aside>
         </aside>
 
         <section class="agent-board content-board">
@@ -76,7 +71,7 @@
                 <div class="workflow-confirm">
                   <div>
                     <h4>Action Confirmation</h4>
-                    <p class="helper-text">Real export requires <b>EXPORT</b>; other real actions require current release_id.</p>
+                    <p id="confirmHint" class="helper-text">Real export requires <b>EXPORT</b>; other real actions require current release_id.</p>
                   </div>
                   <input id="confirmText" class="confirm-input" placeholder="release_id or EXPORT" />
                   <div id="jobStatus" class="job-status empty-state">No backend job running.</div>

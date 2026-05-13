@@ -38,6 +38,14 @@ _ACTIONS = {
         "extra_args": [],
         "needs_run_id": False,
     },
+    "upload": {
+        "command": "upload",
+        "label": "Upload ONNX",
+        "supports_dry_run": True,
+        "requires_confirm": True,
+        "extra_args": [],
+        "needs_run_id": True,
+    },
     "handoff": {
         "command": "handoff",
         "label": "Generate Handoff",
@@ -57,6 +65,14 @@ _ACTIONS = {
     "apply-handoff": {
         "command": "apply-handoff",
         "label": "Apply Handoff",
+        "supports_dry_run": True,
+        "requires_confirm": True,
+        "extra_args": [],
+        "needs_run_id": True,
+    },
+    "dcl": {
+        "command": "dcl",
+        "label": "Run DCL Diff",
         "supports_dry_run": True,
         "requires_confirm": True,
         "extra_args": [],
@@ -99,11 +115,22 @@ def _command_state(result: Optional[Dict[str, Any]]) -> str:
     return "failed"
 
 
+def _actual_onnx(ifx: Dict[str, Any]) -> Dict[str, Any]:
+    onnx = ifx.get("onnx") or {}
+    mapping_onnx = (ifx.get("ifx_mapping") or {}).get("onnx") or {}
+    runner = ifx.get("truck_runner") or {}
+    dry_run_polluted = (
+        runner.get("selected") == "dry_run"
+        or onnx.get("version") == 0
+    )
+    if onnx and not dry_run_polluted:
+        return onnx
+    return mapping_onnx or onnx
+
+
 def _step_status(record: Dict[str, Any], key: str) -> str:
     stage = str(record.get("stage") or "")
     status = str(record.get("status") or "")
-    if status == "failed" and key in stage:
-        return "failed"
     if key == "inspect":
         return "done" if record.get("experiment") else "pending"
     if key == "pick":
@@ -123,31 +150,48 @@ def _step_status(record: Dict[str, Any], key: str) -> str:
             "done",
             "dry_run",
         }:
-            return "done" if status != "dry_run" else "dry_run"
+            return "dry_run" if stage == "export_dry_run" else "done"
         return "running" if key in stage else "pending"
     if key == "upload":
         ifx = record.get("ifx") or {}
+        if stage == "ifx_upload_dry_run":
+            return "dry_run"
+        if status == "failed" and stage.startswith("ifx_upload"):
+            return "failed"
         if not ifx.get("onnx"):
             return "running" if stage == "ifx_uploading" else "pending"
-        return "dry_run" if stage == "ifx_upload_dry_run" else "done"
+        return "done"
     if key == "ifx":
         ifx = record.get("ifx") or {}
         if stage == "ifx_converting":
             return "running"
-        if status == "failed" and stage.startswith("ifx"):
+        if status == "failed" and stage.startswith("ifx_convert"):
             return "failed"
         if ifx.get("ifx_mapping"):
             return "dry_run" if stage == "ifx_convert_dry_run" else "done"
         return "pending"
     if key == "handoff":
+        if stage == "apply_handoff_dry_run":
+            return "dry_run"
+        if stage == "apply_handoff_failed":
+            return "failed"
         if record.get("apply_handoff"):
             return _command_state(record.get("apply_handoff"))
         if record.get("handoff"):
             return "done"
         return "pending"
     if key == "dcl":
+        dcl = record.get("dcl") or {}
+        if stage == "dcl_failed":
+            return "failed"
+        if stage == "dcl_dry_run":
+            return "dry_run"
+        if stage == "dcl_complete":
+            return "done"
+        if dcl:
+            return _command_state(dcl)
         apply_handoff = record.get("apply_handoff") or {}
-        return "ready" if apply_handoff.get("dcl_commands") else "pending"
+        return "ready" if stage == "apply_handoff_complete" and apply_handoff else "pending"
     if key == "offboard":
         offboard = record.get("offboard") or {}
         if not offboard:
@@ -174,7 +218,7 @@ def _record_summary(record: Dict[str, Any]) -> Dict[str, Any]:
         "experiment_path": record.get("experiment_path"),
         "selected_epoch": selection.get("selected_epoch"),
         "selection_source": selection.get("selection_source"),
-        "onnx_version": (ifx.get("onnx") or mapping.get("onnx") or {}).get("version"),
+        "onnx_version": _actual_onnx(ifx).get("version"),
         "ifx_platforms": len([key for key in mapping if key != "onnx"]),
         "offboard_status": _step_status(record, "offboard"),
         "error_count": len(errors),
@@ -212,18 +256,131 @@ def _tail(value: Any, max_lines: int = 80) -> list[str]:
     return lines[-max_lines:]
 
 
+def _upload_stdout(ifx: Dict[str, Any]) -> list[str]:
+    if not ifx:
+        return []
+    lines = []
+    runner = ifx.get("truck_runner") or {}
+    onnx = ifx.get("onnx") or {}
+    if runner:
+        lines.append(
+            "truck runner: "
+            f"{runner.get('configured') or 'NA'} -> {runner.get('selected') or 'NA'}"
+        )
+    if onnx:
+        lines.append(
+            "uploaded onnx: "
+            f"{onnx.get('module') or 'NA'} {onnx.get('name') or 'NA'} "
+            f"-v {onnx.get('version') if onnx.get('version') is not None else 'NA'}"
+        )
+        if onnx.get("local_path"):
+            lines.append(f"local onnx: {onnx.get('local_path')}")
+    if ifx.get("upload_description"):
+        lines.append(f"upload desc: {ifx.get('upload_description')}")
+    if ifx.get("precision_test_arg"):
+        lines.append(f"precision test: {ifx.get('precision_test_arg')}")
+    return lines
+
+
+def _upload_stderr(record: Dict[str, Any]) -> list[str]:
+    stage = str(record.get("stage") or "")
+    if not stage.startswith("ifx_upload"):
+        return []
+    return [
+        str(item.get("message") or item)
+        for item in (record.get("errors") or [])[-20:]
+    ]
+
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _clean_log_line(value: Any) -> str:
+    return _ANSI_RE.sub("", str(value))
+
+
+def _ifx_stdout(ifx: Dict[str, Any]) -> list[str]:
+    if not ifx:
+        return []
+    lines: list[str] = []
+    onnx = _actual_onnx(ifx)
+    if onnx:
+        lines.append(
+            "onnx: "
+            f"{onnx.get('module') or 'planner.model-files'} "
+            f"{onnx.get('name') or 'NA'} "
+            f"-v {onnx.get('version') if onnx.get('version') is not None else 'NA'}"
+        )
+    if ifx.get("precision_test_arg"):
+        lines.append(f"precision test: {ifx.get('precision_test_arg')}")
+    jenkins = ifx.get("jenkins") or {}
+    if jenkins:
+        if jenkins.get("queue_url"):
+            lines.append(f"jenkins queue: {jenkins.get('queue_url')}")
+        if jenkins.get("build_url"):
+            lines.append(f"jenkins build: {jenkins.get('build_url')}")
+        if jenkins.get("build_number") is not None:
+            lines.append(f"jenkins build_number: {jenkins.get('build_number')}")
+        if jenkins.get("result"):
+            lines.append(f"jenkins result: {jenkins.get('result')}")
+    mapping = ifx.get("ifx_mapping") or ifx.get("dry_run_mapping") or {}
+    if mapping:
+        lines.append("ifx artifacts:")
+        for platform, item in sorted(mapping.items()):
+            if platform == "onnx":
+                continue
+            lines.append(
+                "  "
+                f"{platform}: {item.get('name') or 'NA'} "
+                f"-v {item.get('version') if item.get('version') is not None else 'NA'}"
+            )
+    failed_uploads = ifx.get("failed_uploads") or []
+    if failed_uploads:
+        lines.append("failed uploads:")
+        for item in failed_uploads:
+            lines.append(f"  {_clean_log_line(item)}")
+    console_tail = (jenkins.get("console_tail") or [])[-30:]
+    if console_tail:
+        lines.append("")
+        lines.append("jenkins console tail:")
+        lines.extend(_clean_log_line(line) for line in console_tail)
+    return lines
+
+
+def _ifx_stderr(record: Dict[str, Any]) -> list[str]:
+    stage = str(record.get("stage") or "")
+    if not (stage == "ifx_converting" or stage.startswith("ifx_convert")):
+        return []
+    return [
+        str(item.get("message") or item)
+        for item in (record.get("errors") or [])[-20:]
+    ]
+
+
 def _logs(record: Dict[str, Any]) -> Dict[str, list[str]]:
     export = record.get("export") or {}
     ifx = record.get("ifx") or {}
+    upload_log_source = (
+        ifx.get("dry_run_upload")
+        if str(record.get("stage") or "") == "ifx_upload_dry_run"
+        else ifx
+    )
     jenkins = ifx.get("jenkins") or {}
     apply_handoff = record.get("apply_handoff") or {}
+    dcl = record.get("dcl") or {}
     offboard = record.get("offboard") or {}
     return {
         "export_stdout": _tail((export.get("export") or {}).get("stdout")),
         "export_stderr": _tail((export.get("export") or {}).get("stderr")),
+        "upload_stdout": _upload_stdout(upload_log_source),
+        "upload_stderr": _upload_stderr(record),
+        "ifx_stdout": _ifx_stdout(ifx),
+        "ifx_stderr": _ifx_stderr(record),
         "jenkins_console": jenkins.get("console_tail") or [],
         "handoff_stdout": _tail(apply_handoff.get("stdout")),
         "handoff_stderr": _tail(apply_handoff.get("stderr")),
+        "dcl_stdout": _tail(dcl.get("stdout")),
+        "dcl_stderr": _tail(dcl.get("stderr")),
         "offboard_stdout": _tail(offboard.get("stdout"), 120),
         "offboard_stderr": _tail(offboard.get("stderr"), 80),
     }
@@ -245,8 +402,9 @@ def _commands(record: Dict[str, Any]) -> Dict[str, Any]:
         ),
         "ifx_convert": f"python3 -m model_release_pipeline.cli ifx-convert --run-id {release_id}",
         "apply_handoff": f"python3 -m model_release_pipeline.cli apply-handoff --run-id {release_id}",
+        "dcl": f"python3 -m model_release_pipeline.cli dcl --run-id {release_id}",
         "offboard": f"python3 -m model_release_pipeline.cli offboard --run-id {release_id} --remote luban_2_card",
-        "dcl": (record.get("apply_handoff") or {}).get("dcl_commands") or [],
+        "dcl_commands": (record.get("apply_handoff") or {}).get("dcl_commands") or [],
     }
 
 
@@ -313,6 +471,17 @@ class JobManager:
             desc = str(payload.get("desc") or "").strip()
             if desc:
                 command.extend(["--desc", desc])
+        elif action == "upload":
+            desc = str(payload.get("desc") or "").strip()
+            if desc:
+                command.extend(["--desc", desc])
+            version = str(payload.get("version") or "").strip()
+            if version:
+                if not version.isdigit():
+                    raise ValueError("ONNX version must be an integer.")
+                command.extend(["--onnx-version", str(int(version))])
+            if payload.get("replace_upload"):
+                command.append("--replace-upload")
         else:
             command.extend(spec["extra_args"])
         command.append("--yes")
@@ -463,7 +632,8 @@ class ReleaseWebApp:
         action: str,
         payload: Dict[str, Any],
     ) -> Dict[str, Any]:
-        self.store.load(release_id)
+        if _ACTIONS.get(action, {}).get("needs_run_id", True):
+            self.store.load(release_id)
         return self.jobs.start(
             release_id=release_id,
             action=action,

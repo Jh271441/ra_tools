@@ -114,6 +114,7 @@ class BranchConfig:
 class VoyagerConfig:
     manifest_path: str = "onboard/model_files/MANIFEST.txt"
     commit_prefix: str = "V"
+    return_branch: str = "master-Release_CN-a6d66b30c89"
     manifest_entries: List[ManifestEntryConfig] = field(default_factory=list)
     branches: List[BranchConfig] = field(default_factory=list)
 

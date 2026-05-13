@@ -170,6 +170,18 @@ class CliSelectionTest(unittest.TestCase):
 
         _validate_upload_binding(args, record)
 
+    def test_upload_binding_ignores_previous_dry_run_binding(self) -> None:
+        record = {
+            "stage": "ifx_upload_dry_run",
+            "ifx": {
+                "onnx": {"name": "model.onnx", "version": 0},
+                "truck_runner": {"selected": "dry_run"},
+            },
+        }
+        args = argparse.Namespace(version=None, replace_upload=False)
+
+        _validate_upload_binding(args, record)
+
     def test_apply_handoff_without_branch_applies_all_configured_branches(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             config = default_config()

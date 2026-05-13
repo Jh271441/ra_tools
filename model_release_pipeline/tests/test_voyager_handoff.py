@@ -80,6 +80,7 @@ class VoyagerHandoffTest(unittest.TestCase):
         command = captured["command"]
         self.assertEqual(command[:3], ["docker", "exec", "voyager-dev"])
         self.assertIn("git checkout jasperchen/2026Q1_test_scenario_dnn_dev", command[-1])
+        self.assertIn("git checkout master-Release_CN-a6d66b30c89 || true", command[-1])
         self.assertIn("git commit -m", command[-1])
         self.assertIn("V65. exp, epoch=7. demo", result["commit_message"])
         self.assertEqual(
@@ -124,6 +125,32 @@ class VoyagerHandoffTest(unittest.TestCase):
         shell_script = captured["command"][-1]
         self.assertIn("[dry-run] skip git add/commit", shell_script)
         self.assertNotIn("git commit -m", shell_script)
+
+    def test_dcl_to_docker_uses_nolint_and_returns_to_base_branch(self) -> None:
+        captured = {}
+
+        def fake_runner(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
+            captured["command"] = list(command)
+            return subprocess.CompletedProcess(
+                args=list(command),
+                returncode=0,
+                stdout="DCL OK\n",
+                stderr="",
+            )
+
+        config = default_config()
+        config.ifx.truck_docker_container = "voyager-dev"
+        service = VoyagerHandoffService(config.voyager, command_runner=fake_runner)
+
+        result = service.dcl_to_docker(
+            ifx_config=config.ifx,
+            branch="master",
+        )
+
+        shell_script = captured["command"][-1]
+        self.assertIn("dcl diff -n -u 5716859 --nolint", shell_script)
+        self.assertIn("git checkout master-Release_CN-a6d66b30c89 || true", shell_script)
+        self.assertEqual(result["returncode"], 0)
 
     def test_apply_script_preserves_manifest_spacing_and_skips_same_version(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

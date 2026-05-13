@@ -61,10 +61,10 @@ button {
 .app-shell {
   position: relative;
   z-index: 1;
-  width: min(1800px, 100%);
+  width: 100%;
   height: 100dvh;
-  margin: 0 auto;
-  padding: clamp(16px, 2vw, 24px);
+  margin: 0;
+  padding: clamp(16px, 2vw, 24px) clamp(16px, 2vw, 24px) clamp(16px, 2vw, 24px) 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -77,6 +77,7 @@ button {
   justify-content: space-between;
   gap: 18px;
   margin-bottom: 20px;
+  padding-left: clamp(16px, 2vw, 24px);
 }
 
 .brand {
@@ -221,7 +222,7 @@ h4 {
   flex: 1 1 auto;
   display: flex;
   align-items: stretch;
-  gap: 14px;
+  gap: 0;
   min-height: 0;
   overflow: hidden;
 }
@@ -239,18 +240,18 @@ h4 {
 }
 
 .side-rail {
-  flex: 0 0 214px;
+  position: relative;
+  flex: 0 0 300px;
+  width: 300px;
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 6px;
   min-height: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-xl);
-  padding: 14px 12px;
-  background: rgba(255, 255, 255, 0.66);
-  box-shadow: var(--shadow-soft);
-  backdrop-filter: blur(18px) saturate(1.1);
+  margin: calc(-1 * clamp(16px, 2vw, 24px)) 0 calc(-1 * clamp(16px, 2vw, 24px));
+  border-right: 1px solid var(--line);
+  padding: clamp(16px, 2vw, 24px) 10px 14px;
+  background: rgba(255, 255, 255, 0.72);
   transition: flex-basis 180ms ease;
 }
 
@@ -259,7 +260,7 @@ h4 {
   width: 100%;
   min-width: 0;
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: 10px;
   padding: 10px 12px;
   color: var(--muted);
   background: transparent;
@@ -273,6 +274,31 @@ h4 {
   font-weight: 650;
   line-height: 1.1;
   transition: 160ms ease;
+}
+
+.rail-toggle {
+  position: absolute;
+  top: 22px;
+  right: -14px;
+  z-index: 4;
+  width: 28px;
+  height: 28px;
+  justify-content: center;
+  padding: 0;
+  border-color: var(--line);
+  border-radius: 999px;
+  background: var(--surface-solid);
+  box-shadow: var(--shadow-soft);
+}
+
+.rail-toggle .rail-icon {
+  width: 100%;
+  height: 100%;
+  flex-basis: auto;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  font-size: 1rem;
 }
 
 .rail-toggle:hover,
@@ -317,9 +343,30 @@ h4 {
   white-space: nowrap;
 }
 
+.rail-disclosure {
+  margin-left: auto;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.5);
+  font: 900 0.9rem/1 var(--mono);
+}
+
 .rail-collapsed .side-rail {
   flex-basis: 58px;
   padding-inline: 8px;
+}
+
+.sidebar-collapsed .side-rail {
+  flex-basis: 300px;
+}
+
+.rail-collapsed.sidebar-collapsed .side-rail {
+  flex-basis: 58px;
 }
 
 .rail-collapsed .rail-toggle,
@@ -332,10 +379,18 @@ h4 {
   display: none;
 }
 
+.rail-collapsed .rail-disclosure {
+  display: none;
+}
+
 .rail-collapsed .rail-icon {
   width: 34px;
   height: 34px;
   flex-basis: 34px;
+}
+
+.rail-collapsed .side-rail .run-list {
+  display: none;
 }
 
 .side-rail .view-tab {
@@ -347,19 +402,28 @@ h4 {
 }
 
 .run-list {
-  flex: 1 1 300px;
-  min-width: 260px;
-  max-width: 360px;
-  padding: 20px;
-}
-
-.run-list {
-  flex: 0 0 320px;
-  max-width: 320px;
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: none;
+  padding: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
   transition: all 200ms ease;
+}
+
+.side-rail .run-list {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  margin-top: 6px;
+  border-top: 1px solid var(--line);
+  padding: 14px 6px 0;
+  overflow: hidden;
+}
+
+.side-rail .panel-title {
+  margin-bottom: 12px;
 }
 
 .sidebar-collapsed .run-list {
@@ -387,6 +451,7 @@ h4 {
   min-width: 0;
   height: 100%;
   overflow: hidden;
+  padding-left: clamp(18px, 1.8vw, 28px);
 }
 
 .detail-panel {
@@ -475,6 +540,11 @@ h4 {
   box-shadow: 0 0 0 1px rgba(0, 122, 255, 0.12), var(--shadow-soft);
 }
 
+.run-item.draft {
+  border-style: dashed;
+  background: rgba(255, 255, 255, 0.54);
+}
+
 .run-id {
   font: 700 0.85rem/1.2 var(--mono);
 }
@@ -519,8 +589,8 @@ h4 {
 
 .chip.ready,
 .chip.running {
-  color: var(--warn);
-  background: var(--warn-soft);
+  color: var(--muted);
+  background: var(--surface-strong);
 }
 
 .flow-card {
@@ -535,7 +605,7 @@ h4 {
 
 .flow-controls {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 12px;
   overflow: visible;
   padding: 2px;
@@ -544,17 +614,35 @@ h4 {
 .flow-node {
   position: relative;
   min-width: 0;
-  min-height: 76px;
+  min-height: 72px;
   display: flex;
   align-items: center;
   overflow: hidden;
   text-align: left;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  padding: 14px 16px;
+  padding: 12px 14px;
   background: rgba(255, 255, 255, 0.7);
   cursor: pointer;
   transition: 150ms ease;
+}
+
+.inline-check {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.7);
+  font: 600 0.82rem/1.2 var(--sans);
+}
+
+.inline-check input {
+  width: auto;
+  margin: 0;
 }
 
 .flow-node:hover {
@@ -611,7 +699,7 @@ h4 {
 
 .flow-node.ready .flow-number,
 .flow-node.running .flow-number {
-  background: var(--warn);
+  background: var(--faint);
 }
 
 .flow-top p {
@@ -1112,6 +1200,15 @@ h4 {
   background: var(--surface-strong);
 }
 
+.action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
+.action-button:disabled:hover {
+  background: rgba(255, 255, 255, 0.78);
+}
+
 .action-button.primary:hover {
   background: #006fe8;
 }
@@ -1196,6 +1293,10 @@ h4 {
     padding: 16px;
   }
 
+  .topbar {
+    padding-left: 0;
+  }
+
   .workspace {
     flex-direction: column;
     min-height: auto;
@@ -1204,16 +1305,29 @@ h4 {
   .side-rail {
     flex: none;
     width: 100%;
-    flex-direction: row;
-    overflow-x: auto;
-    padding: 0;
+    flex-direction: column;
+    overflow: visible;
+    margin: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 0 0 12px;
+    background: transparent;
   }
 
   .rail-toggle,
   .rail-item,
   .side-rail .view-tab {
-    min-width: 72px;
-    width: auto;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .rail-toggle {
+    position: static;
+    width: 100%;
+    height: auto;
+    justify-content: flex-start;
+    padding: 10px 12px;
+    border-radius: 10px;
   }
 
   .run-list {
