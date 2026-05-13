@@ -256,10 +256,22 @@ Then open:
 http://127.0.0.1:8765
 ```
 
-The first version is intentionally read-only. It scans `runs_dir`, lists release
-runs, renders an agent-style timeline, summarizes epoch/ONNX/IFX/handoff/offboard
-state, shows captured log tails, and prints the next CLI commands. Keep actual
-mutating operations in the CLI until the web confirmation model is explicit.
+The console scans `runs_dir`, lists release runs, renders an agent-style
+timeline, summarizes epoch/ONNX/IFX/handoff/offboard state, shows captured log
+tails, and prints the next CLI commands.
+
+It also exposes backend actions through the same CLI implementation:
+
+- `handoff`
+- `ifx-convert`
+- `apply-handoff`
+- `offboard`
+
+Dry-run actions start immediately and stream into the `Backend job` log channel.
+Real actions require typing the current `release_id` into the confirmation box
+before the backend starts the CLI subprocess with `--yes`. This keeps dangerous
+steps explicit while avoiding a separate implementation path from the terminal
+workflow.
 
 Offboard can run from a release run or an explicit experiment epoch.
 Prefer passing `--run-id`; it reads the experiment path and selected epoch from

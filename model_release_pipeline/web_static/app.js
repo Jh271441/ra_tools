@@ -3,6 +3,11 @@ const state = {
   selectedId: null,
   selectedRun: null,
   selectedLog: "offboard_stdout",
+  activeView: "workflow",
+  activeStep: "export",
+  sidebarCollapsed: false,
+  activeJobId: null,
+  jobTimer: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -33,15 +38,58 @@ async function fetchJson(url) {
   return response.json();
 }
 
+async function postJson(url, payload) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || `${response.status} ${response.statusText}`);
+  }
+  return data;
+}
+
 async function loadRuns(selectFirst = false) {
   const payload = await fetchJson("/api/runs");
   state.runs = payload.runs || [];
   $("runsDir").textContent = `runs_dir: ${payload.runs_dir}`;
   renderRuns();
-  if (selectFirst && state.runs.length) {
-    await selectRun(state.runs[0].release_id);
+  // Do NOT select first by default anymore, just render empty state or selected run
+  if (state.selectedId) {
+     await selectRun(state.selectedId);
+  } else {
+     renderEmptyState();
   }
 }
+
+function renderEmptyState() {
+  $("runTitle").textContent = "New Release";
+  $("runSubtitle").textContent = "Create a new release by selecting an experiment below.";
+  $("runBadges").innerHTML = `<span class="badge">creating</span>`;
+  renderFlowControls({ actions: [], timeline: [] });
+  renderTimeline([]);
+  // Clear details
+  $("details").innerHTML = `<div class="empty-state">Pick a release run from the left or create a new one.</div>`;
+  $("logOutput").textContent = "Select a run or start a job to view logs.";
+}
+
+function clearSelection() {
+  state.selectedId = null;
+  state.selectedRun = null;
+  state.activeStep = "export";
+  renderRuns();
+  renderEmptyState();
+}
+
+$("newReleaseBtn").onclick = clearSelection;
+
+$("fullscreenLog").onclick = (e) => {
+  e.preventDefault(); // Prevent details toggle
+  e.stopPropagation();
+  $("logDrawer").classList.toggle("fullscreen");
+};
 
 function renderRuns() {
   const filter = $("runFilter").value.trim().toLowerCase();
@@ -102,10 +150,138 @@ function renderSelectedRun() {
     <span class="badge">epoch ${formatEpoch(summary.selected_epoch)}</span>
     <span class="badge">ONNX v${summary.onnx_version ?? "NA"}</span>
   `;
+  renderFlowControls(payload);
   renderTimeline(payload.timeline || []);
   renderDetails(payload);
   renderLogSelect(payload.logs || {});
   renderLog();
+}
+
+function renderFlowControls(payload) {
+  const actions = payload.actions || [];
+  const flow = flowItems(payload.summary || {});
+  const statusByStep = Object.fromEntries((payload.timeline || []).map((step) => [step.key, step.status]));
+  if (!flow.some((item) => item.key === state.activeStep)) {
+    state.activeStep = flow[0].key;
+  }
+  $("flowControls").innerHTML = flow
+    .map((item, index) => {
+      const stepStatus = statusByStep[item.key] || "ready";
+      return `
+        <button class="flow-node ${item.key} ${state.activeStep === item.key ? "selected" : ""} ${statusClass(stepStatus)}" data-step="${item.key}">
+          <div class="flow-top">
+            <div class="flow-number">${index + 1}</div>
+            <div>
+              <h4>${escapeHtml(item.shortTitle)}</h4>
+              <p>${escapeHtml(item.note)}</p>
+            </div>
+            <span class="chip flow-state ${statusClass(stepStatus)}">${escapeHtml(stepStatus)}</span>
+          </div>
+        </button>
+      `;
+    })
+    .join("");
+  bindFlowNodes();
+  renderFlowInspector(flow, actions, statusByStep);
+}
+
+function flowItems(summary) {
+  return [
+    {
+      key: "export",
+      shortTitle: "Export",
+      title: "1. Model Export",
+      note: "new release run",
+      detail: "Create or re-export ONNX from the selected experiment and epoch.",
+      actionKeys: ["export"],
+    },
+    {
+      key: "ifx",
+      shortTitle: "IFX",
+      title: "2. IFX Convert",
+      note: `ONNX v${summary.onnx_version ?? "NA"}`,
+      detail: "Trigger Jenkins IFX conversion from uploaded ONNX and collect generated artifact versions.",
+      actionKeys: ["ifx-convert"],
+    },
+    {
+      key: "handoff",
+      shortTitle: "Handoff",
+      title: "3. Handoff",
+      note: "manifest commit",
+      detail: "Generate or apply Voyager MANIFEST updates, then use DCL commands from Release Details.",
+      actionKeys: ["handoff", "apply-handoff"],
+    },
+    {
+      key: "offboard",
+      shortTitle: "Offboard",
+      title: "4. Offboard",
+      note: "validate model",
+      detail: "Run release validation against the selected experiment and epoch.",
+      actionKeys: ["offboard"],
+    },
+  ];
+}
+
+function bindFlowNodes() {
+  document.querySelectorAll(".flow-node").forEach((node) => {
+    node.onclick = () => {
+      state.activeStep = node.dataset.step;
+      renderFlowControls(state.selectedRun);
+    };
+  });
+}
+
+function renderFlowInspector(flow, actions, statusByStep) {
+  const item = flow.find((step) => step.key === state.activeStep) || flow[0];
+  const itemActions = item.actionKeys
+    .map((key) => actions.find((action) => action.key === key))
+    .filter(Boolean);
+  const stepStatus = statusByStep[item.key] || "ready";
+  $("flowInspector").innerHTML = `
+    <div class="inspector-head">
+      <div>
+        <p class="eyebrow">Selected Step</p>
+        <h3>${escapeHtml(item.title)}</h3>
+        <p class="muted">${escapeHtml(item.detail)}</p>
+      </div>
+      <span class="chip ${statusClass(stepStatus)}">${escapeHtml(stepStatus)}</span>
+    </div>
+    ${item.key === "export" ? renderExportForm() : ""}
+    <div class="flow-actions">${renderActionButtons(itemActions, "primary")}</div>
+  `;
+  bindActionButtons();
+  
+  // Auto-select corresponding log channel
+  if (state.selectedRun && state.selectedRun.logs) {
+    const logMap = {
+      "export": "export_stdout",
+      "ifx": "jenkins_console",
+      "handoff": "handoff_stdout",
+      "offboard": "offboard_stdout"
+    };
+    const targetLog = logMap[state.activeStep];
+    if (targetLog && state.selectedRun.logs[targetLog]) {
+      state.selectedLog = targetLog;
+      $("logSelect").value = targetLog;
+      renderLog();
+    }
+  }
+}
+
+function renderExportForm() {
+  const record = (state.selectedRun || {}).record || {};
+  const experimentPath = record.experiment_path || "";
+  return `
+    <div class="export-form">
+      <input id="exportExperiment" placeholder="experiment path" value="${escapeHtml(experimentPath)}" />
+      <div class="export-row">
+        <input id="exportEpoch" placeholder="epoch, e.g. 007" />
+        <input id="exportRemote" placeholder="remote" value="luban_2_card" />
+      </div>
+      <input id="exportDesc" placeholder="description / release note" />
+      <p class="helper-text">Real export confirmation text is <b>EXPORT</b>.</p>
+    </div>
+  `;
 }
 
 function renderTimeline(timeline) {
@@ -114,11 +290,13 @@ function renderTimeline(timeline) {
       (step, index) => `
       <div class="step ${statusClass(step.status)}">
         <div class="step-index">${index + 1}</div>
-        <div>
-          <h4>${escapeHtml(step.title)}</h4>
-          <p>${escapeHtml(step.description)}</p>
+        <div class="step-card">
+          <div class="step-text">
+            <h4>${escapeHtml(step.title)}</h4>
+            <p>${escapeHtml(step.description)}</p>
+          </div>
+          <span class="chip step-state ${statusClass(step.status)}">${escapeHtml(step.status)}</span>
         </div>
-        <span class="chip step-state ${statusClass(step.status)}">${escapeHtml(step.status)}</span>
       </div>
     `
     )
@@ -204,6 +382,127 @@ function renderDetails(payload) {
       }
     </div>
   `;
+  bindActionButtons();
+  renderActiveJob();
+}
+
+function setView(view) {
+  state.activeView = view;
+  document.querySelectorAll(".view-tab").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.view === view);
+  });
+  $("workflowView").classList.toggle("active", view === "workflow");
+  $("releaseView").classList.toggle("active", view === "release");
+}
+
+function setSidebarCollapsed(collapsed) {
+  state.sidebarCollapsed = collapsed;
+  document.querySelector(".app-shell").classList.toggle("sidebar-collapsed", collapsed);
+  $("sidebarToggle").textContent = collapsed ? "Show runs" : "Hide runs";
+}
+
+function renderActionButtons(actions, size = "") {
+  const sizeClass = size ? ` ${size}` : "";
+  return actions
+    .map((action) => {
+      const dryButton = action.supports_dry_run
+        ? `<button class="action-button${sizeClass}" data-action="${action.key}" data-dry-run="true">${escapeHtml(action.label)} Dry-run</button>`
+        : "";
+      const realButton = action.requires_confirm
+        ? `<button class="action-button danger${sizeClass}" data-action="${action.key}" data-dry-run="false">${escapeHtml(action.label)}</button>`
+        : `<button class="action-button${sizeClass}" data-action="${action.key}" data-dry-run="false">${escapeHtml(action.label)}</button>`;
+      return `${dryButton}${realButton}`;
+    })
+    .join("");
+}
+
+function bindActionButtons() {
+  document.querySelectorAll(".action-button").forEach((button) => {
+    button.onclick = async () => {
+      const action = button.dataset.action;
+      const dryRun = button.dataset.dryRun === "true";
+      const confirmText = $("confirmText") ? $("confirmText").value.trim() : "";
+      await startAction(action, dryRun, confirmText);
+    };
+  });
+}
+
+async function startAction(action, dryRun, confirmText) {
+  if (!state.selectedId) return;
+  const jobStatus = $("jobStatus");
+  try {
+    jobStatus.textContent = `Starting ${action}${dryRun ? " dry-run" : ""}...`;
+    const payload = { dry_run: dryRun, confirm_text: confirmText };
+    if (action === "export") {
+      payload.experiment = $("exportExperiment") ? $("exportExperiment").value.trim() : "";
+      payload.epoch = $("exportEpoch") ? $("exportEpoch").value.trim() : "";
+      payload.remote = $("exportRemote") ? $("exportRemote").value.trim() : "";
+      payload.desc = $("exportDesc") ? $("exportDesc").value.trim() : "";
+    }
+    const job = await postJson(
+      `/api/runs/${encodeURIComponent(state.selectedId)}/actions/${encodeURIComponent(action)}`,
+      payload
+    );
+    state.activeJobId = job.job_id;
+    setSelectedLogToJob();
+    await pollJob(true);
+    if (state.jobTimer) clearInterval(state.jobTimer);
+    state.jobTimer = setInterval(() => pollJob(false), 2500);
+  } catch (error) {
+    jobStatus.textContent = error.message;
+    jobStatus.className = "job-status failed";
+  }
+}
+
+function setSelectedLogToJob() {
+  state.selectedLog = "__job__";
+  const logSelect = $("logSelect");
+  const logDrawer = $("logDrawer");
+  if (logDrawer) {
+    logDrawer.open = true;
+  }
+  if (![...logSelect.options].some((option) => option.value === "__job__")) {
+    const option = document.createElement("option");
+    option.value = "__job__";
+    option.textContent = "Backend job";
+    logSelect.prepend(option);
+  }
+  logSelect.value = "__job__";
+}
+
+async function pollJob(forceReloadRun) {
+  if (!state.activeJobId) return;
+  const job = await fetchJson(`/api/jobs/${encodeURIComponent(state.activeJobId)}`);
+  state.activeJob = job;
+  renderActiveJob();
+  renderLog();
+  if (job.status !== "running") {
+    if (state.jobTimer) {
+      clearInterval(state.jobTimer);
+      state.jobTimer = null;
+    }
+    if (forceReloadRun || state.selectedId) {
+      await loadRuns(false);
+      await selectRun(state.selectedId);
+    }
+  }
+}
+
+function renderActiveJob() {
+  const jobStatus = $("jobStatus");
+  if (!jobStatus) return;
+  const job = state.activeJob;
+  if (!job) {
+    jobStatus.className = "job-status empty-state";
+    jobStatus.textContent = "No backend job running.";
+    return;
+  }
+  jobStatus.className = `job-status ${statusClass(job.status)}`;
+  jobStatus.innerHTML = `
+    <b>${escapeHtml(job.label || job.action)}</b>
+    <span>${escapeHtml(job.status)}${job.dry_run ? " / dry-run" : ""}</span>
+    <span>returncode: ${job.returncode ?? "running"}</span>
+  `;
 }
 
 function renderLogSelect(logs) {
@@ -217,6 +516,10 @@ function renderLogSelect(logs) {
     offboard_stderr: "Offboard stderr",
   };
   const keys = Object.keys(logs);
+  if (state.activeJob && !keys.includes("__job__")) {
+    keys.unshift("__job__");
+    labels.__job__ = "Backend job";
+  }
   if (!keys.includes(state.selectedLog)) {
     state.selectedLog = keys.find((key) => (logs[key] || []).length) || keys[0] || "offboard_stdout";
   }
@@ -226,6 +529,11 @@ function renderLogSelect(logs) {
 }
 
 function renderLog() {
+  if (state.selectedLog === "__job__") {
+    const job = state.activeJob;
+    $("logOutput").textContent = job ? (job.log || []).join("\n") : "No backend job selected.";
+    return;
+  }
   const logs = (state.selectedRun || {}).logs || {};
   const lines = logs[state.selectedLog] || [];
   $("logOutput").textContent = lines.length ? lines.join("\n") : "No log lines captured for this channel.";
@@ -240,11 +548,16 @@ function escapeHtml(value) {
 }
 
 $("refreshButton").onclick = () => loadRuns(false);
+$("sidebarToggle").onclick = () => setSidebarCollapsed(!state.sidebarCollapsed);
+document.querySelectorAll(".view-tab").forEach((tab) => {
+  tab.onclick = () => setView(tab.dataset.view);
+});
 $("runFilter").oninput = renderRuns;
 $("logSelect").onchange = (event) => {
   state.selectedLog = event.target.value;
   renderLog();
 };
+$("logSelect").onclick = (event) => event.stopPropagation();
 $("copyRecordButton").onclick = async () => {
   if (!state.selectedRun) return;
   await navigator.clipboard.writeText(JSON.stringify(state.selectedRun.record, null, 2));

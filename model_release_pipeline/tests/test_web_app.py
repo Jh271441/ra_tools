@@ -8,7 +8,7 @@ from pathlib import Path
 
 from model_release_pipeline.config import default_config
 from model_release_pipeline.state_store import StateStore
-from model_release_pipeline.web_app import ReleaseWebApp, _timeline
+from model_release_pipeline.web_app import JobManager, ReleaseWebApp, _timeline
 
 
 class WebAppTest(unittest.TestCase):
@@ -62,6 +62,7 @@ class WebAppTest(unittest.TestCase):
             self.assertIn("timeline", payload)
             self.assertIn("offboard_stdout", payload["logs"])
             self.assertIn("--run-id", payload["commands"]["offboard"])
+            self.assertIn("actions", payload)
             self.assertTrue(payload["offboard_metrics"])
 
     def test_timeline_marks_failed_export(self) -> None:
@@ -79,6 +80,58 @@ class WebAppTest(unittest.TestCase):
         statuses = {step["key"]: step["status"] for step in _timeline(record)}
 
         self.assertEqual(statuses["export"], "failed")
+
+    def test_job_command_uses_cli_and_dry_run(self) -> None:
+        manager = JobManager(config_path="/tmp/release.yaml")
+
+        command = manager.build_command("run123", "offboard", dry_run=True)
+
+        self.assertIn("-m", command)
+        self.assertIn("model_release_pipeline.cli", command)
+        self.assertIn("--config", command)
+        self.assertIn("/tmp/release.yaml", command)
+        self.assertIn("offboard", command)
+        self.assertIn("--dry-run", command)
+        self.assertIn("--remote", command)
+
+    def test_export_job_command_uses_form_payload(self) -> None:
+        manager = JobManager()
+
+        command = manager.build_command(
+            "unused",
+            "export",
+            dry_run=True,
+            payload={
+                "experiment": "/nfs/exp",
+                "epoch": "007",
+                "remote": "luban_2_card",
+                "desc": "demo",
+            },
+        )
+
+        self.assertIn("export", command)
+        self.assertIn("--experiment", command)
+        self.assertIn("/nfs/exp", command)
+        self.assertIn("--epoch", command)
+        self.assertIn("7", command)
+        self.assertIn("--remote", command)
+        self.assertNotIn("--run-id", command)
+
+    def test_real_action_requires_release_id_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = default_config()
+            config.runs_dir = Path(tmp_dir)
+            store = StateStore(config.runs_dir)
+            record = store.create("/nfs/exp_c", "demo")
+            store.save(record)
+            app = ReleaseWebApp(config)
+
+            with self.assertRaises(PermissionError):
+                app.start_action(
+                    record["release_id"],
+                    "offboard",
+                    {"dry_run": False, "confirm_text": "wrong"},
+                )
 
 
 if __name__ == "__main__":

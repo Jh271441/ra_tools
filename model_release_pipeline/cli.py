@@ -1415,7 +1415,13 @@ def main(argv: Optional[list[str]] = None) -> int:
                 print(DEFAULT_TEMPLATE_PATH)
             return 0
         if args.command == "web":
-            serve_web(config, host=args.host, port=args.port, open_browser=args.open)
+            serve_web(
+                config,
+                host=args.host,
+                port=args.port,
+                open_browser=args.open,
+                config_path=args.config,
+            )
             return 0
     except Exception as exc:  # pylint: disable=broad-except
         if getattr(args, "run_id", None):
