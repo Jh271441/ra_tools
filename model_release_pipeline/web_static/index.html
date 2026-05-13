@@ -17,17 +17,31 @@
           </div>
         </div>
         <div class="top-actions">
-          <button id="sidebarToggle" class="ghost compact">Hide runs</button>
-          <div class="view-switch" aria-label="Workspace view">
-            <button class="view-tab active" data-view="workflow">Workflow</button>
-            <button class="view-tab" data-view="release">Release Details</button>
-          </div>
           <button id="refreshButton" class="ghost">Refresh</button>
           <div class="status-pill" id="runsDir">runs_dir: loading</div>
         </div>
       </header>
 
       <main class="workspace app-workspace">
+        <aside id="sideRail" class="side-rail" aria-label="Primary navigation">
+          <button id="railToggle" class="rail-toggle" title="Collapse toolbar">
+            <span class="rail-icon">⌘</span>
+            <span class="rail-label">Collapse</span>
+          </button>
+          <button id="sidebarToggle" class="rail-item active" title="Release Runs">
+            <span class="rail-icon">R</span>
+            <span class="rail-label">Release Runs</span>
+          </button>
+          <button class="rail-item view-tab active" data-view="workflow" title="Workflow">
+            <span class="rail-icon">W</span>
+            <span class="rail-label">Workflow</span>
+          </button>
+          <button class="rail-item view-tab" data-view="release" title="Release Details">
+            <span class="rail-icon">D</span>
+            <span class="rail-label">Release Details</span>
+          </button>
+        </aside>
+
         <aside id="runSidebar" class="panel run-list">
           <div class="panel-title split-title">
             <span>Release Runs</span>

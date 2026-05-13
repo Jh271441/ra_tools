@@ -6,6 +6,7 @@ const state = {
   activeView: "workflow",
   activeStep: "export",
   sidebarCollapsed: false,
+  railCollapsed: false,
   activeJobId: null,
   jobTimer: null,
 };
@@ -398,7 +399,20 @@ function setView(view) {
 function setSidebarCollapsed(collapsed) {
   state.sidebarCollapsed = collapsed;
   document.querySelector(".app-shell").classList.toggle("sidebar-collapsed", collapsed);
-  $("sidebarToggle").textContent = collapsed ? "Show runs" : "Hide runs";
+  const toggle = $("sidebarToggle");
+  if (toggle) {
+    toggle.classList.toggle("active", !collapsed);
+    toggle.title = collapsed ? "Show Release Runs" : "Hide Release Runs";
+  }
+}
+
+function setRailCollapsed(collapsed) {
+  state.railCollapsed = collapsed;
+  document.querySelector(".app-shell").classList.toggle("rail-collapsed", collapsed);
+  const toggle = $("railToggle");
+  if (toggle) {
+    toggle.title = collapsed ? "Expand toolbar" : "Collapse toolbar";
+  }
 }
 
 function renderActionButtons(actions, size = "") {
@@ -549,6 +563,7 @@ function escapeHtml(value) {
 
 $("refreshButton").onclick = () => loadRuns(false);
 $("sidebarToggle").onclick = () => setSidebarCollapsed(!state.sidebarCollapsed);
+$("railToggle").onclick = () => setRailCollapsed(!state.railCollapsed);
 document.querySelectorAll(".view-tab").forEach((tab) => {
   tab.onclick = () => setView(tab.dataset.view);
 });
