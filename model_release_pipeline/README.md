@@ -33,7 +33,152 @@ By default, `pick` prints a compact report similar to the legacy pick scripts: p
 
 `inspect`, `export`, `release`, `resume`, `ifx`, `handoff`, and `offboard` also default to a compact human-readable summary. Use `--json` only for debugging or automation that needs the full `release_record.json` payload.
 
-Long-running commands print progress to stderr using wide terminal-width separators, a task title, `step: current/total`, and `tasks_remaining: N`. Remote export streams raw stdout/stderr live while the SSH command is running, and still emits a heartbeat every 30 seconds if no log line is produced. The default Luban Python command includes `conda run --no-capture-output` so export logs are not buffered by conda. JSON output remains on stdout when `--json` is used.
+Long-running commands print progress to stderr using wide terminal-width separators, a task title, `step: current/total`, and `tasks_remaining: N`. Standalone commands use their own step count, while `release` uses a combined 9-step flow: inspect, remote export, scp, select truck runner, upload ONNX, prepare precision test, trigger Jenkins IFX, poll IFX artifacts, handoff. Remote export streams raw stdout/stderr live while the SSH command is running, and still emits a heartbeat every 30 seconds if no log line is produced. IFX conversion also reports Jenkins queue wait, assigned build URL, build running status, console download, parsed platforms, missing platforms, and failed uploads during the `Poll IFX Artifacts` step. The default Luban Python command includes `conda run --no-capture-output` so export logs are not buffered by conda. JSON output remains on stdout when `--json` is used.
+
+The IFX stage needs `truck.py`. `ifx.truck_runner` controls where it runs:
+
+- `auto`: try local `truck.py`, then Voyager docker, then SSH.
+- `docker`: run `truck.py` via `docker exec`; configure `truck_docker_container` or export `CONTAINER_NAME_GEN4`, plus `truck_docker_workdir` and `truck_docker_setup`.
+- `ssh`: run `truck.py` after SSH to a cloud server; configure `truck_ssh_host`, `truck_ssh_workdir` such as `~/workspace/voyager` or `~/workspace/voyager2`, and `truck_ssh_setup`.
+
+When `truck.py` runs in docker or SSH, local ONNX/precision-test files are staged into the configured `/tmp/model_release_pipeline_artifacts` directory before upload.
+
+### IFX Truck Runner Use Cases
+
+Use `local` when the current shell is already inside a Voyager environment and `truck.py --help` works directly:
+
+```yaml
+ifx:
+  truck_runner: local
+  truck_local_shell: /bin/zsh
+  truck_local_workdir: /home/didi/workspace/voyager
+  truck_local_setup: source /home/didi/workspace/voyager/bazel/scripts/setup.sh
+```
+
+Use `docker` when the current shell is the local `assist_stuck` conda environment, while `truck.py` only exists inside a local Voyager docker:
+
+```yaml
+ifx:
+  truck_runner: docker
+  truck_docker_container: <container_name>
+  truck_docker_shell: /bin/zsh
+  truck_docker_workdir: /home/didi/workspace/voyager
+  truck_docker_setup: git checkout master-Release_CN-a6d66b30c89 && source /home/didi/workspace/voyager/bazel/scripts/setup.sh
+```
+
+You can also leave `truck_docker_container` empty and export:
+
+```bash
+export CONTAINER_NAME_GEN4=<container_name>
+```
+
+Use `ssh` when `truck.py` is available on a cloud/server machine after SSH, without local docker. Pick the correct Voyager root on that machine:
+
+```yaml
+ifx:
+  truck_runner: ssh
+  truck_ssh_host: cloud_server
+  truck_ssh_shell: /bin/zsh
+  truck_ssh_workdir: /home/didi/workspace/voyager2
+  truck_ssh_setup: source /home/didi/workspace/voyager2/bazel/scripts/setup.sh
+```
+
+Use `auto` for the common mixed setup. It tries local first, then docker, then SSH if configured:
+
+```yaml
+ifx:
+  truck_runner: auto
+```
+
+The ONNX upload description passed to `truck.py push --desc` is generated from the experiment and selected epoch. Passing `--desc` appends release-specific notes:
+
+```bash
+python -m model_release_pipeline.cli ifx \
+  --run-id <release_id> \
+  --desc "loss_min, alpha=0.75, top4 + randn4, old data"
+```
+
+This produces a truck description like:
+
+```text
+<experiment_name>, epoch=007, loss_min, alpha=0.75, top4 + randn4, old data.
+```
+
+The upload and IFX conversion can be run separately:
+
+```bash
+python -m model_release_pipeline.cli upload \
+  --run-id <release_id> \
+  --onnx-version 64 \
+  --desc "loss_min, alpha=0.75, top4 + randn4, old data"
+
+python -m model_release_pipeline.cli ifx-convert \
+  --run-id <release_id>
+```
+
+`upload` stores `ifx.onnx`, `ifx.precision_test_arg`, `ifx.truck_runner`, and `ifx.upload_description` in the run record. `ifx-convert` reuses those fields to trigger Jenkins, records the Jenkins queue/build URL, and parses the Jenkins console output for generated IFX artifact versions. The existing `ifx` command remains a shortcut that runs both commands in sequence.
+
+Jenkins IFX triggering uses `POST` by default because some Jenkins deployments reject `GET /buildWithParameters` with HTTP 405. The default token is the same `ONNX2IFX_DEV` token used by the existing Voyager IFX trigger scripts. For Jenkins instances with CSRF protection, the tool fetches `/crumbIssuer/api/json` and sends the returned crumb header before triggering the job. Override `ifx.jenkins_http_method`, `ifx.jenkins_token`, or `ifx.jenkins_use_crumb` only if your Jenkins job explicitly requires different values.
+
+By default the IFX trigger matches the legacy flow: `max_batch=0` and no fileserver label is passed to Jenkins. The run is tracked by Jenkins queue/build URL instead of an injected label. If any expected platform, including `fp16_thor`, is missing or appears as `upload failed` in the Jenkins console, the conversion is treated as failed even if Jenkins itself reports `SUCCESS`.
+
+A release run is expected to bind to exactly one ONNX fileserver version. Re-running `upload` after a successful upload is blocked by default; run `ifx-convert` next. If you intentionally need to replace the binding, pass `--replace-upload` and an explicit `--onnx-version`.
+
+After `truck.py push`, `upload` verifies the requested ONNX version with `truck.py list`. If the version is not visible, the upload fails instead of writing a misleading version into `release_record.json`.
+
+If `truck.py` reports `code: 60` / `The file is already exist` with the same md5, the fileserver is deduplicating by file content/name and will not create a new version for the same ONNX. Reuse the existing version shown in the error, or change the fileserver filename if a distinct version is required.
+
+## Apply Voyager Handoff
+
+`handoff` only generates files. To apply the MANIFEST change and create a commit inside the Voyager docker checkout, use `apply-handoff`:
+
+```bash
+python -m model_release_pipeline.cli apply-handoff \
+  --run-id <release_id> \
+  --branch gen4_release_20260327 \
+  --docker "$CONTAINER_NAME_GEN4" \
+  --dry-run
+
+python -m model_release_pipeline.cli apply-handoff \
+  --run-id <release_id> \
+  --branch gen4_release_20260327 \
+  --docker "$CONTAINER_NAME_GEN4"
+```
+
+The command runs in docker, checks out the configured branch, replaces the configured Scenario DNN lines in `onboard/model_files/MANIFEST.txt`, prints the diff, and creates a local git commit. It refuses to run on a dirty Voyager worktree unless `--allow-dirty` is provided. Use `--no-commit` if you want the file edit but not the commit.
+
+If `--branch` is omitted, `apply-handoff` loops over every configured `voyager.branches` entry in order and creates one local commit per branch. Pass `--branch <name>` to restrict the operation to a single branch.
+
+`dcl` is intentionally not executed automatically. After `apply-handoff` succeeds, the default follow-up is no-lint diff update:
+
+```bash
+dcl diff -n -u <update_diff_id> --nolint
+```
+
+Run `dcl lint` only when explicitly needed.
+
+To use an explicit fileserver version for the ONNX upload, pass `--onnx-version` (`--version` is kept as an alias):
+
+```bash
+python -m model_release_pipeline.cli ifx \
+  --run-id <release_id> \
+  --onnx-version 64 \
+  --desc "loss_min, alpha=0.75, top4 + randn4, old data"
+```
+
+This maps to:
+
+```bash
+truck.py push planner.model-files <onnx_path> -v 64 --desc "<generated description>"
+```
+
+If you accidentally uploaded a bad version, prefer using a new fileserver version or a new filename. The fileserver delete path is currently deprecated in common `truck.py` deployments:
+
+```bash
+truck.py delete planner.model-files vectorized_scenario_remote_assist_model.onnx 65 -f
+```
+
+The raw fileserver delete API usually requires internal auth/signing and is easier to misuse. Treat deletion as unavailable unless the current `truck.py delete` command succeeds in your configured truck runner environment.
 
 If the training log is incomplete, the report also prints a `TensorBoard Val-Loss Tolerance Fallback` section. In that case the final `Recommended epoch` comes from the primary head's TensorBoard validation-loss fallback, not from the incomplete log ranking. The default tolerance is 5%, meaning epochs with `val_loss <= min_val_loss * 1.05` are considered and the highest-precision epoch in that band is selected.
 
@@ -87,8 +232,11 @@ python -m model_release_pipeline.cli print-config --copy
 - `inspect`: discover checkpoints, logs, hparams, TensorBoard files, and existing exports.
 - `pick`: rank candidate epochs from `train_scenario_dnn.log`; TensorBoard is used if installed.
 - `export`: ssh to Luban, create a temporary hparams yaml, export ONNX, and scp it back to the run directory. If `--epoch` is provided, model picking is skipped.
-- `ifx`: push ONNX through `truck.py`, trigger the Jenkins IFX job, and collect fileserver versions by label.
+- `upload`: push ONNX through `truck.py` and prepare the precision-test truck argument.
+- `ifx-convert`: trigger the Jenkins IFX job from a previous `upload` and collect fileserver versions from the Jenkins build/console output.
+- `ifx`: shortcut for `upload -> ifx-convert`.
 - `handoff`: generate `handoff_manifest_snippet.txt` and `handoff_commands.sh`.
+- `apply-handoff`: apply the MANIFEST replacement in Voyager docker and create a local git commit. `dcl` remains manual/confirmed.
 - `release`: run `export -> ifx -> handoff`. If `--epoch` is provided, model picking is skipped.
 - `resume`: continue from the last incomplete stage in `release_record.json`.
 - `offboard`: create a temporary offboard test yaml on Luban and run the configured test entrypoint.

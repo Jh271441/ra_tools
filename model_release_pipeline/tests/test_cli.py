@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
+import argparse
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from model_release_pipeline.cli import (
+    _command_apply_handoff,
+    _command_ifx_convert,
     _format_pick_result,
     _format_record_result,
     _select_candidate,
     _select_manual_epoch_candidate,
+    _validate_upload_binding,
 )
+from model_release_pipeline.config import default_config
 from model_release_pipeline.services.experiment import ExperimentInspector
+from model_release_pipeline.state_store import StateStore
 
 
 class CliSelectionTest(unittest.TestCase):
@@ -142,6 +148,145 @@ class CliSelectionTest(unittest.TestCase):
         self.assertIn("scp onnx: SKIPPED", text)
         self.assertIn("ModuleNotFoundError", text)
         self.assertNotIn('"checkpoints"', text)
+
+    def test_upload_binding_rejects_version_change_without_replace(self) -> None:
+        record = {
+            "ifx": {
+                "onnx": {
+                    "name": "vectorized_scenario_remote_assist_model.onnx",
+                    "version": 65,
+                }
+            }
+        }
+        args = argparse.Namespace(version=66, replace_upload=False)
+
+        with self.assertRaisesRegex(RuntimeError, "version 65; requested version 66"):
+            _validate_upload_binding(args, record)
+
+    def test_upload_binding_allows_explicit_replace(self) -> None:
+        record = {"ifx": {"onnx": {"name": "model.onnx", "version": 65}}}
+        args = argparse.Namespace(version=66, replace_upload=True)
+
+        _validate_upload_binding(args, record)
+
+    def test_apply_handoff_without_branch_applies_all_configured_branches(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config = default_config()
+            config.runs_dir = Path(tmp_dir)
+            config.ifx.truck_docker_container = "voyager-dev"
+            config.voyager.branches = config.voyager.branches[:2]
+            store = StateStore(config.runs_dir)
+            record = store.create(experiment_path="/tmp/exp", description="")
+            record["experiment"] = {"name": "exp"}
+            record["selection"] = {"selected_epoch": 7}
+            record["ifx"] = {
+                "ifx_mapping": {
+                    "onnx": {"name": "model.onnx", "version": 65},
+                    "fp32_x86": {"name": "model.ifxmodel", "version": 1},
+                }
+            }
+            store.save(record)
+            calls = []
+
+            class FakeService:
+                def __init__(self, _config):
+                    pass
+
+                def apply_to_docker(self, **kwargs):
+                    calls.append(kwargs["branch"])
+                    return {
+                        "returncode": 0,
+                        "stdout": "",
+                        "stderr": "",
+                        "branch": kwargs["branch"],
+                        "checkout_branch": kwargs["branch"],
+                        "dcl_commands": [f"dcl diff {kwargs['branch']}"],
+                    }
+
+            import model_release_pipeline.cli as cli_module
+
+            original_service = cli_module.VoyagerHandoffService
+            original_confirm = cli_module._confirm
+            try:
+                cli_module.VoyagerHandoffService = FakeService
+                cli_module._confirm = lambda _prompt, _yes: True
+                args = argparse.Namespace(
+                    branch=None,
+                    yes=True,
+                    json=True,
+                    desc="",
+                    docker="",
+                    dry_run=False,
+                    no_commit=False,
+                    allow_dirty=False,
+                    allow_append=False,
+                )
+
+                updated = _command_apply_handoff(args, config, store, record)
+            finally:
+                cli_module.VoyagerHandoffService = original_service
+                cli_module._confirm = original_confirm
+
+            self.assertEqual(calls, ["master", "gen4_release_20260403"])
+            self.assertEqual(updated["apply_handoff"]["returncode"], 0)
+            self.assertEqual(len(updated["apply_handoff"]["results"]), 2)
+
+    def test_ifx_convert_dry_run_does_not_persist_preview(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config = default_config()
+            config.runs_dir = Path(tmp_dir)
+            store = StateStore(config.runs_dir)
+            record = store.create(experiment_path="/tmp/exp", description="")
+            record["ifx"] = {
+                "onnx": {
+                    "module": "planner.model-files",
+                    "name": "vectorized_scenario_remote_assist_model.onnx",
+                    "version": 66,
+                },
+                "precision_test_arg": (
+                    "ifx-precision-test ifx_fp32_after_scaling_pos1e1_5.zip -v 1"
+                ),
+            }
+            store.save(record)
+
+            class FakePipeline:
+                def __init__(self, _config):
+                    pass
+
+                def convert(self, **_kwargs):
+                    return {
+                        "jenkins": {
+                            "params": {
+                                "truck_py_arguments_of_onnx": (
+                                    "planner.model-files "
+                                    "vectorized_scenario_remote_assist_model.onnx -v 66"
+                                )
+                            }
+                        },
+                        "ifx_mapping": {"onnx": {"version": 66}},
+                        "label": None,
+                    }
+
+            import model_release_pipeline.cli as cli_module
+
+            original_pipeline = cli_module.IfxPipeline
+            try:
+                cli_module.IfxPipeline = FakePipeline
+                args = argparse.Namespace(
+                    run_id=record["release_id"],
+                    yes=True,
+                    dry_run=True,
+                    json=True,
+                )
+
+                preview = _command_ifx_convert(args, config, store)
+            finally:
+                cli_module.IfxPipeline = original_pipeline
+
+            persisted = store.load(record["release_id"])
+            self.assertEqual(preview["stage"], "ifx_convert_dry_run")
+            self.assertEqual(persisted["stage"], "created")
+            self.assertNotIn("ifx_mapping", persisted["ifx"])
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ from model_release_pipeline.config import (
     load_config,
 )
 from model_release_pipeline.services.experiment import ExperimentInspector
-from model_release_pipeline.services.ifx_pipeline import IfxPipeline
+from model_release_pipeline.services.ifx_pipeline import IfxPipeline, IfxPipelineError
 from model_release_pipeline.services.luban_runner import LubanRunner
 from model_release_pipeline.services.model_picker import ModelPicker
 from model_release_pipeline.services.voyager_handoff import VoyagerHandoffService
@@ -316,6 +316,14 @@ def _format_record_result(record: Dict[str, Any]) -> str:
         label = ifx.get("label")
         mapping = ifx.get("ifx_mapping") or {}
         lines.append(f"ifx: label={label or 'NA'} platforms={len(mapping)}")
+        runner = ifx.get("truck_runner") or {}
+        if runner:
+            lines.append(
+                "  truck runner: "
+                f"{runner.get('configured') or 'NA'} -> {runner.get('selected') or 'NA'}"
+            )
+        if ifx.get("upload_description"):
+            lines.append(f"  upload desc: {ifx.get('upload_description')}")
         onnx = ifx.get("onnx") or {}
         if onnx.get("version") is not None:
             lines.append(f"  onnx version: {onnx.get('version')}")
@@ -327,18 +335,50 @@ def _format_record_result(record: Dict[str, Any]) -> str:
         if handoff.get("commands_file"):
             lines.append(f"handoff commands: {handoff.get('commands_file')}")
 
+    apply_handoff = record.get("apply_handoff") or {}
+    if apply_handoff:
+        _append_command_result(lines, "apply handoff", apply_handoff)
+        if apply_handoff.get("results"):
+            lines.append(
+                "  branches: "
+                f"{len(apply_handoff.get('results') or [])} attempted"
+            )
+            for item in apply_handoff.get("results", []):
+                state = _command_state(item)
+                lines.append(
+                    "  "
+                    f"{item.get('branch')} -> {item.get('checkout_branch')}: {state}"
+                )
+        else:
+            lines.append(
+                "  docker: "
+                f"{apply_handoff.get('container')}:{apply_handoff.get('workdir')}"
+            )
+            lines.append(
+                "  branch: "
+                f"{apply_handoff.get('branch')} -> "
+                f"{apply_handoff.get('checkout_branch')}"
+            )
+        if apply_handoff.get("dcl_commands"):
+            lines.append("  dcl next steps:")
+            lines.extend(
+                f"  {command}" for command in apply_handoff.get("dcl_commands", [])
+            )
+
     offboard = record.get("offboard") or {}
     if offboard:
         _append_command_result(lines, "offboard", offboard)
 
     errors = record.get("errors") or []
-    if errors:
+    if errors and record.get("status") == "failed":
         lines.append("errors:")
         for error in errors[-3:]:
             if isinstance(error, dict):
                 lines.append(f"  {error.get('message')}")
             else:
                 lines.append(f"  {error}")
+    elif errors:
+        lines.append(f"previous_errors: {len(errors)} (see release_record.json)")
     return "\n".join(lines)
 
 
@@ -489,12 +529,14 @@ def _command_export(
     config: ReleaseConfig,
     store: StateStore,
     record: Optional[Dict[str, Any]] = None,
+    step_offset: int = 0,
+    total_steps: int = 3,
 ) -> Dict[str, Any]:
     _progress(
         args,
         "Inspect Experiment",
-        step=1,
-        total=3,
+        step=step_offset + 1,
+        total=total_steps,
         blank_before=False,
         icon="🔎",
         detail=f"experiment: {args.experiment}",
@@ -569,8 +611,8 @@ def _command_export(
     _progress(
         args,
         "Remote ONNX Export",
-        step=2,
-        total=3,
+        step=step_offset + 2,
+        total=total_steps,
         icon="📤",
         detail=(
             f"epoch: {_format_epoch(selected['epoch'])}; "
@@ -584,6 +626,8 @@ def _command_export(
         local_output_dir=store.run_dir(record["release_id"]) / "artifacts",
         dry_run=args.dry_run,
         show_progress=not getattr(args, "json", False),
+        progress_step=step_offset + 3,
+        progress_total=total_steps,
     )
     record["export"] = export_result
     if _export_failed(export_result):
@@ -609,6 +653,84 @@ def _command_ifx(
     config: ReleaseConfig,
     store: StateStore,
     record: Optional[Dict[str, Any]] = None,
+    step_offset: int = 0,
+    total_steps: int = 5,
+) -> Dict[str, Any]:
+    local_onnx_file = (
+        record.get("export", {}).get("local_onnx_file")
+        if record is not None
+        else args.onnx_file
+    )
+    if record is not None:
+        _validate_upload_binding(args, record)
+    if not _confirm(f"Upload {local_onnx_file} and trigger IFX conversion?", args.yes):
+        raise RuntimeError("IFX stage cancelled by user.")
+    record = _command_upload(
+        args,
+        config,
+        store,
+        record=record,
+        step_offset=step_offset,
+        total_steps=total_steps,
+        confirm=False,
+    )
+    record = _command_ifx_convert(
+        args,
+        config,
+        store,
+        record=record,
+        step_offset=step_offset + 3,
+        total_steps=total_steps,
+        confirm=False,
+    )
+    return record
+
+
+def _upload_description(args: argparse.Namespace, record: Dict[str, Any]) -> str:
+    experiment_name = record.get("experiment", {}).get("name") or "manual_onnx"
+    selected_epoch = record.get("selection", {}).get("selected_epoch")
+    epoch_text = (
+        f"epoch={_format_epoch(selected_epoch)}"
+        if selected_epoch is not None
+        else "epoch=unknown"
+    )
+    user_desc = args.desc or record.get("description", "")
+    upload_desc = f"{experiment_name}, {epoch_text}"
+    if user_desc:
+        upload_desc = f"{upload_desc}, {user_desc}"
+    return f"{upload_desc}."
+
+
+def _validate_upload_binding(args: argparse.Namespace, record: Dict[str, Any]) -> None:
+    existing_onnx = record.get("ifx", {}).get("onnx") or {}
+    existing_version = existing_onnx.get("version")
+    if existing_version is None or getattr(args, "replace_upload", False):
+        return
+
+    requested_version = args.version
+    if requested_version is None or requested_version == existing_version:
+        raise RuntimeError(
+            "This release is already bound to ONNX "
+            f"{existing_onnx.get('name') or '<unknown>'} version {existing_version}. "
+            "Run ifx-convert next, or pass --replace-upload to explicitly re-upload."
+        )
+    raise RuntimeError(
+        "This release is already bound to ONNX "
+        f"{existing_onnx.get('name') or '<unknown>'} version {existing_version}; "
+        f"requested version {requested_version}. "
+        "Use a new run-id, or pass --replace-upload if you intentionally want to "
+        "replace the upload binding."
+    )
+
+
+def _command_upload(
+    args: argparse.Namespace,
+    config: ReleaseConfig,
+    store: StateStore,
+    record: Optional[Dict[str, Any]] = None,
+    step_offset: int = 0,
+    total_steps: int = 3,
+    confirm: bool = True,
 ) -> Dict[str, Any]:
     if record is None:
         if not args.onnx_file:
@@ -620,21 +742,104 @@ def _command_ifx(
         if not local_onnx_file:
             raise RuntimeError("No exported ONNX found in release record.")
 
-    if not _confirm(f"Push {local_onnx_file} and trigger IFX conversion?", args.yes):
-        raise RuntimeError("IFX stage cancelled by user.")
-    _progress(args, "IFX Conversion", icon="🚚")
-    record["stage"] = "ifx_running"
+    _validate_upload_binding(args, record)
+
+    if confirm and not _confirm(f"Upload {local_onnx_file} to truck?", args.yes):
+        raise RuntimeError("Upload cancelled by user.")
+
+    record["stage"] = "ifx_uploading"
     record["status"] = "running"
     store.save(record)
-    result = IfxPipeline(config.ifx).run(
+
+    def ifx_progress(title: str, substep: int, detail: Optional[str] = None) -> None:
+        _progress(
+            args,
+            title,
+            step=step_offset + substep,
+            total=total_steps,
+            icon="🚚",
+            detail=detail,
+        )
+
+    result = IfxPipeline(config.ifx).upload(
         local_onnx_file=local_onnx_file,
-        description=args.desc or record.get("description", ""),
+        description=_upload_description(args, record),
         version=args.version,
         dry_run=args.dry_run,
+        progress=ifx_progress if not getattr(args, "json", False) else None,
+        step_offset=step_offset,
     )
-    record["ifx"] = result
-    record["stage"] = "ifx_complete"
+    existing_ifx = {
+        key: value
+        for key, value in record.get("ifx", {}).items()
+        if key not in {"jenkins", "ifx_mapping", "label"}
+    }
+    record["ifx"] = {**existing_ifx, **result}
+    if args.dry_run:
+        record["stage"] = "ifx_upload_dry_run"
+        record["status"] = "dry_run"
+    else:
+        record["stage"] = "ifx_uploaded"
+        record["status"] = "running"
     store.save(record)
+    return record
+
+
+def _command_ifx_convert(
+    args: argparse.Namespace,
+    config: ReleaseConfig,
+    store: StateStore,
+    record: Optional[Dict[str, Any]] = None,
+    step_offset: int = 0,
+    total_steps: int = 2,
+    confirm: bool = True,
+) -> Dict[str, Any]:
+    if record is None:
+        if not args.run_id:
+            raise RuntimeError("Provide --run-id.")
+        record = store.load(args.run_id)
+    if not record.get("ifx", {}).get("onnx"):
+        raise RuntimeError("No uploaded ONNX found in release record. Run upload first.")
+    if confirm and not _confirm("Trigger IFX conversion from uploaded ONNX?", args.yes):
+        raise RuntimeError("IFX conversion cancelled by user.")
+    if args.dry_run:
+        record = json.loads(json.dumps(record))
+    record["stage"] = "ifx_converting"
+    record["status"] = "running"
+    if not args.dry_run:
+        store.save(record)
+
+    def convert_progress(title: str, substep: int, detail: Optional[str] = None) -> None:
+        _progress(
+            args,
+            title,
+            step=step_offset + substep,
+            total=total_steps,
+            icon="🚚",
+            detail=detail,
+        )
+
+    try:
+        result = IfxPipeline(config.ifx).convert(
+            upload_result=record.get("ifx", {}),
+            dry_run=args.dry_run,
+            progress=convert_progress if not getattr(args, "json", False) else None,
+            step_offset=0,
+        )
+    except IfxPipelineError as exc:
+        if exc.partial_result:
+            record["ifx"] = {**record.get("ifx", {}), **exc.partial_result}
+            store.save(record)
+        raise
+    record["ifx"] = {**record.get("ifx", {}), **result}
+    if args.dry_run:
+        record["stage"] = "ifx_convert_dry_run"
+        record["status"] = "dry_run"
+    else:
+        record["stage"] = "ifx_complete"
+        record["status"] = "running"
+    if not args.dry_run:
+        store.save(record)
     return record
 
 
@@ -643,13 +848,15 @@ def _command_handoff(
     config: ReleaseConfig,
     store: StateStore,
     record: Dict[str, Any],
+    step: int = 1,
+    total_steps: int = 1,
 ) -> Dict[str, Any]:
     ifx_mapping = record.get("ifx", {}).get("ifx_mapping")
     if not ifx_mapping:
         ifx_mapping = record.get("ifx", {}).get("dry_run_mapping", {})
     if not ifx_mapping:
         raise RuntimeError("No IFX mapping found in release record.")
-    _progress(args, "Voyager Handoff", icon="🧾")
+    _progress(args, "Voyager Handoff", step=step, total=total_steps, icon="🧾")
     result = VoyagerHandoffService(config.voyager).generate(
         run_dir=store.run_dir(record["release_id"]),
         ifx_mapping=ifx_mapping,
@@ -661,6 +868,90 @@ def _command_handoff(
     record["handoff"] = result
     record["stage"] = "handoff_complete"
     record["status"] = "completed"
+    store.save(record)
+    return record
+
+
+def _ifx_mapping_from_record(record: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    ifx_mapping = record.get("ifx", {}).get("ifx_mapping")
+    if not ifx_mapping:
+        ifx_mapping = record.get("ifx", {}).get("dry_run_mapping", {})
+    if not ifx_mapping:
+        raise RuntimeError("No IFX mapping found in release record.")
+    return ifx_mapping
+
+
+def _command_apply_handoff(
+    args: argparse.Namespace,
+    config: ReleaseConfig,
+    store: StateStore,
+    record: Dict[str, Any],
+) -> Dict[str, Any]:
+    ifx_mapping = _ifx_mapping_from_record(record)
+    branches = [args.branch] if args.branch else [branch.name for branch in config.voyager.branches]
+    branch_text = args.branch or f"all-configured ({len(branches)})"
+    if not _confirm(
+        f"Apply handoff to Voyager MANIFEST and create local commits for {branch_text}?",
+        args.yes,
+    ):
+        raise RuntimeError("apply-handoff cancelled by user.")
+    service = VoyagerHandoffService(config.voyager)
+    results = []
+    failed = None
+    for index, branch_name in enumerate(branches, start=1):
+        _progress(
+            args,
+            "Apply Voyager Handoff",
+            step=index,
+            total=len(branches),
+            icon="🧾",
+            detail=f"mode: docker; branch: {branch_name}",
+        )
+        result = service.apply_to_docker(
+            ifx_config=config.ifx,
+            ifx_mapping=ifx_mapping,
+            description=args.desc or record.get("description", ""),
+            experiment_name=record.get("experiment", {}).get("name")
+            or "scenario_dnn_experiment",
+            selected_epoch=record.get("selection", {}).get("selected_epoch"),
+            branch=branch_name,
+            container=args.docker or "",
+            dry_run=args.dry_run,
+            no_commit=args.no_commit,
+            allow_dirty=args.allow_dirty,
+            allow_append=args.allow_append,
+        )
+        results.append(result)
+        if result.get("returncode") not in (0, None):
+            failed = result
+            break
+    result = (
+        results[0]
+        if args.branch
+        else {
+            "mode": "docker",
+            "returncode": failed.get("returncode") if failed else 0,
+            "stdout": "\n".join(item.get("stdout") or "" for item in results),
+            "stderr": "\n".join(item.get("stderr") or "" for item in results),
+            "results": results,
+            "dcl_commands": [
+                command
+                for item in results
+                for command in item.get("dcl_commands", [])
+            ],
+        }
+    )
+    record["apply_handoff"] = result
+    if failed:
+        record["stage"] = "apply_handoff_failed"
+        record["status"] = "failed"
+        store.add_error(record, "Apply handoff failed. See apply_handoff.stderr.")
+    elif args.dry_run:
+        record["stage"] = "apply_handoff_dry_run"
+        record["status"] = "dry_run"
+    else:
+        record["stage"] = "apply_handoff_complete"
+        record["status"] = "completed"
     store.save(record)
     return record
 
@@ -753,9 +1044,11 @@ def _resume(
     if _record_failed(record):
         return record
     if not record.get("ifx", {}).get("ifx_mapping"):
-        record = _command_ifx(args, config, store, record=record)
+        record = _command_ifx(
+            args, config, store, record=record, step_offset=0, total_steps=6
+        )
     if not record.get("handoff", {}).get("commands_file"):
-        record = _command_handoff(args, config, store, record)
+        record = _command_handoff(args, config, store, record, step=6, total_steps=6)
     return record
 
 
@@ -811,14 +1104,92 @@ def build_parser() -> argparse.ArgumentParser:
     ifx_parser.add_argument("--run-id")
     ifx_parser.add_argument("--onnx-file")
     ifx_parser.add_argument("--desc", default="")
-    ifx_parser.add_argument("--version", type=int)
+    ifx_parser.add_argument(
+        "--version",
+        "--onnx-version",
+        dest="version",
+        type=int,
+        help="Explicit ONNX fileserver version. Defaults to latest+1.",
+    )
+    ifx_parser.add_argument(
+        "--replace-upload",
+        action="store_true",
+        help="Allow replacing an existing ONNX upload binding in this run record.",
+    )
     ifx_parser.add_argument("--dry-run", action="store_true")
+
+    upload_parser = subparsers.add_parser(
+        "upload",
+        aliases=["ifx-upload"],
+        parents=[common],
+        help="Upload ONNX to truck and prepare precision test",
+    )
+    upload_parser.add_argument("--run-id")
+    upload_parser.add_argument("--onnx-file")
+    upload_parser.add_argument("--desc", default="")
+    upload_parser.add_argument(
+        "--version",
+        "--onnx-version",
+        dest="version",
+        type=int,
+        help="Explicit ONNX fileserver version. Defaults to latest+1.",
+    )
+    upload_parser.add_argument(
+        "--replace-upload",
+        action="store_true",
+        help="Allow replacing an existing ONNX upload binding in this run record.",
+    )
+    upload_parser.add_argument("--dry-run", action="store_true")
+
+    convert_parser = subparsers.add_parser(
+        "ifx-convert",
+        parents=[common],
+        help="Trigger Jenkins IFX from an uploaded ONNX",
+    )
+    convert_parser.add_argument("--run-id", required=True)
+    convert_parser.add_argument("--dry-run", action="store_true")
 
     handoff_parser = subparsers.add_parser(
         "handoff", parents=[common], help="Generate Voyager handoff files"
     )
     handoff_parser.add_argument("--run-id", required=True)
     handoff_parser.add_argument("--desc", default="")
+
+    apply_handoff_parser = subparsers.add_parser(
+        "apply-handoff",
+        parents=[common],
+        help="Apply Voyager MANIFEST changes in docker and create a commit",
+    )
+    apply_handoff_parser.add_argument("--run-id", required=True)
+    apply_handoff_parser.add_argument(
+        "--branch",
+        help="Configured branch name or checkout branch. If omitted, apply all configured branches in order.",
+    )
+    apply_handoff_parser.add_argument(
+        "--docker",
+        help="Voyager docker container. Defaults to CONTAINER_NAME_GEN4 or config.",
+    )
+    apply_handoff_parser.add_argument("--desc", default="")
+    apply_handoff_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Apply in-memory check and show diff without committing.",
+    )
+    apply_handoff_parser.add_argument(
+        "--no-commit",
+        action="store_true",
+        help="Modify MANIFEST but skip git add/commit.",
+    )
+    apply_handoff_parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help="Allow applying when the Voyager worktree already has changes.",
+    )
+    apply_handoff_parser.add_argument(
+        "--allow-append",
+        action="store_true",
+        help="Append missing MANIFEST targets instead of failing.",
+    )
 
     release_parser = subparsers.add_parser(
         "release", parents=[common], help="Run export -> ifx -> handoff"
@@ -832,7 +1203,13 @@ def build_parser() -> argparse.ArgumentParser:
     release_parser.add_argument("--top-n", type=int)
     release_parser.add_argument("--loss-tolerance-pct", type=float)
     release_parser.add_argument("--desc", default="")
-    release_parser.add_argument("--version", type=int)
+    release_parser.add_argument(
+        "--version",
+        "--onnx-version",
+        dest="version",
+        type=int,
+        help="Explicit ONNX fileserver version. Defaults to latest+1.",
+    )
     release_parser.add_argument("--dry-run", action="store_true")
 
     resume_parser = subparsers.add_parser(
@@ -845,7 +1222,13 @@ def build_parser() -> argparse.ArgumentParser:
     resume_parser.add_argument("--desc", default="")
     resume_parser.add_argument("--epoch", type=int)
     resume_parser.add_argument("--loss-tolerance-pct", type=float)
-    resume_parser.add_argument("--version", type=int)
+    resume_parser.add_argument(
+        "--version",
+        "--onnx-version",
+        dest="version",
+        type=int,
+        help="Explicit ONNX fileserver version. Defaults to latest+1.",
+    )
     resume_parser.add_argument("--dry-run", action="store_true")
 
     offboard_parser = subparsers.add_parser(
@@ -919,21 +1302,66 @@ def main(argv: Optional[list[str]] = None) -> int:
             return 1 if _record_failed(record) else 0
         if args.command == "ifx":
             record = store.load(args.run_id) if args.run_id else None
-            _print_record(_command_ifx(args, config, store, record), as_json=args.json)
+            _print_record(
+                _command_ifx(args, config, store, record, step_offset=0, total_steps=5),
+                as_json=args.json,
+            )
+            return 0
+        if args.command in {"upload", "ifx-upload"}:
+            record = store.load(args.run_id) if args.run_id else None
+            _print_record(
+                _command_upload(
+                    args,
+                    config,
+                    store,
+                    record,
+                    step_offset=0,
+                    total_steps=3,
+                ),
+                as_json=args.json,
+            )
+            return 0
+        if args.command == "ifx-convert":
+            record = store.load(args.run_id)
+            _print_record(
+                _command_ifx_convert(
+                    args,
+                    config,
+                    store,
+                    record,
+                    step_offset=0,
+                    total_steps=2,
+                ),
+                as_json=args.json,
+            )
             return 0
         if args.command == "handoff":
             record = store.load(args.run_id)
             _print_record(
-                _command_handoff(args, config, store, record), as_json=args.json
+                _command_handoff(args, config, store, record, step=1, total_steps=1),
+                as_json=args.json,
+            )
+            return 0
+        if args.command == "apply-handoff":
+            record = store.load(args.run_id)
+            _print_record(
+                _command_apply_handoff(args, config, store, record),
+                as_json=args.json,
             )
             return 0
         if args.command == "release":
-            record = _command_export(args, config, store)
+            record = _command_export(
+                args, config, store, step_offset=0, total_steps=9
+            )
             if _record_failed(record):
                 _print_record(record, as_json=args.json)
                 return 1
-            record = _command_ifx(args, config, store, record)
-            record = _command_handoff(args, config, store, record)
+            record = _command_ifx(
+                args, config, store, record, step_offset=3, total_steps=9
+            )
+            record = _command_handoff(
+                args, config, store, record, step=9, total_steps=9
+            )
             _print_record(record, as_json=args.json)
             return 0
         if args.command == "resume":

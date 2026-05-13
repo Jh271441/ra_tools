@@ -167,6 +167,8 @@ class LubanRunner:
         local_output_dir: Path,
         dry_run: bool = False,
         show_progress: bool = False,
+        progress_step: int = 3,
+        progress_total: int = 3,
     ) -> Dict[str, object]:
         if not experiment.hparams_file:
             raise RuntimeError("hparams.yaml not found in experiment log directory.")
@@ -248,7 +250,12 @@ dst.write_text("\\n".join(rewritten) + "\\n", encoding='utf-8')
         ]
         if dry_run or export_result["returncode"] in (0, None):
             if show_progress:
-                self._progress_header("Copy exported ONNX", "📥", 3, 3)
+                self._progress_header(
+                    "Copy exported ONNX",
+                    "📥",
+                    progress_step,
+                    progress_total,
+                )
             scp_result = self._run(
                 scp_args,
                 dry_run=dry_run,

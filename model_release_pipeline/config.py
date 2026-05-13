@@ -39,15 +39,39 @@ class IfxConfig:
     method: str = "jenkins"
     truck_module: str = "planner.model-files"
     truck_cmd: str = "truck.py"
+    truck_runner: str = "auto"
+    # local
+    truck_local_shell: str = "/bin/zsh"
+    truck_local_workdir: str = ""
+    truck_local_setup: str = ""
+    # docker
+    truck_docker_container: str = ""
+    truck_docker_container_env: str = "CONTAINER_NAME_GEN4"
+    truck_docker_shell: str = "/bin/zsh"
+    truck_docker_workdir: str = "/home/didi/workspace/voyager"
+    truck_docker_setup: str = (
+        "git checkout master-Release_CN-a6d66b30c89 && "
+        "source /home/didi/workspace/voyager/bazel/scripts/setup.sh"
+    )
+    truck_docker_stage_dir: str = "/tmp/model_release_pipeline_artifacts"
+    # cloud_server
+    truck_ssh_host: str = "cloud_server"
+    truck_ssh_shell: str = "/bin/zsh"
+    truck_ssh_workdir: str = "/home/didi/workspace/voyager"
+    truck_ssh_setup: str = "source /home/didi/workspace/voyager/bazel/scripts/setup.sh"
+    truck_ssh_stage_dir: str = "/tmp/model_release_pipeline_artifacts"
     jenkins_base_url: str = "http://10.79.18.51:8088"
     jenkins_job_name: str = (
         "voyager_ifxruntime_trt_cached_engines_generator_ov23_trt10_dev"
     )
-    jenkins_token: str = ""
+    jenkins_http_method: str = "POST"
+    jenkins_token: str = "ONNX2IFX_DEV"
+    jenkins_use_crumb: bool = True
     username: str = "jasperchen"
-    max_batch: int = 1
-    x86_convert: str = "native"
+    max_batch: int = 0
+    x86_convert: str = "openvino"
     precision_convert: str = "FP16"
+    use_label: bool = False
     label_prefix: str = "scenario_dnn_release_"
     precision_test_truck_arg: str = ""
     precision_test_local_path: str = "~/utils/ifx/ifx_fp32_after_scaling_pos1e1_5.zip"
@@ -163,6 +187,18 @@ def _default_voyager_config() -> VoyagerConfig:
                 checkout_branch="jasperchen/gen4_release_20260403/scenario_dnn_dev",
                 update_diff_id=6076711,
                 sim_plan="lxh_ra_stuck_release_20260403-openloop",
+            ),
+            BranchConfig(
+                name="gen4_release_20260410",
+                checkout_branch="jasperchen/gen4_release_20260410/scenario_dnn_dev",
+                update_diff_id=6106759,
+                sim_plan="lxh_ra_stuck_release_20260410-openloop",
+            ),
+            BranchConfig(
+                name="gen4_release_20260417",
+                checkout_branch="jasperchen/gen4_release_20260417/scenario_dnn_dev",
+                update_diff_id=6106761,
+                sim_plan="lxh_ra_stuck_release_20260417-openloop",
             ),
             BranchConfig(
                 name="gen4_release_20260327",

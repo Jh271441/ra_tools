@@ -15,13 +15,39 @@ ifx:
   method: jenkins
   truck_module: planner.model-files
   truck_cmd: truck.py
+  # Where to run truck.py:
+  # - auto: try local first, then docker, then ssh.
+  # - local: current shell already has Voyager env and truck.py.
+  # - docker: current shell is outside Voyager, truck.py is inside a local Voyager docker.
+  # - ssh: truck.py is available after ssh to a cloud/server machine without docker.
+  truck_runner: auto
+  # Local use case: source Voyager setup in this shell before invoking truck.py.
+  truck_local_shell: /bin/zsh
+  truck_local_workdir: ""
+  truck_local_setup: ""
+  # Docker use case: export CONTAINER_NAME_GEN4, or set truck_docker_container explicitly.
+  truck_docker_container: ""
+  truck_docker_container_env: CONTAINER_NAME_GEN4
+  truck_docker_shell: /bin/zsh
+  truck_docker_workdir: /home/didi/workspace/voyager
+  truck_docker_setup: git checkout master-Release_CN-a6d66b30c89 && source /home/didi/workspace/voyager/bazel/scripts/setup.sh
+  truck_docker_stage_dir: /tmp/model_release_pipeline_artifacts
+  # SSH use case: truck.py is on cloud_server under voyager or voyager2.
+  truck_ssh_host: cloud_server
+  truck_ssh_shell: /bin/zsh
+  truck_ssh_workdir: /home/didi/workspace/voyager
+  truck_ssh_setup: source /home/didi/workspace/voyager/bazel/scripts/setup.sh
+  truck_ssh_stage_dir: /tmp/model_release_pipeline_artifacts
   jenkins_base_url: http://10.79.18.51:8088
   jenkins_job_name: voyager_ifxruntime_trt_cached_engines_generator_ov23_trt10_dev
-  jenkins_token: ""
+  jenkins_http_method: POST
+  jenkins_token: ONNX2IFX_DEV
+  jenkins_use_crumb: true
   username: jasperchen
-  max_batch: 1
-  x86_convert: native
+  max_batch: 0
+  x86_convert: openvino
   precision_convert: FP16
+  use_label: false
   label_prefix: scenario_dnn_release_
   precision_test_truck_arg: ""
   precision_test_local_path: ~/utils/ifx/ifx_fp32_after_scaling_pos1e1_5.zip
@@ -73,6 +99,14 @@ voyager:
       checkout_branch: jasperchen/gen4_release_20260403/scenario_dnn_dev
       update_diff_id: 6076711
       sim_plan: lxh_ra_stuck_release_20260403-openloop
+    - name: gen4_release_20260410
+      checkout_branch: jasperchen/gen4_release_20260410/scenario_dnn_dev
+      update_diff_id: 6106759
+      sim_plan: lxh_ra_stuck_release_20260410-openloop
+    - name: gen4_release_20260417
+      checkout_branch: jasperchen/gen4_release_20260417/scenario_dnn_dev
+      update_diff_id: 6106761
+      sim_plan: lxh_ra_stuck_release_20260417-openloop
     - name: gen4_release_20260327
       checkout_branch: jasperchen/gen4_release_20260327/scenario_dnn_dev
       update_diff_id: 6076959
