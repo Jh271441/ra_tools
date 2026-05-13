@@ -241,6 +241,28 @@ python -m model_release_pipeline.cli print-config --copy
 - `resume`: continue from the last incomplete stage in `release_record.json`.
 - `offboard`: create a temporary offboard test yaml on Luban and run the configured test entrypoint.
 
+Offboard can run from a release run or an explicit experiment epoch.
+Prefer passing `--run-id`; it reads the experiment path and selected epoch from
+the release record, then records the result as an `offboard` branch of the same
+`release_record.json`. Repeated runs are appended to `offboard_branches`.
+The command never edits
+`configs/scenario_dnn_finetune_test.yaml` directly. It creates
+`configs/scenario_dnn_finetune_test.release_offboard_<epoch>.yaml` on Luban,
+rewrites only `load_partial_checkpoint`, streams the remote test log as-is, and runs:
+
+```bash
+python scenario_dnn/train_test/ra_model_pipeline.py \
+  --config-yaml configs/scenario_dnn_finetune_test.release_offboard_epoch=019.yaml
+```
+
+Validate the selected checkpoint from a release run:
+
+```bash
+python -m model_release_pipeline.cli offboard \
+  --run-id <release_id> \
+  --remote luban_2_card
+```
+
 ## Run State
 
 Runs are stored under `runs_dir/<release_id>/release_record.json`. The default is `model_release_pipeline/.runs`, while the example config uses `~/.ra_tools_runs`.

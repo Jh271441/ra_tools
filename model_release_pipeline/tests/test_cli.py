@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 from model_release_pipeline.cli import (
     _command_apply_handoff,
     _command_ifx_convert,
+    _command_offboard,
     _format_pick_result,
     _format_record_result,
     _select_candidate,
@@ -287,6 +288,155 @@ class CliSelectionTest(unittest.TestCase):
             self.assertEqual(preview["stage"], "ifx_convert_dry_run")
             self.assertEqual(persisted["stage"], "created")
             self.assertNotIn("ifx_mapping", persisted["ifx"])
+
+    def test_offboard_uses_run_id_experiment_and_selected_epoch(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config = default_config()
+            config.runs_dir = Path(tmp_dir)
+            store = StateStore(config.runs_dir)
+            record = store.create(experiment_path="/nfs/exp", description="")
+            record["experiment"] = {"name": "exp", "remote_host": "luban_2_card"}
+            record["selection"] = {"selected_epoch": 19}
+            store.save(record)
+            calls = []
+
+            class FakeExperiment:
+                remote_host = "luban_2_card"
+
+                def checkpoint_for_epoch(self, epoch):
+                    self.epoch = epoch
+                    return Path(f"/nfs/exp/checkpoints/version_0/epoch={epoch:03d}.pth")
+
+            class FakeInspector:
+                def __init__(self, *args, **kwargs):
+                    pass
+
+                def inspect(self, *args, **kwargs):
+                    return FakeExperiment()
+
+            class FakeRunner:
+                def __init__(self, _config):
+                    pass
+
+                def run_offboard_test(self, **kwargs):
+                    calls.append(kwargs)
+                    return {
+                        "host": kwargs["remote_host"],
+                        "temp_config": "/nfs/repo/configs/scenario_dnn_finetune_test.release_offboard_epoch=019.yaml",
+                        "checkpoint_path": str(kwargs["checkpoint_path"]),
+                        "command": "ssh luban_2_card ...",
+                        "returncode": 0,
+                        "stdout": "",
+                        "stderr": "",
+                    }
+
+            import model_release_pipeline.cli as cli_module
+
+            original_runner = cli_module.LubanRunner
+            original_inspector = cli_module.ExperimentInspector
+            original_confirm = cli_module._confirm
+            try:
+                cli_module.LubanRunner = FakeRunner
+                cli_module.ExperimentInspector = FakeInspector
+                cli_module._confirm = lambda _prompt, _yes: True
+                args = argparse.Namespace(
+                    run_id=record["release_id"],
+                    experiment=None,
+                    remote="luban_2_card",
+                    remote_python=None,
+                    epoch=None,
+                    desc="",
+                    dry_run=False,
+                    json=True,
+                    yes=True,
+                )
+
+                record = _command_offboard(args, config, store, store.load(record["release_id"]))
+            finally:
+                cli_module.LubanRunner = original_runner
+                cli_module.ExperimentInspector = original_inspector
+                cli_module._confirm = original_confirm
+
+            self.assertEqual(record["stage"], "offboard_complete")
+            self.assertEqual(record["offboard"]["branch"], "offboard")
+            self.assertEqual(record["offboard"]["source"], "run_id")
+            self.assertEqual(len(record["offboard_branches"]), 1)
+            self.assertEqual(
+                str(calls[0]["checkpoint_path"]),
+                "/nfs/exp/checkpoints/version_0/epoch=019.pth",
+            )
+            self.assertEqual(calls[0]["remote_host"], "luban_2_card")
+
+    def test_offboard_dry_run_with_run_id_does_not_persist_branch(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config = default_config()
+            config.runs_dir = Path(tmp_dir)
+            store = StateStore(config.runs_dir)
+            record = store.create(experiment_path="/tmp/exp", description="")
+            record["stage"] = "apply_handoff_complete"
+            record["status"] = "completed"
+            record["selection"] = {"selected_epoch": 19}
+            store.save(record)
+
+            class FakeExperiment:
+                remote_host = "luban_2_card"
+
+                def checkpoint_for_epoch(self, epoch):
+                    return Path(f"/tmp/exp/checkpoints/version_0/epoch={epoch:03d}.pth")
+
+            class FakeInspector:
+                def __init__(self, *args, **kwargs):
+                    pass
+
+                def inspect(self, *args, **kwargs):
+                    return FakeExperiment()
+
+            class FakeRunner:
+                def __init__(self, _config):
+                    pass
+
+                def run_offboard_test(self, **kwargs):
+                    return {
+                        "host": kwargs["remote_host"],
+                        "temp_config": "/nfs/repo/configs/scenario_dnn_finetune_test.release_offboard_epoch=019.yaml",
+                        "checkpoint_path": str(kwargs["checkpoint_path"]),
+                        "command": "ssh luban_2_card ...",
+                        "returncode": None,
+                        "stdout": "",
+                        "stderr": "",
+                    }
+
+            import model_release_pipeline.cli as cli_module
+
+            original_runner = cli_module.LubanRunner
+            original_inspector = cli_module.ExperimentInspector
+            original_confirm = cli_module._confirm
+            try:
+                cli_module.LubanRunner = FakeRunner
+                cli_module.ExperimentInspector = FakeInspector
+                cli_module._confirm = lambda _prompt, _yes: True
+                args = argparse.Namespace(
+                    run_id=record["release_id"],
+                    experiment=None,
+                    remote="luban_2_card",
+                    remote_python=None,
+                    epoch=None,
+                    desc="",
+                    dry_run=True,
+                    json=True,
+                    yes=True,
+                )
+
+                preview = _command_offboard(args, config, store, store.load(record["release_id"]))
+            finally:
+                cli_module.LubanRunner = original_runner
+                cli_module.ExperimentInspector = original_inspector
+                cli_module._confirm = original_confirm
+
+            persisted = store.load(record["release_id"])
+            self.assertEqual(preview["stage"], "offboard_dry_run")
+            self.assertEqual(persisted["stage"], "apply_handoff_complete")
+            self.assertNotIn("offboard_branches", persisted)
 
 
 if __name__ == "__main__":

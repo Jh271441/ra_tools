@@ -45,13 +45,13 @@ class LubanRunner:
         self._progress(self._separator("="))
 
     def _emit_stream_text(
-        self, stream_name: str, text: str, chunks: list[str]
+        self, stream_name: str, text: str, chunks: list[str], raw: bool = False
     ) -> None:
         if not text:
             return
         chunks.append(text)
         for line in text.rstrip("\n").splitlines():
-            self._progress(f"[{stream_name}] {line}")
+            self._progress(line if raw else f"[{stream_name}] {line}")
 
     def _run(
         self,
@@ -59,6 +59,7 @@ class LubanRunner:
         dry_run: bool = False,
         progress_label: Optional[str] = None,
         progress_interval_sec: int = 30,
+        raw_stream: bool = False,
     ) -> Dict[str, object]:
         command_text = " ".join(shlex.quote(arg) for arg in args)
         if dry_run:
@@ -104,7 +105,9 @@ class LubanRunner:
                     for key in list(selector.get_map().values()):
                         stream_name, chunks = key.data
                         remainder = key.fileobj.read()
-                        self._emit_stream_text(stream_name, remainder, chunks)
+                        self._emit_stream_text(
+                            stream_name, remainder, chunks, raw=raw_stream
+                        )
                         selector.unregister(key.fileobj)
                         key.fileobj.close()
                     break
@@ -117,7 +120,7 @@ class LubanRunner:
                 stream_name, chunks = key.data
                 line = key.fileobj.readline()
                 if line:
-                    self._emit_stream_text(stream_name, line, chunks)
+                    self._emit_stream_text(stream_name, line, chunks, raw=raw_stream)
                 else:
                     selector.unregister(key.fileobj)
                     key.fileobj.close()
@@ -296,13 +299,17 @@ dst = Path({remote_temp_yaml.as_posix()!r})
 target = {checkpoint_path.as_posix()!r}
 lines = src.read_text(encoding='utf-8').splitlines()
 rewritten = []
+found = False
 for line in lines:
     stripped = line.strip()
     if stripped.startswith('load_partial_checkpoint:'):
         indent = line[:len(line) - len(line.lstrip())]
         rewritten.append(f"{{indent}}load_partial_checkpoint: {{target}}")
+        found = True
     else:
         rewritten.append(line)
+if not found:
+    rewritten.append(f"load_partial_checkpoint: {{target}}")
 dst.write_text("\\n".join(rewritten) + "\\n", encoding='utf-8')
 """
         remote_script = "\n".join(
@@ -324,6 +331,7 @@ dst.write_text("\\n".join(rewritten) + "\\n", encoding='utf-8')
                 if show_progress
                 else None
             ),
+            raw_stream=True,
         )
         return {
             "host": remote_host or self.config.host_alias,

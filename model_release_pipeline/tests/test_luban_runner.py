@@ -99,6 +99,41 @@ class LubanRunnerTest(unittest.TestCase):
         self.assertEqual(result["scp"]["returncode"], 0)
         self.assertEqual(run_mock.call_count, 2)
 
+    def test_offboard_command_uses_temp_config_and_checkpoint(self) -> None:
+        config = LubanConfig(
+            train_repo="/nfs/stuck_assist_model",
+            python_bin="/home/luban/miniconda3/bin/conda run -n scen_dnn python",
+            remote_python_bin="/home/luban/miniconda3/bin/conda run -n scen_dnn python",
+        )
+
+        result = LubanRunner(config).run_offboard_test(
+            checkpoint_path=Path(
+                "/nfs/exp/checkpoints/version_0/epoch=019.pth"
+            ),
+            remote_host="luban_2_card",
+            dry_run=True,
+        )
+
+        command = result["command"]
+        self.assertIn("load_partial_checkpoint:", command)
+        self.assertIn("/nfs/exp/checkpoints/version_0/epoch=019.pth", command)
+        self.assertIn(
+            "configs/scenario_dnn_finetune_test.release_offboard_epoch=019.yaml",
+            command,
+        )
+        self.assertIn(
+            "scenario_dnn/train_test/ra_model_pipeline.py --config-yaml",
+            command,
+        )
+
+    def test_offboard_streams_raw_log_lines(self) -> None:
+        runner = LubanRunner(LubanConfig())
+        emitted = []
+        with mock.patch.object(runner, "_progress", side_effect=emitted.append):
+            runner._emit_stream_text("stdout", "raw log line\n", [], raw=True)
+
+        self.assertEqual(emitted, ["raw log line"])
+
 
 if __name__ == "__main__":
     unittest.main()

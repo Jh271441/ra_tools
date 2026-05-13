@@ -962,6 +962,8 @@ def _command_offboard(
     store: StateStore,
     record: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    if args.dry_run and record is not None:
+        record = json.loads(json.dumps(record))
     if record is None:
         if not args.experiment:
             raise RuntimeError("Provide --experiment or --run-id.")
@@ -983,6 +985,8 @@ def _command_offboard(
             raise RuntimeError("Provide --epoch when no --run-id is used.")
         epoch = args.epoch
         record = store.create(args.experiment, args.desc or "")
+        checkpoint = experiment.checkpoint_for_epoch(int(epoch))
+        remote_host = experiment.remote_host
     else:
         _progress(
             args,
@@ -1001,7 +1005,8 @@ def _command_offboard(
             or record.get("experiment", {}).get("remote_host"),
         )
         epoch = args.epoch or record.get("selection", {}).get("selected_epoch")
-    checkpoint = experiment.checkpoint_for_epoch(int(epoch))
+        checkpoint = experiment.checkpoint_for_epoch(int(epoch))
+        remote_host = experiment.remote_host
     if checkpoint is None:
         raise RuntimeError(f"Checkpoint for epoch {epoch} not found.")
     if not _confirm(f"Run offboard test with {checkpoint.name}?", args.yes):
@@ -1012,21 +1017,34 @@ def _command_offboard(
         step=2,
         total=2,
         icon="🧪",
-        detail=f"host: {experiment.remote_host or config.luban.host_alias}",
+        detail=f"host: {remote_host or config.luban.host_alias}",
     )
     result = LubanRunner(config.luban).run_offboard_test(
         checkpoint_path=checkpoint,
-        remote_host=experiment.remote_host,
+        remote_host=remote_host,
         dry_run=args.dry_run,
         show_progress=not getattr(args, "json", False),
     )
-    record["offboard"] = result
+    branch_result = {
+        **result,
+        "branch": "offboard",
+        "source": "run_id" if getattr(args, "run_id", None) else "experiment_epoch",
+    }
+    record["offboard"] = branch_result
+    branches = list(record.get("offboard_branches") or [])
+    branches.append(branch_result)
+    record["offboard_branches"] = branches
     if result.get("returncode") not in (0, None):
         record["stage"] = "offboard_failed"
         record["status"] = "failed"
+    elif args.dry_run:
+        record["stage"] = "offboard_dry_run"
+        record["status"] = "dry_run"
     else:
         record["stage"] = "offboard_complete"
-    store.save(record)
+        record["status"] = "completed"
+    if not args.dry_run:
+        store.save(record)
     return record
 
 
