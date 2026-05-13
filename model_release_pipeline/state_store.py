@@ -61,6 +61,37 @@ class StateStore:
             raise FileNotFoundError(f"Release record not found: {path}")
         return json.loads(path.read_text(encoding="utf-8"))
 
+    def list_records(self) -> list[Dict[str, Any]]:
+        records = []
+        if not self.runs_dir.exists():
+            return records
+        for item in sorted(self.runs_dir.iterdir(), reverse=True):
+            if not item.is_dir():
+                continue
+            record_path = item / "release_record.json"
+            if not record_path.exists():
+                continue
+            try:
+                records.append(json.loads(record_path.read_text(encoding="utf-8")))
+            except json.JSONDecodeError:
+                records.append(
+                    {
+                        "release_id": item.name,
+                        "stage": "corrupt_record",
+                        "status": "failed",
+                        "errors": [
+                            {
+                                "message": f"Failed to parse {record_path}",
+                            }
+                        ],
+                    }
+                )
+        return sorted(
+            records,
+            key=lambda record: str(record.get("updated_at") or record.get("created_at") or ""),
+            reverse=True,
+        )
+
     def update(self, record: Dict[str, Any], **fields: Any) -> Dict[str, Any]:
         for key, value in fields.items():
             record[key] = value

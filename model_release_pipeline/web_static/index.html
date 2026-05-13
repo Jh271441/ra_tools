@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scenario DNN Release Agent</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark">RA</div>
+          <div>
+            <p class="eyebrow">Model Release Pipeline</p>
+            <h1>Scenario DNN Release Agent</h1>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button id="refreshButton" class="ghost">Refresh</button>
+          <div class="status-pill" id="runsDir">runs_dir: loading</div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="panel run-list">
+          <div class="panel-title split-title">
+            <span>Release Runs</span>
+            <input id="runFilter" placeholder="Filter run / experiment" />
+          </div>
+          <div id="runs" class="runs"></div>
+        </aside>
+
+        <section class="agent-board">
+          <section class="panel hero-card">
+            <div>
+              <p class="eyebrow">Current Agent State</p>
+              <h2 id="runTitle">Select a run</h2>
+              <p id="runSubtitle" class="muted">Timeline, artifacts, and logs will appear here.</p>
+            </div>
+            <div id="runBadges" class="badge-row"></div>
+          </section>
+
+          <section class="panel timeline-card">
+            <div class="section-heading">
+              <h3>Agent Timeline</h3>
+              <span id="timelineHint">read-only console</span>
+            </div>
+            <div id="timeline" class="timeline"></div>
+          </section>
+
+          <section class="panel log-card">
+            <div class="section-heading">
+              <h3>Live Record Logs</h3>
+              <select id="logSelect"></select>
+            </div>
+            <pre id="logOutput" class="log-output">No run selected.</pre>
+          </section>
+        </section>
+
+        <aside class="panel detail-panel">
+          <div class="panel-title split-title">
+            <span>Decision Panel</span>
+            <button id="copyRecordButton" class="ghost compact">Copy JSON</button>
+          </div>
+          <div id="details" class="details empty-state">
+            Pick a release run from the left. The panel will summarize epoch,
+            ONNX version, IFX artifacts, handoff branches, offboard metrics,
+            and CLI commands.
+          </div>
+        </aside>
+      </main>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>

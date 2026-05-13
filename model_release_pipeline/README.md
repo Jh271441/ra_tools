@@ -240,6 +240,26 @@ python -m model_release_pipeline.cli print-config --copy
 - `release`: run `export -> ifx -> handoff`. If `--epoch` is provided, model picking is skipped.
 - `resume`: continue from the last incomplete stage in `release_record.json`.
 - `offboard`: create a temporary offboard test yaml on Luban and run the configured test entrypoint.
+- `web`: start a read-only browser console for existing release records.
+
+## Web Console
+
+Start the local read-only release agent console:
+
+```bash
+python -m model_release_pipeline.cli web --host 127.0.0.1 --port 8765
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8765
+```
+
+The first version is intentionally read-only. It scans `runs_dir`, lists release
+runs, renders an agent-style timeline, summarizes epoch/ONNX/IFX/handoff/offboard
+state, shows captured log tails, and prints the next CLI commands. Keep actual
+mutating operations in the CLI until the web confirmation model is explicit.
 
 Offboard can run from a release run or an explicit experiment epoch.
 Prefer passing `--run-id`; it reads the experiment path and selected epoch from

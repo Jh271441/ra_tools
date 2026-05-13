@@ -20,6 +20,7 @@ from model_release_pipeline.services.luban_runner import LubanRunner
 from model_release_pipeline.services.model_picker import ModelPicker
 from model_release_pipeline.services.voyager_handoff import VoyagerHandoffService
 from model_release_pipeline.state_store import StateStore
+from model_release_pipeline.web_app import serve as serve_web
 
 
 _DISPLAY_METRICS = ("roc_auc", "pr_auc", "accuracy", "f1_score", "precision", "recall")
@@ -1264,6 +1265,17 @@ def build_parser() -> argparse.ArgumentParser:
         "print-config", parents=[common], help="Show bundled config"
     )
     config_parser.add_argument("--copy", action="store_true")
+
+    web_parser = subparsers.add_parser(
+        "web", parents=[common], help="Start the read-only release web console"
+    )
+    web_parser.add_argument("--host", default="127.0.0.1")
+    web_parser.add_argument("--port", type=int, default=8765)
+    web_parser.add_argument(
+        "--open",
+        action="store_true",
+        help="Open the console in the default browser",
+    )
     return parser
 
 
@@ -1401,6 +1413,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                 print(target)
             else:
                 print(DEFAULT_TEMPLATE_PATH)
+            return 0
+        if args.command == "web":
+            serve_web(config, host=args.host, port=args.port, open_browser=args.open)
             return 0
     except Exception as exc:  # pylint: disable=broad-except
         if getattr(args, "run_id", None):
