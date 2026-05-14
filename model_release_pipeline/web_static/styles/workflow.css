@@ -1,0 +1,217 @@
+.flow-card {
+  width: 100%;
+  min-height: 0;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.flow-controls {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 12px;
+  overflow: visible;
+  padding: 2px;
+}
+
+.flow-node {
+  position: relative;
+  min-width: 0;
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  transition: 150ms ease;
+}
+
+.inline-check {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.7);
+  font: 600 0.82rem/1.2 var(--sans);
+}
+
+.inline-check input {
+  width: auto;
+  margin: 0;
+}
+
+.flow-node:hover {
+  border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.flow-node.selected {
+  border-color: rgba(0, 122, 255, 0.48);
+  background:
+    linear-gradient(135deg, rgba(0, 122, 255, 0.1), rgba(255, 255, 255, 0.92));
+  box-shadow: 0 0 0 1px rgba(0, 122, 255, 0.18), var(--shadow-soft);
+}
+
+.flow-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.flow-top > div:nth-child(2) {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.flow-state {
+  flex: 0 1 auto;
+  margin-left: auto;
+  max-width: 86px;
+}
+
+.flow-number {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: white;
+  background: var(--teal);
+  font: 700 0.8rem/1 var(--mono);
+}
+
+.flow-node.failed .flow-number {
+  background: var(--danger);
+}
+
+.flow-node.pending .flow-number,
+.flow-node.missing .flow-number {
+  background: var(--faint);
+}
+
+.flow-node.ready .flow-number,
+.flow-node.running .flow-number {
+  background: var(--faint);
+}
+
+.flow-top p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flow-top h4 {
+  overflow: hidden;
+  line-height: 1.12;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  gap: 16px;
+  min-height: 0;
+  margin-top: 8px;
+}
+
+.flow-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 12px;
+  overflow: hidden;
+}
+
+.flow-inspector {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  background: var(--surface-muted);
+  overflow: hidden;
+}
+
+.inspector-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.workflow-confirm {
+  flex: 0 0 auto;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  background: var(--surface);
+}
+
+.export-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.export-form input,
+.export-row input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  outline: none;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  background: rgba(255, 255, 255, 0.76);
+  text-overflow: ellipsis;
+}
+
+.export-form input:focus,
+.export-row input:focus {
+  border-color: var(--accent);
+}
+
+.export-row {
+  display: flex;
+  gap: 8px;
+}
+
+.export-row input:first-child {
+  flex: 0 0 40%;
+}
+
+.state-sink {
+  display: none;
+}
+
+.badge-row {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.muted {
+  color: var(--muted);
+}

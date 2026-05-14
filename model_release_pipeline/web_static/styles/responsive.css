@@ -1,0 +1,108 @@
+/* --- Responsive Adjustments --- */
+
+@media (max-width: 1100px) {
+  .release-view.active {
+    flex-direction: column;
+  }
+  .release-view .detail-panel {
+    flex: none;
+    max-width: none;
+    width: 100%;
+  }
+  .release-view .timeline-card {
+    flex: none;
+    max-width: none;
+    width: 100%;
+  }
+  .workflow-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 860px) {
+  html,
+  body {
+    height: auto;
+    overflow: auto; /* Let the whole page scroll on mobile */
+  }
+
+  .app-shell {
+    height: auto;
+    min-height: 100vh;
+    padding: 16px;
+  }
+
+  .topbar {
+    padding-left: 0;
+  }
+
+  .workspace {
+    flex-direction: column;
+    min-height: auto;
+  }
+
+  .side-rail {
+    flex: none;
+    width: 100%;
+    flex-direction: column;
+    overflow: visible;
+    margin: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 0 0 12px;
+    background: transparent;
+  }
+
+  .rail-toggle,
+  .rail-item,
+  .side-rail .view-tab {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .rail-toggle {
+    position: static;
+    width: 100%;
+    height: auto;
+    justify-content: flex-start;
+    padding: 10px 12px;
+    border-radius: 10px;
+  }
+
+  .run-list {
+    flex: none;
+    width: 100%;
+    max-width: none;
+    max-height: 350px; /* Allow list to scroll internally on mobile if needed, but not restricted to tiny dvh */
+  }
+
+  .agent-board {
+    flex: none;
+    min-width: 0;
+  }
+
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .top-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .flow-controls {
+    grid-template-columns: repeat(4, minmax(210px, 1fr));
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 8px;
+  }
+
+  .flow-node {
+    min-width: 210px;
+  }
+
+  .log-output {
+    min-height: 260px;
+  }
+}

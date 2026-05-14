@@ -15,6 +15,7 @@ from model_release_pipeline.web_app import (
     _record_summary,
     _timeline,
 )
+from model_release_pipeline.web.actions import build_cli_command
 
 
 class WebAppTest(unittest.TestCase):
@@ -224,6 +225,16 @@ class WebAppTest(unittest.TestCase):
         self.assertTrue(any("model.onnx" in line for line in logs["ifx_stdout"]))
         self.assertTrue(any("fp32_x86" in line for line in logs["ifx_stdout"]))
         self.assertTrue(any("Finished: SUCCESS" in line for line in logs["ifx_stdout"]))
+
+    def test_ifx_poll_action_accepts_manual_build_url(self) -> None:
+        command = build_cli_command(
+            "run1",
+            "ifx-poll",
+            payload={"build_url": "http://jenkins/job/demo/11669/"},
+        )
+
+        self.assertIn("--build-url", command)
+        self.assertIn("http://jenkins/job/demo/11669/", command)
 
     def test_later_failure_does_not_mark_successful_export_failed(self) -> None:
         record = {

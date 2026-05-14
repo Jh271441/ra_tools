@@ -86,7 +86,7 @@ class IfxConfig:
         ]
     )
     poll_interval_sec: int = 30
-    timeout_sec: int = 1800
+    timeout_sec: int = 7200
     local_script_path: str = ""
     extra_params: Dict[str, Any] = field(default_factory=dict)
     trail_base_url: str = "https://voyager.intra.xiaojukeji.com"

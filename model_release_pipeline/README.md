@@ -114,13 +114,17 @@ python -m model_release_pipeline.cli upload \
 
 python -m model_release_pipeline.cli ifx-convert \
   --run-id <release_id>
+
+# Re-collect an already-triggered Jenkins job without triggering a new one.
+python -m model_release_pipeline.cli ifx-poll \
+  --run-id <release_id>
 ```
 
-`upload` stores `ifx.onnx`, `ifx.precision_test_arg`, `ifx.truck_runner`, and `ifx.upload_description` in the run record. `ifx-convert` reuses those fields to trigger Jenkins, records the Jenkins queue/build URL, and parses the Jenkins console output for generated IFX artifact versions. The existing `ifx` command remains a shortcut that runs both commands in sequence.
+`upload` stores `ifx.onnx`, `ifx.precision_test_arg`, `ifx.truck_runner`, and `ifx.upload_description` in the run record. `ifx-convert` reuses those fields to trigger Jenkins, records the Jenkins queue/build URL, and parses the Jenkins console output for generated IFX artifact versions. `ifx-poll` reuses the recorded Jenkins `queue_url` or `build_url` to fetch a completed build later and update `ifx.ifx_mapping`; it does not trigger a new Jenkins job. The existing `ifx` command remains a shortcut that runs both commands in sequence.
 
 Jenkins IFX triggering uses `POST` by default because some Jenkins deployments reject `GET /buildWithParameters` with HTTP 405. The default token is the same `ONNX2IFX_DEV` token used by the existing Voyager IFX trigger scripts. For Jenkins instances with CSRF protection, the tool fetches `/crumbIssuer/api/json` and sends the returned crumb header before triggering the job. Override `ifx.jenkins_http_method`, `ifx.jenkins_token`, or `ifx.jenkins_use_crumb` only if your Jenkins job explicitly requires different values.
 
-By default the IFX trigger matches the legacy flow: `max_batch=0` and no fileserver label is passed to Jenkins. The run is tracked by Jenkins queue/build URL instead of an injected label. If any expected platform, including `fp16_thor`, is missing or appears as `upload failed` in the Jenkins console, the conversion is treated as failed even if Jenkins itself reports `SUCCESS`.
+By default the IFX trigger matches the legacy flow: `max_batch=0` and no fileserver label is passed to Jenkins. The run is tracked by Jenkins queue/build URL instead of an injected label. If any expected platform, including `fp16_thor`, is missing or appears as `upload failed` in the Jenkins console, the conversion is treated as failed even if Jenkins itself reports `SUCCESS`. The default Jenkins watcher timeout is 7200 seconds; override `ifx.timeout_sec` and `ifx.poll_interval_sec` in your YAML if a specific job needs a different wait window.
 
 A release run is expected to bind to exactly one ONNX fileserver version. Re-running `upload` after a successful upload is blocked by default; run `ifx-convert` next. If you intentionally need to replace the binding, pass `--replace-upload` and an explicit `--onnx-version`.
 
@@ -234,6 +238,7 @@ python -m model_release_pipeline.cli print-config --copy
 - `export`: ssh to Luban, create a temporary hparams yaml, export ONNX, and scp it back to the run directory. If `--epoch` is provided, model picking is skipped.
 - `upload`: push ONNX through `truck.py` and prepare the precision-test truck argument.
 - `ifx-convert`: trigger the Jenkins IFX job from a previous `upload` and collect fileserver versions from the Jenkins build/console output.
+- `ifx-poll`: re-check a recorded Jenkins queue/build URL and collect IFX versions without triggering a new job.
 - `ifx`: shortcut for `upload -> ifx-convert`.
 - `handoff`: generate `handoff_manifest_snippet.txt` and `handoff_commands.sh`.
 - `apply-handoff`: apply the MANIFEST replacement in Voyager docker and create a local git commit. `dcl` remains manual/confirmed.

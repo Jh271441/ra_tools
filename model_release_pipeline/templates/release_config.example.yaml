@@ -59,7 +59,7 @@ ifx:
     - fp16_gen4
     - fp16_thor
   poll_interval_sec: 30
-  timeout_sec: 1800
+  timeout_sec: 7200
   extra_params: {}
 
 picker:

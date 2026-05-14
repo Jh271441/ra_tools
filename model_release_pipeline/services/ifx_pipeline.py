@@ -151,6 +151,28 @@ class IfxPipeline:
         if not build_url:
             raise TimeoutError(f"Timed out waiting for Jenkins queue item: {queue_url}")
 
+        return self._wait_for_jenkins_build_url(
+            build_url, started=started, progress=progress, progress_step=progress_step
+        )
+
+    def _wait_for_jenkins_build_url(
+        self,
+        build_url: str,
+        *,
+        started: Optional[float] = None,
+        progress: Optional[Callable[[str, int, Optional[str]], None]] = None,
+        progress_step: int = 0,
+    ) -> Dict[str, Any]:
+        started = started or time.time()
+        last_progress = 0.0
+
+        def emit(detail: str, force: bool = False) -> None:
+            nonlocal last_progress
+            now = time.time()
+            if progress and (force or now - last_progress >= 30):
+                progress("Poll IFX Artifacts", progress_step, detail)
+                last_progress = now
+
         build_api = self._jenkins_api_url(build_url)
         build_payload: Dict[str, Any] = {}
         build_running_reported = False
@@ -198,6 +220,70 @@ class IfxPipeline:
             "result": build_payload.get("result"),
             "console_text": console_response.text,
         }
+
+    def _collect_jenkins_ifx_result(
+        self,
+        jenkins_result: Dict[str, Any],
+        onnx_arg: str,
+        *,
+        progress: Optional[Callable[[str, int, Optional[str]], None]] = None,
+        progress_step: int = 0,
+    ) -> Dict[str, Any]:
+        if jenkins_result.get("build_url"):
+            build_result = self._wait_for_jenkins_build_url(
+                jenkins_result["build_url"],
+                progress=progress,
+                progress_step=progress_step,
+            )
+        else:
+            build_result = self._wait_for_jenkins_build(
+                jenkins_result.get("queue_url"),
+                progress=progress,
+                progress_step=progress_step,
+            )
+        persisted_build = {
+            key: value for key, value in build_result.items() if key != "console_text"
+        }
+        console_lines = build_result.get("console_text", "").splitlines()
+        persisted_build["console_tail"] = console_lines[-80:]
+        updated_jenkins = {**jenkins_result, **persisted_build}
+        parsed = self._parse_ifx_mapping_from_console(
+            build_result.get("console_text", ""), onnx_arg
+        )
+        ifx_mapping = parsed["mapping"]
+        failed_uploads = parsed["failed_uploads"]
+        missing = [
+            platform
+            for platform in self.config.expected_platforms
+            if platform not in ifx_mapping
+        ]
+        if progress:
+            found = [
+                platform
+                for platform in self.config.expected_platforms
+                if platform in ifx_mapping
+            ]
+            progress(
+                "Poll IFX Artifacts",
+                progress_step,
+                f"parsed console; found: {found or 'none'}; "
+                f"missing: {missing or 'none'}; "
+                f"failed_uploads: {failed_uploads or 'none'}",
+            )
+        result = {
+            "jenkins": updated_jenkins,
+            "ifx_mapping": ifx_mapping,
+            "failed_uploads": failed_uploads,
+        }
+        if failed_uploads or missing or build_result.get("result") != "SUCCESS":
+            raise IfxPipelineError(
+                "IFX conversion did not produce all expected artifacts. "
+                f"jenkins_result={build_result.get('result')}; "
+                f"failed_uploads={failed_uploads}; missing={missing}; "
+                f"build_url={build_result.get('build_url')}",
+                result,
+            )
+        return result
 
     @staticmethod
     def _strip_ansi(text: str) -> str:
@@ -478,51 +564,15 @@ class IfxPipeline:
             )
         else:
             try:
-                build_result = self._wait_for_jenkins_build(
-                    jenkins_result.get("queue_url"),
+                collected = self._collect_jenkins_ifx_result(
+                    jenkins_result,
+                    onnx_arg,
                     progress=progress,
                     progress_step=step_offset + 2,
                 )
-                persisted_build = {
-                    key: value
-                    for key, value in build_result.items()
-                    if key != "console_text"
-                }
-                console_lines = build_result.get("console_text", "").splitlines()
-                persisted_build["console_tail"] = console_lines[-80:]
-                jenkins_result = {**jenkins_result, **persisted_build}
+                jenkins_result = collected["jenkins"]
                 partial_result["jenkins"] = jenkins_result
-                parsed = self._parse_ifx_mapping_from_console(
-                    build_result.get("console_text", ""), onnx_arg
-                )
-                ifx_mapping = parsed["mapping"]
-                failed_uploads = parsed["failed_uploads"]
-                missing = [
-                    platform
-                    for platform in self.config.expected_platforms
-                    if platform not in ifx_mapping
-                ]
-                if progress:
-                    found = [
-                        platform
-                        for platform in self.config.expected_platforms
-                        if platform in ifx_mapping
-                    ]
-                    progress(
-                        "Poll IFX Artifacts",
-                        step_offset + 2,
-                        f"parsed console; found: {found or 'none'}; "
-                        f"missing: {missing or 'none'}; "
-                        f"failed_uploads: {failed_uploads or 'none'}",
-                    )
-                if failed_uploads or missing or build_result.get("result") != "SUCCESS":
-                    raise IfxPipelineError(
-                        "IFX conversion did not produce all expected artifacts. "
-                        f"jenkins_result={build_result.get('result')}; "
-                        f"failed_uploads={failed_uploads}; missing={missing}; "
-                        f"build_url={build_result.get('build_url')}",
-                        {**partial_result, "ifx_mapping": ifx_mapping},
-                    )
+                ifx_mapping = collected["ifx_mapping"]
             except IfxPipelineError:
                 raise
             except Exception as exc:
@@ -531,4 +581,47 @@ class IfxPipeline:
             "jenkins": jenkins_result,
             "ifx_mapping": ifx_mapping,
             "label": label or None,
+        }
+
+    def poll_existing(
+        self,
+        upload_result: Dict[str, Any],
+        progress: Optional[Callable[[str, int, Optional[str]], None]] = None,
+        step_offset: int = 0,
+    ) -> Dict[str, Any]:
+        """Collect artifacts from an already-triggered Jenkins IFX build."""
+        if not self.config.enabled:
+            raise RuntimeError("IFX pipeline is disabled in config.")
+
+        onnx = upload_result.get("onnx") or {}
+        if not onnx:
+            raise RuntimeError("Missing uploaded ONNX. Run upload first.")
+        jenkins_result = upload_result.get("jenkins") or {}
+        if not (jenkins_result.get("queue_url") or jenkins_result.get("build_url")):
+            raise RuntimeError("No Jenkins queue_url/build_url found. Run ifx-convert first.")
+        onnx_arg = ArtifactVersion(
+            module=onnx.get("module") or self.config.truck_module,
+            name=onnx["name"],
+            version=onnx["version"],
+        ).truck_pull_arg()
+        if not onnx_arg:
+            raise RuntimeError("Failed to build truck pull arg for ONNX artifact.")
+
+        if progress:
+            progress(
+                "Poll IFX Artifacts",
+                step_offset + 1,
+                f"reuse Jenkins build: {jenkins_result.get('build_url') or jenkins_result.get('queue_url')}",
+            )
+        collected = self._collect_jenkins_ifx_result(
+            jenkins_result,
+            onnx_arg,
+            progress=progress,
+            progress_step=step_offset + 1,
+        )
+        return {
+            "jenkins": collected["jenkins"],
+            "ifx_mapping": collected["ifx_mapping"],
+            "failed_uploads": collected.get("failed_uploads", []),
+            "label": upload_result.get("label"),
         }
