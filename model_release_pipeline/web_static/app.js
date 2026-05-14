@@ -38,10 +38,27 @@ function clearSelection() {
 
 $("newReleaseBtn").onclick = clearSelection;
 
+function syncLogFullscreenButton(isFullscreen) {
+  const fullscreenButton = $("fullscreenLog");
+  fullscreenButton.setAttribute("aria-pressed", isFullscreen ? "true" : "false");
+  fullscreenButton.title = isFullscreen ? "Exit Fullscreen" : "Toggle Fullscreen";
+}
+
+$("logDrawer").ontoggle = () => {
+  const logDrawer = $("logDrawer");
+  if (!logDrawer.open && logDrawer.classList.contains("fullscreen")) {
+    logDrawer.classList.remove("fullscreen");
+    syncLogFullscreenButton(false);
+  }
+};
+
 $("fullscreenLog").onclick = (e) => {
   e.preventDefault(); // Prevent details toggle
   e.stopPropagation();
-  $("logDrawer").classList.toggle("fullscreen");
+  const logDrawer = $("logDrawer");
+  logDrawer.open = true;
+  const isFullscreen = logDrawer.classList.toggle("fullscreen");
+  syncLogFullscreenButton(isFullscreen);
 };
 
 function renderRuns() {

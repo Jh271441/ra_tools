@@ -39,6 +39,7 @@
   .workspace {
     flex-direction: column;
     min-height: auto;
+    overflow: visible;
   }
 
   .side-rail {
@@ -79,6 +80,13 @@
   .agent-board {
     flex: none;
     min-width: 0;
+    height: auto;
+  }
+
+  .content-board {
+    height: auto;
+    overflow: visible;
+    padding: 0;
   }
 
   .topbar {
@@ -91,18 +99,40 @@
     justify-content: flex-start;
   }
 
+  #workflowView.active {
+    display: flex;
+    overflow: visible;
+  }
+
+  .flow-card {
+    overflow: visible;
+  }
+
   .flow-controls {
-    grid-template-columns: repeat(4, minmax(210px, 1fr));
     overflow-x: auto;
     overflow-y: hidden;
     padding-bottom: 8px;
   }
 
+  .flow-lane,
+  .flow-fork-divider {
+    min-width: calc((210px * 7) + (12px * 6));
+  }
+
   .flow-node {
-    min-width: 210px;
+    min-width: 0;
+  }
+
+  .log-drawer[open] {
+    height: clamp(260px, 42dvh, 420px);
+  }
+
+  .log-drawer.fullscreen {
+    position: fixed;
+    inset: 16px;
   }
 
   .log-output {
-    min-height: 260px;
+    min-height: 0;
   }
 }
