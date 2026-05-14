@@ -6,7 +6,6 @@ from model_release_pipeline.pipeline_steps import MAIN_PIPELINE_STEPS, PipelineS
 
 
 STEP_COMMANDS = {
-    "inspect": "inspect",
     "pick": "pick",
     "export": "export",
     "upload": "upload",

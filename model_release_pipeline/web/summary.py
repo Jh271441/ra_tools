@@ -38,8 +38,12 @@ def step_status(record: Dict[str, Any], key: str) -> str:
     if key == "inspect":
         return "done" if record.get("experiment") else "pending"
     if key == "pick":
+        if record.get("pick"):
+            return "done"
         selection = record.get("selection") or {}
-        return "done" if selection.get("selected_epoch") is not None else "pending"
+        if selection.get("selected_epoch") is not None:
+            return "skipped"
+        return "pending"
     if key == "export":
         export = record.get("export") or {}
         if not export:
@@ -101,7 +105,8 @@ def step_status(record: Dict[str, Any], key: str) -> str:
     if key == "offboard":
         offboard = record.get("offboard") or {}
         if not offboard:
-            return "pending"
+            selection = record.get("selection") or {}
+            return "ready" if selection.get("selected_epoch") is not None else "pending"
         if stage == "offboard_failed":
             return "failed"
         return command_state(offboard)
@@ -138,6 +143,7 @@ def timeline(record: Dict[str, Any]) -> list[Dict[str, Any]]:
             "key": step.key,
             "title": step.title,
             "description": step.description,
+            "group": step.group,
             "status": step_status(record, step.key),
         }
         for step in WEB_PIPELINE_STEPS

@@ -108,6 +108,15 @@ class BranchConfig:
     checkout_branch: str
     update_diff_id: int
     sim_plan: str
+    update_diff_ids: List[int] = field(default_factory=list)
+    manifest_entries: List[ManifestEntryConfig] = field(default_factory=list)
+
+    def effective_diff_ids(self) -> List[int]:
+        if self.update_diff_ids:
+            return list(self.update_diff_ids)
+        if self.update_diff_id:
+            return [self.update_diff_id]
+        return []
 
 
 @dataclass
@@ -207,6 +216,46 @@ def _default_voyager_config() -> VoyagerConfig:
                 update_diff_id=6076959,
                 sim_plan="lxh_ra_stuck_release_20260327-openloop",
             ),
+            BranchConfig(
+                name="gen4_release_20260206",
+                checkout_branch="jasperchen/gen4_release_20260206/scenario_dnn_dev",
+                update_diff_id=6106765,
+                update_diff_ids=[6106765, 6115905],
+                sim_plan="lxh_ra_stuck_release_20260206-openloop",
+                manifest_entries=[
+                    ManifestEntryConfig(
+                        platform="onnx",
+                        expected_name="vectorized_scenario_remote_assist_model.onnx",
+                        target_path="./planner_models/vectorized_scenario_remote_assist_model_2025Q4.onnx",
+                        description="Vectorized scenario assist stuck model.",
+                    ),
+                    ManifestEntryConfig(
+                        platform="fp32_x86",
+                        expected_name="vectorized_scenario_remote_assist_model_bs0_fp32_x86.ifxmodel",
+                        target_path="./planner_models/vectorized_scenario_remote_assist_model_2025Q4_x86.ifxmodel",
+                    ),
+                    ManifestEntryConfig(
+                        platform="fp16_6000",
+                        expected_name="vectorized_scenario_remote_assist_model_bs0_fp16_6000_trt109.ifxmodel",
+                        target_path="./planner_models/vectorized_scenario_remote_assist_model_2025Q4_fp16_6000.ifxmodel",
+                    ),
+                    ManifestEntryConfig(
+                        platform="fp16_3060",
+                        expected_name="vectorized_scenario_remote_assist_model_bs0_fp16_3060_trt109.ifxmodel",
+                        target_path="./planner_models/vectorized_scenario_remote_assist_model_2025Q4_fp16_3060.ifxmodel",
+                    ),
+                    ManifestEntryConfig(
+                        platform="fp16_gen4",
+                        expected_name="vectorized_scenario_remote_assist_model_bs0_fp16_gen4_trt109.ifxmodel",
+                        target_path="./planner_models/vectorized_scenario_remote_assist_model_2025Q4_fp16_gen4.ifxmodel",
+                    ),
+                    ManifestEntryConfig(
+                        platform="fp16_thor",
+                        expected_name="vectorized_scenario_remote_assist_model_bs0_fp16_thor_trt1013.ifxmodel",
+                        target_path="./planner_models/vectorized_scenario_remote_assist_model_2025Q4_fp16_thor.ifxmodel",
+                    ),
+                ],
+            ),
         ],
     )
 
@@ -227,7 +276,13 @@ def _config_from_dict(data: Dict[str, Any]) -> ReleaseConfig:
         ManifestEntryConfig(**entry)
         for entry in voyager_cfg.get("manifest_entries", [])
     ]
-    branch_entries = [BranchConfig(**entry) for entry in voyager_cfg.get("branches", [])]
+    branch_entries = []
+    for entry in voyager_cfg.get("branches", []):
+        branch_kwargs = {k: v for k, v in entry.items() if k in BranchConfig.__dataclass_fields__ and k != "manifest_entries"}
+        raw_entries = entry.get("manifest_entries", [])
+        if raw_entries:
+            branch_kwargs["manifest_entries"] = [ManifestEntryConfig(**e) for e in raw_entries]
+        branch_entries.append(BranchConfig(**branch_kwargs))
     voyager = _default_voyager_config()
     if manifest_entries:
         voyager.manifest_entries = manifest_entries

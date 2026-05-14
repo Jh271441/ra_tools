@@ -85,6 +85,72 @@ def ensure_run(
     return record if record is not None else store.create(experiment_path, description)
 
 
+def inspect_and_pick(
+    experiment_path: str,
+    config: ReleaseConfig,
+    remote: Optional[str] = None,
+    remote_python: Optional[str] = None,
+    policy: Optional[str] = None,
+    top_n: Optional[int] = None,
+    loss_tolerance_pct: Optional[float] = None,
+) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    """Run inspect + pick without touching StateStore (for CLI or preview)."""
+    experiment = ExperimentInspector(
+        remote_python_bin=remote_python or config.luban.remote_python_bin
+    ).inspect(experiment_path, remote_host=remote)
+    pick_result = ModelPicker().pick(
+        experiment=experiment,
+        policy=policy or config.picker.policy,
+        top_n=top_n or config.picker.top_n,
+        loss_tolerance_pct=(
+            loss_tolerance_pct if loss_tolerance_pct is not None
+            else config.picker.loss_tolerance_pct
+        ),
+    )
+    return experiment.to_dict(), pick_result
+
+
+def run_pick(
+    args: argparse.Namespace,
+    config: ReleaseConfig,
+    store: StateStore,
+    record: Optional[Dict[str, Any]] = None,
+    *,
+    progress: ProgressFn,
+    inspector_cls: Any = ExperimentInspector,
+    picker_cls: Any = ModelPicker,
+) -> Dict[str, Any]:
+    progress(args, "Inspect Experiment", 1, 2, "🔎", f"experiment: {args.experiment}", False)
+    experiment = inspector_cls(
+        remote_python_bin=getattr(args, "remote_python", None) or config.luban.remote_python_bin
+    ).inspect(args.experiment, remote_host=getattr(args, "remote", None))
+
+    progress(args, "Pick Epoch", 2, 2, "🏁", None, True)
+    pick_result = picker_cls().pick(
+        experiment=experiment,
+        policy=getattr(args, "policy", None) or config.picker.policy,
+        top_n=getattr(args, "top_n", None) or config.picker.top_n,
+        loss_tolerance_pct=(
+            getattr(args, "loss_tolerance_pct", None)
+            if getattr(args, "loss_tolerance_pct", None) is not None
+            else config.picker.loss_tolerance_pct
+        ),
+    )
+
+    record = ensure_run(record, store, args.experiment, getattr(args, "desc", "") or "")
+    record["experiment_path"] = args.experiment
+    record["experiment"] = experiment.to_dict()
+    record["pick"] = pick_result
+    record["selection"] = {
+        "selected_epoch": pick_result.get("recommended_epoch"),
+        "selection_source": "pick",
+    }
+    record["stage"] = "picked"
+    record["status"] = "running"
+    store.save(record)
+    return record
+
+
 def export_failed(export_result: Dict[str, Any]) -> bool:
     remote_returncode = (export_result.get("export") or {}).get("returncode")
     scp_returncode = (export_result.get("scp") or {}).get("returncode")

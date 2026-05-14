@@ -7,6 +7,7 @@ import json
 from typing import Any, Callable, Dict, Optional
 
 from model_release_pipeline.config import ReleaseConfig
+from model_release_pipeline.onboard.versioned_onnx import ensure_versioned_backup
 from model_release_pipeline.services.ifx_pipeline import IfxPipeline, IfxPipelineError
 from model_release_pipeline.state_store import StateStore
 
@@ -133,6 +134,15 @@ def run_upload(
             if key not in {"jenkins", "ifx_mapping", "label", "dry_run_upload"}
         }
         record["ifx"] = {**existing_ifx, **result}
+        backup_path = ensure_versioned_backup(config.runs_dir, record)
+        record["ifx"]["onnx"] = {
+            **record["ifx"].get("onnx", {}),
+            "versioned_backup_path": str(backup_path),
+        }
+        record["export"] = {
+            **record.get("export", {}),
+            "versioned_onnx_file": str(backup_path),
+        }
         record["stage"] = "ifx_uploaded"
         record["status"] = "running"
     store.save(record)

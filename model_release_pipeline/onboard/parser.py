@@ -69,6 +69,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         help="TensorBoard fallback loss tolerance, e.g. 0.05 keeps epochs within 5%% of min val loss",
     )
+    pick_parser.add_argument("--desc", default="")
+    pick_parser.add_argument(
+        "--save",
+        action="store_true",
+        help="Create a StateStore release record for this pick run",
+    )
 
     export_parser = subparsers.add_parser(
         "export", parents=[common], help="Export ONNX from Luban"

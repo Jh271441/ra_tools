@@ -1,4 +1,5 @@
 export const DEFAULT_ACTIONS = [
+  { key: "pick", label: "Pick Epoch", supports_dry_run: false, requires_confirm: false, needs_run_id: false },
   { key: "export", label: "Model Export", supports_dry_run: true, requires_confirm: true, needs_run_id: false },
   { key: "upload", label: "Upload ONNX", supports_dry_run: true, requires_confirm: true, needs_run_id: true },
   { key: "ifx-convert", label: "Trigger IFX Convert", supports_dry_run: true, requires_confirm: true, needs_run_id: true },
@@ -37,6 +38,7 @@ export const STEP_LOG_MAP = {
 };
 
 export const NEXT_STEP_BY_ACTION = {
+  pick: "export",
   export: "upload",
   upload: "ifx",
   "ifx-convert": "handoff",

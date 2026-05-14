@@ -1,4 +1,5 @@
 import { renderDetails } from "./modules/details.js";
+import { fetchJson } from "./modules/api.js";
 import { renderActiveJob, startAction as startBackendAction } from "./modules/jobs.js";
 import { renderLog, renderLogSelect } from "./modules/logs.js";
 import { setRailCollapsed, setSidebarCollapsed, setView } from "./modules/navigation.js";
@@ -98,6 +99,10 @@ $("copyRecordButton").onclick = async () => {
   $("copyRecordButton").textContent = "Copied";
   setTimeout(() => ($("copyRecordButton").textContent = "Copy JSON"), 1100);
 };
+
+fetchJson("/api/config/branches")
+  .then((data) => { state.configBranches = data.branches || []; })
+  .catch(() => {});
 
 loadRuns(true).catch((error) => {
   $("runs").innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;

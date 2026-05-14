@@ -10,6 +10,7 @@ from model_release_pipeline.output import format_epoch, progress as _progress
 from model_release_pipeline.onboard.export import (
     export_failed,
     run_export,
+    run_pick,
     select_candidate,
     select_manual_epoch_candidate,
 )
@@ -60,6 +61,23 @@ def _make_progress(args: argparse.Namespace):
             detail=detail,
         )
     return _prog
+
+
+def _run_pick(
+    args: argparse.Namespace,
+    config: ReleaseConfig,
+    store: StateStore,
+    record: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    return run_pick(
+        args,
+        config,
+        store,
+        record,
+        progress=_make_progress(args),
+        inspector_cls=ExperimentInspector,
+        picker_cls=ModelPicker,
+    )
 
 
 def _run_export(
@@ -293,6 +311,9 @@ def dispatch(
     store: StateStore,
 ) -> Tuple[Dict[str, Any], int]:
     """Run a record-mutating command; return (record, exit_code)."""
+    if command == "pick":
+        return _run_pick(args, config, store), 0
+
     if command == "export":
         record = _run_export(args, config, store)
         return record, 1 if export_failed(record) else 0

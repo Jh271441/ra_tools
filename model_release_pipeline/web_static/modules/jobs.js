@@ -14,7 +14,11 @@ export async function startAction(action, dryRun, confirmText, callbacks) {
   try {
     jobStatus.textContent = `Starting ${action}${dryRun ? " dry-run" : ""}...`;
     const payload = { dry_run: dryRun, confirm_text: confirmText };
-    if (action === "export") {
+    if (action === "pick") {
+      payload.experiment = $("pickExperiment") ? $("pickExperiment").value.trim() : "";
+      payload.remote = $("pickRemote") ? $("pickRemote").value.trim() : "";
+      payload.desc = $("pickDesc") ? $("pickDesc").value.trim() : "";
+    } else if (action === "export") {
       payload.experiment = $("exportExperiment") ? $("exportExperiment").value.trim() : "";
       payload.epoch = $("exportEpoch") ? $("exportEpoch").value.trim() : "";
       payload.remote = $("exportRemote") ? $("exportRemote").value.trim() : "";
@@ -25,6 +29,11 @@ export async function startAction(action, dryRun, confirmText, callbacks) {
       payload.replace_upload = $("uploadReplace") ? $("uploadReplace").checked : false;
     } else if (action === "ifx-poll") {
       payload.build_url = $("ifxBuildUrl") ? $("ifxBuildUrl").value.trim() : "";
+    } else if (action === "apply-handoff") {
+      payload.branch = $("handoffBranch") ? $("handoffBranch").value : "";
+      payload.desc = $("handoffDesc") ? $("handoffDesc").value.trim() : "";
+    } else if (action === "dcl") {
+      payload.branch = $("dclBranch") ? $("dclBranch").value : "";
     }
     const releaseId = state.selectedId || "__draft__";
     const job = await postJson(
@@ -57,20 +66,20 @@ export async function pollJob(forceReloadRun, callbacks) {
       clearInterval(state.jobTimer);
       state.jobTimer = null;
     }
-    const completedDraftExport = !state.selectedId && job.action === "export";
-    if (completedDraftExport && !job.dry_run) {
+    const completedDraftCreate = !state.selectedId && ["export", "pick"].includes(job.action);
+    if (completedDraftCreate && !job.dry_run) {
       state.draftRun = false;
     }
     const nextStep = NEXT_STEP_BY_ACTION[job.action];
     if (job.status === "completed" && !job.dry_run && nextStep) {
       state.activeStep = nextStep;
     }
-    if (state.selectedId || (completedDraftExport && !job.dry_run)) {
+    if (state.selectedId || (completedDraftCreate && !job.dry_run)) {
       const selectedBeforeReload = state.selectedId;
       await callbacks.loadRuns(false);
       if (selectedBeforeReload) {
         await callbacks.selectRun(selectedBeforeReload);
-      } else if (completedDraftExport && !job.dry_run && state.runs.length) {
+      } else if (completedDraftCreate && !job.dry_run && state.runs.length) {
         await callbacks.selectRun(state.runs[0].release_id);
       }
     }

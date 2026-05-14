@@ -1,3 +1,4 @@
+import { postJson } from "./api.js";
 import { $ } from "./state.js";
 import { escapeHtml, formatEpoch } from "./utils.js";
 
@@ -9,6 +10,7 @@ export function renderDetails(payload) {
   const apply = record.apply_handoff || {};
   const commands = payload.commands || {};
   const errors = record.errors || [];
+  const copyInfo = payload.onnx_local_copy || {};
 
   const artifacts =
     Object.entries(mapping)
@@ -35,6 +37,15 @@ export function renderDetails(payload) {
       .map((command) => `<div class="code-line">${escapeHtml(command)}</div>`)
       .join("") || `<div class="empty-state">DCL commands are not ready.</div>`;
 
+  const localOnnx = copyInfo.available
+    ? `
+      <div class="copy-onnx-panel detail-copy-onnx">
+        <button id="detailCopyVersionedOnnxBtn" class="action-button mini" type="button">Copy ONNX</button>
+        <span id="detailCopyVersionedOnnxResult" class="helper-text">${escapeHtml(copyInfo.target_path || "")}</span>
+      </div>
+    `
+    : `<div class="empty-state">Available after ONNX upload succeeds.</div>`;
+
   $("details").className = "details";
   $("details").innerHTML = `
     <div class="detail-block">
@@ -48,6 +59,11 @@ export function renderDetails(payload) {
     <div class="detail-block">
       <h4>IFX Artifacts</h4>
       ${artifacts}
+    </div>
+
+    <div class="detail-block">
+      <h4>Local ONNX</h4>
+      ${localOnnx}
     </div>
 
     <div class="detail-block">
@@ -81,4 +97,24 @@ export function renderDetails(payload) {
       }
     </div>
   `;
+
+  const detailCopyBtn = $("detailCopyVersionedOnnxBtn");
+  if (detailCopyBtn) {
+    detailCopyBtn.onclick = async () => {
+      const resultEl = $("detailCopyVersionedOnnxResult");
+      detailCopyBtn.disabled = true;
+      if (resultEl) resultEl.textContent = "Copying...";
+      try {
+        const data = await postJson(
+          `/api/runs/${encodeURIComponent(summary.release_id)}/copy-versioned-onnx`,
+          {}
+        );
+        if (resultEl) resultEl.textContent = `Copied to ${data.target}`;
+      } catch (e) {
+        if (resultEl) resultEl.textContent = e.message;
+      } finally {
+        detailCopyBtn.disabled = false;
+      }
+    };
+  }
 }

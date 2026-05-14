@@ -36,10 +36,12 @@ class VoyagerHandoffService:
         )
 
     def _render_manifest_lines(
-        self, ifx_mapping: Dict[str, Dict[str, Any]]
+        self,
+        ifx_mapping: Dict[str, Dict[str, Any]],
+        manifest_entries: Optional[List[Any]] = None,
     ) -> List[str]:
         lines = []
-        for entry in self.config.manifest_entries:
+        for entry in (manifest_entries or self.config.manifest_entries):
             file_info = ifx_mapping.get(entry.platform)
             if not file_info:
                 lines.append(
@@ -72,6 +74,8 @@ class VoyagerHandoffService:
             "",
         ]
         for branch in self.config.branches:
+            diff_ids = branch.effective_diff_ids()
+            dcl_lines = [f"dcl diff -n -u {did}" for did in diff_ids]
             commands.extend(
                 [
                     f"# [{branch.name}]",
@@ -80,7 +84,7 @@ class VoyagerHandoffService:
                     "git add onboard/model_files/MANIFEST.txt",
                     f'git commit -m "{commit_message}"',
                     "dcl lint",
-                    f"dcl diff -n -u {branch.update_diff_id}",
+                    *dcl_lines,
                     f"# Sim plan: {branch.sim_plan}",
                     "",
                 ]
@@ -347,14 +351,18 @@ else:
                 "test -z \"$(git status --porcelain)\" || "
                 "(echo 'Voyager worktree is dirty after checkout.' >&2; git status --short >&2; exit 2)"
             )
-        diff_command = f"dcl diff -n -u {branch.update_diff_id} --nolint"
+        diff_ids = branch.effective_diff_ids()
         if dry_run:
-            shell_parts.append(f"echo '[dry-run] {diff_command}'")
+            for did in diff_ids:
+                shell_parts.append(f"echo '[dry-run] dcl diff -n -u {did} --nolint'")
         else:
             if lint:
                 shell_parts.append("dcl lint")
-                diff_command = f"dcl diff -n -u {branch.update_diff_id}"
-            shell_parts.append(diff_command)
+                for did in diff_ids:
+                    shell_parts.append(f"dcl diff -n -u {did}")
+            else:
+                for did in diff_ids:
+                    shell_parts.append(f"dcl diff -n -u {did} --nolint")
         return [
             "docker",
             "exec",
@@ -386,7 +394,8 @@ else:
                 "apply-handoff docker mode requires a container. Set "
                 f"{ifx_config.truck_docker_container_env} or pass --docker."
             )
-        manifest_lines = self._render_manifest_lines(ifx_mapping)
+        branch_entries = chosen_branch.manifest_entries or None
+        manifest_lines = self._render_manifest_lines(ifx_mapping, branch_entries)
         commit_message = self._render_commit_message(
             onnx_version=ifx_mapping.get("onnx", {}).get("version"),
             description=description,
@@ -405,10 +414,10 @@ else:
             allow_append=allow_append,
         )
         result = self.command_runner(command)
-        dcl_commands = [
-            f"dcl diff -n -u {chosen_branch.update_diff_id} --nolint",
-            f"# optional explicit lint: dcl lint && dcl diff -n -u {chosen_branch.update_diff_id}",
-        ]
+        dcl_commands = []
+        for did in chosen_branch.effective_diff_ids():
+            dcl_commands.append(f"dcl diff -n -u {did} --nolint")
+            dcl_commands.append(f"# optional explicit lint: dcl lint && dcl diff -n -u {did}")
         return {
             "mode": "docker",
             "container": docker_container,
@@ -459,7 +468,7 @@ else:
             "workdir": ifx_config.truck_docker_workdir,
             "branch": chosen_branch.name,
             "checkout_branch": chosen_branch.checkout_branch,
-            "update_diff_id": chosen_branch.update_diff_id,
+            "update_diff_ids": chosen_branch.effective_diff_ids(),
             "command": " ".join(shlex.quote(part) for part in command),
             "returncode": result.returncode,
             "stdout": result.stdout,

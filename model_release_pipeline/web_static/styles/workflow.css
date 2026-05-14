@@ -9,11 +9,42 @@
 }
 
 .flow-controls {
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+  padding: 2px;
+}
+
+.flow-lane {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 12px;
-  overflow: visible;
-  padding: 2px;
+}
+
+.flow-fork-divider {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 12px;
+  margin: 6px 0 4px;
+}
+
+.fork-branch-label {
+  grid-column: 2;
+  font-size: 0.73rem;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 2px 4px 4px 6px;
+  border-left: 2px solid var(--line);
+  border-bottom: 2px solid var(--line);
+  border-bottom-left-radius: 4px;
+}
+
+.flow-lane.offboard-lane {
+  margin-bottom: 4px;
+}
+
+.flow-lane.offboard-lane .flow-node {
+  grid-column: 2;
 }
 
 .flow-node {
@@ -48,6 +79,25 @@
 .inline-check input {
   width: auto;
   margin: 0;
+}
+
+.copy-onnx-panel {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.copy-onnx-panel .action-button {
+  flex: 0 0 auto;
+  width: 100%;
+}
+
+.copy-onnx-panel .helper-text {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .flow-node:hover {
@@ -197,6 +247,22 @@
 .export-row {
   display: flex;
   gap: 8px;
+}
+
+.branch-select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  outline: none;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  background: rgba(255, 255, 255, 0.76);
+  cursor: pointer;
+}
+
+.branch-select:focus {
+  border-color: var(--accent);
 }
 
 .export-row input:first-child {

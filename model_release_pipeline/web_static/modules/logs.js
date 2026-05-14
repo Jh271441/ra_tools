@@ -36,6 +36,12 @@ export function renderLog() {
     $("logOutput").textContent = job ? (job.log || []).join("\n") : "No backend job selected.";
     return;
   }
+  if (state.selectedLog === "pick_preview") {
+    $("logOutput").textContent = state.pickPreviewLines.length
+      ? state.pickPreviewLines.join("\n")
+      : "No pick preview loaded.";
+    return;
+  }
   const logs = (state.selectedRun || {}).logs || {};
   const lines = logs[state.selectedLog] || [];
   $("logOutput").textContent = lines.length ? lines.join("\n") : "No log lines captured for this channel.";

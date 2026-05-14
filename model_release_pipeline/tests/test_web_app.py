@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from model_release_pipeline.config import default_config, IfxConfig
+from model_release_pipeline.onboard.versioned_onnx import copy_versioned_onnx_to_utils
 from model_release_pipeline.services.ifx_pipeline import IfxPipeline, IfxPipelineError
 from model_release_pipeline.state_store import StateStore
 from model_release_pipeline.web_app import (
@@ -150,6 +151,35 @@ class WebAppTest(unittest.TestCase):
         self.assertIn("--onnx-version", command)
         self.assertIn("67", command)
         self.assertIn("--replace-upload", command)
+
+    def test_copy_versioned_onnx_to_utils_uses_run_backup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config = default_config()
+            config.runs_dir = root / "runs"
+            store = StateStore(config.runs_dir)
+            record = store.create("/nfs/exp", "demo")
+            record["ifx"] = {
+                "onnx": {
+                    "name": "vectorized_scenario_remote_assist_model.onnx",
+                    "version": 67,
+                }
+            }
+            source = store.run_dir(record["release_id"]) / "artifacts" / "vectorized_scenario_remote_assist_model.onnx"
+            source.write_bytes(b"onnx")
+            record["export"] = {"local_onnx_file": str(source)}
+            store.save(record)
+
+            result = copy_versioned_onnx_to_utils(
+                config.runs_dir,
+                record,
+                target_dir=root / "utils" / "onnx",
+            )
+
+            expected_name = "vectorized_vectorized_scenario_remote_assist_model_v67.onnx"
+            self.assertTrue((config.runs_dir / record["release_id"] / "artifacts" / expected_name).exists())
+            self.assertEqual(Path(result["target"]).name, expected_name)
+            self.assertEqual(Path(result["target"]).read_bytes(), b"onnx")
 
     def test_dcl_action_is_exposed_and_logged(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -370,6 +400,29 @@ class WebAppTest(unittest.TestCase):
                     "offboard",
                     {"dry_run": False, "confirm_text": "wrong"},
                 )
+
+    def test_pick_status_done_skipped_pending(self) -> None:
+        self.assertEqual(step_status({}, "pick"), "pending")
+        self.assertEqual(
+            step_status({"selection": {"selected_epoch": 7}}, "pick"), "skipped"
+        )
+        self.assertEqual(
+            step_status({"pick": {"recommended_epoch": 7}, "selection": {"selected_epoch": 7}}, "pick"),
+            "done",
+        )
+
+    def test_offboard_is_ready_after_pick_and_pending_before(self) -> None:
+        self.assertEqual(step_status({}, "offboard"), "pending")
+        self.assertEqual(
+            step_status({"selection": {"selected_epoch": 7}}, "offboard"), "ready"
+        )
+        self.assertEqual(
+            step_status(
+                {"selection": {"selected_epoch": 7}, "offboard": {"returncode": 0}},
+                "offboard",
+            ),
+            "done",
+        )
 
     def test_ifx_convert_failed_timeline_shows_failed(self) -> None:
         record = {

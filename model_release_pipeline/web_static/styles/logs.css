@@ -140,6 +140,32 @@
   position: relative;
 }
 
+.timeline-group-sep {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 8px 48px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.timeline-group-sep::before {
+  content: "";
+  flex: 0 0 16px;
+  height: 1px;
+  background: var(--line);
+}
+
+.timeline-group-sep::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
 .step {
   display: flex;
   align-items: flex-start;

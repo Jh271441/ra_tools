@@ -104,10 +104,25 @@ def run_apply_handoff(
             failed = result
             break
 
-    result = (
-        results[0]
-        if args.branch
-        else {
+    single_branch_result = results[0] if args.branch else None
+    if single_branch_result is not None:
+        existing = record.get("apply_handoff")
+        if existing and isinstance(existing.get("results"), list) and not failed:
+            # Supplement mode: merge this branch into the existing multi-branch result.
+            kept = [r for r in existing["results"] if r.get("branch") != single_branch_result.get("branch")]
+            merged_results = kept + [single_branch_result]
+            result = {
+                **existing,
+                "results": merged_results,
+                "dcl_commands": [cmd for r in merged_results for cmd in r.get("dcl_commands", [])],
+                "returncode": max((r.get("returncode") or 0) for r in merged_results),
+                "stdout": "\n".join(r.get("stdout") or "" for r in merged_results if r.get("stdout")),
+                "stderr": "\n".join(r.get("stderr") or "" for r in merged_results if r.get("stderr")),
+            }
+        else:
+            result = single_branch_result
+    else:
+        result = {
             "mode": "docker",
             "returncode": failed.get("returncode") if failed else 0,
             "stdout": "\n".join(item.get("stdout") or "" for item in results),
@@ -119,16 +134,17 @@ def run_apply_handoff(
                 for command in item.get("dcl_commands", [])
             ],
         }
-    )
     record["apply_handoff"] = result
+    supplementing = single_branch_result is not None and record.get("stage") == "apply_handoff_complete"
     if failed:
         record["stage"] = "apply_handoff_failed"
         record["status"] = "failed"
         store.add_error(record, "Apply handoff failed. See apply_handoff.stderr.")
     elif args.dry_run:
-        record["stage"] = "apply_handoff_dry_run"
-        record["status"] = "dry_run"
-    else:
+        if not supplementing:
+            record["stage"] = "apply_handoff_dry_run"
+            record["status"] = "dry_run"
+    elif not supplementing:
         record["stage"] = "apply_handoff_complete"
         record["status"] = "completed"
     store.save(record)

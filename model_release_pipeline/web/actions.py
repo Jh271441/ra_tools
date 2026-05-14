@@ -7,6 +7,14 @@ from typing import Any, Dict, Optional
 
 
 ACTIONS = {
+    "pick": {
+        "command": "pick",
+        "label": "Pick Epoch",
+        "supports_dry_run": False,
+        "requires_confirm": False,
+        "extra_args": [],
+        "needs_run_id": False,
+    },
     "export": {
         "command": "export",
         "label": "Model Export",
@@ -109,7 +117,22 @@ def build_cli_command(
     payload = payload or {}
     if spec.get("needs_run_id", True):
         command.extend(["--run-id", release_id])
-    if action == "export":
+    if action == "pick":
+        experiment = str(payload.get("experiment") or "").strip()
+        if not experiment:
+            raise ValueError("Pick requires experiment.")
+        command.extend(["--experiment", experiment])
+        remote = str(payload.get("remote") or "").strip()
+        if remote:
+            command.extend(["--remote", remote])
+        remote_python = str(payload.get("remote_python") or "").strip()
+        if remote_python:
+            command.extend(["--remote-python", remote_python])
+        desc = str(payload.get("desc") or "").strip()
+        if desc:
+            command.extend(["--desc", desc])
+        command.append("--save")
+    elif action == "export":
         experiment = str(payload.get("experiment") or "").strip()
         if not experiment:
             raise ValueError("Model export requires experiment.")
@@ -146,6 +169,17 @@ def build_cli_command(
         build_url = str(payload.get("build_url") or "").strip()
         if build_url:
             command.extend(["--build-url", build_url])
+    elif action == "apply-handoff":
+        branch = str(payload.get("branch") or "").strip()
+        if branch:
+            command.extend(["--branch", branch])
+        desc = str(payload.get("desc") or "").strip()
+        if desc:
+            command.extend(["--desc", desc])
+    elif action == "dcl":
+        branch = str(payload.get("branch") or "").strip()
+        if branch:
+            command.extend(["--branch", branch])
     else:
         command.extend(spec["extra_args"])
 

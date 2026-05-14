@@ -10,26 +10,29 @@ class PipelineStep:
     key: str
     title: str
     description: str
+    group: str = "onboard"  # "shared" | "onboard" | "offboard"
 
 
-MAIN_PIPELINE_STEPS = [
-    PipelineStep("inspect", "Inspect", "Inspect experiment metadata and checkpoints"),
-    PipelineStep("pick", "Pick", "Recommend epoch from log/TensorBoard metrics"),
-    PipelineStep("export", "Export", "Export and copy ONNX from Luban"),
-    PipelineStep("upload", "Upload", "Upload ONNX with truck.py"),
-    PipelineStep("ifx", "IFX Convert", "Trigger Jenkins and collect IFX versions"),
-    PipelineStep("handoff", "Handoff", "Generate or apply Voyager MANIFEST updates"),
-    PipelineStep("dcl", "DCL", "Update review diffs manually"),
+SHARED_STEPS = [
+    PipelineStep("pick", "Pick", "Inspect experiment and recommend epoch from metrics", group="shared"),
 ]
 
+ONBOARD_STEPS = [
+    PipelineStep("export",  "Export",      "Export and copy ONNX from Luban",               group="onboard"),
+    PipelineStep("upload",  "Upload",      "Upload ONNX with truck.py",                     group="onboard"),
+    PipelineStep("ifx",     "IFX Convert", "Trigger Jenkins and collect IFX versions",       group="onboard"),
+    PipelineStep("handoff", "Handoff",     "Generate or apply Voyager MANIFEST updates",     group="onboard"),
+    PipelineStep("dcl",     "DCL",         "Update review diffs manually",                   group="onboard"),
+]
 
 OFFBOARD_STEP = PipelineStep(
     "offboard",
     "Offboard",
     "Run release checkpoint validation",
+    group="offboard",
 )
 
-
-# The core release path is 1-7. Web still exposes offboard next to the release
-# path as an independent validation branch.
+# inspect+pick are shared; onboard is the deploy path (steps 1-7);
+# offboard is independent validation available after pick.
+MAIN_PIPELINE_STEPS = [*SHARED_STEPS, *ONBOARD_STEPS]
 WEB_PIPELINE_STEPS = [*MAIN_PIPELINE_STEPS, OFFBOARD_STEP]

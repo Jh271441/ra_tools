@@ -112,3 +112,29 @@ voyager:
       checkout_branch: jasperchen/gen4_release_20260327/scenario_dnn_dev
       update_diff_id: 6076959
       sim_plan: lxh_ra_stuck_release_20260327-openloop
+    - name: gen4_release_20260206
+      checkout_branch: jasperchen/gen4_release_20260206/scenario_dnn_dev
+      update_diff_id: 6106765
+      update_diff_ids: [6106765, 6115905]
+      sim_plan: lxh_ra_stuck_release_20260206-openloop
+      # This branch uses _2025Q4_ target paths; gen3/l20 entries are left unchanged.
+      manifest_entries:
+        - platform: onnx
+          expected_name: vectorized_scenario_remote_assist_model.onnx
+          target_path: ./planner_models/vectorized_scenario_remote_assist_model_2025Q4.onnx
+          description: Vectorized scenario assist stuck model.
+        - platform: fp32_x86
+          expected_name: vectorized_scenario_remote_assist_model_bs0_fp32_x86.ifxmodel
+          target_path: ./planner_models/vectorized_scenario_remote_assist_model_2025Q4_x86.ifxmodel
+        - platform: fp16_6000
+          expected_name: vectorized_scenario_remote_assist_model_bs0_fp16_6000_trt109.ifxmodel
+          target_path: ./planner_models/vectorized_scenario_remote_assist_model_2025Q4_fp16_6000.ifxmodel
+        - platform: fp16_3060
+          expected_name: vectorized_scenario_remote_assist_model_bs0_fp16_3060_trt109.ifxmodel
+          target_path: ./planner_models/vectorized_scenario_remote_assist_model_2025Q4_fp16_3060.ifxmodel
+        - platform: fp16_gen4
+          expected_name: vectorized_scenario_remote_assist_model_bs0_fp16_gen4_trt109.ifxmodel
+          target_path: ./planner_models/vectorized_scenario_remote_assist_model_2025Q4_fp16_gen4.ifxmodel
+        - platform: fp16_thor
+          expected_name: vectorized_scenario_remote_assist_model_bs0_fp16_thor_trt1013.ifxmodel
+          target_path: ./planner_models/vectorized_scenario_remote_assist_model_2025Q4_fp16_thor.ifxmodel

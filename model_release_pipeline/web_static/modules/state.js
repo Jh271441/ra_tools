@@ -10,6 +10,8 @@ export const state = {
   draftRun: true,
   activeJobId: null,
   jobTimer: null,
+  pickPreviewLines: [],
+  configBranches: [],
 };
 
 export const $ = (id) => document.getElementById(id);

@@ -18,6 +18,7 @@ from model_release_pipeline.output import (
     format_inspect_result,
     format_pick_result,
 )
+from model_release_pipeline.onboard.export import inspect_and_pick as _inspect_and_pick_fn
 from model_release_pipeline.services.experiment import ExperimentInspector
 from model_release_pipeline.services.model_picker import ModelPicker
 from model_release_pipeline.state_store import StateStore
@@ -49,20 +50,11 @@ def _inspect_and_pick(
     remote: Optional[str] = None,
     remote_python: Optional[str] = None,
 ) -> tuple[Dict[str, Any], Dict[str, Any]]:
-    experiment = ExperimentInspector(
-        remote_python_bin=remote_python or config.luban.remote_python_bin
-    ).inspect(experiment_path, remote_host=remote)
-    pick_result = ModelPicker().pick(
-        experiment=experiment,
-        policy=policy or config.picker.policy,
-        top_n=top_n or config.picker.top_n,
-        loss_tolerance_pct=(
-            loss_tolerance_pct
-            if loss_tolerance_pct is not None
-            else config.picker.loss_tolerance_pct
-        ),
+    return _inspect_and_pick_fn(
+        experiment_path, config,
+        remote=remote, remote_python=remote_python,
+        policy=policy, top_n=top_n, loss_tolerance_pct=loss_tolerance_pct,
     )
-    return experiment.to_dict(), pick_result
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -91,6 +83,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             return 0
 
         if args.command == "pick":
+            if getattr(args, "save", False):
+                record, exit_code = dispatch("pick", args, config, store)
+                _print_record(record, as_json=args.json)
+                return exit_code
             from model_release_pipeline.output import progress
             progress(
                 args,
