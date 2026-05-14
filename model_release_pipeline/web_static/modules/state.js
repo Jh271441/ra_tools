@@ -12,6 +12,7 @@ export const state = {
   jobTimer: null,
   pickPreviewLines: [],
   configBranches: [],
+  experimentFolderCache: {},
 };
 
 export const $ = (id) => document.getElementById(id);

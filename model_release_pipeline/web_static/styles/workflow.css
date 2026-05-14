@@ -227,7 +227,8 @@
 }
 
 .export-form input,
-.export-row input {
+.export-row input,
+.experiment-select {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--line);
@@ -239,8 +240,40 @@
   text-overflow: ellipsis;
 }
 
+.experiment-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 220px) 36px;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.experiment-select {
+  cursor: pointer;
+}
+
+.experiment-picker .icon-button {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--text);
+  cursor: pointer;
+  font: 700 0.92rem/1 var(--sans);
+}
+
+.experiment-picker .icon-button:hover {
+  border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.92);
+}
+
 .export-form input:focus,
-.export-row input:focus {
+.export-row input:focus,
+.experiment-select:focus,
+.experiment-picker .icon-button:focus {
   border-color: var(--accent);
 }
 

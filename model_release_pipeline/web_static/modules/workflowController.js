@@ -86,6 +86,73 @@ function ensurePickPreviewOption() {
   logSelect.value = "pick_preview";
 }
 
+function renderExperimentOptions(inputId, data) {
+  const input = $(inputId);
+  const select = $(`${inputId}Select`);
+  if (!input || !select) return;
+  const folders = data?.folders || [];
+  select.innerHTML = "";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = folders.length ? "Select..." : "No folders found";
+  select.appendChild(placeholder);
+  for (const folder of folders) {
+    const option = document.createElement("option");
+    option.value = folder.path || "";
+    option.textContent = folder.name || folder.path || "";
+    option.title = folder.path || "";
+    option.selected = input.value.trim() === option.value;
+    select.appendChild(option);
+  }
+}
+
+async function loadExperimentOptions(inputId, forceReload = false) {
+  const select = $(`${inputId}Select`);
+  if (!select) return;
+  const picker = select.closest(".experiment-picker");
+  const root = picker?.dataset.root || "";
+  const cacheKey = root || "__default__";
+  if (!forceReload && state.experimentFolderCache[cacheKey]) {
+    renderExperimentOptions(inputId, state.experimentFolderCache[cacheKey]);
+    return;
+  }
+  select.disabled = true;
+  select.innerHTML = `<option value="">Loading...</option>`;
+  try {
+    const params = new URLSearchParams();
+    if (root) params.set("root", root);
+    const data = await fetchJson(`/api/experiment-folders?${params}`);
+    state.experimentFolderCache[cacheKey] = {
+      ...data,
+      fetchedAt: Date.now(),
+    };
+    renderExperimentOptions(inputId, data);
+  } catch (e) {
+    select.innerHTML = "";
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "Load failed";
+    option.title = e.message;
+    select.appendChild(option);
+  } finally {
+    select.disabled = false;
+  }
+}
+
+function bindExperimentPicker(inputId) {
+  const input = $(inputId);
+  const select = $(`${inputId}Select`);
+  const refresh = $(`${inputId}Refresh`);
+  if (!input || !select) return;
+  select.onchange = () => {
+    if (select.value) input.value = select.value;
+  };
+  if (refresh) {
+    refresh.onclick = () => loadExperimentOptions(inputId, true);
+  }
+  loadExperimentOptions(inputId);
+}
+
 function bindActionButtons(onAction) {
   document.querySelectorAll(".action-button").forEach((button) => {
     button.onclick = async () => {
@@ -151,6 +218,8 @@ function renderFlowInspector(flow, actions, statusByStep, onAction) {
     <div class="flow-actions">${renderActionButtons(itemActions, "primary")}</div>
   `;
   bindActionButtons(onAction);
+  bindExperimentPicker("pickExperiment");
+  bindExperimentPicker("exportExperiment");
   renderConfirmHint(itemActions);
 
   const previewBtn = $("pickPreviewBtn");

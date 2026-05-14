@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -50,6 +51,51 @@ class WebAppTest(unittest.TestCase):
             self.assertEqual(payload["runs"][0]["selected_epoch"], 7)
             self.assertEqual(payload["runs"][0]["onnx_version"], 67)
             self.assertEqual(payload["runs"][0]["ifx_platforms"], 1)
+
+    def test_lists_experiment_folders_from_device_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir) / "experiments"
+            root.mkdir()
+            (root / "exp_b").mkdir()
+            (root / "exp_a").mkdir()
+            (root / "notes.txt").write_text("skip", encoding="utf-8")
+            config = default_config()
+            config.runs_dir = Path(tmp_dir) / "runs"
+
+            payload = ReleaseWebApp(config).list_experiment_folders(
+                root=f"device:{root.as_posix()}"
+            )
+
+            self.assertEqual(payload["filesystem_root"], root.as_posix())
+            self.assertEqual(
+                [folder["name"] for folder in payload["folders"]],
+                ["exp_b", "exp_a"],
+            )
+            self.assertEqual(
+                [folder["path"] for folder in payload["folders"]],
+                [(root / "exp_b").as_posix(), (root / "exp_a").as_posix()],
+            )
+
+    def test_lists_experiment_folders_falls_back_to_luban(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            missing_root = Path(tmp_dir) / "missing"
+            config = default_config()
+            config.runs_dir = Path(tmp_dir) / "runs"
+
+            with patch("model_release_pipeline.web_app.subprocess.run") as run:
+                run.return_value = subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout='[{"name": "remote_exp", "path": "/nfs/root/remote_exp"}]',
+                    stderr="",
+                )
+
+                payload = ReleaseWebApp(config).list_experiment_folders(
+                    root=f"device:{missing_root.as_posix()}"
+                )
+
+            self.assertEqual(payload["source"], "remote:luban_2_card")
+            self.assertEqual(payload["folders"][0]["name"], "remote_exp")
 
     def test_run_detail_includes_timeline_logs_and_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -1,6 +1,8 @@
 import { state } from "./state.js";
 import { escapeHtml, formatEpoch } from "./utils.js";
 
+export const DEFAULT_EXPERIMENT_ROOT = "device:/nfs/dataset-ofs-remote-assist-stuck/user/jasperchen/ego_stuck_data/scenario_dnn_26q1/";
+
 export function flowItems(summary) {
   return [
     {
@@ -69,12 +71,26 @@ export function flowItems(summary) {
   ];
 }
 
+function renderExperimentPathPicker(id, value) {
+  const selectId = `${id}Select`;
+  const refreshId = `${id}Refresh`;
+  return `
+    <div class="experiment-picker" data-root="${escapeHtml(DEFAULT_EXPERIMENT_ROOT)}">
+      <input id="${id}" placeholder="experiment path" value="${escapeHtml(value)}" />
+      <select id="${selectId}" class="experiment-select" aria-label="select experiment folder">
+        <option value="">Select...</option>
+      </select>
+      <button id="${refreshId}" class="icon-button" type="button" title="Refresh experiment folders">↻</button>
+    </div>
+  `;
+}
+
 export function renderPickForm() {
   const record = (state.selectedRun || {}).record || {};
   const experimentPath = record.experiment_path || "";
   return `
     <div class="export-form">
-      <input id="pickExperiment" placeholder="experiment path" value="${escapeHtml(experimentPath)}" />
+      ${renderExperimentPathPicker("pickExperiment", experimentPath)}
       <div class="export-row">
         <input id="pickRemote" placeholder="remote" value="luban_2_card" />
         <input id="pickDesc" placeholder="description / release note" />
@@ -93,7 +109,7 @@ export function renderExportForm() {
   const experimentPath = record.experiment_path || "";
   return `
     <div class="export-form">
-      <input id="exportExperiment" placeholder="experiment path" value="${escapeHtml(experimentPath)}" />
+      ${renderExperimentPathPicker("exportExperiment", experimentPath)}
       <div class="export-row">
         <input id="exportEpoch" placeholder="epoch, e.g. 007" />
         <input id="exportRemote" placeholder="remote" value="luban_2_card" />

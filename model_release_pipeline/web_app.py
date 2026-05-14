@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 import mimetypes
 import re
+import shlex
+import subprocess
 import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, Optional
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from model_release_pipeline.config import PACKAGE_ROOT, ReleaseConfig
 from model_release_pipeline.onboard.versioned_onnx import (
@@ -30,6 +32,10 @@ from model_release_pipeline.web.summary import (
 
 
 STATIC_DIR = PACKAGE_ROOT / "web_static"
+DEFAULT_EXPERIMENT_ROOT = (
+    "device:/nfs/dataset-ofs-remote-assist-stuck/user/jasperchen/"
+    "ego_stuck_data/scenario_dnn_26q1/"
+)
 
 # Backward-compatible names used by tests and any local helper scripts.
 _ACTIONS = ACTIONS
@@ -58,6 +64,33 @@ def _safe_run_id(path_value: str) -> str:
 
 def _safe_job_id(path_value: str) -> str:
     return _safe_id(path_value, "job id")
+
+
+def _device_filesystem_path(path_value: str) -> Path:
+    match = re.fullmatch(r"[A-Za-z0-9_.-]+:(/.*)", path_value)
+    local_path = match.group(1) if match else path_value
+    return Path(local_path).expanduser()
+
+
+def _remote_list_script() -> str:
+    return r"""
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+if not root.exists():
+    raise FileNotFoundError(f"Experiment root does not exist: {root}")
+if not root.is_dir():
+    raise NotADirectoryError(f"Experiment root is not a directory: {root}")
+folders = [
+    {"name": item.name, "path": item.as_posix()}
+    for item in root.iterdir()
+    if item.is_dir()
+]
+folders.sort(key=lambda item: item["name"].casefold(), reverse=True)
+print(json.dumps(folders, ensure_ascii=False))
+"""
 
 
 class ReleaseWebApp:
@@ -109,6 +142,72 @@ class ReleaseWebApp:
                 for b in self.config.voyager.branches
             ]
         }
+
+    def list_experiment_folders(
+        self,
+        root: str = DEFAULT_EXPERIMENT_ROOT,
+        limit: int = 500,
+    ) -> Dict[str, Any]:
+        root = (root or DEFAULT_EXPERIMENT_ROOT).strip()
+        filesystem_root = _device_filesystem_path(root)
+        source = "local"
+        if filesystem_root.exists():
+            if not filesystem_root.is_dir():
+                raise NotADirectoryError(f"Experiment root is not a directory: {filesystem_root}")
+
+            folders = []
+            for item in filesystem_root.iterdir():
+                if not item.is_dir():
+                    continue
+                folders.append(
+                    {
+                        "name": item.name,
+                        "path": item.as_posix(),
+                    }
+                )
+            folders.sort(key=lambda item: item["name"].casefold(), reverse=True)
+        else:
+            source = f"remote:{self.config.luban.host_alias}"
+            folders = self._list_remote_experiment_folders(filesystem_root)
+
+        if limit > 0:
+            folders = folders[:limit]
+        return {
+            "root": root,
+            "filesystem_root": filesystem_root.as_posix(),
+            "source": source,
+            "folders": folders,
+        }
+
+    def _list_remote_experiment_folders(self, filesystem_root: Path) -> list[Dict[str, Any]]:
+        remote_python = shlex.split(self.config.luban.remote_python_bin or "python3")
+        remote_command = " ".join(
+            shlex.quote(part)
+            for part in [
+                *remote_python,
+                "-c",
+                _remote_list_script(),
+                filesystem_root.as_posix(),
+            ]
+        )
+        command = ["ssh", self.config.luban.host_alias, remote_command]
+        result = subprocess.run(
+            command,
+            text=True,
+            capture_output=True,
+            timeout=20,
+            check=False,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            raise FileNotFoundError(
+                f"Experiment root does not exist locally and remote listing failed "
+                f"on {self.config.luban.host_alias}: {detail}"
+            )
+        folders = json.loads(result.stdout or "[]")
+        if not isinstance(folders, list):
+            raise ValueError("Remote experiment folder listing returned invalid data.")
+        return folders
 
     def preview_pick(self, experiment: str, remote: str = "", remote_python: str = "") -> Dict[str, Any]:
         from model_release_pipeline.onboard.export import inspect_and_pick
@@ -187,8 +286,17 @@ def _handle_api_get(
     if path == "/api/config/branches":
         _json_response(handler, app.list_branches())
         return True
+    if path == "/api/experiment-folders":
+        params = parse_qs(query)
+        root = (params.get("root") or [DEFAULT_EXPERIMENT_ROOT])[0]
+        limit_raw = (params.get("limit") or ["500"])[0]
+        try:
+            limit = int(limit_raw)
+        except ValueError:
+            limit = 500
+        _json_response(handler, app.list_experiment_folders(root=root, limit=limit))
+        return True
     if path == "/api/pick":
-        from urllib.parse import parse_qs
         params = parse_qs(query)
         experiment = (params.get("experiment") or [""])[0]
         remote = (params.get("remote") or [""])[0]
