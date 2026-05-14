@@ -272,6 +272,8 @@ def _static_response(handler: BaseHTTPRequestHandler, path: Path) -> None:
     data = path.read_bytes()
     handler.send_response(HTTPStatus.OK)
     handler.send_header("Content-Type", content_type)
+    handler.send_header("Cache-Control", "no-store, max-age=0")
+    handler.send_header("Pragma", "no-cache")
     handler.send_header("Content-Length", str(len(data)))
     handler.end_headers()
     handler.wfile.write(data)

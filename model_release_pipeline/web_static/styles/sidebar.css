@@ -1,5 +1,6 @@
 .side-rail {
   position: relative;
+  z-index: 2;
   flex: 0 0 300px;
   width: 300px;
   display: flex;
@@ -9,7 +10,7 @@
   min-height: 0;
   margin: calc(-1 * clamp(16px, 2vw, 24px)) 0 calc(-1 * clamp(16px, 2vw, 24px));
   border-right: 1px solid var(--line);
-  padding: clamp(16px, 2vw, 24px) 10px 14px;
+  padding: clamp(16px, 2vw, 24px) 10px 24px;
   background: rgba(255, 255, 255, 0.72);
   transition: flex-basis 180ms ease;
 }
