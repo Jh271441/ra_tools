@@ -7,19 +7,21 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from model_release_pipeline.cli import (
-    _command_apply_handoff,
-    _command_ifx_convert,
-    _command_offboard,
-    _format_pick_result,
-    _format_record_result,
-    _select_candidate,
-    _select_manual_epoch_candidate,
-    _validate_upload_binding,
-)
 from model_release_pipeline.config import default_config
+from model_release_pipeline.onboard.export import (
+    select_candidate,
+    select_manual_epoch_candidate,
+)
+from model_release_pipeline.onboard.upload import validate_upload_binding
+from model_release_pipeline.output import format_pick_result, format_record_result
 from model_release_pipeline.services.experiment import ExperimentInspector
 from model_release_pipeline.state_store import StateStore
+import model_release_pipeline.steps.runner as runner_module
+from model_release_pipeline.steps.runner import (
+    _run_apply_handoff,
+    _run_ifx_convert,
+    _run_offboard,
+)
 
 
 class CliSelectionTest(unittest.TestCase):
@@ -41,7 +43,7 @@ class CliSelectionTest(unittest.TestCase):
             "all_candidates": [],
         }
 
-        selected = _select_candidate(
+        selected = select_candidate(
             pick_result,
             "/tmp/exp",
             epoch=None,
@@ -62,7 +64,7 @@ class CliSelectionTest(unittest.TestCase):
         }
 
         with self.assertRaisesRegex(RuntimeError, "--task or --epoch"):
-            _select_candidate(pick_result, "/tmp/exp", epoch=None)
+            select_candidate(pick_result, "/tmp/exp", epoch=None)
 
     def test_formats_pick_result_without_full_json_dump(self) -> None:
         pick_result = {
@@ -96,7 +98,7 @@ class CliSelectionTest(unittest.TestCase):
             },
         }
 
-        text = _format_pick_result(pick_result)
+        text = format_pick_result(pick_result)
 
         self.assertIn("===== stuck_detect: Top 1 by roc_auc =====", text)
         self.assertIn("Recommended epoch: 003", text)
@@ -111,7 +113,7 @@ class CliSelectionTest(unittest.TestCase):
             checkpoint.write_text("", encoding="utf-8")
             experiment = ExperimentInspector().inspect(root)
 
-            selected = _select_manual_epoch_candidate(experiment, str(root), 7)
+            selected = select_manual_epoch_candidate(experiment, str(root), 7)
 
             self.assertEqual(selected["epoch"], 7)
             self.assertEqual(selected["sources"], ["manual_epoch"])
@@ -141,7 +143,7 @@ class CliSelectionTest(unittest.TestCase):
             },
         }
 
-        text = _format_record_result(record)
+        text = format_record_result(record)
 
         self.assertIn("release_id: run123", text)
         self.assertIn("selected epoch: 007", text)
@@ -162,13 +164,13 @@ class CliSelectionTest(unittest.TestCase):
         args = argparse.Namespace(version=66, replace_upload=False)
 
         with self.assertRaisesRegex(RuntimeError, "version 65; requested version 66"):
-            _validate_upload_binding(args, record)
+            validate_upload_binding(args, record)
 
     def test_upload_binding_allows_explicit_replace(self) -> None:
         record = {"ifx": {"onnx": {"name": "model.onnx", "version": 65}}}
         args = argparse.Namespace(version=66, replace_upload=True)
 
-        _validate_upload_binding(args, record)
+        validate_upload_binding(args, record)
 
     def test_upload_binding_ignores_previous_dry_run_binding(self) -> None:
         record = {
@@ -180,7 +182,7 @@ class CliSelectionTest(unittest.TestCase):
         }
         args = argparse.Namespace(version=None, replace_upload=False)
 
-        _validate_upload_binding(args, record)
+        validate_upload_binding(args, record)
 
     def test_apply_handoff_without_branch_applies_all_configured_branches(self) -> None:
         with TemporaryDirectory() as tmp_dir:
@@ -216,13 +218,11 @@ class CliSelectionTest(unittest.TestCase):
                         "dcl_commands": [f"dcl diff {kwargs['branch']}"],
                     }
 
-            import model_release_pipeline.cli as cli_module
-
-            original_service = cli_module.VoyagerHandoffService
-            original_confirm = cli_module._confirm
+            original_service = runner_module.VoyagerHandoffService
+            original_confirm = runner_module._confirm
             try:
-                cli_module.VoyagerHandoffService = FakeService
-                cli_module._confirm = lambda _prompt, _yes: True
+                runner_module.VoyagerHandoffService = FakeService
+                runner_module._confirm = lambda _prompt, _yes: True
                 args = argparse.Namespace(
                     branch=None,
                     yes=True,
@@ -235,10 +235,10 @@ class CliSelectionTest(unittest.TestCase):
                     allow_append=False,
                 )
 
-                updated = _command_apply_handoff(args, config, store, record)
+                updated = _run_apply_handoff(args, config, store, record)
             finally:
-                cli_module.VoyagerHandoffService = original_service
-                cli_module._confirm = original_confirm
+                runner_module.VoyagerHandoffService = original_service
+                runner_module._confirm = original_confirm
 
             self.assertEqual(calls, ["master", "gen4_release_20260403"])
             self.assertEqual(updated["apply_handoff"]["returncode"], 0)
@@ -280,11 +280,9 @@ class CliSelectionTest(unittest.TestCase):
                         "label": None,
                     }
 
-            import model_release_pipeline.cli as cli_module
-
-            original_pipeline = cli_module.IfxPipeline
+            original_pipeline = runner_module.IfxPipeline
             try:
-                cli_module.IfxPipeline = FakePipeline
+                runner_module.IfxPipeline = FakePipeline
                 args = argparse.Namespace(
                     run_id=record["release_id"],
                     yes=True,
@@ -292,9 +290,9 @@ class CliSelectionTest(unittest.TestCase):
                     json=True,
                 )
 
-                preview = _command_ifx_convert(args, config, store)
+                preview = _run_ifx_convert(args, config, store)
             finally:
-                cli_module.IfxPipeline = original_pipeline
+                runner_module.IfxPipeline = original_pipeline
 
             persisted = store.load(record["release_id"])
             self.assertEqual(preview["stage"], "ifx_convert_dry_run")
@@ -342,15 +340,13 @@ class CliSelectionTest(unittest.TestCase):
                         "stderr": "",
                     }
 
-            import model_release_pipeline.cli as cli_module
-
-            original_runner = cli_module.LubanRunner
-            original_inspector = cli_module.ExperimentInspector
-            original_confirm = cli_module._confirm
+            original_runner = runner_module.LubanRunner
+            original_inspector = runner_module.ExperimentInspector
+            original_confirm = runner_module._confirm
             try:
-                cli_module.LubanRunner = FakeRunner
-                cli_module.ExperimentInspector = FakeInspector
-                cli_module._confirm = lambda _prompt, _yes: True
+                runner_module.LubanRunner = FakeRunner
+                runner_module.ExperimentInspector = FakeInspector
+                runner_module._confirm = lambda _prompt, _yes: True
                 args = argparse.Namespace(
                     run_id=record["release_id"],
                     experiment=None,
@@ -363,11 +359,11 @@ class CliSelectionTest(unittest.TestCase):
                     yes=True,
                 )
 
-                record = _command_offboard(args, config, store, store.load(record["release_id"]))
+                record = _run_offboard(args, config, store, store.load(record["release_id"]))
             finally:
-                cli_module.LubanRunner = original_runner
-                cli_module.ExperimentInspector = original_inspector
-                cli_module._confirm = original_confirm
+                runner_module.LubanRunner = original_runner
+                runner_module.ExperimentInspector = original_inspector
+                runner_module._confirm = original_confirm
 
             self.assertEqual(record["stage"], "offboard_complete")
             self.assertEqual(record["offboard"]["branch"], "offboard")
@@ -418,15 +414,13 @@ class CliSelectionTest(unittest.TestCase):
                         "stderr": "",
                     }
 
-            import model_release_pipeline.cli as cli_module
-
-            original_runner = cli_module.LubanRunner
-            original_inspector = cli_module.ExperimentInspector
-            original_confirm = cli_module._confirm
+            original_runner = runner_module.LubanRunner
+            original_inspector = runner_module.ExperimentInspector
+            original_confirm = runner_module._confirm
             try:
-                cli_module.LubanRunner = FakeRunner
-                cli_module.ExperimentInspector = FakeInspector
-                cli_module._confirm = lambda _prompt, _yes: True
+                runner_module.LubanRunner = FakeRunner
+                runner_module.ExperimentInspector = FakeInspector
+                runner_module._confirm = lambda _prompt, _yes: True
                 args = argparse.Namespace(
                     run_id=record["release_id"],
                     experiment=None,
@@ -439,11 +433,11 @@ class CliSelectionTest(unittest.TestCase):
                     yes=True,
                 )
 
-                preview = _command_offboard(args, config, store, store.load(record["release_id"]))
+                preview = _run_offboard(args, config, store, store.load(record["release_id"]))
             finally:
-                cli_module.LubanRunner = original_runner
-                cli_module.ExperimentInspector = original_inspector
-                cli_module._confirm = original_confirm
+                runner_module.LubanRunner = original_runner
+                runner_module.ExperimentInspector = original_inspector
+                runner_module._confirm = original_confirm
 
             persisted = store.load(record["release_id"])
             self.assertEqual(preview["stage"], "offboard_dry_run")

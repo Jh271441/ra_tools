@@ -2,7 +2,37 @@
 
 from __future__ import annotations
 
+import shutil
+import sys
 from typing import Any, Dict, Optional
+
+
+def separator(char: str = "=") -> str:
+    columns = shutil.get_terminal_size((100, 20)).columns
+    return char * max(40, int(columns * 0.9))
+
+
+def progress(
+    args: Any,
+    title: str,
+    step: Optional[int] = None,
+    total: Optional[int] = None,
+    blank_before: bool = True,
+    icon: str = "▶",
+    detail: Optional[str] = None,
+) -> None:
+    if getattr(args, "json", False):
+        return
+    title = title.strip().rstrip(".")
+    spacer = "\n" if blank_before else ""
+    print(f"{spacer}{separator('=')}", file=sys.stderr, flush=True)
+    print(f"{icon} {title}", file=sys.stderr, flush=True)
+    if step is not None and total is not None:
+        print(f"step: {step}/{total}", file=sys.stderr, flush=True)
+        print(f"tasks_remaining: {max(total - step, 0)}", file=sys.stderr, flush=True)
+    if detail:
+        print(detail, file=sys.stderr, flush=True)
+    print(separator("="), file=sys.stderr, flush=True)
 
 DISPLAY_METRICS = ("roc_auc", "pr_auc", "accuracy", "f1_score", "precision", "recall")
 

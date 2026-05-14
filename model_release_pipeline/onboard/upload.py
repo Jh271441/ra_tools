@@ -188,7 +188,8 @@ def run_ifx_convert(
     except ifx_pipeline_error_cls as exc:
         if exc.partial_result:
             record["ifx"] = {**record.get("ifx", {}), **exc.partial_result}
-            store.save(record)
+        record["stage"] = "ifx_convert_failed"
+        store.save(record)
         raise
     record["ifx"] = {**record.get("ifx", {}), **result}
     if args.dry_run:
@@ -255,7 +256,8 @@ def run_ifx_poll(
     except ifx_pipeline_error_cls as exc:
         if exc.partial_result:
             record["ifx"] = {**record.get("ifx", {}), **exc.partial_result}
-            store.save(record)
+        record["stage"] = "ifx_poll_failed"
+        store.save(record)
         raise
 
     record["ifx"] = {**record.get("ifx", {}), **result}

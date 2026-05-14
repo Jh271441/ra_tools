@@ -67,9 +67,11 @@ def step_status(record: Dict[str, Any], key: str) -> str:
         return "done"
     if key == "ifx":
         ifx = record.get("ifx") or {}
-        if stage == "ifx_converting":
+        if stage in ("ifx_converting", "ifx_polling"):
             return "running"
-        if status == "failed" and stage.startswith("ifx_convert"):
+        if stage in ("ifx_convert_failed", "ifx_poll_failed") or (
+            status == "failed" and stage.startswith("ifx_convert")
+        ):
             return "failed"
         if ifx.get("ifx_mapping"):
             return "dry_run" if stage == "ifx_convert_dry_run" else "done"

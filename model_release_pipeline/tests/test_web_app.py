@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
-from model_release_pipeline.config import default_config
+from model_release_pipeline.config import default_config, IfxConfig
+from model_release_pipeline.services.ifx_pipeline import IfxPipeline, IfxPipelineError
 from model_release_pipeline.state_store import StateStore
 from model_release_pipeline.web_app import (
     JobManager,
@@ -16,6 +19,7 @@ from model_release_pipeline.web_app import (
     _timeline,
 )
 from model_release_pipeline.web.actions import build_cli_command
+from model_release_pipeline.web.summary import step_status
 
 
 class WebAppTest(unittest.TestCase):
@@ -366,6 +370,87 @@ class WebAppTest(unittest.TestCase):
                     "offboard",
                     {"dry_run": False, "confirm_text": "wrong"},
                 )
+
+    def test_ifx_convert_failed_timeline_shows_failed(self) -> None:
+        record = {
+            "stage": "ifx_convert_failed",
+            "status": "failed",
+            "ifx": {
+                "onnx": {"name": "model.onnx", "version": 64},
+                "jenkins": {
+                    "build_url": "http://jenkins/job/demo/1/",
+                    "result": "SUCCESS",
+                    "last_poll_status": "SUCCESS",
+                },
+            },
+        }
+
+        self.assertEqual(step_status(record, "ifx"), "failed")
+
+    def test_ifx_polling_timeline_shows_running(self) -> None:
+        record = {
+            "stage": "ifx_polling",
+            "status": "running",
+            "ifx": {
+                "onnx": {"name": "model.onnx", "version": 64},
+                "jenkins": {"build_url": "http://jenkins/job/demo/1/"},
+            },
+        }
+
+        self.assertEqual(step_status(record, "ifx"), "running")
+
+    def test_ifx_poll_failed_stage_shows_failed(self) -> None:
+        record = {
+            "stage": "ifx_poll_failed",
+            "status": "failed",
+            "ifx": {
+                "onnx": {"name": "model.onnx", "version": 64},
+                "jenkins": {
+                    "build_url": "http://jenkins/job/demo/1/",
+                    "last_poll_status": "SUCCESS",
+                },
+            },
+        }
+
+        self.assertEqual(step_status(record, "ifx"), "failed")
+
+    def test_dry_run_ifx_convert_does_not_save_to_store(self) -> None:
+        from model_release_pipeline.onboard.upload import run_ifx_convert
+
+        record = {
+            "release_id": "test_dry_run",
+            "stage": "ifx_uploaded",
+            "status": "running",
+            "ifx": {
+                "onnx": {
+                    "module": "planner.model-files",
+                    "name": "model.onnx",
+                    "version": 64,
+                },
+                "precision_test_arg": "ifx-test test.zip -v 1",
+            },
+        }
+        args = argparse.Namespace(
+            run_id="test_dry_run",
+            dry_run=True,
+            yes=True,
+            json=False,
+        )
+        store = MagicMock()
+        config = default_config()
+
+        run_ifx_convert(
+            args,
+            config,
+            store,
+            record,
+            progress=lambda *a, **kw: None,
+            confirm=lambda *a, **kw: True,
+            ifx_pipeline_cls=IfxPipeline,
+            ifx_pipeline_error_cls=IfxPipelineError,
+        )
+
+        store.save.assert_not_called()
 
 
 if __name__ == "__main__":

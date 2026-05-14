@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from model_release_pipeline.config import IfxConfig
-from model_release_pipeline.services.ifx_pipeline import IfxPipeline
+from model_release_pipeline.services.ifx_pipeline import IfxPipeline, IfxPipelineError
 
 
 class IfxPipelineTest(unittest.TestCase):
@@ -255,6 +255,61 @@ vectorized_scenario_remote_assist_model_bs0_fp16_thor_trt1013.ifxmodel upload fa
         self.assertEqual(result["ifx_mapping"]["fp32_x86"]["version"], 72)
         self.assertEqual(result["ifx_mapping"]["fp16_6000"]["version"], 37)
         self.assertEqual(result["ifx_mapping"]["onnx"]["version"], 64)
+
+
+    def test_collect_jenkins_result_adds_last_poll_status(self) -> None:
+        console = """
+vectorized_scenario_remote_assist_model_bs0_fp32_x86.ifxmodel upload done
+1 planner.model-files vectorized_scenario_remote_assist_model_bs0_fp32_x86.ifxmodel 72 21.41 2026-05-08T06:47:22Z 4de42
+vectorized_scenario_remote_assist_model_bs0_fp16_thor_trt1013.ifxmodel upload failed
+"""
+
+        class FakeResponse:
+            status_code = 200
+            headers = {}
+
+            def __init__(self, payload=None, text="") -> None:
+                self._payload = payload or {}
+                self.text = text
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self):
+                return self._payload
+
+        class FakeSession:
+            def get(self, url, timeout=30):
+                if url.endswith("/job/demo/1/api/json"):
+                    return FakeResponse(
+                        {"building": False, "number": 1, "result": "SUCCESS"}
+                    )
+                if url.endswith("/job/demo/1/consoleText"):
+                    return FakeResponse(text=console)
+                raise AssertionError(f"unexpected url: {url}")
+
+        with patch(
+            "model_release_pipeline.services.ifx_pipeline.requests.Session",
+            return_value=FakeSession(),
+        ):
+            pipeline = IfxPipeline(
+                IfxConfig(
+                    jenkins_base_url="http://jenkins",
+                    expected_platforms=["fp32_x86", "fp16_thor"],
+                    timeout_sec=2,
+                    poll_interval_sec=0,
+                )
+            )
+            try:
+                pipeline._collect_jenkins_ifx_result(
+                    {"build_url": "http://jenkins/job/demo/1/"},
+                    "planner.model-files vectorized_scenario_remote_assist_model.onnx -v 64",
+                )
+                self.fail("Expected IfxPipelineError")
+            except IfxPipelineError as exc:
+                jenkins = exc.partial_result.get("jenkins") or {}
+                self.assertIn("last_poll_status", jenkins)
+                self.assertEqual(jenkins["last_poll_status"], "SUCCESS")
 
 
 if __name__ == "__main__":

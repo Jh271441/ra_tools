@@ -246,6 +246,7 @@ class IfxPipeline:
         }
         console_lines = build_result.get("console_text", "").splitlines()
         persisted_build["console_tail"] = console_lines[-80:]
+        persisted_build["last_poll_status"] = build_result.get("result") or "incomplete"
         updated_jenkins = {**jenkins_result, **persisted_build}
         parsed = self._parse_ifx_mapping_from_console(
             build_result.get("console_text", ""), onnx_arg
