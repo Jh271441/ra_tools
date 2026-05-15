@@ -198,6 +198,103 @@ class WebAppTest(unittest.TestCase):
         self.assertIn("67", command)
         self.assertIn("--replace-upload", command)
 
+    def test_stage_defaults_and_run_overrides_are_merged_for_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = default_config()
+            config.runs_dir = Path(tmp_dir) / "runs"
+            store = StateStore(config.runs_dir)
+            record = store.create("/nfs/exp", "demo")
+            app = ReleaseWebApp(config)
+            captured = {}
+
+            app.patch_stage_defaults(
+                {
+                    "dcl": {
+                        "branch": "master",
+                        "checkout_branch": "global_branch",
+                        "update_diff_ids": "111",
+                    }
+                }
+            )
+            app.patch_run_stage_config(
+                record["release_id"],
+                {
+                    "dcl": {
+                        "checkout_branch": "run_branch",
+                        "allow_dirty": True,
+                    }
+                },
+            )
+
+            def fake_start(**kwargs):
+                captured.update(kwargs)
+                return {"job_id": "job1", "status": "running"}
+
+            app.jobs.start = fake_start  # type: ignore[method-assign]
+
+            app.start_action(
+                record["release_id"],
+                "dcl",
+                {"dry_run": True, "branch": "gen4_release_20260403"},
+            )
+
+            payload = captured["payload"]
+            self.assertEqual(payload["branch"], "gen4_release_20260403")
+            self.assertEqual(payload["checkout_branch"], "run_branch")
+            self.assertEqual(payload["update_diff_ids"], [111])
+            self.assertTrue(payload["allow_dirty"])
+
+    def test_run_stage_config_is_saved_in_release_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = default_config()
+            config.runs_dir = Path(tmp_dir)
+            store = StateStore(config.runs_dir)
+            record = store.create("/nfs/exp", "demo")
+            app = ReleaseWebApp(config)
+
+            result = app.patch_run_stage_config(
+                record["release_id"],
+                {"handoff": {"branch": "master", "update_diff_ids": "123,CR456"}},
+            )
+
+            self.assertEqual(result["stage_config"]["handoff"]["update_diff_ids"], [123, 456])
+            saved = store.load(record["release_id"])
+            self.assertEqual(saved["web_stage_config"], result["stage_config"])
+
+    def test_handoff_and_dcl_commands_accept_branch_overrides(self) -> None:
+        dcl_command = build_cli_command(
+            "run123",
+            "dcl",
+            dry_run=True,
+            payload={
+                "branch": "master",
+                "checkout_branch": "feature_branch",
+                "update_diff_ids": [123, 456],
+                "sim_plan": "sim_a",
+                "lint": False,
+                "allow_dirty": True,
+            },
+        )
+        handoff_command = build_cli_command(
+            "run123",
+            "apply-handoff",
+            dry_run=True,
+            payload={
+                "branch": "master",
+                "checkout_branch": "feature_branch",
+                "update_diff_ids": [123],
+                "allow_dirty": True,
+            },
+        )
+
+        self.assertIn("--checkout-branch", dcl_command)
+        self.assertIn("feature_branch", dcl_command)
+        self.assertIn("--update-diff-ids", dcl_command)
+        self.assertIn("123,456", dcl_command)
+        self.assertIn("--allow-dirty", dcl_command)
+        self.assertIn("--checkout-branch", handoff_command)
+        self.assertIn("123", handoff_command)
+
     def test_copy_versioned_onnx_to_utils_uses_run_backup(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)

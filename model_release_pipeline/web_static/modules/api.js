@@ -19,3 +19,16 @@ export async function postJson(url, payload) {
   }
   return data;
 }
+
+export async function patchJson(url, payload) {
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || `${response.status} ${response.statusText}`);
+  }
+  return data;
+}

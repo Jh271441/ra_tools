@@ -136,6 +136,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--docker",
         help="Voyager docker container. Defaults to CONTAINER_NAME_GEN4 or config.",
     )
+    apply_handoff_parser.add_argument(
+        "--checkout-branch",
+        help="Temporary checkout branch override for the selected branch.",
+    )
+    apply_handoff_parser.add_argument(
+        "--update-diff-ids",
+        help="Temporary comma-separated DCL update diff ids for the selected branch.",
+    )
+    apply_handoff_parser.add_argument(
+        "--sim-plan",
+        help="Temporary sim plan label for the selected branch.",
+    )
     apply_handoff_parser.add_argument("--desc", default="")
     apply_handoff_parser.add_argument("--dry-run", action="store_true")
     apply_handoff_parser.add_argument("--no-commit", action="store_true")
@@ -155,6 +167,18 @@ def build_parser() -> argparse.ArgumentParser:
     dcl_parser.add_argument(
         "--docker",
         help="Voyager docker container. Defaults to CONTAINER_NAME_GEN4 or config.",
+    )
+    dcl_parser.add_argument(
+        "--checkout-branch",
+        help="Temporary checkout branch override for the selected branch.",
+    )
+    dcl_parser.add_argument(
+        "--update-diff-ids",
+        help="Temporary comma-separated DCL update diff ids for the selected branch.",
+    )
+    dcl_parser.add_argument(
+        "--sim-plan",
+        help="Temporary sim plan label for the selected branch.",
     )
     dcl_parser.add_argument("--dry-run", action="store_true")
     dcl_parser.add_argument("--lint", action="store_true")

@@ -124,6 +124,15 @@ fetchJson("/api/config/branches")
   .then((data) => { state.configBranches = data.branches || []; })
   .catch(() => {});
 
+fetchJson("/api/config/stage-defaults")
+  .then((data) => {
+    state.stageDefaults = data.stage_defaults || {};
+    if (state.selectedRun || state.draftRun) {
+      renderFlowControls(state.selectedRun || null);
+    }
+  })
+  .catch(() => {});
+
 loadRuns(true).catch((error) => {
   $("runs").innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
 });

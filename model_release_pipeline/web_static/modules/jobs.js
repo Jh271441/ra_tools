@@ -4,6 +4,15 @@ import { renderLog, setSelectedLogToJob } from "./logs.js";
 import { $, state } from "./state.js";
 import { escapeHtml, statusClass } from "./utils.js";
 
+function applyStageConfigPayload(payload) {
+  if ($("stageConfigBranch")) payload.branch = $("stageConfigBranch").value;
+  if ($("stageConfigCheckout")) payload.checkout_branch = $("stageConfigCheckout").value.trim();
+  if ($("stageConfigDiffIds")) payload.update_diff_ids = $("stageConfigDiffIds").value.trim();
+  if ($("stageConfigSimPlan")) payload.sim_plan = $("stageConfigSimPlan").value.trim();
+  if ($("stageConfigLint")) payload.lint = $("stageConfigLint").checked;
+  if ($("stageConfigAllowDirty")) payload.allow_dirty = $("stageConfigAllowDirty").checked;
+}
+
 export async function startAction(action, dryRun, confirmText, callbacks) {
   const jobStatus = $("jobStatus");
   if (!state.selectedId && action !== "export") {
@@ -32,8 +41,10 @@ export async function startAction(action, dryRun, confirmText, callbacks) {
     } else if (action === "apply-handoff") {
       payload.branch = $("handoffBranch") ? $("handoffBranch").value : "";
       payload.desc = $("handoffDesc") ? $("handoffDesc").value.trim() : "";
+      applyStageConfigPayload(payload);
     } else if (action === "dcl") {
       payload.branch = $("dclBranch") ? $("dclBranch").value : "";
+      applyStageConfigPayload(payload);
     }
     const releaseId = state.selectedId || "__draft__";
     const job = await postJson(

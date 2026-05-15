@@ -212,6 +212,29 @@
   margin-bottom: 16px;
 }
 
+.inspector-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.inspector-tools .icon-button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.78);
+  cursor: pointer;
+}
+
+.inspector-tools .icon-button:hover {
+  border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.94);
+}
+
 .workflow-confirm {
   flex: 0 0 auto;
   min-width: 0;
@@ -230,6 +253,7 @@
 
 .export-form input,
 .export-row input,
+.stage-config-panel input,
 .experiment-select {
   width: 100%;
   min-width: 0;
@@ -274,6 +298,7 @@
 
 .export-form input:focus,
 .export-row input:focus,
+.stage-config-panel input:focus,
 .experiment-select:focus,
 .experiment-picker .icon-button:focus {
   border-color: var(--accent);
@@ -298,6 +323,57 @@
 
 .branch-select:focus {
   border-color: var(--accent);
+}
+
+.stage-config-panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  padding: 12px;
+  margin: 4px 0 12px;
+}
+
+.stage-config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.stage-config-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.stage-config-grid label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-config-checks,
+.stage-config-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.inline-check input {
+  width: auto;
 }
 
 .export-row input:first-child {

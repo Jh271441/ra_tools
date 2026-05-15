@@ -135,4 +135,8 @@
   .log-output {
     min-height: 0;
   }
+
+  .stage-config-grid {
+    grid-template-columns: 1fr;
+  }
 }

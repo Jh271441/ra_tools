@@ -1,5 +1,5 @@
 import { STEP_LOG_MAP } from "./constants.js";
-import { fetchJson, postJson } from "./api.js";
+import { fetchJson, patchJson, postJson } from "./api.js";
 import { renderLog } from "./logs.js";
 import { actionSpecs, draftPayload } from "./releaseData.js";
 import { $, state } from "./state.js";
@@ -12,6 +12,7 @@ import {
   renderHandoffForm,
   renderIfxForm,
   renderPickForm,
+  renderStageConfigPanel,
   renderUploadForm,
 } from "./workflow.js";
 
@@ -173,6 +174,74 @@ function bindFlowNodes(onAction) {
   });
 }
 
+function supportsStageConfig(stepKey) {
+  return ["handoff", "dcl"].includes(stepKey);
+}
+
+function collectStageConfig() {
+  const diffIds = $("stageConfigDiffIds") ? $("stageConfigDiffIds").value.trim() : "";
+  return {
+    branch: $("stageConfigBranch") ? $("stageConfigBranch").value : "",
+    checkout_branch: $("stageConfigCheckout") ? $("stageConfigCheckout").value.trim() : "",
+    update_diff_ids: diffIds,
+    sim_plan: $("stageConfigSimPlan") ? $("stageConfigSimPlan").value.trim() : "",
+    lint: $("stageConfigLint") ? $("stageConfigLint").checked : false,
+    allow_dirty: $("stageConfigAllowDirty") ? $("stageConfigAllowDirty").checked : false,
+  };
+}
+
+function bindStageConfigPanel(stepKey, onAction) {
+  const toggle = $("stageConfigToggle");
+  if (toggle) {
+    toggle.onclick = () => {
+      state.openStageSettings = state.openStageSettings === stepKey ? null : stepKey;
+      renderFlowControls(state.selectedRun || draftPayload(), onAction);
+    };
+  }
+  const saveRun = $("saveRunStageConfig");
+  const saveDefault = $("saveDefaultStageConfig");
+  const result = $("stageConfigResult");
+  if (saveRun) {
+    saveRun.onclick = async () => {
+      if (!state.selectedId) return;
+      saveRun.disabled = true;
+      if (result) result.textContent = "Saving...";
+      try {
+        const data = await patchJson(
+          `/api/runs/${encodeURIComponent(state.selectedId)}/stage-config`,
+          { [stepKey]: collectStageConfig() }
+        );
+        state.selectedRun.stage_config = data.stage_config || {};
+        if (result) result.textContent = "Saved to run.";
+        renderFlowControls(state.selectedRun || draftPayload(), onAction);
+      } catch (e) {
+        if (result) result.textContent = e.message;
+      } finally {
+        saveRun.disabled = false;
+      }
+    };
+  }
+  if (saveDefault) {
+    saveDefault.onclick = async () => {
+      saveDefault.disabled = true;
+      if (result) result.textContent = "Saving...";
+      try {
+        const data = await patchJson(
+          "/api/config/stage-defaults",
+          { [stepKey]: collectStageConfig() }
+        );
+        state.stageDefaults = data.stage_defaults || {};
+        if (result) result.textContent = "Saved as default.";
+        renderFlowControls(state.selectedRun || draftPayload(), onAction);
+      } catch (e) {
+        if (result) result.textContent = e.message;
+      } finally {
+        saveDefault.disabled = false;
+      }
+    };
+  }
+}
+
 function renderConfirmHint(actions) {
   const hint = $("confirmHint");
   const input = $("confirmText");
@@ -207,7 +276,10 @@ function renderFlowInspector(flow, actions, statusByStep, onAction) {
         <h3>${escapeHtml(item.title)}</h3>
         <p class="muted">${escapeHtml(item.detail)}</p>
       </div>
-      <span class="chip ${statusClass(stepStatus)}">${escapeHtml(stepStatus)}</span>
+      <div class="inspector-tools">
+        ${supportsStageConfig(item.key) ? `<button id="stageConfigToggle" class="icon-button" type="button" title="Stage settings">⚙</button>` : ""}
+        <span class="chip ${statusClass(stepStatus)}">${escapeHtml(stepStatus)}</span>
+      </div>
     </div>
     ${item.key === "pick" ? renderPickForm() : ""}
     ${item.key === "export" ? renderExportForm() : ""}
@@ -215,9 +287,11 @@ function renderFlowInspector(flow, actions, statusByStep, onAction) {
     ${item.key === "ifx" ? renderIfxForm() : ""}
     ${item.key === "handoff" ? renderHandoffForm() : ""}
     ${item.key === "dcl" ? renderDclForm() : ""}
+    ${state.openStageSettings === item.key ? renderStageConfigPanel(item.key) : ""}
     <div class="flow-actions">${renderActionButtons(itemActions, "primary")}</div>
   `;
   bindActionButtons(onAction);
+  bindStageConfigPanel(item.key, onAction);
   bindExperimentPicker("pickExperiment");
   bindExperimentPicker("exportExperiment");
   renderConfirmHint(itemActions);

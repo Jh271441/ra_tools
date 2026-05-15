@@ -19,6 +19,7 @@ from model_release_pipeline.state_store import StateStore
 import model_release_pipeline.steps.runner as runner_module
 from model_release_pipeline.steps.runner import (
     _run_apply_handoff,
+    _run_dcl,
     _run_ifx_convert,
     _run_offboard,
 )
@@ -243,6 +244,58 @@ class CliSelectionTest(unittest.TestCase):
             self.assertEqual(calls, ["master", "gen4_release_20260403"])
             self.assertEqual(updated["apply_handoff"]["returncode"], 0)
             self.assertEqual(len(updated["apply_handoff"]["results"]), 2)
+
+    def test_dcl_uses_temporary_branch_override(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config = default_config()
+            config.runs_dir = Path(tmp_dir)
+            store = StateStore(config.runs_dir)
+            record = store.create(experiment_path="/tmp/exp", description="")
+            store.save(record)
+            captured = {}
+
+            class FakeService:
+                def __init__(self, voyager_config):
+                    captured["voyager_config"] = voyager_config
+
+                def dcl_to_docker(self, **kwargs):
+                    branch = captured["voyager_config"].branches[0]
+                    return {
+                        "returncode": 0,
+                        "stdout": "",
+                        "stderr": "",
+                        "branch": kwargs["branch"],
+                        "checkout_branch": branch.checkout_branch,
+                        "update_diff_ids": branch.effective_diff_ids(),
+                        "command": "dcl diff -n -u 123 --nolint",
+                    }
+
+            original_service = runner_module.VoyagerHandoffService
+            original_confirm = runner_module._confirm
+            try:
+                runner_module.VoyagerHandoffService = FakeService
+                runner_module._confirm = lambda _prompt, _yes: True
+                args = argparse.Namespace(
+                    branch="master",
+                    yes=True,
+                    json=True,
+                    docker="",
+                    dry_run=True,
+                    lint=False,
+                    allow_dirty=True,
+                    checkout_branch="jasperchen/tmp_release",
+                    update_diff_ids="123",
+                    sim_plan="sim_tmp",
+                )
+
+                updated = _run_dcl(args, config, store, record)
+            finally:
+                runner_module.VoyagerHandoffService = original_service
+                runner_module._confirm = original_confirm
+
+            self.assertEqual(updated["dcl"]["checkout_branch"], "jasperchen/tmp_release")
+            self.assertEqual(updated["dcl"]["update_diff_ids"], [123])
+            self.assertIn("dcl diff -n -u 123 --nolint", updated["dcl"]["command"])
 
     def test_ifx_convert_dry_run_does_not_persist_preview(self) -> None:
         with TemporaryDirectory() as tmp_dir:

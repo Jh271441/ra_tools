@@ -23,6 +23,15 @@ from model_release_pipeline.state_store import StateStore
 from model_release_pipeline.web.actions import ACTIONS, action_specs
 from model_release_pipeline.web.jobs import JobManager as _JobManager
 from model_release_pipeline.web.logs import record_logs
+from model_release_pipeline.web.stage_config import (
+    STAGE_CONFIG_KEY,
+    action_stage_key,
+    effective_stage_config,
+    read_defaults,
+    record_stage_config,
+    update_stage_config,
+    write_defaults,
+)
 from model_release_pipeline.web.summary import (
     commands,
     extract_metric_table,
@@ -117,6 +126,7 @@ class ReleaseWebApp:
             "logs": record_logs(record),
             "commands": commands(record),
             "actions": action_specs(),
+            "stage_config": record_stage_config(record),
             "onnx_local_copy": versioned_onnx_info(self.config.runs_dir, record),
             "offboard_metrics": extract_metric_table(
                 str((record.get("offboard") or {}).get("stdout") or "")
@@ -138,10 +148,34 @@ class ReleaseWebApp:
     def list_branches(self) -> Dict[str, Any]:
         return {
             "branches": [
-                {"name": b.name, "checkout_branch": b.checkout_branch}
+                {
+                    "name": b.name,
+                    "checkout_branch": b.checkout_branch,
+                    "update_diff_ids": b.effective_diff_ids(),
+                    "sim_plan": b.sim_plan,
+                }
                 for b in self.config.voyager.branches
             ]
         }
+
+    def get_stage_defaults(self) -> Dict[str, Any]:
+        return {"stage_defaults": read_defaults(self.config.runs_dir)}
+
+    def patch_stage_defaults(self, patch: Dict[str, Any]) -> Dict[str, Any]:
+        current = read_defaults(self.config.runs_dir)
+        updated = update_stage_config(current, patch)
+        return {"stage_defaults": write_defaults(self.config.runs_dir, updated)}
+
+    def get_run_stage_config(self, release_id: str) -> Dict[str, Any]:
+        record = self.store.load(release_id)
+        return {"stage_config": record_stage_config(record)}
+
+    def patch_run_stage_config(self, release_id: str, patch: Dict[str, Any]) -> Dict[str, Any]:
+        record = self.store.load(release_id)
+        updated = update_stage_config(record_stage_config(record), patch)
+        record[STAGE_CONFIG_KEY] = updated
+        self.store.save(record)
+        return {"stage_config": updated}
 
     def list_experiment_folders(
         self,
@@ -226,7 +260,19 @@ class ReleaseWebApp:
         payload: Dict[str, Any],
     ) -> Dict[str, Any]:
         if ACTIONS.get(action, {}).get("needs_run_id", True):
-            self.store.load(release_id)
+            record = self.store.load(release_id)
+        else:
+            record = {}
+        payload = dict(payload)
+        stage_key = action_stage_key(action)
+        if stage_key:
+            merged = effective_stage_config(
+                stage_key,
+                read_defaults(self.config.runs_dir),
+                record_stage_config(record),
+                payload,
+            )
+            payload.update(merged)
         return self.jobs.start(
             release_id=release_id,
             action=action,
@@ -288,6 +334,9 @@ def _handle_api_get(
     if path == "/api/config/branches":
         _json_response(handler, app.list_branches())
         return True
+    if path == "/api/config/stage-defaults":
+        _json_response(handler, app.get_stage_defaults())
+        return True
     if path == "/api/experiment-folders":
         params = parse_qs(query)
         root = (params.get("root") or [DEFAULT_EXPERIMENT_ROOT])[0]
@@ -325,6 +374,9 @@ def _handle_api_get(
         if len(parts) == 1:
             _json_response(handler, app.get_run(release_id))
             return True
+        if len(parts) == 2 and parts[1] == "stage-config":
+            _json_response(handler, app.get_run_stage_config(release_id))
+            return True
         if len(parts) == 3 and parts[1] == "files":
             content, content_type = app.read_run_file(
                 release_id, _safe_run_id(parts[2])
@@ -334,6 +386,25 @@ def _handle_api_get(
             handler.send_header("Content-Length", str(len(content)))
             handler.end_headers()
             handler.wfile.write(content)
+            return True
+    return False
+
+
+def _handle_api_patch(
+    handler: BaseHTTPRequestHandler,
+    app: ReleaseWebApp,
+    path: str,
+    payload: Dict[str, Any],
+) -> bool:
+    if path == "/api/config/stage-defaults":
+        _json_response(handler, app.patch_stage_defaults(payload))
+        return True
+    if path.startswith("/api/runs/"):
+        suffix = path.removeprefix("/api/runs/")
+        parts = suffix.split("/")
+        release_id = _safe_run_id(parts[0])
+        if len(parts) == 2 and parts[1] == "stage-config":
+            _json_response(handler, app.patch_run_stage_config(release_id, payload))
             return True
     return False
 
@@ -395,6 +466,26 @@ def _make_handler(app: ReleaseWebApp) -> type[BaseHTTPRequestHandler]:
                             status=HTTPStatus.ACCEPTED,
                         )
                         return
+                _text_response(self, "Not found", HTTPStatus.NOT_FOUND)
+            except PermissionError as exc:
+                _json_response(self, {"error": str(exc)}, status=HTTPStatus.FORBIDDEN)
+            except FileNotFoundError as exc:
+                _json_response(self, {"error": str(exc)}, status=HTTPStatus.NOT_FOUND)
+            except Exception as exc:  # pylint: disable=broad-except
+                _json_response(
+                    self,
+                    {"error": str(exc)},
+                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
+
+        def do_PATCH(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            try:
+                content_length = int(self.headers.get("Content-Length") or "0")
+                raw_body = self.rfile.read(content_length) if content_length else b"{}"
+                payload = json.loads(raw_body.decode("utf-8") or "{}")
+                if _handle_api_patch(self, app, parsed.path, payload):
+                    return
                 _text_response(self, "Not found", HTTPStatus.NOT_FOUND)
             except PermissionError as exc:
                 _json_response(self, {"error": str(exc)}, status=HTTPStatus.FORBIDDEN)

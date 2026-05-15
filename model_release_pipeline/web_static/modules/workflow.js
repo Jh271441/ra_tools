@@ -85,6 +85,28 @@ function renderExperimentPathPicker(id, value) {
   `;
 }
 
+function stageConfig(stage) {
+  return {
+    ...((state.stageDefaults || {})[stage] || {}),
+    ...((((state.selectedRun || {}).stage_config || {})[stage]) || {}),
+  };
+}
+
+function selectedAttr(value, expected) {
+  return String(value || "") === String(expected || "") ? " selected" : "";
+}
+
+function checkedAttr(value) {
+  return value ? " checked" : "";
+}
+
+function renderBranchOptions(selected = "") {
+  const branches = state.configBranches || [];
+  return branches
+    .map((b) => `<option value="${escapeHtml(b.name)}"${selectedAttr(selected, b.name)}>${escapeHtml(b.name)}</option>`)
+    .join("");
+}
+
 export function renderPickForm() {
   const record = (state.selectedRun || {}).record || {};
   const experimentPath = record.experiment_path || "";
@@ -159,16 +181,13 @@ export function renderIfxForm() {
 }
 
 export function renderHandoffForm() {
-  const branches = state.configBranches || [];
-  const options = branches
-    .map((b) => `<option value="${escapeHtml(b.name)}">${escapeHtml(b.name)}</option>`)
-    .join("");
+  const config = stageConfig("handoff");
   return `
     <div class="export-form">
       <div class="export-row">
         <select id="handoffBranch" class="branch-select">
-          <option value="">all configured branches</option>
-          ${options}
+          <option value=""${selectedAttr(config.branch, "")}>all configured branches</option>
+          ${renderBranchOptions(config.branch)}
         </select>
         <input id="handoffDesc" placeholder="description (optional)" />
       </div>
@@ -178,17 +197,62 @@ export function renderHandoffForm() {
 }
 
 export function renderDclForm() {
-  const branches = state.configBranches || [];
-  const options = branches
-    .map((b) => `<option value="${escapeHtml(b.name)}">${escapeHtml(b.name)}</option>`)
-    .join("");
+  const config = stageConfig("dcl");
   return `
     <div class="export-form">
       <select id="dclBranch" class="branch-select">
-        <option value="">all configured branches</option>
-        ${options}
+        <option value=""${selectedAttr(config.branch, "")}>all configured branches</option>
+        ${renderBranchOptions(config.branch)}
       </select>
       <p class="helper-text">Leave empty to run DCL diff for all branches, or select one to supplement a specific CR.</p>
+    </div>
+  `;
+}
+
+export function renderStageConfigPanel(stage) {
+  const config = stageConfig(stage);
+  const diffIds = Array.isArray(config.update_diff_ids)
+    ? config.update_diff_ids.join(",")
+    : (config.update_diff_ids || "");
+  const runDisabled = state.selectedId ? "" : " disabled title=\"Select a release run first.\"";
+  return `
+    <div class="stage-config-panel">
+      <div class="stage-config-grid">
+        <label>
+          <span>Branch</span>
+          <select id="stageConfigBranch" class="branch-select">
+            <option value=""${selectedAttr(config.branch, "")}>all configured branches</option>
+            ${renderBranchOptions(config.branch)}
+          </select>
+        </label>
+        <label>
+          <span>Checkout branch</span>
+          <input id="stageConfigCheckout" value="${escapeHtml(config.checkout_branch || "")}" placeholder="temporary checkout branch" />
+        </label>
+        <label>
+          <span>CR / update diff ids</span>
+          <input id="stageConfigDiffIds" value="${escapeHtml(diffIds)}" placeholder="5716859,6115905" />
+        </label>
+        <label>
+          <span>Sim plan</span>
+          <input id="stageConfigSimPlan" value="${escapeHtml(config.sim_plan || "")}" placeholder="sim plan" />
+        </label>
+      </div>
+      <div class="stage-config-checks">
+        <label class="inline-check">
+          <input id="stageConfigLint" type="checkbox"${checkedAttr(config.lint)} />
+          lint
+        </label>
+        <label class="inline-check">
+          <input id="stageConfigAllowDirty" type="checkbox"${checkedAttr(config.allow_dirty)} />
+          allow dirty
+        </label>
+      </div>
+      <div class="stage-config-actions">
+        <button id="saveRunStageConfig" class="action-button" type="button"${runDisabled}>Save to current run</button>
+        <button id="saveDefaultStageConfig" class="action-button" type="button">Save as global default</button>
+        <span id="stageConfigResult" class="helper-text"></span>
+      </div>
     </div>
   `;
 }

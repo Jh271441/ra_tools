@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 from typing import Any, Callable, Dict
 
-from model_release_pipeline.config import ReleaseConfig
+from model_release_pipeline.config import BranchConfig, ReleaseConfig, VoyagerConfig
 from model_release_pipeline.services.voyager_handoff import VoyagerHandoffService
 from model_release_pipeline.state_store import StateStore
+from model_release_pipeline.web.stage_config import parse_update_diff_ids
 
 ConfirmFn = Callable[[str, bool], bool]
 ProgressFn = Callable[[argparse.Namespace, str, int, int, str, str], None]
@@ -20,6 +22,75 @@ def ifx_mapping_from_record(record: Dict[str, Any]) -> Dict[str, Dict[str, Any]]
     if not ifx_mapping:
         raise RuntimeError("No IFX mapping found in release record.")
     return ifx_mapping
+
+
+def _find_branch(config: VoyagerConfig, branch_value: str) -> BranchConfig | None:
+    for branch in config.branches:
+        if branch_value in {branch.name, branch.checkout_branch}:
+            return branch
+    return None
+
+
+def _temporary_branch_config(
+    config: VoyagerConfig,
+    args: argparse.Namespace,
+) -> BranchConfig | None:
+    checkout_branch = str(getattr(args, "checkout_branch", "") or "").strip()
+    update_diff_ids = parse_update_diff_ids(getattr(args, "update_diff_ids", "") or "")
+    sim_plan = str(getattr(args, "sim_plan", "") or "").strip()
+    if not any([checkout_branch, update_diff_ids, sim_plan]):
+        return None
+
+    branch_value = str(getattr(args, "branch", "") or "").strip()
+    if not branch_value:
+        raise RuntimeError("Temporary branch overrides require --branch.")
+
+    base = _find_branch(config, branch_value)
+    if base is None:
+        if not checkout_branch:
+            raise RuntimeError(
+                "Unknown branch override requires --checkout-branch."
+            )
+        branch = BranchConfig(
+            name=branch_value,
+            checkout_branch=checkout_branch,
+            update_diff_id=0,
+            update_diff_ids=[],
+            sim_plan="",
+        )
+    else:
+        branch = replace(base)
+
+    if checkout_branch:
+        branch.checkout_branch = checkout_branch
+    if update_diff_ids:
+        branch.update_diff_ids = update_diff_ids
+        branch.update_diff_id = update_diff_ids[0]
+    if sim_plan:
+        branch.sim_plan = sim_plan
+    return branch
+
+
+def _voyager_config_for_args(
+    config: VoyagerConfig,
+    args: argparse.Namespace,
+) -> tuple[VoyagerConfig, BranchConfig | None]:
+    override = _temporary_branch_config(config, args)
+    if override is None:
+        return config, None
+
+    branches = []
+    replaced = False
+    branch_value = str(getattr(args, "branch", "") or "").strip()
+    for branch in config.branches:
+        if branch_value in {branch.name, branch.checkout_branch}:
+            branches.append(override)
+            replaced = True
+        else:
+            branches.append(branch)
+    if not replaced:
+        branches.append(override)
+    return replace(config, branches=branches), override
 
 
 def run_handoff(
@@ -61,8 +132,11 @@ def run_apply_handoff(
     service_cls: Any = VoyagerHandoffService,
 ) -> Dict[str, Any]:
     ifx_mapping = ifx_mapping_from_record(record)
+    voyager_config, branch_override = _voyager_config_for_args(config.voyager, args)
     branches = (
-        [args.branch]
+        [branch_override.name]
+        if branch_override
+        else [args.branch]
         if args.branch
         else [branch.name for branch in config.voyager.branches]
     )
@@ -73,7 +147,7 @@ def run_apply_handoff(
     ):
         raise RuntimeError("apply-handoff cancelled by user.")
 
-    service = service_cls(config.voyager)
+    service = service_cls(voyager_config)
     results = []
     failed = None
     for index, branch_name in enumerate(branches, start=1):
@@ -161,8 +235,11 @@ def run_dcl(
     confirm: ConfirmFn,
     service_cls: Any = VoyagerHandoffService,
 ) -> Dict[str, Any]:
+    voyager_config, branch_override = _voyager_config_for_args(config.voyager, args)
     branches = (
-        [args.branch]
+        [branch_override.name]
+        if branch_override
+        else [args.branch]
         if args.branch
         else [branch.name for branch in config.voyager.branches]
     )
@@ -170,7 +247,7 @@ def run_dcl(
     if not confirm(f"Run DCL diff for {branch_text}?", args.yes):
         raise RuntimeError("dcl cancelled by user.")
 
-    service = service_cls(config.voyager)
+    service = service_cls(voyager_config)
     results = []
     failed = None
     for index, branch_name in enumerate(branches, start=1):

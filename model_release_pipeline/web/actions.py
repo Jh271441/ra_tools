@@ -173,13 +173,41 @@ def build_cli_command(
         branch = str(payload.get("branch") or "").strip()
         if branch:
             command.extend(["--branch", branch])
+        checkout_branch = str(payload.get("checkout_branch") or "").strip()
+        if checkout_branch:
+            command.extend(["--checkout-branch", checkout_branch])
+        update_diff_ids = payload.get("update_diff_ids")
+        if update_diff_ids:
+            if isinstance(update_diff_ids, (list, tuple)):
+                update_diff_ids = ",".join(str(item) for item in update_diff_ids)
+            command.extend(["--update-diff-ids", str(update_diff_ids)])
+        sim_plan = str(payload.get("sim_plan") or "").strip()
+        if sim_plan:
+            command.extend(["--sim-plan", sim_plan])
         desc = str(payload.get("desc") or "").strip()
         if desc:
             command.extend(["--desc", desc])
+        if payload.get("allow_dirty"):
+            command.append("--allow-dirty")
     elif action == "dcl":
         branch = str(payload.get("branch") or "").strip()
         if branch:
             command.extend(["--branch", branch])
+        checkout_branch = str(payload.get("checkout_branch") or "").strip()
+        if checkout_branch:
+            command.extend(["--checkout-branch", checkout_branch])
+        update_diff_ids = payload.get("update_diff_ids")
+        if update_diff_ids:
+            if isinstance(update_diff_ids, (list, tuple)):
+                update_diff_ids = ",".join(str(item) for item in update_diff_ids)
+            command.extend(["--update-diff-ids", str(update_diff_ids)])
+        sim_plan = str(payload.get("sim_plan") or "").strip()
+        if sim_plan:
+            command.extend(["--sim-plan", sim_plan])
+        if payload.get("lint"):
+            command.append("--lint")
+        if payload.get("allow_dirty"):
+            command.append("--allow-dirty")
     else:
         command.extend(spec["extra_args"])
 

@@ -12,6 +12,8 @@ export const state = {
   jobTimer: null,
   pickPreviewLines: [],
   configBranches: [],
+  stageDefaults: {},
+  openStageSettings: null,
   experimentFolderCache: {},
 };
 
