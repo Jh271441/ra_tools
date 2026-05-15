@@ -19,6 +19,11 @@ from model_release_pipeline.onboard.handoff import (
     run_dcl,
     run_handoff,
 )
+from model_release_pipeline.onboard.sim_plan import (
+    cancel_sim_plan,
+    refresh_sim_plan_status,
+    run_sim_plan,
+)
 from model_release_pipeline.onboard.upload import (
     run_ifx_convert,
     run_ifx_poll,
@@ -30,6 +35,7 @@ from model_release_pipeline.services.experiment import ExperimentInspector
 from model_release_pipeline.services.ifx_pipeline import IfxPipeline, IfxPipelineError
 from model_release_pipeline.services.luban_runner import LubanRunner
 from model_release_pipeline.services.model_picker import ModelPicker
+from model_release_pipeline.services.sim_plan import SimPlanClient
 from model_release_pipeline.services.voyager_handoff import VoyagerHandoffService
 from model_release_pipeline.state_store import StateStore
 
@@ -264,6 +270,56 @@ def _run_dcl(
     )
 
 
+def _run_sim_plan(
+    args: argparse.Namespace,
+    config: ReleaseConfig,
+    store: StateStore,
+    record: Dict[str, Any],
+) -> Dict[str, Any]:
+    return run_sim_plan(
+        args,
+        config,
+        store,
+        record,
+        progress=_make_progress(args),
+        confirm=_confirm,
+        service_cls=SimPlanClient,
+    )
+
+
+def _refresh_sim_plan_status(
+    args: argparse.Namespace,
+    config: ReleaseConfig,
+    store: StateStore,
+    record: Dict[str, Any],
+) -> Dict[str, Any]:
+    return refresh_sim_plan_status(
+        args,
+        config,
+        store,
+        record,
+        progress=_make_progress(args),
+        service_cls=SimPlanClient,
+    )
+
+
+def _cancel_sim_plan(
+    args: argparse.Namespace,
+    config: ReleaseConfig,
+    store: StateStore,
+    record: Dict[str, Any],
+) -> Dict[str, Any]:
+    return cancel_sim_plan(
+        args,
+        config,
+        store,
+        record,
+        progress=_make_progress(args),
+        confirm=_confirm,
+        service_cls=SimPlanClient,
+    )
+
+
 def _run_offboard(
     args: argparse.Namespace,
     config: ReleaseConfig,
@@ -360,6 +416,21 @@ def dispatch_locked(
     if command == "dcl":
         record = store.load(args.run_id)
         return _run_dcl(args, config, store, record), 0
+
+    if command == "sim-plan":
+        record = store.load(args.run_id)
+        record = _run_sim_plan(args, config, store, record)
+        return record, 1 if record.get("status") == "failed" else 0
+
+    if command == "sim-plan-status":
+        record = store.load(args.run_id)
+        record = _refresh_sim_plan_status(args, config, store, record)
+        return record, 1 if record.get("status") == "failed" else 0
+
+    if command == "sim-plan-cancel":
+        record = store.load(args.run_id)
+        record = _cancel_sim_plan(args, config, store, record)
+        return record, 1 if record.get("status") == "failed" else 0
 
     if command == "release":
         record = _run_export(args, config, store, step_offset=0, total_steps=9)

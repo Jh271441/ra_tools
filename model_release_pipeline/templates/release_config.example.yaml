@@ -67,6 +67,22 @@ picker:
   top_n: 3
   loss_tolerance_pct: 0.05
 
+sim_plan:
+  enabled: true
+  trail_base_url: https://voyager.intra.xiaojukeji.com
+  appid: "4"
+  token: ""
+  token_env: SIMPLAN_TRAIL_TOKEN
+  username: jasperchen
+  business_type: 37
+  trigger_from: kunpeng
+  priority: 2
+  platform: 4
+  cluster: prod
+  base_version: Default
+  denoise_mode: 0
+  timeout_sec: 100
+
 voyager:
   manifest_path: onboard/model_files/MANIFEST.txt
   commit_prefix: V
@@ -96,27 +112,40 @@ voyager:
       checkout_branch: jasperchen/2026Q1_test_scenario_dnn_dev
       update_diff_id: 5716859
       sim_plan: topic_ra_auto_trigger
+      sim_plans:
+        - name: topic_ra_auto_trigger
+          enabled_by_default: false
     - name: gen4_release_20260403
       checkout_branch: jasperchen/gen4_release_20260403/scenario_dnn_dev
       update_diff_id: 6076711
       sim_plan: lxh_ra_stuck_release_20260403-openloop
+      sim_plans:
+        - name: lxh_ra_stuck_release_20260403-openloop
     - name: gen4_release_20260410
       checkout_branch: jasperchen/gen4_release_20260410/scenario_dnn_dev
       update_diff_id: 6106759
       sim_plan: lxh_ra_stuck_release_20260410-openloop
+      sim_plans:
+        - name: lxh_ra_stuck_release_20260410-openloop
     - name: gen4_release_20260417
       checkout_branch: jasperchen/gen4_release_20260417/scenario_dnn_dev
       update_diff_id: 6106761
       sim_plan: lxh_ra_stuck_release_20260417-openloop
+      sim_plans:
+        - name: lxh_ra_stuck_release_20260417-openloop
     - name: gen4_release_20260327
       checkout_branch: jasperchen/gen4_release_20260327/scenario_dnn_dev
       update_diff_id: 6076959
       sim_plan: lxh_ra_stuck_release_20260327-openloop
+      sim_plans:
+        - name: lxh_ra_stuck_release_20260327-openloop
     - name: gen4_release_20260206
       checkout_branch: jasperchen/gen4_release_20260206/scenario_dnn_dev
       update_diff_id: 6106765
-      update_diff_ids: [6106765, 6115905]
       sim_plan: lxh_ra_stuck_release_20260206-openloop
+      sim_plans:
+        - name: lxh_ra_stuck_release_20260206-openloop
+        - name: lxh_ra_stuck_20260206_reviewed-openloop
       # This branch uses _2025Q4_ target paths; gen3/l20 entries are left unchanged.
       manifest_entries:
         - platform: onnx

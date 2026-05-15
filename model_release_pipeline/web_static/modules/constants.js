@@ -7,6 +7,9 @@ export const DEFAULT_ACTIONS = [
   { key: "handoff", label: "Generate Handoff", supports_dry_run: false, requires_confirm: false, needs_run_id: true },
   { key: "apply-handoff", label: "Apply Handoff", supports_dry_run: true, requires_confirm: true, needs_run_id: true },
   { key: "dcl", label: "Run DCL Diff", supports_dry_run: true, requires_confirm: true, needs_run_id: true },
+  { key: "sim-plan", label: "Trigger Sim Plan", supports_dry_run: true, requires_confirm: true, needs_run_id: true },
+  { key: "sim-plan-status", label: "Refresh Sim Plan", supports_dry_run: false, requires_confirm: false, needs_run_id: true },
+  { key: "sim-plan-cancel", label: "Cancel Sim Plan", supports_dry_run: false, requires_confirm: true, needs_run_id: true },
   { key: "offboard", label: "Run Offboard", supports_dry_run: true, requires_confirm: true, needs_run_id: false },
 ];
 
@@ -22,6 +25,8 @@ export const LOG_LABELS = {
   handoff_stderr: "Handoff stderr",
   dcl_stdout: "DCL stdout",
   dcl_stderr: "DCL stderr",
+  sim_plan_stdout: "Sim Plan stdout",
+  sim_plan_stderr: "Sim Plan stderr",
   offboard_stdout: "Offboard stdout",
   offboard_stderr: "Offboard stderr",
 };
@@ -34,6 +39,7 @@ export const STEP_LOG_MAP = {
   ifx: "ifx_stdout",
   handoff: "handoff_stdout",
   dcl: "dcl_stdout",
+  sim_plan: "sim_plan_stdout",
   offboard: "offboard_stdout",
 };
 
@@ -45,4 +51,6 @@ export const NEXT_STEP_BY_ACTION = {
   "ifx-poll": "handoff",
   handoff: "handoff",
   "apply-handoff": "dcl",
+  dcl: "sim_plan",
+  "sim-plan": "sim_plan",
 };

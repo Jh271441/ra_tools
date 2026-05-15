@@ -9,8 +9,21 @@ function applyStageConfigPayload(payload) {
   if ($("stageConfigCheckout")) payload.checkout_branch = $("stageConfigCheckout").value.trim();
   if ($("stageConfigDiffIds")) payload.update_diff_ids = $("stageConfigDiffIds").value.trim();
   if ($("stageConfigSimPlan")) payload.sim_plan = $("stageConfigSimPlan").value.trim();
+  if ($("stageConfigRevision")) payload.revision_id = $("stageConfigRevision").value.trim();
+  if ($("stageConfigPlanNames")) payload.plans = $("stageConfigPlanNames").value.trim();
+  if ($("stageConfigPriority")) payload.priority = $("stageConfigPriority").value.trim();
+  if ($("stageConfigSensitiveHour")) payload.time_sensitive_hour = $("stageConfigSensitiveHour").value.trim();
   if ($("stageConfigLint")) payload.lint = $("stageConfigLint").checked;
   if ($("stageConfigAllowDirty")) payload.allow_dirty = $("stageConfigAllowDirty").checked;
+}
+
+function selectedSimPlans() {
+  return [...document.querySelectorAll(".sim-plan-check:checked")]
+    .filter((input) => {
+      const panel = input.closest(".sim-plan-branch-plans");
+      return !panel || panel.style.display !== "none";
+    })
+    .map((input) => input.value);
 }
 
 function trackJob(job) {
@@ -61,6 +74,15 @@ export async function startAction(action, dryRun, confirmText, callbacks) {
     } else if (action === "dcl") {
       payload.branch = $("dclBranch") ? $("dclBranch").value : "";
       applyStageConfigPayload(payload);
+    } else if (action === "sim-plan") {
+      payload.branch = $("simPlanBranch") ? $("simPlanBranch").value : "";
+      payload.revision_id = $("simPlanRevision") ? $("simPlanRevision").value.trim() : "";
+      payload.plans = selectedSimPlans();
+      payload.priority = $("simPlanPriority") ? $("simPlanPriority").value.trim() : "";
+      payload.time_sensitive_hour = $("simPlanSensitiveHour") ? $("simPlanSensitiveHour").value.trim() : "";
+      applyStageConfigPayload(payload);
+    } else if (action === "sim-plan-cancel") {
+      payload.record_id = $("simPlanCancelRecord") ? $("simPlanCancelRecord").value.trim() : "";
     } else if (action === "offboard") {
       const mode = document.querySelector('input[name="offboardMode"]:checked')?.value || (state.selectedId ? "selected" : "explicit");
       payload.mode = mode;

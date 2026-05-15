@@ -483,6 +483,65 @@ class WebAppTest(unittest.TestCase):
         self.assertIn("run123", command)
         self.assertNotIn("--experiment", command)
 
+    def test_sim_plan_command_accepts_plans_and_revision(self) -> None:
+        command = build_cli_command(
+            "run123",
+            "sim-plan",
+            dry_run=True,
+            payload={
+                "branch": "gen4_release_20260206",
+                "revision_id": "6106765",
+                "plans": [
+                    "lxh_ra_stuck_release_20260206-openloop",
+                    "lxh_ra_stuck_20260206_reviewed-openloop",
+                ],
+            },
+        )
+
+        self.assertIn("sim-plan", command)
+        self.assertIn("--run-id", command)
+        self.assertIn("run123", command)
+        self.assertIn("--revision-id", command)
+        self.assertIn("6106765", command)
+        self.assertEqual(command.count("--plan"), 2)
+
+    def test_sim_plan_action_is_exposed_and_logged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = default_config()
+            config.runs_dir = Path(tmp_dir)
+            store = StateStore(config.runs_dir)
+            record = store.create("/nfs/exp_s", "demo")
+            record["dcl"] = {"returncode": 0}
+            record["sim_plan"] = {
+                "returncode": 0,
+                "stdout": "triggered sim plan",
+                "stderr": "",
+            }
+            record["stage"] = "sim_plan_triggered"
+            store.save(record)
+
+            payload = ReleaseWebApp(config).get_run(record["release_id"])
+
+            self.assertTrue(any(action["key"] == "sim-plan" for action in payload["actions"]))
+            self.assertEqual(
+                {step["key"]: step["status"] for step in payload["timeline"]}["sim_plan"],
+                "done",
+            )
+            self.assertIn("triggered sim plan", "\n".join(payload["logs"]["sim_plan_stdout"]))
+
+    def test_default_config_uses_one_cr_for_0206_with_two_sim_plans(self) -> None:
+        config = default_config()
+        branch = next(b for b in config.voyager.branches if b.name == "gen4_release_20260206")
+
+        self.assertEqual(branch.effective_diff_ids(), [6106765])
+        self.assertEqual(
+            [plan.name for plan in branch.effective_sim_plans()],
+            [
+                "lxh_ra_stuck_release_20260206-openloop",
+                "lxh_ra_stuck_20260206_reviewed-openloop",
+            ],
+        )
+
     def test_selected_run_export_command_uses_run_id(self) -> None:
         command = build_cli_command(
             "run123",

@@ -73,9 +73,9 @@ export function flowItems(summary) {
       badge: "O6",
       shortTitle: "Sim Plan",
       title: "Onboard: Sim Plan",
-      note: "manual trigger",
-      detail: "TODO: sim plan remains a manual trigger until CLI support lands.",
-      actionKeys: [],
+      note: "Kunpeng SimOne",
+      detail: "Trigger, refresh, or cancel Kunpeng SimOne plans after DCL creates the review revision.",
+      actionKeys: ["sim-plan", "sim-plan-status", "sim-plan-cancel"],
     },
   ];
   const offboard = [
@@ -228,9 +228,42 @@ export function renderDclForm() {
         ${renderBranchOptions(config.branch)}
       </select>
       <p class="helper-text">Leave empty to run DCL diff for all branches, or select one to supplement a specific CR.</p>
-      <p class="helper-text todo-note">TODO: sim plan remains a manual trigger until CLI support lands.</p>
+      <p class="helper-text">O6 Sim Plan uses the DCL revision id from this branch after DCL completes.</p>
     </div>
   `;
+}
+
+function branchByName(name) {
+  return (state.configBranches || []).find((b) => b.name === name || b.checkout_branch === name);
+}
+
+function renderSimPlanChecks(config) {
+  const branches = state.configBranches || [];
+  const selectedPlans = Array.isArray(config.plans) ? new Set(config.plans) : null;
+  const selectedBranch = config.branch || "";
+  return branches
+    .map((branch) => {
+      const plans = branch.sim_plans || (branch.sim_plan ? [{ name: branch.sim_plan, enabled_by_default: true }] : []);
+      if (!plans.length) return "";
+      const hidden = selectedBranch && selectedBranch !== branch.name ? " style=\"display:none\"" : "";
+      return `
+        <div class="sim-plan-branch-plans" data-branch="${escapeHtml(branch.name)}"${hidden}>
+          <div class="sim-plan-branch-title">${escapeHtml(branch.name)} <span>CR ${(branch.update_diff_ids || []).join(",") || "from DCL"}</span></div>
+          <div class="sim-plan-checks">
+            ${plans.map((plan) => {
+              const checked = selectedPlans ? selectedPlans.has(plan.name) : !!plan.enabled_by_default;
+              return `
+                <label class="inline-check sim-plan-option">
+                  <input class="sim-plan-check" type="checkbox" value="${escapeHtml(plan.name)}"${checkedAttr(checked)} />
+                  ${escapeHtml(plan.name)}
+                </label>
+              `;
+            }).join("")}
+          </div>
+        </div>
+      `;
+    })
+    .join("");
 }
 
 export function renderOffboardForm() {
@@ -265,17 +298,71 @@ export function renderOffboardForm() {
   `;
 }
 
-export function renderSimPlanPlaceholder() {
+export function renderSimPlanForm() {
+  const config = stageConfig("sim_plan");
+  const record = (state.selectedRun || {}).record || {};
+  const simPlan = record.sim_plan || {};
   return `
-    <div class="export-form">
-      <p class="helper-text todo-note">TODO: manual trigger until CLI support lands.</p>
-      <p class="helper-text">Use the Sim plan fields in Handoff or DCL settings as placeholders for now. No web action will be started from this node.</p>
+    <div class="export-form sim-plan-form">
+      <div class="export-row">
+        <select id="simPlanBranch" class="branch-select">
+          <option value=""${selectedAttr(config.branch, "")}>all enabled branches</option>
+          ${renderBranchOptions(config.branch)}
+        </select>
+        <input id="simPlanRevision" value="${escapeHtml(config.revision_id || "")}" placeholder="optional revision id, defaults to DCL result" />
+      </div>
+      ${renderSimPlanChecks(config)}
+      <div class="export-row">
+        <input id="simPlanPriority" value="${escapeHtml(config.priority || "")}" placeholder="priority override" />
+        <input id="simPlanSensitiveHour" value="${escapeHtml(config.time_sensitive_hour || "")}" placeholder="time sensitive hour" />
+      </div>
+      <input id="simPlanCancelRecord" placeholder="record id for cancel, e.g. o123456" />
+      <p class="helper-text">Default selections come from branch config. Master is configured but unchecked by default because it is resource-heavy.</p>
+      <p class="helper-text">${simPlan.stdout ? escapeHtml(simPlan.stdout.split("\n").slice(-1)[0]) : "No Sim Plan result recorded yet."}</p>
     </div>
   `;
 }
 
 export function renderStageConfigPanel(stage) {
   const config = stageConfig(stage);
+  if (stage === "sim_plan") {
+    const plans = Array.isArray(config.plans) ? config.plans.join(",") : (config.plans || "");
+    const runDisabled = state.selectedId ? "" : " disabled title=\"Select a release run first.\"";
+    return `
+      <div class="stage-config-panel">
+        <div class="stage-config-grid">
+          <label>
+            <span>Branch</span>
+            <select id="stageConfigBranch" class="branch-select">
+              <option value=""${selectedAttr(config.branch, "")}>all enabled branches</option>
+              ${renderBranchOptions(config.branch)}
+            </select>
+          </label>
+          <label>
+            <span>Revision id</span>
+            <input id="stageConfigRevision" value="${escapeHtml(config.revision_id || "")}" placeholder="from DCL result" />
+          </label>
+          <label>
+            <span>Plans</span>
+            <input id="stageConfigPlanNames" value="${escapeHtml(plans)}" placeholder="comma-separated plan names" />
+          </label>
+          <label>
+            <span>Priority</span>
+            <input id="stageConfigPriority" value="${escapeHtml(config.priority || "")}" placeholder="optional" />
+          </label>
+          <label>
+            <span>Time sensitive hour</span>
+            <input id="stageConfigSensitiveHour" value="${escapeHtml(config.time_sensitive_hour || "")}" placeholder="optional" />
+          </label>
+        </div>
+        <div class="stage-config-actions">
+          <button id="saveRunStageConfig" class="action-button" type="button"${runDisabled}>Save to current run</button>
+          <button id="saveDefaultStageConfig" class="action-button" type="button">Save as global default</button>
+          <span id="stageConfigResult" class="helper-text"></span>
+        </div>
+      </div>
+    `;
+  }
   const diffIds = Array.isArray(config.update_diff_ids)
     ? config.update_diff_ids.join(",")
     : (config.update_diff_ids || "");

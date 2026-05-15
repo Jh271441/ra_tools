@@ -125,6 +125,7 @@ def record_logs(record: Dict[str, Any]) -> Dict[str, list[str]]:
     jenkins = ifx.get("jenkins") or {}
     apply_handoff = record.get("apply_handoff") or {}
     dcl = record.get("dcl") or {}
+    sim_plan = record.get("sim_plan") or {}
     offboard = record.get("offboard") or {}
     return {
         "export_stdout": tail((export.get("export") or {}).get("stdout")),
@@ -138,6 +139,8 @@ def record_logs(record: Dict[str, Any]) -> Dict[str, list[str]]:
         "handoff_stderr": tail(apply_handoff.get("stderr")),
         "dcl_stdout": tail(dcl.get("stdout")),
         "dcl_stderr": tail(dcl.get("stderr")),
+        "sim_plan_stdout": tail(sim_plan.get("stdout"), 120),
+        "sim_plan_stderr": tail(sim_plan.get("stderr"), 120),
         "offboard_stdout": tail(offboard.get("stdout"), 120),
         "offboard_stderr": tail(offboard.get("stderr"), 80),
     }

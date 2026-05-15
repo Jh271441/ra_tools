@@ -102,6 +102,15 @@ def step_status(record: Dict[str, Any], key: str) -> str:
             return command_state(dcl)
         apply_handoff = record.get("apply_handoff") or {}
         return "ready" if stage == "apply_handoff_complete" and apply_handoff else "pending"
+    if key == "sim_plan":
+        sim_plan = record.get("sim_plan") or {}
+        if stage == "sim_plan_failed":
+            return "failed"
+        if stage == "sim_plan_dry_run":
+            return "dry_run"
+        if sim_plan:
+            return command_state(sim_plan)
+        return "ready" if stage == "dcl_complete" and record.get("dcl") else "pending"
     if key == "offboard":
         offboard = record.get("offboard") or {}
         if not offboard:
@@ -175,6 +184,16 @@ def commands(record: Dict[str, Any]) -> Dict[str, Any]:
             f"python3 -m model_release_pipeline.cli apply-handoff --run-id {release_id}"
         ),
         "dcl": f"python3 -m model_release_pipeline.cli dcl --run-id {release_id}",
+        "sim_plan": (
+            f"python3 -m model_release_pipeline.cli sim-plan --run-id {release_id}"
+        ),
+        "sim_plan_status": (
+            f"python3 -m model_release_pipeline.cli sim-plan-status --run-id {release_id}"
+        ),
+        "sim_plan_cancel": (
+            "python3 -m model_release_pipeline.cli sim-plan-cancel "
+            f"--run-id {release_id} --record-id <sim_plan_record_id>"
+        ),
         "offboard": (
             "python3 -m model_release_pipeline.cli offboard "
             f"--run-id {release_id} --remote luban_2_card"

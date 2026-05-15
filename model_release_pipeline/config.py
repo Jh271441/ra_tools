@@ -103,12 +103,22 @@ class ManifestEntryConfig:
 
 
 @dataclass
+class BranchSimPlanConfig:
+    name: str
+    plan_id: int = 0
+    enabled_by_default: bool = True
+    priority: int = 0
+    time_sensitive_hour: float = 0.0
+
+
+@dataclass
 class BranchConfig:
     name: str
     checkout_branch: str
     update_diff_id: int
-    sim_plan: str
+    sim_plan: str = ""
     update_diff_ids: List[int] = field(default_factory=list)
+    sim_plans: List[BranchSimPlanConfig] = field(default_factory=list)
     manifest_entries: List[ManifestEntryConfig] = field(default_factory=list)
 
     def effective_diff_ids(self) -> List[int]:
@@ -116,6 +126,13 @@ class BranchConfig:
             return list(self.update_diff_ids)
         if self.update_diff_id:
             return [self.update_diff_id]
+        return []
+
+    def effective_sim_plans(self) -> List[BranchSimPlanConfig]:
+        if self.sim_plans:
+            return list(self.sim_plans)
+        if self.sim_plan:
+            return [BranchSimPlanConfig(name=self.sim_plan)]
         return []
 
 
@@ -136,6 +153,25 @@ class PickerConfig:
 
 
 @dataclass
+class SimPlanConfig:
+    enabled: bool = True
+    trail_base_url: str = "https://voyager.intra.xiaojukeji.com"
+    appid: str = "4"
+    token: str = ""
+    token_env: str = "SIMPLAN_TRAIL_TOKEN"
+    username: str = "jasperchen"
+    business_type: int = 37
+    trigger_from: str = "kunpeng"
+    context_prefix: str = "model_release"
+    priority: int = 2
+    platform: int = 4
+    cluster: str = "prod"
+    base_version: str = "Default"
+    denoise_mode: int = 0
+    timeout_sec: int = 100
+
+
+@dataclass
 class ReleaseConfig:
     runs_dir: Path = DEFAULT_RUNS_DIR
     onnx_file_name: str = "vectorized_scenario_remote_assist_model.onnx"
@@ -143,6 +179,7 @@ class ReleaseConfig:
     ifx: IfxConfig = field(default_factory=IfxConfig)
     voyager: VoyagerConfig = field(default_factory=VoyagerConfig)
     picker: PickerConfig = field(default_factory=PickerConfig)
+    sim_plan: SimPlanConfig = field(default_factory=SimPlanConfig)
 
     def to_dict(self) -> Dict[str, Any]:
         data = asdict(self)
@@ -191,37 +228,58 @@ def _default_voyager_config() -> VoyagerConfig:
                 checkout_branch="jasperchen/2026Q1_test_scenario_dnn_dev",
                 update_diff_id=5716859,
                 sim_plan="topic_ra_auto_trigger",
+                sim_plans=[
+                    BranchSimPlanConfig(
+                        name="topic_ra_auto_trigger",
+                        enabled_by_default=False,
+                    )
+                ],
             ),
             BranchConfig(
                 name="gen4_release_20260403",
                 checkout_branch="jasperchen/gen4_release_20260403/scenario_dnn_dev",
                 update_diff_id=6076711,
                 sim_plan="lxh_ra_stuck_release_20260403-openloop",
+                sim_plans=[
+                    BranchSimPlanConfig(name="lxh_ra_stuck_release_20260403-openloop")
+                ],
             ),
             BranchConfig(
                 name="gen4_release_20260410",
                 checkout_branch="jasperchen/gen4_release_20260410/scenario_dnn_dev",
                 update_diff_id=6106759,
                 sim_plan="lxh_ra_stuck_release_20260410-openloop",
+                sim_plans=[
+                    BranchSimPlanConfig(name="lxh_ra_stuck_release_20260410-openloop")
+                ],
             ),
             BranchConfig(
                 name="gen4_release_20260417",
                 checkout_branch="jasperchen/gen4_release_20260417/scenario_dnn_dev",
                 update_diff_id=6106761,
                 sim_plan="lxh_ra_stuck_release_20260417-openloop",
+                sim_plans=[
+                    BranchSimPlanConfig(name="lxh_ra_stuck_release_20260417-openloop")
+                ],
             ),
             BranchConfig(
                 name="gen4_release_20260327",
                 checkout_branch="jasperchen/gen4_release_20260327/scenario_dnn_dev",
                 update_diff_id=6076959,
                 sim_plan="lxh_ra_stuck_release_20260327-openloop",
+                sim_plans=[
+                    BranchSimPlanConfig(name="lxh_ra_stuck_release_20260327-openloop")
+                ],
             ),
             BranchConfig(
                 name="gen4_release_20260206",
                 checkout_branch="jasperchen/gen4_release_20260206/scenario_dnn_dev",
                 update_diff_id=6106765,
-                update_diff_ids=[6106765, 6115905],
                 sim_plan="lxh_ra_stuck_release_20260206-openloop",
+                sim_plans=[
+                    BranchSimPlanConfig(name="lxh_ra_stuck_release_20260206-openloop"),
+                    BranchSimPlanConfig(name="lxh_ra_stuck_20260206_reviewed-openloop"),
+                ],
                 manifest_entries=[
                     ManifestEntryConfig(
                         platform="onnx",
@@ -279,6 +337,16 @@ def _config_from_dict(data: Dict[str, Any]) -> ReleaseConfig:
     branch_entries = []
     for entry in voyager_cfg.get("branches", []):
         branch_kwargs = {k: v for k, v in entry.items() if k in BranchConfig.__dataclass_fields__ and k != "manifest_entries"}
+        raw_sim_plans = branch_kwargs.get("sim_plans") or []
+        if raw_sim_plans:
+            branch_kwargs["sim_plans"] = [
+                item
+                if isinstance(item, BranchSimPlanConfig)
+                else BranchSimPlanConfig(**item)
+                if isinstance(item, dict)
+                else BranchSimPlanConfig(name=str(item))
+                for item in raw_sim_plans
+            ]
         raw_entries = entry.get("manifest_entries", [])
         if raw_entries:
             branch_kwargs["manifest_entries"] = [ManifestEntryConfig(**e) for e in raw_entries]
@@ -295,6 +363,7 @@ def _config_from_dict(data: Dict[str, Any]) -> ReleaseConfig:
     luban = LubanConfig(**data.get("luban", {}))
     ifx = IfxConfig(**data.get("ifx", {}))
     picker = PickerConfig(**data.get("picker", {}))
+    sim_plan = SimPlanConfig(**data.get("sim_plan", {}))
     runs_dir = Path(str(data.get("runs_dir", DEFAULT_RUNS_DIR))).expanduser()
     return ReleaseConfig(
         runs_dir=runs_dir,
@@ -305,6 +374,7 @@ def _config_from_dict(data: Dict[str, Any]) -> ReleaseConfig:
         ifx=ifx,
         voyager=voyager,
         picker=picker,
+        sim_plan=sim_plan,
     )
 
 

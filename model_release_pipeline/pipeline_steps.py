@@ -23,6 +23,7 @@ ONBOARD_STEPS = [
     PipelineStep("ifx",     "IFX Convert", "Trigger Jenkins and collect IFX versions",       group="onboard"),
     PipelineStep("handoff", "Handoff",     "Generate or apply Voyager MANIFEST updates",     group="onboard"),
     PipelineStep("dcl",     "DCL",         "Update review diffs manually",                   group="onboard"),
+    PipelineStep("sim_plan", "Sim Plan",   "Trigger or manage Kunpeng SimOne plans",          group="onboard"),
 ]
 
 OFFBOARD_STEP = PipelineStep(

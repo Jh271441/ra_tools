@@ -71,6 +71,30 @@ ACTIONS = {
         "extra_args": [],
         "needs_run_id": True,
     },
+    "sim-plan": {
+        "command": "sim-plan",
+        "label": "Trigger Sim Plan",
+        "supports_dry_run": True,
+        "requires_confirm": True,
+        "extra_args": [],
+        "needs_run_id": True,
+    },
+    "sim-plan-status": {
+        "command": "sim-plan-status",
+        "label": "Refresh Sim Plan",
+        "supports_dry_run": False,
+        "requires_confirm": False,
+        "extra_args": [],
+        "needs_run_id": True,
+    },
+    "sim-plan-cancel": {
+        "command": "sim-plan-cancel",
+        "label": "Cancel Sim Plan",
+        "supports_dry_run": False,
+        "requires_confirm": True,
+        "extra_args": [],
+        "needs_run_id": True,
+    },
     "offboard": {
         "command": "offboard",
         "label": "Run Offboard",
@@ -210,6 +234,36 @@ def build_cli_command(
             command.append("--lint")
         if payload.get("allow_dirty"):
             command.append("--allow-dirty")
+    elif action == "sim-plan":
+        branch = str(payload.get("branch") or "").strip()
+        if branch:
+            command.extend(["--branch", branch])
+        revision_id = str(payload.get("revision_id") or "").strip()
+        if revision_id:
+            if not revision_id.isdigit():
+                raise ValueError("revision_id must be an integer.")
+            command.extend(["--revision-id", str(int(revision_id))])
+        plans = payload.get("plans") or payload.get("plan") or []
+        if isinstance(plans, str):
+            plans = [plans]
+        for plan in plans:
+            text = str(plan or "").strip()
+            if text:
+                command.extend(["--plan", text])
+        priority = str(payload.get("priority") or "").strip()
+        if priority:
+            if not priority.isdigit():
+                raise ValueError("priority must be an integer.")
+            command.extend(["--priority", str(int(priority))])
+        time_sensitive_hour = str(payload.get("time_sensitive_hour") or "").strip()
+        if time_sensitive_hour:
+            float(time_sensitive_hour)
+            command.extend(["--time-sensitive-hour", time_sensitive_hour])
+    elif action == "sim-plan-cancel":
+        record_id = str(payload.get("record_id") or "").strip()
+        if not record_id:
+            raise ValueError("Sim Plan cancel requires record_id.")
+        command.extend(["--record-id", record_id])
     elif action == "offboard":
         experiment = str(payload.get("experiment") or "").strip()
         epoch = str(payload.get("epoch") or "").strip()

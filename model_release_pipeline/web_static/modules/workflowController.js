@@ -13,7 +13,7 @@ import {
   renderIfxForm,
   renderOffboardForm,
   renderPickForm,
-  renderSimPlanPlaceholder,
+  renderSimPlanForm,
   renderStageConfigPanel,
   renderUploadForm,
 } from "./workflow.js";
@@ -185,10 +185,19 @@ function bindFlowNodes(onAction) {
 }
 
 function supportsStageConfig(stepKey) {
-  return ["handoff", "dcl"].includes(stepKey);
+  return ["handoff", "dcl", "sim_plan"].includes(stepKey);
 }
 
 function collectStageConfig() {
+  if (state.activeStep === "sim_plan") {
+    return {
+      branch: $("stageConfigBranch") ? $("stageConfigBranch").value : "",
+      revision_id: $("stageConfigRevision") ? $("stageConfigRevision").value.trim() : "",
+      plans: $("stageConfigPlanNames") ? $("stageConfigPlanNames").value.trim() : "",
+      priority: $("stageConfigPriority") ? $("stageConfigPriority").value.trim() : "",
+      time_sensitive_hour: $("stageConfigSensitiveHour") ? $("stageConfigSensitiveHour").value.trim() : "",
+    };
+  }
   const diffIds = $("stageConfigDiffIds") ? $("stageConfigDiffIds").value.trim() : "";
   return {
     branch: $("stageConfigBranch") ? $("stageConfigBranch").value : "",
@@ -315,7 +324,7 @@ function renderFlowInspector(flow, actions, statusByStep, onAction) {
     ${item.key === "handoff" ? renderHandoffForm() : ""}
     ${item.key === "dcl" ? renderDclForm() : ""}
     ${item.key === "offboard" ? renderOffboardForm() : ""}
-    ${item.key === "sim_plan" ? renderSimPlanPlaceholder() : ""}
+    ${item.key === "sim_plan" ? renderSimPlanForm() : ""}
     ${state.openStageSettings === item.key ? renderStageConfigPanel(item.key) : ""}
     <div class="flow-actions">${renderActionButtons(itemActions, "primary")}</div>
   `;
@@ -329,6 +338,15 @@ function renderFlowInspector(flow, actions, statusByStep, onAction) {
   document.querySelectorAll('input[name="offboardMode"]').forEach((input) => {
     input.onchange = () => renderConfirmHint(itemActions);
   });
+
+  const simPlanBranch = $("simPlanBranch");
+  if (simPlanBranch) {
+    simPlanBranch.onchange = () => {
+      document.querySelectorAll(".sim-plan-branch-plans").forEach((panel) => {
+        panel.style.display = (!simPlanBranch.value || panel.dataset.branch === simPlanBranch.value) ? "" : "none";
+      });
+    };
+  }
 
   const previewBtn = $("pickPreviewBtn");
   if (previewBtn) {

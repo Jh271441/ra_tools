@@ -23,6 +23,7 @@ from model_release_pipeline.steps.runner import (
     _run_dcl,
     _run_ifx_convert,
     _run_offboard,
+    _run_sim_plan,
 )
 
 
@@ -429,6 +430,67 @@ class CliSelectionTest(unittest.TestCase):
             self.assertIn("master", calls[0]["temp_branch"])
             self.assertEqual(calls[1]["source_commit"], "075e24f0729")
             self.assertEqual(updated["dcl"]["results"][0]["source_commit"], "d9d1b574779")
+
+    def test_sim_plan_uses_single_dcl_revision_for_multiple_plans(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config = default_config()
+            config.runs_dir = Path(tmp_dir)
+            store = StateStore(config.runs_dir)
+            record = store.create(experiment_path="/tmp/exp", description="")
+            record["stage"] = "dcl_complete"
+            record["dcl"] = {
+                "returncode": 0,
+                "results": [
+                    {
+                        "branch": "gen4_release_20260206",
+                        "update_diff_ids": [6106765],
+                    }
+                ],
+            }
+            store.save(record)
+            calls = []
+
+            class FakeSimPlanClient:
+                def __init__(self, _config):
+                    pass
+
+                def trigger(self, **kwargs):
+                    calls.append(kwargs)
+                    return {
+                        "returncode": 0,
+                        "request": {"trigger_param": {"revision_id": kwargs["revision_id"]}},
+                        "response": {"data": {"context_id": len(calls)}},
+                        "plan_id": len(calls),
+                        "context_id": len(calls),
+                    }
+
+            original_client = runner_module.SimPlanClient
+            try:
+                runner_module.SimPlanClient = FakeSimPlanClient
+                args = argparse.Namespace(
+                    branch="gen4_release_20260206",
+                    revision_id=None,
+                    plan=None,
+                    priority=None,
+                    time_sensitive_hour=None,
+                    dry_run=False,
+                    yes=True,
+                    json=True,
+                )
+
+                updated = _run_sim_plan(args, config, store, record)
+            finally:
+                runner_module.SimPlanClient = original_client
+
+            self.assertEqual(updated["stage"], "sim_plan_triggered")
+            self.assertEqual([call["revision_id"] for call in calls], [6106765, 6106765])
+            self.assertEqual(
+                [call["plan"].name for call in calls],
+                [
+                    "lxh_ra_stuck_release_20260206-openloop",
+                    "lxh_ra_stuck_20260206_reviewed-openloop",
+                ],
+            )
 
     def test_ifx_convert_dry_run_does_not_persist_preview(self) -> None:
         with TemporaryDirectory() as tmp_dir:

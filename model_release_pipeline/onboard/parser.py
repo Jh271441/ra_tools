@@ -185,6 +185,45 @@ def build_parser() -> argparse.ArgumentParser:
     dcl_parser.add_argument("--lint", action="store_true")
     dcl_parser.add_argument("--allow-dirty", action="store_true")
 
+    sim_plan_parser = subparsers.add_parser(
+        "sim-plan",
+        parents=[common],
+        help="Trigger Kunpeng/SimOne Sim Plan jobs for DCL revision ids",
+    )
+    sim_plan_parser.add_argument("--run-id", required=True)
+    sim_plan_parser.add_argument(
+        "--branch",
+        help="Configured branch name or checkout branch. If omitted, trigger enabled default plans for all branches.",
+    )
+    sim_plan_parser.add_argument(
+        "--revision-id",
+        type=int,
+        help="Explicit DCL revision id. Defaults to the revision id recorded by the DCL step.",
+    )
+    sim_plan_parser.add_argument(
+        "--plan",
+        action="append",
+        help="Sim Plan name to trigger. Can be repeated or comma-separated.",
+    )
+    sim_plan_parser.add_argument("--priority", type=int)
+    sim_plan_parser.add_argument("--time-sensitive-hour", type=float)
+    sim_plan_parser.add_argument("--dry-run", action="store_true")
+
+    sim_status_parser = subparsers.add_parser(
+        "sim-plan-status",
+        parents=[common],
+        help="Refresh stored Sim Plan status from Kunpeng/SimOne",
+    )
+    sim_status_parser.add_argument("--run-id", required=True)
+
+    sim_cancel_parser = subparsers.add_parser(
+        "sim-plan-cancel",
+        parents=[common],
+        help="Cancel a Kunpeng/SimOne Sim Plan record",
+    )
+    sim_cancel_parser.add_argument("--run-id", required=True)
+    sim_cancel_parser.add_argument("--record-id", required=True)
+
     release_parser = subparsers.add_parser(
         "release", parents=[common], help="Run export -> ifx -> handoff"
     )

@@ -153,6 +153,16 @@ class ReleaseWebApp:
                     "checkout_branch": b.checkout_branch,
                     "update_diff_ids": b.effective_diff_ids(),
                     "sim_plan": b.sim_plan,
+                    "sim_plans": [
+                        {
+                            "name": plan.name,
+                            "plan_id": plan.plan_id,
+                            "enabled_by_default": plan.enabled_by_default,
+                            "priority": plan.priority,
+                            "time_sensitive_hour": plan.time_sensitive_hour,
+                        }
+                        for plan in b.effective_sim_plans()
+                    ],
                 }
                 for b in self.config.voyager.branches
             ]

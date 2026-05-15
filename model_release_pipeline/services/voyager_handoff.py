@@ -98,6 +98,9 @@ class VoyagerHandoffService:
         for branch in self.config.branches:
             diff_ids = branch.effective_diff_ids()
             dcl_lines = [f"dcl diff -n -u {did}" for did in diff_ids]
+            sim_plan_names = ", ".join(
+                plan.name for plan in branch.effective_sim_plans()
+            ) or branch.sim_plan
             commands.extend(
                 [
                     f"# [{branch.name}]",
@@ -107,7 +110,7 @@ class VoyagerHandoffService:
                     f'git commit -m "{commit_message}"',
                     "dcl lint",
                     *dcl_lines,
-                    f"# Sim plan: {branch.sim_plan}",
+                    f"# Sim plans: {sim_plan_names}",
                     "",
                 ]
             )
@@ -476,6 +479,7 @@ else:
             else "",
             "dcl_commands": dcl_commands,
             "sim_plan": chosen_branch.sim_plan,
+            "sim_plans": [plan.name for plan in chosen_branch.effective_sim_plans()],
         }
 
     def dcl_to_docker(
@@ -524,6 +528,7 @@ else:
             "dry_run": dry_run,
             "lint": lint,
             "sim_plan": chosen_branch.sim_plan,
+            "sim_plans": [plan.name for plan in chosen_branch.effective_sim_plans()],
         }
 
     def generate(

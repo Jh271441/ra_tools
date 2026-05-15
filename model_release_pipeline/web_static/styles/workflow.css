@@ -331,6 +331,44 @@
   gap: 8px;
 }
 
+.sim-plan-form {
+  gap: 10px;
+}
+
+.sim-plan-branch-plans {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.sim-plan-branch-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.sim-plan-branch-title span {
+  color: var(--muted);
+  font: 600 0.76rem/1.2 var(--mono);
+}
+
+.sim-plan-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sim-plan-option {
+  flex: 1 1 260px;
+  justify-content: flex-start;
+  overflow-wrap: anywhere;
+}
+
 .todo-note {
   color: var(--muted);
   font-style: italic;

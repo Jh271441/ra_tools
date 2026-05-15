@@ -8,16 +8,21 @@ from typing import Any, Dict, Iterable, Optional
 
 
 STAGE_CONFIG_KEY = "web_stage_config"
-SUPPORTED_STAGE_KEYS = {"handoff", "dcl"}
+SUPPORTED_STAGE_KEYS = {"handoff", "dcl", "sim_plan"}
 ACTION_STAGE_KEYS = {
     "apply-handoff": "handoff",
     "dcl": "dcl",
+    "sim-plan": "sim_plan",
 }
 ALLOWED_FIELDS = {
     "branch",
     "checkout_branch",
     "update_diff_ids",
     "sim_plan",
+    "plans",
+    "revision_id",
+    "priority",
+    "time_sensitive_hour",
     "lint",
     "allow_dirty",
 }
@@ -119,6 +124,23 @@ def clean_stage_values(
             else:
                 cleaned[key] = bool(raw_value)
             continue
+        if key in {"plans"}:
+            plans = parse_sim_plans(raw_value)
+            if plans:
+                cleaned[key] = plans
+            continue
+        if key in {"revision_id", "priority"}:
+            text = str(raw_value or "").strip()
+            if text:
+                if not text.isdigit():
+                    raise ValueError(f"{key} must be an integer.")
+                cleaned[key] = int(text)
+            continue
+        if key == "time_sensitive_hour":
+            text = str(raw_value or "").strip()
+            if text:
+                cleaned[key] = float(text)
+            continue
         if key == "update_diff_ids":
             diff_ids = parse_update_diff_ids(raw_value)
             if diff_ids:
@@ -128,6 +150,23 @@ def clean_stage_values(
         if value or (key == "branch" and keep_empty_branch):
             cleaned[key] = value
     return cleaned
+
+
+def parse_sim_plans(value: Any) -> list[str]:
+    if value is None:
+        return []
+    raw_items: Iterable[Any]
+    if isinstance(value, (list, tuple)):
+        raw_items = value
+    else:
+        text = str(value).replace("\n", ",")
+        raw_items = [part.strip() for part in text.split(",")]
+    plans = []
+    for item in raw_items:
+        text = str(item or "").strip()
+        if text:
+            plans.append(text)
+    return plans
 
 
 def parse_update_diff_ids(value: Any) -> list[int]:
