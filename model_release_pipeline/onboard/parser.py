@@ -81,6 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_experiment_options(export_parser)
     _add_picker_options(export_parser)
+    export_parser.add_argument("--run-id")
     export_parser.add_argument("--desc", default="")
     export_parser.add_argument("--dry-run", action="store_true")
 

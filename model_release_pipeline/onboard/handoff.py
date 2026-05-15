@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import re
 from dataclasses import replace
 from typing import Any, Callable, Dict
 
 from model_release_pipeline.config import BranchConfig, ReleaseConfig, VoyagerConfig
-from model_release_pipeline.services.voyager_handoff import VoyagerHandoffService
+from model_release_pipeline.services.voyager_handoff import (
+    VoyagerHandoffService,
+    extract_apply_commit,
+)
 from model_release_pipeline.state_store import StateStore
 from model_release_pipeline.web.stage_config import parse_update_diff_ids
 
@@ -91,6 +95,48 @@ def _voyager_config_for_args(
     if not replaced:
         branches.append(override)
     return replace(config, branches=branches), override
+
+
+def _safe_dcl_temp_branch(release_id: str, branch_name: str, commit: str) -> str:
+    branch_part = re.sub(r"[^A-Za-z0-9._-]+", "_", branch_name).strip("_")
+    release_part = re.sub(r"[^A-Za-z0-9._-]+", "_", release_id).strip("_")
+    return f"model_release_dcl_{release_part}_{branch_part}_{commit[:12]}"
+
+
+def _apply_results(record: Dict[str, Any]) -> list[Dict[str, Any]]:
+    apply_handoff = record.get("apply_handoff") or {}
+    results = apply_handoff.get("results")
+    if isinstance(results, list):
+        return [item for item in results if isinstance(item, dict)]
+    if isinstance(apply_handoff, dict) and apply_handoff.get("branch"):
+        return [apply_handoff]
+    return []
+
+
+def _apply_result_for_branch(
+    record: Dict[str, Any],
+    branch: BranchConfig | None,
+    branch_name: str,
+) -> Dict[str, Any] | None:
+    names = {branch_name}
+    if branch is not None:
+        names.update({branch.name, branch.checkout_branch})
+    for result in _apply_results(record):
+        if result.get("branch") in names or result.get("checkout_branch") in names:
+            return result
+    return None
+
+
+def _apply_commit_for_branch(
+    record: Dict[str, Any],
+    branch: BranchConfig | None,
+    branch_name: str,
+) -> str:
+    result = _apply_result_for_branch(record, branch, branch_name)
+    if not result:
+        return ""
+    commit = str(result.get("commit") or result.get("source_commit") or "").strip()
+    return commit or extract_apply_commit(str(result.get("stdout") or ""))
 
 
 def run_handoff(
@@ -251,6 +297,13 @@ def run_dcl(
     results = []
     failed = None
     for index, branch_name in enumerate(branches, start=1):
+        branch_config = _find_branch(voyager_config, branch_name)
+        source_commit = _apply_commit_for_branch(record, branch_config, branch_name)
+        temp_branch = (
+            _safe_dcl_temp_branch(record["release_id"], branch_name, source_commit)
+            if source_commit
+            else ""
+        )
         progress(
             args,
             "Run DCL Diff",
@@ -266,6 +319,8 @@ def run_dcl(
             dry_run=args.dry_run,
             lint=args.lint,
             allow_dirty=args.allow_dirty,
+            source_commit=source_commit,
+            temp_branch=temp_branch,
         )
         results.append(result)
         if result.get("returncode") not in (0, None):

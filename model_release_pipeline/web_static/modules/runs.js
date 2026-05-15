@@ -4,10 +4,13 @@ import { draftPayload } from "./releaseData.js";
 import { $, state } from "./state.js";
 import { escapeHtml, formatEpoch, shortName, statusClass } from "./utils.js";
 
+let _animateNextRender = false;
+
 export async function loadRuns({ selectRun, renderEmptyState, renderRuns }, selectFirst = false) {
   const payload = await fetchJson("/api/runs");
   state.runs = payload.runs || [];
   $("runsDir").textContent = `runs_dir: ${payload.runs_dir}`;
+  _animateNextRender = true;
   renderRuns();
   if (state.selectedId) {
     await selectRun(state.selectedId);
@@ -19,9 +22,11 @@ export async function loadRuns({ selectRun, renderEmptyState, renderRuns }, sele
 }
 
 export function renderRunList({ clearSelection, selectRun }) {
+  const animate = _animateNextRender;
+  _animateNextRender = false;
   const filter = $("runFilter").value.trim().toLowerCase();
   const runsEl = $("runs");
-  runsEl.innerHTML = "";
+
   const visible = state.runs.filter((run) => {
     const haystack = [
       run.release_id,
@@ -35,9 +40,35 @@ export function renderRunList({ clearSelection, selectRun }) {
     return !filter || haystack.includes(filter);
   });
 
+  // Fast path: if only the selected item changed, update active classes in-place
+  // without touching the DOM structure (avoids flash from full innerHTML rebuild).
+  if (!animate) {
+    const existingItems = runsEl.querySelectorAll(".run-item[data-run-id]");
+    const expectedIds = [
+      ...(state.draftRun ? ["__draft__"] : []),
+      ...visible.map((r) => r.release_id),
+    ];
+    const match =
+      existingItems.length === expectedIds.length &&
+      [...existingItems].every((el, i) => el.dataset.runId === expectedIds[i]);
+    if (match) {
+      existingItems.forEach((el) => {
+        const id = el.dataset.runId;
+        el.classList.toggle("active", id === "__draft__" ? state.draftRun : id === state.selectedId);
+      });
+      return;
+    }
+  }
+
+  // Full rebuild (fresh load, filter change, or list structure changed)
+  runsEl.innerHTML = "";
+  let staggerIndex = 0;
+
   if (state.draftRun) {
     const draft = document.createElement("button");
     draft.className = "run-item draft active";
+    draft.dataset.runId = "__draft__";
+    if (animate) draft.style.animationDelay = "0ms";
     draft.onclick = clearSelection;
     draft.innerHTML = `
       <div class="run-id">New release draft</div>
@@ -50,6 +81,7 @@ export function renderRunList({ clearSelection, selectRun }) {
       </div>
     `;
     runsEl.appendChild(draft);
+    staggerIndex = 1;
   }
 
   if (!visible.length && !state.draftRun) {
@@ -57,9 +89,11 @@ export function renderRunList({ clearSelection, selectRun }) {
     return;
   }
 
-  for (const run of visible) {
+  for (const [i, run] of visible.entries()) {
     const button = document.createElement("button");
     button.className = `run-item ${run.release_id === state.selectedId ? "active" : ""}`;
+    button.dataset.runId = run.release_id;
+    if (animate) button.style.animationDelay = `${Math.min((i + staggerIndex) * 30, 240)}ms`;
     button.onclick = () => selectRun(run.release_id);
     button.innerHTML = `
       <div class="run-id">${escapeHtml(run.release_id)}</div>
@@ -78,10 +112,17 @@ export function renderRunList({ clearSelection, selectRun }) {
 export async function fetchRun(releaseId, { renderSelectedRun, renderRuns }) {
   state.draftRun = false;
   state.selectedId = releaseId;
+
+  const pane = document.querySelector(".view-pane.active");
+  if (pane) pane.classList.add("content-fade-out");
+
   renderRuns();
+
   const payload = await fetchJson(`/api/runs/${encodeURIComponent(releaseId)}`);
   state.selectedRun = payload;
   renderSelectedRun();
+
+  if (pane) pane.classList.remove("content-fade-out");
 }
 
 export function renderRunHeader() {

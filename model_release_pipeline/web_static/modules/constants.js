@@ -7,7 +7,7 @@ export const DEFAULT_ACTIONS = [
   { key: "handoff", label: "Generate Handoff", supports_dry_run: false, requires_confirm: false, needs_run_id: true },
   { key: "apply-handoff", label: "Apply Handoff", supports_dry_run: true, requires_confirm: true, needs_run_id: true },
   { key: "dcl", label: "Run DCL Diff", supports_dry_run: true, requires_confirm: true, needs_run_id: true },
-  { key: "offboard", label: "Run Offboard", supports_dry_run: true, requires_confirm: true, needs_run_id: true },
+  { key: "offboard", label: "Run Offboard", supports_dry_run: true, requires_confirm: true, needs_run_id: false },
 ];
 
 export const LOG_LABELS = {
@@ -45,5 +45,4 @@ export const NEXT_STEP_BY_ACTION = {
   "ifx-poll": "handoff",
   handoff: "handoff",
   "apply-handoff": "dcl",
-  dcl: "offboard",
 };

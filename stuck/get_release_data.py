@@ -4,6 +4,7 @@ EXTRA = {
     "gen4-release-20260403": {"tp": 354, "fp": 33},
     "gen4-release-20260410": {"tp": 556, "fp": 37},
     "gen4-release-20260417": {"tp": 380, "fp": 55},
+    "gen4-release-20260206": {"tp": 349, "fp": 3},
 }
 
 
@@ -31,3 +32,5 @@ calc_metrics(version="gen4-release-20260327", tp=441, fn=217, fp=241)
 calc_metrics(version="gen4-release-20260403", tp=552, fn=305, fp=223)
 calc_metrics(version="gen4-release-20260410", tp=666, fn=310, fp=296)
 calc_metrics(version="gen4-release-20260417", tp=566, fn=259, fp=307)
+calc_metrics(version="gen4-release-20260206", tp=475, fn=213, fp=475)
+calc_metrics(version="gen4-release-20260206", tp=821, fn=253, fp=247)

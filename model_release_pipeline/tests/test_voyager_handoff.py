@@ -11,7 +11,11 @@ from pathlib import Path
 from typing import Sequence
 
 from model_release_pipeline.config import default_config
-from model_release_pipeline.services.voyager_handoff import VoyagerHandoffService
+from model_release_pipeline.services.voyager_handoff import (
+    APPLY_COMMIT_MARKER,
+    VoyagerHandoffService,
+    extract_apply_commit,
+)
 
 
 class VoyagerHandoffTest(unittest.TestCase):
@@ -50,7 +54,7 @@ class VoyagerHandoffTest(unittest.TestCase):
             return subprocess.CompletedProcess(
                 args=list(command),
                 returncode=0,
-                stdout="Updated MANIFEST\n",
+                stdout=f"Updated MANIFEST\n{APPLY_COMMIT_MARKER}abc123def456\n",
                 stderr="",
             )
 
@@ -82,7 +86,9 @@ class VoyagerHandoffTest(unittest.TestCase):
         self.assertIn("git checkout jasperchen/2026Q1_test_scenario_dnn_dev", command[-1])
         self.assertIn("git checkout master-Release_CN-a6d66b30c89 || true", command[-1])
         self.assertIn("git commit -m", command[-1])
+        self.assertIn(APPLY_COMMIT_MARKER, command[-1])
         self.assertIn("V65. exp, epoch=7. demo", result["commit_message"])
+        self.assertEqual(result["commit"], "abc123def456")
         self.assertEqual(
             result["dcl_commands"],
             [
@@ -150,7 +156,52 @@ class VoyagerHandoffTest(unittest.TestCase):
         shell_script = captured["command"][-1]
         self.assertIn("dcl diff -n -u 5716859 --nolint", shell_script)
         self.assertIn("git checkout master-Release_CN-a6d66b30c89 || true", shell_script)
+        self.assertNotIn("git branch -D", shell_script)
         self.assertEqual(result["returncode"], 0)
+
+    def test_dcl_to_docker_can_pin_source_commit(self) -> None:
+        captured = {}
+
+        def fake_runner(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
+            captured["command"] = list(command)
+            return subprocess.CompletedProcess(
+                args=list(command),
+                returncode=0,
+                stdout="DCL OK\n",
+                stderr="",
+            )
+
+        config = default_config()
+        config.ifx.truck_docker_container = "voyager-dev"
+        service = VoyagerHandoffService(config.voyager, command_runner=fake_runner)
+
+        result = service.dcl_to_docker(
+            ifx_config=config.ifx,
+            branch="master",
+            source_commit="d9d1b574779",
+            temp_branch="model_release_dcl_test_master_d9d1b574779",
+        )
+
+        shell_script = captured["command"][-1]
+        self.assertIn(
+            "git switch -C model_release_dcl_test_master_d9d1b574779 d9d1b574779",
+            shell_script,
+        )
+        self.assertIn(
+            "git branch -D model_release_dcl_test_master_d9d1b574779",
+            shell_script,
+        )
+        self.assertNotIn("git checkout jasperchen/2026Q1_test_scenario_dnn_dev", shell_script)
+        self.assertEqual(result["source_commit"], "d9d1b574779")
+        self.assertEqual(result["temp_branch"], "model_release_dcl_test_master_d9d1b574779")
+
+    def test_extract_apply_commit_supports_legacy_commit_output(self) -> None:
+        stdout = (
+            "Updated MANIFEST\n"
+            "[jasperchen/2026Q1_test_scenario_dnn_dev d9d1b574779] V74. exp\n"
+        )
+
+        self.assertEqual(extract_apply_commit(stdout), "d9d1b574779")
 
     def test_apply_script_preserves_manifest_spacing_and_skips_same_version(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

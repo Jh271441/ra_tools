@@ -9,6 +9,10 @@ export const state = {
   railCollapsed: false,
   draftRun: true,
   activeJobId: null,
+  activeJob: null,
+  activeJobsByRelease: {},
+  trackedJobIdsByRelease: {},
+  handledJobIds: new Set(),
   jobTimer: null,
   pickPreviewLines: [],
   configBranches: [],
@@ -18,3 +22,12 @@ export const state = {
 };
 
 export const $ = (id) => document.getElementById(id);
+
+export function currentReleaseKey() {
+  return state.selectedId || (state.draftRun ? "__draft__" : null);
+}
+
+export function currentJob() {
+  const key = currentReleaseKey();
+  return key ? state.activeJobsByRelease[key] || null : null;
+}

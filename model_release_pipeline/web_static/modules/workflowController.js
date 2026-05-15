@@ -11,10 +11,15 @@ import {
   renderExportForm,
   renderHandoffForm,
   renderIfxForm,
+  renderOffboardForm,
   renderPickForm,
+  renderSimPlanPlaceholder,
   renderStageConfigPanel,
   renderUploadForm,
 } from "./workflow.js";
+
+// True only when the user explicitly clicks a flow node; suppresses animation on run switch.
+let _animateNextInspector = false;
 
 function fmt(val, digits = 3) {
   return val != null ? Number(val).toFixed(digits) : "N/A";
@@ -165,10 +170,15 @@ function bindActionButtons(onAction) {
   });
 }
 
+function selectedOffboardMode() {
+  return document.querySelector('input[name="offboardMode"]:checked')?.value || (state.selectedId ? "selected" : "explicit");
+}
+
 function bindFlowNodes(onAction) {
   document.querySelectorAll(".flow-node").forEach((node) => {
     node.onclick = () => {
       state.activeStep = node.dataset.step;
+      _animateNextInspector = true;
       renderFlowControls(state.selectedRun || draftPayload(), onAction);
     };
   });
@@ -249,6 +259,8 @@ function renderConfirmHint(actions) {
   const hasRealAction = actions.some((action) => action.requires_confirm);
   const exportOnly =
     actions.length > 0 && actions.every((action) => action.key === "export");
+  const offboardOnly =
+    actions.length > 0 && actions.every((action) => action.key === "offboard");
   if (!hasRealAction) {
     hint.innerHTML = "This step has no destructive backend action.";
     input.placeholder = "no confirmation required";
@@ -257,6 +269,11 @@ function renderConfirmHint(actions) {
   if (exportOnly) {
     hint.innerHTML = "Real export requires <b>EXPORT</b>.";
     input.placeholder = "EXPORT";
+    return;
+  }
+  if (offboardOnly && (!state.selectedId || selectedOffboardMode() === "explicit")) {
+    hint.innerHTML = "Direct real offboard requires <b>OFFBOARD</b>.";
+    input.placeholder = "OFFBOARD";
     return;
   }
   hint.innerHTML = "Real actions require current <b>release_id</b>.";
@@ -269,7 +286,17 @@ function renderFlowInspector(flow, actions, statusByStep, onAction) {
     .map((key) => actions.find((action) => action.key === key))
     .filter(Boolean);
   const stepStatus = statusByStep[item.key] || "pending";
-  $("flowInspector").innerHTML = `
+  const inspector = $("flowInspector");
+  const shouldAnimate = _animateNextInspector;
+  _animateNextInspector = false;
+  if (shouldAnimate) {
+    inspector.classList.remove("animate-update");
+    void inspector.offsetWidth; // force reflow to restart animation
+    inspector.classList.add("animate-update");
+  } else {
+    inspector.classList.remove("animate-update");
+  }
+  inspector.innerHTML = `
     <div class="inspector-head">
       <div>
         <p class="eyebrow">Selected Step</p>
@@ -287,6 +314,8 @@ function renderFlowInspector(flow, actions, statusByStep, onAction) {
     ${item.key === "ifx" ? renderIfxForm() : ""}
     ${item.key === "handoff" ? renderHandoffForm() : ""}
     ${item.key === "dcl" ? renderDclForm() : ""}
+    ${item.key === "offboard" ? renderOffboardForm() : ""}
+    ${item.key === "sim_plan" ? renderSimPlanPlaceholder() : ""}
     ${state.openStageSettings === item.key ? renderStageConfigPanel(item.key) : ""}
     <div class="flow-actions">${renderActionButtons(itemActions, "primary")}</div>
   `;
@@ -294,7 +323,12 @@ function renderFlowInspector(flow, actions, statusByStep, onAction) {
   bindStageConfigPanel(item.key, onAction);
   bindExperimentPicker("pickExperiment");
   bindExperimentPicker("exportExperiment");
+  bindExperimentPicker("offboardExperiment");
   renderConfirmHint(itemActions);
+
+  document.querySelectorAll('input[name="offboardMode"]').forEach((input) => {
+    input.onchange = () => renderConfirmHint(itemActions);
+  });
 
   const previewBtn = $("pickPreviewBtn");
   if (previewBtn) {
@@ -357,7 +391,12 @@ function renderFlowInspector(flow, actions, statusByStep, onAction) {
 export function renderFlowControls(payload, onAction) {
   payload = payload || draftPayload();
   const actions = actionSpecs(payload.actions);
-  const flow = flowItems(payload.summary || {});
+  const flowGroups = flowItems(payload.summary || {});
+  const flow = [
+    ...(flowGroups.shared || []),
+    ...(flowGroups.offboard || []),
+    ...(flowGroups.onboard || []),
+  ];
   const statusByStep = Object.fromEntries(
     (payload.timeline || []).map((step) => [step.key, step.status])
   );
@@ -366,12 +405,11 @@ export function renderFlowControls(payload, onAction) {
   }
 
   const renderNode = (item) => {
-    const nodeIndex = flow.indexOf(item);
     const stepStatus = statusByStep[item.key] || "pending";
     return `
       <button class="flow-node ${item.key} ${state.activeStep === item.key ? "selected" : ""} ${statusClass(stepStatus)}" data-step="${item.key}">
         <div class="flow-top">
-          <div class="flow-number">${nodeIndex + 1}</div>
+          <div class="flow-number">${escapeHtml(item.badge || "")}</div>
           <div>
             <h4>${escapeHtml(item.shortTitle)}</h4>
             <p>${escapeHtml(item.note)}</p>
@@ -382,18 +420,26 @@ export function renderFlowControls(payload, onAction) {
     `;
   };
 
-  const mainItems = flow.filter((item) => item.group !== "offboard");
-  const offboardItems = flow.filter((item) => item.group === "offboard");
-
   $("flowControls").innerHTML = `
-    <div class="flow-lane main-lane">
-      ${mainItems.map(renderNode).join("")}
+    <div class="flow-entry-row">
+      <div class="flow-group shared-flow">
+        <div class="flow-group-title">Luban Inspect / Pick</div>
+        <div class="flow-lane shared-lane">
+          ${(flowGroups.shared || []).map(renderNode).join("")}
+        </div>
+      </div>
+      <div class="flow-group offboard-flow">
+        <div class="flow-group-title">Standalone Offboard</div>
+        <div class="flow-lane offboard-lane">
+          ${(flowGroups.offboard || []).map(renderNode).join("")}
+        </div>
+      </div>
     </div>
-    <div class="flow-fork-divider">
-      <div class="fork-branch-label">↳ Offboard</div>
-    </div>
-    <div class="flow-lane offboard-lane">
-      ${offboardItems.map(renderNode).join("")}
+    <div class="flow-group onboard-flow">
+      <div class="flow-group-title">Onboard</div>
+      <div class="flow-lane onboard-lane">
+        ${(flowGroups.onboard || []).map(renderNode).join("")}
+      </div>
     </div>
   `;
   bindFlowNodes(onAction);

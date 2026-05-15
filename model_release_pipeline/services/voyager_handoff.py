@@ -5,12 +5,34 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import shlex
 import subprocess
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from model_release_pipeline.config import BranchConfig, IfxConfig, VoyagerConfig
+
+
+APPLY_COMMIT_MARKER = "MODEL_RELEASE_APPLY_COMMIT="
+
+
+def extract_apply_commit(stdout: str) -> str:
+    """Return the commit created by apply-handoff stdout, including legacy logs."""
+    marker_matches = re.findall(
+        rf"^{re.escape(APPLY_COMMIT_MARKER)}([0-9a-f]{{7,40}})$",
+        stdout or "",
+        flags=re.MULTILINE,
+    )
+    if marker_matches:
+        return marker_matches[-1]
+
+    legacy_matches = re.findall(
+        r"^\[[^\]\s]+\s+([0-9a-f]{7,40})\]\s+V\d+\.",
+        stdout or "",
+        flags=re.MULTILINE,
+    )
+    return legacy_matches[-1] if legacy_matches else ""
 
 
 class VoyagerHandoffService:
@@ -123,9 +145,14 @@ class VoyagerHandoffService:
             ifx_config.truck_docker_container_env, ""
         )
 
-    def _return_branch_trap(self) -> str:
+    def _return_branch_trap(self, cleanup_branch: str = "") -> str:
         branch = self.config.return_branch
         cleanup = f"echo '[cleanup] return to {branch}'; git checkout {shlex.quote(branch)} || true"
+        if cleanup_branch:
+            cleanup += (
+                f"; git branch -D {shlex.quote(cleanup_branch)} "
+                ">/dev/null 2>&1 || true"
+            )
         return f"trap {shlex.quote(cleanup)} EXIT"
 
     def _apply_script(self) -> str:
@@ -310,7 +337,8 @@ else:
                 [
                     f"git add {shlex.quote(self.config.manifest_path)}",
                     "if git diff --cached --quiet; then echo 'No staged changes; skip commit'; "
-                    f"else git commit -m {shlex.quote(commit_message)}; fi",
+                    f"else git commit -m {shlex.quote(commit_message)}; "
+                    f"echo {APPLY_COMMIT_MARKER}$(git rev-parse HEAD); fi",
                 ]
             )
         return [
@@ -330,10 +358,15 @@ else:
         lint: bool,
         allow_dirty: bool,
         dry_run: bool,
+        source_commit: str = "",
+        temp_branch: str = "",
     ) -> List[str]:
+        checkout_target = ""
+        if source_commit:
+            checkout_target = temp_branch or f"model_release_dcl_{source_commit[:12]}"
         shell_parts = [
             f"cd {shlex.quote(ifx_config.truck_docker_workdir)}",
-            self._return_branch_trap(),
+            self._return_branch_trap(checkout_target),
         ]
         if ifx_config.truck_docker_setup:
             shell_parts.append(
@@ -345,7 +378,13 @@ else:
                 "test -z \"$(git status --porcelain)\" || "
                 "(echo 'Voyager worktree is dirty; commit/stash it or pass --allow-dirty.' >&2; git status --short >&2; exit 2)"
             )
-        shell_parts.append(f"git checkout {shlex.quote(branch.checkout_branch)}")
+        if source_commit:
+            shell_parts.append(
+                "git switch -C "
+                f"{shlex.quote(checkout_target)} {shlex.quote(source_commit)}"
+            )
+        else:
+            shell_parts.append(f"git checkout {shlex.quote(branch.checkout_branch)}")
         if not allow_dirty:
             shell_parts.append(
                 "test -z \"$(git status --porcelain)\" || "
@@ -432,6 +471,9 @@ else:
             "stderr": result.stderr,
             "dry_run": dry_run,
             "no_commit": no_commit,
+            "commit": extract_apply_commit(result.stdout)
+            if result.returncode == 0 and not dry_run and not no_commit
+            else "",
             "dcl_commands": dcl_commands,
             "sim_plan": chosen_branch.sim_plan,
         }
@@ -444,6 +486,8 @@ else:
         dry_run: bool = False,
         lint: bool = False,
         allow_dirty: bool = False,
+        source_commit: str = "",
+        temp_branch: str = "",
     ) -> Dict[str, Any]:
         """Run DCL diff inside a Voyager docker checkout and return to base branch."""
         chosen_branch = self._branch_by_name_or_checkout(branch)
@@ -460,6 +504,8 @@ else:
             lint=lint,
             allow_dirty=allow_dirty,
             dry_run=dry_run,
+            source_commit=source_commit,
+            temp_branch=temp_branch,
         )
         result = self.command_runner(command)
         return {
@@ -468,6 +514,8 @@ else:
             "workdir": ifx_config.truck_docker_workdir,
             "branch": chosen_branch.name,
             "checkout_branch": chosen_branch.checkout_branch,
+            "source_commit": source_commit,
+            "temp_branch": temp_branch,
             "update_diff_ids": chosen_branch.effective_diff_ids(),
             "command": " ".join(shlex.quote(part) for part in command),
             "returncode": result.returncode,

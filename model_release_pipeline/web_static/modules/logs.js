@@ -1,5 +1,5 @@
 import { LOG_LABELS } from "./constants.js";
-import { $, state } from "./state.js";
+import { $, currentJob, state } from "./state.js";
 
 export function setSelectedLogToJob() {
   state.selectedLog = "__job__";
@@ -19,7 +19,7 @@ export function setSelectedLogToJob() {
 
 export function renderLogSelect(logs) {
   const keys = Object.keys(LOG_LABELS);
-  if (state.activeJob && !keys.includes("__job__")) {
+  if (currentJob() && !keys.includes("__job__")) {
     keys.unshift("__job__");
   }
   if (!keys.includes(state.selectedLog)) {
@@ -32,7 +32,7 @@ export function renderLogSelect(logs) {
 
 export function renderLog() {
   if (state.selectedLog === "__job__") {
-    const job = state.activeJob;
+    const job = currentJob();
     $("logOutput").textContent = job ? (job.log || []).join("\n") : "No backend job selected.";
     return;
   }

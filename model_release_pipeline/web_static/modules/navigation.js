@@ -1,12 +1,27 @@
 import { $, state } from "./state.js";
 
+const LEAVE_MS = 130;
+
 export function setView(view) {
-  state.activeView = view;
-  document.querySelectorAll(".view-tab").forEach((tab) => {
-    tab.classList.toggle("active", tab.dataset.view === view);
-  });
-  $("workflowView").classList.toggle("active", view === "workflow");
-  $("releaseView").classList.toggle("active", view === "release");
+  if (state.activeView === view) return;
+  const outEl = document.querySelector(".view-pane.active");
+
+  const activate = () => {
+    if (outEl) outEl.classList.remove("is-leaving");
+    state.activeView = view;
+    document.querySelectorAll(".view-tab").forEach((tab) => {
+      tab.classList.toggle("active", tab.dataset.view === view);
+    });
+    $("workflowView").classList.toggle("active", view === "workflow");
+    $("releaseView").classList.toggle("active", view === "release");
+  };
+
+  if (outEl) {
+    outEl.classList.add("is-leaving");
+    setTimeout(activate, LEAVE_MS);
+  } else {
+    activate();
+  }
 }
 
 export function setSidebarCollapsed(collapsed) {

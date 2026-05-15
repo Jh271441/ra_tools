@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="10" y1="8" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0f766e"/>
+      <stop offset="0.55" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="spark" x1="20" y1="18" x2="45" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#a7f3d0"/>
+      <stop offset="1" stop-color="#bfdbfe"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <path d="M15 42h34" stroke="#e0f2fe" stroke-width="3.5" stroke-linecap="round" opacity="0.9"/>
+  <path d="M17 39l8-12 8 7 9-14 7 10" fill="none" stroke="url(#spark)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="25" cy="27" r="3.5" fill="#ecfeff"/>
+  <circle cx="42" cy="20" r="3.5" fill="#ecfeff"/>
+  <path d="M18 50h8M38 50h8" stroke="#93c5fd" stroke-width="3" stroke-linecap="round" opacity="0.85"/>
+  <text x="32" y="38" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="800" fill="#ffffff" letter-spacing="0">RA</text>
+</svg>

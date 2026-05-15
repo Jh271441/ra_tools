@@ -311,11 +311,26 @@ def dispatch(
     store: StateStore,
 ) -> Tuple[Dict[str, Any], int]:
     """Run a record-mutating command; return (record, exit_code)."""
+    release_id = getattr(args, "run_id", None)
+    if release_id:
+        with store.run_lock(release_id):
+            return dispatch_locked(command, args, config, store)
+    return dispatch_locked(command, args, config, store)
+
+
+def dispatch_locked(
+    command: str,
+    args: argparse.Namespace,
+    config: ReleaseConfig,
+    store: StateStore,
+) -> Tuple[Dict[str, Any], int]:
+    """Run a record-mutating command after any required run lock is held."""
     if command == "pick":
         return _run_pick(args, config, store), 0
 
     if command == "export":
-        record = _run_export(args, config, store)
+        record = store.load(args.run_id) if getattr(args, "run_id", None) else None
+        record = _run_export(args, config, store, record=record)
         return record, 1 if export_failed(record) else 0
 
     if command in {"upload", "ifx-upload"}:

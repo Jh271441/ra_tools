@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 from typing import Any, Callable, Dict, Optional
 
 from model_release_pipeline.config import ReleaseConfig
@@ -83,6 +84,28 @@ def ensure_run(
     description: str,
 ) -> Dict[str, Any]:
     return record if record is not None else store.create(experiment_path, description)
+
+
+def unsaved_dry_run_record(
+    experiment_path: Optional[str],
+    description: str,
+) -> Dict[str, Any]:
+    now = datetime.now().isoformat()
+    return {
+        "release_id": "__dry_run_export__",
+        "created_at": now,
+        "updated_at": now,
+        "status": "created",
+        "stage": "created",
+        "description": description,
+        "experiment_path": experiment_path,
+        "selection": {},
+        "export": {},
+        "ifx": {},
+        "handoff": {},
+        "offboard": {},
+        "errors": [],
+    }
 
 
 def inspect_and_pick(
@@ -213,7 +236,12 @@ def run_export(
     if not confirm(f"Export epoch={selected['epoch']} from {experiment.name}?", args.yes):
         raise RuntimeError("Export cancelled by user.")
 
-    record = ensure_run(record, store, args.experiment, args.desc or "")
+    persist_record = not (args.dry_run and record is None)
+    record = (
+        unsaved_dry_run_record(args.experiment, args.desc or "")
+        if args.dry_run and record is None
+        else ensure_run(record, store, args.experiment, args.desc or "")
+    )
     record["stage"] = "exporting"
     record["status"] = "running"
     record["experiment"] = experiment.to_dict()
@@ -241,7 +269,8 @@ def run_export(
         },
         "notes": pick_result["notes"],
     }
-    store.save(record)
+    if persist_record:
+        store.save(record)
 
     checkpoint = experiment.checkpoint_for_epoch(selected["epoch"])
     if checkpoint is None:
@@ -287,5 +316,6 @@ def run_export(
     else:
         record["stage"] = "exported"
         record["status"] = "running"
-    store.save(record)
+    if persist_record:
+        store.save(record)
     return record

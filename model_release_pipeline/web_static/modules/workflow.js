@@ -4,71 +4,93 @@ import { escapeHtml, formatEpoch } from "./utils.js";
 export const DEFAULT_EXPERIMENT_ROOT = "device:/nfs/dataset-ofs-remote-assist-stuck/user/jasperchen/ego_stuck_data/scenario_dnn_26q1/";
 
 export function flowItems(summary) {
-  return [
+  const shared = [
     {
       key: "pick",
-      group: "main",
+      group: "shared",
+      badge: "Inspect",
       shortTitle: "Pick",
-      title: "1. Pick Epoch",
+      title: "Luban Inspect / Pick",
       note: `epoch ${formatEpoch(summary.selected_epoch)}`,
-      detail: "Inspect experiment and recommend epoch from metrics. Creates a new release record. Use 'Preview epoch' to check the recommendation first.",
+      detail: "Inspect an experiment on Luban and recommend an epoch. Preview does not save; Pick creates a release record.",
       actionKeys: ["pick"],
     },
+  ];
+  const onboard = [
     {
       key: "export",
-      group: "main",
+      group: "onboard",
+      badge: "O1",
       shortTitle: "Export",
-      title: "2. Model Export",
+      title: "Onboard: Export to Local",
       note: "ONNX to NFS",
       detail: "Create or re-export ONNX from the selected experiment and epoch.",
       actionKeys: ["export"],
     },
     {
       key: "upload",
-      group: "main",
+      group: "onboard",
+      badge: "O2",
       shortTitle: "Upload",
-      title: "3. Upload ONNX",
+      title: "Onboard: Upload to Cloud",
       note: `ONNX v${summary.onnx_version ?? "NA"}`,
       detail: "Upload the exported ONNX to fileserver with truck.py and bind the ONNX version to this release.",
       actionKeys: ["upload"],
     },
     {
       key: "ifx",
-      group: "main",
+      group: "onboard",
+      badge: "O3",
       shortTitle: "IFX",
-      title: "4. IFX Convert",
+      title: "Onboard: IFX Conversion",
       note: `ONNX v${summary.onnx_version ?? "NA"}`,
       detail: "Trigger Jenkins IFX conversion from uploaded ONNX, or poll an already-triggered Jenkins build and collect artifact versions.",
       actionKeys: ["ifx-convert", "ifx-poll"],
     },
     {
       key: "handoff",
-      group: "main",
+      group: "onboard",
+      badge: "O4",
       shortTitle: "Handoff",
-      title: "5. Handoff",
+      title: "Onboard: Handoff / Apply Commit",
       note: "manifest commit",
       detail: "Generate or apply Voyager MANIFEST updates, then use DCL commands from Release Details.",
       actionKeys: ["handoff", "apply-handoff"],
     },
     {
       key: "dcl",
-      group: "main",
+      group: "onboard",
+      badge: "O5",
       shortTitle: "DCL",
-      title: "6. DCL Diff",
+      title: "Onboard: DCL Upload to Kunpeng",
       note: "review diff",
       detail: "Run dcl diff inside the Voyager docker checkout. The runner returns to the configured base branch after it finishes.",
       actionKeys: ["dcl"],
     },
     {
+      key: "sim_plan",
+      group: "onboard",
+      badge: "O6",
+      shortTitle: "Sim Plan",
+      title: "Onboard: Sim Plan",
+      note: "manual trigger",
+      detail: "TODO: sim plan remains a manual trigger until CLI support lands.",
+      actionKeys: [],
+    },
+  ];
+  const offboard = [
+    {
       key: "offboard",
       group: "offboard",
+      badge: "Test",
       shortTitle: "Offboard",
-      title: "7. Offboard",
+      title: "Offboard Validation",
       note: "validate model",
-      detail: "Run release validation against the selected experiment and epoch. Available independently after Pick — does not require the Onboard path.",
+      detail: "Run offline validation from the selected pick, or enter an experiment and epoch directly without using the Onboard path.",
       actionKeys: ["offboard"],
     },
   ];
+  return { shared, onboard, offboard };
 }
 
 function renderExperimentPathPicker(id, value) {
@@ -117,7 +139,7 @@ export function renderPickForm() {
         <input id="pickRemote" placeholder="remote" value="luban_2_card" />
         <input id="pickDesc" placeholder="description / release note" />
       </div>
-      <div class="export-row" style="align-items:center;gap:12px">
+      <div class="export-row action-row">
         <button id="pickPreviewBtn" class="action-button" type="button">Preview epoch ↗</button>
         <span id="pickPreviewResult" class="helper-text"></span>
       </div>
@@ -192,6 +214,7 @@ export function renderHandoffForm() {
         <input id="handoffDesc" placeholder="description (optional)" />
       </div>
       <p class="helper-text">Leave branch empty to apply all branches. Select a specific branch to supplement a previously completed release.</p>
+      <p class="helper-text todo-note">TODO: sim plan remains a manual trigger until CLI support lands.</p>
     </div>
   `;
 }
@@ -205,6 +228,48 @@ export function renderDclForm() {
         ${renderBranchOptions(config.branch)}
       </select>
       <p class="helper-text">Leave empty to run DCL diff for all branches, or select one to supplement a specific CR.</p>
+      <p class="helper-text todo-note">TODO: sim plan remains a manual trigger until CLI support lands.</p>
+    </div>
+  `;
+}
+
+export function renderOffboardForm() {
+  const record = (state.selectedRun || {}).record || {};
+  const experimentPath = record.experiment_path || "";
+  const selectedEpoch = (record.selection || {}).selected_epoch;
+  const useSelectedChecked = state.selectedId ? " checked" : "";
+  const explicitChecked = state.selectedId ? "" : " checked";
+  return `
+    <div class="export-form offboard-form">
+      <div class="mode-switch">
+        <label class="inline-check">
+          <input type="radio" name="offboardMode" value="selected"${useSelectedChecked}${state.selectedId ? "" : " disabled"} />
+          Use selected pick
+        </label>
+        <label class="inline-check">
+          <input type="radio" name="offboardMode" value="explicit"${explicitChecked} />
+          Run explicit experiment/epoch
+        </label>
+      </div>
+      <div class="offboard-selected-note helper-text">
+        Selected pick: ${state.selectedId ? escapeHtml(state.selectedId) : "none"}
+      </div>
+      ${renderExperimentPathPicker("offboardExperiment", experimentPath)}
+      <div class="export-row">
+        <input id="offboardEpoch" placeholder="epoch, e.g. 007" value="${selectedEpoch != null ? escapeHtml(formatEpoch(selectedEpoch)) : ""}" />
+        <input id="offboardRemote" placeholder="remote" value="luban_2_card" />
+      </div>
+      <input id="offboardDesc" placeholder="description / release note" />
+      <p class="helper-text">Explicit offboard confirmation text is <b>OFFBOARD</b>. Selected-pick offboard uses the current <b>release_id</b>.</p>
+    </div>
+  `;
+}
+
+export function renderSimPlanPlaceholder() {
+  return `
+    <div class="export-form">
+      <p class="helper-text todo-note">TODO: manual trigger until CLI support lands.</p>
+      <p class="helper-text">Use the Sim plan fields in Handoff or DCL settings as placeholders for now. No web action will be started from this node.</p>
     </div>
   `;
 }
@@ -236,6 +301,7 @@ export function renderStageConfigPanel(stage) {
         <label>
           <span>Sim plan</span>
           <input id="stageConfigSimPlan" value="${escapeHtml(config.sim_plan || "")}" placeholder="sim plan" />
+          <span class="helper-text todo-note">TODO: manual trigger until CLI support lands.</span>
         </label>
       </div>
       <div class="stage-config-checks">
@@ -263,7 +329,7 @@ export function renderActionButtons(actions, size = "") {
     .map((action) => {
       const disabled = action.needs_run_id && !state.selectedId;
       const disabledAttrs = disabled
-        ? ` disabled title="Export first to create a release_id."`
+        ? ` disabled title="Select or create a release run first."`
         : "";
       const dryButton = action.supports_dry_run
         ? `<button class="action-button${sizeClass}" data-action="${action.key}" data-dry-run="true"${disabledAttrs}>${escapeHtml(action.label)} Dry-run</button>`

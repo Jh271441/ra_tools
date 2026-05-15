@@ -9,6 +9,7 @@ from tempfile import TemporaryDirectory
 
 from model_release_pipeline.config import default_config
 from model_release_pipeline.onboard.export import (
+    run_export,
     select_candidate,
     select_manual_epoch_candidate,
 )
@@ -153,6 +154,64 @@ class CliSelectionTest(unittest.TestCase):
         self.assertIn("ModuleNotFoundError", text)
         self.assertNotIn('"checkpoints"', text)
 
+    def test_draft_export_dry_run_does_not_create_release_record(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            exp = root / "exp"
+            (exp / "checkpoints" / "version_0").mkdir(parents=True)
+            (exp / "log" / "version_0").mkdir(parents=True)
+            (exp / "checkpoints" / "version_0" / "epoch=004.pth").write_text(
+                "",
+                encoding="utf-8",
+            )
+            (exp / "log" / "version_0" / "hparams.yaml").write_text(
+                "trained_model_relative_path: old.pth\n",
+                encoding="utf-8",
+            )
+            config = default_config()
+            config.runs_dir = root / "runs"
+            store = StateStore(config.runs_dir)
+
+            class FakeRunner:
+                def __init__(self, _config):
+                    pass
+
+                def export_onnx(self, **kwargs):
+                    return {
+                        "local_onnx_file": str(kwargs["local_output_dir"] / "model.onnx"),
+                        "export": {"returncode": None, "stderr": "dry-run"},
+                        "scp": {"returncode": None, "stderr": "dry-run"},
+                    }
+
+            args = argparse.Namespace(
+                experiment=str(exp),
+                remote=None,
+                remote_python=None,
+                epoch=4,
+                policy=None,
+                top_n=None,
+                loss_tolerance_pct=None,
+                task=None,
+                desc="preview",
+                dry_run=True,
+                yes=True,
+                json=True,
+            )
+
+            record = run_export(
+                args,
+                config,
+                store,
+                progress=lambda *_args: None,
+                confirm=lambda _prompt, _yes: True,
+                format_epoch=lambda epoch: f"{int(epoch):03d}",
+                luban_runner_cls=FakeRunner,
+            )
+
+            self.assertEqual(record["release_id"], "__dry_run_export__")
+            self.assertEqual(record["stage"], "export_dry_run")
+            self.assertEqual(store.list_records(), [])
+
     def test_upload_binding_rejects_version_change_without_replace(self) -> None:
         record = {
             "ifx": {
@@ -296,6 +355,80 @@ class CliSelectionTest(unittest.TestCase):
             self.assertEqual(updated["dcl"]["checkout_branch"], "jasperchen/tmp_release")
             self.assertEqual(updated["dcl"]["update_diff_ids"], [123])
             self.assertIn("dcl diff -n -u 123 --nolint", updated["dcl"]["command"])
+
+    def test_dcl_pins_to_apply_handoff_commit(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config = default_config()
+            config.runs_dir = Path(tmp_dir)
+            config.voyager.branches = config.voyager.branches[:2]
+            store = StateStore(config.runs_dir)
+            record = store.create(experiment_path="/tmp/exp", description="")
+            record["stage"] = "apply_handoff_complete"
+            record["apply_handoff"] = {
+                "returncode": 0,
+                "results": [
+                    {
+                        "branch": "master",
+                        "checkout_branch": "jasperchen/2026Q1_test_scenario_dnn_dev",
+                        "commit": "d9d1b574779",
+                    },
+                    {
+                        "branch": "gen4_release_20260403",
+                        "checkout_branch": "jasperchen/gen4_release_20260403/scenario_dnn_dev",
+                        "stdout": (
+                            "[jasperchen/gen4_release_20260403/scenario_dnn_dev "
+                            "075e24f0729] V74. exp\n"
+                        ),
+                    },
+                ],
+            }
+            store.save(record)
+            calls = []
+
+            class FakeService:
+                def __init__(self, _config):
+                    pass
+
+                def dcl_to_docker(self, **kwargs):
+                    calls.append(kwargs)
+                    return {
+                        "returncode": 0,
+                        "stdout": "",
+                        "stderr": "",
+                        "branch": kwargs["branch"],
+                        "source_commit": kwargs["source_commit"],
+                        "temp_branch": kwargs["temp_branch"],
+                        "command": "dcl diff",
+                    }
+
+            original_service = runner_module.VoyagerHandoffService
+            original_confirm = runner_module._confirm
+            try:
+                runner_module.VoyagerHandoffService = FakeService
+                runner_module._confirm = lambda _prompt, _yes: True
+                args = argparse.Namespace(
+                    branch=None,
+                    yes=True,
+                    json=True,
+                    docker="",
+                    dry_run=True,
+                    lint=False,
+                    allow_dirty=True,
+                    checkout_branch="",
+                    update_diff_ids="",
+                    sim_plan="",
+                )
+
+                updated = _run_dcl(args, config, store, record)
+            finally:
+                runner_module.VoyagerHandoffService = original_service
+                runner_module._confirm = original_confirm
+
+            self.assertEqual(calls[0]["source_commit"], "d9d1b574779")
+            self.assertIn(record["release_id"], calls[0]["temp_branch"])
+            self.assertIn("master", calls[0]["temp_branch"])
+            self.assertEqual(calls[1]["source_commit"], "075e24f0729")
+            self.assertEqual(updated["dcl"]["results"][0]["source_commit"], "d9d1b574779")
 
     def test_ifx_convert_dry_run_does_not_persist_preview(self) -> None:
         with TemporaryDirectory() as tmp_dir:

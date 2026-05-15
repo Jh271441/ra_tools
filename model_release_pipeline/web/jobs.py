@@ -13,6 +13,13 @@ from typing import Any, Dict, Optional
 from model_release_pipeline.web.actions import ACTIONS, build_cli_command
 
 
+def _direct_offboard(release_id: str, action: str, payload: Optional[Dict[str, Any]]) -> bool:
+    if action != "offboard":
+        return False
+    payload = payload or {}
+    return release_id == "__draft__" or bool(str(payload.get("experiment") or "").strip())
+
+
 class JobManager:
     """Runs CLI actions in background threads and keeps recent logs."""
 
@@ -48,10 +55,33 @@ class JobManager:
         if action not in ACTIONS:
             raise ValueError(f"Unsupported action: {action}")
         spec = ACTIONS[action]
-        expected_confirm = release_id if spec.get("needs_run_id", True) else "EXPORT"
+        if action == "export":
+            expected_confirm = "EXPORT"
+        elif _direct_offboard(release_id, action, payload):
+            expected_confirm = "OFFBOARD"
+        elif action == "offboard":
+            expected_confirm = release_id
+        else:
+            expected_confirm = release_id if spec.get("needs_run_id", True) else "EXPORT"
         if spec["requires_confirm"] and not dry_run and confirm_text != expected_confirm:
             raise PermissionError(
                 f"Real action requires confirm_text to match {expected_confirm}."
+            )
+
+        with self._lock:
+            running = [
+                job
+                for job in self._jobs.values()
+                if job.get("release_id") == release_id
+                and release_id != "__draft__"
+                and job.get("status") == "running"
+            ]
+        if running:
+            job = running[0]
+            raise RuntimeError(
+                "Release "
+                f"{release_id} already has a running action "
+                f"({job.get('action')} / job {job.get('job_id')})."
             )
 
         command = self.build_command(

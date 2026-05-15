@@ -27,13 +27,19 @@ function renderEmptyState() {
   renderDraftFlow({ renderFlowControls, renderTimeline });
 }
 
-function clearSelection() {
+async function clearSelection() {
+  const pane = document.querySelector(".view-pane.active");
+  if (pane) {
+    pane.classList.add("content-fade-out");
+    await new Promise((r) => setTimeout(r, 160));
+  }
   state.selectedId = null;
   state.selectedRun = null;
   state.activeStep = "export";
   state.draftRun = true;
   renderRuns();
   renderEmptyState();
+  if (pane) pane.classList.remove("content-fade-out");
 }
 
 $("newReleaseBtn").onclick = clearSelection;

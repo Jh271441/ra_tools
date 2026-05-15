@@ -152,11 +152,50 @@ class WebAppTest(unittest.TestCase):
         self.assertIn("--dry-run", command)
         self.assertIn("--remote", command)
 
+    def test_job_manager_rejects_concurrent_action_for_same_release(self) -> None:
+        manager = JobManager()
+        manager._jobs["job1"] = {  # pylint: disable=protected-access
+            "job_id": "job1",
+            "release_id": "run123",
+            "action": "export",
+            "status": "running",
+        }
+
+        with self.assertRaisesRegex(RuntimeError, "already has a running action"):
+            manager.start(
+                "run123",
+                "upload",
+                dry_run=True,
+                confirm_text="",
+                payload={},
+            )
+
+    def test_job_manager_allows_concurrent_action_for_different_release(self) -> None:
+        manager = JobManager()
+        manager._run_job = lambda _job_id, _command: None  # type: ignore[method-assign]  # pylint: disable=protected-access
+        manager._jobs["job1"] = {  # pylint: disable=protected-access
+            "job_id": "job1",
+            "release_id": "run123",
+            "action": "export",
+            "status": "running",
+        }
+
+        job = manager.start(
+            "run456",
+            "upload",
+            dry_run=True,
+            confirm_text="",
+            payload={},
+        )
+
+        self.assertEqual(job["release_id"], "run456")
+        self.assertEqual(job["status"], "running")
+
     def test_export_job_command_uses_form_payload(self) -> None:
         manager = JobManager()
 
         command = manager.build_command(
-            "unused",
+            "__draft__",
             "export",
             dry_run=True,
             payload={
@@ -413,6 +452,66 @@ class WebAppTest(unittest.TestCase):
         self.assertIn("--build-url", command)
         self.assertIn("http://jenkins/job/demo/11669/", command)
 
+    def test_direct_offboard_command_uses_experiment_epoch_without_run_id(self) -> None:
+        command = build_cli_command(
+            "__draft__",
+            "offboard",
+            dry_run=True,
+            payload={
+                "experiment": "/nfs/exp_off",
+                "epoch": "019",
+                "remote": "luban_2_card",
+            },
+        )
+
+        self.assertIn("offboard", command)
+        self.assertIn("--experiment", command)
+        self.assertIn("/nfs/exp_off", command)
+        self.assertIn("--epoch", command)
+        self.assertIn("19", command)
+        self.assertNotIn("--run-id", command)
+
+    def test_selected_run_offboard_command_uses_run_id(self) -> None:
+        command = build_cli_command(
+            "run123",
+            "offboard",
+            dry_run=True,
+            payload={"remote": "luban_2_card"},
+        )
+
+        self.assertIn("--run-id", command)
+        self.assertIn("run123", command)
+        self.assertNotIn("--experiment", command)
+
+    def test_selected_run_export_command_uses_run_id(self) -> None:
+        command = build_cli_command(
+            "run123",
+            "export",
+            dry_run=True,
+            payload={
+                "experiment": "/nfs/exp",
+                "epoch": "004",
+                "remote": "luban_2_card",
+            },
+        )
+
+        self.assertIn("--run-id", command)
+        self.assertIn("run123", command)
+
+    def test_draft_export_command_omits_run_id(self) -> None:
+        command = build_cli_command(
+            "__draft__",
+            "export",
+            dry_run=True,
+            payload={
+                "experiment": "/nfs/exp",
+                "epoch": "004",
+                "remote": "luban_2_card",
+            },
+        )
+
+        self.assertNotIn("--run-id", command)
+
     def test_later_failure_does_not_mark_successful_export_failed(self) -> None:
         record = {
             "stage": "exported",
@@ -543,6 +642,51 @@ class WebAppTest(unittest.TestCase):
                     "offboard",
                     {"dry_run": False, "confirm_text": "wrong"},
                 )
+
+    def test_direct_offboard_real_action_requires_offboard_confirmation(self) -> None:
+        manager = JobManager()
+
+        with self.assertRaisesRegex(PermissionError, "OFFBOARD"):
+            manager.start(
+                "__draft__",
+                "offboard",
+                dry_run=False,
+                confirm_text="wrong",
+                payload={
+                    "experiment": "/nfs/exp_off",
+                    "epoch": "19",
+                    "remote": "luban_2_card",
+                },
+            )
+
+    def test_draft_offboard_action_does_not_require_existing_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = default_config()
+            config.runs_dir = Path(tmp_dir)
+            app = ReleaseWebApp(config)
+            captured = {}
+
+            def fake_start(**kwargs):
+                captured.update(kwargs)
+                return {"job_id": "job1", "status": "running"}
+
+            app.jobs.start = fake_start  # type: ignore[method-assign]
+
+            result = app.start_action(
+                "__draft__",
+                "offboard",
+                {
+                    "dry_run": True,
+                    "experiment": "/nfs/exp",
+                    "epoch": "004",
+                    "remote": "luban_2_card",
+                },
+            )
+
+            self.assertEqual(result["job_id"], "job1")
+            self.assertEqual(captured["release_id"], "__draft__")
+            self.assertEqual(captured["action"], "offboard")
+            self.assertTrue(captured["dry_run"])
 
     def test_pick_status_done_skipped_pending(self) -> None:
         self.assertEqual(step_status({}, "pick"), "pending")

@@ -15,7 +15,11 @@
     width: 100%;
   }
   .workflow-detail-grid {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .workflow-confirm {
+    flex-basis: auto;
   }
 }
 
@@ -109,22 +113,44 @@
   }
 
   .flow-controls {
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding-bottom: 8px;
+    overflow: visible;
+    padding-bottom: 0;
   }
 
-  .flow-lane,
-  .flow-fork-divider {
-    min-width: calc((210px * 7) + (12px * 6));
+  .flow-entry-row {
+    flex-direction: column;
+  }
+
+  .flow-lane {
+    flex-direction: column;
+    flex-wrap: nowrap;
   }
 
   .flow-node {
+    width: 100%;
     min-width: 0;
   }
 
+  .experiment-picker,
+  .export-row,
+  .copy-onnx-panel {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .experiment-picker .icon-button,
+  .export-row .action-button,
+  .copy-onnx-panel .action-button {
+    width: 100%;
+  }
+
+  .export-row input:first-child {
+    flex-basis: auto;
+  }
+
   .log-drawer[open] {
-    --log-drawer-height: clamp(320px, 56dvh, 560px);
+    --log-drawer-height: clamp(280px, 52dvh, 520px);
   }
 
   .log-drawer.fullscreen {

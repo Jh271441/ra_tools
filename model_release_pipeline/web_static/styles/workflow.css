@@ -11,41 +11,50 @@
 .flow-controls {
   display: flex;
   flex-direction: column;
+  gap: 12px;
   flex: 0 0 auto;
   overflow: visible;
   padding: 2px;
 }
 
-.flow-lane {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 12px;
+.flow-group {
+  min-width: 0;
 }
 
-.flow-fork-divider {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 12px;
-  margin: 6px 0 4px;
-}
-
-.fork-branch-label {
-  grid-column: 2;
-  font-size: 0.73rem;
-  font-weight: 600;
+.flow-group-title {
+  margin: 0 0 6px;
   color: var(--muted);
-  padding: 2px 4px 4px 6px;
-  border-left: 2px solid var(--line);
-  border-bottom: 2px solid var(--line);
-  border-bottom-left-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
-.flow-lane.offboard-lane {
-  margin-bottom: 4px;
+.flow-entry-row {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+  min-width: 0;
 }
 
-.flow-lane.offboard-lane .flow-node {
-  grid-column: 2;
+.shared-flow,
+.offboard-flow {
+  flex: 1 1 0;
+}
+
+.flow-lane {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.shared-lane .flow-node,
+.offboard-lane .flow-node {
+  flex: 1 1 230px;
+}
+
+.onboard-lane .flow-node {
+  flex: 1 1 170px;
 }
 
 .flow-node {
@@ -133,12 +142,13 @@
 }
 
 .flow-number {
-  width: 28px;
+  min-width: 36px;
   height: 28px;
-  flex: 0 0 28px;
+  flex: 0 0 auto;
   display: grid;
   place-items: center;
-  border-radius: 50%;
+  border-radius: 999px;
+  padding: 0 8px;
   color: white;
   background: var(--teal);
   font: 700 0.8rem/1 var(--mono);
@@ -176,11 +186,12 @@
 }
 
 .workflow-detail-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  display: flex;
+  align-items: stretch;
   gap: 16px;
   flex: 0 0 auto;
   min-height: 0;
+  min-width: 0;
   margin-top: 8px;
 }
 
@@ -236,7 +247,7 @@
 }
 
 .workflow-confirm {
-  flex: 0 0 auto;
+  flex: 0 0 320px;
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -307,6 +318,22 @@
 .export-row {
   display: flex;
   gap: 8px;
+}
+
+.action-row {
+  align-items: center;
+  gap: 12px;
+}
+
+.mode-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.todo-note {
+  color: var(--muted);
+  font-style: italic;
 }
 
 .branch-select {

@@ -18,6 +18,21 @@ class StateStoreTest(unittest.TestCase):
             self.assertEqual(loaded["experiment_path"], "/tmp/exp")
             self.assertEqual(loaded["description"], "demo")
 
+    def test_run_lock_rejects_concurrent_same_release(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = StateStore(Path(tmp_dir))
+            with store.run_lock("run123"):
+                with self.assertRaisesRegex(RuntimeError, "already has a running action"):
+                    with store.run_lock("run123"):
+                        pass
+
+    def test_run_lock_allows_different_releases(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            store = StateStore(Path(tmp_dir))
+            with store.run_lock("run123"):
+                with store.run_lock("run456"):
+                    pass
+
 
 if __name__ == "__main__":
     unittest.main()

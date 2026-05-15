@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import fcntl
+import hashlib
+from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterator, Optional
 
 
 class StateStore:
@@ -35,6 +38,27 @@ class StateStore:
         }
         self.save(record)
         return record
+
+    @contextmanager
+    def run_lock(self, release_id: str) -> Iterator[None]:
+        """Hold an inter-process lock for one release record mutation."""
+        locks_dir = self.runs_dir / ".locks"
+        locks_dir.mkdir(parents=True, exist_ok=True)
+        lock_name = hashlib.sha256(str(release_id).encode("utf-8")).hexdigest()
+        lock_path = locks_dir / f"{lock_name}.lock"
+        with lock_path.open("w", encoding="utf-8") as lock_file:
+            lock_file.write(str(release_id))
+            lock_file.flush()
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise RuntimeError(
+                    f"Release {release_id} already has a running action."
+                ) from exc
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     def run_dir(self, release_id: str) -> Path:
         path = self.runs_dir / release_id

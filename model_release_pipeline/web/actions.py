@@ -77,7 +77,7 @@ ACTIONS = {
         "supports_dry_run": True,
         "requires_confirm": True,
         "extra_args": ["--remote", "luban_2_card"],
-        "needs_run_id": True,
+        "needs_run_id": False,
     },
 }
 
@@ -133,6 +133,8 @@ def build_cli_command(
             command.extend(["--desc", desc])
         command.append("--save")
     elif action == "export":
+        if release_id != "__draft__":
+            command.extend(["--run-id", release_id])
         experiment = str(payload.get("experiment") or "").strip()
         if not experiment:
             raise ValueError("Model export requires experiment.")
@@ -208,6 +210,33 @@ def build_cli_command(
             command.append("--lint")
         if payload.get("allow_dirty"):
             command.append("--allow-dirty")
+    elif action == "offboard":
+        experiment = str(payload.get("experiment") or "").strip()
+        epoch = str(payload.get("epoch") or "").strip()
+        if experiment or release_id == "__draft__":
+            if not experiment:
+                raise ValueError("Direct offboard requires experiment.")
+            if not epoch:
+                raise ValueError("Direct offboard requires epoch.")
+            if not epoch.isdigit():
+                raise ValueError("epoch must be an integer.")
+            command.extend(["--experiment", experiment, "--epoch", str(int(epoch))])
+            remote = str(payload.get("remote") or "").strip()
+            if remote:
+                command.extend(["--remote", remote])
+            remote_python = str(payload.get("remote_python") or "").strip()
+            if remote_python:
+                command.extend(["--remote-python", remote_python])
+            desc = str(payload.get("desc") or "").strip()
+            if desc:
+                command.extend(["--desc", desc])
+        else:
+            command.extend(["--run-id", release_id])
+            remote = str(payload.get("remote") or "").strip()
+            if remote:
+                command.extend(["--remote", remote])
+            else:
+                command.extend(spec["extra_args"])
     else:
         command.extend(spec["extra_args"])
 

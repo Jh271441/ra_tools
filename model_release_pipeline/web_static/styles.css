@@ -5,6 +5,7 @@
 @import url("./styles/logs.css");
 @import url("./styles/details.css");
 @import url("./styles/responsive.css");
+@import url("./styles/transitions.css");
 
 .agent-board {
   flex: 2 1 600px;

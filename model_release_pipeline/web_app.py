@@ -294,20 +294,26 @@ class ReleaseWebApp:
 
 def _json_response(handler: BaseHTTPRequestHandler, payload: Any, status: int = 200) -> None:
     data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
-    handler.send_response(status)
-    handler.send_header("Content-Type", "application/json; charset=utf-8")
-    handler.send_header("Content-Length", str(len(data)))
-    handler.end_headers()
-    handler.wfile.write(data)
+    try:
+        handler.send_response(status)
+        handler.send_header("Content-Type", "application/json; charset=utf-8")
+        handler.send_header("Content-Length", str(len(data)))
+        handler.end_headers()
+        handler.wfile.write(data)
+    except (BrokenPipeError, ConnectionResetError):
+        pass
 
 
 def _text_response(handler: BaseHTTPRequestHandler, text: str, status: int = 200) -> None:
     data = text.encode("utf-8")
-    handler.send_response(status)
-    handler.send_header("Content-Type", "text/plain; charset=utf-8")
-    handler.send_header("Content-Length", str(len(data)))
-    handler.end_headers()
-    handler.wfile.write(data)
+    try:
+        handler.send_response(status)
+        handler.send_header("Content-Type", "text/plain; charset=utf-8")
+        handler.send_header("Content-Length", str(len(data)))
+        handler.end_headers()
+        handler.wfile.write(data)
+    except (BrokenPipeError, ConnectionResetError):
+        pass
 
 
 def _static_response(handler: BaseHTTPRequestHandler, path: Path) -> None:
@@ -413,6 +419,9 @@ def _handle_static_get(handler: BaseHTTPRequestHandler, path: str) -> None:
     if path in {"", "/"}:
         _static_response(handler, STATIC_DIR / "index.html")
         return
+    if path == "/favicon.ico":
+        _static_response(handler, STATIC_DIR / "favicon.svg")
+        return
     static_path = (STATIC_DIR / path.removeprefix("/")).resolve()
     if STATIC_DIR.resolve() in static_path.parents:
         _static_response(handler, static_path)
@@ -431,6 +440,8 @@ def _make_handler(app: ReleaseWebApp) -> type[BaseHTTPRequestHandler]:
                 if _handle_api_get(self, app, parsed.path, parsed.query):
                     return
                 _handle_static_get(self, parsed.path)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
             except FileNotFoundError as exc:
                 _json_response(self, {"error": str(exc)}, status=HTTPStatus.NOT_FOUND)
             except Exception as exc:  # pylint: disable=broad-except
@@ -467,6 +478,8 @@ def _make_handler(app: ReleaseWebApp) -> type[BaseHTTPRequestHandler]:
                         )
                         return
                 _text_response(self, "Not found", HTTPStatus.NOT_FOUND)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
             except PermissionError as exc:
                 _json_response(self, {"error": str(exc)}, status=HTTPStatus.FORBIDDEN)
             except FileNotFoundError as exc:
@@ -487,6 +500,8 @@ def _make_handler(app: ReleaseWebApp) -> type[BaseHTTPRequestHandler]:
                 if _handle_api_patch(self, app, parsed.path, payload):
                     return
                 _text_response(self, "Not found", HTTPStatus.NOT_FOUND)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
             except PermissionError as exc:
                 _json_response(self, {"error": str(exc)}, status=HTTPStatus.FORBIDDEN)
             except FileNotFoundError as exc:
