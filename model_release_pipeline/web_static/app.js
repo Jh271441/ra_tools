@@ -58,6 +58,9 @@ $("fullscreenLog").onclick = (e) => {
   const logDrawer = $("logDrawer");
   logDrawer.open = true;
   const isFullscreen = logDrawer.classList.toggle("fullscreen");
+  if (isFullscreen) {
+    $("workflowView").scrollTop = 0;
+  }
   syncLogFullscreenButton(isFullscreen);
 };
 

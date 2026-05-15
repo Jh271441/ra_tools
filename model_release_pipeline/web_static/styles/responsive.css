@@ -124,7 +124,7 @@
   }
 
   .log-drawer[open] {
-    height: clamp(260px, 42dvh, 420px);
+    --log-drawer-height: clamp(320px, 56dvh, 560px);
   }
 
   .log-drawer.fullscreen {

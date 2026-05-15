@@ -4,9 +4,8 @@
   padding: 20px;
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
-  overflow: auto;
-  overscroll-behavior: contain;
+  flex: 0 0 auto;
+  overflow: visible;
 }
 
 .flow-controls {

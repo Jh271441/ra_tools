@@ -22,6 +22,7 @@
 }
 
 .log-drawer {
+  --log-drawer-height: clamp(420px, calc((100vw - 380px) * 0.5625), 720px);
   flex: 0 0 auto;
   min-height: 0;
   height: auto;
@@ -30,9 +31,9 @@
 }
 
 .log-drawer[open] {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  height: clamp(220px, 28dvh, 340px);
+  display: flex;
+  flex-direction: column;
+  height: var(--log-drawer-height);
 }
 
 .log-drawer:not([open]) {
@@ -95,6 +96,15 @@
   height: auto;
 }
 
+.log-drawer[open] .log-output {
+  height: calc(var(--log-drawer-height) - 88px);
+  flex: 0 0 auto;
+}
+
+.log-drawer.fullscreen[open] .log-output {
+  height: calc(100% - 88px);
+}
+
 .log-summary #logSelect {
   margin-left: 0;
 }
@@ -112,12 +122,14 @@
 }
 
 #workflowView.active {
-  display: grid;
+  display: flex;
   position: relative;
-  grid-template-rows: minmax(0, 1fr) auto;
+  flex-direction: column;
   gap: 20px;
   background: rgb(245, 245, 247);
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 
 .release-view.active {
@@ -291,7 +303,7 @@
   max-height: none;
   margin: 0 20px 20px;
   overflow: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior: auto;
   border-radius: 16px;
   padding: 16px;
   background: #151516;
