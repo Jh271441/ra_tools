@@ -492,6 +492,56 @@ class CliSelectionTest(unittest.TestCase):
                 ],
             )
 
+    def test_sim_plan_all_branches_does_not_cross_apply_selected_plans(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config = default_config()
+            config.runs_dir = Path(tmp_dir)
+            store = StateStore(config.runs_dir)
+            record = store.create(experiment_path="/tmp/exp", description="")
+            record["stage"] = "dcl_complete"
+            record["dcl"] = {
+                "returncode": 0,
+                "results": [
+                    {"branch": branch.name, "update_diff_ids": branch.effective_diff_ids()}
+                    for branch in config.voyager.branches
+                ],
+            }
+            store.save(record)
+            selected_plan_names = [
+                "lxh_ra_stuck_20260206_reviewed-openloop",
+                "lxh_ra_stuck_release_20260206-openloop",
+                "lxh_ra_stuck_release_20260327-openloop",
+                "lxh_ra_stuck_release_20260403-openloop",
+                "lxh_ra_stuck_release_20260410-openloop",
+                "lxh_ra_stuck_release_20260417-openloop",
+            ]
+            args = argparse.Namespace(
+                branch=None,
+                revision_id=None,
+                plan=selected_plan_names,
+                priority=None,
+                time_sensitive_hour=None,
+                dry_run=True,
+                yes=True,
+                json=True,
+            )
+
+            updated = _run_sim_plan(args, config, store, record)
+            lines = updated["sim_plan"]["stdout"].splitlines()
+
+            self.assertEqual(len(lines), 6)
+            self.assertFalse(any("master CR5716859 lxh_ra_stuck" in line for line in lines))
+            self.assertIn(
+                "dry-run: gen4_release_20260206 CR6106765 "
+                "lxh_ra_stuck_20260206_reviewed-openloop",
+                lines,
+            )
+            self.assertIn(
+                "dry-run: gen4_release_20260206 CR6106765 "
+                "lxh_ra_stuck_release_20260206-openloop",
+                lines,
+            )
+
     def test_ifx_convert_dry_run_does_not_persist_preview(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             config = default_config()

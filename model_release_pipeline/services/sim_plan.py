@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import time
+from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 from urllib.parse import urljoin
 
@@ -30,10 +31,15 @@ class SimPlanClient:
 
     def _token(self) -> str:
         token = self.config.token or os.environ.get(self.config.token_env, "")
+        if not token and self.config.token_file:
+            token_path = Path(self.config.token_file).expanduser()
+            if token_path.exists():
+                token = token_path.read_text(encoding="utf-8").strip()
         if not token:
             raise RuntimeError(
                 "Sim Plan Trail token is not configured. Set "
-                f"{self.config.token_env} or sim_plan.token in the release config."
+                f"{self.config.token_env}, sim_plan.token, or sim_plan.token_file "
+                "in the release config."
             )
         return token
 

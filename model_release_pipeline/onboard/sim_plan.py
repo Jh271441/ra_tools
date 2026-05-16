@@ -90,15 +90,21 @@ def _selected_branches(config: VoyagerConfig, args: argparse.Namespace) -> list[
     return list(config.branches)
 
 
-def _selected_plans(branch: BranchConfig, selected_names: list[str]) -> list[BranchSimPlanConfig]:
+def _selected_plans(
+    branch: BranchConfig,
+    selected_names: list[str],
+    *,
+    allow_custom: bool,
+) -> list[BranchSimPlanConfig]:
     plans = branch.effective_sim_plans()
     if selected_names:
         wanted = set(selected_names)
         chosen = [plan for plan in plans if plan.name in wanted]
-        known = {plan.name for plan in chosen}
-        missing = sorted(wanted - known)
-        if missing:
-            chosen.extend(BranchSimPlanConfig(name=name) for name in missing)
+        if allow_custom:
+            known = {plan.name for plan in chosen}
+            missing = sorted(wanted - known)
+            if missing:
+                chosen.extend(BranchSimPlanConfig(name=name) for name in missing)
         return chosen
     return [plan for plan in plans if plan.enabled_by_default]
 
@@ -110,6 +116,8 @@ def _tasks(
 ) -> list[Dict[str, Any]]:
     selected_names = _plan_overrides(args)
     explicit_revision = getattr(args, "revision_id", None)
+    branch_value = str(getattr(args, "branch", "") or "").strip()
+    allow_custom = bool(branch_value)
     tasks: list[Dict[str, Any]] = []
     for branch in _selected_branches(config.voyager, args):
         revision_id = int(explicit_revision) if explicit_revision else _revision_from_dcl(record, branch)
@@ -118,7 +126,7 @@ def _tasks(
             revision_id = int(ids[0]) if ids else None
         if revision_id is None:
             raise RuntimeError(f"No DCL revision_id found for branch {branch.name}.")
-        for plan in _selected_plans(branch, selected_names):
+        for plan in _selected_plans(branch, selected_names, allow_custom=allow_custom):
             tasks.append({"branch": branch, "revision_id": revision_id, "plan": plan})
     if not tasks:
         raise RuntimeError("No Sim Plan is selected.")

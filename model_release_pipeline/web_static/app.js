@@ -18,8 +18,8 @@ import {
   renderTimeline,
 } from "./modules/workflowController.js";
 
-async function loadRuns(selectFirst = false) {
-  await loadRunData({ selectRun, renderEmptyState, renderRuns }, selectFirst);
+async function loadRuns(selectFirst = false, options = {}) {
+  await loadRunData({ selectRun, renderEmptyState, renderRuns }, selectFirst, options);
 }
 
 function renderEmptyState() {
@@ -74,8 +74,8 @@ function renderRuns() {
   renderRunList({ clearSelection, selectRun });
 }
 
-async function selectRun(releaseId) {
-  await fetchRun(releaseId, { renderSelectedRun, renderRuns });
+async function selectRun(releaseId, options = {}) {
+  await fetchRun(releaseId, { renderSelectedRun, renderRuns }, options);
 }
 
 function renderSelectedRun() {

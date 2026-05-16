@@ -165,4 +165,10 @@
   .stage-config-grid {
     grid-template-columns: 1fr;
   }
+
+  .sim-plan-list {
+    max-height: none;
+    grid-template-columns: 1fr;
+    overflow: visible;
+  }
 }

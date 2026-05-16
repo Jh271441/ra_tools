@@ -6,16 +6,16 @@ import { escapeHtml, formatEpoch, shortName, statusClass } from "./utils.js";
 
 let _animateNextRender = false;
 
-export async function loadRuns({ selectRun, renderEmptyState, renderRuns }, selectFirst = false) {
+export async function loadRuns({ selectRun, renderEmptyState, renderRuns }, selectFirst = false, options = {}) {
   const payload = await fetchJson("/api/runs");
   state.runs = payload.runs || [];
   $("runsDir").textContent = `runs_dir: ${payload.runs_dir}`;
-  _animateNextRender = true;
+  _animateNextRender = !options.silent;
   renderRuns();
   if (state.selectedId) {
-    await selectRun(state.selectedId);
+    await selectRun(state.selectedId, { silent: options.silent });
   } else if (selectFirst && !state.draftRun && state.runs.length) {
-    await selectRun(state.runs[0].release_id);
+    await selectRun(state.runs[0].release_id, { silent: options.silent });
   } else {
     renderEmptyState();
   }
@@ -109,12 +109,12 @@ export function renderRunList({ clearSelection, selectRun }) {
   }
 }
 
-export async function fetchRun(releaseId, { renderSelectedRun, renderRuns }) {
+export async function fetchRun(releaseId, { renderSelectedRun, renderRuns }, options = {}) {
   state.draftRun = false;
   state.selectedId = releaseId;
 
   const pane = document.querySelector(".view-pane.active");
-  if (pane) pane.classList.add("content-fade-out");
+  if (pane && !options.silent) pane.classList.add("content-fade-out");
 
   renderRuns();
 

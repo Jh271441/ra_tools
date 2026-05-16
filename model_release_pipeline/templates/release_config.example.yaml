@@ -73,6 +73,7 @@ sim_plan:
   appid: "4"
   token: ""
   token_env: SIMPLAN_TRAIL_TOKEN
+  token_file: ~/.ra_tools_simplan_token
   username: jasperchen
   business_type: 37
   trigger_from: kunpeng
@@ -114,6 +115,7 @@ voyager:
       sim_plan: topic_ra_auto_trigger
       sim_plans:
         - name: topic_ra_auto_trigger
+          plan_id: 2129
           enabled_by_default: false
     - name: gen4_release_20260403
       checkout_branch: jasperchen/gen4_release_20260403/scenario_dnn_dev
@@ -121,31 +123,37 @@ voyager:
       sim_plan: lxh_ra_stuck_release_20260403-openloop
       sim_plans:
         - name: lxh_ra_stuck_release_20260403-openloop
+          plan_id: 6590
     - name: gen4_release_20260410
       checkout_branch: jasperchen/gen4_release_20260410/scenario_dnn_dev
       update_diff_id: 6106759
       sim_plan: lxh_ra_stuck_release_20260410-openloop
       sim_plans:
         - name: lxh_ra_stuck_release_20260410-openloop
+          plan_id: 6668
     - name: gen4_release_20260417
       checkout_branch: jasperchen/gen4_release_20260417/scenario_dnn_dev
       update_diff_id: 6106761
       sim_plan: lxh_ra_stuck_release_20260417-openloop
       sim_plans:
         - name: lxh_ra_stuck_release_20260417-openloop
+          plan_id: 6670
     - name: gen4_release_20260327
       checkout_branch: jasperchen/gen4_release_20260327/scenario_dnn_dev
       update_diff_id: 6076959
       sim_plan: lxh_ra_stuck_release_20260327-openloop
       sim_plans:
         - name: lxh_ra_stuck_release_20260327-openloop
+          plan_id: 6592
     - name: gen4_release_20260206
       checkout_branch: jasperchen/gen4_release_20260206/scenario_dnn_dev
       update_diff_id: 6106765
       sim_plan: lxh_ra_stuck_release_20260206-openloop
       sim_plans:
         - name: lxh_ra_stuck_release_20260206-openloop
+          plan_id: 6672
         - name: lxh_ra_stuck_20260206_reviewed-openloop
+          plan_id: 6684
       # This branch uses _2025Q4_ target paths; gen3/l20 entries are left unchanged.
       manifest_entries:
         - platform: onnx

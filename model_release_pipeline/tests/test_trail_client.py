@@ -7,11 +7,21 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from model_release_pipeline.config import IfxConfig
+from model_release_pipeline.config import IfxConfig, SimPlanConfig
+from model_release_pipeline.services.sim_plan import SimPlanClient
 from model_release_pipeline.services.trail_client import TrailClient
 
 
 class TrailClientTest(unittest.TestCase):
+    def test_sim_plan_client_reads_token_file(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            token_file = Path(tmp_dir) / "token"
+            token_file.write_text("demo-token\n", encoding="utf-8")
+
+            client = SimPlanClient(SimPlanConfig(token_file=str(token_file)))
+
+            self.assertEqual(client._token(), "demo-token")
+
     def test_docker_truck_command_sources_voyager_setup(self) -> None:
         config = IfxConfig(
             truck_runner="docker",

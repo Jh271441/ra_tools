@@ -1,20 +1,46 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="bg" x1="10" y1="8" x2="56" y2="58" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#0f766e"/>
-      <stop offset="0.55" stop-color="#2563eb"/>
-      <stop offset="1" stop-color="#111827"/>
+    <linearGradient id="raGradient" x1="220" y1="320" x2="820" y2="720" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1F6BFF"/>
+      <stop offset="0.52" stop-color="#18BCE2"/>
+      <stop offset="1" stop-color="#12D6A0"/>
     </linearGradient>
-    <linearGradient id="spark" x1="20" y1="18" x2="45" y2="46" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#a7f3d0"/>
-      <stop offset="1" stop-color="#bfdbfe"/>
-    </linearGradient>
+
+    <filter id="tileShadow" x="40" y="50" width="944" height="944" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#000000" flood-opacity="0.14"/>
+    </filter>
+
+    <filter id="iconShadow" x="120" y="160" width="820" height="760" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#0EA5E9" flood-opacity="0.18"/>
+    </filter>
   </defs>
-  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
-  <path d="M15 42h34" stroke="#e0f2fe" stroke-width="3.5" stroke-linecap="round" opacity="0.9"/>
-  <path d="M17 39l8-12 8 7 9-14 7 10" fill="none" stroke="url(#spark)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="25" cy="27" r="3.5" fill="#ecfeff"/>
-  <circle cx="42" cy="20" r="3.5" fill="#ecfeff"/>
-  <path d="M18 50h8M38 50h8" stroke="#93c5fd" stroke-width="3" stroke-linecap="round" opacity="0.85"/>
-  <text x="32" y="38" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="800" fill="#ffffff" letter-spacing="0">RA</text>
+
+  <rect
+    x="104"
+    y="104"
+    width="816"
+    height="816"
+    rx="170"
+    fill="#FFFFFF"
+    filter="url(#tileShadow)"
+  />
+
+  <g filter="url(#iconShadow)" transform="translate(-52 0)">
+    <path
+      d="M304 674V396C304 320 364 276 430 276C496 276 548 328 548 398V560C548 624 600 676 664 676H790"
+      stroke="url(#raGradient)"
+      stroke-width="88"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+
+    <path
+      d="M742 594L834 686L742 778"
+      stroke="url(#raGradient)"
+      stroke-width="88"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      transform="translate(788 686) scale(0.88) translate(-788 -686)"
+    />
+  </g>
 </svg>

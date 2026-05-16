@@ -241,9 +241,12 @@ function renderSimPlanChecks(config) {
   const branches = state.configBranches || [];
   const selectedPlans = Array.isArray(config.plans) ? new Set(config.plans) : null;
   const selectedBranch = config.branch || "";
-  return branches
+  const cards = branches
     .map((branch) => {
-      const plans = branch.sim_plans || (branch.sim_plan ? [{ name: branch.sim_plan, enabled_by_default: true }] : []);
+      const plans = branch.sim_plans || (branch.sim_plan ? [{
+        name: branch.sim_plan,
+        enabled_by_default: branch.name !== "master" && branch.sim_plan !== "topic_ra_auto_trigger",
+      }] : []);
       if (!plans.length) return "";
       const hidden = selectedBranch && selectedBranch !== branch.name ? " style=\"display:none\"" : "";
       return `
@@ -251,7 +254,8 @@ function renderSimPlanChecks(config) {
           <div class="sim-plan-branch-title">${escapeHtml(branch.name)} <span>CR ${(branch.update_diff_ids || []).join(",") || "from DCL"}</span></div>
           <div class="sim-plan-checks">
             ${plans.map((plan) => {
-              const checked = selectedPlans ? selectedPlans.has(plan.name) : !!plan.enabled_by_default;
+              const enabledByDefault = plan.enabled_by_default === true || plan.enabled_by_default === "true";
+              const checked = selectedPlans ? selectedPlans.has(plan.name) : enabledByDefault;
               return `
                 <label class="inline-check sim-plan-option">
                   <input class="sim-plan-check" type="checkbox" value="${escapeHtml(plan.name)}"${checkedAttr(checked)} />
@@ -264,6 +268,7 @@ function renderSimPlanChecks(config) {
       `;
     })
     .join("");
+  return `<div class="sim-plan-list">${cards}</div>`;
 }
 
 export function renderOffboardForm() {

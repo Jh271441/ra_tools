@@ -104,8 +104,8 @@ export async function startAction(action, dryRun, confirmText, callbacks) {
     await pollJobs(true, callbacks);
     ensureJobPoller(callbacks);
   } catch (error) {
-    if (error.message.includes("Unsupported action: upload")) {
-      jobStatus.textContent = "Web backend is stale: restart `python -m model_release_pipeline.cli web` to enable upload.";
+    if (error.message.includes("Unsupported action:")) {
+      jobStatus.textContent = "Web backend is stale: restart `python -m model_release_pipeline.cli web` to enable this action.";
     } else {
       jobStatus.textContent = error.message;
     }
@@ -163,9 +163,9 @@ export async function pollJobs(forceReloadRun, callbacks) {
   renderLog();
 
   if (shouldReloadRuns) {
-    await callbacks.loadRuns(false);
+    await callbacks.loadRuns(false, { silent: true });
     if (draftCreated && !selectedBeforeReload && state.runs.length) {
-      await callbacks.selectRun(state.runs[0].release_id);
+      await callbacks.selectRun(state.runs[0].release_id, { silent: true });
     }
   }
 }

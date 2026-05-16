@@ -159,6 +159,7 @@ class SimPlanConfig:
     appid: str = "4"
     token: str = ""
     token_env: str = "SIMPLAN_TRAIL_TOKEN"
+    token_file: str = "~/.ra_tools_simplan_token"
     username: str = "jasperchen"
     business_type: int = 37
     trigger_from: str = "kunpeng"
@@ -231,6 +232,7 @@ def _default_voyager_config() -> VoyagerConfig:
                 sim_plans=[
                     BranchSimPlanConfig(
                         name="topic_ra_auto_trigger",
+                        plan_id=2129,
                         enabled_by_default=False,
                     )
                 ],
@@ -241,7 +243,10 @@ def _default_voyager_config() -> VoyagerConfig:
                 update_diff_id=6076711,
                 sim_plan="lxh_ra_stuck_release_20260403-openloop",
                 sim_plans=[
-                    BranchSimPlanConfig(name="lxh_ra_stuck_release_20260403-openloop")
+                    BranchSimPlanConfig(
+                        name="lxh_ra_stuck_release_20260403-openloop",
+                        plan_id=6590,
+                    )
                 ],
             ),
             BranchConfig(
@@ -250,7 +255,10 @@ def _default_voyager_config() -> VoyagerConfig:
                 update_diff_id=6106759,
                 sim_plan="lxh_ra_stuck_release_20260410-openloop",
                 sim_plans=[
-                    BranchSimPlanConfig(name="lxh_ra_stuck_release_20260410-openloop")
+                    BranchSimPlanConfig(
+                        name="lxh_ra_stuck_release_20260410-openloop",
+                        plan_id=6668,
+                    )
                 ],
             ),
             BranchConfig(
@@ -259,7 +267,10 @@ def _default_voyager_config() -> VoyagerConfig:
                 update_diff_id=6106761,
                 sim_plan="lxh_ra_stuck_release_20260417-openloop",
                 sim_plans=[
-                    BranchSimPlanConfig(name="lxh_ra_stuck_release_20260417-openloop")
+                    BranchSimPlanConfig(
+                        name="lxh_ra_stuck_release_20260417-openloop",
+                        plan_id=6670,
+                    )
                 ],
             ),
             BranchConfig(
@@ -268,7 +279,10 @@ def _default_voyager_config() -> VoyagerConfig:
                 update_diff_id=6076959,
                 sim_plan="lxh_ra_stuck_release_20260327-openloop",
                 sim_plans=[
-                    BranchSimPlanConfig(name="lxh_ra_stuck_release_20260327-openloop")
+                    BranchSimPlanConfig(
+                        name="lxh_ra_stuck_release_20260327-openloop",
+                        plan_id=6592,
+                    )
                 ],
             ),
             BranchConfig(
@@ -277,8 +291,14 @@ def _default_voyager_config() -> VoyagerConfig:
                 update_diff_id=6106765,
                 sim_plan="lxh_ra_stuck_release_20260206-openloop",
                 sim_plans=[
-                    BranchSimPlanConfig(name="lxh_ra_stuck_release_20260206-openloop"),
-                    BranchSimPlanConfig(name="lxh_ra_stuck_20260206_reviewed-openloop"),
+                    BranchSimPlanConfig(
+                        name="lxh_ra_stuck_release_20260206-openloop",
+                        plan_id=6672,
+                    ),
+                    BranchSimPlanConfig(
+                        name="lxh_ra_stuck_20260206_reviewed-openloop",
+                        plan_id=6684,
+                    ),
                 ],
                 manifest_entries=[
                     ManifestEntryConfig(
