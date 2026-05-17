@@ -16,7 +16,10 @@ DEFAULT_TEMPLATE_PATH = PACKAGE_ROOT / "templates" / "release_config.example.yam
 
 @dataclass
 class LubanConfig:
-    host_alias: str = "luban_2_card"
+    host_alias: str = "luban_1_card"
+    host_aliases: List[str] = field(
+        default_factory=lambda: ["luban_1_card", "luban_2_card"]
+    )
     python_bin: str = (
         "/home/luban/miniconda3/bin/conda run --no-capture-output "
         "-n scen_dnn python"
@@ -31,6 +34,10 @@ class LubanConfig:
     export_script: str = "scenario_dnn/export/export_scenario_dnn.py"
     offboard_config_path: str = "configs/scenario_dnn_finetune_test.yaml"
     offboard_entry_script: str = "scenario_dnn/train_test/ra_model_pipeline.py"
+
+    def effective_host_aliases(self) -> List[str]:
+        hosts = [self.host_alias, *self.host_aliases]
+        return list(dict.fromkeys(host for host in hosts if str(host).strip()))
 
 
 @dataclass

@@ -89,13 +89,14 @@ python -m model_release_pipeline.cli print-config
 
 封装 scenario dnn 发布链路的本机入口，包含选模、远端导出 ONNX、触发 IFX 转换，以及生成 Voyager/Kunpeng handoff 文件。
 
-本机无法直接访问 `/nfs/...` 实验目录时，可以通过 `--remote luban_2_card` 让工具 ssh 到 Luban 读取实验元信息：
+本机无法直接访问 `/nfs/...` 实验目录时，可以通过 `--remote luban_1_card` 让工具 ssh 到 Luban 读取实验元信息：
 
 ```bash
-python -m model_release_pipeline.cli inspect --remote luban_2_card --experiment /nfs/.../experiment
-python -m model_release_pipeline.cli export --remote luban_2_card --experiment /nfs/.../experiment --epoch 5 --dry-run
+python -m model_release_pipeline.cli inspect --remote luban_1_card --experiment /nfs/.../experiment
+python -m model_release_pipeline.cli export --remote luban_1_card --experiment /nfs/.../experiment --epoch 5 --dry-run
 ```
 
 默认远端 Python 是 `/home/luban/miniconda3/bin/conda run -n scen_dnn python`，也可以用 `--remote-python` 临时覆盖。
+Web 页面里的 Luban remote 输入框支持一键切换，候选列表来自配置里的 `luban.host_aliases`；默认当前使用 `luban.host_alias: luban_1_card`。
 
 如果已手动确定 checkpoint，`export`/`release` 传 `--epoch` 会跳过自动选模，直接推进 ONNX 导出、IFX 转换和 Voyager handoff。

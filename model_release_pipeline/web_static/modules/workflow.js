@@ -122,6 +122,33 @@ function checkedAttr(value) {
   return value ? " checked" : "";
 }
 
+export function currentLubanHost() {
+  return state.selectedLubanHost || state.defaultLubanHost || state.lubanHosts?.[0] || "luban_1_card";
+}
+
+function nextLubanHost(current = currentLubanHost()) {
+  const hosts = state.lubanHosts?.length ? state.lubanHosts : ["luban_1_card", "luban_2_card"];
+  const index = hosts.indexOf(current);
+  return hosts[index >= 0 ? (index + 1) % hosts.length : 0] || current || "luban_1_card";
+}
+
+function renderLubanRemoteControl(id) {
+  const host = currentLubanHost();
+  const nextHost = nextLubanHost(host);
+  return `
+    <div class="luban-remote-control">
+      <input id="${id}" class="luban-remote-input" placeholder="remote" value="${escapeHtml(host)}" />
+      <button
+        class="icon-button luban-host-switch"
+        type="button"
+        data-target="${id}"
+        title="Switch to ${escapeHtml(nextHost)}"
+        aria-label="Switch Luban host"
+      >⇄</button>
+    </div>
+  `;
+}
+
 function renderBranchOptions(selected = "") {
   const branches = state.configBranches || [];
   return branches
@@ -136,7 +163,7 @@ export function renderPickForm() {
     <div class="export-form">
       ${renderExperimentPathPicker("pickExperiment", experimentPath)}
       <div class="export-row">
-        <input id="pickRemote" placeholder="remote" value="luban_2_card" />
+        ${renderLubanRemoteControl("pickRemote")}
         <input id="pickDesc" placeholder="description / release note" />
       </div>
       <div class="export-row action-row">
@@ -156,7 +183,7 @@ export function renderExportForm() {
       ${renderExperimentPathPicker("exportExperiment", experimentPath)}
       <div class="export-row">
         <input id="exportEpoch" placeholder="epoch, e.g. 007" />
-        <input id="exportRemote" placeholder="remote" value="luban_2_card" />
+        ${renderLubanRemoteControl("exportRemote")}
       </div>
       <input id="exportDesc" placeholder="description / release note" />
       <p class="helper-text">Real export confirmation text is <b>EXPORT</b>.</p>
@@ -277,6 +304,9 @@ export function renderOffboardForm() {
   const selectedEpoch = (record.selection || {}).selected_epoch;
   const useSelectedChecked = state.selectedId ? " checked" : "";
   const explicitChecked = state.selectedId ? "" : " checked";
+  const yamlOptions = state.offboardTestYamls?.length
+    ? state.offboardTestYamls
+    : [{ name: "scenario_dnn_finetune_test.yaml", path: "configs/scenario_dnn_finetune_test.yaml" }];
   return `
     <div class="export-form offboard-form">
       <div class="mode-switch">
@@ -295,10 +325,18 @@ export function renderOffboardForm() {
       ${renderExperimentPathPicker("offboardExperiment", experimentPath)}
       <div class="export-row">
         <input id="offboardEpoch" placeholder="epoch, e.g. 007" value="${selectedEpoch != null ? escapeHtml(formatEpoch(selectedEpoch)) : ""}" />
-        <input id="offboardRemote" placeholder="remote" value="luban_2_card" />
+        ${renderLubanRemoteControl("offboardRemote")}
+      </div>
+      <div class="offboard-yaml-list">
+        ${yamlOptions.map((item, index) => `
+          <label class="inline-check offboard-yaml-option">
+            <input class="offboard-yaml-check" type="checkbox" value="${escapeHtml(item.path)}"${index === 0 ? " checked" : ""} />
+            ${escapeHtml(item.name)}
+          </label>
+        `).join("")}
       </div>
       <input id="offboardDesc" placeholder="description / release note" />
-      <p class="helper-text">Explicit offboard confirmation text is <b>OFFBOARD</b>. Selected-pick offboard uses the current <b>release_id</b>.</p>
+      <p class="helper-text">Only scenario_dnn_finetune_test.yaml and scenario_dnn_finetune_test_*.yaml are allowed. Explicit offboard confirmation text is <b>OFFBOARD</b>; selected-pick offboard uses the current <b>release_id</b>.</p>
     </div>
   `;
 }

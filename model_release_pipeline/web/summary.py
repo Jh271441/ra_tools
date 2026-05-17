@@ -171,7 +171,7 @@ def commands(record: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "export": (
             "python3 -m model_release_pipeline.cli export "
-            f"--remote luban_2_card --experiment {experiment_path!r} {epoch_arg}"
+            f"--remote luban_1_card --experiment {experiment_path!r} {epoch_arg}"
         ),
         "upload": (
             "python3 -m model_release_pipeline.cli upload "
@@ -196,7 +196,7 @@ def commands(record: Dict[str, Any]) -> Dict[str, Any]:
         ),
         "offboard": (
             "python3 -m model_release_pipeline.cli offboard "
-            f"--run-id {release_id} --remote luban_2_card"
+            f"--run-id {release_id} --remote luban_1_card"
         ),
         "dcl_commands": (record.get("apply_handoff") or {}).get("dcl_commands") or [],
     }

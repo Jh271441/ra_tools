@@ -168,6 +168,73 @@ class ReleaseWebApp:
             ]
         }
 
+    def list_luban_hosts(self) -> Dict[str, Any]:
+        return {
+            "default_host": self.config.luban.host_alias,
+            "hosts": self.config.luban.effective_host_aliases(),
+        }
+
+    def list_offboard_test_yamls(self) -> Dict[str, Any]:
+        config_dir = Path(self.config.luban.train_repo) / "configs"
+        pattern = re.compile(r"^scenario_dnn_finetune_test(?:_.*)?\.yaml$")
+        source = "local"
+        if config_dir.exists():
+            items = [
+                {
+                    "name": path.name,
+                    "path": f"configs/{path.name}",
+                }
+                for path in config_dir.iterdir()
+                if path.is_file() and pattern.fullmatch(path.name)
+            ]
+        else:
+            source = f"remote:{self.config.luban.host_alias}"
+            items = self._list_remote_offboard_test_yamls(config_dir)
+        items.sort(key=lambda item: item["name"])
+        return {"source": source, "yamls": items}
+
+    def _list_remote_offboard_test_yamls(self, config_dir: Path) -> list[Dict[str, str]]:
+        script = r"""
+import json
+import re
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+pattern = re.compile(r"^scenario_dnn_finetune_test(?:_.*)?\.yaml$")
+items = [
+    {"name": item.name, "path": f"configs/{item.name}"}
+    for item in root.iterdir()
+    if item.is_file() and pattern.fullmatch(item.name)
+]
+print(json.dumps(items, ensure_ascii=False))
+"""
+        remote_python = shlex.split(self.config.luban.remote_python_bin or "python3")
+        remote_command = " ".join(
+            shlex.quote(part)
+            for part in [
+                *remote_python,
+                "-c",
+                script,
+                config_dir.as_posix(),
+            ]
+        )
+        command = ["ssh", self.config.luban.host_alias, remote_command]
+        result = subprocess.run(
+            command,
+            text=True,
+            capture_output=True,
+            timeout=20,
+            check=False,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            raise FileNotFoundError(f"Offboard test yaml listing failed: {detail}")
+        payload = json.loads(result.stdout or "[]")
+        if not isinstance(payload, list):
+            raise ValueError("Offboard test yaml listing returned invalid data.")
+        return payload
+
     def get_stage_defaults(self) -> Dict[str, Any]:
         return {"stage_defaults": read_defaults(self.config.runs_dir)}
 
@@ -191,8 +258,10 @@ class ReleaseWebApp:
         self,
         root: str = DEFAULT_EXPERIMENT_ROOT,
         limit: int = 500,
+        remote: str = "",
     ) -> Dict[str, Any]:
         root = (root or DEFAULT_EXPERIMENT_ROOT).strip()
+        remote_host = (remote or self.config.luban.host_alias).strip()
         filesystem_root = _device_filesystem_path(root)
         source = "local"
         if filesystem_root.exists():
@@ -211,8 +280,8 @@ class ReleaseWebApp:
                 )
             folders.sort(key=lambda item: item["name"].casefold(), reverse=True)
         else:
-            source = f"remote:{self.config.luban.host_alias}"
-            folders = self._list_remote_experiment_folders(filesystem_root)
+            source = f"remote:{remote_host}"
+            folders = self._list_remote_experiment_folders(filesystem_root, remote_host)
 
         if limit > 0:
             folders = folders[:limit]
@@ -223,7 +292,11 @@ class ReleaseWebApp:
             "folders": folders,
         }
 
-    def _list_remote_experiment_folders(self, filesystem_root: Path) -> list[Dict[str, Any]]:
+    def _list_remote_experiment_folders(
+        self,
+        filesystem_root: Path,
+        remote_host: str,
+    ) -> list[Dict[str, Any]]:
         remote_python = shlex.split(self.config.luban.remote_python_bin or "python3")
         remote_command = " ".join(
             shlex.quote(part)
@@ -234,7 +307,7 @@ class ReleaseWebApp:
                 filesystem_root.as_posix(),
             ]
         )
-        command = ["ssh", self.config.luban.host_alias, remote_command]
+        command = ["ssh", remote_host, remote_command]
         result = subprocess.run(
             command,
             text=True,
@@ -246,7 +319,7 @@ class ReleaseWebApp:
             detail = (result.stderr or result.stdout or "").strip()
             raise FileNotFoundError(
                 f"Experiment root does not exist locally and remote listing failed "
-                f"on {self.config.luban.host_alias}: {detail}"
+                f"on {remote_host}: {detail}"
             )
         folders = json.loads(result.stdout or "[]")
         if not isinstance(folders, list):
@@ -350,6 +423,12 @@ def _handle_api_get(
     if path == "/api/config/branches":
         _json_response(handler, app.list_branches())
         return True
+    if path == "/api/config/luban-hosts":
+        _json_response(handler, app.list_luban_hosts())
+        return True
+    if path == "/api/config/offboard-test-yamls":
+        _json_response(handler, app.list_offboard_test_yamls())
+        return True
     if path == "/api/config/stage-defaults":
         _json_response(handler, app.get_stage_defaults())
         return True
@@ -361,7 +440,8 @@ def _handle_api_get(
             limit = int(limit_raw)
         except ValueError:
             limit = 500
-        _json_response(handler, app.list_experiment_folders(root=root, limit=limit))
+        remote = (params.get("remote") or [""])[0]
+        _json_response(handler, app.list_experiment_folders(root=root, limit=limit, remote=remote))
         return True
     if path == "/api/pick":
         params = parse_qs(query)

@@ -285,10 +285,14 @@ dst.write_text("\\n".join(rewritten) + "\\n", encoding='utf-8')
         self,
         checkpoint_path: Path,
         remote_host: str | None = None,
+        config_path: str | None = None,
         dry_run: bool = False,
         show_progress: bool = False,
     ) -> Dict[str, object]:
-        remote_config = Path(self.config.train_repo) / self.config.offboard_config_path
+        chosen_config = config_path or self.config.offboard_config_path
+        remote_config = Path(chosen_config)
+        if not remote_config.is_absolute():
+            remote_config = Path(self.config.train_repo) / remote_config
         remote_temp_yaml = remote_config.with_name(
             f"{remote_config.stem}.release_offboard_{checkpoint_path.stem}.yaml"
         )
@@ -335,6 +339,7 @@ dst.write_text("\\n".join(rewritten) + "\\n", encoding='utf-8')
         )
         return {
             "host": remote_host or self.config.host_alias,
+            "config_yaml": remote_config.as_posix(),
             "temp_config": remote_temp_yaml.as_posix(),
             "checkpoint_path": str(checkpoint_path),
             "command": result["command"],

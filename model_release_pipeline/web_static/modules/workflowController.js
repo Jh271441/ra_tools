@@ -5,6 +5,7 @@ import { actionSpecs, draftPayload } from "./releaseData.js";
 import { $, state } from "./state.js";
 import { escapeHtml, formatEpoch, statusClass } from "./utils.js";
 import {
+  currentLubanHost,
   flowItems,
   renderActionButtons,
   renderDclForm,
@@ -112,12 +113,47 @@ function renderExperimentOptions(inputId, data) {
   }
 }
 
+function nextLubanHost(current = currentLubanHost()) {
+  const hosts = state.lubanHosts?.length ? state.lubanHosts : ["luban_1_card", "luban_2_card"];
+  const index = hosts.indexOf(current);
+  return hosts[index >= 0 ? (index + 1) % hosts.length : 0] || current || "luban_1_card";
+}
+
+function setLubanHost(host) {
+  const value = (host || currentLubanHost()).trim();
+  if (!value) return;
+  state.selectedLubanHost = value;
+  document.querySelectorAll(".luban-remote-input").forEach((input) => {
+    input.value = value;
+  });
+  const nextHost = nextLubanHost(value);
+  document.querySelectorAll(".luban-host-switch").forEach((button) => {
+    button.title = `Switch to ${nextHost}`;
+  });
+}
+
+function bindLubanHostSwitches() {
+  document.querySelectorAll(".luban-remote-input").forEach((input) => {
+    input.onchange = () => setLubanHost(input.value);
+  });
+  document.querySelectorAll(".luban-host-switch").forEach((button) => {
+    button.onclick = () => {
+      const target = $(button.dataset.target || "");
+      setLubanHost(nextLubanHost((target?.value || currentLubanHost()).trim()));
+      ["pickExperiment", "exportExperiment", "offboardExperiment"].forEach((inputId) => {
+        if ($(`${inputId}Select`)) loadExperimentOptions(inputId, true);
+      });
+    };
+  });
+}
+
 async function loadExperimentOptions(inputId, forceReload = false) {
   const select = $(`${inputId}Select`);
   if (!select) return;
   const picker = select.closest(".experiment-picker");
   const root = picker?.dataset.root || "";
-  const cacheKey = root || "__default__";
+  const remote = currentLubanHost();
+  const cacheKey = `${root || "__default__"}::${remote || "__default__"}`;
   if (!forceReload && state.experimentFolderCache[cacheKey]) {
     renderExperimentOptions(inputId, state.experimentFolderCache[cacheKey]);
     return;
@@ -127,6 +163,7 @@ async function loadExperimentOptions(inputId, forceReload = false) {
   try {
     const params = new URLSearchParams();
     if (root) params.set("root", root);
+    if (remote) params.set("remote", remote);
     const data = await fetchJson(`/api/experiment-folders?${params}`);
     state.experimentFolderCache[cacheKey] = {
       ...data,
@@ -333,6 +370,7 @@ function renderFlowInspector(flow, actions, statusByStep, onAction) {
   bindExperimentPicker("pickExperiment");
   bindExperimentPicker("exportExperiment");
   bindExperimentPicker("offboardExperiment");
+  bindLubanHostSwitches();
   renderConfirmHint(itemActions);
 
   document.querySelectorAll('input[name="offboardMode"]').forEach((input) => {

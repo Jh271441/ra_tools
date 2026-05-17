@@ -603,13 +603,13 @@ class CliSelectionTest(unittest.TestCase):
             config.runs_dir = Path(tmp_dir)
             store = StateStore(config.runs_dir)
             record = store.create(experiment_path="/nfs/exp", description="")
-            record["experiment"] = {"name": "exp", "remote_host": "luban_2_card"}
+            record["experiment"] = {"name": "exp", "remote_host": "luban_1_card"}
             record["selection"] = {"selected_epoch": 19}
             store.save(record)
             calls = []
 
             class FakeExperiment:
-                remote_host = "luban_2_card"
+                remote_host = "luban_1_card"
 
                 def checkpoint_for_epoch(self, epoch):
                     self.epoch = epoch
@@ -632,7 +632,7 @@ class CliSelectionTest(unittest.TestCase):
                         "host": kwargs["remote_host"],
                         "temp_config": "/nfs/repo/configs/scenario_dnn_finetune_test.release_offboard_epoch=019.yaml",
                         "checkpoint_path": str(kwargs["checkpoint_path"]),
-                        "command": "ssh luban_2_card ...",
+                        "command": "ssh luban_1_card ...",
                         "returncode": 0,
                         "stdout": "",
                         "stderr": "",
@@ -648,9 +648,10 @@ class CliSelectionTest(unittest.TestCase):
                 args = argparse.Namespace(
                     run_id=record["release_id"],
                     experiment=None,
-                    remote="luban_2_card",
+                    remote="luban_1_card",
                     remote_python=None,
                     epoch=None,
+                    test_yaml=None,
                     desc="",
                     dry_run=False,
                     json=True,
@@ -671,7 +672,135 @@ class CliSelectionTest(unittest.TestCase):
                 str(calls[0]["checkpoint_path"]),
                 "/nfs/exp/checkpoints/version_0/epoch=019.pth",
             )
-            self.assertEqual(calls[0]["remote_host"], "luban_2_card")
+            self.assertEqual(calls[0]["remote_host"], "luban_1_card")
+
+    def test_offboard_runs_multiple_test_yamls(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config = default_config()
+            config.runs_dir = Path(tmp_dir)
+            store = StateStore(config.runs_dir)
+            record = store.create(experiment_path="/nfs/exp", description="")
+            record["experiment"] = {"name": "exp", "remote_host": "luban_1_card"}
+            record["selection"] = {"selected_epoch": 19}
+            store.save(record)
+            calls = []
+
+            class FakeExperiment:
+                remote_host = "luban_1_card"
+
+                def checkpoint_for_epoch(self, epoch):
+                    return Path(f"/nfs/exp/checkpoints/version_0/epoch={epoch:03d}.pth")
+
+            class FakeInspector:
+                def __init__(self, *args, **kwargs):
+                    pass
+
+                def inspect(self, *args, **kwargs):
+                    return FakeExperiment()
+
+            class FakeRunner:
+                def __init__(self, _config):
+                    pass
+
+                def run_offboard_test(self, **kwargs):
+                    calls.append(kwargs)
+                    return {
+                        "host": kwargs["remote_host"],
+                        "config_yaml": kwargs["config_path"],
+                        "temp_config": f"{kwargs['config_path']}.tmp",
+                        "checkpoint_path": str(kwargs["checkpoint_path"]),
+                        "command": f"run {kwargs['config_path']}",
+                        "returncode": 0,
+                        "stdout": kwargs["config_path"],
+                        "stderr": "",
+                    }
+
+            original_runner = runner_module.LubanRunner
+            original_inspector = runner_module.ExperimentInspector
+            original_confirm = runner_module._confirm
+            try:
+                runner_module.LubanRunner = FakeRunner
+                runner_module.ExperimentInspector = FakeInspector
+                runner_module._confirm = lambda _prompt, _yes: True
+                args = argparse.Namespace(
+                    run_id=record["release_id"],
+                    experiment=None,
+                    remote="luban_1_card",
+                    remote_python=None,
+                    epoch=None,
+                    test_yaml=[
+                        "scenario_dnn_finetune_test.yaml",
+                        "configs/scenario_dnn_finetune_test_smoke.yaml",
+                    ],
+                    desc="",
+                    dry_run=False,
+                    json=True,
+                    yes=True,
+                )
+
+                updated = _run_offboard(args, config, store, store.load(record["release_id"]))
+            finally:
+                runner_module.LubanRunner = original_runner
+                runner_module.ExperimentInspector = original_inspector
+                runner_module._confirm = original_confirm
+
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(
+                [call["config_path"] for call in calls],
+                [
+                    "configs/scenario_dnn_finetune_test.yaml",
+                    "configs/scenario_dnn_finetune_test_smoke.yaml",
+                ],
+            )
+            self.assertEqual(updated["offboard"]["returncode"], 0)
+            self.assertEqual(len(updated["offboard"]["results"]), 2)
+
+    def test_offboard_rejects_generated_release_offboard_yaml(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            config = default_config()
+            config.runs_dir = Path(tmp_dir)
+            store = StateStore(config.runs_dir)
+            record = store.create(experiment_path="/nfs/exp", description="")
+            record["experiment"] = {"name": "exp", "remote_host": "luban_1_card"}
+            record["selection"] = {"selected_epoch": 19}
+            store.save(record)
+
+            class FakeExperiment:
+                remote_host = "luban_1_card"
+
+                def checkpoint_for_epoch(self, epoch):
+                    return Path(f"/nfs/exp/checkpoints/version_0/epoch={epoch:03d}.pth")
+
+            class FakeInspector:
+                def __init__(self, *args, **kwargs):
+                    pass
+
+                def inspect(self, *args, **kwargs):
+                    return FakeExperiment()
+
+            original_inspector = runner_module.ExperimentInspector
+            original_confirm = runner_module._confirm
+            try:
+                runner_module.ExperimentInspector = FakeInspector
+                runner_module._confirm = lambda _prompt, _yes: True
+                args = argparse.Namespace(
+                    run_id=record["release_id"],
+                    experiment=None,
+                    remote="luban_1_card",
+                    remote_python=None,
+                    epoch=None,
+                    test_yaml=["scenario_dnn_finetune_test.release_offboard_epoch=007.yaml"],
+                    desc="",
+                    dry_run=True,
+                    json=True,
+                    yes=True,
+                )
+
+                with self.assertRaisesRegex(RuntimeError, "scenario_dnn_finetune_test_"):
+                    _run_offboard(args, config, store, store.load(record["release_id"]))
+            finally:
+                runner_module.ExperimentInspector = original_inspector
+                runner_module._confirm = original_confirm
 
     def test_offboard_dry_run_with_run_id_does_not_persist_branch(self) -> None:
         with TemporaryDirectory() as tmp_dir:
@@ -685,7 +814,7 @@ class CliSelectionTest(unittest.TestCase):
             store.save(record)
 
             class FakeExperiment:
-                remote_host = "luban_2_card"
+                remote_host = "luban_1_card"
 
                 def checkpoint_for_epoch(self, epoch):
                     return Path(f"/tmp/exp/checkpoints/version_0/epoch={epoch:03d}.pth")
@@ -706,7 +835,7 @@ class CliSelectionTest(unittest.TestCase):
                         "host": kwargs["remote_host"],
                         "temp_config": "/nfs/repo/configs/scenario_dnn_finetune_test.release_offboard_epoch=019.yaml",
                         "checkpoint_path": str(kwargs["checkpoint_path"]),
-                        "command": "ssh luban_2_card ...",
+                        "command": "ssh luban_1_card ...",
                         "returncode": None,
                         "stdout": "",
                         "stderr": "",
@@ -722,9 +851,10 @@ class CliSelectionTest(unittest.TestCase):
                 args = argparse.Namespace(
                     run_id=record["release_id"],
                     experiment=None,
-                    remote="luban_2_card",
+                    remote="luban_1_card",
                     remote_python=None,
                     epoch=None,
+                    test_yaml=None,
                     desc="",
                     dry_run=True,
                     json=True,

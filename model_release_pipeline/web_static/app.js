@@ -130,9 +130,29 @@ fetchJson("/api/config/branches")
   .then((data) => { state.configBranches = data.branches || []; })
   .catch(() => {});
 
+fetchJson("/api/config/luban-hosts")
+  .then((data) => {
+    state.lubanHosts = data.hosts || [];
+    state.defaultLubanHost = data.default_host || state.defaultLubanHost;
+    state.selectedLubanHost = state.selectedLubanHost || state.defaultLubanHost;
+    if (state.selectedRun || state.draftRun) {
+      renderFlowControls(state.selectedRun || null);
+    }
+  })
+  .catch(() => {});
+
 fetchJson("/api/config/stage-defaults")
   .then((data) => {
     state.stageDefaults = data.stage_defaults || {};
+    if (state.selectedRun || state.draftRun) {
+      renderFlowControls(state.selectedRun || null);
+    }
+  })
+  .catch(() => {});
+
+fetchJson("/api/config/offboard-test-yamls")
+  .then((data) => {
+    state.offboardTestYamls = data.yamls || [];
     if (state.selectedRun || state.draftRun) {
       renderFlowControls(state.selectedRun || null);
     }

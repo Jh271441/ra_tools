@@ -16,7 +16,11 @@ export const state = {
   jobTimer: null,
   pickPreviewLines: [],
   configBranches: [],
+  lubanHosts: [],
+  defaultLubanHost: "luban_1_card",
+  selectedLubanHost: "",
   stageDefaults: {},
+  offboardTestYamls: [],
   openStageSettings: null,
   experimentFolderCache: {},
 };

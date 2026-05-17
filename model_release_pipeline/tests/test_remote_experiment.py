@@ -42,10 +42,10 @@ class RemoteExperimentTest(unittest.TestCase):
             experiment = ExperimentInspector(
                 remote_python_bin=remote_python
             ).inspect(
-                "/nfs/remote/remote_exp", remote_host="luban_2_card"
+                "/nfs/remote/remote_exp", remote_host="luban_1_card"
             )
 
-        self.assertEqual(experiment.remote_host, "luban_2_card")
+        self.assertEqual(experiment.remote_host, "luban_1_card")
         self.assertNotIn("log_text", experiment.to_dict())
         run_mock.assert_called_once()
         self.assertIn(remote_python, run_mock.call_args.args[0][2])

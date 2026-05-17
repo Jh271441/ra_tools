@@ -284,11 +284,20 @@
   align-items: stretch;
 }
 
+.luban-remote-control {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  gap: 8px;
+  flex: 1 1 0;
+}
+
 .experiment-select {
   cursor: pointer;
 }
 
-.experiment-picker .icon-button {
+.experiment-picker .icon-button,
+.luban-remote-control .icon-button {
   width: 36px;
   min-width: 36px;
   height: 36px;
@@ -302,7 +311,8 @@
   font: 700 0.92rem/1 var(--sans);
 }
 
-.experiment-picker .icon-button:hover {
+.experiment-picker .icon-button:hover,
+.luban-remote-control .icon-button:hover {
   border-color: var(--line-strong);
   background: rgba(255, 255, 255, 0.92);
 }
@@ -311,7 +321,8 @@
 .export-row input:focus,
 .stage-config-panel input:focus,
 .experiment-select:focus,
-.experiment-picker .icon-button:focus {
+.experiment-picker .icon-button:focus,
+.luban-remote-control .icon-button:focus {
   border-color: var(--accent);
 }
 
@@ -329,6 +340,22 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.offboard-yaml-list {
+  max-height: 150px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.offboard-yaml-option {
+  min-height: 32px;
+  padding: 0 10px;
+  justify-content: flex-start;
+  overflow-wrap: anywhere;
 }
 
 .sim-plan-form {

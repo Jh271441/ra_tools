@@ -25,7 +25,7 @@ class LubanRunnerTest(unittest.TestCase):
             tensorboard_files=[],
             checkpoints=[Path("/nfs/exp/checkpoints/version_0/epoch=007.pth")],
             exported_epochs=[],
-            remote_host="luban_2_card",
+            remote_host="luban_1_card",
         )
         config = LubanConfig(
             train_repo="/nfs/stuck_assist_model",
@@ -66,7 +66,7 @@ class LubanRunnerTest(unittest.TestCase):
             tensorboard_files=[],
             checkpoints=[Path("/nfs/exp/checkpoints/version_0/epoch=007.pth")],
             exported_epochs=[],
-            remote_host="luban_2_card",
+            remote_host="luban_1_card",
         )
         runner = LubanRunner(LubanConfig(train_repo="/nfs/stuck_assist_model"))
 
@@ -110,7 +110,7 @@ class LubanRunnerTest(unittest.TestCase):
             checkpoint_path=Path(
                 "/nfs/exp/checkpoints/version_0/epoch=019.pth"
             ),
-            remote_host="luban_2_card",
+            remote_host="luban_1_card",
             dry_run=True,
         )
 
@@ -124,6 +124,25 @@ class LubanRunnerTest(unittest.TestCase):
         self.assertIn(
             "scenario_dnn/train_test/ra_model_pipeline.py --config-yaml",
             command,
+        )
+
+    def test_offboard_command_accepts_custom_test_yaml(self) -> None:
+        config = LubanConfig(train_repo="/nfs/stuck_assist_model")
+
+        result = LubanRunner(config).run_offboard_test(
+            checkpoint_path=Path("/nfs/exp/checkpoints/version_0/epoch=019.pth"),
+            remote_host="luban_1_card",
+            config_path="configs/scenario_dnn_finetune_test_smoke.yaml",
+            dry_run=True,
+        )
+
+        self.assertEqual(
+            result["config_yaml"],
+            "/nfs/stuck_assist_model/configs/scenario_dnn_finetune_test_smoke.yaml",
+        )
+        self.assertIn(
+            "scenario_dnn_finetune_test_smoke.release_offboard_epoch=019.yaml",
+            result["command"],
         )
 
     def test_offboard_streams_raw_log_lines(self) -> None:

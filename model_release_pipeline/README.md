@@ -16,17 +16,19 @@ python -m model_release_pipeline.cli release --experiment <experiment_path> --ep
 For experiments that only exist on Luban/OFS, keep the command on your local machine and add `--remote`:
 
 ```bash
-python -m model_release_pipeline.cli inspect --remote luban_2_card --experiment /nfs/.../experiment
-python -m model_release_pipeline.cli export --remote luban_2_card --experiment /nfs/.../experiment --epoch <epoch> --dry-run
-python -m model_release_pipeline.cli release --remote luban_2_card --experiment /nfs/.../experiment --epoch <epoch> --desc "release note" --dry-run
+python -m model_release_pipeline.cli inspect --remote luban_1_card --experiment /nfs/.../experiment
+python -m model_release_pipeline.cli export --remote luban_1_card --experiment /nfs/.../experiment --epoch <epoch> --dry-run
+python -m model_release_pipeline.cli release --remote luban_1_card --experiment /nfs/.../experiment --epoch <epoch> --desc "release note" --dry-run
 ```
+
+The web console exposes the configured Luban hosts as a one-click switch beside each remote field. Edit `luban.host_aliases` in the YAML config to add or reorder fallback hosts.
 
 For multi-head experiments, `pick` reads `activated_tasks` from `hparams.yaml`, writes separate recommendations under `per_task`, and also emits a combined checkpoint recommendation at top-level `recommended_epoch` when enough metrics are available. The combined recommendation prefers the primary head `stuck_detect` and is precision-oriented.
 
 ```bash
-python -m model_release_pipeline.cli pick --remote luban_2_card --experiment /nfs/.../experiment --top-n 3
-python -m model_release_pipeline.cli export --remote luban_2_card --experiment /nfs/.../experiment --dry-run
-python -m model_release_pipeline.cli release --remote luban_2_card --experiment /nfs/.../experiment --desc "release note" --dry-run
+python -m model_release_pipeline.cli pick --remote luban_1_card --experiment /nfs/.../experiment --top-n 3
+python -m model_release_pipeline.cli export --remote luban_1_card --experiment /nfs/.../experiment --dry-run
+python -m model_release_pipeline.cli release --remote luban_1_card --experiment /nfs/.../experiment --desc "release note" --dry-run
 ```
 
 By default, `pick` prints a compact report similar to the legacy pick scripts: per-task Top-N by `roc_auc`, `pr_auc`, precision/recall, selected combined epochs, and the final `Recommended epoch`. Use `--json` only when you need the full machine-readable payload.
@@ -189,9 +191,9 @@ If the training log is incomplete, the report also prints a `TensorBoard Val-Los
 If you intentionally want to use one head's standalone recommendation instead of the combined recommendation, pass `--task`. If you have already decided an epoch manually, pass `--epoch`.
 
 ```bash
-python -m model_release_pipeline.cli export --remote luban_2_card --experiment /nfs/.../experiment --task stuck_detect --dry-run
-python -m model_release_pipeline.cli export --remote luban_2_card --experiment /nfs/.../experiment --epoch 5 --dry-run
-python -m model_release_pipeline.cli pick --remote luban_2_card --experiment /nfs/.../experiment --loss-tolerance-pct 0.10
+python -m model_release_pipeline.cli export --remote luban_1_card --experiment /nfs/.../experiment --task stuck_detect --dry-run
+python -m model_release_pipeline.cli export --remote luban_1_card --experiment /nfs/.../experiment --epoch 5 --dry-run
+python -m model_release_pipeline.cli pick --remote luban_1_card --experiment /nfs/.../experiment --loss-tolerance-pct 0.10
 ```
 
 ## Manual Epoch Flow
@@ -202,13 +204,13 @@ Model selection is intentionally optional. If you already have a chosen checkpoi
 EXP=/nfs/dataset-ofs-remote-assist-stuck/user/jasperchen/ego_stuck_data/scenario_dnn_26q1/<experiment>
 
 python -m model_release_pipeline.cli export \
-  --remote luban_2_card \
+  --remote luban_1_card \
   --experiment "$EXP" \
   --epoch 5 \
   --dry-run
 
 python -m model_release_pipeline.cli release \
-  --remote luban_2_card \
+  --remote luban_1_card \
   --experiment "$EXP" \
   --epoch 5 \
   --desc "scenario dnn release" \
@@ -222,7 +224,7 @@ The remote export command runs from `stuck_assist_model`, sets `PYTHONPATH` to t
 If the remote host needs a specific conda environment, set it in config or override it per command:
 
 ```bash
-python -m model_release_pipeline.cli inspect --remote luban_2_card --remote-python "/home/luban/miniconda3/bin/conda run --no-capture-output -n scen_dnn python" --experiment /nfs/.../experiment
+python -m model_release_pipeline.cli inspect --remote luban_1_card --remote-python "/home/luban/miniconda3/bin/conda run --no-capture-output -n scen_dnn python" --experiment /nfs/.../experiment
 ```
 
 Copy the editable config template:
@@ -297,7 +299,7 @@ Validate the selected checkpoint from a release run:
 ```bash
 python -m model_release_pipeline.cli offboard \
   --run-id <release_id> \
-  --remote luban_2_card
+  --remote luban_1_card
 ```
 
 ## Run State

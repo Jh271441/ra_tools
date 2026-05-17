@@ -26,6 +26,11 @@ function selectedSimPlans() {
     .map((input) => input.value);
 }
 
+function selectedOffboardTestYamls() {
+  return [...document.querySelectorAll(".offboard-yaml-check:checked")]
+    .map((input) => input.value);
+}
+
 function trackJob(job) {
   state.activeJobId = job.job_id;
   state.activeJobsByRelease[job.release_id] = job;
@@ -87,6 +92,7 @@ export async function startAction(action, dryRun, confirmText, callbacks) {
       const mode = document.querySelector('input[name="offboardMode"]:checked')?.value || (state.selectedId ? "selected" : "explicit");
       payload.mode = mode;
       payload.remote = $("offboardRemote") ? $("offboardRemote").value.trim() : "";
+      payload.test_yamls = selectedOffboardTestYamls();
       if (mode === "explicit" || !state.selectedId) {
         payload.experiment = $("offboardExperiment") ? $("offboardExperiment").value.trim() : "";
         payload.epoch = $("offboardEpoch") ? $("offboardEpoch").value.trim() : "";

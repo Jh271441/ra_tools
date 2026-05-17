@@ -266,6 +266,11 @@ def build_parser() -> argparse.ArgumentParser:
     offboard_parser.add_argument("--remote", help="SSH host alias for remote inspect/offboard")
     offboard_parser.add_argument("--remote-python", help="Python command on remote host")
     offboard_parser.add_argument("--epoch", type=int)
+    offboard_parser.add_argument(
+        "--test-yaml",
+        action="append",
+        help="Offboard test yaml under configs/. Can be repeated. Must match scenario_dnn_finetune_test*.yaml.",
+    )
     offboard_parser.add_argument("--desc", default="")
     offboard_parser.add_argument("--dry-run", action="store_true")
 

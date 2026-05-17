@@ -100,7 +100,7 @@ ACTIONS = {
         "label": "Run Offboard",
         "supports_dry_run": True,
         "requires_confirm": True,
-        "extra_args": ["--remote", "luban_2_card"],
+        "extra_args": ["--remote", "luban_1_card"],
         "needs_run_id": False,
     },
 }
@@ -284,6 +284,13 @@ def build_cli_command(
             desc = str(payload.get("desc") or "").strip()
             if desc:
                 command.extend(["--desc", desc])
+            test_yamls = payload.get("test_yamls") or payload.get("test_yaml") or []
+            if isinstance(test_yamls, str):
+                test_yamls = [test_yamls]
+            for test_yaml in test_yamls:
+                text = str(test_yaml or "").strip()
+                if text:
+                    command.extend(["--test-yaml", text])
         else:
             command.extend(["--run-id", release_id])
             remote = str(payload.get("remote") or "").strip()
@@ -291,6 +298,13 @@ def build_cli_command(
                 command.extend(["--remote", remote])
             else:
                 command.extend(spec["extra_args"])
+            test_yamls = payload.get("test_yamls") or payload.get("test_yaml") or []
+            if isinstance(test_yamls, str):
+                test_yamls = [test_yamls]
+            for test_yaml in test_yamls:
+                text = str(test_yaml or "").strip()
+                if text:
+                    command.extend(["--test-yaml", text])
     else:
         command.extend(spec["extra_args"])
 

@@ -132,6 +132,7 @@
   }
 
   .experiment-picker,
+  .luban-remote-control,
   .export-row,
   .copy-onnx-panel {
     display: flex;
@@ -140,6 +141,7 @@
   }
 
   .experiment-picker .icon-button,
+  .luban-remote-control .icon-button,
   .export-row .action-button,
   .copy-onnx-panel .action-button {
     width: 100%;
@@ -167,6 +169,12 @@
   }
 
   .sim-plan-list {
+    max-height: none;
+    grid-template-columns: 1fr;
+    overflow: visible;
+  }
+
+  .offboard-yaml-list {
     max-height: none;
     grid-template-columns: 1fr;
     overflow: visible;

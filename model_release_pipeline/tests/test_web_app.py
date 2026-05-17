@@ -94,8 +94,40 @@ class WebAppTest(unittest.TestCase):
                     root=f"device:{missing_root.as_posix()}"
                 )
 
-            self.assertEqual(payload["source"], "remote:luban_2_card")
+            self.assertEqual(payload["source"], "remote:luban_1_card")
             self.assertEqual(payload["folders"][0]["name"], "remote_exp")
+
+    def test_lists_luban_hosts_for_web_switcher(self) -> None:
+        config = default_config()
+        config.luban.host_alias = "luban_1_card"
+        config.luban.host_aliases = ["luban_1_card", "luban_2_card"]
+
+        payload = ReleaseWebApp(config).list_luban_hosts()
+
+        self.assertEqual(payload["default_host"], "luban_1_card")
+        self.assertEqual(payload["hosts"], ["luban_1_card", "luban_2_card"])
+
+    def test_experiment_folder_remote_fallback_uses_requested_luban_host(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            missing_root = Path(tmp_dir) / "missing"
+            config = default_config()
+            config.runs_dir = Path(tmp_dir) / "runs"
+
+            with patch("model_release_pipeline.web_app.subprocess.run") as run:
+                run.return_value = subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout="[]",
+                    stderr="",
+                )
+
+                payload = ReleaseWebApp(config).list_experiment_folders(
+                    root=f"device:{missing_root.as_posix()}",
+                    remote="luban_2_card",
+                )
+
+            self.assertEqual(payload["source"], "remote:luban_2_card")
+            self.assertEqual(run.call_args.args[0][1], "luban_2_card")
 
     def test_run_detail_includes_timeline_logs_and_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -201,7 +233,7 @@ class WebAppTest(unittest.TestCase):
             payload={
                 "experiment": "/nfs/exp",
                 "epoch": "007",
-                "remote": "luban_2_card",
+                "remote": "luban_1_card",
                 "desc": "demo",
             },
         )
@@ -460,7 +492,7 @@ class WebAppTest(unittest.TestCase):
             payload={
                 "experiment": "/nfs/exp_off",
                 "epoch": "019",
-                "remote": "luban_2_card",
+                "remote": "luban_1_card",
             },
         )
 
@@ -476,12 +508,29 @@ class WebAppTest(unittest.TestCase):
             "run123",
             "offboard",
             dry_run=True,
-            payload={"remote": "luban_2_card"},
+            payload={"remote": "luban_1_card"},
         )
 
         self.assertIn("--run-id", command)
         self.assertIn("run123", command)
         self.assertNotIn("--experiment", command)
+
+    def test_offboard_command_accepts_multiple_test_yamls(self) -> None:
+        command = build_cli_command(
+            "run123",
+            "offboard",
+            dry_run=True,
+            payload={
+                "remote": "luban_1_card",
+                "test_yamls": [
+                    "configs/scenario_dnn_finetune_test.yaml",
+                    "configs/scenario_dnn_finetune_test_smoke.yaml",
+                ],
+            },
+        )
+
+        self.assertEqual(command.count("--test-yaml"), 2)
+        self.assertIn("configs/scenario_dnn_finetune_test_smoke.yaml", command)
 
     def test_sim_plan_command_accepts_plans_and_revision(self) -> None:
         command = build_cli_command(
@@ -550,7 +599,7 @@ class WebAppTest(unittest.TestCase):
             payload={
                 "experiment": "/nfs/exp",
                 "epoch": "004",
-                "remote": "luban_2_card",
+                "remote": "luban_1_card",
             },
         )
 
@@ -565,7 +614,7 @@ class WebAppTest(unittest.TestCase):
             payload={
                 "experiment": "/nfs/exp",
                 "epoch": "004",
-                "remote": "luban_2_card",
+                "remote": "luban_1_card",
             },
         )
 
@@ -677,7 +726,7 @@ class WebAppTest(unittest.TestCase):
                     "dry_run": True,
                     "experiment": "/nfs/exp",
                     "epoch": "004",
-                    "remote": "luban_2_card",
+                    "remote": "luban_1_card",
                 },
             )
 
@@ -714,7 +763,7 @@ class WebAppTest(unittest.TestCase):
                 payload={
                     "experiment": "/nfs/exp_off",
                     "epoch": "19",
-                    "remote": "luban_2_card",
+                    "remote": "luban_1_card",
                 },
             )
 
@@ -738,7 +787,7 @@ class WebAppTest(unittest.TestCase):
                     "dry_run": True,
                     "experiment": "/nfs/exp",
                     "epoch": "004",
-                    "remote": "luban_2_card",
+                    "remote": "luban_1_card",
                 },
             )
 
