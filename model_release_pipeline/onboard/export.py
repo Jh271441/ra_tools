@@ -118,9 +118,13 @@ def inspect_and_pick(
     loss_tolerance_pct: Optional[float] = None,
 ) -> tuple[Dict[str, Any], Dict[str, Any]]:
     """Run inspect + pick without touching StateStore (for CLI or preview)."""
-    experiment = ExperimentInspector(
-        remote_python_bin=remote_python or config.luban.remote_python_bin
-    ).inspect(experiment_path, remote_host=remote)
+    experiment = _inspect_experiment_with_luban_fallback(
+        experiment_path,
+        config,
+        remote=remote,
+        remote_python=remote_python,
+        inspector_cls=ExperimentInspector,
+    )
     pick_result = ModelPicker().pick(
         experiment=experiment,
         policy=policy or config.picker.policy,
@@ -131,6 +135,54 @@ def inspect_and_pick(
         ),
     )
     return experiment.to_dict(), pick_result
+
+
+def _remote_host_candidates(config: ReleaseConfig, remote: Optional[str]) -> list[str]:
+    requested = str(remote or "").strip()
+    if not requested:
+        return []
+    candidates = [requested]
+    for host in config.luban.effective_host_aliases():
+        if host != requested:
+            candidates.append(host)
+    return candidates
+
+
+def _looks_like_broken_remote_mount(exc: Exception) -> bool:
+    text = str(exc)
+    return (
+        "Transport endpoint is not connected" in text
+        or "Errno 107" in text
+    )
+
+
+def _inspect_experiment_with_luban_fallback(
+    experiment_path: str,
+    config: ReleaseConfig,
+    *,
+    remote: Optional[str],
+    remote_python: Optional[str],
+    inspector_cls: Any,
+) -> Any:
+    hosts = _remote_host_candidates(config, remote)
+    if not hosts:
+        return inspector_cls(
+            remote_python_bin=remote_python or config.luban.remote_python_bin
+        ).inspect(experiment_path, remote_host=remote)
+
+    errors: list[tuple[str, Exception]] = []
+    for host in hosts:
+        try:
+            return inspector_cls(
+                remote_python_bin=remote_python or config.luban.remote_python_bin
+            ).inspect(experiment_path, remote_host=host)
+        except Exception as exc:
+            errors.append((host, exc))
+            if not _looks_like_broken_remote_mount(exc):
+                raise
+
+    detail = "; ".join(f"{host}: {exc}" for host, exc in errors)
+    raise RuntimeError(f"Remote inspect failed on all Luban hosts. {detail}")
 
 
 def run_pick(
@@ -144,9 +196,13 @@ def run_pick(
     picker_cls: Any = ModelPicker,
 ) -> Dict[str, Any]:
     progress(args, "Inspect Experiment", 1, 2, "🔎", f"experiment: {args.experiment}", False)
-    experiment = inspector_cls(
-        remote_python_bin=getattr(args, "remote_python", None) or config.luban.remote_python_bin
-    ).inspect(args.experiment, remote_host=getattr(args, "remote", None))
+    experiment = _inspect_experiment_with_luban_fallback(
+        args.experiment,
+        config,
+        remote=getattr(args, "remote", None),
+        remote_python=getattr(args, "remote_python", None),
+        inspector_cls=inspector_cls,
+    )
 
     progress(args, "Pick Epoch", 2, 2, "🏁", None, True)
     pick_result = picker_cls().pick(

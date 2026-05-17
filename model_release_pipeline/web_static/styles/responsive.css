@@ -27,21 +27,45 @@
   html,
   body {
     height: auto;
-    overflow: auto; /* Let the whole page scroll on mobile */
+    max-width: 100%;
+    overflow-x: hidden;
+    overflow-y: auto; /* Let the whole page scroll on mobile */
   }
 
   .app-shell {
+    width: 100%;
+    max-width: 100vw;
     height: auto;
     min-height: 100vh;
-    padding: 16px;
+    overflow-x: hidden;
+    padding: 14px;
+  }
+
+  .app-shell::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 998;
+    background: rgba(29, 29, 31, 0.28);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 160ms ease;
+  }
+
+  .app-shell:not(.rail-collapsed)::before {
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .topbar {
     padding-left: 0;
+    gap: 12px;
   }
 
   .workspace {
     flex-direction: column;
+    width: 100%;
+    max-width: 100%;
     min-height: auto;
     overflow: visible;
   }
@@ -49,47 +73,119 @@
   .side-rail {
     flex: none;
     width: 100%;
-    flex-direction: column;
+    max-width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
     overflow: visible;
     margin: 0;
     border-right: 0;
     border-bottom: 1px solid var(--line);
-    padding: 0 0 12px;
+    padding: 0 0 10px;
     background: transparent;
+  }
+
+  .app-shell:not(.rail-collapsed) .side-rail {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 999;
+    width: min(86vw, 320px);
+    max-width: calc(100vw - 32px);
+    height: 100dvh;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    overflow: hidden;
+    margin: 0;
+    border-right: 1px solid var(--line);
+    border-bottom: 0;
+    padding: 16px 12px 18px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 16px 0 40px rgba(0, 0, 0, 0.16);
+    backdrop-filter: blur(22px) saturate(1.18);
   }
 
   .rail-toggle,
   .rail-item,
   .side-rail .view-tab {
     min-width: 0;
-    width: 100%;
+    width: auto;
   }
 
   .rail-toggle {
     position: static;
-    width: 100%;
-    height: auto;
-    justify-content: flex-start;
-    padding: 10px 12px;
+    flex: 0 0 42px;
+    width: 42px;
+    height: 42px;
+    justify-content: center;
+    padding: 0;
     border-radius: 10px;
   }
 
+  .app-shell:not(.rail-collapsed) .rail-toggle {
+    position: absolute;
+    top: 16px;
+    right: -16px;
+    z-index: 1001;
+    flex-basis: 32px;
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    background: var(--surface-solid);
+    box-shadow: var(--shadow-soft);
+  }
+
+  .rail-item,
+  .side-rail .view-tab {
+    flex: 1 1 120px;
+    max-width: 100%;
+  }
+
+  .app-shell:not(.rail-collapsed) .rail-item,
+  .app-shell:not(.rail-collapsed) .side-rail .view-tab {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+
   .run-list {
-    flex: none;
+    flex: 1 0 100%;
     width: 100%;
     max-width: none;
-    max-height: 350px; /* Allow list to scroll internally on mobile if needed, but not restricted to tiny dvh */
+    max-height: min(48dvh, 360px);
+    overflow: auto;
+  }
+
+  .app-shell:not(.rail-collapsed) .run-list {
+    flex: 1 1 auto;
+    width: 100%;
+    max-height: none;
+    min-height: 0;
+    display: flex;
+    overflow: hidden;
+  }
+
+  .app-shell:not(.rail-collapsed) .runs {
+    overflow-y: auto;
+  }
+
+  .sidebar-collapsed .run-list {
+    display: none;
   }
 
   .agent-board {
     flex: none;
     min-width: 0;
+    width: 100%;
+    max-width: 100%;
     height: auto;
   }
 
   .content-board {
+    width: 100%;
+    max-width: 100%;
     height: auto;
-    overflow: visible;
+    overflow-x: hidden;
+    overflow-y: visible;
     padding: 0;
   }
 
@@ -101,6 +197,10 @@
   .top-actions {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .status-pill {
+    max-width: 100%;
   }
 
   #workflowView.active {
@@ -118,41 +218,89 @@
   }
 
   .flow-entry-row {
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: wrap;
+    width: 100%;
+    max-width: 100%;
   }
 
   .flow-lane {
-    flex-direction: column;
-    flex-wrap: nowrap;
+    flex-direction: row;
+    flex-wrap: wrap;
+    width: 100%;
+    max-width: 100%;
   }
 
   .flow-node {
-    width: 100%;
+    flex: 1 1 min(220px, 100%);
     min-width: 0;
+    max-width: 100%;
   }
 
   .experiment-picker,
-  .luban-remote-control,
   .export-row,
   .copy-onnx-panel {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: wrap;
     width: 100%;
+    max-width: 100%;
   }
 
   .experiment-picker .icon-button,
-  .luban-remote-control .icon-button,
   .export-row .action-button,
   .copy-onnx-panel .action-button {
+    width: auto;
+  }
+
+  .experiment-picker > input {
+    flex: 1 1 260px;
+  }
+
+  .experiment-select {
+    flex: 1 1 180px;
+  }
+
+  .experiment-picker .icon-button {
+    flex: 0 0 42px;
+    width: 42px;
+    min-width: 42px;
+  }
+
+  .luban-remote-control {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 42px;
     width: 100%;
+    max-width: 100%;
+    flex: 1 1 220px;
+  }
+
+  .luban-remote-control .icon-button {
+    width: 42px;
+    min-width: 42px;
   }
 
   .export-row input:first-child {
+    flex: 1 1 180px;
     flex-basis: auto;
   }
 
+  .workflow-detail-grid {
+    flex-direction: row;
+    flex-wrap: wrap;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .flow-inspector,
+  .workflow-confirm {
+    flex: 1 1 320px;
+    width: auto;
+    max-width: 100%;
+  }
+
   .log-drawer[open] {
-    --log-drawer-height: clamp(280px, 52dvh, 520px);
+    --log-drawer-height: clamp(240px, 48dvh, 480px);
   }
 
   .log-drawer.fullscreen {
@@ -160,8 +308,25 @@
     inset: 16px;
   }
 
+  .log-summary {
+    align-items: flex-start;
+    padding: 14px;
+  }
+
+  .log-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .log-summary #logSelect {
+    flex: 1 1 180px;
+    min-width: 0;
+  }
+
   .log-output {
     min-height: 0;
+    max-width: 100%;
+    overflow-x: auto;
   }
 
   .stage-config-grid {
@@ -176,7 +341,7 @@
 
   .offboard-yaml-list {
     max-height: none;
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
     overflow: visible;
   }
 }

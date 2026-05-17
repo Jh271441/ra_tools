@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import json
 import unittest
+from pathlib import Path
 from subprocess import CompletedProcess
 from unittest import mock
 
+from model_release_pipeline.config import default_config
+from model_release_pipeline.models import ExperimentInfo
+from model_release_pipeline.onboard.export import _inspect_experiment_with_luban_fallback
 from model_release_pipeline.services.experiment import ExperimentInspector
 from model_release_pipeline.services.model_picker import ModelPicker
 
@@ -64,6 +68,47 @@ class RemoteExperimentTest(unittest.TestCase):
                 (root / "epoch=009").mkdir()
                 (root / "version_0").mkdir()
                 self.assertEqual(_pick_first_dir(root).name, "version_0")
+
+    def test_remote_inspect_falls_back_when_luban_mount_is_broken(self) -> None:
+        config = default_config()
+        calls = []
+
+        class FakeInspector:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def inspect(self, experiment_path, remote_host=None):
+                calls.append(remote_host)
+                if remote_host == "luban_2_card":
+                    raise RuntimeError(
+                        "Remote inspect failed: OSError: [Errno 107] "
+                        "Transport endpoint is not connected"
+                    )
+                return ExperimentInfo(
+                    name="exp",
+                    experiment_path=Path(experiment_path),
+                    version_name="version_0",
+                    checkpoints_dir=Path("/nfs/exp/checkpoints/version_0"),
+                    log_dir=Path("/nfs/exp/log/version_0"),
+                    export_dir=None,
+                    log_file=None,
+                    hparams_file=None,
+                    tensorboard_files=[],
+                    checkpoints=[],
+                    exported_epochs=[],
+                    remote_host=remote_host,
+                )
+
+        experiment = _inspect_experiment_with_luban_fallback(
+            "/nfs/exp",
+            config,
+            remote="luban_2_card",
+            remote_python=None,
+            inspector_cls=FakeInspector,
+        )
+
+        self.assertEqual(calls, ["luban_2_card", "luban_1_card"])
+        self.assertEqual(experiment.remote_host, "luban_1_card")
 
 
 if __name__ == "__main__":

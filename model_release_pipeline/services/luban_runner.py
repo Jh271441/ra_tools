@@ -196,23 +196,68 @@ class LubanRunner:
         )
         inline_python = f"""
 from pathlib import Path
+import yaml
 src = Path({remote_hparams.as_posix()!r})
 dst = Path({remote_temp_yaml.as_posix()!r})
 target = {checkpoint_rel.as_posix()!r}
-lines = src.read_text(encoding='utf-8').splitlines()
-rewritten = []
-found = False
-for line in lines:
-    stripped = line.strip()
-    if stripped.startswith('trained_model_relative_path:'):
-        indent = line[:len(line) - len(line.lstrip())]
-        rewritten.append(f"{{indent}}trained_model_relative_path: {{target}}")
-        found = True
-    else:
-        rewritten.append(line)
-if not found:
-    rewritten.append(f"trained_model_relative_path: {{target}}")
-dst.write_text("\\n".join(rewritten) + "\\n", encoding='utf-8')
+default_model_export = {{
+    "inputs": [
+        "old_dnn_features",
+        "ego_geometric",
+        "ego_heading",
+        "ego_continuous",
+        "ego_discrete",
+        "ego_trajectory",
+        "ego_valid_geometric",
+        "ego_valid_history",
+        "ego_valid_trajectory",
+        "agent_geometric",
+        "agent_heading",
+        "agent_continuous",
+        "agent_discrete",
+        "agent_trajectory",
+        "agent_valid_geometric",
+        "agent_valid_history",
+        "agent_valid_trajectory",
+        "lane_geometric",
+        "lane_continuous",
+        "lane_discrete",
+        "lane_valid_geometric",
+        "lane_valid_history",
+        "zone_geometric",
+        "zone_discrete",
+        "zone_valid_geometric",
+        "zone_valid_history",
+        "obj_geometric",
+        "obj_discrete",
+        "obj_valid_geometric",
+        "obj_valid_history",
+        "tl_continuous",
+        "tl_discrete",
+        "tl_valid_history",
+        "nearby_lane_geometric",
+        "nearby_lane_continuous",
+        "nearby_lane_discrete",
+        "nearby_lane_valid_geometric",
+        "nearby_lane_valid_history",
+    ],
+    "outputs": [
+        "stuck_score",
+        "stuck_attn_scores",
+    ],
+    "batch_size_for_onnx": 1,
+    "output_diff_test_steps": 300,
+    "default_allowed_difference": 0.1,
+}}
+data = yaml.safe_load(src.read_text(encoding='utf-8')) or {{}}
+data.pop("trained_model_relative_path", None)
+model_export = data.setdefault("model_export", {{}})
+if not isinstance(model_export, dict):
+    raise TypeError("model_export must be a mapping when present")
+for key, value in default_model_export.items():
+    model_export.setdefault(key, value)
+model_export["trained_model_relative_path"] = target
+dst.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding='utf-8')
 """
         remote_script = "\n".join(
             [

@@ -18,6 +18,8 @@ import {
   renderTimeline,
 } from "./modules/workflowController.js";
 
+const MOBILE_MEDIA = window.matchMedia("(max-width: 860px)");
+
 async function loadRuns(selectFirst = false, options = {}) {
   await loadRunData({ selectRun, renderEmptyState, renderRuns }, selectFirst, options);
 }
@@ -94,6 +96,20 @@ function renderFlowControls(payload) {
   renderWorkflowControls(payload, startAction);
 }
 
+function applyInitialResponsiveState() {
+  if (!MOBILE_MEDIA.matches) return;
+  setSidebarCollapsed(true);
+  setRailCollapsed(true);
+}
+
+applyInitialResponsiveState();
+
+function closeMobileNavigation() {
+  if (!MOBILE_MEDIA.matches || state.railCollapsed) return;
+  setRailCollapsed(true);
+  setSidebarCollapsed(true);
+}
+
 async function startAction(action, dryRun, confirmText) {
   await startBackendAction(action, dryRun, confirmText, { loadRuns, selectRun });
 }
@@ -109,9 +125,26 @@ $("sidebarToggle").onclick = (event) => {
   event.stopPropagation();
   setSidebarCollapsed(!state.sidebarCollapsed);
 };
-$("railToggle").onclick = () => setRailCollapsed(!state.railCollapsed);
+$("railToggle").onclick = (event) => {
+  event.stopPropagation();
+  if (MOBILE_MEDIA.matches) {
+    const opening = state.railCollapsed;
+    setRailCollapsed(!opening);
+    setSidebarCollapsed(!opening ? true : false);
+    return;
+  }
+  setRailCollapsed(!state.railCollapsed);
+};
 document.querySelectorAll(".view-tab").forEach((tab) => {
-  tab.onclick = () => setView(tab.dataset.view);
+  tab.onclick = () => {
+    setView(tab.dataset.view);
+    closeMobileNavigation();
+  };
+});
+document.addEventListener("click", (event) => {
+  if (!MOBILE_MEDIA.matches || state.railCollapsed) return;
+  const rail = $("sideRail");
+  if (rail && !rail.contains(event.target)) closeMobileNavigation();
 });
 $("runFilter").oninput = renderRuns;
 $("logSelect").onchange = (event) => {

@@ -42,6 +42,7 @@
 
 .log-summary {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
@@ -73,9 +74,11 @@
 
 .log-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   margin-left: auto;
+  min-width: 0;
 }
 
 .log-drawer.fullscreen {
@@ -118,6 +121,7 @@
   flex-direction: column;
   gap: 20px;
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -141,6 +145,7 @@
 
 .release-view .timeline-card {
   flex: 0 0 clamp(420px, 32vw, 560px);
+  min-width: 0;
   max-width: 560px;
 }
 

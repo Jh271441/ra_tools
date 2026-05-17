@@ -46,6 +46,9 @@ class LubanRunnerTest(unittest.TestCase):
         self.assertIn(" python -c ", command)
         self.assertNotIn("python - <<", command)
         self.assertIn("export PYTHONPATH=/nfs/stuck_assist_model", command)
+        self.assertIn('data.setdefault("model_export"', command)
+        self.assertIn('model_export["trained_model_relative_path"] = target', command)
+        self.assertIn('data.pop("trained_model_relative_path", None)', command)
 
     def test_default_luban_python_streams_conda_output(self) -> None:
         config = default_config().luban

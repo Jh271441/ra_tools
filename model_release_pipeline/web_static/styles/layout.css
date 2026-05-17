@@ -16,6 +16,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 18px;
+  min-width: 0;
   margin-bottom: 20px;
   padding-left: clamp(16px, 2vw, 24px);
 }
@@ -163,6 +164,7 @@ h4 {
   display: flex;
   align-items: stretch;
   gap: 0;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
@@ -172,6 +174,8 @@ h4 {
 }
 
 .panel {
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid var(--line);
   border-radius: var(--radius-xl);
   background: var(--surface);
