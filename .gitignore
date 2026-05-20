@@ -6,3 +6,6 @@ data/
 *.png
 *.json
 model_release_pipeline/.runs/
+model_release_pipeline/web_frontend/node_modules/
+model_release_pipeline/web_frontend/dist/
+model_release_pipeline/web_frontend/.vite/
