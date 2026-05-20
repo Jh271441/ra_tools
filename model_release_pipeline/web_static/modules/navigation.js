@@ -44,4 +44,9 @@ export function setRailCollapsed(collapsed) {
     const icon = toggle.querySelector(".rail-icon");
     if (icon) icon.textContent = collapsed ? "›" : "‹";
   }
+  const mobileToggle = $("mobileNavToggle");
+  if (mobileToggle) {
+    mobileToggle.setAttribute("aria-expanded", String(!collapsed));
+    mobileToggle.setAttribute("aria-label", collapsed ? "Open navigation" : "Close navigation");
+  }
 }

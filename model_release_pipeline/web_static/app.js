@@ -97,9 +97,13 @@ function renderFlowControls(payload) {
 }
 
 function applyInitialResponsiveState() {
-  if (!MOBILE_MEDIA.matches) return;
-  setSidebarCollapsed(true);
-  setRailCollapsed(true);
+  if (MOBILE_MEDIA.matches) {
+    setSidebarCollapsed(true);
+    setRailCollapsed(true);
+  } else {
+    setRailCollapsed(false);
+    setSidebarCollapsed(false);
+  }
 }
 
 applyInitialResponsiveState();
@@ -112,6 +116,65 @@ function closeMobileNavigation() {
 
 async function startAction(action, dryRun, confirmText) {
   await startBackendAction(action, dryRun, confirmText, { loadRuns, selectRun });
+}
+
+const runsDirEl = $("runsDir");
+if (runsDirEl) {
+  const bubble = document.createElement("div");
+  bubble.className = "popover-bubble";
+  bubble.setAttribute("role", "tooltip");
+  document.body.appendChild(bubble);
+
+  function positionBubble() {
+    const rect = runsDirEl.getBoundingClientRect();
+    const margin = 8;
+    const gap = 10;
+    // Tentatively place bubble below the pill, left-aligned with it.
+    let left = rect.left;
+    const top = rect.bottom + gap;
+    // Clamp horizontally so the bubble stays inside the viewport.
+    const bubbleWidth = Math.min(bubble.offsetWidth, window.innerWidth - margin * 2);
+    if (left + bubbleWidth > window.innerWidth - margin) {
+      left = window.innerWidth - bubbleWidth - margin;
+    }
+    if (left < margin) left = margin;
+    bubble.style.left = `${left}px`;
+    bubble.style.top = `${top}px`;
+    // Position the arrow to point at the centre of the pill.
+    const arrowX = Math.max(10, Math.min(rect.left + rect.width / 2 - left - 5, bubbleWidth - 16));
+    bubble.style.setProperty("--bubble-arrow", `${arrowX}px`);
+    bubble.style.setProperty("--bubble-origin", `${arrowX + 5}px top`);
+  }
+
+  function openBubble() {
+    bubble.textContent = runsDirEl.title || runsDirEl.textContent.replace(/^runs_dir:\s*/, "");
+    bubble.classList.add("open");
+    // Measure after the bubble is rendered, then place.
+    requestAnimationFrame(positionBubble);
+  }
+
+  function closeBubble() {
+    bubble.classList.remove("open");
+  }
+
+  runsDirEl.onclick = (event) => {
+    event.stopPropagation();
+    if (bubble.classList.contains("open")) closeBubble();
+    else openBubble();
+  };
+
+  document.addEventListener("click", (event) => {
+    if (!bubble.classList.contains("open")) return;
+    if (event.target === runsDirEl || bubble.contains(event.target)) return;
+    closeBubble();
+  });
+
+  window.addEventListener("resize", () => {
+    if (bubble.classList.contains("open")) positionBubble();
+  });
+  window.addEventListener("scroll", () => {
+    if (bubble.classList.contains("open")) positionBubble();
+  }, { passive: true });
 }
 
 $("refreshButton").onclick = () => {
@@ -135,6 +198,28 @@ $("railToggle").onclick = (event) => {
   }
   setRailCollapsed(!state.railCollapsed);
 };
+
+const mobileNavToggle = $("mobileNavToggle");
+if (mobileNavToggle) {
+  mobileNavToggle.onclick = (event) => {
+    event.stopPropagation();
+    if (!MOBILE_MEDIA.matches) return;
+    const opening = state.railCollapsed;
+    setRailCollapsed(!opening);
+    setSidebarCollapsed(opening ? false : true);
+    mobileNavToggle.setAttribute("aria-expanded", String(opening));
+  };
+}
+
+function syncMobileNavAria() {
+  if (!mobileNavToggle) return;
+  const expanded = MOBILE_MEDIA.matches && !state.railCollapsed;
+  mobileNavToggle.setAttribute("aria-expanded", String(expanded));
+}
+MOBILE_MEDIA.addEventListener?.("change", () => {
+  applyInitialResponsiveState();
+  syncMobileNavAria();
+});
 document.querySelectorAll(".view-tab").forEach((tab) => {
   tab.onclick = () => {
     setView(tab.dataset.view);

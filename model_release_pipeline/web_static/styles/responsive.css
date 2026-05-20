@@ -30,6 +30,8 @@
     max-width: 100%;
     overflow-x: hidden;
     overflow-y: auto; /* Let the whole page scroll on mobile */
+    /* Content area = white; topbar = grey (see .topbar rule below). */
+    background: var(--surface-solid);
   }
 
   .app-shell {
@@ -38,7 +40,31 @@
     height: auto;
     min-height: 100vh;
     overflow-x: hidden;
-    padding: 14px;
+    padding: 0; /* edge-to-edge content, gutters live inside each section */
+    background: var(--surface-solid);
+  }
+
+  /* Flat-section mode for in-page panels: drop the card chrome, let
+     content sit flush with the screen edge, separate sections by a
+     hairline divider + spacing (iOS Settings style).
+     Overlays/list cells keep their chrome — see exclusions below. */
+  .panel {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    padding: 16px clamp(14px, 4vw, 18px);
+  }
+
+  .panel + .panel {
+    margin-top: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  /* Exclusions: the slide-in drawer is a true overlay, keep its identity. */
+  .side-rail {
+    background: rgba(255, 255, 255, 0.98);
   }
 
   .app-shell::before {
@@ -46,10 +72,10 @@
     position: fixed;
     inset: 0;
     z-index: 998;
-    background: rgba(29, 29, 31, 0.28);
+    background: rgba(29, 29, 31, 0.36);
     opacity: 0;
     pointer-events: none;
-    transition: opacity 160ms ease;
+    transition: opacity 200ms ease;
   }
 
   .app-shell:not(.rail-collapsed)::before {
@@ -57,9 +83,19 @@
     pointer-events: auto;
   }
 
+  .mobile-nav-toggle {
+    display: inline-flex;
+  }
+
   .topbar {
-    padding-left: 0;
+    padding: 14px clamp(14px, 4vw, 18px);
     gap: 12px;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 0;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg); /* grey topbar; content area below is white */
   }
 
   .workspace {
@@ -70,28 +106,20 @@
     overflow: visible;
   }
 
+  /* Mobile: side-rail is ALWAYS a fixed-position slide-in drawer.
+     Collapsed (default) -> off-screen via translateX(-100%).
+     Open -> slides in from the left.
+     This replaces the older row-of-buttons layout, which was confusing
+     because the toggle was tiny and unlabeled. */
   .side-rail {
-    flex: none;
-    width: 100%;
-    max-width: 100%;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    overflow: visible;
-    margin: 0;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-    padding: 0 0 10px;
-    background: transparent;
-  }
-
-  .app-shell:not(.rail-collapsed) .side-rail {
     position: fixed;
     inset: 0 auto 0 0;
     z-index: 999;
     width: min(86vw, 320px);
-    max-width: calc(100vw - 32px);
+    max-width: calc(100vw - 48px);
     height: 100dvh;
+    flex: none;
+    display: flex;
     flex-direction: column;
     flex-wrap: nowrap;
     align-items: stretch;
@@ -99,77 +127,75 @@
     margin: 0;
     border-right: 1px solid var(--line);
     border-bottom: 0;
-    padding: 16px 12px 18px;
-    background: rgba(255, 255, 255, 0.96);
+    padding: 18px 14px 18px;
+    background: rgba(255, 255, 255, 0.98);
     box-shadow: 16px 0 40px rgba(0, 0, 0, 0.16);
     backdrop-filter: blur(22px) saturate(1.18);
+    transform: translateX(-100%);
+    transition: transform 220ms cubic-bezier(0.32, 0.72, 0, 1);
+    will-change: transform;
   }
 
-  .rail-toggle,
-  .rail-item,
-  .side-rail .view-tab {
-    min-width: 0;
-    width: auto;
+  .app-shell:not(.rail-collapsed) .side-rail {
+    transform: translateX(0);
   }
 
+  /* Hide the legacy in-rail toggle on mobile; the hamburger button in
+     the topbar is now the single, obvious entry point. */
   .rail-toggle {
-    position: static;
-    flex: 0 0 42px;
-    width: 42px;
-    height: 42px;
-    justify-content: center;
-    padding: 0;
-    border-radius: 10px;
-  }
-
-  .app-shell:not(.rail-collapsed) .rail-toggle {
-    position: absolute;
-    top: 16px;
-    right: -16px;
-    z-index: 1001;
-    flex-basis: 32px;
-    width: 32px;
-    height: 32px;
-    border-radius: 999px;
-    background: var(--surface-solid);
-    box-shadow: var(--shadow-soft);
+    display: none;
   }
 
   .rail-item,
   .side-rail .view-tab {
-    flex: 1 1 120px;
-    max-width: 100%;
+    width: 100%;
+    flex: 0 0 auto;
+    justify-content: flex-start;
   }
 
-  .app-shell:not(.rail-collapsed) .rail-item,
-  .app-shell:not(.rail-collapsed) .side-rail .view-tab {
-    flex: 0 0 auto;
-    width: 100%;
+  /* On mobile inside the drawer the labels should always be visible —
+     ignore the desktop .rail-collapsed label-hiding rule. */
+  .rail-collapsed .rail-label,
+  .rail-collapsed .rail-disclosure {
+    display: inline;
+  }
+
+  .rail-collapsed .rail-icon {
+    width: 28px;
+    height: 28px;
+    flex-basis: 28px;
   }
 
   .run-list {
-    flex: 1 0 100%;
-    width: 100%;
-    max-width: none;
-    max-height: min(48dvh, 360px);
-    overflow: auto;
-  }
-
-  .app-shell:not(.rail-collapsed) .run-list {
     flex: 1 1 auto;
     width: 100%;
+    max-width: none;
     max-height: none;
     min-height: 0;
     display: flex;
     overflow: hidden;
   }
 
-  .app-shell:not(.rail-collapsed) .runs {
+  .runs {
     overflow-y: auto;
   }
 
+  /* In mobile drawer mode the .rail-collapsed / .sidebar-collapsed classes
+     are *global* state flags (drawer closed); they should NOT visually
+     collapse the contents of the drawer itself (which is just slid off
+     screen via transform). Restore full layout for items inside the rail. */
+  .rail-collapsed .side-rail .run-list,
   .sidebar-collapsed .run-list {
-    display: none;
+    display: flex;
+    flex: 1 1 auto;
+    flex-basis: auto;
+    min-width: 0;
+    max-width: none;
+    opacity: 1;
+    pointer-events: auto;
+    padding: 14px 6px 0;
+    border-width: 1px;
+    overflow: hidden;
   }
 
   .agent-board {
@@ -180,23 +206,75 @@
     height: auto;
   }
 
-  .content-board {
+  /* Bump specificity: the unconditional `.content-board { background: rgb(245,245,247) }`
+     in styles.css lives AFTER this @import, so a plain selector loses the
+     source-order tiebreaker. `body .content-board` (0,1,1) beats it. */
+  body .content-board {
     width: 100%;
     max-width: 100%;
     height: auto;
     overflow-x: hidden;
     overflow-y: visible;
     padding: 0;
+    background: transparent;
   }
 
+  /* Two-row topbar on mobile.
+     Row 1 (utility): [☰] .................. [Refresh]
+     Row 2 (brand):   [RA]  Scenario DNN Release Agent */
   .topbar {
-    flex-direction: column;
-    align-items: flex-start;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 14px;
   }
 
-  .top-actions {
+  .topbar .brand {
+    order: 1;
+    flex: 1 0 100%;
+    min-width: 0;
     width: 100%;
+    gap: 12px;
+  }
+
+  .mobile-nav-toggle {
+    order: 2;
+  }
+
+  /* Cluster [Refresh] [runs_dir] next to the hamburger, left-aligned.
+     The whole [☰] [Refresh] [runs_dir] group is sized to roughly match
+     the sidebar drawer's width (320px) so it reads as one balanced bar. */
+  .top-actions {
+    order: 3;
+    flex: 0 1 auto;
+    width: auto;
+    max-width: calc(320px - 40px - 10px); /* drawer - hamburger - gap */
+    min-width: 0;
     justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .topbar .brand h1 {
+    font-size: clamp(1.2rem, 5vw, 1.5rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* runs_dir on mobile: capped width + ellipsis. Tap to open a popover
+     bubble that shows the full path (handled in JS). Sized so that
+     [☰] [Refresh] [runs_dir] together align with the sidebar drawer (320px). */
+  .top-actions .status-pill {
+    flex: 1 1 auto;
+    max-width: 180px;
+    min-width: 0;
+    cursor: pointer;
+  }
+
+  #refreshButton {
+    padding: 8px 14px;
+    font-size: 0.85rem;
   }
 
   .status-pill {
@@ -206,10 +284,34 @@
   #workflowView.active {
     display: flex;
     overflow: visible;
+    background: transparent; /* flat-section mode: kill desktop grey bg */
   }
 
   .flow-card {
     overflow: visible;
+  }
+
+  /* Section heading on mobile: same row as desktop, but title block takes
+     the lion's share and hint sits on the right in smaller, subdued text. */
+  .section-heading {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .section-heading > div {
+    flex: 2 1 auto;
+    min-width: 0;
+  }
+
+  .section-heading > span {
+    flex: 0 1 auto;
+    max-width: 38%;
+    color: var(--muted);
+    font-size: 0.74rem;
+    line-height: 1.35;
+    text-align: right;
+    opacity: 0.85;
   }
 
   .flow-controls {
@@ -306,27 +408,90 @@
   .log-drawer.fullscreen {
     position: fixed;
     inset: 16px;
+    /* Restore card chrome for the fullscreen overlay (in-page panels are
+       flat on mobile, but this is a true overlay). */
+    border: 1px solid var(--line);
+    border-radius: var(--radius-xl);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(22px) saturate(1.18);
   }
 
+  /* Single row: [title block] [select] [fullscreen] */
   .log-summary {
-    align-items: flex-start;
-    padding: 14px;
+    flex-wrap: nowrap;
+    align-items: center;
+    padding: 4px 0 14px; /* panel already supplies horizontal padding */
+    gap: 8px;
+    border-bottom: 0;
+  }
+
+  .log-summary > div:first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .log-summary > div:first-child h3 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .log-drawer[open] .log-summary {
+    border-bottom: 1px solid var(--line);
+  }
+
+  /* Hide the "Hide"/"Show" pseudo on mobile — it kept wrapping to a
+     stray third line. The whole summary row remains tappable to toggle. */
+  .log-summary::after,
+  .log-drawer[open] .log-summary::after {
+    display: none;
   }
 
   .log-actions {
-    width: 100%;
-    margin-left: 0;
+    width: auto;
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
+    margin-left: auto;
+    gap: 6px;
   }
 
   .log-summary #logSelect {
-    flex: 1 1 180px;
+    flex: 0 1 130px;
     min-width: 0;
+    max-width: 150px;
+    padding: 6px 10px;
+    font-size: 0.82rem;
+  }
+
+  .log-summary #fullscreenLog {
+    flex: 0 0 auto;
+    padding: 6px 10px;
+  }
+
+  /* Log block on mobile: always a fixed 35dvh tall regardless of content.
+     - empty state: box stays this height, message sits at top, lots of
+       empty dark space below — visually consistent with the content state,
+     - long content: scrolls inside the same 35dvh frame.
+     The fixed size guarantees the bottom rounded corners stay above the
+     viewport edge. */
+  .log-drawer[open] .log-output {
+    height: 35dvh;
+    min-height: 35dvh;
+    max-height: 35dvh;
+    flex: 0 0 auto;
+    align-self: stretch;
   }
 
   .log-output {
     min-height: 0;
     max-width: 100%;
     overflow-x: auto;
+    /* Desktop adds margin: 0 20px 20px around the log block. The flat
+       panel on mobile already supplies horizontal padding; cancel the
+       extra horizontal margin and keep a small bottom gap so the rounded
+       corners breathe. */
+    margin: 0 0 8px;
   }
 
   .stage-config-grid {

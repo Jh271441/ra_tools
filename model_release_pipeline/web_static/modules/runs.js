@@ -9,7 +9,9 @@ let _animateNextRender = false;
 export async function loadRuns({ selectRun, renderEmptyState, renderRuns }, selectFirst = false, options = {}) {
   const payload = await fetchJson("/api/runs");
   state.runs = payload.runs || [];
-  $("runsDir").textContent = `runs_dir: ${payload.runs_dir}`;
+  const runsDirEl = $("runsDir");
+  runsDirEl.textContent = `runs_dir: ${payload.runs_dir}`;
+  runsDirEl.title = payload.runs_dir;
   _animateNextRender = !options.silent;
   renderRuns();
   if (state.selectedId) {

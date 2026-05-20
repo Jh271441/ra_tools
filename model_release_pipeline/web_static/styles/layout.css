@@ -21,6 +21,77 @@
   padding-left: clamp(16px, 2vw, 24px);
 }
 
+.mobile-nav-toggle {
+  display: none;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  transition: 150ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-nav-toggle:hover,
+.mobile-nav-toggle:focus-visible {
+  background: rgba(29, 29, 31, 0.06);
+  outline: none;
+}
+
+.mobile-nav-toggle:active {
+  background: rgba(29, 29, 31, 0.1);
+}
+
+.mobile-nav-toggle .hamburger {
+  position: relative;
+  display: block;
+  width: 20px;
+  height: 14px;
+}
+
+.mobile-nav-toggle .hamburger::before,
+.mobile-nav-toggle .hamburger::after,
+.mobile-nav-toggle .hamburger {
+  background-image: none;
+}
+
+.mobile-nav-toggle .hamburger::before,
+.mobile-nav-toggle .hamburger::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--ink);
+  transition: transform 180ms ease, top 180ms ease, opacity 120ms ease;
+}
+
+.mobile-nav-toggle .hamburger::before {
+  top: 0;
+  box-shadow: 0 6px 0 var(--ink);
+}
+
+.mobile-nav-toggle .hamburger::after {
+  top: 12px;
+}
+
+.mobile-nav-toggle[aria-expanded="true"] .hamburger::before {
+  top: 6px;
+  transform: rotate(45deg);
+  box-shadow: none;
+}
+
+.mobile-nav-toggle[aria-expanded="true"] .hamburger::after {
+  top: 6px;
+  transform: rotate(-45deg);
+}
+
 .brand {
   display: flex;
   align-items: center;
@@ -89,8 +160,18 @@ h4 {
 }
 
 .top-actions {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
+  min-width: 0;
+}
+
+.top-actions > * {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.top-actions #refreshButton {
+  flex-shrink: 0; /* keep Refresh full-size; runs_dir shrinks via ellipsis */
 }
 
 .view-switch {
@@ -128,13 +209,19 @@ h4 {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.76);
   box-shadow: 0 1px 1px rgba(255, 255, 255, 0.85) inset;
+  /* Shared pill metrics — Refresh button and runs_dir pill should look
+     like siblings: identical height, padding, border radius. Font family
+     may differ (sans for actions, mono for path content) but size/weight
+     match. */
+  padding: 7px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.25;
 }
 
 .ghost {
-  padding: 8px 14px;
   cursor: pointer;
-  font-size: 0.9rem;
-  font-weight: 500;
+  font-family: var(--body);
   transition: 150ms ease;
 }
 
@@ -145,18 +232,21 @@ h4 {
 
 .compact {
   padding: 6px 12px;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
 }
 
 .status-pill,
 .badge {
-  max-width: min(52vw, 620px);
+  max-width: min(38vw, 460px);
   overflow: hidden;
-  padding: 7px 12px;
   color: var(--muted);
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: 600 0.8rem/1.2 var(--mono);
+  font-family: var(--mono);
+}
+
+.status-pill {
+  cursor: pointer;
 }
 
 .workspace {
