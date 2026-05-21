@@ -79,3 +79,15 @@ export const LOG_LABELS: Record<string, string> = {
   offboard_stdout: 'Offboard stdout',
   offboard_stderr: 'Offboard stderr',
 };
+
+export const NEXT_STEP_BY_ACTION: Partial<Record<string, string>> = {
+  pick: 'export',
+  export: 'upload',
+  upload: 'ifx',
+  'ifx-convert': 'handoff',
+  'ifx-poll': 'handoff',
+  handoff: 'handoff',
+  'apply-handoff': 'dcl',
+  dcl: 'sim_plan',
+  'sim-plan': 'sim_plan',
+};

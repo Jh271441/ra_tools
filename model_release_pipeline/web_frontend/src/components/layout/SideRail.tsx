@@ -23,6 +23,7 @@ interface SideRailProps {
   selectedId: string | null;
   onSelectRun: (id: string) => void;
   onNewRelease: () => void;
+  draftRun?: boolean;
   railCollapsed: boolean;
   onToggleRail: () => void;
   sidebarCollapsed: boolean;
@@ -37,6 +38,7 @@ export default function SideRail({
   selectedId,
   onSelectRun,
   onNewRelease,
+  draftRun = false,
   railCollapsed,
   onToggleRail,
   sidebarCollapsed,
@@ -114,6 +116,17 @@ export default function SideRail({
           onChange={(e) => setFilter(e.target.value)}
         />
         <div className={styles.runsList}>
+          {draftRun && (
+            <button
+              className={`${styles.runItem} ${!selectedId ? styles.runItemActive : ''}`}
+              onClick={onNewRelease}
+            >
+              <div className={styles.runId}>New release draft</div>
+              <div className={styles.runMeta}>
+                <span className="chip running">pick</span>
+              </div>
+            </button>
+          )}
           {filteredRuns.map((run) => (
             <button
               key={run.release_id}

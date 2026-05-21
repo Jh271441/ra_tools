@@ -116,9 +116,64 @@
   gap: 6px;
 }
 
+.experimentSelect {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  outline: none;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  background: rgba(255, 255, 255, 0.76);
+  cursor: pointer;
+}
+
+.experimentSelect:focus {
+  border-color: var(--accent);
+}
+
+.lubanRemoteControl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
 .lubanInput {
-  flex: 0 0 auto;
-  min-width: 120px;
+  flex: 1;
+  min-width: 80px;
+}
+
+.simPlanList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.simPlanBranchPlans {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.simPlanBranchTitle {
+  font: 600 0.82rem/1.2 var(--sans);
+  margin-bottom: 8px;
+  color: var(--ink);
+}
+
+.simPlanBranchTitle span {
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.simPlanChecks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .branchSelect {

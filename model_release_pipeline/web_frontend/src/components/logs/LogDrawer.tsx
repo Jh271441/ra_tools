@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import type { GetRunResponse, LogKey } from '../../types/api';
+import { useEffect, useState, useMemo } from 'react';
+import type { GetRunResponse, Job, LogKey } from '../../types/api';
 import { LOG_LABELS } from '../workflow/flowItems';
 import styles from './LogDrawer.module.css';
 
@@ -27,12 +27,26 @@ const ChevronUp = () => (
   </svg>
 );
 
+const SPECIAL_LABELS: Record<string, string> = {
+  __job__: 'Backend job',
+  __pick_preview__: 'Pick preview',
+};
+
 interface LogDrawerProps {
   run: GetRunResponse | null;
   releaseId: string | null;
+  activeJob?: Job | null;
+  pickPreviewLines?: string[] | null;
+  defaultLogKey?: string;
 }
 
-export default function LogDrawer({ run, releaseId: _releaseId }: LogDrawerProps) {
+export default function LogDrawer({
+  run,
+  releaseId: _releaseId,
+  activeJob,
+  pickPreviewLines,
+  defaultLogKey,
+}: LogDrawerProps) {
   const [open, setOpen] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
   const [selectedLog, setSelectedLog] = useState('');
@@ -44,17 +58,45 @@ export default function LogDrawer({ run, releaseId: _releaseId }: LogDrawerProps
     return (Object.keys(logs) as LogKey[]).filter((k) => logs[k].length > 0);
   }, [logs]);
 
-  const effectiveKey = logKeys.includes(selectedLog as LogKey) ? selectedLog : (logKeys[0] ?? '');
-  const content = logs && effectiveKey ? logs[effectiveKey as LogKey].join('\n') : '';
+  // special channels prepended
+  const allKeys = useMemo(() => [
+    ...(activeJob ? ['__job__'] : []),
+    ...(pickPreviewLines?.length ? ['__pick_preview__'] : []),
+    ...logKeys,
+  ], [activeJob, pickPreviewLines, logKeys]);
+
+  // auto-switch to __job__ when a new job starts
+  useEffect(() => {
+    if (activeJob?.job_id) {
+      setSelectedLog('__job__');
+      setOpen(true);
+    }
+  }, [activeJob?.job_id]);
+
+  // auto-switch to relevant log when step changes (only if not watching a job)
+  useEffect(() => {
+    if (!defaultLogKey || activeJob) return;
+    if (allKeys.includes(defaultLogKey)) setSelectedLog(defaultLogKey);
+  }, [defaultLogKey]); // intentionally omit allKeys/activeJob to avoid over-firing
+
+  const effectiveKey = allKeys.includes(selectedLog) ? selectedLog : (allKeys[0] ?? '');
+
+  const content = useMemo(() => {
+    if (effectiveKey === '__job__') return activeJob?.log.join('\n') ?? '';
+    if (effectiveKey === '__pick_preview__') return pickPreviewLines?.join('\n') ?? '';
+    if (!logs || !effectiveKey) return '';
+    return logs[effectiveKey as LogKey]?.join('\n') ?? '';
+  }, [effectiveKey, activeJob, pickPreviewLines, logs]);
+
+  const labelFor = (k: string) =>
+    SPECIAL_LABELS[k] ?? LOG_LABELS[k] ?? k;
 
   const drawerClass = [
     'panel',
     styles.logDrawer,
     open ? styles.logDrawerOpen : '',
     fullscreen ? styles.logDrawerFullscreen : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
+  ].filter(Boolean).join(' ');
 
   return (
     <div className={drawerClass}>
@@ -65,27 +107,30 @@ export default function LogDrawer({ run, releaseId: _releaseId }: LogDrawerProps
           role="button"
           tabIndex={0}
           onClick={() => setOpen((v) => !v)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') setOpen((v) => !v);
-          }}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setOpen((v) => !v); }}
         >
           <p className="eyebrow">Execution Console</p>
           <h3 className={styles.logHeading}>Live Backend Logs</h3>
+          {activeJob && (
+            <span className={`chip ${activeJob.status} ${styles.jobChip}`}>
+              {activeJob.label} · {activeJob.status}
+              {activeJob.dry_run ? ' / dry-run' : ''}
+              {activeJob.returncode != null ? ` · rc=${activeJob.returncode}` : ''}
+            </span>
+          )}
         </div>
 
-        {/* Right: controls — clicks do not propagate to toggle */}
+        {/* Right: controls */}
         <div className={styles.logActions}>
-          {open && logKeys.length > 0 && (
+          {open && allKeys.length > 0 && (
             <select
               className={styles.logSelect}
               value={effectiveKey}
               onChange={(e) => setSelectedLog(e.target.value)}
               onClick={(e) => e.stopPropagation()}
             >
-              {logKeys.map((k) => (
-                <option key={k} value={k}>
-                  {LOG_LABELS[k] ?? k}
-                </option>
+              {allKeys.map((k) => (
+                <option key={k} value={k}>{labelFor(k)}</option>
               ))}
             </select>
           )}
@@ -93,10 +138,7 @@ export default function LogDrawer({ run, releaseId: _releaseId }: LogDrawerProps
             className={styles.logIconBtn}
             type="button"
             title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-            onClick={(e) => {
-              e.stopPropagation();
-              setFullscreen((v) => !v);
-            }}
+            onClick={(e) => { e.stopPropagation(); setFullscreen((v) => !v); }}
           >
             {fullscreen ? <CollapseIcon /> : <ExpandIcon />}
           </button>
@@ -104,17 +146,18 @@ export default function LogDrawer({ run, releaseId: _releaseId }: LogDrawerProps
             className={styles.logIconBtn}
             type="button"
             title={open ? 'Collapse' : 'Expand'}
-            onClick={(e) => {
-              e.stopPropagation();
-              setOpen((v) => !v);
-            }}
+            onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
           >
             {open ? <ChevronUp /> : <ChevronDown />}
           </button>
         </div>
       </div>
 
-      {open && <pre className={styles.logOutput}>{content || '(no log content)'}</pre>}
+      {open && (
+        <pre className={styles.logOutput}>
+          {content || '(no log content)'}
+        </pre>
+      )}
     </div>
   );
 }

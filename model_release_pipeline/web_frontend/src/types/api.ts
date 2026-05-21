@@ -253,9 +253,17 @@ export interface ListJobsResponse {
   jobs: Job[];
 }
 
+export interface SimPlanEntry {
+  name: string;
+  enabled_by_default?: boolean | string;
+}
+
 export interface BranchInfo {
   name: string;
   checkout_branch?: string;
+  sim_plans?: SimPlanEntry[];
+  sim_plan?: string;
+  update_diff_ids?: number[];
 }
 
 export interface ConfigBranchesResponse {
@@ -269,6 +277,7 @@ export interface LubanHostsResponse {
 
 export interface OffboardTestYamlEntry {
   name: string;
+  path?: string;
   [key: string]: unknown;
 }
 
@@ -292,7 +301,8 @@ export interface ExperimentFoldersResponse {
 }
 
 export interface PickPreviewResponse {
-  lines: string[];
+  experiment?: Record<string, unknown>;
+  pick?: Record<string, unknown>;
   error?: string;
 }
 

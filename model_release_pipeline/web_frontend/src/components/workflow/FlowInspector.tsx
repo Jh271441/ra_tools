@@ -1,7 +1,13 @@
-import { useState, useCallback } from 'react';
-import type { ActionSpec, BranchInfo, GetRunResponse, StageConfig, StageKey, StageValues } from '../../types/api';
+import { useState, useCallback, useEffect } from 'react';
+import type {
+  ActionSpec, BranchInfo, ExperimentFolder, GetRunResponse,
+  OffboardTestYamlEntry, PickPreviewResponse, StageConfig, StageKey, StageValues,
+} from '../../types/api';
 import type { FlowItem } from './flowItems';
-import { startAction, patchRunStageConfig, patchStageDefaults } from '../../api/client';
+import {
+  copyVersionedOnnx, listExperimentFolders, previewPick,
+  startAction, patchRunStageConfig, patchStageDefaults,
+} from '../../api/client';
 import styles from './FlowInspector.module.css';
 
 const DEFAULT_ROOT = 'device:/nfs/dataset-ofs-remote-assist-stuck/user/jasperchen/ego_stuck_data/scenario_dnn_26q1/';
@@ -11,7 +17,119 @@ function fmtEpoch(val: number | null | undefined): string {
   return Number.isInteger(val) ? String(val).padStart(3, '0') : Number(val).toFixed(1);
 }
 
+function fmt(val: unknown, digits = 3): string {
+  return val != null ? Number(val).toFixed(digits) : 'N/A';
+}
+
+function formatPickLog(data: PickPreviewResponse): string[] {
+  const pick = (data.pick ?? {}) as Record<string, unknown>;
+  const lines: string[] = [];
+  const epoch = pick.recommended_epoch as number | null | undefined;
+  lines.push('=== Pick Preview ===');
+  lines.push(`Recommended epoch: ${epoch != null ? fmtEpoch(epoch) : 'none'}`);
+  lines.push(`Policy: ${pick.policy ?? '?'} | top_n: ${pick.top_n ?? '?'} | loss_tolerance_pct: ${pick.loss_tolerance_pct ?? '?'}`);
+  lines.push('');
+  const notes = (pick.notes as string[] | undefined) ?? [];
+  if (notes.length) {
+    lines.push('Notes:');
+    for (const note of notes) lines.push(`  - ${note}`);
+    lines.push('');
+  }
+  const candidates = (pick.candidates as Record<string, unknown>[] | undefined) ?? [];
+  if (candidates.length) {
+    lines.push('Top candidates:');
+    for (const [i, c] of candidates.entries()) {
+      const marker = c.epoch === epoch ? ' ◀ recommended' : '';
+      const mbt = (c.metrics_by_task as Record<string, Record<string, unknown>> | undefined) ?? {};
+      const taskKeys = Object.keys(mbt);
+      if (taskKeys.length) {
+        lines.push(`  ${String(i + 1).padStart(2)}.  epoch ${fmtEpoch(c.epoch as number)}${marker}`);
+        for (const task of taskKeys) {
+          const m = mbt[task];
+          lines.push(
+            `        [${task}]  precision=${fmt(m.precision)}  recall=${fmt(m.recall)}` +
+            `  loss=${fmt(m.loss)}  pr_auc=${fmt(m.pr_auc)}  roc_auc=${fmt(m.roc_auc)}`,
+          );
+        }
+      } else {
+        const task = c.task ? ` [${c.task as string}]` : '';
+        lines.push(
+          `  ${String(i + 1).padStart(2)}.  epoch ${fmtEpoch(c.epoch as number)}${task}` +
+          `  precision=${fmt(c.precision)}  recall=${fmt(c.recall)}  loss=${fmt(c.loss)}` +
+          `  pr_auc=${fmt(c.pr_auc)}  roc_auc=${fmt(c.roc_auc)}${marker}`,
+        );
+        for (const note of (c.notes as string[] | undefined) ?? []) lines.push(`        note: ${note}`);
+      }
+    }
+    lines.push('');
+  }
+  const perTask = (pick.per_task as Record<string, Record<string, unknown>> | undefined) ?? {};
+  const perTaskKeys = Object.keys(perTask);
+  if (perTaskKeys.length > 1) {
+    lines.push('Per-task recommendations:');
+    for (const task of perTaskKeys) {
+      const tr = perTask[task];
+      const ep = tr.recommended_epoch as number | null | undefined;
+      lines.push(`  ${task}: recommended epoch ${ep != null ? fmtEpoch(ep) : 'none'}`);
+    }
+  }
+  return lines;
+}
+
 // ─── Shared sub-components ───────────────────────────────────────────────────
+
+function ExperimentPicker({ id, defaultValue, lubanHost }: {
+  id: string; defaultValue?: string; lubanHost: string;
+}) {
+  const [value, setValue] = useState(defaultValue ?? '');
+  const [folders, setFolders] = useState<ExperimentFolder[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => { setValue(defaultValue ?? ''); }, [defaultValue]);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await listExperimentFolders(DEFAULT_ROOT, 100, lubanHost);
+      setFolders(data.folders);
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }, [lubanHost]);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  return (
+    <div className={styles.experimentPicker}>
+      <input id={id} placeholder="experiment path" value={value} onChange={(e) => setValue(e.target.value)} />
+      <div className={styles.row}>
+        <select
+          className={styles.experimentSelect}
+          value={value}
+          onChange={(e) => { if (e.target.value) setValue(e.target.value); }}
+        >
+          <option value="">{loading ? 'Loading…' : folders.length ? 'Select folder…' : 'No folders found'}</option>
+          {folders.map((f) => <option key={f.path} value={f.path}>{f.name}</option>)}
+        </select>
+        <button className={styles.iconButton} type="button" title="Refresh folders" disabled={loading} onClick={refresh}>↻</button>
+      </div>
+    </div>
+  );
+}
+
+function LubanRemoteControl({ id, value, hosts, onChange }: {
+  id: string; value: string; hosts: string[]; onChange: (v: string) => void;
+}) {
+  const idx = hosts.indexOf(value);
+  const next = hosts.length > 0 ? (hosts[(idx >= 0 ? idx + 1 : 0) % hosts.length] ?? value) : value;
+  return (
+    <div className={styles.lubanRemoteControl}>
+      <input id={id} className={styles.lubanInput} placeholder="remote" value={value}
+        onChange={(e) => onChange(e.target.value)} />
+      <button className={styles.iconButton} type="button" title={`Switch to ${next}`}
+        onClick={() => onChange(next)}>⇄</button>
+    </div>
+  );
+}
 
 function BranchSelect({ id, value, onChange, branches, allLabel = 'all configured branches' }: {
   id: string; value: string; onChange: (v: string) => void;
@@ -31,44 +149,56 @@ function HelperText({ children }: { children: React.ReactNode }) {
 
 // ─── Step forms ──────────────────────────────────────────────────────────────
 
-function PickForm({ run, lubanHost, onLubanHostChange }: {
+function PickForm({ run, lubanHost, lubanHosts, onLubanHostChange, onPickPreview }: {
   run: GetRunResponse | null;
-  lubanHost: string;
+  lubanHost: string; lubanHosts: string[];
   onLubanHostChange: (h: string) => void;
+  onPickPreview: (lines: string[]) => void;
 }) {
   const expPath = run?.record.experiment_path ?? '';
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  const handlePreview = async () => {
+    const exp = (document.getElementById('pickExperiment') as HTMLInputElement | null)?.value ?? '';
+    if (!exp) return;
+    setPreviewLoading(true);
+    try {
+      const data = await previewPick(exp, lubanHost);
+      onPickPreview(formatPickLog(data));
+    } catch (e) {
+      onPickPreview([String(e)]);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   return (
     <div className={styles.form}>
-      <div className={styles.experimentPicker} data-root={DEFAULT_ROOT}>
-        <input id="pickExperiment" placeholder="experiment path" defaultValue={expPath} />
-      </div>
+      <ExperimentPicker id="pickExperiment" defaultValue={expPath} lubanHost={lubanHost} />
       <div className={styles.row}>
-        <input id="pickRemote" className={styles.lubanInput} placeholder="remote" value={lubanHost}
-          onChange={(e) => onLubanHostChange(e.target.value)} />
+        <LubanRemoteControl id="pickRemote" value={lubanHost} hosts={lubanHosts} onChange={onLubanHostChange} />
         <input id="pickDesc" placeholder="description / release note" />
       </div>
       <div className={styles.row}>
-        <button id="pickPreviewBtn" className={styles.actionBtn} type="button">Preview epoch ↗</button>
-        <span id="pickPreviewResult" className={styles.helperText} />
+        <button className={styles.actionBtn} type="button" disabled={previewLoading} onClick={handlePreview}>
+          {previewLoading ? 'Loading…' : 'Preview epoch ↗'}
+        </button>
       </div>
       <HelperText>Pick runs on Luban and creates a new release. Use Preview to check the recommendation without saving.</HelperText>
     </div>
   );
 }
 
-function ExportForm({ run, lubanHost, onLubanHostChange }: {
-  run: GetRunResponse | null; lubanHost: string; onLubanHostChange: (h: string) => void;
+function ExportForm({ run, lubanHost, lubanHosts, onLubanHostChange }: {
+  run: GetRunResponse | null; lubanHost: string; lubanHosts: string[]; onLubanHostChange: (h: string) => void;
 }) {
   const expPath = run?.record.experiment_path ?? '';
   return (
     <div className={styles.form}>
-      <div className={styles.experimentPicker}>
-        <input id="exportExperiment" placeholder="experiment path" defaultValue={expPath} />
-      </div>
+      <ExperimentPicker id="exportExperiment" defaultValue={expPath} lubanHost={lubanHost} />
       <div className={styles.row}>
         <input id="exportEpoch" placeholder="epoch, e.g. 007" />
-        <input id="exportRemote" className={styles.lubanInput} placeholder="remote" value={lubanHost}
-          onChange={(e) => onLubanHostChange(e.target.value)} />
+        <LubanRemoteControl id="exportRemote" value={lubanHost} hosts={lubanHosts} onChange={onLubanHostChange} />
       </div>
       <input id="exportDesc" placeholder="description / release note" />
       <HelperText>Real export confirmation text is <b>EXPORT</b>.</HelperText>
@@ -76,7 +206,21 @@ function ExportForm({ run, lubanHost, onLubanHostChange }: {
   );
 }
 
-function UploadForm() {
+function UploadForm({ run, releaseId }: { run: GetRunResponse | null; releaseId: string | null }) {
+  const copyInfo = run?.versioned_onnx as Record<string, unknown> | undefined;
+  const [copyStatus, setCopyStatus] = useState('');
+
+  const handleCopy = async () => {
+    if (!releaseId) return;
+    setCopyStatus('Copying…');
+    try {
+      const r = await copyVersionedOnnx(releaseId);
+      setCopyStatus(String(r.message ?? r.target_path ?? 'Done'));
+    } catch (e) {
+      setCopyStatus(String(e));
+    }
+  };
+
   return (
     <div className={styles.form}>
       <div className={styles.row}>
@@ -87,13 +231,19 @@ function UploadForm() {
         </label>
       </div>
       <input id="uploadDesc" placeholder="fileserver description / release note" />
+      {!!copyInfo?.available && (
+        <div className={styles.row}>
+          <button className={styles.actionBtn} type="button" onClick={handleCopy}>Copy versioned ONNX</button>
+          <span className={styles.helperText}>{copyStatus || String(copyInfo.target_path ?? '')}</span>
+        </div>
+      )}
       <HelperText>Real upload confirmation text is the current <b>release_id</b>.</HelperText>
     </div>
   );
 }
 
 function IfxForm({ run }: { run: GetRunResponse | null }) {
-  const buildUrl = (run?.record.ifx?.jenkins?.build_url) ?? '';
+  const buildUrl = run?.record.ifx?.jenkins?.build_url ?? '';
   return (
     <div className={styles.form}>
       <input id="ifxBuildUrl" placeholder="optional Jenkins build URL" defaultValue={buildUrl} />
@@ -125,15 +275,75 @@ function DclForm({ branches, stageConfig }: { branches: BranchInfo[]; stageConfi
   );
 }
 
-function OffboardForm({ run, lubanHost, onLubanHostChange, offboardYamls, releaseId }: {
-  run: GetRunResponse | null; lubanHost: string; onLubanHostChange: (h: string) => void;
-  offboardYamls: string[]; releaseId: string | null;
+function SimPlanForm({ branches, stageConfig, run }: {
+  branches: BranchInfo[]; stageConfig: StageValues; run: GetRunResponse | null;
+}) {
+  const [branch, setBranch] = useState(stageConfig.branch ?? '');
+  const selectedPlans = Array.isArray(stageConfig.plans) ? new Set(stageConfig.plans) : null;
+  const simPlanOut = (run?.record.sim_plan as Record<string, unknown> | undefined)?.stdout;
+  const lastLine = typeof simPlanOut === 'string'
+    ? simPlanOut.split('\n').filter(Boolean).slice(-1)[0] : null;
+
+  return (
+    <div className={styles.form}>
+      <div className={styles.row}>
+        <BranchSelect id="simPlanBranch" value={branch} onChange={setBranch}
+          branches={branches} allLabel="all enabled branches" />
+        <input id="simPlanRevision" placeholder="optional revision id, defaults to DCL result"
+          defaultValue={String(stageConfig.revision_id ?? '')} />
+      </div>
+      <div className={styles.simPlanList}>
+        {branches.map((b) => {
+          const plans = b.sim_plans ?? (b.sim_plan ? [{
+            name: b.sim_plan,
+            enabled_by_default: b.name !== 'master' && b.sim_plan !== 'topic_ra_auto_trigger',
+          }] : []);
+          if (!plans.length) return null;
+          const hidden = branch !== '' && branch !== b.name;
+          return (
+            <div key={b.name} className={styles.simPlanBranchPlans} style={hidden ? { display: 'none' } : undefined}>
+              <div className={styles.simPlanBranchTitle}>
+                {b.name} <span>CR {(b.update_diff_ids ?? []).join(',') || 'from DCL'}</span>
+              </div>
+              <div className={styles.simPlanChecks}>
+                {plans.map((plan) => {
+                  const enabledByDefault = plan.enabled_by_default === true || plan.enabled_by_default === 'true';
+                  const checked = selectedPlans ? selectedPlans.has(plan.name) : enabledByDefault;
+                  return (
+                    <label key={plan.name} className={styles.inlineCheck}>
+                      <input className="sim-plan-check" type="checkbox" value={plan.name} defaultChecked={checked} />
+                      {plan.name}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className={styles.row}>
+        <input id="simPlanPriority" placeholder="priority override"
+          defaultValue={String(stageConfig.priority ?? '')} />
+        <input id="simPlanSensitiveHour" placeholder="time sensitive hour"
+          defaultValue={String(stageConfig.time_sensitive_hour ?? '')} />
+      </div>
+      <input id="simPlanCancelRecord" placeholder="record id for cancel, e.g. o123456" />
+      <HelperText>{lastLine ?? 'No Sim Plan result recorded yet.'}</HelperText>
+    </div>
+  );
+}
+
+function OffboardForm({ run, lubanHost, lubanHosts, onLubanHostChange, offboardYamls, releaseId }: {
+  run: GetRunResponse | null; lubanHost: string; lubanHosts: string[]; onLubanHostChange: (h: string) => void;
+  offboardYamls: OffboardTestYamlEntry[]; releaseId: string | null;
 }) {
   const expPath = run?.record.experiment_path ?? '';
   const selectedEpoch = run?.record.selection?.selected_epoch;
   const hasRun = Boolean(releaseId);
   const [mode, setMode] = useState<'selected' | 'explicit'>(hasRun ? 'selected' : 'explicit');
-  const yamls = offboardYamls.length ? offboardYamls : ['scenario_dnn_finetune_test.yaml'];
+  const yamls = offboardYamls.length
+    ? offboardYamls
+    : [{ name: 'scenario_dnn_finetune_test.yaml', path: 'configs/scenario_dnn_finetune_test.yaml' }];
   return (
     <div className={styles.form}>
       <div className={styles.row}>
@@ -149,52 +359,22 @@ function OffboardForm({ run, lubanHost, onLubanHostChange, offboardYamls, releas
         </label>
       </div>
       <div className={styles.helperText}>Selected pick: {releaseId ?? 'none'}</div>
-      <div className={styles.experimentPicker}>
-        <input id="offboardExperiment" placeholder="experiment path" defaultValue={expPath} />
-      </div>
+      <ExperimentPicker id="offboardExperiment" defaultValue={expPath} lubanHost={lubanHost} />
       <div className={styles.row}>
         <input id="offboardEpoch" placeholder="epoch, e.g. 007"
           defaultValue={selectedEpoch != null ? fmtEpoch(selectedEpoch) : ''} />
-        <input id="offboardRemote" className={styles.lubanInput} placeholder="remote" value={lubanHost}
-          onChange={(e) => onLubanHostChange(e.target.value)} />
+        <LubanRemoteControl id="offboardRemote" value={lubanHost} hosts={lubanHosts} onChange={onLubanHostChange} />
       </div>
       <div className={styles.yamlList}>
-        {yamls.map((name, i) => (
-          <label key={name} className={styles.inlineCheck}>
-            <input className="offboard-yaml-check" type="checkbox" value={name} defaultChecked={i === 0} />
-            {name}
+        {yamls.map((yaml, i) => (
+          <label key={yaml.name} className={styles.inlineCheck}>
+            <input className="offboard-yaml-check" type="checkbox" value={yaml.path ?? yaml.name} defaultChecked={i === 0} />
+            {yaml.name}
           </label>
         ))}
       </div>
       <input id="offboardDesc" placeholder="description / release note" />
       <HelperText>Explicit offboard confirmation text is <b>OFFBOARD</b>; selected-pick offboard uses the current <b>release_id</b>.</HelperText>
-    </div>
-  );
-}
-
-function SimPlanForm({ branches, stageConfig, run }: {
-  branches: BranchInfo[]; stageConfig: StageValues; run: GetRunResponse | null;
-}) {
-  const [branch, setBranch] = useState(stageConfig.branch ?? '');
-  const simPlanOut = (run?.record.sim_plan as Record<string, unknown>)?.stdout;
-  const lastLine = typeof simPlanOut === 'string'
-    ? simPlanOut.split('\n').filter(Boolean).slice(-1)[0] : null;
-  return (
-    <div className={styles.form}>
-      <div className={styles.row}>
-        <BranchSelect id="simPlanBranch" value={branch} onChange={setBranch}
-          branches={branches} allLabel="all enabled branches" />
-        <input id="simPlanRevision" placeholder="optional revision id, defaults to DCL result"
-          defaultValue={String(stageConfig.revision_id ?? '')} />
-      </div>
-      <div className={styles.row}>
-        <input id="simPlanPriority" placeholder="priority override"
-          defaultValue={String(stageConfig.priority ?? '')} />
-        <input id="simPlanSensitiveHour" placeholder="time sensitive hour"
-          defaultValue={String(stageConfig.time_sensitive_hour ?? '')} />
-      </div>
-      <input id="simPlanCancelRecord" placeholder="record id for cancel, e.g. o123456" />
-      <HelperText>{lastLine ?? 'No Sim Plan result recorded yet.'}</HelperText>
     </div>
   );
 }
@@ -332,9 +512,11 @@ interface FlowInspectorProps {
   releaseId: string | null;
   branches: BranchInfo[];
   stageDefaults: StageConfig;
-  offboardYamls: string[];
+  offboardYamls: OffboardTestYamlEntry[];
   lubanHost: string;
+  lubanHosts: string[];
   onLubanHostChange: (h: string) => void;
+  onPickPreview: (lines: string[]) => void;
   onJobStarted: (jobId: string) => void;
   confirmText: string;
   onConfirmChange: (v: string) => void;
@@ -343,8 +525,8 @@ interface FlowInspectorProps {
 
 export default function FlowInspector({
   item, status, actions, run, releaseId, branches, stageDefaults,
-  offboardYamls, lubanHost, onLubanHostChange, onJobStarted,
-  confirmText, onConfirmChange: _onConfirmChange, onStatusChange,
+  offboardYamls, lubanHost, lubanHosts, onLubanHostChange, onPickPreview,
+  onJobStarted, confirmText, onConfirmChange: _onConfirmChange, onStatusChange,
 }: FlowInspectorProps) {
   const STAGE_CONFIG_STEPS: StageKey[] = ['handoff', 'dcl', 'sim_plan'];
   const supportsStageConfig = STAGE_CONFIG_STEPS.includes(item.key as StageKey);
@@ -443,15 +625,20 @@ export default function FlowInspector({
         </div>
       </div>
 
-      {item.key === 'pick' && <PickForm run={run} lubanHost={lubanHost} onLubanHostChange={onLubanHostChange} />}
-      {item.key === 'export' && <ExportForm run={run} lubanHost={lubanHost} onLubanHostChange={onLubanHostChange} />}
-      {item.key === 'upload' && <UploadForm />}
+      {item.key === 'pick' && (
+        <PickForm run={run} lubanHost={lubanHost} lubanHosts={lubanHosts}
+          onLubanHostChange={onLubanHostChange} onPickPreview={onPickPreview} />
+      )}
+      {item.key === 'export' && (
+        <ExportForm run={run} lubanHost={lubanHost} lubanHosts={lubanHosts} onLubanHostChange={onLubanHostChange} />
+      )}
+      {item.key === 'upload' && <UploadForm run={run} releaseId={releaseId} />}
       {item.key === 'ifx' && <IfxForm run={run} />}
       {item.key === 'handoff' && <HandoffForm branches={branches} stageConfig={mergedConfig('handoff')} />}
       {item.key === 'dcl' && <DclForm branches={branches} stageConfig={mergedConfig('dcl')} />}
       {item.key === 'offboard' && (
-        <OffboardForm run={run} lubanHost={lubanHost} onLubanHostChange={onLubanHostChange}
-          offboardYamls={offboardYamls} releaseId={releaseId} />
+        <OffboardForm run={run} lubanHost={lubanHost} lubanHosts={lubanHosts}
+          onLubanHostChange={onLubanHostChange} offboardYamls={offboardYamls} releaseId={releaseId} />
       )}
       {item.key === 'sim_plan' && (
         <SimPlanForm branches={branches} stageConfig={mergedConfig('sim_plan')} run={run} />

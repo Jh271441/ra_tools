@@ -16,6 +16,7 @@ export default function App() {
 
   const [activeView, setActiveView] = useState<ViewName>('workflow');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [draftRun, setDraftRun] = useState(false);
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -35,9 +36,30 @@ export default function App() {
   const handleSelectRun = useCallback(
     (id: string) => {
       setSelectedId(id);
+      setDraftRun(false);
       if (isMobileOrTablet) setDrawerOpen(false);
     },
     [isMobileOrTablet],
+  );
+
+  const handleNewRelease = useCallback(() => {
+    setDraftRun(true);
+    setSelectedId(null);
+    setActiveView('workflow');
+    if (isMobileOrTablet) setDrawerOpen(false);
+  }, [isMobileOrTablet]);
+
+  const handleRunRefresh = useCallback(
+    (newReleaseId?: string) => {
+      if (newReleaseId) {
+        setDraftRun(false);
+        setSelectedId(newReleaseId);
+        void refresh();
+      } else {
+        void refreshRun();
+      }
+    },
+    [refresh, refreshRun],
   );
 
   const handleViewChange = useCallback(
@@ -48,12 +70,6 @@ export default function App() {
     [isMobileOrTablet],
   );
 
-  const handleJobStarted = useCallback(
-    (_jobId: string) => {
-      setTimeout(() => { refreshRun(); }, 3000);
-    },
-    [refreshRun],
-  );
 
   return (
     <div className={styles.shell}>
@@ -71,7 +87,8 @@ export default function App() {
           runs={runs}
           selectedId={selectedId}
           onSelectRun={handleSelectRun}
-          onNewRelease={() => {}}
+          onNewRelease={handleNewRelease}
+          draftRun={draftRun}
           railCollapsed={railCollapsed}
           onToggleRail={() => setRailCollapsed((v) => !v)}
           sidebarCollapsed={sidebarCollapsed}
@@ -88,7 +105,8 @@ export default function App() {
             <WorkflowView
               selectedId={selectedId}
               run={runDetail}
-              onJobStarted={handleJobStarted}
+              draftRun={draftRun}
+              onRunRefresh={handleRunRefresh}
             />
           }
           releaseContent={
