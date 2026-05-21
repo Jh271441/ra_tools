@@ -1,0 +1,142 @@
+.flowControls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 0 0 auto;
+  overflow: visible;
+  padding: 2px;
+}
+
+.flowEntryRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.flowGroup {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.flowGroupOnboard {
+  min-width: 0;
+}
+
+.flowGroupTitle {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.flowLane {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.flowLane .flowNode {
+  flex: 1 1 230px;
+  max-width: 100%;
+}
+
+.flowLaneOnboard {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.flowLaneOnboard .flowNode {
+  flex: 1 1 170px;
+  max-width: 100%;
+}
+
+.flowNode {
+  position: relative;
+  min-width: 0;
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  transition: 150ms ease;
+}
+
+.flowNode:hover {
+  border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.flowNode.selected {
+  border-color: rgba(0, 122, 255, 0.48);
+  background: linear-gradient(135deg, rgba(0, 122, 255, 0.1), rgba(255, 255, 255, 0.92));
+  box-shadow: 0 0 0 1px rgba(0, 122, 255, 0.18), var(--shadow-soft);
+}
+
+.flowTop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.flowText {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.flowText h4 {
+  overflow: hidden;
+  line-height: 1.12;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flowText p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flowNumber {
+  min-width: 36px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  padding: 0 8px;
+  color: white;
+  background: var(--teal);
+  font: 700 0.8rem/1 var(--mono);
+}
+
+.flowNumber.failed { background: var(--danger); }
+.flowNumber.pending { background: var(--faint); }
+.flowNumber.running { background: var(--warn); }
+.flowNumber.done { background: var(--teal); }
+
+.flowState {
+  flex: 0 1 auto;
+  margin-left: auto;
+  max-width: 86px;
+}
+
+@media (max-width: 860px) {
+  .flowEntryRow { flex-direction: row; flex-wrap: wrap; }
+  .flowLane .flowNode { flex: 1 1 min(220px, 100%); }
+  .flowLaneOnboard .flowNode { flex: 0 0 calc(50% - 6px); max-width: calc(50% - 6px); }
+}

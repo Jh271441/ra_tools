@@ -5,6 +5,7 @@ import type { ViewName } from './components/layout/SideRail';
 import Workspace from './components/layout/Workspace';
 import Timeline from './components/details/Timeline';
 import ReleaseDetails from './components/details/ReleaseDetails';
+import WorkflowView from './components/workflow/WorkflowView';
 import { useRuns, useRun } from './hooks/useRuns';
 import { useResponsive } from './hooks/useResponsive';
 import styles from './App.module.css';
@@ -21,7 +22,7 @@ export default function App() {
 
   const runs = runsData?.runs ?? [];
   const selectedRun = runs.find((r) => r.release_id === selectedId) ?? null;
-  const { data: runDetail, loading: runLoading } = useRun(selectedId);
+  const { data: runDetail, loading: runLoading, refresh: refreshRun } = useRun(selectedId);
 
   const handleToggleDrawer = useCallback(() => {
     if (isMobileOrTablet) {
@@ -45,6 +46,13 @@ export default function App() {
       if (isMobileOrTablet) setDrawerOpen(false);
     },
     [isMobileOrTablet],
+  );
+
+  const handleJobStarted = useCallback(
+    (_jobId: string) => {
+      setTimeout(() => { refreshRun(); }, 3000);
+    },
+    [refreshRun],
   );
 
   return (
@@ -77,15 +85,11 @@ export default function App() {
           drawerOpen={drawerOpen}
           onCloseDrawer={() => setDrawerOpen(false)}
           workflowContent={
-            <div className="panel" style={{ padding: 20 }}>
-              <p className="eyebrow">Operator Workflow</p>
-              <h3>Release Flow Controls</h3>
-              <p className="muted" style={{ marginTop: 8 }}>
-                {selectedRun
-                  ? `Workflow for ${selectedRun.release_id} — Phase 4 will render step cards here.`
-                  : 'Select a release run to see the workflow.'}
-              </p>
-            </div>
+            <WorkflowView
+              selectedId={selectedId}
+              run={runDetail}
+              onJobStarted={handleJobStarted}
+            />
           }
           releaseContent={
             selectedRun ? (

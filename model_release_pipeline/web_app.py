@@ -41,6 +41,7 @@ from model_release_pipeline.web.summary import (
 
 
 STATIC_DIR = PACKAGE_ROOT / "web_static"
+FRONTEND_DIST = PACKAGE_ROOT / "web_frontend" / "dist"
 DEFAULT_EXPERIMENT_ROOT = (
     "device:/nfs/dataset-ofs-remote-assist-stuck/user/jasperchen/"
     "ego_stuck_data/scenario_dnn_26q1/"
@@ -506,6 +507,20 @@ def _handle_api_patch(
 
 
 def _handle_static_get(handler: BaseHTTPRequestHandler, path: str) -> None:
+    # New React frontend served at /new
+    if path in {"/new", "/new/"}:
+        _static_response(handler, FRONTEND_DIST / "index.html")
+        return
+    if path.startswith("/new/"):
+        rel = path.removeprefix("/new/")
+        dist_path = (FRONTEND_DIST / rel).resolve()
+        if FRONTEND_DIST.resolve() in dist_path.parents and dist_path.is_file():
+            _static_response(handler, dist_path)
+            return
+        # SPA fallback: any unmatched /new/* path serves the app shell
+        _static_response(handler, FRONTEND_DIST / "index.html")
+        return
+    # Legacy web_static frontend at /
     if path in {"", "/"}:
         _static_response(handler, STATIC_DIR / "index.html")
         return

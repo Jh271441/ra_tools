@@ -59,10 +59,10 @@ h4 { font-size: 0.95rem; font-weight: 600; }
 .ghost,
 .status-pill,
 .badge {
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.76);
-  box-shadow: 0 1px 1px rgba(255, 255, 255, 0.85) inset;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 1px rgba(255, 255, 255, 0.9) inset;
   padding: 7px 14px;
   font-size: 0.82rem;
   font-weight: 600;
@@ -72,16 +72,22 @@ h4 { font-size: 0.95rem; font-weight: 600; }
 .ghost {
   cursor: pointer;
   font-family: var(--body);
-  transition: 150ms ease;
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease, transform 80ms ease;
 }
 
 .ghost:hover {
-  background: var(--surface-strong);
-  border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(29, 29, 31, 0.24);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.07), 0 1px 1px rgba(255, 255, 255, 0.9) inset;
+}
+
+.ghost:active {
+  transform: scale(0.97);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
 }
 
 .compact {
-  padding: 6px 12px;
+  padding: 5px 11px;
   font-size: 0.78rem;
 }
 
