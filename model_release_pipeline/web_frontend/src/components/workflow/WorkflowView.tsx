@@ -44,12 +44,10 @@ export default function WorkflowView({ selectedId, run, draftRun = false, onRunR
   // When job finishes: refresh run data and optionally auto-advance step
   useEffect(() => {
     if (!activeJob || activeJob.status === 'running') return;
-    // In draft mode with a real completed job, pass the new release_id so App can auto-select it
-    const newId =
-      !selectedId && activeJob.status === 'completed' && !activeJob.dry_run
-        ? activeJob.release_id
-        : undefined;
-    onRunRefresh(newId);
+    // Draft action completed — signal App to refresh and auto-select the newest run
+    const isDraftCreate = !selectedId && activeJob.status === 'completed' && !activeJob.dry_run
+      && ['pick', 'export', 'offboard'].includes(activeJob.action);
+    onRunRefresh(isDraftCreate ? '__draft__' : undefined);
     if (activeJob.status === 'completed' && !activeJob.dry_run) {
       const next = NEXT_STEP_BY_ACTION[activeJob.action];
       if (next) setActiveStep(next);

@@ -78,25 +78,32 @@ function formatPickLog(data: PickPreviewResponse): string[] {
 
 // ─── Shared sub-components ───────────────────────────────────────────────────
 
+const _folderCache = new Map<string, ExperimentFolder[]>();
+
 function ExperimentPicker({ id, defaultValue, lubanHost }: {
   id: string; defaultValue?: string; lubanHost: string;
 }) {
   const [value, setValue] = useState(defaultValue ?? '');
-  const [folders, setFolders] = useState<ExperimentFolder[]>([]);
+  const [folders, setFolders] = useState<ExperimentFolder[]>(() => _folderCache.get(lubanHost) ?? []);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => { setValue(defaultValue ?? ''); }, [defaultValue]);
 
-  const refresh = useCallback(async () => {
+  const fetch = useCallback(async (force = false) => {
+    if (!force && _folderCache.has(lubanHost)) {
+      setFolders(_folderCache.get(lubanHost)!);
+      return;
+    }
     setLoading(true);
     try {
       const data = await listExperimentFolders(DEFAULT_ROOT, 100, lubanHost);
+      _folderCache.set(lubanHost, data.folders);
       setFolders(data.folders);
     } catch { /* ignore */ }
     finally { setLoading(false); }
   }, [lubanHost]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { void fetch(); }, [fetch]);
 
   return (
     <div className={styles.experimentPicker}>
@@ -110,7 +117,7 @@ function ExperimentPicker({ id, defaultValue, lubanHost }: {
           <option value="">{loading ? 'Loading…' : folders.length ? 'Select folder…' : 'No folders found'}</option>
           {folders.map((f) => <option key={f.path} value={f.path}>{f.name}</option>)}
         </select>
-        <button className={styles.iconButton} type="button" title="Refresh folders" disabled={loading} onClick={refresh}>↻</button>
+        <button className={styles.iconButton} type="button" title="Refresh folders" disabled={loading} onClick={() => fetch(true)}>↻</button>
       </div>
     </div>
   );
@@ -596,7 +603,7 @@ export default function FlowInspector({
   };
 
   const runAction = useCallback(async (action: ActionSpec, dryRun: boolean) => {
-    const target = action.needs_run_id ? releaseId : (releaseId ?? '__new__');
+    const target = action.needs_run_id ? releaseId : (releaseId ?? '__draft__');
     if (action.needs_run_id && !releaseId) { onStatusChange('Select a release run first.'); return; }
     setBusy(true);
     onStatusChange('Starting…');

@@ -10,10 +10,13 @@ export function useRuns() {
   const refresh = useCallback(async () => {
     try {
       setLoading(true);
-      setData(await listRuns());
+      const result = await listRuns();
+      setData(result);
       setError(null);
+      return result;
     } catch (e) {
       setError(String(e));
+      return null;
     } finally {
       setLoading(false);
     }

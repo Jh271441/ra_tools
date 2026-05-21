@@ -12,7 +12,7 @@
   border-right: 1px solid var(--line);
   padding: clamp(16px, 2vw, 24px) 10px 24px;
   background: rgba(255, 255, 255, 0.72);
-  transition: flex-basis 180ms ease;
+  transition: flex-basis 100ms ease;
 }
 
 /* Desktop collapsed */
@@ -39,7 +39,7 @@
   cursor: pointer;
   font-size: 1rem;
   color: var(--muted);
-  transition: 160ms ease;
+  transition: 80ms ease;
 }
 
 .railToggle:hover {
@@ -63,7 +63,7 @@
   font-size: 0.86rem;
   font-weight: 650;
   line-height: 1.1;
-  transition: 160ms ease;
+  transition: 80ms ease;
 }
 
 .navItem:hover {
@@ -102,7 +102,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: opacity 160ms ease;
+  transition: opacity 80ms ease;
 }
 
 .collapsed .navLabel {
@@ -130,7 +130,7 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  transition: all 200ms ease;
+  transition: flex-basis 100ms ease, opacity 80ms ease, padding 100ms ease;
 }
 
 .collapsed .runListSection {
@@ -165,7 +165,7 @@
   font-size: 0.85rem;
   background: var(--surface-strong);
   margin-bottom: 12px;
-  transition: 150ms ease;
+  transition: 80ms ease;
 }
 
 .filterInput:focus {
@@ -197,7 +197,7 @@
   background: rgba(255, 255, 255, 0.5);
   font: 900 0.9rem/1 var(--mono);
   cursor: pointer;
-  transition: opacity 160ms ease;
+  transition: opacity 80ms ease;
 }
 
 .collapsed .disclosure {
@@ -214,10 +214,10 @@
   color: var(--ink);
   background: rgba(255, 255, 255, 0.62);
   cursor: pointer;
-  transition: 150ms ease;
+  transition: 80ms ease;
 }
 
-.runItem:hover {
+.runItem:hover:not(.runItemActive) {
   border-color: var(--line-strong);
   background: rgba(255, 255, 255, 0.88);
 }

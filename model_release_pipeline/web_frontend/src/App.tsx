@@ -51,7 +51,14 @@ export default function App() {
 
   const handleRunRefresh = useCallback(
     (newReleaseId?: string) => {
-      if (newReleaseId) {
+      if (newReleaseId === '__draft__') {
+        // draft action completed — refresh list then select the newest (first) run
+        setDraftRun(false);
+        void refresh().then((data) => {
+          const first = data?.runs[0]?.release_id;
+          if (first) setSelectedId(first);
+        });
+      } else if (newReleaseId) {
         setDraftRun(false);
         setSelectedId(newReleaseId);
         void refresh();
