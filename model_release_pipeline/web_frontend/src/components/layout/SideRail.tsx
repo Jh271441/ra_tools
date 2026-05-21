@@ -118,12 +118,16 @@ export default function SideRail({
         <div className={styles.runsList}>
           {draftRun && (
             <button
-              className={`${styles.runItem} ${!selectedId ? styles.runItemActive : ''}`}
+              className={[styles.runItem, styles.runItemDraft, !selectedId ? styles.runItemActive : ''].filter(Boolean).join(' ')}
               onClick={onNewRelease}
             >
               <div className={styles.runId}>New release draft</div>
+              <div className={styles.runName}>Waiting for pick…</div>
               <div className={styles.runMeta}>
-                <span className="chip running">pick</span>
+                <span className="chip">pending</span>
+                <span className="chip">epoch NA</span>
+                <span className="chip">onnx NA</span>
+                <span className="chip">ifx 0</span>
               </div>
             </button>
           )}

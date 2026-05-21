@@ -16,7 +16,7 @@ export default function App() {
 
   const [activeView, setActiveView] = useState<ViewName>('workflow');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [draftRun, setDraftRun] = useState(false);
+  const [draftRun, setDraftRun] = useState(true);
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);

@@ -157,6 +157,7 @@ function PickForm({ run, lubanHost, lubanHosts, onLubanHostChange, onPickPreview
 }) {
   const expPath = run?.record.experiment_path ?? '';
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewResult, setPreviewResult] = useState('');
 
   const handlePreview = async () => {
     const exp = (document.getElementById('pickExperiment') as HTMLInputElement | null)?.value ?? '';
@@ -164,8 +165,11 @@ function PickForm({ run, lubanHost, lubanHosts, onLubanHostChange, onPickPreview
     setPreviewLoading(true);
     try {
       const data = await previewPick(exp, lubanHost);
+      const epoch = (data.pick as Record<string, unknown> | undefined)?.recommended_epoch;
+      setPreviewResult(epoch != null ? `Recommended: epoch ${fmtEpoch(epoch as number)}` : data.error ?? 'No recommendation');
       onPickPreview(formatPickLog(data));
     } catch (e) {
+      setPreviewResult(String(e));
       onPickPreview([String(e)]);
     } finally {
       setPreviewLoading(false);
@@ -183,8 +187,9 @@ function PickForm({ run, lubanHost, lubanHosts, onLubanHostChange, onPickPreview
         <button className={styles.actionBtn} type="button" disabled={previewLoading} onClick={handlePreview}>
           {previewLoading ? 'Loading…' : 'Preview epoch ↗'}
         </button>
+        {previewResult && <span className={styles.helperText} style={{ margin: 0 }}>{previewResult}</span>}
       </div>
-      <HelperText>Pick runs on Luban and creates a new release. Use Preview to check the recommendation without saving.</HelperText>
+      <HelperText>Pick runs on Luban and creates a new release.</HelperText>
     </div>
   );
 }
@@ -657,10 +662,10 @@ export default function FlowInspector({
       <div className={styles.flowActions}>
         {itemActions.map((action) => (
           <div key={action.key} className={styles.actionGroup}>
-            {action.supports_dry_run && (
+            {action.supports_dry_run && action.key !== 'pick' && (
               <button
                 className={`${styles.actionBtn} ${styles.actionBtnPrimary} ${styles.actionBtnFull}`}
-                type="button" disabled={busy}
+                type="button" disabled={busy || (action.needs_run_id && !releaseId)}
                 onClick={() => runAction(action, true)}>
                 {action.label} Dry-run
               </button>

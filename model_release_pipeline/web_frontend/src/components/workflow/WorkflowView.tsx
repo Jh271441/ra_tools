@@ -22,7 +22,7 @@ interface WorkflowViewProps {
 }
 
 export default function WorkflowView({ selectedId, run, draftRun = false, onRunRefresh }: WorkflowViewProps) {
-  const [activeStep, setActiveStep] = useState('pick');
+  const [activeStep, setActiveStep] = useState('export');
   const [lubanHost, setLubanHost] = useState('');
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [stageDefaults, setStageDefaults] = useState<StageConfig>({});
@@ -81,7 +81,21 @@ export default function WorkflowView({ selectedId, run, draftRun = false, onRunR
     return all.find((i) => i.key === activeStep) ?? all[0];
   }, [groups, activeStep]);
 
-  const actions = run?.actions ?? [];
+  const DEFAULT_ACTIONS: ActionSpec[] = [
+    { key: 'pick',            label: 'Pick Epoch',          supports_dry_run: false, requires_confirm: false, needs_run_id: false },
+    { key: 'export',          label: 'Model Export',        supports_dry_run: true,  requires_confirm: true,  needs_run_id: false },
+    { key: 'upload',          label: 'Upload ONNX',         supports_dry_run: true,  requires_confirm: true,  needs_run_id: true  },
+    { key: 'ifx-convert',     label: 'Trigger IFX Convert', supports_dry_run: true,  requires_confirm: true,  needs_run_id: true  },
+    { key: 'ifx-poll',        label: 'Poll IFX Result',     supports_dry_run: false, requires_confirm: false, needs_run_id: true  },
+    { key: 'handoff',         label: 'Generate Handoff',    supports_dry_run: false, requires_confirm: false, needs_run_id: true  },
+    { key: 'apply-handoff',   label: 'Apply Handoff',       supports_dry_run: true,  requires_confirm: true,  needs_run_id: true  },
+    { key: 'dcl',             label: 'Run DCL Diff',        supports_dry_run: true,  requires_confirm: true,  needs_run_id: true  },
+    { key: 'sim-plan',        label: 'Trigger Sim Plan',    supports_dry_run: true,  requires_confirm: true,  needs_run_id: true  },
+    { key: 'sim-plan-status', label: 'Refresh Sim Plan',    supports_dry_run: false, requires_confirm: false, needs_run_id: true  },
+    { key: 'sim-plan-cancel', label: 'Cancel Sim Plan',     supports_dry_run: false, requires_confirm: true,  needs_run_id: true  },
+    { key: 'offboard',        label: 'Run Offboard',        supports_dry_run: true,  requires_confirm: true,  needs_run_id: false },
+  ];
+  const actions = run?.actions ?? (draftRun ? DEFAULT_ACTIONS : []);
 
   const itemActions = useMemo(() => {
     if (!activeItem) return [];
