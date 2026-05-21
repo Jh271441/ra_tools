@@ -64,6 +64,7 @@ export default function App() {
         void refresh();
       } else {
         void refreshRun();
+        void refresh();
       }
     },
     [refresh, refreshRun],

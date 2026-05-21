@@ -60,7 +60,6 @@ export default function WorkflowView({ selectedId, run, draftRun = false, onRunR
 
   const handleSelectStep = useCallback((step: string) => {
     setActiveStep(step);
-    setConfirmText('');
     setConfirmStatus('');
   }, []);
 
