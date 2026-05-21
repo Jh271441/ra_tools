@@ -21,7 +21,7 @@
   height: 100%;
   overflow: hidden;
   padding: 0 0 clamp(16px, 2vw, 24px) clamp(18px, 1.8vw, 28px);
-  background: rgb(245, 245, 247);
+  background: var(--bg);
   isolation: isolate;
 }
 
@@ -80,7 +80,7 @@
     max-width: 100%;
     height: auto;
     overflow: visible;
-    padding: 0 clamp(14px, 4vw, 18px) clamp(14px, 4vw, 18px);
+    padding: 0;
     background: transparent;
   }
 

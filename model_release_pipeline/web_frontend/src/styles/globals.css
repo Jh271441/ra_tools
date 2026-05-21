@@ -101,9 +101,8 @@ h4 { font-size: 0.95rem; font-weight: 600; }
   max-width: 100%;
   border: 1px solid var(--line);
   border-radius: var(--radius-xl);
-  background: var(--surface);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(22px) saturate(1.18);
+  background: var(--surface-solid);
+  box-shadow: var(--shadow-soft);
 }
 
 /* Chip */
@@ -148,7 +147,7 @@ h4 { font-size: 0.95rem; font-weight: 600; }
     max-width: 100%;
     overflow-x: hidden;
     overflow-y: auto;
-    background: var(--surface-solid);
+    background: var(--bg);
   }
 
   .panel {

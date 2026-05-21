@@ -80,11 +80,13 @@
   background: var(--danger);
 }
 
-.pending .stepIndex {
+.pending .stepIndex,
+.missing .stepIndex {
   background: var(--faint);
 }
 
-.running .stepIndex {
+.running .stepIndex,
+.ready .stepIndex {
   background: var(--warn);
 }
 

@@ -1,11 +1,12 @@
+import { Fragment } from 'react';
 import type { TimelineStep } from '../../types/api';
 import styles from './Timeline.module.css';
 
 function statusClass(status: string): string {
   if (['done', 'completed', 'dry_run'].includes(status)) return styles.done;
   if (status === 'failed') return styles.failed;
-  if (status === 'running') return styles.running;
-  if (status === 'pending') return styles.pending;
+  if (['running', 'ready'].includes(status)) return styles.running;
+  if (['pending', 'missing'].includes(status)) return styles.pending;
   return '';
 }
 
@@ -27,7 +28,7 @@ export default function Timeline({ timeline }: TimelineProps) {
         prevGroup = step.group ?? prevGroup;
 
         return (
-          <div key={step.key}>
+          <Fragment key={step.key}>
             {showSep && (
               <div className={styles.groupSep}>
                 <span>Offboard Validation</span>
@@ -45,7 +46,7 @@ export default function Timeline({ timeline }: TimelineProps) {
                 </span>
               </div>
             </div>
-          </div>
+          </Fragment>
         );
       })}
     </div>

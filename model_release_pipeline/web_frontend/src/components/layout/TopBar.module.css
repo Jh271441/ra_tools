@@ -118,7 +118,7 @@
     padding: 14px clamp(14px, 4vw, 18px);
     gap: 10px;
     flex-wrap: wrap;
-    margin-bottom: 14px;
+    margin-bottom: 0;
     border-bottom: 1px solid var(--line);
     background: var(--bg);
   }
