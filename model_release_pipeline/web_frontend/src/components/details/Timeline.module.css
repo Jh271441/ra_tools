@@ -1,0 +1,138 @@
+.timeline {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.groupSep {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 8px 48px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.groupSep::before {
+  content: '';
+  flex: 0 0 16px;
+  height: 1px;
+  background: var(--line);
+}
+
+.groupSep::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  position: relative;
+  padding-bottom: 16px;
+}
+
+.step:last-child {
+  padding-bottom: 0;
+}
+
+.step::after {
+  content: '';
+  position: absolute;
+  top: 32px;
+  bottom: 0;
+  left: 15px;
+  width: 2px;
+  background: var(--line-strong);
+  z-index: 0;
+}
+
+.step:last-child::after {
+  display: none;
+}
+
+.stepIndex {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: white;
+  background: var(--teal);
+  font: 700 0.85rem/1 var(--mono);
+  position: relative;
+  z-index: 1;
+}
+
+.failed .stepIndex {
+  background: var(--danger);
+}
+
+.pending .stepIndex {
+  background: var(--faint);
+}
+
+.running .stepIndex {
+  background: var(--warn);
+}
+
+.done .stepIndex {
+  background: var(--teal);
+}
+
+.stepCard {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  background: var(--surface-muted);
+  transition: 150ms ease;
+}
+
+.stepCard:hover {
+  background: var(--surface);
+  border-color: var(--line-strong);
+}
+
+.stepText {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.stepText h4 {
+  margin: 0 0 4px;
+}
+
+.stepText p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.stepState {
+  flex: 0 0 auto;
+  min-width: 70px;
+  text-align: right;
+}
+
+@media (max-width: 860px) {
+  .stepCard {
+    padding: 12px;
+  }
+}

@@ -1,0 +1,149 @@
+.topbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-width: 0;
+  margin-bottom: 20px;
+  padding-left: clamp(16px, 2vw, 24px);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 12px;
+}
+
+.brandMark {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  color: white;
+  background: var(--ink);
+  font: 800 0.9rem/1 var(--mono);
+  letter-spacing: -0.04em;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  min-width: 0;
+  gap: 10px;
+}
+
+.actions > *:not(.refreshBtn) {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.refreshBtn {
+  flex-shrink: 0;
+}
+
+/* Mobile hamburger */
+.mobileToggle {
+  display: none;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  transition: 150ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobileToggle:hover,
+.mobileToggle:focus-visible {
+  background: rgba(29, 29, 31, 0.06);
+  outline: none;
+}
+
+.hamburger {
+  position: relative;
+  display: block;
+  width: 20px;
+  height: 14px;
+}
+
+.hamburger::before,
+.hamburger::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--ink);
+  transition: transform 180ms ease, top 180ms ease, opacity 120ms ease;
+}
+
+.hamburger::before {
+  top: 0;
+  box-shadow: 0 6px 0 var(--ink);
+}
+
+.hamburger::after {
+  top: 12px;
+}
+
+.open .hamburger::before {
+  top: 6px;
+  transform: rotate(45deg);
+  box-shadow: none;
+}
+
+.open .hamburger::after {
+  top: 6px;
+  transform: rotate(-45deg);
+}
+
+@media (max-width: 860px) {
+  .mobileToggle {
+    display: inline-flex;
+  }
+
+  .topbar {
+    padding: 14px clamp(14px, 4vw, 18px);
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg);
+  }
+
+  .brand {
+    order: 1;
+    flex: 1 0 100%;
+    width: 100%;
+  }
+
+  .brand h1 {
+    font-size: clamp(1.2rem, 5vw, 1.5rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobileToggle {
+    order: 2;
+  }
+
+  .actions {
+    order: 3;
+    flex: 0 1 auto;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+}
