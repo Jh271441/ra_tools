@@ -30,7 +30,7 @@
   max-width: 560px;
   padding: 20px;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
