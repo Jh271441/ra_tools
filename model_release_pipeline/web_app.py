@@ -40,7 +40,6 @@ from model_release_pipeline.web.summary import (
 )
 
 
-STATIC_DIR = PACKAGE_ROOT / "web_static"
 FRONTEND_DIST = PACKAGE_ROOT / "web_frontend" / "dist"
 DEFAULT_EXPERIMENT_ROOT = (
     "device:/nfs/dataset-ofs-remote-assist-stuck/user/jasperchen/"
@@ -128,7 +127,7 @@ class ReleaseWebApp:
             "commands": commands(record),
             "actions": action_specs(),
             "stage_config": record_stage_config(record),
-            "onnx_local_copy": versioned_onnx_info(self.config.runs_dir, record),
+            "versioned_onnx": versioned_onnx_info(self.config.runs_dir, record),
             "offboard_metrics": extract_metric_table(
                 str((record.get("offboard") or {}).get("stdout") or "")
             ),
@@ -507,31 +506,15 @@ def _handle_api_patch(
 
 
 def _handle_static_get(handler: BaseHTTPRequestHandler, path: str) -> None:
-    # New React frontend served at /new
-    if path in {"/new", "/new/"}:
-        _static_response(handler, FRONTEND_DIST / "index.html")
-        return
-    if path.startswith("/new/"):
-        rel = path.removeprefix("/new/")
-        dist_path = (FRONTEND_DIST / rel).resolve()
-        if FRONTEND_DIST.resolve() in dist_path.parents and dist_path.is_file():
-            _static_response(handler, dist_path)
-            return
-        # SPA fallback: any unmatched /new/* path serves the app shell
-        _static_response(handler, FRONTEND_DIST / "index.html")
-        return
-    # Legacy web_static frontend at /
     if path in {"", "/"}:
-        _static_response(handler, STATIC_DIR / "index.html")
+        _static_response(handler, FRONTEND_DIST / "index.html")
         return
-    if path == "/favicon.ico":
-        _static_response(handler, STATIC_DIR / "favicon.svg")
+    dist_path = (FRONTEND_DIST / path.removeprefix("/")).resolve()
+    if FRONTEND_DIST.resolve() in dist_path.parents and dist_path.is_file():
+        _static_response(handler, dist_path)
         return
-    static_path = (STATIC_DIR / path.removeprefix("/")).resolve()
-    if STATIC_DIR.resolve() in static_path.parents:
-        _static_response(handler, static_path)
-        return
-    _text_response(handler, "Not found", HTTPStatus.NOT_FOUND)
+    # SPA fallback: unmatched paths serve the app shell
+    _static_response(handler, FRONTEND_DIST / "index.html")
 
 
 def _make_handler(app: ReleaseWebApp) -> type[BaseHTTPRequestHandler]:
