@@ -274,6 +274,52 @@ def build_parser() -> argparse.ArgumentParser:
     offboard_parser.add_argument("--desc", default="")
     offboard_parser.add_argument("--dry-run", action="store_true")
 
+    branch_prep_parser = subparsers.add_parser(
+        "branch-prep",
+        parents=[common],
+        help="Checkout a release branch and create a new working branch in Voyager docker",
+    )
+    branch_prep_parser.add_argument("--run-id", required=True)
+    branch_prep_parser.add_argument(
+        "--base-branch",
+        help="Release branch to checkout, e.g. gen4_release_20260508.",
+    )
+    branch_prep_parser.add_argument(
+        "--new-branch",
+        help="New working branch to create with git checkout -b.",
+    )
+    branch_prep_parser.add_argument(
+        "--docker",
+        help="Voyager docker container. Defaults to CONTAINER_NAME_GEN4 or config.",
+    )
+    branch_prep_parser.add_argument("--dry-run", action="store_true")
+
+    dcl_patch_parser = subparsers.add_parser(
+        "dcl-patch",
+        parents=[common],
+        help="Apply a DCL patch revision inside Voyager docker: dcl patch --revision <id>",
+    )
+    dcl_patch_parser.add_argument("--run-id", required=True)
+    dcl_patch_parser.add_argument(
+        "--revision-id",
+        required=True,
+        help="DCL revision id to apply, e.g. 6231959.",
+    )
+    dcl_patch_parser.add_argument(
+        "--branch",
+        help="Configured branch name. If omitted, apply to all configured branches.",
+    )
+    dcl_patch_parser.add_argument(
+        "--nobranch",
+        action="store_true",
+        help="Pass --nobranch to dcl patch (apply without creating a branch).",
+    )
+    dcl_patch_parser.add_argument(
+        "--docker",
+        help="Voyager docker container. Defaults to CONTAINER_NAME_GEN4 or config.",
+    )
+    dcl_patch_parser.add_argument("--dry-run", action="store_true")
+
     config_parser = subparsers.add_parser(
         "print-config", parents=[common], help="Show bundled config"
     )

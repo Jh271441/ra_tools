@@ -38,6 +38,8 @@ export function getFlowItems(summary: RunSummary | null): FlowGroups {
       },
     ],
     onboard: [
+      { key: 'branch_prep', group: 'onboard', badge: 'R1', shortTitle: 'Branch Prep', title: 'Rule Patch: Checkout & Branch', note: 'checkout base, create branch', detail: 'Checkout a release branch in Voyager docker and create a new working branch (git checkout -b).', actionKeys: ['branch-prep'] },
+      { key: 'dcl_patch', group: 'onboard', badge: 'R2', shortTitle: 'DCL Patch', title: 'Rule Patch: Patch CR', note: 'apply DCL revision', detail: 'Apply a specific DCL revision to the working branch: dcl patch --revision <id> --nobranch.', actionKeys: ['dcl-patch'] },
       { key: 'export', group: 'onboard', badge: 'O1', shortTitle: 'Export', title: 'Onboard: Export to Local', note: 'ONNX to NFS', detail: 'Create or re-export ONNX from the selected experiment and epoch.', actionKeys: ['export'] },
       { key: 'upload', group: 'onboard', badge: 'O2', shortTitle: 'Upload', title: 'Onboard: Upload to Cloud', note: `ONNX v${s.onnx_version ?? 'NA'}`, detail: 'Upload the exported ONNX to fileserver with truck.py and bind the ONNX version to this release.', actionKeys: ['upload'] },
       { key: 'ifx', group: 'onboard', badge: 'O3', shortTitle: 'IFX', title: 'Onboard: IFX Conversion', note: `ONNX v${s.onnx_version ?? 'NA'}`, detail: 'Trigger Jenkins IFX conversion from uploaded ONNX, or poll an already-triggered Jenkins build and collect artifact versions.', actionKeys: ['ifx-convert', 'ifx-poll'] },
@@ -53,6 +55,8 @@ export function getFlowItems(summary: RunSummary | null): FlowGroups {
 
 export const STEP_LOG_MAP: Record<string, string> = {
   pick: 'export_stdout',
+  branch_prep: 'branch_prep_stdout',
+  dcl_patch: 'dcl_patch_stdout',
   export: 'export_stdout',
   upload: 'upload_stdout',
   ifx: 'ifx_stdout',
@@ -63,6 +67,10 @@ export const STEP_LOG_MAP: Record<string, string> = {
 };
 
 export const LOG_LABELS: Record<string, string> = {
+  branch_prep_stdout: 'Branch Prep stdout',
+  branch_prep_stderr: 'Branch Prep stderr',
+  dcl_patch_stdout: 'DCL Patch stdout',
+  dcl_patch_stderr: 'DCL Patch stderr',
   export_stdout: 'Export stdout',
   export_stderr: 'Export stderr',
   upload_stdout: 'Upload stdout',
@@ -91,6 +99,8 @@ export function filterFlowGroups(groups: FlowGroups, includedSteps: string[]): F
 
 export const NEXT_STEP_BY_ACTION: Partial<Record<string, string>> = {
   pick: 'export',
+  'branch-prep': 'dcl_patch',
+  'dcl-patch': 'dcl',
   export: 'upload',
   upload: 'ifx',
   'ifx-convert': 'handoff',

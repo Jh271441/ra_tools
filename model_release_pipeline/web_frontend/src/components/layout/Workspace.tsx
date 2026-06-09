@@ -1,10 +1,12 @@
 import type { ReactNode } from 'react';
-import type { ViewName } from './SideRail';
 import type { RunSummary } from '../../types/api';
 import styles from './Workspace.module.css';
 
+export type ViewName = 'workflow' | 'release';
+
 interface WorkspaceProps {
   activeView: ViewName;
+  onViewChange: (view: ViewName) => void;
   selectedRun: RunSummary | null;
   workflowContent: ReactNode;
   releaseContent: ReactNode;
@@ -14,6 +16,7 @@ interface WorkspaceProps {
 
 export default function Workspace({
   activeView,
+  onViewChange,
   selectedRun,
   workflowContent,
   releaseContent,
@@ -46,6 +49,21 @@ export default function Workspace({
             </div>
           )}
         </section>
+
+        <div className={styles.viewTabBar}>
+          <button
+            className={`${styles.viewTab} ${activeView === 'workflow' ? styles.viewTabActive : ''}`}
+            onClick={() => onViewChange('workflow')}
+          >
+            Steps
+          </button>
+          <button
+            className={`${styles.viewTab} ${activeView === 'release' ? styles.viewTabActive : ''}`}
+            onClick={() => onViewChange('release')}
+          >
+            Details
+          </button>
+        </div>
 
         <div
           className={`${styles.viewPane} ${activeView === 'workflow' ? styles.viewPaneActive : ''}`}

@@ -13,10 +13,10 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     includedSteps: ['pick', 'export', 'upload', 'ifx', 'handoff', 'dcl', 'sim_plan', 'offboard'],
   },
   {
-    id: 'rule_change',
-    name: 'Rule Change',
-    description: 'Patch a branch config, run DCL diff and trigger sim plans — no model upload',
-    includedSteps: ['handoff', 'dcl', 'sim_plan'],
+    id: 'rule_patch',
+    name: 'Rule Patch',
+    description: 'Checkout release branch, apply DCL patch CR, run DCL diff and sim plan',
+    includedSteps: ['branch_prep', 'dcl_patch', 'dcl', 'sim_plan'],
   },
   {
     id: 'offboard_only',

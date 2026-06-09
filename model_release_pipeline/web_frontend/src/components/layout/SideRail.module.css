@@ -6,7 +6,7 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 6px;
+  gap: 4px;
   min-height: 0;
   margin: calc(-1 * clamp(16px, 2vw, 24px)) 0 calc(-1 * clamp(16px, 2vw, 24px));
   border-right: 1px solid var(--line);
@@ -47,8 +47,31 @@
   background: rgba(255, 255, 255, 0.95);
 }
 
-/* Nav items */
-.navItem {
+/* Workflow section list (fills the rail) */
+.workflowList {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+}
+
+/* Individual workflow section */
+.workflowSection {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 0 0 auto;
+}
+
+.workflowSectionExpanded {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Section header (clickable row) */
+.sectionHeader {
   width: 100%;
   min-width: 0;
   border: 1px solid transparent;
@@ -64,16 +87,17 @@
   font-weight: 650;
   line-height: 1.1;
   transition: 80ms ease;
+  flex: 0 0 auto;
 }
 
-
-.navItemActive {
+.sectionHeaderActive {
   color: #ffffff;
   background: linear-gradient(180deg, #3d7df5, #2864e6);
   border-color: rgba(40, 100, 230, 0.36);
   box-shadow: 0 10px 24px rgba(40, 100, 230, 0.22);
 }
 
+/* Icon badge */
 .navIcon {
   width: 28px;
   height: 28px;
@@ -87,17 +111,17 @@
   font: 800 0.76rem/1 var(--mono);
 }
 
-.navItemActive .navIcon {
+.sectionHeaderActive .navIcon {
   color: #2864e6;
   background: rgba(255, 255, 255, 0.95);
 }
 
 .navLabel {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: opacity 80ms ease;
 }
 
 .collapsed .navLabel {
@@ -110,45 +134,28 @@
   flex-basis: 34px;
 }
 
-.collapsed .navItem {
+.collapsed .sectionHeader {
   justify-content: center;
   padding-inline: 6px;
 }
 
-/* Run list panel inside rail */
-.runListSection {
+/* Section body (filter + run list) */
+.sectionBody {
   flex: 1 1 auto;
   min-height: 0;
-  margin-top: 6px;
-  border-top: 1px solid var(--line);
-  padding: 14px 6px 0;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
-  transition: flex-basis 100ms ease, opacity 80ms ease, padding 100ms ease;
-}
-
-.collapsed .runListSection {
-  display: none;
-}
-
-.sidebarCollapsed .runListSection {
-  flex-basis: 0;
-  min-width: 0;
-  max-width: 0;
+  padding: 8px 6px 0;
+  border-top: 1px solid var(--line);
+  margin-top: 2px;
   overflow: hidden;
-  padding: 0;
-  opacity: 0;
-  pointer-events: none;
-  border-width: 0;
 }
 
 .runListHeader {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-  font-weight: 700;
+  justify-content: flex-end;
+  margin-bottom: 8px;
 }
 
 .filterInput {
@@ -156,10 +163,10 @@
   border: 1px solid var(--line);
   border-radius: 999px;
   outline: none;
-  padding: 8px 14px;
+  padding: 7px 14px;
   font-size: 0.85rem;
   background: var(--surface-strong);
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   transition: 80ms ease;
 }
 
@@ -178,9 +185,8 @@
   padding: 0 4px 8px 0;
 }
 
-/* Disclosure toggle for sidebar */
+/* Disclosure arrow */
 .disclosure {
-  margin-left: auto;
   width: 22px;
   height: 22px;
   flex: 0 0 22px;
@@ -201,11 +207,11 @@
   height: 5px;
   border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;
-  transform: translateY(-1.5px) rotate(45deg); /* down chevron, -1.5px compensates visual offset after rotation */
+  transform: translateY(-1.5px) rotate(45deg);
 }
 
 .disclosureCollapsed::before {
-  transform: translateX(-1.5px) rotate(-45deg); /* right chevron */
+  transform: translateX(-1.5px) rotate(-45deg);
 }
 
 .collapsed .disclosure {
@@ -307,9 +313,7 @@
     display: none;
   }
 
-  /* Always show labels/disclosure inside the drawer */
-  .collapsed .navLabel,
-  .collapsed .disclosure {
+  .collapsed .navLabel {
     display: inline;
   }
 
@@ -319,25 +323,11 @@
     flex-basis: 28px;
   }
 
-  .collapsed .navItem {
+  .collapsed .sectionHeader {
     justify-content: flex-start;
   }
 
-  .collapsed .runListSection,
-  .sidebarCollapsed .runListSection {
-    display: flex;
-    flex: 1 1 auto;
-    flex-basis: auto;
-    min-width: 0;
-    max-width: none;
-    opacity: 1;
-    pointer-events: auto;
-    padding: 14px 6px 0;
-    border-width: 1px;
-    overflow: hidden;
-  }
-
-  .runsList {
-    overflow-y: auto;
+  .collapsed .disclosure {
+    display: grid;
   }
 }

@@ -156,6 +156,54 @@ function HelperText({ children }: { children: React.ReactNode }) {
 
 // ─── Step forms ──────────────────────────────────────────────────────────────
 
+function BranchPrepForm({ branches }: { branches: BranchInfo[] }) {
+  return (
+    <div className={styles.form}>
+      <label className={styles.stageLabel}>
+        <span>Base release branch</span>
+        <input id="branchPrepBase" placeholder="e.g. gen4_release_20260508" />
+      </label>
+      <label className={styles.stageLabel}>
+        <span>New working branch</span>
+        <input id="branchPrepNew" placeholder="e.g. jasperchen/rule_patch_20260601" />
+      </label>
+      <HelperText>
+        Runs inside the Voyager docker: <code>git checkout &lt;base&gt;</code> then <code>git checkout -b &lt;new&gt;</code>.
+        Confirmation text is the current <b>release_id</b>.
+      </HelperText>
+      {branches.length > 0 && (
+        <HelperText>Configured branches: {branches.map((b) => b.name).join(', ')}</HelperText>
+      )}
+    </div>
+  );
+}
+
+function DclPatchForm({ branches }: { branches: BranchInfo[] }) {
+  const [branch, setBranch] = useState('');
+  return (
+    <div className={styles.form}>
+      <div className={styles.row}>
+        <label className={styles.stageLabel}>
+          <span>DCL Revision ID</span>
+          <input id="dclPatchRevision" placeholder="e.g. 6231959" />
+        </label>
+        <label className={styles.stageLabel}>
+          <span>Branch (optional)</span>
+          <BranchSelect id="dclPatchBranch" value={branch} onChange={setBranch} branches={branches} allLabel="all branches" />
+        </label>
+      </div>
+      <label className={styles.inlineCheck}>
+        <input id="dclPatchNobranch" type="checkbox" defaultChecked />
+        <code>--nobranch</code> (patch without creating a branch)
+      </label>
+      <HelperText>
+        Runs inside the Voyager docker: <code>dcl patch --revision &lt;id&gt; [--nobranch] [--branch &lt;branch&gt;]</code>.
+        Confirmation text is the current <b>release_id</b>.
+      </HelperText>
+    </div>
+  );
+}
+
 function PickForm({ run, lubanHost, lubanHosts, onLubanHostChange, onPickPreview }: {
   run: GetRunResponse | null;
   lubanHost: string; lubanHosts: string[];
@@ -733,7 +781,14 @@ export default function FlowInspector({
     const gcls = (cls: string) => [...document.querySelectorAll<HTMLInputElement>(`.${cls}:checked`)].map((el) => el.value);
     const payload: Record<string, unknown> = { dry_run: dryRun, confirm_text: confirmText };
     const key = action.key;
-    if (key === 'pick') {
+    if (key === 'branch-prep') {
+      payload.base_branch = g('branchPrepBase');
+      payload.new_branch = g('branchPrepNew');
+    } else if (key === 'dcl-patch') {
+      payload.revision_id = g('dclPatchRevision');
+      payload.branch = g('dclPatchBranch');
+      payload.nobranch = (document.getElementById('dclPatchNobranch') as HTMLInputElement)?.checked ?? true;
+    } else if (key === 'pick') {
       payload.experiment = g('pickExperiment');
       payload.remote = g('pickRemote');
       payload.description = g('pickDesc');
@@ -815,6 +870,8 @@ export default function FlowInspector({
         </div>
       </div>
 
+      {item.key === 'branch_prep' && <BranchPrepForm branches={branches} />}
+      {item.key === 'dcl_patch' && <DclPatchForm branches={branches} />}
       {item.key === 'pick' && (
         <PickForm run={run} lubanHost={lubanHost} lubanHosts={lubanHosts}
           onLubanHostChange={onLubanHostChange} onPickPreview={onPickPreview} />

@@ -482,6 +482,109 @@ else:
             "sim_plans": [plan.name for plan in chosen_branch.effective_sim_plans()],
         }
 
+    def branch_prep_to_docker(
+        self,
+        ifx_config: IfxConfig,
+        base_branch: str,
+        new_branch: str,
+        container: str = "",
+        dry_run: bool = False,
+    ) -> Dict[str, Any]:
+        """Checkout a release branch and create a working branch inside Voyager docker."""
+        docker_container = self._docker_container(ifx_config, container)
+        if not docker_container:
+            raise RuntimeError(
+                "branch-prep docker mode requires a container. Set "
+                f"{ifx_config.truck_docker_container_env} or pass --docker."
+            )
+        if dry_run:
+            shell_parts = [
+                f"cd {shlex.quote(ifx_config.truck_docker_workdir)}",
+                f"echo '[dry-run] git checkout {shlex.quote(base_branch)}'",
+                f"echo '[dry-run] git checkout -b {shlex.quote(new_branch)}'",
+            ]
+        else:
+            shell_parts = [
+                f"cd {shlex.quote(ifx_config.truck_docker_workdir)}",
+                "set -e",
+                "git fetch --prune",
+                f"git checkout {shlex.quote(base_branch)}",
+                f"git checkout -b {shlex.quote(new_branch)}",
+            ]
+        command = [
+            "docker",
+            "exec",
+            docker_container,
+            ifx_config.truck_docker_shell,
+            "-lc",
+            "; ".join(shell_parts),
+        ]
+        result = self.command_runner(command)
+        return {
+            "mode": "docker",
+            "container": docker_container,
+            "workdir": ifx_config.truck_docker_workdir,
+            "base_branch": base_branch,
+            "new_branch": new_branch,
+            "command": " ".join(shlex.quote(part) for part in command),
+            "returncode": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "dry_run": dry_run,
+        }
+
+    def dcl_patch_to_docker(
+        self,
+        ifx_config: IfxConfig,
+        revision_id: str,
+        nobranch: bool = True,
+        container: str = "",
+        dry_run: bool = False,
+    ) -> Dict[str, Any]:
+        """Apply a DCL patch revision inside Voyager docker."""
+        docker_container = self._docker_container(ifx_config, container)
+        if not docker_container:
+            raise RuntimeError(
+                "dcl-patch docker mode requires a container. Set "
+                f"{ifx_config.truck_docker_container_env} or pass --docker."
+            )
+        dcl_cmd_parts = ["dcl", "patch", "--revision", shlex.quote(revision_id)]
+        if nobranch:
+            dcl_cmd_parts.append("--nobranch")
+        dcl_cmd = " ".join(dcl_cmd_parts)
+        if dry_run:
+            shell_parts = [
+                f"cd {shlex.quote(ifx_config.truck_docker_workdir)}",
+                f"echo '[dry-run] {dcl_cmd}'",
+            ]
+        else:
+            shell_parts = [
+                f"cd {shlex.quote(ifx_config.truck_docker_workdir)}",
+                "set -e",
+                dcl_cmd,
+            ]
+        command = [
+            "docker",
+            "exec",
+            docker_container,
+            ifx_config.truck_docker_shell,
+            "-lc",
+            "; ".join(shell_parts),
+        ]
+        result = self.command_runner(command)
+        return {
+            "mode": "docker",
+            "container": docker_container,
+            "workdir": ifx_config.truck_docker_workdir,
+            "revision_id": revision_id,
+            "nobranch": nobranch,
+            "command": " ".join(shlex.quote(part) for part in command),
+            "returncode": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "dry_run": dry_run,
+        }
+
     def dcl_to_docker(
         self,
         ifx_config: IfxConfig,

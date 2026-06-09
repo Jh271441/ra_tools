@@ -115,6 +115,8 @@ def ifx_stderr(record: Dict[str, Any]) -> list[str]:
 
 
 def record_logs(record: Dict[str, Any]) -> Dict[str, list[str]]:
+    branch_prep = record.get("branch_prep") or {}
+    dcl_patch = record.get("dcl_patch") or {}
     export = record.get("export") or {}
     ifx = record.get("ifx") or {}
     upload_log_source = (
@@ -128,6 +130,10 @@ def record_logs(record: Dict[str, Any]) -> Dict[str, list[str]]:
     sim_plan = record.get("sim_plan") or {}
     offboard = record.get("offboard") or {}
     return {
+        "branch_prep_stdout": tail(branch_prep.get("stdout")),
+        "branch_prep_stderr": tail(branch_prep.get("stderr")),
+        "dcl_patch_stdout": tail(dcl_patch.get("stdout")),
+        "dcl_patch_stderr": tail(dcl_patch.get("stderr")),
         "export_stdout": tail((export.get("export") or {}).get("stdout")),
         "export_stderr": tail((export.get("export") or {}).get("stderr")),
         "upload_stdout": upload_stdout(upload_log_source),

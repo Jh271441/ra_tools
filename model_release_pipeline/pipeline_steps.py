@@ -18,6 +18,8 @@ SHARED_STEPS = [
 ]
 
 ONBOARD_STEPS = [
+    PipelineStep("branch_prep", "Branch Prep", "Checkout release branch and create working branch", group="onboard"),
+    PipelineStep("dcl_patch",   "DCL Patch",   "Apply a DCL patch revision in Voyager docker",     group="onboard"),
     PipelineStep("export",  "Export",      "Export and copy ONNX from Luban",               group="onboard"),
     PipelineStep("upload",  "Upload",      "Upload ONNX with truck.py",                     group="onboard"),
     PipelineStep("ifx",     "IFX Convert", "Trigger Jenkins and collect IFX versions",       group="onboard"),

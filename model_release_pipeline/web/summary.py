@@ -44,6 +44,28 @@ def step_status(record: Dict[str, Any], key: str) -> str:
         if selection.get("selected_epoch") is not None:
             return "skipped"
         return "pending"
+    if key == "branch_prep":
+        bp = record.get("branch_prep") or {}
+        if not bp:
+            return "pending"
+        if record.get("stage") == "branch_prep_failed":
+            return "failed"
+        if record.get("stage") == "branch_prep_dry_run":
+            return "dry_run"
+        if record.get("stage") == "branch_prep_complete":
+            return "done"
+        return command_state(bp)
+    if key == "dcl_patch":
+        dp = record.get("dcl_patch") or {}
+        if not dp:
+            return "pending"
+        if record.get("stage") == "dcl_patch_failed":
+            return "failed"
+        if record.get("stage") == "dcl_patch_dry_run":
+            return "dry_run"
+        if record.get("stage") == "dcl_patch_complete":
+            return "done"
+        return command_state(dp)
     if key == "export":
         export = record.get("export") or {}
         if not export:
@@ -143,6 +165,7 @@ def record_summary(record: Dict[str, Any]) -> Dict[str, Any]:
         "ifx_platforms": len([key for key in mapping if key != "onnx"]),
         "offboard_status": step_status(record, "offboard"),
         "error_count": len(errors),
+        "workflow_type": (record.get("metadata") or {}).get("workflow_type", "full_release"),
     }
 
 

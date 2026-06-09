@@ -113,6 +113,7 @@ export interface RunSummary {
   ifx_platforms: number;
   offboard_status: string;
   error_count: number;
+  workflow_type?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -158,7 +159,11 @@ export type LogKey =
   | 'sim_plan_stdout'
   | 'sim_plan_stderr'
   | 'offboard_stdout'
-  | 'offboard_stderr';
+  | 'offboard_stderr'
+  | 'branch_prep_stdout'
+  | 'branch_prep_stderr'
+  | 'dcl_patch_stdout'
+  | 'dcl_patch_stderr';
 
 export type LogMap = Record<LogKey, string[]>;
 
@@ -178,7 +183,9 @@ export type ActionKey =
   | 'sim-plan'
   | 'sim-plan-status'
   | 'sim-plan-cancel'
-  | 'offboard';
+  | 'offboard'
+  | 'branch-prep'
+  | 'dcl-patch';
 
 export interface ActionSpec {
   key: ActionKey;

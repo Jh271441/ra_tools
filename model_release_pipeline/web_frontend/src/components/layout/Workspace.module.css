@@ -49,6 +49,40 @@
   max-width: 50%;
 }
 
+.viewTabBar {
+  display: flex;
+  gap: 2px;
+  padding: 4px 0 0;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 0;
+  flex: 0 0 auto;
+}
+
+.viewTab {
+  padding: 7px 18px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+  transition: 80ms ease;
+  margin-bottom: -1px;
+}
+
+.viewTab:hover {
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.viewTabActive {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: transparent;
+}
+
 .viewPane {
   flex: 1 1 auto;
   min-height: 0;

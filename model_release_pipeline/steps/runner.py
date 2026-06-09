@@ -14,6 +14,8 @@ from model_release_pipeline.onboard.export import (
     select_candidate,
     select_manual_epoch_candidate,
 )
+from model_release_pipeline.onboard.branch_prep import run_branch_prep
+from model_release_pipeline.onboard.dcl_patch import run_dcl_patch
 from model_release_pipeline.onboard.handoff import (
     run_apply_handoff,
     run_dcl,
@@ -320,6 +322,40 @@ def _cancel_sim_plan(
     )
 
 
+def _run_branch_prep(
+    args: argparse.Namespace,
+    config: ReleaseConfig,
+    store: StateStore,
+    record: Dict[str, Any],
+) -> Dict[str, Any]:
+    return run_branch_prep(
+        args,
+        config,
+        store,
+        record,
+        progress=_make_progress(args),
+        confirm=_confirm,
+        service_cls=VoyagerHandoffService,
+    )
+
+
+def _run_dcl_patch(
+    args: argparse.Namespace,
+    config: ReleaseConfig,
+    store: StateStore,
+    record: Dict[str, Any],
+) -> Dict[str, Any]:
+    return run_dcl_patch(
+        args,
+        config,
+        store,
+        record,
+        progress=_make_progress(args),
+        confirm=_confirm,
+        service_cls=VoyagerHandoffService,
+    )
+
+
 def _run_offboard(
     args: argparse.Namespace,
     config: ReleaseConfig,
@@ -447,6 +483,16 @@ def dispatch_locked(
     if command == "offboard":
         record = store.load(args.run_id) if args.run_id else None
         record = _run_offboard(args, config, store, record)
+        return record, 1 if record.get("status") == "failed" else 0
+
+    if command == "branch-prep":
+        record = store.load(args.run_id)
+        record = _run_branch_prep(args, config, store, record)
+        return record, 1 if record.get("status") == "failed" else 0
+
+    if command == "dcl-patch":
+        record = store.load(args.run_id)
+        record = _run_dcl_patch(args, config, store, record)
         return record, 1 if record.get("status") == "failed" else 0
 
     raise ValueError(f"Unknown command: {command}")

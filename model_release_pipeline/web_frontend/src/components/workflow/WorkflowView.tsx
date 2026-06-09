@@ -8,7 +8,7 @@ import {
   getStageDefaults,
 } from '../../api/client';
 import { getFlowItems, filterFlowGroups, NEXT_STEP_BY_ACTION, STEP_LOG_MAP } from './flowItems';
-import { WORKFLOW_TEMPLATES, getTemplate } from './workflowTemplates';
+import { getTemplate } from './workflowTemplates';
 import { useJobPoller } from '../../hooks/useJobPoller';
 import FlowControls from './FlowControls';
 import FlowInspector from './FlowInspector';
@@ -20,10 +20,10 @@ interface WorkflowViewProps {
   run: GetRunResponse | null;
   draftRun?: boolean;
   onRunRefresh: (newReleaseId?: string) => void;
+  workflowType: string;
 }
 
-export default function WorkflowView({ selectedId, run, draftRun = false, onRunRefresh }: WorkflowViewProps) {
-  const [templateId, setTemplateId] = useState(() => localStorage.getItem('workflowTemplate') ?? 'full_release');
+export default function WorkflowView({ selectedId, run, draftRun = false, onRunRefresh, workflowType }: WorkflowViewProps) {
   const [activeStep, setActiveStep] = useState('export');
   const [lubanHost, setLubanHost] = useState('');
   const [branches, setBranches] = useState<BranchInfo[]>([]);
@@ -68,7 +68,7 @@ export default function WorkflowView({ selectedId, run, draftRun = false, onRunR
   // Auto-switch LogDrawer log channel when step changes
   const defaultLogKey = useMemo(() => STEP_LOG_MAP[activeStep] ?? '', [activeStep]);
 
-  const template = useMemo(() => getTemplate(templateId), [templateId]);
+  const template = useMemo(() => getTemplate(workflowType), [workflowType]);
   const allGroups = useMemo(() => getFlowItems(run?.summary ?? null), [run]);
   const groups = useMemo(() => filterFlowGroups(allGroups, template.includedSteps), [allGroups, template]);
 
@@ -78,11 +78,6 @@ export default function WorkflowView({ selectedId, run, draftRun = false, onRunR
       setActiveStep(template.includedSteps[0] ?? 'export');
     }
   }, [template, activeStep]);
-
-  const handleTemplateChange = useCallback((id: string) => {
-    setTemplateId(id);
-    localStorage.setItem('workflowTemplate', id);
-  }, []);
 
   const statusByStep = useMemo<Record<string, StepStatus>>(() => {
     if (!run?.timeline) return {};
@@ -95,6 +90,8 @@ export default function WorkflowView({ selectedId, run, draftRun = false, onRunR
   }, [groups, activeStep]);
 
   const DEFAULT_ACTIONS: ActionSpec[] = [
+    { key: 'branch-prep',     label: 'Branch Prep',         supports_dry_run: true,  requires_confirm: true,  needs_run_id: true  },
+    { key: 'dcl-patch',       label: 'DCL Patch Apply',     supports_dry_run: true,  requires_confirm: true,  needs_run_id: true  },
     { key: 'pick',            label: 'Pick Epoch',          supports_dry_run: false, requires_confirm: false, needs_run_id: false },
     { key: 'export',          label: 'Model Export',        supports_dry_run: true,  requires_confirm: true,  needs_run_id: false },
     { key: 'upload',          label: 'Upload ONNX',         supports_dry_run: true,  requires_confirm: true,  needs_run_id: true  },
@@ -153,16 +150,6 @@ export default function WorkflowView({ selectedId, run, draftRun = false, onRunR
             <h3>Release Flow Controls</h3>
           </div>
           <div className={styles.flowHeaderRight}>
-            <select
-              className={styles.templateSelect}
-              value={templateId}
-              onChange={(e) => handleTemplateChange(e.target.value)}
-              title={template.description}
-            >
-              {WORKFLOW_TEMPLATES.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
             <p className={styles.flowHint}>click a step to inspect<br />actions and logs</p>
           </div>
         </div>

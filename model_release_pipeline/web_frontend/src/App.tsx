@@ -1,8 +1,8 @@
 import { useCallback, useState } from 'react';
 import TopBar from './components/layout/TopBar';
 import SideRail from './components/layout/SideRail';
-import type { ViewName } from './components/layout/SideRail';
 import Workspace from './components/layout/Workspace';
+import type { ViewName } from './components/layout/Workspace';
 import Timeline from './components/details/Timeline';
 import ReleaseDetails from './components/details/ReleaseDetails';
 import WorkflowView from './components/workflow/WorkflowView';
@@ -15,10 +15,13 @@ export default function App() {
   const { isMobileOrTablet } = useResponsive();
 
   const [activeView, setActiveView] = useState<ViewName>('workflow');
+  const [workflowType, setWorkflowType] = useState(
+    () => localStorage.getItem('workflowType') ?? 'full_release',
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [draftRun, setDraftRun] = useState(true);
+  const [draftRun, setDraftRun] = useState(false);
+  const [draftWorkflowType, setDraftWorkflowType] = useState('full_release');
   const [railCollapsed, setRailCollapsed] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const runs = runsData?.runs ?? [];
@@ -42,17 +45,28 @@ export default function App() {
     [isMobileOrTablet],
   );
 
-  const handleNewRelease = useCallback(() => {
-    setDraftRun(true);
+  const handleNewRelease = useCallback(
+    (type: string = workflowType) => {
+      setDraftRun(true);
+      setDraftWorkflowType(type);
+      setSelectedId(null);
+      setWorkflowType(type);
+      localStorage.setItem('workflowType', type);
+      if (isMobileOrTablet) setDrawerOpen(false);
+    },
+    [isMobileOrTablet, workflowType],
+  );
+
+  const handleWorkflowTypeChange = useCallback((id: string) => {
+    setWorkflowType(id);
+    localStorage.setItem('workflowType', id);
+    setDraftRun(false);
     setSelectedId(null);
-    setActiveView('workflow');
-    if (isMobileOrTablet) setDrawerOpen(false);
-  }, [isMobileOrTablet]);
+  }, []);
 
   const handleRunRefresh = useCallback(
     (newReleaseId?: string) => {
       if (newReleaseId === '__draft__') {
-        // draft action completed — refresh list then select the newest (first) run
         setDraftRun(false);
         void refresh().then((data) => {
           const first = data?.runs[0]?.release_id;
@@ -78,7 +92,6 @@ export default function App() {
     [isMobileOrTablet],
   );
 
-
   return (
     <div className={styles.shell}>
       <TopBar
@@ -90,22 +103,22 @@ export default function App() {
 
       <main style={{ flex: '1 1 auto', display: 'flex', minHeight: 0, overflow: 'hidden' }}>
         <SideRail
-          activeView={activeView}
-          onViewChange={handleViewChange}
           runs={runs}
           selectedId={selectedId}
           onSelectRun={handleSelectRun}
           onNewRelease={handleNewRelease}
           draftRun={draftRun}
+          draftWorkflowType={draftWorkflowType}
+          activeWorkflowType={workflowType}
+          onWorkflowTypeChange={handleWorkflowTypeChange}
           railCollapsed={railCollapsed}
           onToggleRail={() => setRailCollapsed((v) => !v)}
-          sidebarCollapsed={sidebarCollapsed}
-          onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
           drawerOpen={drawerOpen}
         />
 
         <Workspace
           activeView={activeView}
+          onViewChange={handleViewChange}
           selectedRun={selectedRun}
           drawerOpen={drawerOpen}
           onCloseDrawer={() => setDrawerOpen(false)}
@@ -115,6 +128,7 @@ export default function App() {
               run={runDetail}
               draftRun={draftRun}
               onRunRefresh={handleRunRefresh}
+              workflowType={workflowType}
             />
           }
           releaseContent={

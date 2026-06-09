@@ -103,6 +103,22 @@ ACTIONS = {
         "extra_args": ["--remote", "luban_1_card"],
         "needs_run_id": False,
     },
+    "branch-prep": {
+        "command": "branch-prep",
+        "label": "Branch Prep",
+        "supports_dry_run": True,
+        "requires_confirm": True,
+        "extra_args": [],
+        "needs_run_id": True,
+    },
+    "dcl-patch": {
+        "command": "dcl-patch",
+        "label": "DCL Patch Apply",
+        "supports_dry_run": True,
+        "requires_confirm": True,
+        "extra_args": [],
+        "needs_run_id": True,
+    },
 }
 
 
@@ -305,6 +321,23 @@ def build_cli_command(
                 text = str(test_yaml or "").strip()
                 if text:
                     command.extend(["--test-yaml", text])
+    elif action == "branch-prep":
+        base_branch = str(payload.get("base_branch") or "").strip()
+        if base_branch:
+            command.extend(["--base-branch", base_branch])
+        new_branch = str(payload.get("new_branch") or "").strip()
+        if new_branch:
+            command.extend(["--new-branch", new_branch])
+    elif action == "dcl-patch":
+        revision_id = str(payload.get("revision_id") or "").strip()
+        if not revision_id:
+            raise ValueError("DCL Patch requires revision_id.")
+        command.extend(["--revision-id", revision_id])
+        branch = str(payload.get("branch") or "").strip()
+        if branch:
+            command.extend(["--branch", branch])
+        if payload.get("nobranch"):
+            command.append("--nobranch")
     else:
         command.extend(spec["extra_args"])
 
