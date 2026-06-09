@@ -23,6 +23,10 @@ ra_tools/
 │   ├── issue_api.py
 │   ├── scenario_api.py
 │   └── utils.py
+├── scripts/
+│   ├── download_road_bag_cloud.py   # 在 cloud_server 上按时间段下载路测 bag
+│   ├── read_bag.py                  # 本机读取 bag 并解析 proto 字段（无需 ROS/voyager）
+│   └── planning_stub.proto          # read_bag.py 使用的最小 proto stub
 ├── stuck/
 ├── swag/
 └── utils/
@@ -100,3 +104,93 @@ python -m model_release_pipeline.cli export --remote luban_1_card --experiment /
 Web 页面里的 Luban remote 输入框支持一键切换，候选列表来自配置里的 `luban.host_aliases`；默认当前使用 `luban.host_alias: luban_1_card`。
 
 如果已手动确定 checkpoint，`export`/`release` 传 `--epoch` 会跳过自动选模，直接推进 ONNX 导出、IFX 转换和 Voyager handoff。
+
+---
+
+## scripts/ — 路测 bag 工具
+
+不依赖 voyager 仓库或本地 ROS 安装，纯 pip 环境即可使用。
+
+### 前置依赖（只需装一次）
+
+```bash
+cd ra_tools
+python3 -m venv .venv
+.venv/bin/pip install rosbags
+```
+
+**proto 定义来源（二选一，优先用方式 A）：**
+
+**方式 A（推荐）**：直接引用 voyager Docker 编译产物，路径 `~/workspace/voyager/bazel-build/bin/protobuf_python/protos_python_pb/`。
+这是 `//protobuf_python:protos_python` 的输出，包含所有 onboard proto 的完整 `_pb2.py` 文件。
+如果该路径不存在，进 Docker 编译一次即可：
+
+```bash
+docker exec -it $CONTAINER_NAME_GEN4 zsh -c \
+  "cd ~/workspace/voyager && bazel build --config=local //protobuf_python:protos_python"
+# 编译产物自动写入宿主机可见的 bazel-build/bin/（cache 目录共享）
+```
+
+**方式 B（无 Docker/voyager 时的兜底）**：用 `scripts/planning_stub.proto`（手写的最小 stub，只含 `is_opened` 字段路径）：
+
+```bash
+.venv/bin/pip install grpcio-tools google-protobuf
+.venv/bin/python3 -m grpc_tools.protoc \
+    -I scripts --python_out=scripts scripts/planning_stub.proto
+```
+
+`read_bag.py` 启动时自动检测方式 A 的路径，找不到时降级到方式 B。
+
+### 1. 下载路测 bag（在 cloud_server 上执行）
+
+`scripts/download_road_bag_cloud.py` 通过内网 Tempest SDK 按 trip_id + 时间段下载 `.bag` 文件。
+**需在 cloud_server（172.16.145.60:12017）上运行**，该机器已预装 `voy-tempest` 和 `voy-vbag`。
+
+```bash
+# 上传脚本到 cloud_server（首次）
+scp scripts/download_road_bag_cloud.py cloud_server:/tmp/
+
+# SSH 进去执行
+ssh cloud_server "python3 /tmp/download_road_bag_cloud.py \
+    --trip  10385_20260525_070411 \
+    --start 1779665020000 \
+    --end   1779665070000 \
+    --output /tmp/my_road.bag"
+
+# 把 bag 拉回本机
+scp cloud_server:/tmp/my_road.bag /tmp/
+```
+
+参数说明：
+
+| 参数 | 说明 |
+|------|------|
+| `--trip` | trip_id，格式如 `10385_20260525_070411` |
+| `--start` / `--end` | 时间范围，毫秒时间戳 |
+| `--output` | 输出 `.bag` 路径 |
+| `--topics` | 可选，指定 topic 列表（默认下载 planning_debug / assist_request / stuck_detection_recall_signal） |
+
+### 2. 本机读取 bag 并解析 proto 字段
+
+`scripts/read_bag.py` 纯 Python 读取 `.bag` 文件，解析 `planning_debug` 中的 proto 字段，**无需 ROS/voyager 环境**。
+
+首次运行时会自动编译 `planning_stub.proto` → `planning_stub_pb2.py`（之后跳过）。
+
+```bash
+# 默认：打印所有 planning_debug 消息的 is_opened 字段
+.venv/bin/python3 scripts/read_bag.py /tmp/my_road.bag
+
+# 只看 is_opened=True 的行
+.venv/bin/python3 scripts/read_bag.py /tmp/my_road.bag | grep True
+
+# 显示所有 topic 的所有消息
+.venv/bin/python3 scripts/read_bag.py /tmp/my_road.bag --show-all
+
+# 只看指定 topic
+.venv/bin/python3 scripts/read_bag.py /tmp/my_road.bag \
+    --topic /planning/assist_request /planning/stuck_detection_recall_signal
+```
+
+**方式 A 的优势**：完整 pb2 覆盖所有字段，proto 有改动时重新 `bazel build` 即可，无需维护 stub。
+
+**方式 B 的局限**：`planning_stub.proto` 只保留到 `is_opened` 的字段路径（field numbers 21→14→5→1）。field number 被修改时对照 `onboard/planner/planner_protos/` 更新 stub 数字即可。

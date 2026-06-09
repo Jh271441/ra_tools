@@ -1,0 +1,31 @@
+// 最小 stub proto，只保留 planning_debug → assistRequestSession.is_opened 的字段路径。
+// 其余字段用 protobuf 的前向兼容特性忽略。
+//
+// 编译：python3 -m grpc_tools.protoc -I scripts --python_out=scripts scripts/planning_stub.proto
+
+syntax = "proto3";
+package planner.pb;
+
+message AssistRequest {}
+
+message AssistRequestSession {
+  bool is_opened = 1;
+  bool is_updated = 2;
+  AssistRequest request = 3;
+  int64 incremental_request_id = 4;
+}
+
+message AssistDebug {
+  // field 5 matches onboard/planner/planner_protos/debug/behavior_reasoners/assist/assist_debug.proto
+  AssistRequestSession assist_request_session = 5;
+}
+
+message BehaviorReasonersDebug {
+  // field 14 matches onboard/planner/planner_protos/debug/behavior_reasoners/behavior_reasoners_debug.proto
+  AssistDebug assist_debug = 14;
+}
+
+message PlanningDebug {
+  // field 21 matches onboard/planner/planner_protos/planning_debug.proto
+  BehaviorReasonersDebug behavior_reasoner_debug = 21;
+}
