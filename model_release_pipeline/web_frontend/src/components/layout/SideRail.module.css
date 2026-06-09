@@ -66,11 +66,6 @@
   transition: 80ms ease;
 }
 
-.navItem:hover {
-  color: var(--ink);
-  background: rgba(255, 255, 255, 0.72);
-  border-color: var(--line);
-}
 
 .navItemActive {
   color: #ffffff;
@@ -195,9 +190,22 @@
   border-radius: 999px;
   color: inherit;
   background: rgba(255, 255, 255, 0.5);
-  font: 900 0.9rem/1 var(--mono);
   cursor: pointer;
   transition: opacity 80ms ease;
+}
+
+.disclosure::before {
+  content: '';
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-1.5px) rotate(45deg); /* down chevron, -1.5px compensates visual offset after rotation */
+}
+
+.disclosureCollapsed::before {
+  transform: translateX(-1.5px) rotate(-45deg); /* right chevron */
 }
 
 .collapsed .disclosure {

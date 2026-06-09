@@ -119,7 +119,7 @@ export default function App() {
           }
           releaseContent={
             selectedRun ? (
-              runLoading ? (
+              runLoading && !runDetail ? (
                 <div className="panel" style={{ padding: 20 }}>
                   <p className="muted">Loading details…</p>
                 </div>

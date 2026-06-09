@@ -91,15 +91,13 @@ export default function SideRail({
         <span className={styles.navIcon}>D</span>
         <span className={styles.navLabel}>Release Details</span>
         <span
-          className={styles.disclosure}
+          className={`${styles.disclosure} ${sidebarCollapsed ? styles.disclosureCollapsed : ''}`}
           onClick={(e) => {
             e.stopPropagation();
             onToggleSidebar();
           }}
           title={sidebarCollapsed ? 'Show Release Runs' : 'Hide Release Runs'}
-        >
-          {sidebarCollapsed ? '›' : '⌄'}
-        </span>
+        />
       </button>
 
       <div className={styles.runListSection}>
