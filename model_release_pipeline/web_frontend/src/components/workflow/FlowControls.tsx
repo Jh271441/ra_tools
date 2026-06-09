@@ -44,13 +44,52 @@ interface FlowControlsProps {
 }
 
 export default function FlowControls({ groups, statusByStep, activeStep, onSelectStep }: FlowControlsProps) {
+  const hasEntry = groups.shared.length > 0 || groups.offboard.length > 0;
+  const hasOnboard = groups.onboard.length > 0;
+
   return (
     <div className={styles.flowControls}>
-      <div className={styles.flowEntryRow}>
-        <div className={styles.flowGroup}>
-          <div className={styles.flowGroupTitle}>Luban Inspect / Pick</div>
-          <div className={styles.flowLane}>
-            {groups.shared.map((item) => (
+      {hasEntry && (
+        <div className={styles.flowEntryRow}>
+          {groups.shared.length > 0 && (
+            <div className={styles.flowGroup}>
+              <div className={styles.flowGroupTitle}>Luban Inspect / Pick</div>
+              <div className={styles.flowLane}>
+                {groups.shared.map((item) => (
+                  <FlowNode
+                    key={item.key}
+                    item={item}
+                    status={statusByStep[item.key]}
+                    selected={activeStep === item.key}
+                    onClick={() => onSelectStep(item.key)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+          {groups.offboard.length > 0 && (
+            <div className={styles.flowGroup}>
+              <div className={styles.flowGroupTitle}>Standalone Offboard</div>
+              <div className={styles.flowLane}>
+                {groups.offboard.map((item) => (
+                  <FlowNode
+                    key={item.key}
+                    item={item}
+                    status={statusByStep[item.key]}
+                    selected={activeStep === item.key}
+                    onClick={() => onSelectStep(item.key)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {hasOnboard && (
+        <div className={styles.flowGroupOnboard}>
+          {hasEntry && <div className={styles.flowGroupTitle}>Onboard</div>}
+          <div className={styles.flowLaneOnboard}>
+            {groups.onboard.map((item) => (
               <FlowNode
                 key={item.key}
                 item={item}
@@ -61,35 +100,7 @@ export default function FlowControls({ groups, statusByStep, activeStep, onSelec
             ))}
           </div>
         </div>
-        <div className={styles.flowGroup}>
-          <div className={styles.flowGroupTitle}>Standalone Offboard</div>
-          <div className={styles.flowLane}>
-            {groups.offboard.map((item) => (
-              <FlowNode
-                key={item.key}
-                item={item}
-                status={statusByStep[item.key]}
-                selected={activeStep === item.key}
-                onClick={() => onSelectStep(item.key)}
-              />
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className={styles.flowGroupOnboard}>
-        <div className={styles.flowGroupTitle}>Onboard</div>
-        <div className={styles.flowLaneOnboard}>
-          {groups.onboard.map((item) => (
-            <FlowNode
-              key={item.key}
-              item={item}
-              status={statusByStep[item.key]}
-              selected={activeStep === item.key}
-              onClick={() => onSelectStep(item.key)}
-            />
-          ))}
-        </div>
-      </div>
+      )}
     </div>
   );
 }

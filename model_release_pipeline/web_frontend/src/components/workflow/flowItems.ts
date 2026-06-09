@@ -80,6 +80,15 @@ export const LOG_LABELS: Record<string, string> = {
   offboard_stderr: 'Offboard stderr',
 };
 
+export function filterFlowGroups(groups: FlowGroups, includedSteps: string[]): FlowGroups {
+  const included = new Set(includedSteps);
+  return {
+    shared: groups.shared.filter((i) => included.has(i.key)),
+    onboard: groups.onboard.filter((i) => included.has(i.key)),
+    offboard: groups.offboard.filter((i) => included.has(i.key)),
+  };
+}
+
 export const NEXT_STEP_BY_ACTION: Partial<Record<string, string>> = {
   pick: 'export',
   export: 'upload',

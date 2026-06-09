@@ -277,12 +277,147 @@ function HandoffForm({ branches, stageConfig }: { branches: BranchInfo[]; stageC
   );
 }
 
+interface DclBranchConfig {
+  id: number;
+  branchName: string;
+  checkoutBranch: string;
+  updateDiffIds: string;
+  simPlan: string;
+  lint: boolean;
+  allowDirty: boolean;
+}
+
 function DclForm({ branches, stageConfig }: { branches: BranchInfo[]; stageConfig: StageValues }) {
-  const [branch, setBranch] = useState(stageConfig.branch ?? '');
+  const [activeBranchName, setActiveBranchName] = useState(stageConfig.branch ?? '');
+  const [configs, setConfigs] = useState<DclBranchConfig[]>(() =>
+    branches.length
+      ? branches.map((b, i) => ({
+          id: i,
+          branchName: b.name,
+          checkoutBranch: b.checkout_branch ?? '',
+          updateDiffIds: (b.update_diff_ids ?? []).join(', '),
+          simPlan: '',
+          lint: false,
+          allowDirty: false,
+        }))
+      : [{
+          id: 0,
+          branchName: stageConfig.branch ?? '',
+          checkoutBranch: stageConfig.checkout_branch ?? '',
+          updateDiffIds: (stageConfig.update_diff_ids ?? []).join(', '),
+          simPlan: stageConfig.sim_plan ?? '',
+          lint: stageConfig.lint ?? false,
+          allowDirty: stageConfig.allow_dirty ?? false,
+        }]
+  );
+  const [nextId, setNextId] = useState(branches.length || 1);
+  const [expandedId, setExpandedId] = useState<number | null>(configs[0]?.id ?? null);
+
+  const updateConfig = (id: number, patch: Partial<DclBranchConfig>) =>
+    setConfigs((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+
+  const addConfig = () => {
+    const newCfg: DclBranchConfig = { id: nextId, branchName: '', checkoutBranch: '', updateDiffIds: '', simPlan: '', lint: false, allowDirty: false };
+    setConfigs((prev) => [...prev, newCfg]);
+    setExpandedId(nextId);
+    setNextId((n) => n + 1);
+  };
+
+  const removeConfig = (id: number) => {
+    setConfigs((prev) => {
+      const next = prev.filter((c) => c.id !== id);
+      if (expandedId === id) setExpandedId(next[0]?.id ?? null);
+      return next;
+    });
+  };
+
+  // Sync activeBranchName hidden input so collectPayload can read it
+  const activeConfig = configs.find((c) => c.branchName === activeBranchName) ?? configs[0];
+
   return (
     <div className={styles.form}>
-      <BranchSelect id="dclBranch" value={branch} onChange={setBranch} branches={branches} />
-      <HelperText>Leave empty to run DCL diff for all branches, or select one to supplement a specific CR.</HelperText>
+      <div className={styles.dclBranchHeader}>
+        <span className={styles.dclBranchLabel}>DCL branch configs</span>
+        <button className={styles.iconButton} type="button" onClick={addConfig} title="Add branch config">+ Add</button>
+      </div>
+
+      <div className={styles.dclConfigList}>
+        {configs.map((cfg) => {
+          const isExpanded = expandedId === cfg.id;
+          return (
+            <div key={cfg.id} className={`${styles.dclConfigCard} ${activeBranchName === cfg.branchName ? styles.dclConfigCardActive : ''}`}>
+              <div className={styles.dclConfigCardHeader}>
+                <button
+                  className={styles.dclConfigCardTitle}
+                  type="button"
+                  onClick={() => { setExpandedId(isExpanded ? null : cfg.id); setActiveBranchName(cfg.branchName); }}
+                >
+                  <span className={styles.dclConfigCardChevron}>{isExpanded ? '▾' : '▸'}</span>
+                  <span>{cfg.branchName || <em className={styles.muted}>new branch</em>}</span>
+                </button>
+                <div className={styles.dclConfigCardActions}>
+                  <label className={styles.inlineCheck} title="Set as active branch for DCL run">
+                    <input
+                      type="radio"
+                      name="dclActiveBranch"
+                      checked={activeBranchName === cfg.branchName}
+                      onChange={() => setActiveBranchName(cfg.branchName)}
+                    />
+                    run this
+                  </label>
+                  {configs.length > 1 && (
+                    <button className={styles.iconButton} type="button" title="Remove" onClick={() => removeConfig(cfg.id)}>×</button>
+                  )}
+                </div>
+              </div>
+              {isExpanded && (
+                <div className={styles.dclConfigCardBody}>
+                  <div className={styles.row}>
+                    <label className={styles.stageLabel}>
+                      <span>Branch</span>
+                      <BranchSelect id="dclBranch" value={cfg.branchName} onChange={(v) => { updateConfig(cfg.id, { branchName: v }); if (activeBranchName === cfg.branchName) setActiveBranchName(v); }} branches={branches} allLabel="all branches" />
+                    </label>
+                    <label className={styles.stageLabel}>
+                      <span>Checkout branch</span>
+                      <input placeholder="temporary checkout" value={cfg.checkoutBranch} onChange={(e) => updateConfig(cfg.id, { checkoutBranch: e.target.value })} />
+                    </label>
+                  </div>
+                  <div className={styles.row}>
+                    <label className={styles.stageLabel}>
+                      <span>Update diff IDs</span>
+                      <input placeholder="e.g. 5716859, 6115905" value={cfg.updateDiffIds} onChange={(e) => updateConfig(cfg.id, { updateDiffIds: e.target.value })} />
+                    </label>
+                    <label className={styles.stageLabel}>
+                      <span>Sim plan</span>
+                      <input placeholder="sim plan name" value={cfg.simPlan} onChange={(e) => updateConfig(cfg.id, { simPlan: e.target.value })} />
+                    </label>
+                  </div>
+                  <div className={styles.stageChecks}>
+                    <label className={styles.inlineCheck}>
+                      <input type="checkbox" checked={cfg.lint} onChange={(e) => updateConfig(cfg.id, { lint: e.target.checked })} />
+                      lint
+                    </label>
+                    <label className={styles.inlineCheck}>
+                      <input type="checkbox" checked={cfg.allowDirty} onChange={(e) => updateConfig(cfg.id, { allowDirty: e.target.checked })} />
+                      allow dirty
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Hidden inputs for collectPayload compatibility */}
+      <input id="dclBranchActive" type="hidden" value={activeConfig?.branchName ?? ''} />
+      <input id="dclCheckoutBranch" type="hidden" value={activeConfig?.checkoutBranch ?? ''} />
+      <input id="dclUpdateDiffIds" type="hidden" value={activeConfig?.updateDiffIds ?? ''} />
+      <input id="dclSimPlan" type="hidden" value={activeConfig?.simPlan ?? ''} />
+      <input id="dclLint" type="hidden" value={activeConfig?.lint ? 'true' : ''} />
+      <input id="dclAllowDirty" type="hidden" value={activeConfig?.allowDirty ? 'true' : ''} />
+
+      <HelperText>Select "run this" on a branch to target that config; leave branch empty to run for all branches.</HelperText>
     </div>
   );
 }
@@ -292,9 +427,18 @@ function SimPlanForm({ branches, stageConfig, run }: {
 }) {
   const [branch, setBranch] = useState(stageConfig.branch ?? '');
   const selectedPlans = Array.isArray(stageConfig.plans) ? new Set(stageConfig.plans) : null;
+  const [customPlans, setCustomPlans] = useState<string[]>([]);
+  const [customInput, setCustomInput] = useState('');
   const simPlanOut = (run?.record.sim_plan as Record<string, unknown> | undefined)?.stdout;
   const lastLine = typeof simPlanOut === 'string'
     ? simPlanOut.split('\n').filter(Boolean).slice(-1)[0] : null;
+
+  const addCustomPlan = () => {
+    const name = customInput.trim();
+    if (!name || customPlans.includes(name)) return;
+    setCustomPlans((prev) => [...prev, name]);
+    setCustomInput('');
+  };
 
   return (
     <div className={styles.form}>
@@ -332,6 +476,35 @@ function SimPlanForm({ branches, stageConfig, run }: {
             </div>
           );
         })}
+        {customPlans.length > 0 && (
+          <div className={styles.simPlanBranchPlans}>
+            <div className={styles.simPlanBranchTitle}>Custom plans</div>
+            <div className={styles.simPlanChecks}>
+              {customPlans.map((name) => (
+                <label key={name} className={styles.inlineCheck}>
+                  <input className="sim-plan-check" type="checkbox" value={name} defaultChecked />
+                  {name}
+                  <button
+                    className={styles.planRemoveBtn}
+                    type="button"
+                    title="Remove"
+                    onClick={() => setCustomPlans((prev) => prev.filter((p) => p !== name))}
+                  >×</button>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      <div className={styles.simPlanAddRow}>
+        <input
+          className={styles.simPlanAddInput}
+          placeholder="custom plan name"
+          value={customInput}
+          onChange={(e) => setCustomInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomPlan(); } }}
+        />
+        <button className={styles.actionBtn} type="button" onClick={addCustomPlan}>+ Add Plan</button>
       </div>
       <div className={styles.row}>
         <input id="simPlanPriority" placeholder="priority override"
@@ -581,7 +754,12 @@ export default function FlowInspector({
     } else if (key === 'apply-handoff') {
       payload.branch = g('handoffBranch');
     } else if (key === 'dcl') {
-      payload.branch = g('dclBranch');
+      payload.branch = g('dclBranchActive') || g('dclBranch');
+      payload.checkout_branch = g('dclCheckoutBranch');
+      payload.update_diff_ids = g('dclUpdateDiffIds').split(',').map((s) => s.trim()).filter(Boolean);
+      payload.sim_plan = g('dclSimPlan');
+      payload.lint = g('dclLint') === 'true';
+      payload.allow_dirty = g('dclAllowDirty') === 'true';
     } else if (key === 'sim-plan') {
       payload.branch = g('simPlanBranch');
       payload.revision_id = g('simPlanRevision');

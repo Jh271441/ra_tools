@@ -391,3 +391,110 @@
 .actionBtnDanger:disabled {
   opacity: 0.42;
 }
+
+/* ── DCL multi-branch config ─────────────────────────────────────────────── */
+
+.dclBranchHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.dclBranchLabel {
+  font: 600 0.82rem/1.2 var(--sans);
+  color: var(--muted);
+}
+
+.dclConfigList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dclConfigCard {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.5);
+  overflow: hidden;
+}
+
+.dclConfigCardActive {
+  border-color: rgba(0, 122, 255, 0.4);
+  background: rgba(0, 122, 255, 0.04);
+}
+
+.dclConfigCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  gap: 8px;
+}
+
+.dclConfigCardTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  font: 600 0.85rem/1.2 var(--sans);
+  color: var(--ink);
+}
+
+.dclConfigCardChevron {
+  font-size: 0.75rem;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.dclConfigCardActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.dclConfigCardBody {
+  padding: 10px;
+  padding-top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  margin-top: 0;
+  padding-top: 10px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* ── Sim Plan add row ─────────────────────────────────────────────────────── */
+
+.simPlanAddRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.simPlanAddInput {
+  flex: 1;
+  min-width: 0;
+}
+
+.planRemoveBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding: 0 2px;
+  margin-left: 2px;
+  line-height: 1;
+}

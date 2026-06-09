@@ -29,6 +29,31 @@
   gap: 12px;
 }
 
+.flowHeaderRight {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.templateSelect {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-strong);
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  outline: none;
+  transition: border-color 80ms ease;
+}
+
+.templateSelect:focus {
+  border-color: var(--accent);
+}
+
 .flowHint {
   flex-shrink: 0;
   text-align: right;

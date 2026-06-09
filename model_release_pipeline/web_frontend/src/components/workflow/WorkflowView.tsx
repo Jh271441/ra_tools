@@ -7,7 +7,8 @@ import {
   getOffboardTestYamls,
   getStageDefaults,
 } from '../../api/client';
-import { getFlowItems, NEXT_STEP_BY_ACTION, STEP_LOG_MAP } from './flowItems';
+import { getFlowItems, filterFlowGroups, NEXT_STEP_BY_ACTION, STEP_LOG_MAP } from './flowItems';
+import { WORKFLOW_TEMPLATES, getTemplate } from './workflowTemplates';
 import { useJobPoller } from '../../hooks/useJobPoller';
 import FlowControls from './FlowControls';
 import FlowInspector from './FlowInspector';
@@ -22,6 +23,7 @@ interface WorkflowViewProps {
 }
 
 export default function WorkflowView({ selectedId, run, draftRun = false, onRunRefresh }: WorkflowViewProps) {
+  const [templateId, setTemplateId] = useState(() => localStorage.getItem('workflowTemplate') ?? 'full_release');
   const [activeStep, setActiveStep] = useState('export');
   const [lubanHost, setLubanHost] = useState('');
   const [branches, setBranches] = useState<BranchInfo[]>([]);
@@ -66,7 +68,21 @@ export default function WorkflowView({ selectedId, run, draftRun = false, onRunR
   // Auto-switch LogDrawer log channel when step changes
   const defaultLogKey = useMemo(() => STEP_LOG_MAP[activeStep] ?? '', [activeStep]);
 
-  const groups = useMemo(() => getFlowItems(run?.summary ?? null), [run]);
+  const template = useMemo(() => getTemplate(templateId), [templateId]);
+  const allGroups = useMemo(() => getFlowItems(run?.summary ?? null), [run]);
+  const groups = useMemo(() => filterFlowGroups(allGroups, template.includedSteps), [allGroups, template]);
+
+  // Clamp activeStep to the current template's included steps
+  useEffect(() => {
+    if (!template.includedSteps.includes(activeStep)) {
+      setActiveStep(template.includedSteps[0] ?? 'export');
+    }
+  }, [template, activeStep]);
+
+  const handleTemplateChange = useCallback((id: string) => {
+    setTemplateId(id);
+    localStorage.setItem('workflowTemplate', id);
+  }, []);
 
   const statusByStep = useMemo<Record<string, StepStatus>>(() => {
     if (!run?.timeline) return {};
@@ -136,7 +152,19 @@ export default function WorkflowView({ selectedId, run, draftRun = false, onRunR
             <p className="eyebrow">Operator Workflow</p>
             <h3>Release Flow Controls</h3>
           </div>
-          <p className={styles.flowHint}>click a step to inspect<br />actions and logs</p>
+          <div className={styles.flowHeaderRight}>
+            <select
+              className={styles.templateSelect}
+              value={templateId}
+              onChange={(e) => handleTemplateChange(e.target.value)}
+              title={template.description}
+            >
+              {WORKFLOW_TEMPLATES.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+            <p className={styles.flowHint}>click a step to inspect<br />actions and logs</p>
+          </div>
         </div>
         <FlowControls
           groups={groups}
