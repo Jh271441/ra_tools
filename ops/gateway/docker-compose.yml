@@ -1,0 +1,18 @@
+services:
+  nginx:
+    image: nginx:stable-alpine
+    container_name: ra-gateway-nginx
+    network_mode: host
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+
+  # 把主机的 nginx:80 桥接进 ts-proxy 的网络命名空间,
+  # 让 `tailscale serve` 能以 127.0.0.1:80 的形式暴露到 tailnet。
+  # 172.17.0.1 是 docker 默认 bridge 网关 = 宿主机。
+  ts-bridge:
+    image: alpine/socat
+    container_name: ts-gateway-bridge
+    network_mode: "container:ts-proxy"
+    command: -d -d TCP-LISTEN:80,bind=127.0.0.1,fork,reuseaddr TCP:172.17.0.1:80
+    restart: unless-stopped
