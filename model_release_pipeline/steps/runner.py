@@ -16,6 +16,11 @@ from model_release_pipeline.onboard.export import (
 )
 from model_release_pipeline.onboard.branch_prep import run_branch_prep
 from model_release_pipeline.onboard.dcl_patch import run_dcl_patch
+from model_release_pipeline.onboard.rule_matrix import (
+    run_rule_release,
+    run_rule_setup,
+    run_rule_sim,
+)
 from model_release_pipeline.onboard.handoff import (
     run_apply_handoff,
     run_dcl,
@@ -326,7 +331,7 @@ def _run_branch_prep(
     args: argparse.Namespace,
     config: ReleaseConfig,
     store: StateStore,
-    record: Dict[str, Any],
+    record: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     return run_branch_prep(
         args,
@@ -353,6 +358,57 @@ def _run_dcl_patch(
         progress=_make_progress(args),
         confirm=_confirm,
         service_cls=VoyagerHandoffService,
+    )
+
+
+def _run_rule_setup(
+    args: argparse.Namespace,
+    config: ReleaseConfig,
+    store: StateStore,
+    record: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    return run_rule_setup(
+        args,
+        config,
+        store,
+        record,
+        progress=_make_progress(args),
+        confirm=_confirm,
+        service_cls=VoyagerHandoffService,
+    )
+
+
+def _run_rule_release(
+    args: argparse.Namespace,
+    config: ReleaseConfig,
+    store: StateStore,
+    record: Dict[str, Any],
+) -> Dict[str, Any]:
+    return run_rule_release(
+        args,
+        config,
+        store,
+        record,
+        progress=_make_progress(args),
+        confirm=_confirm,
+        service_cls=VoyagerHandoffService,
+    )
+
+
+def _run_rule_sim(
+    args: argparse.Namespace,
+    config: ReleaseConfig,
+    store: StateStore,
+    record: Dict[str, Any],
+) -> Dict[str, Any]:
+    return run_rule_sim(
+        args,
+        config,
+        store,
+        record,
+        progress=_make_progress(args),
+        confirm=_confirm,
+        service_cls=SimPlanClient,
     )
 
 
@@ -486,13 +542,28 @@ def dispatch_locked(
         return record, 1 if record.get("status") == "failed" else 0
 
     if command == "branch-prep":
-        record = store.load(args.run_id)
+        record = store.load(args.run_id) if getattr(args, "run_id", None) else None
         record = _run_branch_prep(args, config, store, record)
         return record, 1 if record.get("status") == "failed" else 0
 
     if command == "dcl-patch":
         record = store.load(args.run_id)
         record = _run_dcl_patch(args, config, store, record)
+        return record, 1 if record.get("status") == "failed" else 0
+
+    if command == "rule-setup":
+        record = store.load(args.run_id) if getattr(args, "run_id", None) else None
+        record = _run_rule_setup(args, config, store, record)
+        return record, 1 if record.get("status") == "failed" else 0
+
+    if command == "rule-release":
+        record = store.load(args.run_id)
+        record = _run_rule_release(args, config, store, record)
+        return record, 1 if record.get("status") == "failed" else 0
+
+    if command == "rule-sim":
+        record = store.load(args.run_id)
+        record = _run_rule_sim(args, config, store, record)
         return record, 1 if record.get("status") == "failed" else 0
 
     raise ValueError(f"Unknown command: {command}")

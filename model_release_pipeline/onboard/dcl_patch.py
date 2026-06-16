@@ -46,6 +46,16 @@ def run_dcl_patch(
     )
 
     record["dcl_patch"] = result
+    # Accumulate every applied CR so multiple patches on one working branch
+    # don't overwrite each other (a release branch may stack several CRs).
+    record.setdefault("dcl_patch_history", []).append(
+        {
+            "revision_id": revision_id,
+            "nobranch": nobranch,
+            "returncode": result.get("returncode"),
+            "dry_run": bool(args.dry_run),
+        }
+    )
     if result.get("returncode") not in (0, None):
         record["stage"] = "dcl_patch_failed"
         record["status"] = "failed"

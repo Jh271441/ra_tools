@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import argparse
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Optional
 
 from model_release_pipeline.config import ReleaseConfig
+from model_release_pipeline.onboard.export import ensure_run
 from model_release_pipeline.services.voyager_handoff import VoyagerHandoffService
 from model_release_pipeline.state_store import StateStore
 
@@ -17,7 +18,7 @@ def run_branch_prep(
     args: argparse.Namespace,
     config: ReleaseConfig,
     store: StateStore,
-    record: Dict[str, Any],
+    record: Optional[Dict[str, Any]] = None,
     *,
     progress: ProgressFn,
     confirm: ConfirmFn,
@@ -35,6 +36,16 @@ def run_branch_prep(
         args.yes,
     ):
         raise RuntimeError("branch-prep cancelled by user.")
+
+    # branch-prep is the entry step for the Rule Patch workflow: when no run
+    # exists yet, create one (mirrors how `pick` bootstraps a release record).
+    record = ensure_run(
+        record,
+        store,
+        None,
+        getattr(args, "desc", "") or "",
+        workflow_type=getattr(args, "workflow_type", None) or "rule_patch",
+    )
 
     progress(args, "Branch Prep", 1, 1, "🌿", f"checkout {base_branch!r}; create {new_branch!r}")
 

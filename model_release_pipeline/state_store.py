@@ -29,6 +29,7 @@ class StateStore:
             "stage": "created",
             "description": description,
             "experiment_path": experiment_path,
+            "metadata": {},
             "selection": {},
             "export": {},
             "ifx": {},

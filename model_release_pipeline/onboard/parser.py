@@ -71,6 +71,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     pick_parser.add_argument("--desc", default="")
     pick_parser.add_argument(
+        "--workflow-type",
+        help="Workflow type tag stored in record.metadata (default full_release).",
+    )
+    pick_parser.add_argument(
         "--save",
         action="store_true",
         help="Create a StateStore release record for this pick run",
@@ -83,6 +87,10 @@ def build_parser() -> argparse.ArgumentParser:
     _add_picker_options(export_parser)
     export_parser.add_argument("--run-id")
     export_parser.add_argument("--desc", default="")
+    export_parser.add_argument(
+        "--workflow-type",
+        help="Workflow type tag stored in record.metadata (default full_release).",
+    )
     export_parser.add_argument("--dry-run", action="store_true")
 
     ifx_parser = subparsers.add_parser(
@@ -272,6 +280,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Offboard test yaml under configs/. Can be repeated. Must match scenario_dnn_finetune_test*.yaml.",
     )
     offboard_parser.add_argument("--desc", default="")
+    offboard_parser.add_argument(
+        "--workflow-type",
+        help="Workflow type tag stored in record.metadata (default offboard_only).",
+    )
     offboard_parser.add_argument("--dry-run", action="store_true")
 
     branch_prep_parser = subparsers.add_parser(
@@ -279,7 +291,14 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[common],
         help="Checkout a release branch and create a new working branch in Voyager docker",
     )
-    branch_prep_parser.add_argument("--run-id", required=True)
+    branch_prep_parser.add_argument(
+        "--run-id",
+        help="Existing release id. Omit to create a new run (Rule Patch entry step).",
+    )
+    branch_prep_parser.add_argument(
+        "--workflow-type",
+        help="Workflow type tag stored in record.metadata (default rule_patch).",
+    )
     branch_prep_parser.add_argument(
         "--base-branch",
         help="Release branch to checkout, e.g. gen4_release_20260508.",
@@ -319,6 +338,77 @@ def build_parser() -> argparse.ArgumentParser:
         help="Voyager docker container. Defaults to CONTAINER_NAME_GEN4 or config.",
     )
     dcl_patch_parser.add_argument("--dry-run", action="store_true")
+
+    rule_setup_parser = subparsers.add_parser(
+        "rule-setup",
+        parents=[common],
+        help="Create a Rule Patch run: one rule CR validated across a release matrix",
+    )
+    rule_setup_parser.add_argument(
+        "--run-id",
+        help="Existing run id. Omit to create a new run (Rule Patch entry step).",
+    )
+    rule_setup_parser.add_argument(
+        "--workflow-type",
+        help="Workflow type tag stored in record.metadata (default rule_patch).",
+    )
+    rule_setup_parser.add_argument(
+        "--revision-id", help="Rule CR revision id to validate, e.g. 6231959."
+    )
+    rule_setup_parser.add_argument(
+        "--rule-name", help="Short rule name used in working branch, e.g. FN_forcing_recall."
+    )
+    rule_setup_parser.add_argument(
+        "--branch-prefix",
+        help="Working branch prefix, e.g. jasperchen. Branch = <prefix>/<release>/<rule>.",
+    )
+    rule_setup_parser.add_argument(
+        "--release",
+        action="append",
+        help="Target release branch (repeatable), e.g. gen4_release_20260508.",
+    )
+    rule_setup_parser.add_argument(
+        "--releases", help="Comma-separated target release branches."
+    )
+    rule_setup_parser.add_argument("--desc", default="")
+    rule_setup_parser.add_argument("--dry-run", action="store_true")
+
+    rule_release_parser = subparsers.add_parser(
+        "rule-release",
+        parents=[common],
+        help="Run the validate chain (branch prep + dcl patch + dcl diff) for one release",
+    )
+    rule_release_parser.add_argument("--run-id", required=True)
+    rule_release_parser.add_argument(
+        "--release", help="Target release branch within this run."
+    )
+    rule_release_parser.add_argument(
+        "--release-index", type=int, help="Target release by index instead of name."
+    )
+    rule_release_parser.add_argument(
+        "--docker",
+        help="Voyager docker container. Defaults to CONTAINER_NAME_GEN4 or config.",
+    )
+    rule_release_parser.add_argument("--dry-run", action="store_true")
+
+    rule_sim_parser = subparsers.add_parser(
+        "rule-sim",
+        parents=[common],
+        help="Trigger Sim Plan for one release's test CR within a Rule Patch run",
+    )
+    rule_sim_parser.add_argument("--run-id", required=True)
+    rule_sim_parser.add_argument(
+        "--release", help="Target release branch within this run."
+    )
+    rule_sim_parser.add_argument(
+        "--release-index", type=int, help="Target release by index instead of name."
+    )
+    rule_sim_parser.add_argument(
+        "--plan", action="append", help="Sim plan name (repeatable)."
+    )
+    rule_sim_parser.add_argument("--priority", type=int)
+    rule_sim_parser.add_argument("--time-sensitive-hour", type=float)
+    rule_sim_parser.add_argument("--dry-run", action="store_true")
 
     config_parser = subparsers.add_parser(
         "print-config", parents=[common], help="Show bundled config"

@@ -157,35 +157,52 @@ function HelperText({ children }: { children: React.ReactNode }) {
 // ─── Step forms ──────────────────────────────────────────────────────────────
 
 function BranchPrepForm({ branches }: { branches: BranchInfo[] }) {
+  const [base, setBase] = useState('');
+  const [newBranch, setNewBranch] = useState('');
+  const [touched, setTouched] = useState(false);
+
+  // Auto-suggest a working branch name from the chosen base branch until the
+  // operator types their own.
+  const handleBaseChange = (v: string) => {
+    setBase(v);
+    if (!touched) setNewBranch(v ? `rule_patch/${v}` : '');
+  };
+
   return (
     <div className={styles.form}>
-      <label className={styles.stageLabel}>
-        <span>Base release branch</span>
-        <input id="branchPrepBase" placeholder="e.g. gen4_release_20260508" />
-      </label>
-      <label className={styles.stageLabel}>
-        <span>New working branch</span>
-        <input id="branchPrepNew" placeholder="e.g. jasperchen/rule_patch_20260601" />
-      </label>
+      <div className={styles.row}>
+        <label className={styles.stageLabel}>
+          <span>Base release branch</span>
+          <BranchSelect id="branchPrepBase" value={base} onChange={handleBaseChange}
+            branches={branches} allLabel="select release branch" />
+        </label>
+        <label className={styles.stageLabel}>
+          <span>New working branch</span>
+          <input id="branchPrepNew" placeholder="e.g. rule_patch/gen4_release_20260508"
+            value={newBranch}
+            onChange={(e) => { setTouched(true); setNewBranch(e.target.value); }} />
+        </label>
+      </div>
       <HelperText>
         Runs inside the Voyager docker: <code>git checkout &lt;base&gt;</code> then <code>git checkout -b &lt;new&gt;</code>.
-        Confirmation text is the current <b>release_id</b>.
+        Creates a new Rule Patch run — no <b>release_id</b> needed.
       </HelperText>
-      {branches.length > 0 && (
-        <HelperText>Configured branches: {branches.map((b) => b.name).join(', ')}</HelperText>
-      )}
     </div>
   );
 }
 
-function DclPatchForm({ branches }: { branches: BranchInfo[] }) {
+function DclPatchForm({ branches, run, draftPrefill }: {
+  branches: BranchInfo[]; run: GetRunResponse | null; draftPrefill?: { revision_id?: string };
+}) {
   const [branch, setBranch] = useState('');
+  const history = run?.record.dcl_patch_history ?? [];
   return (
     <div className={styles.form}>
       <div className={styles.row}>
         <label className={styles.stageLabel}>
           <span>DCL Revision ID</span>
-          <input id="dclPatchRevision" placeholder="e.g. 6231959" />
+          <input id="dclPatchRevision" placeholder="e.g. 6231959"
+            defaultValue={draftPrefill?.revision_id ?? ''} />
         </label>
         <label className={styles.stageLabel}>
           <span>Branch (optional)</span>
@@ -196,9 +213,19 @@ function DclPatchForm({ branches }: { branches: BranchInfo[] }) {
         <input id="dclPatchNobranch" type="checkbox" defaultChecked />
         <code>--nobranch</code> (patch without creating a branch)
       </label>
+      {history.length > 0 && (
+        <div className={styles.runMeta} style={{ marginTop: 4 }}>
+          <span className={styles.helperText} style={{ marginRight: 6 }}>Applied CRs:</span>
+          {history.map((h, i) => (
+            <span key={i} className={`chip ${h.returncode === 0 || h.dry_run ? 'done' : 'failed'}`}>
+              {h.revision_id}{h.dry_run ? ' (dry)' : ''}
+            </span>
+          ))}
+        </div>
+      )}
       <HelperText>
         Runs inside the Voyager docker: <code>dcl patch --revision &lt;id&gt; [--nobranch] [--branch &lt;branch&gt;]</code>.
-        Confirmation text is the current <b>release_id</b>.
+        Repeatable — each CR is appended, not overwritten. Confirmation text is the current <b>release_id</b>.
       </HelperText>
     </div>
   );
@@ -754,12 +781,15 @@ interface FlowInspectorProps {
   confirmText: string;
   onConfirmChange: (v: string) => void;
   onStatusChange: (s: string) => void;
+  workflowType: string;
+  draftPrefill?: { revision_id?: string };
 }
 
 export default function FlowInspector({
   item, status, actions, run, releaseId, branches, stageDefaults,
   offboardYamls, lubanHost, lubanHosts, onLubanHostChange, onPickPreview,
   onJobStarted, confirmText, onConfirmChange: _onConfirmChange, onStatusChange,
+  workflowType, draftPrefill,
 }: FlowInspectorProps) {
   const STAGE_CONFIG_STEPS: StageKey[] = ['handoff', 'dcl', 'sim_plan'];
   const supportsStageConfig = STAGE_CONFIG_STEPS.includes(item.key as StageKey);
@@ -781,6 +811,10 @@ export default function FlowInspector({
     const gcls = (cls: string) => [...document.querySelectorAll<HTMLInputElement>(`.${cls}:checked`)].map((el) => el.value);
     const payload: Record<string, unknown> = { dry_run: dryRun, confirm_text: confirmText };
     const key = action.key;
+    // Run-creating actions tag the new record with the active workflow type.
+    if (['branch-prep', 'pick', 'export', 'offboard'].includes(key)) {
+      payload.workflow_type = workflowType;
+    }
     if (key === 'branch-prep') {
       payload.base_branch = g('branchPrepBase');
       payload.new_branch = g('branchPrepNew');
@@ -847,7 +881,7 @@ export default function FlowInspector({
       onJobStarted(res.job_id);
     } catch (e) { onStatusChange(String(e)); }
     finally { setBusy(false); }
-  }, [releaseId, confirmText, onStatusChange, onJobStarted]);
+  }, [releaseId, confirmText, workflowType, onStatusChange, onJobStarted]);
 
   return (
     <div className={styles.inspector}>
@@ -871,7 +905,7 @@ export default function FlowInspector({
       </div>
 
       {item.key === 'branch_prep' && <BranchPrepForm branches={branches} />}
-      {item.key === 'dcl_patch' && <DclPatchForm branches={branches} />}
+      {item.key === 'dcl_patch' && <DclPatchForm branches={branches} run={run} draftPrefill={draftPrefill} />}
       {item.key === 'pick' && (
         <PickForm run={run} lubanHost={lubanHost} lubanHosts={lubanHosts}
           onLubanHostChange={onLubanHostChange} onPickPreview={onPickPreview} />

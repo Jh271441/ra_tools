@@ -18,10 +18,42 @@ export interface ReleaseRecord {
   handoff: Record<string, unknown>;
   apply_handoff?: ApplyHandoffResult;
   dcl?: CommandResult;
+  branch_prep?: CommandResult;
+  dcl_patch?: CommandResult & { revision_id?: string };
+  dcl_patch_history?: DclPatchHistoryEntry[];
   sim_plan?: CommandResult;
   offboard: CommandResult;
   errors: RecordError[];
   web_stage_config?: StageConfig;
+  metadata?: { workflow_type?: string; [key: string]: unknown };
+  rule_patch?: RulePatchSpec;
+  releases?: ReleaseMatrixEntry[];
+}
+
+export interface RulePatchSpec {
+  revision_id: string;
+  rule_name: string;
+  branch_prefix?: string;
+}
+
+export interface ReleaseMatrixEntry {
+  release_branch: string;
+  working_branch: string;
+  test_cr_revision?: string;
+  branch_prep?: CommandResult;
+  dcl_patch?: CommandResult;
+  dcl?: CommandResult & { revision_id?: string };
+  sim_plan?: CommandResult;
+  status?: string;
+  stage?: string;
+  sim_status?: string;
+}
+
+export interface DclPatchHistoryEntry {
+  revision_id: string;
+  nobranch?: boolean;
+  returncode?: number | null;
+  dry_run?: boolean;
 }
 
 export interface ExperimentInfo {
@@ -114,6 +146,10 @@ export interface RunSummary {
   offboard_status: string;
   error_count: number;
   workflow_type?: string;
+  rule_name?: string;
+  rule_revision?: string;
+  release_count?: number;
+  releases_passed?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -185,7 +221,10 @@ export type ActionKey =
   | 'sim-plan-cancel'
   | 'offboard'
   | 'branch-prep'
-  | 'dcl-patch';
+  | 'dcl-patch'
+  | 'rule-setup'
+  | 'rule-release'
+  | 'rule-sim';
 
 export interface ActionSpec {
   key: ActionKey;

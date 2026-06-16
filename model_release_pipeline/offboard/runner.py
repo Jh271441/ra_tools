@@ -103,6 +103,9 @@ def run_offboard(
             raise RuntimeError("Provide --epoch when no --run-id is used.")
         epoch = args.epoch
         record = store.create(args.experiment, args.desc or "")
+        record.setdefault("metadata", {})["workflow_type"] = (
+            getattr(args, "workflow_type", None) or "offboard_only"
+        )
         checkpoint = experiment.checkpoint_for_epoch(int(epoch))
         remote_host = experiment.remote_host
     else:

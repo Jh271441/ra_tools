@@ -35,6 +35,15 @@ def extract_apply_commit(stdout: str) -> str:
     return legacy_matches[-1] if legacy_matches else ""
 
 
+def extract_revision_id(stdout: str) -> str:
+    """Return the kunpeng revision id from `dcl diff` stdout, if present.
+
+    Matches lines like ``Your revision link: https://.../view/revision/6239029``.
+    """
+    matches = re.findall(r"/revision/(\d+)", stdout or "")
+    return matches[-1] if matches else ""
+
+
 class VoyagerHandoffService:
     """Renders manifest snippets and shell commands for downstream steps."""
 
@@ -578,6 +587,72 @@ else:
             "workdir": ifx_config.truck_docker_workdir,
             "revision_id": revision_id,
             "nobranch": nobranch,
+            "command": " ".join(shlex.quote(part) for part in command),
+            "returncode": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "dry_run": dry_run,
+        }
+
+    def rule_dcl_diff_to_docker(
+        self,
+        ifx_config: IfxConfig,
+        base_branch: str,
+        working_branch: str,
+        test_cr_revision: str = "",
+        container: str = "",
+        dry_run: bool = False,
+    ) -> Dict[str, Any]:
+        """Run the Rule Patch `dcl diff` inside Voyager docker.
+
+        Checks out the per-(rule, release) working branch, then either creates
+        the release's persistent 测试CR (``dcl diff -c -n -d <base>``) or updates
+        it with a new patchset (``dcl diff -n -u <revision>``) when a revision is
+        already known. The created/updated revision id is parsed back out of the
+        command stdout so it can be cached per release.
+        """
+        docker_container = self._docker_container(ifx_config, container)
+        if not docker_container:
+            raise RuntimeError(
+                "rule dcl-diff docker mode requires a container. Set "
+                f"{ifx_config.truck_docker_container_env} or pass --docker."
+            )
+        revision = str(test_cr_revision or "").strip()
+        if revision:
+            dcl_cmd = f"dcl diff -n -u {shlex.quote(revision)} --nolint"
+        else:
+            dcl_cmd = f"dcl diff -c -n -d {shlex.quote(base_branch)} --nolint"
+        if dry_run:
+            shell_parts = [
+                f"cd {shlex.quote(ifx_config.truck_docker_workdir)}",
+                f"echo '[dry-run] git checkout {shlex.quote(working_branch)}'",
+                f"echo '[dry-run] {dcl_cmd}'",
+            ]
+        else:
+            shell_parts = [
+                f"cd {shlex.quote(ifx_config.truck_docker_workdir)}",
+                "set -e",
+                f"git checkout {shlex.quote(working_branch)}",
+                dcl_cmd,
+            ]
+        command = [
+            "docker",
+            "exec",
+            docker_container,
+            ifx_config.truck_docker_shell,
+            "-lc",
+            "; ".join(shell_parts),
+        ]
+        result = self.command_runner(command)
+        parsed_revision = revision or extract_revision_id(result.stdout)
+        return {
+            "mode": "docker",
+            "container": docker_container,
+            "workdir": ifx_config.truck_docker_workdir,
+            "base_branch": base_branch,
+            "working_branch": working_branch,
+            "reused_revision": bool(revision),
+            "revision_id": parsed_revision,
             "command": " ".join(shlex.quote(part) for part in command),
             "returncode": result.returncode,
             "stdout": result.stdout,

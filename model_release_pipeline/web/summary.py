@@ -144,13 +144,26 @@ def step_status(record: Dict[str, Any], key: str) -> str:
     return "pending"
 
 
+def rule_patch_summary(record: Dict[str, Any]) -> Dict[str, Any]:
+    """Aggregate fields for a Rule Patch (matrix) run: rule CR + per-release verdict."""
+    spec = record.get("rule_patch") or {}
+    releases = record.get("releases") or []
+    passed = sum(1 for e in releases if (e or {}).get("status") == "completed")
+    return {
+        "rule_name": spec.get("rule_name"),
+        "rule_revision": spec.get("revision_id"),
+        "release_count": len(releases),
+        "releases_passed": passed,
+    }
+
+
 def record_summary(record: Dict[str, Any]) -> Dict[str, Any]:
     experiment = record.get("experiment") or {}
     selection = record.get("selection") or {}
     ifx = record.get("ifx") or {}
     mapping = ifx.get("ifx_mapping") or {}
     errors = record.get("errors") or []
-    return {
+    summary = {
         "release_id": record.get("release_id"),
         "created_at": record.get("created_at"),
         "updated_at": record.get("updated_at"),
@@ -167,6 +180,9 @@ def record_summary(record: Dict[str, Any]) -> Dict[str, Any]:
         "error_count": len(errors),
         "workflow_type": (record.get("metadata") or {}).get("workflow_type", "full_release"),
     }
+    if summary["workflow_type"] == "rule_patch":
+        summary.update(rule_patch_summary(record))
+    return summary
 
 
 def timeline(record: Dict[str, Any]) -> list[Dict[str, Any]]:

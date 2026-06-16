@@ -12,6 +12,7 @@ import { getTemplate } from './workflowTemplates';
 import { useJobPoller } from '../../hooks/useJobPoller';
 import FlowControls from './FlowControls';
 import FlowInspector from './FlowInspector';
+import RuleMatrixView from './RuleMatrixView';
 import LogDrawer from '../logs/LogDrawer';
 import styles from './WorkflowView.module.css';
 
@@ -48,7 +49,7 @@ export default function WorkflowView({ selectedId, run, draftRun = false, onRunR
     if (!activeJob || activeJob.status === 'running') return;
     // Draft action completed — signal App to refresh and auto-select the newest run
     const isDraftCreate = !selectedId && activeJob.status === 'completed' && !activeJob.dry_run
-      && ['pick', 'export', 'offboard'].includes(activeJob.action);
+      && ['pick', 'export', 'offboard', 'branch-prep'].includes(activeJob.action);
     onRunRefresh(isDraftCreate ? '__draft__' : undefined);
     if (activeJob.status === 'completed' && !activeJob.dry_run) {
       const next = NEXT_STEP_BY_ACTION[activeJob.action];
@@ -90,7 +91,7 @@ export default function WorkflowView({ selectedId, run, draftRun = false, onRunR
   }, [groups, activeStep]);
 
   const DEFAULT_ACTIONS: ActionSpec[] = [
-    { key: 'branch-prep',     label: 'Branch Prep',         supports_dry_run: true,  requires_confirm: true,  needs_run_id: true  },
+    { key: 'branch-prep',     label: 'Branch Prep',         supports_dry_run: true,  requires_confirm: false, needs_run_id: false },
     { key: 'dcl-patch',       label: 'DCL Patch Apply',     supports_dry_run: true,  requires_confirm: true,  needs_run_id: true  },
     { key: 'pick',            label: 'Pick Epoch',          supports_dry_run: false, requires_confirm: false, needs_run_id: false },
     { key: 'export',          label: 'Model Export',        supports_dry_run: true,  requires_confirm: true,  needs_run_id: false },
@@ -126,6 +127,18 @@ export default function WorkflowView({ selectedId, run, draftRun = false, onRunR
     if (itemActions.every((a) => a.key === 'export')) return <>Real export requires <b>EXPORT</b>.</>;
     return <>Real actions require current <b>release_id</b>.</>;
   }, [itemActions]);
+
+  if (workflowType === 'rule_patch') {
+    return (
+      <RuleMatrixView
+        selectedId={selectedId}
+        run={run}
+        draftRun={draftRun}
+        branches={branches}
+        onRunRefresh={onRunRefresh}
+      />
+    );
+  }
 
   if (!selectedId && !draftRun) {
     return (
@@ -178,6 +191,7 @@ export default function WorkflowView({ selectedId, run, draftRun = false, onRunR
               confirmText={confirmText}
               onConfirmChange={setConfirmText}
               onStatusChange={setConfirmStatus}
+              workflowType={workflowType}
             />
           )}
           <div className={styles.confirmCard}>

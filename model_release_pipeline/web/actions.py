@@ -107,13 +107,37 @@ ACTIONS = {
         "command": "branch-prep",
         "label": "Branch Prep",
         "supports_dry_run": True,
-        "requires_confirm": True,
+        "requires_confirm": False,
         "extra_args": [],
-        "needs_run_id": True,
+        "needs_run_id": False,
     },
     "dcl-patch": {
         "command": "dcl-patch",
         "label": "DCL Patch Apply",
+        "supports_dry_run": True,
+        "requires_confirm": True,
+        "extra_args": [],
+        "needs_run_id": True,
+    },
+    "rule-setup": {
+        "command": "rule-setup",
+        "label": "Rule Setup",
+        "supports_dry_run": False,
+        "requires_confirm": False,
+        "extra_args": [],
+        "needs_run_id": False,
+    },
+    "rule-release": {
+        "command": "rule-release",
+        "label": "Run Validate",
+        "supports_dry_run": True,
+        "requires_confirm": True,
+        "extra_args": [],
+        "needs_run_id": True,
+    },
+    "rule-sim": {
+        "command": "rule-sim",
+        "label": "Trigger Sim",
         "supports_dry_run": True,
         "requires_confirm": True,
         "extra_args": [],
@@ -322,6 +346,10 @@ def build_cli_command(
                 if text:
                     command.extend(["--test-yaml", text])
     elif action == "branch-prep":
+        # Entry step for Rule Patch: create a new run unless an existing one is
+        # targeted (mirrors how `export` treats --run-id as optional).
+        if release_id != "__draft__":
+            command.extend(["--run-id", release_id])
         base_branch = str(payload.get("base_branch") or "").strip()
         if base_branch:
             command.extend(["--base-branch", base_branch])
@@ -338,8 +366,79 @@ def build_cli_command(
             command.extend(["--branch", branch])
         if payload.get("nobranch"):
             command.append("--nobranch")
+    elif action == "rule-setup":
+        # Entry step for the Rule Patch matrix: create a new run unless an
+        # existing one is targeted (mirrors `branch-prep`/`export`).
+        if release_id != "__draft__":
+            command.extend(["--run-id", release_id])
+        revision_id = str(payload.get("revision_id") or "").strip()
+        if not revision_id:
+            raise ValueError("Rule Setup requires revision_id (the rule CR).")
+        command.extend(["--revision-id", revision_id])
+        rule_name = str(payload.get("rule_name") or "").strip()
+        if not rule_name:
+            raise ValueError("Rule Setup requires rule_name.")
+        command.extend(["--rule-name", rule_name])
+        branch_prefix = str(payload.get("branch_prefix") or "").strip()
+        if branch_prefix:
+            command.extend(["--branch-prefix", branch_prefix])
+        releases = payload.get("releases") or []
+        if isinstance(releases, str):
+            releases = [releases]
+        seen = []
+        for release in releases:
+            text = str(release or "").strip()
+            if text and text not in seen:
+                seen.append(text)
+                command.extend(["--release", text])
+        if not seen:
+            raise ValueError("Rule Setup requires at least one release.")
+        desc = str(payload.get("description") or payload.get("desc") or "").strip()
+        if desc:
+            command.extend(["--desc", desc])
+    elif action == "rule-release":
+        release = str(payload.get("release") or "").strip()
+        release_index = payload.get("release_index")
+        if release:
+            command.extend(["--release", release])
+        elif release_index is not None and str(release_index).strip() != "":
+            command.extend(["--release-index", str(int(release_index))])
+        else:
+            raise ValueError("Run Validate requires release or release_index.")
+    elif action == "rule-sim":
+        release = str(payload.get("release") or "").strip()
+        release_index = payload.get("release_index")
+        if release:
+            command.extend(["--release", release])
+        elif release_index is not None and str(release_index).strip() != "":
+            command.extend(["--release-index", str(int(release_index))])
+        else:
+            raise ValueError("Trigger Sim requires release or release_index.")
+        plans = payload.get("plans") or payload.get("plan") or []
+        if isinstance(plans, str):
+            plans = [plans]
+        for plan in plans:
+            text = str(plan or "").strip()
+            if text:
+                command.extend(["--plan", text])
+        priority = str(payload.get("priority") or "").strip()
+        if priority:
+            if not priority.isdigit():
+                raise ValueError("priority must be an integer.")
+            command.extend(["--priority", str(int(priority))])
+        time_sensitive_hour = str(payload.get("time_sensitive_hour") or "").strip()
+        if time_sensitive_hour:
+            float(time_sensitive_hour)
+            command.extend(["--time-sensitive-hour", time_sensitive_hour])
     else:
         command.extend(spec["extra_args"])
+
+    # Run-creating actions persist the active workflow type into record.metadata
+    # so the sidebar can group runs by workflow.
+    if action in ("pick", "export", "offboard", "branch-prep", "rule-setup"):
+        workflow_type = str(payload.get("workflow_type") or "").strip()
+        if workflow_type:
+            command.extend(["--workflow-type", workflow_type])
 
     command.append("--yes")
     if dry_run:

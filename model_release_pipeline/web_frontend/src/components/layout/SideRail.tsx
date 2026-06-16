@@ -45,6 +45,7 @@ interface WorkflowSectionProps {
   onNewRelease: () => void;
   draftRun: boolean;
   draftActive: boolean;
+  active: boolean;
   expanded: boolean;
   onToggle: () => void;
   railCollapsed: boolean;
@@ -59,6 +60,7 @@ function WorkflowSection({
   onNewRelease,
   draftRun,
   draftActive,
+  active,
   expanded,
   onToggle,
   railCollapsed,
@@ -76,7 +78,7 @@ function WorkflowSection({
   return (
     <div className={`${styles.workflowSection} ${expanded ? styles.workflowSectionExpanded : ''}`}>
       <button
-        className={`${styles.sectionHeader} ${expanded ? styles.sectionHeaderActive : ''}`}
+        className={`${styles.sectionHeader} ${active ? styles.sectionHeaderActive : ''}`}
         onClick={onToggle}
         title={templateName}
       >
@@ -109,28 +111,41 @@ function WorkflowSection({
                 onClick={onNewRelease}
               >
                 <div className={styles.runId}>New draft</div>
-                <div className={styles.runName}>Waiting for pick…</div>
+                <div className={styles.runName}>Not created yet — run the first step</div>
                 <div className={styles.runMeta}>
                   <span className="chip">pending</span>
                 </div>
               </button>
             )}
-            {filteredRuns.map((run) => (
+            {filteredRuns.map((run) => {
+              const isRulePatch = run.workflow_type === 'rule_patch';
+              return (
               <button
                 key={run.release_id}
                 className={`${styles.runItem} ${selectedId === run.release_id ? styles.runItemActive : ''}`}
                 onClick={() => onSelectRun(run.release_id)}
               >
                 <div className={styles.runId}>{run.release_id}</div>
-                <div className={styles.runName}>{run.experiment_name || '(no experiment)'}</div>
+                <div className={styles.runName}>
+                  {isRulePatch
+                    ? `${run.rule_name || 'rule'} @ CR${run.rule_revision ?? '?'}`
+                    : run.experiment_name || '(no experiment)'}
+                </div>
                 <div className={styles.runMeta}>
                   <span className={`chip ${statusClass(run.stage || run.status)}`}>{run.stage || 'created'}</span>
-                  <span className="chip">epoch {formatEpoch(run.selected_epoch)}</span>
-                  <span className="chip">onnx {run.onnx_version ?? 'NA'}</span>
-                  <span className="chip">ifx {run.ifx_platforms ?? 0}</span>
+                  {isRulePatch ? (
+                    <span className="chip">{run.releases_passed ?? 0}/{run.release_count ?? 0} releases</span>
+                  ) : (
+                    <>
+                      <span className="chip">epoch {formatEpoch(run.selected_epoch)}</span>
+                      <span className="chip">onnx {run.onnx_version ?? 'NA'}</span>
+                      <span className="chip">ifx {run.ifx_platforms ?? 0}</span>
+                    </>
+                  )}
                 </div>
               </button>
-            ))}
+              );
+            })}
             {filteredRuns.length === 0 && !draftActive && (
               <p className="muted" style={{ fontSize: '0.85rem', padding: 8 }}>
                 {filter ? 'No matching runs.' : 'No runs yet.'}
@@ -156,6 +171,8 @@ export default function SideRail({
   onToggleRail,
   drawerOpen,
 }: SideRailProps) {
+  const [expandedId, setExpandedId] = useState<string | null>(activeWorkflowType);
+
   const railCls = [
     styles.rail,
     railCollapsed ? styles.collapsed : '',
@@ -165,12 +182,13 @@ export default function SideRail({
     .join(' ');
 
   const handleSectionToggle = (templateId: string) => {
-    if (activeWorkflowType === templateId) {
-      // clicking the already-active section header just collapses
-      // but we keep it active; just collapse visually by doing nothing special —
-      // user can click again to re-expand
+    if (expandedId === templateId) {
+      // collapse the currently-expanded section
+      setExpandedId(null);
       return;
     }
+    // expand this section and make it the active workflow
+    setExpandedId(templateId);
     onWorkflowTypeChange(templateId);
   };
 
@@ -199,13 +217,18 @@ export default function SideRail({
               runs={sectionRuns}
               selectedId={selectedId}
               onSelectRun={(id) => {
+                setExpandedId(tmpl.id);
                 onWorkflowTypeChange(tmpl.id);
                 onSelectRun(id);
               }}
-              onNewRelease={() => onNewRelease(tmpl.id)}
+              onNewRelease={() => {
+                setExpandedId(tmpl.id);
+                onNewRelease(tmpl.id);
+              }}
               draftRun={draftRun}
               draftActive={draftWorkflowType === tmpl.id}
-              expanded={activeWorkflowType === tmpl.id}
+              active={activeWorkflowType === tmpl.id}
+              expanded={expandedId === tmpl.id}
               onToggle={() => handleSectionToggle(tmpl.id)}
               railCollapsed={railCollapsed}
             />

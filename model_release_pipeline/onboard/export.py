@@ -82,8 +82,13 @@ def ensure_run(
     store: StateStore,
     experiment_path: Optional[str],
     description: str,
+    workflow_type: Optional[str] = None,
 ) -> Dict[str, Any]:
-    return record if record is not None else store.create(experiment_path, description)
+    if record is not None:
+        return record
+    record = store.create(experiment_path, description)
+    record.setdefault("metadata", {})["workflow_type"] = workflow_type or "full_release"
+    return record
 
 
 def unsaved_dry_run_record(
@@ -216,7 +221,13 @@ def run_pick(
         ),
     )
 
-    record = ensure_run(record, store, args.experiment, getattr(args, "desc", "") or "")
+    record = ensure_run(
+        record,
+        store,
+        args.experiment,
+        getattr(args, "desc", "") or "",
+        workflow_type=getattr(args, "workflow_type", None),
+    )
     record["experiment_path"] = args.experiment
     record["experiment"] = experiment.to_dict()
     record["pick"] = pick_result
@@ -296,7 +307,13 @@ def run_export(
     record = (
         unsaved_dry_run_record(args.experiment, args.desc or "")
         if args.dry_run and record is None
-        else ensure_run(record, store, args.experiment, args.desc or "")
+        else ensure_run(
+            record,
+            store,
+            args.experiment,
+            args.desc or "",
+            workflow_type=getattr(args, "workflow_type", None),
+        )
     )
     record["stage"] = "exporting"
     record["status"] = "running"

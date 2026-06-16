@@ -1,0 +1,290 @@
+.view {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-right: clamp(18px, 1.8vw, 28px);
+}
+
+/* Keep cards and the log drawer at their natural height so .view scrolls
+   instead of squashing the fixed-height log console into a collapsed box. */
+.view > * {
+  flex: 0 0 auto;
+}
+
+.ruleCard {
+  width: 100%;
+  padding: 20px;
+  background: #ffffff !important;
+  box-shadow: none;
+  overflow: visible;
+}
+
+@media (max-width: 860px) {
+  .view {
+    overflow: visible;
+    padding-right: 0;
+    gap: 0;
+  }
+
+  .ruleCard {
+    padding: 16px clamp(14px, 4vw, 18px);
+  }
+}
+
+.help {
+  color: var(--muted, #8a93a6);
+  font-size: 0.85rem;
+  margin: 8px 0 0;
+}
+
+.help code,
+.previewBranch {
+  font-size: 0.78rem;
+}
+
+.previewBranch {
+  margin-right: 6px;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--muted, #8a93a6);
+}
+
+.field input {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md, 12px);
+  outline: none;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--ink, #1d1d1f);
+}
+
+.field input:focus,
+.adhocRow input:focus,
+.confirmInput:focus {
+  border-color: var(--accent, #007aff);
+}
+
+.releasePicker {
+  margin-top: 16px;
+  border: 1px solid var(--line, rgba(29, 29, 31, 0.09));
+  border-radius: var(--radius-lg, 16px);
+  padding: 12px 14px;
+  background: var(--surface, rgba(255, 255, 255, 0.82));
+}
+
+.releasePickerHead {
+  font-size: 0.8rem;
+  color: var(--muted, #8a93a6);
+  margin-bottom: 8px;
+}
+
+.releaseChecks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+}
+
+.releaseCheck {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: max-content;
+  font-size: 0.85rem;
+  color: var(--ink, #1d1d1f);
+}
+
+.adhocRow {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.adhocRow input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md, 12px);
+  outline: none;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--ink, #1d1d1f);
+}
+
+.actionsRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.primaryBtn {
+  background: var(--accent, #3b82f6);
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 8px 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primaryBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.headerRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rev {
+  color: var(--muted, #8a93a6);
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.tableWrap {
+  margin-top: 14px;
+  overflow-x: auto;
+  border: 1px solid var(--line, rgba(29, 29, 31, 0.09));
+  border-radius: var(--radius-lg, 16px);
+}
+
+.matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.matrix th,
+.matrix td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line, rgba(29, 29, 31, 0.09));
+  white-space: nowrap;
+}
+
+.matrix tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.matrix th {
+  color: var(--muted, #8a93a6);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.branchCell {
+  font-size: 0.75rem;
+}
+
+.steps {
+  font-family: var(--mono, monospace);
+  letter-spacing: 2px;
+}
+
+.muted {
+  color: var(--muted, #8a93a6);
+}
+
+.rowActions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.smallDanger {
+  background: transparent;
+  border: 1px solid var(--danger, #ef4444);
+  color: var(--danger, #ef4444);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.smallDanger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.removeBtn {
+  background: transparent;
+  border: none;
+  color: var(--muted, #8a93a6);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.removeBtn:hover {
+  color: var(--danger, #ef4444);
+}
+
+.footerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.footerRow .adhocRow {
+  margin-top: 0;
+  flex: 1 1 320px;
+}
+
+.confirmCard {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line, rgba(29, 29, 31, 0.09));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.confirmInput {
+  max-width: 360px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md, 12px);
+  outline: none;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--ink, #1d1d1f);
+}
+
+@media (max-width: 640px) {
+  .adhocRow {
+    flex-direction: column;
+  }
+
+  .adhocRow button,
+  .actionsRow button {
+    width: fit-content;
+  }
+}
