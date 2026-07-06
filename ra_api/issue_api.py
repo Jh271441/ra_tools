@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 
 
 class IssueURL(Enum):
-    query_by_issue_id_list = 'http://10.85.128.137/paladin/issue/pool/query_by_issue_id_list/'
-    query = 'http://10.85.128.137/paladin/issue/pool/query/'
+    query_by_issue_id_list = 'http://voyager.intra.xiaojukeji.com/paladin/issue/pool/query_by_issue_id_list/'
+    query = 'http://voyager.intra.xiaojukeji.com/paladin/issue/pool/query/'
     query_issue_pool_url = 'http://voyager.intra.xiaojukeji.com/paladin/issue/pool/query/'
 
 
@@ -281,4 +281,3 @@ if __name__ == '__main__':
     ]
     res = TrailInterface().query_issue_poll(view_id=2410, query_attrs=query_attrs)
     print(res)
-
