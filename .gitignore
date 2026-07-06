@@ -1,10 +1,16 @@
 data/
+!ra_sim_repro_dashboard/data/
+!ra_sim_repro_dashboard/data/mock/
 .idea/
 **/*.xlsx
 **/*.pyc
 *.csv
 *.png
 *.json
+!ra_sim_repro_dashboard/frontend/package.json
+!ra_sim_repro_dashboard/frontend/package-lock.json
+!ra_sim_repro_dashboard/frontend/tsconfig.json
+!ra_sim_repro_dashboard/data/mock/*.json
 model_release_pipeline/.runs/
 model_release_pipeline/web_frontend/node_modules/
 model_release_pipeline/web_frontend/dist/

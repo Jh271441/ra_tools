@@ -1,0 +1,82 @@
+# A version is identified by release/binary + scenario set labels + sim jobs.
+# Scenario labels are queried from Scenario Management; sim job ids are filled
+# manually after open-loop simulation jobs are launched.
+current_version: "gen4-release-20260626"
+compare_versions:
+  - "gen4-release-20260515"
+  - "gen4-release-20260522"
+  - "gen4-release-20260529"
+  - "gen4-release-20260605"
+
+versions:
+  "gen4-release-20260515":
+    label: "1.gen4-release-20260515"
+    release_date: "2026-05-15"
+    platform_gen: "GEN4_PT"
+    version_category: "release版本"
+    big_version: "gen4-release"
+    test_version: "20260515"
+    binary: "gen4-release-20260515"
+    sim_plan: "lxh_ra_stuck_release-20260515-openloop"
+    sim_job_id: 40790004
+    baseline_job_id:
+    scenario_sets:
+      positive:
+        labels:
+          - "lxh_ra_stuck_20260425_pos"
+          - "lxh_ra_stuck_20260425_AutoTrigger"
+          - "lxh_ra_stuck_20260425_gen4-release-20260515"
+        expected_triggered: true
+      negative:
+        labels:
+          - "lxh_ra_stuck_20260425_neg"
+          - "lxh_ra_stuck_20260425_AutoTrigger"
+          - "lxh_ra_stuck_20260425_gen4-release-20260515"
+        expected_triggered: false
+    sim_jobs:
+      positive_job_id: 40790004
+      negative_job_id:
+  "gen4-release-20260522":
+    label: "1.gen4-release-20260522"
+    release_date: "2026-05-22"
+    platform_gen: "GEN4_PT"
+    version_category: "release版本"
+    big_version: "gen4-release"
+    test_version: "20260522"
+    binary: "gen4-release-20260522"
+    sim_plan: "lxh_ra_stuck_release-20260522-openloop"
+    sim_job_id: 40790003
+    baseline_job_id:
+  "gen4-release-20260529":
+    label: "1.gen4-release-20260529"
+    release_date: "2026-05-29"
+    platform_gen: "GEN4_PT"
+    version_category: "release版本"
+    big_version: "gen4-release"
+    test_version: "20260529"
+    binary: "gen4-release-20260529"
+    sim_plan: "lxh_ra_stuck_release-20260529-openloop"
+    sim_job_id: 40790002
+    baseline_job_id:
+  "gen4-release-20260605":
+    label: "1.gen4-release-20260605"
+    release_date: "2026-06-05"
+    platform_gen: "GEN4_PT"
+    version_category: "release版本"
+    big_version: "gen4-release"
+    test_version: "20260605"
+    binary: "gen4-release-20260605"
+    sim_plan: "lxh_ra_stuck_release-20260605-openloop"
+    sim_job_id: 40790001
+    baseline_job_id:
+  "gen4-release-20260626":
+    label: "1.gen4-release-20260626"
+    release_date: "2026-06-26"
+    platform_gen: "GEN4_PT"
+    version_category: "release版本"
+    big_version: "gen4-release"
+    test_version: "20260626"
+    binary: "gen4-release-20260626"
+    sim_plan: "lxh_ra_stuck_release-20260626-openloop"
+    sim_job_id: 40790000
+    baseline_job_id:

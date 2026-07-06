@@ -1,0 +1,52 @@
+{
+  "rows": [
+    {
+      "scenario_id": "32142607",
+      "scenario_name": "cn32318631_607",
+      "issue_id": "cn32318631",
+      "signature": "trip_10385_20260525_070411",
+      "road_triggered": true,
+      "sim_triggered": true,
+      "max_scen_dnn": 0.62,
+      "threshold": 0.2,
+      "unstuck_status": "MODEL_REQUEST",
+      "fn_reasons": ["ASSIST_STUCK_MODEL"]
+    },
+    {
+      "scenario_id": "32138520",
+      "scenario_name": "cn32318631_520",
+      "issue_id": "cn32318631",
+      "signature": "trip_10385_20260525_070411",
+      "road_triggered": true,
+      "sim_triggered": true,
+      "max_scen_dnn": 0.57,
+      "threshold": 0.5,
+      "unstuck_status": "MODEL_REQUEST",
+      "fn_reasons": ["ASSIST_STUCK_MODEL"]
+    },
+    {
+      "scenario_id": "32422765",
+      "scenario_name": "cn32422765_cloud_sim",
+      "issue_id": "cn32422765",
+      "signature": "trip_10498_20260527_194112",
+      "road_triggered": true,
+      "sim_triggered": true,
+      "max_scen_dnn": 0.61,
+      "threshold": 0.5,
+      "unstuck_status": "RULE_FN_DETECT",
+      "fn_reasons": ["FN_FORCING_RECALL"]
+    },
+    {
+      "scenario_id": "32600011",
+      "scenario_name": "stable_positive",
+      "issue_id": "cn32499880",
+      "signature": "trip_mock",
+      "road_triggered": true,
+      "sim_triggered": true,
+      "max_scen_dnn": 0.79,
+      "threshold": 0.5,
+      "unstuck_status": "MODEL_REQUEST",
+      "fn_reasons": ["ASSIST_STUCK_MODEL"]
+    }
+  ]
+}

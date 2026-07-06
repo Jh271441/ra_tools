@@ -1,0 +1,88 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ra_dashboard
+      POSTGRES_USER: ra_dashboard
+      POSTGRES_PASSWORD: ra_dashboard
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6380:6379"
+
+  backend:
+    build:
+      context: ./backend
+    env_file:
+      - .env.example
+    environment:
+      DATABASE_URL: postgresql+psycopg2://ra_dashboard:ra_dashboard@postgres:5432/ra_dashboard
+      REDIS_URL: redis://redis:6379/0
+      ENABLE_RQ: "1"
+      VERSIONS_CONFIG: /app/config/versions.yaml
+      MOCK_DATA_DIR: /app/data/mock
+      VOYAGER_RESULT_BASE_URL: ${VOYAGER_RESULT_BASE_URL:-https://voyager.intra.xiaojukeji.com}
+      VOYAGER_COOKIE: ${VOYAGER_COOKIE:-}
+      VOYAGER_QUERY_PAGE_SIZE: ${VOYAGER_QUERY_PAGE_SIZE:-1000}
+      TRAIL_APP_ID: ${TRAIL_APP_ID:-}
+      TRAIL_APP_TOKEN: ${TRAIL_APP_TOKEN:-}
+      SCENARIO_APP_ID: ${SCENARIO_APP_ID:-}
+      SCENARIO_APP_TOKEN: ${SCENARIO_APP_TOKEN:-}
+      SCENARIO_QUERY_PAGE_SIZE: ${SCENARIO_QUERY_PAGE_SIZE:-500}
+      ISSUE_APP_ID: ${ISSUE_APP_ID:-}
+      ISSUE_APP_TOKEN: ${ISSUE_APP_TOKEN:-}
+    volumes:
+      - ./config:/app/config:ro
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+
+  worker:
+    build:
+      context: ./backend
+    command: rq worker -u redis://redis:6379/0 ra_dashboard_refresh
+    env_file:
+      - .env.example
+    environment:
+      DATABASE_URL: postgresql+psycopg2://ra_dashboard:ra_dashboard@postgres:5432/ra_dashboard
+      REDIS_URL: redis://redis:6379/0
+      ENABLE_RQ: "1"
+      VERSIONS_CONFIG: /app/config/versions.yaml
+      MOCK_DATA_DIR: /app/data/mock
+      VOYAGER_RESULT_BASE_URL: ${VOYAGER_RESULT_BASE_URL:-https://voyager.intra.xiaojukeji.com}
+      VOYAGER_COOKIE: ${VOYAGER_COOKIE:-}
+      VOYAGER_QUERY_PAGE_SIZE: ${VOYAGER_QUERY_PAGE_SIZE:-1000}
+      TRAIL_APP_ID: ${TRAIL_APP_ID:-}
+      TRAIL_APP_TOKEN: ${TRAIL_APP_TOKEN:-}
+      SCENARIO_APP_ID: ${SCENARIO_APP_ID:-}
+      SCENARIO_APP_TOKEN: ${SCENARIO_APP_TOKEN:-}
+      SCENARIO_QUERY_PAGE_SIZE: ${SCENARIO_QUERY_PAGE_SIZE:-500}
+      ISSUE_APP_ID: ${ISSUE_APP_ID:-}
+      ISSUE_APP_TOKEN: ${ISSUE_APP_TOKEN:-}
+    volumes:
+      - ./config:/app/config:ro
+      - ./data:/app/data
+    depends_on:
+      - backend
+      - redis
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_PROXY_TARGET: http://backend:8000
+    ports:
+      - "5174:5174"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

@@ -1,0 +1,29 @@
+{
+  "cn32318631": {
+    "issue_id": "cn32318631",
+    "issue_topic": "路测 RA stuck 触发但仿真未复现",
+    "status": "open",
+    "priority": "P1",
+    "poi": "Shanghai",
+    "issue_time": "2026-06-09 07:04:11",
+    "url": "https://voyager.intra.xiaojukeji.com/paladin/issue/detail/cn32318631"
+  },
+  "cn32422765": {
+    "issue_id": "cn32422765",
+    "issue_topic": "cloud_sim is_queuing 误判导致 forcing recall 计数饿死",
+    "status": "triaging",
+    "priority": "P0",
+    "poi": "Beijing",
+    "issue_time": "2026-06-15 19:41:12",
+    "url": "https://voyager.intra.xiaojukeji.com/paladin/issue/detail/cn32422765"
+  },
+  "cn32499880": {
+    "issue_id": "cn32499880",
+    "issue_topic": "ForbidByLaneChange FP 压制模型触发",
+    "status": "fixed",
+    "priority": "P1",
+    "poi": "Guangzhou",
+    "issue_time": "2026-06-23 10:12:00",
+    "url": "https://voyager.intra.xiaojukeji.com/paladin/issue/detail/cn32499880"
+  }
+}
