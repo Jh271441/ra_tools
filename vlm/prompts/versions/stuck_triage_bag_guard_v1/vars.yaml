@@ -1,0 +1,71 @@
+# Prompt 变量定义
+# 说明每个模板变量的类型、描述和默认值
+
+variables:
+  n_frames:
+    type: int
+    description: 帧数（图片数量）
+    required: true
+
+  frame_labels:
+    type: List[str]
+    description: 时间标签列表，如 ["t-3s", "t-2s", "t-1s", "t(自触发)", "t+1s", "t+2s", "t+3s"]
+    required: true
+
+  visual_timeline:
+    type: str
+    description: 按相对触发时间分组的视觉输入图号时间轴
+    required: true
+
+  time_windows_json:
+    type: str
+    description: 21个时间窗口数据的 JSON 字符串
+    required: true
+
+  bev_raw_frame_guide:
+    type: str
+    description: BEV raw frame 输入图例与分析要点；无 BEV 时为“无”
+    required: false
+    default: "无"
+
+  rag_context:
+    type: str
+    description: RAG 知识库检索返回的判定标准片段
+    required: false
+    default: ""
+
+  ra_event_json:
+    type: str
+    description: RA 事件数据的 JSON 字符串
+    required: false
+    default: ""
+
+  ra_info_structured:
+    type: str
+    description: RA 事件结构化分析文本
+    required: false
+    default: "无远程协助记录"
+
+  trajectory_info:
+    type: str
+    description: 规划轨迹摘要文本
+    required: false
+    default: "无轨迹数据"
+
+  metadata_summary:
+    type: str
+    description: 车辆物理时序特征摘要（speed/yielding时序等事实）
+    required: false
+    default: ""
+
+  version:
+    type: str
+    description: Prompt 版本号
+    required: false
+    default: "v1.0"
+
+  description:
+    type: str
+    description: 版本说明
+    required: false
+    default: ""
