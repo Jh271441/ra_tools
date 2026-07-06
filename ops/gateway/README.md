@@ -8,6 +8,7 @@ Colleagues can access services with the development machine IP and path prefixes
 ## Routes
 
 - `http://<dev-machine-ip>/` -> model-release at `127.0.0.1:8765`
+- `http://<dev-machine-ip>/v1/` -> lingma-proxy OpenAI-compatible API at `127.0.0.1:8095/v1/`
 - `http://<dev-machine-ip>/dcc/` -> DCC at `127.0.0.1:9999`
 - `http://<dev-machine-ip>/tb/` -> TensorBoard tunnel at `127.0.0.1:16006`
 
