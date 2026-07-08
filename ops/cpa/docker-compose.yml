@@ -1,0 +1,9 @@
+services:
+  cpa:
+    image: eceasy/cli-proxy-api:latest
+    container_name: cpa-server
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./config.yaml:/CLIProxyAPI/config.yaml
+      - ./auth-dir:/root/.cli-proxy-api

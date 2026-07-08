@@ -1,0 +1,21 @@
+host: "0.0.0.0"
+port: 8317
+tls:
+  enable: false
+  cert: ""
+  key: ""
+remote-management:
+  allow-remote: true
+  secret-key: "change-me"
+  disable-control-panel: false
+auth-dir: "/root/.cli-proxy-api"
+api-keys:
+  - "change-me"
+debug: false
+disable-cooling: true
+proxy-url: ""
+request-retry: 3
+max-retry-credentials: 5
+max-retry-interval: 30
+routing:
+  strategy: "round-robin"

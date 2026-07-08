@@ -18,4 +18,5 @@ model_release_pipeline/web_frontend/.vite/
 
 # Local proxy/account state.
 cc-connect.service
-ops/cpa/
+ops/cpa/auth-dir/
+ops/cpa/config.yaml
