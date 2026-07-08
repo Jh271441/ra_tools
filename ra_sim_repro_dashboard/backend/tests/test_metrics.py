@@ -1,6 +1,24 @@
 from app.metrics import classify_result, summarize_rows
 
 
+class Row:
+    def __init__(
+        self,
+        *,
+        road_triggered: bool,
+        sim_triggered: bool,
+        precision_label: str,
+        source_groups: list[str],
+    ):
+        self.road_triggered = road_triggered
+        self.sim_triggered = sim_triggered
+        self.reproduced = road_triggered and sim_triggered
+        self.precision_label = precision_label
+        self.trigger_type = "MODEL" if sim_triggered else "NONE"
+        self.root_cause = "REPRODUCED" if self.reproduced else "UNKNOWN"
+        self.raw_metrics = {"source_groups": source_groups}
+
+
 def test_model_fp_with_model_evidence_keeps_model_type_and_fp_root_cause():
     result = classify_result(
         {
@@ -52,4 +70,23 @@ def test_summary_rates():
     assert summary["total_cases"] == 3
     assert summary["sim_repro_rate"] == 0.5
     assert summary["precision"] == 0.5
+    assert summary["recall"] == 0.5
+
+
+def test_summary_repro_rate_uses_only_auto_trigger_source_groups():
+    rows = [
+        Row(road_triggered=True, sim_triggered=True, precision_label="TP", source_groups=["positive_auto"]),
+        Row(road_triggered=True, sim_triggered=False, precision_label="FN", source_groups=["positive_auto"]),
+        Row(road_triggered=True, sim_triggered=True, precision_label="TP", source_groups=["positive_manual"]),
+        Row(road_triggered=True, sim_triggered=False, precision_label="FN", source_groups=["positive_manual"]),
+        Row(road_triggered=False, sim_triggered=True, precision_label="FP", source_groups=["negative_auto"]),
+        Row(road_triggered=False, sim_triggered=False, precision_label="TN", source_groups=["negative_auto"]),
+    ]
+
+    summary = summarize_rows(rows)
+
+    assert summary["road_positive_cases"] == 4
+    assert summary["reproduced_cases"] == 2
+    assert summary["sim_repro_rate"] == 0.5
+    assert summary["precision"] == 0.6667
     assert summary["recall"] == 0.5

@@ -7,6 +7,7 @@ MODEL_REASONS = {"ASSIST_STUCK_MODEL", "MODEL_REQUEST", "MODEL_DETECT"}
 FN_PREFIXES = ("FN_",)
 FP_PREFIXES = ("FP_",)
 FP_STATUSES = {"MODEL_FP", "kAbort", "ABORT", "3"}
+AUTO_TRIGGER_SOURCE_GROUPS = {"positive_auto", "negative_auto"}
 
 
 @dataclass(frozen=True)
@@ -135,9 +136,20 @@ def rate(numerator: int, denominator: int) -> float:
     return round(numerator / denominator, 4)
 
 
+def source_groups(row: Any) -> set[str]:
+    raw_metrics = getattr(row, "raw_metrics", None)
+    if not isinstance(raw_metrics, dict):
+        return set()
+    value = raw_metrics.get("source_groups")
+    if isinstance(value, list):
+        return {str(item) for item in value if str(item).strip()}
+    if isinstance(value, str):
+        return {part.strip() for part in value.replace("|", ",").split(",") if part.strip()}
+    return set()
+
+
 def summarize_rows(rows: list[Any]) -> dict[str, Any]:
     total = len(rows)
-    road_positive = sum(1 for row in rows if row.road_triggered)
     sim_positive = sum(1 for row in rows if row.sim_triggered)
     tp = sum(1 for row in rows if row.precision_label == "TP")
     fp = sum(1 for row in rows if row.precision_label == "FP")
@@ -145,7 +157,17 @@ def summarize_rows(rows: list[Any]) -> dict[str, Any]:
     model_count = sum(1 for row in rows if row.trigger_type == "MODEL" and row.sim_triggered)
     fn_count = sum(1 for row in rows if row.trigger_type == "FN" and row.sim_triggered)
     fp_suppress_count = sum(1 for row in rows if row.root_cause == "FP_RULE_SUPPRESS")
-    reproduced = sum(1 for row in rows if row.reproduced)
+    rows_have_source_groups = any(source_groups(row) for row in rows)
+    if rows_have_source_groups:
+        repro_rows = [
+            row
+            for row in rows
+            if source_groups(row) & AUTO_TRIGGER_SOURCE_GROUPS
+        ]
+    else:
+        repro_rows = [row for row in rows if row.road_triggered]
+    repro_source_cases = len(repro_rows)
+    reproduced = sum(1 for row in repro_rows if row.sim_triggered)
 
     precision = rate(tp, tp + fp)
     recall = rate(tp, tp + fn)
@@ -157,11 +179,11 @@ def summarize_rows(rows: list[Any]) -> dict[str, Any]:
 
     return {
         "total_cases": total,
-        "road_positive_cases": road_positive,
+        "road_positive_cases": repro_source_cases,
         "sim_positive_cases": sim_positive,
         "reproduced_cases": reproduced,
-        "sim_repro_rate": rate(reproduced, road_positive),
-        "model_repro_rate": rate(model_count, road_positive),
+        "sim_repro_rate": rate(reproduced, repro_source_cases),
+        "model_repro_rate": rate(model_count, repro_source_cases),
         "fn_fallback_rate": rate(fn_count, max(sim_positive, 1)),
         "fp_suppress_rate": rate(fp_suppress_count, total),
         "precision": precision,

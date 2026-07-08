@@ -337,6 +337,7 @@ def _summary_from_metadata(metadata: dict[str, Any] | None) -> dict[str, Any] | 
     source_tp = _int_value(source.get("auto_trigger_tp"))
     source_fn = _int_value(source.get("manual_trigger_fn"))
     source_fp = _int_value(source.get("auto_trigger_fp"))
+    source_auto_triggered = source_tp + source_fp
     source_total = _int_value(source.get("total_scenarios")) or (
         source_tp
         + source_fn
@@ -367,18 +368,34 @@ def _summary_from_metadata(metadata: dict[str, Any] | None) -> dict[str, Any] | 
     if not estimated_fn and estimated_tp and source_positive:
         estimated_fn = max(source_positive - estimated_tp, 0)
 
+    repro_rate = _float_value(
+        sim.get("sim_repro_rate")
+        or sim.get("repro_rate")
+        or sim.get("auto_trigger_repro_rate")
+    )
+    auto_reproduced = _int_value(
+        sim.get("auto_reproduced")
+        or sim.get("auto_trigger_reproduced")
+        or sim.get("reproduced_cases")
+    )
+    if not auto_reproduced and repro_rate is not None and source_auto_triggered:
+        auto_reproduced = round(repro_rate * source_auto_triggered)
+    if repro_rate is None:
+        repro_rate = _rate(auto_reproduced, source_auto_triggered)
+
     precision = round(float(precision or 0), 4)
     recall = round(float(recall or 0), 4)
+    repro_rate = round(float(repro_rate or 0), 4)
     f1 = round(2 * precision * recall / (precision + recall), 4) if precision + recall else 0.0
     sim_positive = estimated_tp + estimated_fp
 
     return {
         "total_cases": source_total,
-        "road_positive_cases": source_positive,
+        "road_positive_cases": source_auto_triggered,
         "sim_positive_cases": sim_positive,
-        "reproduced_cases": estimated_tp,
-        "sim_repro_rate": recall,
-        "model_repro_rate": recall,
+        "reproduced_cases": auto_reproduced,
+        "sim_repro_rate": repro_rate,
+        "model_repro_rate": repro_rate,
         "fn_fallback_rate": 0.0,
         "fp_suppress_rate": _rate(estimated_fp, max(source_total, 1)),
         "precision": precision,
