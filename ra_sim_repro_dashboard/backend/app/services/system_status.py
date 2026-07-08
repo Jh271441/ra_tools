@@ -76,8 +76,10 @@ def _check_redis() -> tuple[dict[str, Any], Any]:
         "extra": {},
     }
     if not settings.enable_rq:
+        # Redis is unused in this mode; avoid paying the connect timeout on every poll.
         check["status"] = "skipped"
         check["detail"] = f"{check['detail']} (ENABLE_RQ=0)"
+        return check, None
     client = None
     started = time.perf_counter()
     try:
@@ -90,8 +92,19 @@ def _check_redis() -> tuple[dict[str, Any], Any]:
         )
         client.ping()
         check["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
-        if check["status"] != "skipped":
-            check["status"] = "ok"
+        check["status"] = "ok"
+    except Exception as exc:
+        check["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
+        check["error"] = str(exc)
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+        return check, None
+    # Connectivity is confirmed; INFO is enrichment only and must not flip the
+    # status or drop the client that the queue check still needs.
+    try:
         info = client.info(section="server")
         memory = client.info(section="memory")
         clients = client.info(section="clients")
@@ -102,11 +115,7 @@ def _check_redis() -> tuple[dict[str, Any], Any]:
             "connected_clients": clients.get("connected_clients", 0),
         }
     except Exception as exc:
-        check["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
-        check["error"] = str(exc)
-        if check["status"] != "skipped":
-            check["status"] = "error"
-        client = None
+        check["error"] = f"INFO unavailable: {exc}"
     return check, client
 
 
@@ -225,8 +234,8 @@ def _check_last_refresh(db: Session) -> dict[str, Any]:
         check["extra"] = {
             "job_status": job.status,
             "progress": job.progress,
-            "created_at": job.created_at.isoformat() if job.created_at else "",
-            "finished_at": job.finished_at.isoformat() if job.finished_at else "",
+            "created_at": f"{job.created_at.isoformat()}Z" if job.created_at else "",
+            "finished_at": f"{job.finished_at.isoformat()}Z" if job.finished_at else "",
         }
         if job.status == "completed":
             check["status"] = "ok"

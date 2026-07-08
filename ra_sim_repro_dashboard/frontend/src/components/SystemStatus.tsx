@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -31,15 +31,17 @@ const checkIcons: Record<string, typeof Database> = {
   last_refresh: History,
 };
 
-const statusBadgeVariant: Record<SystemCheckStatus, 'success' | 'warning' | 'destructive' | 'secondary'> = {
-  ok: 'success',
-  warn: 'warning',
-  error: 'destructive',
-  skipped: 'secondary',
+// Themed to the app primary (blue) for healthy states; warn/error keep
+// semantic colors so problems still stand out.
+const statusBadgeClass: Record<SystemCheckStatus, string> = {
+  ok: 'border-primary/25 bg-primary/10 text-primary dark:border-primary/30 dark:bg-primary/15',
+  warn: 'border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+  error: 'border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300',
+  skipped: 'border-border/80 bg-muted text-muted-foreground',
 };
 
 function StatusIcon({ status, className }: { status: SystemCheckStatus; className?: string }) {
-  if (status === 'ok') return <CheckCircle2 className={cn('text-emerald-500', className)} />;
+  if (status === 'ok') return <CheckCircle2 className={cn('text-primary', className)} />;
   if (status === 'warn') return <AlertTriangle className={cn('text-amber-500', className)} />;
   if (status === 'error') return <XCircle className={cn('text-red-500', className)} />;
   return <CircleSlash className={cn('text-muted-foreground', className)} />;
@@ -70,7 +72,7 @@ function CheckCard({ check }: { check: SystemCheck }) {
           <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
           <span className="truncate">{t(`statusCheck.${check.key}`, check.key)}</span>
         </CardTitle>
-        <Badge variant={statusBadgeVariant[check.status]} className="shrink-0">
+        <Badge variant="outline" className={cn('shrink-0', statusBadgeClass[check.status])}>
           <StatusIcon status={check.status} className="h-3.5 w-3.5" />
           {t(`statusValue.${check.status}`, check.status)}
         </Badge>
@@ -113,18 +115,23 @@ export function SystemStatus() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [checkedAt, setCheckedAt] = useState<Date | null>(null);
+  const requestSeq = useRef(0);
 
   const load = useCallback(async () => {
+    // Guard against a slow earlier response overwriting a newer one.
+    const seq = ++requestSeq.current;
     setLoading(true);
     try {
       const result = await api.systemStatus();
+      if (seq !== requestSeq.current) return;
       setStatus(result);
       setCheckedAt(new Date());
       setError('');
     } catch (err) {
+      if (seq !== requestSeq.current) return;
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
+      if (seq === requestSeq.current) setLoading(false);
     }
   }, []);
 
@@ -159,7 +166,10 @@ export function SystemStatus() {
                 <Badge variant="outline">
                   {t('backendUptime')}: {formatUptime(status.uptime_seconds)}
                 </Badge>
-                <Badge variant={status.enable_rq ? 'success' : 'secondary'}>
+                <Badge
+                  variant="outline"
+                  className={status.enable_rq ? statusBadgeClass.ok : statusBadgeClass.skipped}
+                >
                   RQ {status.enable_rq ? 'ON' : 'OFF'}
                 </Badge>
               </>
