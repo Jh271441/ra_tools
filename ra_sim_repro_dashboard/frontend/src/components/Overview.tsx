@@ -1,7 +1,7 @@
 import {
   Bar,
-  BarChart,
   CartesianGrid,
+  ComposedChart,
   LabelList,
   Line,
   LineChart,
@@ -11,7 +11,7 @@ import {
   YAxis,
   type LabelProps,
 } from 'recharts';
-import { useState, type KeyboardEvent } from 'react';
+import { useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { Activity, ArrowDownRight, ArrowUpRight, CircleAlert, Gauge, ShieldCheck, Target } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { KpiSummary, SummaryResponse } from '../types';
@@ -51,17 +51,8 @@ const chartColors = {
   fp: 'hsl(var(--chart-red))',
 };
 
-type TrendMetric = 'precision' | 'recall' | 'f1';
-
-type TrendRow = {
-  version_key: string;
-  version: string;
-  precision: number;
-  recall: number;
-  f1: number;
-};
-
-const trendMetricKeys: TrendMetric[] = ['precision', 'recall', 'f1'];
+type ReproMetric = 'repro' | 'tp' | 'fn' | 'fp';
+const reproMetricKeys: ReproMetric[] = ['repro', 'tp', 'fn', 'fp'];
 
 const tooltipProps = {
   contentStyle: {
@@ -88,15 +79,63 @@ function hollowDot(color: string, radius = 3.5) {
   };
 }
 
+function ChartHoverCursor(props: {
+  points?: Array<{ x?: number; y?: number }>;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+}) {
+  const pointX = optionalNumber(props.points?.[0]?.x);
+  const rectX = optionalNumber(props.x);
+  const rectWidth = optionalNumber(props.width);
+  const x = pointX ?? (rectX != null && rectWidth != null ? rectX + rectWidth / 2 : undefined);
+  const y = optionalNumber(props.y) ?? optionalNumber(props.points?.[0]?.y) ?? 0;
+  const height = optionalNumber(props.height);
+  if (x == null || height == null) return null;
+  return (
+    <line
+      className="chart-hover-cursor"
+      x1={x}
+      x2={x}
+      y1={y}
+      y2={y + height}
+      stroke="hsl(var(--primary) / 0.3)"
+      strokeWidth={1.5}
+      strokeDasharray="4 6"
+      strokeLinecap="round"
+      pointerEvents="none"
+    />
+  );
+}
+
 function numberValue(value: unknown) {
   if (typeof value === 'number') return value;
   if (typeof value === 'string' && value.trim()) return Number(value);
   return 0;
 }
 
+function optionalNumber(value: unknown) {
+  if (value == null || value === '') return undefined;
+  const numeric = numberValue(value);
+  return Number.isFinite(numeric) ? numeric : undefined;
+}
+
 function maybePct(value: unknown) {
   const numeric = numberValue(value);
   return numeric ? pct(numeric) : '-';
+}
+
+function firstNumber(...values: unknown[]) {
+  for (const value of values) {
+    const numeric = numberValue(value);
+    if (Number.isFinite(numeric) && numeric !== 0) return numeric;
+  }
+  return 0;
+}
+
+function formatCount(value: number | undefined) {
+  return new Intl.NumberFormat().format(Math.max(0, Math.round(value ?? 0)));
 }
 
 function formatChartLabel(value: unknown) {
@@ -120,6 +159,7 @@ function TrendValueLabel({
   if (!Number.isFinite(x) || !Number.isFinite(y) || props.value == null) return null;
   return (
     <text
+      className="chart-value-label"
       x={x + dx}
       y={y + dy}
       fill={color}
@@ -142,16 +182,40 @@ function renderTrendLabel(color: string, dx: number, dy: number) {
   );
 }
 
-function trendDomain(rows: TrendRow[], keys: TrendMetric[]): [number, number] {
-  const values = rows.flatMap((item) => keys.map((key) => item[key])).filter(Number.isFinite);
+function VersionTick(props: { x?: number; y?: number; payload?: { value?: unknown; index?: number } }) {
+  const x = numberValue(props.x);
+  const y = numberValue(props.y);
+  const value = String(props.payload?.value ?? '');
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return (
+    <text
+      x={x}
+      y={y + 14}
+      fill="hsl(var(--muted-foreground))"
+      fontSize={12}
+      fontWeight={600}
+      textAnchor="middle"
+    >
+      {value}
+    </text>
+  );
+}
+
+function pctDomain(rows: Array<Record<string, unknown>>, keys: string[]): [number, number] {
+  const values = rows
+    .flatMap((item) => keys.map((key) => optionalNumber(item[key])))
+    .filter((value): value is number => value != null);
   if (!values.length) return [0, 100];
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const paddedMin = Math.max(0, Math.floor((min - 5) / 5) * 5);
-  const paddedMax = Math.min(100, Math.ceil((max + 5) / 5) * 5);
-  if (paddedMax - paddedMin >= 15) return [paddedMin, paddedMax];
+  const lower = Math.max(0, Math.floor((min - 6) / 5) * 5);
+  const upper = Math.min(100, Math.ceil((max + 6) / 5) * 5);
+  if (upper - lower >= 12) return [lower, upper];
   const center = (min + max) / 2;
-  return [Math.max(0, Math.floor((center - 8) / 5) * 5), Math.min(100, Math.ceil((center + 8) / 5) * 5)];
+  return [
+    Math.max(0, Math.floor((center - 8) / 5) * 5),
+    Math.min(100, Math.ceil((center + 8) / 5) * 5),
+  ];
 }
 
 function interactiveProps(onClick: () => void) {
@@ -170,10 +234,11 @@ function interactiveProps(onClick: () => void) {
 
 export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
   const { t } = useTranslation();
-  const [visibleTrendMetrics, setVisibleTrendMetrics] = useState<Record<TrendMetric, boolean>>({
-    precision: true,
-    recall: true,
-    f1: true,
+  const [visibleReproMetrics, setVisibleReproMetrics] = useState<Record<ReproMetric, boolean>>({
+    repro: true,
+    tp: true,
+    fn: true,
+    fp: true,
   });
   const [showTrendLabels, setShowTrendLabels] = useState(true);
 
@@ -205,31 +270,33 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
     precision: Math.round(item.precision * 1000) / 10,
     recall: Math.round(item.recall * 1000) / 10,
     f1: Math.round(item.f1 * 1000) / 10,
+    repro: Math.round(item.sim_repro_rate * 1000) / 10,
+    tp: firstNumber(item.sim_estimate?.estimated_tp, item.sim_estimate?.tp, item.reproduced_cases),
+    fn: firstNumber(item.sim_estimate?.estimated_fn, item.sim_estimate?.fn, item.road_positive_cases - item.reproduced_cases),
+    fp: firstNumber(item.sim_estimate?.estimated_fp, item.sim_estimate?.fp, item.sim_positive_cases - item.reproduced_cases),
+    actualPrecision: Math.round(numberValue(item.source_gt?.online_precision || item.source_gt?.calculated_precision || item.precision) * 1000) / 10,
+    actualRecall: Math.round(numberValue(item.source_gt?.online_recall || item.source_gt?.calculated_recall || item.recall) * 1000) / 10,
+    simPrecision: undefined,
+    simRecall: undefined,
   }));
-  const activeTrendMetrics = trendMetricKeys.filter((key) => visibleTrendMetrics[key]);
-  const precisionRecallDomain = trendDomain(trend, activeTrendMetrics.length ? activeTrendMetrics : trendMetricKeys);
-  const trendControls: Array<{ key: TrendMetric; label: string; color: string }> = [
-    { key: 'precision', label: t('precision'), color: chartColors.precision },
-    { key: 'recall', label: t('recall'), color: chartColors.recall },
-    { key: 'f1', label: t('f1'), color: chartColors.f1 },
+  const reproDomain = pctDomain(trend, ['repro']);
+  const prDomain = pctDomain(trend, ['actualPrecision', 'actualRecall', 'simPrecision', 'simRecall']);
+  const reproControls: Array<{ key: ReproMetric; label: string; color: string }> = [
+    { key: 'repro', label: t('simReproRate'), color: chartColors.repro },
+    { key: 'tp', label: 'TP', color: chartColors.model },
+    { key: 'fn', label: 'FN', color: chartColors.fn },
+    { key: 'fp', label: 'FP', color: chartColors.fp },
   ];
+  const hasBinaryMatrix = trend.some((item) => item.simPrecision != null || item.simRecall != null);
 
-  function toggleTrendMetric(key: TrendMetric) {
-    setVisibleTrendMetrics((current) => {
-      const activeCount = trendMetricKeys.filter((item) => current[item]).length;
+  function toggleReproMetric(key: ReproMetric) {
+    setVisibleReproMetrics((current) => {
+      const activeCount = reproMetricKeys.filter((item) => current[item]).length;
       if (current[key] && activeCount === 1) return current;
       return { ...current, [key]: !current[key] };
     });
   }
 
-  const breakdown = comparison.map((item) => ({
-    version_key: item.version_key,
-    version: item.label || item.version_key,
-    model: Math.round(item.model_repro_rate * 1000) / 10,
-    fn: Math.round(item.fn_fallback_rate * 1000) / 10,
-    fp: Math.round(item.fp_suppress_rate * 1000) / 10,
-    repro: Math.round(item.sim_repro_rate * 1000) / 10,
-  }));
   const aggregateRows = comparison.filter((item) => item.source_gt || item.sim_estimate);
 
   return (
@@ -268,22 +335,22 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
-          <CardHeader className="flex-row items-start justify-between gap-3">
-            <div>
-              <CardTitle>{t('versionTrend')}</CardTitle>
-              <p className="mt-1 text-[13px] leading-5 text-muted-foreground">{t('versionTrendSubtitle')}</p>
+          <CardHeader className="min-h-[86px] flex-row items-start justify-between gap-2 px-5 pb-2 pt-4">
+            <div className="min-w-0">
+              <CardTitle>{t('continuousReproTrend')}</CardTitle>
+              <p className="mt-0.5 text-[12px] leading-4 text-muted-foreground">{t('continuousReproTrendSubtitle')}</p>
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-1.5">
-              {trendControls.map((item) => (
+            <div className="flex max-w-[390px] shrink-0 flex-wrap items-center justify-end gap-1">
+              {reproControls.map((item) => (
                 <button
                   key={item.key}
                   type="button"
-                  aria-pressed={visibleTrendMetrics[item.key]}
+                  aria-pressed={visibleReproMetrics[item.key]}
+                  style={{ '--toggle-color': item.color } as CSSProperties}
                   className={cn(
-                    'inline-flex h-8 items-center gap-1 rounded-md border border-border/80 bg-card/60 px-2.5 text-xs font-semibold transition hover:border-primary/40 hover:bg-accent focus:outline-none focus:ring-1 focus:ring-ring',
-                    !visibleTrendMetrics[item.key] && 'opacity-45 grayscale',
+                    'chart-toggle inline-flex h-7 items-center gap-1 rounded-md border border-border/80 px-2 text-[11px] font-semibold focus:outline-none focus:ring-1 focus:ring-ring',
                   )}
-                  onClick={() => toggleTrendMetric(item.key)}
+                  onClick={() => toggleReproMetric(item.key)}
                 >
                   <LegendDot color={item.color} />
                   {item.label}
@@ -292,9 +359,9 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
               <button
                 type="button"
                 aria-pressed={showTrendLabels}
+                style={{ '--toggle-color': 'hsl(var(--primary))' } as CSSProperties}
                 className={cn(
-                  'inline-flex h-8 items-center rounded-md border border-border/80 bg-card/60 px-2.5 text-xs font-semibold transition hover:border-primary/40 hover:bg-accent focus:outline-none focus:ring-1 focus:ring-ring',
-                  showTrendLabels && 'border-primary/30 bg-accent text-accent-foreground',
+                  'chart-toggle inline-flex h-7 items-center rounded-md border border-border/80 px-2 text-[11px] font-semibold focus:outline-none focus:ring-1 focus:ring-ring',
                 )}
                 onClick={() => setShowTrendLabels((value) => !value)}
               >
@@ -302,67 +369,88 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
               </button>
             </div>
           </CardHeader>
-          <CardContent className="h-80">
+          <CardContent className="h-80 px-4 pb-4 pt-0">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart
+              <ComposedChart
                 data={trend}
-                margin={{ top: 28, right: 48, left: 2, bottom: 12 }}
+                margin={{ top: 18, right: 20, left: 0, bottom: 8 }}
+                barCategoryGap="18%"
+                barGap={2}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.68)" vertical={false} />
                 <XAxis
                   dataKey="version"
+                  scale="point"
                   tickLine={false}
                   axisLine={false}
                   interval={0}
                   minTickGap={0}
                   height={44}
                   tickMargin={12}
-                  padding={{ left: 28, right: 28 }}
-                  tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                  padding={{ left: 64, right: 64 }}
+                  tick={<VersionTick />}
                 />
-                <YAxis domain={precisionRecallDomain} tickLine={false} axisLine={false} width={40} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
-                <Tooltip {...tooltipProps} />
-                {visibleTrendMetrics.precision ? (
-                  <Line type="linear" dataKey="precision" stroke={chartColors.precision} strokeWidth={2.4} dot={hollowDot(chartColors.precision)} activeDot={hollowDot(chartColors.precision, 5)} isAnimationActive={false}>
-                    {showTrendLabels ? <LabelList dataKey="precision" content={renderTrendLabel(chartColors.precision, 8, -12)} /> : null}
+                <YAxis yAxisId="rate" domain={reproDomain} tickLine={false} axisLine={false} width={38} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
+                <YAxis yAxisId="count" hide width={0} />
+                <Tooltip {...tooltipProps} cursor={<ChartHoverCursor />} />
+                {visibleReproMetrics.tp ? (
+                  <Bar yAxisId="count" dataKey="tp" fill={chartColors.model} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive animationDuration={520} animationEasing="ease-out" />
+                ) : null}
+                {visibleReproMetrics.fn ? (
+                  <Bar yAxisId="count" dataKey="fn" fill={chartColors.fn} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive animationDuration={520} animationEasing="ease-out" />
+                ) : null}
+                {visibleReproMetrics.fp ? (
+                  <Bar yAxisId="count" dataKey="fp" fill={chartColors.fp} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive animationDuration={520} animationEasing="ease-out" />
+                ) : null}
+                {visibleReproMetrics.repro ? (
+                  <Line yAxisId="rate" type="linear" dataKey="repro" stroke={chartColors.repro} strokeWidth={3} dot={hollowDot(chartColors.repro, 4)} activeDot={hollowDot(chartColors.repro, 5.5)} isAnimationActive animationDuration={560} animationEasing="ease-out">
+                    {showTrendLabels ? <LabelList dataKey="repro" content={renderTrendLabel(chartColors.repro, -8, -14)} /> : null}
                   </Line>
                 ) : null}
-                {visibleTrendMetrics.recall ? (
-                  <Line type="linear" dataKey="recall" stroke={chartColors.recall} strokeWidth={2.4} dot={hollowDot(chartColors.recall)} activeDot={hollowDot(chartColors.recall, 5)} isAnimationActive={false}>
-                    {showTrendLabels ? <LabelList dataKey="recall" content={renderTrendLabel(chartColors.recall, -8, 12)} /> : null}
-                  </Line>
-                ) : null}
-                {visibleTrendMetrics.f1 ? (
-                  <Line type="linear" dataKey="f1" stroke={chartColors.f1} strokeWidth={2.4} dot={hollowDot(chartColors.f1)} activeDot={hollowDot(chartColors.f1, 5)} isAnimationActive={false}>
-                    {showTrendLabels ? <LabelList dataKey="f1" content={renderTrendLabel(chartColors.f1, 8, 12)} /> : null}
-                  </Line>
-                ) : null}
-              </LineChart>
+              </ComposedChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex-row items-start justify-between gap-3">
-            <div>
-              <CardTitle>{t('reproBreakdown')}</CardTitle>
-              <p className="mt-1 text-[13px] leading-5 text-muted-foreground">{t('reproBreakdownSubtitle')}</p>
+          <CardHeader className="min-h-[86px] flex-row items-start justify-between gap-2 px-5 pb-2 pt-4">
+            <div className="min-w-0">
+              <CardTitle>{t('binaryBacktestPr')}</CardTitle>
+              <p className="mt-0.5 text-[12px] leading-4 text-muted-foreground">{t('binaryBacktestPrSubtitle')}</p>
+              <div className="mt-2 flex flex-wrap gap-3 text-[11px] font-semibold text-muted-foreground">
+                <span className="inline-flex items-center gap-1.5"><LegendDot color={chartColors.precision} />{t('actualPrecision')}</span>
+                <span className="inline-flex items-center gap-1.5"><LegendDot color={chartColors.recall} />{t('actualRecall')}</span>
+                {hasBinaryMatrix ? <span className="inline-flex items-center gap-1.5"><LegendDot color={chartColors.repro} />{t('simPR')}</span> : null}
+              </div>
             </div>
-            <Badge variant="secondary">{current.total_cases} {t('cases')}</Badge>
+            <Badge variant="secondary">{current.version_key}</Badge>
           </CardHeader>
-          <CardContent className="h-80">
+          <CardContent className="relative h-80 px-4 pb-4 pt-0">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={breakdown} margin={{ top: 16, right: 20, left: 2, bottom: 12 }}>
+              <LineChart data={trend} margin={{ top: 18, right: 42, left: 0, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.68)" vertical={false} />
-                <XAxis dataKey="version" tickLine={false} axisLine={false} interval={0} minTickGap={0} height={44} tickMargin={12} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
-                <YAxis domain={[0, 100]} tickLine={false} axisLine={false} width={40} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
-                <Tooltip {...tooltipProps} />
-                <Bar dataKey="repro" fill={chartColors.repro} radius={[4, 4, 0, 0]} />
-                <Bar dataKey="model" fill={chartColors.model} radius={[4, 4, 0, 0]} />
-                <Bar dataKey="fn" fill={chartColors.fn} radius={[4, 4, 0, 0]} />
-                <Bar dataKey="fp" fill={chartColors.fp} radius={[4, 4, 0, 0]} />
-              </BarChart>
+                <XAxis dataKey="version" scale="point" tickLine={false} axisLine={false} interval={0} minTickGap={0} height={44} tickMargin={12} padding={{ left: 64, right: 64 }} tick={<VersionTick />} />
+                <YAxis domain={prDomain} tickLine={false} axisLine={false} width={40} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
+                <Tooltip {...tooltipProps} cursor={<ChartHoverCursor />} />
+                <Line type="linear" dataKey="actualPrecision" name={t('actualPrecision')} stroke={chartColors.precision} strokeWidth={2.2} dot={hollowDot(chartColors.precision)} activeDot={hollowDot(chartColors.precision, 5)} isAnimationActive animationDuration={560} animationEasing="ease-out">
+                  {showTrendLabels ? <LabelList dataKey="actualPrecision" content={renderTrendLabel(chartColors.precision, 8, -12)} /> : null}
+                </Line>
+                <Line type="linear" dataKey="actualRecall" name={t('actualRecall')} stroke={chartColors.recall} strokeWidth={2.2} dot={hollowDot(chartColors.recall)} activeDot={hollowDot(chartColors.recall, 5)} isAnimationActive animationDuration={560} animationEasing="ease-out">
+                  {showTrendLabels ? <LabelList dataKey="actualRecall" content={renderTrendLabel(chartColors.recall, -8, 12)} /> : null}
+                </Line>
+                {hasBinaryMatrix ? (
+                  <>
+                    <Line type="linear" dataKey="simPrecision" name={t('simPrecisionEstimate')} stroke={chartColors.fp} strokeDasharray="5 4" strokeWidth={2.2} dot={hollowDot(chartColors.fp)} activeDot={hollowDot(chartColors.fp, 5)} isAnimationActive animationDuration={560} animationEasing="ease-out" />
+                    <Line type="linear" dataKey="simRecall" name={t('simRecallEstimate')} stroke={chartColors.repro} strokeDasharray="5 4" strokeWidth={2.2} dot={hollowDot(chartColors.repro)} activeDot={hollowDot(chartColors.repro, 5)} isAnimationActive animationDuration={560} animationEasing="ease-out" />
+                  </>
+                ) : null}
+              </LineChart>
             </ResponsiveContainer>
+            {!hasBinaryMatrix ? (
+              <div className="pointer-events-none absolute right-4 top-4 rounded-md border border-border/80 bg-card/90 px-3 py-2 text-xs text-muted-foreground shadow-sm">
+                {t('binaryMatrixPending')}
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       </div>

@@ -8,7 +8,6 @@ import {
   LayoutDashboard,
   ListChecks,
   PanelLeftClose,
-  PanelLeftOpen,
   RotateCcw,
   Search,
 } from 'lucide-react';
@@ -40,12 +39,12 @@ const defaultSourceFilters = {
   testVersion: '',
 };
 
-function pct(value: number | undefined) {
-  return `${Math.round((value ?? 0) * 1000) / 10}%`;
-}
-
 function stringValue(value: unknown) {
   return value == null ? '' : String(value);
+}
+
+function pct(value: number | undefined) {
+  return `${Math.round((value ?? 0) * 1000) / 10}%`;
 }
 
 function addOption(target: Set<string>, value: unknown) {
@@ -274,10 +273,10 @@ export default function App() {
 
   return (
     <div className="min-h-screen text-foreground">
-      <div className="flex min-h-screen">
+      <div className="min-h-screen lg:flex">
         <aside
           className={cn(
-            'relative hidden shrink-0 border-r border-border/70 bg-card/72 backdrop-blur-xl transition-[width] duration-200 dark:bg-background/74 lg:flex lg:flex-col',
+            'fixed inset-y-0 left-0 z-30 hidden overflow-hidden border-r border-border/70 bg-card/86 backdrop-blur-xl transition-[width] duration-180 ease-out dark:bg-background/88 lg:flex lg:flex-col',
             sidebarCollapsed ? 'w-[72px]' : 'w-72',
           )}
         >
@@ -287,13 +286,19 @@ export default function App() {
               sidebarCollapsed ? 'justify-center px-3' : 'gap-3 px-5',
             )}
           >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm shadow-primary/20">
+            <button
+              type="button"
+              className="group flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm shadow-primary/20 transition-[box-shadow,opacity,transform] duration-150 hover:opacity-95 hover:shadow-md hover:shadow-primary/25 active:scale-95 focus:outline-none focus:ring-2 focus:ring-ring"
+              onClick={() => setSidebarCollapsed((value) => !value)}
+              title={sidebarCollapsed ? t('expandSidebar') : t('collapseSidebar')}
+              aria-label={sidebarCollapsed ? t('expandSidebar') : t('collapseSidebar')}
+            >
               <Activity className="h-4 w-4" />
-            </div>
+            </button>
             {!sidebarCollapsed ? (
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-semibold">RA Sim Repro Dashboard</div>
-                <div className="text-[11px] text-muted-foreground">Issue Analytics</div>
+                <div className="truncate text-[13px] font-semibold">{t('brandTitle')}</div>
+                <div className="text-[11px] text-muted-foreground">{t('brandSubtitle')}</div>
               </div>
             ) : null}
             {!sidebarCollapsed ? (
@@ -311,20 +316,9 @@ export default function App() {
           </div>
 
           <nav className="grid gap-1 p-3">
-            {sidebarCollapsed ? (
-              <Button
-                variant="ghost"
-                className="h-10 justify-center px-0"
-                onClick={() => setSidebarCollapsed(false)}
-                title={t('expandSidebar')}
-                aria-label={t('expandSidebar')}
-              >
-                <PanelLeftOpen className="h-4 w-4" />
-              </Button>
-            ) : null}
             <Button
               variant={page === 'overview' ? 'secondary' : 'ghost'}
-              className={cn(sidebarCollapsed ? 'h-10 justify-center px-0' : 'justify-start')}
+              className={cn(sidebarCollapsed ? 'sidebar-icon-button' : 'justify-start')}
               onClick={() => setPage('overview')}
               title={t('overview')}
               aria-label={t('overview')}
@@ -334,7 +328,7 @@ export default function App() {
             </Button>
             <Button
               variant={page === 'issues' ? 'secondary' : 'ghost'}
-              className={cn(sidebarCollapsed ? 'h-10 justify-center px-0' : 'justify-start')}
+              className={cn(sidebarCollapsed ? 'sidebar-icon-button' : 'justify-start')}
               onClick={() => setPage('issues')}
               title={t('issues')}
               aria-label={t('issues')}
@@ -344,11 +338,24 @@ export default function App() {
             </Button>
           </nav>
 
-          <div className={cn('mt-auto border-t border-border/70', sidebarCollapsed ? 'p-3' : 'p-4')}>
+          <div className={cn('mt-auto grid gap-3 border-t border-border/70', sidebarCollapsed ? 'p-3' : 'p-4')}>
+            <TopControls
+              dark={dark}
+              onToggleDark={() => setDark((value) => !value)}
+              onRefresh={handleRefresh}
+              refreshing={refreshing}
+              compact={sidebarCollapsed}
+            />
+            {!sidebarCollapsed && refreshJob ? (
+              <Badge variant={refreshing ? 'warning' : refreshJob.status === 'completed' ? 'success' : 'destructive'} className="justify-center">
+                {refreshJob.status} {refreshJob.progress}%
+              </Badge>
+            ) : null}
             <div
               className={cn(
-                'metric-surface rounded-lg border',
-                sidebarCollapsed ? 'flex h-11 cursor-pointer items-center justify-center p-0' : 'p-3',
+                sidebarCollapsed
+                  ? 'sidebar-icon-button flex cursor-pointer items-center justify-center'
+                  : 'metric-surface rounded-lg border p-3',
               )}
               role={sidebarCollapsed ? 'button' : undefined}
               tabIndex={sidebarCollapsed ? 0 : undefined}
@@ -383,12 +390,17 @@ export default function App() {
           </div>
         </aside>
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-20 border-b border-border/70 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
-            <div className="flex min-h-16 flex-col gap-3 px-4 py-3 md:px-6 xl:flex-row xl:items-center xl:justify-between">
+        <div
+          className={cn(
+            'flex min-h-screen min-w-0 flex-1 flex-col transition-[padding-left] duration-180 ease-out',
+            sidebarCollapsed ? 'lg:pl-[72px]' : 'lg:pl-72',
+          )}
+        >
+          <header className="sticky top-0 z-20 border-b border-border/70 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60 lg:hidden">
+            <div className="flex flex-col gap-3 px-4 py-3">
               <div className="min-w-0">
                 <div className="mb-1 flex flex-wrap items-center gap-2">
-                  <Badge variant="secondary" className="lg:hidden">
+                  <Badge variant="secondary">
                     <Database className="h-3.5 w-3.5" />
                     {current?.label || '-'}
                   </Badge>
@@ -398,13 +410,12 @@ export default function App() {
                     </Badge>
                   ) : null}
                 </div>
-                <h1 className="truncate text-lg font-semibold tracking-normal md:text-xl">
+                <h1 className="truncate text-lg font-semibold tracking-normal">
                   {page === 'overview' ? t('appTitle') : t('issues')}
                 </h1>
-                <p className="mt-1 max-w-3xl text-[13px] leading-5 text-muted-foreground">{t('appSubtitle')}</p>
               </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <nav className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1 lg:hidden">
+              <div className="grid gap-2">
+                <nav className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
                   <Button
                     variant={page === 'overview' ? 'default' : 'ghost'}
                     size="sm"
@@ -427,6 +438,7 @@ export default function App() {
                   onToggleDark={() => setDark((value) => !value)}
                   onRefresh={handleRefresh}
                   refreshing={refreshing}
+                  className="grid grid-cols-3"
                 />
               </div>
             </div>
@@ -483,7 +495,7 @@ export default function App() {
                 </Button>
               </div>
 
-              {versionCards.length ? (
+              {page === 'issues' && versionCards.length ? (
                 <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
                   {visibleVersionCards.slice(0, 5).map((item) => {
                     const active = item.version_key === current?.version_key;

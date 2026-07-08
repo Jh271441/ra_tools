@@ -19,11 +19,11 @@
   --border: 214 38% 89%;
   --input: 214 38% 87%;
   --ring: 214 94% 53%;
-  --chart-blue: 214 92% 56%;
-  --chart-green: 165 70% 42%;
-  --chart-purple: 263 74% 66%;
-  --chart-orange: 36 96% 52%;
-  --chart-red: 4 82% 56%;
+  --chart-blue: 216 96% 64%;
+  --chart-green: 171 56% 56%;
+  --chart-purple: 232 70% 68%;
+  --chart-orange: 25 96% 70%;
+  --chart-red: 204 48% 61%;
   --radius: 0.5rem;
 }
 
@@ -44,11 +44,11 @@
   --border: 218 18% 19%;
   --input: 218 18% 27%;
   --ring: 214 94% 58%;
-  --chart-blue: 214 92% 63%;
-  --chart-green: 166 58% 55%;
-  --chart-purple: 265 78% 69%;
-  --chart-orange: 43 92% 58%;
-  --chart-red: 356 82% 64%;
+  --chart-blue: 216 96% 68%;
+  --chart-green: 171 52% 61%;
+  --chart-purple: 232 66% 72%;
+  --chart-orange: 25 88% 72%;
+  --chart-red: 204 46% 66%;
 }
 
 * {
@@ -105,6 +105,121 @@ body {
   background:
     linear-gradient(180deg, hsl(220 15% 12% / 0.76), hsl(220 15% 8% / 0.72));
   border-color: hsl(var(--border) / 0.62);
+}
+
+.chart-toggle {
+  --toggle-color: hsl(var(--primary));
+  position: relative;
+  background: hsl(var(--card) / 0.72);
+  box-shadow: 0 1px 0 hsl(0 0% 100% / 0.55) inset;
+  transform: translateY(0) scale(1);
+  transition:
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease;
+}
+
+.chart-toggle:hover {
+  transform: translateY(-1px) scale(1.015);
+  border-color: color-mix(in oklab, var(--toggle-color) 42%, hsl(var(--border)));
+  background: color-mix(in oklab, var(--toggle-color) 8%, hsl(var(--card)));
+  box-shadow:
+    0 1px 0 hsl(0 0% 100% / 0.62) inset,
+    0 8px 18px hsl(216 36% 34% / 0.09);
+}
+
+.chart-toggle:active {
+  transform: translateY(0) scale(0.97);
+}
+
+.chart-toggle[aria-pressed="true"] {
+  border-color: color-mix(in oklab, var(--toggle-color) 58%, hsl(var(--border)));
+  background: color-mix(in oklab, var(--toggle-color) 13%, hsl(var(--card)));
+  box-shadow:
+    0 1px 0 hsl(0 0% 100% / 0.62) inset,
+    0 0 0 3px color-mix(in oklab, var(--toggle-color) 14%, transparent),
+    0 10px 24px color-mix(in oklab, var(--toggle-color) 14%, transparent);
+}
+
+.chart-toggle[aria-pressed="false"] {
+  opacity: 0.56;
+  filter: saturate(0.72);
+}
+
+.dark .chart-toggle {
+  background: hsl(var(--card) / 0.72);
+  box-shadow: 0 1px 0 hsl(0 0% 100% / 0.05) inset;
+}
+
+.dark .chart-toggle:hover,
+.dark .chart-toggle[aria-pressed="true"] {
+  background: color-mix(in oklab, var(--toggle-color) 13%, hsl(var(--card)));
+  box-shadow:
+    0 1px 0 hsl(0 0% 100% / 0.06) inset,
+    0 0 0 3px color-mix(in oklab, var(--toggle-color) 18%, transparent),
+    0 12px 26px hsl(220 20% 2% / 0.24);
+}
+
+.sidebar-icon-button {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 8px;
+  color: hsl(var(--muted-foreground));
+  background: transparent;
+  box-shadow: none;
+  white-space: nowrap;
+  transition:
+    transform 150ms ease,
+    color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.sidebar-icon-button:hover {
+  color: hsl(var(--primary));
+  background: hsl(var(--accent) / 0.82);
+  box-shadow: 0 8px 18px hsl(216 36% 34% / 0.08);
+}
+
+.sidebar-icon-button:active {
+  transform: scale(0.96);
+}
+
+.sidebar-icon-button.text-primary {
+  color: hsl(var(--primary));
+}
+
+.chart-hover-cursor {
+  opacity: 0;
+  animation: chart-cursor-in 140ms ease-out forwards;
+}
+
+.chart-value-label {
+  opacity: 0;
+  animation: chart-label-in 520ms cubic-bezier(0.2, 0.8, 0.2, 1) 120ms forwards;
+}
+
+@keyframes chart-cursor-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes chart-label-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .fine-grid {
