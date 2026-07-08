@@ -265,13 +265,14 @@ f1        = 2 * precision * recall / (precision + recall)
 仿真复现率：
 
 ```text
-sim_repro_rate = reproduced_cases / road_positive_cases
+sim_repro_rate = reproduced_auto_trigger_cases / source_auto_trigger_cases
 ```
 
 其中：
 
-- `reproduced_cases`: `road_triggered=true && sim_triggered=true`
-- `road_positive_cases`: `road_triggered=true`
+- `source_auto_trigger_cases`: source group 为 `positive_auto` 或 `negative_auto` 的场景。
+- `reproduced_auto_trigger_cases`: 上述 source 自触发场景中 `sim_triggered=true` 的数量。
+- `positive_manual`: 人工触发正样本只参与 `recall = TP / (TP + FN)`，不进入仿真复现率分母。
 
 ### 8.3 触发类型与根因
 

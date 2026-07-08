@@ -19,8 +19,11 @@ precision = TP / (TP + FP)
 recall    = TP / (TP + FN)
 f1        = 2 * precision * recall / (precision + recall)
 
-sim_repro_rate = source road-triggered scenarios reproduced by simulation
-               / source road-triggered scenarios
+sim_repro_rate = sim-triggered source auto-trigger scenarios
+               / source auto-trigger scenarios
+
+source auto-trigger scenarios = positive_auto + negative_auto
+positive_manual only participates in recall / FN estimation, not sim_repro_rate.
 ```
 
 ## 2. 系统边界
