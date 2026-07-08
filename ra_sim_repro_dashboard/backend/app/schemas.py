@@ -134,3 +134,21 @@ class RefreshJobOut(BaseModel):
 
 class RefreshRequest(BaseModel):
     force: bool = False
+
+
+class SystemCheck(BaseModel):
+    key: str
+    status: str
+    latency_ms: float | None = None
+    detail: str = ""
+    error: str = ""
+    extra: dict[str, Any] = {}
+
+
+class SystemStatusResponse(BaseModel):
+    overall: str
+    generated_at: datetime
+    app_started_at: datetime
+    uptime_seconds: int
+    enable_rq: bool
+    checks: list[SystemCheck]

@@ -20,11 +20,13 @@ from app.schemas import (
     RefreshRequest,
     ScenarioDetailResponse,
     SummaryResponse,
+    SystemStatusResponse,
     VersionComparisonItem,
     VersionOut,
     VersionsResponse,
 )
 from app.services.refresh import build_snapshot, create_refresh_job, refresh_dashboard, sync_versions_from_config
+from app.services.system_status import collect_system_status
 
 
 router = APIRouter(prefix="/api")
@@ -37,6 +39,11 @@ DbSession = Annotated[Session, Depends(get_db)]
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@router.get("/system/status", response_model=SystemStatusResponse)
+def system_status(db: DbSession) -> SystemStatusResponse:
+    return SystemStatusResponse(**collect_system_status(db))
 
 
 @router.get("/dashboard/versions", response_model=VersionsResponse)

@@ -112,6 +112,26 @@ export interface ScenarioDetailResponse {
   results: ScenarioResult[];
 }
 
+export type SystemCheckStatus = 'ok' | 'warn' | 'error' | 'skipped';
+
+export interface SystemCheck {
+  key: string;
+  status: SystemCheckStatus;
+  latency_ms: number | null;
+  detail: string;
+  error: string;
+  extra: Record<string, unknown>;
+}
+
+export interface SystemStatusResponse {
+  overall: SystemCheckStatus;
+  generated_at: string;
+  app_started_at: string;
+  uptime_seconds: number;
+  enable_rq: boolean;
+  checks: SystemCheck[];
+}
+
 export interface RefreshJob {
   job_id: string;
   status: 'queued' | 'running' | 'completed' | 'failed';

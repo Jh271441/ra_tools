@@ -4,6 +4,7 @@ import type {
   RefreshJob,
   ScenarioDetailResponse,
   SummaryResponse,
+  SystemStatusResponse,
   VersionsResponse,
   KpiSummary,
 } from '../types';
@@ -34,4 +35,5 @@ export const api = {
     }),
   refreshStatus: (jobId: string) =>
     fetchJson<RefreshJob>(`/api/dashboard/refresh/${encodeURIComponent(jobId)}`),
+  systemStatus: () => fetchJson<SystemStatusResponse>('/api/system/status'),
 };

@@ -5,6 +5,7 @@ import {
   Database,
   Filter,
   GitCompareArrows,
+  HeartPulse,
   LayoutDashboard,
   ListChecks,
   PanelLeftClose,
@@ -16,13 +17,14 @@ import { api } from './api/client';
 import { IssueDetail } from './components/IssueDetail';
 import { IssuesTable } from './components/IssuesTable';
 import { Overview } from './components/Overview';
+import { SystemStatus } from './components/SystemStatus';
 import { TopControls } from './components/TopControls';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
 import { cn } from './lib/utils';
 import type { IssueListItem, KpiSummary, RefreshJob, SelectedIssueResult, SummaryResponse, VersionItem } from './types';
 
-type Page = 'overview' | 'issues';
+type Page = 'overview' | 'issues' | 'status';
 
 const defaultFilters = {
   version: '',
@@ -336,6 +338,16 @@ export default function App() {
               <ListChecks className="h-4 w-4" />
               {!sidebarCollapsed ? t('issues') : null}
             </Button>
+            <Button
+              variant={page === 'status' ? 'secondary' : 'ghost'}
+              className={cn(sidebarCollapsed ? 'sidebar-icon-button' : 'justify-start')}
+              onClick={() => setPage('status')}
+              title={t('systemStatus')}
+              aria-label={t('systemStatus')}
+            >
+              <HeartPulse className="h-4 w-4" />
+              {!sidebarCollapsed ? t('systemStatus') : null}
+            </Button>
           </nav>
 
           <div className={cn('mt-auto grid gap-3 border-t border-border/70', sidebarCollapsed ? 'p-3' : 'p-4')}>
@@ -411,11 +423,11 @@ export default function App() {
                   ) : null}
                 </div>
                 <h1 className="truncate text-lg font-semibold tracking-normal">
-                  {page === 'overview' ? t('appTitle') : t('issues')}
+                  {page === 'overview' ? t('appTitle') : page === 'issues' ? t('issues') : t('systemStatus')}
                 </h1>
               </div>
               <div className="grid gap-2">
-                <nav className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
+                <nav className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
                   <Button
                     variant={page === 'overview' ? 'default' : 'ghost'}
                     size="sm"
@@ -432,6 +444,14 @@ export default function App() {
                     <ListChecks className="h-4 w-4" />
                     {t('issues')}
                   </Button>
+                  <Button
+                    variant={page === 'status' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setPage('status')}
+                  >
+                    <HeartPulse className="h-4 w-4" />
+                    {t('systemStatus')}
+                  </Button>
                 </nav>
                 <TopControls
                   dark={dark}
@@ -445,6 +465,7 @@ export default function App() {
           </header>
 
           <main className="grid min-w-0 gap-5 p-4 md:p-6">
+            {page !== 'status' ? (
             <section className="apple-panel fine-grid grid gap-4 rounded-lg border p-4">
               <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -549,14 +570,17 @@ export default function App() {
                 </div>
               ) : null}
             </section>
+            ) : null}
 
-            {error ? (
+            {error && page !== 'status' ? (
               <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
                 {error}
               </div>
             ) : null}
 
-            {page === 'overview' ? (
+            {page === 'status' ? (
+              <SystemStatus />
+            ) : page === 'overview' ? (
               <Overview summary={summary} comparison={comparison} onOpenIssues={openIssues} />
             ) : (
               <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(380px,0.75fr)]">
