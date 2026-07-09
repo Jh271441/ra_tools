@@ -26,6 +26,22 @@ import type { IssueListItem, KpiSummary, RefreshJob, SelectedIssueResult, Summar
 
 type Page = 'overview' | 'issues' | 'status';
 
+// Lightweight history routing: module switches map to /sim/overview,
+// /sim/issues, /sim/status so browser/mouse back-forward navigates between
+// modules instead of leaving the app. BASE_URL is '/sim/' in this build.
+const BASE_PATH = import.meta.env.BASE_URL.replace(/\/$/, '');
+const PAGES: Page[] = ['overview', 'issues', 'status'];
+
+function pageFromLocation(): Page {
+  const path = window.location.pathname;
+  for (const candidate of PAGES) {
+    if (path === `${BASE_PATH}/${candidate}` || path.startsWith(`${BASE_PATH}/${candidate}/`)) {
+      return candidate;
+    }
+  }
+  return 'overview';
+}
+
 const defaultFilters = {
   version: '',
   rootCause: '',
@@ -95,7 +111,23 @@ function SelectFilter({
 
 export default function App() {
   const { t } = useTranslation();
-  const [page, setPage] = useState<Page>('overview');
+  const [page, setPageState] = useState<Page>(pageFromLocation);
+
+  const setPage = useCallback((next: Page) => {
+    setPageState(next);
+    const target = `${BASE_PATH}/${next}`;
+    if (window.location.pathname !== target) {
+      window.history.pushState({ page: next }, '', target);
+    }
+  }, []);
+
+  useEffect(() => {
+    // Normalize bare /sim/ to a canonical module URL without adding a history entry.
+    window.history.replaceState({ page: pageFromLocation() }, '', `${BASE_PATH}/${pageFromLocation()}`);
+    const onPopState = () => setPageState(pageFromLocation());
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
   const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebarCollapsed') === '1');
   const [versions, setVersions] = useState<VersionItem[]>([]);

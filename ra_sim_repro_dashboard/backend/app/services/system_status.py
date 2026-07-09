@@ -64,6 +64,8 @@ def _check_database(db: Session) -> dict[str, Any]:
     except Exception as exc:
         check["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
         check["error"] = str(exc)
+        # Leave the session usable for the checks that run after this one.
+        db.rollback()
     return check
 
 
