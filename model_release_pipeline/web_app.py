@@ -41,6 +41,20 @@ from model_release_pipeline.web.summary import (
 
 
 FRONTEND_DIST = PACKAGE_ROOT / "web_frontend" / "dist"
+
+# Gateway mount prefix. The nginx gateway serves this app under /release/ and
+# strips the prefix before proxying, but direct port access (host:8765) still
+# sends /release/-prefixed asset and API paths because the frontend is built
+# with Vite base=/release/. Stripping it here keeps both access paths working.
+MOUNT_PREFIX = "/release"
+
+
+def _strip_mount_prefix(path: str) -> str:
+    if path == MOUNT_PREFIX:
+        return "/"
+    if path.startswith(MOUNT_PREFIX + "/"):
+        return path[len(MOUNT_PREFIX):]
+    return path
 DEFAULT_EXPERIMENT_ROOT = (
     "device:/nfs/dataset-ofs-remote-assist-stuck/user/jasperchen/"
     "ego_stuck_data/scenario_dnn_26q1/"
@@ -524,10 +538,11 @@ def _make_handler(app: ReleaseWebApp) -> type[BaseHTTPRequestHandler]:
 
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
+            path = _strip_mount_prefix(parsed.path)
             try:
-                if _handle_api_get(self, app, parsed.path, parsed.query):
+                if _handle_api_get(self, app, path, parsed.query):
                     return
-                _handle_static_get(self, parsed.path)
+                _handle_static_get(self, path)
             except (BrokenPipeError, ConnectionResetError):
                 pass
             except FileNotFoundError as exc:
@@ -541,12 +556,13 @@ def _make_handler(app: ReleaseWebApp) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
+            path = _strip_mount_prefix(parsed.path)
             try:
                 content_length = int(self.headers.get("Content-Length") or "0")
                 raw_body = self.rfile.read(content_length) if content_length else b"{}"
                 payload = json.loads(raw_body.decode("utf-8") or "{}")
-                if parsed.path.startswith("/api/runs/"):
-                    suffix = parsed.path.removeprefix("/api/runs/")
+                if path.startswith("/api/runs/"):
+                    suffix = path.removeprefix("/api/runs/")
                     parts = suffix.split("/")
                     if len(parts) == 2 and parts[1] == "copy-versioned-onnx":
                         release_id = _safe_run_id(parts[0])
@@ -581,11 +597,12 @@ def _make_handler(app: ReleaseWebApp) -> type[BaseHTTPRequestHandler]:
 
         def do_PATCH(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
+            path = _strip_mount_prefix(parsed.path)
             try:
                 content_length = int(self.headers.get("Content-Length") or "0")
                 raw_body = self.rfile.read(content_length) if content_length else b"{}"
                 payload = json.loads(raw_body.decode("utf-8") or "{}")
-                if _handle_api_patch(self, app, parsed.path, payload):
+                if _handle_api_patch(self, app, path, payload):
                     return
                 _text_response(self, "Not found", HTTPStatus.NOT_FOUND)
             except (BrokenPipeError, ConnectionResetError):

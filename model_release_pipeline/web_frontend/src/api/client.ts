@@ -19,6 +19,10 @@ import type {
 // Generic helpers
 // ---------------------------------------------------------------------------
 
+// Follows the Vite base ('/release/' behind the gateway), so API calls stay
+// relative to wherever the app is mounted.
+const API_BASE = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/api`;
+
 export async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
@@ -59,19 +63,19 @@ export async function patchJson<T>(url: string, body: unknown = {}): Promise<T> 
 // Runs
 // ---------------------------------------------------------------------------
 
-export const listRuns = () => fetchJson<ListRunsResponse>('/api/runs');
+export const listRuns = () => fetchJson<ListRunsResponse>(`${API_BASE}/runs`);
 
 export const getRun = (releaseId: string) =>
-  fetchJson<GetRunResponse>(`/api/runs/${releaseId}`);
+  fetchJson<GetRunResponse>(`${API_BASE}/runs/${releaseId}`);
 
 export const getRunStageConfig = (releaseId: string) =>
-  fetchJson<StageConfig>(`/api/runs/${releaseId}/stage-config`);
+  fetchJson<StageConfig>(`${API_BASE}/runs/${releaseId}/stage-config`);
 
 export const patchRunStageConfig = (releaseId: string, patch: Partial<Record<string, StageValues>>) =>
-  patchJson<StageConfig>(`/api/runs/${releaseId}/stage-config`, patch);
+  patchJson<StageConfig>(`${API_BASE}/runs/${releaseId}/stage-config`, patch);
 
 export const copyVersionedOnnx = (releaseId: string) =>
-  postJson<Record<string, unknown>>(`/api/runs/${releaseId}/copy-versioned-onnx`);
+  postJson<Record<string, unknown>>(`${API_BASE}/runs/${releaseId}/copy-versioned-onnx`);
 
 // ---------------------------------------------------------------------------
 // Actions & Jobs
@@ -81,30 +85,30 @@ export const startAction = (
   releaseId: string,
   action: string,
   payload: StartActionPayload = {},
-) => postJson<StartActionResponse>(`/api/runs/${releaseId}/actions/${action}`, payload);
+) => postJson<StartActionResponse>(`${API_BASE}/runs/${releaseId}/actions/${action}`, payload);
 
-export const listJobs = () => fetchJson<ListJobsResponse>('/api/jobs');
+export const listJobs = () => fetchJson<ListJobsResponse>(`${API_BASE}/jobs`);
 
-export const getJob = (jobId: string) => fetchJson<Job>(`/api/jobs/${jobId}`);
+export const getJob = (jobId: string) => fetchJson<Job>(`${API_BASE}/jobs/${jobId}`);
 
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 
 export const getConfigBranches = () =>
-  fetchJson<ConfigBranchesResponse>('/api/config/branches');
+  fetchJson<ConfigBranchesResponse>(`${API_BASE}/config/branches`);
 
 export const getLubanHosts = () =>
-  fetchJson<LubanHostsResponse>('/api/config/luban-hosts');
+  fetchJson<LubanHostsResponse>(`${API_BASE}/config/luban-hosts`);
 
 export const getOffboardTestYamls = () =>
-  fetchJson<OffboardTestYamlsResponse>('/api/config/offboard-test-yamls');
+  fetchJson<OffboardTestYamlsResponse>(`${API_BASE}/config/offboard-test-yamls`);
 
 export const getStageDefaults = () =>
-  fetchJson<StageDefaultsResponse>('/api/config/stage-defaults');
+  fetchJson<StageDefaultsResponse>(`${API_BASE}/config/stage-defaults`);
 
 export const patchStageDefaults = (patch: Partial<Record<string, StageValues>>) =>
-  patchJson<StageConfig>('/api/config/stage-defaults', patch);
+  patchJson<StageConfig>(`${API_BASE}/config/stage-defaults`, patch);
 
 // ---------------------------------------------------------------------------
 // Experiment & Pick
@@ -115,12 +119,12 @@ export const listExperimentFolders = (root?: string, limit?: number, remote?: st
   if (root) params.set('root', root);
   if (limit != null) params.set('limit', String(limit));
   if (remote) params.set('remote', remote);
-  return fetchJson<ExperimentFoldersResponse>(`/api/experiment-folders?${params}`);
+  return fetchJson<ExperimentFoldersResponse>(`${API_BASE}/experiment-folders?${params}`);
 };
 
 export const previewPick = (experiment: string, remote?: string, remotePython?: string) => {
   const params = new URLSearchParams({ experiment });
   if (remote) params.set('remote', remote);
   if (remotePython) params.set('remote_python', remotePython);
-  return fetchJson<PickPreviewResponse>(`/api/pick?${params}`);
+  return fetchJson<PickPreviewResponse>(`${API_BASE}/pick?${params}`);
 };
