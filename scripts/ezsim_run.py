@@ -133,8 +133,8 @@ class EzSimClient:
         extra_args: Optional[str] = None,
         modules: Optional[list] = None,
         warmup_ms: int = 5000,
-        skip_map_update: bool = True,
-        skip_model_update: bool = True,
+        skip_map_update: bool = False,
+        skip_model_update: bool = False,
         binary_id: Optional[int] = None,
         build: Optional[str] = None,
     ) -> dict:
@@ -201,6 +201,16 @@ def main():
     parser.add_argument("--extra-args", default=None, help="覆盖 extra_args")
     parser.add_argument("--modules", default=None, help="模块列表，如 PLANNING,PERFECT_POSE")
     parser.add_argument("--warmup", type=int, default=5000, help="warmup ms（默认 5000）")
+    parser.add_argument(
+        "--skip-map-update",
+        action="store_true",
+        help="跳过路测地图更新（RA 复现通常不要开启）",
+    )
+    parser.add_argument(
+        "--skip-model-update",
+        action="store_true",
+        help="跳过模型包更新（指定旧 binary 时通常不要开启）",
+    )
     parser.add_argument("--binary", type=int, default=None,
                         help="Orion binary_id，从 Trail 下载对应 CI binary（如 1665523）")
     parser.add_argument("--build", default=None,
@@ -243,6 +253,8 @@ def main():
         extra_args=args.extra_args,
         modules=modules,
         warmup_ms=args.warmup,
+        skip_map_update=args.skip_map_update,
+        skip_model_update=args.skip_model_update,
         binary_id=args.binary,
         build=args.build,
     )
