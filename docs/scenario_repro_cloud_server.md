@@ -24,6 +24,23 @@ export WORK_DIR=/home/didi/ra_bags/scenario_${SCENARIO_ID}
 mkdir -p "$WORK_DIR"
 ```
 
+如果只需要一条命令完成第 2 至第 6 步，使用：
+
+```bash
+cd /home/didi/workspace/ra_tools
+python3 scripts/scenario_repro.py "$SCENARIO_ID" --binary "$BINARY_ID"
+```
+
+首次执行前建议先检查计划，不下载 bag、也不启动仿真：
+
+```bash
+python3 scripts/scenario_repro.py "$SCENARIO_ID" --binary "$BINARY_ID" --dry-run
+```
+
+自动流程产物位于 `/home/didi/ra_bags/scenario_<scenario_id>/`：`road.bag`、指向
+EzSim 产物的 `sim.bag`/`events.log` 软链接，以及记录 trip、binary、sim id、状态和 topic
+帧数的 `metadata.json`。
+
 `BINARY_ID` 应替换为路测当时版本对应的 Orion binary。使用更新的默认 build 只能用于
 现状验证，不能作为严格的路测复现结论。
 
