@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import resource
 import shutil
 import subprocess
 import sys
@@ -63,6 +64,14 @@ def road_download_command(
     if topics:
         command.extend(["-T", *topics])
     return command
+
+
+def ensure_nofile_limit(minimum: int) -> tuple[int, int]:
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    target = min(max(soft, minimum), hard)
+    if target > soft:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
+    return resource.getrlimit(resource.RLIMIT_NOFILE)
 
 
 def topic_counts(path: Path, env: dict[str, str]) -> dict[str, int]:
@@ -126,6 +135,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force-road-download", action="store_true")
     parser.add_argument("--skip-road-download", action="store_true")
     parser.add_argument(
+        "--road-only",
+        action="store_true",
+        help="Download/reuse the road bag and stop before starting EzSim",
+    )
+    parser.add_argument(
+        "--nofile-limit",
+        type=int,
+        default=65536,
+        help="Soft file-descriptor limit used by voy-bag",
+    )
+    parser.add_argument(
         "--filtered-road",
         action="store_true",
         help="Download only RA topics instead of the complete raw road bag",
@@ -145,6 +165,7 @@ def main() -> None:
     work_dir = Path(args.output_root).expanduser() / f"scenario_{args.scenario_id}"
     road_mode = "filtered" if args.filtered_road else "raw"
     road_bag = work_dir / f"road_{road_mode}.bag"
+    road_complete = Path(f"{road_bag}.complete")
     start_ms = max(0, int(segment["startTimestamp"]) - args.road_prefix_ms)
     end_ms = int(segment["endTimestamp"])
     download_cmd = road_download_command(
@@ -168,6 +189,7 @@ def main() -> None:
         "requested_build": args.build,
         "warmup_ms": args.warmup,
         "road_bag": str(road_bag),
+        "road_download_complete_marker": str(road_complete),
     }
 
     print(json.dumps(metadata, ensure_ascii=False, indent=2))
@@ -183,12 +205,33 @@ def main() -> None:
     env = voy_sdk_env(args.binary)
 
     if not args.skip_road_download:
-        if road_bag.exists() and not args.force_road_download:
+        if road_bag.exists() and road_complete.exists() and not args.force_road_download:
             print(f"Reusing road bag: {road_bag}")
         else:
             if road_bag.exists():
                 road_bag.unlink()
-            subprocess.run(download_cmd, env=env, cwd=work_dir, check=True)
+            if road_complete.exists():
+                road_complete.unlink()
+            soft_limit, hard_limit = ensure_nofile_limit(args.nofile_limit)
+            metadata["nofile_soft_limit"] = soft_limit
+            metadata["nofile_hard_limit"] = hard_limit
+            write_metadata(work_dir / "metadata.json", metadata)
+            print(f"File descriptor limit: soft={soft_limit} hard={hard_limit}")
+            try:
+                subprocess.run(download_cmd, env=env, cwd=work_dir, check=True)
+            except subprocess.CalledProcessError:
+                metadata["workflow_status"] = "road_download_failed"
+                write_metadata(work_dir / "metadata.json", metadata)
+                raise
+            road_complete.write_text("complete\n", encoding="ascii")
+        metadata["road_download_complete"] = road_complete.exists()
+        write_metadata(work_dir / "metadata.json", metadata)
+
+    if args.road_only:
+        metadata["workflow_status"] = "road_download_complete"
+        write_metadata(work_dir / "metadata.json", metadata)
+        print(f"Road-only workflow complete: {road_bag}")
+        return
 
     client = EzSimClient()
     sim = client.start_by_scenario_id(

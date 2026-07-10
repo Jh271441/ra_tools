@@ -128,6 +128,27 @@ voy-bag download road_filtered.bag \
 
 服务器磁盘使用率较高，下载完整包前应确认剩余容量。不要同时保留多个重复的完整 bag。
 
+完整 bag 会打开大量临时流。自动脚本会把 `voy-bag` 继承的文件描述符 soft limit 提升到
+`65536`，并只在下载成功后创建 `road_raw.bag.complete`。如果下载中断，下次执行会删除
+未标记完成的半包并重新下载。
+
+已有 sim、只需要补原始 road bag 时使用：
+
+```bash
+.venv/bin/python3 scripts/scenario_repro.py "$SCENARIO_ID" \
+  --binary "$BINARY_ID" \
+  --road-only
+```
+
+遇到 `Too many open files` 时可显式提高目标值，但不能超过服务器 hard limit：
+
+```bash
+.venv/bin/python3 scripts/scenario_repro.py "$SCENARIO_ID" \
+  --binary "$BINARY_ID" \
+  --road-only \
+  --nofile-limit 131072
+```
+
 ## 4. 先检查是否已有历史 EzSim
 
 ```bash
