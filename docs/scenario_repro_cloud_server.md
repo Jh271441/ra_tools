@@ -13,6 +13,8 @@
 
 ```bash
 ssh cloud_server
+cd /home/didi/workspace/ra_tools
+bash scripts/setup_cloud_python.sh
 
 export LD_LIBRARY_PATH=/home/didi/.voyager/ezsim/binary/1665523/tmp/lib:$LD_LIBRARY_PATH
 export PYTHONPATH=/opt/voy-sdk/lib/python3/dist-packages:$PYTHONPATH
@@ -28,13 +30,13 @@ mkdir -p "$WORK_DIR"
 
 ```bash
 cd /home/didi/workspace/ra_tools
-python3 scripts/scenario_repro.py "$SCENARIO_ID" --binary "$BINARY_ID"
+.venv/bin/python3 scripts/scenario_repro.py "$SCENARIO_ID" --binary "$BINARY_ID"
 ```
 
 首次执行前建议先检查计划，不下载 bag、也不启动仿真：
 
 ```bash
-python3 scripts/scenario_repro.py "$SCENARIO_ID" --binary "$BINARY_ID" --dry-run
+.venv/bin/python3 scripts/scenario_repro.py "$SCENARIO_ID" --binary "$BINARY_ID" --dry-run
 ```
 
 自动流程产物位于 `/home/didi/ra_bags/scenario_<scenario_id>/`：`road.bag`、指向
@@ -48,7 +50,7 @@ EzSim 产物的 `sim.bag`/`events.log` 软链接，以及记录 trip、binary、
 
 ```bash
 cd /home/didi/workspace/ra_tools
-python3 - "$SCENARIO_ID" <<'PY'
+.venv/bin/python3 - "$SCENARIO_ID" <<'PY'
 import json
 import sys
 
@@ -106,7 +108,7 @@ voy-bag download road.bag -i <issue_uid> \
 
 ```bash
 cd /home/didi/workspace/ra_tools
-python3 scripts/ezsim_run.py --list | grep "ra_repro_${SCENARIO_ID}" || true
+.venv/bin/python3 scripts/ezsim_run.py --list | grep "ra_repro_${SCENARIO_ID}" || true
 ```
 
 如果已有状态为 `Success` 的同 binary 结果，优先复用，产物位于：
@@ -120,7 +122,7 @@ python3 scripts/ezsim_run.py --list | grep "ra_repro_${SCENARIO_ID}" || true
 
 ```bash
 cd /home/didi/workspace/ra_tools
-python3 scripts/ezsim_run.py "$SCENARIO_ID" \
+.venv/bin/python3 scripts/ezsim_run.py "$SCENARIO_ID" \
   --binary "$BINARY_ID" \
   --wait
 ```
@@ -147,7 +149,7 @@ ls -lh "$SIM_DIR/output.bag" "$SIM_DIR/events.log"
 先统计关键 topic 帧数：
 
 ```bash
-python3 - "$WORK_DIR/road.bag" "$SIM_DIR/output.bag" <<'PY'
+.venv/bin/python3 - "$WORK_DIR/road.bag" "$SIM_DIR/output.bag" <<'PY'
 import sys
 import rosbag
 
@@ -199,7 +201,7 @@ cd /home/didi/workspace/check_sim_reproduction
 版本指定 road/sim bag 和对齐时间。批量 job 结果可使用：
 
 ```bash
-python3 08_batch_job_diff_analysis.py \
+/home/didi/workspace/ra_tools/.venv/bin/python3 08_batch_job_diff_analysis.py \
   --job-id <orion_job_id> \
   --limit 5 \
   --bag-dir "$WORK_DIR" \
@@ -209,7 +211,7 @@ python3 08_batch_job_diff_analysis.py \
 对已抽取的 npz 做 nearby lane 对齐：
 
 ```bash
-python3 06_analyze_nearby_lane_alignment.py \
+/home/didi/workspace/ra_tools/.venv/bin/python3 06_analyze_nearby_lane_alignment.py \
   --road "$WORK_DIR/road_features.npz" \
   --sim "$WORK_DIR/sim_features.npz" \
   --show-mapping

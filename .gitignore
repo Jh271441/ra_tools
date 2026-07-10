@@ -2,6 +2,7 @@ data/
 !ra_sim_repro_dashboard/data/
 !ra_sim_repro_dashboard/data/mock/
 .idea/
+.venv/
 **/*.xlsx
 **/*.pyc
 *.csv
