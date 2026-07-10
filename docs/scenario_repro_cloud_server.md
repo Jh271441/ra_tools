@@ -149,6 +149,28 @@ voy-bag download road_filtered.bag \
   --nofile-limit 131072
 ```
 
+`voy-bag` 下载默认使用 C++ Protobuf；同一 trip 的 1 秒 `/planning/seed` 小样已验证成功，
+不会再产生纯 Python 性能提示。bag 读取分析仍使用 Python Protobuf，保持 Voyager 旧 proto
+兼容性。如果某类原始 topic 与 C++ 实现不兼容，可回退：
+
+```bash
+.venv/bin/python3 scripts/scenario_repro.py "$SCENARIO_ID" \
+  --binary "$BINARY_ID" \
+  --road-only \
+  --download-protobuf python
+```
+
+脚本仍会过滤完全匹配的重复 Protobuf 性能提示，但不会过滤其他 stderr。下载期间每 30 秒
+打印一次 `road_raw.bag` 的实际大小；默认连续 300 秒不增长时打印 stall warning，但不会
+自动终止下载。阈值可调整：
+
+```bash
+.venv/bin/python3 scripts/scenario_repro.py "$SCENARIO_ID" \
+  --binary "$BINARY_ID" \
+  --road-only \
+  --stall-warning-seconds 600
+```
+
 ## 4. 先检查是否已有历史 EzSim
 
 ```bash

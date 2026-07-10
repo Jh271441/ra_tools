@@ -9,6 +9,8 @@ import resource
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -22,9 +24,16 @@ RA_TOPICS = [
     "/planning/assist_request",
     "/planning/stuck_detection_recall_signal",
 ]
+PROTOBUF_PYTHON_WARNING = (
+    "Warning: the Protobuf library implementation is in Python, "
+    "which could significantly impact performance."
+)
 
 
-def voy_sdk_env(binary_id: int | None) -> dict[str, str]:
+def voy_sdk_env(
+    binary_id: int | None,
+    protobuf_implementation: str = "python",
+) -> dict[str, str]:
     env = os.environ.copy()
     binary_root = Path.home() / ".voyager/ezsim/binary"
     requested_lib = binary_root / str(binary_id) / "tmp/lib" if binary_id else None
@@ -38,7 +47,7 @@ def voy_sdk_env(binary_id: int | None) -> dict[str, str]:
     env["PYTHONPATH"] = ":".join(
         item for item in [sdk_python, env.get("PYTHONPATH", "")] if item
     )
-    env["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
+    env["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = protobuf_implementation
     return env
 
 
@@ -72,6 +81,73 @@ def ensure_nofile_limit(minimum: int) -> tuple[int, int]:
     if target > soft:
         resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
     return resource.getrlimit(resource.RLIMIT_NOFILE)
+
+
+def relay_download_stderr(stream: Any) -> None:
+    for line in stream:
+        if line.strip() == PROTOBUF_PYTHON_WARNING:
+            continue
+        sys.stderr.write(line)
+        sys.stderr.flush()
+
+
+def run_download(
+    command: list[str],
+    env: dict[str, str],
+    cwd: Path,
+    output: Path,
+    stall_warning_seconds: int,
+) -> None:
+    process = subprocess.Popen(
+        command,
+        env=env,
+        cwd=cwd,
+        stderr=subprocess.PIPE,
+        text=True,
+        errors="replace",
+        bufsize=1,
+    )
+    assert process.stderr is not None
+    stderr_thread = threading.Thread(
+        target=relay_download_stderr,
+        args=(process.stderr,),
+        daemon=True,
+    )
+    stderr_thread.start()
+
+    last_size = output.stat().st_size if output.exists() else 0
+    last_change = time.monotonic()
+    last_report = 0.0
+    last_stall_warning = 0.0
+    while process.poll() is None:
+        now = time.monotonic()
+        size = output.stat().st_size if output.exists() else 0
+        if size != last_size:
+            last_size = size
+            last_change = now
+        if now - last_report >= 30:
+            print(f"[road-download] output_size={size / (1024 ** 3):.2f} GiB")
+            last_report = now
+        stalled_for = now - last_change
+        if (
+            stall_warning_seconds > 0
+            and stalled_for >= stall_warning_seconds
+            and now - last_stall_warning >= 60
+        ):
+            print(
+                f"[road-download] warning: output has not grown for "
+                f"{int(stalled_for)} seconds; voy-bag is still running",
+                file=sys.stderr,
+            )
+            last_stall_warning = now
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
+
+    stderr_thread.join(timeout=5)
+    if process.returncode:
+        raise subprocess.CalledProcessError(process.returncode, command)
 
 
 def topic_counts(path: Path, env: dict[str, str]) -> dict[str, int]:
@@ -146,6 +222,18 @@ def parse_args() -> argparse.Namespace:
         help="Soft file-descriptor limit used by voy-bag",
     )
     parser.add_argument(
+        "--stall-warning-seconds",
+        type=int,
+        default=300,
+        help="Warn when the road bag output has not grown for this duration",
+    )
+    parser.add_argument(
+        "--download-protobuf",
+        choices=["cpp", "python"],
+        default="cpp",
+        help="Protobuf implementation used by voy-bag",
+    )
+    parser.add_argument(
         "--filtered-road",
         action="store_true",
         help="Download only RA topics instead of the complete raw road bag",
@@ -190,6 +278,7 @@ def main() -> None:
         "warmup_ms": args.warmup,
         "road_bag": str(road_bag),
         "road_download_complete_marker": str(road_complete),
+        "road_download_protobuf_implementation": args.download_protobuf,
     }
 
     print(json.dumps(metadata, ensure_ascii=False, indent=2))
@@ -202,7 +291,11 @@ def main() -> None:
 
     work_dir.mkdir(parents=True, exist_ok=True)
     write_metadata(work_dir / "metadata.json", metadata)
-    env = voy_sdk_env(args.binary)
+    analysis_env = voy_sdk_env(args.binary, protobuf_implementation="python")
+    download_env = voy_sdk_env(
+        args.binary,
+        protobuf_implementation=args.download_protobuf,
+    )
 
     if not args.skip_road_download:
         if road_bag.exists() and road_complete.exists() and not args.force_road_download:
@@ -218,7 +311,13 @@ def main() -> None:
             write_metadata(work_dir / "metadata.json", metadata)
             print(f"File descriptor limit: soft={soft_limit} hard={hard_limit}")
             try:
-                subprocess.run(download_cmd, env=env, cwd=work_dir, check=True)
+                run_download(
+                    download_cmd,
+                    env=download_env,
+                    cwd=work_dir,
+                    output=road_bag,
+                    stall_warning_seconds=args.stall_warning_seconds,
+                )
             except subprocess.CalledProcessError:
                 metadata["workflow_status"] = "road_download_failed"
                 write_metadata(work_dir / "metadata.json", metadata)
@@ -276,9 +375,9 @@ def main() -> None:
     if events_log.exists():
         replace_symlink(work_dir / "events.log", events_log)
 
-    counts: dict[str, Any] = {"sim": topic_counts(sim_bag, env)}
+    counts: dict[str, Any] = {"sim": topic_counts(sim_bag, analysis_env)}
     if road_bag.exists():
-        counts["road"] = topic_counts(road_bag, env)
+        counts["road"] = topic_counts(road_bag, analysis_env)
     metadata["topic_counts"] = counts
     write_metadata(work_dir / "metadata.json", metadata)
 
