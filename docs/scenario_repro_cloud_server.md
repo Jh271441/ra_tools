@@ -39,9 +39,21 @@ cd /home/didi/workspace/ra_tools
 .venv/bin/python3 scripts/scenario_repro.py "$SCENARIO_ID" --binary "$BINARY_ID" --dry-run
 ```
 
-自动流程产物位于 `/home/didi/ra_bags/scenario_<scenario_id>/`：`road.bag`、指向
+自动流程产物位于 `/home/didi/ra_bags/scenario_<scenario_id>/`：`road_raw.bag`、指向
 EzSim 产物的 `sim.bag`/`events.log` 软链接，以及记录 trip、binary、sim id、状态和 topic
 帧数的 `metadata.json`。
+
+默认下载完整时间窗的原始路测 bag，不传 `-T`。完整 bag 可能达到几十 GB。只需要 RA
+topic 时显式使用：
+
+```bash
+.venv/bin/python3 scripts/scenario_repro.py "$SCENARIO_ID" \
+  --binary "$BINARY_ID" \
+  --filtered-road
+```
+
+裁剪包保存为 `road_filtered.bag`，避免和完整包混淆。`metadata.json` 中的
+`road_download_mode`、`road_download_topics` 和 `road_bag` 会记录实际选择。
 
 `metadata.json` 会同时记录请求值和 EzSim 最终生效值：
 
@@ -85,26 +97,28 @@ PY
 
 ## 3. 下载路测 bag
 
-推荐按 trip 和时间窗下载，并只保留 RA 分析需要的 topic。为了覆盖 warmup 状态，可把
-`start_timestamp` 向前扩 5 至 10 秒。
+自动脚本默认按 trip 和时间窗下载完整原始 bag。为了覆盖 warmup 状态，默认把
+`start_timestamp` 向前扩 5 秒。
 
 ```bash
 cd "$WORK_DIR"
-voy-bag download road.bag \
+voy-bag download road_raw.bag \
   -t <trip_id> \
   -s <start_timestamp_ms> \
-  -e <end_timestamp_ms> \
-  -T /planning/seed \
-     /planning/planning_debug \
-     /planning/remote_assist_model_debug \
-     /planning/assist_request \
-     /planning/stuck_detection_recall_signal
+  -e <end_timestamp_ms>
 ```
 
-也可以按 issue 下载，但可能明显更大：
+也可以按 issue 下载完整包，但通常明显更大：
 
 ```bash
-voy-bag download road.bag -i <issue_uid> \
+voy-bag download road_raw.bag -i <issue_uid>
+```
+
+磁盘受限时才使用 topic 裁剪：
+
+```bash
+voy-bag download road_filtered.bag \
+  -t <trip_id> -s <start_timestamp_ms> -e <end_timestamp_ms> \
   -T /planning/seed \
      /planning/planning_debug \
      /planning/remote_assist_model_debug \
@@ -112,7 +126,7 @@ voy-bag download road.bag -i <issue_uid> \
      /planning/stuck_detection_recall_signal
 ```
 
-不要省略 `-T`。整 issue 下载可能达到几十 GB。
+服务器磁盘使用率较高，下载完整包前应确认剩余容量。不要同时保留多个重复的完整 bag。
 
 ## 4. 先检查是否已有历史 EzSim
 
@@ -159,7 +173,7 @@ ls -lh "$SIM_DIR/output.bag" "$SIM_DIR/events.log"
 先统计关键 topic 帧数：
 
 ```bash
-.venv/bin/python3 - "$WORK_DIR/road.bag" "$SIM_DIR/output.bag" <<'PY'
+.venv/bin/python3 - "$WORK_DIR/road_raw.bag" "$SIM_DIR/output.bag" <<'PY'
 import sys
 import rosbag
 

@@ -46,9 +46,10 @@ def road_download_command(
     trip_id: str,
     start_ms: int,
     end_ms: int,
+    topics: list[str] | None = None,
 ) -> list[str]:
     voy_bag = shutil.which("voy-bag") or "/home/didi/.local/bin/voy-bag"
-    return [
+    command = [
         voy_bag,
         "download",
         str(output),
@@ -58,9 +59,10 @@ def road_download_command(
         str(start_ms),
         "-e",
         str(end_ms),
-        "-T",
-        *RA_TOPICS,
     ]
+    if topics:
+        command.extend(["-T", *topics])
+    return command
 
 
 def topic_counts(path: Path, env: dict[str, str]) -> dict[str, int]:
@@ -124,6 +126,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force-road-download", action="store_true")
     parser.add_argument("--skip-road-download", action="store_true")
     parser.add_argument(
+        "--filtered-road",
+        action="store_true",
+        help="Download only RA topics instead of the complete raw road bag",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Query Trail and print planned paths/commands without downloading or simulating",
@@ -136,11 +143,16 @@ def main() -> None:
     info = _get_trail_trip_segment(args.scenario_id)
     segment = info["trip_segment"]
     work_dir = Path(args.output_root).expanduser() / f"scenario_{args.scenario_id}"
-    road_bag = work_dir / "road.bag"
+    road_mode = "filtered" if args.filtered_road else "raw"
+    road_bag = work_dir / f"road_{road_mode}.bag"
     start_ms = max(0, int(segment["startTimestamp"]) - args.road_prefix_ms)
     end_ms = int(segment["endTimestamp"])
     download_cmd = road_download_command(
-        road_bag, str(segment["tripId"]), start_ms, end_ms
+        road_bag,
+        str(segment["tripId"]),
+        start_ms,
+        end_ms,
+        topics=RA_TOPICS if args.filtered_road else None,
     )
 
     metadata: dict[str, Any] = {
@@ -150,6 +162,8 @@ def main() -> None:
         "trip_segment": segment,
         "road_download_start_ms": start_ms,
         "road_download_end_ms": end_ms,
+        "road_download_mode": road_mode,
+        "road_download_topics": RA_TOPICS if args.filtered_road else None,
         "requested_binary_id": args.binary,
         "requested_build": args.build,
         "warmup_ms": args.warmup,
@@ -159,6 +173,8 @@ def main() -> None:
     print(json.dumps(metadata, ensure_ascii=False, indent=2))
     print("Road download command:")
     print(" ".join(download_cmd))
+    if not args.filtered_road:
+        print("Warning: raw road bag download can use tens of GB of disk space.")
     if args.dry_run:
         return
 
