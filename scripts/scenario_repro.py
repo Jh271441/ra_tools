@@ -150,8 +150,8 @@ def main() -> None:
         "trip_segment": segment,
         "road_download_start_ms": start_ms,
         "road_download_end_ms": end_ms,
-        "binary_id": args.binary,
-        "build": args.build,
+        "requested_binary_id": args.binary,
+        "requested_build": args.build,
         "warmup_ms": args.warmup,
         "road_bag": str(road_bag),
     }
@@ -190,11 +190,18 @@ def main() -> None:
     metadata["sim_status"] = final.get("status")
     metadata["sim_failure"] = final.get("failure")
     metadata["sim_durations"] = final.get("durations", {})
+    sim_options = final.get("options", {})
+    metadata["sim_binary_id"] = sim_options.get("binary_id")
+    metadata["sim_build_dir_hash"] = final.get("build_dir_hash")
+    metadata["sim_runtime_dir"] = final.get("sim_runtime_dir")
+    metadata["sim_server_version"] = final.get("server_version")
+    metadata["sim_skip_map_update"] = sim_options.get("skip_map_update")
+    metadata["sim_skip_model_update"] = sim_options.get("skip_model_update")
 
     sim_dir = Path.home() / ".voyager/ezsim/simulation" / sim_id
     sim_bag = sim_dir / "output.bag"
     events_log = sim_dir / "events.log"
-    metadata["sim_dir"] = str(sim_dir)
+    metadata["sim_artifact_dir"] = str(sim_dir)
     metadata["sim_bag"] = str(sim_bag)
     metadata["events_log"] = str(events_log)
 

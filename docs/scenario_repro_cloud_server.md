@@ -43,6 +43,16 @@ cd /home/didi/workspace/ra_tools
 EzSim 产物的 `sim.bag`/`events.log` 软链接，以及记录 trip、binary、sim id、状态和 topic
 帧数的 `metadata.json`。
 
+`metadata.json` 会同时记录请求值和 EzSim 最终生效值：
+
+- `requested_binary_id` / `requested_build`
+- `sim_binary_id` / `sim_build_dir_hash`
+- `sim_runtime_dir` / `sim_server_version`
+- `sim_skip_map_update` / `sim_skip_model_update`
+
+其中 `sim_binary_id` 和 `sim_runtime_dir` 来自仿真完成后的 EzSim API 返回，用于确认实际
+运行版本，而不只依赖命令行请求值。
+
 `BINARY_ID` 应替换为路测当时版本对应的 Orion binary。使用更新的默认 build 只能用于
 现状验证，不能作为严格的路测复现结论。
 
