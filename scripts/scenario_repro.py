@@ -230,7 +230,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--download-protobuf",
         choices=["cpp", "python"],
-        default="cpp",
+        default="python",
         help="Protobuf implementation used by voy-bag",
     )
     parser.add_argument(

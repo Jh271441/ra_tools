@@ -149,15 +149,16 @@ voy-bag download road_filtered.bag \
   --nofile-limit 131072
 ```
 
-`voy-bag` 下载默认使用 C++ Protobuf；同一 trip 的 1 秒 `/planning/seed` 小样已验证成功，
-不会再产生纯 Python 性能提示。bag 读取分析仍使用 Python Protobuf，保持 Voyager 旧 proto
-兼容性。如果某类原始 topic 与 C++ 实现不兼容，可回退：
+`voy-bag` 默认使用 Python Protobuf，保持 Voyager 旧 proto、Data Gateway 鉴权和完整 topic
+流程的兼容性。重复的性能提示由父进程精确过滤，不会隐藏其他 stderr。C++ Protobuf 只在
+同一 trip 的 1 秒 `/planning/seed` 小样中验证过，不作为完整 raw bag 的默认配置。需要实验
+C++ 性能时显式指定：
 
 ```bash
 .venv/bin/python3 scripts/scenario_repro.py "$SCENARIO_ID" \
   --binary "$BINARY_ID" \
   --road-only \
-  --download-protobuf python
+  --download-protobuf cpp
 ```
 
 脚本仍会过滤完全匹配的重复 Protobuf 性能提示，但不会过滤其他 stderr。下载期间每 30 秒
