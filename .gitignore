@@ -21,3 +21,8 @@ model_release_pipeline/web_frontend/.vite/
 cc-connect.service
 ops/cpa/auth-dir/
 ops/cpa/config.yaml
+
+# Ares Playwright credentials, browser profile, and local screenshots.
+ares_storage_state.json
+ares_chrome_profile/
+playwright_screenshots/
