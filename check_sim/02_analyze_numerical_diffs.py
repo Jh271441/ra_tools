@@ -4,15 +4,12 @@ import argparse
 
 import numpy as np
 
-from planning_seed_reader import get_frame, get_tensor_dict
-
-
-def get_values(value):
-    result = []
-    result.extend(getattr(value, "float_vals", []))
-    result.extend(getattr(value, "double_vals", []))
-    result.extend(getattr(value, "int_vals", []))
-    return result
+if __package__:
+    from .planning_seed_reader import get_frame, get_tensor_dict
+    from .tensor_io import tensor_values
+else:
+    from planning_seed_reader import get_frame, get_tensor_dict
+    from tensor_io import tensor_values
 
 
 def main():
@@ -47,8 +44,8 @@ def main():
     print("-" * 100)
 
     for name in sorted(set(road) | set(sim)):
-        road_values = get_values(road[name]) if name in road else []
-        sim_values = get_values(sim[name]) if name in sim else []
+        road_values = tensor_values(road[name]) if name in road else []
+        sim_values = tensor_values(sim[name]) if name in sim else []
         if not road_values or not sim_values:
             print(f"{name:<28} | {'MISSING':<25} | {'MISSING':<25} | {'N/A':<12}")
             continue

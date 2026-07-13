@@ -1,6 +1,6 @@
 # Check Sim 01-07 使用说明
 
-本文说明 `ra_tools/scripts/check_sim/` 下 01-07 脚本的用途、输入输出、运行命令和结果解释。
+本文说明 `ra_tools/check_sim/` 下 01-07 脚本的用途、输入输出、运行命令和结果解释。
 这些脚本用于比较同一场景的路测 `road.bag` 与 EzSim `sim.bag`，重点定位
 `/planning/seed` 中模型 TensorDict 是否不一致，以及 `nearby_lane` 是否导致推理差异。
 
@@ -48,7 +48,7 @@ export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 export VOYAGER_PROTO_PB=/home/didi/workspace/voyager/bazel-build/bin/protobuf_python/protos_python_pb
 
 export PY=/home/didi/workspace/ra_tools/.venv/bin/python3
-export CHECK_SIM=/home/didi/workspace/ra_tools/scripts/check_sim
+export CHECK_SIM=/home/didi/workspace/ra_tools/check_sim
 export WORK_DIR=/home/didi/ra_bags/scenario_32141295
 export ROAD_BAG=$WORK_DIR/road.bag
 export SIM_BAG=$WORK_DIR/sim.bag

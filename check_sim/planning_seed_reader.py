@@ -8,40 +8,40 @@ import io
 import os
 import sys
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterator
 
 
 TOPIC = "/planning/seed"
-DEFAULT_PROTO_ROOT = Path(
-    os.environ.get(
-        "VOYAGER_PROTO_PB",
-        "~/workspace/voyager/bazel-build/bin/protobuf_python/protos_python_pb",
-    )
-).expanduser()
 
 
+@lru_cache(maxsize=1)
 def _load_runtime():
     os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
     sdk_path = Path("/opt/voy-sdk/lib/python3/dist-packages")
     if sdk_path.is_dir() and str(sdk_path) not in sys.path:
         sys.path.insert(0, str(sdk_path))
-    if not DEFAULT_PROTO_ROOT.is_dir():
+
+    proto_root = Path(
+        os.environ.get(
+            "VOYAGER_PROTO_PB",
+            "~/workspace/voyager/bazel-build/bin/protobuf_python/protos_python_pb",
+        )
+    ).expanduser()
+    if not proto_root.is_dir():
         raise RuntimeError(
             "Voyager protobuf Python bindings not found. Set VOYAGER_PROTO_PB "
-            f"or build them at {DEFAULT_PROTO_ROOT}"
+            f"or build them at {proto_root}"
         )
-    if str(DEFAULT_PROTO_ROOT) not in sys.path:
-        sys.path.insert(0, str(DEFAULT_PROTO_ROOT))
+    if str(proto_root) not in sys.path:
+        sys.path.insert(0, str(proto_root))
 
     import rosbag
     from planner_protos import planning_seed_pb2
 
     return rosbag, planning_seed_pb2.PlanningSeed
-
-
-rosbag, PlanningSeed = _load_runtime()
 
 
 @dataclass(frozen=True)
@@ -65,15 +65,16 @@ def _raw_payload(raw_message) -> bytes:
 
 
 def _parse_seed(raw_message):
-    message = PlanningSeed()
+    _, planning_seed = _load_runtime()
+    message = planning_seed()
     message.ParseFromString(_raw_payload(raw_message))
     return message
 
 
 def read_raw_records(path: str | Path, topic: str = TOPIC):
-    """Load record timestamps and raw messages without ROS message deserialization."""
+    """Load record timestamps and raw messages without ROS deserialization."""
+    rosbag, _ = _load_runtime()
     records = []
-    # voy-sdk emits a known placeholder-md5 warning while opening proto_msg topics.
     with contextlib.redirect_stderr(io.StringIO()):
         with rosbag.Bag(str(path), "r") as bag:
             for _, raw_message, timestamp in bag.read_messages(
@@ -131,7 +132,8 @@ def get_frame(
 
 
 def iter_frames(path: str | Path, topic: str = TOPIC) -> Iterator[SeedFrame]:
-    """Parse every PlanningSeed frame. Intended only for explicit full-bag analysis."""
+    """Parse every PlanningSeed frame for explicit full-bag analysis."""
+    rosbag, _ = _load_runtime()
     with contextlib.redirect_stderr(io.StringIO()):
         with rosbag.Bag(str(path), "r") as bag:
             for _, raw_message, timestamp in bag.read_messages(

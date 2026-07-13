@@ -7,7 +7,7 @@
 3. 使用路测地图和对应 binary 触发 EzSim 开环规划仿真。
 4. 定位 EzSim 生成的 `output.bag` 和 `events.log`。
 5. 检查 road/sim 是否触发 RA。
-6. 使用 `check_sim_reproduction` 做 `/planning/seed` 特征比较。
+6. 使用 `ra_tools/check_sim` 做 `/planning/seed` 特征比较。
 
 ## 1. 登录与环境
 
@@ -313,24 +313,34 @@ grep -aoE 'rt_event\.planner::[A-Za-z0-9_]+' "$SIM_DIR/events.log" | sort | uniq
 
 ```bash
 ln -s "$SIM_DIR/output.bag" "$WORK_DIR/sim.bag"
-cd /home/didi/workspace/check_sim_reproduction
+cd /home/didi/workspace/ra_tools
 ```
 
-当前 `01/02/03` 脚本仍带有 `cn30851935` 默认文件名和目标时间，分析新场景前需要通过参数化
-版本指定 road/sim bag 和对齐时间。批量 job 结果可使用：
+当前 `check_sim/01-07` 已在 `ra_tools` 内独立维护。先按目标时间检查并抽取单帧特征：
 
 ```bash
-/home/didi/workspace/ra_tools/.venv/bin/python3 08_batch_job_diff_analysis.py \
-  --job-id <orion_job_id> \
-  --limit 5 \
-  --bag-dir "$WORK_DIR" \
-  --output-dir "$WORK_DIR/batch_diff_outputs"
+export PY=/home/didi/workspace/ra_tools/.venv/bin/python3
+export TARGET_MS=<road_target_timestamp_ms>
+
+$PY check_sim/01_check_nearby_frames.py \
+  --road "$WORK_DIR/road.bag" \
+  --sim "$WORK_DIR/sim.bag" \
+  --ts "$TARGET_MS" \
+  --count 2
+
+$PY check_sim/03_extract_features_to_npz.py \
+  --road "$WORK_DIR/road.bag" \
+  --sim "$WORK_DIR/sim.bag" \
+  --ts "$TARGET_MS" \
+  --offset -1 \
+  --road-output "$WORK_DIR/road_features.npz" \
+  --sim-output "$WORK_DIR/sim_features.npz"
 ```
 
 对已抽取的 npz 做 nearby lane 对齐：
 
 ```bash
-/home/didi/workspace/ra_tools/.venv/bin/python3 06_analyze_nearby_lane_alignment.py \
+$PY check_sim/06_analyze_nearby_lane_alignment.py \
   --road "$WORK_DIR/road_features.npz" \
   --sim "$WORK_DIR/sim_features.npz" \
   --show-mapping

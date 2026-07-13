@@ -2,7 +2,10 @@
 
 import argparse
 
-from planning_seed_reader import get_nearby_frames, get_tensor_dict
+if __package__:
+    from .planning_seed_reader import get_nearby_frames, get_tensor_dict
+else:
+    from planning_seed_reader import get_nearby_frames, get_tensor_dict
 
 
 def format_tensor_dict(tensor_dict):
@@ -41,9 +44,7 @@ def main():
     )
     print("-" * 90)
 
-    offsets = sorted(
-        {item["index_offset"] for item in road_results + sim_results}
-    )
+    offsets = sorted({item["index_offset"] for item in road_results + sim_results})
     for offset in offsets:
         road = next(
             (item for item in road_results if item["index_offset"] == offset), None
@@ -60,7 +61,6 @@ def main():
             f"{label:<8} | {road_time:<20} | {road_td:<15} | "
             f"{sim_time:<20} | {sim_td:<15}"
         )
-
 
 
 if __name__ == "__main__":
