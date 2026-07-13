@@ -473,8 +473,14 @@ def main() -> None:
                 args.output_root / f"case_{row['scenario_id']}" / "summary.json"
             )
             if not summary_path.is_file():
+                error_path = summary_path.parent / "error.json"
+                error = "summary missing"
+                if error_path.is_file():
+                    error = json.loads(error_path.read_text(encoding="utf8")).get(
+                        "error", error
+                    )
                 results.append(
-                    {"scenario_id": row["scenario_id"], "error": "summary missing"}
+                    {"scenario_id": row["scenario_id"], "error": error}
                 )
                 continue
             result = json.loads(summary_path.read_text(encoding="utf8"))
