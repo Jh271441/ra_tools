@@ -454,6 +454,27 @@ recall signal，不发送正式 AssistRequest，并返回该状态。用
 `compare_ra_debug.py` 中的 `non_voluntary_unstuck_reason`、`stuck_timer_ms`、
 `strict_model_detected` 和 `uncertain_stuck` 判断门控解除原因。
 
+### Base miss 50-case 批量结论（2026-07-14）
+
+使用 `check_sim/batch/data/base_miss_50.csv` 和 CSV 中 base binary `1633565` 串行重跑。
+原 Orion output bag 已超过保留期，因此历史 DPE 与当前同配置重跑结果分开统计。50 个输入
+中 48 个完整成功，2 个因 smart-agent ONNX 的 CUDA `invalid resource handle` 稳定失败。
+
+48 个成功 case 的 road 触发路径以 FN 为主：`FN_FORCING_RECALL` 23 个，
+`ASSIST_STUCK_MODEL` 19 个，其余 6 个来自 special/FN/routing。根因聚类为：
+
+- 22 个 `SIM_FORCING_RECALL_NOT_REPRODUCED`，是最大类别；必须检查 forcing accumulated
+  cycle、场景 trigger cycle 和 reset/block 原因，不能归为模型未召回。
+- 9 个 `SIM_MODEL_NOT_RECALLED`。
+- 7 个当前重跑实际产生 planning request 且 opened session，但历史 DPE 记录未触发，说明
+  跨运行时序不稳定。
+- 其余 10 个分布在特定 FN/special/routing 未复现、request state、FP queuing 和 voluntary
+  unstuck gate。
+
+完整逐案证据见 `reports/ra_repro_base_miss_50_analysis.md`。批量运行必须串行；并发 EzSim
+会争用 binary cache。bag 下载运行库优先固定为 `/opt/voy-sdk/lib`，不要依赖 EzSim 临时
+binary 目录，该目录会在仿真清理时失效。
+
 建议长期保留：
 
 - `summary.json`、`summary.csv`
