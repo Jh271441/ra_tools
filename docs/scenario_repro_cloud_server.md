@@ -429,6 +429,25 @@ warmup。路测 `/pose` 与仿真 `/simulation/pose` 按消息时间戳在 20 ms
 - pose 对齐后模型分数仍不同，且仿真请求没有提前。速度差异只解释 Yield FP
   时序，不能解释全部模型输入和请求仲裁差异。
 
+进一步解析 selected trajectory 的 `StuckSignal` 后，正式请求差异落在 voluntary
+unstuck 门控的上游输入：
+
+- 路测首次 `MODEL_REQUEST` 帧为 `reason=kNoStuck`、`start_timestamp=0`，但
+  `last_stuck_timestamp=1777372738256` 仍保留旧值。
+- `IsVoluntaryUnstuckFail()` 直接计算 `last_stuck_timestamp - start_timestamp >
+  5000`，没有先检查 `reason` 或 `start_timestamp` 是否有效，因此该掉零帧立即
+  得到 `UnstuckFail`，绕过 voluntary unstuck 等待并发送请求。
+- baseline sim 同期仍是 `kNotBlockageObject`，signal duration 为 2490 ms，返回
+  `WAITTING_CORE_PLANNER_UNSTUCK`；到 signal 后续掉零时才请求。
+- replay road pose 消除了 Yield FP 差异，但没有复现路测同一时刻的 selected
+  trajectory StuckSignal 掉零，因此正式请求仍晚于路测。
+
+这说明当前 case 有两条独立差异链：PerfectPose 速度阈值影响 Yield FP 时序；
+selected trajectory 的 StuckSignal 连续性影响 voluntary unstuck 门控和正式请求。
+此外，旧 Orion base DPE 记录未触发，而当前相同 binary/extra args 重跑既有
+`MODEL_REQUEST`、`/planning/assist_request`，也有一帧 opened assist session，表明
+本 case 还存在跨运行时序敏感性。报告中必须区分旧任务指标和当前重跑实测。
+
 `WAITTING_CORE_PLANNER_UNSTUCK` 不代表模型未检出。代码在模型已返回
 `kModelDetected` 后仍会检查 voluntary unstuck 状态；处于自主脱困阶段时只发送
 recall signal，不发送正式 AssistRequest，并返回该状态。用

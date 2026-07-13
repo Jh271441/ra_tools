@@ -321,6 +321,8 @@ def write_report(results: list[dict[str, Any]], path: Path) -> None:
         f"- 输入 case：{len(results)}；成功解析：{len(successful)}；失败：{len(failures)}。",
         "- 对比从 Trail `trip_segment.startTimestamp` 开始，排除 EzSim warmup。",
         "- 信号来自 `/planning/planning_debug`，重点检查模型召回、FP、voluntary unstuck、StuckSignal 和正式请求。",
+        "- 原 Orion output bag 已超过保留期；除已有本地 case 外，sim 使用 CSV 中的 base binary 和同一组标准 extra args 重新运行。",
+        "- CSV DPE 是历史任务指标，报告中的 planning/session 信号来自当前重跑；二者不一致时单独标记为跨运行复现不稳定。",
         "",
         "## 根因分布",
         "",
