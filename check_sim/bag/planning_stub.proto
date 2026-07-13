@@ -122,6 +122,34 @@ message AssistStuckFPLaneChangeDebug {
   int64 lane_change_forbid_requirement_timestmap = 2;
 }
 
+message AssistStuckFPYieldDynamicObjectDebug {
+  enum DecisionReason {
+    kUnKnown = 0;
+    kNoYieldingObject = 1;
+    kYieldingObjectIsBlockage = 2;
+    kYieldingOtherLaneSlowMovingObject = 3;
+    kYieldingObjectSwitchToStatic = 4;
+    kJunctionOrExitZone = 5;
+    kStuckRightMostWithLowCycles = 6;
+    kStuckRightMostWithHighCycles = 7;
+    kYieldingTempParkedObject = 8;
+    kYieldingVaryingTrafficFlow = 9;
+    kYieldingDynamicObject = 10;
+    kYieldingEndDelayBuffer = 11;
+    kOtherScenarios = 12;
+    kHighConflictInJunction = 13;
+  }
+  int64 yield_hold_cycles = 1;
+  int64 yield_temp_parked_cycles = 2;
+  int64 right_lane_yield_cycles = 3;
+  int64 total_yielding_cycles = 4;
+  DecisionReason decision_reason = 6;
+  int64 yielding_object_id = 7;
+  double yielding_object_speed = 8;
+  double yielding_object_heading = 9;
+  double ego_heading = 10;
+}
+
 message AssistStuckRules {
   enum RuleDecision {
     kNone = 0;
@@ -133,6 +161,7 @@ message AssistStuckRules {
   }
   RuleDecision rule_decision = 1;
   AssistStuckRuleActivation rule_activation = 2;
+  AssistStuckFPYieldDynamicObjectDebug fp_yield_dynamic_object_debug = 11;
   AssistStuckFPLaneChangeDebug fp_lane_change_debug = 25;
   repeated AssistModelProcessReason fp_process_reasons = 26;
   repeated AssistModelProcessReason fn_process_reasons = 27;

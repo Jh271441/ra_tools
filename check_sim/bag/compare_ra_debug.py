@@ -44,6 +44,13 @@ class Frame:
     fn_reasons: tuple[str, ...]
     active_rules: tuple[str, ...]
     lane_change_forbid_timestamp_ms: int | None
+    yield_dynamic_decision: str
+    yielding_object_id: int | None
+    yielding_object_speed: float | None
+    yield_hold_cycles: int
+    yield_temp_parked_cycles: int
+    right_lane_yield_cycles: int
+    total_yielding_cycles: int
     model_detected: bool
     scenario_dnn: float | None
     threshold: float
@@ -78,6 +85,8 @@ def parse_frame(timestamp_ms: int, payload: bytes) -> Frame:
     reason_field = debug.DESCRIPTOR.fields_by_name["assist_model_process_reason"]
     decision_field = rules.DESCRIPTOR.fields_by_name["rule_decision"]
     lane_change_ts = rules.fp_lane_change_debug.lane_change_forbid_requirement_timestmap
+    yield_debug = rules.fp_yield_dynamic_object_debug
+    yield_decision_field = yield_debug.DESCRIPTOR.fields_by_name["decision_reason"]
     return Frame(
         timestamp_ms=timestamp_ms,
         status=enum_name(status_field, debug.unstuck_status),
@@ -87,6 +96,19 @@ def parse_frame(timestamp_ms: int, payload: bytes) -> Frame:
         fn_reasons=tuple(enum_name(reason_field, value) for value in rules.fn_process_reasons),
         active_rules=active_rules,
         lane_change_forbid_timestamp_ms=lane_change_ts or None,
+        yield_dynamic_decision=enum_name(
+            yield_decision_field, yield_debug.decision_reason
+        ),
+        yielding_object_id=yield_debug.yielding_object_id or None,
+        yielding_object_speed=(
+            float(yield_debug.yielding_object_speed)
+            if yield_debug.yielding_object_id
+            else None
+        ),
+        yield_hold_cycles=yield_debug.yield_hold_cycles,
+        yield_temp_parked_cycles=yield_debug.yield_temp_parked_cycles,
+        right_lane_yield_cycles=yield_debug.right_lane_yield_cycles,
+        total_yielding_cycles=yield_debug.total_yielding_cycles,
         model_detected=debug.is_stuck_detected_by_model,
         scenario_dnn=optional_double(debug, "scenario_dnn_stuck_likelihood_from_ra_vnode"),
         threshold=debug.stuck_threshold,
@@ -141,6 +163,16 @@ def histogram(frames: list[Frame], attribute: str) -> dict[str, int]:
     return dict(Counter(str(getattr(frame, attribute)) for frame in frames))
 
 
+def repeated_reason_histogram(frames: list[Frame], attribute: str) -> dict[str, int]:
+    return dict(
+        Counter(
+            reason
+            for frame in frames
+            for reason in getattr(frame, attribute)
+        )
+    )
+
+
 def compare(road: list[Frame], sim: list[Frame], tolerance_ms: int) -> dict:
     sim_times = [frame.timestamp_ms for frame in sim]
     aligned = []
@@ -162,6 +194,10 @@ def compare(road: list[Frame], sim: list[Frame], tolerance_ms: int) -> dict:
         "sim_statuses": histogram(sim, "status"),
         "road_process_reasons": histogram(road, "process_reason"),
         "sim_process_reasons": histogram(sim, "process_reason"),
+        "road_fp_reason_frames": repeated_reason_histogram(road, "fp_reasons"),
+        "sim_fp_reason_frames": repeated_reason_histogram(sim, "fp_reasons"),
+        "road_yield_dynamic_decisions": histogram(road, "yield_dynamic_decision"),
+        "sim_yield_dynamic_decisions": histogram(sim, "yield_dynamic_decision"),
         "first_mismatches": mismatches[:10],
     }
 
@@ -205,6 +241,10 @@ def format_frame(frame: dict) -> str:
         f"ts={frame['timestamp_ms']} status={frame['status']} "
         f"reason={frame['process_reason']} decision={frame['rule_decision']} "
         f"fp={list(frame['fp_reasons'])} active={list(frame['active_rules'])} "
+        f"yield={frame['yield_dynamic_decision']} "
+        f"yield_obj={frame['yielding_object_id']} "
+        f"yield_speed={frame['yielding_object_speed']} "
+        f"yield_hold={frame['yield_hold_cycles']} "
         f"scen_dnn={frame['scenario_dnn']} threshold={frame['threshold']} "
         f"lane_change_forbid_ts={frame['lane_change_forbid_timestamp_ms']}"
     )
@@ -225,6 +265,10 @@ def print_text(result: dict) -> None:
     print(f"sim statuses:  {result['sim_statuses']}")
     print(f"road reasons:  {result['road_process_reasons']}")
     print(f"sim reasons:   {result['sim_process_reasons']}")
+    print(f"road FP frames: {result['road_fp_reason_frames']}")
+    print(f"sim FP frames:  {result['sim_fp_reason_frames']}")
+    print(f"road yield decisions: {result['road_yield_dynamic_decisions']}")
+    print(f"sim yield decisions:  {result['sim_yield_dynamic_decisions']}")
     if not result["first_mismatches"]:
         print("No aligned RA decision mismatch found.")
         return
