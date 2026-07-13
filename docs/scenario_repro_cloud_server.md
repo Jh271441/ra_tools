@@ -14,7 +14,7 @@
 ```bash
 ssh cloud_server
 cd /home/didi/workspace/ra_tools
-bash check_sim/setup_cloud_python.sh
+bash check_sim/repro/setup_cloud_python.sh
 
 export LD_LIBRARY_PATH=/home/didi/.voyager/ezsim/binary/1665523/tmp/lib:$LD_LIBRARY_PATH
 export PYTHONPATH=/opt/voy-sdk/lib/python3/dist-packages:$PYTHONPATH
@@ -30,13 +30,13 @@ mkdir -p "$WORK_DIR"
 
 ```bash
 cd /home/didi/workspace/ra_tools
-.venv/bin/python3 check_sim/scenario_repro.py "$SCENARIO_ID" --binary "$BINARY_ID"
+.venv/bin/python3 check_sim/repro/scenario_repro.py "$SCENARIO_ID" --binary "$BINARY_ID"
 ```
 
 首次执行前建议先检查计划，不下载 bag、也不启动仿真：
 
 ```bash
-.venv/bin/python3 check_sim/scenario_repro.py "$SCENARIO_ID" --binary "$BINARY_ID" --dry-run
+.venv/bin/python3 check_sim/repro/scenario_repro.py "$SCENARIO_ID" --binary "$BINARY_ID" --dry-run
 ```
 
 自动流程产物位于 `/home/didi/ra_bags/scenario_<scenario_id>/`：默认 topic 裁剪包
@@ -44,11 +44,11 @@ cd /home/didi/workspace/ra_tools
 sim id、状态和 topic 帧数的 `metadata.json`。
 
 默认使用 sim topic 白名单，不再下载完整 raw bag：当前场景目录已有 `sim.bag` 时动态读取；
-否则读取 `check_sim/default_road_topics.txt` 中从 scenario `32141295` sim bag 提取的 70-topic
+否则读取 `check_sim/repro/default_road_topics.txt` 中从 scenario `32141295` sim bag 提取的 70-topic
 快照。完整 raw bag 需要显式使用：
 
 ```bash
-.venv/bin/python3 check_sim/scenario_repro.py "$SCENARIO_ID" \
+.venv/bin/python3 check_sim/repro/scenario_repro.py "$SCENARIO_ID" \
   --binary "$BINARY_ID" \
   --raw-road
 ```
@@ -56,7 +56,7 @@ sim id、状态和 topic 帧数的 `metadata.json`。
 只需要 5 个 RA 核心 topic 时显式使用：
 
 ```bash
-.venv/bin/python3 check_sim/scenario_repro.py "$SCENARIO_ID" \
+.venv/bin/python3 check_sim/repro/scenario_repro.py "$SCENARIO_ID" \
   --binary "$BINARY_ID" \
   --filtered-road
 ```
@@ -69,7 +69,7 @@ sim id、状态和 topic 帧数的 `metadata.json`。
 `--filtered-road`：
 
 ```bash
-.venv/bin/python3 check_sim/scenario_repro.py "$SCENARIO_ID" \
+.venv/bin/python3 check_sim/repro/scenario_repro.py "$SCENARIO_ID" \
   --binary "$BINARY_ID" \
   --road-only \
   --road-topic /planning/seed \
@@ -86,7 +86,7 @@ topic 必须以 `/` 开头，重复值会自动去重。
 已有 sim bag 时，可以直接读取它的全部 topic，并下载路测侧同名 topic：
 
 ```bash
-.venv/bin/python3 check_sim/scenario_repro.py "$SCENARIO_ID" \
+.venv/bin/python3 check_sim/repro/scenario_repro.py "$SCENARIO_ID" \
   --binary "$BINARY_ID" \
   --road-only \
   --road-topics-from-sim-bag
@@ -101,7 +101,7 @@ topic 必须以 `/` 开头，重复值会自动去重。
 也可以指定任意 EzSim 输出：
 
 ```bash
-.venv/bin/python3 check_sim/scenario_repro.py "$SCENARIO_ID" \
+.venv/bin/python3 check_sim/repro/scenario_repro.py "$SCENARIO_ID" \
   --binary "$BINARY_ID" \
   --road-only \
   --road-topics-from-sim-bag \
@@ -193,7 +193,7 @@ voy-bag download road_filtered.bag \
 已有 sim、只需要补原始 road bag 时使用：
 
 ```bash
-.venv/bin/python3 check_sim/scenario_repro.py "$SCENARIO_ID" \
+.venv/bin/python3 check_sim/repro/scenario_repro.py "$SCENARIO_ID" \
   --binary "$BINARY_ID" \
   --road-only
 ```
@@ -201,7 +201,7 @@ voy-bag download road_filtered.bag \
 遇到 `Too many open files` 时可显式提高目标值，但不能超过服务器 hard limit：
 
 ```bash
-.venv/bin/python3 check_sim/scenario_repro.py "$SCENARIO_ID" \
+.venv/bin/python3 check_sim/repro/scenario_repro.py "$SCENARIO_ID" \
   --binary "$BINARY_ID" \
   --road-only \
   --nofile-limit 131072
@@ -213,7 +213,7 @@ voy-bag download road_filtered.bag \
 C++ 性能时显式指定：
 
 ```bash
-.venv/bin/python3 check_sim/scenario_repro.py "$SCENARIO_ID" \
+.venv/bin/python3 check_sim/repro/scenario_repro.py "$SCENARIO_ID" \
   --binary "$BINARY_ID" \
   --road-only \
   --download-protobuf cpp
@@ -224,7 +224,7 @@ C++ 性能时显式指定：
 自动终止下载。阈值可调整：
 
 ```bash
-.venv/bin/python3 check_sim/scenario_repro.py "$SCENARIO_ID" \
+.venv/bin/python3 check_sim/repro/scenario_repro.py "$SCENARIO_ID" \
   --binary "$BINARY_ID" \
   --road-only \
   --stall-warning-seconds 600
@@ -234,7 +234,7 @@ C++ 性能时显式指定：
 
 ```bash
 cd /home/didi/workspace/ra_tools
-.venv/bin/python3 check_sim/ezsim.py --list | grep "ra_repro_${SCENARIO_ID}" || true
+.venv/bin/python3 check_sim/repro/ezsim.py --list | grep "ra_repro_${SCENARIO_ID}" || true
 ```
 
 如果已有状态为 `Success` 的同 binary 结果，优先复用，产物位于：
@@ -248,7 +248,7 @@ cd /home/didi/workspace/ra_tools
 
 ```bash
 cd /home/didi/workspace/ra_tools
-.venv/bin/python3 check_sim/ezsim.py "$SCENARIO_ID" \
+.venv/bin/python3 check_sim/repro/ezsim.py "$SCENARIO_ID" \
   --binary "$BINARY_ID" \
   --wait
 ```
@@ -275,7 +275,7 @@ ls -lh "$SIM_DIR/output.bag" "$SIM_DIR/events.log"
 先按时间戳比较关键 topic 的帧数和对齐覆盖率：
 
 ```bash
-.venv/bin/python3 check_sim/compare_road_sim_bags.py \
+.venv/bin/python3 check_sim/bag/compare_road_sim_bags.py \
   "$WORK_DIR/road.bag" \
   "$WORK_DIR/sim.bag"
 ```
@@ -316,19 +316,19 @@ ln -s "$SIM_DIR/output.bag" "$WORK_DIR/sim.bag"
 cd /home/didi/workspace/ra_tools
 ```
 
-当前 `check_sim/01-07` 已在 `ra_tools` 内独立维护。先按目标时间检查并抽取单帧特征：
+当前 `check_sim/analysis/01-07` 已在 `ra_tools` 内独立维护。先按目标时间检查并抽取单帧特征：
 
 ```bash
 export PY=/home/didi/workspace/ra_tools/.venv/bin/python3
 export TARGET_MS=<road_target_timestamp_ms>
 
-$PY check_sim/01_check_nearby_frames.py \
+$PY check_sim/analysis/01_check_nearby_frames.py \
   --road "$WORK_DIR/road.bag" \
   --sim "$WORK_DIR/sim.bag" \
   --ts "$TARGET_MS" \
   --count 2
 
-$PY check_sim/03_extract_features_to_npz.py \
+$PY check_sim/analysis/03_extract_features_to_npz.py \
   --road "$WORK_DIR/road.bag" \
   --sim "$WORK_DIR/sim.bag" \
   --ts "$TARGET_MS" \
@@ -340,7 +340,7 @@ $PY check_sim/03_extract_features_to_npz.py \
 对已抽取的 npz 做 nearby lane 对齐：
 
 ```bash
-$PY check_sim/06_analyze_nearby_lane_alignment.py \
+$PY check_sim/analysis/06_analyze_nearby_lane_alignment.py \
   --road "$WORK_DIR/road_features.npz" \
   --sim "$WORK_DIR/sim_features.npz" \
   --show-mapping

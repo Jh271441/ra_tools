@@ -4,9 +4,9 @@
 支持直接传 Trail scenario_id，自动查询 tripSegment 数据。
 
 Usage:
-    python3 check_sim/ezsim.py <scenario_id>
-    python3 check_sim/ezsim.py <scenario_id> --wait
-    python3 check_sim/ezsim.py --list
+    python3 check_sim/repro/ezsim.py <scenario_id>
+    python3 check_sim/repro/ezsim.py <scenario_id> --wait
+    python3 check_sim/repro/ezsim.py --list
 """
 
 import argparse
@@ -84,7 +84,7 @@ def _resolve_server(server: Optional[str]) -> str:
 
 def get_trail_trip_segment(scenario_id: str) -> dict:
     """从 Trail 查 scenario 的 tripSegment（tripId、startTimestamp、endTimestamp）。"""
-    repo_root = Path(__file__).resolve().parent.parent
+    repo_root = Path(__file__).resolve().parent.parent.parent
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
     from ra_api.scenario_api import ScenarioInterface

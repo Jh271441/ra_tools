@@ -3,18 +3,21 @@
 从 Trail 仿真结果（Orion job）中查询 scenario_id 列表。
 
 用法：
-  python3 check_sim/get_scenario_ids.py --job 40390125
-  python3 check_sim/get_scenario_ids.py --filter "Base.dpe_assist_channel_triggered.value < 1" --job 40390125
-  python3 check_sim/get_scenario_ids.py --job 40390125 --job-feature 40390703
-  python3 check_sim/get_scenario_ids.py --job 40390125 --metrics dpe_assist_channel_triggered dpe_stuck_detect
-  python3 check_sim/get_scenario_ids.py --job 40390125 --size 500 --out ids.txt
+  python3 check_sim/repro/get_scenario_ids.py --job 40390125
+  python3 check_sim/repro/get_scenario_ids.py --filter "Base.dpe_assist_channel_triggered.value < 1" --job 40390125
+  python3 check_sim/repro/get_scenario_ids.py --job 40390125 --job-feature 40390703
+  python3 check_sim/repro/get_scenario_ids.py --job 40390125 --metrics dpe_assist_channel_triggered dpe_stuck_detect
+  python3 check_sim/repro/get_scenario_ids.py --job 40390125 --size 500 --out ids.txt
 """
 
 import argparse
 import sys
 import os
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(
+    0,
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+)
 
 from ra_api.sim_result_api import SimResultClient
 

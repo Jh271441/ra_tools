@@ -131,12 +131,12 @@ docker exec -it $CONTAINER_NAME_GEN4 zsh -c \
 # 编译产物自动写入宿主机可见的 bazel-build/bin/（cache 目录共享）
 ```
 
-**方式 B（无 Docker/voyager 时的兜底）**：用 `check_sim/planning_stub.proto`（手写的最小 stub，只含 `is_opened` 字段路径）：
+**方式 B（无 Docker/voyager 时的兜底）**：用 `check_sim/bag/planning_stub.proto`（手写的最小 stub，只含 `is_opened` 字段路径）：
 
 ```bash
 .venv/bin/pip install grpcio-tools google-protobuf
 .venv/bin/python3 -m grpc_tools.protoc \
-    -I check_sim --python_out=check_sim check_sim/planning_stub.proto
+    -I check_sim/bag --python_out=check_sim/bag check_sim/bag/planning_stub.proto
 ```
 
 `read_bag.py` 启动时自动检测方式 A 的路径，找不到时降级到方式 B。
@@ -172,22 +172,22 @@ scp cloud_server:/tmp/my_road.bag /tmp/
 
 ### 2. 本机读取 bag 并解析 proto 字段
 
-`check_sim/read_bag.py` 纯 Python 读取 `.bag` 文件，解析 `planning_debug` 中的 proto 字段，**无需 ROS/voyager 环境**。
+`check_sim/bag/read_bag.py` 纯 Python 读取 `.bag` 文件，解析 `planning_debug` 中的 proto 字段，**无需 ROS/voyager 环境**。
 
 首次运行时会自动编译 `planning_stub.proto` → `planning_stub_pb2.py`（之后跳过）。
 
 ```bash
 # 默认：打印所有 planning_debug 消息的 is_opened 字段
-.venv/bin/python3 check_sim/read_bag.py /tmp/my_road.bag
+.venv/bin/python3 check_sim/bag/read_bag.py /tmp/my_road.bag
 
 # 只看 is_opened=True 的行
-.venv/bin/python3 check_sim/read_bag.py /tmp/my_road.bag | grep True
+.venv/bin/python3 check_sim/bag/read_bag.py /tmp/my_road.bag | grep True
 
 # 显示所有 topic 的所有消息
-.venv/bin/python3 check_sim/read_bag.py /tmp/my_road.bag --show-all
+.venv/bin/python3 check_sim/bag/read_bag.py /tmp/my_road.bag --show-all
 
 # 只看指定 topic
-.venv/bin/python3 check_sim/read_bag.py /tmp/my_road.bag \
+.venv/bin/python3 check_sim/bag/read_bag.py /tmp/my_road.bag \
     --topic /planning/assist_request /planning/stuck_detection_recall_signal
 ```
 

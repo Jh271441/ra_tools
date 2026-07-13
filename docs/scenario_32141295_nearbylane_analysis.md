@@ -19,7 +19,7 @@ road/sim 推理不一致。
 使用：
 
 ```bash
-.venv/bin/python3 check_sim/compare_road_sim_bags.py \
+.venv/bin/python3 check_sim/bag/compare_road_sim_bags.py \
   /home/didi/ra_bags/scenario_32141295/road.bag \
   /home/didi/ra_bags/scenario_32141295/sim.bag
 ```
@@ -53,7 +53,7 @@ Voyager 的 `proto_msg/PlanningSeed` 使用占位 md5。cloud_server 的系统 `
 2. 跳过 4 字节 ROS 长度前缀。
 3. 使用 Voyager 构建产物中的 `planning_seed_pb2.PlanningSeed` 解析 protobuf。
 
-实现位于 `check_sim/planning_seed_reader.py`。
+实现位于 `check_sim/analysis/planning_seed_reader.py`。
 
 ## 4. 模型执行 cycle 错位
 
@@ -107,7 +107,7 @@ road/sim 模型输出不是稳定发生在相同 planning cycle。直接按 fram
 共同时间帧运行：
 
 ```bash
-.venv/bin/python3 check_sim/06_analyze_nearby_lane_alignment.py \
+.venv/bin/python3 check_sim/analysis/06_analyze_nearby_lane_alignment.py \
   --road /home/didi/ra_bags/scenario_32141295/road_features_1779961631806.npz \
   --sim /home/didi/ra_bags/scenario_32141295/sim_features_1779961631806.npz \
   --show-mapping
@@ -208,7 +208,7 @@ v60/v61 不是 binary `1660677` 的正式复算模型，仅用于验证敏感性
 07 命令：
 
 ```bash
-.venv/bin/python3 check_sim/07_analyze_model_feature_sensitivity.py \
+.venv/bin/python3 check_sim/analysis/07_analyze_model_feature_sensitivity.py \
   --road /home/didi/ra_bags/scenario_32141295/road_features_1779961631806.npz \
   --sim /home/didi/ra_bags/scenario_32141295/sim_features_1779961631806.npz \
   --models /home/didi/ra_models/vectorized_scenario_remote_assist_model_v49.ort_compat.onnx \

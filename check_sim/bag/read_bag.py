@@ -14,12 +14,12 @@ proto 定义来自 voyager Docker 编译产物（bazel-build/bin/protobuf_python
   方式 B（无 voyager 时的兜底）：用本目录的 planning_stub_pb2.py（手写 stub）
     pip install grpcio-tools
     python3 -m grpc_tools.protoc \
-      -I check_sim --python_out=check_sim check_sim/planning_stub.proto
+      -I check_sim/bag --python_out=check_sim/bag check_sim/bag/planning_stub.proto
 
 用法：
-  python3 check_sim/read_bag.py /tmp/my_road.bag
-  python3 check_sim/read_bag.py /tmp/my_road.bag --topic /planning/assist_request --show-all
-  python3 check_sim/read_bag.py /tmp/my_road.bag --only-opened
+  python3 check_sim/bag/read_bag.py /tmp/my_road.bag
+  python3 check_sim/bag/read_bag.py /tmp/my_road.bag --topic /planning/assist_request --show-all
+  python3 check_sim/bag/read_bag.py /tmp/my_road.bag --only-opened
 """
 
 import sys

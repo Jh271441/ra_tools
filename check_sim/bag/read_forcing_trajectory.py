@@ -8,8 +8,8 @@
   - 中途有没有被 Reset（ego 速度过 reset_speed_mps=2.0）
 
 用法:
-    python3 check_sim/read_forcing_trajectory.py <sim_id> [<sim_id> ...]
-    python3 check_sim/read_forcing_trajectory.py --base /custom/sim/dir <sim_id>
+    python3 check_sim/bag/read_forcing_trajectory.py <sim_id> [<sim_id> ...]
+    python3 check_sim/bag/read_forcing_trajectory.py --base /custom/sim/dir <sim_id>
 """
 import argparse
 import re

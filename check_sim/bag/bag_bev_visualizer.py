@@ -14,10 +14,10 @@ Bag BEV Visualizer —— 从 .bag 中读取 planning_debug / tracked_objects / 
   export PYTHONPATH=~/workspace/voyager/bazel-build/bin/protobuf_python/protos_python_pb
 
 用法：
-  python3 check_sim/bag_bev_visualizer.py /path/to/road.bag
-  python3 check_sim/bag_bev_visualizer.py /path/to/sim.bag --output-dir ./my_frames --range 50
-  python3 check_sim/bag_bev_visualizer.py /path/to/sim.bag --every-n 5
-  python3 check_sim/bag_bev_visualizer.py /path/to/sim.bag --max-frames 100
+  python3 check_sim/bag/bag_bev_visualizer.py /path/to/road.bag
+  python3 check_sim/bag/bag_bev_visualizer.py /path/to/sim.bag --output-dir ./my_frames --range 50
+  python3 check_sim/bag/bag_bev_visualizer.py /path/to/sim.bag --every-n 5
+  python3 check_sim/bag/bag_bev_visualizer.py /path/to/sim.bag --max-frames 100
 """
 
 import sys

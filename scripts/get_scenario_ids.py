@@ -8,7 +8,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from check_sim.get_scenario_ids import main
+from check_sim.repro.get_scenario_ids import main
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 venv_dir="${repo_root}/.venv"
 voy_sdk_python="/opt/voy-sdk/lib/python3/dist-packages"
 ezsim_lib="${HOME}/.voyager/ezsim/binary/1665523/tmp/lib"
