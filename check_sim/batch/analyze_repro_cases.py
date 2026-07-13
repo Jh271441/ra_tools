@@ -125,6 +125,11 @@ def summarize_frames(frames: list[Frame], start_ms: int) -> dict[str, Any]:
         formal, lambda frame: frame.non_voluntary_unstuck_reason == "UnstuckFail"
     )
     opened = [frame for frame in formal if frame.assist_session_opened]
+    max_forcing = max(
+        formal,
+        key=lambda frame: frame.forcing_accumulated_cycle,
+        default=None,
+    )
     return {
         "frame_count": len(formal),
         "start_ms": start_ms,
@@ -147,6 +152,13 @@ def summarize_frames(frames: list[Frame], start_ms: int) -> dict[str, Any]:
         ),
         "assist_session_opened_frames": len(opened),
         "first_assist_session_opened_ms": opened[0].timestamp_ms if opened else None,
+        "max_forcing_accumulated_cycle": (
+            max_forcing.forcing_accumulated_cycle if max_forcing else 0
+        ),
+        "forcing_trigger_cycle_at_max": (
+            max_forcing.forcing_trigger_cycle if max_forcing else 0
+        ),
+        "forcing_state_at_max": asdict(max_forcing) if max_forcing else None,
     }
 
 
@@ -188,6 +200,9 @@ def classify(road: dict[str, Any], sim: dict[str, Any]) -> tuple[str, list[str]]
                 f"sim {road_reason} frames={sim_count}",
                 f"stationary cycles road={road['max_stationary_cycles']} "
                 f"sim={sim['max_stationary_cycles']}",
+                "sim forcing accumulated="
+                f"{sim.get('max_forcing_accumulated_cycle', 0)}/"
+                f"{sim.get('forcing_trigger_cycle_at_max', 0)}",
             ]
         )
         if sim_count:

@@ -210,6 +210,33 @@ message AssistStuckFPYieldDynamicObjectDebug {
   double ego_heading = 10;
 }
 
+message RoadStructureFeature {
+  repeated int32 road_structure_attrs = 1;
+}
+
+message AssistStuckForcingRecall {
+  double ego_speed = 1;
+  int64 trigger_cycle = 2;
+  int64 accumulated_cycle = 3;
+  bool is_pulling_io = 4;
+  bool is_waiting_red_light = 5;
+  bool is_queuing = 6;
+  int64 last_triggered_timestamp = 7;
+  bool has_pub_backup_ra_request = 8;
+  bool is_yielding = 9;
+  bool is_ego_about_to_start_up = 10;
+  bool is_ego_pose_in_lane = 11;
+  string debug_str = 12;
+  bool is_ego_in_low_speed_for_long_time = 13;
+  bool is_in_remote_speed_limit = 14;
+  int64 ego_blocked_cycles = 15;
+}
+
+message AssistStuckForcingRecallDebug {
+  RoadStructureFeature road_structure = 1;
+  AssistStuckForcingRecall state = 2;
+}
+
 message AssistStuckRules {
   enum RuleDecision {
     kNone = 0;
@@ -221,6 +248,7 @@ message AssistStuckRules {
   }
   RuleDecision rule_decision = 1;
   AssistStuckRuleActivation rule_activation = 2;
+  AssistStuckForcingRecallDebug forcing_recall_debug = 8;
   AssistStuckFPYieldDynamicObjectDebug fp_yield_dynamic_object_debug = 11;
   AssistStuckFPLaneChangeDebug fp_lane_change_debug = 25;
   repeated AssistModelProcessReason fp_process_reasons = 26;

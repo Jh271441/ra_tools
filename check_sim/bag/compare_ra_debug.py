@@ -70,6 +70,12 @@ class Frame:
     unstuck_modes: tuple[int, ...]
     assist_session_opened: bool
     assist_session_updated: bool
+    forcing_trigger_cycle: int
+    forcing_accumulated_cycle: int
+    forcing_ego_blocked_cycles: int
+    forcing_ego_speed: float
+    forcing_road_structure_attrs: tuple[int, ...]
+    forcing_reset_reasons: tuple[str, ...]
 
 
 def enum_name(field, value: int) -> str:
@@ -135,6 +141,21 @@ def parse_frame(timestamp_ms: int, payload: bytes) -> Frame:
     stuck_start_ms = stuck_signal.start_timestamp if stuck_signal is not None else 0
     stuck_last_ms = stuck_signal.last_stuck_timestamp if stuck_signal is not None else 0
     assist_session = behavior_debug.assist_debug.assist_request_session
+    forcing_debug = rules.forcing_recall_debug
+    forcing_state = forcing_debug.state
+    forcing_reset_reasons = tuple(
+        name
+        for name, active in (
+            ("pulling_io", forcing_state.is_pulling_io),
+            ("waiting_red_light", forcing_state.is_waiting_red_light),
+            ("queuing", forcing_state.is_queuing),
+            ("backup_ra_sent", forcing_state.has_pub_backup_ra_request),
+            ("yielding", forcing_state.is_yielding),
+            ("about_to_start", forcing_state.is_ego_about_to_start_up),
+            ("remote_speed_limit", forcing_state.is_in_remote_speed_limit),
+        )
+        if active
+    )
     return Frame(
         timestamp_ms=timestamp_ms,
         status=enum_name(status_field, debug.unstuck_status),
@@ -196,6 +217,14 @@ def parse_frame(timestamp_ms: int, payload: bytes) -> Frame:
         ),
         assist_session_opened=assist_session.is_opened,
         assist_session_updated=assist_session.is_updated,
+        forcing_trigger_cycle=forcing_state.trigger_cycle,
+        forcing_accumulated_cycle=forcing_state.accumulated_cycle,
+        forcing_ego_blocked_cycles=forcing_state.ego_blocked_cycles,
+        forcing_ego_speed=forcing_state.ego_speed,
+        forcing_road_structure_attrs=tuple(
+            forcing_debug.road_structure.road_structure_attrs
+        ),
+        forcing_reset_reasons=forcing_reset_reasons,
     )
 
 
@@ -337,6 +366,8 @@ def format_frame(frame: dict) -> str:
         f"stuck_reason={frame['stuck_signal_reason']} "
         f"unstuck_modes={frame['unstuck_modes']} "
         f"assist_opened={frame['assist_session_opened']} "
+        f"forcing={frame['forcing_accumulated_cycle']}/"
+        f"{frame['forcing_trigger_cycle']} "
         f"lane_change_forbid_ts={frame['lane_change_forbid_timestamp_ms']}"
     )
 
