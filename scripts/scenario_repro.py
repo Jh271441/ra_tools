@@ -113,6 +113,55 @@ def filtered_bag_name(topics: list[str], custom: bool) -> str:
     return f"road_filtered_{digest}.bag"
 
 
+def road_bag_name(topics_source_type: str, topics: list[str]) -> str:
+    if topics_source_type in {
+        "scenario_sim_bag",
+        "explicit_sim_bag",
+        "default_sim_snapshot",
+    }:
+        return "road.bag"
+    if topics_source_type == "raw":
+        return "road_raw.bag"
+    if topics_source_type == "ra_default":
+        return "road_filtered.bag"
+    return filtered_bag_name(topics, custom=True)
+
+
+def road_download_signature(
+    trip_id: str,
+    start_ms: int,
+    end_ms: int,
+    topics: list[str],
+) -> str:
+    payload = {
+        "trip_id": trip_id,
+        "start_ms": start_ms,
+        "end_ms": end_ms,
+        "topics": sorted(topics),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
+        "utf8"
+    )
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def completion_marker_matches(path: Path, signature: str) -> bool:
+    if not path.is_file():
+        return False
+    try:
+        marker = json.loads(path.read_text(encoding="utf8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+    return marker.get("signature") == signature
+
+
+def write_completion_marker(path: Path, signature: str) -> None:
+    path.write_text(
+        json.dumps({"signature": signature}, indent=2) + "\n",
+        encoding="utf8",
+    )
+
+
 def ensure_nofile_limit(minimum: int) -> tuple[int, int]:
     soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
     target = min(max(soft, minimum), hard)
@@ -384,15 +433,14 @@ def main() -> None:
             )
     road_topics = custom_topics
     road_mode = "filtered" if road_topics else "raw"
-    road_filename = (
-        filtered_bag_name(road_topics, custom=bool(custom_topics))
-        if road_topics
-        else "road_raw.bag"
-    )
+    road_filename = road_bag_name(topics_source_type, road_topics)
     road_bag = work_dir / road_filename
     road_complete = Path(f"{road_bag}.complete")
     start_ms = max(0, int(segment["startTimestamp"]) - args.road_prefix_ms)
     end_ms = int(segment["endTimestamp"])
+    download_signature = road_download_signature(
+        str(segment["tripId"]), start_ms, end_ms, road_topics
+    )
     download_cmd = road_download_command(
         road_bag,
         str(segment["tripId"]),
@@ -425,6 +473,7 @@ def main() -> None:
         "warmup_ms": args.warmup,
         "road_bag": str(road_bag),
         "road_download_complete_marker": str(road_complete),
+        "road_download_signature": download_signature,
         "road_download_protobuf_implementation": args.download_protobuf,
     }
 
@@ -444,7 +493,11 @@ def main() -> None:
     )
 
     if not args.skip_road_download:
-        if road_bag.exists() and road_complete.exists() and not args.force_road_download:
+        if (
+            road_bag.exists()
+            and completion_marker_matches(road_complete, download_signature)
+            and not args.force_road_download
+        ):
             print(f"Reusing road bag: {road_bag}")
         else:
             if road_bag.exists():
@@ -468,8 +521,10 @@ def main() -> None:
                 metadata["workflow_status"] = "road_download_failed"
                 write_metadata(work_dir / "metadata.json", metadata)
                 raise
-            road_complete.write_text("complete\n", encoding="ascii")
-        metadata["road_download_complete"] = road_complete.exists()
+            write_completion_marker(road_complete, download_signature)
+        metadata["road_download_complete"] = completion_marker_matches(
+            road_complete, download_signature
+        )
         write_metadata(work_dir / "metadata.json", metadata)
 
     if args.road_only:

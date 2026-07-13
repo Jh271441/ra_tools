@@ -40,8 +40,8 @@ cd /home/didi/workspace/ra_tools
 ```
 
 自动流程产物位于 `/home/didi/ra_bags/scenario_<scenario_id>/`：默认 topic 裁剪包
-`road_filtered_<hash>.bag`、指向 EzSim 产物的 `sim.bag`/`events.log` 软链接，以及记录
-trip、binary、sim id、状态和 topic 帧数的 `metadata.json`。
+`road.bag`、指向 EzSim 产物的 `sim.bag`/`events.log` 软链接，以及记录 trip、binary、
+sim id、状态和 topic 帧数的 `metadata.json`。
 
 默认使用 sim topic 白名单，不再下载完整 raw bag：当前场景目录已有 `sim.bag` 时动态读取；
 否则读取 `config/default_road_topics.txt` 中从 scenario `32141295` sim bag 提取的 70-topic
@@ -61,7 +61,8 @@ trip、binary、sim id、状态和 topic 帧数的 `metadata.json`。
   --filtered-road
 ```
 
-裁剪包保存为 `road_filtered.bag`，避免和完整包混淆。`metadata.json` 中的
+5-topic 裁剪包保存为 `road_filtered.bag`，完整包保存为 `road_raw.bag`，避免和默认
+`road.bag` 混淆。`metadata.json` 中的
 `road_download_mode`、`road_download_topics` 和 `road_bag` 会记录实际选择。
 
 自定义 topic 时重复传入 `--road-topic`；此参数会自动启用 filtered 模式，不需要再加
@@ -76,8 +77,11 @@ trip、binary、sim id、状态和 topic 帧数的 `metadata.json`。
   --road-topic /planning/assist_request
 ```
 
-自定义包使用 topic 集合哈希命名，例如 `road_filtered_a1b2c3d4.bag`。因此更换 topic 列表
-后不会误复用旧的 `.complete` 文件。topic 必须以 `/` 开头，重复值会自动去重。
+手工 `--road-topic` 包使用 topic 集合哈希命名，例如 `road_filtered_a1b2c3d4.bag`。
+topic 必须以 `/` 开头，重复值会自动去重。
+
+默认 `road.bag.complete` 内保存 trip、时间窗和 topic 集合签名。任一项变化时不会复用旧
+`road.bag`，而会重新下载。
 
 已有 sim bag 时，可以直接读取它的全部 topic，并下载路测侧同名 topic：
 
