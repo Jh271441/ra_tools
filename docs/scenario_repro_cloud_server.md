@@ -55,6 +55,21 @@ topic 时显式使用：
 裁剪包保存为 `road_filtered.bag`，避免和完整包混淆。`metadata.json` 中的
 `road_download_mode`、`road_download_topics` 和 `road_bag` 会记录实际选择。
 
+自定义 topic 时重复传入 `--road-topic`；此参数会自动启用 filtered 模式，不需要再加
+`--filtered-road`：
+
+```bash
+.venv/bin/python3 scripts/scenario_repro.py "$SCENARIO_ID" \
+  --binary "$BINARY_ID" \
+  --road-only \
+  --road-topic /planning/seed \
+  --road-topic /planning/planning_debug \
+  --road-topic /planning/assist_request
+```
+
+自定义包使用 topic 集合哈希命名，例如 `road_filtered_a1b2c3d4.bag`。因此更换 topic 列表
+后不会误复用旧的 `.complete` 文件。topic 必须以 `/` 开头，重复值会自动去重。
+
 `metadata.json` 会同时记录请求值和 EzSim 最终生效值：
 
 - `requested_binary_id` / `requested_build`

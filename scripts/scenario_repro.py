@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import resource
@@ -73,6 +74,26 @@ def road_download_command(
     if topics:
         command.extend(["-T", *topics])
     return command
+
+
+def normalize_topics(topics: list[str]) -> list[str]:
+    normalized = []
+    seen = set()
+    for topic in topics:
+        value = topic.strip()
+        if not value.startswith("/"):
+            raise ValueError(f"Road topic must start with '/': {topic!r}")
+        if value not in seen:
+            normalized.append(value)
+            seen.add(value)
+    return normalized
+
+
+def filtered_bag_name(topics: list[str], custom: bool) -> str:
+    if not custom:
+        return "road_filtered.bag"
+    digest = hashlib.sha256("\n".join(sorted(topics)).encode("utf8")).hexdigest()[:8]
+    return f"road_filtered_{digest}.bag"
 
 
 def ensure_nofile_limit(minimum: int) -> tuple[int, int]:
@@ -239,6 +260,13 @@ def parse_args() -> argparse.Namespace:
         help="Download only RA topics instead of the complete raw road bag",
     )
     parser.add_argument(
+        "--road-topic",
+        action="append",
+        default=[],
+        metavar="TOPIC",
+        help="Road bag topic to include; repeat for multiple topics",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Query Trail and print planned paths/commands without downloading or simulating",
@@ -251,8 +279,15 @@ def main() -> None:
     info = _get_trail_trip_segment(args.scenario_id)
     segment = info["trip_segment"]
     work_dir = Path(args.output_root).expanduser() / f"scenario_{args.scenario_id}"
-    road_mode = "filtered" if args.filtered_road else "raw"
-    road_bag = work_dir / f"road_{road_mode}.bag"
+    custom_topics = normalize_topics(args.road_topic)
+    road_topics = custom_topics or (RA_TOPICS if args.filtered_road else [])
+    road_mode = "filtered" if road_topics else "raw"
+    road_filename = (
+        filtered_bag_name(road_topics, custom=bool(custom_topics))
+        if road_topics
+        else "road_raw.bag"
+    )
+    road_bag = work_dir / road_filename
     road_complete = Path(f"{road_bag}.complete")
     start_ms = max(0, int(segment["startTimestamp"]) - args.road_prefix_ms)
     end_ms = int(segment["endTimestamp"])
@@ -261,7 +296,7 @@ def main() -> None:
         str(segment["tripId"]),
         start_ms,
         end_ms,
-        topics=RA_TOPICS if args.filtered_road else None,
+        topics=road_topics or None,
     )
 
     metadata: dict[str, Any] = {
@@ -272,7 +307,7 @@ def main() -> None:
         "road_download_start_ms": start_ms,
         "road_download_end_ms": end_ms,
         "road_download_mode": road_mode,
-        "road_download_topics": RA_TOPICS if args.filtered_road else None,
+        "road_download_topics": road_topics or None,
         "requested_binary_id": args.binary,
         "requested_build": args.build,
         "warmup_ms": args.warmup,
@@ -284,7 +319,7 @@ def main() -> None:
     print(json.dumps(metadata, ensure_ascii=False, indent=2))
     print("Road download command:")
     print(" ".join(download_cmd))
-    if not args.filtered_road:
+    if not road_topics:
         print("Warning: raw road bag download can use tens of GB of disk space.")
     if args.dry_run:
         return
