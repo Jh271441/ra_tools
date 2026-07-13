@@ -16,7 +16,7 @@ ssh cloud_server
 cd /home/didi/workspace/ra_tools
 bash check_sim/repro/setup_cloud_python.sh
 
-export LD_LIBRARY_PATH=/home/didi/.voyager/ezsim/binary/1665523/tmp/lib:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/opt/voy-sdk/lib:$LD_LIBRARY_PATH
 export PYTHONPATH=/opt/voy-sdk/lib/python3/dist-packages:$PYTHONPATH
 export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 
