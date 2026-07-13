@@ -356,6 +356,18 @@ def write_report(results: list[dict[str, Any]], path: Path) -> None:
     successful = [result for result in results if "root_cause" in result]
     failures = [result for result in results if "error" in result]
     causes = Counter(result["root_cause"] for result in successful)
+    trigger_paths = Counter(
+        result["road"]["request_frame"]["process_reason"]
+        for result in successful
+        if result["road"].get("request_frame")
+    )
+    rerun_requested = sum(result["sim"]["request_count"] > 0 for result in successful)
+    dropout_requests = sum(
+        result["road"].get("request_frame") is not None
+        and result["road"]["request_frame"]["stuck_signal_start_ms"] is None
+        and result["road"]["request_frame"]["stuck_signal_last_ms"] is not None
+        for result in successful
+    )
     lines = [
         "# RA 路测触发 / Base Sim 未触发：50 Case 复现性分析",
         "",
@@ -367,12 +379,30 @@ def write_report(results: list[dict[str, Any]], path: Path) -> None:
         "- 原 Orion output bag 已超过保留期；除已有本地 case 外，sim 使用 CSV 中的 base binary 和同一组标准 extra args 重新运行。",
         "- CSV DPE 是历史任务指标，报告中的 planning/session 信号来自当前重跑；二者不一致时单独标记为跨运行复现不稳定。",
         "",
+        "## 摘要",
+        "",
+        f"- 当前重跑产生 planning `MODEL_REQUEST`：{rerun_requested}/{len(successful)}。",
+        f"- Road 请求帧出现 `StuckSignal start=0,last>0`：{dropout_requests}/{len(successful)}。",
+        "- `MODEL_REQUEST` 仅表示 planning 生成请求；是否建立 assist channel 还需结合 session opened 和历史 DPE。",
+        "",
         "## 根因分布",
         "",
         "| 根因 | 数量 |",
         "|---|---:|",
     ]
     lines.extend(f"| `{cause}` | {count} |" for cause, count in causes.most_common())
+    lines.extend(
+        [
+            "",
+            "## Road 触发路径",
+            "",
+            "| Process reason | 数量 |",
+            "|---|---:|",
+        ]
+    )
+    lines.extend(
+        f"| `{reason}` | {count} |" for reason, count in trigger_paths.most_common()
+    )
     lines.extend(
         [
             "",
@@ -395,6 +425,24 @@ def write_report(results: list[dict[str, Any]], path: Path) -> None:
             f"{result['sim']['model_reason_frames']} | "
             f"{result['sim']['waiting_model_frames']} | "
             f"{result['sim']['assist_session_opened_frames']} | {score_text} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## 机制结论",
+            "",
+            "1. **Voluntary unstuck / StuckSignal**：`IsVoluntaryUnstuckFail()` 直接计算 `last_stuck_timestamp - start_timestamp`。若 signal 掉为 `kNoStuck` 时 start 清零、last 保留，会立即满足超时并改变 RA 请求时机。",
+            "2. **Forcing recall**：该 FN 路径不依赖模型过阈值，而依赖 `accumulated_cycle == trigger_cycle`。排队、让行、红灯、即将起步、速度达到 reset 阈值等状态会阻止累计或清零。",
+            "3. **跨运行不稳定**：历史 Orion DPE 与当前同 binary/extra args 重跑可能不同。应分别报告历史指标、planning request、assist request/session，不能合并为单一“触发/未触发”。",
+            "",
+            "## 逐案证据",
+            "",
+        ]
+    )
+    for result in successful:
+        lines.append(
+            f"- `{result['scenario_id']}` `{result['root_cause']}`："
+            + "；".join(result.get("evidence", []))
         )
     if failures:
         lines.extend(["", "## 失败项", ""])
