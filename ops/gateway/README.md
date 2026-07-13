@@ -55,6 +55,15 @@ docker compose exec nginx nginx -t
 docker compose exec nginx nginx -s reload
 ```
 
+If `nginx.conf` was replaced atomically, the running container's single-file bind mount may still
+point at the old inode. Check with `docker compose exec nginx nginx -T`; if it still prints the old
+configuration, recreate only nginx before validating again:
+
+```bash
+docker compose up -d --force-recreate nginx
+docker compose exec nginx nginx -t
+```
+
 ## Logs
 
 ```bash

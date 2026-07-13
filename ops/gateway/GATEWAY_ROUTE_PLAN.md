@@ -126,7 +126,7 @@ CPA 可能不长久，验收失败不阻塞 Phase 1/2。配置要求：
 11. 同一个 `GET /v1/models` 去掉 CPA Referer 后仍按 lingma 规则鉴权，CPA token 不能把普通根 `/v1/` 请求导向 CPA。
 12. CPA 进程停掉时，`/`、`/release/`、`/sim/` 不受影响。
 
-## Validation Results（2026-07-09）
+## Validation Results（2026-07-09，CPA 补充验证 2026-07-13）
 
 - `docker compose -f ops/gateway/docker-compose.yml config` 通过。
 - `docker compose -f ops/gateway/docker-compose.yml exec nginx nginx -t` 通过。
@@ -142,6 +142,9 @@ CPA 可能不长久，验收失败不阻塞 Phase 1/2。配置要求：
 - `GET /cpa/` → `302 /cpa/management.html#/quota`。
 - `GET /cpa/v1/models` 无 token → CPA 返回 `401 application/json`，说明 nginx 已透传到 CPA。
 - `GET /v0/management/config` 无 management key → CPA 返回 `401 {"error":"missing management key"}`，说明 management UI 的绝对路径 API 已透传到 CPA，不再由 gateway portal 返回 404。
+- CPA 补充验证：带 CPA token 和 `Referer: http://127.0.0.1/cpa/management.html` 请求根 `/v1/models` → `200`，返回 10 个模型。
+- 同一个 CPA token 去掉 CPA Referer 后请求根 `/v1/models` → `401`；lingma token 请求根 `/v1/models` → `200`，返回 7 个模型，证明根路由语义未被 CPA 覆盖。
+- 本次 `nginx.conf` 经原子替换后，运行中容器的单文件 bind mount 仍指向旧 inode；单纯 `nginx -s reload` 会继续加载旧配置。已用 `docker compose -f ops/gateway/docker-compose.yml up -d --force-recreate nginx` 仅重建 nginx，并通过 `nginx -T` 确认新 map 和精确 location 已加载。
 - Headless Chrome 验证：`/sim/overview -> /sim/issues -> history.back() -> /sim/overview -> history.forward() -> /sim/issues`。
 
 Python 单测未跑通：系统 Python 和项目 `.venv` 都没有安装 `pytest`。本轮已用前端 production build、nginx 配置检查、HTTP smoke 和浏览器 history 验证覆盖 gateway 接入风险。
