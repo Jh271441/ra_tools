@@ -52,6 +52,60 @@ enum NonVoluntaryUnstuckReason {
   UnstuckFail = 2;
 }
 
+enum ManeuverType {
+  LANE_FOLLOW = 0;
+  LANE_CHANGE = 1;
+  LANE_CHANGE_ABORT = 2;
+  FALLBACK = 3;
+  PULL_OUT = 4;
+  PULL_OVER = 5;
+  SUPER_NUDGE = 6;
+  LANE_CHANGE_RIGHT = 7;
+  LANE_CHANGE_LEFT = 8;
+  ENGAGE = 9;
+  REVERSE_DRIVING = 10;
+  DECOUPLED_LANE_FOLLOW = 11;
+  DECOUPLED_FORWARD = 13;
+  FALLBACK_IN_MOTION = 14;
+  FALLBACK_REACH_DESTINATION = 15;
+  FALLBACK_STATIONARY = 16;
+}
+
+message StuckSignal {
+  enum Reason {
+    kNoStuck = 0;
+    kBlockageObject = 1;
+    kConstructionZone = 2;
+    kNotBlockageObject = 3;
+    kEndOfLaneSequence = 4;
+    kRemoteAssistTaggedObject = 5;
+    kPhysicalBoundary = 6;
+  }
+  repeated int64 object_ids = 4;
+  int64 start_timestamp = 5;
+  int64 last_stuck_timestamp = 6;
+  Reason reason = 7;
+  double stuck_score = 8;
+}
+
+message UnstuckModeSeed {
+  repeated int32 unstuck_modes = 1;
+}
+
+message StuckDebug {
+  StuckSignal stuck_signal = 1;
+  UnstuckModeSeed unstuck_mode_seed = 3;
+}
+
+message TrajectorySelectionDebug {
+  optional StuckDebug stuck_debug = 15;
+}
+
+message DecoupledManeuverDebug {
+  ManeuverType type = 3;
+  TrajectorySelectionDebug trajectory_selection_debug = 6;
+}
+
 enum AssistModelProcessReason {
   UNDEFINED_REASON = 0;
   FP_TRAFFIC_JAM = 1;
@@ -193,8 +247,10 @@ message EgoStuckDebug {
 message BehaviorReasonersDebug {
   // field 14 matches onboard/planner/planner_protos/debug/behavior_reasoners/behavior_reasoners_debug.proto
   AssistDebug assist_debug = 14;
+  repeated DecoupledManeuverDebug decoupled_maneuvers = 15;
   // field 18 matches ego_stuck_debug in BehaviorReasonersDebug.
   EgoStuckDebug ego_stuck_debug = 18;
+  ManeuverType selected_maneuver_type = 11;
 }
 
 message PlanningDebug {

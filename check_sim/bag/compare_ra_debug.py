@@ -60,6 +60,14 @@ class Frame:
     stuck_timer_ms: float
     strict_model_detected: bool
     uncertain_stuck: bool
+    selected_maneuver_type: str
+    stuck_signal_start_ms: int | None
+    stuck_signal_last_ms: int | None
+    stuck_signal_duration_ms: int | None
+    stuck_signal_reason: str | None
+    stuck_signal_score: float | None
+    stuck_signal_object_ids: tuple[int, ...]
+    unstuck_modes: tuple[int, ...]
 
 
 def enum_name(field, value: int) -> str:
@@ -95,6 +103,31 @@ def parse_frame(timestamp_ms: int, payload: bytes) -> Frame:
     lane_change_ts = rules.fp_lane_change_debug.lane_change_forbid_requirement_timestmap
     yield_debug = rules.fp_yield_dynamic_object_debug
     yield_decision_field = yield_debug.DESCRIPTOR.fields_by_name["decision_reason"]
+    behavior_debug = message.behavior_reasoner_debug
+    maneuver_type_field = behavior_debug.DESCRIPTOR.fields_by_name[
+        "selected_maneuver_type"
+    ]
+    selected_maneuver = next(
+        (
+            maneuver
+            for maneuver in behavior_debug.decoupled_maneuvers
+            if maneuver.type == behavior_debug.selected_maneuver_type
+        ),
+        None,
+    )
+    stuck_debug = None
+    if selected_maneuver is not None:
+        selection_debug = selected_maneuver.trajectory_selection_debug
+        if selection_debug.HasField("stuck_debug"):
+            stuck_debug = selection_debug.stuck_debug
+    stuck_signal = stuck_debug.stuck_signal if stuck_debug is not None else None
+    stuck_signal_reason_field = (
+        stuck_signal.DESCRIPTOR.fields_by_name["reason"]
+        if stuck_signal is not None
+        else None
+    )
+    stuck_start_ms = stuck_signal.start_timestamp if stuck_signal is not None else 0
+    stuck_last_ms = stuck_signal.last_stuck_timestamp if stuck_signal is not None else 0
     return Frame(
         timestamp_ms=timestamp_ms,
         status=enum_name(status_field, debug.unstuck_status),
@@ -130,6 +163,30 @@ def parse_frame(timestamp_ms: int, payload: bytes) -> Frame:
         stuck_timer_ms=debug.stuck_status_timer_elapsed_time_in_ms,
         strict_model_detected=debug.is_strict_stuck_detected_by_dnn_model,
         uncertain_stuck=debug.is_uncertain_stuck,
+        selected_maneuver_type=enum_name(
+            maneuver_type_field, behavior_debug.selected_maneuver_type
+        ),
+        stuck_signal_start_ms=stuck_start_ms or None,
+        stuck_signal_last_ms=stuck_last_ms or None,
+        stuck_signal_duration_ms=(
+            stuck_last_ms - stuck_start_ms if stuck_start_ms and stuck_last_ms else None
+        ),
+        stuck_signal_reason=(
+            enum_name(stuck_signal_reason_field, stuck_signal.reason)
+            if stuck_signal is not None
+            else None
+        ),
+        stuck_signal_score=(
+            float(stuck_signal.stuck_score) if stuck_signal is not None else None
+        ),
+        stuck_signal_object_ids=(
+            tuple(stuck_signal.object_ids) if stuck_signal is not None else ()
+        ),
+        unstuck_modes=(
+            tuple(stuck_debug.unstuck_mode_seed.unstuck_modes)
+            if stuck_debug is not None
+            else ()
+        ),
     )
 
 
@@ -267,6 +324,9 @@ def format_frame(frame: dict) -> str:
         f"uncertain={frame['uncertain_stuck']} "
         f"voluntary_exit={frame['non_voluntary_unstuck_reason']} "
         f"stuck_timer_ms={frame['stuck_timer_ms']:.0f} "
+        f"stuck_signal_ms={frame['stuck_signal_duration_ms']} "
+        f"stuck_reason={frame['stuck_signal_reason']} "
+        f"unstuck_modes={frame['unstuck_modes']} "
         f"lane_change_forbid_ts={frame['lane_change_forbid_timestamp_ms']}"
     )
 
