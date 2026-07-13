@@ -192,6 +192,25 @@ with rosbag.Bag(sys.argv[1]) as bag:
     return json.loads(result.stdout)
 
 
+def bag_topics(path: Path, env: dict[str, str]) -> list[str]:
+    code = """
+import json
+import rosbag
+import sys
+
+with rosbag.Bag(sys.argv[1]) as bag:
+    print(json.dumps(sorted(bag.get_type_and_topic_info().topics)))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code, str(path)],
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(result.stdout)
+
+
 def replace_symlink(link: Path, target: Path) -> None:
     if link.is_symlink():
         link.unlink()
@@ -267,11 +286,26 @@ def parse_args() -> argparse.Namespace:
         help="Road bag topic to include; repeat for multiple topics",
     )
     parser.add_argument(
+        "--road-topics-from-sim-bag",
+        nargs="?",
+        const="AUTO",
+        metavar="PATH",
+        help="Use topics from a sim bag; defaults to the scenario sim.bag symlink",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Query Trail and print planned paths/commands without downloading or simulating",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.road_topics_from_sim_bag is not None and (
+        args.filtered_road or args.road_topic
+    ):
+        parser.error(
+            "--road-topics-from-sim-bag cannot be combined with "
+            "--filtered-road or --road-topic"
+        )
+    return args
 
 
 def main() -> None:
@@ -279,7 +313,22 @@ def main() -> None:
     info = _get_trail_trip_segment(args.scenario_id)
     segment = info["trip_segment"]
     work_dir = Path(args.output_root).expanduser() / f"scenario_{args.scenario_id}"
-    custom_topics = normalize_topics(args.road_topic)
+    analysis_env = voy_sdk_env(args.binary, protobuf_implementation="python")
+    topics_source_bag = None
+    if args.road_topics_from_sim_bag is not None:
+        topics_source_bag = (
+            work_dir / "sim.bag"
+            if args.road_topics_from_sim_bag == "AUTO"
+            else Path(args.road_topics_from_sim_bag).expanduser().resolve()
+        )
+        if not topics_source_bag.exists():
+            raise FileNotFoundError(f"Sim bag not found: {topics_source_bag}")
+        custom_topics = normalize_topics(bag_topics(topics_source_bag, analysis_env))
+        if not custom_topics:
+            raise RuntimeError(f"Sim bag has no topics: {topics_source_bag}")
+        print(f"Loaded {len(custom_topics)} topics from sim bag: {topics_source_bag}")
+    else:
+        custom_topics = normalize_topics(args.road_topic)
     road_topics = custom_topics or (RA_TOPICS if args.filtered_road else [])
     road_mode = "filtered" if road_topics else "raw"
     road_filename = (
@@ -308,6 +357,12 @@ def main() -> None:
         "road_download_end_ms": end_ms,
         "road_download_mode": road_mode,
         "road_download_topics": road_topics or None,
+        "road_topics_source_sim_bag": (
+            str(topics_source_bag) if topics_source_bag is not None else None
+        ),
+        "road_topics_source_count": (
+            len(road_topics) if topics_source_bag is not None else None
+        ),
         "requested_binary_id": args.binary,
         "requested_build": args.build,
         "warmup_ms": args.warmup,
@@ -326,7 +381,6 @@ def main() -> None:
 
     work_dir.mkdir(parents=True, exist_ok=True)
     write_metadata(work_dir / "metadata.json", metadata)
-    analysis_env = voy_sdk_env(args.binary, protobuf_implementation="python")
     download_env = voy_sdk_env(
         args.binary,
         protobuf_implementation=args.download_protobuf,

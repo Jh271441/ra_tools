@@ -70,6 +70,35 @@ topic 时显式使用：
 自定义包使用 topic 集合哈希命名，例如 `road_filtered_a1b2c3d4.bag`。因此更换 topic 列表
 后不会误复用旧的 `.complete` 文件。topic 必须以 `/` 开头，重复值会自动去重。
 
+已有 sim bag 时，可以直接读取它的全部 topic，并下载路测侧同名 topic：
+
+```bash
+.venv/bin/python3 scripts/scenario_repro.py "$SCENARIO_ID" \
+  --binary "$BINARY_ID" \
+  --road-only \
+  --road-topics-from-sim-bag
+```
+
+不传路径时默认读取：
+
+```text
+/home/didi/ra_bags/scenario_<scenario_id>/sim.bag
+```
+
+也可以指定任意 EzSim 输出：
+
+```bash
+.venv/bin/python3 scripts/scenario_repro.py "$SCENARIO_ID" \
+  --binary "$BINARY_ID" \
+  --road-only \
+  --road-topics-from-sim-bag \
+    /home/didi/.voyager/ezsim/simulation/<sim_id>/output.bag
+```
+
+该模式不能和 `--filtered-road`、`--road-topic` 同时使用。最终 topic 列表、sim bag 来源和
+topic 数量会写入 `road_download_topics`、`road_topics_source_sim_bag`、
+`road_topics_source_count`。
+
 `metadata.json` 会同时记录请求值和 EzSim 最终生效值：
 
 - `requested_binary_id` / `requested_build`
