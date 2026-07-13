@@ -115,6 +115,10 @@ def parse_frame(timestamp_ms: int, payload: bytes) -> Frame:
         ),
         None,
     )
+    if selected_maneuver is None and len(behavior_debug.decoupled_maneuvers) == 1:
+        # The top-level type may retain legacy LANE_FOLLOW while the active
+        # decoupled debug is DECOUPLED_FORWARD.
+        selected_maneuver = behavior_debug.decoupled_maneuvers[0]
     stuck_debug = None
     if selected_maneuver is not None:
         selection_debug = selected_maneuver.trajectory_selection_debug
