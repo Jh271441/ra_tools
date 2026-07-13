@@ -262,6 +262,7 @@ def analyze_case(
     case_dir.mkdir(parents=True, exist_ok=True)
     summary_path = case_dir / "summary.json"
     if summary_path.is_file() and not force:
+        (case_dir / "error.json").unlink(missing_ok=True)
         return json.loads(summary_path.read_text(encoding="utf8"))
 
     info = get_trail_trip_segment(scenario_id)
@@ -489,6 +490,7 @@ def main() -> None:
                 json.dumps(result, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf8",
             )
+            (summary_path.parent / "error.json").unlink(missing_ok=True)
             results.append(result)
         write_report(results, args.report or args.output_root / "report.md")
         (args.output_root / "summary.json").write_text(
