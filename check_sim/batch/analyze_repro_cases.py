@@ -347,6 +347,7 @@ def analyze_case(
     summary_path.write_text(
         json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf8"
     )
+    (case_dir / "error.json").unlink(missing_ok=True)
     if not keep_bags:
         downloaded_road_bag.unlink(missing_ok=True)
         downloaded_sim_bag.unlink(missing_ok=True)
