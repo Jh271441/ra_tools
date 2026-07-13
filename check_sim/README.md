@@ -91,6 +91,26 @@ EzSim warmup；无 metadata 时默认排除前 5000 ms。
 结果分别写入 `scenario_<id>/experiments/replay_road_pose/` 和
 `scenario_<id>/experiments/disable_smart_agent/`，不会覆盖默认仿真。
 
+## 批量复现性归因
+
+对 road 已触发、base sim 未触发的 case 清单，可逐案下载最小 road bag，并使用
+清单中的 base binary 和标准 EzSim 参数重跑：
+
+```bash
+.venv/bin/python3 check_sim/batch/analyze_repro_cases.py \
+  check_sim/batch/data/base_miss_50.csv \
+  --output-root /home/didi/ra_batch_39367009
+```
+
+脚本从 Trail `trip_segment.startTimestamp` 开始比较，不重复裁掉 warmup。它会持续
+写入每个 case 的 `summary.json`、全量 `summary.json` 和 `report.md`，单 case 失败
+不会中断整批。默认删除脚本下载的临时 road bag，但保留 EzSim 原始仿真目录和
+`sim_id`；使用 `--keep-bags` 可保留临时 bag，使用 `--scenario <id>` 或 `--limit N`
+可做小批量验证。
+
+根因分类覆盖模型未输出/未召回、FP 抑制、voluntary unstuck 门控、路测
+`StuckSignal` 掉零触发，以及 bag 已有请求但 DPE 指标未识别等情况。
+
 完整的 01-07 用法见 [`docs/check_sim_01_07_guide.md`](../docs/check_sim_01_07_guide.md)。
 
 ## 依赖边界
