@@ -318,7 +318,11 @@ topic 帧数对齐后，使用专用脚本比较 `planning_debug.behaviorReasone
   "$WORK_DIR/sim.bag"
 ```
 
-脚本按 bag 时间戳在 50 ms 内匹配消息，并输出：
+脚本默认排除 warmup：优先读取两个 bag 同目录 `metadata.json` 中精确的
+`trip_segment.startTimestamp`；metadata 不存在时，从 road/sim 共同起点排除 5000 ms。
+使用 `--warmup-ms` 修改回退时长，只有专门排查 warmup 恢复时才传 `--include-warmup`。
+
+正式窗口内按 bag 时间戳在 50 ms 内匹配消息，并输出：
 
 - `unstuck_status`：最终状态，例如 `MODEL_FP`、`MODEL_REQUEST`。
 - `process_reason`、`fp_reasons`、`fn_reasons`：具体命中的规则。

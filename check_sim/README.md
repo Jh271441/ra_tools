@@ -71,6 +71,9 @@ scenario_id
   /home/didi/ra_bags/scenario_<scenario_id>/sim.bag
 ```
 
+`compare_ra_debug.py` 默认从同目录 `metadata.json` 的 scenario 正式起点开始比较，排除
+EzSim warmup；无 metadata 时默认排除前 5000 ms。
+
 也支持包模式：
 
 ```bash

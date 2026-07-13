@@ -166,6 +166,40 @@ def compare(road: list[Frame], sim: list[Frame], tolerance_ms: int) -> dict:
     }
 
 
+def metadata_start_ms(road_path: Path, sim_path: Path) -> tuple[int, Path] | None:
+    candidates = [road_path.parent / "metadata.json", sim_path.parent / "metadata.json"]
+    for path in dict.fromkeys(candidates):
+        if not path.is_file():
+            continue
+        metadata = json.loads(path.read_text())
+        start_ms = metadata.get("trip_segment", {}).get("startTimestamp")
+        if start_ms is not None:
+            return int(start_ms), path
+    return None
+
+
+def comparison_start_ms(
+    road_path: Path,
+    sim_path: Path,
+    road: list[Frame],
+    sim: list[Frame],
+    *,
+    explicit_start_ms: int | None,
+    warmup_ms: int,
+    include_warmup: bool,
+) -> tuple[int | None, str]:
+    if include_warmup:
+        return None, "warmup included by --include-warmup"
+    if explicit_start_ms is not None:
+        return explicit_start_ms, "explicit --start-ms"
+    metadata_start = metadata_start_ms(road_path, sim_path)
+    if metadata_start is not None:
+        start_ms, path = metadata_start
+        return start_ms, f"trip_segment.startTimestamp from {path}"
+    common_start_ms = max(road[0].timestamp_ms, sim[0].timestamp_ms)
+    return common_start_ms + warmup_ms, f"common bag start + {warmup_ms} ms warmup"
+
+
 def format_frame(frame: dict) -> str:
     return (
         f"ts={frame['timestamp_ms']} status={frame['status']} "
@@ -177,6 +211,12 @@ def format_frame(frame: dict) -> str:
 
 
 def print_text(result: dict) -> None:
+    window = result["comparison_window"]
+    print(
+        f"comparison start: {window['start_ms']} "
+        f"({window['source']}); excluded warmup frames: "
+        f"road={window['road_excluded']} sim={window['sim_excluded']}"
+    )
     print(
         f"frames: road={result['road_frames']} sim={result['sim_frames']} "
         f"aligned={result['aligned_frames']} mismatched={result['mismatched_frames']}"
@@ -200,16 +240,56 @@ def main() -> None:
     parser.add_argument("road", type=Path)
     parser.add_argument("sim", type=Path)
     parser.add_argument("--tolerance-ms", type=int, default=50)
+    parser.add_argument(
+        "--start-ms",
+        type=int,
+        help="explicit comparison start timestamp; overrides metadata and warmup",
+    )
+    parser.add_argument(
+        "--warmup-ms",
+        type=int,
+        default=5000,
+        help="warmup excluded when metadata.json is unavailable (default: 5000)",
+    )
+    parser.add_argument(
+        "--include-warmup",
+        action="store_true",
+        help="compare from bag start, including warmup frames",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     for path in (args.road, args.sim):
         if not path.is_file():
             parser.error(f"bag does not exist: {path}")
+    if args.warmup_ms < 0:
+        parser.error("--warmup-ms must be non-negative")
     road = read_frames(args.road)
     sim = read_frames(args.sim)
     if not road or not sim:
         parser.error(f"{TOPIC} is missing from one or both bags")
+    start_ms, start_source = comparison_start_ms(
+        args.road,
+        args.sim,
+        road,
+        sim,
+        explicit_start_ms=args.start_ms,
+        warmup_ms=args.warmup_ms,
+        include_warmup=args.include_warmup,
+    )
+    road_before_filter = len(road)
+    sim_before_filter = len(sim)
+    if start_ms is not None:
+        road = [frame for frame in road if frame.timestamp_ms >= start_ms]
+        sim = [frame for frame in sim if frame.timestamp_ms >= start_ms]
+    if not road or not sim:
+        parser.error("comparison window contains no planning_debug frames")
     result = compare(road, sim, args.tolerance_ms)
+    result["comparison_window"] = {
+        "start_ms": start_ms,
+        "source": start_source,
+        "road_excluded": road_before_filter - len(road),
+        "sim_excluded": sim_before_filter - len(sim),
+    }
     if args.json:
         print(json.dumps(result, indent=2, ensure_ascii=False))
     else:
