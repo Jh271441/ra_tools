@@ -42,12 +42,12 @@ scenario_id
 公共的 EzSim 调用、bag 解析、shape、tensor 转换和 ONNX 推理只在包内共享模块中实现，
 避免编号脚本之间相互 import 或复制代码。`scripts/` 下保留同名兼容入口，但不再承载实现。
 
-以下脚本有意留在 `scripts/`：
+相关但已不在 `scripts/` 承载实现的内容：
 
-- `_launch_*.py`：写死 trip/build 的一次性 EzSim 实验，不属于通用工作流。
-- `download_road_bag.py`、`download_road_bag_cloud.py`：带旧机器路径的下载兼容工具；正式
-  链路统一使用 `repro/scenario_repro.py`。
-- `extract_bag_features.py`：处理 triage JSONL，不读取 road/sim bag。
+- `repro/experiments/_launch_*.py`：写死 trip/build 的一次性 EzSim 实验，不属于通用工作流。
+- `repro/legacy/download_road_bag*.py`：带旧机器路径的下载兼容工具；正式
+  链路统一使用 `repro/scenario_repro.py`。`scripts/download_road_bag*.py` 仅保留兼容入口。
+- `auto_triage/extract_bag_features.py`：处理 triage JSONL，不读取 road/sim bag。
 
 ## 运行
 

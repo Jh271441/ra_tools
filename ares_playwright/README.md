@@ -1,8 +1,9 @@
 # Ares Playwright 工具
 
-这是 `scripts/playwright_test.py` 的模块化重构版。旧脚本保持不变，新工具通过全新的
-BrowserContext 和真实 Ares 页面访问验证 storage state；只有验证为 `VALID` 的状态才会
-截图或上传。
+Ares Studio 登录态校验与截图工具。通过 BrowserContext 和真实 Ares 页面访问验证
+storage state；只有验证为 `VALID` 的状态才会截图或上传。
+
+（旧的 `scripts/playwright_test.py` 已删除，统一使用本包。）
 
 ## 模块
 

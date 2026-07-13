@@ -27,10 +27,11 @@ libplanner_node.so: undefined symbol: _ZN7planner3fLB60FLAGS_planning_enable_sel
 
 ```bash
 # 用 DefaultBuild
-python3 scripts/ezsim_run.py 32138520 --server https://172.16.145.60:10900 --build DefaultBuild --wait
+python3 check_sim/repro/ezsim.py 32138520 --server https://172.16.145.60:10900 --build DefaultBuild --wait
+# 兼容入口：python3 scripts/ezsim_run.py ...
 
 # 用 CI binary
-python3 scripts/ezsim_run.py 32138520 --server https://172.16.145.60:10900 --binary 1665523 --wait
+python3 check_sim/repro/ezsim.py 32138520 --server https://172.16.145.60:10900 --binary 1665523 --wait
 ```
 
 ### 1.3 不同 build 的仿真结果可能差异很大
@@ -73,7 +74,8 @@ sys.modules["voy_scan_udp"] = _stub
 libicui18n.so.60: cannot open shared object file
 ```
 
-**解决**：在 cloud_server 上下载（Ubuntu 22.04 + EzSim 也是 22.04，版本一致），用 `scripts/download_road_bag_cloud.py`。
+**解决**：在 cloud_server 上下载（Ubuntu 22.04 + EzSim 也是 22.04，版本一致），用
+`check_sim/repro/legacy/download_road_bag_cloud.py`（兼容入口：`scripts/download_road_bag_cloud.py`）。
 
 ### 2.3 cloud_server 上 vbag_modules.so 需要 LD_LIBRARY_PATH
 
@@ -83,7 +85,7 @@ libicui18n.so.60: cannot open shared object file
 export LD_LIBRARY_PATH=/volume/home/.voyager/ezsim/binary/1665523/tmp/lib:$LD_LIBRARY_PATH
 ```
 
-`scripts/download_road_bag_cloud.py` 已经通过 `os.execve` 自动重启处理，无需手动设置。
+`check_sim/repro/legacy/download_road_bag_cloud.py` 已经通过 `os.execve` 自动重启处理，无需手动设置。
 
 ---
 
@@ -131,10 +133,10 @@ if conns:
 **优先**：`~/workspace/voyager/bazel-build/bin/protobuf_python/protos_python_pb/`
 — Docker 编译产物，包含全部字段，宿主机可直接访问（共享 `~/.cache/bazel`）。
 
-**兜底**：`scripts/planning_stub.proto` 手写 stub，只含 `is_opened` 字段路径（field numbers 21→14→5→1）。
+**兜底**：`check_sim/bag/planning_stub.proto` 手写 stub，只含 `is_opened` 字段路径（field numbers 21→14→5→1）。
 字段 field number 改变时需手动更新 stub。
 
-`scripts/read_bag.py` 启动时自动检测，找不到 bazel 产物时降级到 stub。
+`check_sim/bag/read_bag.py`（兼容入口：`scripts/read_bag.py`）启动时自动检测，找不到 bazel 产物时降级到 stub。
 
 ---
 

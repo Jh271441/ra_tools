@@ -18,18 +18,19 @@
 
 ```text
 ra_tools/
+├── ares_playwright/            # Ares Studio 登录态 / 截图
+├── auto_triage/                # triage JSONL 特征分析
 ├── check_sim/                  # scenario 复现与 road/sim 分析完整链路
+│   ├── bag/ analysis/ repro/
+│   └── repro/legacy/           # 旧版按时间段下载路测 bag
 ├── issue_to_scenairo.py
 ├── model_release_pipeline/
-├── ra_api/
-│   ├── issue_api.py
-│   ├── scenario_api.py
-│   └── utils.py
-├── scripts/
-│   └── download_road_bag_cloud.py   # 旧版按时间段下载路测 bag
-├── stuck/
+├── ra_api/                     # issue/scenario API + export_issues
+├── ra_sim_repro_dashboard/     # 仿真复现看板（含 stats 脚本）
+├── scripts/                    # 兼容入口（实现已迁到 check_sim 等）
 ├── swag/
-└── utils/
+├── utils/
+└── vlm/                        # VLM prompt 与 multimodal 客户端
 ```
 
 ## 环境要求
@@ -143,12 +144,13 @@ docker exec -it $CONTAINER_NAME_GEN4 zsh -c \
 
 ### 1. 下载路测 bag（在 cloud_server 上执行）
 
-`scripts/download_road_bag_cloud.py` 通过内网 Tempest SDK 按 trip_id + 时间段下载 `.bag` 文件。
+`check_sim/repro/legacy/download_road_bag_cloud.py` 通过内网 Tempest SDK 按 trip_id + 时间段下载 `.bag` 文件
+（`scripts/download_road_bag_cloud.py` 为兼容入口）。
 **需在 cloud_server（172.16.145.60:12017）上运行**，该机器已预装 `voy-tempest` 和 `voy-vbag`。
 
 ```bash
 # 上传脚本到 cloud_server（首次）
-scp scripts/download_road_bag_cloud.py cloud_server:/tmp/
+scp check_sim/repro/legacy/download_road_bag_cloud.py cloud_server:/tmp/
 
 # SSH 进去执行
 ssh cloud_server "python3 /tmp/download_road_bag_cloud.py \

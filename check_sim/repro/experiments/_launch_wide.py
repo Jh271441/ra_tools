@@ -1,7 +1,16 @@
-import sys, urllib3, warnings
-urllib3.disable_warnings(); warnings.filterwarnings("ignore")
-sys.path.insert(0,"/home/didi/workspace/ra_tools"); sys.path.insert(0,"/home/didi/workspace/ra_tools/scripts")
-import ezsim_run as E
+import sys
+import urllib3
+import warnings
+from pathlib import Path
+
+urllib3.disable_warnings()
+warnings.filterwarnings("ignore")
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from check_sim.repro import ezsim as E
 client = E.EzSimClient("https://172.16.145.60:10900")
 # 事件 ~1779882467；起点拉到 1779882410000（事件前 ~57s），end 477644
 TRIP = {"tripId":"10498_20260527_194112","startTimestamp":1779882410000,"endTimestamp":1779882477644}
