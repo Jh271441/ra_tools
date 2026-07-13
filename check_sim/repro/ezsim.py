@@ -24,7 +24,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 _DEFAULT_SERVER = "https://172.16.145.60:10900"
 _AGENT_PORT_FILE = Path.home() / ".voyager/ezsim/agent.port"
 
-_DEFAULT_EXTRA_ARGS = (
+DEFAULT_EXTRA_ARGS = (
     "--sim_disable_loading_assist_topic"
     " --sim_aligned_mode"
     " --planning_use_old_stuck_feature_extractor_length_only_in_sim"
@@ -37,6 +37,9 @@ _DEFAULT_EXTRA_ARGS = (
     " {ego_pose_divergence_threshold:1.5,ego_heading_divergence_threshold:8}"
 )
 _DEFAULT_MODULES = ["PLANNING", "PERFECT_POSE"]
+
+# Compatibility for existing one-off experiment scripts.
+_DEFAULT_EXTRA_ARGS = DEFAULT_EXTRA_ARGS
 
 
 def _resolve_build_dir_hash(client_session: requests.Session, base_url: str, build: str) -> str:
@@ -166,7 +169,7 @@ class EzSimClient:
                 "name": f"ra_repro_{scenario_id}",
                 "enabledModules": modules or _DEFAULT_MODULES,
                 "warmupMs": warmup_ms,
-                "extraArgs": extra_args if extra_args is not None else _DEFAULT_EXTRA_ARGS,
+                "extraArgs": extra_args if extra_args is not None else DEFAULT_EXTRA_ARGS,
                 "topicInjections": [],
                 "dpeMonitorNames": [],
             },

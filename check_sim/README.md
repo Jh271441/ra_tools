@@ -9,6 +9,7 @@
 check_sim/
 ├── repro/                    # Trail、下载与 EzSim 执行
 │   ├── scenario_repro.py
+│   ├── run_pose_ab.py
 │   ├── ezsim.py
 │   ├── get_scenario_ids.py
 │   ├── setup_cloud_python.sh
@@ -79,6 +80,16 @@ EzSim warmup；无 metadata 时默认排除前 5000 ms。
 ```bash
 .venv/bin/python3 -m check_sim.analysis.06_analyze_nearby_lane_alignment --help
 ```
+
+对 ego pose 与 smart agent 做两组隔离实验：
+
+```bash
+.venv/bin/python3 check_sim/repro/run_pose_ab.py \
+  <scenario_id> --binary <binary_id>
+```
+
+结果分别写入 `scenario_<id>/experiments/replay_road_pose/` 和
+`scenario_<id>/experiments/disable_smart_agent/`，不会覆盖默认仿真。
 
 完整的 01-07 用法见 [`docs/check_sim_01_07_guide.md`](../docs/check_sim_01_07_guide.md)。
 

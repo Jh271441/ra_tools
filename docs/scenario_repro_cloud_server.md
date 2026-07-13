@@ -379,6 +379,32 @@ ONNX 模型需要单独放到服务器；`.onnx` 被仓库 `.gitignore` 排除�
 
 ## 8. 结果归档与清理
 
+### Ego pose / smart agent A/B
+
+当 road/sim ego speed 趋势一致但数值存在明显偏差时，运行两组隔离实验：
+
+```bash
+.venv/bin/python3 check_sim/repro/run_pose_ab.py \
+  <scenario_id> --binary <road_test_binary_id>
+```
+
+- `replay_road_pose`：保留 smart agent，增加
+  `--sim_overwrite_ego_pose_with_trip_pose`，验证 PerfectPose 闭环速度的影响。
+- `disable_smart_agent`：保留默认 PerfectPose，增加 `--sim_smart_agent=false`，验证
+  smart agent 通过障碍物运动和 planning trajectory 间接影响 ego speed 的程度。
+
+实验复用主场景的 `road.bag`，结果保存在：
+
+```text
+/home/didi/ra_bags/scenario_<id>/experiments/
+├── replay_road_pose/{road.bag,sim.bag,events.log,metadata.json}
+├── disable_smart_agent/{road.bag,sim.bag,events.log,metadata.json}
+└── summary.json
+```
+
+默认复用已经成功的实验；传 `--force` 才会重新发起。可用
+`--experiment replay_road_pose` 或 `--experiment disable_smart_agent` 只运行一组。
+
 建议长期保留：
 
 - `summary.json`、`summary.csv`
