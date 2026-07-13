@@ -46,6 +46,12 @@ enum UnstuckStatus {
   CANCEL_REQUEST = 22;
 }
 
+enum NonVoluntaryUnstuckReason {
+  Undefined = 0;
+  UndetectedStuckScene = 1;
+  UnstuckFail = 2;
+}
+
 enum AssistModelProcessReason {
   UNDEFINED_REASON = 0;
   FP_TRAFFIC_JAM = 1;
@@ -171,12 +177,17 @@ message EgoStuckDebug {
   optional double dnn_stuck_likelihood = 15;
   optional double dnn_stuck_likelihood_from_ra_vnode = 33;
   optional double scenario_dnn_stuck_likelihood_from_ra_vnode = 34;
+  optional double scenario_dnn_strict_stuck_likelihood_from_ra_vnode = 38;
   UnstuckStatus unstuck_status = 5;
   bool is_stuck_detected_by_model = 6;
   AssistModelProcessReason assist_model_process_reason = 7;
+  NonVoluntaryUnstuckReason non_voluntary_unstuck_reason = 8;
   double stuck_threshold = 10;
   int64 stationary_cycle_count = 13;
   AssistStuckRules rules_debug = 22;
+  double stuck_status_timer_elapsed_time_in_ms = 39;
+  bool is_strict_stuck_detected_by_dnn_model = 41;
+  bool is_uncertain_stuck = 42;
 }
 
 message BehaviorReasonersDebug {

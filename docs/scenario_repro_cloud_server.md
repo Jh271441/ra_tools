@@ -405,6 +405,36 @@ ONNX 模型需要单独放到服务器；`.onnx` 被仓库 `.gitignore` 排除�
 默认复用已经成功的实验；传 `--force` 才会重新发起。可用
 `--experiment replay_road_pose` 或 `--experiment disable_smart_agent` 只运行一组。
 
+### Scenario 29434409 A/B 结论（2026-07-14）
+
+正式对比从 `trip_segment.startTimestamp=1777372719965` 开始，不包含 5 秒
+warmup。路测 `/pose` 与仿真 `/simulation/pose` 按消息时间戳在 20 ms 内对齐。
+
+| 实验 | speed MAE | speed P95 | 0.5 m/s 阈值异步帧 | 首次路测请求前 Yield 决策差异 | RA 请求时间 |
+|---|---:|---:|---:|---:|---:|
+| road | - | - | - | - | `1777372739933` |
+| baseline | 0.0577 m/s | 0.2048 m/s | 155 | 22 | `1777372741648` |
+| replay road pose | 0 | 0 | 0 | 0 | `1777372742157` |
+| disable smart agent | 0.0577 m/s | 0.2048 m/s | 155 | 22 | `1777372741648` |
+
+结论：
+
+- PerfectPose 使用 planner trajectory 生成 `/simulation/pose`，没有保证速度与路测
+  `/pose` 完全一致。小幅速度误差会改变跨越 `0.5 m/s` 静止阈值的时刻，并使
+  `yield_temp_parked_cycles` 相差约 6 个 planning cycle。
+- 回放路测 pose 后，首次请求前的 `FP_YIELD_DYNAMIC_OBJECT` 差异从 22 帧降为
+  0，证明速度时序是该 FP 分支不一致的直接原因，而不是 Yield FP 判断了不同
+  的障碍物。
+- 关闭 smart agent 的结果与 baseline 完全相同，本场景可以排除 smart agent。
+- pose 对齐后模型分数仍不同，且仿真请求没有提前。速度差异只解释 Yield FP
+  时序，不能解释全部模型输入和请求仲裁差异。
+
+`WAITTING_CORE_PLANNER_UNSTUCK` 不代表模型未检出。代码在模型已返回
+`kModelDetected` 后仍会检查 voluntary unstuck 状态；处于自主脱困阶段时只发送
+recall signal，不发送正式 AssistRequest，并返回该状态。用
+`compare_ra_debug.py` 中的 `non_voluntary_unstuck_reason`、`stuck_timer_ms`、
+`strict_model_detected` 和 `uncertain_stuck` 判断门控解除原因。
+
 建议长期保留：
 
 - `summary.json`、`summary.csv`

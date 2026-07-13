@@ -53,8 +53,13 @@ class Frame:
     total_yielding_cycles: int
     model_detected: bool
     scenario_dnn: float | None
+    scenario_dnn_strict: float | None
     threshold: float
     stationary_cycles: int
+    non_voluntary_unstuck_reason: str
+    stuck_timer_ms: float
+    strict_model_detected: bool
+    uncertain_stuck: bool
 
 
 def enum_name(field, value: int) -> str:
@@ -83,6 +88,9 @@ def parse_frame(timestamp_ms: int, payload: bytes) -> Frame:
     )
     status_field = debug.DESCRIPTOR.fields_by_name["unstuck_status"]
     reason_field = debug.DESCRIPTOR.fields_by_name["assist_model_process_reason"]
+    voluntary_reason_field = debug.DESCRIPTOR.fields_by_name[
+        "non_voluntary_unstuck_reason"
+    ]
     decision_field = rules.DESCRIPTOR.fields_by_name["rule_decision"]
     lane_change_ts = rules.fp_lane_change_debug.lane_change_forbid_requirement_timestmap
     yield_debug = rules.fp_yield_dynamic_object_debug
@@ -111,8 +119,17 @@ def parse_frame(timestamp_ms: int, payload: bytes) -> Frame:
         total_yielding_cycles=yield_debug.total_yielding_cycles,
         model_detected=debug.is_stuck_detected_by_model,
         scenario_dnn=optional_double(debug, "scenario_dnn_stuck_likelihood_from_ra_vnode"),
+        scenario_dnn_strict=optional_double(
+            debug, "scenario_dnn_strict_stuck_likelihood_from_ra_vnode"
+        ),
         threshold=debug.stuck_threshold,
         stationary_cycles=debug.stationary_cycle_count,
+        non_voluntary_unstuck_reason=enum_name(
+            voluntary_reason_field, debug.non_voluntary_unstuck_reason
+        ),
+        stuck_timer_ms=debug.stuck_status_timer_elapsed_time_in_ms,
+        strict_model_detected=debug.is_strict_stuck_detected_by_dnn_model,
+        uncertain_stuck=debug.is_uncertain_stuck,
     )
 
 
@@ -245,7 +262,11 @@ def format_frame(frame: dict) -> str:
         f"yield_obj={frame['yielding_object_id']} "
         f"yield_speed={frame['yielding_object_speed']} "
         f"yield_hold={frame['yield_hold_cycles']} "
-        f"scen_dnn={frame['scenario_dnn']} threshold={frame['threshold']} "
+        f"scen_dnn={frame['scenario_dnn']} strict_dnn={frame['scenario_dnn_strict']} "
+        f"threshold={frame['threshold']} strict={frame['strict_model_detected']} "
+        f"uncertain={frame['uncertain_stuck']} "
+        f"voluntary_exit={frame['non_voluntary_unstuck_reason']} "
+        f"stuck_timer_ms={frame['stuck_timer_ms']:.0f} "
         f"lane_change_forbid_ts={frame['lane_change_forbid_timestamp_ms']}"
     )
 
