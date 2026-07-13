@@ -49,6 +49,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scenario", action="append", default=[])
     parser.add_argument("--keep-bags", action="store_true")
     parser.add_argument("--force", action="store_true")
+    parser.add_argument(
+        "--reclassify-only",
+        action="store_true",
+        help="Refresh summaries from retained sim bags without downloading or simulating",
+    )
     parser.add_argument("--poll", type=int, default=15)
     parser.add_argument("--timeout", type=int, default=3600)
     parser.add_argument("--report", type=Path)
@@ -113,6 +118,7 @@ def summarize_frames(frames: list[Frame], start_ms: int) -> dict[str, Any]:
     ]
     scores = [frame.scenario_dnn for frame in formal if frame.scenario_dnn is not None]
     fp_reasons = Counter(reason for frame in formal for reason in frame.fp_reasons)
+    fn_reasons = Counter(reason for frame in formal for reason in frame.fn_reasons)
     request = requests[0] if requests else None
     first_model = model_frames[0] if model_frames else None
     first_fail = first(
@@ -124,6 +130,7 @@ def summarize_frames(frames: list[Frame], start_ms: int) -> dict[str, Any]:
         "start_ms": start_ms,
         "statuses": dict(Counter(frame.status for frame in formal)),
         "fp_reasons": dict(fp_reasons),
+        "fn_reasons": dict(fn_reasons),
         "request_count": len(requests),
         "request_timestamp_ms": request.timestamp_ms if request else None,
         "request_frame": asdict(request) if request else None,
@@ -170,6 +177,27 @@ def classify(road: dict[str, Any], sim: dict[str, Any]) -> tuple[str, list[str]]
         return "SIM_REQUESTED_BUT_METRIC_MISSED", evidence + [
             f"sim bag contains {sim['request_count']} MODEL_REQUEST frame(s)",
             session_text,
+        ]
+
+    road_reason = road_request["process_reason"]
+    if road_reason in {"FN_FORCING_RECALL", "FN_FINAL_FORCING_RECALL"}:
+        sim_count = sim.get("fn_reasons", {}).get(road_reason, 0)
+        evidence.extend(
+            [
+                f"road trigger path={road_reason}",
+                f"sim {road_reason} frames={sim_count}",
+                f"stationary cycles road={road['max_stationary_cycles']} "
+                f"sim={sim['max_stationary_cycles']}",
+            ]
+        )
+        if sim_count:
+            return "SIM_FORCING_RECALL_STATE_NOT_REQUESTED", evidence
+        return "SIM_FORCING_RECALL_NOT_REPRODUCED", evidence
+
+    if road_reason != "ASSIST_STUCK_MODEL":
+        sim_count = sim.get("fn_reasons", {}).get(road_reason, 0)
+        return f"SIM_ROAD_TRIGGER_NOT_REPRODUCED:{road_reason}", evidence + [
+            f"road trigger path={road_reason}; sim frames={sim_count}"
         ]
 
     if sim["model_reason_frames"] == 0:
@@ -335,16 +363,19 @@ def write_report(results: list[dict[str, Any]], path: Path) -> None:
             "",
             "## Case 明细",
             "",
-            "| Scenario | Issue | 根因 | Road request | Sim model frames | Sim waiting | Sim session opened | Sim max score |",
-            "|---:|---|---|---:|---:|---:|---:|---:|",
+            "| Scenario | Issue | Road trigger | 根因 | Road request | Sim model frames | Sim waiting | Sim session opened | Sim max score |",
+            "|---:|---|---|---|---:|---:|---:|---:|---:|",
         ]
     )
     for result in successful:
         road_ts = result["road"]["request_timestamp_ms"] or "-"
+        road_request_frame = result["road"].get("request_frame")
+        road_reason = road_request_frame["process_reason"] if road_request_frame else "-"
         score = result["sim"]["max_scenario_dnn"]
         score_text = f"{score:.4f}" if score is not None else "-"
         lines.append(
             f"| {result['scenario_id']} | {result.get('issue_label') or '-'} | "
+            f"`{road_reason}` | "
             f"`{result['root_cause']}` | {road_ts} | "
             f"{result['sim']['model_reason_frames']} | "
             f"{result['sim']['waiting_model_frames']} | "
@@ -367,6 +398,36 @@ def main() -> None:
     if args.limit is not None:
         rows = rows[: args.limit]
     args.output_root.mkdir(parents=True, exist_ok=True)
+    if args.reclassify_only:
+        results = []
+        for row in rows:
+            summary_path = (
+                args.output_root / f"case_{row['scenario_id']}" / "summary.json"
+            )
+            if not summary_path.is_file():
+                results.append(
+                    {"scenario_id": row["scenario_id"], "error": "summary missing"}
+                )
+                continue
+            result = json.loads(summary_path.read_text(encoding="utf8"))
+            sim_bag = Path(result["sim_bag"])
+            if sim_bag.is_file():
+                result["sim"] = summarize_frames(
+                    read_frames(sim_bag), int(result["trip_segment"]["startTimestamp"])
+                )
+            result["root_cause"], result["evidence"] = classify(
+                result["road"], result["sim"]
+            )
+            summary_path.write_text(
+                json.dumps(result, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf8",
+            )
+            results.append(result)
+        write_report(results, args.report or args.output_root / "report.md")
+        (args.output_root / "summary.json").write_text(
+            json.dumps(results, ensure_ascii=False, indent=2) + "\n", encoding="utf8"
+        )
+        return
     results = []
     for index, row in enumerate(rows, 1):
         scenario_id = row["scenario_id"]
