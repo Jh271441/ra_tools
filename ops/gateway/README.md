@@ -7,10 +7,26 @@ Colleagues can access services with the development machine IP and path prefixes
 
 ## Routes
 
-- `http://<dev-machine-ip>/` -> model-release at `127.0.0.1:8765`
+- `http://<dev-machine-ip>/` -> static tool portal
+- `http://<dev-machine-ip>/release/` -> model-release at `127.0.0.1:8765`
+- `http://<dev-machine-ip>/sim/` -> RA sim repro dashboard static build
+- `http://<dev-machine-ip>/sim/api/` -> RA sim repro API at `127.0.0.1:8000/api/`
+- `http://<dev-machine-ip>/cpa/` -> CPA management UI at `127.0.0.1:8317`
+- `http://<dev-machine-ip>/cpa/v1/` -> CPA OpenAI-compatible API at `127.0.0.1:8317/v1/`
 - `http://<dev-machine-ip>/v1/` -> lingma-proxy OpenAI-compatible API at `127.0.0.1:8095/v1/`
 - `http://<dev-machine-ip>/dcc/` -> DCC at `127.0.0.1:9999`
 - `http://<dev-machine-ip>/tb/` -> TensorBoard tunnel at `127.0.0.1:16006`
+
+## CPA Subpath Notes
+
+The CPA management frontend defaults its API base to the current scheme, host, and port, without
+the `/cpa` mount path. Its management calls therefore use absolute `/v0/management/*` paths and
+its model list uses absolute `/v1/models`.
+
+The gateway forwards only `/v0/management/*` to CPA. For the conflicting `/v1/models` path, it
+uses the CPA management page Referer to send that browser request to CPA; requests without that
+Referer keep the existing lingma-proxy authentication and upstream. Do not globally remap root
+`/v1/models` to CPA.
 
 ## DCC Path Prefix Notes
 

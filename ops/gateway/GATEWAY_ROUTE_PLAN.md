@@ -1,6 +1,6 @@
 # Gateway Route Plan
 
-Last updated: 2026-07-09
+Last updated: 2026-07-13
 
 ## Summary
 
@@ -19,6 +19,7 @@ Last updated: 2026-07-09
 - `/v1/`、`/dcc/`、`/tb/` 保持既有语义。
 - `/cpa/v1/` 已按低优先级实验块处理，nginx 不额外校验 CPA token，并关闭 SSE buffering。
 - CPA management UI 不完全支持 `/cpa/` 子路径：页面会从根路径请求 `/v0/management/*`。Gateway 已增加窄范围兼容路由 `/v0/management` / `/v0/management/` 透传到 CPA，避免把整个 `/v0/` 暴露给 CPA。
+- CPA management UI 的默认连接地址只保留 scheme/host/port，因此“可用模型列表”还会请求根路径 `/v1/models`。Gateway 对这个精确路径按 CPA management 页 Referer 分流到 CPA；其他客户端访问 `/v1/models` 时仍走 lingma-proxy 并执行原有鉴权。
 
 前端改造状态：
 
@@ -76,6 +77,11 @@ CPA 可能不长久，验收失败不阻塞 Phase 1/2。配置要求：
    - `location = /v0/management { proxy_pass http://127.0.0.1:8317; }`
    - `location /v0/management/ { proxy_pass http://127.0.0.1:8317; }`
    - 不要扩大为整个 `/v0/`，避免污染 gateway 根命名空间。
+6. CPA management UI 的模型发现请求同样不完全支持子路径：
+   - 默认连接地址由浏览器的 scheme/host/port 生成，不包含 `/cpa`，因此页面请求根 `/v1/models`；
+   - `location = /v1/models` 仅在 Referer 来自同一 gateway 的 `/cpa/` 页面时转发 CPA `127.0.0.1:8317/v1/models`；
+   - 无 CPA Referer 时仍要求 lingma token，并转发 `127.0.0.1:8095/v1/models`，不能把根 `/v1/models` 全局改给 CPA；
+   - 用户手动把“自定义连接地址”设成 `http(s)://<gateway-host>/cpa` 也能工作，但不作为每个浏览器都要执行的部署步骤。
 
 ## Target Routes
 
@@ -88,6 +94,7 @@ CPA 可能不长久，验收失败不阻塞 Phase 1/2。配置要求：
 | `/cpa/` | CPA management UI | 独立块，可整段删除 |
 | `/cpa/v1/` | `127.0.0.1:8317/v1/` | 纯透传 + SSE 关缓冲 |
 | `/v0/management/` | `127.0.0.1:8317/v0/management/` | CPA management UI 兼容路由 |
+| `/v1/models` | CPA 或 lingma-proxy | CPA management Referer → CPA；其他请求保持 lingma 鉴权 |
 | `/v1/` | `127.0.0.1:8095/v1/` | 保持 lingma-proxy + Bearer 校验 |
 | `/dcc/` | `127.0.0.1:9999` | 保持不变 |
 | `/tb/` | `127.0.0.1:16006` | 保持不变 |
@@ -115,7 +122,9 @@ CPA 可能不长久，验收失败不阻塞 Phase 1/2。配置要求：
 7. `http://127.0.0.1/sim/api/dashboard/summary` 返回 JSON。
 8. `http://127.0.0.1/cpa/` 打开 management UI。
 9. `curl http://127.0.0.1/cpa/v1/models -H "Authorization: Bearer <cpa-token>"` 返回模型列表；无 token 时由 CPA 返回 401。
-10. CPA 进程停掉时，`/`、`/release/`、`/sim/` 不受影响。
+10. 模拟 CPA management UI 请求根模型接口：带 CPA token 和 `Referer: http://127.0.0.1/cpa/management.html` 的 `GET /v1/models` 返回模型列表。
+11. 同一个 `GET /v1/models` 去掉 CPA Referer 后仍按 lingma 规则鉴权，CPA token 不能把普通根 `/v1/` 请求导向 CPA。
+12. CPA 进程停掉时，`/`、`/release/`、`/sim/` 不受影响。
 
 ## Validation Results（2026-07-09）
 
