@@ -272,28 +272,21 @@ ls -lh "$SIM_DIR/output.bag" "$SIM_DIR/events.log"
 
 ## 6. 检查 road/sim RA 触发结果
 
-先统计关键 topic 帧数：
+先按时间戳比较关键 topic 的帧数和对齐覆盖率：
 
 ```bash
-.venv/bin/python3 - "$WORK_DIR/road_raw.bag" "$SIM_DIR/output.bag" <<'PY'
-import sys
-import rosbag
-
-topics = [
-    "/planning/seed",
-    "/planning/planning_debug",
-    "/planning/remote_assist_model_debug",
-    "/planning/assist_request",
-    "/planning/stuck_detection_recall_signal",
-]
-for path in sys.argv[1:]:
-    with rosbag.Bag(path) as bag:
-        info = bag.get_type_and_topic_info().topics
-        print(path)
-        for topic in topics:
-            print(f"  {topic}: {info[topic].message_count if topic in info else 0}")
-PY
+.venv/bin/python3 scripts/compare_road_sim_bags.py \
+  "$WORK_DIR/road.bag" \
+  "$WORK_DIR/sim.bag"
 ```
+
+脚本默认比较 `/planning/seed`、`planning_debug`、`remote_assist_model_debug`、
+`assist_request` 和 `stuck_detection_recall_signal`。`road cov`/`sim cov` 表示在另一侧
+50 ms 内找到最近消息的比例；可用 `--tolerance-ms` 调整，或重复传入 `--topic` 比较其他
+topic。需要机器可读结果时增加 `--json`。
+
+不要直接按帧序号比较。仿真存在 warmup、模块启动和丢帧差异，应先按 bag 时间戳对齐，再
+比较对应消息字段或 `/planning/seed` 中的模型特征。
 
 最直接的判断：
 
