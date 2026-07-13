@@ -25,6 +25,9 @@ RA_TOPICS = [
     "/planning/assist_request",
     "/planning/stuck_detection_recall_signal",
 ]
+DEFAULT_ROAD_TOPICS_FILE = (
+    Path(__file__).resolve().parent.parent / "config/default_road_topics.txt"
+)
 PROTOBUF_PYTHON_WARNING = (
     "Warning: the Protobuf library implementation is in Python, "
     "which could significantly impact performance."
@@ -86,6 +89,20 @@ def normalize_topics(topics: list[str]) -> list[str]:
         if value not in seen:
             normalized.append(value)
             seen.add(value)
+    return normalized
+
+
+def load_topic_file(path: Path) -> list[str]:
+    if not path.is_file():
+        raise FileNotFoundError(f"Road topic config not found: {path}")
+    topics = [
+        line.strip()
+        for line in path.read_text(encoding="utf8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    normalized = normalize_topics(topics)
+    if not normalized:
+        raise RuntimeError(f"Road topic config is empty: {path}")
     return normalized
 
 
@@ -279,6 +296,11 @@ def parse_args() -> argparse.Namespace:
         help="Download only RA topics instead of the complete raw road bag",
     )
     parser.add_argument(
+        "--raw-road",
+        action="store_true",
+        help="Download the complete raw road bag without a topic filter",
+    )
+    parser.add_argument(
         "--road-topic",
         action="append",
         default=[],
@@ -298,12 +320,18 @@ def parse_args() -> argparse.Namespace:
         help="Query Trail and print planned paths/commands without downloading or simulating",
     )
     args = parser.parse_args()
-    if args.road_topics_from_sim_bag is not None and (
-        args.filtered_road or args.road_topic
-    ):
+    selectors = sum(
+        [
+            bool(args.raw_road),
+            bool(args.filtered_road),
+            bool(args.road_topic),
+            args.road_topics_from_sim_bag is not None,
+        ]
+    )
+    if selectors > 1:
         parser.error(
-            "--road-topics-from-sim-bag cannot be combined with "
-            "--filtered-road or --road-topic"
+            "choose only one of --raw-road, --filtered-road, --road-topic, "
+            "or --road-topics-from-sim-bag"
         )
     return args
 
@@ -315,6 +343,7 @@ def main() -> None:
     work_dir = Path(args.output_root).expanduser() / f"scenario_{args.scenario_id}"
     analysis_env = voy_sdk_env(args.binary, protobuf_implementation="python")
     topics_source_bag = None
+    topics_source_type = ""
     if args.road_topics_from_sim_bag is not None:
         topics_source_bag = (
             work_dir / "sim.bag"
@@ -327,9 +356,33 @@ def main() -> None:
         if not custom_topics:
             raise RuntimeError(f"Sim bag has no topics: {topics_source_bag}")
         print(f"Loaded {len(custom_topics)} topics from sim bag: {topics_source_bag}")
-    else:
+        topics_source_type = "explicit_sim_bag"
+    elif args.raw_road:
+        custom_topics = []
+        topics_source_type = "raw"
+    elif args.filtered_road:
+        custom_topics = list(RA_TOPICS)
+        topics_source_type = "ra_default"
+    elif args.road_topic:
         custom_topics = normalize_topics(args.road_topic)
-    road_topics = custom_topics or (RA_TOPICS if args.filtered_road else [])
+        topics_source_type = "custom"
+    else:
+        auto_sim_bag = work_dir / "sim.bag"
+        if auto_sim_bag.exists():
+            topics_source_bag = auto_sim_bag
+            custom_topics = normalize_topics(bag_topics(auto_sim_bag, analysis_env))
+            if not custom_topics:
+                raise RuntimeError(f"Sim bag has no topics: {auto_sim_bag}")
+            topics_source_type = "scenario_sim_bag"
+            print(f"Loaded {len(custom_topics)} topics from sim bag: {auto_sim_bag}")
+        else:
+            custom_topics = load_topic_file(DEFAULT_ROAD_TOPICS_FILE)
+            topics_source_type = "default_sim_snapshot"
+            print(
+                f"Loaded {len(custom_topics)} default topics from: "
+                f"{DEFAULT_ROAD_TOPICS_FILE}"
+            )
+    road_topics = custom_topics
     road_mode = "filtered" if road_topics else "raw"
     road_filename = (
         filtered_bag_name(road_topics, custom=bool(custom_topics))
@@ -357,12 +410,16 @@ def main() -> None:
         "road_download_end_ms": end_ms,
         "road_download_mode": road_mode,
         "road_download_topics": road_topics or None,
+        "road_topics_source_type": topics_source_type,
         "road_topics_source_sim_bag": (
             str(topics_source_bag) if topics_source_bag is not None else None
         ),
-        "road_topics_source_count": (
-            len(road_topics) if topics_source_bag is not None else None
+        "road_topics_source_file": (
+            str(DEFAULT_ROAD_TOPICS_FILE)
+            if topics_source_type == "default_sim_snapshot"
+            else None
         ),
+        "road_topics_source_count": len(road_topics) if road_topics else 0,
         "requested_binary_id": args.binary,
         "requested_build": args.build,
         "warmup_ms": args.warmup,

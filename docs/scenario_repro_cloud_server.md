@@ -39,12 +39,21 @@ cd /home/didi/workspace/ra_tools
 .venv/bin/python3 scripts/scenario_repro.py "$SCENARIO_ID" --binary "$BINARY_ID" --dry-run
 ```
 
-自动流程产物位于 `/home/didi/ra_bags/scenario_<scenario_id>/`：`road_raw.bag`、指向
-EzSim 产物的 `sim.bag`/`events.log` 软链接，以及记录 trip、binary、sim id、状态和 topic
-帧数的 `metadata.json`。
+自动流程产物位于 `/home/didi/ra_bags/scenario_<scenario_id>/`：默认 topic 裁剪包
+`road_filtered_<hash>.bag`、指向 EzSim 产物的 `sim.bag`/`events.log` 软链接，以及记录
+trip、binary、sim id、状态和 topic 帧数的 `metadata.json`。
 
-默认下载完整时间窗的原始路测 bag，不传 `-T`。完整 bag 可能达到几十 GB。只需要 RA
-topic 时显式使用：
+默认使用 sim topic 白名单，不再下载完整 raw bag：当前场景目录已有 `sim.bag` 时动态读取；
+否则读取 `config/default_road_topics.txt` 中从 scenario `32141295` sim bag 提取的 70-topic
+快照。完整 raw bag 需要显式使用：
+
+```bash
+.venv/bin/python3 scripts/scenario_repro.py "$SCENARIO_ID" \
+  --binary "$BINARY_ID" \
+  --raw-road
+```
+
+只需要 5 个 RA 核心 topic 时显式使用：
 
 ```bash
 .venv/bin/python3 scripts/scenario_repro.py "$SCENARIO_ID" \
@@ -95,9 +104,10 @@ topic 时显式使用：
     /home/didi/.voyager/ezsim/simulation/<sim_id>/output.bag
 ```
 
-该模式不能和 `--filtered-road`、`--road-topic` 同时使用。最终 topic 列表、sim bag 来源和
-topic 数量会写入 `road_download_topics`、`road_topics_source_sim_bag`、
-`road_topics_source_count`。
+topic 选择参数 `--raw-road`、`--filtered-road`、`--road-topic`、
+`--road-topics-from-sim-bag` 互斥。最终 topic 列表、来源类型、sim bag/配置文件路径和 topic
+数量会写入 `road_download_topics`、`road_topics_source_type`、
+`road_topics_source_sim_bag`、`road_topics_source_file`、`road_topics_source_count`。
 
 `metadata.json` 会同时记录请求值和 EzSim 最终生效值：
 
@@ -173,8 +183,8 @@ voy-bag download road_filtered.bag \
 服务器磁盘使用率较高，下载完整包前应确认剩余容量。不要同时保留多个重复的完整 bag。
 
 完整 bag 会打开大量临时流。自动脚本会把 `voy-bag` 继承的文件描述符 soft limit 提升到
-`65536`，并只在下载成功后创建 `road_raw.bag.complete`。如果下载中断，下次执行会删除
-未标记完成的半包并重新下载。
+`65536`，并只在下载成功后为选中的 road bag 创建 `.complete` 标记。如果下载中断，下次
+执行会删除未标记完成的半包并重新下载。
 
 已有 sim、只需要补原始 road bag 时使用：
 
@@ -206,7 +216,7 @@ C++ 性能时显式指定：
 ```
 
 脚本仍会过滤完全匹配的重复 Protobuf 性能提示，但不会过滤其他 stderr。下载期间每 30 秒
-打印一次 `road_raw.bag` 的实际大小；默认连续 300 秒不增长时打印 stall warning，但不会
+打印一次当前 road bag 的实际大小；默认连续 300 秒不增长时打印 stall warning，但不会
 自动终止下载。阈值可调整：
 
 ```bash
