@@ -151,22 +151,66 @@ max matched cost    : 0.0000
 1. **没有发现 nearbylane bug。** 同一绝对时间和触发相对帧的五组 nearby lane tensor 都
    完全一致，90 个 lane slot 没有重排。
 2. road/sim 的模型执行 cycle 和 RA 触发时机不一致，sim 最终 RA request 晚约 4.91 秒。
-3. 同一有效模型帧的 score 相差约 `0.04248`，但 nearby lane 完全相同。差异候选集中在
-   agent、`old_dnn_features` 和 traffic light。
+3. v49 复算的 `stuck_score` 相差 `-0.042403`，与 seed 记录值高度一致。07 显示
+   `old_dnn_features` 单组替换贡献 `-0.035440`，解释约 84% 的分数差；agent/ego 是次要
+   因素，nearby lane 贡献为 0。
 4. 该结论与旧案例 `cn30851935` 不冲突。旧案例确实存在 nearby lane 集合相同但 slot
    重排；当前新场景没有复现该问题。
 
-## 9. 未完成项
+## 9. 模型敏感性实验
 
-cloud_server 当前没有 binary `1660677` 对应的 Scenario DNN ONNX，无法运行 07 的 feature
-替换敏感性实验。seed 中已记录真实模型输出，因此可以确认分数差异存在，但暂时不能定量
-拆分 agent、old DNN 和 traffic light 对分数差的贡献。
+EzSim model cache 中存在本次下载的 ONNX：
 
-下一步需要取得与 binary `1660677` 严格对应的 ONNX，再运行：
+```text
+/home/didi/.cache/voyager/model_files/
+planner.model-files_vectorized_scenario_remote_assist_model.onnx_78_e6fa832263f2a97aa870b13615dffefe
+```
+
+该模型经 ORT compatibility rewrite 后输出约 `0.722`，与 seed 记录的 IFX 历史输出不一致，
+因此不能用它解释线上绝对分数。上传的 v49 compat 模型则高度复现 seed：
+
+| 项目 | Road | Sim |
+|---|---:|---:|
+| seed 记录 score | 0.630371 | 0.587891 |
+| v49 ONNX 复算 | 0.630462 | 0.588058 |
+
+v49 feature replacement 的 `stuck_score` 结果：
+
+| Feature group | mixed score | delta from road | 说明 |
+|---|---:|---:|---|
+| `old_dnn_features` | 0.595021 | -0.035440 | 解释约 84% 总分差 |
+| ego | 0.625184 | -0.005278 | 次要贡献 |
+| agent | 0.628881 | -0.001580 | group 总贡献较小，单特征有交互 |
+| traffic light | 0.629669 | -0.000793 | 较小 |
+| nearby lane | 0.630462 | 0.000000 | 无贡献 |
+
+单特征中，除 `old_dnn_features` 外影响较大的包括：
+
+- `agent_geometric`：`-0.017824`
+- `agent_trajectory`：`-0.005851`
+- `ego_continuous`：`-0.005279`
+- `agent_heading`：`-0.005173`
+
+单特征贡献不能直接相加，因为不同输入之间存在非线性交互。
+
+## 10. 跨版本复核
+
+v60/v61 不是 binary `1660677` 的正式复算模型，仅用于验证敏感性结论是否依赖 v49：
+
+| 模型 | Road score | Sim score | 总差异 | Nearby lane delta |
+|---|---:|---:|---:|---:|
+| v49 | 0.630462 | 0.588058 | -0.042403 | 0.000000 |
+| v60 | 0.083085 | 0.082982 | -0.000103 | 0.000000 |
+| v61 | 0.324074 | 0.296353 | -0.027721 | 0.000000 |
+
+三个模型的 nearby lane group 替换贡献均为 0，进一步支持当前场景与 nearbylane 无关。
+
+07 命令：
 
 ```bash
 .venv/bin/python3 scripts/check_sim/07_analyze_model_feature_sensitivity.py \
   --road /home/didi/ra_bags/scenario_32141295/road_features_1779961631806.npz \
   --sim /home/didi/ra_bags/scenario_32141295/sim_features_1779961631806.npz \
-  --models /path/to/binary_1660677_scenario_dnn.onnx
+  --models /home/didi/ra_models/vectorized_scenario_remote_assist_model_v49.ort_compat.onnx \
+  --intra-op-threads 4
 ```
