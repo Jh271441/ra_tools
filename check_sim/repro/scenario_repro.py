@@ -43,10 +43,14 @@ def voy_sdk_env(
     binary_root = Path.home() / ".voyager/ezsim/binary"
     requested_lib = binary_root / str(binary_id) / "tmp/lib" if binary_id else None
     fallback_lib = binary_root / "1665523/tmp/lib"
-    lib_dir = requested_lib if requested_lib and requested_lib.is_dir() else fallback_lib
-    if lib_dir.is_dir():
+    lib_dirs = [
+        str(path)
+        for path in (requested_lib, fallback_lib)
+        if path is not None and path.is_dir()
+    ]
+    if lib_dirs:
         env["LD_LIBRARY_PATH"] = ":".join(
-            item for item in [str(lib_dir), env.get("LD_LIBRARY_PATH", "")] if item
+            item for item in [*lib_dirs, env.get("LD_LIBRARY_PATH", "")] if item
         )
     sdk_python = "/opt/voy-sdk/lib/python3/dist-packages"
     env["PYTHONPATH"] = ":".join(
