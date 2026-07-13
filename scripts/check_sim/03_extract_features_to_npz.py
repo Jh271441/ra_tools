@@ -45,8 +45,11 @@ EXPECTED_SHAPES = {
 
 
 def convert_to_numpy(value, target_shape):
-    values = list(value.float_vals) + list(value.double_vals) + list(value.int_vals)
-    dtype = np.int64 if value.int_vals and not value.float_vals else np.float32
+    float_values = list(getattr(value, "float_vals", []))
+    double_values = list(getattr(value, "double_vals", []))
+    int_values = list(getattr(value, "int_vals", []))
+    values = float_values + double_values + int_values
+    dtype = np.int64 if int_values and not float_values and not double_values else np.float32
     array = np.asarray(values, dtype=dtype)
     expected_size = int(np.prod(target_shape))
     if array.size != expected_size:

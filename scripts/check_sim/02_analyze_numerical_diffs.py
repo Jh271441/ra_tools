@@ -9,9 +9,9 @@ from planning_seed_reader import get_frame, get_tensor_dict
 
 def get_values(value):
     result = []
-    result.extend(value.float_vals)
-    result.extend(value.double_vals)
-    result.extend(value.int_vals)
+    result.extend(getattr(value, "float_vals", []))
+    result.extend(getattr(value, "double_vals", []))
+    result.extend(getattr(value, "int_vals", []))
     return result
 
 
