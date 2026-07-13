@@ -307,6 +307,31 @@ grep -aoE 'rt_event\.planner::[A-Za-z0-9_]+' "$SIM_DIR/events.log" | sort | uniq
 - `AssistStuckFNSelectionTriggered`
 - `RouteUnstuck`
 
+### 对比 FP/FN 规则字段
+
+topic 帧数对齐后，使用专用脚本比较 `planning_debug.behaviorReasonerDebug`
+中的 RA 状态、reasoner 输出和模型分：
+
+```bash
+.venv/bin/python3 check_sim/bag/compare_ra_debug.py \
+  "$WORK_DIR/road.bag" \
+  "$WORK_DIR/sim.bag"
+```
+
+脚本按 bag 时间戳在 50 ms 内匹配消息，并输出：
+
+- `unstuck_status`：最终状态，例如 `MODEL_FP`、`MODEL_REQUEST`。
+- `process_reason`、`fp_reasons`、`fn_reasons`：具体命中的规则。
+- `rule_decision`：仲裁结果，例如 `kAbort`、`kModelDetected`。
+- `active_rules`：规则 activation 位。
+- `scenario_dnn`、`threshold`：模型分和阈值。
+- `lane_change_forbid_ts`：换道模块写入的禁止 RA requirement 时间戳。
+
+若 sim 出现 `FP_LANE_CHANGE_FORBID` 而 road 没有，继续检查同一时间的
+`/planning/seed.behavior_seed.assist_stuck_seed.ra_intervention_requirements`
+和换道轨迹选择。不要通过删除 FP reasoner 或放宽 4 秒有效期来让仿真“通过”；应修复
+仿真中 cross-lane requirement 的来源、warmup 恢复或上游场景发散。
+
 ## 7. 使用 check_sim 比较模型特征
 
 先把 sim bag 链接到本场景工作目录，避免复制大文件：

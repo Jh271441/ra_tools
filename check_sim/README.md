@@ -15,6 +15,7 @@ check_sim/
 │   └── default_road_topics.txt
 ├── bag/                      # bag、events 和可视化检查
 │   ├── compare_road_sim_bags.py
+│   ├── compare_ra_debug.py
 │   ├── read_bag.py
 │   ├── read_forcing_trajectory.py
 │   ├── bag_bev_visualizer.py
@@ -65,6 +66,9 @@ scenario_id
 .venv/bin/python3 check_sim/bag/compare_road_sim_bags.py \
   /home/didi/ra_bags/scenario_<scenario_id>/road.bag \
   /home/didi/ra_bags/scenario_<scenario_id>/sim.bag
+.venv/bin/python3 check_sim/bag/compare_ra_debug.py \
+  /home/didi/ra_bags/scenario_<scenario_id>/road.bag \
+  /home/didi/ra_bags/scenario_<scenario_id>/sim.bag
 ```
 
 也支持包模式：
@@ -80,6 +84,7 @@ scenario_id
 - 01-03、05 读取 bag 时才加载 `rosbag` 和 Voyager protobuf。
 - `repro/scenario_repro.py` 通过同子包的 `ezsim.py` 使用 Trail/EzSim，不依赖 `scripts/`。
 - `bag/compare_road_sim_bags.py` 优先使用 pip 的 `rosbags`，否则回退到 voy-sdk `rosbag`。
+- `bag/compare_ra_debug.py` 使用仓库内最小 proto，不要求完整 Voyager protobuf 构建产物。
 - `bag/read_bag.py` 依赖 `rosbags`；`bag/bag_bev_visualizer.py` 额外依赖 `numpy` 和
   `matplotlib`，且只在实际绘图时加载。
 - 04、05、07 创建模型会话时才加载 `onnx` 和 `onnxruntime`。

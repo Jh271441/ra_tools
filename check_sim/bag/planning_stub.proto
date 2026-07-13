@@ -20,9 +20,141 @@ message AssistDebug {
   AssistRequestSession assist_request_session = 5;
 }
 
+enum UnstuckStatus {
+  UNSTUCK_UNDEFIEND = 0;
+  CORE_PLANNER_DETECT = 1;
+  WAITTING_CORE_PLANNER_UNSTUCK = 2;
+  MODEL_FP = 3;
+  MODEL_DETECT = 4;
+  MODEL_REQUEST = 5;
+  ALREADY_IN_LIGHT_ASSIST = 6;
+  OPS_REFUSED_SCENE = 7;
+  NOT_STATIONARY = 8;
+  RULE_FN_DETECT = 9;
+  ALREADY_IN_WAYPOINT_ASSIST = 10;
+  ALREADY_IN_REVERSING = 11;
+  MANUAL_DRIVING = 12;
+  NORMAL_EXIT = 13;
+  NO_DEBUG_MESSAGE = 14;
+  PULLOUT_IN_REQUEST = 15;
+  FLAG_DISABLE = 16;
+  OUTER_RA_REQUEST = 17;
+  MRC_REACHED = 18;
+  INTERVENTION_FORBID = 19;
+  OMNI_PERF_DISABLE = 20;
+  SPECIAL_STUCK_DETECT = 21;
+  CANCEL_REQUEST = 22;
+}
+
+enum AssistModelProcessReason {
+  UNDEFINED_REASON = 0;
+  FP_TRAFFIC_JAM = 1;
+  FP_RED_LIGHT = 2;
+  FP_STOP_FENCE = 3;
+  FP_STARTUP = 4;
+  FP_MAXSPD = 5;
+  FP_CROSSWALK = 6;
+  FN_REJECT_INQUEUE = 7;
+  FN_JUNCTION = 8;
+  FN_SOLID_LANEMARK = 9;
+  FN_LOW_PRED = 10;
+  FP_PULL_OVER = 11;
+  FP_YIELD_DYNAMIC_OBJECT = 12;
+  FP_EOL_WITH_RED_TL = 13;
+  FP_YIELD_ON_RIGHT_TURN = 14;
+  FP_QUEUING = 15;
+  FN_RA_CZ = 16;
+  FP_YIELD_ON_TURN = 17;
+  FN_NEAR_HARD_BOUNDARY = 18;
+  FN_SELECTION = 19;
+  FP_OCCLUSION = 20;
+  FN_BREAKDOWN_CAR = 21;
+  REQUEST_FROM_ROUTING = 23;
+  FN_PERCEPTION_FP = 24;
+  FN_EOL = 25;
+  FP_REMOTE_SPEED_LIMIT = 26;
+  FN_CZ = 27;
+  REQUEST_FROM_CREEP = 28;
+  FN_NO_BLOCK = 29;
+  FN_LANE_CHANGE_STUCK = 30;
+  FN_FORCING_RECALL = 31;
+  FN_VEHICLE_HAZARD_SIGNAL = 32;
+  REQUEST_FROM_TIDAL_FLOW_LANE = 33;
+  REQUIREMENT_OF_TRAFFIC_LIGHT = 34;
+  FN_ABNORMAL_TRAFFIC_LIGHT = 35;
+  ASSIST_STUCK_MODEL = 36;
+  SPECIAL_STUCK_SCENE = 37;
+  FP_OPEN_SPACE_PLANNING = 38;
+  FP_LANE_CHANGE_FORBID = 39;
+  FN_FINAL_FORCING_RECALL = 40;
+}
+
+message AssistStuckRuleActivation {
+  bool fp_traffic_light = 1;
+  bool fp_yielding = 2;
+  bool fp_pullover = 3;
+  bool fp_crosswalk = 4;
+  bool fp_stop_fence = 5;
+  bool fp_startup = 6;
+  bool fp_max_speed = 7;
+  bool fp_occlusion = 8;
+  bool fp_eol = 9;
+  bool fp_on_turn = 10;
+  bool fp_queuing = 11;
+  bool fp_jam = 12;
+  bool fn_selection = 13;
+  bool fn_near_hb = 14;
+  bool fn_map_change_area = 15;
+  bool fn_breakdown_car = 16;
+  bool fn_perception_fp = 18;
+  bool fn_eol = 19;
+  bool fp_remote_speed_limit = 20;
+  bool fn_construction_zone = 21;
+  bool fn_no_block = 22;
+  bool fn_lane_change_stuck = 23;
+  bool fn_vehicle_hazard_signal = 24;
+  bool fp_open_space_planning = 25;
+  bool fp_lane_change_forbid = 26;
+}
+
+message AssistStuckFPLaneChangeDebug {
+  bool has_trigger_forbid_logic = 1;
+  int64 lane_change_forbid_requirement_timestmap = 2;
+}
+
+message AssistStuckRules {
+  enum RuleDecision {
+    kNone = 0;
+    kAbort = 1;
+    kStuckDetected = 2;
+    kRequestImmediately = 3;
+    kHasActivateFN = 4;
+    kModelDetected = 5;
+  }
+  RuleDecision rule_decision = 1;
+  AssistStuckRuleActivation rule_activation = 2;
+  AssistStuckFPLaneChangeDebug fp_lane_change_debug = 25;
+  repeated AssistModelProcessReason fp_process_reasons = 26;
+  repeated AssistModelProcessReason fn_process_reasons = 27;
+}
+
+message EgoStuckDebug {
+  optional double dnn_stuck_likelihood = 15;
+  optional double dnn_stuck_likelihood_from_ra_vnode = 33;
+  optional double scenario_dnn_stuck_likelihood_from_ra_vnode = 34;
+  UnstuckStatus unstuck_status = 5;
+  bool is_stuck_detected_by_model = 6;
+  AssistModelProcessReason assist_model_process_reason = 7;
+  double stuck_threshold = 10;
+  int64 stationary_cycle_count = 13;
+  AssistStuckRules rules_debug = 22;
+}
+
 message BehaviorReasonersDebug {
   // field 14 matches onboard/planner/planner_protos/debug/behavior_reasoners/behavior_reasoners_debug.proto
   AssistDebug assist_debug = 14;
+  // field 18 matches ego_stuck_debug in BehaviorReasonersDebug.
+  EgoStuckDebug ego_stuck_debug = 18;
 }
 
 message PlanningDebug {
