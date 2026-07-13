@@ -68,6 +68,8 @@ class Frame:
     stuck_signal_score: float | None
     stuck_signal_object_ids: tuple[int, ...]
     unstuck_modes: tuple[int, ...]
+    assist_session_opened: bool
+    assist_session_updated: bool
 
 
 def enum_name(field, value: int) -> str:
@@ -132,6 +134,7 @@ def parse_frame(timestamp_ms: int, payload: bytes) -> Frame:
     )
     stuck_start_ms = stuck_signal.start_timestamp if stuck_signal is not None else 0
     stuck_last_ms = stuck_signal.last_stuck_timestamp if stuck_signal is not None else 0
+    assist_session = behavior_debug.assist_debug.assist_request_session
     return Frame(
         timestamp_ms=timestamp_ms,
         status=enum_name(status_field, debug.unstuck_status),
@@ -191,6 +194,8 @@ def parse_frame(timestamp_ms: int, payload: bytes) -> Frame:
             if stuck_debug is not None
             else ()
         ),
+        assist_session_opened=assist_session.is_opened,
+        assist_session_updated=assist_session.is_updated,
     )
 
 
@@ -331,6 +336,7 @@ def format_frame(frame: dict) -> str:
         f"stuck_signal_ms={frame['stuck_signal_duration_ms']} "
         f"stuck_reason={frame['stuck_signal_reason']} "
         f"unstuck_modes={frame['unstuck_modes']} "
+        f"assist_opened={frame['assist_session_opened']} "
         f"lane_change_forbid_ts={frame['lane_change_forbid_timestamp_ms']}"
     )
 

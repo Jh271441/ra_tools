@@ -118,6 +118,7 @@ def summarize_frames(frames: list[Frame], start_ms: int) -> dict[str, Any]:
     first_fail = first(
         formal, lambda frame: frame.non_voluntary_unstuck_reason == "UnstuckFail"
     )
+    opened = [frame for frame in formal if frame.assist_session_opened]
     return {
         "frame_count": len(formal),
         "start_ms": start_ms,
@@ -137,6 +138,8 @@ def summarize_frames(frames: list[Frame], start_ms: int) -> dict[str, Any]:
         "max_stationary_cycles": max(
             (frame.stationary_cycles for frame in formal), default=0
         ),
+        "assist_session_opened_frames": len(opened),
+        "first_assist_session_opened_ms": opened[0].timestamp_ms if opened else None,
     }
 
 
@@ -159,8 +162,14 @@ def classify(road: dict[str, Any], sim: dict[str, Any]) -> tuple[str, list[str]]
         return "ROAD_REQUEST_NOT_FOUND", ["No MODEL_REQUEST in formal road window"]
 
     if sim["request_count"]:
+        session_text = (
+            f"assist session opened in {sim['assist_session_opened_frames']} frames"
+            if sim["assist_session_opened_frames"]
+            else "assist session never opened"
+        )
         return "SIM_REQUESTED_BUT_METRIC_MISSED", evidence + [
-            f"sim bag contains {sim['request_count']} MODEL_REQUEST frame(s)"
+            f"sim bag contains {sim['request_count']} MODEL_REQUEST frame(s)",
+            session_text,
         ]
 
     if sim["model_reason_frames"] == 0:
@@ -324,8 +333,8 @@ def write_report(results: list[dict[str, Any]], path: Path) -> None:
             "",
             "## Case 明细",
             "",
-            "| Scenario | Issue | 根因 | Road request | Sim model frames | Sim waiting | Sim max score |",
-            "|---:|---|---|---:|---:|---:|---:|",
+            "| Scenario | Issue | 根因 | Road request | Sim model frames | Sim waiting | Sim session opened | Sim max score |",
+            "|---:|---|---|---:|---:|---:|---:|---:|",
         ]
     )
     for result in successful:
@@ -336,7 +345,8 @@ def write_report(results: list[dict[str, Any]], path: Path) -> None:
             f"| {result['scenario_id']} | {result.get('issue_label') or '-'} | "
             f"`{result['root_cause']}` | {road_ts} | "
             f"{result['sim']['model_reason_frames']} | "
-            f"{result['sim']['waiting_model_frames']} | {score_text} |"
+            f"{result['sim']['waiting_model_frames']} | "
+            f"{result['sim']['assist_session_opened_frames']} | {score_text} |"
         )
     if failures:
         lines.extend(["", "## 失败项", ""])
