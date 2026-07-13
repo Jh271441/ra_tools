@@ -3,6 +3,7 @@
 ## 范围与方法
 
 - 输入 case：50；成功解析：48；失败：2。
+- 原始 case 集来自 `~/utils/仿真复现性/`；仓库输入清单为 `check_sim/batch/data/base_miss_50.csv`。
 - 对比从 Trail `trip_segment.startTimestamp` 开始，排除 EzSim warmup。
 - 信号来自 `/planning/planning_debug`，重点检查模型召回、FP、voluntary unstuck、StuckSignal 和正式请求。
 - 原 Orion output bag 已超过保留期；除已有本地 case 外，sim 使用 CSV 中的 base binary 和同一组标准 extra args 重新运行。
@@ -13,6 +14,22 @@
 - 当前重跑产生 planning `MODEL_REQUEST`：7/48。
 - Road 请求帧出现 `StuckSignal start=0,last>0`：40/48。
 - `MODEL_REQUEST` 仅表示 planning 生成请求；是否建立 assist channel 还需结合 session opened 和历史 DPE。
+
+## 当前 Case 29434409 根因
+
+正式对比从 `1777372719965` 开始，不额外裁掉 5 秒 warmup。当前 case 存在两条相互独立的差异链：
+
+1. **PerfectPose 速度误差影响 `FP_YIELD_DYNAMIC_OBJECT` 时序**：baseline 相对 road 的 speed MAE 为 `0.0577 m/s`、P95 为 `0.2048 m/s`，共有 155 个 pose 帧位于 `0.5 m/s` 阈值的不同侧，令 `yield_temp_parked_cycles` 相差约 6 个 planning cycle。回放 road pose 后速度误差归零，首次 road 请求前的 Yield 决策差异由 22 帧降为 0；关闭 smart agent 与 baseline 相同，因此本 case 的 Yield FP 差异来自 ego speed 时序，不是障碍物选择或 smart agent。
+2. **Selected trajectory `StuckSignal` 掉零影响正式请求时机**：road 首次 `MODEL_REQUEST` 帧为 `reason=kNoStuck,start_timestamp=0,last_stuck_timestamp=1777372738256`。`IsVoluntaryUnstuckFail()` 未校验 reason/start 是否有效，直接计算 `last-start > 5000 ms`，因此掉零帧立即得到 `UnstuckFail` 并绕过 voluntary unstuck 等待。sim 同期仍为连续 `kNotBlockageObject`，duration `2490 ms`，状态为 `WAITTING_CORE_PLANNER_UNSTUCK`，随后 signal 掉零时才请求。
+
+Pose 回放只修复第一条链，没有修复 selected trajectory 的 StuckSignal 连续性，所以不能让正式请求时刻完全对齐。历史 Orion base DPE 记录为未触发，但当前相同 binary/extra args 重跑已出现 `MODEL_REQUEST`、`/planning/assist_request` 和 opened session；因此该 case 的批量标签是 `SIM_REQUESTED_BUT_METRIC_MISSED`，并且必须把历史任务指标与当前重跑分开报告。
+
+| 输入/实验 | Speed MAE | Speed P95 | 0.5 m/s 异步帧 | Yield 决策差异 | RA 请求时间 |
+|---|---:|---:|---:|---:|---:|
+| road | - | - | - | - | `1777372739933` |
+| baseline | 0.0577 m/s | 0.2048 m/s | 155 | 22 | `1777372741648` |
+| replay road pose | 0 | 0 | 0 | 0 | `1777372742157` |
+| disable smart agent | 0.0577 m/s | 0.2048 m/s | 155 | 22 | `1777372741648` |
 
 ## 根因分布
 
