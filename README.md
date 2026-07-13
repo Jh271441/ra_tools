@@ -10,6 +10,7 @@
 - `utils/`：一些通用的数据处理和分析脚本
 - `stuck/`、`swag/`：按具体问题域拆分的脚本
 - `model_release_pipeline/`：scenario dnn 模型导出、IFX 转换和 Voyager handoff 工具
+- `check_sim/`：scenario 路测 bag 下载、EzSim 复现和 road/sim 模型差异分析
 
 从当前代码结构看，这个仓库更偏向“脚本工具箱”，而不是一个完整打包发布的 Python 包。
 
@@ -17,6 +18,7 @@
 
 ```text
 ra_tools/
+├── check_sim/                  # scenario 复现与 road/sim 分析完整链路
 ├── issue_to_scenairo.py
 ├── model_release_pipeline/
 ├── ra_api/
@@ -24,9 +26,7 @@ ra_tools/
 │   ├── scenario_api.py
 │   └── utils.py
 ├── scripts/
-│   ├── download_road_bag_cloud.py   # 在 cloud_server 上按时间段下载路测 bag
-│   ├── read_bag.py                  # 本机读取 bag 并解析 proto 字段（无需 ROS/voyager）
-│   └── planning_stub.proto          # read_bag.py 使用的最小 proto stub
+│   └── download_road_bag_cloud.py   # 旧版按时间段下载路测 bag
 ├── stuck/
 ├── swag/
 └── utils/
@@ -107,7 +107,7 @@ Web 页面里的 Luban remote 输入框支持一键切换，候选列表来自�
 
 ---
 
-## scripts/ — 路测 bag 工具
+## check_sim — Scenario 复现与 bag 工具
 
 不依赖 voyager 仓库或本地 ROS 安装，纯 pip 环境即可使用。
 
@@ -131,12 +131,12 @@ docker exec -it $CONTAINER_NAME_GEN4 zsh -c \
 # 编译产物自动写入宿主机可见的 bazel-build/bin/（cache 目录共享）
 ```
 
-**方式 B（无 Docker/voyager 时的兜底）**：用 `scripts/planning_stub.proto`（手写的最小 stub，只含 `is_opened` 字段路径）：
+**方式 B（无 Docker/voyager 时的兜底）**：用 `check_sim/planning_stub.proto`（手写的最小 stub，只含 `is_opened` 字段路径）：
 
 ```bash
 .venv/bin/pip install grpcio-tools google-protobuf
 .venv/bin/python3 -m grpc_tools.protoc \
-    -I scripts --python_out=scripts scripts/planning_stub.proto
+    -I check_sim --python_out=check_sim check_sim/planning_stub.proto
 ```
 
 `read_bag.py` 启动时自动检测方式 A 的路径，找不到时降级到方式 B。
@@ -172,22 +172,22 @@ scp cloud_server:/tmp/my_road.bag /tmp/
 
 ### 2. 本机读取 bag 并解析 proto 字段
 
-`scripts/read_bag.py` 纯 Python 读取 `.bag` 文件，解析 `planning_debug` 中的 proto 字段，**无需 ROS/voyager 环境**。
+`check_sim/read_bag.py` 纯 Python 读取 `.bag` 文件，解析 `planning_debug` 中的 proto 字段，**无需 ROS/voyager 环境**。
 
 首次运行时会自动编译 `planning_stub.proto` → `planning_stub_pb2.py`（之后跳过）。
 
 ```bash
 # 默认：打印所有 planning_debug 消息的 is_opened 字段
-.venv/bin/python3 scripts/read_bag.py /tmp/my_road.bag
+.venv/bin/python3 check_sim/read_bag.py /tmp/my_road.bag
 
 # 只看 is_opened=True 的行
-.venv/bin/python3 scripts/read_bag.py /tmp/my_road.bag | grep True
+.venv/bin/python3 check_sim/read_bag.py /tmp/my_road.bag | grep True
 
 # 显示所有 topic 的所有消息
-.venv/bin/python3 scripts/read_bag.py /tmp/my_road.bag --show-all
+.venv/bin/python3 check_sim/read_bag.py /tmp/my_road.bag --show-all
 
 # 只看指定 topic
-.venv/bin/python3 scripts/read_bag.py /tmp/my_road.bag \
+.venv/bin/python3 check_sim/read_bag.py /tmp/my_road.bag \
     --topic /planning/assist_request /planning/stuck_detection_recall_signal
 ```
 

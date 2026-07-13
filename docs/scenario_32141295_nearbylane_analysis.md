@@ -19,7 +19,7 @@ road/sim 推理不一致。
 使用：
 
 ```bash
-.venv/bin/python3 scripts/compare_road_sim_bags.py \
+.venv/bin/python3 check_sim/compare_road_sim_bags.py \
   /home/didi/ra_bags/scenario_32141295/road.bag \
   /home/didi/ra_bags/scenario_32141295/sim.bag
 ```

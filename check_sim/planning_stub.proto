@@ -1,7 +1,7 @@
 // 最小 stub proto，只保留 planning_debug → assistRequestSession.is_opened 的字段路径。
 // 其余字段用 protobuf 的前向兼容特性忽略。
 //
-// 编译：python3 -m grpc_tools.protoc -I scripts --python_out=scripts scripts/planning_stub.proto
+// 编译：python3 -m grpc_tools.protoc -I check_sim --python_out=check_sim check_sim/planning_stub.proto
 
 syntax = "proto3";
 package planner.pb;

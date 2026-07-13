@@ -85,7 +85,7 @@ binary 的线上推理结果。
 先运行 bag 概览：
 
 ```bash
-$PY scripts/compare_road_sim_bags.py "$ROAD_BAG" "$SIM_BAG"
+$PY check_sim/compare_road_sim_bags.py "$ROAD_BAG" "$SIM_BAG"
 ```
 
 scenario `32141295` 当前记录到：
@@ -348,7 +348,7 @@ lane 集合相同
 
 ### 只判断最终 RA 是否复现
 
-运行 `compare_road_sim_bags.py` 并检查 `assist_request`，无需运行 01-07。
+运行 `check_sim/compare_road_sim_bags.py` 并检查 `assist_request`，无需运行 01-07。
 
 ### 快速检查模型输入和输出
 
