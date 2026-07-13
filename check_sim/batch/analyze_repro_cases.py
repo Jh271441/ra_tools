@@ -46,6 +46,7 @@ def parse_args() -> argparse.Namespace:
         "--output-root", type=Path, default=Path("/home/didi/ra_batch_39367009")
     )
     parser.add_argument("--limit", type=int)
+    parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--scenario", action="append", default=[])
     parser.add_argument("--keep-bags", action="store_true")
     parser.add_argument("--force", action="store_true")
@@ -458,6 +459,8 @@ def main() -> None:
     selected = set(args.scenario)
     if selected:
         rows = [row for row in rows if row["scenario_id"] in selected]
+    if args.offset:
+        rows = rows[args.offset :]
     if args.limit is not None:
         rows = rows[: args.limit]
     args.output_root.mkdir(parents=True, exist_ok=True)
