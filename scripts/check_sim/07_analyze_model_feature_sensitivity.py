@@ -99,11 +99,18 @@ def load_compare_module():
     return module
 
 
-def build_session_cache(model_paths, compare_module):
+def build_session_cache(model_paths, compare_module, intra_op_threads):
     cache = {}
     for model_path in model_paths:
         patched_model = compare_module.ensure_ort_compatible_model(model_path)
-        cache[model_path] = ort.InferenceSession(patched_model, providers=["CPUExecutionProvider"])
+        options = ort.SessionOptions()
+        options.intra_op_num_threads = intra_op_threads
+        options.inter_op_num_threads = 1
+        cache[model_path] = ort.InferenceSession(
+            patched_model,
+            sess_options=options,
+            providers=["CPUExecutionProvider"],
+        )
     return cache
 
 
@@ -136,24 +143,40 @@ def replace_features(base, override, names):
     return mixed
 
 
-def analyze_output(model_path, road, sim, groups, feature_names, output_name, compare_module):
-    road_out = run_inference(model_path, road, compare_module)
-    sim_out = run_inference(model_path, sim, compare_module)
+def run_feature_variants(model_path, road, sim, groups, feature_names, session_cache):
+    road_out = run_inference(model_path, road, session_cache)
+    sim_out = run_inference(model_path, sim, session_cache)
+    group_outputs = {
+        group_name: run_inference(
+            model_path, replace_features(road, sim, names), session_cache
+        )
+        for group_name, names in groups.items()
+    }
+    feature_outputs = {
+        feature_name: run_inference(
+            model_path, replace_features(road, sim, [feature_name]), session_cache
+        )
+        for feature_name in feature_names
+    }
+    return road_out, sim_out, group_outputs, feature_outputs
+
+
+def analyze_output(
+    output_name, road_out, sim_out, group_outputs, feature_outputs
+):
     road_score = float(road_out[output_name].reshape(-1)[0])
     sim_score = float(sim_out[output_name].reshape(-1)[0])
     total_diff = sim_score - road_score
 
     group_rows = []
-    for group_name, names in groups.items():
-        mixed = replace_features(road, sim, names)
-        score = float(run_inference(model_path, mixed, compare_module)[output_name].reshape(-1)[0])
+    for group_name, outputs in group_outputs.items():
+        score = float(outputs[output_name].reshape(-1)[0])
         group_rows.append((group_name, score, score - road_score, sim_score - score))
     group_rows.sort(key=lambda row: abs(row[2]), reverse=True)
 
     feature_rows = []
-    for feature_name in feature_names:
-        mixed = replace_features(road, sim, [feature_name])
-        score = float(run_inference(model_path, mixed, compare_module)[output_name].reshape(-1)[0])
+    for feature_name, outputs in feature_outputs.items():
+        score = float(outputs[output_name].reshape(-1)[0])
         feature_rows.append((feature_name, score, score - road_score, sim_score - score))
     feature_rows.sort(key=lambda row: abs(row[2]), reverse=True)
 
@@ -178,25 +201,32 @@ def main():
     )
     parser.add_argument("--group-limit", type=int, default=10)
     parser.add_argument("--feature-limit", type=int, default=15)
+    parser.add_argument("--intra-op-threads", type=int, default=4)
     args = parser.parse_args()
 
     compare_module = load_compare_module()
     road = load_npz_as_dict(args.road)
     sim = load_npz_as_dict(args.sim)
-    session_cache = build_session_cache(args.models, compare_module)
-
     for model_path in args.models:
+        session_cache = build_session_cache(
+            [model_path], compare_module, args.intra_op_threads
+        )
         print(f"\nMODEL {model_path}")
-        outputs = run_inference(model_path, road, session_cache).keys()
-        for output_name in outputs:
+        road_out, sim_out, group_outputs, feature_outputs = run_feature_variants(
+            model_path,
+            road,
+            sim,
+            DEFAULT_GROUPS,
+            SUBFEATURES,
+            session_cache,
+        )
+        for output_name in road_out:
             road_score, sim_score, total_diff, group_rows, feature_rows = analyze_output(
-                model_path,
-                road,
-                sim,
-                DEFAULT_GROUPS,
-                SUBFEATURES,
                 output_name,
-                session_cache,
+                road_out,
+                sim_out,
+                group_outputs,
+                feature_outputs,
             )
             print(f"\nOutput: {output_name}")
             print(f"  road score : {road_score:.6f}")
