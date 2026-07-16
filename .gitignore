@@ -26,3 +26,6 @@ ops/cpa/config.yaml
 ares_storage_state.json
 ares_chrome_profile/
 playwright_screenshots/
+
+# Onnx model files
+*.onnx*
