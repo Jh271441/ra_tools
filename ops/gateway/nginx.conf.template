@@ -1,3 +1,5 @@
+map_hash_bucket_size 128;
+
 map $http_upgrade $connection_upgrade {
     default upgrade;
     '' close;
@@ -5,12 +7,12 @@ map $http_upgrade $connection_upgrade {
 
 map $http_authorization $lingma_v1_authorized {
     default 0;
-    "Bearer REDACTED-GATEWAY-TOKEN" 1;
+    "Bearer ${LINGMA_GATEWAY_TOKEN}" 1;
 }
 
 map $http_authorization $qoder_v1_authorized {
     default 0;
-    "Bearer REDACTED-GATEWAY-TOKEN" 1;
+    "Bearer ${LINGMA_GATEWAY_TOKEN}" 1;
 }
 
 # CPA's management UI detects only scheme/host/port as its default API base,
@@ -48,7 +50,7 @@ server {
     # Added: Reverse proxy for lingma-proxy with API key check
     location /v1/ {
         # 验证 Intranet 访问的 API Key (Bearer Token)
-        # 您可以把 "REDACTED-GATEWAY-TOKEN" 替换为您自定义的任意密钥
+        # Token is rendered from the untracked ops/gateway/.env at container startup.
         if ($lingma_v1_authorized = 0) {
             add_header Content-Type 'application/json' always;
             return 401 '{"error": {"message": "Invalid or missing Bearer API Token for Intranet", "type": "invalid_request_error", "code": "invalid_api_key"}}';

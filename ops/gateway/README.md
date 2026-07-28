@@ -33,14 +33,21 @@ Referer keep the existing lingma-proxy authentication and upstream. Do not globa
 DCC currently serves its frontend and API from root paths such as `/chunk-*.js`, `/api/dashboard`, and `/plugins`.
 The gateway keeps DCC under `/dcc/` by rewriting DCC HTML/JS/manifest responses with `sub_filter`, injecting React Router `basename="/dcc"`, and forwarding DCC upstream requests with `Host`, `Origin`, and `Referer` values that match direct `127.0.0.1:9999` access.
 
-If DCC is rebuilt to natively support a `/dcc` base path, remove the DCC `sub_filter` rules and upstream header overrides from `nginx.conf`.
+If DCC is rebuilt to natively support a `/dcc` base path, remove the DCC `sub_filter` rules and upstream header overrides from `nginx.conf.template`.
 
 ## Start
 
 ```bash
 cd ops/gateway
+cp .env.example .env
+# Edit .env and set a strong, URL-safe LINGMA_GATEWAY_TOKEN.
+chmod 600 .env
 docker compose up -d
 ```
+
+The real token belongs only in the untracked `.env`. The official nginx image renders
+`nginx.conf.template` into its runtime configuration when the container starts. The container
+refuses to start when `LINGMA_GATEWAY_TOKEN` is empty or missing.
 
 ## Validate
 
@@ -52,15 +59,13 @@ docker compose exec nginx nginx -t
 ## Reload
 
 ```bash
-docker compose exec nginx nginx -s reload
+docker compose up -d --force-recreate nginx
 ```
 
-If `nginx.conf` was replaced atomically, the running container's single-file bind mount may still
-point at the old inode. Check with `docker compose exec nginx nginx -T`; if it still prints the old
-configuration, recreate only nginx before validating again:
+The template and `.env` are rendered only when the container starts, so recreate nginx after
+changing either one. Then validate the generated configuration:
 
 ```bash
-docker compose up -d --force-recreate nginx
 docker compose exec nginx nginx -t
 ```
 

@@ -68,7 +68,7 @@ services:
     container_name: ra-gateway-nginx
     network_mode: host
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
     restart: unless-stopped
 
   # 把主机 nginx:80 桥进 ts-proxy 命名空间,供 `tailscale serve` 以 127.0.0.1:80 暴露
@@ -152,7 +152,7 @@ docker exec ts-proxy tailscale serve status
 
 ## 新增一个服务
 
-只改 `nginx.conf` 加一段 location,**tailscale / socat 都不用动**:
+只改 `nginx.conf.template` 加一段 location,**tailscale / socat 都不用动**:
 
 ```nginx
 location /myapp/ {

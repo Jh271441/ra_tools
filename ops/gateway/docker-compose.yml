@@ -3,8 +3,11 @@ services:
     image: nginx:stable-alpine
     container_name: ra-gateway-nginx
     network_mode: host
+    env_file:
+      - .env
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./require-gateway-token.sh:/docker-entrypoint.d/05-require-gateway-token.sh:ro
       - ./portal:/usr/share/nginx/portal:ro
       - ../../ra_sim_repro_dashboard/frontend/dist:/usr/share/nginx/sim:ro
     restart: unless-stopped

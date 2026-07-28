@@ -14,7 +14,7 @@ Last updated: 2026-07-13
 
 当前 worktree 已经实施本计划，并已在本机 gateway 上完成 smoke 验收：
 
-- `ops/gateway/nginx.conf` 已新增 `/release/`、`/sim/`、`/sim/api/`、`/cpa/`、`/cpa/v1/` 和静态 portal 首页。
+- `ops/gateway/nginx.conf.template` 已新增 `/release/`、`/sim/`、`/sim/api/`、`/cpa/`、`/cpa/v1/` 和静态 portal 首页。
 - `ops/gateway/docker-compose.yml` 已挂载 `ops/gateway/portal` 到 `/usr/share/nginx/portal`，并挂载 `ra_sim_repro_dashboard/frontend/dist` 到 `/usr/share/nginx/sim`。
 - `/v1/`、`/dcc/`、`/tb/` 保持既有语义。
 - `/cpa/v1/` 已按低优先级实验块处理，nginx 不额外校验 CPA token，并关闭 SSE buffering。
@@ -144,7 +144,7 @@ CPA 可能不长久，验收失败不阻塞 Phase 1/2。配置要求：
 - `GET /v0/management/config` 无 management key → CPA 返回 `401 {"error":"missing management key"}`，说明 management UI 的绝对路径 API 已透传到 CPA，不再由 gateway portal 返回 404。
 - CPA 补充验证：带 CPA token 和 `Referer: http://127.0.0.1/cpa/management.html` 请求根 `/v1/models` → `200`，返回 10 个模型。
 - 同一个 CPA token 去掉 CPA Referer 后请求根 `/v1/models` → `401`；lingma token 请求根 `/v1/models` → `200`，返回 7 个模型，证明根路由语义未被 CPA 覆盖。
-- 本次 `nginx.conf` 经原子替换后，运行中容器的单文件 bind mount 仍指向旧 inode；单纯 `nginx -s reload` 会继续加载旧配置。已用 `docker compose -f ops/gateway/docker-compose.yml up -d --force-recreate nginx` 仅重建 nginx，并通过 `nginx -T` 确认新 map 和精确 location 已加载。
+- 本次 `nginx.conf.template` 经原子替换后，运行中容器的单文件 bind mount 仍指向旧 inode；单纯 `nginx -s reload` 会继续加载旧配置。已用 `docker compose -f ops/gateway/docker-compose.yml up -d --force-recreate nginx` 仅重建 nginx，并通过 `nginx -T` 确认新 map 和精确 location 已加载。
 - Headless Chrome 验证：`/sim/overview -> /sim/issues -> history.back() -> /sim/overview -> history.forward() -> /sim/issues`。
 
 Python 单测未跑通：系统 Python 和项目 `.venv` 都没有安装 `pytest`。本轮已用前端 production build、nginx 配置检查、HTTP smoke 和浏览器 history 验证覆盖 gateway 接入风险。
