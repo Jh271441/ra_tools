@@ -17,7 +17,7 @@ from urllib.parse import quote
 
 import openpyxl
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -26,6 +26,7 @@ from .auth import normalise_username, request_identity
 from .baseline import load_label_baseline
 from .batch_prediction_runner import BatchPredictionRunner
 from .db import LABELS, REVIEW_STATUSES, Database
+from .model_catalog import MODEL_ID_RE, ModelCatalog, ModelCatalogError
 from .sanitization import redact_sensitive_fields
 from .settings import Settings
 from .trail_sync import TRAIL_INFO_FIELD, TRAIL_RESULT_FIELD, read_trail_model_fields
@@ -38,6 +39,7 @@ asset_index = AssetIndex(
     manifest_path=settings.ares_manifest,
 )
 camera_index = CameraIndex(settings.camera_root)
+model_catalog = ModelCatalog(settings)
 batch_prediction_runner = BatchPredictionRunner(settings, database)
 trail_sync_lock = threading.Lock()
 review_image_semaphore = asyncio.Semaphore(2)
@@ -937,9 +939,14 @@ app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 @app.get("/runs", include_in_schema=False)
 @app.get("/inference", include_in_schema=False)
 @app.get("/batch-prediction", include_in_schema=False)
-@app.get("/import", include_in_schema=False)
 async def index() -> FileResponse:
     return FileResponse(settings.static_dir / "index.html")
+
+
+@app.get("/import", include_in_schema=False)
+async def legacy_import(kind: str = "issues") -> RedirectResponse:
+    import_kind = "model" if kind == "model" else "issues"
+    return RedirectResponse(url=f"/runs?import={import_kind}", status_code=307)
 
 
 @app.get("/health")
@@ -955,6 +962,7 @@ async def health() -> dict[str, Any]:
         "trail_write_enabled": False,
         "batch_prediction_enabled": settings.batch_prediction_enabled,
         "autotriage_push_enabled": settings.autotriage_push_enabled,
+        "model_gateway": model_catalog.status(),
         "storage": "sqlite-mvp",
     }
 
@@ -984,9 +992,10 @@ async def dashboard_config() -> dict[str, Any]:
             "enabled": settings.batch_prediction_enabled,
             "autotriage_push_enabled": settings.autotriage_push_enabled,
             "max_issues": settings.batch_max_issues,
-            "input_policy": "server_default_model",
+            "input_policy": "server_model_gateway_profile",
             "ares_bev_input": False,
             "trail_write_enabled": False,
+            "model_gateway": model_catalog.status(),
         },
     }
 
@@ -1020,8 +1029,9 @@ async def status() -> dict[str, Any]:
         "batch_prediction_enabled": settings.batch_prediction_enabled,
         "autotriage_push_enabled": settings.autotriage_push_enabled,
         "batch_max_issues": settings.batch_max_issues,
+        "model_gateway": model_catalog.status(),
         "storage": "SQLite MVP / PostgreSQL migration prepared",
-        "model_endpoint_policy": "仅使用 cloud_server ra_auto_triage 默认配置；浏览器不可覆盖",
+        "model_endpoint_policy": "固定服务器网关 + RA Profile；浏览器只提交 model_id",
     }
 
 
@@ -1345,6 +1355,18 @@ async def import_model_results(
     }
 
 
+@app.get("/api/prediction-batches/models")
+async def batch_prediction_models(refresh: bool = False) -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(
+            model_catalog.list_models,
+            refresh=refresh,
+            allow_stale=True,
+        )
+    except ModelCatalogError as exc:
+        raise _detail(exc.status_code, exc.public_message)
+
+
 @app.get("/api/prediction-batches/config")
 async def batch_prediction_config() -> dict[str, Any]:
     latest = database.list_batch_prediction_jobs(page_size=1).get("items", [])
@@ -1354,12 +1376,13 @@ async def batch_prediction_config() -> dict[str, Any]:
         "autotriage_push_enabled": settings.autotriage_push_enabled,
         "max_issues": settings.batch_max_issues,
         "model": {
-            "source": "cloud_server ra_auto_triage 默认 Experiment",
+            "source": "服务器模型网关 + ra_auto_triage 默认 Prompt/Camera 配置",
             "name": _as_text(latest_job.get("model_name"))
-            or "任务启动时解析服务器默认模型",
+            or settings.ra_model_default_id,
             "prompt_version": _as_text(latest_job.get("prompt_version"))
             or "任务启动时解析服务器默认 Prompt",
         },
+        "model_gateway": model_catalog.status(),
         "input_policy": {
             "issue_source": "Voyager Issue + dashboard isolated bag cache",
             "ares_bev_input": False,
@@ -1387,6 +1410,23 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
         raise _detail(400, "Batch 请求必须是 JSON。")
     if not isinstance(body, dict):
         raise _detail(400, "Batch 请求必须是 JSON 对象。")
+    forbidden_model_fields = sorted(
+        {
+            "api_key",
+            "base_url",
+            "provider",
+            "model_name",
+            "model_override",
+            "use_ares_capture",
+            "use_bev_animation",
+            "bev_mode",
+        }.intersection(body)
+    )
+    if forbidden_model_fields:
+        raise _detail(
+            400,
+            "浏览器只能提交 model_id；禁止提交模型地址、凭证、provider 或 Ares/BEV 配置。",
+        )
     raw_issue_ids = body.get("issue_ids")
     if not isinstance(raw_issue_ids, list):
         raise _detail(400, "issue_ids 必须是数组。")
@@ -1421,6 +1461,13 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
     name = _as_text(body.get("name"))
     if len(name) > 120:
         raise _detail(400, "Batch 名称不能超过 120 个字符。")
+    try:
+        model_selection = await asyncio.to_thread(
+            model_catalog.resolve,
+            _as_text(body.get("model_id")),
+        )
+    except ModelCatalogError as exc:
+        raise _detail(exc.status_code, exc.public_message)
     actor, actor_source, actor_verified = _action_actor(
         request, body.get("requested_by")
     )
@@ -1430,6 +1477,10 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
         requested_by=actor,
         requested_by_source=actor_source,
         requested_by_verified=actor_verified,
+        requested_model_id=model_selection["requested_model_id"],
+        resolved_model_id=model_selection["resolved_model_id"],
+        model_source="ra_model_gateway",
+        catalog_sha256=model_selection["catalog_sha256"],
     )
     if not batch_prediction_runner.launch_prediction(job):
         error = "已有 Batch 预测或 AutoTriage 推送正在执行，请稍后重试。"
@@ -1453,7 +1504,10 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
             database.get_batch_prediction_job(job["id"]) or job
         ),
         "safety": {
-            "server_default_model": True,
+            "server_default_model": False,
+            "server_model_gateway": True,
+            "requested_model_id": model_selection["requested_model_id"],
+            "resolved_model_id": model_selection["resolved_model_id"],
             "browser_model_credentials": False,
             "ares_bev_input": False,
             "bag_cache_read_only": False,
@@ -1522,6 +1576,11 @@ async def publish_batch_prediction(job_id: str, request: Request) -> dict[str, A
         return {"job": _public_batch_job(job), "idempotent": True}
     if job.get("publish_status") == "running":
         raise _detail(409, "该 Batch 正在推送 AutoTriage。")
+    if not MODEL_ID_RE.fullmatch(_as_text(job.get("resolved_model_id"))):
+        raise _detail(
+            409,
+            "该历史 Batch 缺少已解析模型信息，不能安全推送；请重新发起预测。",
+        )
     if (
         job.get("status") not in {"succeeded", "partial"}
         or int(job.get("success_count") or 0) <= 0

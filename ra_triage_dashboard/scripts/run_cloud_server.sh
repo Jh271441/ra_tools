@@ -27,6 +27,12 @@ export DASHBOARD_AUTOTRIAGE_PUSH_ENABLED="${DASHBOARD_AUTOTRIAGE_PUSH_ENABLED:-f
 export DASHBOARD_BATCH_MAX_ISSUES="${DASHBOARD_BATCH_MAX_ISSUES:-50}"
 export DASHBOARD_BATCH_JOB_TIMEOUT_SECONDS="${DASHBOARD_BATCH_JOB_TIMEOUT_SECONDS:-7200}"
 export DASHBOARD_BATCH_BAG_CACHE_DIR="${DASHBOARD_BATCH_BAG_CACHE_DIR:-/volume/home/workspace/ra_triage_dashboard_data/batch_bags}"
+export DASHBOARD_RA_MODEL_CATALOG_URL="${DASHBOARD_RA_MODEL_CATALOG_URL:-http://ra-model.intra.xiaojukeji.com/v1/models}"
+export DASHBOARD_RA_MODEL_CHAT_URL="${DASHBOARD_RA_MODEL_CHAT_URL:-http://ra-model.intra.xiaojukeji.com/v1/chat/completions}"
+export DASHBOARD_RA_MODEL_DEFAULT_ID="${DASHBOARD_RA_MODEL_DEFAULT_ID:-auto}"
+export DASHBOARD_RA_MODEL_CATALOG_TTL_SECONDS="${DASHBOARD_RA_MODEL_CATALOG_TTL_SECONDS:-300}"
+export DASHBOARD_RA_MODEL_PROFILE_PATH="${DASHBOARD_RA_MODEL_PROFILE_PATH:-$APP_ROOT/config/model_profiles.json}"
+export DASHBOARD_RA_MODEL_API_KEY_FILE="${DASHBOARD_RA_MODEL_API_KEY_FILE:-/volume/home/workspace/ra_triage_dashboard_data/model_gateway_api_key}"
 export DASHBOARD_AUTO_TRIAGE_RECORD_BASE_URL="${DASHBOARD_AUTO_TRIAGE_RECORD_BASE_URL:-http://auto-triage.intra.xiaojukeji.com/ra/model_triage/records}"
 
 # Intentionally no default DASHBOARD_BOOTSTRAP_MODEL_JSON: the default model

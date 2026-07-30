@@ -47,6 +47,12 @@ class Settings:
     batch_max_issues: int
     batch_job_timeout_seconds: int
     batch_bag_cache_dir: Path
+    ra_model_catalog_url: str
+    ra_model_chat_url: str
+    ra_model_default_id: str
+    ra_model_catalog_ttl_seconds: int
+    ra_model_profile_path: Path
+    ra_model_api_key_file: Path
     auto_triage_record_base_url: str
     allowed_model_hosts: tuple[str, ...]
     job_timeout_seconds: int
@@ -125,6 +131,31 @@ class Settings:
             batch_bag_cache_dir=_path(
                 "DASHBOARD_BATCH_BAG_CACHE_DIR",
                 data_dir / "batch_bags",
+            ),
+            ra_model_catalog_url=os.getenv(
+                "DASHBOARD_RA_MODEL_CATALOG_URL",
+                "http://ra-model.intra.xiaojukeji.com/v1/models",
+            ).strip()
+            or "http://ra-model.intra.xiaojukeji.com/v1/models",
+            ra_model_chat_url=os.getenv(
+                "DASHBOARD_RA_MODEL_CHAT_URL",
+                "http://ra-model.intra.xiaojukeji.com/v1/chat/completions",
+            ).strip()
+            or "http://ra-model.intra.xiaojukeji.com/v1/chat/completions",
+            ra_model_default_id=os.getenv(
+                "DASHBOARD_RA_MODEL_DEFAULT_ID", "auto"
+            ).strip()
+            or "auto",
+            ra_model_catalog_ttl_seconds=_integer(
+                "DASHBOARD_RA_MODEL_CATALOG_TTL_SECONDS", 300, 30
+            ),
+            ra_model_profile_path=_path(
+                "DASHBOARD_RA_MODEL_PROFILE_PATH",
+                app_root / "config" / "model_profiles.json",
+            ),
+            ra_model_api_key_file=_path(
+                "DASHBOARD_RA_MODEL_API_KEY_FILE",
+                data_dir / "model_gateway_api_key",
             ),
             auto_triage_record_base_url=os.getenv(
                 "DASHBOARD_AUTO_TRIAGE_RECORD_BASE_URL",

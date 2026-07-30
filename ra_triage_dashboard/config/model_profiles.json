@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "default_model_id": "auto",
+  "aliases": {
+    "auto": {
+      "display_name": "Auto · RA Camera 基线",
+      "resolved_model_id": "Qwen3.5-9B-finetuned/base",
+      "description": "服务端验证通过后启用的 Camera-only 三分类基线"
+    }
+  },
+  "models": {
+    "Qwen3.5-9B-finetuned/base": {
+      "display_name": "Qwen3.5-9B-finetuned/base",
+      "enabled": true,
+      "provider": "kylin",
+      "prompt_mode": "server_default",
+      "input_contract": "camera_only_ra_triage",
+      "notes": "必须通过 Camera-only、Ares/BEV 关闭的单 Case smoke"
+    }
+  }
+}

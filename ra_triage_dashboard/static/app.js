@@ -3,12 +3,12 @@ const PAGE_ROUTES = {
   review: { path: "/review", title: "RA Triage Workbench", eyebrow: "EVALUATION BASELINE · 0508" },
   runs: { path: "/runs", title: "模型结果 Runs", eyebrow: "MODEL RUN REGISTRY" },
   prediction: { path: "/batch-prediction", title: "Batch 模型预测", eyebrow: "BATCH MODEL INFERENCE" },
-  import: { path: "/import", title: "导入数据与模型结果", eyebrow: "DATA INGESTION" },
 };
 
 const state = {
   config: null,
   cases: [],
+  caseTotal: 0,
   selectedId: "",
   selectedCase: null,
   modelRuns: [],
@@ -17,6 +17,9 @@ const state = {
   predictionBatchTotal: 0,
   predictionRequesters: [],
   batchDefaultModel: null,
+  gatewayModels: [],
+  gatewayModelStatus: null,
+  batchDraftSource: "",
   selectedRunId: "",
   failureOnly: false,
   clusterKey: "",
@@ -36,6 +39,7 @@ const state = {
   trailInspection: null,
   pendingReviewImages: [],
   savingAnnotation: false,
+  sidebarAutoMode: false,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -44,12 +48,32 @@ function parsePageRoute() {
   const match = Object.entries(PAGE_ROUTES).find(([, config]) => config.path === window.location.pathname);
   const params = new URLSearchParams(window.location.search);
   const legacyHash = decodeURIComponent(window.location.hash.slice(1));
+  const issueIds = params
+    .getAll("issue")
+    .filter((issueId) => /^[A-Za-z0-9_-]{3,128}$/.test(issueId));
+  const legacyImport = window.location.pathname === "/import";
   return {
-    page: match?.[0] || (window.location.pathname === "/inference" ? "prediction" : "review"),
-    issue: params.get("issue") || (/^[A-Za-z0-9_-]{3,128}$/.test(legacyHash) ? legacyHash : ""),
+    page:
+      match?.[0] ||
+      (window.location.pathname === "/inference"
+        ? "prediction"
+        : legacyImport
+          ? "runs"
+          : "review"),
+    issue:
+      issueIds[0] ||
+      (/^[A-Za-z0-9_-]{3,128}$/.test(legacyHash) ? legacyHash : ""),
+    issues: issueIds,
+    source: params.get("source") || "",
     runId: params.get("run") || "",
     failureOnly: params.has("failure") ? params.get("failure") === "1" : params.has("run") ? false : null,
-    kind: params.get("kind") === "model" ? "model" : "issues",
+    importKind:
+      params.get("import") === "model" || params.get("kind") === "model"
+        ? "model"
+        : params.has("import") || params.has("kind") || legacyImport
+          ? "issues"
+          : "",
+    legacyRoute: legacyImport || window.location.pathname === "/inference" || Boolean(legacyHash),
   };
 }
 
@@ -65,16 +89,29 @@ function pageUrl(page, options = {}) {
     if (failureOnly && runId) url.searchParams.set("failure", "1");
   }
   if (page === "prediction") {
-    const issueId = options.issue ?? "";
-    if (issueId) url.searchParams.set("issue", issueId);
+    const issueIds = options.issues ?? (options.issue ? [options.issue] : []);
+    [...new Set(issueIds)].forEach((issueId) => {
+      if (/^[A-Za-z0-9_-]{3,128}$/.test(issueId)) url.searchParams.append("issue", issueId);
+    });
+    if (options.source) url.searchParams.set("source", options.source);
   }
-  if (page === "import") {
-    url.searchParams.set("kind", options.kind === "model" ? "model" : "issues");
+  if (page === "runs" && options.importKind) {
+    url.searchParams.set("import", options.importKind === "model" ? "model" : "issues");
   }
   return `${url.pathname}${url.search}`;
 }
 
-function showPage(page, { historyMode = "", issue = "", kind = "" } = {}) {
+function showPage(
+  page,
+  {
+    historyMode = "",
+    issue = "",
+    issues = [],
+    source = "",
+    importKind = "",
+    restoreRoute = false,
+  } = {}
+) {
   const target = PAGE_ROUTES[page] ? page : "review";
   state.activePage = target;
   document.querySelectorAll("[data-page]").forEach((section) => {
@@ -91,27 +128,41 @@ function showPage(page, { historyMode = "", issue = "", kind = "" } = {}) {
   document.title = `${PAGE_ROUTES[target].title} · RA Triage`;
   if (target === "runs") {
     renderRunManager();
-  }
-  if (target === "import") {
-    const importKind = kind || new URLSearchParams(window.location.search).get("kind") || "issues";
-    setImportKind(importKind);
+    const panel = $("#runImportPanel");
+    if (panel) {
+      panel.open = Boolean(importKind);
+      if (importKind) setImportKind(importKind);
+    }
   }
   if (target === "prediction") {
-    const issueId = issue || "";
+    const issueIds = issues.length ? issues : issue ? [issue] : [];
     const issueInput = $("#predictionBatchIssues");
-    if (issueId && issueInput && !issueInput.value.trim()) issueInput.value = issueId;
+    if (issueInput && (issueIds.length || restoreRoute)) {
+      issueInput.value = [...new Set(issueIds)].join("\n");
+    }
+    if (issueIds.length) {
+      state.batchDraftSource = source || (issueIds.length === 1 ? "single" : "");
+    } else if (restoreRoute) {
+      state.batchDraftSource = "";
+    }
+    renderPredictionSourceSummary();
     updatePredictionBatchCount();
     renderBatchRuntimeSummary();
     loadPredictionConfig().catch((error) => showToast(error.message, true));
     loadPredictionBatches().catch((error) => showToast(error.message, true));
   }
-  if (historyMode === "push") history.pushState({ page: target }, "", pageUrl(target, { issue, kind }));
-  if (historyMode === "replace") history.replaceState({ page: target }, "", pageUrl(target, { issue, kind }));
+  const routeOptions = { issue, issues, source, importKind };
+  if (historyMode === "push") history.pushState({ page: target }, "", pageUrl(target, routeOptions));
+  if (historyMode === "replace") history.replaceState({ page: target }, "", pageUrl(target, routeOptions));
   window.scrollTo({ top: 0, behavior: historyMode === "push" ? "smooth" : "auto" });
 }
 
 function navigatePage(page, options = {}) {
-  showPage(page, { ...options, historyMode: "push" });
+  const restoreRoute =
+    page === "prediction" &&
+    !options.issue &&
+    !(Array.isArray(options.issues) && options.issues.length);
+  showPage(page, { ...options, restoreRoute, historyMode: "push" });
 }
 
 function escapeHtml(value) {
@@ -193,8 +244,17 @@ function applySidebarState() {
 }
 
 function toggleSidebar() {
+  state.sidebarAutoMode = false;
   state.sidebarCollapsed = !state.sidebarCollapsed;
   localStorage.setItem("ra-triage-sidebar-collapsed", String(state.sidebarCollapsed));
+  applySidebarState();
+}
+
+function syncAutomaticSidebar() {
+  if (!state.sidebarAutoMode) return;
+  const collapsed = window.matchMedia("(max-width: 1440px)").matches;
+  if (collapsed === state.sidebarCollapsed) return;
+  state.sidebarCollapsed = collapsed;
   applySidebarState();
 }
 
@@ -287,6 +347,7 @@ function renderConfig() {
   if ($("#trailViewId")) $("#trailViewId").textContent = trail.view_id ?? "1000";
   renderTrailSyncState();
   renderBatchRuntimeSummary();
+  updateFilteredPredictionButton();
 }
 
 function renderTrailSyncState() {
@@ -452,20 +513,32 @@ function activeRun() {
 
 function renderActiveRun(overview = null) {
   const run = activeRun();
-  $("#activeRunName").textContent = run?.name || "尚未选择模型 run";
+  const activeName = $("#activeRunName");
+  const activeMeta = $("#activeRunMeta");
+  if (activeName) activeName.textContent = run?.name || "尚未选择模型 Run";
+  const runSelect = $("#modelRunFilter");
+  if (runSelect) {
+    runSelect.title = run
+      ? `${run.name} · ${run.baseline_prediction_count ?? 0} 条 · 错 ${run.failure_count ?? 0}`
+      : "尚未选择模型 Run";
+  }
   if (!run) {
-    $("#activeRunMeta").textContent =
-      state.config?.trail_sync?.message ||
-      "选择团队 Run、创建 Trail 只读快照，或导入 JSON / CSV / XLSX";
+    if (activeMeta) {
+      activeMeta.textContent =
+        state.config?.trail_sync?.message ||
+        "选择团队 Run、创建 Trail 只读快照，或导入 JSON / CSV / XLSX";
+    }
     return;
   }
   const coverage = overview?.predictions ?? run.baseline_prediction_count ?? 0;
   const failures = overview?.model_failures ?? run.failure_count ?? 0;
   const reviewed = overview?.reviewed_failures;
-  $("#activeRunMeta").textContent =
-    `${coverage} / ${state.config?.baseline?.count || "—"} 覆盖 · ${failures} 条判断失败` +
-    `${reviewed === undefined ? "" : ` · ${reviewed} 条已复核`}` +
-    ` · ${run.kind === "trail_snapshot" ? "Trail 快照" : "文件导入"}`;
+  if (activeMeta) {
+    activeMeta.textContent =
+      `${coverage} / ${state.config?.baseline?.count || "—"} 覆盖 · ${failures} 条判断失败` +
+      `${reviewed === undefined ? "" : ` · ${reviewed} 条已复核`}` +
+      ` · ${run.kind === "trail_snapshot" ? "Trail 快照" : "文件导入"}`;
+  }
 }
 
 function renderRunManager() {
@@ -554,7 +627,9 @@ async function useModelRun(runId) {
 
 function issueRow(item) {
   const isSelected = item.issue_id === state.selectedId;
-  const title = item.title || item.scenario || "未命名 issue";
+  const rawTitle = String(item.title || item.scenario || "").trim();
+  const title =
+    rawTitle && !LABELS.includes(rawTitle) && rawTitle !== item.gt_label ? rawTitle : "";
   const annotation = item.annotation?.label;
   const prediction = item.prediction?.label;
   const mismatch = item.prediction?.mismatch;
@@ -564,9 +639,10 @@ function issueRow(item) {
         <span class="issue-id">${escapeHtml(item.issue_id)}</span>
         ${mismatch ? '<span class="mismatch-chip">MISMATCH</span>' : labelBadge(annotation, "待 review")}
       </div>
-      <div class="issue-title">${escapeHtml(title)}</div>
+      ${title ? `<div class="issue-title">${escapeHtml(title)}</div>` : ""}
       <div class="issue-row-meta">
         ${labelBadge(item.gt_label, "GT —")}
+        <span class="quiet-meta" aria-hidden="true">→</span>
         ${prediction ? labelBadge(prediction, "模型 —") : '<span class="quiet-meta">模型 —</span>'}
         ${item.annotation?.author ? `<span class="quiet-meta">复核 · ${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO" : ""}</span>` : ""}
       </div>
@@ -576,7 +652,9 @@ function issueRow(item) {
 
 function renderCases(data) {
   state.cases = data.items || [];
-  $("#caseCount").textContent = data.total ?? 0;
+  state.caseTotal = Number(data.total ?? state.cases.length);
+  $("#caseCount").textContent = state.caseTotal;
+  updateFilteredPredictionButton();
   const list = $("#issueList");
   if (!state.cases.length) {
     const hint = state.failureOnly ? "没有符合条件的模型失败 case。可切换 model run 或关闭失败筛选。" : "没有匹配的 Issue。";
@@ -589,7 +667,72 @@ function renderCases(data) {
   });
 }
 
-async function loadCases({ keepSelection = true } = {}) {
+function predictionBatchLimit() {
+  return Math.min(
+    50,
+    Number(
+      state.config?.prediction_batch?.max_issues ||
+        state.config?.batch_prediction?.max_issues ||
+        50
+    )
+  );
+}
+
+function updateFilteredPredictionButton() {
+  const button = $("#predictFilteredButton");
+  if (!button) return;
+  const total = Number(state.caseTotal || 0);
+  const limit = predictionBatchLimit();
+  button.disabled = total === 0 || state.config?.batch_prediction?.enabled === false;
+  button.textContent = total ? `预测当前筛选 · ${total}` : "预测当前筛选";
+  button.title =
+    total > limit
+      ? `单批最多 ${limit} 个 Issue，请继续收窄筛选后再发起。`
+      : `把当前 ${total} 个筛选结果带入 Batch 页面；不会立即运行或自动推送。`;
+  button.classList.toggle("button-limit-warning", total > limit);
+}
+
+function openBatchDraft(issueIds, source = "") {
+  const ids = [
+    ...new Set(
+      (issueIds || [])
+        .map((issueId) => String(issueId || "").trim())
+        .filter((issueId) => /^[A-Za-z0-9_-]{3,128}$/.test(issueId))
+    ),
+  ];
+  if (!ids.length) {
+    showToast("当前没有可加入 Batch 的 Issue。", true);
+    return;
+  }
+  const limit = predictionBatchLimit();
+  if (ids.length > limit) {
+    showToast(`当前筛选有 ${ids.length} 个 Issue；单批最多 ${limit} 个，请继续收窄筛选。`, true);
+    return;
+  }
+  navigatePage("prediction", { issues: ids, source });
+}
+
+function renderPredictionSourceSummary() {
+  const target = $("#predictionSourceSummary");
+  if (!target) return;
+  const count = predictionIssueIds();
+  if (!state.batchDraftSource || !count.length) {
+    target.classList.add("hidden");
+    target.textContent = "";
+    return;
+  }
+  target.classList.remove("hidden");
+  target.textContent =
+    state.batchDraftSource === "filtered"
+      ? `已从 Review 当前筛选带入 ${count.length} 个 Issue；请核对模型和列表后再开始。`
+      : `已从 Review 当前 Case 带入 ${count.length} 个 Issue；仍按 Batch 任务保存为独立 Model Run。`;
+}
+
+async function loadCases({
+  keepSelection = true,
+  autoSelect = true,
+  selectionHistoryMode = "replace",
+} = {}) {
   const params = new URLSearchParams();
   const search = $("#searchInput").value.trim();
   const gtLabel = $("#gtFilter").value;
@@ -607,7 +750,11 @@ async function loadCases({ keepSelection = true } = {}) {
   params.set("page_size", "1500");
   renderCases(await api(`/api/cases?${params.toString()}`));
   if (!keepSelection || !state.cases.some((item) => item.issue_id === state.selectedId)) {
-    if (state.cases[0]) await selectCase(state.cases[0].issue_id);
+    if (state.cases[0] && autoSelect) {
+      await selectCase(state.cases[0].issue_id, {
+        historyMode: selectionHistoryMode,
+      });
+    }
     else clearDetail();
   }
 }
@@ -634,7 +781,10 @@ async function loadClusters() {
   list.querySelectorAll("[data-cluster-key]").forEach((button) => {
     button.addEventListener("click", async () => {
       state.clusterKey = button.dataset.clusterKey === state.clusterKey ? "" : button.dataset.clusterKey;
-      await loadCases({ keepSelection: false });
+      await loadCases({
+        keepSelection: false,
+        selectionHistoryMode: "push",
+      });
       await loadClusters();
     });
   });
@@ -726,26 +876,41 @@ function predictionCards(caseData) {
 }
 
 function renderDetail(caseData) {
-  const title = caseData.title || caseData.scenario || "未命名 issue";
+  const rawTitle = String(caseData.title || caseData.scenario || "").trim();
+  const title =
+    rawTitle && !LABELS.includes(rawTitle) && rawTitle !== caseData.gt_label
+      ? rawTitle
+      : "Issue Review";
   const primary = (caseData.predictions || []).find((item) => item.model_run_id === state.selectedRunId) || caseData.predictions?.[0];
   const issueUrl = safeUrl(caseData.voyager_issue_url || caseData.trail_url);
   $("#detailPane").innerHTML = `
     <div class="detail-header">
       <div class="detail-title-row">
         <div class="detail-title"><span class="eyebrow">CASE REVIEW</span><h2>${escapeHtml(title)}</h2><span class="detail-id">${escapeHtml(caseData.issue_id)}</span></div>
-        <div class="detail-actions">${issueUrl ? `<a class="button button-quiet" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer">打开 Voyager Issue</a>` : ""}</div>
+        <div class="detail-actions">
+          <button class="button button-primary" type="button" data-predict-current-case>API 推理</button>
+          ${issueUrl ? `<a class="button button-quiet" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer">打开 Voyager Issue</a>` : ""}
+        </div>
       </div>
-      <p class="detail-summary">${escapeHtml(caseData.summary || caseData.review_note || "暂无补充描述。请结合 BEV、Camera 与触发后时序复核。")}</p>
-      <div class="comparison-summary" aria-label="GT 与当前模型对比">
-        <span>GT</span>${labelBadge(caseData.gt_label, "缺失")}
-        <b aria-hidden="true">→</b>
-        <span>当前模型</span>${labelBadge(primary?.model_label, "未输出")}
-        <strong class="${primary?.model_label && primary.model_label !== caseData.gt_label ? "comparison-fail" : "comparison-neutral"}">${primary?.model_label ? primary.model_label === caseData.gt_label ? "一致" : "不一致" : "不可比较"}</strong>
+      <div class="detail-context-row">
+        <div class="comparison-summary" aria-label="GT 与当前模型对比">
+          <span>GT</span>${labelBadge(caseData.gt_label, "缺失")}
+          <b aria-hidden="true">→</b>
+          <span>当前模型</span>${labelBadge(primary?.model_label, "未输出")}
+          <strong class="${primary?.model_label && primary.model_label !== caseData.gt_label ? "comparison-fail" : "comparison-neutral"}">${primary?.model_label ? primary.model_label === caseData.gt_label ? "一致" : "不一致" : "不可比较"}</strong>
+        </div>
+        <p class="detail-summary">${escapeHtml(caseData.summary || "请结合 BEV、Camera 与触发后时序复核。")}</p>
       </div>
-      ${caseData.review_note ? `<div class="review-note"><span>历史备注</span>${escapeHtml(caseData.review_note)}</div>` : ""}
+      ${caseData.review_note ? `<details class="review-note-details"><summary>查看历史备注</summary><div class="review-note"><span>历史备注</span>${escapeHtml(caseData.review_note)}</div></details>` : ""}
     </div>
     ${heroMediaSection(caseData.assets, caseData.camera)}
-    <section class="section"><div class="section-heading"><div><span class="eyebrow">MODEL RUN COMPARISON</span><h3>评测 Run 输出历史</h3></div><small>当前 Review run 会高亮</small></div>${predictionCards(caseData)}</section>`;
+    <details class="section model-history-details">
+      <summary><span>评测 Run 输出历史</span><small>当前 Review Run 会高亮</small></summary>
+      ${predictionCards(caseData)}
+    </details>`;
+  $("#detailPane").querySelector("[data-predict-current-case]")?.addEventListener("click", () => {
+    openBatchDraft([caseData.issue_id], "single");
+  });
   $("#detailPane").querySelectorAll("[data-media-kind]").forEach((button) => {
     button.addEventListener("click", () => openMedia(button.dataset.mediaKind, Number(button.dataset.mediaIndex)));
   });
@@ -951,7 +1116,10 @@ function renderPendingReviewImages() {
   });
 }
 
-async function selectCase(issueId, { updateRoute = true } = {}) {
+async function selectCase(
+  issueId,
+  { updateRoute = true, historyMode = "push" } = {}
+) {
   if (!issueId) return;
   if (state.selectedId && state.selectedId !== issueId) clearPendingReviewImages();
   state.selectedId = issueId;
@@ -962,7 +1130,10 @@ async function selectCase(issueId, { updateRoute = true } = {}) {
     renderDetail(data);
     renderReview(data);
     if (updateRoute && state.activePage === "review") {
-      showPage("review", { historyMode: "replace", issue: issueId });
+      const nextUrl = pageUrl("review", { issue: issueId });
+      if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
+        showPage("review", { historyMode, issue: issueId });
+      }
     }
   } catch (error) {
     showToast(error.message, true);
@@ -1019,7 +1190,7 @@ async function saveAnnotation(event) {
       `已保存新的 review 版本${screenshotCount ? `和 ${screenshotCount} 张截图` : ""}。`
     );
     await Promise.all([loadOverview(), loadClusters(), loadCases(), loadReviewers()]);
-    await selectCase(state.selectedId);
+    await selectCase(state.selectedId, { updateRoute: false });
   } catch (error) {
     showToast(error.message, true);
   } finally {
@@ -1116,9 +1287,75 @@ function updatePredictionBatchCount() {
   target.classList.toggle("input-warning", Boolean(invalid.length || overLimit));
 }
 
+function renderGatewayModels() {
+  const select = $("#predictionModelSelect");
+  const statusTarget = $("#gatewayModelStatus");
+  const endpointTarget = $("#gatewayModelsEndpoint");
+  const createButton = $("#createPredictionBatchButton");
+  if (!select || !statusTarget || !endpointTarget) return;
+  const catalog = state.gatewayModelStatus || {};
+  const previous = select.value;
+  endpointTarget.textContent =
+    catalog.catalog_label ||
+    state.config?.prediction_batch?.model_gateway?.catalog_label ||
+    "ra-model · /v1/models";
+  select.innerHTML = state.gatewayModels.length
+    ? state.gatewayModels
+        .map(
+          (model) =>
+            `<option value="${escapeHtml(model.id)}">${escapeHtml(model.display_name || model.id)}</option>`
+        )
+        .join("")
+    : '<option value="">暂无可用 RA 模型</option>';
+  const defaultId = catalog.default_model_id || "";
+  select.value = state.gatewayModels.some((item) => item.id === previous)
+    ? previous
+    : state.gatewayModels.some((item) => item.id === defaultId)
+      ? defaultId
+      : state.gatewayModels[0]?.id || "";
+  const ready = catalog.status === "ready" && !catalog.stale && Boolean(select.value);
+  statusTarget.className = `gateway-model-status ${ready ? "ok" : "warn"}`;
+  statusTarget.textContent = ready
+    ? `目录在线 ${catalog.online_count ?? "—"} 个 · RA Profile 可选 ${catalog.compatible_count ?? state.gatewayModels.length} 个 · 已过滤 ${catalog.excluded_count ?? "—"} 个`
+    : catalog.message || "模型目录尚未就绪。";
+  if (createButton) createButton.disabled = !ready;
+  renderBatchRuntimeSummary();
+}
+
+async function loadGatewayModels({ refresh = false } = {}) {
+  const statusTarget = $("#gatewayModelStatus");
+  if (statusTarget) {
+    statusTarget.className = "gateway-model-status";
+    statusTarget.textContent = refresh ? "正在刷新模型目录…" : "正在自动获取模型目录…";
+  }
+  try {
+    const data = await api(
+      `/api/prediction-batches/models${refresh ? "?refresh=true" : ""}`
+    );
+    state.gatewayModelStatus = data;
+    state.gatewayModels = data.models || [];
+    renderGatewayModels();
+  } catch (error) {
+    state.gatewayModelStatus = {
+      status: "failed",
+      stale: false,
+      message: error.message,
+      catalog_label:
+        state.config?.prediction_batch?.model_gateway?.catalog_label ||
+        "ra-model · /v1/models",
+    };
+    state.gatewayModels = [];
+    renderGatewayModels();
+    throw error;
+  }
+}
+
 function renderBatchRuntimeSummary() {
   const target = $("#batchModelSummary");
   if (!target) return;
+  const selectedGatewayModel = state.gatewayModels.find(
+    (item) => item.id === $("#predictionModelSelect")?.value
+  );
   const configured =
     state.batchDefaultModel ||
     state.config?.prediction_batch?.safe_experiment ||
@@ -1127,13 +1364,18 @@ function renderBatchRuntimeSummary() {
     state.config?.batch_prediction?.default_model ||
     state.config?.batch_prediction ||
     {};
-  const model = typeof configured === "string" ? configured : configured.model_name || configured.name || configured.model;
+  const model =
+    selectedGatewayModel?.display_name ||
+    (typeof configured === "string"
+      ? configured
+      : configured.model_name || configured.name || configured.model);
   const prompt =
     typeof configured === "object"
       ? configured.prompt_version || configured.prompt || state.config?.prediction_batch?.prompt_version
       : "";
-  const source =
-    typeof configured === "object"
+  const source = selectedGatewayModel
+    ? `网关解析 · ${selectedGatewayModel.resolved_model_id}`
+    : typeof configured === "object"
       ? configured.experiment_source || configured.runtime || configured.source
       : "";
   const media =
@@ -1148,9 +1390,9 @@ function renderBatchRuntimeSummary() {
               : "")
       : "";
   target.innerHTML = `
-    <strong>${escapeHtml(model || "服务器默认模型")}</strong>
+    <strong>${escapeHtml(model || "服务器模型网关")}</strong>
     <span>${prompt ? `Prompt · ${escapeHtml(prompt)}` : "模型与 Prompt 由服务器配置统一决定"}</span>
-    <small>${escapeHtml([source, media].filter(Boolean).join(" · ") || "浏览器不传入模型地址、密钥或媒体输入")}</small>`;
+    <small>${escapeHtml([source, media].filter(Boolean).join(" · ") || "浏览器只提交 model_id；密钥与地址由服务器管理")}</small>`;
 }
 
 function batchStatusLabel(status) {
@@ -1269,7 +1511,11 @@ function renderPredictionBatches(total = state.predictionBatches.length) {
             <span class="publish-status publish-${escapeHtml(publishStatus)}">${escapeHtml(batchPublishLabel(publishStatus))}</span>
           </div>
           <div class="run-row-meta">
-            <span>${escapeHtml(batch.model_name || "服务器默认模型")}</span>
+            <span>${escapeHtml(
+              batch.requested_model_id && batch.requested_model_id !== batch.model_name
+                ? `${batch.requested_model_id} → ${batch.model_name || batch.resolved_model_id}`
+                : batch.model_name || batch.resolved_model_id || "服务器模型网关"
+            )}</span>
             ${batch.prompt_version ? `<span>prompt ${escapeHtml(batch.prompt_version)}</span>` : ""}
             <span>${counts.completed} / ${counts.total} 完成</span>
             <span class="batch-success-count">成功 ${counts.success}</span>
@@ -1378,6 +1624,7 @@ async function loadPredictionConfig() {
   };
   renderBatchRuntimeSummary();
   updatePredictionBatchCount();
+  await loadGatewayModels();
 }
 
 async function pollPredictionBatch(batchId) {
@@ -1417,8 +1664,12 @@ async function submitPredictionBatch(event) {
   const issueIds = predictionIssueIds();
   const invalid = issueIds.filter((issueId) => !/^[A-Za-z0-9_-]{3,128}$/.test(issueId));
   const maxIssues = Number(state.config?.prediction_batch?.max_issues || 0);
+  const modelId = $("#predictionModelSelect")?.value || "";
   if (!issueIds.length) return showToast("请至少输入一个 Issue ID。", true);
   if (invalid.length) return showToast(`Issue ID 格式不合法：${invalid.slice(0, 3).join("、")}`, true);
+  if (!modelId || state.gatewayModelStatus?.status !== "ready" || state.gatewayModelStatus?.stale) {
+    return showToast("模型目录尚未就绪，请先刷新并选择可用模型。", true);
+  }
   if (maxIssues && issueIds.length > maxIssues) {
     return showToast(`单批最多 ${maxIssues} 个 Issue；当前 ${issueIds.length} 个。`, true);
   }
@@ -1430,6 +1681,7 @@ async function submitPredictionBatch(event) {
       method: "POST",
       body: JSON.stringify({
         issue_ids: issueIds,
+        model_id: modelId,
         name: $("#predictionBatchName").value.trim() || "",
         requested_by: state.session.username || "",
       }),
@@ -1442,8 +1694,8 @@ async function submitPredictionBatch(event) {
   } catch (error) {
     showToast(error.message, true);
   } finally {
-    button.disabled = false;
     button.textContent = "开始 Batch 预测";
+    renderGatewayModels();
   }
 }
 
@@ -1498,6 +1750,19 @@ function setImportKind(kind) {
   const input = $(`#importKind input[name="kind"][value="${kind}"]`);
   if (input) input.checked = true;
   updateImportFields();
+}
+
+function openRunImport(kind = "model") {
+  const targetKind = kind === "issues" ? "issues" : "model";
+  navigatePage("runs", { importKind: targetKind });
+  const panel = $("#runImportPanel");
+  if (panel) {
+    panel.open = true;
+    window.setTimeout(
+      () => panel.scrollIntoView({ behavior: "smooth", block: "start" }),
+      0
+    );
+  }
 }
 
 async function submitImport(event) {
@@ -1596,15 +1861,16 @@ function bindEvents() {
         return;
       }
       event.preventDefault();
-      navigatePage(element.dataset.pageTarget, {
-        issue: element.dataset.pageTarget === "prediction" ? state.selectedId : "",
-        kind: element.dataset.pageTarget === "import" ? "issues" : "",
-      });
+      navigatePage(element.dataset.pageTarget);
     });
   });
   $("#filterForm").addEventListener("submit", async (event) => {
     event.preventDefault();
-    await Promise.all([loadCases({ keepSelection: false }), loadClusters(), loadOverview()]);
+    await Promise.all([
+      loadCases({ keepSelection: false, selectionHistoryMode: "push" }),
+      loadClusters(),
+      loadOverview(),
+    ]);
   });
   $("#modelRunFilter").addEventListener("change", async () => {
     const previousRunId = state.selectedRunId;
@@ -1615,20 +1881,33 @@ function bindEvents() {
     $("#failureOnlyInput").checked = state.failureOnly;
     renderActiveRun();
     renderRunManager();
-    await Promise.all([loadCases({ keepSelection: false }), loadClusters(), loadOverview()]);
+    await Promise.all([
+      loadCases({ keepSelection: false, selectionHistoryMode: "push" }),
+      loadClusters(),
+      loadOverview(),
+    ]);
   });
   $("#failureOnlyInput").addEventListener("change", async () => {
     state.failureOnly = $("#failureOnlyInput").checked;
-    await Promise.all([loadCases({ keepSelection: false }), loadClusters(), loadOverview()]);
+    await Promise.all([
+      loadCases({ keepSelection: false, selectionHistoryMode: "push" }),
+      loadClusters(),
+      loadOverview(),
+    ]);
   });
   $("#clearClusterButton").addEventListener("click", async () => {
     state.clusterKey = "";
-    await Promise.all([loadCases({ keepSelection: false }), loadClusters()]);
+    await Promise.all([
+      loadCases({ keepSelection: false, selectionHistoryMode: "push" }),
+      loadClusters(),
+    ]);
   });
   $("#refreshButton").addEventListener("click", async () => {
     try {
       await refreshAll();
-      if (state.selectedId) await selectCase(state.selectedId);
+      if (state.selectedId) {
+        await selectCase(state.selectedId, { updateRoute: false });
+      }
       showToast("页面数据已刷新。");
     } catch (error) {
       showToast(error.message, true);
@@ -1639,9 +1918,22 @@ function bindEvents() {
   $("#runManagerImportButton").addEventListener("click", () => {
     $("#importResult").classList.add("hidden");
     $("#importResult").textContent = "";
-    navigatePage("import", { kind: "model" });
+    openRunImport("model");
   });
-  $("#manageRunsButton").addEventListener("click", () => navigatePage("runs"));
+  $("#reviewUploadModelButton").addEventListener("click", () => openRunImport("model"));
+  $("#predictFilteredButton").addEventListener("click", () => {
+    if (state.cases.length !== state.caseTotal) {
+      showToast(
+        `当前仅加载 ${state.cases.length} / ${state.caseTotal} 个筛选结果，不能创建不完整 Batch。`,
+        true
+      );
+      return;
+    }
+    openBatchDraft(
+      state.cases.map((item) => item.issue_id),
+      "filtered"
+    );
+  });
   $("#refreshRunsButton").addEventListener("click", async () => {
     try {
       await loadRuns();
@@ -1665,19 +1957,41 @@ function bindEvents() {
       .then(() => showToast("Batch 任务历史已刷新。"))
       .catch((error) => showToast(error.message, true));
   });
+  $("#refreshGatewayModelsButton").addEventListener("click", () => {
+    const button = $("#refreshGatewayModelsButton");
+    button.disabled = true;
+    loadGatewayModels({ refresh: true })
+      .then(() => showToast("服务器模型目录已刷新。"))
+      .catch((error) => showToast(error.message, true))
+      .finally(() => {
+        button.disabled = false;
+      });
+  });
+  $("#predictionModelSelect").addEventListener("change", renderBatchRuntimeSummary);
   $("#sidebarToggle").addEventListener("click", toggleSidebar);
+  window.addEventListener("resize", () => {
+    clearTimeout(syncAutomaticSidebar.timer);
+    syncAutomaticSidebar.timer = setTimeout(syncAutomaticSidebar, 80);
+  });
   document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => closeDialog(button.dataset.close)));
   $("#importKind").querySelectorAll("input").forEach((input) => {
     input.addEventListener("change", () => {
       updateImportFields();
-      if (state.activePage === "import") {
-        showPage("import", { historyMode: "replace", kind: currentImportKind() });
+      if (state.activePage === "runs") {
+        showPage("runs", {
+          historyMode: "replace",
+          importKind: currentImportKind(),
+        });
       }
     });
   });
   $("#importFile").addEventListener("change", () => { $("#importFileName").textContent = $("#importFile").files[0]?.name || "未选择文件"; });
   $("#importForm").addEventListener("submit", submitImport);
-  $("#predictionBatchIssues").addEventListener("input", updatePredictionBatchCount);
+  $("#predictionBatchIssues").addEventListener("input", () => {
+    state.batchDraftSource = "";
+    updatePredictionBatchCount();
+    renderPredictionSourceSummary();
+  });
   $("#predictionBatchForm").addEventListener("submit", submitPredictionBatch);
   $("#mediaPrevButton").addEventListener("click", () => moveMedia(-1));
   $("#mediaNextButton").addEventListener("click", () => moveMedia(1));
@@ -1690,35 +2004,67 @@ function bindEvents() {
   });
   window.addEventListener("popstate", async () => {
     const route = parsePageRoute();
-    const validRouteRun = route.runId && state.modelRuns.some((run) => run.id === route.runId);
-    const nextFailureOnly = route.failureOnly ?? state.failureOnly;
+    const nextRunId =
+      route.runId && state.modelRuns.some((run) => run.id === route.runId)
+        ? route.runId
+        : "";
+    const nextFailureOnly = Boolean(nextRunId && route.failureOnly);
     if (
-      validRouteRun &&
-      (route.runId !== state.selectedRunId || nextFailureOnly !== state.failureOnly)
+      nextRunId !== state.selectedRunId ||
+      nextFailureOnly !== state.failureOnly
     ) {
-      state.selectedRunId = route.runId;
-      $("#modelRunFilter").value = route.runId;
+      state.selectedRunId = nextRunId;
+      $("#modelRunFilter").value = nextRunId;
       state.failureOnly = nextFailureOnly;
       $("#failureOnlyInput").checked = state.failureOnly;
-      await Promise.all([loadCases({ keepSelection: false }), loadClusters(), loadOverview()]);
+      $("#failureOnlyInput").disabled = !nextRunId;
+      renderActiveRun();
+      renderRunManager();
+      await Promise.all([
+        loadCases({ keepSelection: true, autoSelect: false }),
+        loadClusters(),
+        loadOverview(),
+      ]);
     }
-    showPage(route.page, { issue: route.issue, kind: route.kind });
-    if (route.page === "review" && route.issue && route.issue !== state.selectedId) {
-      await selectCase(route.issue, { updateRoute: false });
+    showPage(route.page, {
+      issue: route.issue,
+      issues: route.issues,
+      source: route.source,
+      importKind: route.importKind,
+      restoreRoute: true,
+    });
+    if (route.page === "review") {
+      if (route.issue) {
+        if (route.issue !== state.selectedId) {
+          await selectCase(route.issue, { updateRoute: false });
+        }
+      } else {
+        if (state.selectedId) clearPendingReviewImages();
+        clearDetail();
+        renderCases({ items: state.cases, total: state.caseTotal });
+      }
     }
   });
 }
 
 async function bootstrap() {
   const initialRoute = parsePageRoute();
-  state.sidebarCollapsed = localStorage.getItem("ra-triage-sidebar-collapsed") === "true";
+  const savedSidebarState = localStorage.getItem("ra-triage-sidebar-collapsed");
+  state.sidebarAutoMode = savedSidebarState === null;
+  state.sidebarCollapsed =
+    savedSidebarState === null
+      ? window.matchMedia("(max-width: 1440px)").matches
+      : savedSidebarState === "true";
   applySidebarState();
   bindEvents();
   updateImportFields();
   showPage(initialRoute.page, {
-    historyMode: window.location.pathname === "/inference" ? "replace" : "",
+    historyMode: initialRoute.legacyRoute ? "replace" : "",
     issue: initialRoute.issue,
-    kind: initialRoute.kind,
+    issues: initialRoute.issues,
+    source: initialRoute.source,
+    importKind: initialRoute.importKind,
+    restoreRoute: true,
   });
   try {
     await Promise.all([loadConfig(), loadSession()]);
@@ -1731,7 +2077,11 @@ async function bootstrap() {
     await Promise.all([
       loadStatus(),
       loadOverview(),
-      loadCases({ keepSelection: false }),
+      loadCases({
+        keepSelection: false,
+        autoSelect: !initialRoute.issue,
+        selectionHistoryMode: "replace",
+      }),
       loadClusters(),
       loadReviewers(),
     ]);
@@ -1741,7 +2091,10 @@ async function bootstrap() {
     showPage(initialRoute.page, {
       historyMode: "replace",
       issue: initialRoute.issue || state.selectedId,
-      kind: initialRoute.kind,
+      issues: initialRoute.issues,
+      source: initialRoute.source,
+      importKind: initialRoute.importKind,
+      restoreRoute: true,
     });
   } catch (error) {
     showToast(`启动失败：${error.message}`, true);

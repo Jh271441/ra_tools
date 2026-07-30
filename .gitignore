@@ -8,6 +8,7 @@ data/
 *.csv
 *.png
 *.json
+!ra_triage_dashboard/config/model_profiles.json
 !ra_sim_repro_dashboard/frontend/package.json
 !ra_sim_repro_dashboard/frontend/package-lock.json
 !ra_sim_repro_dashboard/frontend/tsconfig.json

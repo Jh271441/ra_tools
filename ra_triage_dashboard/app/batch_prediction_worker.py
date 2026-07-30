@@ -1,7 +1,8 @@
 """Isolated RA batch prediction and AutoTriage publishing worker.
 
-The request is read from stdin.  Model credentials stay in the server-side
-ra_auto_triage configuration and are never accepted from the browser.
+The request is read from stdin. Model credentials are injected by the
+dashboard parent only for prediction and are never accepted from the browser
+or passed to the AutoTriage publishing worker.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ RESULT_PREFIX = "__RA_TRIAGE_BATCH_RESULT__"
 EVENT_PREFIX = "__RA_TRIAGE_BATCH_EVENT__"
 LABELS = {"误触发", "正确触发", "无需协助"}
 ISSUE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{3,128}$")
+MODEL_ID_RE = re.compile(r"^[A-Za-z0-9._/@:+-]{1,160}$")
 MAX_BATCH_ISSUES = 50
 PUBLISH_RESULT_FIELDS = {
     "issue_id",
@@ -300,6 +302,57 @@ def load_default_experiment():
     return experiment, loaded.source
 
 
+def apply_gateway_model_metadata(experiment: Any, model_id: Any) -> str:
+    model_id = str(model_id or "").strip()
+    if not MODEL_ID_RE.fullmatch(model_id):
+        raise ValueError("Batch worker model_id 格式非法。")
+    experiment.model_name = model_id
+    experiment.provider = "kylin"
+    experiment.model_profile = ""
+    # The selected gateway model is fully materialised. Refuse any merge which
+    # could bring the old default model or review-only Ares inputs back.
+    experiment.config_merge_mode = "none"
+    experiment.use_bev_animation = False
+    experiment.bev_mode = "disabled"
+    experiment.bev_animation_manifest = ""
+    experiment.bev_frame_offsets_ms = []
+    experiment.use_ares_capture = False
+    experiment.ares_capture_manifest = ""
+    experiment.ares_capture_on_miss = False
+    return "dashboard_ra_model_gateway"
+
+
+def apply_gateway_model(experiment: Any, request: dict[str, Any]) -> str:
+    source = apply_gateway_model_metadata(experiment, request.get("model_id"))
+    gateway = request.pop("_model_gateway", None)
+    if not isinstance(gateway, dict):
+        raise ValueError("Batch worker 缺少模型网关配置。")
+    provider = str(gateway.pop("provider", "") or "").strip()
+    chat_url = str(gateway.pop("chat_url", "") or "").strip()
+    api_key = str(gateway.pop("api_key", "") or "").strip()
+    gateway.clear()
+    parsed = urlsplit(chat_url)
+    host = (parsed.hostname or "").lower()
+    if (
+        provider != "kylin"
+        or parsed.scheme not in {"http", "https"}
+        or host != "ra-model.intra.xiaojukeji.com"
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or parsed.path.rstrip("/") != "/v1/chat/completions"
+        or not api_key
+    ):
+        raise ValueError("Batch worker 模型网关环境配置非法。")
+    auth_value = api_key if api_key.lower().startswith("apikey:") else f"apikey:{api_key}"
+    register_sensitive_values(api_key, auth_value, chat_url)
+    experiment.provider = provider
+    experiment.base_url = chat_url
+    experiment.api_key = auth_value
+    return source
+
+
 def safe_experiment_config(experiment: Any, source: str) -> dict[str, Any]:
     return {
         "model_name": str(experiment.model_name or ""),
@@ -461,6 +514,7 @@ def predict(request: dict[str, Any], ra_root: Path) -> int:
 
     issue_ids = normalise_issue_ids(request.get("issue_ids"))
     experiment, source = load_default_experiment()
+    source = apply_gateway_model(experiment, request)
     model_base_url, model_api_key = ensure_vision_credentials(experiment)
     register_sensitive_values(model_base_url, model_api_key)
     safe_config = safe_experiment_config(experiment, source)
@@ -478,6 +532,14 @@ def predict(request: dict[str, Any], ra_root: Path) -> int:
         or reconstructed.bev_mode != "disabled"
     ):
         raise ValueError("Batch 模型输入策略校验失败：Ares/BEV 被重新启用。")
+    if (
+        str(reconstructed.model_name or "") != str(request.get("model_id") or "")
+        or str(reconstructed.provider or "") != "kylin"
+        or str(reconstructed.config_merge_mode or "") != "none"
+        or not str(reconstructed.base_url or "")
+        or not str(reconstructed.api_key or "")
+    ):
+        raise ValueError("Batch 模型网关配置未完整传递到子进程。")
 
     rate_limiter = RateLimiter(
         rpm_limit=int(config.get("vlm_triage.rpm_limit", 500) or 500),
@@ -541,6 +603,8 @@ def predict(request: dict[str, Any], ra_root: Path) -> int:
             "partial": status == "partial",
             "status": status,
             "model_name": safe_config["model_name"],
+            "requested_model_id": str(request.get("requested_model_id") or ""),
+            "catalog_sha256": str(request.get("catalog_sha256") or ""),
             "prompt_version": safe_config["prompt_version"],
             "experiment_source": safe_config["experiment_source"],
             "config_sha256": config_sha256,
@@ -697,6 +761,7 @@ def publish(request: dict[str, Any]) -> int:
     from vlm.scripts.internal import RaToolsClient
 
     experiment, source = load_default_experiment()
+    source = apply_gateway_model_metadata(experiment, request.get("model_id"))
     safe_config = safe_experiment_config(experiment, source)
     config_sha256 = canonical_hash(safe_config)
     expected_hash = str(request.get("config_sha256") or "").strip().lower()

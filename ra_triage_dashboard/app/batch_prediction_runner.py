@@ -14,15 +14,21 @@ from typing import Any
 
 from .batch_prediction_worker import EVENT_PREFIX, LABELS, RESULT_PREFIX
 from .db import Database
+from .model_catalog import model_gateway_chat_url, read_model_gateway_api_key
 from .settings import Settings
+
+
+MAX_WORKER_OUTPUT_BYTES = 32 * 1024 * 1024
+MAX_WORKER_EVENTS = 1000
 
 
 class BatchPredictionRunner:
     """Run the RA worker outside the dashboard process.
 
     Only one prediction/publish operation is launched at a time.  The worker
-    resolves model credentials from the server-side RA checkout; neither
-    credentials nor model endpoints enter HTTP requests or dashboard storage.
+    receives only a validated model ID from the browser. Gateway credentials
+    are sent through one-shot prediction-worker stdin and never enter browser
+    requests, process environments, dashboard storage, argv, or publish workers.
     """
 
     def __init__(self, settings: Settings, database: Database):
@@ -125,7 +131,15 @@ class BatchPredictionRunner:
             result, _, log_path = self._run_worker(
                 job_id=job_id,
                 action="predict",
-                payload={"action": "predict", "issue_ids": issue_ids},
+                payload={
+                    "action": "predict",
+                    "issue_ids": issue_ids,
+                    "model_id": str(job.get("resolved_model_id") or ""),
+                    "requested_model_id": str(
+                        job.get("requested_model_id") or ""
+                    ),
+                    "catalog_sha256": str(job.get("catalog_sha256") or ""),
+                },
             )
             raw_results = result.get("results")
             if not isinstance(raw_results, list):
@@ -218,6 +232,13 @@ class BatchPredictionRunner:
                         "experiment": safe_experiment,
                         "batch_prediction_job_id": job_id,
                         "config_sha256": str(result.get("config_sha256") or ""),
+                        "requested_model_id": str(
+                            job.get("requested_model_id") or ""
+                        ),
+                        "resolved_model_id": str(
+                            job.get("resolved_model_id") or ""
+                        ),
+                        "catalog_sha256": str(job.get("catalog_sha256") or ""),
                         "ra_repo_commit": str(result.get("ra_repo_commit") or ""),
                         "trail_view_id": result.get("trail_view_id"),
                         "input_policy": {
@@ -279,6 +300,13 @@ class BatchPredictionRunner:
                     "ra_repo_commit": str(result.get("ra_repo_commit") or ""),
                     "trail_view_id": result.get("trail_view_id"),
                     "safe_experiment": result.get("safe_experiment") or {},
+                    "requested_model_id": str(
+                        job.get("requested_model_id") or ""
+                    ),
+                    "resolved_model_id": str(
+                        job.get("resolved_model_id") or ""
+                    ),
+                    "catalog_sha256": str(job.get("catalog_sha256") or ""),
                     "model_run_duplicate": duplicate,
                     "ares_bev_input": False,
                     "bag_cache_read_only": False,
@@ -346,6 +374,7 @@ class BatchPredictionRunner:
                 payload={
                     "action": "publish",
                     "config_sha256": str(job.get("config_sha256") or ""),
+                    "model_id": str(job.get("resolved_model_id") or ""),
                     "results": results,
                     "record_base_url": self.settings.auto_triage_record_base_url,
                 },
@@ -428,6 +457,19 @@ class BatchPredictionRunner:
             value = os.environ.get(name, "").strip()
             if value:
                 env[name] = value
+        redactions: list[str] = []
+        worker_payload = dict(payload)
+        if action == "predict" and str(payload.get("model_id") or "").strip():
+            model_api_key = read_model_gateway_api_key(self.settings)
+            model_chat_url = model_gateway_chat_url(self.settings)
+            worker_payload["_model_gateway"] = {
+                "api_key": model_api_key,
+                "chat_url": model_chat_url,
+                "provider": "kylin",
+            }
+            redactions.extend(
+                [model_api_key, f"apikey:{model_api_key}", model_chat_url]
+            )
         with self._lock:
             if self._shutting_down:
                 raise RuntimeError("服务正在停止，未启动 Batch worker。")
@@ -444,14 +486,35 @@ class BatchPredictionRunner:
         if process.stdin is None or process.stdout is None:
             self._kill_process_group(process)
             raise RuntimeError("Batch worker 管道创建失败。")
-        process.stdin.write(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
-        process.stdin.close()
-
-        timed_out = False
-        chunks: list[bytes] = []
-        pending = b""
-        events: list[dict[str, Any]] = []
+        worker_input = json.dumps(worker_payload, ensure_ascii=False).encode("utf-8")
+        worker_payload.clear()
         deadline = time.monotonic() + self.settings.batch_job_timeout_seconds
+        input_errors: list[BaseException] = []
+
+        def write_worker_input() -> None:
+            try:
+                process.stdin.write(worker_input)
+                process.stdin.close()
+            except (BrokenPipeError, OSError) as exc:
+                input_errors.append(exc)
+                try:
+                    process.stdin.close()
+                except OSError:
+                    pass
+
+        input_thread = threading.Thread(
+            target=write_worker_input,
+            name=f"batch-stdin-{job_id[:8]}",
+            daemon=True,
+        )
+        input_thread.start()
+        timed_out = False
+        output_too_large = False
+        output_limit_error = ""
+        chunks: list[bytes] = []
+        output_bytes = 0
+        pending = bytearray()
+        events: list[dict[str, Any]] = []
         selector = selectors.DefaultSelector()
         selector.register(process.stdout, selectors.EVENT_READ)
         try:
@@ -469,20 +532,52 @@ class BatchPredictionRunner:
                 data = os.read(process.stdout.fileno(), 65536)
                 if not data:
                     break
+                output_bytes += len(data)
+                if output_bytes > MAX_WORKER_OUTPUT_BYTES:
+                    allowed = max(
+                        0,
+                        MAX_WORKER_OUTPUT_BYTES - (output_bytes - len(data)),
+                    )
+                    if allowed:
+                        chunks.append(data[:allowed])
+                        pending.extend(data[:allowed])
+                    output_too_large = True
+                    output_limit_error = (
+                        f"Batch worker 输出超过 "
+                        f"{MAX_WORKER_OUTPUT_BYTES // (1024 * 1024)} MiB，已终止。"
+                    )
+                    self._kill_process_group(process)
+                    break
                 chunks.append(data)
-                pending += data
-                while b"\n" in pending:
-                    raw_line, pending = pending.split(b"\n", 1)
+                pending.extend(data)
+                while True:
+                    newline = pending.find(b"\n")
+                    if newline < 0:
+                        break
+                    raw_line = bytes(pending[:newline])
+                    del pending[: newline + 1]
                     event = self._parse_prefixed_line(
                         raw_line.decode("utf-8", errors="replace"),
                         EVENT_PREFIX,
                     )
                     if event is not None:
+                        if len(events) >= MAX_WORKER_EVENTS:
+                            output_too_large = True
+                            output_limit_error = (
+                                f"Batch worker 事件超过 {MAX_WORKER_EVENTS} 条，已终止。"
+                            )
+                            self._kill_process_group(process)
+                            break
                         events.append(event)
                         self._persist_worker_event(job_id, action, event)
+                if output_too_large:
+                    break
         except Exception:
             self._kill_process_group(process)
-            process.wait(timeout=5)
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self._kill_process_group(process)
             raise
         finally:
             selector.close()
@@ -493,11 +588,31 @@ class BatchPredictionRunner:
                 self._kill_process_group(process)
                 process.wait(timeout=5)
         else:
-            process.wait()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                timed_out = True
+                self._kill_process_group(process)
+                process.wait(timeout=5)
+            else:
+                try:
+                    process.wait(timeout=remaining)
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    self._kill_process_group(process)
+                    process.wait(timeout=5)
+        input_thread.join(timeout=1)
         remainder = process.stdout.read()
-        if remainder:
+        if remainder and not output_too_large:
+            remaining_output = MAX_WORKER_OUTPUT_BYTES - output_bytes
+            if len(remainder) > remaining_output:
+                remainder = remainder[: max(0, remaining_output)]
+                output_too_large = True
+                output_limit_error = (
+                    f"Batch worker 输出超过 "
+                    f"{MAX_WORKER_OUTPUT_BYTES // (1024 * 1024)} MiB，已终止。"
+                )
             chunks.append(remainder)
-            pending += remainder
+            pending.extend(remainder)
         if pending:
             event = self._parse_prefixed_line(
                 pending.decode("utf-8", errors="replace"),
@@ -506,7 +621,10 @@ class BatchPredictionRunner:
             if event is not None:
                 events.append(event)
                 self._persist_worker_event(job_id, action, event)
-        output = b"".join(chunks).decode("utf-8", errors="replace")
+        output = self._redact_output(
+            b"".join(chunks).decode("utf-8", errors="replace"),
+            redactions,
+        )
         descriptor = os.open(
             log_path,
             os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
@@ -521,6 +639,8 @@ class BatchPredictionRunner:
             if descriptor >= 0:
                 os.close(descriptor)
         result = self._extract_last(output, RESULT_PREFIX)
+        if output_limit_error:
+            raise RuntimeError(output_limit_error)
         timeout_error = (
             f"Batch {action} 超过 "
             f"{self.settings.batch_job_timeout_seconds}s，已终止。"
@@ -547,11 +667,24 @@ class BatchPredictionRunner:
                     "platform_batch_id": str(created.get("batch_id") or ""),
                     "writer": str(created.get("writer") or ""),
                 }
+            elif timed_out:
+                raise RuntimeError(timeout_error)
         if not result:
             raise RuntimeError(
                 f"Batch worker 未输出可解析结果（exit={process.returncode}）。"
             )
         return result, events, log_path
+
+    @staticmethod
+    def _redact_output(value: str, secrets: list[str]) -> str:
+        redacted = value
+        for secret in sorted(
+            {item for item in secrets if item},
+            key=len,
+            reverse=True,
+        ):
+            redacted = redacted.replace(secret, "[REDACTED]")
+        return redacted
 
     @staticmethod
     def _kill_process_group(process: subprocess.Popen[bytes]) -> None:

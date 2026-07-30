@@ -176,6 +176,10 @@ class Database:
                     completed_count INTEGER NOT NULL DEFAULT 0 CHECK(completed_count >= 0),
                     success_count INTEGER NOT NULL DEFAULT 0 CHECK(success_count >= 0),
                     failed_count INTEGER NOT NULL DEFAULT 0 CHECK(failed_count >= 0),
+                    requested_model_id TEXT NOT NULL DEFAULT '',
+                    resolved_model_id TEXT NOT NULL DEFAULT '',
+                    model_source TEXT NOT NULL DEFAULT '',
+                    catalog_sha256 TEXT NOT NULL DEFAULT '',
                     model_name TEXT NOT NULL DEFAULT '',
                     prompt_version TEXT NOT NULL DEFAULT '',
                     experiment_source TEXT NOT NULL DEFAULT '',
@@ -241,6 +245,30 @@ class Database:
             )
             self._ensure_column(
                 conn, "inference_jobs", "requested_by_verified", "INTEGER NOT NULL DEFAULT 0"
+            )
+            self._ensure_column(
+                conn,
+                "batch_prediction_jobs",
+                "requested_model_id",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                conn,
+                "batch_prediction_jobs",
+                "resolved_model_id",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                conn,
+                "batch_prediction_jobs",
+                "model_source",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                conn,
+                "batch_prediction_jobs",
+                "catalog_sha256",
+                "TEXT NOT NULL DEFAULT ''",
             )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_issues_baseline ON issues(baseline_scope)")
             conn.execute(
@@ -1184,6 +1212,10 @@ class Database:
         requested_by: str,
         requested_by_source: str = "legacy",
         requested_by_verified: bool = False,
+        requested_model_id: str,
+        resolved_model_id: str,
+        model_source: str,
+        catalog_sha256: str,
     ) -> dict[str, Any]:
         normalized_issue_ids = [str(issue_id).strip() for issue_id in issue_ids]
         if not normalized_issue_ids or any(not issue_id for issue_id in normalized_issue_ids):
@@ -1223,8 +1255,10 @@ class Database:
                 """
                 INSERT INTO batch_prediction_jobs (
                     id, name, status, requested_by, requested_by_source,
-                    requested_by_verified, total_count, created_at
-                ) VALUES (?, ?, 'queued', ?, ?, ?, ?, ?)
+                    requested_by_verified, total_count, requested_model_id,
+                    resolved_model_id, model_source, catalog_sha256, model_name,
+                    created_at
+                ) VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job_id,
@@ -1233,6 +1267,11 @@ class Database:
                     requested_by_source.strip() or "legacy",
                     int(requested_by_verified),
                     len(normalized_issue_ids),
+                    requested_model_id.strip(),
+                    resolved_model_id.strip(),
+                    model_source.strip() or "ra_model_gateway",
+                    catalog_sha256.strip(),
+                    resolved_model_id.strip(),
                     now,
                 ),
             )
@@ -1729,6 +1768,18 @@ class Database:
             "completed_count": int(row["completed_count"] or 0),
             "success_count": int(row["success_count"] or 0),
             "failed_count": int(row["failed_count"] or 0),
+            "requested_model_id": row["requested_model_id"]
+            if "requested_model_id" in row.keys()
+            else "",
+            "resolved_model_id": row["resolved_model_id"]
+            if "resolved_model_id" in row.keys()
+            else "",
+            "model_source": row["model_source"]
+            if "model_source" in row.keys()
+            else "legacy_server_default",
+            "catalog_sha256": row["catalog_sha256"]
+            if "catalog_sha256" in row.keys()
+            else "",
             "model_name": row["model_name"],
             "prompt_version": row["prompt_version"],
             "experiment_source": row["experiment_source"],

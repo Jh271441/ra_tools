@@ -29,11 +29,7 @@
           </a>
           <a class="sidebar-item" id="openBatchPredictionButton" data-page-target="prediction" href="/batch-prediction" title="Batch 预测">
             <span class="sidebar-icon" aria-hidden="true">▶</span>
-            <span class="sidebar-label"><strong>Batch 预测</strong><small>默认模型 · 批量推送</small></span>
-          </a>
-          <a class="sidebar-item" id="importButton" data-page-target="import" href="/import?kind=issues" title="数据导入">
-            <span class="sidebar-icon" aria-hidden="true">＋</span>
-            <span class="sidebar-label"><strong>数据导入</strong><small>Issue / GT 文件</small></span>
+            <span class="sidebar-label"><strong>Batch 预测</strong><small>模型网关 · 批量推理</small></span>
           </a>
         </nav>
 
@@ -73,15 +69,62 @@
 
         <main class="main">
           <section class="app-page" id="reviewPage" data-page="review">
-            <section class="run-toolbar" aria-label="当前模型 run">
-              <div class="run-toolbar-current">
-                <span class="run-state-dot"></span>
-                <div>
-                  <strong id="activeRunName">尚未选择模型 run</strong>
-                </div>
+            <section class="review-commandbar" aria-label="Review 筛选与快捷操作">
+              <form class="review-filters" id="filterForm">
+                <label class="filter-model-run">
+                  <span>对比模型 Run</span>
+                  <select id="modelRunFilter">
+                    <option value="">未选择模型 Run</option>
+                  </select>
+                </label>
+                <label class="toggle-row compact-filter-toggle">
+                  <input id="failureOnlyInput" type="checkbox" />
+                  <span>
+                    <strong>只看判断失败</strong>
+                    <small>GT ≠ 模型</small>
+                  </span>
+                </label>
+                <label class="filter-search">
+                  <span>检索</span>
+                  <input id="searchInput" name="search" placeholder="Issue ID、场景或关键词" autocomplete="off" />
+                </label>
+                <label>
+                  <span>GT</span>
+                  <select id="gtFilter">
+                    <option value="">全部</option>
+                    <option value="误触发">误触发</option>
+                    <option value="正确触发">正确触发</option>
+                    <option value="无需协助">无需协助</option>
+                  </select>
+                </label>
+                <label>
+                  <span>人工标注</span>
+                  <select id="annotationFilter">
+                    <option value="">全部</option>
+                    <option value="误触发">误触发</option>
+                    <option value="正确触发">正确触发</option>
+                    <option value="无需协助">无需协助</option>
+                  </select>
+                </label>
+                <label>
+                  <span>复核人</span>
+                  <select id="reviewerFilter">
+                    <option value="">全部复核人</option>
+                  </select>
+                </label>
+                <button class="button button-quiet filter-submit" type="submit">应用</button>
+              </form>
+              <div class="review-quick-actions">
+                <button class="button button-quiet" id="reviewUploadModelButton" type="button">上传模型结果</button>
+                <button class="button button-primary" id="predictFilteredButton" type="button" disabled>预测当前筛选</button>
               </div>
-              <div class="run-toolbar-meta" id="activeRunMeta">选择团队 Run、创建 Trail 只读快照，或导入 JSON / CSV / XLSX</div>
-              <button class="button button-quiet" id="manageRunsButton" type="button">管理 Runs</button>
+              <div class="review-cluster-strip">
+                <div class="subheading">
+                  <span>缺失信息聚类</span>
+                  <button class="text-button" id="clearClusterButton" type="button">清除</button>
+                </div>
+                <div class="cluster-list" id="clusterList"><span class="muted">暂无复核聚类</span></div>
+              </div>
             </section>
 
             <section class="workspace">
@@ -92,61 +135,6 @@
                     <h2>Issue 列表</h2>
                   </div>
                   <span class="count-pill" id="caseCount">—</span>
-                </div>
-
-                <form class="filters" id="filterForm">
-                  <label>
-                    <span>对比模型 run</span>
-                    <select id="modelRunFilter">
-                      <option value="">未选择模型 run</option>
-                    </select>
-                  </label>
-                  <label class="toggle-row">
-                    <input id="failureOnlyInput" type="checkbox" />
-                    <span>
-                      <strong>仅看模型判断失败</strong>
-                      <small>GT 与模型三分类标签不一致</small>
-                    </span>
-                  </label>
-                  <label>
-                    <span>检索</span>
-                    <input id="searchInput" name="search" placeholder="issue id、场景或关键词" autocomplete="off" />
-                  </label>
-                  <div class="filter-row">
-                    <label>
-                      <span>GT</span>
-                      <select id="gtFilter">
-                        <option value="">全部</option>
-                        <option value="误触发">误触发</option>
-                        <option value="正确触发">正确触发</option>
-                        <option value="无需协助">无需协助</option>
-                      </select>
-                    </label>
-                    <label>
-                      <span>人工标注</span>
-                      <select id="annotationFilter">
-                        <option value="">全部</option>
-                        <option value="误触发">误触发</option>
-                        <option value="正确触发">正确触发</option>
-                        <option value="无需协助">无需协助</option>
-                      </select>
-                    </label>
-                  </div>
-                  <label>
-                    <span>当前复核人</span>
-                    <select id="reviewerFilter">
-                      <option value="">全部复核人</option>
-                    </select>
-                  </label>
-                  <button class="button button-quiet full-width" type="submit">应用筛选</button>
-                </form>
-
-                <div class="cluster-panel">
-                  <div class="subheading">
-                    <span>缺失信息聚类</span>
-                    <button class="text-button" id="clearClusterButton" type="button">清除</button>
-                  </div>
-                  <div class="cluster-list" id="clusterList"><span class="muted">暂无复核聚类</span></div>
                 </div>
                 <div class="issue-list" id="issueList" aria-live="polite"></div>
               </aside>
@@ -174,7 +162,7 @@
               <div class="runs-toolbar">
                 <p>按模型、人员和批次管理预测结果</p>
                 <div class="run-manager-actions">
-                  <button class="button button-primary" id="runManagerImportButton" type="button">导入 Run</button>
+                  <button class="button button-primary" id="runManagerImportButton" type="button">上传模型结果</button>
                   <button class="button button-quiet" id="refreshRunsButton" type="button">刷新</button>
                 </div>
               </div>
@@ -202,33 +190,106 @@
               <div class="run-manager-summary" id="runManagerSummary">正在加载 Runs…</div>
               <div class="run-manager-list" id="modelRunList"></div>
             </section>
+            <details class="page-card run-import-panel" id="runImportPanel">
+              <summary>
+                <span>上传 Issue / GT 或模型结果</span>
+                <small>JSON / CSV / XLSX · 模型 Run 按内容去重</small>
+              </summary>
+              <div class="run-import-body">
+                <aside class="run-import-copy">
+                  <span class="eyebrow">IMPORT CONTRACT</span>
+                  <h3>导入契约</h3>
+                  <p>Issue 文件至少需要 <code>issue_id</code>；模型结果至少需要 <code>issue_id</code> 与 <code>model_label</code> 或 <code>ra_stuck_auto_result</code>。</p>
+                  <p>模型结果按 SHA-256 创建不可变 Run，不覆盖历史输出，也不会自动切换团队默认 Run。</p>
+                  <div class="actor-summary" id="modelImportActorSummary">创建人将在导入时记录；当前身份尚未读取。</div>
+                </aside>
+                <form class="tool-form" id="importForm">
+                  <div class="segmented" id="importKind">
+                    <label><input type="radio" name="kind" value="issues" checked /> Issue / GT</label>
+                    <label><input type="radio" name="kind" value="model" /> 模型结果</label>
+                  </div>
+                  <label class="file-drop">
+                    <span>选择文件</span>
+                    <input id="importFile" type="file" accept=".json,.csv,.xlsx,.xlsm" required />
+                    <small id="importFileName">未选择文件</small>
+                  </label>
+                  <label id="runNameField" class="hidden">
+                    <span>模型 Run 名（可选）</span>
+                    <input id="runNameInput" placeholder="默认取 experiment.model_name 或文件名" autocomplete="off" />
+                  </label>
+                  <div id="issueImportOptions">
+                    <label>
+                      <span>数据源标记</span>
+                      <input id="issueSourceInput" value="manual_upload" autocomplete="off" />
+                    </label>
+                    <label class="toggle-row compact-toggle">
+                      <input id="replaceGtInput" type="checkbox" />
+                      <span><strong>明确覆盖已有 GT</strong><small>默认保留 0508 baseline 真值</small></span>
+                    </label>
+                  </div>
+                  <div class="dialog-result hidden" id="importResult"></div>
+                  <div class="page-actions">
+                    <button class="button button-primary" type="submit">开始导入</button>
+                  </div>
+                </form>
+              </div>
+            </details>
+            <details class="page-card trail-import-details">
+              <summary>
+                <span>从 Trail 导入模型结果</span>
+                <small>只读 · 仅创建本地 Run · 不改 GT / 默认 Run</small>
+              </summary>
+              <div class="trail-import-body">
+                <p>
+                  检查当前 <strong id="trailScopeCount">1071</strong> 条 baseline 在 Trail view
+                  <strong id="trailViewId">1000</strong> 中的模型字段；不会写 Trail、修改 GT 或改变默认 Run。
+                </p>
+                <div class="trail-sync-state" id="trailSyncState">等待读取当前 Trail 字段状态…</div>
+                <div class="trail-actions">
+                  <button class="button button-quiet" id="checkTrailButton" type="button">检查字段</button>
+                  <button class="button button-primary" id="syncTrailButton" type="button" disabled>创建 Run</button>
+                </div>
+              </div>
+            </details>
           </section>
 
           <section class="app-page tool-page hidden" id="predictionPage" data-page="prediction">
-            <header class="page-heading">
-              <div>
-                <span class="eyebrow">BATCH MODEL INFERENCE</span>
-                <h2>Batch 模型预测</h2>
-                <p>使用开发机上的服务器默认模型批量预测；完成后再显式推送到 AutoTriage。</p>
-              </div>
+            <div class="compact-page-lead">
+              <p>从服务器模型网关选择模型并批量预测；完成后再显式推送到 AutoTriage。</p>
               <button class="button button-quiet" type="button" data-page-target="review">返回判错复核</button>
-            </header>
+            </div>
             <section class="object-semantics">
               <strong>预测与推送分离</strong>
-              <span>创建 Batch 后，后端使用服务器预配置的默认模型执行，不从浏览器接收模型地址、API key 或 Ares 输入。</span>
+              <span>模型列表由后端访问固定网关自动获取；API key 只保存在服务器，不进入浏览器、任务记录或日志。</span>
               <span>预测完成不会自动写入 AutoTriage；请核对结果后，在任务列表中显式点击“推送 AutoTriage”。</span>
             </section>
             <div class="tool-page-grid batch-page-grid">
-              <aside class="page-card page-aside">
-                <span class="eyebrow">SERVER RUNTIME</span>
-                <h3>默认开发机模型</h3>
+              <aside class="page-card page-aside gateway-card">
+                <span class="eyebrow">MODEL GATEWAY</span>
+                <h3>服务器模型网关</h3>
+                <div class="gateway-endpoint">
+                  <span>Models API</span>
+                  <strong id="gatewayModelsEndpoint">正在读取…</strong>
+                  <small>认证方式 · 服务端密钥</small>
+                </div>
+                <label>
+                  <span>模型</span>
+                  <div class="gateway-model-control">
+                    <select id="predictionModelSelect">
+                      <option value="">正在获取可用模型…</option>
+                    </select>
+                    <button class="button button-quiet" id="refreshGatewayModelsButton" type="button" title="刷新模型列表">刷新</button>
+                  </div>
+                </label>
+                <div class="gateway-model-status" id="gatewayModelStatus">正在自动获取模型列表…</div>
                 <div class="batch-runtime-summary" id="batchModelSummary">
                   <strong>正在读取服务器配置…</strong>
-                  <span>模型运行参数由后端统一管理，浏览器不可修改。</span>
+                  <span>Prompt 与 Camera 输入参数继续使用 ra_auto_triage 默认 Experiment。</span>
                 </div>
                 <div class="actor-summary" id="batchActorSummary">当前用户尚未读取。</div>
               </aside>
               <form class="page-card tool-form" id="predictionBatchForm">
+                <div class="batch-source-context hidden" id="predictionSourceSummary"></div>
                 <label>
                   <span>批次名（可选）</span>
                   <input id="predictionBatchName" placeholder="例如 release-20260730-routing-review" maxlength="120" autocomplete="off" />
@@ -275,73 +336,6 @@
               <div class="run-manager-summary" id="batchHistorySummary">正在加载 Batch 任务…</div>
               <div class="job-history-list" id="predictionBatchList"></div>
             </section>
-          </section>
-
-          <section class="app-page tool-page hidden" id="importPage" data-page="import">
-            <header class="page-heading">
-              <div>
-                <span class="eyebrow">DATA INGESTION</span>
-                <h2>导入数据与模型结果</h2>
-                <p>通过明确契约导入 Issue / GT 或创建不可变模型 run。</p>
-              </div>
-              <button class="button button-quiet" type="button" data-page-target="review">返回判错复核</button>
-            </header>
-            <div class="tool-page-grid">
-              <aside class="page-card page-aside">
-                <span class="eyebrow">IMPORT CONTRACT</span>
-                <h3>支持 JSON / CSV / XLSX</h3>
-                <p>Issue 文件至少需要 <code>issue_id</code>；模型结果至少需要 <code>issue_id</code> 与 <code>model_label</code> 或 <code>ra_stuck_auto_result</code>。</p>
-                <p>模型文件按 SHA-256 去重并创建不可变 run，不会覆盖历史输出。</p>
-                <div class="actor-summary" id="modelImportActorSummary">创建人将在导入时记录；当前身份尚未读取。</div>
-              </aside>
-              <form class="page-card tool-form" id="importForm">
-                <div class="segmented" id="importKind">
-                  <label><input type="radio" name="kind" value="issues" checked /> Issue / GT</label>
-                  <label><input type="radio" name="kind" value="model" /> 模型结果</label>
-                </div>
-                <label class="file-drop">
-                  <span>选择文件</span>
-                  <input id="importFile" type="file" accept=".json,.csv,.xlsx,.xlsm" required />
-                  <small id="importFileName">未选择文件</small>
-                </label>
-                <label id="runNameField" class="hidden">
-                  <span>模型 run 名（可选）</span>
-                  <input id="runNameInput" placeholder="默认取 experiment.model_name 或文件名" autocomplete="off" />
-                </label>
-                <div id="issueImportOptions">
-                  <label>
-                    <span>数据源标记</span>
-                    <input id="issueSourceInput" value="manual_upload" autocomplete="off" />
-                  </label>
-                  <label class="toggle-row compact-toggle">
-                    <input id="replaceGtInput" type="checkbox" />
-                    <span><strong>明确覆盖已有 GT</strong><small>默认保留 0508 baseline 真值</small></span>
-                  </label>
-                </div>
-                <div class="dialog-result hidden" id="importResult"></div>
-                <div class="page-actions">
-                  <button class="button button-quiet" type="button" data-page-target="review">取消并返回</button>
-                  <button class="button button-primary" type="submit">开始导入</button>
-                </div>
-              </form>
-            </div>
-            <details class="page-card trail-import-details">
-              <summary>
-                <span>从 Trail 导入模型结果</span>
-                <small>只读 · 仅创建本地 Run · 不改 GT / 默认 Run</small>
-              </summary>
-              <div class="trail-import-body">
-                <p>
-                  检查当前 <strong id="trailScopeCount">1071</strong> 条 baseline 在 Trail view
-                  <strong id="trailViewId">1000</strong> 中的模型字段；不会写 Trail、修改 GT 或改变默认 Run。
-                </p>
-                <div class="trail-sync-state" id="trailSyncState">等待读取当前 Trail 字段状态…</div>
-                <div class="trail-actions">
-                  <button class="button button-quiet" id="checkTrailButton" type="button">检查字段</button>
-                  <button class="button button-primary" id="syncTrailButton" type="button" disabled>创建 Run</button>
-                </div>
-              </div>
-            </details>
           </section>
         </main>
       </div>

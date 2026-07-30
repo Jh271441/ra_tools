@@ -2,15 +2,16 @@
 
 一个独立于 `ra_auto_triage` 的 issue triage / 标注 / 模型结果对比看板。
 
-## 当前 MVP（v1.4）
+## 当前 MVP（v1.5）
 
 - 默认工作集是 `trail_label_baseline_20260729.xlsx` 中 `dataset=0508` 的 **1071 条**；GT 只来自该快照，不因 Trail 查询或模型导入而改变。
 - 首页把媒体作为主内容：默认占位、BEV 图片和未来视频使用同一块大画布；点击后打开 Ares Capture BEV / Camera 统一时序预览，`←/↑` 上一帧、`→/↓` 下一帧，`B/C` 切换 BEV / Camera。顶部比较信息只保留一处紧凑摘要，Review 表单不再重复 GT / 模型预测。
-- 左侧全局工具栏采用 240px / 64px 折叠布局并记住用户选择；判错复核、模型 Runs、Batch 预测和数据导入分别使用 `/review`、`/runs`、`/batch-prediction`、`/import` 独立页面，支持硬刷新和浏览器前进/后退。`/inference` 仅作为旧链接兼容入口。页面按 3 / 2 / 1 栏响应式重排，不依赖固定桌面宽度。
-- Trail 操作分成「检查字段」和「创建 Run」两步，收在数据导入页的默认折叠区；两步都不写回 Trail，快照只创建或复用本地不可变 Run，且不会修改团队默认 Run。启动时若启用 Trail 检查，也只执行第一步。
+- 左侧工具栏宽度随视口缩放，可折叠到 60px；首次访问在不超过 1440px 的窗口自动折叠，用户手动选择后会记住偏好。判错复核、模型 Runs / 导入、Batch 预测分别使用 `/review`、`/runs`、`/batch-prediction` 独立路由，支持硬刷新和浏览器前进/后退。`/import` 会 307 跳转到 `/runs?import=...`，`/inference` 仅作为旧链接兼容入口。Review 使用 container query 按 3 / 2 / 1 栏重排，不依赖物理屏幕分辨率或浏览器 DPR。
+- Trail 操作分成「检查字段」和「创建 Run」两步，收在 Runs 页的默认折叠区；两步都不写回 Trail，快照只创建或复用本地不可变 Run，且不会修改团队默认 Run。启动时若启用 Trail 检查，也只执行第一步。
 - 可导入 issue / GT 与批量模型输出（JSON、CSV、XLSX）；模型文件按 SHA-256 创建不可变 Model Run。Runs 页面只保留模型、人员、批次、覆盖率、错误数与时间，可搜索和切换当前 Review Run。
 - 人工标注为追加式历史，最新一条为当前标注，不覆盖旧 review；「模型为什么判错」是主输入，「模型缺失信息」收进紧凑的结构化多选下拉，并自动汇总为 routing、绕行空间、灯态、双闪、时序等错误聚类。每个 review 版本可粘贴或选择最多 4 张补充截图；场景 Tags 为可选的规范化多选项。
-- 页面可按 Issue ID 列表发起 Batch 预测。worker 在 cloud_server 上解析 `ra_auto_triage` 当前默认 Experiment，浏览器不提交模型名、base URL、API key 或 Ares 输入；成功预测会自动形成 `kind=manual_batch` 的不可变 Model Run，但不会改成团队默认。
+- 首页可把当前单个 Issue 或不超过 50 条的完整筛选结果预填到 Batch 页面；若前端只加载到部分结果或超过上限，会明确阻止而不是静默截断。模型列表由后端读取固定网关 `/v1/models`，再与版本化 RA Profile 取交集；浏览器只提交 `model_id`，默认 `Auto` 会解析并分别记录 requested / resolved model ID。成功预测自动形成 `kind=manual_batch` 的不可变 Model Run，但不会改成团队默认。
+- 网关 API key 只从服务用户持有的 `0600` 普通文件读取，经一次性 stdin 交给预测 worker，读取后立即从请求对象移除；不接受浏览器或父进程环境变量中的 key，也不会把 key 交给 AutoTriage publish worker。模型 Prompt、Camera 帧和 RA event 参数继续来自 `ra_auto_triage` 默认 Experiment，Ares / BEV 强制关闭。
 - Batch 采用两阶段写入：预测阶段只在 dashboard 自己的 `batch_bags/` 缓存中下载/复用 Camera 与 gateway bag，绝不修改 `ra_auto_triage/bags`；同时强制禁用 Ares、禁止 Trail 写和 AutoTriage 写。可信 SSO 用户显式点击「推送 AutoTriage」后，才用 cloud_server 固定服务身份创建生产 Batch、推送成功结果并关联 `records/{batch_id}?tab=results`。重复点击已有 Batch 的任务只返回原链接，不再次建批。
 
 ## 对象生命周期与人员归属
@@ -26,7 +27,7 @@ Issue 列表 ──> Batch Prediction Job ──> 不可变 manual_batch Run
 
 - **Model Run** 是一组模型输出的不可变快照。Review 每次选择一个 Run 与 0508 GT 对比；切换当前 Run 不会修改 GT、人工复核或团队默认 Run。
 - **Trail Run** 也是 Model Run，只是来源为某个 Trail view 的只读字段快照。相同规范化内容复用已有 Run，任意结果变化才创建新 Run。
-- **Batch Prediction Job** 保存一批 Issue 的进度、服务器默认模型指纹、结果、请求人和独立的推送状态。预测成功项自动进入不可变 Run；推理失败和 AutoTriage 写入失败可以分别查看。旧 `inference_jobs` 只为历史兼容保留 GET，旧 POST 返回 `410`。
+- **Batch Prediction Job** 保存一批 Issue 的进度、requested / resolved 模型 ID、目录指纹、结果、请求人和独立推送状态。预测成功项自动进入不可变 Run；推理失败和 AutoTriage 写入失败可以分别查看。旧 `inference_jobs` 只为历史兼容保留 GET，旧 POST 返回 `410`。
 
 页面默认展示团队全部数据，不按当前登录人裁剪；人员字段各自表达不同含义：
 
@@ -48,12 +49,16 @@ Runs 的「人员」统一显示/筛选创建人；旧 Run 没有创建人时回
 - 可变数据：`/volume/home/workspace/ra_triage_dashboard_data`
 - Review 截图：`/volume/home/workspace/ra_triage_dashboard_data/review_attachments`
 - Batch bag 缓存：`/volume/home/workspace/ra_triage_dashboard_data/batch_bags`（可重建、与 RA 仓库隔离）
+- 模型网关密钥：`/volume/home/workspace/ra_triage_dashboard_data/model_gateway_api_key`（服务用户持有的 `0600` 普通文件，不进入代码备份）
+- RA 模型 Profile：`config/model_profiles.json`（版本化兼容白名单，不含凭证）
 - Ares 输入资产：`/volume/home/workspace/ra_auto_triage/bags/ares_capture_bev`（只读）
 - Camera 输入资产：`/volume/home/workspace/ra_auto_triage/bags/camera`（只读）
 - 0508 GT 快照：`/volume/home/workspace/ra_auto_triage/data/trail_label_baseline_20260729.xlsx`（只读）
 - 模型 / Trail 逻辑：`/volume/home/workspace/ra_auto_triage`（代码与原有 bag 只读；Batch 新下载只写 dashboard 独立缓存）
 
-模型 endpoint 与 API key 只存在于 cloud_server 的 `ra_auto_triage` 配置解析结果中，不进入浏览器 HTTP 请求、dashboard SQLite 或公共 API。Batch Run 只保存脱敏后的模型、Prompt、输入策略和配置 SHA-256；上传 JSON / CSV / XLSX 时，metadata、原始行和扩展字段中的 credential / endpoint key 也会在入库前递归脱敏，公共读取再执行一次同样的防护。
+模型 endpoint 是服务端固定配置，API key 只存在于上述受限文件和预测 worker 的一次性 stdin，不进入浏览器 HTTP 请求、dashboard SQLite、argv、子进程环境或公共 API。Batch Run 只保存脱敏后的模型、Prompt、输入策略、目录 SHA-256 和配置 SHA-256；上传 JSON / CSV / XLSX 时，metadata、原始行和扩展字段中的 credential / endpoint key 也会在入库前递归脱敏，公共读取再执行一次同样的防护。
+
+当前网关对外契约是内网 HTTP；2026-07-30 实测 HTTPS 入口的证书已过期，无法在保持证书校验的前提下切换。因此 key 的网络传输目前依赖受控内网边界，仍是已知运营风险。证书续期后应把 catalog / chat URL 一并切换到 HTTPS；代码会继续校验固定 hostname、禁用代理和重定向，不能用关闭证书校验替代修复。
 
 Review 截图绑定到单条追加式 annotation：前端粘贴后先本地预览，保存时才上传；后端在受限后台线程中解码并重新编码为 PNG/JPEG/WebP，去除原始元数据。每次最多 4 张、单张 8 MB、总计 24 MB，单图不超过 4000 万像素；HTTP 请求上限为 26 MB，缺少 `Content-Length` 或固定同源请求标记会在 multipart 解析前拒绝，应用级截图配额为 20 GB，并保留至少 256 MB 磁盘空间。API 只返回附件 ID、尺寸、类型和不含服务器路径的读取 URL。备份 SQLite 时必须同时备份 `review_attachments/`，否则历史记录仍在但图片文件无法恢复。
 
@@ -127,7 +132,9 @@ bash scripts/run_cloud_server.sh
 - `http://172.16.145.60:8785/review`
 - `http://172.16.145.60:8785/runs`
 - `http://172.16.145.60:8785/batch-prediction`
-- `http://172.16.145.60:8785/import?kind=issues`
+- `http://172.16.145.60:8785/runs?import=model`
+
+旧 `/import?kind=issues|model` 仍可访问，但会跳转到对应的 Runs 导入区。
 
 如需收回直接暴露，可把启动参数改为 `--host 127.0.0.1`，再使用 SSH 隧道：
 
@@ -147,6 +154,7 @@ MVP 使用 SQLite（WAL 模式）便于在 cloud_server 快速验证。它适合
 2. `003_identity_attribution.sql`：为 annotations、model_runs 和 inference_jobs 增加身份来源与可信状态，并为复核人、Run 创建人和任务请求人建立索引。
 3. `004_review_attachments.sql`：增加 annotation 级截图元数据；二进制文件仍保存在独立附件目录。
 4. `005_batch_prediction_jobs.sql`：增加 Batch Prediction Job / Item、不可变 Model Run 关联和 AutoTriage 推送审计字段。
+5. `006_batch_model_selection.sql`：为既有 Batch Job 增加 requested / resolved 模型 ID、模型来源和目录指纹。
 
 `003_identity_attribution.sql` 对旧行使用 `legacy` / `verified=false`，不会把历史自由填写姓名升级成可信 SSO。所有人工标注、模型结果、任务记录与附件元数据都保留历史行，因此迁移时是一次数据复制，不需要把旧记录扁平化或覆盖；附件二进制需另行迁移。上述 SQL 仍只是 PostgreSQL 目标 schema 与迁移准备；当前运行 adapter 仍是 SQLite。
 
