@@ -8,9 +8,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from .sanitization import redact_sensitive_fields
+
 
 LABELS = ("误触发", "正确触发", "无需协助")
 REVIEW_STATUSES = ("pending", "reviewed", "needs_gt_review")
+BATCH_JOB_STATUSES = ("queued", "running", "succeeded", "partial", "failed")
+BATCH_PUBLISH_STATUSES = (
+    "not_requested",
+    "running",
+    "succeeded",
+    "partial",
+    "failed",
+)
 
 
 def utc_now() -> str:
@@ -153,6 +163,61 @@ class Database:
                 );
                 CREATE INDEX IF NOT EXISTS idx_jobs_issue_id
                     ON inference_jobs(issue_id, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS batch_prediction_jobs (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL
+                        CHECK(status IN ('queued', 'running', 'succeeded', 'partial', 'failed')),
+                    requested_by TEXT NOT NULL DEFAULT '',
+                    requested_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    requested_by_verified INTEGER NOT NULL DEFAULT 0,
+                    total_count INTEGER NOT NULL DEFAULT 0 CHECK(total_count >= 0),
+                    completed_count INTEGER NOT NULL DEFAULT 0 CHECK(completed_count >= 0),
+                    success_count INTEGER NOT NULL DEFAULT 0 CHECK(success_count >= 0),
+                    failed_count INTEGER NOT NULL DEFAULT 0 CHECK(failed_count >= 0),
+                    model_name TEXT NOT NULL DEFAULT '',
+                    prompt_version TEXT NOT NULL DEFAULT '',
+                    experiment_source TEXT NOT NULL DEFAULT '',
+                    config_sha256 TEXT NOT NULL DEFAULT '',
+                    model_run_id TEXT REFERENCES model_runs(id) ON DELETE SET NULL,
+                    publish_status TEXT NOT NULL DEFAULT 'not_requested'
+                        CHECK(publish_status IN (
+                            'not_requested', 'running', 'succeeded', 'partial', 'failed'
+                        )),
+                    autotriage_batch_id TEXT NOT NULL DEFAULT '',
+                    autotriage_writer TEXT NOT NULL DEFAULT '',
+                    summary_json TEXT NOT NULL DEFAULT '{}',
+                    error_text TEXT NOT NULL DEFAULT '',
+                    log_path TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    started_at TEXT,
+                    finished_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_batch_prediction_jobs_created
+                    ON batch_prediction_jobs(created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_batch_prediction_jobs_requester
+                    ON batch_prediction_jobs(requested_by, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_batch_prediction_jobs_status
+                    ON batch_prediction_jobs(status, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS batch_prediction_items (
+                    job_id TEXT NOT NULL REFERENCES batch_prediction_jobs(id) ON DELETE CASCADE,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE CASCADE,
+                    ordinal INTEGER NOT NULL CHECK(ordinal >= 0),
+                    status TEXT NOT NULL DEFAULT 'queued'
+                        CHECK(status IN ('queued', 'running', 'succeeded', 'failed')),
+                    result_json TEXT NOT NULL DEFAULT '{}',
+                    error_text TEXT NOT NULL DEFAULT '',
+                    autotriage_record_id TEXT NOT NULL DEFAULT '',
+                    started_at TEXT,
+                    finished_at TEXT,
+                    PRIMARY KEY(job_id, issue_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_batch_prediction_items_issue
+                    ON batch_prediction_items(issue_id, job_id);
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_batch_prediction_items_ordinal
+                    ON batch_prediction_items(job_id, ordinal);
                 """
             )
             # Existing MVP databases are upgraded in place.  Each addition is
@@ -196,6 +261,194 @@ class Database:
                 WHERE status IN ('queued', 'running')
                 """,
                 (utc_now(),),
+            )
+            interrupted_at = utc_now()
+            # A hard restart can happen after an immutable manual-batch Run
+            # commits but before the parent job/item linkage is finalized.
+            # Recover that linkage first, then let the normal interruption
+            # handling fail only items which truly have no persisted result.
+            manual_runs = conn.execute(
+                """
+                SELECT id, metadata_json
+                FROM model_runs
+                WHERE kind = 'manual_batch'
+                ORDER BY created_at DESC
+                """
+            ).fetchall()
+            for run_row in manual_runs:
+                metadata = _json_load(run_row["metadata_json"], {})
+                if not isinstance(metadata, dict):
+                    continue
+                batch_job_id = str(
+                    metadata.get("batch_prediction_job_id") or ""
+                ).strip()
+                if not batch_job_id:
+                    continue
+                experiment = metadata.get("experiment")
+                if not isinstance(experiment, dict):
+                    experiment = {}
+                conn.execute(
+                    """
+                    UPDATE batch_prediction_jobs
+                    SET model_run_id = COALESCE(model_run_id, ?),
+                        model_name = CASE WHEN TRIM(model_name) = '' THEN ? ELSE model_name END,
+                        prompt_version = CASE WHEN TRIM(prompt_version) = '' THEN ? ELSE prompt_version END,
+                        experiment_source = CASE
+                            WHEN TRIM(experiment_source) = '' THEN ?
+                            ELSE experiment_source
+                        END,
+                        config_sha256 = CASE
+                            WHEN TRIM(config_sha256) = '' THEN ?
+                            ELSE config_sha256
+                        END
+                    WHERE id = ?
+                    """,
+                    (
+                        str(run_row["id"]),
+                        str(experiment.get("model_name") or ""),
+                        str(experiment.get("prompt_version") or ""),
+                        str(experiment.get("experiment_source") or ""),
+                        str(metadata.get("config_sha256") or ""),
+                        batch_job_id,
+                    ),
+                )
+            recoverable = conn.execute(
+                """
+                SELECT id, model_run_id
+                FROM batch_prediction_jobs
+                WHERE status IN ('queued', 'running')
+                  AND model_run_id IS NOT NULL
+                  AND TRIM(model_run_id) != ''
+                """
+            ).fetchall()
+            for job_row in recoverable:
+                predictions = conn.execute(
+                    """
+                    SELECT issue_id, raw_json
+                    FROM model_predictions
+                    WHERE model_run_id = ?
+                    """,
+                    (job_row["model_run_id"],),
+                ).fetchall()
+                for prediction in predictions:
+                    raw = _json_load(prediction["raw_json"], {})
+                    if not isinstance(raw, dict):
+                        raw = {}
+                    conn.execute(
+                        """
+                        UPDATE batch_prediction_items
+                        SET status = 'succeeded',
+                            result_json = ?,
+                            error_text = '',
+                            started_at = COALESCE(started_at, ?),
+                            finished_at = COALESCE(finished_at, ?)
+                        WHERE job_id = ?
+                          AND issue_id = ?
+                          AND status IN ('queued', 'running')
+                        """,
+                        (
+                            _json(raw),
+                            interrupted_at,
+                            interrupted_at,
+                            job_row["id"],
+                            prediction["issue_id"],
+                        ),
+                    )
+            # Preserve already-completed item results, but make every unfinished
+            # item belonging to an interrupted job terminal.  Updating the
+            # children first lets the parent query still identify queued/running
+            # jobs without introducing a temporary migration marker.
+            conn.execute(
+                """
+                UPDATE batch_prediction_items
+                SET status = 'failed',
+                    finished_at = ?,
+                    error_text = CASE
+                        WHEN TRIM(error_text) = '' THEN
+                            '服务重启前 Batch 预测未完成。'
+                        ELSE error_text
+                    END
+                WHERE status IN ('queued', 'running')
+                  AND EXISTS (
+                      SELECT 1
+                      FROM batch_prediction_jobs bpj
+                      WHERE bpj.id = batch_prediction_items.job_id
+                        AND bpj.status IN ('queued', 'running')
+                  )
+                """,
+                (interrupted_at,),
+            )
+            conn.execute(
+                """
+                UPDATE batch_prediction_jobs
+                SET status = CASE
+                        WHEN EXISTS (
+                            SELECT 1
+                            FROM batch_prediction_items bpi
+                            WHERE bpi.job_id = batch_prediction_jobs.id
+                        )
+                         AND NOT EXISTS (
+                            SELECT 1
+                            FROM batch_prediction_items bpi
+                            WHERE bpi.job_id = batch_prediction_jobs.id
+                              AND bpi.status != 'succeeded'
+                        ) THEN 'succeeded'
+                        WHEN EXISTS (
+                            SELECT 1
+                            FROM batch_prediction_items bpi
+                            WHERE bpi.job_id = batch_prediction_jobs.id
+                              AND bpi.status = 'succeeded'
+                        ) THEN 'partial'
+                        ELSE 'failed'
+                    END,
+                    completed_count = (
+                        SELECT COUNT(*)
+                        FROM batch_prediction_items bpi
+                        WHERE bpi.job_id = batch_prediction_jobs.id
+                          AND bpi.status IN ('succeeded', 'failed')
+                    ),
+                    success_count = (
+                        SELECT COUNT(*)
+                        FROM batch_prediction_items bpi
+                        WHERE bpi.job_id = batch_prediction_jobs.id
+                          AND bpi.status = 'succeeded'
+                    ),
+                    failed_count = (
+                        SELECT COUNT(*)
+                        FROM batch_prediction_items bpi
+                        WHERE bpi.job_id = batch_prediction_jobs.id
+                          AND bpi.status = 'failed'
+                    ),
+                    finished_at = ?,
+                    error_text = CASE
+                        WHEN NOT EXISTS (
+                            SELECT 1
+                            FROM batch_prediction_items bpi
+                            WHERE bpi.job_id = batch_prediction_jobs.id
+                              AND bpi.status != 'succeeded'
+                        ) THEN error_text
+                        WHEN TRIM(error_text) = '' THEN
+                            '服务重启前 Batch 预测未完成；请重新创建任务。'
+                        ELSE error_text
+                    END
+                WHERE status IN ('queued', 'running')
+                """,
+                (interrupted_at,),
+            )
+            conn.execute(
+                """
+                UPDATE batch_prediction_jobs
+                SET publish_status = CASE
+                        WHEN TRIM(autotriage_batch_id) != '' THEN 'partial'
+                        ELSE 'failed'
+                    END,
+                    error_text = CASE
+                        WHEN TRIM(error_text) = '' THEN
+                            '服务重启前 AutoTriage 推送未完成；为避免重复建批，不会自动重试。'
+                        ELSE error_text
+                    END
+                WHERE publish_status = 'running'
+                """
             )
 
     @staticmethod
@@ -327,6 +580,7 @@ class Database:
         created_by_verified: bool = False,
     ) -> tuple[dict[str, Any], bool]:
         now = utc_now()
+        metadata = redact_sensitive_fields(metadata)
         with self._write_lock, self.connect() as conn:
             existing = conn.execute(
                 "SELECT * FROM model_runs WHERE source_sha256 = ?", (source_sha256,)
@@ -391,8 +645,8 @@ class Database:
                         str(row.get("model_label") or ""),
                         str(row.get("model_reason") or ""),
                         row.get("model_confidence"),
-                        _json(row.get("model_extra") or {}),
-                        _json(row.get("raw") or {}),
+                        _json(redact_sensitive_fields(row.get("model_extra") or {})),
+                        _json(redact_sensitive_fields(row.get("raw") or {})),
                         now,
                     ),
                 )
@@ -609,6 +863,25 @@ class Database:
             jobs = conn.execute(
                 "SELECT * FROM inference_jobs WHERE issue_id = ? ORDER BY created_at DESC LIMIT 10", (issue_id,)
             ).fetchall()
+            batch_jobs = conn.execute(
+                """
+                SELECT bpj.*, bpi.status AS item_status,
+                       bpi.job_id AS item_job_id,
+                       bpi.issue_id AS item_issue_id,
+                       bpi.ordinal AS item_ordinal,
+                       bpi.result_json AS item_result_json,
+                       bpi.error_text AS item_error_text,
+                       bpi.autotriage_record_id AS item_autotriage_record_id,
+                       bpi.started_at AS item_started_at,
+                       bpi.finished_at AS item_finished_at
+                FROM batch_prediction_items bpi
+                JOIN batch_prediction_jobs bpj ON bpj.id = bpi.job_id
+                WHERE bpi.issue_id = ?
+                ORDER BY bpj.created_at DESC
+                LIMIT 10
+                """,
+                (issue_id,),
+            ).fetchall()
             attachments = conn.execute(
                 """
                 SELECT ra.*
@@ -631,6 +904,7 @@ class Database:
         data["annotations"] = annotation_items
         data["predictions"] = [self._prediction_dict(row) for row in predictions]
         data["jobs"] = [self._job_dict(row) for row in jobs]
+        data["batch_jobs"] = [self._case_batch_job_dict(row) for row in batch_jobs]
         return data
 
     def create_annotation(
@@ -902,6 +1176,338 @@ class Database:
             ],
         }
 
+    def create_batch_prediction_job(
+        self,
+        *,
+        name: str,
+        issue_ids: list[str],
+        requested_by: str,
+        requested_by_source: str = "legacy",
+        requested_by_verified: bool = False,
+    ) -> dict[str, Any]:
+        normalized_issue_ids = [str(issue_id).strip() for issue_id in issue_ids]
+        if not normalized_issue_ids or any(not issue_id for issue_id in normalized_issue_ids):
+            raise ValueError("Batch 任务至少需要一个有效 issue_id。")
+        if len(set(normalized_issue_ids)) != len(normalized_issue_ids):
+            raise ValueError("Batch 任务中的 issue_id 不能重复。")
+
+        job_id = str(uuid.uuid4())
+        now = utc_now()
+        with self._write_lock, self.connect() as conn:
+            known_issue_ids: set[str] = set()
+            for offset in range(0, len(normalized_issue_ids), 500):
+                chunk = normalized_issue_ids[offset : offset + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                known_issue_ids.update(
+                    str(row["issue_id"])
+                    for row in conn.execute(
+                        f"SELECT issue_id FROM issues WHERE issue_id IN ({placeholders})",
+                        chunk,
+                    ).fetchall()
+                )
+            missing_issue_ids = [
+                issue_id
+                for issue_id in normalized_issue_ids
+                if issue_id not in known_issue_ids
+            ]
+            if missing_issue_ids:
+                preview = ", ".join(missing_issue_ids[:5])
+                suffix = (
+                    f" 等 {len(missing_issue_ids)} 个"
+                    if len(missing_issue_ids) > 5
+                    else ""
+                )
+                raise ValueError(f"Batch 任务包含未导入的 Issue：{preview}{suffix}")
+
+            conn.execute(
+                """
+                INSERT INTO batch_prediction_jobs (
+                    id, name, status, requested_by, requested_by_source,
+                    requested_by_verified, total_count, created_at
+                ) VALUES (?, ?, 'queued', ?, ?, ?, ?, ?)
+                """,
+                (
+                    job_id,
+                    name.strip() or f"Batch {now[:16].replace('T', ' ')} UTC",
+                    requested_by.strip(),
+                    requested_by_source.strip() or "legacy",
+                    int(requested_by_verified),
+                    len(normalized_issue_ids),
+                    now,
+                ),
+            )
+            conn.executemany(
+                """
+                INSERT INTO batch_prediction_items (
+                    job_id, issue_id, ordinal, status
+                ) VALUES (?, ?, ?, 'queued')
+                """,
+                [
+                    (job_id, issue_id, ordinal)
+                    for ordinal, issue_id in enumerate(normalized_issue_ids)
+                ],
+            )
+        result = self.get_batch_prediction_job(job_id)
+        if result is None:
+            raise RuntimeError("Batch 任务创建后无法读取。")
+        return result
+
+    def update_batch_prediction_job(
+        self,
+        job_id: str,
+        *,
+        status: str | None = None,
+        completed_count: int | None = None,
+        success_count: int | None = None,
+        failed_count: int | None = None,
+        model_name: str | None = None,
+        prompt_version: str | None = None,
+        experiment_source: str | None = None,
+        config_sha256: str | None = None,
+        model_run_id: str | None = None,
+        publish_status: str | None = None,
+        autotriage_batch_id: str | None = None,
+        autotriage_writer: str | None = None,
+        summary: dict[str, Any] | None = None,
+        error_text: str | None = None,
+        log_path: str | None = None,
+    ) -> dict[str, Any] | None:
+        values: dict[str, Any] = {}
+        if status is not None:
+            if status not in BATCH_JOB_STATUSES:
+                raise ValueError(f"Batch 任务状态非法：{status}")
+            values["status"] = status
+            if status == "running":
+                values["started_at"] = utc_now()
+            if status in {"succeeded", "partial", "failed"}:
+                values["finished_at"] = utc_now()
+        if publish_status is not None and publish_status not in BATCH_PUBLISH_STATUSES:
+            raise ValueError(f"Batch 推送状态非法：{publish_status}")
+        for count_name, count_value in (
+            ("completed_count", completed_count),
+            ("success_count", success_count),
+            ("failed_count", failed_count),
+        ):
+            if count_value is not None and int(count_value) < 0:
+                raise ValueError(f"{count_name} 不能为负数。")
+        for key, value in (
+            (
+                "completed_count",
+                int(completed_count) if completed_count is not None else None,
+            ),
+            ("success_count", int(success_count) if success_count is not None else None),
+            ("failed_count", int(failed_count) if failed_count is not None else None),
+            ("model_name", model_name),
+            ("prompt_version", prompt_version),
+            ("experiment_source", experiment_source),
+            ("config_sha256", config_sha256),
+            ("model_run_id", model_run_id),
+            ("publish_status", publish_status),
+            ("autotriage_batch_id", autotriage_batch_id),
+            ("autotriage_writer", autotriage_writer),
+            ("error_text", error_text),
+            ("log_path", log_path),
+        ):
+            if value is not None:
+                values[key] = value
+        if summary is not None:
+            values["summary_json"] = _json(summary)
+        if not values:
+            return self.get_batch_prediction_job(job_id)
+        assignments = ", ".join(f"{key} = ?" for key in values)
+        with self._write_lock, self.connect() as conn:
+            conn.execute(
+                f"UPDATE batch_prediction_jobs SET {assignments} WHERE id = ?",
+                (*values.values(), job_id),
+            )
+        return self.get_batch_prediction_job(job_id)
+
+    @staticmethod
+    def _refresh_batch_prediction_counts(
+        conn: sqlite3.Connection,
+        job_id: str,
+    ) -> None:
+        conn.execute(
+            """
+            UPDATE batch_prediction_jobs
+            SET completed_count = (
+                    SELECT COUNT(*)
+                    FROM batch_prediction_items bpi
+                    WHERE bpi.job_id = batch_prediction_jobs.id
+                      AND bpi.status IN ('succeeded', 'failed')
+                ),
+                success_count = (
+                    SELECT COUNT(*)
+                    FROM batch_prediction_items bpi
+                    WHERE bpi.job_id = batch_prediction_jobs.id
+                      AND bpi.status = 'succeeded'
+                ),
+                failed_count = (
+                    SELECT COUNT(*)
+                    FROM batch_prediction_items bpi
+                    WHERE bpi.job_id = batch_prediction_jobs.id
+                      AND bpi.status = 'failed'
+                )
+            WHERE id = ?
+            """,
+            (job_id,),
+        )
+
+    def update_batch_prediction_items(
+        self,
+        job_id: str,
+        results: list[dict[str, Any]],
+    ) -> int:
+        issue_ids = [str(result.get("issue_id") or "").strip() for result in results]
+        if any(not issue_id for issue_id in issue_ids):
+            raise ValueError("Batch 结果缺少 issue_id。")
+        if len(set(issue_ids)) != len(issue_ids):
+            raise ValueError("同一次 Batch 结果更新不能包含重复 issue_id。")
+
+        finished_at = utc_now()
+        updated = 0
+        with self._write_lock, self.connect() as conn:
+            for result in results:
+                issue_id = str(result.get("issue_id") or "").strip()
+                success = bool(result.get("success"))
+                cursor = conn.execute(
+                    """
+                    UPDATE batch_prediction_items
+                    SET status = ?,
+                        result_json = ?,
+                        error_text = ?,
+                        started_at = COALESCE(started_at, ?),
+                        finished_at = ?
+                    WHERE job_id = ? AND issue_id = ?
+                    """,
+                    (
+                        "succeeded" if success else "failed",
+                        _json(result),
+                        str(result.get("error") or ""),
+                        finished_at,
+                        finished_at,
+                        job_id,
+                        issue_id,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    raise ValueError(
+                        f"Batch 任务 {job_id} 不包含 issue_id={issue_id}。"
+                    )
+                updated += 1
+            self._refresh_batch_prediction_counts(conn, job_id)
+        return updated
+
+    def update_batch_prediction_records(
+        self,
+        job_id: str,
+        records: list[dict[str, Any]],
+    ) -> int:
+        updated = 0
+        with self._write_lock, self.connect() as conn:
+            for record in records:
+                issue_id = str(record.get("issue_id") or "").strip()
+                record_id = str(
+                    record.get("record_id") or record.get("id") or ""
+                ).strip()
+                if not issue_id or not record_id:
+                    continue
+                cursor = conn.execute(
+                    """
+                    UPDATE batch_prediction_items
+                    SET autotriage_record_id = ?
+                    WHERE job_id = ? AND issue_id = ?
+                    """,
+                    (record_id, job_id, issue_id),
+                )
+                if cursor.rowcount != 1:
+                    raise ValueError(
+                        f"Batch 任务 {job_id} 不包含 issue_id={issue_id}。"
+                    )
+                updated += 1
+        return updated
+
+    def get_batch_prediction_job(self, job_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM batch_prediction_jobs WHERE id = ?", (job_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            items = conn.execute(
+                """
+                SELECT * FROM batch_prediction_items
+                WHERE job_id = ?
+                ORDER BY ordinal ASC
+                """,
+                (job_id,),
+            ).fetchall()
+        result = self._batch_job_dict(row)
+        result["items"] = [self._batch_item_dict(item) for item in items]
+        return result
+
+    def list_batch_prediction_jobs(
+        self,
+        *,
+        requested_by: str = "",
+        status: str = "",
+        page_size: int = 100,
+    ) -> dict[str, Any]:
+        page_size = min(max(1, page_size), 200)
+        where: list[str] = []
+        params: list[Any] = []
+        if requested_by.strip():
+            where.append("requested_by = ?")
+            params.append(requested_by.strip())
+        if status in BATCH_JOB_STATUSES:
+            where.append("status = ?")
+            params.append(status)
+        condition = f"WHERE {' AND '.join(where)}" if where else ""
+        with self.connect() as conn:
+            total = conn.execute(
+                f"SELECT COUNT(*) FROM batch_prediction_jobs {condition}", params
+            ).fetchone()[0]
+            rows = conn.execute(
+                f"""
+                SELECT * FROM batch_prediction_jobs
+                {condition}
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (*params, page_size),
+            ).fetchall()
+            requester_rows = conn.execute(
+                """
+                SELECT requested_by,
+                       SUM(CASE WHEN requested_by_verified = 1 THEN 1 ELSE 0 END)
+                           AS verified_count,
+                       SUM(CASE WHEN requested_by_verified = 1 THEN 0 ELSE 1 END)
+                           AS unverified_count,
+                       COUNT(*) AS job_count
+                FROM batch_prediction_jobs
+                WHERE TRIM(requested_by) != ''
+                GROUP BY requested_by
+                ORDER BY job_count DESC, requested_by ASC
+                """
+            ).fetchall()
+        return {
+            # List responses intentionally contain summaries only.  Item
+            # results can be large and belong to the per-job detail endpoint.
+            "items": [self._batch_job_dict(row) for row in rows],
+            "total": int(total),
+            "requesters": [
+                {
+                    "name": str(row["requested_by"]),
+                    "verified": bool(row["verified_count"])
+                    and not bool(row["unverified_count"]),
+                    "verified_count": int(row["verified_count"] or 0),
+                    "unverified_count": int(row["unverified_count"] or 0),
+                    "job_count": int(row["job_count"] or 0),
+                }
+                for row in requester_rows
+            ],
+        }
+
     def overview(self, *, baseline_scope: str, model_run_id: str = "") -> dict[str, Any]:
         base_where = "WHERE i.baseline_scope = ?"
         with self.connect() as conn:
@@ -938,6 +1544,9 @@ class Database:
                 ).fetchone()[0]
             running = conn.execute(
                 "SELECT COUNT(*) FROM inference_jobs WHERE status IN ('queued', 'running')"
+            ).fetchone()[0]
+            running += conn.execute(
+                "SELECT COUNT(*) FROM batch_prediction_jobs WHERE status IN ('queued', 'running')"
             ).fetchone()[0]
         return {
             "issues": int(total),
@@ -1046,13 +1655,15 @@ class Database:
             "model_label": row["model_label"],
             "model_reason": row["model_reason"],
             "model_confidence": row["model_confidence"],
-            "model_extra": _json_load(row["model_extra_json"], {}),
+            "model_extra": redact_sensitive_fields(
+                _json_load(row["model_extra_json"], {})
+            ),
             "created_at": row["created_at"],
         }
 
     @staticmethod
     def _run_dict(row: sqlite3.Row) -> dict[str, Any]:
-        metadata = _json_load(row["metadata_json"], {})
+        metadata = redact_sensitive_fields(_json_load(row["metadata_json"], {}))
         experiment = metadata.get("experiment") if isinstance(metadata, dict) else {}
         if not isinstance(experiment, dict):
             experiment = {}
@@ -1097,13 +1708,73 @@ class Database:
             if "requested_by_verified" in row.keys()
             else False,
             "model_name": row["model_name"],
-            "config": _json_load(row["config_json"], {}),
-            "result": _json_load(row["result_json"], {}),
+            "config": redact_sensitive_fields(_json_load(row["config_json"], {})),
+            "result": redact_sensitive_fields(_json_load(row["result_json"], {})),
             "error_text": row["error_text"],
             "created_at": row["created_at"],
             "started_at": row["started_at"],
             "finished_at": row["finished_at"],
         }
+
+    @staticmethod
+    def _batch_job_dict(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "status": row["status"],
+            "requested_by": row["requested_by"],
+            "requested_by_source": row["requested_by_source"],
+            "requested_by_verified": bool(row["requested_by_verified"]),
+            "total_count": int(row["total_count"] or 0),
+            "completed_count": int(row["completed_count"] or 0),
+            "success_count": int(row["success_count"] or 0),
+            "failed_count": int(row["failed_count"] or 0),
+            "model_name": row["model_name"],
+            "prompt_version": row["prompt_version"],
+            "experiment_source": row["experiment_source"],
+            "config_sha256": row["config_sha256"],
+            "model_run_id": row["model_run_id"] or "",
+            "publish_status": row["publish_status"],
+            "autotriage_batch_id": row["autotriage_batch_id"],
+            "autotriage_writer": row["autotriage_writer"],
+            "summary": redact_sensitive_fields(_json_load(row["summary_json"], {})),
+            "error_text": row["error_text"],
+            "created_at": row["created_at"],
+            "started_at": row["started_at"],
+            "finished_at": row["finished_at"],
+        }
+
+    @staticmethod
+    def _batch_item_dict(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "job_id": row["job_id"],
+            "issue_id": row["issue_id"],
+            "ordinal": int(row["ordinal"]),
+            "status": row["status"],
+            "result": redact_sensitive_fields(_json_load(row["result_json"], {})),
+            "error_text": row["error_text"],
+            "autotriage_record_id": row["autotriage_record_id"],
+            "started_at": row["started_at"],
+            "finished_at": row["finished_at"],
+        }
+
+    @classmethod
+    def _case_batch_job_dict(cls, row: sqlite3.Row) -> dict[str, Any]:
+        result = cls._batch_job_dict(row)
+        result["item"] = {
+            "job_id": row["item_job_id"],
+            "issue_id": row["item_issue_id"],
+            "ordinal": int(row["item_ordinal"]),
+            "status": row["item_status"],
+            "result": redact_sensitive_fields(
+                _json_load(row["item_result_json"], {})
+            ),
+            "error_text": row["item_error_text"],
+            "autotriage_record_id": row["item_autotriage_record_id"],
+            "started_at": row["item_started_at"],
+            "finished_at": row["item_finished_at"],
+        }
+        return result
 
     @staticmethod
     def _attachment_dict(row: sqlite3.Row) -> dict[str, Any]:

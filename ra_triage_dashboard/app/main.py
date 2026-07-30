@@ -4,7 +4,6 @@ import asyncio
 import csv
 import hashlib
 import io
-import ipaddress
 import json
 import math
 import re
@@ -14,7 +13,7 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote
 
 import openpyxl
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -25,8 +24,9 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from .assets import AssetIndex, CameraIndex
 from .auth import normalise_username, request_identity
 from .baseline import load_label_baseline
+from .batch_prediction_runner import BatchPredictionRunner
 from .db import LABELS, REVIEW_STATUSES, Database
-from .runner import InferenceRunner
+from .sanitization import redact_sensitive_fields
 from .settings import Settings
 from .trail_sync import TRAIL_INFO_FIELD, TRAIL_RESULT_FIELD, read_trail_model_fields
 
@@ -38,7 +38,7 @@ asset_index = AssetIndex(
     manifest_path=settings.ares_manifest,
 )
 camera_index = CameraIndex(settings.camera_root)
-inference_runner = InferenceRunner(settings, database)
+batch_prediction_runner = BatchPredictionRunner(settings, database)
 trail_sync_lock = threading.Lock()
 review_image_semaphore = asyncio.Semaphore(2)
 
@@ -123,7 +123,7 @@ EXAMPLE_CASES: tuple[dict[str, str], ...] = (
         "scenario": "红绿灯周期性等待",
         "summary": "多个路口红灯持续亮起，有停止线；前方摩自停在停止线后方，自车同步等待。",
         "review_note": "当前模型说明为“正确判断为等灯”；用于核验等灯识别与标注流程。",
-        "trail_url": "http://auto-triage.intra.xiaojukeji.com/ra/model_triage/records/757?tab=results",
+        "trail_url": "https://voyager.intra.xiaojukeji.com/static/management/#/issue/cn32171803?view_id=2410",
     },
     {
         "issue_id": "cn31954847",
@@ -131,7 +131,7 @@ EXAMPLE_CASES: tuple[dict[str, str], ...] = (
         "scenario": "红绿灯周期性等待",
         "summary": "红灯、停止线/斑马线明确；白色厢式货车停在停止线后，红灯转绿后车流通行。",
         "review_note": "当前模型说明为“正确判断排队等灯”；可用于检验大车遮挡下的等灯识别。",
-        "trail_url": "http://auto-triage.intra.xiaojukeji.com/ra/model_triage/records/759?tab=results",
+        "trail_url": "https://voyager.intra.xiaojukeji.com/static/management/#/issue/cn31954847?view_id=2410",
     },
     {
         "issue_id": "cn32000543",
@@ -139,7 +139,7 @@ EXAMPLE_CASES: tuple[dict[str, str], ...] = (
         "scenario": "绕行/异常停车",
         "summary": "模型判为排队，未覆盖 RA 协助下绕行通行；案例关注双闪特征。",
         "review_note": "问题假设：双闪缺失导致“排队”FP。请重点标注异常车辆与可绕行性。",
-        "trail_url": "http://auto-triage.intra.xiaojukeji.com/ra/model_triage/records/761?tab=results",
+        "trail_url": "https://voyager.intra.xiaojukeji.com/static/management/#/issue/cn32000543?view_id=2410",
     },
     {
         "issue_id": "cn32044177",
@@ -147,7 +147,7 @@ EXAMPLE_CASES: tuple[dict[str, str], ...] = (
         "scenario": "routing 方向 / 绕行空间",
         "summary": "模型判为等灯，但未判断 routing 方向和可绕行空间。",
         "review_note": "问题假设：routing 方向缺失导致“等灯”FP。",
-        "trail_url": "http://auto-triage.intra.xiaojukeji.com/ra/model_triage/records/760?tab=results",
+        "trail_url": "https://voyager.intra.xiaojukeji.com/static/management/#/issue/cn32044177?view_id=2410",
     },
     {
         "issue_id": "cn32000563",
@@ -155,7 +155,7 @@ EXAMPLE_CASES: tuple[dict[str, str], ...] = (
         "scenario": "routing 方向 / 右侧通行空间",
         "summary": "模型判为排队，未识别右侧可右转通行空间；SWAG 右变道后又左加塞回原车道，需复核。",
         "review_note": "问题假设：routing 方向缺失导致“排队”FP；需再 review SWAG 操作链。",
-        "trail_url": "http://auto-triage.intra.xiaojukeji.com/ra/model_triage/records/764?tab=results",
+        "trail_url": "https://voyager.intra.xiaojukeji.com/static/management/#/issue/cn32000563?view_id=2410",
     },
     {
         "issue_id": "cn31983487",
@@ -163,7 +163,7 @@ EXAMPLE_CASES: tuple[dict[str, str], ...] = (
         "scenario": "routing 方向 / 无绕行空间",
         "summary": "模型判为等灯，但没有判断 routing 方向。",
         "review_note": "问题假设：routing 方向缺失导致“等灯”FP。",
-        "trail_url": "http://auto-triage.intra.xiaojukeji.com/ra/model_triage/records/765?tab=results",
+        "trail_url": "https://voyager.intra.xiaojukeji.com/static/management/#/issue/cn31983487?view_id=2410",
     },
 )
 
@@ -183,6 +183,40 @@ def _as_text(value: Any) -> str:
     if isinstance(value, float) and math.isnan(value):
         return ""
     return str(value).strip()
+
+
+def _voyager_issue_url(issue_id: str) -> str:
+    return (
+        f"{settings.voyager_issue_base_url.rstrip('/')}/"
+        f"{quote(issue_id, safe='')}?view_id={settings.voyager_issue_view_id}"
+    )
+
+
+def _autotriage_record_url(batch_id: str) -> str:
+    if not batch_id:
+        return ""
+    return (
+        f"{settings.auto_triage_record_base_url.rstrip('/')}/"
+        f"{quote(batch_id, safe='')}?tab=results"
+    )
+
+
+def _public_batch_job(job: dict[str, Any]) -> dict[str, Any]:
+    public = dict(job)
+    public["record_url"] = _autotriage_record_url(
+        _as_text(job.get("autotriage_batch_id"))
+    )
+    if "items" in job:
+        public["items"] = [
+            {
+                **item,
+                "voyager_issue_url": _voyager_issue_url(
+                    _as_text(item.get("issue_id"))
+                ),
+            }
+            for item in job.get("items", [])
+        ]
+    return public
 
 
 def _action_actor(request: Request, submitted_name: Any = "") -> tuple[str, str, bool]:
@@ -361,7 +395,7 @@ def normalize_issue_row(row: dict[str, Any], source: str) -> dict[str, Any] | No
         "trail_url": _as_text(_value(row, "trail_url", "url", "链接")),
         "gt_label": gt_label,
         "gt_source": source if gt_label else "",
-        "extra": row,
+        "extra": redact_sensitive_fields(row),
     }
 
 
@@ -382,7 +416,9 @@ def parse_source_bytes(filename: str, content: bytes) -> tuple[list[dict[str, An
             raise ValueError("JSON 顶层必须是对象或数组。")
         if not isinstance(rows, list):
             raise ValueError("JSON 的 results/data/rows 必须是数组。")
-        return [row for row in rows if isinstance(row, dict)], metadata
+        return [
+            row for row in rows if isinstance(row, dict)
+        ], redact_sensitive_fields(metadata)
 
     if suffix == ".csv":
         text = ""
@@ -420,26 +456,6 @@ def parse_source_bytes(filename: str, content: bytes) -> tuple[list[dict[str, An
         return rows, {"sheet": sheet.title}
 
     raise ValueError("仅支持 .json、.csv、.xlsx 或 .xlsm。")
-
-
-def valid_model_url(value: str) -> bool:
-    parsed = urlparse(value)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        return False
-    if parsed.username or parsed.password:
-        return False
-    host = parsed.hostname.lower().rstrip(".")
-    if host in {"localhost", "127.0.0.1", "::1"}:
-        return True
-    if host in settings.allowed_model_hosts:
-        return True
-    if host.endswith(".intra.xiaojukeji.com"):
-        return True
-    try:
-        address = ipaddress.ip_address(host)
-        return address.is_private or address.is_loopback or address.is_link_local
-    except ValueError:
-        return False
 
 
 def _normalise_review_image(content: bytes) -> tuple[bytes, str, str, int, int]:
@@ -867,12 +883,15 @@ async def lifespan(_: FastAPI):
             identity_verified=False,
             trigger="startup",
         )
-    yield
+    try:
+        yield
+    finally:
+        await asyncio.to_thread(batch_prediction_runner.shutdown)
 
 
 app = FastAPI(
     title="RA Triage Workbench",
-    version="1.3.0",
+    version="1.4.0",
     lifespan=lifespan,
 )
 
@@ -917,6 +936,7 @@ app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 @app.get("/review", include_in_schema=False)
 @app.get("/runs", include_in_schema=False)
 @app.get("/inference", include_in_schema=False)
+@app.get("/batch-prediction", include_in_schema=False)
 @app.get("/import", include_in_schema=False)
 async def index() -> FileResponse:
     return FileResponse(settings.static_dir / "index.html")
@@ -933,6 +953,8 @@ async def health() -> dict[str, Any]:
         "baseline": runtime_state["baseline"],
         "trail_sync": runtime_state["trail_sync"],
         "trail_write_enabled": False,
+        "batch_prediction_enabled": settings.batch_prediction_enabled,
+        "autotriage_push_enabled": settings.autotriage_push_enabled,
         "storage": "sqlite-mvp",
     }
 
@@ -958,6 +980,14 @@ async def dashboard_config() -> dict[str, Any]:
             "media_types": ["image/png", "image/jpeg", "image/webp"],
         },
         "default_failure_only": bool(database.default_model_run_id()),
+        "batch_prediction": {
+            "enabled": settings.batch_prediction_enabled,
+            "autotriage_push_enabled": settings.autotriage_push_enabled,
+            "max_issues": settings.batch_max_issues,
+            "input_policy": "server_default_model",
+            "ares_bev_input": False,
+            "trail_write_enabled": False,
+        },
     }
 
 
@@ -987,8 +1017,11 @@ async def status() -> dict[str, Any]:
         "camera_cache_root_available": settings.camera_root.is_dir(),
         "baseline": runtime_state["baseline"],
         "trail_sync": runtime_state["trail_sync"],
+        "batch_prediction_enabled": settings.batch_prediction_enabled,
+        "autotriage_push_enabled": settings.autotriage_push_enabled,
+        "batch_max_issues": settings.batch_max_issues,
         "storage": "SQLite MVP / PostgreSQL migration prepared",
-        "allowed_model_endpoint_policy": "内网 IP、localhost、*.intra.xiaojukeji.com 或显式白名单",
+        "model_endpoint_policy": "仅使用 cloud_server ra_auto_triage 默认配置；浏览器不可覆盖",
     }
 
 
@@ -1004,7 +1037,7 @@ async def list_cases(
     page: int = 1,
     page_size: int = 100,
 ) -> dict[str, Any]:
-    return database.list_cases(
+    result = database.list_cases(
         baseline_scope=settings.baseline_scope,
         search=search,
         gt_label=gt_label,
@@ -1016,6 +1049,11 @@ async def list_cases(
         page=page,
         page_size=page_size,
     )
+    result["items"] = [
+        {**item, "voyager_issue_url": _voyager_issue_url(item["issue_id"])}
+        for item in result.get("items", [])
+    ]
+    return result
 
 
 @app.get("/api/reviewers")
@@ -1037,6 +1075,10 @@ async def get_case(issue_id: str) -> dict[str, Any]:
     case["camera"] = camera_index.get_assets(
         issue_id, (case["assets"].get("capture") or {}).get("timestamp_ms")
     )
+    case["voyager_issue_url"] = _voyager_issue_url(issue_id)
+    case["batch_jobs"] = [
+        _public_batch_job(job) for job in case.get("batch_jobs", [])
+    ]
     return case
 
 
@@ -1231,9 +1273,6 @@ async def _read_upload(upload: UploadFile) -> tuple[bytes, str, str]:
     if len(content) > MAX_UPLOAD_BYTES:
         raise _detail(413, "上传文件超过 64 MB 限制。")
     source_hash = hashlib.sha256(content).hexdigest()
-    target = settings.uploads_dir / f"{source_hash[:12]}_{filename}"
-    if not target.exists():
-        target.write_bytes(content)
     return content, filename, source_hash
 
 
@@ -1306,73 +1345,223 @@ async def import_model_results(
     }
 
 
-@app.post("/api/inference/jobs")
-async def create_inference_job(request: Request) -> dict[str, Any]:
+@app.get("/api/prediction-batches/config")
+async def batch_prediction_config() -> dict[str, Any]:
+    latest = database.list_batch_prediction_jobs(page_size=1).get("items", [])
+    latest_job = latest[0] if latest else {}
+    return {
+        "enabled": settings.batch_prediction_enabled,
+        "autotriage_push_enabled": settings.autotriage_push_enabled,
+        "max_issues": settings.batch_max_issues,
+        "model": {
+            "source": "cloud_server ra_auto_triage 默认 Experiment",
+            "name": _as_text(latest_job.get("model_name"))
+            or "任务启动时解析服务器默认模型",
+            "prompt_version": _as_text(latest_job.get("prompt_version"))
+            or "任务启动时解析服务器默认 Prompt",
+        },
+        "input_policy": {
+            "issue_source": "Voyager Issue + dashboard isolated bag cache",
+            "ares_bev_input": False,
+            "browser_model_credentials": False,
+            "bag_cache_read_only": False,
+            "bag_cache_scope": "dashboard_isolated",
+            "trail_write_enabled": False,
+        },
+        "publish_policy": {
+            "explicit_confirmation": True,
+            "destination": settings.auto_triage_record_base_url,
+            "writer": "cloud_server 固定服务身份",
+            "requester_is_writer": False,
+        },
+    }
+
+
+@app.post("/api/prediction-batches", status_code=202)
+async def create_batch_prediction(request: Request) -> dict[str, Any]:
+    if not settings.batch_prediction_enabled:
+        raise _detail(503, "当前部署未启用 Batch 预测。")
     try:
         body = await request.json()
     except (TypeError, ValueError):
-        raise _detail(400, "推理请求必须是 JSON。")
-    issue_id = _as_text(body.get("issue_id"))
-    if not ISSUE_ID_RE.fullmatch(issue_id) or database.get_case(issue_id) is None:
-        raise _detail(404, "Issue 不存在或格式非法。")
-
-    dry_run = bool(body.get("dry_run"))
-    base_url = _as_text(body.get("base_url"))
-    api_key = _as_text(body.get("api_key"))
-    model_name = _as_text(body.get("model_name"))
-    if not dry_run:
-        if not valid_model_url(base_url):
-            raise _detail(400, "模型 base URL 不在允许范围，或 URL 格式非法。")
-        if not model_name or len(model_name) > 256:
-            raise _detail(400, "模型名称为空或过长。")
-        if not api_key or len(api_key) > 4096:
-            raise _detail(400, "API key 为空或过长。")
-
-    prompt_version = _as_text(body.get("prompt_version") or "stuck_triage_v1")
-    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", prompt_version):
-        raise _detail(400, "prompt_version 格式非法。")
-    max_tokens = body.get("max_tokens", 512)
-    try:
-        max_tokens = int(max_tokens)
-    except (TypeError, ValueError):
-        raise _detail(400, "max_tokens 必须是整数。")
-    if not 32 <= max_tokens <= 4096:
-        raise _detail(400, "max_tokens 需在 32 到 4096 之间。")
-
-    safe_request = {
-        "issue_id": issue_id,
-        "base_url": base_url,
-        "model_name": model_name,
-        "provider": _as_text(body.get("provider")),
-        "prompt_version": prompt_version,
-        "max_tokens": max_tokens,
-        "temperature": body.get("temperature", 0.6),
-        "use_bev_animation": bool(body.get("use_bev_animation", True)),
-        "use_ra_options": bool(body.get("use_ra_options", True)),
-        "dry_run": dry_run,
-    }
+        raise _detail(400, "Batch 请求必须是 JSON。")
+    if not isinstance(body, dict):
+        raise _detail(400, "Batch 请求必须是 JSON 对象。")
+    raw_issue_ids = body.get("issue_ids")
+    if not isinstance(raw_issue_ids, list):
+        raise _detail(400, "issue_ids 必须是数组。")
+    issue_ids: list[str] = []
+    seen: set[str] = set()
+    for value in raw_issue_ids:
+        issue_id = _as_text(value)
+        if not ISSUE_ID_RE.fullmatch(issue_id):
+            raise _detail(400, f"Issue ID 格式非法: {issue_id or '<空>'}")
+        if issue_id not in seen:
+            seen.add(issue_id)
+            issue_ids.append(issue_id)
+    if not issue_ids:
+        raise _detail(400, "至少需要一个 Issue ID。")
+    if len(issue_ids) > settings.batch_max_issues:
+        raise _detail(
+            400,
+            f"单批最多 {settings.batch_max_issues} 个 Issue；当前 {len(issue_ids)} 个。",
+        )
+    missing = [
+        issue_id
+        for issue_id in issue_ids
+        if database.get_case(issue_id) is None
+    ]
+    if missing:
+        preview = "、".join(missing[:8])
+        suffix = "…" if len(missing) > 8 else ""
+        raise _detail(
+            404,
+            f"以下 Issue 不在当前 Workbench 数据集中: {preview}{suffix}",
+        )
+    name = _as_text(body.get("name"))
+    if len(name) > 120:
+        raise _detail(400, "Batch 名称不能超过 120 个字符。")
     actor, actor_source, actor_verified = _action_actor(
         request, body.get("requested_by")
     )
-    job = database.create_job(
-        issue_id=issue_id,
+    job = database.create_batch_prediction_job(
+        name=name,
+        issue_ids=issue_ids,
         requested_by=actor,
-        model_name=model_name or "preflight",
-        base_url=base_url,
-        config={key: value for key, value in safe_request.items() if key != "base_url"},
         requested_by_source=actor_source,
         requested_by_verified=actor_verified,
     )
-    inference_runner.launch(job, {**safe_request, "api_key": api_key})
+    if not batch_prediction_runner.launch_prediction(job):
+        error = "已有 Batch 预测或 AutoTriage 推送正在执行，请稍后重试。"
+        database.update_batch_prediction_items(
+            job["id"],
+            [
+                {"issue_id": issue_id, "success": False, "error": error}
+                for issue_id in issue_ids
+            ],
+        )
+        database.update_batch_prediction_job(
+            job["id"],
+            status="failed",
+            completed_count=len(issue_ids),
+            failed_count=len(issue_ids),
+            error_text=error,
+        )
+        raise _detail(409, error)
     return {
-        "job": job,
+        "job": _public_batch_job(
+            database.get_batch_prediction_job(job["id"]) or job
+        ),
         "safety": {
+            "server_default_model": True,
+            "browser_model_credentials": False,
+            "ares_bev_input": False,
+            "bag_cache_read_only": False,
+            "bag_cache_scope": "dashboard_isolated",
             "trail_write_enabled": False,
-            "api_key_persisted": False,
-            "api_key_in_argv": False,
-            "bag_cache_read_only": True,
+            "autotriage_publish_automatic": False,
         },
+        "poll_url": f"/api/prediction-batches/{job['id']}",
     }
+
+
+@app.get("/api/prediction-batches")
+async def list_batch_predictions(
+    requested_by: str = "",
+    status: str = "",
+    page_size: int = 100,
+) -> dict[str, Any]:
+    result = database.list_batch_prediction_jobs(
+        requested_by=requested_by,
+        status=status,
+        page_size=page_size,
+    )
+    result["items"] = [
+        _public_batch_job(job) for job in result.get("items", [])
+    ]
+    return result
+
+
+@app.get("/api/prediction-batches/{job_id}")
+async def get_batch_prediction(job_id: str) -> dict[str, Any]:
+    job = database.get_batch_prediction_job(job_id)
+    if job is None:
+        raise _detail(404, "Batch 任务不存在。")
+    return {"job": _public_batch_job(job)}
+
+
+@app.post(
+    "/api/prediction-batches/{job_id}/publish-autotriage",
+    status_code=202,
+)
+async def publish_batch_prediction(job_id: str, request: Request) -> dict[str, Any]:
+    if request.headers.get("x-ra-triage-request") != "publish-v1":
+        raise _detail(403, "缺少 AutoTriage 推送请求标记。")
+    if not settings.autotriage_push_enabled:
+        raise _detail(503, "当前部署未启用 AutoTriage 推送。")
+    publisher = request_identity(request, settings)
+    if not publisher.verified or not publisher.username:
+        raise _detail(
+            403,
+            "AutoTriage 是生产写操作，仅允许可信 SSO 会话；"
+            "直接 IP / 本机 LCA 用户不能触发。",
+        )
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        raise _detail(400, "推送请求必须是 JSON。")
+    if not isinstance(body, dict) or body.get("confirm") not in {
+        True,
+        "publish-autotriage",
+    }:
+        raise _detail(400, "必须显式确认创建生产 AutoTriage Batch。")
+    job = database.get_batch_prediction_job(job_id)
+    if job is None:
+        raise _detail(404, "Batch 任务不存在。")
+    if job.get("autotriage_batch_id"):
+        return {"job": _public_batch_job(job), "idempotent": True}
+    if job.get("publish_status") == "running":
+        raise _detail(409, "该 Batch 正在推送 AutoTriage。")
+    if (
+        job.get("status") not in {"succeeded", "partial"}
+        or int(job.get("success_count") or 0) <= 0
+        or not job.get("model_run_id")
+        or not job.get("config_sha256")
+    ):
+        raise _detail(409, "Batch 尚无可推送的成功预测。")
+    job = (
+        database.update_batch_prediction_job(
+            job_id,
+            summary={
+                **dict(job.get("summary") or {}),
+                "autotriage_publish_request": {
+                    "requested_by": publisher.username,
+                    "identity_source": publisher.source,
+                    "verified": True,
+                },
+            },
+        )
+        or job
+    )
+    if not batch_prediction_runner.launch_publish(job):
+        raise _detail(409, "已有 Batch 预测或 AutoTriage 推送正在执行，请稍后重试。")
+    return {
+        "job": _public_batch_job(
+            database.get_batch_prediction_job(job_id) or job
+        ),
+        "accepted": True,
+        "destination": settings.auto_triage_record_base_url,
+        "poll_url": f"/api/prediction-batches/{job_id}",
+    }
+
+
+@app.post("/api/inference/jobs")
+async def create_inference_job(request: Request) -> dict[str, Any]:
+    raise _detail(
+        410,
+        "浏览器单 Case 自定义模型推理已停用；请使用 /api/prediction-batches，"
+        "由 cloud_server 的 ra_auto_triage 默认模型执行。",
+    )
 
 
 @app.get("/api/inference/jobs")

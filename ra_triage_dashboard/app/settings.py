@@ -40,6 +40,14 @@ class Settings:
     trail_view_id: int
     trail_sync_on_start: bool
     trail_sync_chunk_size: int
+    voyager_issue_base_url: str
+    voyager_issue_view_id: int
+    batch_prediction_enabled: bool
+    autotriage_push_enabled: bool
+    batch_max_issues: int
+    batch_job_timeout_seconds: int
+    batch_bag_cache_dir: Path
+    auto_triage_record_base_url: str
     allowed_model_hosts: tuple[str, ...]
     job_timeout_seconds: int
     trust_proxy_identity_headers: bool
@@ -96,6 +104,33 @@ class Settings:
             trail_view_id=_integer("DASHBOARD_TRAIL_VIEW_ID", 1000),
             trail_sync_on_start=_bool("DASHBOARD_SYNC_TRAIL_ON_START", True),
             trail_sync_chunk_size=_integer("DASHBOARD_TRAIL_SYNC_CHUNK_SIZE", 160, 1),
+            voyager_issue_base_url=os.getenv(
+                "DASHBOARD_VOYAGER_ISSUE_BASE_URL",
+                "https://voyager.intra.xiaojukeji.com/static/management/#/issue",
+            ).strip()
+            or "https://voyager.intra.xiaojukeji.com/static/management/#/issue",
+            voyager_issue_view_id=_integer("DASHBOARD_VOYAGER_ISSUE_VIEW_ID", 2410),
+            batch_prediction_enabled=_bool(
+                "DASHBOARD_BATCH_PREDICTION_ENABLED", False
+            ),
+            autotriage_push_enabled=_bool(
+                "DASHBOARD_AUTOTRIAGE_PUSH_ENABLED", False
+            ),
+            batch_max_issues=min(
+                50, _integer("DASHBOARD_BATCH_MAX_ISSUES", 50, 1)
+            ),
+            batch_job_timeout_seconds=_integer(
+                "DASHBOARD_BATCH_JOB_TIMEOUT_SECONDS", 7200, 60
+            ),
+            batch_bag_cache_dir=_path(
+                "DASHBOARD_BATCH_BAG_CACHE_DIR",
+                data_dir / "batch_bags",
+            ),
+            auto_triage_record_base_url=os.getenv(
+                "DASHBOARD_AUTO_TRIAGE_RECORD_BASE_URL",
+                "http://auto-triage.intra.xiaojukeji.com/ra/model_triage/records",
+            ).strip()
+            or "http://auto-triage.intra.xiaojukeji.com/ra/model_triage/records",
             allowed_model_hosts=extra_hosts,
             job_timeout_seconds=_integer("DASHBOARD_JOB_TIMEOUT_SECONDS", 720, 32),
             trust_proxy_identity_headers=_bool(
@@ -135,4 +170,5 @@ class Settings:
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
         self.uploads_dir.mkdir(parents=True, exist_ok=True)
         self.review_attachments_dir.mkdir(parents=True, exist_ok=True)
+        self.batch_bag_cache_dir.mkdir(parents=True, exist_ok=True)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)

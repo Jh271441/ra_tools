@@ -27,9 +27,9 @@
             <span class="sidebar-icon" aria-hidden="true">M</span>
             <span class="sidebar-label"><strong>模型 Runs</strong><small>导入与版本管理</small></span>
           </a>
-          <a class="sidebar-item" id="openInferButton" data-page-target="inference" href="/inference" title="单 Case 推理">
+          <a class="sidebar-item" id="openBatchPredictionButton" data-page-target="prediction" href="/batch-prediction" title="Batch 预测">
             <span class="sidebar-icon" aria-hidden="true">▶</span>
-            <span class="sidebar-label"><strong>单 Case 推理</strong><small>临时模型调用</small></span>
+            <span class="sidebar-label"><strong>Batch 预测</strong><small>默认模型 · 批量推送</small></span>
           </a>
           <a class="sidebar-item" id="importButton" data-page-target="import" href="/import?kind=issues" title="数据导入">
             <span class="sidebar-icon" aria-hidden="true">＋</span>
@@ -77,7 +77,6 @@
               <div class="run-toolbar-current">
                 <span class="run-state-dot"></span>
                 <div>
-                  <span class="eyebrow">ACTIVE MODEL RUN</span>
                   <strong id="activeRunName">尚未选择模型 run</strong>
                 </div>
               </div>
@@ -196,6 +195,7 @@
                     <option value="">全部来源</option>
                     <option value="upload">批量文件</option>
                     <option value="trail_snapshot">Trail 快照</option>
+                    <option value="manual_batch">网页 Batch</option>
                   </select>
                 </label>
               </div>
@@ -204,87 +204,76 @@
             </section>
           </section>
 
-          <section class="app-page tool-page hidden" id="inferencePage" data-page="inference">
+          <section class="app-page tool-page hidden" id="predictionPage" data-page="prediction">
             <header class="page-heading">
               <div>
-                <span class="eyebrow">LIVE ONE-CASE INFERENCE</span>
-                <h2>单 Case 模型推理</h2>
-                <p>创建一个可审计的 Debug Job；结果不会自动加入评测 Run。</p>
+                <span class="eyebrow">BATCH MODEL INFERENCE</span>
+                <h2>Batch 模型预测</h2>
+                <p>使用开发机上的服务器默认模型批量预测；完成后再显式推送到 AutoTriage。</p>
               </div>
               <button class="button button-quiet" type="button" data-page-target="review">返回判错复核</button>
             </header>
             <section class="object-semantics">
-              <strong>单 Case 推理 ≠ Model Run</strong>
-              <span>每次调用只产生一个 Inference Job，保存在任务历史中。它不会写入现有 Run、不会改变团队默认，也不会进入 Review 失败统计。</span>
-              <span>需要批量对比时，请导出标准 JSON/CSV/XLSX 并显式发布为新的不可变 Run；后续可扩展“实验草稿 → 发布 Run”。</span>
+              <strong>预测与推送分离</strong>
+              <span>创建 Batch 后，后端使用服务器预配置的默认模型执行，不从浏览器接收模型地址、API key 或 Ares 输入。</span>
+              <span>预测完成不会自动写入 AutoTriage；请核对结果后，在任务列表中显式点击“推送 AutoTriage”。</span>
             </section>
-            <div class="tool-page-grid">
+            <div class="tool-page-grid batch-page-grid">
               <aside class="page-card page-aside">
-                <span class="eyebrow">INFERENCE TARGET</span>
-                <h3>选择 Issue</h3>
-                <label>
-                  <span>Issue ID</span>
-                  <input id="inferIssueInput" list="inferIssueOptions" placeholder="例如 cn32171803" autocomplete="off" />
-                  <datalist id="inferIssueOptions"></datalist>
-                </label>
-                <div class="target-case-summary" id="inferCaseSummary">从 Review 队列选择 case，或直接输入 baseline 中的 issue id。</div>
-                <button class="button button-quiet full-width" id="inferOpenReviewButton" type="button">在 Review 中打开</button>
+                <span class="eyebrow">SERVER RUNTIME</span>
+                <h3>默认开发机模型</h3>
+                <div class="batch-runtime-summary" id="batchModelSummary">
+                  <strong>正在读取服务器配置…</strong>
+                  <span>模型运行参数由后端统一管理，浏览器不可修改。</span>
+                </div>
+                <div class="actor-summary" id="batchActorSummary">当前用户尚未读取。</div>
               </aside>
-              <form class="page-card tool-form" id="inferForm">
-                <div class="safety-note">
-                  <strong>安全边界：</strong>当前为直接 IP 的 HTTP 试运行，请勿输入长期或生产 API key。API key 仅在本次请求内通过 stdin 交给 worker；不保存到数据库、参数、环境变量或日志。worker 固定 <code>RA_TOOLS_ENABLED=false</code>、<code>BAG_CACHE_READ_ONLY=true</code>。
-                </div>
-                <div class="infer-grid">
-                  <label><span>模型名称</span><input id="modelNameInput" value="Qwen/Qwen3.5-9B" required /></label>
-                  <label><span>Prompt 版本</span><input id="promptVersionInput" value="stuck_triage_v1" required /></label>
-                  <label class="span-two">
-                    <span>Base URL</span>
-                    <input id="baseUrlInput" type="url" placeholder="http://10.x.x.x/v1/chat/completions" autocomplete="off" />
-                    <small>仅允许内网 IP、localhost、*.intra.xiaojukeji.com 或服务端白名单。</small>
-                  </label>
-                  <label class="span-two"><span>API key</span><input id="apiKeyInput" type="password" placeholder="仅本次推理使用，不会持久化" autocomplete="new-password" /></label>
-                  <label><span>max tokens</span><input id="maxTokensInput" type="number" min="32" max="4096" value="512" /></label>
-                  <label><span>请求人（审计）</span><input id="requestedByInput" placeholder="可选" autocomplete="off" /></label>
-                </div>
-                <div class="checkbox-group">
-                  <label class="toggle-row compact-toggle"><input id="useBevInput" type="checkbox" checked /><span><strong>使用 Ares Capture BEV</strong></span></label>
-                  <label class="toggle-row compact-toggle"><input id="useRaOptionsInput" type="checkbox" checked /><span><strong>注入 ra_options_new（含 SWAG）</strong></span></label>
-                </div>
-                <div class="job-result hidden" id="jobResult"></div>
+              <form class="page-card tool-form" id="predictionBatchForm">
+                <label>
+                  <span>批次名（可选）</span>
+                  <input id="predictionBatchName" placeholder="例如 release-20260730-routing-review" maxlength="120" autocomplete="off" />
+                  <small>留空时由服务器按当前时间生成。</small>
+                </label>
+                <label>
+                  <span>Issue IDs</span>
+                  <textarea class="batch-issue-input" id="predictionBatchIssues" rows="10" placeholder="每行一个，也支持逗号或空格分隔，例如：&#10;cn32171803&#10;cn31954847&#10;cn32000543" required></textarea>
+                  <small id="predictionBatchIssueCount">已识别 0 个 Issue</small>
+                </label>
+                <div class="job-result hidden" id="predictionBatchResult"></div>
                 <div class="page-actions">
-                  <button class="button button-quiet" id="preflightButton" type="button">预检 Ares / Trail</button>
-                  <button class="button button-primary" type="submit">开始单 case 推理</button>
+                  <button class="button button-primary" id="createPredictionBatchButton" type="submit">开始 Batch 预测</button>
                 </div>
               </form>
             </div>
             <section class="page-card job-history-card">
               <div class="section-heading">
                 <div>
-                  <span class="eyebrow">INFERENCE JOB HISTORY</span>
-                  <h3>全员单 Case 任务</h3>
+                  <span class="eyebrow">BATCH JOB HISTORY</span>
+                  <h3>全员 Batch 任务</h3>
                 </div>
-                <button class="button button-quiet" id="refreshInferenceJobsButton" type="button">刷新任务</button>
+                <button class="button button-quiet" id="refreshPredictionBatchesButton" type="button">刷新任务</button>
               </div>
               <div class="run-filter-bar">
                 <label>
                   <span>请求人</span>
-                  <select id="jobRequesterFilter">
+                  <select id="batchRequesterFilter">
                     <option value="">全部请求人</option>
                   </select>
                 </label>
                 <label>
                   <span>任务状态</span>
-                  <select id="jobStatusFilter">
+                  <select id="batchStatusFilter">
                     <option value="">全部状态</option>
                     <option value="queued">排队中</option>
                     <option value="running">运行中</option>
                     <option value="succeeded">成功</option>
+                    <option value="partial">部分成功</option>
                     <option value="failed">失败</option>
                   </select>
                 </label>
               </div>
-              <div class="run-manager-summary" id="jobHistorySummary">正在加载任务历史…</div>
-              <div class="job-history-list" id="inferenceJobList"></div>
+              <div class="run-manager-summary" id="batchHistorySummary">正在加载 Batch 任务…</div>
+              <div class="job-history-list" id="predictionBatchList"></div>
             </section>
           </section>
 
