@@ -23,6 +23,10 @@
             <span class="sidebar-icon" aria-hidden="true">R</span>
             <span class="sidebar-label"><strong>判错复核</strong><small>Failure review</small></span>
           </a>
+          <a class="sidebar-item" id="reviewAnalysisNavButton" data-page-target="analysis" href="/review-analysis" title="Review 原因聚类">
+            <span class="sidebar-icon" aria-hidden="true">C</span>
+            <span class="sidebar-label"><strong>原因聚类</strong><small>Review analysis</small></span>
+          </a>
           <a class="sidebar-item" id="openRunManagerButton" data-page-target="runs" href="/runs" title="模型 Runs">
             <span class="sidebar-icon" aria-hidden="true">M</span>
             <span class="sidebar-label"><strong>模型 Runs</strong><small>导入与版本管理</small></span>
@@ -173,6 +177,163 @@
                   </div>
                 </aside>
               </section>
+            </section>
+          </section>
+
+          <section class="app-page tool-page analysis-page hidden" id="reviewAnalysisPage" data-page="analysis">
+            <div class="compact-page-lead">
+              <p>聚合每个 Issue 最新一版人工 Review：稳定的“缺失信息”用于主聚类，自由文本原因用于可解释的多标签主题聚类。</p>
+              <button class="button button-quiet" type="button" data-page-target="review">返回判错复核</button>
+            </div>
+
+            <section class="page-card analysis-filter-card">
+              <form class="analysis-filters" id="reviewAnalysisFilterForm">
+                <label class="analysis-run-filter">
+                  <span>对比模型 Run</span>
+                  <select id="analysisRunFilter">
+                    <option value="">不叠加模型输出</option>
+                  </select>
+                </label>
+                <label class="toggle-row compact-filter-toggle analysis-failure-toggle">
+                  <input id="analysisFailureOnlyInput" type="checkbox" />
+                  <span><strong>只看模型判断失败</strong></span>
+                </label>
+                <label>
+                  <span>复核人</span>
+                  <select id="analysisReviewerFilter">
+                    <option value="">全部复核人</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Review 状态</span>
+                  <select id="analysisStatusFilter">
+                    <option value="">全部状态</option>
+                    <option value="pending">待复核</option>
+                    <option value="reviewed">已复核</option>
+                    <option value="needs_gt_review">GT 待复核</option>
+                  </select>
+                </label>
+                <label>
+                  <span>GT</span>
+                  <select id="analysisGtFilter">
+                    <option value="">全部 GT</option>
+                    <option value="误触发">误触发</option>
+                    <option value="正确触发">正确触发</option>
+                    <option value="无需协助">无需协助</option>
+                  </select>
+                </label>
+                <label>
+                  <span>人工结论</span>
+                  <select id="analysisAnnotationFilter">
+                    <option value="">全部结论</option>
+                    <option value="误触发">误触发</option>
+                    <option value="正确触发">正确触发</option>
+                    <option value="无需协助">无需协助</option>
+                  </select>
+                </label>
+                <label>
+                  <span>缺失信息</span>
+                  <select id="analysisEvidenceFilter">
+                    <option value="">全部缺失信息</option>
+                  </select>
+                </label>
+                <label>
+                  <span>原因主题</span>
+                  <select id="analysisThemeFilter">
+                    <option value="">全部原因主题</option>
+                  </select>
+                </label>
+                <label class="analysis-search-filter">
+                  <span>检索 Review 原因</span>
+                  <input id="analysisSearchInput" placeholder="Issue ID、场景、人工原因或模型说明" autocomplete="off" />
+                </label>
+                <div class="analysis-filter-actions">
+                  <button class="button button-quiet" id="resetReviewAnalysisButton" type="button">重置</button>
+                  <button class="button button-primary" type="submit">应用</button>
+                </div>
+              </form>
+              <div class="analysis-scope-note" id="analysisScopeNote">
+                Review 是数据集级追加记录，不绑定 Model Run；选择 Run 只改变对比切片和混淆统计。
+              </div>
+            </section>
+
+            <section class="analysis-summary-grid" aria-label="原因聚类概览">
+              <article class="analysis-stat-card">
+                <span>最新 Review</span>
+                <strong id="analysisReviewCount">—</strong>
+                <small id="analysisReviewScope">当前筛选范围</small>
+              </article>
+              <article class="analysis-stat-card">
+                <span>已填写原因</span>
+                <strong id="analysisReasonCount">—</strong>
+                <small id="analysisEmptyReasonCount">— 条未填写</small>
+              </article>
+              <article class="analysis-stat-card">
+                <span>结构化缺失信息</span>
+                <strong id="analysisEvidenceCount">—</strong>
+                <small>至少选择 1 项</small>
+              </article>
+              <article class="analysis-stat-card analysis-stat-warn">
+                <span>文本未归类</span>
+                <strong id="analysisUnclusteredCount">—</strong>
+                <small>有原因、未命中当前主题</small>
+              </article>
+            </section>
+
+            <section class="analysis-cluster-grid">
+              <article class="page-card analysis-cluster-card">
+                <div class="section-heading">
+                  <div>
+                    <span class="eyebrow">STRUCTURED EVIDENCE</span>
+                    <h3>缺失信息聚类</h3>
+                  </div>
+                  <small>人工复选字段 · 可直接筛选</small>
+                </div>
+                <div class="analysis-cluster-list" id="analysisEvidenceClusters">
+                  <div class="analysis-empty">正在统计缺失信息…</div>
+                </div>
+              </article>
+              <article class="page-card analysis-cluster-card">
+                <div class="section-heading">
+                  <div>
+                    <span class="eyebrow">REVIEW REASON THEMES</span>
+                    <h3>原因文本主题</h3>
+                  </div>
+                  <small>关键词 v1 · 单条可属于多个主题</small>
+                </div>
+                <div class="analysis-cluster-list" id="analysisReasonClusters">
+                  <div class="analysis-empty">正在分析 Review 原因…</div>
+                </div>
+              </article>
+            </section>
+
+            <section class="page-card analysis-confusion-card">
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">MODEL COMPARISON</span>
+                  <h3>GT → 模型输出</h3>
+                </div>
+                <small id="analysisConfusionSummary">选择 Model Run 后显示混淆统计</small>
+              </div>
+              <div class="analysis-confusion-wrap" id="analysisConfusionMatrix">
+                <div class="analysis-empty">尚未选择可比较的 Model Run。</div>
+              </div>
+            </section>
+
+            <section class="page-card analysis-case-card">
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">CLUSTERED CASES</span>
+                  <h3>Review 原因明细</h3>
+                </div>
+                <small id="analysisCaseSummary">正在加载…</small>
+              </div>
+              <div class="analysis-case-list" id="analysisCaseList" aria-live="polite"></div>
+              <nav class="case-pagination" aria-label="原因明细分页">
+                <button class="button button-quiet" id="analysisPagePrevious" type="button">上一页</button>
+                <span id="analysisPageSummary">— / —</span>
+                <button class="button button-quiet" id="analysisPageNext" type="button">下一页</button>
+              </nav>
             </section>
           </section>
 

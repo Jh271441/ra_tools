@@ -1093,6 +1093,131 @@ class Database:
             ).fetchone()
         return int(row["total"] or 0)
 
+    def review_reason_rows(
+        self,
+        *,
+        baseline_scope: str,
+        model_run_id: str = "",
+        failure_only: bool = False,
+        annotation_author: str = "",
+        review_status: str = "",
+        gt_label: str = "",
+        annotation_label: str = "",
+        missing_evidence: str = "",
+        search: str = "",
+    ) -> list[dict[str, Any]]:
+        """Return one latest-review row per baseline issue for analysis.
+
+        Human Review is dataset-level rather than run-bound.  ``model_run_id``
+        only adds the selected immutable prediction snapshot and, when asked,
+        narrows the slice to comparable model failures.
+        """
+
+        where = ["i.baseline_scope = ?", "ann.id IS NOT NULL"]
+        params: list[Any] = [model_run_id, baseline_scope]
+        if failure_only and model_run_id:
+            where.extend(
+                [
+                    "i.gt_label IN (?, ?, ?)",
+                    "mp.model_label IN (?, ?, ?)",
+                    "mp.model_label != i.gt_label",
+                ]
+            )
+            params.extend((*LABELS, *LABELS))
+        if annotation_author.strip():
+            where.append("ann.author = ?")
+            params.append(annotation_author.strip())
+        if review_status in REVIEW_STATUSES:
+            where.append("ann.review_status = ?")
+            params.append(review_status)
+        if gt_label in LABELS:
+            where.append("i.gt_label = ?")
+            params.append(gt_label)
+        if annotation_label in LABELS:
+            where.append("ann.label = ?")
+            params.append(annotation_label)
+        if missing_evidence.strip():
+            where.append("ann.missing_evidence_json LIKE ?")
+            params.append(f'%"{missing_evidence.strip()}"%')
+        if search.strip():
+            term = f"%{search.strip()}%"
+            where.append(
+                "("
+                "i.issue_id LIKE ? OR i.title LIKE ? OR i.scenario LIKE ? "
+                "OR i.summary LIKE ? OR ann.note LIKE ? OR mp.model_reason LIKE ?"
+                ")"
+            )
+            params.extend([term, term, term, term, term, term])
+
+        query = f"""
+            SELECT i.issue_id, i.title, i.scenario, i.summary, i.gt_label,
+                   ann.id AS annotation_id,
+                   ann.label AS annotation_label,
+                   ann.review_status AS annotation_review_status,
+                   ann.tags_json AS annotation_tags_json,
+                   ann.missing_evidence_json AS annotation_missing_evidence_json,
+                   ann.note AS annotation_note,
+                   ann.author AS annotation_author,
+                   ann.author_source AS annotation_author_source,
+                   ann.author_verified AS annotation_author_verified,
+                   ann.created_at AS annotation_created_at,
+                   mp.model_run_id, mp.model_label, mp.model_reason,
+                   mp.model_confidence
+            FROM issues i
+            {self._latest_annotation_join()}
+            LEFT JOIN model_predictions mp
+              ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
+            WHERE {' AND '.join(where)}
+            ORDER BY ann.created_at DESC, i.issue_id ASC
+        """
+        with self.connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            model_label = str(row["model_label"] or "")
+            current_gt = str(row["gt_label"] or "")
+            comparable = current_gt in LABELS and model_label in LABELS
+            results.append(
+                {
+                    "issue_id": str(row["issue_id"]),
+                    "title": str(row["title"] or ""),
+                    "scenario": str(row["scenario"] or ""),
+                    "summary": str(row["summary"] or ""),
+                    "gt_label": current_gt,
+                    "annotation": {
+                        "id": int(row["annotation_id"]),
+                        "label": str(row["annotation_label"] or ""),
+                        "review_status": str(
+                            row["annotation_review_status"] or "pending"
+                        ),
+                        "tags": _json_load(row["annotation_tags_json"], []),
+                        "missing_evidence": _json_load(
+                            row["annotation_missing_evidence_json"], []
+                        ),
+                        "note": str(row["annotation_note"] or ""),
+                        "author": str(row["annotation_author"] or ""),
+                        "author_source": str(
+                            row["annotation_author_source"] or "legacy"
+                        ),
+                        "author_verified": bool(
+                            row["annotation_author_verified"]
+                        ),
+                        "created_at": str(row["annotation_created_at"] or ""),
+                    },
+                    "prediction": {
+                        "model_run_id": str(row["model_run_id"] or ""),
+                        "label": model_label,
+                        "reason": str(row["model_reason"] or ""),
+                        "confidence": row["model_confidence"],
+                        "comparable": comparable,
+                        "mismatch": bool(
+                            comparable and model_label != current_gt
+                        ),
+                    },
+                }
+            )
+        return results
+
     def review_clusters(
         self,
         *,

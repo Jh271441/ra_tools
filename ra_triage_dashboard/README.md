@@ -2,14 +2,15 @@
 
 一个独立于 `ra_auto_triage` 的 issue triage / 标注 / 模型结果对比看板。
 
-## 当前 MVP（v1.6）
+## 当前 MVP（v1.7）
 
 - 默认工作集是 `trail_label_baseline_20260729.xlsx` 中 `dataset=0508` 的 **1071 条**；GT 只来自该快照，不因 Trail 查询或模型导入而改变。
 - 首页是服务端筛选、50 条一页的紧凑 Issue 缩略图队列（宽屏五列、随可用宽度降列）；BEV 缩略图按源文件版本生成 640×360 缓存并懒加载，不把 1071 张原图一次送进浏览器。点击 Issue 后才进入 URL 可恢复的详情态，加载大图、Ares Capture BEV / Camera、模型输出和人工 Review；详情支持返回列表及跨页上一/下一 Issue，点击主图会打开占视口 90% 的 BEV / Camera 时序预览。
-- 左侧工具栏只接受用户手动折叠并记住偏好，不再根据分辨率、DPR 或窗口宽度自动改变。判错复核、模型 Runs / 导入、Batch 预测分别使用 `/review`、`/runs`、`/batch-prediction` 独立路由，支持硬刷新和浏览器前进/后退。`/import` 会 307 跳转到 `/runs?import=...`，`/inference` 仅作为旧链接兼容入口。
+- 左侧工具栏只接受用户手动折叠并记住偏好，不再根据分辨率、DPR 或窗口宽度自动改变。判错复核、原因聚类、模型 Runs / 导入、Batch 预测分别使用 `/review`、`/review-analysis`、`/runs`、`/batch-prediction` 独立路由，支持硬刷新和浏览器前进/后退。`/import` 会 307 跳转到 `/runs?import=...`，`/inference` 仅作为旧链接兼容入口。
 - Trail 操作分成「检查字段」和「创建 Run」两步，收在 Runs 页的默认折叠区；两步都不写回 Trail，快照只创建或复用本地不可变 Run，且不会修改团队默认 Run。启动时若启用 Trail 检查，也只执行第一步。
 - 可导入 issue / GT 与批量模型输出（JSON、CSV、XLSX）；也可按 AutoTriage Batch ID / records 链接经固定只读内网接口拉取结果。两者都按规范化内容 SHA-256 创建或复用不可变 Model Run，不覆盖 GT、不切换团队默认 Run；AutoTriage 拉取会显式比较声明数、完成数、结果数和唯一 Issue 数，并标记部分覆盖。
 - 人工标注为追加式历史，最新一条为当前标注，不覆盖旧 review；「模型为什么判错」是主输入，「模型缺失信息」收进紧凑的结构化多选下拉，并自动汇总为 routing、绕行空间、灯态、双闪、时序等错误聚类。每个 review 版本可粘贴或选择最多 4 张补充截图；场景 Tags 为可选的规范化多选项。
+- 原因聚类页只消费每个 Issue 最新一版 Review：稳定的 `missing_evidence[]` 是主聚类，Review 自由文本通过可解释关键词 v1 形成多标签主题，未填写和有文本但未命中主题的记录会单独计数。选择 Model Run 只叠加 GT→模型输出混淆统计或收窄到该 Run 的判断失败切片，不会把数据集级 Review 伪装成绑定某个 Run，也不会反向修改人工结论或 GT。筛选、聚类和分页都写入 `/review-analysis` URL，可硬刷新并用浏览器前进/后退恢复。
 - 首页可把当前单个 Issue 或不超过 50 条的完整筛选结果预填到 Batch 页面；若前端只加载到部分结果或超过上限，会明确阻止而不是静默截断。模型目录保留 Profile 已验证项和网关当前在线的 Qwen3 生成模型，排除 Embedding；实验模型有明确标记且创建任务前需再次确认。默认 `Auto` 仍解析并分别记录 requested / resolved model ID。
 - 每个 Batch 固化请求人、模型验证层级、完整 Prompt 正文与 SHA-256、Prompt 基线版本/是否编辑、Camera 帧偏移、RA Events / RA-SWAG Options 和输入 Profile；任务历史可按人员、状态、模型、Prompt 精确版本（mode + SHA）和输入筛选，已下线模型与旧 Prompt 也保留在筛选项中。Prompt 只允许当前三分类构建器提供的变量，必须保留三个标准标签，并拒绝会输出「无法判断」等第四类的旧模板；Camera 偏移严格递增、包含 0、最多 18 帧。worker 会重新校验 Prompt/Input 快照并重建配置 Hash，预测与后续发布必须一致。
 - 网关 API key 只从服务用户持有的 `0600` 普通文件读取，经一次性 stdin 交给预测 worker，读取后立即从请求对象移除；不接受浏览器或父进程环境变量中的 key，也不会把 key 交给 AutoTriage publish worker。Ares / BEV 和轨迹摘要在 Batch 输入中强制关闭。
@@ -25,6 +26,7 @@ Trail 只读字段检查 ──> 显式创建/复用不可变 Trail Run ──> 
 AutoTriage Batch 只读拉取 ──> 不可变 autotriage_snapshot Run ──> Review 与统计
 Issue 列表 ──> Batch Prediction Job ──> 不可变 manual_batch Run
                                       └─> 显式推送 ──> AutoTriage Batch 链接
+最新人工 Review ──> 稳定缺失信息聚类 + 可解释原因主题 ──> 返回单 Issue 复核
 ```
 
 - **Model Run** 是一组模型输出的不可变快照。Review 每次选择一个 Run 与 0508 GT 对比；切换当前 Run 不会修改 GT、人工复核或团队默认 Run。
@@ -144,9 +146,31 @@ bash scripts/run_cloud_server.sh
 页面路由可直接访问：
 
 - `http://172.16.145.60:8785/review`
+- `http://172.16.145.60:8785/review-analysis`
 - `http://172.16.145.60:8785/runs`
 - `http://172.16.145.60:8785/batch-prediction`
 - `http://172.16.145.60:8785/runs?import=model`
+
+原因聚类页 URL 契约：
+
+```text
+/review-analysis
+  ?run=<model_run_id>|none
+  &failure=1
+  &reviewer=<author>
+  &status=pending|reviewed|needs_gt_review
+  &gt=<三分类标签>
+  &annotation=<三分类标签>
+  &evidence=<stable_missing_evidence_key>
+  &theme=<stable_reason_theme_key>
+  &q=<search>
+  &page=<positive_integer>
+```
+
+`run=none` 明确表示查看全部最新 Review 且不叠加模型输出；只有选择真实 Run 时才允许
+`failure=1`。第一版原因主题是透明、确定性的多标签关键词规则，API 会返回主题说明与命中词；
+后续若加入 embedding / LLM 语义聚类，应使用新的方法版本并保留这一可复现基线，不能静默改变
+历史人工标注或现有主题 key。
 
 旧 `/import?kind=issues|model` 仍可访问，但会跳转到对应的 Runs 导入区。
 

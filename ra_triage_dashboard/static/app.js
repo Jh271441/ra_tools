@@ -1,6 +1,7 @@
 const LABELS = ["误触发", "正确触发", "无需协助"];
 const PAGE_ROUTES = {
   review: { path: "/review", title: "RA Triage Workbench", eyebrow: "EVALUATION BASELINE · 0508" },
+  analysis: { path: "/review-analysis", title: "Review 原因聚类", eyebrow: "REVIEW ERROR ANALYSIS" },
   runs: { path: "/runs", title: "模型结果 Runs", eyebrow: "MODEL RUN REGISTRY" },
   prediction: { path: "/batch-prediction", title: "Batch 模型预测", eyebrow: "BATCH MODEL INFERENCE" },
 };
@@ -38,6 +39,13 @@ const state = {
   selectedRunId: "",
   failureOnly: false,
   clusterKey: "",
+  reviewQueueStale: false,
+  reviewAnalysis: {
+    page: 1,
+    pageSize: 50,
+    requestSeq: 0,
+    data: null,
+  },
   selectedAnnotationLabel: "",
   pollingBatchId: "",
   pollTimer: null,
@@ -72,6 +80,23 @@ function normalizedReviewRouteFilters(params) {
   };
 }
 
+function normalizedAnalysisRouteFilters(params) {
+  const reviewStatus = params.get("status") || "";
+  const rawPage = Number.parseInt(params.get("page") || "1", 10);
+  return {
+    search: params.get("q") || "",
+    gtLabel: LABELS.includes(params.get("gt")) ? params.get("gt") : "",
+    annotationLabel: LABELS.includes(params.get("annotation")) ? params.get("annotation") : "",
+    annotationAuthor: params.get("reviewer") || "",
+    reviewStatus: ["pending", "reviewed", "needs_gt_review"].includes(reviewStatus)
+      ? reviewStatus
+      : "",
+    missingEvidence: params.get("evidence") || "",
+    theme: params.get("theme") || "",
+    page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
+  };
+}
+
 function parsePageRoute() {
   const match = Object.entries(PAGE_ROUTES).find(([, config]) => config.path === window.location.pathname);
   const params = new URLSearchParams(window.location.search);
@@ -97,6 +122,7 @@ function parsePageRoute() {
     runId: params.get("run") || "",
     failureOnly: params.has("failure") ? params.get("failure") === "1" : params.has("run") ? false : null,
     ...reviewFilters,
+    analysisFilters: normalizedAnalysisRouteFilters(params),
     importKind:
       params.get("import") === "model" || params.get("kind") === "model"
         ? "model"
@@ -142,6 +168,61 @@ function applyReviewRouteControls(route) {
   state.casePage = Math.max(1, Number(route.casePage) || 1);
 }
 
+function currentAnalysisRouteOptions(overrides = {}) {
+  return {
+    runId: state.selectedRunId,
+    failureOnly: state.failureOnly,
+    search: $("#analysisSearchInput")?.value.trim() || "",
+    gtLabel: $("#analysisGtFilter")?.value || "",
+    annotationLabel: $("#analysisAnnotationFilter")?.value || "",
+    annotationAuthor: $("#analysisReviewerFilter")?.value || "",
+    reviewStatus: $("#analysisStatusFilter")?.value || "",
+    missingEvidence: $("#analysisEvidenceFilter")?.value || "",
+    theme: $("#analysisThemeFilter")?.value || "",
+    page: state.reviewAnalysis.page,
+    ...overrides,
+  };
+}
+
+function applyAnalysisRouteControls(route) {
+  const filters = route?.analysisFilters || route || {};
+  if ($("#analysisSearchInput")) $("#analysisSearchInput").value = filters.search || "";
+  if ($("#analysisGtFilter")) {
+    $("#analysisGtFilter").value = LABELS.includes(filters.gtLabel) ? filters.gtLabel : "";
+  }
+  if ($("#analysisAnnotationFilter")) {
+    $("#analysisAnnotationFilter").value = LABELS.includes(filters.annotationLabel)
+      ? filters.annotationLabel
+      : "";
+  }
+  if ($("#analysisStatusFilter")) $("#analysisStatusFilter").value = filters.reviewStatus || "";
+  if ($("#analysisReviewerFilter")) {
+    const reviewer = filters.annotationAuthor || "";
+    $("#analysisReviewerFilter").value =
+      !reviewer ||
+      [...$("#analysisReviewerFilter").options].some((option) => option.value === reviewer)
+        ? reviewer
+        : "";
+  }
+  if ($("#analysisEvidenceFilter")) {
+    const evidence = filters.missingEvidence || "";
+    $("#analysisEvidenceFilter").value =
+      !evidence ||
+      [...$("#analysisEvidenceFilter").options].some((option) => option.value === evidence)
+        ? evidence
+        : "";
+  }
+  if ($("#analysisThemeFilter")) {
+    const theme = filters.theme || "";
+    $("#analysisThemeFilter").value =
+      !theme ||
+      [...$("#analysisThemeFilter").options].some((option) => option.value === theme)
+        ? theme
+        : "";
+  }
+  state.reviewAnalysis.page = Math.max(1, Number(filters.page) || 1);
+}
+
 function pageUrl(page, options = {}) {
   const config = PAGE_ROUTES[page] || PAGE_ROUTES.review;
   const url = new URL(config.path, window.location.origin);
@@ -159,6 +240,19 @@ function pageUrl(page, options = {}) {
     if (review.annotationAuthor) url.searchParams.set("reviewer", review.annotationAuthor);
     if (review.clusterKey) url.searchParams.set("evidence", review.clusterKey);
     if (Number(review.casePage) > 1) url.searchParams.set("page", String(review.casePage));
+  }
+  if (page === "analysis") {
+    const analysis = currentAnalysisRouteOptions(options);
+    url.searchParams.set("run", analysis.runId || "none");
+    if (analysis.failureOnly && analysis.runId) url.searchParams.set("failure", "1");
+    if (analysis.search) url.searchParams.set("q", analysis.search);
+    if (analysis.gtLabel) url.searchParams.set("gt", analysis.gtLabel);
+    if (analysis.annotationLabel) url.searchParams.set("annotation", analysis.annotationLabel);
+    if (analysis.annotationAuthor) url.searchParams.set("reviewer", analysis.annotationAuthor);
+    if (analysis.reviewStatus) url.searchParams.set("status", analysis.reviewStatus);
+    if (analysis.missingEvidence) url.searchParams.set("evidence", analysis.missingEvidence);
+    if (analysis.theme) url.searchParams.set("theme", analysis.theme);
+    if (Number(analysis.page) > 1) url.searchParams.set("page", String(analysis.page));
   }
   if (page === "prediction") {
     const issueIds = options.issues ?? (options.issue ? [options.issue] : []);
@@ -239,11 +333,14 @@ function showPage(
     loadPredictionConfig().catch((error) => showToast(error.message, true));
     loadPredictionBatches().catch((error) => showToast(error.message, true));
   }
+  if (target === "analysis") renderAnalysisRunFilter();
   if (target === "review") setReviewView(issue);
   const routeOptions =
     target === "review"
       ? currentReviewRouteOptions({ issue })
-      : { issue, issues, source, importKind };
+      : target === "analysis"
+        ? currentAnalysisRouteOptions()
+        : { issue, issues, source, importKind };
   const historyState = {
     page: target,
     issue: target === "review" ? issue : "",
@@ -264,11 +361,23 @@ function showPage(
 }
 
 function navigatePage(page, options = {}) {
+  const previousPage = state.activePage;
   const restoreRoute =
     page === "prediction" &&
     !options.issue &&
     !(Array.isArray(options.issues) && options.issues.length);
+  if (page === "review" && previousPage === "analysis" && state.reviewQueueStale) {
+    state.casePage = 1;
+  }
   showPage(page, { ...options, restoreRoute, historyMode: "push" });
+  if (page === "analysis" && state.config) {
+    loadReviewReasonAnalysis().catch((error) => showToast(error.message, true));
+  }
+  if (page === "review" && previousPage === "analysis" && state.reviewQueueStale) {
+    reloadReviewGallery({ includeOverview: false, historyMode: "" }).catch((error) =>
+      showToast(error.message, true)
+    );
+  }
 }
 
 function escapeHtml(value) {
@@ -455,6 +564,40 @@ function renderConfig() {
   renderTrailSyncState();
   renderBatchRuntimeSummary();
   updateFilteredPredictionButton();
+  renderAnalysisCatalogFilters();
+}
+
+function renderAnalysisCatalogFilters() {
+  const evidenceSelect = $("#analysisEvidenceFilter");
+  if (evidenceSelect) {
+    const previous = evidenceSelect.value;
+    evidenceSelect.innerHTML = [
+      '<option value="">全部缺失信息</option>',
+      ...(state.config?.missing_evidence_catalog || []).map(
+        (item) => `<option value="${escapeHtml(item.key)}">${escapeHtml(item.label)}</option>`
+      ),
+    ].join("");
+    evidenceSelect.value = [...evidenceSelect.options].some(
+      (option) => option.value === previous
+    )
+      ? previous
+      : "";
+  }
+  const themeSelect = $("#analysisThemeFilter");
+  if (themeSelect) {
+    const previous = themeSelect.value;
+    themeSelect.innerHTML = [
+      '<option value="">全部原因主题</option>',
+      ...(state.config?.review_reason_theme_catalog || []).map(
+        (item) => `<option value="${escapeHtml(item.key)}">${escapeHtml(item.label)}</option>`
+      ),
+    ].join("");
+    themeSelect.value = [...themeSelect.options].some(
+      (option) => option.value === previous
+    )
+      ? previous
+      : "";
+  }
 }
 
 function renderTrailSyncState() {
@@ -524,26 +667,47 @@ async function loadStatus() {
 async function loadReviewers() {
   const data = await api("/api/reviewers");
   state.reviewers = data.items || [];
-  const select = $("#reviewerFilter");
-  if (!select) return;
-  const previous = select.value;
-  select.innerHTML = `<option value="">全部复核人</option>${state.reviewers
-    .map(
-      (item) => {
-        const trust =
-          item.verified_count > 0 && item.unverified_count > 0
-            ? " · 混合身份"
-            : item.verified
-              ? " · SSO"
-              : "";
-        return `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)} · ${item.review_count} 条${trust}</option>`;
-      }
-    )
-    .join("")}`;
-  select.value = state.reviewers.some((item) => item.name === previous) ? previous : "";
+  ["#reviewerFilter", "#analysisReviewerFilter"].forEach((selector) => {
+    const select = $(selector);
+    if (!select) return;
+    const previous = select.value;
+    select.innerHTML = `<option value="">全部复核人</option>${state.reviewers
+      .map(
+        (item) => {
+          const trust =
+            item.verified_count > 0 && item.unverified_count > 0
+              ? " · 混合身份"
+              : item.verified
+                ? " · SSO"
+                : "";
+          return `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)} · ${item.review_count} 条${trust}</option>`;
+        }
+      )
+      .join("")}`;
+    select.value = state.reviewers.some((item) => item.name === previous) ? previous : "";
+  });
 }
 
-async function loadRuns({ preferDefault = false } = {}) {
+function renderAnalysisRunFilter() {
+  const select = $("#analysisRunFilter");
+  if (!select) return;
+  select.innerHTML = `<option value="">不叠加模型输出</option>${state.modelRuns
+    .map((run) => {
+      const tag = run.is_default ? "默认 · " : "";
+      return `<option value="${escapeHtml(run.id)}">${tag}${escapeHtml(run.name)} · ${run.baseline_prediction_count ?? 0} 条 · 错 ${run.failure_count ?? 0}</option>`;
+    })
+    .join("")}`;
+  select.value = state.modelRuns.some((run) => run.id === state.selectedRunId)
+    ? state.selectedRunId
+    : "";
+  const failure = $("#analysisFailureOnlyInput");
+  if (failure) {
+    failure.disabled = !select.value;
+    failure.checked = Boolean(state.failureOnly && select.value);
+  }
+}
+
+async function loadRuns({ preferDefault = false, preserveEmpty = false } = {}) {
   const data = await api("/api/model-runs");
   state.modelRuns = data.items || [];
   const select = $("#modelRunFilter");
@@ -554,7 +718,9 @@ async function loadRuns({ preferDefault = false } = {}) {
     (preferDefault ? state.modelRuns[0]?.id || "" : "");
   const candidate = preferDefault
     ? preferredRunId
-    : state.selectedRunId || data.default_model_run_id || state.config?.default_model_run_id || "";
+    : preserveEmpty
+      ? state.selectedRunId
+      : state.selectedRunId || data.default_model_run_id || state.config?.default_model_run_id || "";
   select.innerHTML = `<option value="">未选择模型 run</option>${state.modelRuns
     .map((run) => {
       const tag = run.is_default ? "默认 · " : "";
@@ -568,6 +734,7 @@ async function loadRuns({ preferDefault = false } = {}) {
   if (preferDefault && !previousRunId && state.selectedRunId) state.failureOnly = true;
   if (!state.selectedRunId) state.failureOnly = false;
   failure.checked = state.failureOnly;
+  renderAnalysisRunFilter();
   renderRunFilters();
   renderActiveRun();
   renderRunManager();
@@ -984,6 +1151,7 @@ async function loadCases({
     return loadCases({ keepSelection, page: totalPages });
   }
   renderCases(data);
+  state.reviewQueueStale = false;
   if (!keepSelection) {
     clearDetail({ showGallery: state.activePage === "review" });
   }
@@ -1014,6 +1182,280 @@ async function loadClusters() {
       await reloadReviewGallery({ includeOverview: false });
     });
   });
+}
+
+function safeSameOriginReviewUrl(url) {
+  try {
+    const parsed = new URL(String(url || ""), window.location.origin);
+    if (parsed.origin !== window.location.origin || parsed.pathname !== "/review") return "";
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return "";
+  }
+}
+
+function reviewStatusLabel(status) {
+  return (
+    {
+      pending: "待复核",
+      reviewed: "已复核",
+      needs_gt_review: "GT 待复核",
+    }[status] || status || "未记录"
+  );
+}
+
+function analysisRequestOptions() {
+  return currentAnalysisRouteOptions({
+    runId: $("#analysisRunFilter")?.value || "",
+    failureOnly: Boolean(
+      $("#analysisRunFilter")?.value && $("#analysisFailureOnlyInput")?.checked
+    ),
+  });
+}
+
+function renderAnalysisClusterList(items, targetSelector, kind) {
+  const target = $(targetSelector);
+  if (!target) return;
+  if (!items.length) {
+    target.innerHTML =
+      '<div class="analysis-empty">当前筛选范围内还没有可统计的聚类。</div>';
+    return;
+  }
+  const activeValue =
+    kind === "evidence"
+      ? $("#analysisEvidenceFilter")?.value || ""
+      : $("#analysisThemeFilter")?.value || "";
+  target.innerHTML = items
+    .map((item) => {
+      const percentage = Math.round(Number(item.share || 0) * 1000) / 10;
+      const width = Math.max(2, Math.min(100, percentage));
+      return `<button class="analysis-cluster-row ${activeValue === item.key ? "active" : ""}" type="button"
+          data-analysis-cluster-kind="${kind}" data-analysis-cluster-key="${escapeHtml(item.key)}"
+          title="${escapeHtml(item.description || item.label)}">
+        <span class="analysis-cluster-copy">
+          <strong>${escapeHtml(item.label)}</strong>
+          <small>${escapeHtml(item.description || "")}</small>
+        </span>
+        <span class="analysis-cluster-value"><b>${item.count}</b><small>${percentage}%</small></span>
+        <span class="analysis-bar-track" aria-hidden="true"><span style="width:${width}%"></span></span>
+      </button>`;
+    })
+    .join("");
+  target.querySelectorAll("[data-analysis-cluster-key]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const select =
+        button.dataset.analysisClusterKind === "evidence"
+          ? $("#analysisEvidenceFilter")
+          : $("#analysisThemeFilter");
+      select.value =
+        select.value === button.dataset.analysisClusterKey
+          ? ""
+          : button.dataset.analysisClusterKey;
+      state.reviewAnalysis.page = 1;
+      showPage("analysis", { historyMode: "push" });
+      loadReviewReasonAnalysis().catch((error) => showToast(error.message, true));
+    });
+  });
+}
+
+function renderAnalysisConfusion(data) {
+  const target = $("#analysisConfusionMatrix");
+  const summary = $("#analysisConfusionSummary");
+  const run = data.scope?.model_run;
+  const confusion = data.confusion || {};
+  if (!run) {
+    summary.textContent = "选择 Model Run 后显示混淆统计";
+    target.innerHTML = '<div class="analysis-empty">尚未选择可比较的 Model Run。</div>';
+    return;
+  }
+  summary.textContent =
+    `${run.name} · 可比较 ${confusion.comparable || 0} 条 · 判断失败 ${confusion.mismatches || 0} 条`;
+  const labels = confusion.labels || LABELS;
+  if (!confusion.comparable) {
+    target.innerHTML =
+      '<div class="analysis-empty">当前 Review 切片没有同时具备有效 GT 与模型三分类输出的 Issue。</div>';
+    return;
+  }
+  target.innerHTML = `<table class="analysis-confusion-table">
+    <thead><tr><th>GT ↓ / 模型 →</th>${labels
+      .map((label) => `<th>${escapeHtml(label)}</th>`)
+      .join("")}<th>合计</th></tr></thead>
+    <tbody>${(confusion.rows || [])
+      .map(
+        (row) => `<tr>
+          <th>${escapeHtml(row.gt_label)}</th>
+          ${(row.cells || [])
+            .map(
+              (cell) =>
+                `<td class="${cell.model_label === row.gt_label ? "confusion-match" : cell.count ? "confusion-mismatch" : ""}">${cell.count}</td>`
+            )
+            .join("")}
+          <td class="confusion-total">${row.total}</td>
+        </tr>`
+      )
+      .join("")}</tbody>
+  </table>`;
+}
+
+function renderAnalysisCases(data) {
+  const target = $("#analysisCaseList");
+  const items = data.items || [];
+  $("#analysisCaseSummary").textContent =
+    `${data.total || 0} 条最新 Review · 当前显示 ${items.length} 条`;
+  if (!items.length) {
+    target.innerHTML =
+      '<div class="analysis-empty">当前筛选下没有 Review 原因明细。</div>';
+  } else {
+    target.innerHTML = items
+      .map((item) => {
+        const annotation = item.annotation || {};
+        const prediction = item.prediction || {};
+        const reasonThemes = item.reason_themes || [];
+        const reviewUrl = safeSameOriginReviewUrl(item.review_url);
+        const voyagerUrl = safeUrl(item.voyager_issue_url);
+        const confidence =
+          prediction.confidence === null || prediction.confidence === undefined
+            ? ""
+            : ` · ${(Number(prediction.confidence) * 100).toFixed(1)}%`;
+        const evidenceChips = (annotation.missing_evidence || [])
+          .map(
+            (key) =>
+              `<span class="analysis-chip evidence-chip">${escapeHtml(evidenceLabel(key))}</span>`
+          )
+          .join("");
+        const themeChips = reasonThemes
+          .map(
+            (theme) =>
+              `<span class="analysis-chip theme-chip" title="命中：${escapeHtml((theme.matched_keywords || []).join("、"))}">${escapeHtml(theme.label)}</span>`
+          )
+          .join("");
+        return `<article class="analysis-case-row">
+          <div class="analysis-case-identity">
+            <strong>${escapeHtml(item.issue_id)}</strong>
+            <span>${escapeHtml(item.title || item.scenario || "未填写场景")}</span>
+          </div>
+          <div class="analysis-case-labels">
+            <span>GT ${labelBadge(item.gt_label)}</span>
+            <span>模型 ${labelBadge(prediction.label)}${escapeHtml(confidence)}</span>
+            <span>人工 ${labelBadge(annotation.label)}</span>
+          </div>
+          <div class="analysis-case-reason">
+            <strong class="${annotation.note ? "" : "reason-empty"}">${escapeHtml(annotation.note || "未填写“模型为什么判错”")}</strong>
+            ${prediction.reason ? `<p>模型说明：${escapeHtml(prediction.reason)}</p>` : ""}
+            <div class="analysis-chip-list">${themeChips}${evidenceChips}</div>
+          </div>
+          <div class="analysis-case-meta">
+            <span>${escapeHtml(annotation.author || "未记录复核人")}${annotation.author_verified ? " · SSO" : ""}</span>
+            <span>${escapeHtml(reviewStatusLabel(annotation.review_status))} · ${formatTime(annotation.created_at)}</span>
+            <span class="analysis-case-actions">
+              ${reviewUrl ? `<a class="text-link" href="${escapeHtml(reviewUrl)}">打开 Review</a>` : ""}
+              ${voyagerUrl ? `<a class="text-link" href="${escapeHtml(voyagerUrl)}" target="_blank" rel="noreferrer">Voyager ↗</a>` : ""}
+            </span>
+          </div>
+        </article>`;
+      })
+      .join("");
+  }
+  const page = Number(data.page || 1);
+  const pageCount = Number(data.page_count || 1);
+  $("#analysisPageSummary").textContent = `${page} / ${pageCount}`;
+  $("#analysisPagePrevious").disabled = page <= 1;
+  $("#analysisPageNext").disabled = page >= pageCount;
+}
+
+function renderReviewReasonAnalysis(data) {
+  const summary = data.summary || {};
+  state.reviewAnalysis.page = Number(data.page || 1);
+  $("#analysisReviewCount").textContent = summary.latest_reviews ?? 0;
+  $("#analysisReasonCount").textContent = summary.with_reason ?? 0;
+  $("#analysisEmptyReasonCount").textContent = `${summary.empty_reason ?? 0} 条未填写`;
+  $("#analysisEvidenceCount").textContent = summary.with_structured_evidence ?? 0;
+  $("#analysisUnclusteredCount").textContent = summary.unclustered_reason ?? 0;
+  const run = data.scope?.model_run;
+  $("#analysisReviewScope").textContent = run
+    ? `${run.name}${data.scope.failure_only ? " · 仅判断失败" : ""}`
+    : "全部最新 Review";
+  $("#analysisScopeNote").textContent = run
+    ? `当前叠加 ${run.name}；Review 仍取每个 Issue 的最新版本，不绑定该 Run。${
+        data.scope.failure_only
+          ? ` 当前只保留 GT 与模型输出不一致的 ${summary.latest_reviews ?? 0} 条。`
+          : ""
+      }`
+    : "当前统计全部最新 Review，不叠加模型输出；选择 Run 只改变对比切片和混淆统计。";
+  renderAnalysisClusterList(
+    data.evidence_clusters || [],
+    "#analysisEvidenceClusters",
+    "evidence"
+  );
+  renderAnalysisClusterList(
+    data.reason_clusters || [],
+    "#analysisReasonClusters",
+    "theme"
+  );
+  renderAnalysisConfusion(data);
+  renderAnalysisCases(data);
+}
+
+async function loadReviewReasonAnalysis() {
+  const requestSeq = ++state.reviewAnalysis.requestSeq;
+  const options = analysisRequestOptions();
+  const params = new URLSearchParams();
+  if (options.runId) params.set("model_run_id", options.runId);
+  params.set("failure_only", String(Boolean(options.failureOnly && options.runId)));
+  if (options.annotationAuthor) params.set("annotation_author", options.annotationAuthor);
+  if (options.reviewStatus) params.set("review_status", options.reviewStatus);
+  if (options.gtLabel) params.set("gt_label", options.gtLabel);
+  if (options.annotationLabel) params.set("annotation_label", options.annotationLabel);
+  if (options.missingEvidence) params.set("missing_evidence", options.missingEvidence);
+  if (options.theme) params.set("theme", options.theme);
+  if (options.search) params.set("search", options.search);
+  params.set("page", String(Math.max(1, Number(options.page) || 1)));
+  params.set("page_size", String(state.reviewAnalysis.pageSize));
+  $("#analysisCaseSummary").textContent = "正在加载最新 Review…";
+  const data = await api(`/api/review-reason-analysis?${params.toString()}`);
+  if (requestSeq !== state.reviewAnalysis.requestSeq) return;
+  state.reviewAnalysis.data = data;
+  renderReviewReasonAnalysis(data);
+}
+
+function applyAnalysisComparisonSelection() {
+  const previousRunId = state.selectedRunId;
+  const previousFailureOnly = state.failureOnly;
+  const runId = $("#analysisRunFilter").value;
+  state.selectedRunId = state.modelRuns.some((run) => run.id === runId) ? runId : "";
+  state.failureOnly = Boolean(
+    state.selectedRunId && $("#analysisFailureOnlyInput").checked
+  );
+  if (
+    previousRunId !== state.selectedRunId ||
+    previousFailureOnly !== state.failureOnly
+  ) {
+    state.reviewQueueStale = true;
+  }
+  $("#modelRunFilter").value = state.selectedRunId;
+  $("#failureOnlyInput").disabled = !state.selectedRunId;
+  $("#failureOnlyInput").checked = state.failureOnly;
+  renderActiveRun();
+  renderRunManager();
+}
+
+async function reloadReviewAnalysis({ historyMode = "push" } = {}) {
+  applyAnalysisComparisonSelection();
+  showPage("analysis", { historyMode });
+  await Promise.all([loadReviewReasonAnalysis(), loadOverview()]);
+}
+
+async function changeAnalysisPage(delta) {
+  const data = state.reviewAnalysis.data || {};
+  const target = Math.max(
+    1,
+    Math.min(Number(data.page_count || 1), state.reviewAnalysis.page + delta)
+  );
+  if (target === state.reviewAnalysis.page) return;
+  state.reviewAnalysis.page = target;
+  showPage("analysis", { historyMode: "push" });
+  await loadReviewReasonAnalysis();
+  window.scrollTo({ top: $("#analysisCaseList").offsetTop - 72, behavior: "smooth" });
 }
 
 function clearDetail({ showGallery = true } = {}) {
@@ -2539,6 +2981,47 @@ function bindEvents() {
     event.preventDefault();
     await reloadReviewGallery();
   });
+  $("#reviewAnalysisFilterForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    state.reviewAnalysis.page = 1;
+    try {
+      await reloadReviewAnalysis();
+    } catch (error) {
+      showToast(error.message, true);
+    }
+  });
+  $("#analysisRunFilter").addEventListener("change", () => {
+    const runId = $("#analysisRunFilter").value;
+    const failure = $("#analysisFailureOnlyInput");
+    const wasDisabled = failure.disabled;
+    failure.disabled = !runId;
+    if (!runId) failure.checked = false;
+    else if (wasDisabled) failure.checked = true;
+  });
+  $("#resetReviewAnalysisButton").addEventListener("click", async () => {
+    $("#analysisRunFilter").value = "";
+    $("#analysisFailureOnlyInput").checked = false;
+    $("#analysisFailureOnlyInput").disabled = true;
+    $("#analysisReviewerFilter").value = "";
+    $("#analysisStatusFilter").value = "";
+    $("#analysisGtFilter").value = "";
+    $("#analysisAnnotationFilter").value = "";
+    $("#analysisEvidenceFilter").value = "";
+    $("#analysisThemeFilter").value = "";
+    $("#analysisSearchInput").value = "";
+    state.reviewAnalysis.page = 1;
+    try {
+      await reloadReviewAnalysis();
+    } catch (error) {
+      showToast(error.message, true);
+    }
+  });
+  $("#analysisPagePrevious").addEventListener("click", () => {
+    changeAnalysisPage(-1).catch((error) => showToast(error.message, true));
+  });
+  $("#analysisPageNext").addEventListener("click", () => {
+    changeAnalysisPage(1).catch((error) => showToast(error.message, true));
+  });
   $("#modelRunFilter").addEventListener("change", async () => {
     const previousRunId = state.selectedRunId;
     state.selectedRunId = $("#modelRunFilter").value;
@@ -2546,12 +3029,14 @@ function bindEvents() {
     if (state.selectedRunId && !previousRunId) state.failureOnly = true;
     $("#failureOnlyInput").disabled = !state.selectedRunId;
     $("#failureOnlyInput").checked = state.failureOnly;
+    renderAnalysisRunFilter();
     renderActiveRun();
     renderRunManager();
     await reloadReviewGallery();
   });
   $("#failureOnlyInput").addEventListener("change", async () => {
     state.failureOnly = $("#failureOnlyInput").checked;
+    renderAnalysisRunFilter();
     await reloadReviewGallery();
   });
   $("#clearClusterButton").addEventListener("click", async () => {
@@ -2574,7 +3059,9 @@ function bindEvents() {
   $("#refreshButton").addEventListener("click", async () => {
     try {
       await refreshAll();
-      if (state.selectedId) {
+      if (state.activePage === "analysis") {
+        await loadReviewReasonAnalysis();
+      } else if (state.selectedId) {
         await selectCase(state.selectedId, { updateRoute: false });
       }
       showToast("页面数据已刷新。");
@@ -2700,6 +3187,36 @@ function bindEvents() {
   });
   window.addEventListener("popstate", async () => {
     const route = parsePageRoute();
+    if (route.page === "analysis") {
+      const previousRunId = state.selectedRunId;
+      const previousFailureOnly = state.failureOnly;
+      const nextRunId =
+        route.runId && state.modelRuns.some((run) => run.id === route.runId)
+          ? route.runId
+          : "";
+      state.selectedRunId = nextRunId;
+      state.failureOnly = Boolean(nextRunId && route.failureOnly);
+      if (
+        previousRunId !== state.selectedRunId ||
+        previousFailureOnly !== state.failureOnly
+      ) {
+        state.reviewQueueStale = true;
+      }
+      $("#modelRunFilter").value = nextRunId;
+      $("#failureOnlyInput").checked = state.failureOnly;
+      $("#failureOnlyInput").disabled = !nextRunId;
+      renderAnalysisRunFilter();
+      applyAnalysisRouteControls(route);
+      showPage("analysis", { restoreRoute: true });
+      renderActiveRun();
+      renderRunManager();
+      try {
+        await Promise.all([loadReviewReasonAnalysis(), loadOverview()]);
+      } catch (error) {
+        showToast(error.message, true);
+      }
+      return;
+    }
     if (route.page !== "review") {
       showPage(route.page, {
         issues: route.issues,
@@ -2720,6 +3237,7 @@ function bindEvents() {
     state.failureOnly = nextFailureOnly;
     $("#failureOnlyInput").checked = state.failureOnly;
     $("#failureOnlyInput").disabled = !nextRunId;
+    renderAnalysisRunFilter();
     renderActiveRun();
     renderRunManager();
     if (!route.issue) {
@@ -2757,7 +3275,7 @@ async function bootstrap() {
   const savedSidebarState = localStorage.getItem("ra-triage-sidebar-collapsed");
   state.sidebarCollapsed = savedSidebarState === "true";
   applySidebarState();
-  applyReviewRouteControls(initialRoute);
+  if (initialRoute.page === "review") applyReviewRouteControls(initialRoute);
   bindEvents();
   updateImportFields();
   showPage(initialRoute.page, {
@@ -2770,14 +3288,21 @@ async function bootstrap() {
   });
   try {
     await Promise.all([loadConfig(), loadSession()]);
-    state.selectedRunId = initialRoute.runId || state.config.default_model_run_id || "";
+    state.selectedRunId =
+      initialRoute.runId === "none"
+        ? ""
+        : initialRoute.runId || state.config.default_model_run_id || "";
     state.failureOnly =
       initialRoute.failureOnly ??
       Boolean(state.config.default_failure_only && state.selectedRunId);
-    await loadRuns({ preferDefault: !initialRoute.runId });
+    await loadRuns({
+      preferDefault: !initialRoute.runId,
+      preserveEmpty: initialRoute.runId === "none",
+    });
     $("#failureOnlyInput").checked = state.failureOnly;
     await loadReviewers();
-    applyReviewRouteControls(initialRoute);
+    if (initialRoute.page === "review") applyReviewRouteControls(initialRoute);
+    if (initialRoute.page === "analysis") applyAnalysisRouteControls(initialRoute);
     await Promise.all([
       loadStatus(),
       loadOverview(),
@@ -2787,7 +3312,11 @@ async function bootstrap() {
       }),
       loadClusters(),
     ]);
-    if (initialRoute.issue && initialRoute.issue !== state.selectedId) {
+    if (
+      initialRoute.page === "review" &&
+      initialRoute.issue &&
+      initialRoute.issue !== state.selectedId
+    ) {
       await selectCase(initialRoute.issue, { updateRoute: false });
     }
     showPage(initialRoute.page, {
@@ -2798,6 +3327,7 @@ async function bootstrap() {
       importKind: initialRoute.importKind,
       restoreRoute: true,
     });
+    if (initialRoute.page === "analysis") await loadReviewReasonAnalysis();
   } catch (error) {
     showToast(`启动失败：${error.message}`, true);
   }
