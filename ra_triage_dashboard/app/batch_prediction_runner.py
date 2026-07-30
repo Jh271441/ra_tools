@@ -26,9 +26,10 @@ class BatchPredictionRunner:
     """Run the RA worker outside the dashboard process.
 
     Only one prediction/publish operation is launched at a time.  The worker
-    receives only a validated model ID from the browser. Gateway credentials
-    are sent through one-shot prediction-worker stdin and never enter browser
-    requests, process environments, dashboard storage, argv, or publish workers.
+    receives a server-resolved model ID plus a validated Prompt/Input snapshot.
+    Gateway credentials are sent through one-shot prediction-worker stdin and
+    never enter browser requests, process environments, dashboard storage,
+    argv, or publish workers.
     """
 
     def __init__(self, settings: Settings, database: Database):
@@ -139,6 +140,18 @@ class BatchPredictionRunner:
                         job.get("requested_model_id") or ""
                     ),
                     "catalog_sha256": str(job.get("catalog_sha256") or ""),
+                    "prompt_version": str(job.get("prompt_version") or ""),
+                    "prompt_template": str(
+                        job.get("prompt_template") or ""
+                    ),
+                    "prompt_template_sha256": str(
+                        job.get("prompt_template_sha256") or ""
+                    ),
+                    "prompt_mode": str(job.get("prompt_mode") or ""),
+                    "input_profile": str(job.get("input_profile") or ""),
+                    "input_config": job.get("input_config")
+                    if isinstance(job.get("input_config"), dict)
+                    else {},
                 },
             )
             raw_results = result.get("results")
@@ -239,6 +252,19 @@ class BatchPredictionRunner:
                             job.get("resolved_model_id") or ""
                         ),
                         "catalog_sha256": str(job.get("catalog_sha256") or ""),
+                        "model_validation_status": str(
+                            job.get("model_validation_status") or ""
+                        ),
+                        "prompt_template_sha256": str(
+                            job.get("prompt_template_sha256") or ""
+                        ),
+                        "prompt_mode": str(job.get("prompt_mode") or ""),
+                        "input_profile": str(
+                            job.get("input_profile") or ""
+                        ),
+                        "input_config": job.get("input_config")
+                        if isinstance(job.get("input_config"), dict)
+                        else {},
                         "ra_repo_commit": str(result.get("ra_repo_commit") or ""),
                         "trail_view_id": result.get("trail_view_id"),
                         "input_policy": {
@@ -307,6 +333,17 @@ class BatchPredictionRunner:
                         job.get("resolved_model_id") or ""
                     ),
                     "catalog_sha256": str(job.get("catalog_sha256") or ""),
+                    "model_validation_status": str(
+                        job.get("model_validation_status") or ""
+                    ),
+                    "prompt_template_sha256": str(
+                        job.get("prompt_template_sha256") or ""
+                    ),
+                    "prompt_mode": str(job.get("prompt_mode") or ""),
+                    "input_profile": str(job.get("input_profile") or ""),
+                    "input_config": job.get("input_config")
+                    if isinstance(job.get("input_config"), dict)
+                    else {},
                     "model_run_duplicate": duplicate,
                     "ares_bev_input": False,
                     "bag_cache_read_only": False,
@@ -375,6 +412,18 @@ class BatchPredictionRunner:
                     "action": "publish",
                     "config_sha256": str(job.get("config_sha256") or ""),
                     "model_id": str(job.get("resolved_model_id") or ""),
+                    "prompt_version": str(job.get("prompt_version") or ""),
+                    "prompt_template": str(
+                        job.get("prompt_template") or ""
+                    ),
+                    "prompt_template_sha256": str(
+                        job.get("prompt_template_sha256") or ""
+                    ),
+                    "prompt_mode": str(job.get("prompt_mode") or ""),
+                    "input_profile": str(job.get("input_profile") or ""),
+                    "input_config": job.get("input_config")
+                    if isinstance(job.get("input_config"), dict)
+                    else {},
                     "results": results,
                     "record_base_url": self.settings.auto_triage_record_base_url,
                 },

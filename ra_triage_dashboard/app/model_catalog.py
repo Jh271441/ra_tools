@@ -120,7 +120,7 @@ def read_model_gateway_api_key(settings: Settings) -> str:
 
 
 class ModelCatalog:
-    """Server-owned model discovery intersected with an RA-compatible profile."""
+    """Server-owned Qwen3 discovery with validated and experimental tiers."""
 
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -193,12 +193,13 @@ class ModelCatalog:
         if selected is None:
             raise ModelCatalogError(
                 400,
-                "所选模型不在当前在线且已验证的 RA 模型 Profile 中。",
+                "所选模型不在当前在线的 RA Qwen3 可用目录中。",
             )
         return {
             "requested_model_id": requested,
             "resolved_model_id": selected["resolved_model_id"],
             "provider": selected["provider"],
+            "validation_status": selected["validation_status"],
             "catalog_sha256": snapshot["catalog_sha256"],
             "profile_version": snapshot["profile_version"],
             "display_name": selected["display_name"],
@@ -294,6 +295,7 @@ class ModelCatalog:
         if not isinstance(models, dict) or not isinstance(aliases, dict):
             raise ModelCatalogError(503, "服务器 RA 模型 Profile 格式非法。")
         available: list[dict[str, str]] = []
+        available_ids: set[str] = set()
         for alias_id, alias in aliases.items():
             if not MODEL_ID_RE.fullmatch(str(alias_id)) or not isinstance(alias, dict):
                 continue
@@ -305,14 +307,16 @@ class ModelCatalog:
                 or model_profile.get("enabled") is not True
             ):
                 continue
-            available.append(
-                self._public_model(
-                    requested_id=str(alias_id),
-                    resolved_id=resolved,
-                    profile=model_profile,
-                    display_name=str(alias.get("display_name") or alias_id),
-                )
+            public_model = self._public_model(
+                requested_id=str(alias_id),
+                resolved_id=resolved,
+                profile=model_profile,
+                display_name=str(alias.get("display_name") or alias_id),
+                validation_status="validated",
             )
+            if public_model["id"] not in available_ids:
+                available.append(public_model)
+                available_ids.add(public_model["id"])
         for model_id, model_profile in models.items():
             if (
                 model_id not in online
@@ -321,16 +325,44 @@ class ModelCatalog:
                 or model_profile.get("enabled") is not True
             ):
                 continue
-            available.append(
-                self._public_model(
-                    requested_id=str(model_id),
-                    resolved_id=str(model_id),
-                    profile=model_profile,
-                    display_name=str(
-                        model_profile.get("display_name") or model_id
-                    ),
-                )
+            public_model = self._public_model(
+                requested_id=str(model_id),
+                resolved_id=str(model_id),
+                profile=model_profile,
+                display_name=str(
+                    model_profile.get("display_name") or model_id
+                ),
+                validation_status="validated",
             )
+            if public_model["id"] not in available_ids:
+                available.append(public_model)
+                available_ids.add(public_model["id"])
+
+        represented_online_ids = {
+            item["resolved_model_id"] for item in available
+        }
+        for model_id in sorted(online):
+            lowered = model_id.lower()
+            if (
+                "qwen3" not in lowered
+                or "embedding" in lowered
+                or model_id in available_ids
+                or model_id in represented_online_ids
+            ):
+                continue
+            available.append(
+                {
+                    "id": model_id,
+                    "display_name": model_id,
+                    "resolved_model_id": model_id,
+                    "provider": "kylin",
+                    "input_contract": "camera_only_ra_triage",
+                    "prompt_mode": "server_default",
+                    "validation_status": "experimental",
+                }
+            )
+            available_ids.add(model_id)
+            represented_online_ids.add(model_id)
         default_model_id = str(
             profile.get("default_model_id")
             or self.settings.ra_model_default_id
@@ -357,16 +389,33 @@ class ModelCatalog:
                 separators=(",", ":"),
             ).encode("utf-8")
         ).hexdigest()
+        validated_count = sum(
+            item["validation_status"] == "validated" for item in available
+        )
+        experimental_count = sum(
+            item["validation_status"] == "experimental" for item in available
+        )
         return {
             "status": "ready",
             "stale": False,
-            "message": "模型目录已刷新；仅展示在线且通过 RA Profile 的模型。",
+            "message": (
+                "模型目录已刷新；"
+                f"已验证 {validated_count} 个可选项，"
+                f"实验性在线 Qwen3 {experimental_count} 个。"
+            ),
             "catalog_label": "ra-model.intra.xiaojukeji.com/v1/models",
             "default_model_id": default_model_id,
             "models": available,
             "online_count": len(online),
+            "available_count": len(available),
             "compatible_count": len(available),
-            "excluded_count": max(0, len(online) - len({item["resolved_model_id"] for item in available})),
+            "validated_count": validated_count,
+            "experimental_count": experimental_count,
+            "excluded_count": max(
+                0,
+                len(online)
+                - len({item["resolved_model_id"] for item in available}),
+            ),
             "refreshed_at": _utc_now(),
             "catalog_sha256": catalog_sha256,
             "profile_version": schema_version,
@@ -379,6 +428,7 @@ class ModelCatalog:
         resolved_id: str,
         profile: dict[str, Any],
         display_name: str,
+        validation_status: str = "validated",
     ) -> dict[str, str]:
         provider = str(profile.get("provider") or "").strip()
         input_contract = str(profile.get("input_contract") or "").strip()
@@ -396,4 +446,5 @@ class ModelCatalog:
             "provider": provider,
             "input_contract": input_contract,
             "prompt_mode": prompt_mode,
+            "validation_status": validation_status,
         }

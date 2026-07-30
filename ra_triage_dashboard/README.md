@@ -2,16 +2,17 @@
 
 一个独立于 `ra_auto_triage` 的 issue triage / 标注 / 模型结果对比看板。
 
-## 当前 MVP（v1.5）
+## 当前 MVP（v1.6）
 
 - 默认工作集是 `trail_label_baseline_20260729.xlsx` 中 `dataset=0508` 的 **1071 条**；GT 只来自该快照，不因 Trail 查询或模型导入而改变。
-- 首页把媒体作为主内容：默认占位、BEV 图片和未来视频使用同一块大画布；点击后打开 Ares Capture BEV / Camera 统一时序预览，`←/↑` 上一帧、`→/↓` 下一帧，`B/C` 切换 BEV / Camera。顶部比较信息只保留一处紧凑摘要，Review 表单不再重复 GT / 模型预测。
-- 左侧工具栏宽度随视口缩放，可折叠到 60px；首次访问在不超过 1440px 的窗口自动折叠，用户手动选择后会记住偏好。判错复核、模型 Runs / 导入、Batch 预测分别使用 `/review`、`/runs`、`/batch-prediction` 独立路由，支持硬刷新和浏览器前进/后退。`/import` 会 307 跳转到 `/runs?import=...`，`/inference` 仅作为旧链接兼容入口。Review 使用 container query 按 3 / 2 / 1 栏重排，不依赖物理屏幕分辨率或浏览器 DPR。
+- 首页是服务端筛选、50 条一页的四列 Issue 缩略图队列；BEV 缩略图按源文件版本生成 640×360 缓存并懒加载，不把 1071 张原图一次送进浏览器。点击 Issue 后才进入 URL 可恢复的详情态，加载大图、Ares Capture BEV / Camera、模型输出和人工 Review；详情支持返回列表及跨页上一/下一 Issue。
+- 左侧工具栏只接受用户手动折叠并记住偏好，不再根据分辨率、DPR 或窗口宽度自动改变。判错复核、模型 Runs / 导入、Batch 预测分别使用 `/review`、`/runs`、`/batch-prediction` 独立路由，支持硬刷新和浏览器前进/后退。`/import` 会 307 跳转到 `/runs?import=...`，`/inference` 仅作为旧链接兼容入口。
 - Trail 操作分成「检查字段」和「创建 Run」两步，收在 Runs 页的默认折叠区；两步都不写回 Trail，快照只创建或复用本地不可变 Run，且不会修改团队默认 Run。启动时若启用 Trail 检查，也只执行第一步。
-- 可导入 issue / GT 与批量模型输出（JSON、CSV、XLSX）；模型文件按 SHA-256 创建不可变 Model Run。Runs 页面只保留模型、人员、批次、覆盖率、错误数与时间，可搜索和切换当前 Review Run。
+- 可导入 issue / GT 与批量模型输出（JSON、CSV、XLSX）；也可按 AutoTriage Batch ID / records 链接经固定只读内网接口拉取结果。两者都按规范化内容 SHA-256 创建或复用不可变 Model Run，不覆盖 GT、不切换团队默认 Run；AutoTriage 拉取会显式比较声明数、完成数、结果数和唯一 Issue 数，并标记部分覆盖。
 - 人工标注为追加式历史，最新一条为当前标注，不覆盖旧 review；「模型为什么判错」是主输入，「模型缺失信息」收进紧凑的结构化多选下拉，并自动汇总为 routing、绕行空间、灯态、双闪、时序等错误聚类。每个 review 版本可粘贴或选择最多 4 张补充截图；场景 Tags 为可选的规范化多选项。
-- 首页可把当前单个 Issue 或不超过 50 条的完整筛选结果预填到 Batch 页面；若前端只加载到部分结果或超过上限，会明确阻止而不是静默截断。模型列表由后端读取固定网关 `/v1/models`，再与版本化 RA Profile 取交集；浏览器只提交 `model_id`，默认 `Auto` 会解析并分别记录 requested / resolved model ID。成功预测自动形成 `kind=manual_batch` 的不可变 Model Run，但不会改成团队默认。
-- 网关 API key 只从服务用户持有的 `0600` 普通文件读取，经一次性 stdin 交给预测 worker，读取后立即从请求对象移除；不接受浏览器或父进程环境变量中的 key，也不会把 key 交给 AutoTriage publish worker。模型 Prompt、Camera 帧和 RA event 参数继续来自 `ra_auto_triage` 默认 Experiment，Ares / BEV 强制关闭。
+- 首页可把当前单个 Issue 或不超过 50 条的完整筛选结果预填到 Batch 页面；若前端只加载到部分结果或超过上限，会明确阻止而不是静默截断。模型目录保留 Profile 已验证项和网关当前在线的 Qwen3 生成模型，排除 Embedding；实验模型有明确标记且创建任务前需再次确认。默认 `Auto` 仍解析并分别记录 requested / resolved model ID。
+- 每个 Batch 固化请求人、模型验证层级、完整 Prompt 正文与 SHA-256、Prompt 基线版本/是否编辑、Camera 帧偏移、RA Events / RA-SWAG Options 和输入 Profile；任务历史可按人员、状态、模型、Prompt 精确版本（mode + SHA）和输入筛选，已下线模型与旧 Prompt 也保留在筛选项中。Prompt 只允许当前三分类构建器提供的变量并必须保留三个标准标签；Camera 偏移严格递增、包含 0、最多 18 帧。worker 会重新校验 Prompt/Input 快照并重建配置 Hash，预测与后续发布必须一致。
+- 网关 API key 只从服务用户持有的 `0600` 普通文件读取，经一次性 stdin 交给预测 worker，读取后立即从请求对象移除；不接受浏览器或父进程环境变量中的 key，也不会把 key 交给 AutoTriage publish worker。Ares / BEV 和轨迹摘要在 Batch 输入中强制关闭。
 - Batch 采用两阶段写入：预测阶段只在 dashboard 自己的 `batch_bags/` 缓存中下载/复用 Camera 与 gateway bag，绝不修改 `ra_auto_triage/bags`；同时强制禁用 Ares、禁止 Trail 写和 AutoTriage 写。可信 SSO 用户显式点击「推送 AutoTriage」后，才用 cloud_server 固定服务身份创建生产 Batch、推送成功结果并关联 `records/{batch_id}?tab=results`。重复点击已有 Batch 的任务只返回原链接，不再次建批。
 
 ## 对象生命周期与人员归属
@@ -21,13 +22,15 @@
 ```text
 JSON / CSV / XLSX 批量结果 ──> 不可变 Model Run ──> Review 与统计
 Trail 只读字段检查 ──> 显式创建/复用不可变 Trail Run ──> Review 与统计
+AutoTriage Batch 只读拉取 ──> 不可变 autotriage_snapshot Run ──> Review 与统计
 Issue 列表 ──> Batch Prediction Job ──> 不可变 manual_batch Run
                                       └─> 显式推送 ──> AutoTriage Batch 链接
 ```
 
 - **Model Run** 是一组模型输出的不可变快照。Review 每次选择一个 Run 与 0508 GT 对比；切换当前 Run 不会修改 GT、人工复核或团队默认 Run。
 - **Trail Run** 也是 Model Run，只是来源为某个 Trail view 的只读字段快照。相同规范化内容复用已有 Run，任意结果变化才创建新 Run。
-- **Batch Prediction Job** 保存一批 Issue 的进度、requested / resolved 模型 ID、目录指纹、结果、请求人和独立推送状态。预测成功项自动进入不可变 Run；推理失败和 AutoTriage 写入失败可以分别查看。旧 `inference_jobs` 只为历史兼容保留 GET，旧 POST 返回 `410`。
+- **AutoTriage Snapshot Run** 是平台 Batch detail/results 的只读内容快照。平台用户保留为来源元数据，实际在页面执行拉取的人保留为 Run 创建人；两者不混用。
+- **Batch Prediction Job** 保存一批 Issue 的进度、requested / resolved 模型 ID、验证层级、Prompt/Input 快照与 Hash、结果、请求人和独立推送状态。预测成功项自动进入不可变 Run；推理失败和 AutoTriage 写入失败可以分别查看。旧 `inference_jobs` 只为历史兼容保留 GET，旧 POST 返回 `410`。
 
 页面默认展示团队全部数据，不按当前登录人裁剪；人员字段各自表达不同含义：
 
@@ -48,6 +51,7 @@ Runs 的「人员」统一显示/筛选创建人；旧 Run 没有创建人时回
 - 代码：`/volume/home/workspace/ra_tools/ra_triage_dashboard`
 - 可变数据：`/volume/home/workspace/ra_triage_dashboard_data`
 - Review 截图：`/volume/home/workspace/ra_triage_dashboard_data/review_attachments`
+- Issue 缩略图缓存：`/volume/home/workspace/ra_triage_dashboard_data/case_thumbnails`（可重建）
 - Batch bag 缓存：`/volume/home/workspace/ra_triage_dashboard_data/batch_bags`（可重建、与 RA 仓库隔离）
 - 模型网关密钥：`/volume/home/workspace/ra_triage_dashboard_data/model_gateway_api_key`（服务用户持有的 `0600` 普通文件，不进入代码备份）
 - RA 模型 Profile：`config/model_profiles.json`（版本化兼容白名单，不含凭证）
@@ -57,6 +61,11 @@ Runs 的「人员」统一显示/筛选创建人；旧 Run 没有创建人时回
 - 模型 / Trail 逻辑：`/volume/home/workspace/ra_auto_triage`（代码与原有 bag 只读；Batch 新下载只写 dashboard 独立缓存）
 
 模型 endpoint 是服务端固定配置，API key 只存在于上述受限文件和预测 worker 的一次性 stdin，不进入浏览器 HTTP 请求、dashboard SQLite、argv、子进程环境或公共 API。Batch Run 只保存脱敏后的模型、Prompt、输入策略、目录 SHA-256 和配置 SHA-256；上传 JSON / CSV / XLSX 时，metadata、原始行和扩展字段中的 credential / endpoint key 也会在入库前递归脱敏，公共读取再执行一次同样的防护。
+
+AutoTriage 拉取同样是服务端固定来源，默认
+`DASHBOARD_AUTOTRIAGE_API_BASE_URL=http://10.190.57.183:8000`。浏览器提供的
+records 链接只用于提取数字 Batch ID，后端不会跟随其中的 hostname；客户端禁用
+代理和重定向，拉取只产生本地不可变 Run，不调用平台写接口。
 
 当前网关对外契约是内网 HTTP；2026-07-30 实测 HTTPS 入口的证书已过期，无法在保持证书校验的前提下切换。因此 key 的网络传输目前依赖受控内网边界，仍是已知运营风险。证书续期后应把 catalog / chat URL 一并切换到 HTTPS；代码会继续校验固定 hostname、禁用代理和重定向，不能用关闭证书校验替代修复。
 
@@ -110,6 +119,11 @@ issue_id, model_label
 
 GT 导入默认不会覆盖已有 GT，只有在 UI 勾选明确覆盖时才会改写。
 
+AutoTriage 快照导入只接受数字 Batch ID 或能提取该 ID 的 records 链接。后端
+重新拉取 Batch detail 与 results，只接受三个标准标签，并把平台用户、模型、
+Prompt 版本/Hash 和覆盖情况保存为来源元数据；平台返回的 GT 只保留在脱敏原始
+行中，不会更新 Workbench baseline。
+
 Trail 只消费 `ra_stuck_auto_result` 和 `ra_stuck_auto_result_info`。可通过 `DASHBOARD_TRAIL_VIEW_ID` 指向包含这两个字段的 view：
 
 1. 点击「检查字段可见性」，只读检查字段、完整性和可用覆盖数，不创建 Run。
@@ -125,7 +139,7 @@ bash scripts/bootstrap_cloud_server_env.sh
 bash scripts/run_cloud_server.sh
 ```
 
-启动脚本固定使用 `/volume/home/workspace/ra_triage_dashboard_venv`。该 venv 继承 cloud_server 已验证的 RA / Trail 依赖栈，并在环境内覆盖截图入口所需的安全版本；Batch worker 会先加载 Voyager 环境，再用同一 Python 调用 `ra_auto_triage`。当前试运行监听 `0.0.0.0:8785`，可从内网直接访问 `http://172.16.145.60:8785`。直接 IP 是明文 HTTP 且无可信 SSO，只适合受控内网试用；正式多人使用应迁到 HTTPS + SSO 认证代理。
+启动脚本默认使用 `/volume/home/workspace/ra_triage_dashboard_venv`，并监听 `0.0.0.0:8785`；可通过 `DASHBOARD_VENV_DIR`、`DASHBOARD_HOST`、`DASHBOARD_PORT` 和 `DASHBOARD_DATA_DIR` 覆盖，便于隔离 staging。该 venv 继承 cloud_server 已验证的 RA / Trail 依赖栈，并在环境内覆盖截图入口所需的安全版本；Batch worker 会先加载 Voyager 环境，再用同一 Python 调用 `ra_auto_triage`。当前试运行可从内网直接访问 `http://172.16.145.60:8785`。直接 IP 是明文 HTTP 且无可信 SSO，只适合受控内网试用；正式多人使用应迁到 HTTPS + SSO 认证代理。
 
 页面路由可直接访问：
 
@@ -155,6 +169,7 @@ MVP 使用 SQLite（WAL 模式）便于在 cloud_server 快速验证。它适合
 3. `004_review_attachments.sql`：增加 annotation 级截图元数据；二进制文件仍保存在独立附件目录。
 4. `005_batch_prediction_jobs.sql`：增加 Batch Prediction Job / Item、不可变 Model Run 关联和 AutoTriage 推送审计字段。
 5. `006_batch_model_selection.sql`：为既有 Batch Job 增加 requested / resolved 模型 ID、模型来源和目录指纹。
+6. `007_batch_prompt_input.sql`：增加模型验证层级、完整 Prompt 快照/Hash、输入 Profile 和输入配置 JSON 及筛选索引。
 
 `003_identity_attribution.sql` 对旧行使用 `legacy` / `verified=false`，不会把历史自由填写姓名升级成可信 SSO。所有人工标注、模型结果、任务记录与附件元数据都保留历史行，因此迁移时是一次数据复制，不需要把旧记录扁平化或覆盖；附件二进制需另行迁移。上述 SQL 仍只是 PostgreSQL 目标 schema 与迁移准备；当前运行 adapter 仍是 SQLite。
 

@@ -69,7 +69,8 @@
 
         <main class="main">
           <section class="app-page" id="reviewPage" data-page="review">
-            <section class="review-commandbar" aria-label="Review 筛选与快捷操作">
+            <section class="review-gallery-view" id="reviewGalleryView">
+              <section class="review-commandbar" aria-label="Review 筛选与快捷操作">
               <form class="review-filters" id="filterForm">
                 <label class="filter-model-run">
                   <span>对比模型 Run</span>
@@ -125,35 +126,54 @@
                 </div>
                 <div class="cluster-list" id="clusterList"><span class="muted">暂无复核聚类</span></div>
               </div>
-            </section>
-
-            <section class="workspace">
-              <aside class="issue-pane">
-                <div class="pane-heading">
-                  <div>
-                    <span class="eyebrow">FAILURE REVIEW QUEUE</span>
-                    <h2>Issue 列表</h2>
-                  </div>
-                  <span class="count-pill" id="caseCount">—</span>
-                </div>
-                <div class="issue-list" id="issueList" aria-live="polite"></div>
-              </aside>
-
-              <section class="detail-pane" id="detailPane">
-                <div class="empty-state">
-                  <div class="empty-glyph" aria-hidden="true">+</div>
-                  <h2>选择一个失败 case 开始 review</h2>
-                  <p>默认队列只显示模型判断与 0508 GT 不一致的样本。点击 BEV 大图可打开完整时序并切换 Camera。</p>
-                </div>
               </section>
 
-              <aside class="review-pane" id="reviewPane">
-                <div class="review-placeholder">
-                  <span class="eyebrow">HUMAN REVIEW</span>
-                  <h2>人工复核</h2>
-                  <p>记录最终结论，并选出模型遗漏的关键信息；这些字段会自动汇总为错误聚类。</p>
+              <section class="gallery-panel">
+                <div class="gallery-heading">
+                  <div>
+                    <span class="eyebrow">FAILURE REVIEW QUEUE</span>
+                    <h2>Issue Gallery</h2>
+                  </div>
+                  <div class="gallery-heading-meta">
+                    <span id="galleryResultSummary">正在加载 Issue…</span>
+                    <span class="count-pill" id="caseCount">—</span>
+                  </div>
                 </div>
-              </aside>
+                <div class="issue-grid" id="issueList" aria-live="polite"></div>
+                <nav class="case-pagination" aria-label="Issue 分页">
+                  <button class="button button-quiet" id="casePagePrevious" type="button">上一页</button>
+                  <span id="casePageSummary">— / —</span>
+                  <button class="button button-quiet" id="casePageNext" type="button">下一页</button>
+                </nav>
+              </section>
+            </section>
+
+            <section class="review-detail-view hidden" id="reviewDetailView">
+              <div class="case-detail-nav">
+                <button class="button button-quiet" id="backToGalleryButton" type="button">← 返回筛选结果</button>
+                <div class="case-detail-pager">
+                  <button class="button button-quiet" id="previousIssueButton" type="button">← 上一 Issue</button>
+                  <span id="detailQueuePosition">— / —</span>
+                  <button class="button button-quiet" id="nextIssueButton" type="button">下一 Issue →</button>
+                </div>
+              </div>
+              <section class="review-detail-workspace">
+                <section class="detail-pane" id="detailPane">
+                  <div class="empty-state">
+                    <div class="empty-glyph" aria-hidden="true">+</div>
+                    <h2>正在准备 Issue 详情</h2>
+                    <p>点击 Gallery 卡片后，这里会显示 BEV / Camera 与模型输出。</p>
+                  </div>
+                </section>
+
+                <aside class="review-pane" id="reviewPane">
+                  <div class="review-placeholder">
+                    <span class="eyebrow">HUMAN REVIEW</span>
+                    <h2>人工复核</h2>
+                    <p>记录最终结论，并选出模型遗漏的关键信息；这些字段会自动汇总为错误聚类。</p>
+                  </div>
+                </aside>
+              </section>
             </section>
           </section>
 
@@ -162,6 +182,7 @@
               <div class="runs-toolbar">
                 <p>按模型、人员和批次管理预测结果</p>
                 <div class="run-manager-actions">
+                  <button class="button button-quiet" id="openAutoTriageImportButton" type="button">从 AutoTriage 拉取</button>
                   <button class="button button-primary" id="runManagerImportButton" type="button">上传模型结果</button>
                   <button class="button button-quiet" id="refreshRunsButton" type="button">刷新</button>
                 </div>
@@ -184,6 +205,7 @@
                     <option value="upload">批量文件</option>
                     <option value="trail_snapshot">Trail 快照</option>
                     <option value="manual_batch">网页 Batch</option>
+                    <option value="autotriage_snapshot">AutoTriage 快照</option>
                   </select>
                 </label>
               </div>
@@ -234,6 +256,34 @@
                 </form>
               </div>
             </details>
+            <details class="page-card run-import-panel" id="autotriageImportPanel">
+              <summary>
+                <span>从 AutoTriage 拉取模型结果</span>
+                <small>固定内网只读接口 · 创建不可变 Run · 不改 GT / 默认 Run</small>
+              </summary>
+              <div class="run-import-body">
+                <aside class="run-import-copy">
+                  <span class="eyebrow">AUTOTRIAGE SNAPSHOT</span>
+                  <h3>按 Batch 拉取</h3>
+                  <p>输入 Batch ID 或 records 链接。服务端只访问固定 AutoTriage 内网地址，并校验声明总数、完成数、结果数和唯一 Issue 数。</p>
+                  <p>平台内容相同会复用已有 Run；平台结果变化时会生成新的内容快照。</p>
+                </aside>
+                <form class="tool-form" id="autotriageImportForm">
+                  <label>
+                    <span>Batch ID / records 链接</span>
+                    <input id="autotriageBatchInput" placeholder="例如 761，或 …/records/761?tab=results" autocomplete="off" required />
+                  </label>
+                  <label>
+                    <span>模型 Run 名（可选）</span>
+                    <input id="autotriageRunNameInput" placeholder="默认使用平台 Batch 名" maxlength="120" autocomplete="off" />
+                  </label>
+                  <div class="dialog-result hidden" id="autotriageImportResult"></div>
+                  <div class="page-actions">
+                    <button class="button button-primary" id="importAutoTriageButton" type="submit">拉取并创建 Run</button>
+                  </div>
+                </form>
+              </div>
+            </details>
             <details class="page-card trail-import-details">
               <summary>
                 <span>从 Trail 导入模型结果</span>
@@ -273,6 +323,10 @@
                   <small>认证方式 · 服务端密钥</small>
                 </div>
                 <label>
+                  <span>筛选模型</span>
+                  <input id="predictionModelSearch" placeholder="输入 Qwen3 / checkpoint 关键词" autocomplete="off" />
+                </label>
+                <label>
                   <span>模型</span>
                   <div class="gateway-model-control">
                     <select id="predictionModelSelect">
@@ -295,6 +349,50 @@
                   <input id="predictionBatchName" placeholder="例如 release-20260730-routing-review" maxlength="120" autocomplete="off" />
                   <small>留空时由服务器按当前时间生成。</small>
                 </label>
+                <details class="batch-config-details" open>
+                  <summary>
+                    <span>Prompt 与输入配置</span>
+                    <small>每个 Batch 固化完整快照，可按模型 / Prompt / 输入筛选</small>
+                  </summary>
+                  <div class="batch-config-body">
+                    <div class="batch-config-grid">
+                      <label>
+                        <span>Prompt 基线</span>
+                        <select id="predictionPromptSelect">
+                          <option value="">正在读取服务器 Prompt…</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>输入 Profile</span>
+                        <select id="predictionInputProfile">
+                          <option value="camera_ra_event">Camera 7 帧 + RA Events</option>
+                          <option value="camera_ra_options">Camera 7 帧 + RA Events + RA/SWAG Options</option>
+                          <option value="camera_only">Camera 7 帧</option>
+                        </select>
+                      </label>
+                    </div>
+                    <label>
+                      <span>Prompt 正文（可编辑）</span>
+                      <textarea class="batch-prompt-input" id="predictionPromptTemplate" rows="12" spellcheck="false" placeholder="选择 Prompt 后载入完整正文"></textarea>
+                      <small id="predictionPromptSummary">正文会在任务创建时计算 SHA-256 并固化。</small>
+                    </label>
+                    <label>
+                      <span>Camera 帧偏移（ms）</span>
+                      <input id="predictionFrameOffsets" value="-3000,-2000,-1000,0,1000,2000,3000" autocomplete="off" />
+                      <small>严格递增、包含 0；最多 18 帧，范围 ±30000 ms。</small>
+                    </label>
+                    <div class="batch-input-toggles">
+                      <label class="toggle-row compact-toggle">
+                        <input id="predictionUseRaEvent" type="checkbox" checked />
+                        <span><strong>RA Events</strong><small>注入协助时序</small></span>
+                      </label>
+                      <label class="toggle-row compact-toggle">
+                        <input id="predictionUseRaOptions" type="checkbox" />
+                        <span><strong>RA / SWAG Options</strong><small>需同时启用 RA Events</small></span>
+                      </label>
+                    </div>
+                  </div>
+                </details>
                 <label>
                   <span>Issue IDs</span>
                   <textarea class="batch-issue-input" id="predictionBatchIssues" rows="10" placeholder="每行一个，也支持逗号或空格分隔，例如：&#10;cn32171803&#10;cn31954847&#10;cn32000543" required></textarea>
@@ -314,7 +412,7 @@
                 </div>
                 <button class="button button-quiet" id="refreshPredictionBatchesButton" type="button">刷新任务</button>
               </div>
-              <div class="run-filter-bar">
+              <div class="run-filter-bar batch-history-filters">
                 <label>
                   <span>请求人</span>
                   <select id="batchRequesterFilter">
@@ -330,6 +428,28 @@
                     <option value="succeeded">成功</option>
                     <option value="partial">部分成功</option>
                     <option value="failed">失败</option>
+                  </select>
+                </label>
+                <label>
+                  <span>模型</span>
+                  <select id="batchModelFilter">
+                    <option value="">全部模型</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Prompt</span>
+                  <select id="batchPromptFilter">
+                    <option value="">全部 Prompt</option>
+                  </select>
+                </label>
+                <label>
+                  <span>输入</span>
+                  <select id="batchInputFilter">
+                    <option value="">全部输入</option>
+                    <option value="camera_ra_event">Camera + RA Events</option>
+                    <option value="camera_ra_options">Camera + RA/SWAG Options</option>
+                    <option value="camera_only">Camera only</option>
+                    <option value="custom">Custom</option>
                   </select>
                 </label>
               </div>

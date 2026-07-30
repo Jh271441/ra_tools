@@ -54,6 +54,56 @@ class AssetIndex:
             self._assets = {}
         return len(parsed)
 
+    def has_issue(self, issue_id: str) -> bool:
+        """Return whether an indexed Ares manifest entry exists for an issue."""
+
+        self.refresh()
+        with self._lock:
+            meta_path = self._meta_paths.get(issue_id)
+        return bool(meta_path and meta_path.is_file())
+
+    def get_thumbnail_source(self, issue_id: str) -> dict[str, Any] | None:
+        """Resolve the t0/nearest BEV frame used to build a lightweight thumbnail.
+
+        The returned path is consumed only by the dashboard backend.  Browser
+        responses continue to expose opaque asset/thumbnail URLs.
+        """
+
+        assets = self.get_assets(issue_id)
+        frames = assets.get("frames") if isinstance(assets, dict) else None
+        if not isinstance(frames, list) or not frames:
+            return None
+
+        def distance(frame: dict[str, Any]) -> tuple[float, int]:
+            raw = frame.get("offset_ms")
+            if raw is None and frame.get("offset_sec") is not None:
+                try:
+                    raw = float(frame["offset_sec"]) * 1000
+                except (TypeError, ValueError):
+                    raw = None
+            try:
+                return abs(float(raw)), frames.index(frame)
+            except (TypeError, ValueError):
+                return float("inf"), frames.index(frame)
+
+        selected = min(
+            (frame for frame in frames if isinstance(frame, dict)),
+            key=distance,
+            default=None,
+        )
+        if selected is None:
+            return None
+        asset_id = str(selected.get("id") or "")
+        path = self.get_asset_path(issue_id, asset_id)
+        if path is None:
+            return None
+        return {
+            "path": path,
+            "asset_id": asset_id,
+            "offset_ms": selected.get("offset_ms"),
+            "offset_sec": selected.get("offset_sec"),
+        }
+
     def get_assets(self, issue_id: str) -> dict[str, Any]:
         self.refresh()
         with self._lock:

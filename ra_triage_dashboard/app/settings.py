@@ -27,6 +27,7 @@ def _integer(name: str, default: int, minimum: int = 1) -> int:
 @dataclass(frozen=True)
 class Settings:
     app_root: Path
+    build_commit: str
     static_dir: Path
     data_dir: Path
     database_url: str
@@ -54,6 +55,7 @@ class Settings:
     ra_model_profile_path: Path
     ra_model_api_key_file: Path
     auto_triage_record_base_url: str
+    autotriage_api_base_url: str
     allowed_model_hosts: tuple[str, ...]
     job_timeout_seconds: int
     trust_proxy_identity_headers: bool
@@ -91,6 +93,10 @@ class Settings:
         )
         return cls(
             app_root=app_root,
+            build_commit=(
+                os.getenv("DASHBOARD_BUILD_COMMIT", "").strip()[:64]
+                or "unverified"
+            ),
             static_dir=app_root / "static",
             data_dir=data_dir,
             database_url=os.getenv(
@@ -162,6 +168,11 @@ class Settings:
                 "http://auto-triage.intra.xiaojukeji.com/ra/model_triage/records",
             ).strip()
             or "http://auto-triage.intra.xiaojukeji.com/ra/model_triage/records",
+            autotriage_api_base_url=os.getenv(
+                "DASHBOARD_AUTOTRIAGE_API_BASE_URL",
+                "http://10.190.57.183:8000",
+            ).strip()
+            or "http://10.190.57.183:8000",
             allowed_model_hosts=extra_hosts,
             job_timeout_seconds=_integer("DASHBOARD_JOB_TIMEOUT_SECONDS", 720, 32),
             trust_proxy_identity_headers=_bool(
@@ -196,10 +207,15 @@ class Settings:
     def review_attachments_dir(self) -> Path:
         return self.data_dir / "review_attachments"
 
+    @property
+    def case_thumbnails_dir(self) -> Path:
+        return self.data_dir / "case_thumbnails"
+
     def ensure_directories(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
         self.uploads_dir.mkdir(parents=True, exist_ok=True)
         self.review_attachments_dir.mkdir(parents=True, exist_ok=True)
+        self.case_thumbnails_dir.mkdir(parents=True, exist_ok=True)
         self.batch_bag_cache_dir.mkdir(parents=True, exist_ok=True)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)

@@ -24,6 +24,21 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+try:
+    from .prompt_catalog import (
+        PROMPT_ID_RE,
+        PromptCatalogError,
+        _normalise_prompt_text,
+        normalise_input_config,
+    )
+except ImportError:  # Direct script execution from run_batch_worker.sh.
+    from prompt_catalog import (  # type: ignore[no-redef]
+        PROMPT_ID_RE,
+        PromptCatalogError,
+        _normalise_prompt_text,
+        normalise_input_config,
+    )
+
 
 RESULT_PREFIX = "__RA_TRIAGE_BATCH_RESULT__"
 EVENT_PREFIX = "__RA_TRIAGE_BATCH_EVENT__"
@@ -353,13 +368,120 @@ def apply_gateway_model(experiment: Any, request: dict[str, Any]) -> str:
     return source
 
 
-def safe_experiment_config(experiment: Any, source: str) -> dict[str, Any]:
+def apply_prediction_configuration(
+    experiment: Any,
+    request: dict[str, Any],
+) -> dict[str, str]:
+    prompt_version = str(request.get("prompt_version") or "").strip()
+    if not PROMPT_ID_RE.fullmatch(prompt_version):
+        raise ValueError("Batch worker prompt_version 格式非法。")
+    try:
+        prompt_template = _normalise_prompt_text(
+            request.get("prompt_template")
+        )
+    except PromptCatalogError as exc:
+        raise ValueError(str(exc)) from exc
+    prompt_sha = str(
+        request.get("prompt_template_sha256") or ""
+    ).strip().lower()
+    actual_prompt_sha = hashlib.sha256(
+        prompt_template.encode("utf-8")
+    ).hexdigest()
+    if not re.fullmatch(r"[0-9a-f]{64}", prompt_sha) or (
+        prompt_sha != actual_prompt_sha
+    ):
+        raise ValueError("Batch worker Prompt SHA-256 校验失败。")
+    prompt_mode = str(request.get("prompt_mode") or "").strip()
+    if prompt_mode not in {"catalog", "custom"}:
+        raise ValueError("Batch worker prompt_mode 非法。")
+
+    raw_input = request.get("input_config")
+    if not isinstance(raw_input, dict):
+        raise ValueError("Batch worker input_config 必须是对象。")
+    allowed_input_fields = {
+        "profile_id",
+        "frame_offsets_ms",
+        "use_ra_event",
+        "use_ra_options",
+        "use_trajectory_summary",
+        "use_ares_capture",
+        "use_bev_animation",
+    }
+    unknown = sorted(set(raw_input) - allowed_input_fields)
+    if unknown:
+        raise ValueError(
+            f"Batch worker input_config 含未知字段：{', '.join(unknown)}。"
+        )
+    if any(
+        raw_input.get(key) is not False
+        for key in (
+            "use_trajectory_summary",
+            "use_ares_capture",
+            "use_bev_animation",
+        )
+    ):
+        raise ValueError("Batch worker 禁止启用轨迹摘要或 Ares/BEV 输入。")
+    try:
+        input_config = normalise_input_config(
+            {
+                key: raw_input.get(key)
+                for key in (
+                    "profile_id",
+                    "frame_offsets_ms",
+                    "use_ra_event",
+                    "use_ra_options",
+                )
+                if key in raw_input
+            }
+        )
+    except PromptCatalogError as exc:
+        raise ValueError(str(exc)) from exc
+    input_profile = str(request.get("input_profile") or "").strip()
+    if (
+        not input_profile
+        or input_profile != input_config["profile_id"]
+        or str(raw_input.get("profile_id") or "") != input_profile
+    ):
+        raise ValueError("Batch worker Input Profile 快照校验失败。")
+
+    experiment.prompt_version = prompt_version
+    experiment.prompt_template = prompt_template
+    experiment.prompt_template_sha256 = prompt_sha
+    if hasattr(experiment, "output_mode"):
+        experiment.output_mode = "triage"
+    experiment.frame_offsets_ms = list(input_config["frame_offsets_ms"])
+    experiment.use_ra_event = bool(input_config["use_ra_event"])
+    experiment.use_ra_options = bool(input_config["use_ra_options"])
+    experiment.use_trajectory_summary = False
+    experiment.use_bev_animation = False
+    experiment.use_ares_capture = False
+    experiment.bev_mode = "disabled"
+    experiment.bev_animation_manifest = ""
+    experiment.bev_frame_offsets_ms = []
+    experiment.ares_capture_manifest = ""
+    experiment.ares_capture_on_miss = False
+    experiment.config_merge_mode = "none"
+    return {
+        "prompt_mode": prompt_mode,
+        "input_profile": input_profile,
+    }
+
+
+def safe_experiment_config(
+    experiment: Any,
+    source: str,
+    *,
+    prompt_mode: str = "server_default",
+    input_profile: str = "server_default",
+) -> dict[str, Any]:
     return {
         "model_name": str(experiment.model_name or ""),
         "provider": str(getattr(experiment, "provider", "") or ""),
         "model_profile": str(getattr(experiment, "model_profile", "") or ""),
         "prompt_version": str(experiment.prompt_version or ""),
         "prompt_sha256": prompt_sha256(experiment),
+        "prompt_mode": prompt_mode,
+        "input_profile": input_profile,
         "experiment_source": str(source or ""),
         "config_merge_mode": str(experiment.config_merge_mode or ""),
         "platform_experiment_id": getattr(experiment, "platform_experiment_id", None),
@@ -515,9 +637,15 @@ def predict(request: dict[str, Any], ra_root: Path) -> int:
     issue_ids = normalise_issue_ids(request.get("issue_ids"))
     experiment, source = load_default_experiment()
     source = apply_gateway_model(experiment, request)
+    dashboard_config = apply_prediction_configuration(experiment, request)
     model_base_url, model_api_key = ensure_vision_credentials(experiment)
     register_sensitive_values(model_base_url, model_api_key)
-    safe_config = safe_experiment_config(experiment, source)
+    safe_config = safe_experiment_config(
+        experiment,
+        source,
+        prompt_mode=dashboard_config["prompt_mode"],
+        input_profile=dashboard_config["input_profile"],
+    )
     config_sha256 = canonical_hash(safe_config)
     tasks, view_id = load_tasks(issue_ids)
     worker_experiment = experiment_to_worker_dict(experiment)
@@ -540,6 +668,14 @@ def predict(request: dict[str, Any], ra_root: Path) -> int:
         or not str(reconstructed.api_key or "")
     ):
         raise ValueError("Batch 模型网关配置未完整传递到子进程。")
+    reconstructed_safe_config = safe_experiment_config(
+        reconstructed,
+        source,
+        prompt_mode=dashboard_config["prompt_mode"],
+        input_profile=dashboard_config["input_profile"],
+    )
+    if canonical_hash(reconstructed_safe_config) != config_sha256:
+        raise ValueError("Batch Prompt/Input 配置未完整传递到子进程。")
 
     rate_limiter = RateLimiter(
         rpm_limit=int(config.get("vlm_triage.rpm_limit", 500) or 500),
@@ -762,7 +898,13 @@ def publish(request: dict[str, Any]) -> int:
 
     experiment, source = load_default_experiment()
     source = apply_gateway_model_metadata(experiment, request.get("model_id"))
-    safe_config = safe_experiment_config(experiment, source)
+    dashboard_config = apply_prediction_configuration(experiment, request)
+    safe_config = safe_experiment_config(
+        experiment,
+        source,
+        prompt_mode=dashboard_config["prompt_mode"],
+        input_profile=dashboard_config["input_profile"],
+    )
     config_sha256 = canonical_hash(safe_config)
     expected_hash = str(request.get("config_sha256") or "").strip().lower()
     if not expected_hash or expected_hash != config_sha256:

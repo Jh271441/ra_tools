@@ -11,7 +11,10 @@ if [[ ! -x "$PYTHON_BIN" ]]; then
   exit 1
 fi
 
-export DASHBOARD_DATA_DIR="/volume/home/workspace/ra_triage_dashboard_data"
+export DASHBOARD_DATA_DIR="${DASHBOARD_DATA_DIR:-/volume/home/workspace/ra_triage_dashboard_data}"
+export DASHBOARD_BUILD_COMMIT="${DASHBOARD_BUILD_COMMIT:-unverified}"
+export DASHBOARD_HOST="${DASHBOARD_HOST:-0.0.0.0}"
+export DASHBOARD_PORT="${DASHBOARD_PORT:-8785}"
 export RA_AUTO_TRIAGE_ROOT="/volume/home/workspace/ra_auto_triage"
 export ARES_CAPTURE_MANIFEST="/volume/home/workspace/ra_auto_triage/bags/ares_capture_bev/manifest.jsonl"
 export CAMERA_CACHE_ROOT="/volume/home/workspace/ra_auto_triage/bags/camera"
@@ -26,7 +29,7 @@ export DASHBOARD_BATCH_PREDICTION_ENABLED="${DASHBOARD_BATCH_PREDICTION_ENABLED:
 export DASHBOARD_AUTOTRIAGE_PUSH_ENABLED="${DASHBOARD_AUTOTRIAGE_PUSH_ENABLED:-false}"
 export DASHBOARD_BATCH_MAX_ISSUES="${DASHBOARD_BATCH_MAX_ISSUES:-50}"
 export DASHBOARD_BATCH_JOB_TIMEOUT_SECONDS="${DASHBOARD_BATCH_JOB_TIMEOUT_SECONDS:-7200}"
-export DASHBOARD_BATCH_BAG_CACHE_DIR="${DASHBOARD_BATCH_BAG_CACHE_DIR:-/volume/home/workspace/ra_triage_dashboard_data/batch_bags}"
+export DASHBOARD_BATCH_BAG_CACHE_DIR="${DASHBOARD_BATCH_BAG_CACHE_DIR:-$DASHBOARD_DATA_DIR/batch_bags}"
 export DASHBOARD_RA_MODEL_CATALOG_URL="${DASHBOARD_RA_MODEL_CATALOG_URL:-http://ra-model.intra.xiaojukeji.com/v1/models}"
 export DASHBOARD_RA_MODEL_CHAT_URL="${DASHBOARD_RA_MODEL_CHAT_URL:-http://ra-model.intra.xiaojukeji.com/v1/chat/completions}"
 export DASHBOARD_RA_MODEL_DEFAULT_ID="${DASHBOARD_RA_MODEL_DEFAULT_ID:-auto}"
@@ -34,8 +37,9 @@ export DASHBOARD_RA_MODEL_CATALOG_TTL_SECONDS="${DASHBOARD_RA_MODEL_CATALOG_TTL_
 export DASHBOARD_RA_MODEL_PROFILE_PATH="${DASHBOARD_RA_MODEL_PROFILE_PATH:-$APP_ROOT/config/model_profiles.json}"
 export DASHBOARD_RA_MODEL_API_KEY_FILE="${DASHBOARD_RA_MODEL_API_KEY_FILE:-/volume/home/workspace/ra_triage_dashboard_data/model_gateway_api_key}"
 export DASHBOARD_AUTO_TRIAGE_RECORD_BASE_URL="${DASHBOARD_AUTO_TRIAGE_RECORD_BASE_URL:-http://auto-triage.intra.xiaojukeji.com/ra/model_triage/records}"
+export DASHBOARD_AUTOTRIAGE_API_BASE_URL="${DASHBOARD_AUTOTRIAGE_API_BASE_URL:-http://10.190.57.183:8000}"
 
 # Intentionally no default DASHBOARD_BOOTSTRAP_MODEL_JSON: the default model
 # comparison is the read-only Trail field snapshot, not the historical 348 run.
 
-exec "$PYTHON_BIN" -m uvicorn app.main:app --app-dir "$APP_ROOT" --host 0.0.0.0 --port 8785
+exec "$PYTHON_BIN" -m uvicorn app.main:app --app-dir "$APP_ROOT" --host "$DASHBOARD_HOST" --port "$DASHBOARD_PORT"

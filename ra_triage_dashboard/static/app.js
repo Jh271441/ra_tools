@@ -9,6 +9,12 @@ const state = {
   config: null,
   cases: [],
   caseTotal: 0,
+  casePage: 1,
+  casePageSize: 50,
+  caseRequestSeq: 0,
+  caseListRequestSeq: 0,
+  reviewReloadSeq: 0,
+  galleryScrollY: 0,
   selectedId: "",
   selectedCase: null,
   modelRuns: [],
@@ -16,9 +22,18 @@ const state = {
   predictionBatches: [],
   predictionBatchTotal: 0,
   predictionRequesters: [],
+  batchListRequestSeq: 0,
   batchDefaultModel: null,
   gatewayModels: [],
   gatewayModelStatus: null,
+  selectedGatewayModelId: "",
+  batchPrompts: [],
+  batchPromptStatus: null,
+  batchFacets: {
+    models: [],
+    prompts: [],
+    input_profiles: [],
+  },
   batchDraftSource: "",
   selectedRunId: "",
   failureOnly: false,
@@ -39,10 +54,23 @@ const state = {
   trailInspection: null,
   pendingReviewImages: [],
   savingAnnotation: false,
-  sidebarAutoMode: false,
 };
 
 const $ = (selector) => document.querySelector(selector);
+
+function normalizedReviewRouteFilters(params) {
+  const gtLabel = params.get("gt") || "";
+  const annotationLabel = params.get("annotation") || "";
+  const rawPage = Number.parseInt(params.get("page") || "1", 10);
+  return {
+    search: params.get("q") || "",
+    gtLabel: LABELS.includes(gtLabel) ? gtLabel : "",
+    annotationLabel: LABELS.includes(annotationLabel) ? annotationLabel : "",
+    annotationAuthor: params.get("reviewer") || "",
+    clusterKey: params.get("evidence") || "",
+    casePage: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
+  };
+}
 
 function parsePageRoute() {
   const match = Object.entries(PAGE_ROUTES).find(([, config]) => config.path === window.location.pathname);
@@ -52,6 +80,7 @@ function parsePageRoute() {
     .getAll("issue")
     .filter((issueId) => /^[A-Za-z0-9_-]{3,128}$/.test(issueId));
   const legacyImport = window.location.pathname === "/import";
+  const reviewFilters = normalizedReviewRouteFilters(params);
   return {
     page:
       match?.[0] ||
@@ -67,6 +96,7 @@ function parsePageRoute() {
     source: params.get("source") || "",
     runId: params.get("run") || "",
     failureOnly: params.has("failure") ? params.get("failure") === "1" : params.has("run") ? false : null,
+    ...reviewFilters,
     importKind:
       params.get("import") === "model" || params.get("kind") === "model"
         ? "model"
@@ -77,16 +107,58 @@ function parsePageRoute() {
   };
 }
 
+function currentReviewRouteOptions(overrides = {}) {
+  return {
+    issue: state.selectedId,
+    runId: state.selectedRunId,
+    failureOnly: state.failureOnly,
+    search: $("#searchInput")?.value.trim() || "",
+    gtLabel: $("#gtFilter")?.value || "",
+    annotationLabel: $("#annotationFilter")?.value || "",
+    annotationAuthor: $("#reviewerFilter")?.value || "",
+    clusterKey: state.clusterKey,
+    casePage: state.casePage,
+    ...overrides,
+  };
+}
+
+function applyReviewRouteControls(route) {
+  if (!route) return;
+  if ($("#searchInput")) $("#searchInput").value = route.search || "";
+  if ($("#gtFilter")) $("#gtFilter").value = LABELS.includes(route.gtLabel) ? route.gtLabel : "";
+  if ($("#annotationFilter")) {
+    $("#annotationFilter").value = LABELS.includes(route.annotationLabel)
+      ? route.annotationLabel
+      : "";
+  }
+  if ($("#reviewerFilter")) {
+    const reviewer = route.annotationAuthor || "";
+    $("#reviewerFilter").value =
+      !reviewer || [...$("#reviewerFilter").options].some((option) => option.value === reviewer)
+        ? reviewer
+        : "";
+  }
+  state.clusterKey = route.clusterKey || "";
+  state.casePage = Math.max(1, Number(route.casePage) || 1);
+}
+
 function pageUrl(page, options = {}) {
   const config = PAGE_ROUTES[page] || PAGE_ROUTES.review;
   const url = new URL(config.path, window.location.origin);
   if (page === "review") {
-    const issueId = options.issue ?? state.selectedId;
-    const runId = options.runId ?? state.selectedRunId;
-    const failureOnly = options.failureOnly ?? state.failureOnly;
+    const review = currentReviewRouteOptions(options);
+    const issueId = review.issue;
+    const runId = review.runId;
+    const failureOnly = review.failureOnly;
     if (issueId) url.searchParams.set("issue", issueId);
     if (runId) url.searchParams.set("run", runId);
     if (failureOnly && runId) url.searchParams.set("failure", "1");
+    if (review.search) url.searchParams.set("q", review.search);
+    if (review.gtLabel) url.searchParams.set("gt", review.gtLabel);
+    if (review.annotationLabel) url.searchParams.set("annotation", review.annotationLabel);
+    if (review.annotationAuthor) url.searchParams.set("reviewer", review.annotationAuthor);
+    if (review.clusterKey) url.searchParams.set("evidence", review.clusterKey);
+    if (Number(review.casePage) > 1) url.searchParams.set("page", String(review.casePage));
   }
   if (page === "prediction") {
     const issueIds = options.issues ?? (options.issue ? [options.issue] : []);
@@ -99,6 +171,22 @@ function pageUrl(page, options = {}) {
     url.searchParams.set("import", options.importKind === "model" ? "model" : "issues");
   }
   return `${url.pathname}${url.search}`;
+}
+
+function setReviewView(issueId = "") {
+  const gallery = $("#reviewGalleryView");
+  const detail = $("#reviewDetailView");
+  if (!gallery || !detail) return;
+  const showingDetail = Boolean(issueId);
+  gallery.classList.toggle("hidden", showingDetail);
+  detail.classList.toggle("hidden", !showingDetail);
+  $("#reviewPage")?.classList.toggle("is-detail", showingDetail);
+  if (!showingDetail) {
+    closeDialog("mediaDialog");
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: state.galleryScrollY, behavior: "auto" });
+    });
+  }
 }
 
 function showPage(
@@ -151,10 +239,28 @@ function showPage(
     loadPredictionConfig().catch((error) => showToast(error.message, true));
     loadPredictionBatches().catch((error) => showToast(error.message, true));
   }
-  const routeOptions = { issue, issues, source, importKind };
-  if (historyMode === "push") history.pushState({ page: target }, "", pageUrl(target, routeOptions));
-  if (historyMode === "replace") history.replaceState({ page: target }, "", pageUrl(target, routeOptions));
-  window.scrollTo({ top: 0, behavior: historyMode === "push" ? "smooth" : "auto" });
+  if (target === "review") setReviewView(issue);
+  const routeOptions =
+    target === "review"
+      ? currentReviewRouteOptions({ issue })
+      : { issue, issues, source, importKind };
+  const historyState = {
+    page: target,
+    issue: target === "review" ? issue : "",
+    openedFromGallery:
+      target === "review" &&
+      Boolean(issue) &&
+      (historyMode === "push" || Boolean(window.history.state?.openedFromGallery)),
+  };
+  if (historyMode === "push") {
+    history.pushState(historyState, "", pageUrl(target, routeOptions));
+  }
+  if (historyMode === "replace") {
+    history.replaceState(historyState, "", pageUrl(target, routeOptions));
+  }
+  if (target !== "review" || issue) {
+    window.scrollTo({ top: 0, behavior: historyMode === "push" ? "smooth" : "auto" });
+  }
 }
 
 function navigatePage(page, options = {}) {
@@ -178,6 +284,16 @@ function safeUrl(url) {
   try {
     const parsed = new URL(url);
     return ["http:", "https:"].includes(parsed.protocol) ? parsed.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function safeSameOriginAssetUrl(url) {
+  try {
+    const parsed = new URL(String(url || ""), window.location.origin);
+    if (parsed.origin !== window.location.origin || !parsed.pathname.startsWith("/api/")) return "";
+    return `${parsed.pathname}${parsed.search}`;
   } catch {
     return "";
   }
@@ -244,17 +360,8 @@ function applySidebarState() {
 }
 
 function toggleSidebar() {
-  state.sidebarAutoMode = false;
   state.sidebarCollapsed = !state.sidebarCollapsed;
   localStorage.setItem("ra-triage-sidebar-collapsed", String(state.sidebarCollapsed));
-  applySidebarState();
-}
-
-function syncAutomaticSidebar() {
-  if (!state.sidebarAutoMode) return;
-  const collapsed = window.matchMedia("(max-width: 1440px)").matches;
-  if (collapsed === state.sidebarCollapsed) return;
-  state.sidebarCollapsed = collapsed;
   applySidebarState();
 }
 
@@ -481,8 +588,10 @@ function runPeople() {
 
 function runBatchName(run) {
   const experiment = run.metadata?.experiment || {};
+  const platformBatch = run.metadata?.platform_batch || {};
   const sourceFile = String(run.source_name || "").split(/[\\/]/).pop() || "";
   return (
+    platformBatch.batch_name ||
     experiment.run_id ||
     experiment.experiment_id ||
     sourceFile.replace(/\.(json|csv|xlsx|xlsm)$/i, "") ||
@@ -533,11 +642,18 @@ function renderActiveRun(overview = null) {
   const coverage = overview?.predictions ?? run.baseline_prediction_count ?? 0;
   const failures = overview?.model_failures ?? run.failure_count ?? 0;
   const reviewed = overview?.reviewed_failures;
+  const sourceLabel =
+    {
+      trail_snapshot: "Trail 快照",
+      manual_batch: "网页 Batch",
+      autotriage_snapshot: "AutoTriage 快照",
+      upload: "文件导入",
+    }[run.kind] || run.kind || "模型 Run";
   if (activeMeta) {
     activeMeta.textContent =
       `${coverage} / ${state.config?.baseline?.count || "—"} 覆盖 · ${failures} 条判断失败` +
       `${reviewed === undefined ? "" : ` · ${reviewed} 条已复核`}` +
-      ` · ${run.kind === "trail_snapshot" ? "Trail 快照" : "文件导入"}`;
+      ` · ${sourceLabel}`;
   }
 }
 
@@ -556,6 +672,9 @@ function renderRunManager() {
       run.source_name,
       run.created_by,
       run.declared_author,
+      run.metadata?.model_name,
+      run.metadata?.prompt_version,
+      run.metadata?.external_username,
     ]
       .join(" ")
       .toLowerCase();
@@ -580,6 +699,9 @@ function renderRunManager() {
           baselineCount && coverage >= baselineCount ? "全量覆盖" : "部分覆盖";
         const owner = runOwner(run) || "未记录";
         const batch = runBatchName(run);
+        const modelName = run.metadata?.model_name || run.metadata?.experiment?.model_name || "";
+        const promptVersion = run.metadata?.prompt_version || run.metadata?.experiment?.prompt_version || "";
+        const externalUser = run.metadata?.external_username || "";
         const ownerTitle = run.created_by
           ? `提交人：${run.created_by}${run.declared_author && run.declared_author !== run.created_by ? `；结果包作者：${run.declared_author}` : ""}`
           : run.declared_author
@@ -594,6 +716,9 @@ function renderRunManager() {
           <div class="run-row-meta">
             <span title="${escapeHtml(ownerTitle)}">人员 · <b class="run-meta-value">${escapeHtml(owner)}</b></span>
             <span title="${escapeHtml(run.source_name || "")}">批次 · <b class="run-meta-value">${escapeHtml(batch)}</b></span>
+            ${modelName ? `<span>模型 · ${escapeHtml(modelName)}</span>` : ""}
+            ${promptVersion ? `<span>Prompt · ${escapeHtml(promptVersion)}</span>` : ""}
+            ${externalUser && externalUser !== owner ? `<span>平台用户 · ${escapeHtml(externalUser)}</span>` : ""}
             <span>${coverage} / ${state.config?.baseline?.count || "—"} 条</span>
             <span class="run-failure-count">错误 ${run.failure_count ?? 0}</span>
             <span>${formatTime(run.created_at)}</span>
@@ -616,16 +741,18 @@ async function useModelRun(runId) {
   state.selectedRunId = runId;
   state.failureOnly = true;
   state.selectedId = "";
+  state.casePage = 1;
+  state.galleryScrollY = 0;
   $("#modelRunFilter").value = runId;
   $("#failureOnlyInput").disabled = false;
   $("#failureOnlyInput").checked = true;
   renderActiveRun();
   renderRunManager();
-  await Promise.all([loadCases({ keepSelection: false }), loadClusters(), loadOverview()]);
+  await Promise.all([loadCases({ keepSelection: false, page: 1 }), loadClusters(), loadOverview()]);
   navigatePage("review");
 }
 
-function issueRow(item) {
+function issueCard(item) {
   const isSelected = item.issue_id === state.selectedId;
   const rawTitle = String(item.title || item.scenario || "").trim();
   const title =
@@ -633,21 +760,94 @@ function issueRow(item) {
   const annotation = item.annotation?.label;
   const prediction = item.prediction?.label;
   const mismatch = item.prediction?.mismatch;
+  const thumbnailUrl = safeSameOriginAssetUrl(item.thumbnail?.url);
+  const thumbnailLabel = String(
+    item.thumbnail?.label || (thumbnailUrl ? "BEV 关键帧" : "暂无缩略图")
+  );
+  const issueUrl = safeUrl(item.voyager_issue_url);
   return `
-    <button class="issue-row ${isSelected ? "selected" : ""}" data-issue-id="${escapeHtml(item.issue_id)}">
-      <div class="issue-row-top">
-        <span class="issue-id">${escapeHtml(item.issue_id)}</span>
-        ${mismatch ? '<span class="mismatch-chip">MISMATCH</span>' : labelBadge(annotation, "待 review")}
+    <article class="issue-card ${isSelected ? "selected" : ""}" data-issue-id="${escapeHtml(item.issue_id)}" role="button" tabindex="0" aria-label="打开 ${escapeHtml(item.issue_id)} Review">
+      <div class="issue-thumbnail">
+        <div class="issue-thumbnail-placeholder" aria-hidden="true"><span>RA</span><small>暂无 BEV 缩略图</small></div>
+        ${thumbnailUrl ? `<img src="${escapeHtml(thumbnailUrl)}" alt="${escapeHtml(item.issue_id)} ${escapeHtml(thumbnailLabel)}" loading="lazy" decoding="async" data-case-thumbnail />` : ""}
+        <span class="issue-thumbnail-label">${escapeHtml(thumbnailLabel)}</span>
+        ${mismatch ? '<span class="mismatch-chip issue-thumbnail-status">MISMATCH</span>' : ""}
       </div>
-      ${title ? `<div class="issue-title">${escapeHtml(title)}</div>` : ""}
-      <div class="issue-row-meta">
-        ${labelBadge(item.gt_label, "GT —")}
-        <span class="quiet-meta" aria-hidden="true">→</span>
-        ${prediction ? labelBadge(prediction, "模型 —") : '<span class="quiet-meta">模型 —</span>'}
-        ${item.annotation?.author ? `<span class="quiet-meta">复核 · ${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO" : ""}</span>` : ""}
+      <div class="issue-card-body">
+        <div class="issue-card-heading">
+          ${issueUrl ? `<a class="issue-id" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" data-card-link title="打开 Voyager Issue">${escapeHtml(item.issue_id)}</a>` : `<span class="issue-id">${escapeHtml(item.issue_id)}</span>`}
+          ${!mismatch ? labelBadge(annotation, "待 review") : ""}
+        </div>
+        ${title ? `<div class="issue-title">${escapeHtml(title)}</div>` : ""}
+        <div class="issue-card-labels">
+          <span class="issue-label-pair"><small>GT</small>${labelBadge(item.gt_label, "—")}</span>
+          <span class="issue-label-pair"><small>模型</small>${prediction ? labelBadge(prediction, "—") : labelBadge("", "—")}</span>
+        </div>
+        ${item.annotation?.author ? `<div class="issue-reviewer">复核 · ${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO" : ""}</div>` : ""}
+        ${item.annotation?.missing_evidence?.length ? `<div class="row-evidence">${item.annotation.missing_evidence.map((key) => `<span>${escapeHtml(evidenceLabel(key))}</span>`).join("")}</div>` : ""}
       </div>
-      ${item.annotation?.missing_evidence?.length ? `<div class="row-evidence">${item.annotation.missing_evidence.map((key) => `<span>${escapeHtml(evidenceLabel(key))}</span>`).join("")}</div>` : ""}
-    </button>`;
+    </article>`;
+}
+
+function totalCasePages() {
+  return Math.max(1, Math.ceil(Number(state.caseTotal || 0) / state.casePageSize));
+}
+
+function renderCasePagination() {
+  const totalPages = totalCasePages();
+  const previous = $("#casePagePrevious");
+  const next = $("#casePageNext");
+  const summary = $("#casePageSummary");
+  const result = $("#galleryResultSummary");
+  if (previous) previous.disabled = state.casePage <= 1 || !state.caseTotal;
+  if (next) next.disabled = state.casePage >= totalPages || !state.caseTotal;
+  if (summary) summary.textContent = state.caseTotal ? `${state.casePage} / ${totalPages}` : "0 / 0";
+  if (result) {
+    const start = state.caseTotal ? (state.casePage - 1) * state.casePageSize + 1 : 0;
+    const end = Math.min(state.casePage * state.casePageSize, state.caseTotal);
+    result.textContent = state.caseTotal
+      ? `当前 ${start}–${end} / 共 ${state.caseTotal} 条`
+      : "当前没有匹配的 Issue";
+  }
+}
+
+function renderCaseNavigation() {
+  const index = state.cases.findIndex((item) => item.issue_id === state.selectedId);
+  const previous = $("#previousIssueButton");
+  const next = $("#nextIssueButton");
+  const position = $("#detailQueuePosition");
+  const hasPrevious = index > 0 || (index === 0 && state.casePage > 1);
+  const hasNext =
+    index >= 0 &&
+    (index < state.cases.length - 1 ||
+      state.casePage * state.casePageSize < state.caseTotal);
+  if (previous) previous.disabled = !hasPrevious;
+  if (next) next.disabled = !hasNext;
+  if (position) {
+    position.textContent =
+      index >= 0
+        ? `${(state.casePage - 1) * state.casePageSize + index + 1} / ${state.caseTotal}`
+        : "不在当前筛选页";
+  }
+}
+
+async function changeCasePage(delta) {
+  const targetPage = state.casePage + delta;
+  if (targetPage < 1 || targetPage > totalCasePages()) return;
+  state.galleryScrollY = 0;
+  clearPendingReviewImages();
+  await loadCases({ keepSelection: false, page: targetPage });
+  showPage("review", { historyMode: "push", issue: "" });
+}
+
+function returnToReviewGallery() {
+  clearPendingReviewImages();
+  if (window.history.state?.openedFromGallery) {
+    window.history.back();
+    return;
+  }
+  clearDetail({ showGallery: true });
+  showPage("review", { historyMode: "replace", issue: "" });
 }
 
 function renderCases(data) {
@@ -655,15 +855,37 @@ function renderCases(data) {
   state.caseTotal = Number(data.total ?? state.cases.length);
   $("#caseCount").textContent = state.caseTotal;
   updateFilteredPredictionButton();
+  renderCasePagination();
+  renderCaseNavigation();
   const list = $("#issueList");
   if (!state.cases.length) {
     const hint = state.failureOnly ? "没有符合条件的模型失败 case。可切换 model run 或关闭失败筛选。" : "没有匹配的 Issue。";
-    list.innerHTML = `<div class="no-asset">${hint}</div>`;
+    list.innerHTML = `<div class="no-asset issue-grid-empty">${hint}</div>`;
     return;
   }
-  list.innerHTML = state.cases.map(issueRow).join("");
+  list.innerHTML = state.cases.map(issueCard).join("");
   list.querySelectorAll("[data-issue-id]").forEach((element) => {
-    element.addEventListener("click", () => selectCase(element.dataset.issueId));
+    const open = () => selectCase(element.dataset.issueId);
+    element.addEventListener("click", (event) => {
+      if (event.target.closest("[data-card-link]")) return;
+      open();
+    });
+    element.addEventListener("keydown", (event) => {
+      if (event.target.closest("[data-card-link]")) return;
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        open();
+      }
+    });
+  });
+  list.querySelectorAll("[data-case-thumbnail]").forEach((image) => {
+    image.addEventListener("error", () => {
+      const thumbnail = image.closest(".issue-thumbnail");
+      thumbnail?.classList.add("thumbnail-missing");
+      const label = thumbnail?.querySelector(".issue-thumbnail-label");
+      if (label) label.textContent = "缩略图加载失败";
+      image.remove();
+    });
   });
 }
 
@@ -730,9 +952,10 @@ function renderPredictionSourceSummary() {
 
 async function loadCases({
   keepSelection = true,
-  autoSelect = true,
-  selectionHistoryMode = "replace",
+  page = state.casePage,
 } = {}) {
+  const requestSeq = ++state.caseListRequestSeq;
+  state.casePage = Math.max(1, Number(page) || 1);
   const params = new URLSearchParams();
   const search = $("#searchInput").value.trim();
   const gtLabel = $("#gtFilter").value;
@@ -747,15 +970,22 @@ async function loadCases({
   if (state.selectedRunId) params.set("model_run_id", state.selectedRunId);
   if (state.failureOnly) params.set("failure_only", "true");
   if (state.clusterKey) params.set("missing_evidence", state.clusterKey);
-  params.set("page_size", "1500");
-  renderCases(await api(`/api/cases?${params.toString()}`));
-  if (!keepSelection || !state.cases.some((item) => item.issue_id === state.selectedId)) {
-    if (state.cases[0] && autoSelect) {
-      await selectCase(state.cases[0].issue_id, {
-        historyMode: selectionHistoryMode,
-      });
-    }
-    else clearDetail();
+  params.set("page", String(state.casePage));
+  params.set("page_size", String(state.casePageSize));
+  params.set("include_thumbnail", "true");
+  const data = await api(`/api/cases?${params.toString()}`);
+  if (requestSeq !== state.caseListRequestSeq) return;
+  const totalPages = Math.max(
+    1,
+    Math.ceil(Number(data.total || 0) / state.casePageSize)
+  );
+  if (state.casePage > totalPages) {
+    state.casePage = totalPages;
+    return loadCases({ keepSelection, page: totalPages });
+  }
+  renderCases(data);
+  if (!keepSelection) {
+    clearDetail({ showGallery: state.activePage === "review" });
   }
 }
 
@@ -781,26 +1011,25 @@ async function loadClusters() {
   list.querySelectorAll("[data-cluster-key]").forEach((button) => {
     button.addEventListener("click", async () => {
       state.clusterKey = button.dataset.clusterKey === state.clusterKey ? "" : button.dataset.clusterKey;
-      await loadCases({
-        keepSelection: false,
-        selectionHistoryMode: "push",
-      });
-      await loadClusters();
+      await reloadReviewGallery({ includeOverview: false });
     });
   });
 }
 
-function clearDetail() {
+function clearDetail({ showGallery = true } = {}) {
   state.selectedId = "";
   state.selectedCase = null;
+  state.caseRequestSeq += 1;
   $("#detailPane").innerHTML = `
     <div class="empty-state">
       <div class="empty-glyph" aria-hidden="true">+</div>
-      <h2>选择一个 case 开始 review</h2>
-      <p>可在左侧筛选失败 case；模型 run 的完整历史与导入操作放在全局工具栏中。</p>
+      <h2>正在准备 Issue 详情</h2>
+      <p>从筛选结果中打开一个 Issue 后，这里会显示 BEV / Camera 与模型输出。</p>
     </div>`;
   $("#reviewPane").innerHTML = `
     <div class="review-placeholder"><span class="eyebrow">HUMAN REVIEW</span><h2>人工复核</h2><p>选择 Issue 后记录结论和模型遗漏的关键信息。</p></div>`;
+  renderCaseNavigation();
+  if (showGallery) setReviewView("");
 }
 
 function heroFrameIndex(frames) {
@@ -1121,23 +1350,69 @@ async function selectCase(
   { updateRoute = true, historyMode = "push" } = {}
 ) {
   if (!issueId) return;
+  const gallery = $("#reviewGalleryView");
+  if (gallery && !gallery.classList.contains("hidden")) {
+    state.galleryScrollY = window.scrollY;
+  }
   if (state.selectedId && state.selectedId !== issueId) clearPendingReviewImages();
   state.selectedId = issueId;
-  renderCases({ items: state.cases, total: $("#caseCount").textContent });
+  state.selectedCase = null;
+  const requestSeq = ++state.caseRequestSeq;
+  renderCaseNavigation();
+  $("#detailPane").innerHTML = `
+    <div class="empty-state detail-loading-state">
+      <div class="empty-glyph" aria-hidden="true">…</div>
+      <h2>正在加载 ${escapeHtml(issueId)}</h2>
+      <p>正在读取模型输出、Ares BEV 与 Camera 时序。</p>
+    </div>`;
+  $("#reviewPane").innerHTML = `
+    <div class="review-placeholder"><span class="eyebrow">HUMAN REVIEW</span><h2>正在加载标注</h2><p>Issue 数据返回后即可继续 Review。</p></div>`;
+  if (updateRoute && state.activePage === "review") {
+    const nextUrl = pageUrl("review", { issue: issueId });
+    if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
+      showPage("review", { historyMode, issue: issueId });
+    } else {
+      setReviewView(issueId);
+    }
+  } else {
+    setReviewView(issueId);
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }
   try {
     const data = await api(`/api/cases/${encodeURIComponent(issueId)}`);
+    if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId) return;
     state.selectedCase = data;
     renderDetail(data);
     renderReview(data);
-    if (updateRoute && state.activePage === "review") {
-      const nextUrl = pageUrl("review", { issue: issueId });
-      if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
-        showPage("review", { historyMode, issue: issueId });
-      }
-    }
   } catch (error) {
+    if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId) return;
+    $("#detailPane").innerHTML = `
+      <div class="empty-state">
+        <div class="empty-glyph" aria-hidden="true">!</div>
+        <h2>Issue 加载失败</h2>
+        <p>${escapeHtml(error.message)}</p>
+      </div>`;
     showToast(error.message, true);
   }
+}
+
+async function navigateAdjacentCase(delta) {
+  if (!state.selectedId || ![-1, 1].includes(delta)) return;
+  let index = state.cases.findIndex((item) => item.issue_id === state.selectedId);
+  if (index < 0) return;
+  let targetIndex = index + delta;
+  if (targetIndex < 0 && state.casePage > 1) {
+    await loadCases({ keepSelection: true, page: state.casePage - 1 });
+    targetIndex = state.cases.length - 1;
+  } else if (
+    targetIndex >= state.cases.length &&
+    state.casePage * state.casePageSize < state.caseTotal
+  ) {
+    await loadCases({ keepSelection: true, page: state.casePage + 1 });
+    targetIndex = 0;
+  }
+  const target = state.cases[targetIndex];
+  if (target) await selectCase(target.issue_id, { historyMode: "replace" });
 }
 
 async function saveAnnotation(event) {
@@ -1294,31 +1569,73 @@ function renderGatewayModels() {
   const createButton = $("#createPredictionBatchButton");
   if (!select || !statusTarget || !endpointTarget) return;
   const catalog = state.gatewayModelStatus || {};
-  const previous = select.value;
+  const previous = state.selectedGatewayModelId || select.value;
+  const search = ($("#predictionModelSearch")?.value || "").trim().toLowerCase();
+  const visibleModels = state.gatewayModels.filter((model) =>
+    !search ||
+    [model.id, model.display_name, model.resolved_model_id]
+      .join(" ")
+      .toLowerCase()
+      .includes(search)
+  );
+  const defaultId = catalog.default_model_id || "";
+  const selectedModel = previous
+    ? state.gatewayModels.find((item) => item.id === previous) || null
+    : state.gatewayModels.find((item) => item.id === defaultId) ||
+      state.gatewayModels[0] ||
+      null;
+  const unavailableSelection = Boolean(previous && !selectedModel);
+  const displayModels = [...visibleModels];
+  if (
+    selectedModel &&
+    !displayModels.some((item) => item.id === selectedModel.id)
+  ) {
+    displayModels.unshift({ ...selectedModel, pinnedBySearch: true });
+  }
+  if (unavailableSelection) {
+    displayModels.unshift({
+      id: previous,
+      display_name: `${previous} · 当前选择已不可用`,
+      unavailable: true,
+    });
+  }
   endpointTarget.textContent =
     catalog.catalog_label ||
     state.config?.prediction_batch?.model_gateway?.catalog_label ||
     "ra-model · /v1/models";
-  select.innerHTML = state.gatewayModels.length
-    ? state.gatewayModels
+  select.innerHTML = displayModels.length
+    ? displayModels
         .map(
-          (model) =>
-            `<option value="${escapeHtml(model.id)}">${escapeHtml(model.display_name || model.id)}</option>`
+          (model) => {
+            const tier = model.unavailable
+              ? "不可用"
+              : model.validation_status === "validated"
+                ? "已验证"
+                : "实验";
+            const searchNote = model.pinnedBySearch ? " · 当前选择（搜索未命中）" : "";
+            return `<option value="${escapeHtml(model.id)}">[${tier}] ${escapeHtml(model.display_name || model.id)}${searchNote}</option>`;
+          }
         )
         .join("")
-    : '<option value="">暂无可用 RA 模型</option>';
-  const defaultId = catalog.default_model_id || "";
-  select.value = state.gatewayModels.some((item) => item.id === previous)
-    ? previous
-    : state.gatewayModels.some((item) => item.id === defaultId)
-      ? defaultId
-      : state.gatewayModels[0]?.id || "";
-  const ready = catalog.status === "ready" && !catalog.stale && Boolean(select.value);
+    : '<option value="">没有匹配的 Qwen3 模型</option>';
+  select.value = unavailableSelection ? previous : selectedModel?.id || "";
+  state.selectedGatewayModelId = select.value;
+  const selectedIsOnline = state.gatewayModels.some(
+    (item) => item.id === state.selectedGatewayModelId
+  );
+  const ready =
+    catalog.status === "ready" &&
+    !catalog.stale &&
+    Boolean(select.value) &&
+    selectedIsOnline;
   statusTarget.className = `gateway-model-status ${ready ? "ok" : "warn"}`;
-  statusTarget.textContent = ready
-    ? `目录在线 ${catalog.online_count ?? "—"} 个 · RA Profile 可选 ${catalog.compatible_count ?? state.gatewayModels.length} 个 · 已过滤 ${catalog.excluded_count ?? "—"} 个`
-    : catalog.message || "模型目录尚未就绪。";
+  statusTarget.textContent = unavailableSelection
+    ? `当前选择 ${previous} 已不在在线 Qwen3 目录；请选择其他模型后再提交。`
+    : ready
+      ? `已验证 ${catalog.validated_count ?? "—"} · 实验性 Qwen3 ${catalog.experimental_count ?? "—"} · 当前显示 ${visibleModels.length} / ${state.gatewayModels.length}`
+      : catalog.message || "模型目录尚未就绪。";
   if (createButton) createButton.disabled = !ready;
+  renderBatchCatalogFilters();
   renderBatchRuntimeSummary();
 }
 
@@ -1350,6 +1667,225 @@ async function loadGatewayModels({ refresh = false } = {}) {
   }
 }
 
+function selectedBatchPrompt() {
+  const promptId = $("#predictionPromptSelect")?.value || "";
+  return state.batchPrompts.find((item) => item.id === promptId) || null;
+}
+
+function updatePromptEditorSummary() {
+  const target = $("#predictionPromptSummary");
+  const editor = $("#predictionPromptTemplate");
+  if (!target || !editor) return;
+  const selected = selectedBatchPrompt();
+  const changed = Boolean(selected && editor.value.trim() !== String(selected.template || "").trim());
+  const bytes = new TextEncoder().encode(editor.value).length;
+  target.textContent =
+    `${bytes} bytes · ${changed ? "已修改，将保存 custom Prompt 快照" : "服务器模板原文"}` +
+    (selected?.sha256 ? ` · 基线 SHA ${selected.sha256.slice(0, 12)}…` : "");
+  target.classList.toggle("input-warning", bytes === 0 || bytes > 128 * 1024);
+  renderBatchRuntimeSummary();
+}
+
+function loadSelectedPromptTemplate() {
+  const selected = selectedBatchPrompt();
+  const editor = $("#predictionPromptTemplate");
+  if (!editor) return;
+  editor.value = selected?.template || "";
+  editor.dataset.promptId = selected?.id || "";
+  updatePromptEditorSummary();
+}
+
+function renderBatchPrompts() {
+  const select = $("#predictionPromptSelect");
+  if (!select) return;
+  const previous = select.value;
+  select.innerHTML = state.batchPrompts.length
+    ? state.batchPrompts
+        .map((prompt) => `<option value="${escapeHtml(prompt.id)}">${escapeHtml(prompt.display_name || prompt.id)}${prompt.is_default ? " · 默认" : ""}</option>`)
+        .join("")
+    : '<option value="">暂无可用三分类 Prompt</option>';
+  const defaultId = state.batchPromptStatus?.default_prompt_id || "";
+  select.value = state.batchPrompts.some((item) => item.id === previous)
+    ? previous
+    : state.batchPrompts.some((item) => item.id === defaultId)
+      ? defaultId
+      : state.batchPrompts[0]?.id || "";
+  if ($("#predictionPromptTemplate")?.dataset.promptId !== select.value) {
+    loadSelectedPromptTemplate();
+  }
+  renderBatchCatalogFilters();
+}
+
+async function loadBatchPrompts() {
+  const data = await api("/api/prediction-batches/prompts");
+  state.batchPromptStatus = data;
+  state.batchPrompts = data.items || [];
+  renderBatchPrompts();
+}
+
+function batchInputPresets() {
+  return (
+    state.config?.prediction_batch?.input_policy?.profiles || [
+      {
+        id: "camera_ra_event",
+        frame_offsets_ms: [-3000, -2000, -1000, 0, 1000, 2000, 3000],
+        use_ra_event: true,
+        use_ra_options: false,
+      },
+      {
+        id: "camera_ra_options",
+        frame_offsets_ms: [-3000, -2000, -1000, 0, 1000, 2000, 3000],
+        use_ra_event: true,
+        use_ra_options: true,
+      },
+      {
+        id: "camera_only",
+        frame_offsets_ms: [-3000, -2000, -1000, 0, 1000, 2000, 3000],
+        use_ra_event: false,
+        use_ra_options: false,
+      },
+    ]
+  );
+}
+
+function applyBatchInputPreset() {
+  const profileId = $("#predictionInputProfile")?.value || "camera_ra_event";
+  const preset = batchInputPresets().find((item) => item.id === profileId);
+  if (!preset) return;
+  $("#predictionFrameOffsets").value = (preset.frame_offsets_ms || []).join(",");
+  $("#predictionUseRaEvent").checked = Boolean(preset.use_ra_event);
+  $("#predictionUseRaOptions").checked = Boolean(preset.use_ra_options);
+  renderBatchRuntimeSummary();
+}
+
+function batchPromptFacetValue({ version = "", mode = "", sha256 = "" } = {}) {
+  return JSON.stringify([String(version), String(mode), String(sha256)]);
+}
+
+function parseBatchPromptFacetValue(value) {
+  if (!value) return { version: "", mode: "", sha256: "" };
+  try {
+    const [version = "", mode = "", sha256 = ""] = JSON.parse(value);
+    return {
+      version: String(version),
+      mode: String(mode),
+      sha256: String(sha256),
+    };
+  } catch {
+    return { version: String(value), mode: "", sha256: "" };
+  }
+}
+
+function renderBatchCatalogFilters() {
+  const modelFilter = $("#batchModelFilter");
+  if (modelFilter) {
+    const previous = modelFilter.value;
+    const modelOptions = new Map(
+      state.gatewayModels.map((model) => [
+        model.id,
+        {
+          id: model.id,
+          label: model.display_name || model.id,
+          count: null,
+        },
+      ])
+    );
+    (state.batchFacets.models || []).forEach((model) => {
+      const existing = modelOptions.get(model.id);
+      modelOptions.set(model.id, {
+        id: model.id,
+        label: existing?.label || `${model.id} · 历史`,
+        count: model.job_count,
+      });
+    });
+    modelFilter.innerHTML = [
+      '<option value="">全部模型</option>',
+      ...[...modelOptions.values()].map(
+        (model) =>
+          `<option value="${escapeHtml(model.id)}">${escapeHtml(model.label)}${model.count != null ? ` · ${model.count}` : ""}</option>`
+      ),
+    ].join("");
+    modelFilter.value = modelOptions.has(previous) ? previous : "";
+  }
+  const promptFilter = $("#batchPromptFilter");
+  if (promptFilter) {
+    const previous = promptFilter.value;
+    const promptOptions = new Map();
+    state.batchPrompts.forEach((prompt) => {
+      const facet = {
+        version: prompt.id,
+        mode: "catalog",
+        sha256: prompt.sha256 || "",
+      };
+      const value = batchPromptFacetValue(facet);
+      promptOptions.set(value, {
+        ...facet,
+        value,
+        label: `${prompt.display_name || prompt.id} · 当前模板`,
+        count: null,
+      });
+    });
+    (state.batchFacets.prompts || []).forEach((prompt) => {
+      const value = batchPromptFacetValue(prompt);
+      const shaLabel = prompt.sha256 ? ` · ${prompt.sha256.slice(0, 10)}…` : "";
+      const modeLabel =
+        prompt.mode === "custom"
+          ? "custom"
+          : prompt.mode === "catalog"
+            ? "catalog"
+            : "legacy";
+      const existing = promptOptions.get(value);
+      promptOptions.set(value, {
+        ...prompt,
+        value,
+        label:
+          existing?.label ||
+          `${prompt.version} · ${modeLabel}${shaLabel}`,
+        count: prompt.job_count,
+      });
+    });
+    promptFilter.innerHTML = [
+      '<option value="">全部 Prompt</option>',
+      ...[...promptOptions.values()].map(
+        (prompt) =>
+          `<option value="${escapeHtml(prompt.value)}">${escapeHtml(prompt.label)}${prompt.count != null ? ` · ${prompt.count}` : ""}</option>`
+      ),
+    ].join("");
+    promptFilter.value = promptOptions.has(previous) ? previous : "";
+  }
+  const inputFilter = $("#batchInputFilter");
+  if (inputFilter) {
+    const previous = inputFilter.value;
+    const inputLabels = {
+      camera_ra_event: "Camera + RA Events",
+      camera_ra_options: "Camera + RA/SWAG Options",
+      camera_only: "Camera only",
+      custom: "Custom",
+    };
+    const inputOptions = new Map(
+      Object.entries(inputLabels).map(([id, label]) => [
+        id,
+        { id, label, count: null },
+      ])
+    );
+    (state.batchFacets.input_profiles || []).forEach((profile) => {
+      inputOptions.set(profile.id, {
+        id: profile.id,
+        label: inputLabels[profile.id] || `${profile.id} · 历史`,
+        count: profile.job_count,
+      });
+    });
+    inputFilter.innerHTML = [
+      '<option value="">全部输入</option>',
+      ...[...inputOptions.values()].map(
+        (profile) =>
+          `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.label)}${profile.count != null ? ` · ${profile.count}` : ""}</option>`
+      ),
+    ].join("");
+    inputFilter.value = inputOptions.has(previous) ? previous : "";
+  }
+}
+
 function renderBatchRuntimeSummary() {
   const target = $("#batchModelSummary");
   if (!target) return;
@@ -1370,9 +1906,10 @@ function renderBatchRuntimeSummary() {
       ? configured
       : configured.model_name || configured.name || configured.model);
   const prompt =
-    typeof configured === "object"
+    selectedBatchPrompt()?.id ||
+    (typeof configured === "object"
       ? configured.prompt_version || configured.prompt || state.config?.prediction_batch?.prompt_version
-      : "";
+      : "");
   const source = selectedGatewayModel
     ? `网关解析 · ${selectedGatewayModel.resolved_model_id}`
     : typeof configured === "object"
@@ -1391,8 +1928,8 @@ function renderBatchRuntimeSummary() {
       : "";
   target.innerHTML = `
     <strong>${escapeHtml(model || "服务器模型网关")}</strong>
-    <span>${prompt ? `Prompt · ${escapeHtml(prompt)}` : "模型与 Prompt 由服务器配置统一决定"}</span>
-    <small>${escapeHtml([source, media].filter(Boolean).join(" · ") || "浏览器只提交 model_id；密钥与地址由服务器管理")}</small>`;
+    <span>${prompt ? `Prompt · ${escapeHtml(prompt)}` : "尚未选择 Prompt"} · 输入 ${escapeHtml($("#predictionInputProfile")?.value || "camera_ra_event")}</span>
+    <small>${escapeHtml([source, media].filter(Boolean).join(" · ") || "模型地址与密钥由服务器管理；Prompt 和输入按 Batch 固化")}</small>`;
 }
 
 function batchStatusLabel(status) {
@@ -1494,6 +2031,8 @@ function renderPredictionBatches(total = state.predictionBatches.length) {
         terminal.has(batch.status) &&
         counts.success > 0 &&
         Boolean(batch.model_run_id) &&
+        Boolean(batch.prompt_template_sha256) &&
+        Boolean(batch.input_profile) &&
         ["not_requested", "not_published", "pending", "failed"].includes(publishStatus);
       const batchUrl = safeUrl(
         batch.autotriage_record_url ||
@@ -1516,7 +2055,9 @@ function renderPredictionBatches(total = state.predictionBatches.length) {
                 ? `${batch.requested_model_id} → ${batch.model_name || batch.resolved_model_id}`
                 : batch.model_name || batch.resolved_model_id || "服务器模型网关"
             )}</span>
-            ${batch.prompt_version ? `<span>prompt ${escapeHtml(batch.prompt_version)}</span>` : ""}
+            ${batch.model_validation_status === "experimental" ? "<span>实验模型</span>" : ""}
+            ${batch.prompt_version ? `<span>Prompt ${escapeHtml(batch.prompt_version)}${batch.prompt_mode === "custom" ? ` · custom${batch.prompt_template_sha256 ? ` · ${escapeHtml(batch.prompt_template_sha256.slice(0, 10))}…` : ""}` : ""}</span>` : ""}
+            ${batch.input_profile ? `<span>输入 ${escapeHtml(batch.input_profile)}</span>` : ""}
             <span>${counts.completed} / ${counts.total} 完成</span>
             <span class="batch-success-count">成功 ${counts.success}</span>
             <span class="run-failure-count">失败 ${counts.failed}</span>
@@ -1563,6 +2104,12 @@ function showPredictionBatch(batch) {
       <strong>${escapeHtml(batch.name || batch.batch_name || batch.id)}</strong>
       <span>${escapeHtml(batchStatusLabel(batch.status))} · ${counts.completed}/${counts.total} 完成 · 成功 ${counts.success} · 失败 ${counts.failed}</span>
     </div>
+    <div class="run-row-meta">
+      <span>模型 ${escapeHtml(batch.resolved_model_id || batch.model_name || "—")}${batch.model_validation_status === "experimental" ? " · 实验" : ""}</span>
+      <span>Prompt ${escapeHtml(batch.prompt_version || "—")}${batch.prompt_mode === "custom" ? " · custom" : ""}</span>
+      <span>输入 ${escapeHtml(batch.input_profile || "—")}</span>
+      ${batch.prompt_template_sha256 ? `<span>Prompt SHA ${escapeHtml(batch.prompt_template_sha256.slice(0, 12))}…</span>` : ""}
+    </div>
     ${
       items.length
         ? `<div class="batch-result-items">${items
@@ -1587,16 +2134,33 @@ function showPredictionBatch(batch) {
 
 async function loadPredictionBatches() {
   if (!$("#predictionBatchList")) return;
+  const requestSeq = ++state.batchListRequestSeq;
   const params = new URLSearchParams({ page_size: "200" });
   const requesterValue = $("#batchRequesterFilter")?.value || "";
   const requester = requesterValue === "__me__" ? state.session.username : requesterValue;
   const status = $("#batchStatusFilter")?.value || "";
+  const modelId = $("#batchModelFilter")?.value || "";
+  const promptFacet = parseBatchPromptFacetValue(
+    $("#batchPromptFilter")?.value || ""
+  );
+  const inputProfile = $("#batchInputFilter")?.value || "";
   if (requester) params.set("requested_by", requester);
   if (status) params.set("status", status);
+  if (modelId) params.set("model_id", modelId);
+  if (promptFacet.version) params.set("prompt_version", promptFacet.version);
+  if (promptFacet.mode) params.set("prompt_mode", promptFacet.mode);
+  if (promptFacet.sha256) params.set("prompt_sha256", promptFacet.sha256);
+  if (inputProfile) params.set("input_profile", inputProfile);
   const data = await api(`/api/prediction-batches?${params.toString()}`);
+  if (requestSeq !== state.batchListRequestSeq) return;
   state.predictionBatches = data.items || [];
   state.predictionBatchTotal = data.total ?? state.predictionBatches.length;
   state.predictionRequesters = data.requesters || [];
+  state.batchFacets = data.facets || {
+    models: [],
+    prompts: [],
+    input_profiles: [],
+  };
   const latestSafeExperiment = state.predictionBatches.find(
     (item) => item.summary?.safe_experiment
   )?.summary?.safe_experiment;
@@ -1606,6 +2170,7 @@ async function loadPredictionBatches() {
     : incomingModel || state.batchDefaultModel;
   renderBatchRuntimeSummary();
   renderBatchRequesterFilter();
+  renderBatchCatalogFilters();
   renderPredictionBatches(state.predictionBatchTotal);
 }
 
@@ -1624,7 +2189,7 @@ async function loadPredictionConfig() {
   };
   renderBatchRuntimeSummary();
   updatePredictionBatchCount();
-  await loadGatewayModels();
+  await Promise.all([loadGatewayModels(), loadBatchPrompts()]);
 }
 
 async function pollPredictionBatch(batchId) {
@@ -1665,10 +2230,40 @@ async function submitPredictionBatch(event) {
   const invalid = issueIds.filter((issueId) => !/^[A-Za-z0-9_-]{3,128}$/.test(issueId));
   const maxIssues = Number(state.config?.prediction_batch?.max_issues || 0);
   const modelId = $("#predictionModelSelect")?.value || "";
+  const selectedModel = state.gatewayModels.find((item) => item.id === modelId);
+  const promptId = $("#predictionPromptSelect")?.value || "";
+  const promptTemplate = $("#predictionPromptTemplate")?.value || "";
+  const frameOffsetParts = String($("#predictionFrameOffsets")?.value || "")
+    .split(/[\s,，;；]+/)
+    .filter(Boolean);
+  const frameOffsets = frameOffsetParts.map((value) => Number(value));
+  const useRaEvent = Boolean($("#predictionUseRaEvent")?.checked);
+  const useRaOptions = Boolean($("#predictionUseRaOptions")?.checked);
   if (!issueIds.length) return showToast("请至少输入一个 Issue ID。", true);
   if (invalid.length) return showToast(`Issue ID 格式不合法：${invalid.slice(0, 3).join("、")}`, true);
   if (!modelId || state.gatewayModelStatus?.status !== "ready" || state.gatewayModelStatus?.stale) {
     return showToast("模型目录尚未就绪，请先刷新并选择可用模型。", true);
+  }
+  if (!promptId || !promptTemplate.trim()) {
+    return showToast("请选择 Prompt，并保留非空正文。", true);
+  }
+  if (
+    !frameOffsets.length ||
+    frameOffsets.some((value) => !Number.isInteger(value))
+  ) {
+    return showToast("Camera 帧偏移必须是逗号分隔的整数。", true);
+  }
+  if (useRaOptions && !useRaEvent) {
+    return showToast("启用 RA / SWAG Options 时必须同时启用 RA Events。", true);
+  }
+  const experimental = selectedModel?.validation_status !== "validated";
+  if (
+    experimental &&
+    !window.confirm(
+      `模型「${selectedModel?.display_name || modelId}」在线但尚未完成 RA 基线验证。仍要用它创建实验 Batch 吗？`
+    )
+  ) {
+    return;
   }
   if (maxIssues && issueIds.length > maxIssues) {
     return showToast(`单批最多 ${maxIssues} 个 Issue；当前 ${issueIds.length} 个。`, true);
@@ -1682,6 +2277,15 @@ async function submitPredictionBatch(event) {
       body: JSON.stringify({
         issue_ids: issueIds,
         model_id: modelId,
+        allow_experimental_model: experimental,
+        prompt_id: promptId,
+        prompt_template: promptTemplate,
+        input_config: {
+          profile_id: $("#predictionInputProfile")?.value || "camera_ra_event",
+          frame_offsets_ms: frameOffsets,
+          use_ra_event: useRaEvent,
+          use_ra_options: useRaOptions,
+        },
         name: $("#predictionBatchName").value.trim() || "",
         requested_by: state.session.username || "",
       }),
@@ -1795,6 +2399,55 @@ async function submitImport(event) {
   }
 }
 
+function openAutoTriageImport() {
+  navigatePage("runs");
+  const panel = $("#autotriageImportPanel");
+  if (panel) {
+    panel.open = true;
+    window.setTimeout(
+      () => panel.scrollIntoView({ behavior: "smooth", block: "start" }),
+      0
+    );
+  }
+}
+
+async function submitAutoTriageImport(event) {
+  event.preventDefault();
+  const batchRef = $("#autotriageBatchInput")?.value.trim() || "";
+  if (!batchRef) return showToast("请输入 AutoTriage Batch ID 或 records 链接。", true);
+  const button = $("#importAutoTriageButton");
+  const target = $("#autotriageImportResult");
+  button.disabled = true;
+  button.textContent = "正在拉取…";
+  target.classList.remove("hidden");
+  target.textContent = "正在通过服务器固定只读接口校验 Batch 与结果覆盖…";
+  try {
+    const result = await api("/api/import/autotriage", {
+      method: "POST",
+      body: JSON.stringify({
+        batch_id: batchRef,
+        run_name: $("#autotriageRunNameInput")?.value.trim() || "",
+        created_by: state.session.username || "",
+      }),
+    });
+    const coverage = result.coverage || {};
+    const recordUrl = safeUrl(result.record_url);
+    target.innerHTML = `
+      <strong>${result.duplicate ? "已复用相同内容 Run" : "已创建 AutoTriage 快照 Run"}</strong>
+      <span>Batch ${escapeHtml(result.batch_id)} · 接受 ${coverage.accepted_result_count ?? "—"} / 声明 ${coverage.declared_total ?? "—"} 条${coverage.partial ? " · 部分覆盖" : " · 覆盖完整"}</span>
+      ${recordUrl ? `<a href="${escapeHtml(recordUrl)}" target="_blank" rel="noreferrer">打开 AutoTriage</a>` : ""}`;
+    await loadRuns();
+    renderRunManager();
+    showToast(coverage.partial ? "Run 已拉取，但平台 Batch 为部分覆盖。" : "AutoTriage Run 已拉取。", Boolean(coverage.partial));
+  } catch (error) {
+    target.textContent = `拉取失败：${error.message}`;
+    showToast(error.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = "拉取并创建 Run";
+  }
+}
+
 async function syncTrail(mode = "preview") {
   const createRun = mode === "create";
   if (
@@ -1851,6 +2504,24 @@ async function refreshAll({ resetSelection = false } = {}) {
   ]);
 }
 
+async function reloadReviewGallery({
+  includeOverview = true,
+  historyMode = "push",
+} = {}) {
+  const reloadSeq = ++state.reviewReloadSeq;
+  state.casePage = 1;
+  state.galleryScrollY = 0;
+  clearPendingReviewImages();
+  const requests = [
+    loadCases({ keepSelection: false, page: 1 }),
+    loadClusters(),
+  ];
+  if (includeOverview) requests.push(loadOverview());
+  await Promise.all(requests);
+  if (reloadSeq !== state.reviewReloadSeq) return;
+  showPage("review", { historyMode, issue: "" });
+}
+
 function bindEvents() {
   document.querySelectorAll("[data-page-target]").forEach((element) => {
     element.addEventListener("click", (event) => {
@@ -1866,11 +2537,7 @@ function bindEvents() {
   });
   $("#filterForm").addEventListener("submit", async (event) => {
     event.preventDefault();
-    await Promise.all([
-      loadCases({ keepSelection: false, selectionHistoryMode: "push" }),
-      loadClusters(),
-      loadOverview(),
-    ]);
+    await reloadReviewGallery();
   });
   $("#modelRunFilter").addEventListener("change", async () => {
     const previousRunId = state.selectedRunId;
@@ -1881,26 +2548,28 @@ function bindEvents() {
     $("#failureOnlyInput").checked = state.failureOnly;
     renderActiveRun();
     renderRunManager();
-    await Promise.all([
-      loadCases({ keepSelection: false, selectionHistoryMode: "push" }),
-      loadClusters(),
-      loadOverview(),
-    ]);
+    await reloadReviewGallery();
   });
   $("#failureOnlyInput").addEventListener("change", async () => {
     state.failureOnly = $("#failureOnlyInput").checked;
-    await Promise.all([
-      loadCases({ keepSelection: false, selectionHistoryMode: "push" }),
-      loadClusters(),
-      loadOverview(),
-    ]);
+    await reloadReviewGallery();
   });
   $("#clearClusterButton").addEventListener("click", async () => {
     state.clusterKey = "";
-    await Promise.all([
-      loadCases({ keepSelection: false, selectionHistoryMode: "push" }),
-      loadClusters(),
-    ]);
+    await reloadReviewGallery({ includeOverview: false });
+  });
+  $("#casePagePrevious").addEventListener("click", () => {
+    changeCasePage(-1).catch((error) => showToast(error.message, true));
+  });
+  $("#casePageNext").addEventListener("click", () => {
+    changeCasePage(1).catch((error) => showToast(error.message, true));
+  });
+  $("#backToGalleryButton").addEventListener("click", returnToReviewGallery);
+  $("#previousIssueButton").addEventListener("click", () => {
+    navigateAdjacentCase(-1).catch((error) => showToast(error.message, true));
+  });
+  $("#nextIssueButton").addEventListener("click", () => {
+    navigateAdjacentCase(1).catch((error) => showToast(error.message, true));
   });
   $("#refreshButton").addEventListener("click", async () => {
     try {
@@ -1920,8 +2589,17 @@ function bindEvents() {
     $("#importResult").textContent = "";
     openRunImport("model");
   });
+  $("#openAutoTriageImportButton").addEventListener("click", openAutoTriageImport);
   $("#reviewUploadModelButton").addEventListener("click", () => openRunImport("model"));
   $("#predictFilteredButton").addEventListener("click", () => {
+    const limit = predictionBatchLimit();
+    if (state.caseTotal > limit) {
+      showToast(
+        `当前筛选有 ${state.caseTotal} 个 Issue；单批最多 ${limit} 个，请继续收窄筛选。`,
+        true
+      );
+      return;
+    }
     if (state.cases.length !== state.caseTotal) {
       showToast(
         `当前仅加载 ${state.cases.length} / ${state.caseTotal} 个筛选结果，不能创建不完整 Batch。`,
@@ -1952,6 +2630,11 @@ function bindEvents() {
   $("#batchStatusFilter").addEventListener("change", () => {
     loadPredictionBatches().catch((error) => showToast(error.message, true));
   });
+  ["#batchModelFilter", "#batchPromptFilter", "#batchInputFilter"].forEach((selector) => {
+    $(selector).addEventListener("change", () => {
+      loadPredictionBatches().catch((error) => showToast(error.message, true));
+    });
+  });
   $("#refreshPredictionBatchesButton").addEventListener("click", () => {
     loadPredictionBatches()
       .then(() => showToast("Batch 任务历史已刷新。"))
@@ -1967,12 +2650,24 @@ function bindEvents() {
         button.disabled = false;
       });
   });
-  $("#predictionModelSelect").addEventListener("change", renderBatchRuntimeSummary);
-  $("#sidebarToggle").addEventListener("click", toggleSidebar);
-  window.addEventListener("resize", () => {
-    clearTimeout(syncAutomaticSidebar.timer);
-    syncAutomaticSidebar.timer = setTimeout(syncAutomaticSidebar, 80);
+  $("#predictionModelSelect").addEventListener("change", () => {
+    state.selectedGatewayModelId = $("#predictionModelSelect").value;
+    renderGatewayModels();
   });
+  $("#predictionModelSearch").addEventListener("input", renderGatewayModels);
+  $("#predictionPromptSelect").addEventListener("change", loadSelectedPromptTemplate);
+  $("#predictionPromptTemplate").addEventListener("input", updatePromptEditorSummary);
+  $("#predictionInputProfile").addEventListener("change", applyBatchInputPreset);
+  $("#predictionFrameOffsets").addEventListener("input", renderBatchRuntimeSummary);
+  $("#predictionUseRaEvent").addEventListener("change", () => {
+    if (!$("#predictionUseRaEvent").checked) $("#predictionUseRaOptions").checked = false;
+    renderBatchRuntimeSummary();
+  });
+  $("#predictionUseRaOptions").addEventListener("change", () => {
+    if ($("#predictionUseRaOptions").checked) $("#predictionUseRaEvent").checked = true;
+    renderBatchRuntimeSummary();
+  });
+  $("#sidebarToggle").addEventListener("click", toggleSidebar);
   document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => closeDialog(button.dataset.close)));
   $("#importKind").querySelectorAll("input").forEach((input) => {
     input.addEventListener("change", () => {
@@ -1987,6 +2682,7 @@ function bindEvents() {
   });
   $("#importFile").addEventListener("change", () => { $("#importFileName").textContent = $("#importFile").files[0]?.name || "未选择文件"; });
   $("#importForm").addEventListener("submit", submitImport);
+  $("#autotriageImportForm").addEventListener("submit", submitAutoTriageImport);
   $("#predictionBatchIssues").addEventListener("input", () => {
     state.batchDraftSource = "";
     updatePredictionBatchCount();
@@ -2004,45 +2700,54 @@ function bindEvents() {
   });
   window.addEventListener("popstate", async () => {
     const route = parsePageRoute();
+    if (route.page !== "review") {
+      showPage(route.page, {
+        issues: route.issues,
+        source: route.source,
+        importKind: route.importKind,
+        restoreRoute: true,
+      });
+      return;
+    }
+    applyReviewRouteControls(route);
     const nextRunId =
       route.runId && state.modelRuns.some((run) => run.id === route.runId)
         ? route.runId
         : "";
     const nextFailureOnly = Boolean(nextRunId && route.failureOnly);
-    if (
-      nextRunId !== state.selectedRunId ||
-      nextFailureOnly !== state.failureOnly
-    ) {
-      state.selectedRunId = nextRunId;
-      $("#modelRunFilter").value = nextRunId;
-      state.failureOnly = nextFailureOnly;
-      $("#failureOnlyInput").checked = state.failureOnly;
-      $("#failureOnlyInput").disabled = !nextRunId;
-      renderActiveRun();
-      renderRunManager();
+    state.selectedRunId = nextRunId;
+    $("#modelRunFilter").value = nextRunId;
+    state.failureOnly = nextFailureOnly;
+    $("#failureOnlyInput").checked = state.failureOnly;
+    $("#failureOnlyInput").disabled = !nextRunId;
+    renderActiveRun();
+    renderRunManager();
+    if (!route.issue) {
+      if (state.selectedId) clearPendingReviewImages();
+      clearDetail({ showGallery: true });
+    }
+    showPage("review", {
+      issue: route.issue,
+      restoreRoute: true,
+    });
+    try {
       await Promise.all([
-        loadCases({ keepSelection: true, autoSelect: false }),
+        loadCases({ keepSelection: true, page: route.casePage }),
         loadClusters(),
         loadOverview(),
       ]);
-    }
-    showPage(route.page, {
-      issue: route.issue,
-      issues: route.issues,
-      source: route.source,
-      importKind: route.importKind,
-      restoreRoute: true,
-    });
-    if (route.page === "review") {
       if (route.issue) {
-        if (route.issue !== state.selectedId) {
+        if (route.issue !== state.selectedId || !state.selectedCase) {
           await selectCase(route.issue, { updateRoute: false });
+        } else {
+          setReviewView(route.issue);
+          renderCaseNavigation();
         }
       } else {
-        if (state.selectedId) clearPendingReviewImages();
-        clearDetail();
         renderCases({ items: state.cases, total: state.caseTotal });
       }
+    } catch (error) {
+      showToast(error.message, true);
     }
   });
 }
@@ -2050,12 +2755,9 @@ function bindEvents() {
 async function bootstrap() {
   const initialRoute = parsePageRoute();
   const savedSidebarState = localStorage.getItem("ra-triage-sidebar-collapsed");
-  state.sidebarAutoMode = savedSidebarState === null;
-  state.sidebarCollapsed =
-    savedSidebarState === null
-      ? window.matchMedia("(max-width: 1440px)").matches
-      : savedSidebarState === "true";
+  state.sidebarCollapsed = savedSidebarState === "true";
   applySidebarState();
+  applyReviewRouteControls(initialRoute);
   bindEvents();
   updateImportFields();
   showPage(initialRoute.page, {
@@ -2074,23 +2776,23 @@ async function bootstrap() {
       Boolean(state.config.default_failure_only && state.selectedRunId);
     await loadRuns({ preferDefault: !initialRoute.runId });
     $("#failureOnlyInput").checked = state.failureOnly;
+    await loadReviewers();
+    applyReviewRouteControls(initialRoute);
     await Promise.all([
       loadStatus(),
       loadOverview(),
       loadCases({
-        keepSelection: false,
-        autoSelect: !initialRoute.issue,
-        selectionHistoryMode: "replace",
+        keepSelection: Boolean(initialRoute.issue),
+        page: initialRoute.casePage,
       }),
       loadClusters(),
-      loadReviewers(),
     ]);
     if (initialRoute.issue && initialRoute.issue !== state.selectedId) {
       await selectCase(initialRoute.issue, { updateRoute: false });
     }
     showPage(initialRoute.page, {
       historyMode: "replace",
-      issue: initialRoute.issue || state.selectedId,
+      issue: initialRoute.issue,
       issues: initialRoute.issues,
       source: initialRoute.source,
       importKind: initialRoute.importKind,

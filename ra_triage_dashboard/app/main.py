@@ -23,10 +23,25 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 from .assets import AssetIndex, CameraIndex
 from .auth import normalise_username, request_identity
+from .autotriage_source import (
+    AutoTriageSource,
+    AutoTriageSourceError,
+    normalise_batch_id,
+)
 from .baseline import load_label_baseline
 from .batch_prediction_runner import BatchPredictionRunner
 from .db import LABELS, REVIEW_STATUSES, Database
 from .model_catalog import MODEL_ID_RE, ModelCatalog, ModelCatalogError
+from .prompt_catalog import (
+    INPUT_PRESETS,
+    MAX_FRAME_COUNT,
+    MAX_FRAME_OFFSET_MS,
+    MAX_PROMPT_BYTES,
+    MIN_FRAME_OFFSET_MS,
+    PromptCatalog,
+    PromptCatalogError,
+    normalise_input_config,
+)
 from .sanitization import redact_sensitive_fields
 from .settings import Settings
 from .trail_sync import TRAIL_INFO_FIELD, TRAIL_RESULT_FIELD, read_trail_model_fields
@@ -40,9 +55,12 @@ asset_index = AssetIndex(
 )
 camera_index = CameraIndex(settings.camera_root)
 model_catalog = ModelCatalog(settings)
+prompt_catalog = PromptCatalog(settings.ra_auto_triage_root)
+autotriage_source = AutoTriageSource(settings.autotriage_api_base_url)
 batch_prediction_runner = BatchPredictionRunner(settings, database)
 trail_sync_lock = threading.Lock()
 review_image_semaphore = asyncio.Semaphore(2)
+thumbnail_image_semaphore = asyncio.Semaphore(4)
 
 ISSUE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{3,128}$")
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
@@ -53,6 +71,7 @@ MAX_REVIEW_MULTIPART_REQUEST_BYTES = 26 * 1024 * 1024
 MAX_REVIEW_ATTACHMENT_PIXELS = 40_000_000
 MAX_REVIEW_ATTACHMENT_STORAGE_BYTES = 20 * 1024 * 1024 * 1024
 MIN_REVIEW_ATTACHMENT_DISK_FREE = 256 * 1024 * 1024
+MAX_BATCH_JSON_REQUEST_BYTES = 256 * 1024
 
 MISSING_EVIDENCE_CATALOG: tuple[dict[str, str], ...] = (
     {"key": "routing_direction", "label": "routing 方向", "hint": "未理解自车目标转向 / 车道任务"},
@@ -203,8 +222,17 @@ def _autotriage_record_url(batch_id: str) -> str:
     )
 
 
-def _public_batch_job(job: dict[str, Any]) -> dict[str, Any]:
+def _public_batch_job(
+    job: dict[str, Any],
+    *,
+    include_prompt: bool = False,
+) -> dict[str, Any]:
     public = dict(job)
+    prompt_template = _as_text(public.get("prompt_template"))
+    public["prompt_template_length"] = len(prompt_template)
+    public["prompt_preview"] = re.sub(r"\s+", " ", prompt_template)[:240]
+    if not include_prompt:
+        public.pop("prompt_template", None)
     public["record_url"] = _autotriage_record_url(
         _as_text(job.get("autotriage_batch_id"))
     )
@@ -219,6 +247,86 @@ def _public_batch_job(job: dict[str, Any]) -> dict[str, Any]:
             for item in job.get("items", [])
         ]
     return public
+
+
+def _safe_autotriage_batch(batch: dict[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "id",
+        "batch_name",
+        "username",
+        "status",
+        "prompt_version",
+        "prompt_text",
+        "model_name",
+        "total_count",
+        "completed_count",
+        "success_count",
+        "failed_count",
+        "match_count",
+        "mismatch_count",
+        "accuracy",
+        "experiment_id",
+        "experiment_revision_id",
+        "experiment_source",
+        "created_at",
+        "started_at",
+        "finished_at",
+    }
+    safe = redact_sensitive_fields(
+        {key: batch.get(key) for key in allowed if key in batch}
+    )
+    prompt_text = _as_text(safe.pop("prompt_text", ""))
+    safe["prompt_sha256"] = (
+        hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
+        if prompt_text
+        else ""
+    )
+    safe["prompt_preview"] = re.sub(r"\s+", " ", prompt_text)[:240]
+    safe["prompt_length"] = len(prompt_text)
+    return safe
+
+
+def _thumbnail_cache_path(issue_id: str, source: Path) -> Path:
+    stat = source.stat()
+    fingerprint = (
+        f"{issue_id}\0{source}\0{stat.st_mtime_ns}\0{stat.st_size}"
+    ).encode("utf-8")
+    digest = hashlib.sha256(fingerprint).hexdigest()
+    return settings.case_thumbnails_dir / f"{digest}.jpg"
+
+
+def _render_case_thumbnail(source: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with Image.open(source) as opened:
+        image = ImageOps.exif_transpose(opened)
+        if image.width * image.height > MAX_REVIEW_ATTACHMENT_PIXELS:
+            raise ValueError("BEV 图片像素数过大。")
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+        contained = ImageOps.contain(
+            image,
+            (640, 360),
+            method=Image.Resampling.LANCZOS,
+        )
+        canvas = Image.new("RGB", (640, 360), color=(11, 18, 32))
+        canvas.paste(
+            contained,
+            ((640 - contained.width) // 2, (360 - contained.height) // 2),
+        )
+        temp_path = destination.with_name(
+            f".{destination.name}.{uuid.uuid4().hex}.tmp"
+        )
+        try:
+            canvas.save(
+                temp_path,
+                format="JPEG",
+                quality=78,
+                optimize=True,
+                progressive=True,
+            )
+            temp_path.replace(destination)
+        finally:
+            temp_path.unlink(missing_ok=True)
 
 
 def _action_actor(request: Request, submitted_name: Any = "") -> tuple[str, str, bool]:
@@ -368,6 +476,114 @@ def normalize_model_row(row: dict[str, Any]) -> dict[str, Any] | None:
         "model_confidence": confidence,
         "model_extra": extra,
         "raw": row,
+    }
+
+
+def _fetch_autotriage_snapshot(batch_ref: Any) -> dict[str, Any]:
+    batch_id = normalise_batch_id(batch_ref)
+    batch = autotriage_source.fetch_batch(batch_id)
+    source_rows = autotriage_source.fetch_results(batch_id)
+    safe_batch = _safe_autotriage_batch(batch)
+    rows: list[dict[str, Any]] = []
+    rejected = 0
+    seen: set[str] = set()
+    for source_row in source_rows:
+        redacted_row = redact_sensitive_fields(source_row)
+        normalized = normalize_model_row(redacted_row)
+        explicit_success = source_row.get("success")
+        row_failed = explicit_success is False or (
+            isinstance(explicit_success, str)
+            and explicit_success.strip().lower() in {"false", "0", "failed"}
+        )
+        if (
+            row_failed
+            or normalized is None
+            or normalized.get("model_label") not in LABELS
+        ):
+            rejected += 1
+            continue
+        issue_id = _as_text(normalized.get("issue_id"))
+        if issue_id in seen:
+            raise AutoTriageSourceError(
+                f"AutoTriage Batch {batch_id} 含重复 Issue：{issue_id}。"
+            )
+        seen.add(issue_id)
+        normalized["raw"] = redacted_row
+        rows.append(normalized)
+    if not rows:
+        raise AutoTriageSourceError(
+            "该 AutoTriage Batch 没有可导入的三分类预测结果。"
+        )
+
+    def platform_count(field: str) -> int:
+        try:
+            count = int(batch.get(field) or 0)
+        except (TypeError, ValueError):
+            raise AutoTriageSourceError(
+                f"AutoTriage Batch 的 {field} 非法。"
+            )
+        if count < 0:
+            raise AutoTriageSourceError(
+                f"AutoTriage Batch 的 {field} 不能为负数。"
+            )
+        return count
+
+    declared_total = platform_count("total_count")
+    completed_total = platform_count("completed_count")
+    failed_total = platform_count("failed_count")
+    platform_status = _as_text(batch.get("status")).lower()
+    partial = bool(
+        rejected
+        or failed_total
+        or platform_status not in {"completed", "succeeded"}
+        or (declared_total and len(source_rows) != declared_total)
+        or (declared_total and completed_total != declared_total)
+        or (declared_total and len(rows) != declared_total)
+    )
+    fingerprint_rows = [
+        {
+            "issue_id": row["issue_id"],
+            "trip_id": row["trip_id"],
+            "model_label": row["model_label"],
+            "model_reason": row["model_reason"],
+            "model_confidence": row["model_confidence"],
+            "model_extra": row["model_extra"],
+        }
+        for row in sorted(rows, key=lambda item: item["issue_id"])
+    ]
+    fingerprint = {
+        "schema_version": "autotriage-snapshot-v1",
+        "batch_id": batch_id,
+        "batch": safe_batch,
+        "predictions": fingerprint_rows,
+        "source_result_count": len(source_rows),
+        "rejected_result_count": rejected,
+    }
+    source_sha256 = hashlib.sha256(
+        json.dumps(
+            fingerprint,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    coverage = {
+        "declared_total": declared_total,
+        "completed_total": completed_total,
+        "failed_total": failed_total,
+        "platform_status": platform_status,
+        "source_result_count": len(source_rows),
+        "accepted_result_count": len(rows),
+        "rejected_result_count": rejected,
+        "unique_issue_count": len(seen),
+        "partial": partial,
+    }
+    return {
+        "batch_id": batch_id,
+        "batch": safe_batch,
+        "rows": rows,
+        "coverage": coverage,
+        "source_sha256": source_sha256,
     }
 
 
@@ -893,13 +1109,35 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="RA Triage Workbench",
-    version="1.4.0",
+    version="1.6.0",
     lifespan=lifespan,
 )
 
 
 @app.middleware("http")
-async def review_attachment_request_size_guard(request: Request, call_next):
+async def request_size_guard(request: Request, call_next):
+    if request.method == "POST" and request.url.path in {
+        "/api/prediction-batches",
+        "/api/import/autotriage",
+    }:
+        content_length = request.headers.get("content-length", "").strip()
+        if not content_length:
+            return JSONResponse(
+                status_code=411,
+                content={"detail": "JSON 请求必须提供 Content-Length。"},
+            )
+        try:
+            request_bytes = int(content_length)
+        except ValueError:
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "Content-Length 非法。"},
+            )
+        if request_bytes > MAX_BATCH_JSON_REQUEST_BYTES:
+            return JSONResponse(
+                status_code=413,
+                content={"detail": "Batch / AutoTriage 请求不能超过 256 KiB。"},
+            )
     if (
         request.method == "POST"
         and request.url.path.startswith("/api/cases/")
@@ -953,6 +1191,7 @@ async def legacy_import(kind: str = "issues") -> RedirectResponse:
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
+        "build_commit": settings.build_commit,
         "ra_auto_triage_root_available": (settings.ra_auto_triage_root / "vlm").is_dir(),
         "ares_manifest_available": settings.ares_manifest.is_file(),
         "ares_indexed_issues": asset_index.refresh(),
@@ -977,6 +1216,7 @@ async def overview(model_run_id: str = "") -> dict[str, Any]:
 async def dashboard_config() -> dict[str, Any]:
     return {
         "baseline": runtime_state["baseline"],
+        "build_commit": settings.build_commit,
         "default_model_run_id": database.default_model_run_id(),
         "trail_sync": runtime_state["trail_sync"],
         "missing_evidence_catalog": MISSING_EVIDENCE_CATALOG,
@@ -1020,6 +1260,7 @@ async def session(request: Request) -> dict[str, object]:
 async def status() -> dict[str, Any]:
     return {
         "trail_write_enabled": False,
+        "build_commit": settings.build_commit,
         "ra_auto_triage_root_available": (settings.ra_auto_triage_root / "vlm").is_dir(),
         "ares_manifest_available": settings.ares_manifest.is_file(),
         "ares_indexed_issues": asset_index.refresh(),
@@ -1031,7 +1272,10 @@ async def status() -> dict[str, Any]:
         "batch_max_issues": settings.batch_max_issues,
         "model_gateway": model_catalog.status(),
         "storage": "SQLite MVP / PostgreSQL migration prepared",
-        "model_endpoint_policy": "固定服务器网关 + RA Profile；浏览器只提交 model_id",
+        "model_endpoint_policy": (
+            "固定服务器网关；Profile 模型已验证，其他在线 Qwen3 显式实验；"
+            "浏览器不能提交地址或凭证"
+        ),
     }
 
 
@@ -1046,6 +1290,7 @@ async def list_cases(
     missing_evidence: str = "",
     page: int = 1,
     page_size: int = 100,
+    include_thumbnail: bool = False,
 ) -> dict[str, Any]:
     result = database.list_cases(
         baseline_scope=settings.baseline_scope,
@@ -1059,16 +1304,66 @@ async def list_cases(
         page=page,
         page_size=page_size,
     )
-    result["items"] = [
-        {**item, "voyager_issue_url": _voyager_issue_url(item["issue_id"])}
-        for item in result.get("items", [])
-    ]
+    items: list[dict[str, Any]] = []
+    for item in result.get("items", []):
+        issue_id = _as_text(item.get("issue_id"))
+        public = {
+            **item,
+            "voyager_issue_url": _voyager_issue_url(issue_id),
+        }
+        if include_thumbnail:
+            public["thumbnail"] = (
+                {
+                    "url": f"/api/case-thumbnails/{quote(issue_id, safe='')}",
+                    "kind": "bev",
+                    "label": "BEV · t0 附近",
+                }
+                if asset_index.has_issue(issue_id)
+                else None
+            )
+        items.append(public)
+    result["items"] = items
     return result
 
 
 @app.get("/api/reviewers")
 async def reviewers() -> dict[str, Any]:
     return {"items": database.list_reviewers(settings.baseline_scope)}
+
+
+@app.get("/api/case-thumbnails/{issue_id}")
+async def get_case_thumbnail(issue_id: str) -> FileResponse:
+    if not ISSUE_ID_RE.fullmatch(issue_id) or database.get_case(issue_id) is None:
+        raise _detail(404, "Issue 不存在。")
+    source_info = await asyncio.to_thread(
+        asset_index.get_thumbnail_source,
+        issue_id,
+    )
+    if not source_info or not isinstance(source_info.get("path"), Path):
+        raise _detail(404, "该 Issue 暂无 BEV 缩略图。")
+    source = source_info["path"]
+    try:
+        destination = _thumbnail_cache_path(issue_id, source)
+        if not destination.is_file():
+            async with thumbnail_image_semaphore:
+                if not destination.is_file():
+                    await asyncio.to_thread(
+                        _render_case_thumbnail,
+                        source,
+                        destination,
+                    )
+    except (
+        Image.DecompressionBombError,
+        UnidentifiedImageError,
+        OSError,
+        ValueError,
+    ):
+        raise _detail(404, "该 Issue 的 BEV 缩略图无法生成。")
+    return FileResponse(
+        destination,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=300, must-revalidate"},
+    )
 
 
 @app.get("/api/cases/{issue_id}")
@@ -1268,6 +1563,12 @@ async def import_contract() -> dict[str, Any]:
             ],
             "native_json_envelope": {"experiment": {}, "results": []},
         },
+        "autotriage_snapshot": {
+            "input": "数字 Batch ID 或 records 链接",
+            "source": "服务器固定只读 AutoTriage API",
+            "kind": "autotriage_snapshot",
+            "make_default": False,
+        },
         "notes": [
             "每次导入会创建不可变 model run，并按 SHA-256 去重。",
             "Trail 真值不因模型导入而覆盖；只有 issues 导入且显式 replace_gt 才会覆盖已有 GT。",
@@ -1355,6 +1656,99 @@ async def import_model_results(
     }
 
 
+@app.get("/api/import/autotriage/{batch_id}")
+async def preview_autotriage_import(batch_id: str) -> dict[str, Any]:
+    try:
+        normalized_batch_id = normalise_batch_id(batch_id)
+    except AutoTriageSourceError as exc:
+        raise _detail(400, str(exc))
+    try:
+        snapshot = await asyncio.to_thread(
+            _fetch_autotriage_snapshot,
+            normalized_batch_id,
+        )
+    except AutoTriageSourceError as exc:
+        raise _detail(502, str(exc))
+    return {
+        "batch_id": snapshot["batch_id"],
+        "batch": snapshot["batch"],
+        "coverage": snapshot["coverage"],
+        "record_url": _autotriage_record_url(snapshot["batch_id"]),
+        "default_changed": False,
+        "read_only": True,
+    }
+
+
+@app.post("/api/import/autotriage")
+async def import_autotriage_results(
+    request: Request,
+) -> dict[str, Any]:
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        raise _detail(400, "AutoTriage 导入请求必须是 JSON。")
+    if not isinstance(body, dict):
+        raise _detail(400, "AutoTriage 导入请求必须是 JSON 对象。")
+    unknown = sorted(set(body) - {"batch_id", "run_name", "created_by"})
+    if unknown:
+        raise _detail(400, f"AutoTriage 导入包含未知字段：{', '.join(unknown)}。")
+    try:
+        normalized_batch_id = normalise_batch_id(body.get("batch_id"))
+    except AutoTriageSourceError as exc:
+        raise _detail(400, str(exc))
+    try:
+        snapshot = await asyncio.to_thread(
+            _fetch_autotriage_snapshot,
+            normalized_batch_id,
+        )
+    except AutoTriageSourceError as exc:
+        raise _detail(502, str(exc))
+    run_name = _as_text(body.get("run_name"))
+    if len(run_name) > 120:
+        raise _detail(400, "Run 名称不能超过 120 个字符。")
+    batch = snapshot["batch"]
+    actor, actor_source, actor_verified = _action_actor(
+        request,
+        body.get("created_by"),
+    )
+    metadata = {
+        "schema_version": "autotriage-snapshot-v1",
+        "origin": "autotriage_readonly_snapshot",
+        "source_ref": f"autotriage_batch:{snapshot['batch_id']}",
+        "record_url": _autotriage_record_url(snapshot["batch_id"]),
+        "platform_batch": batch,
+        "coverage": snapshot["coverage"],
+        "external_username": _as_text(batch.get("username")),
+        "model_name": _as_text(batch.get("model_name")),
+        "prompt_version": _as_text(batch.get("prompt_version")),
+        "prompt_sha256": _as_text(batch.get("prompt_sha256")),
+        "default_changed": False,
+    }
+    run, duplicate = database.import_model_run(
+        name=run_name
+        or _as_text(batch.get("batch_name"))
+        or f"AutoTriage Batch {snapshot['batch_id']}",
+        source_name=f"AutoTriage Batch {snapshot['batch_id']}",
+        source_sha256=snapshot["source_sha256"],
+        metadata=metadata,
+        rows=snapshot["rows"],
+        kind="autotriage_snapshot",
+        make_default=False,
+        created_by=actor,
+        created_by_source=actor_source,
+        created_by_verified=actor_verified,
+    )
+    return {
+        "run": run,
+        "duplicate": duplicate,
+        "batch_id": snapshot["batch_id"],
+        "coverage": snapshot["coverage"],
+        "record_url": _autotriage_record_url(snapshot["batch_id"]),
+        "default_changed": False,
+        "read_only": True,
+    }
+
+
 @app.get("/api/prediction-batches/models")
 async def batch_prediction_models(refresh: bool = False) -> dict[str, Any]:
     try:
@@ -1367,6 +1761,17 @@ async def batch_prediction_models(refresh: bool = False) -> dict[str, Any]:
         raise _detail(exc.status_code, exc.public_message)
 
 
+@app.get("/api/prediction-batches/prompts")
+async def batch_prediction_prompts() -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(
+            prompt_catalog.list_prompts,
+            include_template=True,
+        )
+    except PromptCatalogError as exc:
+        raise _detail(503, str(exc))
+
+
 @app.get("/api/prediction-batches/config")
 async def batch_prediction_config() -> dict[str, Any]:
     latest = database.list_batch_prediction_jobs(page_size=1).get("items", [])
@@ -1376,15 +1781,30 @@ async def batch_prediction_config() -> dict[str, Any]:
         "autotriage_push_enabled": settings.autotriage_push_enabled,
         "max_issues": settings.batch_max_issues,
         "model": {
-            "source": "服务器模型网关 + ra_auto_triage 默认 Prompt/Camera 配置",
+            "source": "服务器模型网关 + 用户选择的 Prompt/Camera 输入快照",
             "name": _as_text(latest_job.get("model_name"))
             or settings.ra_model_default_id,
             "prompt_version": _as_text(latest_job.get("prompt_version"))
-            or "任务启动时解析服务器默认 Prompt",
+            or "任务创建时固化服务器 Prompt",
         },
         "model_gateway": model_catalog.status(),
+        "prompt_policy": {
+            "source": "cloud_server ra_auto_triage/vlm/prompts/versions",
+            "editable": True,
+            "immutable_per_job": True,
+            "max_bytes": MAX_PROMPT_BYTES,
+        },
         "input_policy": {
             "issue_source": "Voyager Issue + dashboard isolated bag cache",
+            "profiles": list(INPUT_PRESETS),
+            "editable_fields": [
+                "frame_offsets_ms",
+                "use_ra_event",
+                "use_ra_options",
+            ],
+            "frame_count_max": MAX_FRAME_COUNT,
+            "frame_offset_min_ms": MIN_FRAME_OFFSET_MS,
+            "frame_offset_max_ms": MAX_FRAME_OFFSET_MS,
             "ares_bev_input": False,
             "browser_model_credentials": False,
             "bag_cache_read_only": False,
@@ -1420,12 +1840,34 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
             "use_ares_capture",
             "use_bev_animation",
             "bev_mode",
+            "bag_path",
+            "camera_topic",
+            "camera_topics",
+            "experiment",
+            "experiment_id",
+            "experiment_revision_id",
         }.intersection(body)
     )
     if forbidden_model_fields:
         raise _detail(
             400,
-            "浏览器只能提交 model_id；禁止提交模型地址、凭证、provider 或 Ares/BEV 配置。",
+            "禁止提交模型地址、凭证、provider、路径、实验 ID 或 Ares/BEV 配置。",
+        )
+    allowed_fields = {
+        "name",
+        "issue_ids",
+        "requested_by",
+        "model_id",
+        "prompt_id",
+        "prompt_template",
+        "input_config",
+        "allow_experimental_model",
+    }
+    unknown_fields = sorted(set(body) - allowed_fields)
+    if unknown_fields:
+        raise _detail(
+            400,
+            f"Batch 请求包含未知字段：{', '.join(unknown_fields)}。",
         )
     raw_issue_ids = body.get("issue_ids")
     if not isinstance(raw_issue_ids, list):
@@ -1468,6 +1910,27 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
         )
     except ModelCatalogError as exc:
         raise _detail(exc.status_code, exc.public_message)
+    validation_status = _as_text(
+        model_selection.get("validation_status")
+    ) or "validated"
+    if (
+        validation_status != "validated"
+        and body.get("allow_experimental_model") is not True
+    ):
+        raise _detail(
+            400,
+            "该 Qwen3 模型在线但尚未完成 RA 基线验证；"
+            "如需试跑，请显式确认 allow_experimental_model=true。",
+        )
+    try:
+        prompt_selection = await asyncio.to_thread(
+            prompt_catalog.resolve,
+            body.get("prompt_id"),
+            body.get("prompt_template"),
+        )
+        input_config = normalise_input_config(body.get("input_config"))
+    except PromptCatalogError as exc:
+        raise _detail(400, str(exc))
     actor, actor_source, actor_verified = _action_actor(
         request, body.get("requested_by")
     )
@@ -1481,6 +1944,15 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
         resolved_model_id=model_selection["resolved_model_id"],
         model_source="ra_model_gateway",
         catalog_sha256=model_selection["catalog_sha256"],
+        model_validation_status=validation_status,
+        prompt_version=prompt_selection["prompt_version"],
+        prompt_template=prompt_selection["prompt_template"],
+        prompt_template_sha256=prompt_selection[
+            "prompt_template_sha256"
+        ],
+        prompt_mode=prompt_selection["prompt_mode"],
+        input_profile=input_config["profile_id"],
+        input_config=input_config,
     )
     if not batch_prediction_runner.launch_prediction(job):
         error = "已有 Batch 预测或 AutoTriage 推送正在执行，请稍后重试。"
@@ -1508,6 +1980,11 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
             "server_model_gateway": True,
             "requested_model_id": model_selection["requested_model_id"],
             "resolved_model_id": model_selection["resolved_model_id"],
+            "model_validation_status": validation_status,
+            "prompt_version": prompt_selection["prompt_version"],
+            "prompt_sha256": prompt_selection["prompt_template_sha256"],
+            "prompt_mode": prompt_selection["prompt_mode"],
+            "input_profile": input_config["profile_id"],
             "browser_model_credentials": False,
             "ares_bev_input": False,
             "bag_cache_read_only": False,
@@ -1523,11 +2000,21 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
 async def list_batch_predictions(
     requested_by: str = "",
     status: str = "",
+    model_id: str = "",
+    prompt_version: str = "",
+    prompt_mode: str = "",
+    prompt_sha256: str = "",
+    input_profile: str = "",
     page_size: int = 100,
 ) -> dict[str, Any]:
     result = database.list_batch_prediction_jobs(
         requested_by=requested_by,
         status=status,
+        model_id=model_id,
+        prompt_version=prompt_version,
+        prompt_mode=prompt_mode,
+        prompt_sha256=prompt_sha256,
+        input_profile=input_profile,
         page_size=page_size,
     )
     result["items"] = [
@@ -1541,7 +2028,7 @@ async def get_batch_prediction(job_id: str) -> dict[str, Any]:
     job = database.get_batch_prediction_job(job_id)
     if job is None:
         raise _detail(404, "Batch 任务不存在。")
-    return {"job": _public_batch_job(job)}
+    return {"job": _public_batch_job(job, include_prompt=True)}
 
 
 @app.post(
@@ -1580,6 +2067,20 @@ async def publish_batch_prediction(job_id: str, request: Request) -> dict[str, A
         raise _detail(
             409,
             "该历史 Batch 缺少已解析模型信息，不能安全推送；请重新发起预测。",
+        )
+    if (
+        not _as_text(job.get("prompt_template"))
+        or not re.fullmatch(
+            r"[0-9a-f]{64}",
+            _as_text(job.get("prompt_template_sha256")).lower(),
+        )
+        or not _as_text(job.get("input_profile"))
+        or not isinstance(job.get("input_config"), dict)
+    ):
+        raise _detail(
+            409,
+            "该历史 Batch 缺少不可变 Prompt/Input 快照，"
+            "不能重建同一配置推送；请重新发起预测。",
         )
     if (
         job.get("status") not in {"succeeded", "partial"}

@@ -180,8 +180,14 @@ class Database:
                     resolved_model_id TEXT NOT NULL DEFAULT '',
                     model_source TEXT NOT NULL DEFAULT '',
                     catalog_sha256 TEXT NOT NULL DEFAULT '',
+                    model_validation_status TEXT NOT NULL DEFAULT '',
                     model_name TEXT NOT NULL DEFAULT '',
                     prompt_version TEXT NOT NULL DEFAULT '',
+                    prompt_template TEXT NOT NULL DEFAULT '',
+                    prompt_template_sha256 TEXT NOT NULL DEFAULT '',
+                    prompt_mode TEXT NOT NULL DEFAULT '',
+                    input_profile TEXT NOT NULL DEFAULT '',
+                    input_config_json TEXT NOT NULL DEFAULT '{}',
                     experiment_source TEXT NOT NULL DEFAULT '',
                     config_sha256 TEXT NOT NULL DEFAULT '',
                     model_run_id TEXT REFERENCES model_runs(id) ON DELETE SET NULL,
@@ -270,12 +276,66 @@ class Database:
                 "catalog_sha256",
                 "TEXT NOT NULL DEFAULT ''",
             )
+            self._ensure_column(
+                conn,
+                "batch_prediction_jobs",
+                "model_validation_status",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                conn,
+                "batch_prediction_jobs",
+                "prompt_template",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                conn,
+                "batch_prediction_jobs",
+                "prompt_template_sha256",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                conn,
+                "batch_prediction_jobs",
+                "prompt_mode",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                conn,
+                "batch_prediction_jobs",
+                "input_profile",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                conn,
+                "batch_prediction_jobs",
+                "input_config_json",
+                "TEXT NOT NULL DEFAULT '{}'",
+            )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_issues_baseline ON issues(baseline_scope)")
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_annotations_author ON annotations(author)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_model_runs_created_by ON model_runs(created_by)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_batch_prediction_jobs_model "
+                "ON batch_prediction_jobs(requested_model_id, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_batch_prediction_jobs_prompt "
+                "ON batch_prediction_jobs(prompt_version, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_batch_prediction_jobs_prompt_revision "
+                "ON batch_prediction_jobs("
+                "prompt_version, prompt_mode, prompt_template_sha256, created_at DESC"
+                ")"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_batch_prediction_jobs_input "
+                "ON batch_prediction_jobs(input_profile, created_at DESC)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_jobs_requested_by ON inference_jobs(requested_by)"
@@ -1216,6 +1276,13 @@ class Database:
         resolved_model_id: str,
         model_source: str,
         catalog_sha256: str,
+        model_validation_status: str = "legacy",
+        prompt_version: str = "",
+        prompt_template: str = "",
+        prompt_template_sha256: str = "",
+        prompt_mode: str = "",
+        input_profile: str = "",
+        input_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         normalized_issue_ids = [str(issue_id).strip() for issue_id in issue_ids]
         if not normalized_issue_ids or any(not issue_id for issue_id in normalized_issue_ids):
@@ -1256,9 +1323,13 @@ class Database:
                 INSERT INTO batch_prediction_jobs (
                     id, name, status, requested_by, requested_by_source,
                     requested_by_verified, total_count, requested_model_id,
-                    resolved_model_id, model_source, catalog_sha256, model_name,
-                    created_at
-                ) VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    resolved_model_id, model_source, catalog_sha256,
+                    model_validation_status, model_name, prompt_version,
+                    prompt_template, prompt_template_sha256, prompt_mode,
+                    input_profile, input_config_json, created_at
+                ) VALUES (
+                    ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                )
                 """,
                 (
                     job_id,
@@ -1271,7 +1342,14 @@ class Database:
                     resolved_model_id.strip(),
                     model_source.strip() or "ra_model_gateway",
                     catalog_sha256.strip(),
+                    model_validation_status.strip(),
                     resolved_model_id.strip(),
+                    prompt_version.strip(),
+                    prompt_template,
+                    prompt_template_sha256.strip(),
+                    prompt_mode.strip(),
+                    input_profile.strip(),
+                    _json(input_config),
                     now,
                 ),
             )
@@ -1490,6 +1568,11 @@ class Database:
         *,
         requested_by: str = "",
         status: str = "",
+        model_id: str = "",
+        prompt_version: str = "",
+        prompt_mode: str = "",
+        prompt_sha256: str = "",
+        input_profile: str = "",
         page_size: int = 100,
     ) -> dict[str, Any]:
         page_size = min(max(1, page_size), 200)
@@ -1501,6 +1584,21 @@ class Database:
         if status in BATCH_JOB_STATUSES:
             where.append("status = ?")
             params.append(status)
+        if model_id.strip():
+            where.append("(requested_model_id = ? OR resolved_model_id = ?)")
+            params.extend((model_id.strip(), model_id.strip()))
+        if prompt_version.strip():
+            where.append("prompt_version = ?")
+            params.append(prompt_version.strip())
+        if prompt_mode.strip():
+            where.append("prompt_mode = ?")
+            params.append(prompt_mode.strip())
+        if prompt_sha256.strip():
+            where.append("prompt_template_sha256 = ?")
+            params.append(prompt_sha256.strip())
+        if input_profile.strip():
+            where.append("input_profile = ?")
+            params.append(input_profile.strip())
         condition = f"WHERE {' AND '.join(where)}" if where else ""
         with self.connect() as conn:
             total = conn.execute(
@@ -1529,6 +1627,42 @@ class Database:
                 ORDER BY job_count DESC, requested_by ASC
                 """
             ).fetchall()
+            model_rows = conn.execute(
+                """
+                SELECT model_id, COUNT(*) AS job_count
+                FROM (
+                    SELECT id, TRIM(requested_model_id) AS model_id
+                    FROM batch_prediction_jobs
+                    WHERE TRIM(requested_model_id) != ''
+                    UNION
+                    SELECT id, TRIM(resolved_model_id) AS model_id
+                    FROM batch_prediction_jobs
+                    WHERE TRIM(resolved_model_id) != ''
+                )
+                GROUP BY model_id
+                ORDER BY job_count DESC, model_id ASC
+                """
+            ).fetchall()
+            prompt_rows = conn.execute(
+                """
+                SELECT prompt_version, prompt_mode, prompt_template_sha256,
+                       COUNT(*) AS job_count
+                FROM batch_prediction_jobs
+                WHERE TRIM(prompt_version) != ''
+                GROUP BY prompt_version, prompt_mode, prompt_template_sha256
+                ORDER BY job_count DESC, prompt_version ASC,
+                         prompt_mode ASC, prompt_template_sha256 ASC
+                """
+            ).fetchall()
+            input_rows = conn.execute(
+                """
+                SELECT input_profile, COUNT(*) AS job_count
+                FROM batch_prediction_jobs
+                WHERE TRIM(input_profile) != ''
+                GROUP BY input_profile
+                ORDER BY job_count DESC, input_profile ASC
+                """
+            ).fetchall()
         return {
             # List responses intentionally contain summaries only.  Item
             # results can be large and belong to the per-job detail endpoint.
@@ -1545,6 +1679,31 @@ class Database:
                 }
                 for row in requester_rows
             ],
+            "facets": {
+                "models": [
+                    {
+                        "id": str(row["model_id"]),
+                        "job_count": int(row["job_count"] or 0),
+                    }
+                    for row in model_rows
+                ],
+                "prompts": [
+                    {
+                        "version": str(row["prompt_version"]),
+                        "mode": str(row["prompt_mode"] or ""),
+                        "sha256": str(row["prompt_template_sha256"] or ""),
+                        "job_count": int(row["job_count"] or 0),
+                    }
+                    for row in prompt_rows
+                ],
+                "input_profiles": [
+                    {
+                        "id": str(row["input_profile"]),
+                        "job_count": int(row["job_count"] or 0),
+                    }
+                    for row in input_rows
+                ],
+            },
         }
 
     def overview(self, *, baseline_scope: str, model_run_id: str = "") -> dict[str, Any]:
@@ -1780,8 +1939,31 @@ class Database:
             "catalog_sha256": row["catalog_sha256"]
             if "catalog_sha256" in row.keys()
             else "",
+            "model_validation_status": row["model_validation_status"]
+            if "model_validation_status" in row.keys()
+            else "",
             "model_name": row["model_name"],
             "prompt_version": row["prompt_version"],
+            "prompt_template": row["prompt_template"]
+            if "prompt_template" in row.keys()
+            else "",
+            "prompt_template_sha256": row["prompt_template_sha256"]
+            if "prompt_template_sha256" in row.keys()
+            else "",
+            "prompt_mode": row["prompt_mode"]
+            if "prompt_mode" in row.keys()
+            else "",
+            "input_profile": row["input_profile"]
+            if "input_profile" in row.keys()
+            else "",
+            "input_config": redact_sensitive_fields(
+                _json_load(
+                    row["input_config_json"]
+                    if "input_config_json" in row.keys()
+                    else "{}",
+                    {},
+                )
+            ),
             "experiment_source": row["experiment_source"],
             "config_sha256": row["config_sha256"],
             "model_run_id": row["model_run_id"] or "",
