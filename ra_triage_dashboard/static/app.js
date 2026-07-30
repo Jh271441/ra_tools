@@ -863,11 +863,15 @@ function updateTagSummary() {
   if (target) target.textContent = `已选 ${count} 项`;
 }
 
+function releasePreviewUrlLater(previewUrl) {
+  window.setTimeout(() => URL.revokeObjectURL(previewUrl), 5000);
+}
+
 function clearPendingReviewImages() {
   const previewUrls = state.pendingReviewImages.map((item) => item.previewUrl);
   state.pendingReviewImages = [];
   renderPendingReviewImages();
-  previewUrls.forEach((previewUrl) => URL.revokeObjectURL(previewUrl));
+  previewUrls.forEach(releasePreviewUrlLater);
 }
 
 function addPendingReviewImages(files) {
@@ -932,7 +936,7 @@ function renderPendingReviewImages() {
       const previewUrl = state.pendingReviewImages[index].previewUrl;
       state.pendingReviewImages.splice(index, 1);
       renderPendingReviewImages();
-      URL.revokeObjectURL(previewUrl);
+      releasePreviewUrlLater(previewUrl);
     });
   });
 }
