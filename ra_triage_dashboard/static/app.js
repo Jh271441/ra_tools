@@ -864,8 +864,10 @@ function updateTagSummary() {
 }
 
 function clearPendingReviewImages() {
-  state.pendingReviewImages.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+  const previewUrls = state.pendingReviewImages.map((item) => item.previewUrl);
   state.pendingReviewImages = [];
+  renderPendingReviewImages();
+  previewUrls.forEach((previewUrl) => URL.revokeObjectURL(previewUrl));
 }
 
 function addPendingReviewImages(files) {
@@ -927,9 +929,10 @@ function renderPendingReviewImages() {
         (item) => item.id === button.dataset.removeScreenshot
       );
       if (index < 0) return;
-      URL.revokeObjectURL(state.pendingReviewImages[index].previewUrl);
+      const previewUrl = state.pendingReviewImages[index].previewUrl;
       state.pendingReviewImages.splice(index, 1);
       renderPendingReviewImages();
+      URL.revokeObjectURL(previewUrl);
     });
   });
 }
