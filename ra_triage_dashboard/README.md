@@ -5,7 +5,7 @@
 ## 当前 MVP（v1.6）
 
 - 默认工作集是 `trail_label_baseline_20260729.xlsx` 中 `dataset=0508` 的 **1071 条**；GT 只来自该快照，不因 Trail 查询或模型导入而改变。
-- 首页是服务端筛选、50 条一页的四列 Issue 缩略图队列；BEV 缩略图按源文件版本生成 640×360 缓存并懒加载，不把 1071 张原图一次送进浏览器。点击 Issue 后才进入 URL 可恢复的详情态，加载大图、Ares Capture BEV / Camera、模型输出和人工 Review；详情支持返回列表及跨页上一/下一 Issue。
+- 首页是服务端筛选、50 条一页的紧凑 Issue 缩略图队列（宽屏五列、随可用宽度降列）；BEV 缩略图按源文件版本生成 640×360 缓存并懒加载，不把 1071 张原图一次送进浏览器。点击 Issue 后才进入 URL 可恢复的详情态，加载大图、Ares Capture BEV / Camera、模型输出和人工 Review；详情支持返回列表及跨页上一/下一 Issue，点击主图会打开占视口 90% 的 BEV / Camera 时序预览。
 - 左侧工具栏只接受用户手动折叠并记住偏好，不再根据分辨率、DPR 或窗口宽度自动改变。判错复核、模型 Runs / 导入、Batch 预测分别使用 `/review`、`/runs`、`/batch-prediction` 独立路由，支持硬刷新和浏览器前进/后退。`/import` 会 307 跳转到 `/runs?import=...`，`/inference` 仅作为旧链接兼容入口。
 - Trail 操作分成「检查字段」和「创建 Run」两步，收在 Runs 页的默认折叠区；两步都不写回 Trail，快照只创建或复用本地不可变 Run，且不会修改团队默认 Run。启动时若启用 Trail 检查，也只执行第一步。
 - 可导入 issue / GT 与批量模型输出（JSON、CSV、XLSX）；也可按 AutoTriage Batch ID / records 链接经固定只读内网接口拉取结果。两者都按规范化内容 SHA-256 创建或复用不可变 Model Run，不覆盖 GT、不切换团队默认 Run；AutoTriage 拉取会显式比较声明数、完成数、结果数和唯一 Issue 数，并标记部分覆盖。
