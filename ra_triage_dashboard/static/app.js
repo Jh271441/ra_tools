@@ -1,4 +1,10 @@
 const LABELS = ["误触发", "正确触发", "无需协助"];
+const PAGE_ROUTES = {
+  review: { path: "/review", title: "RA Triage Workbench", eyebrow: "EVALUATION BASELINE · 0508" },
+  runs: { path: "/runs", title: "模型结果 Runs", eyebrow: "MODEL RUN REGISTRY" },
+  inference: { path: "/inference", title: "单 Case 模型推理", eyebrow: "LIVE ONE-CASE INFERENCE" },
+  import: { path: "/import", title: "导入数据与模型结果", eyebrow: "DATA INGESTION" },
+};
 
 const state = {
   config: null,
@@ -15,9 +21,81 @@ const state = {
   media: { kind: "bev", index: 0 },
   session: { username: "", source: "anonymous", authenticated: false, verified: false },
   sidebarCollapsed: false,
+  activePage: "review",
+  inferenceCase: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
+
+function parsePageRoute() {
+  const match = Object.entries(PAGE_ROUTES).find(([, config]) => config.path === window.location.pathname);
+  const params = new URLSearchParams(window.location.search);
+  const legacyHash = decodeURIComponent(window.location.hash.slice(1));
+  return {
+    page: match?.[0] || "review",
+    issue: params.get("issue") || (/^[A-Za-z0-9_-]{3,128}$/.test(legacyHash) ? legacyHash : ""),
+    runId: params.get("run") || "",
+    failureOnly: params.has("failure") ? params.get("failure") === "1" : params.has("run") ? false : null,
+    kind: params.get("kind") === "model" ? "model" : "issues",
+  };
+}
+
+function pageUrl(page, options = {}) {
+  const config = PAGE_ROUTES[page] || PAGE_ROUTES.review;
+  const url = new URL(config.path, window.location.origin);
+  if (page === "review") {
+    const issueId = options.issue ?? state.selectedId;
+    const runId = options.runId ?? state.selectedRunId;
+    const failureOnly = options.failureOnly ?? state.failureOnly;
+    if (issueId) url.searchParams.set("issue", issueId);
+    if (runId) url.searchParams.set("run", runId);
+    if (failureOnly && runId) url.searchParams.set("failure", "1");
+  }
+  if (page === "inference") {
+    const issueId = options.issue ?? $("#inferIssueInput")?.value.trim() ?? state.selectedId;
+    if (issueId) url.searchParams.set("issue", issueId);
+  }
+  if (page === "import") {
+    url.searchParams.set("kind", options.kind === "model" ? "model" : "issues");
+  }
+  return `${url.pathname}${url.search}`;
+}
+
+function showPage(page, { historyMode = "", issue = "", kind = "" } = {}) {
+  const target = PAGE_ROUTES[page] ? page : "review";
+  const previousPage = state.activePage;
+  state.activePage = target;
+  document.querySelectorAll("[data-page]").forEach((section) => {
+    section.classList.toggle("hidden", section.dataset.page !== target);
+  });
+  document.querySelectorAll(".sidebar-item[data-page-target]").forEach((item) => {
+    const active = item.dataset.pageTarget === target;
+    item.classList.toggle("active", active);
+    if (active) item.setAttribute("aria-current", "page");
+    else item.removeAttribute("aria-current");
+  });
+  $("#pageTitle").textContent = PAGE_ROUTES[target].title;
+  $("#pageEyebrow").textContent = PAGE_ROUTES[target].eyebrow;
+  document.title = `${PAGE_ROUTES[target].title} · RA Triage`;
+  if (previousPage === "inference" && target !== "inference") $("#apiKeyInput").value = "";
+  if (target === "runs") renderRunManager();
+  if (target === "import") {
+    const importKind = kind || new URLSearchParams(window.location.search).get("kind") || "issues";
+    setImportKind(importKind);
+  }
+  if (target === "inference") {
+    const issueId = issue || state.selectedId;
+    if (issueId) $("#inferIssueInput").value = issueId;
+    updateInferenceTarget();
+  }
+  if (historyMode === "push") history.pushState({ page: target }, "", pageUrl(target, { issue, kind }));
+  if (historyMode === "replace") history.replaceState({ page: target }, "", pageUrl(target, { issue, kind }));
+  window.scrollTo({ top: 0, behavior: historyMode === "push" ? "smooth" : "auto" });
+}
+
+function navigatePage(page, options = {}) {
+  showPage(page, { ...options, historyMode: "push" });
+}
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -301,7 +379,7 @@ async function useModelRun(runId) {
   renderActiveRun();
   renderRunManager();
   await Promise.all([loadCases({ keepSelection: false }), loadClusters(), loadOverview()]);
-  closeDialog("runManagerDialog");
+  navigatePage("review");
 }
 
 async function setDefaultRun(runId) {
@@ -339,6 +417,9 @@ function issueRow(item) {
 function renderCases(data) {
   state.cases = data.items || [];
   $("#caseCount").textContent = data.total ?? 0;
+  $("#inferIssueOptions").innerHTML = state.cases
+    .map((item) => `<option value="${escapeHtml(item.issue_id)}">${escapeHtml(item.title || item.scenario || "")}</option>`)
+    .join("");
   const list = $("#issueList");
   if (!state.cases.length) {
     const hint = state.failureOnly ? "没有符合条件的模型失败 case。可切换 model run 或关闭失败筛选。" : "没有匹配的 Issue。";
@@ -401,7 +482,6 @@ async function loadClusters() {
 function clearDetail() {
   state.selectedId = "";
   state.selectedCase = null;
-  $("#openInferButton").disabled = true;
   $("#detailPane").innerHTML = `
     <div class="empty-state">
       <div class="empty-glyph" aria-hidden="true">+</div>
@@ -482,7 +562,6 @@ function renderDetail(caseData) {
     </div>
     ${heroMediaSection(caseData.assets, caseData.camera)}
     <section class="section"><div class="section-heading"><div><span class="eyebrow">MODEL COMPARISON</span><h3>模型输出历史</h3></div><small>默认 run 会高亮</small></div>${predictionCards(caseData)}</section>`;
-  $("#openInferButton").disabled = false;
   $("#detailPane").querySelectorAll("[data-media-kind]").forEach((button) => {
     button.addEventListener("click", () => openMedia(button.dataset.mediaKind, Number(button.dataset.mediaIndex)));
   });
@@ -547,7 +626,7 @@ function updateEvidenceSummary() {
   if (target) target.textContent = `已选 ${count} 项`;
 }
 
-async function selectCase(issueId) {
+async function selectCase(issueId, { updateRoute = true } = {}) {
   if (!issueId) return;
   state.selectedId = issueId;
   renderCases({ items: state.cases, total: $("#caseCount").textContent });
@@ -556,7 +635,13 @@ async function selectCase(issueId) {
     state.selectedCase = data;
     renderDetail(data);
     renderReview(data);
-    history.replaceState({}, "", `#${encodeURIComponent(issueId)}`);
+    if (!$("#inferIssueInput").value) $("#inferIssueInput").value = issueId;
+    if (state.activePage === "inference" && $("#inferIssueInput").value === issueId) {
+      renderInferenceCaseSummary(data);
+    }
+    if (updateRoute && state.activePage === "review") {
+      showPage("review", { historyMode: "replace", issue: issueId });
+    }
   } catch (error) {
     showToast(error.message, true);
   }
@@ -590,12 +675,12 @@ function mediaFrames(kind) {
 
 function openDialog(id) {
   const dialog = $(`#${id}`);
-  if (!dialog.open) dialog.showModal();
+  if (dialog && !dialog.open) dialog.showModal();
 }
 
 function closeDialog(id) {
   const dialog = $(`#${id}`);
-  if (dialog.open) dialog.close();
+  if (dialog?.open) dialog.close();
 }
 
 function renderMediaDialog() {
@@ -644,11 +729,42 @@ function moveMedia(delta) {
   renderMediaDialog();
 }
 
-function openInferDialog() {
-  if (!state.selectedId) return;
-  $("#jobResult").classList.add("hidden");
-  $("#jobResult").textContent = "";
-  openDialog("inferDialog");
+function renderInferenceCaseSummary(caseData) {
+  state.inferenceCase = caseData;
+  const primary =
+    (caseData.predictions || []).find((item) => item.model_run_id === state.selectedRunId) ||
+    caseData.predictions?.[0];
+  $("#inferCaseSummary").innerHTML = `
+    <strong>${escapeHtml(caseData.issue_id)}</strong>
+    <span>${escapeHtml(caseData.title || caseData.scenario || "未命名 issue")}</span>
+    <div>${labelBadge(caseData.gt_label, "GT —")}${labelBadge(primary?.model_label, "模型 —")}</div>`;
+  $("#inferOpenReviewButton").disabled = false;
+}
+
+async function updateInferenceTarget() {
+  const issueId = $("#inferIssueInput").value.trim();
+  state.inferenceCase = null;
+  $("#inferOpenReviewButton").disabled = !issueId;
+  if (!/^[A-Za-z0-9_-]{3,128}$/.test(issueId)) {
+    $("#inferCaseSummary").textContent = issueId
+      ? "Issue ID 格式不合法。"
+      : "从 Review 队列选择 case，或直接输入 baseline 中的 issue id。";
+    return;
+  }
+  if (state.selectedCase?.issue_id === issueId) {
+    renderInferenceCaseSummary(state.selectedCase);
+    return;
+  }
+  $("#inferCaseSummary").textContent = "正在读取 Issue…";
+  try {
+    const data = await api(`/api/cases/${encodeURIComponent(issueId)}`);
+    if ($("#inferIssueInput").value.trim() === issueId) renderInferenceCaseSummary(data);
+  } catch (error) {
+    if ($("#inferIssueInput").value.trim() === issueId) {
+      $("#inferCaseSummary").textContent = error.message;
+      $("#inferOpenReviewButton").disabled = true;
+    }
+  }
 }
 
 function showJob(job) {
@@ -679,7 +795,9 @@ async function pollJob(jobId) {
         state.pollTimer = null;
         state.pollingJobId = "";
         await loadOverview();
-        if (state.selectedId) await selectCase(state.selectedId);
+        if (state.activePage === "review" && state.selectedId === data.job.issue_id) {
+          await selectCase(state.selectedId);
+        }
       }
     } catch (error) {
       clearInterval(state.pollTimer);
@@ -691,10 +809,11 @@ async function pollJob(jobId) {
 }
 
 async function submitInference({ dryRun }) {
-  if (!state.selectedId) return;
+  const issueId = $("#inferIssueInput").value.trim();
+  if (!issueId) return showToast("请先输入 Issue ID。", true);
   const keyInput = $("#apiKeyInput");
   const payload = {
-    issue_id: state.selectedId,
+    issue_id: issueId,
     model_name: $("#modelNameInput").value.trim(),
     prompt_version: $("#promptVersionInput").value.trim(),
     base_url: $("#baseUrlInput").value.trim(),
@@ -707,6 +826,7 @@ async function submitInference({ dryRun }) {
   };
   if (dryRun) Object.assign(payload, { model_name: "", base_url: "", api_key: "" });
   try {
+    showPage("inference", { historyMode: "replace", issue: issueId });
     const result = await api("/api/inference/jobs", { method: "POST", body: JSON.stringify(payload) });
     keyInput.value = "";
     showJob(result.job);
@@ -727,13 +847,10 @@ function updateImportFields() {
   $("#issueImportOptions").classList.toggle("hidden", isModel);
 }
 
-function openImportDialog(kind) {
+function setImportKind(kind) {
   const input = $(`#importKind input[name="kind"][value="${kind}"]`);
   if (input) input.checked = true;
   updateImportFields();
-  $("#importResult").classList.add("hidden");
-  $("#importResult").textContent = "";
-  openDialog("importDialog");
 }
 
 async function submitImport(event) {
@@ -793,6 +910,21 @@ async function refreshAll({ resetSelection = false } = {}) {
 }
 
 function bindEvents() {
+  document.querySelectorAll("[data-page-target]").forEach((element) => {
+    element.addEventListener("click", (event) => {
+      if (
+        element.tagName === "A" &&
+        (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      navigatePage(element.dataset.pageTarget, {
+        issue: element.dataset.pageTarget === "inference" ? state.selectedId : "",
+        kind: element.dataset.pageTarget === "import" ? "issues" : "",
+      });
+    });
+  });
   $("#filterForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     await Promise.all([loadCases({ keepSelection: false }), loadClusters(), loadOverview()]);
@@ -826,19 +958,12 @@ function bindEvents() {
     }
   });
   $("#syncTrailButton").addEventListener("click", syncTrail);
-  $("#importButton").addEventListener("click", () => openImportDialog("issues"));
   $("#runManagerImportButton").addEventListener("click", () => {
-    closeDialog("runManagerDialog");
-    openImportDialog("model");
+    $("#importResult").classList.add("hidden");
+    $("#importResult").textContent = "";
+    navigatePage("import", { kind: "model" });
   });
-  $("#openRunManagerButton").addEventListener("click", () => {
-    renderRunManager();
-    openDialog("runManagerDialog");
-  });
-  $("#manageRunsButton").addEventListener("click", () => {
-    renderRunManager();
-    openDialog("runManagerDialog");
-  });
+  $("#manageRunsButton").addEventListener("click", () => navigatePage("runs"));
   $("#refreshRunsButton").addEventListener("click", async () => {
     try {
       await loadRuns();
@@ -848,13 +973,30 @@ function bindEvents() {
       showToast(error.message, true);
     }
   });
-  $("#openInferButton").addEventListener("click", openInferDialog);
-  $("#reviewNavButton").addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
   $("#sidebarToggle").addEventListener("click", toggleSidebar);
   document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => closeDialog(button.dataset.close)));
-  $("#importKind").querySelectorAll("input").forEach((input) => input.addEventListener("change", updateImportFields));
+  $("#importKind").querySelectorAll("input").forEach((input) => {
+    input.addEventListener("change", () => {
+      updateImportFields();
+      if (state.activePage === "import") {
+        showPage("import", { historyMode: "replace", kind: currentImportKind() });
+      }
+    });
+  });
   $("#importFile").addEventListener("change", () => { $("#importFileName").textContent = $("#importFile").files[0]?.name || "未选择文件"; });
   $("#importForm").addEventListener("submit", submitImport);
+  $("#inferIssueInput").addEventListener("change", () => {
+    updateInferenceTarget();
+    if (state.activePage === "inference") {
+      showPage("inference", { historyMode: "replace", issue: $("#inferIssueInput").value.trim() });
+    }
+  });
+  $("#inferOpenReviewButton").addEventListener("click", async () => {
+    const issueId = $("#inferIssueInput").value.trim();
+    if (!issueId) return;
+    navigatePage("review", { issue: issueId });
+    await selectCase(issueId);
+  });
   $("#preflightButton").addEventListener("click", () => submitInference({ dryRun: true }));
   $("#inferForm").addEventListener("submit", (event) => { event.preventDefault(); submitInference({ dryRun: false }); });
   $("#mediaPrevButton").addEventListener("click", () => moveMedia(-1));
@@ -866,22 +1008,51 @@ function bindEvents() {
     if (event.key.toLowerCase() === "b" && mediaFrames("bev").length) { state.media.kind = "bev"; state.media.index = 0; renderMediaDialog(); }
     if (event.key.toLowerCase() === "c" && mediaFrames("camera").length) { state.media.kind = "camera"; state.media.index = 0; renderMediaDialog(); }
   });
+  window.addEventListener("popstate", async () => {
+    const route = parsePageRoute();
+    const validRouteRun = route.runId && state.modelRuns.some((run) => run.id === route.runId);
+    const nextFailureOnly = route.failureOnly ?? state.failureOnly;
+    if (
+      validRouteRun &&
+      (route.runId !== state.selectedRunId || nextFailureOnly !== state.failureOnly)
+    ) {
+      state.selectedRunId = route.runId;
+      $("#modelRunFilter").value = route.runId;
+      state.failureOnly = nextFailureOnly;
+      $("#failureOnlyInput").checked = state.failureOnly;
+      await Promise.all([loadCases({ keepSelection: false }), loadClusters(), loadOverview()]);
+    }
+    showPage(route.page, { issue: route.issue, kind: route.kind });
+    if (route.page === "review" && route.issue && route.issue !== state.selectedId) {
+      await selectCase(route.issue, { updateRoute: false });
+    }
+  });
 }
 
 async function bootstrap() {
+  const initialRoute = parsePageRoute();
   state.sidebarCollapsed = localStorage.getItem("ra-triage-sidebar-collapsed") === "true";
   applySidebarState();
   bindEvents();
   updateImportFields();
+  showPage(initialRoute.page, { issue: initialRoute.issue, kind: initialRoute.kind });
   try {
     await Promise.all([loadConfig(), loadSession()]);
-    state.selectedRunId = state.config.default_model_run_id || "";
-    state.failureOnly = Boolean(state.config.default_failure_only && state.selectedRunId);
-    await loadRuns({ preferDefault: true });
+    state.selectedRunId = initialRoute.runId || state.config.default_model_run_id || "";
+    state.failureOnly =
+      initialRoute.failureOnly ??
+      Boolean(state.config.default_failure_only && state.selectedRunId);
+    await loadRuns({ preferDefault: !initialRoute.runId });
     $("#failureOnlyInput").checked = state.failureOnly;
     await Promise.all([loadStatus(), loadOverview(), loadCases({ keepSelection: false }), loadClusters()]);
-    const hashId = decodeURIComponent(window.location.hash.slice(1));
-    if (hashId && state.cases.some((item) => item.issue_id === hashId)) await selectCase(hashId);
+    if (initialRoute.issue && initialRoute.issue !== state.selectedId) {
+      await selectCase(initialRoute.issue, { updateRoute: false });
+    }
+    showPage(initialRoute.page, {
+      historyMode: "replace",
+      issue: initialRoute.issue || state.selectedId,
+      kind: initialRoute.kind,
+    });
   } catch (error) {
     showToast(`启动失败：${error.message}`, true);
   }

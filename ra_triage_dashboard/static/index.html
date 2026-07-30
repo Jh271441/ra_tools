@@ -18,22 +18,22 @@
         </div>
 
         <nav class="sidebar-nav" aria-label="工作台工具">
-          <button class="sidebar-item active" id="reviewNavButton" type="button" title="判错复核">
+          <a class="sidebar-item active" id="reviewNavButton" data-page-target="review" href="/review" title="判错复核">
             <span class="sidebar-icon" aria-hidden="true">R</span>
             <span class="sidebar-label"><strong>判错复核</strong><small>Failure review</small></span>
-          </button>
-          <button class="sidebar-item" id="openRunManagerButton" type="button" title="模型 Runs">
+          </a>
+          <a class="sidebar-item" id="openRunManagerButton" data-page-target="runs" href="/runs" title="模型 Runs">
             <span class="sidebar-icon" aria-hidden="true">M</span>
             <span class="sidebar-label"><strong>模型 Runs</strong><small>导入与版本管理</small></span>
-          </button>
-          <button class="sidebar-item" id="openInferButton" type="button" title="单 Case 推理" disabled>
+          </a>
+          <a class="sidebar-item" id="openInferButton" data-page-target="inference" href="/inference" title="单 Case 推理">
             <span class="sidebar-icon" aria-hidden="true">▶</span>
             <span class="sidebar-label"><strong>单 Case 推理</strong><small>临时模型调用</small></span>
-          </button>
-          <button class="sidebar-item" id="importButton" type="button" title="数据导入">
+          </a>
+          <a class="sidebar-item" id="importButton" data-page-target="import" href="/import?kind=issues" title="数据导入">
             <span class="sidebar-icon" aria-hidden="true">＋</span>
             <span class="sidebar-label"><strong>数据导入</strong><small>Issue / GT 文件</small></span>
-          </button>
+          </a>
         </nav>
 
         <div class="sidebar-bottom">
@@ -55,8 +55,8 @@
         <header class="topbar">
           <div class="brand">
             <div>
-              <div class="eyebrow">EVALUATION BASELINE · 0508</div>
-              <h1>RA Triage Workbench</h1>
+              <div class="eyebrow" id="pageEyebrow">EVALUATION BASELINE · 0508</div>
+              <h1 id="pageTitle">RA Triage Workbench</h1>
             </div>
           </div>
           <div class="header-metrics" aria-label="概览">
@@ -71,199 +71,219 @@
         </header>
 
         <main class="main">
-          <section class="run-toolbar" aria-label="当前模型 run">
-            <div class="run-toolbar-current">
-              <span class="run-state-dot"></span>
-              <div>
-                <span class="eyebrow">ACTIVE MODEL RUN</span>
-                <strong id="activeRunName">尚未选择模型 run</strong>
+          <section class="app-page" id="reviewPage" data-page="review">
+            <section class="run-toolbar" aria-label="当前模型 run">
+              <div class="run-toolbar-current">
+                <span class="run-state-dot"></span>
+                <div>
+                  <span class="eyebrow">ACTIVE MODEL RUN</span>
+                  <strong id="activeRunName">尚未选择模型 run</strong>
+                </div>
               </div>
-            </div>
-            <div class="run-toolbar-meta" id="activeRunMeta">同步 Trail 字段或导入 JSON / CSV / XLSX</div>
-            <button class="button button-quiet" id="manageRunsButton" type="button">管理 Runs</button>
+              <div class="run-toolbar-meta" id="activeRunMeta">同步 Trail 字段或导入 JSON / CSV / XLSX</div>
+              <button class="button button-quiet" id="manageRunsButton" type="button">管理 Runs</button>
+            </section>
+
+            <section class="workspace">
+              <aside class="issue-pane">
+                <div class="pane-heading">
+                  <div>
+                    <span class="eyebrow">FAILURE REVIEW QUEUE</span>
+                    <h2>Issue 列表</h2>
+                  </div>
+                  <span class="count-pill" id="caseCount">—</span>
+                </div>
+
+                <form class="filters" id="filterForm">
+                  <label>
+                    <span>对比模型 run</span>
+                    <select id="modelRunFilter">
+                      <option value="">未选择模型 run</option>
+                    </select>
+                  </label>
+                  <label class="toggle-row">
+                    <input id="failureOnlyInput" type="checkbox" />
+                    <span>
+                      <strong>仅看模型判断失败</strong>
+                      <small>GT 与模型三分类标签不一致</small>
+                    </span>
+                  </label>
+                  <label>
+                    <span>检索</span>
+                    <input id="searchInput" name="search" placeholder="issue id、场景或关键词" autocomplete="off" />
+                  </label>
+                  <div class="filter-row">
+                    <label>
+                      <span>GT</span>
+                      <select id="gtFilter">
+                        <option value="">全部</option>
+                        <option value="误触发">误触发</option>
+                        <option value="正确触发">正确触发</option>
+                        <option value="无需协助">无需协助</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>人工标注</span>
+                      <select id="annotationFilter">
+                        <option value="">全部</option>
+                        <option value="误触发">误触发</option>
+                        <option value="正确触发">正确触发</option>
+                        <option value="无需协助">无需协助</option>
+                      </select>
+                    </label>
+                  </div>
+                  <button class="button button-quiet full-width" type="submit">应用筛选</button>
+                </form>
+
+                <div class="cluster-panel">
+                  <div class="subheading">
+                    <span>缺失信息聚类</span>
+                    <button class="text-button" id="clearClusterButton" type="button">清除</button>
+                  </div>
+                  <div class="cluster-list" id="clusterList"><span class="muted">暂无复核聚类</span></div>
+                </div>
+                <div class="issue-list" id="issueList" aria-live="polite"></div>
+              </aside>
+
+              <section class="detail-pane" id="detailPane">
+                <div class="empty-state">
+                  <div class="empty-glyph" aria-hidden="true">+</div>
+                  <h2>选择一个失败 case 开始 review</h2>
+                  <p>默认队列只显示模型判断与 0508 GT 不一致的样本。点击 BEV 大图可打开完整时序并切换 Camera。</p>
+                </div>
+              </section>
+
+              <aside class="review-pane" id="reviewPane">
+                <div class="review-placeholder">
+                  <span class="eyebrow">HUMAN REVIEW</span>
+                  <h2>人工复核</h2>
+                  <p>记录最终结论，并选出模型遗漏的关键信息；这些字段会自动汇总为错误聚类。</p>
+                </div>
+              </aside>
+            </section>
           </section>
 
-        <section class="workspace">
-          <aside class="issue-pane">
-            <div class="pane-heading">
+          <section class="app-page tool-page hidden" id="runsPage" data-page="runs">
+            <header class="page-heading">
               <div>
-                <span class="eyebrow">FAILURE REVIEW QUEUE</span>
-                <h2>Issue 列表</h2>
+                <span class="eyebrow">MODEL RUN REGISTRY</span>
+                <h2>模型结果 Runs</h2>
+                <p>管理不可变模型输出快照、Trail 同步和默认 Review run。</p>
               </div>
-              <span class="count-pill" id="caseCount">—</span>
-            </div>
+              <button class="button button-quiet" type="button" data-page-target="review">返回判错复核</button>
+            </header>
+            <section class="page-card runs-page-card">
+              <div class="run-manager-actions">
+                <button class="button button-primary" id="runManagerImportButton" type="button">导入模型结果</button>
+                <button class="button button-quiet" id="syncTrailButton" type="button">同步 Trail 字段</button>
+                <button class="button button-quiet" id="refreshRunsButton" type="button">刷新列表</button>
+              </div>
+              <div class="run-manager-summary" id="runManagerSummary">正在加载 model runs…</div>
+              <div class="run-manager-list" id="modelRunList"></div>
+            </section>
+          </section>
 
-            <form class="filters" id="filterForm">
-              <label>
-                <span>对比模型 run</span>
-                <select id="modelRunFilter">
-                  <option value="">未选择模型 run</option>
-                </select>
-              </label>
-              <label class="toggle-row">
-                <input id="failureOnlyInput" type="checkbox" />
-                <span>
-                  <strong>仅看模型判断失败</strong>
-                  <small>GT 与模型三分类标签不一致</small>
-                </span>
-              </label>
-              <label>
-                <span>检索</span>
-                <input id="searchInput" name="search" placeholder="issue id、场景或关键词" autocomplete="off" />
-              </label>
-              <div class="filter-row">
+          <section class="app-page tool-page hidden" id="inferencePage" data-page="inference">
+            <header class="page-heading">
+              <div>
+                <span class="eyebrow">LIVE ONE-CASE INFERENCE</span>
+                <h2>单 Case 模型推理</h2>
+                <p>为指定 issue 临时配置模型 endpoint，并通过受控 worker 调用 ra_auto_triage。</p>
+              </div>
+              <button class="button button-quiet" type="button" data-page-target="review">返回判错复核</button>
+            </header>
+            <div class="tool-page-grid">
+              <aside class="page-card page-aside">
+                <span class="eyebrow">INFERENCE TARGET</span>
+                <h3>选择 Issue</h3>
                 <label>
-                  <span>GT</span>
-                  <select id="gtFilter">
-                    <option value="">全部</option>
-                    <option value="误触发">误触发</option>
-                    <option value="正确触发">正确触发</option>
-                    <option value="无需协助">无需协助</option>
-                  </select>
+                  <span>Issue ID</span>
+                  <input id="inferIssueInput" list="inferIssueOptions" placeholder="例如 cn32171803" autocomplete="off" />
+                  <datalist id="inferIssueOptions"></datalist>
                 </label>
-                <label>
-                  <span>人工标注</span>
-                  <select id="annotationFilter">
-                    <option value="">全部</option>
-                    <option value="误触发">误触发</option>
-                    <option value="正确触发">正确触发</option>
-                    <option value="无需协助">无需协助</option>
-                  </select>
-                </label>
-              </div>
-              <button class="button button-quiet full-width" type="submit">应用筛选</button>
-            </form>
-
-            <div class="cluster-panel">
-              <div class="subheading">
-                <span>缺失信息聚类</span>
-                <button class="text-button" id="clearClusterButton" type="button">清除</button>
-              </div>
-              <div class="cluster-list" id="clusterList"><span class="muted">暂无复核聚类</span></div>
-            </div>
-            <div class="issue-list" id="issueList" aria-live="polite"></div>
-          </aside>
-
-          <section class="detail-pane" id="detailPane">
-            <div class="empty-state">
-              <div class="empty-glyph" aria-hidden="true">+</div>
-              <h2>选择一个失败 case 开始 review</h2>
-              <p>默认队列只显示模型判断与 0508 GT 不一致的样本。点击 BEV 大图可打开完整时序并切换 Camera。</p>
+                <div class="target-case-summary" id="inferCaseSummary">从 Review 队列选择 case，或直接输入 baseline 中的 issue id。</div>
+                <button class="button button-quiet full-width" id="inferOpenReviewButton" type="button">在 Review 中打开</button>
+              </aside>
+              <form class="page-card tool-form" id="inferForm">
+                <div class="safety-note">
+                  <strong>安全边界：</strong>当前为直接 IP 的 HTTP 试运行，请勿输入长期或生产 API key。API key 仅在本次请求内通过 stdin 交给 worker；不保存到数据库、参数、环境变量或日志。worker 固定 <code>RA_TOOLS_ENABLED=false</code>、<code>BAG_CACHE_READ_ONLY=true</code>。
+                </div>
+                <div class="infer-grid">
+                  <label><span>模型名称</span><input id="modelNameInput" value="Qwen/Qwen3.5-9B" required /></label>
+                  <label><span>Prompt 版本</span><input id="promptVersionInput" value="stuck_triage_v1" required /></label>
+                  <label class="span-two">
+                    <span>Base URL</span>
+                    <input id="baseUrlInput" type="url" placeholder="http://10.x.x.x/v1/chat/completions" autocomplete="off" />
+                    <small>仅允许内网 IP、localhost、*.intra.xiaojukeji.com 或服务端白名单。</small>
+                  </label>
+                  <label class="span-two"><span>API key</span><input id="apiKeyInput" type="password" placeholder="仅本次推理使用，不会持久化" autocomplete="new-password" /></label>
+                  <label><span>max tokens</span><input id="maxTokensInput" type="number" min="32" max="4096" value="512" /></label>
+                  <label><span>请求人（审计）</span><input id="requestedByInput" placeholder="可选" autocomplete="off" /></label>
+                </div>
+                <div class="checkbox-group">
+                  <label class="toggle-row compact-toggle"><input id="useBevInput" type="checkbox" checked /><span><strong>使用 Ares Capture BEV</strong></span></label>
+                  <label class="toggle-row compact-toggle"><input id="useRaOptionsInput" type="checkbox" checked /><span><strong>注入 ra_options_new（含 SWAG）</strong></span></label>
+                </div>
+                <div class="job-result hidden" id="jobResult"></div>
+                <div class="page-actions">
+                  <button class="button button-quiet" id="preflightButton" type="button">预检 Ares / Trail</button>
+                  <button class="button button-primary" type="submit">开始单 case 推理</button>
+                </div>
+              </form>
             </div>
           </section>
 
-          <aside class="review-pane" id="reviewPane">
-            <div class="review-placeholder">
-              <span class="eyebrow">HUMAN REVIEW</span>
-              <h2>人工复核</h2>
-              <p>记录最终结论，并选出模型遗漏的关键信息；这些字段会自动汇总为错误聚类。</p>
+          <section class="app-page tool-page hidden" id="importPage" data-page="import">
+            <header class="page-heading">
+              <div>
+                <span class="eyebrow">DATA INGESTION</span>
+                <h2>导入数据与模型结果</h2>
+                <p>通过明确契约导入 Issue / GT 或创建不可变模型 run。</p>
+              </div>
+              <button class="button button-quiet" type="button" data-page-target="review">返回判错复核</button>
+            </header>
+            <div class="tool-page-grid">
+              <aside class="page-card page-aside">
+                <span class="eyebrow">IMPORT CONTRACT</span>
+                <h3>支持 JSON / CSV / XLSX</h3>
+                <p>Issue 文件至少需要 <code>issue_id</code>；模型结果至少需要 <code>issue_id</code> 与 <code>model_label</code> 或 <code>ra_stuck_auto_result</code>。</p>
+                <p>模型文件按 SHA-256 去重并创建不可变 run，不会覆盖历史输出。</p>
+              </aside>
+              <form class="page-card tool-form" id="importForm">
+                <div class="segmented" id="importKind">
+                  <label><input type="radio" name="kind" value="issues" checked /> Issue / GT</label>
+                  <label><input type="radio" name="kind" value="model" /> 模型结果</label>
+                </div>
+                <label class="file-drop">
+                  <span>选择文件</span>
+                  <input id="importFile" type="file" accept=".json,.csv,.xlsx,.xlsm" required />
+                  <small id="importFileName">未选择文件</small>
+                </label>
+                <label id="runNameField" class="hidden">
+                  <span>模型 run 名（可选）</span>
+                  <input id="runNameInput" placeholder="默认取 experiment.model_name 或文件名" autocomplete="off" />
+                </label>
+                <div id="issueImportOptions">
+                  <label>
+                    <span>数据源标记</span>
+                    <input id="issueSourceInput" value="manual_upload" autocomplete="off" />
+                  </label>
+                  <label class="toggle-row compact-toggle">
+                    <input id="replaceGtInput" type="checkbox" />
+                    <span><strong>明确覆盖已有 GT</strong><small>默认保留 0508 baseline 真值</small></span>
+                  </label>
+                </div>
+                <div class="dialog-result hidden" id="importResult"></div>
+                <div class="page-actions">
+                  <button class="button button-quiet" type="button" data-page-target="review">取消并返回</button>
+                  <button class="button button-primary" type="submit">开始导入</button>
+                </div>
+              </form>
             </div>
-          </aside>
-        </section>
+          </section>
         </main>
       </div>
     </div>
-
-    <dialog class="dialog dialog-wide" id="runManagerDialog">
-      <div class="dialog-card">
-        <div class="dialog-heading">
-          <div>
-            <span class="eyebrow">MODEL RUN REGISTRY</span>
-            <h2>模型结果 Runs</h2>
-          </div>
-          <button class="icon-button" type="button" data-close="runManagerDialog" aria-label="关闭">×</button>
-        </div>
-        <p class="dialog-copy">
-          每次 JSON / CSV / XLSX 解析结果保存为不可变 run。可切换当前 Review run 或指定默认 run；设为默认不会改写模型输出。
-        </p>
-        <div class="run-manager-actions">
-          <button class="button button-primary" id="runManagerImportButton" type="button">导入模型结果</button>
-          <button class="button button-quiet" id="syncTrailButton" type="button">同步 Trail 字段</button>
-          <button class="button button-quiet" id="refreshRunsButton" type="button">刷新列表</button>
-        </div>
-        <div class="run-manager-summary" id="runManagerSummary">正在加载 model runs…</div>
-        <div class="run-manager-list" id="modelRunList"></div>
-      </div>
-    </dialog>
-
-    <dialog class="dialog" id="importDialog">
-      <form class="dialog-card" id="importForm" method="dialog">
-        <div class="dialog-heading">
-          <div>
-            <span class="eyebrow">IMMUTABLE MODEL RUN</span>
-            <h2>导入 issue 或模型结果</h2>
-          </div>
-          <button class="icon-button" type="button" data-close="importDialog" aria-label="关闭">×</button>
-        </div>
-        <p class="dialog-copy">
-          支持 JSON / CSV / XLSX。模型结果最小契约为 <code>issue_id, ra_stuck_auto_result</code>；可附 <code>ra_stuck_auto_result_info</code>、reason、confidence、trip_id。文件按 SHA-256 去重；同一内容可重复上传，不会覆盖历史 run。
-        </p>
-        <div class="segmented" id="importKind">
-          <label><input type="radio" name="kind" value="issues" checked /> Issue / GT</label>
-          <label><input type="radio" name="kind" value="model" /> 模型结果</label>
-        </div>
-        <label class="file-drop">
-          <span>选择文件</span>
-          <input id="importFile" type="file" accept=".json,.csv,.xlsx,.xlsm" required />
-          <small id="importFileName">未选择文件</small>
-        </label>
-        <label id="runNameField" class="hidden">
-          <span>模型 run 名（可选）</span>
-          <input id="runNameInput" placeholder="默认取 experiment.model_name 或文件名" autocomplete="off" />
-        </label>
-        <div id="issueImportOptions">
-          <label>
-            <span>数据源标记</span>
-            <input id="issueSourceInput" value="manual_upload" autocomplete="off" />
-          </label>
-          <label class="toggle-row compact-toggle">
-            <input id="replaceGtInput" type="checkbox" />
-            <span><strong>明确覆盖已有 GT</strong><small>默认保留 0508 baseline 真值</small></span>
-          </label>
-        </div>
-        <div class="dialog-result hidden" id="importResult"></div>
-        <div class="dialog-actions">
-          <button class="button button-quiet" type="button" data-close="importDialog">取消</button>
-          <button class="button button-primary" type="submit">开始导入</button>
-        </div>
-      </form>
-    </dialog>
-
-    <dialog class="dialog dialog-wide" id="inferDialog">
-      <form class="dialog-card" id="inferForm" method="dialog">
-        <div class="dialog-heading">
-          <div>
-            <span class="eyebrow">LIVE ONE-CASE INFERENCE</span>
-            <h2>模型操作窗口</h2>
-          </div>
-          <button class="icon-button" type="button" data-close="inferDialog" aria-label="关闭">×</button>
-        </div>
-        <div class="safety-note">
-          <strong>安全边界：</strong>当前为直接 IP 的 HTTP 试运行，请勿输入长期或生产 API key。API key 仅在本次请求内通过 stdin 交给 worker；不保存到数据库、参数、环境变量或日志。worker 固定 <code>RA_TOOLS_ENABLED=false</code>、<code>BAG_CACHE_READ_ONLY=true</code>。
-        </div>
-        <div class="infer-grid">
-          <label><span>模型名称</span><input id="modelNameInput" value="Qwen/Qwen3.5-9B" required /></label>
-          <label><span>Prompt 版本</span><input id="promptVersionInput" value="stuck_triage_v1" required /></label>
-          <label class="span-two">
-            <span>Base URL</span>
-            <input id="baseUrlInput" type="url" placeholder="http://10.x.x.x/v1/chat/completions" autocomplete="off" />
-            <small>仅允许内网 IP、localhost、*.intra.xiaojukeji.com 或服务端白名单。</small>
-          </label>
-          <label class="span-two"><span>API key</span><input id="apiKeyInput" type="password" placeholder="仅本次推理使用，不会持久化" autocomplete="new-password" /></label>
-          <label><span>max tokens</span><input id="maxTokensInput" type="number" min="32" max="4096" value="512" /></label>
-          <label><span>请求人（审计）</span><input id="requestedByInput" placeholder="可选" autocomplete="off" /></label>
-        </div>
-        <div class="checkbox-group">
-          <label class="toggle-row compact-toggle"><input id="useBevInput" type="checkbox" checked /><span><strong>使用 Ares Capture BEV</strong></span></label>
-          <label class="toggle-row compact-toggle"><input id="useRaOptionsInput" type="checkbox" checked /><span><strong>注入 ra_options_new（含 SWAG）</strong></span></label>
-        </div>
-        <div class="job-result hidden" id="jobResult"></div>
-        <div class="dialog-actions">
-          <button class="button button-quiet" id="preflightButton" type="button">预检 Ares / Trail</button>
-          <button class="button button-primary" type="submit">开始单 case 推理</button>
-        </div>
-      </form>
-    </dialog>
 
     <dialog class="media-dialog" id="mediaDialog">
       <div class="media-dialog-card">

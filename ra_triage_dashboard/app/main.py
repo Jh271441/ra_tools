@@ -524,13 +524,17 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="RA Triage Workbench",
-    version="0.2.0",
+    version="1.1.0",
     lifespan=lifespan,
 )
 app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 
 
 @app.get("/", include_in_schema=False)
+@app.get("/review", include_in_schema=False)
+@app.get("/runs", include_in_schema=False)
+@app.get("/inference", include_in_schema=False)
+@app.get("/import", include_in_schema=False)
 async def index() -> FileResponse:
     return FileResponse(settings.static_dir / "index.html")
 

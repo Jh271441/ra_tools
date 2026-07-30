@@ -6,9 +6,9 @@
 
 - 默认工作集是 `trail_label_baseline_20260729.xlsx` 中 `dataset=0508` 的 **1071 条**；GT 只来自该快照，不因 Trail 查询或模型导入而改变。
 - 首页为单张大 BEV review canvas，点击后打开 Ares Capture BEV / Camera 统一时序预览；`←/↑` 上一帧、`→/↓` 下一帧，`B/C` 切换 BEV / Camera。以后可直接把主 canvas 的资产替换成 Camera 合成图或视频。
-- 左侧全局工具栏采用 240px / 64px 折叠布局并记住用户选择；模型 Runs、单 case 推理和数据导入不再挤占页面头部。
+- 左侧全局工具栏采用 240px / 64px 折叠布局并记住用户选择；判错复核、模型 Runs、单 case 推理和数据导入分别使用 `/review`、`/runs`、`/inference`、`/import` 独立页面，支持硬刷新和浏览器前进/后退。只有 BEV / Camera 媒体预览保留弹层。
 - 服务启动时会从配置的 Trail view 只读拉取张扬的 `ra_stuck_auto_result` 和 `ra_stuck_auto_result_info`，生成默认比较 run；同内容回刷复用已有快照，字段结果变化才新增历史 run。
-- 可导入 issue / GT 与模型输出（JSON、CSV、XLSX）；模型文件按 SHA-256 创建不可变 model run。独立 Runs 管理窗口可切换 Review run、设为默认、同步 Trail 并查看覆盖率。
+- 可导入 issue / GT 与模型输出（JSON、CSV、XLSX）；模型文件按 SHA-256 创建不可变 model run。独立 Runs 管理页面可切换 Review run、设为默认、同步 Trail 并查看覆盖率。
 - 人工标注为追加式历史，最新一条为当前标注，不覆盖旧 review；「模型为什么判错」是主输入，「模型缺失信息」收进紧凑的结构化多选下拉，并自动汇总为 routing、绕行空间、灯态、双闪、时序等错误聚类。
 - 页面可提交单 case 推理：模型名、base URL、API key 临时输入，调用 `ra_auto_triage` 的受控 worker。
 - 推理 worker 固定 `RA_TOOLS_ENABLED=false` 和 `BAG_CACHE_READ_ONLY=true`，不会创建 model-triage batch 或写 Trail。
@@ -75,6 +75,13 @@ bash scripts/run_cloud_server.sh
 ```
 
 当前试运行监听 `0.0.0.0:8785`，可从内网直接访问 `http://172.16.145.60:8785`。因为这是明文 HTTP，单 case 推理只应使用临时、低权限 key；生产多人使用应迁到 HTTPS + SSO 认证代理。
+
+页面路由可直接访问：
+
+- `http://172.16.145.60:8785/review`
+- `http://172.16.145.60:8785/runs`
+- `http://172.16.145.60:8785/inference`
+- `http://172.16.145.60:8785/import?kind=issues`
 
 如需收回直接暴露，可把启动参数改为 `--host 127.0.0.1`，再使用 SSH 隧道：
 
