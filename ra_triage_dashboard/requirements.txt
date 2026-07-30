@@ -1,8 +1,5 @@
-# MVP runtime (cloud_server global Python currently provides these).
-fastapi>=0.115,<1
-uvicorn>=0.34,<1
-python-multipart>=0.0.5
-openpyxl>=3.0
+# MVP runtime.
+-r requirements-runtime.txt
 
 # Production PostgreSQL phase.
 SQLAlchemy>=2.0

@@ -33,6 +33,8 @@ const state = {
   activePage: "review",
   inferenceCase: null,
   trailInspection: null,
+  pendingReviewImages: [],
+  savingAnnotation: false,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -90,7 +92,6 @@ function showPage(page, { historyMode = "", issue = "", kind = "" } = {}) {
   if (previousPage === "inference" && target !== "inference") $("#apiKeyInput").value = "";
   if (target === "runs") {
     renderRunManager();
-    renderTrailSyncState();
   }
   if (target === "import") {
     const importKind = kind || new URLSearchParams(window.location.search).get("kind") || "issues";
@@ -143,6 +144,10 @@ function formatTime(value) {
 
 function evidenceLabel(key) {
   return state.config?.missing_evidence_catalog?.find((item) => item.key === key)?.label || key;
+}
+
+function tagLabel(key) {
+  return state.config?.review_tag_catalog?.find((item) => item.key === key)?.label || key;
 }
 
 function frameLabel(frame) {
@@ -247,16 +252,6 @@ function renderSession() {
       : username
         ? `本次导入显示名：${username}（本机 LCA，未验证；不能用于权限）`
         : "当前没有可信 SSO；Run 创建人将记为未记录。";
-  }
-  const runIdentityNote = $("#runIdentityNote");
-  if (runIdentityNote) {
-    runIdentityNote.textContent = state.session.verified
-      ? `当前展示团队全部 Runs。你是 ${username}（SSO 已验证）；可按创建人或实验作者筛选。${
-          state.session.can_manage_team_default
-            ? "你有团队默认 Run 管理权限。"
-            : "团队默认 Run 仅允许配置的管理员修改。"
-        }`
-      : "当前展示团队全部 Runs。IP 直连没有可信 SSO；本机 LCA 只作未验证署名，不能修改团队默认。";
   }
 }
 
@@ -402,13 +397,28 @@ async function loadRuns({ preferDefault = false } = {}) {
   renderRunManager();
 }
 
+function runOwner(run) {
+  return run.created_by || run.declared_author || "";
+}
+
 function runPeople() {
   const values = new Set();
   state.modelRuns.forEach((run) => {
-    if (run.created_by) values.add(run.created_by);
-    if (run.declared_author) values.add(run.declared_author);
+    const owner = runOwner(run);
+    if (owner) values.add(owner);
   });
   return [...values].sort((left, right) => left.localeCompare(right, "zh-CN"));
+}
+
+function runBatchName(run) {
+  const experiment = run.metadata?.experiment || {};
+  const sourceFile = String(run.source_name || "").split(/[\\/]/).pop() || "";
+  return (
+    experiment.run_id ||
+    experiment.experiment_id ||
+    sourceFile.replace(/\.(json|csv|xlsx|xlsm)$/i, "") ||
+    "未命名批次"
+  );
 }
 
 function renderRunFilters() {
@@ -453,23 +463,31 @@ function renderActiveRun(overview = null) {
 function renderRunManager() {
   const list = $("#modelRunList");
   if (!list) return;
+  const search = ($("#runSearchInput")?.value || "").trim().toLowerCase();
   const personValue = $("#runPersonFilter")?.value || "";
   const person = personValue === "__me__" ? state.session.username : personValue;
   const kind = $("#runKindFilter")?.value || "";
   const filteredRuns = state.modelRuns.filter((run) => {
-    const personMatch =
-      !person || run.created_by === person || run.declared_author === person;
-    return personMatch && (!kind || run.kind === kind);
+    const personMatch = !person || runOwner(run) === person;
+    const searchText = [
+      run.name,
+      runBatchName(run),
+      run.source_name,
+      run.created_by,
+      run.declared_author,
+    ]
+      .join(" ")
+      .toLowerCase();
+    return personMatch && (!kind || run.kind === kind) && (!search || searchText.includes(search));
   });
   const totalCoverage = filteredRuns.reduce(
     (sum, run) => sum + Number(run.baseline_prediction_count || 0),
     0
   );
   $("#runManagerSummary").textContent =
-    `显示 ${filteredRuns.length} / ${state.modelRuns.length} 个团队 Run` +
-    ` · 累计 ${totalCoverage} 条 baseline 预测记录`;
+    `${filteredRuns.length} / ${state.modelRuns.length} 个 Run · ${totalCoverage} 条预测`;
   if (!filteredRuns.length) {
-    list.innerHTML = '<div class="no-asset">当前筛选下没有 Model Run。可清除人员/来源筛选、上传批量结果，或创建 Trail 只读快照。</div>';
+    list.innerHTML = '<div class="no-asset">当前筛选下没有 Run。</div>';
     return;
   }
   const baselineCount = Number(state.config?.baseline?.count || 0);
@@ -479,39 +497,29 @@ function renderRunManager() {
         const coverage = Number(run.baseline_prediction_count || 0);
         const coverageLabel =
           baselineCount && coverage >= baselineCount ? "全量覆盖" : "部分覆盖";
-        const creator = run.created_by || "历史未记录";
-        const creatorTrust = run.created_by_verified
-          ? "SSO 已验证"
-          : run.created_by
-            ? "未验证"
-            : "legacy";
-        const declaredAuthor = run.declared_author || "未声明";
+        const owner = runOwner(run) || "未记录";
+        const batch = runBatchName(run);
+        const ownerTitle = run.created_by
+          ? `提交人：${run.created_by}${run.declared_author && run.declared_author !== run.created_by ? `；结果包作者：${run.declared_author}` : ""}`
+          : run.declared_author
+            ? `结果包作者：${run.declared_author}`
+            : "人员信息未记录";
         return `<article class="run-row ${run.id === state.selectedRunId ? "active" : ""}">
         <div class="run-row-main">
           <div class="run-row-title">
             <strong>${escapeHtml(run.name)}</strong>
-            ${run.is_default ? '<span class="run-default-badge">默认</span>' : ""}
             <span class="run-coverage-badge">${coverageLabel}</span>
           </div>
           <div class="run-row-meta">
-            <span>${coverage} / ${state.config?.baseline?.count || "—"} 覆盖</span>
-            <span>${run.failure_count ?? 0} 条失败</span>
-            <span>${run.kind === "trail_snapshot" ? "Trail 快照" : "文件导入"}</span>
+            <span title="${escapeHtml(ownerTitle)}">人员 · <b class="run-meta-value">${escapeHtml(owner)}</b></span>
+            <span title="${escapeHtml(run.source_name || "")}">批次 · <b class="run-meta-value">${escapeHtml(batch)}</b></span>
+            <span>${coverage} / ${state.config?.baseline?.count || "—"} 条</span>
+            <span class="run-failure-count">错误 ${run.failure_count ?? 0}</span>
             <span>${formatTime(run.created_at)}</span>
           </div>
-          <div class="run-identity-row">
-            <span>创建人：<b>${escapeHtml(creator)}</b><em>${escapeHtml(creatorTrust)}</em></span>
-            <span>实验作者：<b>${escapeHtml(declaredAuthor)}</b><em>结果包声明</em></span>
-          </div>
-          <div class="run-row-source" title="${escapeHtml(run.source_name || "")}">${escapeHtml(run.source_name || "无来源文件")}</div>
         </div>
         <div class="run-row-actions">
-          <button class="button ${run.id === state.selectedRunId ? "button-primary" : "button-quiet"}" type="button" data-use-run="${escapeHtml(run.id)}">${run.id === state.selectedRunId ? "Review 使用中" : "在 Review 中打开"}</button>
-          ${
-            run.is_default
-              ? ""
-              : `<button class="button button-quiet" type="button" data-default-run="${escapeHtml(run.id)}" ${state.session.can_manage_team_default ? "" : "disabled"} title="${state.session.can_manage_team_default ? "修改所有用户的团队默认 Run" : "需要可信 SSO 且位于团队默认管理员名单"}">设为团队默认</button>`
-          }
+          <button class="button ${run.id === state.selectedRunId ? "button-primary" : "button-quiet"}" type="button" data-use-run="${escapeHtml(run.id)}">${run.id === state.selectedRunId ? "当前 Review" : "打开 Review"}</button>
         </div>
       </article>`;
       }
@@ -519,9 +527,6 @@ function renderRunManager() {
     .join("");
   list.querySelectorAll("[data-use-run]").forEach((button) => {
     button.addEventListener("click", () => useModelRun(button.dataset.useRun));
-  });
-  list.querySelectorAll("[data-default-run]").forEach((button) => {
-    button.addEventListener("click", () => setDefaultRun(button.dataset.defaultRun));
   });
 }
 
@@ -537,32 +542,6 @@ async function useModelRun(runId) {
   renderRunManager();
   await Promise.all([loadCases({ keepSelection: false }), loadClusters(), loadOverview()]);
   navigatePage("review");
-}
-
-async function setDefaultRun(runId) {
-  if (!state.session.can_manage_team_default) {
-    showToast(
-      "设置团队默认 Run 需要可信 SSO 且位于管理员名单；当前仍可在 Review 中打开任意 Run。",
-      true
-    );
-    return;
-  }
-  const run = state.modelRuns.find((item) => item.id === runId);
-  if (
-    !window.confirm(
-      `确定将“${run?.name || runId}”设为团队默认吗？\n\n这会改变所有用户进入 Review 时默认选择的 Run，但不会改写模型输出、GT 或人工复核。`
-    )
-  ) {
-    return;
-  }
-  try {
-    await api(`/api/model-runs/${encodeURIComponent(runId)}/default`, { method: "POST", body: "{}" });
-    await loadRuns();
-    await loadOverview();
-    showToast("已更新团队默认 Run；历史输出、GT 和人工复核均未改写。");
-  } catch (error) {
-    showToast(error.message, true);
-  }
 }
 
 function issueRow(item) {
@@ -780,7 +759,8 @@ function annotationHistory(annotations) {
       (annotation) => `<article class="history-row">
         <div class="history-head">${labelBadge(annotation.label, annotation.review_status === "needs_gt_review" ? "GT 待复核" : "已记录")}<span>${formatTime(annotation.created_at)}</span></div>
         ${annotation.missing_evidence?.length ? `<div class="tags">${annotation.missing_evidence.map((key) => `<span class="tag evidence-tag">${escapeHtml(evidenceLabel(key))}</span>`).join("")}</div>` : ""}
-        ${annotation.tags?.length ? `<div class="tags">${annotation.tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>` : ""}
+        ${annotation.tags?.length ? `<div class="tags">${annotation.tags.map((tag) => `<span class="tag">${escapeHtml(tagLabel(tag))}</span>`).join("")}</div>` : ""}
+        ${annotation.attachments?.length ? `<div class="history-attachments">${annotation.attachments.map((attachment, index) => `<a href="${escapeHtml(attachment.url)}" target="_blank" rel="noreferrer" title="打开补充截图 ${index + 1}"><img src="${escapeHtml(attachment.url)}" alt="补充截图 ${index + 1}" loading="lazy" /></a>`).join("")}</div>` : ""}
         ${annotation.note ? `<p>${escapeHtml(annotation.note)}</p>` : ""}
         ${annotation.author ? `<small>${escapeHtml(annotation.author)}${annotation.author_verified ? " · SSO 已验证" : " · 未验证/历史"}</small>` : ""}
       </article>`)
@@ -792,6 +772,10 @@ function renderReview(caseData) {
   state.selectedAnnotationLabel = previous.label || "";
   const chosenEvidence = new Set(previous.missing_evidence || []);
   const catalog = state.config?.missing_evidence_catalog || [];
+  const tagCatalog = state.config?.review_tag_catalog || [];
+  const chosenTags = new Set(
+    (previous.tags || []).filter((tag) => tagCatalog.some((item) => item.key === tag))
+  );
   const author = state.session.username || previous.author || "";
   const authorLocked = Boolean(state.session.verified && state.session.username);
   $("#reviewPane").innerHTML = `
@@ -809,7 +793,20 @@ function renderReview(caseData) {
         <summary>缺失信息（多选）<span class="evidence-summary-count" id="evidenceSummaryCount">已选 ${chosenEvidence.size} 项</span></summary>
         <div class="evidence-options">${catalog.map((item) => `<label class="evidence-option" title="${escapeHtml(item.hint || "")}"><input type="checkbox" name="missingEvidence" value="${escapeHtml(item.key)}" ${chosenEvidence.has(item.key) ? "checked" : ""} /><span><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.hint || "")}</small></span></label>`).join("")}</div>
       </details>
-      <label><span>补充 tags（可选，逗号分隔）</span><input id="annotationTags" value="${escapeHtml((previous.tags || []).join(", "))}" placeholder="例如：右转, 双闪, 遮挡" autocomplete="off" /></label>
+      <details class="evidence-dropdown tag-dropdown">
+        <summary>场景 Tags（可选）<span class="evidence-summary-count" id="tagSummaryCount">已选 ${chosenTags.size} 项</span></summary>
+        <div class="tag-options">${tagCatalog.map((item) => `<label class="tag-option"><input type="checkbox" name="reviewTags" value="${escapeHtml(item.key)}" ${chosenTags.has(item.key) ? "checked" : ""} /><span>${escapeHtml(item.label)}</span></label>`).join("")}</div>
+      </details>
+      <div class="review-attachment-field">
+        <span>补充截图（可选）</span>
+        <div class="screenshot-paste-zone" id="screenshotPasteZone" tabindex="0" role="group" aria-label="粘贴补充截图">
+          <strong>粘贴截图</strong>
+          <small>点击此处后直接 Ctrl / ⌘ + V；最多 4 张，每张 8 MB。</small>
+          <button class="screenshot-browse-button" id="reviewScreenshotBrowse" type="button">选择图片</button>
+        </div>
+        <input class="hidden" id="reviewScreenshotInput" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+        <div class="pending-screenshot-list" id="pendingScreenshotList"></div>
+      </div>
       <label><span>标注人${authorLocked ? "（SSO）" : "（可编辑）"}</span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" ${authorLocked ? "readonly" : ""} /></label>
       <button class="button button-primary full-width" type="submit">保存新的 review 版本</button>
     </form>
@@ -823,6 +820,34 @@ function renderReview(caseData) {
   $("#reviewPane").querySelectorAll('input[name="missingEvidence"]').forEach((input) => {
     input.addEventListener("change", updateEvidenceSummary);
   });
+  $("#reviewPane").querySelectorAll('input[name="reviewTags"]').forEach((input) => {
+    input.addEventListener("change", updateTagSummary);
+  });
+  const pasteZone = $("#screenshotPasteZone");
+  const screenshotInput = $("#reviewScreenshotInput");
+  const screenshotBrowse = $("#reviewScreenshotBrowse");
+  pasteZone.addEventListener("click", (event) => {
+    if (event.target !== screenshotBrowse) pasteZone.focus();
+  });
+  screenshotBrowse.addEventListener("click", (event) => {
+    event.stopPropagation();
+    screenshotInput.click();
+  });
+  pasteZone.addEventListener("paste", (event) => {
+    const files = [...(event.clipboardData?.items || [])]
+      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .map((item) => item.getAsFile())
+      .filter(Boolean);
+    if (files.length) {
+      event.preventDefault();
+      addPendingReviewImages(files);
+    }
+  });
+  screenshotInput.addEventListener("change", () => {
+    addPendingReviewImages([...screenshotInput.files]);
+    screenshotInput.value = "";
+  });
+  renderPendingReviewImages();
   $("#annotationForm").addEventListener("submit", saveAnnotation);
 }
 
@@ -832,8 +857,86 @@ function updateEvidenceSummary() {
   if (target) target.textContent = `已选 ${count} 项`;
 }
 
+function updateTagSummary() {
+  const count = document.querySelectorAll('input[name="reviewTags"]:checked').length;
+  const target = $("#tagSummaryCount");
+  if (target) target.textContent = `已选 ${count} 项`;
+}
+
+function clearPendingReviewImages() {
+  state.pendingReviewImages.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+  state.pendingReviewImages = [];
+}
+
+function addPendingReviewImages(files) {
+  const limits = state.config?.review_attachment_limits || {};
+  const maxCount = Number(limits.max_count || 4);
+  const maxBytes = Number(limits.max_bytes_each || 8 * 1024 * 1024);
+  const maxTotalBytes = Number(limits.max_bytes_total || 24 * 1024 * 1024);
+  const allowed = new Set(limits.media_types || ["image/png", "image/jpeg", "image/webp"]);
+  let rejected = "";
+  files.forEach((file) => {
+    if (state.pendingReviewImages.length >= maxCount) {
+      rejected = `最多只能添加 ${maxCount} 张截图。`;
+      return;
+    }
+    if (!allowed.has(file.type)) {
+      rejected = "仅支持 PNG、JPEG 或 WebP 图片。";
+      return;
+    }
+    if (file.size > maxBytes) {
+      rejected = "单张截图不能超过 8 MB。";
+      return;
+    }
+    const currentBytes = state.pendingReviewImages.reduce(
+      (sum, item) => sum + item.file.size,
+      0
+    );
+    if (currentBytes + file.size > maxTotalBytes) {
+      rejected = "本次截图总大小不能超过 24 MB。";
+      return;
+    }
+    state.pendingReviewImages.push({
+      id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+      file,
+      previewUrl: URL.createObjectURL(file),
+    });
+  });
+  renderPendingReviewImages();
+  if (rejected) showToast(rejected, true);
+}
+
+function renderPendingReviewImages() {
+  const target = $("#pendingScreenshotList");
+  if (!target) return;
+  if (!state.pendingReviewImages.length) {
+    target.innerHTML = "";
+    return;
+  }
+  target.innerHTML = state.pendingReviewImages
+    .map(
+      (item) => `<div class="pending-screenshot">
+        <img src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.file.name || "待上传截图")}" />
+        <button type="button" data-remove-screenshot="${escapeHtml(item.id)}" aria-label="移除截图">×</button>
+      </div>`
+    )
+    .join("");
+  target.querySelectorAll("[data-remove-screenshot]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = state.pendingReviewImages.findIndex(
+        (item) => item.id === button.dataset.removeScreenshot
+      );
+      if (index < 0) return;
+      URL.revokeObjectURL(state.pendingReviewImages[index].previewUrl);
+      state.pendingReviewImages.splice(index, 1);
+      renderPendingReviewImages();
+    });
+  });
+}
+
 async function selectCase(issueId, { updateRoute = true } = {}) {
   if (!issueId) return;
+  if (state.selectedId && state.selectedId !== issueId) clearPendingReviewImages();
   state.selectedId = issueId;
   renderCases({ items: state.cases, total: $("#caseCount").textContent });
   try {
@@ -855,22 +958,63 @@ async function selectCase(issueId, { updateRoute = true } = {}) {
 
 async function saveAnnotation(event) {
   event.preventDefault();
-  if (!state.selectedId) return;
+  if (!state.selectedId || state.savingAnnotation) return;
+  state.savingAnnotation = true;
+  const submitButton = event.submitter || $("#annotationForm button[type='submit']");
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.setAttribute("aria-busy", "true");
+  }
   const payload = {
     label: state.selectedAnnotationLabel,
     review_status: $("#reviewStatusInput").value,
-    tags: $("#annotationTags").value.split(",").map((tag) => tag.trim()).filter(Boolean),
+    tags: [...document.querySelectorAll('input[name="reviewTags"]:checked')].map(
+      (input) => input.value
+    ),
     missing_evidence: [...document.querySelectorAll('input[name="missingEvidence"]:checked')].map((input) => input.value),
     note: $("#annotationNote").value,
     author: $("#annotationAuthor").value,
   };
   try {
-    await api(`/api/cases/${encodeURIComponent(state.selectedId)}/annotations`, { method: "POST", body: JSON.stringify(payload) });
-    showToast("已保存新的 review 版本，并更新缺失信息聚类。");
+    if (state.pendingReviewImages.length) {
+      const form = new FormData();
+      form.append("payload", JSON.stringify(payload));
+      state.pendingReviewImages.forEach((item, index) => {
+        form.append(
+          "attachments",
+          item.file,
+          item.file.name || `clipboard-${index + 1}.png`
+        );
+      });
+      await api(
+        `/api/cases/${encodeURIComponent(state.selectedId)}/annotations-with-attachments`,
+        {
+          method: "POST",
+          body: form,
+          headers: { "X-RA-Triage-Request": "review-v1" },
+        }
+      );
+    } else {
+      await api(`/api/cases/${encodeURIComponent(state.selectedId)}/annotations`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    }
+    const screenshotCount = state.pendingReviewImages.length;
+    clearPendingReviewImages();
+    showToast(
+      `已保存新的 review 版本${screenshotCount ? `和 ${screenshotCount} 张截图` : ""}。`
+    );
     await Promise.all([loadOverview(), loadClusters(), loadCases(), loadReviewers()]);
     await selectCase(state.selectedId);
   } catch (error) {
     showToast(error.message, true);
+  } finally {
+    state.savingAnnotation = false;
+    if (submitButton?.isConnected) {
+      submitButton.disabled = false;
+      submitButton.removeAttribute("aria-busy");
+    }
   }
 }
 
@@ -1199,6 +1343,14 @@ async function submitImport(event) {
 
 async function syncTrail(mode = "preview") {
   const createRun = mode === "create";
+  if (
+    createRun &&
+    !window.confirm(
+      "将创建或复用一个本地 Run。不会写入 Trail，也不会修改 GT、人工复核或默认 Run。继续？"
+    )
+  ) {
+    return;
+  }
   const button = createRun ? $("#syncTrailButton") : $("#checkTrailButton");
   button.disabled = true;
   button.textContent = createRun ? "创建中…" : "检查中…";
@@ -1228,7 +1380,7 @@ async function syncTrail(mode = "preview") {
     showToast(error.message, true);
   } finally {
     button.disabled = false;
-    button.textContent = createRun ? "创建只读 Trail 快照" : "检查字段可见性";
+    button.textContent = createRun ? "创建 Run" : "检查字段";
     renderTrailSyncState();
   }
 }
@@ -1313,6 +1465,7 @@ function bindEvents() {
   });
   $("#runPersonFilter").addEventListener("change", renderRunManager);
   $("#runKindFilter").addEventListener("change", renderRunManager);
+  $("#runSearchInput").addEventListener("input", renderRunManager);
   $("#jobRequesterFilter").addEventListener("change", () => {
     loadInferenceJobs().catch((error) => showToast(error.message, true));
   });

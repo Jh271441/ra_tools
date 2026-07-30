@@ -126,8 +126,13 @@ class Settings:
     def uploads_dir(self) -> Path:
         return self.data_dir / "uploads"
 
+    @property
+    def review_attachments_dir(self) -> Path:
+        return self.data_dir / "review_attachments"
+
     def ensure_directories(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
         self.uploads_dir.mkdir(parents=True, exist_ok=True)
+        self.review_attachments_dir.mkdir(parents=True, exist_ok=True)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)

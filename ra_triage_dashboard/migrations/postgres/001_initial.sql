@@ -42,6 +42,21 @@ CREATE TABLE IF NOT EXISTS annotations (
 CREATE INDEX IF NOT EXISTS idx_annotations_issue_created
     ON annotations(issue_id, id DESC);
 
+CREATE TABLE IF NOT EXISTS review_attachments (
+    id uuid PRIMARY KEY,
+    annotation_id bigint NOT NULL REFERENCES annotations(id) ON DELETE CASCADE,
+    original_name text NOT NULL DEFAULT '',
+    stored_name text NOT NULL UNIQUE,
+    media_type varchar(64) NOT NULL,
+    size_bytes bigint NOT NULL,
+    width integer NOT NULL,
+    height integer NOT NULL,
+    sha256 char(64) NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_review_attachments_annotation
+    ON review_attachments(annotation_id, created_at ASC);
+
 CREATE TABLE IF NOT EXISTS model_runs (
     id varchar(36) PRIMARY KEY,
     name text NOT NULL,

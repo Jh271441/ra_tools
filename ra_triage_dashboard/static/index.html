@@ -171,73 +171,21 @@
           </section>
 
           <section class="app-page tool-page hidden" id="runsPage" data-page="runs">
-            <header class="page-heading">
-              <div>
-                <span class="eyebrow">MODEL RUN REGISTRY</span>
-                <h2>评测 Runs · 批量结果快照</h2>
-                <p>Run 是一组不可变模型输出；Review 每次选择一个 Run 与 0508 GT 对比。</p>
-              </div>
-              <button class="button button-quiet" type="button" data-page-target="review">返回判错复核</button>
-            </header>
-            <section class="result-flow" aria-label="模型结果生命周期">
-              <div class="flow-card">
-                <span>01 · INPUT</span>
-                <strong>批量文件 / Trail 只读字段</strong>
-                <small>收集一批 issue 的模型输出</small>
-              </div>
-              <span class="flow-arrow" aria-hidden="true">→</span>
-              <div class="flow-card active">
-                <span>02 · ASSET</span>
-                <strong>不可变 Model Run</strong>
-                <small>按内容哈希去重，可追溯来源和创建人</small>
-              </div>
-              <span class="flow-arrow" aria-hidden="true">→</span>
-              <div class="flow-card">
-                <span>03 · CONSUMER</span>
-                <strong>Review 与统计</strong>
-                <small>选择 Run 后对比 0508 baseline</small>
-              </div>
-              <div class="flow-side-note">
-                <strong>单 Case 推理是 Debug Job</strong>
-                <span>默认不会自动写入任何 Run，也不影响 Review 统计。</span>
-              </div>
-            </section>
-            <section class="page-card trail-safety-card">
-              <div class="section-heading">
-                <div>
-                  <span class="eyebrow">TRAIL READ-ONLY SNAPSHOT</span>
-                  <h3>从 Trail 检查并创建只读快照</h3>
-                </div>
-                <span class="safety-badge">只读 Trail</span>
-              </div>
-              <p>
-                只按当前 0508 baseline 的 <strong id="trailScopeCount">1071</strong> 个 issue ID 查询
-                Trail view <strong id="trailViewId">1000</strong>，仅读取
-                <code>ra_stuck_auto_result</code> 与 <code>ra_stuck_auto_result_info</code>。
-              </p>
-              <ul class="safety-list">
-                <li>不会写回 Trail，也不会修改 0508 GT、人工复核或历史 Run。</li>
-                <li>“检查字段”只验证字段与覆盖数，不创建任何记录。</li>
-                <li>“创建只读快照”只创建或复用本地不可变 Run，不会改变团队默认 Run。</li>
-                <li>若任一分片未完整返回，为避免部分快照，本次不会创建 Run。</li>
-              </ul>
-              <div class="trail-sync-state" id="trailSyncState">等待读取当前 Trail 字段状态…</div>
-              <div class="trail-actions">
-                <button class="button button-quiet" id="checkTrailButton" type="button">检查字段可见性</button>
-                <button class="button button-primary" id="syncTrailButton" type="button" disabled>创建只读 Trail 快照</button>
-              </div>
-            </section>
             <section class="page-card runs-page-card">
-              <div class="run-manager-actions">
-                <button class="button button-primary" id="runManagerImportButton" type="button">导入批量模型结果</button>
-                <button class="button button-quiet" id="refreshRunsButton" type="button">刷新列表</button>
+              <div class="runs-toolbar">
+                <p>按模型、人员和批次管理预测结果</p>
+                <div class="run-manager-actions">
+                  <button class="button button-primary" id="runManagerImportButton" type="button">导入 Run</button>
+                  <button class="button button-quiet" id="refreshRunsButton" type="button">刷新</button>
+                </div>
               </div>
-              <div class="shared-data-note" id="runIdentityNote">
-                当前展示团队全部 Runs。创建人来自可信 SSO；结果包中的实验作者会单独标记，二者可能不同。
-              </div>
-              <div class="run-filter-bar">
+              <div class="run-filter-bar run-filter-three">
                 <label>
-                  <span>相关人员</span>
+                  <span>模型 / 批次</span>
+                  <input id="runSearchInput" placeholder="搜索模型名、批次或文件" autocomplete="off" />
+                </label>
+                <label>
+                  <span>人员</span>
                   <select id="runPersonFilter">
                     <option value="">全部人员</option>
                   </select>
@@ -251,7 +199,7 @@
                   </select>
                 </label>
               </div>
-              <div class="run-manager-summary" id="runManagerSummary">正在加载 model runs…</div>
+              <div class="run-manager-summary" id="runManagerSummary">正在加载 Runs…</div>
               <div class="run-manager-list" id="modelRunList"></div>
             </section>
           </section>
@@ -388,6 +336,23 @@
                 </div>
               </form>
             </div>
+            <details class="page-card trail-import-details">
+              <summary>
+                <span>从 Trail 导入模型结果</span>
+                <small>只读 · 仅创建本地 Run · 不改 GT / 默认 Run</small>
+              </summary>
+              <div class="trail-import-body">
+                <p>
+                  检查当前 <strong id="trailScopeCount">1071</strong> 条 baseline 在 Trail view
+                  <strong id="trailViewId">1000</strong> 中的模型字段；不会写 Trail、修改 GT 或改变默认 Run。
+                </p>
+                <div class="trail-sync-state" id="trailSyncState">等待读取当前 Trail 字段状态…</div>
+                <div class="trail-actions">
+                  <button class="button button-quiet" id="checkTrailButton" type="button">检查字段</button>
+                  <button class="button button-primary" id="syncTrailButton" type="button" disabled>创建 Run</button>
+                </div>
+              </div>
+            </details>
           </section>
         </main>
       </div>

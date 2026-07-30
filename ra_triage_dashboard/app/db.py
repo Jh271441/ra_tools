@@ -88,6 +88,21 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_annotations_issue_id
                     ON annotations(issue_id, id DESC);
 
+                CREATE TABLE IF NOT EXISTS review_attachments (
+                    id TEXT PRIMARY KEY,
+                    annotation_id INTEGER NOT NULL REFERENCES annotations(id) ON DELETE CASCADE,
+                    original_name TEXT NOT NULL DEFAULT '',
+                    stored_name TEXT NOT NULL UNIQUE,
+                    media_type TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL,
+                    width INTEGER NOT NULL,
+                    height INTEGER NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_review_attachments_annotation
+                    ON review_attachments(annotation_id, created_at ASC);
+
                 CREATE TABLE IF NOT EXISTS model_runs (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -594,8 +609,26 @@ class Database:
             jobs = conn.execute(
                 "SELECT * FROM inference_jobs WHERE issue_id = ? ORDER BY created_at DESC LIMIT 10", (issue_id,)
             ).fetchall()
+            attachments = conn.execute(
+                """
+                SELECT ra.*
+                FROM review_attachments ra
+                JOIN annotations ann ON ann.id = ra.annotation_id
+                WHERE ann.issue_id = ?
+                ORDER BY ra.created_at ASC
+                """,
+                (issue_id,),
+            ).fetchall()
         data = self._issue_dict(issue)
-        data["annotations"] = [self._annotation_dict(row) for row in annotations]
+        attachments_by_annotation: dict[int, list[dict[str, Any]]] = {}
+        for row in attachments:
+            attachments_by_annotation.setdefault(int(row["annotation_id"]), []).append(
+                self._attachment_dict(row)
+            )
+        annotation_items = [self._annotation_dict(row) for row in annotations]
+        for annotation in annotation_items:
+            annotation["attachments"] = attachments_by_annotation.get(int(annotation["id"]), [])
+        data["annotations"] = annotation_items
         data["predictions"] = [self._prediction_dict(row) for row in predictions]
         data["jobs"] = [self._job_dict(row) for row in jobs]
         return data
@@ -612,6 +645,7 @@ class Database:
         author: str,
         author_source: str = "legacy",
         author_verified: bool = False,
+        attachments: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         if label and label not in LABELS:
             raise ValueError(f"不支持的标注标签: {label}")
@@ -621,6 +655,7 @@ class Database:
         missing_evidence = sorted(
             {str(item).strip() for item in missing_evidence if str(item).strip()}
         )
+        attachments = attachments or []
         now = utc_now()
         with self._write_lock, self.connect() as conn:
             previous = conn.execute(
@@ -648,8 +683,53 @@ class Database:
                 ),
             )
             conn.execute("UPDATE issues SET updated_at = ? WHERE issue_id = ?", (now, issue_id))
+            for attachment in attachments:
+                conn.execute(
+                    """
+                    INSERT INTO review_attachments (
+                        id, annotation_id, original_name, stored_name,
+                        media_type, size_bytes, width, height, sha256, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(attachment["id"]),
+                        cursor.lastrowid,
+                        str(attachment.get("original_name") or ""),
+                        str(attachment["stored_name"]),
+                        str(attachment["media_type"]),
+                        int(attachment["size_bytes"]),
+                        int(attachment["width"]),
+                        int(attachment["height"]),
+                        str(attachment["sha256"]),
+                        now,
+                    ),
+                )
             row = conn.execute("SELECT * FROM annotations WHERE id = ?", (cursor.lastrowid,)).fetchone()
-        return self._annotation_dict(row)
+        result = self._annotation_dict(row)
+        result["attachments"] = [
+            {
+                **attachment,
+                "annotation_id": int(cursor.lastrowid),
+                "created_at": now,
+            }
+            for attachment in attachments
+        ]
+        return result
+
+    def get_review_attachment(self, attachment_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM review_attachments WHERE id = ?",
+                (attachment_id,),
+            ).fetchone()
+        return self._attachment_dict(row) if row else None
+
+    def review_attachment_storage_bytes(self) -> int:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(size_bytes), 0) AS total FROM review_attachments"
+            ).fetchone()
+        return int(row["total"] or 0)
 
     def review_clusters(
         self,
@@ -1023,4 +1103,19 @@ class Database:
             "created_at": row["created_at"],
             "started_at": row["started_at"],
             "finished_at": row["finished_at"],
+        }
+
+    @staticmethod
+    def _attachment_dict(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "annotation_id": int(row["annotation_id"]),
+            "original_name": row["original_name"],
+            "stored_name": row["stored_name"],
+            "media_type": row["media_type"],
+            "size_bytes": int(row["size_bytes"]),
+            "width": int(row["width"]),
+            "height": int(row["height"]),
+            "sha256": row["sha256"],
+            "created_at": row["created_at"],
         }

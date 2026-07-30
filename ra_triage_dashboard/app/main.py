@@ -8,7 +8,9 @@ import ipaddress
 import json
 import math
 import re
+import shutil
 import threading
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -16,8 +18,9 @@ from urllib.parse import urlparse
 
 import openpyxl
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from .assets import AssetIndex, CameraIndex
 from .auth import normalise_username, request_identity
@@ -37,9 +40,17 @@ asset_index = AssetIndex(
 camera_index = CameraIndex(settings.camera_root)
 inference_runner = InferenceRunner(settings, database)
 trail_sync_lock = threading.Lock()
+review_image_semaphore = asyncio.Semaphore(2)
 
 ISSUE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{3,128}$")
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
+MAX_REVIEW_ATTACHMENTS = 4
+MAX_REVIEW_ATTACHMENT_BYTES = 8 * 1024 * 1024
+MAX_REVIEW_ATTACHMENTS_TOTAL_BYTES = 24 * 1024 * 1024
+MAX_REVIEW_MULTIPART_REQUEST_BYTES = 26 * 1024 * 1024
+MAX_REVIEW_ATTACHMENT_PIXELS = 40_000_000
+MAX_REVIEW_ATTACHMENT_STORAGE_BYTES = 20 * 1024 * 1024 * 1024
+MIN_REVIEW_ATTACHMENT_DISK_FREE = 256 * 1024 * 1024
 
 MISSING_EVIDENCE_CATALOG: tuple[dict[str, str], ...] = (
     {"key": "routing_direction", "label": "routing 方向", "hint": "未理解自车目标转向 / 车道任务"},
@@ -56,6 +67,42 @@ MISSING_EVIDENCE_CATALOG: tuple[dict[str, str], ...] = (
     {"key": "bev_topology", "label": "BEV 拓扑", "hint": "需要 BEV 复核车道、障碍物和绕行关系"},
     {"key": "gt_needs_review", "label": "GT 需复核", "hint": "模型并非明显错，真值或边界定义待确认"},
 )
+
+REVIEW_TAG_CATALOG: tuple[dict[str, str], ...] = (
+    {"key": "left_turn", "label": "左转"},
+    {"key": "right_turn", "label": "右转"},
+    {"key": "straight", "label": "直行"},
+    {"key": "traffic_light", "label": "信号灯"},
+    {"key": "queue", "label": "排队"},
+    {"key": "temporary_stop", "label": "双闪 / 临停 / 故障车"},
+    {"key": "occlusion", "label": "遮挡"},
+    {"key": "vulnerable_road_user", "label": "摩自 / 行人"},
+    {"key": "passable_space", "label": "可绕行空间"},
+    {"key": "swag", "label": "SWAG / RA 操作"},
+    {"key": "gt_boundary", "label": "GT 边界"},
+)
+REVIEW_TAG_KEYS = frozenset(item["key"] for item in REVIEW_TAG_CATALOG)
+REVIEW_TAG_ALIASES = {
+    "左转": "left_turn",
+    "右转": "right_turn",
+    "直行": "straight",
+    "信号灯": "traffic_light",
+    "红绿灯": "traffic_light",
+    "等灯": "traffic_light",
+    "排队": "queue",
+    "双闪": "temporary_stop",
+    "临停": "temporary_stop",
+    "故障车": "temporary_stop",
+    "遮挡": "occlusion",
+    "摩自": "vulnerable_road_user",
+    "行人": "vulnerable_road_user",
+    "可绕行": "passable_space",
+    "绕行空间": "passable_space",
+    "SWAG": "swag",
+    "RA": "swag",
+    "GT": "gt_boundary",
+    "GT待复核": "gt_boundary",
+}
 
 runtime_state: dict[str, Any] = {
     "baseline": {"status": "not_loaded", "message": "等待加载 0508 baseline。", "count": 0},
@@ -395,6 +442,191 @@ def valid_model_url(value: str) -> bool:
         return False
 
 
+def _normalise_review_image(content: bytes) -> tuple[bytes, str, str, int, int]:
+    try:
+        with Image.open(io.BytesIO(content)) as source:
+            source.seek(0)
+            width, height = source.size
+            if width <= 0 or height <= 0 or width * height > MAX_REVIEW_ATTACHMENT_PIXELS:
+                raise _detail(400, "截图尺寸非法或像素数超过 4000 万。")
+            image = ImageOps.exif_transpose(source)
+            width, height = image.size
+            image_format = (source.format or "").upper()
+            output = io.BytesIO()
+            if image_format == "PNG":
+                if image.mode not in {"1", "L", "LA", "P", "RGB", "RGBA"}:
+                    image = image.convert("RGBA")
+                image.save(output, format="PNG", optimize=True)
+                media_type, suffix = "image/png", ".png"
+            elif image_format in {"JPEG", "JPG"}:
+                if image.mode != "RGB":
+                    image = image.convert("RGB")
+                image.save(output, format="JPEG", quality=92, optimize=True)
+                media_type, suffix = "image/jpeg", ".jpg"
+            elif image_format == "WEBP":
+                if image.mode not in {"RGB", "RGBA"}:
+                    image = image.convert("RGBA")
+                image.save(output, format="WEBP", quality=92, method=4)
+                media_type, suffix = "image/webp", ".webp"
+            else:
+                raise _detail(400, "截图仅支持 PNG、JPEG 或 WebP。")
+            normalized = output.getvalue()
+    except HTTPException:
+        raise
+    except (Image.DecompressionBombError, UnidentifiedImageError, OSError, ValueError):
+        raise _detail(400, "截图无法解码或文件已损坏。")
+    if not normalized or len(normalized) > MAX_REVIEW_ATTACHMENT_BYTES:
+        raise _detail(413, "规范化后的单张截图不能超过 8 MB。")
+    return normalized, media_type, suffix, width, height
+
+
+async def _store_review_attachments(
+    uploads: list[UploadFile],
+) -> tuple[list[dict[str, Any]], list[Path]]:
+    if len(uploads) > MAX_REVIEW_ATTACHMENTS:
+        raise _detail(400, f"每次最多粘贴 {MAX_REVIEW_ATTACHMENTS} 张截图。")
+    prepared: list[tuple[dict[str, Any], bytes]] = []
+    raw_total_bytes = 0
+    total_bytes = 0
+    for upload in uploads:
+        content = await upload.read(MAX_REVIEW_ATTACHMENT_BYTES + 1)
+        if not content:
+            raise _detail(400, "截图文件为空。")
+        if len(content) > MAX_REVIEW_ATTACHMENT_BYTES:
+            raise _detail(413, "单张截图不能超过 8 MB。")
+        raw_total_bytes += len(content)
+        if raw_total_bytes > MAX_REVIEW_ATTACHMENTS_TOTAL_BYTES:
+            raise _detail(413, "本次截图总大小不能超过 24 MB。")
+        async with review_image_semaphore:
+            normalized, media_type, suffix, width, height = await asyncio.to_thread(
+                _normalise_review_image,
+                content,
+            )
+        total_bytes += len(normalized)
+        if total_bytes > MAX_REVIEW_ATTACHMENTS_TOTAL_BYTES:
+            raise _detail(413, "本次截图总大小不能超过 24 MB。")
+        attachment_id = str(uuid.uuid4())
+        stored_name = f"{attachment_id[:2]}/{attachment_id}{suffix}"
+        prepared.append(
+            (
+                {
+                    "id": attachment_id,
+                    "original_name": _safe_filename(
+                        upload.filename or f"clipboard{suffix}"
+                    ),
+                    "stored_name": stored_name,
+                    "media_type": media_type,
+                    "size_bytes": len(normalized),
+                    "width": width,
+                    "height": height,
+                    "sha256": hashlib.sha256(normalized).hexdigest(),
+                },
+                normalized,
+            )
+        )
+
+    root = settings.review_attachments_dir.resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    if (
+        prepared
+        and database.review_attachment_storage_bytes() + total_bytes
+        > MAX_REVIEW_ATTACHMENT_STORAGE_BYTES
+    ):
+        raise _detail(507, "Review 截图已达到 20 GB 存储配额，请联系管理员清理或扩容。")
+    if prepared and shutil.disk_usage(root).free < total_bytes + MIN_REVIEW_ATTACHMENT_DISK_FREE:
+        raise _detail(507, "截图存储空间不足，请联系管理员。")
+    temp_paths: list[Path] = []
+    final_paths: list[Path] = []
+    try:
+        for record, content in prepared:
+            stored_name = str(record["stored_name"])
+            path = (settings.review_attachments_dir / stored_name).resolve()
+            if root not in path.parents:
+                raise _detail(400, "截图存储路径非法。")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+            temp_path.write_bytes(content)
+            temp_paths.append(temp_path)
+            final_paths.append(path)
+        for temp_path, final_path in zip(temp_paths, final_paths):
+            temp_path.replace(final_path)
+    except Exception:
+        for path in [*temp_paths, *final_paths]:
+            path.unlink(missing_ok=True)
+        raise
+    return [record for record, _ in prepared], final_paths
+
+
+def _public_review_attachment(attachment: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": attachment["id"],
+        "media_type": attachment["media_type"],
+        "size_bytes": int(attachment["size_bytes"]),
+        "width": int(attachment["width"]),
+        "height": int(attachment["height"]),
+        "created_at": attachment.get("created_at"),
+        "url": f"/api/review-attachments/{attachment['id']}",
+    }
+
+
+def _normalise_review_tags(values: list[Any]) -> list[str]:
+    if len(values) > 12:
+        raise _detail(400, "每条 review 最多选择 12 个 tags。")
+    normalized: set[str] = set()
+    legacy: set[str] = set()
+    for value in values:
+        raw = str(value).strip()
+        if not raw:
+            continue
+        if len(raw) > 48 or re.search(r"[\x00-\x1f\x7f]", raw):
+            raise _detail(400, "tag 长度或字符不合法。")
+        key = REVIEW_TAG_ALIASES.get(raw, raw)
+        if key in REVIEW_TAG_KEYS:
+            normalized.add(key)
+        else:
+            # Existing JSON clients historically supplied free-form tags.
+            # Preserve safe legacy values while the UI only offers the catalog.
+            legacy.add(raw)
+    return [
+        *[item["key"] for item in REVIEW_TAG_CATALOG if item["key"] in normalized],
+        *sorted(legacy),
+    ]
+
+
+def _create_annotation_record(
+    *,
+    issue_id: str,
+    request: Request,
+    body: dict[str, Any],
+    attachments: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    label = _as_text(body.get("label"))
+    review_status = _as_text(body.get("review_status") or "pending")
+    tags = body.get("tags") or []
+    missing_evidence = body.get("missing_evidence") or []
+    if not isinstance(tags, list):
+        raise _detail(400, "tags 必须是数组。")
+    if not isinstance(missing_evidence, list):
+        raise _detail(400, "missing_evidence 必须是数组。")
+    tags = _normalise_review_tags(tags)
+    author, author_source, author_verified = _action_actor(request, body.get("author"))
+    try:
+        return database.create_annotation(
+            issue_id=issue_id,
+            label=label,
+            review_status=review_status,
+            tags=tags,
+            missing_evidence=missing_evidence,
+            note=_as_text(body.get("note")),
+            author=author,
+            author_source=author_source,
+            author_verified=author_verified,
+            attachments=attachments,
+        )
+    except ValueError as exc:
+        raise _detail(400, str(exc))
+
+
 def bootstrap_model_result() -> None:
     path = settings.bootstrap_model_json
     if not path or not path.is_file():
@@ -640,9 +872,44 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="RA Triage Workbench",
-    version="1.2.0",
+    version="1.3.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def review_attachment_request_size_guard(request: Request, call_next):
+    if (
+        request.method == "POST"
+        and request.url.path.startswith("/api/cases/")
+        and request.url.path.endswith("/annotations-with-attachments")
+    ):
+        if request.headers.get("x-ra-triage-request") != "review-v1":
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "缺少 Review 截图请求标记。"},
+            )
+        content_length = request.headers.get("content-length", "").strip()
+        if not content_length:
+            return JSONResponse(
+                status_code=411,
+                content={"detail": "Review 截图请求必须提供 Content-Length。"},
+            )
+        try:
+            request_bytes = int(content_length)
+        except ValueError:
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "Content-Length 非法。"},
+            )
+        if request_bytes > MAX_REVIEW_MULTIPART_REQUEST_BYTES:
+            return JSONResponse(
+                status_code=413,
+                content={"detail": "截图上传请求不能超过 26 MB。"},
+            )
+    return await call_next(request)
+
+
 app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 
 
@@ -683,6 +950,13 @@ async def dashboard_config() -> dict[str, Any]:
         "default_model_run_id": database.default_model_run_id(),
         "trail_sync": runtime_state["trail_sync"],
         "missing_evidence_catalog": MISSING_EVIDENCE_CATALOG,
+        "review_tag_catalog": REVIEW_TAG_CATALOG,
+        "review_attachment_limits": {
+            "max_count": MAX_REVIEW_ATTACHMENTS,
+            "max_bytes_each": MAX_REVIEW_ATTACHMENT_BYTES,
+            "max_bytes_total": MAX_REVIEW_ATTACHMENTS_TOTAL_BYTES,
+            "media_types": ["image/png", "image/jpeg", "image/webp"],
+        },
         "default_failure_only": bool(database.default_model_run_id()),
     }
 
@@ -754,6 +1028,11 @@ async def get_case(issue_id: str) -> dict[str, Any]:
     case = database.get_case(issue_id)
     if case is None:
         raise _detail(404, "Issue 不存在。")
+    for annotation in case.get("annotations", []):
+        annotation["attachments"] = [
+            _public_review_attachment(attachment)
+            for attachment in annotation.get("attachments", [])
+        ]
     case["assets"] = asset_index.get_assets(issue_id)
     case["camera"] = camera_index.get_assets(
         issue_id, (case["assets"].get("capture") or {}).get("timestamp_ms")
@@ -779,6 +1058,26 @@ async def get_asset(issue_id: str, asset_id: str) -> FileResponse:
     return FileResponse(path, media_type=media_type, filename=path.name)
 
 
+@app.get("/api/review-attachments/{attachment_id}")
+async def get_review_attachment(attachment_id: str) -> FileResponse:
+    attachment = database.get_review_attachment(attachment_id)
+    if attachment is None:
+        raise _detail(404, "Review 截图不存在。")
+    root = settings.review_attachments_dir.resolve()
+    path = (root / attachment["stored_name"]).resolve()
+    if root not in path.parents or not path.is_file():
+        raise _detail(404, "Review 截图文件不存在。")
+    return FileResponse(
+        path,
+        media_type=attachment["media_type"],
+        headers={
+            "Content-Disposition": "inline",
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, max-age=31536000, immutable",
+        },
+    )
+
+
 @app.post("/api/cases/{issue_id}/annotations")
 async def create_annotation(issue_id: str, request: Request) -> dict[str, Any]:
     if database.get_case(issue_id) is None:
@@ -787,29 +1086,47 @@ async def create_annotation(issue_id: str, request: Request) -> dict[str, Any]:
         body = await request.json()
     except (TypeError, ValueError):
         raise _detail(400, "标注请求必须是 JSON。")
-    label = _as_text(body.get("label"))
-    review_status = _as_text(body.get("review_status") or "pending")
-    tags = body.get("tags") or []
-    missing_evidence = body.get("missing_evidence") or []
-    if not isinstance(tags, list):
-        raise _detail(400, "tags 必须是数组。")
-    if not isinstance(missing_evidence, list):
-        raise _detail(400, "missing_evidence 必须是数组。")
-    author, author_source, author_verified = _action_actor(request, body.get("author"))
+    if not isinstance(body, dict):
+        raise _detail(400, "标注请求必须是 JSON 对象。")
+    annotation = _create_annotation_record(
+        issue_id=issue_id,
+        request=request,
+        body=body,
+    )
+    return {"annotation": annotation}
+
+
+@app.post("/api/cases/{issue_id}/annotations-with-attachments")
+async def create_annotation_with_attachments(
+    issue_id: str,
+    request: Request,
+    payload: str = Form(...),
+    attachments: list[UploadFile] | None = File(None),
+) -> dict[str, Any]:
+    if database.get_case(issue_id) is None:
+        raise _detail(404, "Issue 不存在。")
     try:
-        annotation = database.create_annotation(
+        body = json.loads(payload)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        raise _detail(400, "payload 必须是 JSON 对象。")
+    if not isinstance(body, dict):
+        raise _detail(400, "payload 必须是 JSON 对象。")
+    records, paths = await _store_review_attachments(attachments or [])
+    try:
+        annotation = _create_annotation_record(
             issue_id=issue_id,
-            label=label,
-            review_status=review_status,
-            tags=tags,
-            missing_evidence=missing_evidence,
-            note=_as_text(body.get("note")),
-            author=author,
-            author_source=author_source,
-            author_verified=author_verified,
+            request=request,
+            body=body,
+            attachments=records,
         )
-    except ValueError as exc:
-        raise _detail(400, str(exc))
+    except Exception:
+        for path in paths:
+            path.unlink(missing_ok=True)
+        raise
+    annotation["attachments"] = [
+        _public_review_attachment(attachment)
+        for attachment in annotation.get("attachments", [])
+    ]
     return {"annotation": annotation}
 
 

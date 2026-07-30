@@ -1,0 +1,6 @@
+# RA Triage Workbench runtime.
+fastapi>=0.115,<0.116
+uvicorn>=0.34,<0.35
+python-multipart>=0.0.18,<1
+openpyxl>=3.0,<4
+Pillow>=10.3,<12

@@ -2,6 +2,15 @@
 set -e
 
 APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+VENV_DIR="${DASHBOARD_VENV_DIR:-/volume/home/workspace/ra_triage_dashboard_venv}"
+PYTHON_BIN="${DASHBOARD_PYTHON_BIN:-$VENV_DIR/bin/python3}"
+
+if [[ ! -x "$PYTHON_BIN" ]]; then
+  echo "Dashboard Python environment is missing: $PYTHON_BIN" >&2
+  echo "Run: bash $APP_ROOT/scripts/bootstrap_cloud_server_env.sh" >&2
+  exit 1
+fi
+
 export DASHBOARD_DATA_DIR="/volume/home/workspace/ra_triage_dashboard_data"
 export RA_AUTO_TRIAGE_ROOT="/volume/home/workspace/ra_auto_triage"
 export ARES_CAPTURE_MANIFEST="/volume/home/workspace/ra_auto_triage/bags/ares_capture_bev/manifest.jsonl"
@@ -15,4 +24,4 @@ export DASHBOARD_SYNC_TRAIL_ON_START="${DASHBOARD_SYNC_TRAIL_ON_START:-true}"
 # Intentionally no default DASHBOARD_BOOTSTRAP_MODEL_JSON: the default model
 # comparison is the read-only Trail field snapshot, not the historical 348 run.
 
-exec python3 -m uvicorn app.main:app --app-dir "$APP_ROOT" --host 0.0.0.0 --port 8785
+exec "$PYTHON_BIN" -m uvicorn app.main:app --app-dir "$APP_ROOT" --host 0.0.0.0 --port 8785
