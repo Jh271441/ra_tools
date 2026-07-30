@@ -7,59 +7,81 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <header class="topbar">
-        <div class="brand">
+    <div class="app-shell" id="appShell">
+      <aside class="app-sidebar" id="appSidebar">
+        <div class="sidebar-brand">
           <div class="brand-mark" aria-hidden="true">RA</div>
-          <div>
-            <div class="eyebrow">AUTO-TRIAGE / REVIEW QUEUE</div>
-            <h1>RA Triage Workbench</h1>
+          <div class="sidebar-copy">
+            <strong>RA Triage</strong>
+            <span>Review Workbench</span>
           </div>
         </div>
-        <div class="dataset-state" id="datasetState">
-          <span class="status-dot"></span>
-          <span>加载 0508 baseline…</span>
-        </div>
-        <div class="top-actions">
-          <button class="button button-quiet" id="refreshButton">刷新</button>
-          <button class="button button-quiet" id="syncTrailButton">同步 Trail 字段</button>
-          <button class="button button-quiet" id="importButton">导入结果</button>
-          <button class="button button-primary" id="openInferButton" disabled>单 case 推理</button>
-        </div>
-      </header>
 
-      <main class="main">
-        <section class="baseline-banner" id="baselineBanner">
-          <div>
-            <span class="eyebrow">EVALUATION BASELINE</span>
-            <strong>0508 · 1071 cases</strong>
-            <span class="muted" id="baselineMessage">正在载入真值快照。</span>
+        <nav class="sidebar-nav" aria-label="工作台工具">
+          <button class="sidebar-item active" id="reviewNavButton" type="button" title="判错复核">
+            <span class="sidebar-icon" aria-hidden="true">R</span>
+            <span class="sidebar-label"><strong>判错复核</strong><small>Failure review</small></span>
+          </button>
+          <button class="sidebar-item" id="openRunManagerButton" type="button" title="模型 Runs">
+            <span class="sidebar-icon" aria-hidden="true">M</span>
+            <span class="sidebar-label"><strong>模型 Runs</strong><small>导入与版本管理</small></span>
+          </button>
+          <button class="sidebar-item" id="openInferButton" type="button" title="单 Case 推理" disabled>
+            <span class="sidebar-icon" aria-hidden="true">▶</span>
+            <span class="sidebar-label"><strong>单 Case 推理</strong><small>临时模型调用</small></span>
+          </button>
+          <button class="sidebar-item" id="importButton" type="button" title="数据导入">
+            <span class="sidebar-icon" aria-hidden="true">＋</span>
+            <span class="sidebar-label"><strong>数据导入</strong><small>Issue / GT 文件</small></span>
+          </button>
+        </nav>
+
+        <div class="sidebar-bottom">
+          <div class="sidebar-user" id="sidebarUser" title="当前会话">
+            <span class="user-avatar" id="userAvatar" aria-hidden="true">?</span>
+            <span class="sidebar-label">
+              <strong id="sessionUserName">SSO 未接入</strong>
+              <small id="sessionUserSource">直接 IP 会话</small>
+            </span>
           </div>
-          <div class="trail-field-state" id="trailFieldState">Trail 模型字段待同步</div>
-        </section>
+          <button class="sidebar-collapse" id="sidebarToggle" type="button" aria-expanded="true" title="折叠工具栏">
+            <span aria-hidden="true">‹</span>
+            <span class="sidebar-label">折叠工具栏</span>
+          </button>
+        </div>
+      </aside>
 
-        <section class="stats" aria-label="概览">
-          <article class="stat-card">
-            <span>Baseline</span>
-            <strong id="statIssues">—</strong>
-            <small>固定 0508 真值范围</small>
-          </article>
-          <article class="stat-card stat-card-fail">
-            <span>模型判断失败</span>
-            <strong id="statFailures">—</strong>
-            <small id="statCoverage">等待默认 run</small>
-          </article>
-          <article class="stat-card">
-            <span>已人工复核</span>
-            <strong id="statReviewed">—</strong>
-            <small id="statUnlabelled">—</small>
-          </article>
-          <article class="stat-card">
-            <span>模型输出</span>
-            <strong id="statPredictions">—</strong>
-            <small id="statRuns">—</small>
-          </article>
-        </section>
+      <div class="app-frame">
+        <header class="topbar">
+          <div class="brand">
+            <div>
+              <div class="eyebrow">EVALUATION BASELINE · 0508</div>
+              <h1>RA Triage Workbench</h1>
+            </div>
+          </div>
+          <div class="header-metrics" aria-label="概览">
+            <div><span>Baseline</span><strong id="statIssues">—</strong></div>
+            <div class="metric-fail"><span>判断失败</span><strong id="statFailures">—</strong></div>
+            <div><span>人工复核</span><strong id="statReviewed">—</strong></div>
+            <div><span>模型输出</span><strong id="statPredictions">—</strong></div>
+          </div>
+          <div class="top-actions">
+            <button class="button button-quiet" id="refreshButton">刷新</button>
+          </div>
+        </header>
+
+        <main class="main">
+          <section class="run-toolbar" aria-label="当前模型 run">
+            <div class="run-toolbar-current">
+              <span class="run-state-dot"></span>
+              <div>
+                <span class="eyebrow">ACTIVE MODEL RUN</span>
+                <strong id="activeRunName">尚未选择模型 run</strong>
+              </div>
+            </div>
+            <div class="run-toolbar-meta" id="activeRunMeta">同步 Trail 字段或导入 JSON / CSV / XLSX</div>
+            <button class="button button-quiet" id="manageRunsButton" type="button">管理 Runs</button>
+          </section>
 
         <section class="workspace">
           <aside class="issue-pane">
@@ -126,7 +148,7 @@
             <div class="empty-state">
               <div class="empty-glyph" aria-hidden="true">+</div>
               <h2>选择一个失败 case 开始 review</h2>
-              <p>默认队列只显示模型判断与 0508 GT 不一致的样本。点击缩略图可打开 Ares BEV / Camera 预览。</p>
+              <p>默认队列只显示模型判断与 0508 GT 不一致的样本。点击 BEV 大图可打开完整时序并切换 Camera。</p>
             </div>
           </section>
 
@@ -138,8 +160,31 @@
             </div>
           </aside>
         </section>
-      </main>
+        </main>
+      </div>
     </div>
+
+    <dialog class="dialog dialog-wide" id="runManagerDialog">
+      <div class="dialog-card">
+        <div class="dialog-heading">
+          <div>
+            <span class="eyebrow">MODEL RUN REGISTRY</span>
+            <h2>模型结果 Runs</h2>
+          </div>
+          <button class="icon-button" type="button" data-close="runManagerDialog" aria-label="关闭">×</button>
+        </div>
+        <p class="dialog-copy">
+          每次 JSON / CSV / XLSX 解析结果保存为不可变 run。可切换当前 Review run 或指定默认 run；设为默认不会改写模型输出。
+        </p>
+        <div class="run-manager-actions">
+          <button class="button button-primary" id="runManagerImportButton" type="button">导入模型结果</button>
+          <button class="button button-quiet" id="syncTrailButton" type="button">同步 Trail 字段</button>
+          <button class="button button-quiet" id="refreshRunsButton" type="button">刷新列表</button>
+        </div>
+        <div class="run-manager-summary" id="runManagerSummary">正在加载 model runs…</div>
+        <div class="run-manager-list" id="modelRunList"></div>
+      </div>
+    </dialog>
 
     <dialog class="dialog" id="importDialog">
       <form class="dialog-card" id="importForm" method="dialog">

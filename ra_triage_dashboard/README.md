@@ -5,10 +5,11 @@
 ## 当前 MVP
 
 - 默认工作集是 `trail_label_baseline_20260729.xlsx` 中 `dataset=0508` 的 **1071 条**；GT 只来自该快照，不因 Trail 查询或模型导入而改变。
-- Ares Capture BEV 9 帧、可选视频和同 issue 的 `bags/camera/*/after_compress` Camera 九帧都只读展示。缩略图可打开统一预览，`←/↑` 上一帧、`→/↓` 下一帧，`B/C` 切换 BEV / Camera。
+- 首页为单张大 BEV review canvas，点击后打开 Ares Capture BEV / Camera 统一时序预览；`←/↑` 上一帧、`→/↓` 下一帧，`B/C` 切换 BEV / Camera。以后可直接把主 canvas 的资产替换成 Camera 合成图或视频。
+- 左侧全局工具栏采用 240px / 64px 折叠布局并记住用户选择；模型 Runs、单 case 推理和数据导入不再挤占页面头部。
 - 服务启动时会从配置的 Trail view 只读拉取张扬的 `ra_stuck_auto_result` 和 `ra_stuck_auto_result_info`，生成默认比较 run；同内容回刷复用已有快照，字段结果变化才新增历史 run。
-- 可导入 issue / GT 与模型输出（JSON、CSV、XLSX）；模型文件按 SHA-256 创建不可变 model run。
-- 人工标注为追加式历史，最新一条为当前标注，不覆盖旧 review；「模型缺失信息」采用结构化多选，自动汇总为 routing、绕行空间、灯态、双闪、时序等错误聚类。
+- 可导入 issue / GT 与模型输出（JSON、CSV、XLSX）；模型文件按 SHA-256 创建不可变 model run。独立 Runs 管理窗口可切换 Review run、设为默认、同步 Trail 并查看覆盖率。
+- 人工标注为追加式历史，最新一条为当前标注，不覆盖旧 review；「模型为什么判错」是主输入，「模型缺失信息」收进紧凑的结构化多选下拉，并自动汇总为 routing、绕行空间、灯态、双闪、时序等错误聚类。
 - 页面可提交单 case 推理：模型名、base URL、API key 临时输入，调用 `ra_auto_triage` 的受控 worker。
 - 推理 worker 固定 `RA_TOOLS_ENABLED=false` 和 `BAG_CACHE_READ_ONLY=true`，不会创建 model-triage batch 或写 Trail。
 
@@ -24,6 +25,19 @@
 - 模型 / Trail 读取逻辑：`/volume/home/workspace/ra_auto_triage`（只读调用）
 
 API key 仅存在于 HTTP 请求和 worker stdin 的内存中；不会写入 SQLite、任务配置、命令行参数、环境变量或 worker 日志。页面提交后立即清空输入框。
+
+## 用户身份与后续 SSO
+
+当前直接 IP 部署没有可信的 SSO ingress，后端默认不信任任何客户端身份 header。页面会尝试从访问者本机 LCA `/lcainfo` 响应中**只提取** `LocalUserAccount`，用作页面显示和默认标注人；不会上传、返回或保存 LCA 响应中的 token。该用户名在 UI 中明确标记为「未验证」，不能用于权限判断。
+
+套内网域名并接入 SSO 代理后，应由 ingress 先清除客户端同名 header，再注入唯一身份 header，并确保服务只能从该代理访问。完成这些网络约束后才启用：
+
+```bash
+export DASHBOARD_TRUST_PROXY_IDENTITY_HEADERS=true
+export DASHBOARD_IDENTITY_HEADER=X-SSO-User
+```
+
+可信代理身份会覆盖前端提交的 `author` / `requested_by`。在完成上述约束前保持默认 `false`。
 
 ## 结果导入契约
 

@@ -13,6 +13,8 @@ const state = {
   pollingJobId: "",
   pollTimer: null,
   media: { kind: "bev", index: 0 },
+  session: { username: "", source: "anonymous", authenticated: false, verified: false },
+  sidebarCollapsed: false,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -85,16 +87,88 @@ function showToast(message, isError = false) {
   showToast.timer = setTimeout(() => toast.classList.add("hidden"), 4600);
 }
 
+function applySidebarState() {
+  $("#appShell").classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
+  $("#sidebarToggle").setAttribute("aria-expanded", String(!state.sidebarCollapsed));
+  $("#sidebarToggle").title = state.sidebarCollapsed ? "展开工具栏" : "折叠工具栏";
+}
+
+function toggleSidebar() {
+  state.sidebarCollapsed = !state.sidebarCollapsed;
+  localStorage.setItem("ra-triage-sidebar-collapsed", String(state.sidebarCollapsed));
+  applySidebarState();
+}
+
+function validDisplayName(value) {
+  const username = String(value || "").trim();
+  return /^[A-Za-z0-9._@-]{1,128}$/.test(username) ? username : "";
+}
+
+async function browserLcaUsername() {
+  const endpoints =
+    window.location.protocol === "https:"
+      ? ["https://127.0.0.1:19888/lcainfo"]
+      : ["http://127.0.0.1:18888/lcainfo"];
+  for (const endpoint of endpoints) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1500);
+    try {
+      const response = await fetch(endpoint, {
+        credentials: "omit",
+        mode: "cors",
+        signal: controller.signal,
+      });
+      if (!response.ok) continue;
+      const payload = await response.json();
+      const username = validDisplayName(payload?.LocalUserAccount);
+      if (username) return username;
+    } catch {
+      // LCA is an optional display-name fallback on direct-IP deployments.
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return "";
+}
+
+function renderSession() {
+  const username = state.session.username;
+  $("#sessionUserName").textContent = username || "SSO 未接入";
+  $("#userAvatar").textContent = username ? username.slice(0, 1).toUpperCase() : "?";
+  $("#sessionUserSource").textContent = state.session.verified
+    ? "企业 SSO · 已验证"
+    : username
+      ? "本机 LCA · 未验证"
+      : "直接 IP 会话";
+  $("#sidebarUser").title = state.session.verified
+    ? `可信代理认证：${username}`
+    : username
+      ? `本机 LCA 用户：${username}（仅作显示与默认标注人）`
+      : "当前没有可用的用户名";
+  const requestedBy = $("#requestedByInput");
+  if (requestedBy && username && !requestedBy.value) requestedBy.value = username;
+  if (requestedBy) requestedBy.readOnly = Boolean(state.session.verified);
+}
+
+async function loadSession() {
+  const serverSession = await api("/api/session");
+  if (serverSession.authenticated && validDisplayName(serverSession.username)) {
+    state.session = serverSession;
+  } else {
+    const username = serverSession.browser_lca_fallback ? await browserLcaUsername() : "";
+    state.session = {
+      username,
+      source: username ? "browser_lca_unverified" : "anonymous",
+      authenticated: false,
+      verified: false,
+    };
+  }
+  renderSession();
+}
+
 function renderConfig() {
   const baseline = state.config?.baseline || {};
-  const trail = state.config?.trail_sync || {};
-  const count = baseline.count ?? 0;
-  $("#datasetState").innerHTML = `<span class="status-dot"></span><span>0508 baseline · ${count || "—"} cases · 只读</span>`;
-  $("#baselineBanner strong").textContent = `0508 · ${count || "—"} cases`;
-  $("#baselineMessage").textContent = baseline.message || "固定真值快照";
-  const tone = trail.status === "ready" ? "ok" : trail.status === "running" ? "pending" : "warn";
-  $("#trailFieldState").className = `trail-field-state ${tone}`;
-  $("#trailFieldState").textContent = trail.message || "Trail 模型字段待同步";
+  $(".header-metrics")?.setAttribute("title", baseline.message || "0508 baseline GT 只读");
 }
 
 async function loadConfig() {
@@ -105,13 +179,9 @@ async function loadConfig() {
 function renderOverview(data) {
   $("#statIssues").textContent = data.issues ?? "—";
   $("#statFailures").textContent = data.model_failures ?? "—";
-  $("#statCoverage").textContent = state.selectedRunId
-    ? `${data.predictions ?? 0} / ${data.issues ?? 0} 条模型输出`
-    : "请同步 Trail 字段或导入模型结果";
   $("#statReviewed").textContent = data.reviewed_failures ?? data.labelled ?? "—";
-  $("#statUnlabelled").textContent = `${data.labelled ?? 0} 已写入 review · ${data.unlabelled ?? 0} 未复核`;
   $("#statPredictions").textContent = data.predictions ?? "—";
-  $("#statRuns").textContent = `${state.modelRuns.length} 个可比较 run`;
+  renderActiveRun(data);
 }
 
 async function loadOverview() {
@@ -135,8 +205,13 @@ async function loadRuns({ preferDefault = false } = {}) {
   const data = await api("/api/model-runs");
   state.modelRuns = data.items || [];
   const select = $("#modelRunFilter");
+  const previousRunId = state.selectedRunId;
+  const preferredRunId =
+    data.default_model_run_id ||
+    state.config?.default_model_run_id ||
+    (preferDefault ? state.modelRuns[0]?.id || "" : "");
   const candidate = preferDefault
-    ? data.default_model_run_id || state.config?.default_model_run_id || ""
+    ? preferredRunId
     : state.selectedRunId || data.default_model_run_id || state.config?.default_model_run_id || "";
   select.innerHTML = `<option value="">未选择模型 run</option>${state.modelRuns
     .map((run) => {
@@ -148,8 +223,96 @@ async function loadRuns({ preferDefault = false } = {}) {
   select.value = state.selectedRunId;
   const failure = $("#failureOnlyInput");
   failure.disabled = !state.selectedRunId;
+  if (preferDefault && !previousRunId && state.selectedRunId) state.failureOnly = true;
   if (!state.selectedRunId) state.failureOnly = false;
   failure.checked = state.failureOnly;
+  renderActiveRun();
+  renderRunManager();
+}
+
+function activeRun() {
+  return state.modelRuns.find((run) => run.id === state.selectedRunId);
+}
+
+function renderActiveRun(overview = null) {
+  const run = activeRun();
+  $("#activeRunName").textContent = run?.name || "尚未选择模型 run";
+  if (!run) {
+    $("#activeRunMeta").textContent = state.config?.trail_sync?.message || "同步 Trail 字段或导入 JSON / CSV / XLSX";
+    return;
+  }
+  const coverage = overview?.predictions ?? run.baseline_prediction_count ?? 0;
+  const failures = overview?.model_failures ?? run.failure_count ?? 0;
+  const reviewed = overview?.reviewed_failures;
+  $("#activeRunMeta").textContent =
+    `${coverage} / ${state.config?.baseline?.count || "—"} 覆盖 · ${failures} 条判断失败` +
+    `${reviewed === undefined ? "" : ` · ${reviewed} 条已复核`}` +
+    ` · ${run.kind === "trail_snapshot" ? "Trail 快照" : "文件导入"}`;
+}
+
+function renderRunManager() {
+  const list = $("#modelRunList");
+  if (!list) return;
+  const totalCoverage = state.modelRuns.reduce((sum, run) => sum + Number(run.baseline_prediction_count || 0), 0);
+  $("#runManagerSummary").textContent = `${state.modelRuns.length} 个不可变 run · 累计 ${totalCoverage} 条 baseline 预测记录`;
+  if (!state.modelRuns.length) {
+    list.innerHTML = '<div class="no-asset">暂无模型 run。可上传 JSON / CSV / XLSX，或同步 Trail 字段。</div>';
+    return;
+  }
+  list.innerHTML = state.modelRuns
+    .map(
+      (run) => `<article class="run-row ${run.id === state.selectedRunId ? "active" : ""}">
+        <div class="run-row-main">
+          <div class="run-row-title">
+            <strong>${escapeHtml(run.name)}</strong>
+            ${run.is_default ? '<span class="run-default-badge">默认</span>' : ""}
+          </div>
+          <div class="run-row-meta">
+            <span>${run.baseline_prediction_count ?? 0} / ${state.config?.baseline?.count || "—"} 覆盖</span>
+            <span>${run.failure_count ?? 0} 条失败</span>
+            <span>${run.kind === "trail_snapshot" ? "Trail 快照" : "文件导入"}</span>
+            <span>${formatTime(run.created_at)}</span>
+          </div>
+          <div class="run-row-source" title="${escapeHtml(run.source_name || "")}">${escapeHtml(run.source_name || "无来源文件")}</div>
+        </div>
+        <div class="run-row-actions">
+          <button class="button ${run.id === state.selectedRunId ? "button-primary" : "button-quiet"}" type="button" data-use-run="${escapeHtml(run.id)}">${run.id === state.selectedRunId ? "使用中" : "用于 Review"}</button>
+          ${run.is_default ? "" : `<button class="button button-quiet" type="button" data-default-run="${escapeHtml(run.id)}">设为默认</button>`}
+        </div>
+      </article>`
+    )
+    .join("");
+  list.querySelectorAll("[data-use-run]").forEach((button) => {
+    button.addEventListener("click", () => useModelRun(button.dataset.useRun));
+  });
+  list.querySelectorAll("[data-default-run]").forEach((button) => {
+    button.addEventListener("click", () => setDefaultRun(button.dataset.defaultRun));
+  });
+}
+
+async function useModelRun(runId) {
+  if (!state.modelRuns.some((run) => run.id === runId)) return;
+  state.selectedRunId = runId;
+  state.failureOnly = true;
+  state.selectedId = "";
+  $("#modelRunFilter").value = runId;
+  $("#failureOnlyInput").disabled = false;
+  $("#failureOnlyInput").checked = true;
+  renderActiveRun();
+  renderRunManager();
+  await Promise.all([loadCases({ keepSelection: false }), loadClusters(), loadOverview()]);
+  closeDialog("runManagerDialog");
+}
+
+async function setDefaultRun(runId) {
+  try {
+    await api(`/api/model-runs/${encodeURIComponent(runId)}/default`, { method: "POST", body: "{}" });
+    await loadRuns();
+    await loadOverview();
+    showToast("已更新默认模型 run；历史输出未被改写。");
+  } catch (error) {
+    showToast(error.message, true);
+  }
 }
 
 function issueRow(item) {
@@ -243,35 +406,39 @@ function clearDetail() {
     <div class="empty-state">
       <div class="empty-glyph" aria-hidden="true">+</div>
       <h2>选择一个 case 开始 review</h2>
-      <p>可在左侧切换模型 run、按 GT 筛选，或只看模型判断失败的 case。</p>
+      <p>可在左侧筛选失败 case；模型 run 的完整历史与导入操作放在全局工具栏中。</p>
     </div>`;
   $("#reviewPane").innerHTML = `
     <div class="review-placeholder"><span class="eyebrow">HUMAN REVIEW</span><h2>人工复核</h2><p>选择 Issue 后记录结论和模型遗漏的关键信息。</p></div>`;
 }
 
-function mediaSection(kind, media) {
-  const name = kind === "bev" ? "Ares Capture · BEV" : "Camera";
-  const frames = media?.frames || [];
-  const capture = media?.capture || {};
-  if (!media?.available || !frames.length) {
-    return `<section class="section media-section"><div class="section-heading"><div><span class="eyebrow">${kind === "bev" ? "AUXILIARY" : "PRIMARY VISUAL"}</span><h3>${name}</h3></div></div><div class="no-asset">${kind === "bev" ? "没有找到 Ares Capture BEV 帧。" : "没有找到 Camera 缓存。"}</div></section>`;
+function heroFrameIndex(frames) {
+  const exact = frames.findIndex((frame) => Number(frame.offset_ms ?? frame.offset_sec * 1000) === 0);
+  if (exact >= 0) return exact;
+  return Math.floor(frames.length / 2);
+}
+
+function heroMediaSection(bev, camera) {
+  const frames = bev?.frames || [];
+  if (!bev?.available || !frames.length) {
+    return '<section class="hero-media"><div class="section-heading"><div><span class="eyebrow">ARES CAPTURE</span><h3>BEV 主视图</h3></div></div><div class="no-asset">没有找到 Ares Capture BEV 帧。</div></section>';
   }
-  const hint = kind === "bev" ? (capture.layout || "9 帧时序") : `${capture.variant || "after_compress"} · ${frames.length} 帧`;
+  const index = heroFrameIndex(frames);
+  const frame = frames[index];
+  const cameraCount = camera?.frames?.length || 0;
   return `
-    <section class="section media-section">
+    <section class="hero-media">
       <div class="section-heading">
-        <div><span class="eyebrow">${kind === "bev" ? "AUXILIARY TOPOLOGY" : "PRIMARY VISUAL EVIDENCE"}</span><h3>${name}</h3></div>
-        <small>${escapeHtml(hint)} · 点击预览</small>
+        <div><span class="eyebrow">PRIMARY REVIEW CANVAS</span><h3>Ares Capture · BEV</h3></div>
+        <small>默认 ${escapeHtml(frameLabel(frame))} · 点击进入时序预览</small>
       </div>
-      <div class="frames">
-        ${frames
-          .map(
-            (frame, index) => `<button type="button" class="frame-card" data-media-kind="${kind}" data-media-index="${index}" aria-label="打开 ${name} ${frameLabel(frame)}">
-              <img loading="lazy" src="${escapeHtml(frame.url)}" alt="${name} ${escapeHtml(frameLabel(frame))}" />
-              <span>${escapeHtml(frameLabel(frame))}</span>
-            </button>`
-          )
-          .join("")}
+      <button type="button" class="hero-media-button" data-media-kind="bev" data-media-index="${index}" aria-label="打开 BEV 与 Camera 时序预览">
+        <img src="${escapeHtml(frame.url)}" alt="Ares Capture BEV ${escapeHtml(frameLabel(frame))}" />
+        <span class="hero-media-overlay">展开预览 · ${escapeHtml(frameLabel(frame))}</span>
+      </button>
+      <div class="hero-media-meta">
+        <span><b>${frames.length}</b> 帧 BEV 时序</span>
+        <span>${cameraCount ? `<b>${cameraCount}</b> 帧 Camera 可在预览中切换` : "Camera 暂不可用"}</span>
       </div>
     </section>`;
 }
@@ -299,7 +466,6 @@ function renderDetail(caseData) {
   const title = caseData.title || caseData.scenario || "未命名 issue";
   const primary = (caseData.predictions || []).find((item) => item.model_run_id === state.selectedRunId) || caseData.predictions?.[0];
   const trailUrl = safeUrl(caseData.trail_url);
-  const video = caseData.assets?.video;
   $("#detailPane").innerHTML = `
     <div class="detail-header">
       <div class="detail-title-row">
@@ -314,8 +480,7 @@ function renderDetail(caseData) {
       </div>
       ${caseData.review_note ? `<div class="review-note"><span>历史备注</span>${escapeHtml(caseData.review_note)}</div>` : ""}
     </div>
-    <div class="visual-grid">${mediaSection("bev", caseData.assets)}${mediaSection("camera", caseData.camera)}</div>
-    ${video ? `<section class="section"><div class="section-heading"><div><span class="eyebrow">OPTIONAL PLAYBACK</span><h3>Ares Capture 视频</h3></div></div><div class="video-card"><video controls preload="metadata" src="${escapeHtml(video.url)}"></video></div></section>` : ""}
+    ${heroMediaSection(caseData.assets, caseData.camera)}
     <section class="section"><div class="section-heading"><div><span class="eyebrow">MODEL COMPARISON</span><h3>模型输出历史</h3></div><small>默认 run 会高亮</small></div>${predictionCards(caseData)}</section>`;
   $("#openInferButton").disabled = false;
   $("#detailPane").querySelectorAll("[data-media-kind]").forEach((button) => {
@@ -342,16 +507,25 @@ function renderReview(caseData) {
   state.selectedAnnotationLabel = previous.label || "";
   const chosenEvidence = new Set(previous.missing_evidence || []);
   const catalog = state.config?.missing_evidence_catalog || [];
+  const author = state.session.username || previous.author || "";
+  const authorLocked = Boolean(state.session.verified && state.session.username);
   $("#reviewPane").innerHTML = `
     <div class="review-title"><div><span class="eyebrow">HUMAN REVIEW</span><h2>标注与错误归因</h2></div><span class="review-issue">${escapeHtml(caseData.issue_id)}</span></div>
     <form class="review-form" id="annotationForm">
       <div class="review-context"><span>GT ${escapeHtml(caseData.gt_label || "—")}</span><span>模型 ${escapeHtml((caseData.predictions || []).find((item) => item.model_run_id === state.selectedRunId)?.model_label || "—")}</span></div>
       <div><label><span>人工最终判断</span></label><div class="label-buttons">${LABELS.map((label) => `<button class="label-choice ${state.selectedAnnotationLabel === label ? "active" : ""}" data-annotation-label="${label}" type="button">${label}</button>`).join("")}</div></div>
       <label><span>复核状态</span><select id="reviewStatusInput"><option value="pending">待补充</option><option value="reviewed" ${previous.review_status === "reviewed" ? "selected" : ""}>已复核</option><option value="needs_gt_review" ${previous.review_status === "needs_gt_review" ? "selected" : ""}>GT 需复核</option></select></label>
-      <fieldset class="evidence-fieldset"><legend>模型缺失了什么信息？</legend><p>多选。该结构化字段会进入左侧错误聚类。</p><div class="evidence-options">${catalog.map((item) => `<label class="evidence-option" title="${escapeHtml(item.hint || "")}"><input type="checkbox" name="missingEvidence" value="${escapeHtml(item.key)}" ${chosenEvidence.has(item.key) ? "checked" : ""} /><span><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.hint || "")}</small></span></label>`).join("")}</div></fieldset>
+      <label class="review-reason">
+        <span>模型为什么判错？</span>
+        <small>请写清交通灯、routing、绕行空间、时序或 RA / SWAG 操作链等关键依据。</small>
+        <textarea id="annotationNote" placeholder="例如：自车 routing 为右转，前车直行等灯；右侧存在可安全通行空间，模型只看到排队而遗漏 routing 与绕行条件。">${escapeHtml(previous.note || "")}</textarea>
+      </label>
+      <details class="evidence-dropdown">
+        <summary>缺失信息（多选）<span class="evidence-summary-count" id="evidenceSummaryCount">已选 ${chosenEvidence.size} 项</span></summary>
+        <div class="evidence-options">${catalog.map((item) => `<label class="evidence-option" title="${escapeHtml(item.hint || "")}"><input type="checkbox" name="missingEvidence" value="${escapeHtml(item.key)}" ${chosenEvidence.has(item.key) ? "checked" : ""} /><span><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.hint || "")}</small></span></label>`).join("")}</div>
+      </details>
       <label><span>补充 tags（可选，逗号分隔）</span><input id="annotationTags" value="${escapeHtml((previous.tags || []).join(", "))}" placeholder="例如：右转, 双闪, 遮挡" autocomplete="off" /></label>
-      <label><span>Review 依据</span><textarea id="annotationNote" placeholder="说明交通灯、routing、绕行空间、时序与最终判断依据。">${escapeHtml(previous.note || "")}</textarea></label>
-      <label><span>标注人（可选）</span><input id="annotationAuthor" value="${escapeHtml(previous.author || "")}" placeholder="姓名或工号" autocomplete="off" /></label>
+      <label><span>标注人${authorLocked ? "（SSO）" : "（可编辑）"}</span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" ${authorLocked ? "readonly" : ""} /></label>
       <button class="button button-primary full-width" type="submit">保存新的 review 版本</button>
     </form>
     <section class="annotation-history"><div class="subheading"><span>Review 历史</span><small>追加式，不覆盖旧记录</small></div>${annotationHistory(caseData.annotations)}</section>`;
@@ -361,7 +535,16 @@ function renderReview(caseData) {
       $("#reviewPane").querySelectorAll("[data-annotation-label]").forEach((item) => item.classList.toggle("active", item === button));
     });
   });
+  $("#reviewPane").querySelectorAll('input[name="missingEvidence"]').forEach((input) => {
+    input.addEventListener("change", updateEvidenceSummary);
+  });
   $("#annotationForm").addEventListener("submit", saveAnnotation);
+}
+
+function updateEvidenceSummary() {
+  const count = document.querySelectorAll('input[name="missingEvidence"]:checked').length;
+  const target = $("#evidenceSummaryCount");
+  if (target) target.textContent = `已选 ${count} 项`;
 }
 
 async function selectCase(issueId) {
@@ -544,6 +727,15 @@ function updateImportFields() {
   $("#issueImportOptions").classList.toggle("hidden", isModel);
 }
 
+function openImportDialog(kind) {
+  const input = $(`#importKind input[name="kind"][value="${kind}"]`);
+  if (input) input.checked = true;
+  updateImportFields();
+  $("#importResult").classList.add("hidden");
+  $("#importResult").textContent = "";
+  openDialog("importDialog");
+}
+
 async function submitImport(event) {
   event.preventDefault();
   const file = $("#importFile").files[0];
@@ -612,6 +804,8 @@ function bindEvents() {
     if (state.selectedRunId && !previousRunId) state.failureOnly = true;
     $("#failureOnlyInput").disabled = !state.selectedRunId;
     $("#failureOnlyInput").checked = state.failureOnly;
+    renderActiveRun();
+    renderRunManager();
     await Promise.all([loadCases({ keepSelection: false }), loadClusters(), loadOverview()]);
   });
   $("#failureOnlyInput").addEventListener("change", async () => {
@@ -632,8 +826,31 @@ function bindEvents() {
     }
   });
   $("#syncTrailButton").addEventListener("click", syncTrail);
-  $("#importButton").addEventListener("click", () => openDialog("importDialog"));
+  $("#importButton").addEventListener("click", () => openImportDialog("issues"));
+  $("#runManagerImportButton").addEventListener("click", () => {
+    closeDialog("runManagerDialog");
+    openImportDialog("model");
+  });
+  $("#openRunManagerButton").addEventListener("click", () => {
+    renderRunManager();
+    openDialog("runManagerDialog");
+  });
+  $("#manageRunsButton").addEventListener("click", () => {
+    renderRunManager();
+    openDialog("runManagerDialog");
+  });
+  $("#refreshRunsButton").addEventListener("click", async () => {
+    try {
+      await loadRuns();
+      await loadOverview();
+      showToast("模型 run 列表已刷新。");
+    } catch (error) {
+      showToast(error.message, true);
+    }
+  });
   $("#openInferButton").addEventListener("click", openInferDialog);
+  $("#reviewNavButton").addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+  $("#sidebarToggle").addEventListener("click", toggleSidebar);
   document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => closeDialog(button.dataset.close)));
   $("#importKind").querySelectorAll("input").forEach((input) => input.addEventListener("change", updateImportFields));
   $("#importFile").addEventListener("change", () => { $("#importFileName").textContent = $("#importFile").files[0]?.name || "未选择文件"; });
@@ -652,10 +869,12 @@ function bindEvents() {
 }
 
 async function bootstrap() {
+  state.sidebarCollapsed = localStorage.getItem("ra-triage-sidebar-collapsed") === "true";
+  applySidebarState();
   bindEvents();
   updateImportFields();
   try {
-    await loadConfig();
+    await Promise.all([loadConfig(), loadSession()]);
     state.selectedRunId = state.config.default_model_run_id || "";
     state.failureOnly = Boolean(state.config.default_failure_only && state.selectedRunId);
     await loadRuns({ preferDefault: true });

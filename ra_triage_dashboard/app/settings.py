@@ -42,6 +42,8 @@ class Settings:
     trail_sync_chunk_size: int
     allowed_model_hosts: tuple[str, ...]
     job_timeout_seconds: int
+    trust_proxy_identity_headers: bool
+    identity_header: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -90,6 +92,13 @@ class Settings:
             trail_sync_chunk_size=_integer("DASHBOARD_TRAIL_SYNC_CHUNK_SIZE", 160, 1),
             allowed_model_hosts=extra_hosts,
             job_timeout_seconds=_integer("DASHBOARD_JOB_TIMEOUT_SECONDS", 720, 32),
+            trust_proxy_identity_headers=_bool(
+                "DASHBOARD_TRUST_PROXY_IDENTITY_HEADERS", False
+            ),
+            identity_header=os.getenv(
+                "DASHBOARD_IDENTITY_HEADER", "X-SSO-User"
+            ).strip()
+            or "X-SSO-User",
         )
 
     @property

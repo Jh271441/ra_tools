@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .assets import AssetIndex, CameraIndex
+from .auth import request_identity
 from .baseline import load_label_baseline
 from .db import LABELS, REVIEW_STATUSES, Database
 from .runner import InferenceRunner
@@ -523,7 +524,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="RA Triage Workbench",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
@@ -563,6 +564,21 @@ async def dashboard_config() -> dict[str, Any]:
         "trail_sync": runtime_state["trail_sync"],
         "missing_evidence_catalog": MISSING_EVIDENCE_CATALOG,
         "default_failure_only": bool(database.default_model_run_id()),
+    }
+
+
+@app.get("/api/session")
+async def session(request: Request) -> dict[str, object]:
+    identity = request_identity(request, settings)
+    return identity.as_dict(
+        trust_proxy_headers=settings.trust_proxy_identity_headers
+    ) | {
+        "browser_lca_fallback": not identity.authenticated,
+        "identity_header": (
+            settings.identity_header
+            if settings.trust_proxy_identity_headers
+            else ""
+        ),
     }
 
 
@@ -651,6 +667,7 @@ async def create_annotation(issue_id: str, request: Request) -> dict[str, Any]:
         raise _detail(400, "tags 必须是数组。")
     if not isinstance(missing_evidence, list):
         raise _detail(400, "missing_evidence 必须是数组。")
+    identity = request_identity(request, settings)
     try:
         annotation = database.create_annotation(
             issue_id=issue_id,
@@ -659,7 +676,11 @@ async def create_annotation(issue_id: str, request: Request) -> dict[str, Any]:
             tags=tags,
             missing_evidence=missing_evidence,
             note=_as_text(body.get("note")),
-            author=_as_text(body.get("author")),
+            author=(
+                identity.username
+                if identity.authenticated
+                else _as_text(body.get("author"))
+            ),
         )
     except ValueError as exc:
         raise _detail(400, str(exc))
@@ -672,6 +693,14 @@ async def model_runs() -> dict[str, Any]:
         "items": database.list_model_runs(settings.baseline_scope),
         "default_model_run_id": database.default_model_run_id(),
     }
+
+
+@app.post("/api/model-runs/{run_id}/default")
+async def set_default_model_run(run_id: str) -> dict[str, Any]:
+    run = database.set_default_model_run(run_id)
+    if run is None:
+        raise _detail(404, "模型 run 不存在。")
+    return {"run": run, "default_model_run_id": run_id}
 
 
 @app.get("/api/review-clusters")
@@ -845,9 +874,14 @@ async def create_inference_job(request: Request) -> dict[str, Any]:
         "use_ra_options": bool(body.get("use_ra_options", True)),
         "dry_run": dry_run,
     }
+    identity = request_identity(request, settings)
     job = database.create_job(
         issue_id=issue_id,
-        requested_by=_as_text(body.get("requested_by")),
+        requested_by=(
+            identity.username
+            if identity.authenticated
+            else _as_text(body.get("requested_by"))
+        ),
         model_name=model_name or "preflight",
         base_url=base_url,
         config={key: value for key, value in safe_request.items() if key != "base_url"},
