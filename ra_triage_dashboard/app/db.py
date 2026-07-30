@@ -12,6 +12,7 @@ from .sanitization import redact_sensitive_fields
 
 
 LABELS = ("误触发", "正确触发", "无需协助")
+COMPARISON_STATUSES = ("all", "mismatch", "match", "none")
 REVIEW_STATUSES = ("pending", "reviewed", "needs_gt_review")
 BATCH_JOB_STATUSES = ("queued", "running", "succeeded", "partial", "failed")
 BATCH_PUBLISH_STATUSES = (
@@ -851,6 +852,7 @@ class Database:
         annotation_label: str = "",
         annotation_author: str = "",
         model_run_id: str = "",
+        comparison_status: str = "all",
         failure_only: bool = False,
         missing_evidence: str = "",
         page: int = 1,
@@ -858,6 +860,13 @@ class Database:
     ) -> dict[str, Any]:
         page = max(1, page)
         page_size = min(max(1, page_size), 2000)
+        comparison_status = str(comparison_status or "all").strip().lower()
+        if failure_only:
+            comparison_status = "mismatch"
+        if comparison_status not in COMPARISON_STATUSES:
+            raise ValueError("unsupported comparison_status")
+        if comparison_status != "all" and not model_run_id:
+            raise ValueError("comparison_status requires model_run_id")
         where: list[str] = []
         params: list[Any] = []
         if baseline_scope:
@@ -881,11 +890,17 @@ class Database:
             # avoids treating a prefix as a different evidence item.
             where.append("ann.missing_evidence_json LIKE ?")
             params.append(f'%"{missing_evidence.strip()}"%')
-        if failure_only:
+        if comparison_status != "all":
             where.append("i.gt_label IN (?, ?, ?)")
-            where.append("mp.model_label IN (?, ?, ?)")
-            where.append("mp.model_label != i.gt_label")
-            params.extend((*LABELS, *LABELS))
+            params.extend(LABELS)
+            if comparison_status == "none":
+                where.append("(mp.model_label IS NULL OR mp.model_label NOT IN (?, ?, ?))")
+                params.extend(LABELS)
+            else:
+                where.append("mp.model_label IN (?, ?, ?)")
+                params.extend(LABELS)
+                operator = "=" if comparison_status == "match" else "!="
+                where.append(f"mp.model_label {operator} i.gt_label")
         condition = f"WHERE {' AND '.join(where)}" if where else ""
         common = f"""
             FROM issues i
@@ -1092,6 +1107,146 @@ class Database:
                 "SELECT COALESCE(SUM(size_bytes), 0) AS total FROM review_attachments"
             ).fetchone()
         return int(row["total"] or 0)
+
+    def review_reason_rows(
+        self,
+        *,
+        baseline_scope: str,
+        model_run_id: str = "",
+        comparison_status: str = "all",
+        failure_only: bool = False,
+        annotation_author: str = "",
+        review_status: str = "",
+        gt_label: str = "",
+        annotation_label: str = "",
+        missing_evidence: str = "",
+        search: str = "",
+    ) -> list[dict[str, Any]]:
+        """Return one latest-review row per baseline issue for analysis.
+
+        Human Review is dataset-level rather than run-bound. ``model_run_id``
+        only adds the selected immutable prediction snapshot. ``comparison_status``
+        can narrow the slice to MATCH, MISMATCH, or NONE (no canonical
+        prediction). ``failure_only`` remains a compatibility alias for
+        MISMATCH.
+        """
+
+        comparison_status = str(comparison_status or "all").strip().lower()
+        if failure_only:
+            comparison_status = "mismatch"
+        if comparison_status not in {"all", "mismatch", "match", "none"}:
+            raise ValueError("unsupported comparison_status")
+        if comparison_status != "all" and not model_run_id:
+            raise ValueError("comparison_status requires model_run_id")
+
+        where = ["i.baseline_scope = ?", "ann.id IS NOT NULL"]
+        params: list[Any] = [model_run_id, baseline_scope]
+        if comparison_status != "all":
+            where.append("i.gt_label IN (?, ?, ?)")
+            params.extend(LABELS)
+            if comparison_status == "none":
+                where.append(
+                    "(mp.model_label IS NULL OR mp.model_label NOT IN (?, ?, ?))"
+                )
+                params.extend(LABELS)
+            else:
+                where.append("mp.model_label IN (?, ?, ?)")
+                params.extend(LABELS)
+                operator = "=" if comparison_status == "match" else "!="
+                where.append(f"mp.model_label {operator} i.gt_label")
+        if annotation_author.strip():
+            where.append("ann.author = ?")
+            params.append(annotation_author.strip())
+        if review_status in REVIEW_STATUSES:
+            where.append("ann.review_status = ?")
+            params.append(review_status)
+        if gt_label in LABELS:
+            where.append("i.gt_label = ?")
+            params.append(gt_label)
+        if annotation_label in LABELS:
+            where.append("ann.label = ?")
+            params.append(annotation_label)
+        if missing_evidence.strip():
+            where.append("ann.missing_evidence_json LIKE ?")
+            params.append(f'%"{missing_evidence.strip()}"%')
+        if search.strip():
+            term = f"%{search.strip()}%"
+            where.append(
+                "("
+                "i.issue_id LIKE ? OR i.title LIKE ? OR i.scenario LIKE ? "
+                "OR i.summary LIKE ? OR ann.note LIKE ? OR mp.model_reason LIKE ?"
+                ")"
+            )
+            params.extend([term, term, term, term, term, term])
+
+        query = f"""
+            SELECT i.issue_id, i.title, i.scenario, i.summary, i.gt_label,
+                   ann.id AS annotation_id,
+                   ann.label AS annotation_label,
+                   ann.review_status AS annotation_review_status,
+                   ann.tags_json AS annotation_tags_json,
+                   ann.missing_evidence_json AS annotation_missing_evidence_json,
+                   ann.note AS annotation_note,
+                   ann.author AS annotation_author,
+                   ann.author_source AS annotation_author_source,
+                   ann.author_verified AS annotation_author_verified,
+                   ann.created_at AS annotation_created_at,
+                   mp.model_run_id, mp.model_label, mp.model_reason,
+                   mp.model_confidence
+            FROM issues i
+            {self._latest_annotation_join()}
+            LEFT JOIN model_predictions mp
+              ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
+            WHERE {' AND '.join(where)}
+            ORDER BY ann.created_at DESC, i.issue_id ASC
+        """
+        with self.connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            model_label = str(row["model_label"] or "")
+            current_gt = str(row["gt_label"] or "")
+            comparable = current_gt in LABELS and model_label in LABELS
+            results.append(
+                {
+                    "issue_id": str(row["issue_id"]),
+                    "title": str(row["title"] or ""),
+                    "scenario": str(row["scenario"] or ""),
+                    "summary": str(row["summary"] or ""),
+                    "gt_label": current_gt,
+                    "annotation": {
+                        "id": int(row["annotation_id"]),
+                        "label": str(row["annotation_label"] or ""),
+                        "review_status": str(
+                            row["annotation_review_status"] or "pending"
+                        ),
+                        "tags": _json_load(row["annotation_tags_json"], []),
+                        "missing_evidence": _json_load(
+                            row["annotation_missing_evidence_json"], []
+                        ),
+                        "note": str(row["annotation_note"] or ""),
+                        "author": str(row["annotation_author"] or ""),
+                        "author_source": str(
+                            row["annotation_author_source"] or "legacy"
+                        ),
+                        "author_verified": bool(
+                            row["annotation_author_verified"]
+                        ),
+                        "created_at": str(row["annotation_created_at"] or ""),
+                    },
+                    "prediction": {
+                        "model_run_id": str(row["model_run_id"] or ""),
+                        "label": model_label,
+                        "reason": str(row["model_reason"] or ""),
+                        "confidence": row["model_confidence"],
+                        "comparable": comparable,
+                        "mismatch": bool(
+                            comparable and model_label != current_gt
+                        ),
+                    },
+                }
+            )
+        return results
 
     def review_clusters(
         self,

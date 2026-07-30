@@ -42,6 +42,11 @@ from .prompt_catalog import (
     PromptCatalogError,
     normalise_input_config,
 )
+from .review_analysis import (
+    COMPARISON_STATUSES,
+    REASON_THEME_CATALOG,
+    build_review_reason_analysis,
+)
 from .sanitization import redact_sensitive_fields
 from .settings import Settings
 from .trail_sync import TRAIL_INFO_FIELD, TRAIL_RESULT_FIELD, read_trail_model_fields
@@ -1109,7 +1114,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="RA Triage Workbench",
-    version="1.6.0",
+    version="1.7.0",
     lifespan=lifespan,
 )
 
@@ -1174,6 +1179,7 @@ app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 
 @app.get("/", include_in_schema=False)
 @app.get("/review", include_in_schema=False)
+@app.get("/review-analysis", include_in_schema=False)
 @app.get("/runs", include_in_schema=False)
 @app.get("/inference", include_in_schema=False)
 @app.get("/batch-prediction", include_in_schema=False)
@@ -1221,6 +1227,14 @@ async def dashboard_config() -> dict[str, Any]:
         "trail_sync": runtime_state["trail_sync"],
         "missing_evidence_catalog": MISSING_EVIDENCE_CATALOG,
         "review_tag_catalog": REVIEW_TAG_CATALOG,
+        "review_reason_theme_catalog": tuple(
+            {
+                "key": item["key"],
+                "label": item["label"],
+                "description": item["description"],
+            }
+            for item in REASON_THEME_CATALOG
+        ),
         "review_attachment_limits": {
             "max_count": MAX_REVIEW_ATTACHMENTS,
             "max_bytes_each": MAX_REVIEW_ATTACHMENT_BYTES,
@@ -1286,12 +1300,21 @@ async def list_cases(
     annotation_label: str = "",
     annotation_author: str = "",
     model_run_id: str = "",
+    comparison: str = "",
     failure_only: bool = False,
     missing_evidence: str = "",
     page: int = 1,
     page_size: int = 100,
     include_thumbnail: bool = False,
 ) -> dict[str, Any]:
+    requested_comparison = _as_text(comparison).strip().lower()
+    if requested_comparison and requested_comparison not in COMPARISON_STATUSES:
+        raise _detail(400, "comparison 仅支持 all、mismatch、match 或 none。")
+    if failure_only and requested_comparison and requested_comparison != "mismatch":
+        raise _detail(400, "failure_only=true 与 comparison 参数冲突。")
+    comparison_status = requested_comparison or ("mismatch" if failure_only else "all")
+    if comparison_status != "all" and not model_run_id:
+        raise _detail(400, "筛选模型对比关系时必须选择 Model Run。")
     result = database.list_cases(
         baseline_scope=settings.baseline_scope,
         search=search,
@@ -1299,6 +1322,7 @@ async def list_cases(
         annotation_label=annotation_label,
         annotation_author=annotation_author,
         model_run_id=model_run_id,
+        comparison_status=comparison_status,
         failure_only=failure_only,
         missing_evidence=missing_evidence,
         page=page,
@@ -1323,6 +1347,11 @@ async def list_cases(
             )
         items.append(public)
     result["items"] = items
+    result["filters"] = {
+        "model_run_id": model_run_id,
+        "comparison_status": comparison_status,
+        "failure_only": comparison_status == "mismatch",
+    }
     return result
 
 
@@ -1513,6 +1542,131 @@ async def review_clusters(
             annotation_author=annotation_author,
         )
     }
+
+
+@app.get("/api/review-reason-analysis")
+async def review_reason_analysis(
+    model_run_id: str = "",
+    comparison: str = "",
+    failure_only: bool = False,
+    annotation_author: str = "",
+    review_status: str = "",
+    gt_label: str = "",
+    annotation_label: str = "",
+    missing_evidence: str = "",
+    theme: str = "",
+    search: str = "",
+    page: int = 1,
+    page_size: int = 50,
+) -> dict[str, Any]:
+    evidence_catalog = {
+        str(item["key"]): {
+            "label": str(item["label"]),
+            "description": str(item["hint"]),
+        }
+        for item in MISSING_EVIDENCE_CATALOG
+    }
+    theme_keys = {str(item["key"]) for item in REASON_THEME_CATALOG}
+    requested_comparison = _as_text(comparison).strip().lower()
+    if requested_comparison and requested_comparison not in COMPARISON_STATUSES:
+        raise _detail(
+            400,
+            "comparison 仅支持 all、mismatch、match 或 none。",
+        )
+    if (
+        failure_only
+        and requested_comparison
+        and requested_comparison != "mismatch"
+    ):
+        raise _detail(400, "failure_only=true 与 comparison 参数冲突。")
+    comparison_status = requested_comparison or (
+        "mismatch" if failure_only else "all"
+    )
+    if review_status and review_status not in REVIEW_STATUSES:
+        raise _detail(400, "review_status 不在支持范围内。")
+    if gt_label and gt_label not in LABELS:
+        raise _detail(400, "gt_label 不在三分类范围内。")
+    if annotation_label and annotation_label not in LABELS:
+        raise _detail(400, "annotation_label 不在三分类范围内。")
+    if missing_evidence and missing_evidence not in evidence_catalog:
+        raise _detail(400, "missing_evidence 不在稳定字段目录中。")
+    if theme and theme not in theme_keys:
+        raise _detail(400, "theme 不在 Review 原因主题目录中。")
+    if comparison_status != "all" and not model_run_id:
+        raise _detail(400, "筛选模型对比关系时必须选择 Model Run。")
+
+    selected_run: dict[str, Any] | None = None
+    if model_run_id:
+        selected_run = next(
+            (
+                run
+                for run in database.list_model_runs(settings.baseline_scope)
+                if run["id"] == model_run_id
+            ),
+            None,
+        )
+        if selected_run is None:
+            raise _detail(404, "Model Run 不存在。")
+
+    rows = database.review_reason_rows(
+        baseline_scope=settings.baseline_scope,
+        model_run_id=model_run_id,
+        comparison_status=comparison_status,
+        annotation_author=_as_text(annotation_author)[:128],
+        review_status=review_status,
+        gt_label=gt_label,
+        annotation_label=annotation_label,
+        missing_evidence=missing_evidence,
+        search=_as_text(search)[:256],
+    )
+    result = build_review_reason_analysis(
+        rows,
+        theme=theme,
+        evidence_catalog=evidence_catalog,
+        has_model_run=bool(model_run_id),
+        page=page,
+        page_size=page_size,
+    )
+    for item in result["items"]:
+        issue_id = _as_text(item.get("issue_id"))
+        review_params = [f"issue={quote(issue_id, safe='')}"]
+        if model_run_id:
+            review_params.append(f"run={quote(model_run_id, safe='')}")
+        if comparison_status == "mismatch" and model_run_id:
+            review_params.append("failure=1")
+        item["voyager_issue_url"] = _voyager_issue_url(issue_id)
+        item["review_url"] = f"/review?{'&'.join(review_params)}"
+    result["scope"] = {
+        "baseline_scope": settings.baseline_scope,
+        "model_run": (
+            {
+                "id": selected_run["id"],
+                "name": selected_run["name"],
+                "kind": selected_run["kind"],
+                "prediction_count": selected_run["baseline_prediction_count"],
+                "failure_count": selected_run["failure_count"],
+            }
+            if selected_run
+            else None
+        ),
+        "comparison_status": comparison_status,
+        "failure_only": comparison_status == "mismatch",
+        "review_binding": "latest_annotation_per_issue",
+        "review_is_run_bound": False,
+    }
+    result["filters"] = {
+        "model_run_id": model_run_id,
+        "comparison_status": comparison_status,
+        "failure_only": comparison_status == "mismatch",
+        "annotation_author": _as_text(annotation_author)[:128],
+        "review_status": review_status,
+        "gt_label": gt_label,
+        "annotation_label": annotation_label,
+        "missing_evidence": missing_evidence,
+        "theme": theme,
+        "search": _as_text(search)[:256],
+    }
+    return result
 
 
 @app.post("/api/trail-model-sync")
