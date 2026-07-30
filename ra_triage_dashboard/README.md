@@ -11,7 +11,7 @@
 - 可导入 issue / GT 与批量模型输出（JSON、CSV、XLSX）；也可按 AutoTriage Batch ID / records 链接经固定只读内网接口拉取结果。两者都按规范化内容 SHA-256 创建或复用不可变 Model Run，不覆盖 GT、不切换团队默认 Run；AutoTriage 拉取会显式比较声明数、完成数、结果数和唯一 Issue 数，并标记部分覆盖。
 - 人工标注为追加式历史，最新一条为当前标注，不覆盖旧 review；「模型为什么判错」是主输入，「模型缺失信息」收进紧凑的结构化多选下拉，并自动汇总为 routing、绕行空间、灯态、双闪、时序等错误聚类。每个 review 版本可粘贴或选择最多 4 张补充截图；场景 Tags 为可选的规范化多选项。
 - 首页可把当前单个 Issue 或不超过 50 条的完整筛选结果预填到 Batch 页面；若前端只加载到部分结果或超过上限，会明确阻止而不是静默截断。模型目录保留 Profile 已验证项和网关当前在线的 Qwen3 生成模型，排除 Embedding；实验模型有明确标记且创建任务前需再次确认。默认 `Auto` 仍解析并分别记录 requested / resolved model ID。
-- 每个 Batch 固化请求人、模型验证层级、完整 Prompt 正文与 SHA-256、Prompt 基线版本/是否编辑、Camera 帧偏移、RA Events / RA-SWAG Options 和输入 Profile；任务历史可按人员、状态、模型、Prompt 精确版本（mode + SHA）和输入筛选，已下线模型与旧 Prompt 也保留在筛选项中。Prompt 只允许当前三分类构建器提供的变量并必须保留三个标准标签；Camera 偏移严格递增、包含 0、最多 18 帧。worker 会重新校验 Prompt/Input 快照并重建配置 Hash，预测与后续发布必须一致。
+- 每个 Batch 固化请求人、模型验证层级、完整 Prompt 正文与 SHA-256、Prompt 基线版本/是否编辑、Camera 帧偏移、RA Events / RA-SWAG Options 和输入 Profile；任务历史可按人员、状态、模型、Prompt 精确版本（mode + SHA）和输入筛选，已下线模型与旧 Prompt 也保留在筛选项中。Prompt 只允许当前三分类构建器提供的变量，必须保留三个标准标签，并拒绝会输出「无法判断」等第四类的旧模板；Camera 偏移严格递增、包含 0、最多 18 帧。worker 会重新校验 Prompt/Input 快照并重建配置 Hash，预测与后续发布必须一致。
 - 网关 API key 只从服务用户持有的 `0600` 普通文件读取，经一次性 stdin 交给预测 worker，读取后立即从请求对象移除；不接受浏览器或父进程环境变量中的 key，也不会把 key 交给 AutoTriage publish worker。Ares / BEV 和轨迹摘要在 Batch 输入中强制关闭。
 - Batch 采用两阶段写入：预测阶段只在 dashboard 自己的 `batch_bags/` 缓存中下载/复用 Camera 与 gateway bag，绝不修改 `ra_auto_triage/bags`；同时强制禁用 Ares、禁止 Trail 写和 AutoTriage 写。可信 SSO 用户显式点击「推送 AutoTriage」后，才用 cloud_server 固定服务身份创建生产 Batch、推送成功结果并关联 `records/{batch_id}?tab=results`。重复点击已有 Batch 的任务只返回原链接，不再次建批。
 

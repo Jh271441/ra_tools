@@ -15,6 +15,7 @@ MAX_FRAME_COUNT = 18
 MIN_FRAME_OFFSET_MS = -30_000
 MAX_FRAME_OFFSET_MS = 30_000
 TRIAGE_LABELS = ("误触发", "正确触发", "无需协助")
+FORBIDDEN_TRIAGE_LABELS = ("无法判断",)
 ALLOWED_TEMPLATE_VARIABLES = frozenset(
     {
         "n_frames",
@@ -103,6 +104,14 @@ def _normalise_prompt_text(value: Any) -> str:
     if missing_labels:
         raise PromptCatalogError(
             "Prompt 必须保留三分类输出契约：误触发、正确触发、无需协助。"
+        )
+    forbidden_labels = [
+        label for label in FORBIDDEN_TRIAGE_LABELS if label in text
+    ]
+    if forbidden_labels:
+        raise PromptCatalogError(
+            "Prompt 不能引入三分类以外的输出标签："
+            f"{', '.join(forbidden_labels)}。"
         )
     return text
 

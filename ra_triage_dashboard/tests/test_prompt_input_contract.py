@@ -35,6 +35,10 @@ class PromptInputContractTest(unittest.TestCase):
                 VALID_TEMPLATE + "\n{{unsupported_runtime_value}}",
             ),
             ("two_class", "仅输出误触发或正确触发。" * 4),
+            (
+                "four_class",
+                VALID_TEMPLATE + "\n证据不足时 label 可以输出无法判断。",
+            ),
         ):
             directory = versions / prompt_id
             directory.mkdir(parents=True)
@@ -92,6 +96,11 @@ class PromptInputContractTest(unittest.TestCase):
             catalog.resolve(
                 "stuck_triage_auto_opt_api",
                 VALID_TEMPLATE + "\n{{unknown_value}}",
+            )
+        with self.assertRaisesRegex(PromptCatalogError, "三分类以外"):
+            catalog.resolve(
+                "stuck_triage_auto_opt_api",
+                VALID_TEMPLATE + "\n证据不足时输出无法判断。",
             )
         input_config = normalise_input_config(None)
         with self.assertRaisesRegex(ValueError, "SHA-256"):
