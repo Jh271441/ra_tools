@@ -1,0 +1,806 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+import threading
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Iterable
+
+
+LABELS = ("误触发", "正确触发", "无需协助")
+REVIEW_STATUSES = ("pending", "reviewed", "needs_gt_review")
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _json(value: Any) -> str:
+    return json.dumps(value if value is not None else {}, ensure_ascii=False)
+
+
+def _json_load(value: str | None, default: Any) -> Any:
+    if not value:
+        return default
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError):
+        return default
+
+
+class Database:
+    """SQLite MVP storage with portable, append-only review history.
+
+    ``baseline_scope`` is intentionally stored on the issue rather than
+    deleting old imports.  This lets the active 0508/1071 evaluation set stay
+    stable while uploaded model runs and prior reviews remain recoverable.
+    """
+
+    def __init__(self, path: Path):
+        self.path = path
+        self._write_lock = threading.RLock()
+
+    def connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.path, timeout=30, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA busy_timeout = 30000")
+        return conn
+
+    def init(self) -> None:
+        with self._write_lock, self.connect() as conn:
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS issues (
+                    issue_id TEXT PRIMARY KEY,
+                    trip_id TEXT NOT NULL DEFAULT '',
+                    title TEXT NOT NULL DEFAULT '',
+                    scenario TEXT NOT NULL DEFAULT '',
+                    summary TEXT NOT NULL DEFAULT '',
+                    review_note TEXT NOT NULL DEFAULT '',
+                    trail_url TEXT NOT NULL DEFAULT '',
+                    gt_label TEXT,
+                    gt_source TEXT NOT NULL DEFAULT '',
+                    source TEXT NOT NULL DEFAULT '',
+                    baseline_scope TEXT NOT NULL DEFAULT '',
+                    extra_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS annotations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE CASCADE,
+                    label TEXT,
+                    review_status TEXT NOT NULL DEFAULT 'pending',
+                    tags_json TEXT NOT NULL DEFAULT '[]',
+                    missing_evidence_json TEXT NOT NULL DEFAULT '[]',
+                    note TEXT NOT NULL DEFAULT '',
+                    author TEXT NOT NULL DEFAULT '',
+                    supersedes_id INTEGER REFERENCES annotations(id),
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_annotations_issue_id
+                    ON annotations(issue_id, id DESC);
+
+                CREATE TABLE IF NOT EXISTS model_runs (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    source_name TEXT NOT NULL DEFAULT '',
+                    source_sha256 TEXT NOT NULL UNIQUE,
+                    schema_version TEXT NOT NULL DEFAULT 'v1',
+                    kind TEXT NOT NULL DEFAULT 'upload',
+                    is_default INTEGER NOT NULL DEFAULT 0,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS model_predictions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    model_run_id TEXT NOT NULL REFERENCES model_runs(id) ON DELETE CASCADE,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE CASCADE,
+                    trip_id TEXT NOT NULL DEFAULT '',
+                    model_label TEXT NOT NULL DEFAULT '',
+                    model_reason TEXT NOT NULL DEFAULT '',
+                    model_confidence REAL,
+                    model_extra_json TEXT NOT NULL DEFAULT '{}',
+                    raw_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    UNIQUE(model_run_id, issue_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_predictions_issue_id
+                    ON model_predictions(issue_id, model_run_id);
+
+                CREATE TABLE IF NOT EXISTS inference_jobs (
+                    id TEXT PRIMARY KEY,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE CASCADE,
+                    status TEXT NOT NULL,
+                    requested_by TEXT NOT NULL DEFAULT '',
+                    model_name TEXT NOT NULL DEFAULT '',
+                    base_url TEXT NOT NULL DEFAULT '',
+                    config_json TEXT NOT NULL DEFAULT '{}',
+                    result_json TEXT NOT NULL DEFAULT '{}',
+                    error_text TEXT NOT NULL DEFAULT '',
+                    log_path TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    started_at TEXT,
+                    finished_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_jobs_issue_id
+                    ON inference_jobs(issue_id, created_at DESC);
+                """
+            )
+            # Existing MVP databases are upgraded in place.  Each addition is
+            # nullable/defaulted, so prior annotations and model runs survive.
+            self._ensure_column(conn, "issues", "baseline_scope", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "annotations", "review_status", "TEXT NOT NULL DEFAULT 'pending'")
+            self._ensure_column(conn, "annotations", "missing_evidence_json", "TEXT NOT NULL DEFAULT '[]'")
+            self._ensure_column(conn, "model_runs", "kind", "TEXT NOT NULL DEFAULT 'upload'")
+            self._ensure_column(conn, "model_runs", "is_default", "INTEGER NOT NULL DEFAULT 0")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_issues_baseline ON issues(baseline_scope)")
+            conn.execute(
+                """
+                UPDATE inference_jobs
+                SET status = 'failed',
+                    finished_at = ?,
+                    error_text = '服务重启前任务未完成；请重新提交。'
+                WHERE status IN ('queued', 'running')
+                """,
+                (utc_now(),),
+            )
+
+    @staticmethod
+    def _ensure_column(conn: sqlite3.Connection, table: str, column: str, declaration: str) -> None:
+        columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+
+    def seed_examples(self, examples: Iterable[dict[str, Any]]) -> None:
+        self.upsert_issues(examples, source="user_examples", replace_gt=False)
+
+    def replace_baseline_scope(
+        self,
+        *,
+        scope: str,
+        rows: Iterable[dict[str, Any]],
+        source: str,
+    ) -> dict[str, int]:
+        materialized = list(rows)
+        with self._write_lock, self.connect() as conn:
+            conn.execute("UPDATE issues SET baseline_scope = '' WHERE baseline_scope = ?", (scope,))
+        return self.upsert_issues(
+            materialized,
+            source=source,
+            replace_gt=True,
+            baseline_scope=scope,
+        )
+
+    def baseline_issue_ids(self, scope: str) -> list[str]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT issue_id FROM issues WHERE baseline_scope = ? ORDER BY issue_id", (scope,)
+            ).fetchall()
+        return [str(row["issue_id"]) for row in rows]
+
+    def upsert_issues(
+        self,
+        rows: Iterable[dict[str, Any]],
+        *,
+        source: str,
+        replace_gt: bool,
+        baseline_scope: str = "",
+    ) -> dict[str, int]:
+        inserted = updated = skipped = 0
+        now = utc_now()
+        with self._write_lock, self.connect() as conn:
+            for row in rows:
+                issue_id = str(row.get("issue_id") or "").strip()
+                if not issue_id:
+                    skipped += 1
+                    continue
+                gt_label = str(row.get("gt_label") or "").strip()
+                if gt_label not in LABELS:
+                    gt_label = ""
+                existing = conn.execute(
+                    "SELECT issue_id, gt_label FROM issues WHERE issue_id = ?", (issue_id,)
+                ).fetchone()
+                extra = row.get("extra") or {}
+                values = {
+                    "trip_id": str(row.get("trip_id") or "").strip(),
+                    "title": str(row.get("title") or "").strip(),
+                    "scenario": str(row.get("scenario") or "").strip(),
+                    "summary": str(row.get("summary") or "").strip(),
+                    "review_note": str(row.get("review_note") or "").strip(),
+                    "trail_url": str(row.get("trail_url") or "").strip(),
+                    "gt_source": str(row.get("gt_source") or source).strip(),
+                    "extra_json": _json(extra),
+                }
+                if existing is None:
+                    conn.execute(
+                        """
+                        INSERT INTO issues (
+                            issue_id, trip_id, title, scenario, summary, review_note,
+                            trail_url, gt_label, gt_source, source, baseline_scope,
+                            extra_json, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            issue_id,
+                            values["trip_id"],
+                            values["title"],
+                            values["scenario"],
+                            values["summary"],
+                            values["review_note"],
+                            values["trail_url"],
+                            gt_label or None,
+                            values["gt_source"],
+                            source,
+                            baseline_scope,
+                            values["extra_json"],
+                            now,
+                            now,
+                        ),
+                    )
+                    inserted += 1
+                    continue
+
+                # Model-result imports often contain only issue_id.  Never
+                # blank richer fields from a prior baseline or manual review.
+                updates = {key: value for key, value in values.items() if value not in ("", "{}")}
+                if gt_label and (replace_gt or not existing["gt_label"]):
+                    updates["gt_label"] = gt_label
+                    updates["gt_source"] = values["gt_source"]
+                if baseline_scope:
+                    updates["baseline_scope"] = baseline_scope
+                if not updates:
+                    skipped += 1
+                    continue
+                assignments = ", ".join(f"{key} = ?" for key in updates)
+                conn.execute(
+                    f"UPDATE issues SET {assignments}, source = ?, updated_at = ? WHERE issue_id = ?",
+                    (*updates.values(), source, now, issue_id),
+                )
+                updated += 1
+        return {"inserted": inserted, "updated": updated, "skipped": skipped}
+
+    def import_model_run(
+        self,
+        *,
+        name: str,
+        source_name: str,
+        source_sha256: str,
+        metadata: dict[str, Any],
+        rows: list[dict[str, Any]],
+        kind: str = "upload",
+        make_default: bool = False,
+    ) -> tuple[dict[str, Any], bool]:
+        now = utc_now()
+        with self._write_lock, self.connect() as conn:
+            existing = conn.execute(
+                "SELECT * FROM model_runs WHERE source_sha256 = ?", (source_sha256,)
+            ).fetchone()
+            if existing:
+                if make_default:
+                    conn.execute("UPDATE model_runs SET is_default = 0")
+                    conn.execute("UPDATE model_runs SET is_default = 1 WHERE id = ?", (existing["id"],))
+                    existing = conn.execute(
+                        "SELECT * FROM model_runs WHERE id = ?", (existing["id"],)
+                    ).fetchone()
+                return self._run_dict(existing), True
+
+            run_id = str(uuid.uuid4())
+            if make_default:
+                conn.execute("UPDATE model_runs SET is_default = 0")
+            conn.execute(
+                """
+                INSERT INTO model_runs (
+                    id, name, source_name, source_sha256, schema_version,
+                    kind, is_default, metadata_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    name,
+                    source_name,
+                    source_sha256,
+                    str(metadata.get("schema_version") or "v1"),
+                    kind,
+                    int(make_default),
+                    _json(metadata),
+                    now,
+                ),
+            )
+            for row in rows:
+                issue_id = str(row["issue_id"])
+                issue = conn.execute("SELECT issue_id FROM issues WHERE issue_id = ?", (issue_id,)).fetchone()
+                if issue is None:
+                    conn.execute(
+                        """
+                        INSERT INTO issues (issue_id, trip_id, source, created_at, updated_at)
+                        VALUES (?, ?, 'model_import', ?, ?)
+                        """,
+                        (issue_id, str(row.get("trip_id") or ""), now, now),
+                    )
+                conn.execute(
+                    """
+                    INSERT INTO model_predictions (
+                        model_run_id, issue_id, trip_id, model_label, model_reason,
+                        model_confidence, model_extra_json, raw_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        run_id,
+                        issue_id,
+                        str(row.get("trip_id") or ""),
+                        str(row.get("model_label") or ""),
+                        str(row.get("model_reason") or ""),
+                        row.get("model_confidence"),
+                        _json(row.get("model_extra") or {}),
+                        _json(row.get("raw") or {}),
+                        now,
+                    ),
+                )
+            result = conn.execute("SELECT * FROM model_runs WHERE id = ?", (run_id,)).fetchone()
+        return self._run_dict(result), False
+
+    def default_model_run_id(self) -> str:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT id FROM model_runs WHERE is_default = 1 ORDER BY created_at DESC LIMIT 1"
+            ).fetchone()
+        return str(row["id"]) if row else ""
+
+    def list_model_runs(self, baseline_scope: str = "") -> list[dict[str, Any]]:
+        labels = tuple(LABELS)
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT mr.*,
+                       COUNT(mp.id) AS prediction_count,
+                       SUM(CASE WHEN i.baseline_scope = ? THEN 1 ELSE 0 END) AS baseline_prediction_count,
+                       SUM(CASE
+                             WHEN i.baseline_scope = ?
+                              AND i.gt_label IN (?, ?, ?)
+                              AND mp.model_label IN (?, ?, ?)
+                              AND mp.model_label != i.gt_label
+                             THEN 1 ELSE 0 END) AS failure_count
+                FROM model_runs mr
+                LEFT JOIN model_predictions mp ON mp.model_run_id = mr.id
+                LEFT JOIN issues i ON i.issue_id = mp.issue_id
+                GROUP BY mr.id
+                ORDER BY mr.is_default DESC, mr.created_at DESC
+                """,
+                (baseline_scope, baseline_scope, *labels, *labels),
+            ).fetchall()
+        return [
+            self._run_dict(row)
+            | {
+                "prediction_count": int(row["prediction_count"] or 0),
+                "baseline_prediction_count": int(row["baseline_prediction_count"] or 0),
+                "failure_count": int(row["failure_count"] or 0),
+            }
+            for row in rows
+        ]
+
+    @staticmethod
+    def _latest_annotation_join() -> str:
+        return """
+            LEFT JOIN annotations ann
+              ON ann.id = (
+                  SELECT a.id FROM annotations a
+                  WHERE a.issue_id = i.issue_id
+                  ORDER BY a.id DESC LIMIT 1
+              )
+        """
+
+    def list_cases(
+        self,
+        *,
+        baseline_scope: str = "",
+        search: str = "",
+        gt_label: str = "",
+        annotation_label: str = "",
+        model_run_id: str = "",
+        failure_only: bool = False,
+        missing_evidence: str = "",
+        page: int = 1,
+        page_size: int = 100,
+    ) -> dict[str, Any]:
+        page = max(1, page)
+        page_size = min(max(1, page_size), 2000)
+        where: list[str] = []
+        params: list[Any] = []
+        if baseline_scope:
+            where.append("i.baseline_scope = ?")
+            params.append(baseline_scope)
+        if search.strip():
+            term = f"%{search.strip()}%"
+            where.append("(i.issue_id LIKE ? OR i.title LIKE ? OR i.scenario LIKE ? OR i.summary LIKE ?)")
+            params.extend([term, term, term, term])
+        if gt_label in LABELS:
+            where.append("i.gt_label = ?")
+            params.append(gt_label)
+        if annotation_label in LABELS:
+            where.append("ann.label = ?")
+            params.append(annotation_label)
+        if missing_evidence.strip():
+            # Values are serialized as a JSON array; matching the quoted token
+            # avoids treating a prefix as a different evidence item.
+            where.append("ann.missing_evidence_json LIKE ?")
+            params.append(f'%"{missing_evidence.strip()}"%')
+        if failure_only:
+            where.append("i.gt_label IN (?, ?, ?)")
+            where.append("mp.model_label IN (?, ?, ?)")
+            where.append("mp.model_label != i.gt_label")
+            params.extend((*LABELS, *LABELS))
+        condition = f"WHERE {' AND '.join(where)}" if where else ""
+        common = f"""
+            FROM issues i
+            {self._latest_annotation_join()}
+            LEFT JOIN model_predictions mp
+              ON mp.issue_id = i.issue_id
+             AND mp.model_run_id = ?
+        """
+        model_args = [model_run_id]
+        with self.connect() as conn:
+            total = conn.execute(
+                f"SELECT COUNT(DISTINCT i.issue_id) {common} {condition}", (*model_args, *params)
+            ).fetchone()[0]
+            rows = conn.execute(
+                f"""
+                SELECT i.*, ann.label AS annotation_label, ann.review_status AS annotation_review_status,
+                       ann.tags_json AS annotation_tags_json,
+                       ann.missing_evidence_json AS annotation_missing_evidence_json,
+                       ann.note AS annotation_note, ann.author AS annotation_author,
+                       ann.created_at AS annotation_created_at,
+                       mp.model_label, mp.model_reason, mp.model_confidence, mp.model_run_id
+                {common}
+                {condition}
+                ORDER BY
+                    CASE WHEN ann.id IS NULL THEN 0 ELSE 1 END,
+                    CASE WHEN i.source = 'user_examples' THEN 0 ELSE 1 END,
+                    i.updated_at DESC, i.issue_id ASC
+                LIMIT ? OFFSET ?
+                """,
+                (*model_args, *params, page_size, (page - 1) * page_size),
+            ).fetchall()
+        return {
+            "items": [self._case_summary(row) for row in rows],
+            "total": int(total),
+            "page": page,
+            "page_size": page_size,
+        }
+
+    def get_case(self, issue_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            issue = conn.execute("SELECT * FROM issues WHERE issue_id = ?", (issue_id,)).fetchone()
+            if issue is None:
+                return None
+            annotations = conn.execute(
+                "SELECT * FROM annotations WHERE issue_id = ? ORDER BY id DESC", (issue_id,)
+            ).fetchall()
+            predictions = conn.execute(
+                """
+                SELECT mp.*, mr.name AS run_name, mr.created_at AS run_created_at,
+                       mr.kind AS run_kind, mr.is_default AS run_is_default
+                FROM model_predictions mp
+                JOIN model_runs mr ON mr.id = mp.model_run_id
+                WHERE mp.issue_id = ?
+                ORDER BY mr.is_default DESC, mr.created_at DESC
+                """,
+                (issue_id,),
+            ).fetchall()
+            jobs = conn.execute(
+                "SELECT * FROM inference_jobs WHERE issue_id = ? ORDER BY created_at DESC LIMIT 10", (issue_id,)
+            ).fetchall()
+        data = self._issue_dict(issue)
+        data["annotations"] = [self._annotation_dict(row) for row in annotations]
+        data["predictions"] = [self._prediction_dict(row) for row in predictions]
+        data["jobs"] = [self._job_dict(row) for row in jobs]
+        return data
+
+    def create_annotation(
+        self,
+        *,
+        issue_id: str,
+        label: str,
+        review_status: str,
+        tags: list[str],
+        missing_evidence: list[str],
+        note: str,
+        author: str,
+    ) -> dict[str, Any]:
+        if label and label not in LABELS:
+            raise ValueError(f"不支持的标注标签: {label}")
+        if review_status not in REVIEW_STATUSES:
+            raise ValueError(f"不支持的 review 状态: {review_status}")
+        tags = sorted({str(tag).strip() for tag in tags if str(tag).strip()})
+        missing_evidence = sorted(
+            {str(item).strip() for item in missing_evidence if str(item).strip()}
+        )
+        now = utc_now()
+        with self._write_lock, self.connect() as conn:
+            previous = conn.execute(
+                "SELECT id FROM annotations WHERE issue_id = ? ORDER BY id DESC LIMIT 1", (issue_id,)
+            ).fetchone()
+            cursor = conn.execute(
+                """
+                INSERT INTO annotations (
+                    issue_id, label, review_status, tags_json, missing_evidence_json,
+                    note, author, supersedes_id, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    issue_id,
+                    label or None,
+                    review_status,
+                    _json(tags),
+                    _json(missing_evidence),
+                    note.strip(),
+                    author.strip(),
+                    previous["id"] if previous else None,
+                    now,
+                ),
+            )
+            conn.execute("UPDATE issues SET updated_at = ? WHERE issue_id = ?", (now, issue_id))
+            row = conn.execute("SELECT * FROM annotations WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        return self._annotation_dict(row)
+
+    def review_clusters(
+        self,
+        *,
+        baseline_scope: str,
+        model_run_id: str = "",
+        failure_only: bool = True,
+    ) -> list[dict[str, Any]]:
+        where = ["i.baseline_scope = ?", "ann.id IS NOT NULL"]
+        params: list[Any] = [model_run_id, baseline_scope]
+        if failure_only and model_run_id:
+            where.extend(
+                [
+                    "i.gt_label IN (?, ?, ?)",
+                    "mp.model_label IN (?, ?, ?)",
+                    "mp.model_label != i.gt_label",
+                ]
+            )
+            params.extend((*LABELS, *LABELS))
+        query = f"""
+            SELECT ann.missing_evidence_json
+            FROM issues i
+            {self._latest_annotation_join()}
+            LEFT JOIN model_predictions mp
+              ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
+            WHERE {' AND '.join(where)}
+        """
+        counts: dict[str, int] = {}
+        with self.connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        for row in rows:
+            values = _json_load(row["missing_evidence_json"], [])
+            if not isinstance(values, list):
+                continue
+            for value in values:
+                key = str(value).strip()
+                if key:
+                    counts[key] = counts.get(key, 0) + 1
+        return [{"key": key, "count": count} for key, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))]
+
+    def create_job(
+        self,
+        *,
+        issue_id: str,
+        requested_by: str,
+        model_name: str,
+        base_url: str,
+        config: dict[str, Any],
+    ) -> dict[str, Any]:
+        job_id = str(uuid.uuid4())
+        now = utc_now()
+        with self._write_lock, self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO inference_jobs (
+                    id, issue_id, status, requested_by, model_name, base_url,
+                    config_json, created_at
+                ) VALUES (?, ?, 'queued', ?, ?, ?, ?, ?)
+                """,
+                (job_id, issue_id, requested_by.strip(), model_name.strip(), base_url.strip(), _json(config), now),
+            )
+            row = conn.execute("SELECT * FROM inference_jobs WHERE id = ?", (job_id,)).fetchone()
+        return self._job_dict(row)
+
+    def update_job(
+        self,
+        job_id: str,
+        *,
+        status: str,
+        result: dict[str, Any] | None = None,
+        error_text: str = "",
+        log_path: str = "",
+    ) -> dict[str, Any] | None:
+        now = utc_now()
+        values: dict[str, Any] = {"status": status}
+        if status == "running":
+            values["started_at"] = now
+        if status in {"succeeded", "failed"}:
+            values["finished_at"] = now
+        if result is not None:
+            values["result_json"] = _json(result)
+        if error_text:
+            values["error_text"] = error_text
+        if log_path:
+            values["log_path"] = log_path
+        assignments = ", ".join(f"{key} = ?" for key in values)
+        with self._write_lock, self.connect() as conn:
+            conn.execute(f"UPDATE inference_jobs SET {assignments} WHERE id = ?", (*values.values(), job_id))
+            row = conn.execute("SELECT * FROM inference_jobs WHERE id = ?", (job_id,)).fetchone()
+        return self._job_dict(row) if row else None
+
+    def get_job(self, job_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM inference_jobs WHERE id = ?", (job_id,)).fetchone()
+        return self._job_dict(row) if row else None
+
+    def overview(self, *, baseline_scope: str, model_run_id: str = "") -> dict[str, Any]:
+        base_where = "WHERE i.baseline_scope = ?"
+        with self.connect() as conn:
+            total = conn.execute(f"SELECT COUNT(*) FROM issues i {base_where}", (baseline_scope,)).fetchone()[0]
+            labelled = conn.execute(
+                f"""
+                SELECT COUNT(*)
+                FROM issues i
+                {self._latest_annotation_join()}
+                {base_where} AND ann.id IS NOT NULL
+                """,
+                (baseline_scope,),
+            ).fetchone()[0]
+            predictions = failures = reviewed_failures = 0
+            if model_run_id:
+                common = f"""
+                    FROM issues i
+                    {self._latest_annotation_join()}
+                    LEFT JOIN model_predictions mp
+                      ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
+                    WHERE i.baseline_scope = ?
+                """
+                predictions = conn.execute(
+                    f"SELECT COUNT(mp.id) {common}", (model_run_id, baseline_scope)
+                ).fetchone()[0]
+                failure_condition = " AND i.gt_label IN (?, ?, ?) AND mp.model_label IN (?, ?, ?) AND mp.model_label != i.gt_label"
+                failures = conn.execute(
+                    f"SELECT COUNT(*) {common}{failure_condition}",
+                    (model_run_id, baseline_scope, *LABELS, *LABELS),
+                ).fetchone()[0]
+                reviewed_failures = conn.execute(
+                    f"SELECT COUNT(*) {common}{failure_condition} AND ann.id IS NOT NULL",
+                    (model_run_id, baseline_scope, *LABELS, *LABELS),
+                ).fetchone()[0]
+            running = conn.execute(
+                "SELECT COUNT(*) FROM inference_jobs WHERE status IN ('queued', 'running')"
+            ).fetchone()[0]
+        return {
+            "issues": int(total),
+            "labelled": int(labelled),
+            "unlabelled": max(int(total) - int(labelled), 0),
+            "predictions": int(predictions),
+            "model_failures": int(failures),
+            "reviewed_failures": int(reviewed_failures),
+            "running_jobs": int(running),
+        }
+
+    @staticmethod
+    def _issue_dict(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "issue_id": row["issue_id"],
+            "trip_id": row["trip_id"],
+            "title": row["title"],
+            "scenario": row["scenario"],
+            "summary": row["summary"],
+            "review_note": row["review_note"],
+            "trail_url": row["trail_url"],
+            "gt_label": row["gt_label"] or "",
+            "gt_source": row["gt_source"],
+            "source": row["source"],
+            "baseline_scope": row["baseline_scope"] if "baseline_scope" in row.keys() else "",
+            "extra": _json_load(row["extra_json"], {}),
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    @classmethod
+    def _case_summary(cls, row: sqlite3.Row) -> dict[str, Any]:
+        data = cls._issue_dict(row)
+        model_label = row["model_label"] or ""
+        comparable = bool(data["gt_label"] in LABELS and model_label in LABELS)
+        data.update(
+            {
+                "annotation": {
+                    "label": row["annotation_label"] or "",
+                    "review_status": row["annotation_review_status"] or "pending",
+                    "tags": _json_load(row["annotation_tags_json"], []),
+                    "missing_evidence": _json_load(row["annotation_missing_evidence_json"], []),
+                    "note": row["annotation_note"] or "",
+                    "author": row["annotation_author"] or "",
+                    "created_at": row["annotation_created_at"] or "",
+                },
+                "prediction": {
+                    "model_run_id": row["model_run_id"] or "",
+                    "label": model_label,
+                    "reason": row["model_reason"] or "",
+                    "confidence": row["model_confidence"],
+                    "comparable": comparable,
+                    "mismatch": bool(comparable and model_label != data["gt_label"]),
+                },
+            }
+        )
+        return data
+
+    @staticmethod
+    def _annotation_dict(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "issue_id": row["issue_id"],
+            "label": row["label"] or "",
+            "review_status": row["review_status"] if "review_status" in row.keys() else "pending",
+            "tags": _json_load(row["tags_json"], []),
+            "missing_evidence": _json_load(
+                row["missing_evidence_json"] if "missing_evidence_json" in row.keys() else "[]", []
+            ),
+            "note": row["note"],
+            "author": row["author"],
+            "supersedes_id": row["supersedes_id"],
+            "created_at": row["created_at"],
+        }
+
+    @staticmethod
+    def _prediction_dict(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "model_run_id": row["model_run_id"],
+            "run_name": row["run_name"] if "run_name" in row.keys() else "",
+            "run_created_at": row["run_created_at"] if "run_created_at" in row.keys() else "",
+            "run_kind": row["run_kind"] if "run_kind" in row.keys() else "",
+            "run_is_default": bool(row["run_is_default"]) if "run_is_default" in row.keys() else False,
+            "issue_id": row["issue_id"],
+            "trip_id": row["trip_id"],
+            "model_label": row["model_label"],
+            "model_reason": row["model_reason"],
+            "model_confidence": row["model_confidence"],
+            "model_extra": _json_load(row["model_extra_json"], {}),
+            "created_at": row["created_at"],
+        }
+
+    @staticmethod
+    def _run_dict(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "source_name": row["source_name"],
+            "source_sha256": row["source_sha256"],
+            "schema_version": row["schema_version"],
+            "kind": row["kind"] if "kind" in row.keys() else "upload",
+            "is_default": bool(row["is_default"]) if "is_default" in row.keys() else False,
+            "metadata": _json_load(row["metadata_json"], {}),
+            "created_at": row["created_at"],
+        }
+
+    @staticmethod
+    def _job_dict(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "issue_id": row["issue_id"],
+            "status": row["status"],
+            "requested_by": row["requested_by"],
+            "model_name": row["model_name"],
+            "base_url": row["base_url"],
+            "config": _json_load(row["config_json"], {}),
+            "result": _json_load(row["result_json"], {}),
+            "error_text": row["error_text"],
+            "log_path": row["log_path"],
+            "created_at": row["created_at"],
+            "started_at": row["started_at"],
+            "finished_at": row["finished_at"],
+        }

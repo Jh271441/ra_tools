@@ -1,0 +1,273 @@
+from __future__ import annotations
+
+import json
+import re
+import threading
+from pathlib import Path
+from typing import Any
+from urllib.parse import quote
+
+
+class AssetIndex:
+    """Read-only index over Ares Capture manifest/meta files.
+
+    Only paths present in the manifest are served, so the asset endpoint cannot
+    be used to browse arbitrary files on cloud_server.
+    """
+
+    def __init__(self, *, ra_root: Path, manifest_path: Path):
+        self.ra_root = ra_root.resolve()
+        self.manifest_path = manifest_path.resolve()
+        self._lock = threading.RLock()
+        self._manifest_mtime_ns = -1
+        self._meta_paths: dict[str, Path] = {}
+        self._assets: dict[str, dict[str, Path]] = {}
+
+    def refresh(self, force: bool = False) -> int:
+        try:
+            stat = self.manifest_path.stat()
+        except FileNotFoundError:
+            with self._lock:
+                self._meta_paths = {}
+                self._assets = {}
+            return 0
+        if not force and stat.st_mtime_ns == self._manifest_mtime_ns:
+            return len(self._meta_paths)
+
+        parsed: dict[str, Path] = {}
+        with self.manifest_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    row = json.loads(line)
+                    issue_id = str(row.get("issue_id") or "").strip()
+                    meta_path = str(row.get("meta_path") or "").strip()
+                except (TypeError, ValueError):
+                    continue
+                if not issue_id or not meta_path:
+                    continue
+                candidate = (self.ra_root / meta_path).resolve()
+                if self._within_root(candidate):
+                    parsed[issue_id] = candidate
+        with self._lock:
+            self._manifest_mtime_ns = stat.st_mtime_ns
+            self._meta_paths = parsed
+            self._assets = {}
+        return len(parsed)
+
+    def get_assets(self, issue_id: str) -> dict[str, Any]:
+        self.refresh()
+        with self._lock:
+            meta_path = self._meta_paths.get(issue_id)
+        if not meta_path or not meta_path.is_file():
+            return {
+                "available": False,
+                "issue_id": issue_id,
+                "frames": [],
+                "video": None,
+                "capture": {},
+            }
+
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {
+                "available": False,
+                "issue_id": issue_id,
+                "frames": [],
+                "video": None,
+                "capture": {},
+            }
+
+        base = meta_path.parent
+        assets: dict[str, Path] = {}
+        frames: list[dict[str, Any]] = []
+        variants = ((meta.get("capture_plan") or {}).get("variants") or [])
+        for variant_index, variant in enumerate(variants):
+            for frame_index, frame in enumerate(variant.get("frames") or []):
+                relative_path = str(frame.get("relative_path") or "")
+                path = self._resolve_asset(base, relative_path)
+                if not path or not path.is_file():
+                    continue
+                asset_id = f"frame-{variant_index}-{frame_index}"
+                assets[asset_id] = path
+                frames.append(
+                    {
+                        "id": asset_id,
+                        "offset_ms": frame.get("offset_ms"),
+                        "offset_sec": frame.get("offset_sec"),
+                        "url": f"/api/assets/{quote(issue_id)}/{asset_id}",
+                        "size_bytes": path.stat().st_size,
+                    }
+                )
+
+        video: dict[str, Any] | None = None
+        for variant_index, variant in enumerate(variants):
+            relative_path = str(variant.get("video_relative_path") or "")
+            path = self._resolve_asset(base, relative_path)
+            if not path or not path.is_file():
+                continue
+            asset_id = f"video-{variant_index}"
+            assets[asset_id] = path
+            video = {
+                "id": asset_id,
+                "url": f"/api/assets/{quote(issue_id)}/{asset_id}",
+                "size_bytes": path.stat().st_size,
+            }
+            break
+
+        with self._lock:
+            self._assets[issue_id] = assets
+        source_row = meta.get("source_row") or {}
+        return {
+            "available": bool(frames or video),
+            "issue_id": issue_id,
+            "frames": frames,
+            "video": video,
+            "capture": {
+                "status": meta.get("status", ""),
+                "layout": (meta.get("ares_layout") or {}).get("name", ""),
+                "timestamp_ms": source_row.get("capture_timestamp_ms"),
+                "trip_id": source_row.get("trip_id", ""),
+                "rendered_files": meta.get("rendered_files") or [],
+            },
+        }
+
+    def get_asset_path(self, issue_id: str, asset_id: str) -> Path | None:
+        with self._lock:
+            path = self._assets.get(issue_id, {}).get(asset_id)
+        if path and path.is_file() and self._within_root(path):
+            return path
+        self.get_assets(issue_id)
+        with self._lock:
+            path = self._assets.get(issue_id, {}).get(asset_id)
+        if path and path.is_file() and self._within_root(path):
+            return path
+        return None
+
+    def _resolve_asset(self, base: Path, relative_path: str) -> Path | None:
+        if not relative_path:
+            return None
+        candidate = (base / relative_path).resolve()
+        if not self._within_root(candidate):
+            return None
+        return candidate
+
+    def _within_root(self, path: Path) -> bool:
+        try:
+            path.resolve().relative_to(self.ra_root)
+            return True
+        except ValueError:
+            return False
+
+
+class CameraIndex:
+    """Read-only index for camera JPEGs cached alongside Ares Capture.
+
+    The current 0508 baseline has one ``after_compress`` directory per issue.
+    We still resolve each directory defensively and only serve files under the
+    configured cache root.
+    """
+
+    _numbered_image = re.compile(r"^(?P<index>\d+)\.(?:jpg|jpeg|png)$", re.IGNORECASE)
+    _default_offsets = (-19, -14, -9, -4, 0, 4, 9, 14, 19)
+
+    def __init__(self, camera_root: Path):
+        self.camera_root = camera_root.resolve()
+        self._lock = threading.RLock()
+        self._assets: dict[str, dict[str, Path]] = {}
+
+    def get_assets(self, issue_id: str, timestamp_ms: Any = None) -> dict[str, Any]:
+        folder = self._select_folder(issue_id, timestamp_ms)
+        if folder is None:
+            return {
+                "available": False,
+                "issue_id": issue_id,
+                "frames": [],
+                "capture": {},
+            }
+        source = folder / "after_compress"
+        if not source.is_dir():
+            source = folder / "before_compress"
+        if not source.is_dir():
+            return {
+                "available": False,
+                "issue_id": issue_id,
+                "frames": [],
+                "capture": {"cache_dir": folder.name},
+            }
+        numbered: list[tuple[int, Path]] = []
+        for child in source.iterdir():
+            match = self._numbered_image.match(child.name)
+            if child.is_file() and match:
+                numbered.append((int(match.group("index")), child.resolve()))
+        numbered.sort(key=lambda item: item[0])
+        assets: dict[str, Path] = {}
+        frames: list[dict[str, Any]] = []
+        for position, (frame_number, path) in enumerate(numbered):
+            if not self._within_root(path):
+                continue
+            asset_id = f"camera-{position}"
+            assets[asset_id] = path
+            offset = self._default_offsets[position] if position < len(self._default_offsets) else None
+            frames.append(
+                {
+                    "id": asset_id,
+                    "frame_number": frame_number,
+                    "offset_sec": offset,
+                    "url": f"/api/assets/{quote(issue_id)}/{asset_id}",
+                    "size_bytes": path.stat().st_size,
+                }
+            )
+        with self._lock:
+            self._assets[issue_id] = assets
+        return {
+            "available": bool(frames),
+            "issue_id": issue_id,
+            "frames": frames,
+            "capture": {
+                "cache_dir": folder.name,
+                "variant": source.name,
+                "timestamp_ms": self._timestamp_from_folder(folder, issue_id),
+            },
+        }
+
+    def get_asset_path(self, issue_id: str, asset_id: str) -> Path | None:
+        with self._lock:
+            path = self._assets.get(issue_id, {}).get(asset_id)
+        if path and path.is_file() and self._within_root(path):
+            return path
+        self.get_assets(issue_id)
+        with self._lock:
+            path = self._assets.get(issue_id, {}).get(asset_id)
+        if path and path.is_file() and self._within_root(path):
+            return path
+        return None
+
+    def _select_folder(self, issue_id: str, timestamp_ms: Any) -> Path | None:
+        if not self.camera_root.is_dir():
+            return None
+        timestamp = str(timestamp_ms or "").strip()
+        if timestamp:
+            exact = (self.camera_root / f"{issue_id}_{timestamp}").resolve()
+            if exact.is_dir() and self._within_root(exact):
+                return exact
+        candidates = [
+            path.resolve()
+            for path in self.camera_root.glob(f"{issue_id}_*")
+            if path.is_dir() and self._within_root(path)
+        ]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda path: path.stat().st_mtime_ns)
+
+    @staticmethod
+    def _timestamp_from_folder(folder: Path, issue_id: str) -> str:
+        prefix = f"{issue_id}_"
+        return folder.name[len(prefix) :] if folder.name.startswith(prefix) else ""
+
+    def _within_root(self, path: Path) -> bool:
+        try:
+            path.resolve().relative_to(self.camera_root)
+            return True
+        except ValueError:
+            return False
