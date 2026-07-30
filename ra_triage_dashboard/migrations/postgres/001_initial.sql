@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS annotations (
     missing_evidence_json jsonb NOT NULL DEFAULT '[]'::jsonb,
     note text NOT NULL DEFAULT '',
     author text NOT NULL DEFAULT '',
+    author_source text NOT NULL DEFAULT 'legacy',
+    author_verified boolean NOT NULL DEFAULT false,
     supersedes_id bigint REFERENCES annotations(id),
     created_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT annotations_label_check
@@ -48,6 +50,9 @@ CREATE TABLE IF NOT EXISTS model_runs (
     schema_version varchar(32) NOT NULL DEFAULT 'v1',
     kind varchar(32) NOT NULL DEFAULT 'upload',
     is_default boolean NOT NULL DEFAULT false,
+    created_by text NOT NULL DEFAULT '',
+    created_by_source text NOT NULL DEFAULT 'legacy',
+    created_by_verified boolean NOT NULL DEFAULT false,
     metadata_json jsonb NOT NULL DEFAULT '{}'::jsonb,
     created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -75,6 +80,8 @@ CREATE TABLE IF NOT EXISTS inference_jobs (
     issue_id varchar(128) NOT NULL REFERENCES issues(issue_id) ON DELETE CASCADE,
     status varchar(16) NOT NULL,
     requested_by text NOT NULL DEFAULT '',
+    requested_by_source text NOT NULL DEFAULT 'legacy',
+    requested_by_verified boolean NOT NULL DEFAULT false,
     model_name text NOT NULL DEFAULT '',
     base_url text NOT NULL DEFAULT '',
     config_json jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -89,5 +96,11 @@ CREATE TABLE IF NOT EXISTS inference_jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_issue_created
     ON inference_jobs(issue_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_annotations_author
+    ON annotations(author);
+CREATE INDEX IF NOT EXISTS idx_model_runs_created_by
+    ON model_runs(created_by);
+CREATE INDEX IF NOT EXISTS idx_jobs_requested_by
+    ON inference_jobs(requested_by);
 
 COMMIT;

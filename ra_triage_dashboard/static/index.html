@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RA Triage Workbench</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='%2309b8d4'/><text x='32' y='41' text-anchor='middle' font-size='28' font-family='sans-serif' font-weight='700' fill='%2309141d'>RA</text></svg>" />
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
@@ -80,7 +81,7 @@
                   <strong id="activeRunName">尚未选择模型 run</strong>
                 </div>
               </div>
-              <div class="run-toolbar-meta" id="activeRunMeta">同步 Trail 字段或导入 JSON / CSV / XLSX</div>
+              <div class="run-toolbar-meta" id="activeRunMeta">选择团队 Run、创建 Trail 只读快照，或导入 JSON / CSV / XLSX</div>
               <button class="button button-quiet" id="manageRunsButton" type="button">管理 Runs</button>
             </section>
 
@@ -132,6 +133,12 @@
                       </select>
                     </label>
                   </div>
+                  <label>
+                    <span>当前复核人</span>
+                    <select id="reviewerFilter">
+                      <option value="">全部复核人</option>
+                    </select>
+                  </label>
                   <button class="button button-quiet full-width" type="submit">应用筛选</button>
                 </form>
 
@@ -167,16 +174,82 @@
             <header class="page-heading">
               <div>
                 <span class="eyebrow">MODEL RUN REGISTRY</span>
-                <h2>模型结果 Runs</h2>
-                <p>管理不可变模型输出快照、Trail 同步和默认 Review run。</p>
+                <h2>评测 Runs · 批量结果快照</h2>
+                <p>Run 是一组不可变模型输出；Review 每次选择一个 Run 与 0508 GT 对比。</p>
               </div>
               <button class="button button-quiet" type="button" data-page-target="review">返回判错复核</button>
             </header>
+            <section class="result-flow" aria-label="模型结果生命周期">
+              <div class="flow-card">
+                <span>01 · INPUT</span>
+                <strong>批量文件 / Trail 只读字段</strong>
+                <small>收集一批 issue 的模型输出</small>
+              </div>
+              <span class="flow-arrow" aria-hidden="true">→</span>
+              <div class="flow-card active">
+                <span>02 · ASSET</span>
+                <strong>不可变 Model Run</strong>
+                <small>按内容哈希去重，可追溯来源和创建人</small>
+              </div>
+              <span class="flow-arrow" aria-hidden="true">→</span>
+              <div class="flow-card">
+                <span>03 · CONSUMER</span>
+                <strong>Review 与统计</strong>
+                <small>选择 Run 后对比 0508 baseline</small>
+              </div>
+              <div class="flow-side-note">
+                <strong>单 Case 推理是 Debug Job</strong>
+                <span>默认不会自动写入任何 Run，也不影响 Review 统计。</span>
+              </div>
+            </section>
+            <section class="page-card trail-safety-card">
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">TRAIL READ-ONLY SNAPSHOT</span>
+                  <h3>从 Trail 检查并创建只读快照</h3>
+                </div>
+                <span class="safety-badge">只读 Trail</span>
+              </div>
+              <p>
+                只按当前 0508 baseline 的 <strong id="trailScopeCount">1071</strong> 个 issue ID 查询
+                Trail view <strong id="trailViewId">1000</strong>，仅读取
+                <code>ra_stuck_auto_result</code> 与 <code>ra_stuck_auto_result_info</code>。
+              </p>
+              <ul class="safety-list">
+                <li>不会写回 Trail，也不会修改 0508 GT、人工复核或历史 Run。</li>
+                <li>“检查字段”只验证字段与覆盖数，不创建任何记录。</li>
+                <li>“创建只读快照”只创建或复用本地不可变 Run，不会改变团队默认 Run。</li>
+                <li>若任一分片未完整返回，为避免部分快照，本次不会创建 Run。</li>
+              </ul>
+              <div class="trail-sync-state" id="trailSyncState">等待读取当前 Trail 字段状态…</div>
+              <div class="trail-actions">
+                <button class="button button-quiet" id="checkTrailButton" type="button">检查字段可见性</button>
+                <button class="button button-primary" id="syncTrailButton" type="button" disabled>创建只读 Trail 快照</button>
+              </div>
+            </section>
             <section class="page-card runs-page-card">
               <div class="run-manager-actions">
-                <button class="button button-primary" id="runManagerImportButton" type="button">导入模型结果</button>
-                <button class="button button-quiet" id="syncTrailButton" type="button">同步 Trail 字段</button>
+                <button class="button button-primary" id="runManagerImportButton" type="button">导入批量模型结果</button>
                 <button class="button button-quiet" id="refreshRunsButton" type="button">刷新列表</button>
+              </div>
+              <div class="shared-data-note" id="runIdentityNote">
+                当前展示团队全部 Runs。创建人来自可信 SSO；结果包中的实验作者会单独标记，二者可能不同。
+              </div>
+              <div class="run-filter-bar">
+                <label>
+                  <span>相关人员</span>
+                  <select id="runPersonFilter">
+                    <option value="">全部人员</option>
+                  </select>
+                </label>
+                <label>
+                  <span>来源类型</span>
+                  <select id="runKindFilter">
+                    <option value="">全部来源</option>
+                    <option value="upload">批量文件</option>
+                    <option value="trail_snapshot">Trail 快照</option>
+                  </select>
+                </label>
               </div>
               <div class="run-manager-summary" id="runManagerSummary">正在加载 model runs…</div>
               <div class="run-manager-list" id="modelRunList"></div>
@@ -188,10 +261,15 @@
               <div>
                 <span class="eyebrow">LIVE ONE-CASE INFERENCE</span>
                 <h2>单 Case 模型推理</h2>
-                <p>为指定 issue 临时配置模型 endpoint，并通过受控 worker 调用 ra_auto_triage。</p>
+                <p>创建一个可审计的 Debug Job；结果不会自动加入评测 Run。</p>
               </div>
               <button class="button button-quiet" type="button" data-page-target="review">返回判错复核</button>
             </header>
+            <section class="object-semantics">
+              <strong>单 Case 推理 ≠ Model Run</strong>
+              <span>每次调用只产生一个 Inference Job，保存在任务历史中。它不会写入现有 Run、不会改变团队默认，也不会进入 Review 失败统计。</span>
+              <span>需要批量对比时，请导出标准 JSON/CSV/XLSX 并显式发布为新的不可变 Run；后续可扩展“实验草稿 → 发布 Run”。</span>
+            </section>
             <div class="tool-page-grid">
               <aside class="page-card page-aside">
                 <span class="eyebrow">INFERENCE TARGET</span>
@@ -231,6 +309,35 @@
                 </div>
               </form>
             </div>
+            <section class="page-card job-history-card">
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">INFERENCE JOB HISTORY</span>
+                  <h3>全员单 Case 任务</h3>
+                </div>
+                <button class="button button-quiet" id="refreshInferenceJobsButton" type="button">刷新任务</button>
+              </div>
+              <div class="run-filter-bar">
+                <label>
+                  <span>请求人</span>
+                  <select id="jobRequesterFilter">
+                    <option value="">全部请求人</option>
+                  </select>
+                </label>
+                <label>
+                  <span>任务状态</span>
+                  <select id="jobStatusFilter">
+                    <option value="">全部状态</option>
+                    <option value="queued">排队中</option>
+                    <option value="running">运行中</option>
+                    <option value="succeeded">成功</option>
+                    <option value="failed">失败</option>
+                  </select>
+                </label>
+              </div>
+              <div class="run-manager-summary" id="jobHistorySummary">正在加载任务历史…</div>
+              <div class="job-history-list" id="inferenceJobList"></div>
+            </section>
           </section>
 
           <section class="app-page tool-page hidden" id="importPage" data-page="import">
@@ -248,6 +355,7 @@
                 <h3>支持 JSON / CSV / XLSX</h3>
                 <p>Issue 文件至少需要 <code>issue_id</code>；模型结果至少需要 <code>issue_id</code> 与 <code>model_label</code> 或 <code>ra_stuck_auto_result</code>。</p>
                 <p>模型文件按 SHA-256 去重并创建不可变 run，不会覆盖历史输出。</p>
+                <div class="actor-summary" id="modelImportActorSummary">创建人将在导入时记录；当前身份尚未读取。</div>
               </aside>
               <form class="page-card tool-form" id="importForm">
                 <div class="segmented" id="importKind">

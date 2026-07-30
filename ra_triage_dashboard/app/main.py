@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .assets import AssetIndex, CameraIndex
-from .auth import request_identity
+from .auth import normalise_username, request_identity
 from .baseline import load_label_baseline
 from .db import LABELS, REVIEW_STATUSES, Database
 from .runner import InferenceRunner
@@ -59,7 +59,13 @@ MISSING_EVIDENCE_CATALOG: tuple[dict[str, str], ...] = (
 
 runtime_state: dict[str, Any] = {
     "baseline": {"status": "not_loaded", "message": "等待加载 0508 baseline。", "count": 0},
-    "trail_sync": {"status": "not_started", "message": "尚未同步 Trail 模型字段。", "run_id": ""},
+    "trail_sync": {
+        "status": "not_started",
+        "message": "尚未检查 Trail 模型字段。",
+        "run_id": "",
+        "can_create": False,
+        "default_changed": False,
+    },
 }
 
 
@@ -130,6 +136,27 @@ def _as_text(value: Any) -> str:
     if isinstance(value, float) and math.isnan(value):
         return ""
     return str(value).strip()
+
+
+def _action_actor(request: Request, submitted_name: Any = "") -> tuple[str, str, bool]:
+    """Resolve an audit/display actor without trusting direct-IP client claims."""
+
+    identity = request_identity(request, settings)
+    if identity.verified and identity.username:
+        return identity.username, identity.source, True
+    username = normalise_username(_as_text(submitted_name))
+    if username:
+        return username, "client_claim_unverified", False
+    return "", "anonymous", False
+
+
+def _can_manage_team_default(request: Request) -> bool:
+    identity = request_identity(request, settings)
+    return bool(
+        identity.verified
+        and identity.username
+        and identity.username in settings.team_default_managers
+    )
 
 
 def _value(row: dict[str, Any], *names: str) -> Any:
@@ -386,6 +413,9 @@ def bootstrap_model_result() -> None:
             source_sha256=hashlib.sha256(content).hexdigest(),
             metadata=metadata,
             rows=rows,
+            created_by="system",
+            created_by_source="service_bootstrap",
+            created_by_verified=False,
         )
     except Exception as exc:
         print(f"[ra_triage_dashboard] bootstrap model result skipped: {exc}", flush=True)
@@ -413,19 +443,35 @@ def bootstrap_baseline() -> dict[str, Any]:
     return state
 
 
-def sync_trail_model_fields() -> dict[str, Any]:
-    """Create/reuse an immutable default model snapshot from the Trail view."""
+def sync_trail_model_fields(
+    *,
+    create_run: bool = False,
+    requested_by: str = "",
+    identity_source: str = "anonymous",
+    identity_verified: bool = False,
+    trigger: str = "manual",
+) -> dict[str, Any]:
+    """Inspect Trail fields and optionally create/reuse an immutable local snapshot.
+
+    This function only calls the Trail query client.  Creating a snapshot writes
+    local SQLite rows, but never writes Trail and never changes the shared
+    default model run.
+    """
 
     if not trail_sync_lock.acquire(blocking=False):
         return {
             **runtime_state["trail_sync"],
             "status": "running",
-            "message": "已有 Trail 同步任务在运行。",
+            "message": "已有 Trail 字段检查或快照任务在运行。",
         }
+    action = "创建只读快照" if create_run else "检查字段"
     runtime_state["trail_sync"] = {
         "status": "running",
-        "message": f"正在读取 Trail view {settings.trail_view_id}。",
+        "message": f"正在从 Trail view {settings.trail_view_id} 只读{action}。",
         "run_id": "",
+        "can_create": False,
+        "default_changed": False,
+        "action": "create" if create_run else "preview",
     }
     try:
         issue_ids = database.baseline_issue_ids(settings.baseline_scope)
@@ -443,22 +489,70 @@ def sync_trail_model_fields() -> dict[str, Any]:
             "returned_issues": result.returned_issues,
             "fields_visible": list(result.fields_visible),
             "run_id": "",
+            "complete": result.complete,
+            "can_create": False,
+            "default_changed": False,
+            "action": "create" if create_run else "preview",
         }
+        if not result.complete or result.returned_issues < result.queried_issues:
+            state.update(
+                {
+                    "status": "failed",
+                    "message": (
+                        result.message
+                        + (
+                            f" 仅返回 {result.returned_issues} / {result.queried_issues} 个 baseline issue；"
+                            if result.complete
+                            else " "
+                        )
+                        + "为避免部分快照，未创建 Run，团队默认 Run 未变化。"
+                    ),
+                }
+            )
+            runtime_state["trail_sync"] = state
+            return state
         if TRAIL_RESULT_FIELD not in result.fields_visible:
+            state["message"] = result.message + " 未创建 Run，团队默认 Run 未变化。"
             runtime_state["trail_sync"] = state
             return state
         normalized = [row for raw in result.rows if (row := normalize_model_row(raw))]
-        usable = [row for row in normalized if row["model_label"]]
+        # Trail snapshots participate in three-class evaluation, so only the
+        # canonical labels are usable. Keep non-standard values out of the
+        # snapshot rather than treating placeholders such as "nan" as labels.
+        usable = [row for row in normalized if row["model_label"] in LABELS]
         if not usable:
             state.update(
                 {
                     "status": "empty",
-                    "message": result.message + " 字段已出现，但当前 1071 范围没有非空模型结果。",
+                    "message": (
+                        result.message
+                        + " 字段已出现，但当前 baseline 没有非空模型结果；未创建 Run。"
+                    ),
                 }
             )
             runtime_state["trail_sync"] = state
             return state
         snapshot_rows = sorted(usable, key=lambda row: row["issue_id"])
+        state.update(
+            {
+                "can_create": True,
+                "usable_predictions": len(usable),
+                "missing_predictions": max(result.queried_issues - len(usable), 0),
+            }
+        )
+        if not create_run:
+            state.update(
+                {
+                    "status": "preview_ready",
+                    "message": (
+                        result.message
+                        + f" 检查完成：{len(usable)} / {result.queried_issues} 条可生成快照。"
+                        + " 尚未创建 Run，团队默认 Run 未变化。"
+                    ),
+                }
+            )
+            runtime_state["trail_sync"] = state
+            return state
         payload = {
             "scope": settings.baseline_scope,
             "view_id": settings.trail_view_id,
@@ -481,10 +575,14 @@ def sync_trail_model_fields() -> dict[str, Any]:
                 "queried_issues": result.queried_issues,
                 "returned_issues": result.returned_issues,
                 "usable_predictions": len(usable),
+                "trigger": trigger,
             },
             rows=snapshot_rows,
             kind="trail_snapshot",
-            make_default=True,
+            make_default=False,
+            created_by=requested_by,
+            created_by_source=identity_source,
+            created_by_verified=identity_verified,
         )
         state.update(
             {
@@ -492,7 +590,15 @@ def sync_trail_model_fields() -> dict[str, Any]:
                 "run_id": run["id"],
                 "usable_predictions": len(usable),
                 "duplicate": duplicate,
-                "message": result.message + f" 已设为默认比较 run（{len(usable)} 条）。",
+                "message": (
+                    result.message
+                    + (
+                        f" 内容未变化，已复用现有只读快照（{len(usable)} 条）。"
+                        if duplicate
+                        else f" 已创建只读快照（{len(usable)} 条）。"
+                    )
+                    + " Trail、GT、人工复核和团队默认 Run 均未修改。"
+                ),
             }
         )
         runtime_state["trail_sync"] = state
@@ -500,8 +606,11 @@ def sync_trail_model_fields() -> dict[str, Any]:
     except Exception as exc:
         state = {
             "status": "failed",
-            "message": f"Trail 模型字段同步失败: {exc}",
+            "message": f"Trail 只读{action}失败: {exc}；未创建 Run，团队默认 Run 未变化。",
             "run_id": "",
+            "can_create": False,
+            "default_changed": False,
+            "action": "create" if create_run else "preview",
         }
         runtime_state["trail_sync"] = state
         return state
@@ -518,13 +627,20 @@ async def lifespan(_: FastAPI):
     asset_index.refresh(force=True)
     bootstrap_model_result()
     if settings.trail_sync_on_start:
-        await asyncio.to_thread(sync_trail_model_fields)
+        await asyncio.to_thread(
+            sync_trail_model_fields,
+            create_run=False,
+            requested_by="system",
+            identity_source="service_startup",
+            identity_verified=False,
+            trigger="startup",
+        )
     yield
 
 
 app = FastAPI(
     title="RA Triage Workbench",
-    version="1.1.0",
+    version="1.2.0",
     lifespan=lifespan,
 )
 app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
@@ -583,6 +699,7 @@ async def session(request: Request) -> dict[str, object]:
             if settings.trust_proxy_identity_headers
             else ""
         ),
+        "can_manage_team_default": _can_manage_team_default(request),
     }
 
 
@@ -606,6 +723,7 @@ async def list_cases(
     search: str = "",
     gt_label: str = "",
     annotation_label: str = "",
+    annotation_author: str = "",
     model_run_id: str = "",
     failure_only: bool = False,
     missing_evidence: str = "",
@@ -617,12 +735,18 @@ async def list_cases(
         search=search,
         gt_label=gt_label,
         annotation_label=annotation_label,
+        annotation_author=annotation_author,
         model_run_id=model_run_id,
         failure_only=failure_only,
         missing_evidence=missing_evidence,
         page=page,
         page_size=page_size,
     )
+
+
+@app.get("/api/reviewers")
+async def reviewers() -> dict[str, Any]:
+    return {"items": database.list_reviewers(settings.baseline_scope)}
 
 
 @app.get("/api/cases/{issue_id}")
@@ -671,7 +795,7 @@ async def create_annotation(issue_id: str, request: Request) -> dict[str, Any]:
         raise _detail(400, "tags 必须是数组。")
     if not isinstance(missing_evidence, list):
         raise _detail(400, "missing_evidence 必须是数组。")
-    identity = request_identity(request, settings)
+    author, author_source, author_verified = _action_actor(request, body.get("author"))
     try:
         annotation = database.create_annotation(
             issue_id=issue_id,
@@ -680,11 +804,9 @@ async def create_annotation(issue_id: str, request: Request) -> dict[str, Any]:
             tags=tags,
             missing_evidence=missing_evidence,
             note=_as_text(body.get("note")),
-            author=(
-                identity.username
-                if identity.authenticated
-                else _as_text(body.get("author"))
-            ),
+            author=author,
+            author_source=author_source,
+            author_verified=author_verified,
         )
     except ValueError as exc:
         raise _detail(400, str(exc))
@@ -700,7 +822,13 @@ async def model_runs() -> dict[str, Any]:
 
 
 @app.post("/api/model-runs/{run_id}/default")
-async def set_default_model_run(run_id: str) -> dict[str, Any]:
+async def set_default_model_run(run_id: str, request: Request) -> dict[str, Any]:
+    if not _can_manage_team_default(request):
+        raise _detail(
+            403,
+            "设置团队默认 Run 需要可信 SSO 且用户名位于 "
+            "DASHBOARD_TEAM_DEFAULT_MANAGERS；当前仍可在 Review 中选择任意 Run。",
+        )
     run = database.set_default_model_run(run_id)
     if run is None:
         raise _detail(404, "模型 run 不存在。")
@@ -708,19 +836,41 @@ async def set_default_model_run(run_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/review-clusters")
-async def review_clusters(model_run_id: str = "", failure_only: bool = True) -> dict[str, Any]:
+async def review_clusters(
+    model_run_id: str = "",
+    failure_only: bool = True,
+    annotation_author: str = "",
+) -> dict[str, Any]:
     return {
         "items": database.review_clusters(
             baseline_scope=settings.baseline_scope,
             model_run_id=model_run_id,
             failure_only=failure_only,
+            annotation_author=annotation_author,
         )
     }
 
 
 @app.post("/api/trail-model-sync")
-async def trail_model_sync() -> dict[str, Any]:
-    return await asyncio.to_thread(sync_trail_model_fields)
+async def trail_model_sync(request: Request) -> dict[str, Any]:
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        body = {}
+    mode = _as_text(body.get("mode") or "preview")
+    if mode not in {"preview", "create"}:
+        raise _detail(400, "mode 仅支持 preview 或 create。")
+    actor, actor_source, actor_verified = _action_actor(
+        request, body.get("requested_by")
+    )
+    return await asyncio.to_thread(
+        sync_trail_model_fields,
+        create_run=mode == "create",
+        requested_by=actor,
+        identity_source=actor_source,
+        identity_verified=actor_verified,
+        trigger="manual",
+    )
 
 
 @app.get("/api/import-contract")
@@ -800,8 +950,10 @@ async def import_issues(
 
 @app.post("/api/import/model-results")
 async def import_model_results(
+    request: Request,
     file: UploadFile = File(...),
     run_name: str = Form(""),
+    created_by: str = Form(""),
 ) -> dict[str, Any]:
     content, filename, source_hash = await _read_upload(file)
     try:
@@ -816,12 +968,16 @@ async def import_model_results(
         )
     experiment = metadata.get("experiment") if isinstance(metadata.get("experiment"), dict) else {}
     default_name = _as_text(experiment.get("model_name")) or Path(filename).stem
+    actor, actor_source, actor_verified = _action_actor(request, created_by)
     run, duplicate = database.import_model_run(
         name=_as_text(run_name) or default_name,
         source_name=filename,
         source_sha256=source_hash,
         metadata=metadata,
         rows=rows,
+        created_by=actor,
+        created_by_source=actor_source,
+        created_by_verified=actor_verified,
     )
     return {
         "run": run,
@@ -878,17 +1034,17 @@ async def create_inference_job(request: Request) -> dict[str, Any]:
         "use_ra_options": bool(body.get("use_ra_options", True)),
         "dry_run": dry_run,
     }
-    identity = request_identity(request, settings)
+    actor, actor_source, actor_verified = _action_actor(
+        request, body.get("requested_by")
+    )
     job = database.create_job(
         issue_id=issue_id,
-        requested_by=(
-            identity.username
-            if identity.authenticated
-            else _as_text(body.get("requested_by"))
-        ),
+        requested_by=actor,
         model_name=model_name or "preflight",
         base_url=base_url,
         config={key: value for key, value in safe_request.items() if key != "base_url"},
+        requested_by_source=actor_source,
+        requested_by_verified=actor_verified,
     )
     inference_runner.launch(job, {**safe_request, "api_key": api_key})
     return {
@@ -900,6 +1056,19 @@ async def create_inference_job(request: Request) -> dict[str, Any]:
             "bag_cache_read_only": True,
         },
     }
+
+
+@app.get("/api/inference/jobs")
+async def list_inference_jobs(
+    requested_by: str = "",
+    status: str = "",
+    page_size: int = 100,
+) -> dict[str, Any]:
+    return database.list_inference_jobs(
+        requested_by=requested_by,
+        status=status,
+        page_size=page_size,
+    )
 
 
 @app.get("/api/inference/jobs/{job_id}")

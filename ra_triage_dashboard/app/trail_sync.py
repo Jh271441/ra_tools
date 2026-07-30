@@ -18,6 +18,7 @@ class TrailSyncResult:
     returned_issues: int
     fields_visible: tuple[str, ...]
     view_id: int
+    complete: bool
     message: str
 
 
@@ -43,7 +44,15 @@ def read_trail_model_fields(
 
     ids = sorted({str(issue_id).strip() for issue_id in issue_ids if str(issue_id).strip()})
     if not ids:
-        return TrailSyncResult([], 0, 0, (), view_id, "当前 baseline 没有可同步的 issue。")
+        return TrailSyncResult(
+            rows=[],
+            queried_issues=0,
+            returned_issues=0,
+            fields_visible=(),
+            view_id=view_id,
+            complete=True,
+            message="当前 baseline 没有可同步的 issue。",
+        )
     root = str(ra_root.resolve())
     if root not in sys.path:
         sys.path.insert(0, root)
@@ -52,7 +61,13 @@ def read_trail_model_fields(
         from utils.get_ra_issue_utils import get_self_issue  # type: ignore[import-not-found]
     except Exception as exc:
         return TrailSyncResult(
-            [], len(ids), 0, (), view_id, f"无法加载 ra_auto_triage 的 Trail 只读客户端: {exc}"
+            rows=[],
+            queried_issues=len(ids),
+            returned_issues=0,
+            fields_visible=(),
+            view_id=view_id,
+            complete=False,
+            message=f"无法加载 ra_auto_triage 的 Trail 只读客户端: {exc}",
         )
 
     output: dict[str, dict[str, Any]] = {}
@@ -63,12 +78,13 @@ def read_trail_model_fields(
             frame = get_self_issue(condition, view_id=view_id, size=max(len(chunk), 200))
         except Exception as exc:
             return TrailSyncResult(
-                list(output.values()),
-                len(ids),
-                len(output),
-                tuple(sorted(visible)),
-                view_id,
-                f"Trail 查询失败（view {view_id}）: {exc}",
+                rows=list(output.values()),
+                queried_issues=len(ids),
+                returned_issues=len(output),
+                fields_visible=tuple(sorted(visible)),
+                view_id=view_id,
+                complete=False,
+                message=f"Trail 查询失败（view {view_id}）；为避免部分快照，本次不会创建 Run: {exc}",
             )
         if frame is None or len(frame) == 0:
             continue
@@ -106,4 +122,12 @@ def read_trail_model_fields(
             f"Trail view {view_id} 已读取 {len(output)} 条，"
             f"可见字段: {', '.join(fields)}。"
         )
-    return TrailSyncResult(list(output.values()), len(ids), len(output), fields, view_id, message)
+    return TrailSyncResult(
+        rows=list(output.values()),
+        queried_issues=len(ids),
+        returned_issues=len(output),
+        fields_visible=fields,
+        view_id=view_id,
+        complete=True,
+        message=message,
+    )

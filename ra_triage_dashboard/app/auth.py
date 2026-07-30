@@ -28,7 +28,7 @@ class SessionIdentity:
         }
 
 
-def _normalise_username(value: str) -> str:
+def normalise_username(value: str) -> str:
     username = value.strip()
     return username if IDENTITY_RE.fullmatch(username) else ""
 
@@ -44,7 +44,7 @@ def request_identity(request: Request, settings: Settings) -> SessionIdentity:
 
     if not settings.trust_proxy_identity_headers:
         return SessionIdentity()
-    username = _normalise_username(request.headers.get(settings.identity_header, ""))
+    username = normalise_username(request.headers.get(settings.identity_header, ""))
     if not username:
         return SessionIdentity(source="trusted_proxy_header_missing")
     return SessionIdentity(

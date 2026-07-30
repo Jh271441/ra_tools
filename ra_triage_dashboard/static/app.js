@@ -12,6 +12,9 @@ const state = {
   selectedId: "",
   selectedCase: null,
   modelRuns: [],
+  reviewers: [],
+  inferenceJobs: [],
+  inferenceRequesters: [],
   selectedRunId: "",
   failureOnly: false,
   clusterKey: "",
@@ -19,10 +22,17 @@ const state = {
   pollingJobId: "",
   pollTimer: null,
   media: { kind: "bev", index: 0 },
-  session: { username: "", source: "anonymous", authenticated: false, verified: false },
+  session: {
+    username: "",
+    source: "anonymous",
+    authenticated: false,
+    verified: false,
+    can_manage_team_default: false,
+  },
   sidebarCollapsed: false,
   activePage: "review",
   inferenceCase: null,
+  trailInspection: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -78,7 +88,10 @@ function showPage(page, { historyMode = "", issue = "", kind = "" } = {}) {
   $("#pageEyebrow").textContent = PAGE_ROUTES[target].eyebrow;
   document.title = `${PAGE_ROUTES[target].title} · RA Triage`;
   if (previousPage === "inference" && target !== "inference") $("#apiKeyInput").value = "";
-  if (target === "runs") renderRunManager();
+  if (target === "runs") {
+    renderRunManager();
+    renderTrailSyncState();
+  }
   if (target === "import") {
     const importKind = kind || new URLSearchParams(window.location.search).get("kind") || "issues";
     setImportKind(importKind);
@@ -87,6 +100,7 @@ function showPage(page, { historyMode = "", issue = "", kind = "" } = {}) {
     const issueId = issue || state.selectedId;
     if (issueId) $("#inferIssueInput").value = issueId;
     updateInferenceTarget();
+    loadInferenceJobs().catch((error) => showToast(error.message, true));
   }
   if (historyMode === "push") history.pushState({ page: target }, "", pageUrl(target, { issue, kind }));
   if (historyMode === "replace") history.replaceState({ page: target }, "", pageUrl(target, { issue, kind }));
@@ -226,6 +240,24 @@ function renderSession() {
   const requestedBy = $("#requestedByInput");
   if (requestedBy && username && !requestedBy.value) requestedBy.value = username;
   if (requestedBy) requestedBy.readOnly = Boolean(state.session.verified);
+  const importActor = $("#modelImportActorSummary");
+  if (importActor) {
+    importActor.textContent = state.session.verified
+      ? `本次导入创建人：${username}（企业 SSO 已验证）`
+      : username
+        ? `本次导入显示名：${username}（本机 LCA，未验证；不能用于权限）`
+        : "当前没有可信 SSO；Run 创建人将记为未记录。";
+  }
+  const runIdentityNote = $("#runIdentityNote");
+  if (runIdentityNote) {
+    runIdentityNote.textContent = state.session.verified
+      ? `当前展示团队全部 Runs。你是 ${username}（SSO 已验证）；可按创建人或实验作者筛选。${
+          state.session.can_manage_team_default
+            ? "你有团队默认 Run 管理权限。"
+            : "团队默认 Run 仅允许配置的管理员修改。"
+        }`
+      : "当前展示团队全部 Runs。IP 直连没有可信 SSO；本机 LCA 只作未验证署名，不能修改团队默认。";
+  }
 }
 
 async function loadSession() {
@@ -239,6 +271,7 @@ async function loadSession() {
       source: username ? "browser_lca_unverified" : "anonymous",
       authenticated: false,
       verified: false,
+      can_manage_team_default: false,
     };
   }
   renderSession();
@@ -247,6 +280,44 @@ async function loadSession() {
 function renderConfig() {
   const baseline = state.config?.baseline || {};
   $(".header-metrics")?.setAttribute("title", baseline.message || "0508 baseline GT 只读");
+  if ($("#trailScopeCount")) $("#trailScopeCount").textContent = baseline.count ?? "—";
+  const trail = state.trailInspection || state.config?.trail_sync || {};
+  if ($("#trailViewId")) $("#trailViewId").textContent = trail.view_id ?? "1000";
+  renderTrailSyncState();
+}
+
+function renderTrailSyncState() {
+  const target = $("#trailSyncState");
+  if (!target) return;
+  const trail = state.trailInspection || state.config?.trail_sync || {};
+  const status = trail.status || "not_started";
+  const visibleFields = trail.fields_visible?.length
+    ? trail.fields_visible.join("、")
+    : "尚未发现模型字段";
+  const coverage =
+    trail.usable_predictions === undefined
+      ? ""
+      : ` · 可用 ${trail.usable_predictions} / ${trail.queried_issues ?? "—"}`;
+  target.className = `trail-sync-state ${
+    ["preview_ready", "ready"].includes(status)
+      ? "ok"
+      : ["failed", "unavailable", "empty"].includes(status)
+        ? "warn"
+        : "pending"
+  }`;
+  target.innerHTML = `
+    <strong>${escapeHtml(trail.message || "尚未检查 Trail 模型字段。")}</strong>
+    <span>字段：${escapeHtml(visibleFields)}${escapeHtml(coverage)}</span>`;
+  const checkButton = $("#checkTrailButton");
+  const createButton = $("#syncTrailButton");
+  const running = status === "running";
+  if (checkButton) checkButton.disabled = running;
+  if (createButton) {
+    createButton.disabled = running || !trail.can_create;
+    createButton.title = trail.can_create
+      ? "创建或复用本地不可变快照；不会改变团队默认 Run"
+      : "请先检查字段；所有 baseline issue 分片必须完整返回，结果本身可为部分覆盖";
+  }
 }
 
 async function loadConfig() {
@@ -279,6 +350,28 @@ async function loadStatus() {
   }
 }
 
+async function loadReviewers() {
+  const data = await api("/api/reviewers");
+  state.reviewers = data.items || [];
+  const select = $("#reviewerFilter");
+  if (!select) return;
+  const previous = select.value;
+  select.innerHTML = `<option value="">全部复核人</option>${state.reviewers
+    .map(
+      (item) => {
+        const trust =
+          item.verified_count > 0 && item.unverified_count > 0
+            ? " · 混合身份"
+            : item.verified
+              ? " · SSO"
+              : "";
+        return `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)} · ${item.review_count} 条${trust}</option>`;
+      }
+    )
+    .join("")}`;
+  select.value = state.reviewers.some((item) => item.name === previous) ? previous : "";
+}
+
 async function loadRuns({ preferDefault = false } = {}) {
   const data = await api("/api/model-runs");
   state.modelRuns = data.items || [];
@@ -304,8 +397,35 @@ async function loadRuns({ preferDefault = false } = {}) {
   if (preferDefault && !previousRunId && state.selectedRunId) state.failureOnly = true;
   if (!state.selectedRunId) state.failureOnly = false;
   failure.checked = state.failureOnly;
+  renderRunFilters();
   renderActiveRun();
   renderRunManager();
+}
+
+function runPeople() {
+  const values = new Set();
+  state.modelRuns.forEach((run) => {
+    if (run.created_by) values.add(run.created_by);
+    if (run.declared_author) values.add(run.declared_author);
+  });
+  return [...values].sort((left, right) => left.localeCompare(right, "zh-CN"));
+}
+
+function renderRunFilters() {
+  const select = $("#runPersonFilter");
+  if (!select) return;
+  const previous = select.value;
+  const mine = state.session.username;
+  const people = runPeople();
+  select.innerHTML = [
+    '<option value="">全部人员</option>',
+    mine ? `<option value="__me__">我的 · ${escapeHtml(mine)}</option>` : "",
+    ...people.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`),
+  ].join("");
+  select.value =
+    previous === "__me__" || people.includes(previous)
+      ? previous
+      : "";
 }
 
 function activeRun() {
@@ -316,7 +436,9 @@ function renderActiveRun(overview = null) {
   const run = activeRun();
   $("#activeRunName").textContent = run?.name || "尚未选择模型 run";
   if (!run) {
-    $("#activeRunMeta").textContent = state.config?.trail_sync?.message || "同步 Trail 字段或导入 JSON / CSV / XLSX";
+    $("#activeRunMeta").textContent =
+      state.config?.trail_sync?.message ||
+      "选择团队 Run、创建 Trail 只读快照，或导入 JSON / CSV / XLSX";
     return;
   }
   const coverage = overview?.predictions ?? run.baseline_prediction_count ?? 0;
@@ -331,33 +453,68 @@ function renderActiveRun(overview = null) {
 function renderRunManager() {
   const list = $("#modelRunList");
   if (!list) return;
-  const totalCoverage = state.modelRuns.reduce((sum, run) => sum + Number(run.baseline_prediction_count || 0), 0);
-  $("#runManagerSummary").textContent = `${state.modelRuns.length} 个不可变 run · 累计 ${totalCoverage} 条 baseline 预测记录`;
-  if (!state.modelRuns.length) {
-    list.innerHTML = '<div class="no-asset">暂无模型 run。可上传 JSON / CSV / XLSX，或同步 Trail 字段。</div>';
+  const personValue = $("#runPersonFilter")?.value || "";
+  const person = personValue === "__me__" ? state.session.username : personValue;
+  const kind = $("#runKindFilter")?.value || "";
+  const filteredRuns = state.modelRuns.filter((run) => {
+    const personMatch =
+      !person || run.created_by === person || run.declared_author === person;
+    return personMatch && (!kind || run.kind === kind);
+  });
+  const totalCoverage = filteredRuns.reduce(
+    (sum, run) => sum + Number(run.baseline_prediction_count || 0),
+    0
+  );
+  $("#runManagerSummary").textContent =
+    `显示 ${filteredRuns.length} / ${state.modelRuns.length} 个团队 Run` +
+    ` · 累计 ${totalCoverage} 条 baseline 预测记录`;
+  if (!filteredRuns.length) {
+    list.innerHTML = '<div class="no-asset">当前筛选下没有 Model Run。可清除人员/来源筛选、上传批量结果，或创建 Trail 只读快照。</div>';
     return;
   }
-  list.innerHTML = state.modelRuns
+  const baselineCount = Number(state.config?.baseline?.count || 0);
+  list.innerHTML = filteredRuns
     .map(
-      (run) => `<article class="run-row ${run.id === state.selectedRunId ? "active" : ""}">
+      (run) => {
+        const coverage = Number(run.baseline_prediction_count || 0);
+        const coverageLabel =
+          baselineCount && coverage >= baselineCount ? "全量覆盖" : "部分覆盖";
+        const creator = run.created_by || "历史未记录";
+        const creatorTrust = run.created_by_verified
+          ? "SSO 已验证"
+          : run.created_by
+            ? "未验证"
+            : "legacy";
+        const declaredAuthor = run.declared_author || "未声明";
+        return `<article class="run-row ${run.id === state.selectedRunId ? "active" : ""}">
         <div class="run-row-main">
           <div class="run-row-title">
             <strong>${escapeHtml(run.name)}</strong>
             ${run.is_default ? '<span class="run-default-badge">默认</span>' : ""}
+            <span class="run-coverage-badge">${coverageLabel}</span>
           </div>
           <div class="run-row-meta">
-            <span>${run.baseline_prediction_count ?? 0} / ${state.config?.baseline?.count || "—"} 覆盖</span>
+            <span>${coverage} / ${state.config?.baseline?.count || "—"} 覆盖</span>
             <span>${run.failure_count ?? 0} 条失败</span>
             <span>${run.kind === "trail_snapshot" ? "Trail 快照" : "文件导入"}</span>
             <span>${formatTime(run.created_at)}</span>
           </div>
+          <div class="run-identity-row">
+            <span>创建人：<b>${escapeHtml(creator)}</b><em>${escapeHtml(creatorTrust)}</em></span>
+            <span>实验作者：<b>${escapeHtml(declaredAuthor)}</b><em>结果包声明</em></span>
+          </div>
           <div class="run-row-source" title="${escapeHtml(run.source_name || "")}">${escapeHtml(run.source_name || "无来源文件")}</div>
         </div>
         <div class="run-row-actions">
-          <button class="button ${run.id === state.selectedRunId ? "button-primary" : "button-quiet"}" type="button" data-use-run="${escapeHtml(run.id)}">${run.id === state.selectedRunId ? "使用中" : "用于 Review"}</button>
-          ${run.is_default ? "" : `<button class="button button-quiet" type="button" data-default-run="${escapeHtml(run.id)}">设为默认</button>`}
+          <button class="button ${run.id === state.selectedRunId ? "button-primary" : "button-quiet"}" type="button" data-use-run="${escapeHtml(run.id)}">${run.id === state.selectedRunId ? "Review 使用中" : "在 Review 中打开"}</button>
+          ${
+            run.is_default
+              ? ""
+              : `<button class="button button-quiet" type="button" data-default-run="${escapeHtml(run.id)}" ${state.session.can_manage_team_default ? "" : "disabled"} title="${state.session.can_manage_team_default ? "修改所有用户的团队默认 Run" : "需要可信 SSO 且位于团队默认管理员名单"}">设为团队默认</button>`
+          }
         </div>
-      </article>`
+      </article>`;
+      }
     )
     .join("");
   list.querySelectorAll("[data-use-run]").forEach((button) => {
@@ -383,11 +540,26 @@ async function useModelRun(runId) {
 }
 
 async function setDefaultRun(runId) {
+  if (!state.session.can_manage_team_default) {
+    showToast(
+      "设置团队默认 Run 需要可信 SSO 且位于管理员名单；当前仍可在 Review 中打开任意 Run。",
+      true
+    );
+    return;
+  }
+  const run = state.modelRuns.find((item) => item.id === runId);
+  if (
+    !window.confirm(
+      `确定将“${run?.name || runId}”设为团队默认吗？\n\n这会改变所有用户进入 Review 时默认选择的 Run，但不会改写模型输出、GT 或人工复核。`
+    )
+  ) {
+    return;
+  }
   try {
     await api(`/api/model-runs/${encodeURIComponent(runId)}/default`, { method: "POST", body: "{}" });
     await loadRuns();
     await loadOverview();
-    showToast("已更新默认模型 run；历史输出未被改写。");
+    showToast("已更新团队默认 Run；历史输出、GT 和人工复核均未改写。");
   } catch (error) {
     showToast(error.message, true);
   }
@@ -409,6 +581,7 @@ function issueRow(item) {
       <div class="issue-row-meta">
         ${labelBadge(item.gt_label, "GT —")}
         ${prediction ? labelBadge(prediction, "模型 —") : '<span class="quiet-meta">模型 —</span>'}
+        ${item.annotation?.author ? `<span class="quiet-meta">复核 · ${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO" : ""}</span>` : ""}
       </div>
       ${item.annotation?.missing_evidence?.length ? `<div class="row-evidence">${item.annotation.missing_evidence.map((key) => `<span>${escapeHtml(evidenceLabel(key))}</span>`).join("")}</div>` : ""}
     </button>`;
@@ -437,11 +610,13 @@ async function loadCases({ keepSelection = true } = {}) {
   const search = $("#searchInput").value.trim();
   const gtLabel = $("#gtFilter").value;
   const annotationLabel = $("#annotationFilter").value;
+  const annotationAuthor = $("#reviewerFilter").value;
   state.selectedRunId = $("#modelRunFilter").value;
   state.failureOnly = Boolean($("#failureOnlyInput").checked && state.selectedRunId);
   if (search) params.set("search", search);
   if (gtLabel) params.set("gt_label", gtLabel);
   if (annotationLabel) params.set("annotation_label", annotationLabel);
+  if (annotationAuthor) params.set("annotation_author", annotationAuthor);
   if (state.selectedRunId) params.set("model_run_id", state.selectedRunId);
   if (state.failureOnly) params.set("failure_only", "true");
   if (state.clusterKey) params.set("missing_evidence", state.clusterKey);
@@ -457,6 +632,8 @@ async function loadClusters() {
   const params = new URLSearchParams();
   if (state.selectedRunId) params.set("model_run_id", state.selectedRunId);
   params.set("failure_only", String(Boolean(state.failureOnly && state.selectedRunId)));
+  const annotationAuthor = $("#reviewerFilter")?.value;
+  if (annotationAuthor) params.set("annotation_author", annotationAuthor);
   const data = await api(`/api/review-clusters?${params.toString()}`);
   const list = $("#clusterList");
   if (!(data.items || []).length) {
@@ -526,7 +703,7 @@ function heroMediaSection(bev, camera) {
 function predictionCards(caseData) {
   const predictions = caseData.predictions || [];
   if (!predictions.length) {
-    return '<div class="no-asset">当前 case 没有模型输出。可同步 Trail 字段、上传结果文件，或运行单 case 推理。</div>';
+    return '<div class="no-asset">当前 case 没有 Run 模型输出。可创建 Trail 只读快照或上传批量结果；单 Case Job 不会自动进入这里。</div>';
   }
   return `<div class="model-list">${predictions
     .map((prediction) => {
@@ -536,7 +713,35 @@ function predictionCards(caseData) {
       return `<article class="model-card ${selected ? "active" : ""}">
         <div class="model-card-head"><div><span class="eyebrow">${escapeHtml(prediction.run_kind || "model run")}</span><h3>${escapeHtml(prediction.run_name || "模型输出")}</h3></div>${labelBadge(prediction.model_label, "未输出")}</div>
         <p>${escapeHtml(detail)}</p>
-        <div class="model-card-meta">${prediction.model_confidence ?? "—"} confidence · ${formatTime(prediction.created_at)}</div>
+        <div class="model-card-meta">${prediction.model_confidence ?? "—"} confidence · ${formatTime(prediction.created_at)}${prediction.run_created_by ? ` · 创建人 ${escapeHtml(prediction.run_created_by)}` : ""}</div>
+      </article>`;
+    })
+    .join("")}</div>`;
+}
+
+function inferenceJobCards(jobs) {
+  if (!jobs?.length) {
+    return '<div class="no-asset">这个 issue 还没有单 Case Debug Job。</div>';
+  }
+  return `<div class="job-mini-list">${jobs
+    .map((job) => {
+      const detail = job.result?.result || {};
+      const statusLabel = {
+        queued: "排队中",
+        running: "运行中",
+        succeeded: "成功",
+        failed: "失败",
+      }[job.status] || job.status;
+      return `<article class="job-mini-row">
+        <div>
+          <strong>${escapeHtml(job.model_name || "preflight")}</strong>
+          <span>${escapeHtml(job.issue_id)} · ${formatTime(job.created_at)}</span>
+        </div>
+        <div class="job-mini-meta">
+          <span class="job-status status-${escapeHtml(job.status)}">${escapeHtml(statusLabel)}</span>
+          ${detail.model_label ? labelBadge(detail.model_label, "—") : ""}
+          <span>${job.requested_by ? `请求人 ${escapeHtml(job.requested_by)}${job.requested_by_verified ? " · SSO" : ""}` : "请求人未记录"}</span>
+        </div>
       </article>`;
     })
     .join("")}</div>`;
@@ -561,7 +766,8 @@ function renderDetail(caseData) {
       ${caseData.review_note ? `<div class="review-note"><span>历史备注</span>${escapeHtml(caseData.review_note)}</div>` : ""}
     </div>
     ${heroMediaSection(caseData.assets, caseData.camera)}
-    <section class="section"><div class="section-heading"><div><span class="eyebrow">MODEL COMPARISON</span><h3>模型输出历史</h3></div><small>默认 run 会高亮</small></div>${predictionCards(caseData)}</section>`;
+    <section class="section"><div class="section-heading"><div><span class="eyebrow">MODEL RUN COMPARISON</span><h3>评测 Run 输出历史</h3></div><small>当前 Review run 会高亮</small></div>${predictionCards(caseData)}</section>
+    <section class="section"><div class="section-heading"><div><span class="eyebrow">DEBUG JOBS</span><h3>单 Case 推理记录</h3></div><small>仅调试，不进入 Run 统计</small></div>${inferenceJobCards(caseData.jobs)}</section>`;
   $("#detailPane").querySelectorAll("[data-media-kind]").forEach((button) => {
     button.addEventListener("click", () => openMedia(button.dataset.mediaKind, Number(button.dataset.mediaIndex)));
   });
@@ -576,7 +782,7 @@ function annotationHistory(annotations) {
         ${annotation.missing_evidence?.length ? `<div class="tags">${annotation.missing_evidence.map((key) => `<span class="tag evidence-tag">${escapeHtml(evidenceLabel(key))}</span>`).join("")}</div>` : ""}
         ${annotation.tags?.length ? `<div class="tags">${annotation.tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>` : ""}
         ${annotation.note ? `<p>${escapeHtml(annotation.note)}</p>` : ""}
-        ${annotation.author ? `<small>${escapeHtml(annotation.author)}</small>` : ""}
+        ${annotation.author ? `<small>${escapeHtml(annotation.author)}${annotation.author_verified ? " · SSO 已验证" : " · 未验证/历史"}</small>` : ""}
       </article>`)
     .join("");
 }
@@ -661,7 +867,7 @@ async function saveAnnotation(event) {
   try {
     await api(`/api/cases/${encodeURIComponent(state.selectedId)}/annotations`, { method: "POST", body: JSON.stringify(payload) });
     showToast("已保存新的 review 版本，并更新缺失信息聚类。");
-    await Promise.all([loadOverview(), loadClusters(), loadCases()]);
+    await Promise.all([loadOverview(), loadClusters(), loadCases(), loadReviewers()]);
     await selectCase(state.selectedId);
   } catch (error) {
     showToast(error.message, true);
@@ -767,6 +973,109 @@ async function updateInferenceTarget() {
   }
 }
 
+function renderJobRequesterFilter() {
+  const select = $("#jobRequesterFilter");
+  if (!select) return;
+  const previous = select.value;
+  const mine = state.session.username;
+  select.innerHTML = [
+    '<option value="">全部请求人</option>',
+    mine ? `<option value="__me__">我的 · ${escapeHtml(mine)}</option>` : "",
+    ...state.inferenceRequesters.map(
+      (item) => {
+        const trust =
+          item.verified_count > 0 && item.unverified_count > 0
+            ? " · 混合身份"
+            : item.verified
+              ? " · SSO"
+              : "";
+        return `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)} · ${item.job_count} 个${trust}</option>`;
+      }
+    ),
+  ].join("");
+  const names = state.inferenceRequesters.map((item) => item.name);
+  select.value =
+    previous === "__me__" || names.includes(previous)
+      ? previous
+      : "";
+}
+
+function renderInferenceJobs(total = state.inferenceJobs.length) {
+  const list = $("#inferenceJobList");
+  if (!list) return;
+  $("#jobHistorySummary").textContent =
+    `显示 ${state.inferenceJobs.length} / ${total} 个 Debug Job` +
+    " · 默认展示全员 · 不计入 Model Run";
+  if (!state.inferenceJobs.length) {
+    list.innerHTML = '<div class="no-asset">当前筛选下没有单 Case 推理任务。</div>';
+    return;
+  }
+  list.innerHTML = state.inferenceJobs
+    .map((job) => {
+      const detail = job.result?.result || {};
+      const statusLabel = {
+        queued: "排队中",
+        running: "运行中",
+        succeeded: "成功",
+        failed: "失败",
+      }[job.status] || job.status;
+      return `<article class="job-history-row">
+        <div class="job-history-main">
+          <div class="run-row-title">
+            <strong>${escapeHtml(job.issue_id)}</strong>
+            <span class="job-status status-${escapeHtml(job.status)}">${escapeHtml(statusLabel)}</span>
+            <span class="debug-only-badge">DEBUG ONLY</span>
+          </div>
+          <div class="run-row-meta">
+            <span>${escapeHtml(job.model_name || "preflight")}</span>
+            <span>prompt ${escapeHtml(job.config?.prompt_version || "—")}</span>
+            <span>${formatTime(job.created_at)}</span>
+            <span>${job.requested_by ? `请求人 ${escapeHtml(job.requested_by)}${job.requested_by_verified ? " · SSO" : " · 未验证"}` : "请求人未记录"}</span>
+          </div>
+          ${
+            detail.model_label || job.error_text
+              ? `<div class="job-result-preview">${detail.model_label ? `输出：${escapeHtml(detail.model_label)} · ${escapeHtml(detail.model_reason || "无 reason")}` : `错误：${escapeHtml(job.error_text)}`}</div>`
+              : ""
+          }
+        </div>
+        <div class="run-row-actions">
+          <button class="button button-quiet" type="button" data-show-job="${escapeHtml(job.id)}">查看结果</button>
+          <button class="button button-quiet" type="button" data-job-review="${escapeHtml(job.issue_id)}">打开 Review</button>
+        </div>
+      </article>`;
+    })
+    .join("");
+  list.querySelectorAll("[data-show-job]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const job = state.inferenceJobs.find((item) => item.id === button.dataset.showJob);
+      if (job) showJob(job);
+      $("#jobResult")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  });
+  list.querySelectorAll("[data-job-review]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const issueId = button.dataset.jobReview;
+      navigatePage("review", { issue: issueId });
+      await selectCase(issueId);
+    });
+  });
+}
+
+async function loadInferenceJobs() {
+  if (!$("#inferenceJobList")) return;
+  const params = new URLSearchParams({ page_size: "200" });
+  const requesterValue = $("#jobRequesterFilter")?.value || "";
+  const requester = requesterValue === "__me__" ? state.session.username : requesterValue;
+  const status = $("#jobStatusFilter")?.value || "";
+  if (requester) params.set("requested_by", requester);
+  if (status) params.set("status", status);
+  const data = await api(`/api/inference/jobs?${params.toString()}`);
+  state.inferenceJobs = data.items || [];
+  state.inferenceRequesters = data.requesters || [];
+  renderJobRequesterFilter();
+  renderInferenceJobs(data.total ?? state.inferenceJobs.length);
+}
+
 function showJob(job) {
   const target = $("#jobResult");
   target.classList.remove("hidden");
@@ -794,18 +1103,22 @@ async function pollJob(jobId) {
         clearInterval(state.pollTimer);
         state.pollTimer = null;
         state.pollingJobId = "";
-        await loadOverview();
+        await Promise.all([loadOverview(), loadInferenceJobs()]);
         if (state.activePage === "review" && state.selectedId === data.job.issue_id) {
           await selectCase(state.selectedId);
         }
       }
     } catch (error) {
       clearInterval(state.pollTimer);
+      state.pollTimer = null;
+      state.pollingJobId = "";
       showToast(error.message, true);
     }
   };
   await tick();
-  state.pollTimer = setInterval(tick, 2000);
+  if (state.pollingJobId === jobId) {
+    state.pollTimer = setInterval(tick, 2000);
+  }
 }
 
 async function submitInference({ dryRun }) {
@@ -830,6 +1143,7 @@ async function submitInference({ dryRun }) {
     const result = await api("/api/inference/jobs", { method: "POST", body: JSON.stringify(payload) });
     keyInput.value = "";
     showJob(result.job);
+    await loadInferenceJobs();
     await pollJob(result.job.id);
   } catch (error) {
     keyInput.value = "";
@@ -861,7 +1175,10 @@ async function submitImport(event) {
   const form = new FormData();
   form.append("file", file);
   const endpoint = kind === "model" ? "/api/import/model-results" : "/api/import/issues";
-  if (kind === "model") form.append("run_name", $("#runNameInput").value.trim());
+  if (kind === "model") {
+    form.append("run_name", $("#runNameInput").value.trim());
+    form.append("created_by", state.session.username || "");
+  }
   else {
     form.append("source", $("#issueSourceInput").value.trim() || "manual_upload");
     form.append("replace_gt", String($("#replaceGtInput").checked));
@@ -880,33 +1197,53 @@ async function submitImport(event) {
   }
 }
 
-async function syncTrail() {
-  const button = $("#syncTrailButton");
+async function syncTrail(mode = "preview") {
+  const createRun = mode === "create";
+  const button = createRun ? $("#syncTrailButton") : $("#checkTrailButton");
   button.disabled = true;
-  button.textContent = "同步中…";
+  button.textContent = createRun ? "创建中…" : "检查中…";
   try {
-    const result = await api("/api/trail-model-sync", { method: "POST", body: "{}" });
-    state.config = { ...(state.config || {}), trail_sync: result, default_model_run_id: result.run_id || state.config?.default_model_run_id };
+    const result = await api("/api/trail-model-sync", {
+      method: "POST",
+      body: JSON.stringify({
+        mode,
+        requested_by: state.session.username || "",
+      }),
+    });
+    state.trailInspection = result;
+    state.config = {
+      ...(state.config || {}),
+      trail_sync: result,
+      default_model_run_id: state.config?.default_model_run_id || "",
+    };
     renderConfig();
-    if (result.run_id) {
-      state.selectedRunId = result.run_id;
-      state.failureOnly = true;
+    if (createRun && result.run_id) {
+      await loadRuns();
     }
-    await loadRuns({ preferDefault: Boolean(result.run_id) });
-    await Promise.all([loadOverview(), loadCases({ keepSelection: false }), loadClusters()]);
-    showToast(result.message || "Trail 字段同步完成。", result.status === "failed");
+    showToast(
+      result.message || (createRun ? "Trail 只读快照处理完成。" : "Trail 字段检查完成。"),
+      ["failed", "unavailable"].includes(result.status)
+    );
   } catch (error) {
     showToast(error.message, true);
   } finally {
     button.disabled = false;
-    button.textContent = "同步 Trail 字段";
+    button.textContent = createRun ? "创建只读 Trail 快照" : "检查字段可见性";
+    renderTrailSyncState();
   }
 }
 
 async function refreshAll({ resetSelection = false } = {}) {
   await loadConfig();
   await loadRuns();
-  await Promise.all([loadStatus(), loadOverview(), loadCases({ keepSelection: !resetSelection }), loadClusters()]);
+  await Promise.all([
+    loadStatus(),
+    loadOverview(),
+    loadCases({ keepSelection: !resetSelection }),
+    loadClusters(),
+    loadReviewers(),
+    loadInferenceJobs(),
+  ]);
 }
 
 function bindEvents() {
@@ -957,7 +1294,8 @@ function bindEvents() {
       showToast(error.message, true);
     }
   });
-  $("#syncTrailButton").addEventListener("click", syncTrail);
+  $("#checkTrailButton").addEventListener("click", () => syncTrail("preview"));
+  $("#syncTrailButton").addEventListener("click", () => syncTrail("create"));
   $("#runManagerImportButton").addEventListener("click", () => {
     $("#importResult").classList.add("hidden");
     $("#importResult").textContent = "";
@@ -972,6 +1310,19 @@ function bindEvents() {
     } catch (error) {
       showToast(error.message, true);
     }
+  });
+  $("#runPersonFilter").addEventListener("change", renderRunManager);
+  $("#runKindFilter").addEventListener("change", renderRunManager);
+  $("#jobRequesterFilter").addEventListener("change", () => {
+    loadInferenceJobs().catch((error) => showToast(error.message, true));
+  });
+  $("#jobStatusFilter").addEventListener("change", () => {
+    loadInferenceJobs().catch((error) => showToast(error.message, true));
+  });
+  $("#refreshInferenceJobsButton").addEventListener("click", () => {
+    loadInferenceJobs()
+      .then(() => showToast("单 Case 任务历史已刷新。"))
+      .catch((error) => showToast(error.message, true));
   });
   $("#sidebarToggle").addEventListener("click", toggleSidebar);
   document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => closeDialog(button.dataset.close)));
@@ -1044,7 +1395,14 @@ async function bootstrap() {
       Boolean(state.config.default_failure_only && state.selectedRunId);
     await loadRuns({ preferDefault: !initialRoute.runId });
     $("#failureOnlyInput").checked = state.failureOnly;
-    await Promise.all([loadStatus(), loadOverview(), loadCases({ keepSelection: false }), loadClusters()]);
+    await Promise.all([
+      loadStatus(),
+      loadOverview(),
+      loadCases({ keepSelection: false }),
+      loadClusters(),
+      loadReviewers(),
+      loadInferenceJobs(),
+    ]);
     if (initialRoute.issue && initialRoute.issue !== state.selectedId) {
       await selectCase(initialRoute.issue, { updateRoute: false });
     }

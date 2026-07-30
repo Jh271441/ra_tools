@@ -80,6 +80,8 @@ class Database:
                     missing_evidence_json TEXT NOT NULL DEFAULT '[]',
                     note TEXT NOT NULL DEFAULT '',
                     author TEXT NOT NULL DEFAULT '',
+                    author_source TEXT NOT NULL DEFAULT 'legacy',
+                    author_verified INTEGER NOT NULL DEFAULT 0,
                     supersedes_id INTEGER REFERENCES annotations(id),
                     created_at TEXT NOT NULL
                 );
@@ -94,6 +96,9 @@ class Database:
                     schema_version TEXT NOT NULL DEFAULT 'v1',
                     kind TEXT NOT NULL DEFAULT 'upload',
                     is_default INTEGER NOT NULL DEFAULT 0,
+                    created_by TEXT NOT NULL DEFAULT '',
+                    created_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    created_by_verified INTEGER NOT NULL DEFAULT 0,
                     metadata_json TEXT NOT NULL DEFAULT '{}',
                     created_at TEXT NOT NULL
                 );
@@ -119,6 +124,8 @@ class Database:
                     issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE CASCADE,
                     status TEXT NOT NULL,
                     requested_by TEXT NOT NULL DEFAULT '',
+                    requested_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    requested_by_verified INTEGER NOT NULL DEFAULT 0,
                     model_name TEXT NOT NULL DEFAULT '',
                     base_url TEXT NOT NULL DEFAULT '',
                     config_json TEXT NOT NULL DEFAULT '{}',
@@ -138,9 +145,33 @@ class Database:
             self._ensure_column(conn, "issues", "baseline_scope", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "annotations", "review_status", "TEXT NOT NULL DEFAULT 'pending'")
             self._ensure_column(conn, "annotations", "missing_evidence_json", "TEXT NOT NULL DEFAULT '[]'")
+            self._ensure_column(conn, "annotations", "author_source", "TEXT NOT NULL DEFAULT 'legacy'")
+            self._ensure_column(conn, "annotations", "author_verified", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "model_runs", "kind", "TEXT NOT NULL DEFAULT 'upload'")
             self._ensure_column(conn, "model_runs", "is_default", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "model_runs", "created_by", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(
+                conn, "model_runs", "created_by_source", "TEXT NOT NULL DEFAULT 'legacy'"
+            )
+            self._ensure_column(
+                conn, "model_runs", "created_by_verified", "INTEGER NOT NULL DEFAULT 0"
+            )
+            self._ensure_column(
+                conn, "inference_jobs", "requested_by_source", "TEXT NOT NULL DEFAULT 'legacy'"
+            )
+            self._ensure_column(
+                conn, "inference_jobs", "requested_by_verified", "INTEGER NOT NULL DEFAULT 0"
+            )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_issues_baseline ON issues(baseline_scope)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_annotations_author ON annotations(author)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_model_runs_created_by ON model_runs(created_by)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_jobs_requested_by ON inference_jobs(requested_by)"
+            )
             conn.execute(
                 """
                 UPDATE inference_jobs
@@ -276,6 +307,9 @@ class Database:
         rows: list[dict[str, Any]],
         kind: str = "upload",
         make_default: bool = False,
+        created_by: str = "",
+        created_by_source: str = "legacy",
+        created_by_verified: bool = False,
     ) -> tuple[dict[str, Any], bool]:
         now = utc_now()
         with self._write_lock, self.connect() as conn:
@@ -298,8 +332,9 @@ class Database:
                 """
                 INSERT INTO model_runs (
                     id, name, source_name, source_sha256, schema_version,
-                    kind, is_default, metadata_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    kind, is_default, created_by, created_by_source,
+                    created_by_verified, metadata_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -309,6 +344,9 @@ class Database:
                     str(metadata.get("schema_version") or "v1"),
                     kind,
                     int(make_default),
+                    created_by.strip(),
+                    created_by_source.strip() or "legacy",
+                    int(created_by_verified),
                     _json(metadata),
                     now,
                 ),
@@ -399,6 +437,43 @@ class Database:
             for row in rows
         ]
 
+    def list_reviewers(self, baseline_scope: str = "") -> list[dict[str, Any]]:
+        params: list[Any] = []
+        scope_filter = ""
+        if baseline_scope:
+            scope_filter = "AND i.baseline_scope = ?"
+            params.append(baseline_scope)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT ann.author,
+                       SUM(CASE WHEN ann.author_verified = 1 THEN 1 ELSE 0 END)
+                           AS verified_count,
+                       SUM(CASE WHEN ann.author_verified = 1 THEN 0 ELSE 1 END)
+                           AS unverified_count,
+                       COUNT(*) AS review_count
+                FROM issues i
+                {self._latest_annotation_join()}
+                WHERE ann.id IS NOT NULL
+                  AND TRIM(ann.author) != ''
+                  {scope_filter}
+                GROUP BY ann.author
+                ORDER BY review_count DESC, ann.author ASC
+                """,
+                params,
+            ).fetchall()
+        return [
+            {
+                "name": str(row["author"]),
+                "verified": bool(row["verified_count"])
+                and not bool(row["unverified_count"]),
+                "verified_count": int(row["verified_count"] or 0),
+                "unverified_count": int(row["unverified_count"] or 0),
+                "review_count": int(row["review_count"] or 0),
+            }
+            for row in rows
+        ]
+
     @staticmethod
     def _latest_annotation_join() -> str:
         return """
@@ -417,6 +492,7 @@ class Database:
         search: str = "",
         gt_label: str = "",
         annotation_label: str = "",
+        annotation_author: str = "",
         model_run_id: str = "",
         failure_only: bool = False,
         missing_evidence: str = "",
@@ -440,6 +516,9 @@ class Database:
         if annotation_label in LABELS:
             where.append("ann.label = ?")
             params.append(annotation_label)
+        if annotation_author.strip():
+            where.append("ann.author = ?")
+            params.append(annotation_author.strip())
         if missing_evidence.strip():
             # Values are serialized as a JSON array; matching the quoted token
             # avoids treating a prefix as a different evidence item.
@@ -469,6 +548,8 @@ class Database:
                        ann.tags_json AS annotation_tags_json,
                        ann.missing_evidence_json AS annotation_missing_evidence_json,
                        ann.note AS annotation_note, ann.author AS annotation_author,
+                       ann.author_source AS annotation_author_source,
+                       ann.author_verified AS annotation_author_verified,
                        ann.created_at AS annotation_created_at,
                        mp.model_label, mp.model_reason, mp.model_confidence, mp.model_run_id
                 {common}
@@ -499,7 +580,10 @@ class Database:
             predictions = conn.execute(
                 """
                 SELECT mp.*, mr.name AS run_name, mr.created_at AS run_created_at,
-                       mr.kind AS run_kind, mr.is_default AS run_is_default
+                       mr.kind AS run_kind, mr.is_default AS run_is_default,
+                       mr.created_by AS run_created_by,
+                       mr.created_by_source AS run_created_by_source,
+                       mr.created_by_verified AS run_created_by_verified
                 FROM model_predictions mp
                 JOIN model_runs mr ON mr.id = mp.model_run_id
                 WHERE mp.issue_id = ?
@@ -526,6 +610,8 @@ class Database:
         missing_evidence: list[str],
         note: str,
         author: str,
+        author_source: str = "legacy",
+        author_verified: bool = False,
     ) -> dict[str, Any]:
         if label and label not in LABELS:
             raise ValueError(f"不支持的标注标签: {label}")
@@ -544,8 +630,8 @@ class Database:
                 """
                 INSERT INTO annotations (
                     issue_id, label, review_status, tags_json, missing_evidence_json,
-                    note, author, supersedes_id, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    note, author, author_source, author_verified, supersedes_id, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     issue_id,
@@ -555,6 +641,8 @@ class Database:
                     _json(missing_evidence),
                     note.strip(),
                     author.strip(),
+                    author_source.strip() or "legacy",
+                    int(author_verified),
                     previous["id"] if previous else None,
                     now,
                 ),
@@ -569,6 +657,7 @@ class Database:
         baseline_scope: str,
         model_run_id: str = "",
         failure_only: bool = True,
+        annotation_author: str = "",
     ) -> list[dict[str, Any]]:
         where = ["i.baseline_scope = ?", "ann.id IS NOT NULL"]
         params: list[Any] = [model_run_id, baseline_scope]
@@ -581,6 +670,9 @@ class Database:
                 ]
             )
             params.extend((*LABELS, *LABELS))
+        if annotation_author.strip():
+            where.append("ann.author = ?")
+            params.append(annotation_author.strip())
         query = f"""
             SELECT ann.missing_evidence_json
             FROM issues i
@@ -610,6 +702,8 @@ class Database:
         model_name: str,
         base_url: str,
         config: dict[str, Any],
+        requested_by_source: str = "legacy",
+        requested_by_verified: bool = False,
     ) -> dict[str, Any]:
         job_id = str(uuid.uuid4())
         now = utc_now()
@@ -617,11 +711,21 @@ class Database:
             conn.execute(
                 """
                 INSERT INTO inference_jobs (
-                    id, issue_id, status, requested_by, model_name, base_url,
-                    config_json, created_at
-                ) VALUES (?, ?, 'queued', ?, ?, ?, ?, ?)
+                    id, issue_id, status, requested_by, requested_by_source,
+                    requested_by_verified, model_name, base_url, config_json, created_at
+                ) VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (job_id, issue_id, requested_by.strip(), model_name.strip(), base_url.strip(), _json(config), now),
+                (
+                    job_id,
+                    issue_id,
+                    requested_by.strip(),
+                    requested_by_source.strip() or "legacy",
+                    int(requested_by_verified),
+                    model_name.strip(),
+                    base_url.strip(),
+                    _json(config),
+                    now,
+                ),
             )
             row = conn.execute("SELECT * FROM inference_jobs WHERE id = ?", (job_id,)).fetchone()
         return self._job_dict(row)
@@ -657,6 +761,66 @@ class Database:
         with self.connect() as conn:
             row = conn.execute("SELECT * FROM inference_jobs WHERE id = ?", (job_id,)).fetchone()
         return self._job_dict(row) if row else None
+
+    def list_inference_jobs(
+        self,
+        *,
+        requested_by: str = "",
+        status: str = "",
+        page_size: int = 100,
+    ) -> dict[str, Any]:
+        page_size = min(max(1, page_size), 500)
+        where: list[str] = []
+        params: list[Any] = []
+        if requested_by.strip():
+            where.append("requested_by = ?")
+            params.append(requested_by.strip())
+        if status in {"queued", "running", "succeeded", "failed"}:
+            where.append("status = ?")
+            params.append(status)
+        condition = f"WHERE {' AND '.join(where)}" if where else ""
+        with self.connect() as conn:
+            total = conn.execute(
+                f"SELECT COUNT(*) FROM inference_jobs {condition}", params
+            ).fetchone()[0]
+            rows = conn.execute(
+                f"""
+                SELECT * FROM inference_jobs
+                {condition}
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (*params, page_size),
+            ).fetchall()
+            requester_rows = conn.execute(
+                """
+                SELECT requested_by,
+                       SUM(CASE WHEN requested_by_verified = 1 THEN 1 ELSE 0 END)
+                           AS verified_count,
+                       SUM(CASE WHEN requested_by_verified = 1 THEN 0 ELSE 1 END)
+                           AS unverified_count,
+                       COUNT(*) AS job_count
+                FROM inference_jobs
+                WHERE TRIM(requested_by) != ''
+                GROUP BY requested_by
+                ORDER BY job_count DESC, requested_by ASC
+                """
+            ).fetchall()
+        return {
+            "items": [self._job_dict(row) for row in rows],
+            "total": int(total),
+            "requesters": [
+                {
+                    "name": str(row["requested_by"]),
+                    "verified": bool(row["verified_count"])
+                    and not bool(row["unverified_count"]),
+                    "verified_count": int(row["verified_count"] or 0),
+                    "unverified_count": int(row["unverified_count"] or 0),
+                    "job_count": int(row["job_count"] or 0),
+                }
+                for row in requester_rows
+            ],
+        }
 
     def overview(self, *, baseline_scope: str, model_run_id: str = "") -> dict[str, Any]:
         base_where = "WHERE i.baseline_scope = ?"
@@ -738,6 +902,8 @@ class Database:
                     "missing_evidence": _json_load(row["annotation_missing_evidence_json"], []),
                     "note": row["annotation_note"] or "",
                     "author": row["annotation_author"] or "",
+                    "author_source": row["annotation_author_source"] or "legacy",
+                    "author_verified": bool(row["annotation_author_verified"]),
                     "created_at": row["annotation_created_at"] or "",
                 },
                 "prediction": {
@@ -765,6 +931,12 @@ class Database:
             ),
             "note": row["note"],
             "author": row["author"],
+            "author_source": (
+                row["author_source"] if "author_source" in row.keys() else "legacy"
+            ),
+            "author_verified": bool(row["author_verified"])
+            if "author_verified" in row.keys()
+            else False,
             "supersedes_id": row["supersedes_id"],
             "created_at": row["created_at"],
         }
@@ -778,6 +950,17 @@ class Database:
             "run_created_at": row["run_created_at"] if "run_created_at" in row.keys() else "",
             "run_kind": row["run_kind"] if "run_kind" in row.keys() else "",
             "run_is_default": bool(row["run_is_default"]) if "run_is_default" in row.keys() else False,
+            "run_created_by": (
+                row["run_created_by"] if "run_created_by" in row.keys() else ""
+            ),
+            "run_created_by_source": (
+                row["run_created_by_source"]
+                if "run_created_by_source" in row.keys()
+                else "legacy"
+            ),
+            "run_created_by_verified": bool(row["run_created_by_verified"])
+            if "run_created_by_verified" in row.keys()
+            else False,
             "issue_id": row["issue_id"],
             "trip_id": row["trip_id"],
             "model_label": row["model_label"],
@@ -789,6 +972,15 @@ class Database:
 
     @staticmethod
     def _run_dict(row: sqlite3.Row) -> dict[str, Any]:
+        metadata = _json_load(row["metadata_json"], {})
+        experiment = metadata.get("experiment") if isinstance(metadata, dict) else {}
+        if not isinstance(experiment, dict):
+            experiment = {}
+        declared_author = str(
+            experiment.get("author")
+            or (metadata.get("author") if isinstance(metadata, dict) else "")
+            or ""
+        ).strip()
         return {
             "id": row["id"],
             "name": row["name"],
@@ -797,7 +989,15 @@ class Database:
             "schema_version": row["schema_version"],
             "kind": row["kind"] if "kind" in row.keys() else "upload",
             "is_default": bool(row["is_default"]) if "is_default" in row.keys() else False,
-            "metadata": _json_load(row["metadata_json"], {}),
+            "created_by": row["created_by"] if "created_by" in row.keys() else "",
+            "created_by_source": (
+                row["created_by_source"] if "created_by_source" in row.keys() else "legacy"
+            ),
+            "created_by_verified": bool(row["created_by_verified"])
+            if "created_by_verified" in row.keys()
+            else False,
+            "declared_author": declared_author,
+            "metadata": metadata,
             "created_at": row["created_at"],
         }
 
@@ -808,12 +1008,18 @@ class Database:
             "issue_id": row["issue_id"],
             "status": row["status"],
             "requested_by": row["requested_by"],
+            "requested_by_source": (
+                row["requested_by_source"]
+                if "requested_by_source" in row.keys()
+                else "legacy"
+            ),
+            "requested_by_verified": bool(row["requested_by_verified"])
+            if "requested_by_verified" in row.keys()
+            else False,
             "model_name": row["model_name"],
-            "base_url": row["base_url"],
             "config": _json_load(row["config_json"], {}),
             "result": _json_load(row["result_json"], {}),
             "error_text": row["error_text"],
-            "log_path": row["log_path"],
             "created_at": row["created_at"],
             "started_at": row["started_at"],
             "finished_at": row["finished_at"],

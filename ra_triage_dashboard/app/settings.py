@@ -44,6 +44,7 @@ class Settings:
     job_timeout_seconds: int
     trust_proxy_identity_headers: bool
     identity_header: str
+    team_default_managers: tuple[str, ...]
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -68,6 +69,11 @@ class Settings:
             host.strip().lower()
             for host in os.getenv("DASHBOARD_ALLOWED_MODEL_HOSTS", "").split(",")
             if host.strip()
+        )
+        team_default_managers = tuple(
+            username.strip()
+            for username in os.getenv("DASHBOARD_TEAM_DEFAULT_MANAGERS", "").split(",")
+            if username.strip()
         )
         return cls(
             app_root=app_root,
@@ -99,6 +105,7 @@ class Settings:
                 "DASHBOARD_IDENTITY_HEADER", "X-SSO-User"
             ).strip()
             or "X-SSO-User",
+            team_default_managers=team_default_managers,
         )
 
     @property
