@@ -115,7 +115,7 @@ bash scripts/bootstrap_cloud_server_env.sh
 bash scripts/run_cloud_server.sh
 ```
 
-启动脚本固定使用 `/volume/home/workspace/ra_triage_dashboard_venv`，不再依赖 cloud_server 的全局 Python 包；其中 `python-multipart>=0.0.18`、`Pillow>=10.3` 是截图上传的安全最低版本。当前试运行监听 `0.0.0.0:8785`，可从内网直接访问 `http://172.16.145.60:8785`。因为这是明文 HTTP，单 case 推理只应使用临时、低权限 key；生产多人使用应迁到 HTTPS + SSO 认证代理。
+启动脚本固定使用 `/volume/home/workspace/ra_triage_dashboard_venv`。该 venv 继承 cloud_server 已验证的 RA / Trail 依赖栈，并在环境内覆盖截图入口所需的安全版本；`python-multipart>=0.0.18`、`Pillow>=10.3` 是最低要求。当前试运行监听 `0.0.0.0:8785`，可从内网直接访问 `http://172.16.145.60:8785`。因为这是明文 HTTP，单 case 推理只应使用临时、低权限 key；生产多人使用应迁到 HTTPS + SSO 认证代理。
 
 页面路由可直接访问：
 
