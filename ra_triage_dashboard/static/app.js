@@ -1862,6 +1862,22 @@ function predictionCards(caseData) {
     .join("")}</div>`;
 }
 
+function openHistoryDialog(kind, caseData) {
+  if (!caseData) return;
+  const isModel = kind === "model";
+  const predictions = caseData.predictions || [];
+  const annotations = caseData.annotations || [];
+  $("#historyDialogEyebrow").textContent = isModel ? "MODEL RUN HISTORY" : "REVIEW HISTORY";
+  $("#historyDialogTitle").textContent = isModel ? "评测 Run 输出历史" : "Review 历史";
+  $("#historyDialogMeta").textContent = isModel
+    ? `${predictions.length} 个模型 Run · 当前 Review Run 会高亮`
+    : `${annotations.length} 条历史 Review · 追加式，不覆盖旧记录`;
+  $("#historyDialogContent").innerHTML = isModel
+    ? predictionCards(caseData)
+    : annotationHistory(annotations);
+  openDialog("historyDialog");
+}
+
 function renderDetail(caseData) {
   const rawTitle = String(caseData.title || caseData.scenario || "").trim();
   const title =
@@ -1904,15 +1920,20 @@ function renderDetail(caseData) {
       ${caseData.review_note ? `<details class="review-note-details"><summary>查看历史备注</summary><div class="review-note"><span>历史备注</span>${escapeHtml(caseData.review_note)}</div></details>` : ""}
     </div>
     ${heroMediaSection(caseData.assets, caseData.camera)}
-    <details class="section model-history-details">
-      <summary><span>评测 Run 输出历史</span><small>当前 Review Run 会高亮</small></summary>
-      ${predictionCards(caseData)}
-    </details>`;
+    <section class="section history-launch-section">
+      <button class="history-launch-button" type="button" data-open-history="model">
+        <span><span class="eyebrow">MODEL RUN HISTORY</span><strong>评测 Run 输出历史</strong></span>
+        <span class="history-launch-meta">${(caseData.predictions || []).length} 个 Run · 查看详情 →</span>
+      </button>
+    </section>`;
   $("#detailPane").querySelector("[data-predict-current-case]")?.addEventListener("click", () => {
     openBatchDraft([caseData.issue_id], "single");
   });
   $("#detailPane").querySelector("[data-open-bev-preview]")?.addEventListener("click", () => {
     openMedia("bev", heroFrameIndex(bevFrames));
+  });
+  $("#detailPane").querySelector("[data-open-history='model']")?.addEventListener("click", () => {
+    openHistoryDialog("model", caseData);
   });
   $("#detailPane").querySelector("#backToGalleryButton")?.addEventListener("click", returnToReviewGallery);
   $("#detailPane").querySelector("#previousIssueButton")?.addEventListener("click", () => {
@@ -2008,7 +2029,13 @@ function renderReview(caseData) {
       <label><span>标注人${authorLocked ? "（SSO）" : "（可编辑）"}</span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" ${authorLocked ? "readonly" : ""} /></label>
       <button class="button button-primary full-width" type="submit">保存新的 review 版本</button>
     </form>
-    <section class="annotation-history"><div class="subheading"><span>Review 历史</span><small>追加式，不覆盖旧记录</small></div>${annotationHistory(caseData.annotations)}</section>`;
+    <button class="history-launch-button review-history-launch" type="button" data-open-history="review">
+      <span><span class="eyebrow">REVIEW HISTORY</span><strong>Review 历史</strong></span>
+      <span class="history-launch-meta">${(caseData.annotations || []).length} 条 · 查看详情 →</span>
+    </button>`;
+  $("#reviewPane").querySelector("[data-open-history='review']")?.addEventListener("click", () => {
+    openHistoryDialog("review", caseData);
+  });
   $("#reviewPane").querySelectorAll('input[name="missingEvidence"]').forEach((input) => {
     input.addEventListener("change", updateEvidenceSummary);
   });
