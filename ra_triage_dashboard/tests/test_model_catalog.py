@@ -176,6 +176,8 @@ class ModelCatalogTest(unittest.TestCase):
         rows = [
             {"id": "aliyun/Qwen3-VL-Plus"},
             {"id": "aliyun/Qwen3-Next-80B-A3B-Instruct"},
+            {"id": "volcengine/Doubao-Seed-1.6-Vision-250815"},
+            {"id": "volcengine/Doubao-Seedance-2.0-260128-4k"},
             {"id": "Qwen3-Embedding/Qwen3-Embedding-4B"},
             {"id": "Other/Llama-Vision"},
         ]
@@ -200,7 +202,7 @@ class ModelCatalogTest(unittest.TestCase):
             )
         self.assertEqual(snapshot["provider_id"], "tokenservice")
         self.assertEqual(snapshot["default_model_id"], "aliyun/Qwen3-VL-Plus")
-        self.assertEqual(snapshot["experimental_count"], 2)
+        self.assertEqual(snapshot["experimental_count"], 3)
         self.assertEqual(selected["provider"], "tokenservice")
         self.assertEqual(selected["validation_status"], "experimental")
 

@@ -452,12 +452,25 @@ class ModelCatalog:
         self,
         online: dict[str, dict[str, str]],
     ) -> dict[str, Any]:
-        """Build TokenService's catalog from its server-owned online list."""
+        """Build TokenService's catalog from its server-owned online list.
+
+        TokenService exposes both the Qwen3 family and a small set of vision
+        models under the Volcengine/Doubao namespace.  Keep the former broad
+        (the operator may compare any Qwen3 variant), while admitting only
+        Doubao models whose identifier explicitly advertises Vision/VL input.
+        Text, embedding, image-generation and video-generation models stay
+        out of the RA camera Batch selector.
+        """
         available: list[dict[str, str]] = []
         for model_id in sorted(online):
             lowered = model_id.lower()
+            is_qwen3 = "qwen3" in lowered
+            is_doubao_vision = (
+                "doubao" in lowered
+                and ("vision" in lowered or "-vl" in lowered or "/vl" in lowered)
+            )
             if (
-                "qwen3" not in lowered
+                not (is_qwen3 or is_doubao_vision)
                 or "embedding" in lowered
                 or not MODEL_ID_RE.fullmatch(model_id)
             ):
@@ -476,7 +489,7 @@ class ModelCatalog:
         if not available:
             raise ModelCatalogError(
                 503,
-                "TokenService 当前没有可用的 Qwen3 视觉模型。",
+                "TokenService 当前没有可用的 Qwen3 / Doubao 视觉模型。",
                 stale_eligible=True,
             )
         preferred = {"aliyun/qwen3-vl-plus", "aliyun/qwen3-vl-flash"}
@@ -503,7 +516,7 @@ class ModelCatalog:
             "stale": False,
             "message": (
                 "TokenService 模型目录已刷新；"
-                f"在线 Qwen3 实验模型 {len(available)} 个，需创建 Batch 前确认。"
+                f"在线 Qwen3 / Doubao 视觉实验模型 {len(available)} 个，需创建 Batch 前确认。"
             ),
             "catalog_label": "tokenservice-gateway-ys.intra.xiaojukeji.com/v1/models",
             "provider_id": "tokenservice",
@@ -517,7 +530,7 @@ class ModelCatalog:
             "excluded_count": max(0, len(online) - len(available)),
             "refreshed_at": _utc_now(),
             "catalog_sha256": catalog_sha256,
-            "profile_version": "tokenservice-online-qwen3",
+            "profile_version": "tokenservice-online-qwen3-doubao-vl",
         }
 
     def _load_profiles(self) -> dict[str, Any]:

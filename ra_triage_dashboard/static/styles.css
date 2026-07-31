@@ -190,6 +190,7 @@ a:hover { color: var(--accent); }
 .gateway-provider-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 10px; }
 .gateway-provider-heading small { color: var(--faint); font-size: 9px; }
 .gateway-provider-list { display: grid; gap: 5px; }
+.gateway-provider-list select { min-width: 0; width: 100%; }
 .gateway-provider-option { width: 100%; display: grid; gap: 2px; padding: 6px 7px; border: 1px solid var(--line); border-radius: 5px; color: inherit; background: rgba(15, 22, 32, .7); font: inherit; text-align: left; cursor: pointer; }
 .gateway-provider-option.active { border-color: rgba(34,211,238,.48); background: rgba(34,211,238,.07); }
 .gateway-provider-option.disabled { opacity: .62; }
@@ -456,6 +457,8 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .empty-glyph { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 7px; color: var(--accent); font-size: 21px; }
 .detail-header { padding-bottom: 8px; border-bottom: 1px solid var(--line-soft); }
 .detail-title-row { display: flex; align-items: center; justify-content: space-between; gap: 9px; }
+.detail-navigation { min-width: 0; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px; }
+.detail-navigation .button { padding: 5px 7px; font-size: 10px; }
 .detail-title { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 5px 9px; }
 .detail-title .eyebrow { flex: 0 0 100%; }
 .detail-title h2 { overflow: hidden; max-width: min(520px, 48vw); font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
@@ -464,6 +467,7 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .detail-actions .button { padding: 6px 8px; }
 .hero-bev-open { box-shadow: 0 0 0 2px rgba(34,211,238,.08); }
 .detail-context-row { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 7px 10px; margin-top: 6px; }
+.detail-context-row .detail-actions { margin-left: auto; flex: 0 0 auto; }
 .detail-summary {
   min-width: 180px; max-width: 720px; flex: 1; display: -webkit-box; overflow: hidden; color: var(--muted); font-size: 11px; line-height: 1.45;
   -webkit-box-orient: vertical; -webkit-line-clamp: 2;
@@ -982,6 +986,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .run-filter-bar, .filter-row { grid-template-columns: minmax(0, 1fr); }
   .batch-config-grid, .batch-common-config, .batch-input-toggles, .batch-history-filters { grid-template-columns: minmax(0, 1fr); }
   .page-actions, .detail-title-row, .section-heading, .batch-result-heading { align-items: flex-start; flex-direction: column; }
+  .detail-navigation { width: 100%; justify-content: space-between; }
   .batch-detail-heading { align-items: flex-start; flex-direction: column; }
   .batch-detail-heading > span { white-space: normal; }
   .page-actions .button { width: 100%; }

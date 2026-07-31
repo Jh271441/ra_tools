@@ -1878,10 +1878,13 @@ function renderDetail(caseData) {
     <div class="detail-header">
       <div class="detail-title-row">
         <div class="detail-title"><span class="eyebrow">CASE REVIEW</span><h2>${escapeHtml(title)}</h2><span class="detail-id">${escapeHtml(caseData.issue_id)}</span></div>
-        <div class="detail-actions">
-          ${bevPreviewButton}
-          <button class="button button-primary" type="button" data-predict-current-case>API 推理</button>
-          ${issueUrl ? `<a class="button button-quiet" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer">Issue link</a>` : ""}
+        <div class="detail-navigation">
+          <button class="button button-quiet" id="backToGalleryButton" type="button">← 返回筛选结果</button>
+          <div class="case-detail-pager">
+            <button class="button button-quiet" id="previousIssueButton" type="button">← 上一 Issue</button>
+            <span id="detailQueuePosition">— / —</span>
+            <button class="button button-quiet" id="nextIssueButton" type="button">下一 Issue →</button>
+          </div>
         </div>
       </div>
       <div class="detail-context-row">
@@ -1892,16 +1895,13 @@ function renderDetail(caseData) {
           <strong class="${primary?.model_label && primary.model_label !== caseData.gt_label ? "comparison-fail" : "comparison-neutral"}">${primary?.model_label ? primary.model_label === caseData.gt_label ? "一致" : "不一致" : "不可比较"}</strong>
         </div>
         <p class="detail-summary">${escapeHtml(caseData.summary || "请结合 BEV、Camera 与触发后时序复核。")}</p>
+        <div class="detail-actions">
+          ${bevPreviewButton}
+          <button class="button button-primary" type="button" data-predict-current-case>API 推理</button>
+          ${issueUrl ? `<a class="button button-quiet" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer">Issue link</a>` : ""}
+        </div>
       </div>
       ${caseData.review_note ? `<details class="review-note-details"><summary>查看历史备注</summary><div class="review-note"><span>历史备注</span>${escapeHtml(caseData.review_note)}</div></details>` : ""}
-    </div>
-    <div class="case-detail-nav case-detail-nav-inline">
-      <button class="button button-quiet" id="backToGalleryButton" type="button">← 返回筛选结果</button>
-      <div class="case-detail-pager">
-        <button class="button button-quiet" id="previousIssueButton" type="button">← 上一 Issue</button>
-        <span id="detailQueuePosition">— / —</span>
-        <button class="button button-quiet" id="nextIssueButton" type="button">下一 Issue →</button>
-      </div>
     </div>
     ${heroMediaSection(caseData.assets, caseData.camera)}
     <details class="section model-history-details">
@@ -2469,12 +2469,13 @@ function updatePredictionBatchCount() {
 }
 
 function renderGatewayProviders() {
-  const target = $("#gatewayProviderList");
+  const target = $("#gatewayProviderSelect");
   if (!target) return;
   const catalog = state.config?.prediction_batch?.providers || {};
   const providers = Array.isArray(catalog.providers) ? catalog.providers : [];
   if (!providers.length) {
-    target.innerHTML = '<div class="muted">未发现服务端 Provider 配置。</div>';
+    target.innerHTML = '<option value="">未发现服务端 Provider 配置</option>';
+    target.disabled = true;
     return;
   }
   const configuredSelected = state.selectedGatewayProviderId || catalog.active_provider_id;
@@ -2484,33 +2485,25 @@ function renderGatewayProviders() {
   state.selectedGatewayProviderId = selectedId;
   target.innerHTML = providers
     .map((provider) => {
-      const active = provider.id === selectedId;
       const selectable = Boolean(provider.enabled && provider.supports_batch);
-      const endpoint = provider.endpoint || "endpoint 未暴露";
-      const status = active
-        ? "当前 Batch"
-        : selectable
-          ? "可用"
-          : "仅配置可见";
-      return `<button type="button" class="gateway-provider-option ${active ? "active" : ""} ${selectable ? "" : "disabled"}" data-gateway-provider="${escapeHtml(provider.id)}" ${selectable ? "" : "disabled"} aria-pressed="${active ? "true" : "false"}">
-        <strong>${escapeHtml(provider.display_name || provider.id)} · ${escapeHtml(status)}</strong>
-        <small>${escapeHtml(endpoint)}${provider.credential_configured ? " · 服务端凭证已配置" : " · 未配置服务端凭证"}</small>
-      </button>`;
+      const status = selectable ? "可用" : provider.credential_configured ? "暂不可用" : "未配置凭证";
+      return `<option value="${escapeHtml(provider.id)}" ${selectable ? "" : "disabled"}>${escapeHtml(provider.display_name || provider.id)} · ${escapeHtml(status)}</option>`;
     })
     .join("");
-  target.querySelectorAll("[data-gateway-provider]").forEach((button) => {
-      button.addEventListener("click", () => {
-        if (button.disabled) return;
-        state.selectedGatewayProviderId = button.dataset.gatewayProvider || selectedId;
-        renderGatewayProviders();
-        state.selectedGatewayModelId = "";
-        const modelSelect = $("#predictionModelSelect");
-        if (modelSelect) modelSelect.value = "";
-        loadGatewayModels({ providerId: state.selectedGatewayProviderId }).catch((error) => {
-          showToast(error.message, true);
-        });
-      });
-  });
+  target.value = selectedId;
+  target.disabled = false;
+  target.onchange = () => {
+    const nextId = target.value || selectedId;
+    if (nextId === state.selectedGatewayProviderId) return;
+    state.selectedGatewayProviderId = nextId;
+    state.selectedGatewayModelId = "";
+    const modelSelect = $("#predictionModelSelect");
+    if (modelSelect) modelSelect.value = "";
+    renderGatewayProviders();
+    loadGatewayModels({ providerId: state.selectedGatewayProviderId }).catch((error) => {
+      showToast(error.message, true);
+    });
+  };
 }
 
 function renderGatewayModels() {
@@ -2569,7 +2562,7 @@ function renderGatewayModels() {
           }
         )
         .join("")
-    : '<option value="">没有匹配的 Qwen3 模型</option>';
+    : '<option value="">没有匹配的模型</option>';
   select.value = unavailableSelection ? previous : selectedModel?.id || "";
   state.selectedGatewayModelId = select.value;
   if (listTarget) {
@@ -2596,7 +2589,7 @@ function renderGatewayModels() {
             </button>`;
           })
           .join("")
-      : '<div class="muted">没有匹配的 Qwen3 模型。</div>';
+      : '<div class="muted">没有匹配的模型。</div>';
     listTarget.querySelectorAll("[data-gateway-model]").forEach((button) => {
       button.addEventListener("click", () => {
         if (button.disabled) return;
@@ -2616,9 +2609,9 @@ function renderGatewayModels() {
     selectedIsOnline;
   statusTarget.className = `gateway-model-status ${ready ? "ok" : "warn"}`;
   statusTarget.textContent = unavailableSelection
-    ? `当前选择 ${previous} 已不在在线 Qwen3 目录；请选择其他模型后再提交。`
+    ? `当前选择 ${previous} 已不在当前 Provider 在线目录；请选择其他模型后再提交。`
     : ready
-      ? `已验证 ${catalog.validated_count ?? "—"} · 实验性 Qwen3 ${catalog.experimental_count ?? "—"} · 当前显示 ${visibleModels.length} / ${state.gatewayModels.length}`
+      ? `已验证 ${catalog.validated_count ?? "—"} · 实验模型 ${catalog.experimental_count ?? "—"} · 当前显示 ${visibleModels.length} / ${state.gatewayModels.length}`
       : catalog.message || "模型目录尚未就绪。";
   if (createButton) createButton.disabled = !ready;
   renderBatchCatalogFilters();

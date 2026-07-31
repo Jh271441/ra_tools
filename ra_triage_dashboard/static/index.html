@@ -488,12 +488,14 @@
                 <div class="gateway-provider-panel">
                   <div class="gateway-provider-heading"><span>Provider</span><small>服务端已登记</small></div>
                   <div id="gatewayProviderList" class="gateway-provider-list">
-                    <div class="muted">正在读取 Provider…</div>
+                    <select id="gatewayProviderSelect" aria-label="选择模型 Provider">
+                      <option value="">正在读取 Provider…</option>
+                    </select>
                   </div>
                 </div>
                 <label>
                   <span>筛选模型</span>
-                  <input id="predictionModelSearch" placeholder="输入 Qwen3 / checkpoint 关键词" autocomplete="off" />
+                  <input id="predictionModelSearch" placeholder="输入模型 / checkpoint 关键词" autocomplete="off" />
                 </label>
                 <label>
                   <span>模型</span>
