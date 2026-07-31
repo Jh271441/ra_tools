@@ -517,7 +517,6 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 }
 .history-inline-button:hover { border-color: rgba(34,211,238,.48); color: var(--accent); background: rgba(34,211,238,.05); }
 .hero-media-meta .history-inline-button { margin-left: auto; }
-.review-history-footer { display: flex; justify-content: flex-end; margin-top: 8px; }
 .frames { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .frame-card { position: relative; aspect-ratio: 16 / 9; overflow: hidden; padding: 0; border: 1px solid var(--line); border-radius: 7px; background: #0d1119; }
 .frame-card:hover { border-color: rgba(34,211,238,.6); }
@@ -555,6 +554,18 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .history-launch-button strong { color: #cbd8e7; font-size: 12px; }
 .history-launch-meta { flex: 0 0 auto; color: var(--faint); font-size: 10px; }
 .review-history-launch { margin-top: 10px; }
+.review-history-toggle { margin-top: 10px; border: 1px solid var(--line); border-radius: 8px; background: #0d121b; }
+.review-history-toggle > summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px;
+  color: #cbd8e7; cursor: pointer; list-style: none;
+}
+.review-history-toggle > summary::-webkit-details-marker { display: none; }
+.review-history-toggle > summary::after { content: "⌄"; color: var(--faint); font-size: 14px; transition: transform 150ms ease-out; }
+.review-history-toggle[open] > summary::after { transform: rotate(180deg); }
+.review-history-toggle > summary > span:first-child { min-width: 0; display: grid; gap: 2px; }
+.review-history-toggle > summary .eyebrow { font-size: 8px; }
+.review-history-toggle > summary strong { font-size: 12px; }
+.review-history-content { display: grid; gap: 8px; max-height: 300px; overflow: auto; padding: 8px; border-top: 1px solid var(--line-soft); }
 
 .review-pane { max-height: calc(100dvh - 58px); overflow-y: auto; position: sticky; top: 51px; padding: 11px; }
 .review-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 9px; margin-bottom: 8px; }

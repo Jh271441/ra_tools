@@ -2025,12 +2025,10 @@ function renderReview(caseData) {
       <label><span>标注人${authorLocked ? "（SSO）" : "（可编辑）"}</span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" ${authorLocked ? "readonly" : ""} /></label>
       <button class="button button-primary full-width" type="submit">保存新的 review 版本</button>
     </form>
-    <div class="review-history-footer">
-      <button class="history-inline-button" type="button" data-open-history="review">Review 历史 · ${(caseData.annotations || []).length} 条</button>
-    </div>`;
-  $("#reviewPane").querySelector("[data-open-history='review']")?.addEventListener("click", () => {
-    openHistoryDialog("review", caseData);
-  });
+    <details class="review-history-toggle">
+      <summary><span><span class="eyebrow">REVIEW HISTORY</span><strong>Review 历史</strong></span><span class="history-launch-meta">${(caseData.annotations || []).length} 条</span></summary>
+      <div class="review-history-content">${annotationHistory(caseData.annotations)}</div>
+    </details>`;
   $("#reviewPane").querySelectorAll('input[name="missingEvidence"]').forEach((input) => {
     input.addEventListener("change", updateEvidenceSummary);
   });
