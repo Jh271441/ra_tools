@@ -410,14 +410,16 @@
                         <span>Batch ID / records 链接</span>
                         <input id="autotriageBatchInput" placeholder="例如 761，或 …/records/761?tab=results" autocomplete="off" required />
                       </label>
-                      <label>
-                        <span>模型 Run 名（可选）</span>
-                        <input id="autotriageRunNameInput" placeholder="默认使用平台 Batch 名" maxlength="120" autocomplete="off" />
-                      </label>
-                      <div class="dialog-result hidden" id="autotriageImportResult"></div>
-                      <div class="page-actions">
-                        <button class="button button-primary" id="importAutoTriageButton" type="submit">拉取并创建 Run</button>
+                      <div class="run-import-controls">
+                        <label>
+                          <span>模型 Run 名（可选）</span>
+                          <input id="autotriageRunNameInput" placeholder="默认使用平台 Batch 名" maxlength="120" autocomplete="off" />
+                        </label>
+                        <div class="page-actions">
+                          <button class="button button-primary" id="importAutoTriageButton" type="submit">拉取并创建 Run</button>
+                        </div>
                       </div>
+                      <div class="dialog-result hidden" id="autotriageImportResult"></div>
                     </form>
                   </div>
                 </section>
@@ -431,10 +433,12 @@
                       </p>
                       <p class="muted">检查仅创建或复用本地不可变 Run，不会改变团队默认 Run。</p>
                     </div>
-                    <div class="trail-sync-state" id="trailSyncState">等待读取当前 Trail 字段状态…</div>
-                    <div class="trail-actions">
-                      <button class="button button-quiet" id="checkTrailButton" type="button">检查字段</button>
-                      <button class="button button-primary" id="syncTrailButton" type="button" disabled>创建 Run</button>
+                    <div class="trail-state-row">
+                      <div class="trail-sync-state" id="trailSyncState">等待读取当前 Trail 字段状态…</div>
+                      <div class="trail-actions">
+                        <button class="button button-quiet" id="checkTrailButton" type="button">检查字段</button>
+                        <button class="button button-primary" id="syncTrailButton" type="button" disabled>创建 Run</button>
+                      </div>
                     </div>
                   </div>
                 </section>
