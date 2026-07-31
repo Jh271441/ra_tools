@@ -120,7 +120,7 @@ issue_id, model_label
 { "experiment": { ... }, "results": [ ... ] }
 ```
 
-Runs 行的 CSV/JSON「预览」调用同源 `GET /api/model-runs/{run_id}/source-preview`，默认展示前 200 行并对单元格做长度限制和敏感字段脱敏；「下载」调用 `GET /api/model-runs/{run_id}/source?download=1`。早期未归档但仍保留预测行的 Run 会生成 `reconstructed-model-run-v1` 复核副本并显式标记，不冒充原始文件。
+Runs 行的 CSV/JSON「预览」调用同源 `GET /api/model-runs/{run_id}/source-preview?page=1&page_size=100`，页面内全屏分页查看完整数据（单页最多 200 行），并对单元格做长度限制和敏感字段脱敏；「下载」调用 `GET /api/model-runs/{run_id}/source?download=1`。早期未归档但仍保留预测行的 Run 会生成 `reconstructed-model-run-v1` 复核副本并显式标记，不冒充原始文件。
 
 GT 导入默认不会覆盖已有 GT，只有在 UI 勾选明确覆盖时才会改写。
 

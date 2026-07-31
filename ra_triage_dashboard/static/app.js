@@ -61,6 +61,7 @@ const state = {
   pollingBatchId: "",
   pollTimer: null,
   media: { kind: "bev", index: 0 },
+  sourcePreview: { runId: "", page: 1, pageSize: 100, pageCount: 1 },
   session: {
     username: "",
     source: "anonymous",
@@ -99,13 +100,6 @@ function setReviewComparisonStatus(
   if (select) {
     select.disabled = !hasRun;
     select.value = nextStatus;
-    select.classList.remove(
-      "comparison-all",
-      "comparison-mismatch",
-      "comparison-match",
-      "comparison-none"
-    );
-    select.classList.add(`comparison-${nextStatus}`);
   }
   return nextStatus;
 }
@@ -396,6 +390,7 @@ function showPage(
     issues = [],
     source = "",
     importKind = "",
+    runSourceTab = "",
     restoreRoute = false,
   } = {}
 ) {
@@ -416,7 +411,7 @@ function showPage(
   if (target === "runs") {
     renderRunManager();
     if (importKind) setImportKind(importKind);
-    else activateRunSourceTab("upload");
+    else activateRunSourceTab(runSourceTab || "upload");
   }
   if (target === "prediction") {
     const issueIds = issues.length ? issues : issue ? [issue] : [];
@@ -1918,7 +1913,7 @@ function renderReview(caseData) {
   const author = state.session.username || previous.author || "";
   const authorLocked = Boolean(state.session.verified && state.session.username);
   $("#reviewPane").innerHTML = `
-    <div class="review-title"><div><span class="eyebrow">HUMAN REVIEW</span><h2>标注与错误归因</h2></div><span class="review-issue">${escapeHtml(caseData.issue_id)}</span></div>
+    <div class="review-title"><div><span class="eyebrow">HUMAN REVIEW</span><h2>标注与错误归因</h2><small class="review-scope-note">人工 Review 按 Issue 共用；模型输出按 Run 区分</small></div><span class="review-issue">${escapeHtml(caseData.issue_id)}</span></div>
     <form class="review-form" id="annotationForm">
       <div><label><span>人工最终判断</span></label><div class="label-buttons">${LABELS.map((label) => `<button class="label-choice ${state.selectedAnnotationLabel === label ? "active" : ""}" data-annotation-label="${label}" type="button">${label}</button>`).join("")}</div></div>
       <label><span>复核状态</span><select id="reviewStatusInput"><option value="pending">待补充</option><option value="reviewed" ${previous.review_status === "reviewed" ? "selected" : ""}>已复核</option><option value="needs_gt_review" ${previous.review_status === "needs_gt_review" ? "selected" : ""}>GT 需复核</option></select></label>
@@ -2232,9 +2227,17 @@ function renderSourcePreview(data) {
   const columns = Array.isArray(data?.columns) ? data.columns : [];
   const metadata = data?.metadata && typeof data.metadata === "object" ? data.metadata : {};
   const rowCount = Number(data?.total_rows || rows.length);
+  const page = Number(data?.page || 1);
+  const pageCount = Number(data?.page_count || 1);
+  const offset = Number(data?.offset || 0);
+  state.sourcePreview.page = page;
+  state.sourcePreview.pageCount = pageCount;
   $("#sourcePreviewEyebrow").textContent = `${format || "SOURCE"} · MODEL RUN`;
   $("#sourcePreviewTitle").textContent = data?.filename || "文件预览";
-  $("#sourcePreviewMeta").textContent = `${rowCount} 条结果${data?.truncated ? ` · 当前展示前 ${rows.length} 条` : ""}`;
+  $("#sourcePreviewMeta").textContent = `${rowCount} 条结果 · 第 ${page} / ${pageCount} 页${data?.reconstructed ? " · Run 重建副本" : ""}`;
+  $("#sourcePreviewPageLabel").textContent = `第 ${page} / ${pageCount} 页`;
+  $("#sourcePreviewPrevious").disabled = !data?.has_previous;
+  $("#sourcePreviewNext").disabled = !data?.has_next;
   const notice = data?.reconstructed
     ? '<div class="source-preview-notice">原始上传文件未归档；当前内容由 Run 中已保存的脱敏预测行重建，仅用于复核。</div>'
     : "";
@@ -2251,10 +2254,23 @@ function renderSourcePreview(data) {
       const cells = columns
         .map((column) => `<td>${escapeHtml(row?.[column] ?? "")}</td>`)
         .join("");
-      return `<tr><td>${index + 1}</td>${cells}</tr>`;
+      return `<tr><td>${offset + index + 1}</td>${cells}</tr>`;
     })
     .join("");
   $("#sourcePreviewContent").innerHTML = `${notice}${metadataBlock}<table class="source-preview-table"><thead><tr><th scope="col">#</th>${header}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+async function loadSourcePreviewPage(runId, page = 1) {
+  const run = state.modelRuns.find((item) => item.id === runId);
+  const source = run?.source_file && typeof run.source_file === "object" ? run.source_file : {};
+  const previewUrl = safeSameOriginAssetUrl(source.preview_url);
+  if (!run || !source.available || !source.preview_supported || !previewUrl) {
+    throw new Error("该 Run 没有可用的 CSV / JSON 页面预览。");
+  }
+  const separator = previewUrl.includes("?") ? "&" : "?";
+  const data = await api(`${previewUrl}${separator}page=${encodeURIComponent(Math.max(1, page))}&page_size=${state.sourcePreview.pageSize}`);
+  state.sourcePreview.runId = runId;
+  renderSourcePreview(data);
 }
 
 async function openSourcePreview(runId) {
@@ -2268,11 +2284,14 @@ async function openSourcePreview(runId) {
   $("#sourcePreviewEyebrow").textContent = "MODEL SOURCE PREVIEW";
   $("#sourcePreviewTitle").textContent = source.filename || "文件预览";
   $("#sourcePreviewMeta").textContent = "正在读取…";
+  $("#sourcePreviewPageLabel").textContent = "第 1 / … 页";
+  $("#sourcePreviewPrevious").disabled = true;
+  $("#sourcePreviewNext").disabled = true;
   $("#sourcePreviewContent").innerHTML = '<div class="no-asset">正在生成预览…</div>';
   openDialog("sourcePreviewDialog");
   try {
-    const data = await api(previewUrl);
-    renderSourcePreview(data);
+    state.sourcePreview = { runId, page: 1, pageSize: 100, pageCount: 1 };
+    await loadSourcePreviewPage(runId, 1);
   } catch (error) {
     $("#sourcePreviewMeta").textContent = "预览失败";
     $("#sourcePreviewContent").innerHTML = `<div class="no-asset">${escapeHtml(error.message)}</div>`;
@@ -3184,8 +3203,7 @@ async function submitImport(event) {
 }
 
 function openAutoTriageImport() {
-  navigatePage("runs");
-  activateRunSourceTab("autotriage");
+  navigatePage("runs", { runSourceTab: "autotriage" });
   window.setTimeout(() => $("#runsSourceCard")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
 }
 
@@ -3420,8 +3438,7 @@ function bindEvents() {
   });
   $("#openAutoTriageImportButton").addEventListener("click", openAutoTriageImport);
   $("#openTrailImportButton").addEventListener("click", () => {
-    navigatePage("runs");
-    activateRunSourceTab("trail");
+    navigatePage("runs", { runSourceTab: "trail" });
     window.setTimeout(() => $("#runsSourceCard")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   });
   $("#reviewUploadModelButton").addEventListener("click", () => openRunImport("model"));
@@ -3512,6 +3529,14 @@ function bindEvents() {
     renderPredictionSourceSummary();
   });
   $("#predictionBatchForm").addEventListener("submit", submitPredictionBatch);
+  $("#sourcePreviewPrevious").addEventListener("click", () => {
+    if (!state.sourcePreview.runId || state.sourcePreview.page <= 1) return;
+    loadSourcePreviewPage(state.sourcePreview.runId, state.sourcePreview.page - 1).catch((error) => showToast(error.message, true));
+  });
+  $("#sourcePreviewNext").addEventListener("click", () => {
+    if (!state.sourcePreview.runId || state.sourcePreview.page >= state.sourcePreview.pageCount) return;
+    loadSourcePreviewPage(state.sourcePreview.runId, state.sourcePreview.page + 1).catch((error) => showToast(error.message, true));
+  });
   $("#mediaPrevButton").addEventListener("click", () => moveMedia(-1));
   $("#mediaNextButton").addEventListener("click", () => moveMedia(1));
   document.addEventListener("keydown", (event) => {

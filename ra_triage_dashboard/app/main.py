@@ -1671,7 +1671,11 @@ async def model_runs() -> dict[str, Any]:
 
 
 @app.get("/api/model-runs/{run_id}/source-preview")
-async def preview_model_run_source(run_id: str) -> dict[str, Any]:
+async def preview_model_run_source(
+    run_id: str,
+    page: int = 1,
+    page_size: int = 100,
+) -> dict[str, Any]:
     run = database.get_model_run(run_id)
     if run is None:
         raise _detail(404, "模型 Run 不存在。")
@@ -1703,12 +1707,19 @@ async def preview_model_run_source(run_id: str) -> dict[str, Any]:
         except (OSError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
             raise _detail(422, f"来源文件无法生成预览：{exc}")
 
+    page = max(1, int(page))
+    page_size = min(max(1, int(page_size)), MAX_SOURCE_PREVIEW_ROWS)
+    total_rows = len(source_rows)
+    page_count = max(1, math.ceil(total_rows / page_size))
+    page = min(page, page_count)
+    page_start = (page - 1) * page_size
+    page_rows = source_rows[page_start : page_start + page_size]
     preview_rows = [
         {
             str(key): _source_preview_value(value)
             for key, value in row.items()
         }
-        for row in source_rows[:MAX_SOURCE_PREVIEW_ROWS]
+        for row in page_rows
     ]
     columns: list[str] = []
     seen_columns: set[str] = set()
@@ -1726,8 +1737,14 @@ async def preview_model_run_source(run_id: str) -> dict[str, Any]:
         "format": suffix[1:],
         "columns": columns,
         "rows": preview_rows,
-        "total_rows": len(source_rows),
-        "truncated": len(source_rows) > len(preview_rows),
+        "total_rows": total_rows,
+        "page": page,
+        "page_size": page_size,
+        "page_count": page_count,
+        "offset": page_start,
+        "has_previous": page > 1,
+        "has_next": page < page_count,
+        "truncated": total_rows > len(preview_rows),
         "metadata": metadata_preview,
         "reconstructed": reconstructed,
     }
