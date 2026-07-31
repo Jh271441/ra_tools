@@ -12,6 +12,7 @@ from .sanitization import redact_sensitive_fields
 
 
 LABELS = ("误触发", "正确触发", "无需协助")
+COMPARISON_STATUSES = ("all", "mismatch", "match", "none")
 REVIEW_STATUSES = ("pending", "reviewed", "needs_gt_review")
 BATCH_JOB_STATUSES = ("queued", "running", "succeeded", "partial", "failed")
 BATCH_PUBLISH_STATUSES = (
@@ -851,6 +852,7 @@ class Database:
         annotation_label: str = "",
         annotation_author: str = "",
         model_run_id: str = "",
+        comparison_status: str = "all",
         failure_only: bool = False,
         missing_evidence: str = "",
         page: int = 1,
@@ -858,6 +860,13 @@ class Database:
     ) -> dict[str, Any]:
         page = max(1, page)
         page_size = min(max(1, page_size), 2000)
+        comparison_status = str(comparison_status or "all").strip().lower()
+        if failure_only:
+            comparison_status = "mismatch"
+        if comparison_status not in COMPARISON_STATUSES:
+            raise ValueError("unsupported comparison_status")
+        if comparison_status != "all" and not model_run_id:
+            raise ValueError("comparison_status requires model_run_id")
         where: list[str] = []
         params: list[Any] = []
         if baseline_scope:
@@ -881,11 +890,17 @@ class Database:
             # avoids treating a prefix as a different evidence item.
             where.append("ann.missing_evidence_json LIKE ?")
             params.append(f'%"{missing_evidence.strip()}"%')
-        if failure_only:
+        if comparison_status != "all":
             where.append("i.gt_label IN (?, ?, ?)")
-            where.append("mp.model_label IN (?, ?, ?)")
-            where.append("mp.model_label != i.gt_label")
-            params.extend((*LABELS, *LABELS))
+            params.extend(LABELS)
+            if comparison_status == "none":
+                where.append("(mp.model_label IS NULL OR mp.model_label NOT IN (?, ?, ?))")
+                params.extend(LABELS)
+            else:
+                where.append("mp.model_label IN (?, ?, ?)")
+                params.extend(LABELS)
+                operator = "=" if comparison_status == "match" else "!="
+                where.append(f"mp.model_label {operator} i.gt_label")
         condition = f"WHERE {' AND '.join(where)}" if where else ""
         common = f"""
             FROM issues i

@@ -1300,12 +1300,21 @@ async def list_cases(
     annotation_label: str = "",
     annotation_author: str = "",
     model_run_id: str = "",
+    comparison: str = "",
     failure_only: bool = False,
     missing_evidence: str = "",
     page: int = 1,
     page_size: int = 100,
     include_thumbnail: bool = False,
 ) -> dict[str, Any]:
+    requested_comparison = _as_text(comparison).strip().lower()
+    if requested_comparison and requested_comparison not in COMPARISON_STATUSES:
+        raise _detail(400, "comparison 仅支持 all、mismatch、match 或 none。")
+    if failure_only and requested_comparison and requested_comparison != "mismatch":
+        raise _detail(400, "failure_only=true 与 comparison 参数冲突。")
+    comparison_status = requested_comparison or ("mismatch" if failure_only else "all")
+    if comparison_status != "all" and not model_run_id:
+        raise _detail(400, "筛选模型对比关系时必须选择 Model Run。")
     result = database.list_cases(
         baseline_scope=settings.baseline_scope,
         search=search,
@@ -1313,6 +1322,7 @@ async def list_cases(
         annotation_label=annotation_label,
         annotation_author=annotation_author,
         model_run_id=model_run_id,
+        comparison_status=comparison_status,
         failure_only=failure_only,
         missing_evidence=missing_evidence,
         page=page,
@@ -1337,6 +1347,11 @@ async def list_cases(
             )
         items.append(public)
     result["items"] = items
+    result["filters"] = {
+        "model_run_id": model_run_id,
+        "comparison_status": comparison_status,
+        "failure_only": comparison_status == "mismatch",
+    }
     return result
 
 

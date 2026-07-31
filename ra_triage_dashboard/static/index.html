@@ -82,11 +82,14 @@
                     <option value="">未选择模型 Run</option>
                   </select>
                 </label>
-                <label class="toggle-row compact-filter-toggle">
-                  <input id="failureOnlyInput" type="checkbox" />
-                  <span>
-                    <strong>只看判断失败</strong>
-                  </span>
+                <label class="filter-comparison">
+                  <span>模型判断结果</span>
+                  <select id="comparisonFilter" aria-label="模型判断结果筛选">
+                    <option value="all">全部</option>
+                    <option value="mismatch">MISMATCH · 判断失败</option>
+                    <option value="match">MATCH · 判断一致</option>
+                    <option value="none">NONE · 未预测</option>
+                  </select>
                 </label>
                 <label class="filter-search">
                   <span>检索</span>
@@ -134,7 +137,7 @@
               <section class="gallery-panel">
                 <div class="gallery-heading">
                   <div>
-                    <span class="eyebrow">FAILURE REVIEW QUEUE</span>
+                    <span class="eyebrow">ISSUE REVIEW QUEUE</span>
                     <h2>Issue Gallery</h2>
                   </div>
                   <div class="gallery-heading-meta">

@@ -202,10 +202,11 @@ a:hover { color: var(--accent); }
 }
 .review-filters label { min-width: 0; gap: 3px; color: var(--faint); font-size: 9px; }
 .review-filters input, .review-filters select { min-width: 0; height: 32px; padding: 5px 7px; font-size: 11px; }
-.compact-filter-toggle { min-width: 0; height: 32px; grid-template-columns: auto minmax(0, 1fr); gap: 6px; padding: 5px 7px; }
-.review-filters .compact-filter-toggle input { width: 14px; height: 14px; padding: 0; }
-.compact-filter-toggle span { min-width: 0; align-self: center; }
-.compact-filter-toggle strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.filter-comparison select { font-weight: 700; letter-spacing: .01em; }
+.review-filters #comparisonFilter.comparison-mismatch { border-color: rgba(248,113,113,.48); color: #f5a1a1; background: rgba(248,113,113,.08); }
+.review-filters #comparisonFilter.comparison-match { border-color: rgba(52,211,153,.45); color: #8edcbc; background: rgba(52,211,153,.08); }
+.review-filters #comparisonFilter.comparison-none { border-color: rgba(148,163,184,.42); color: #aab6c7; background: rgba(148,163,184,.08); }
+.review-filters #comparisonFilter:disabled { color: var(--faint); background: #0d1119; }
 .filter-submit { height: 32px; padding: 5px 9px; }
 .review-quick-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .review-quick-actions .button { min-height: 32px; padding: 6px 8px; }
@@ -374,6 +375,10 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .issue-title { overflow: hidden; color: #e4ebf5; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .quiet-meta { color: var(--faint); font-size: 10px; }
 .mismatch-chip { padding: 2px 5px; border: 1px solid rgba(248,113,113,.35); border-radius: 4px; color: #fda4a4; background: rgba(248,113,113,.1); font-size: 9px; letter-spacing: .06em; font-weight: 750; }
+.comparison-chip { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; font-size: 9px; letter-spacing: .06em; font-weight: 750; }
+.comparison-chip.comparison-mismatch { border-color: rgba(248,113,113,.42); color: #f5a1a1; background: rgba(248,113,113,.1); }
+.comparison-chip.comparison-match { border-color: rgba(52,211,153,.4); color: #8edcbc; background: rgba(52,211,153,.09); }
+.comparison-chip.comparison-none { border-color: rgba(148,163,184,.38); color: #aab6c7; background: rgba(148,163,184,.08); }
 .label-badge { display: inline-flex; align-items: center; min-height: 19px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); background: rgba(255,255,255,.025); font-size: 10px; font-weight: 650; white-space: nowrap; }
 .label-误触发 { border-color: rgba(248,113,113,.3); color: #fda4a4; background: rgba(248,113,113,.09); }
 .label-正确触发 { border-color: rgba(52,211,153,.3); color: #9ae6c9; background: rgba(52,211,153,.09); }
@@ -866,7 +871,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .case-detail-pager .button { min-width: 0; padding-inline: 6px; }
   .review-filters { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .filter-model-run, .filter-search { grid-column: 1 / -1; }
-  .compact-filter-toggle { grid-column: 1 / -1; }
+  .filter-comparison { grid-column: 1 / -1; }
   .review-quick-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .review-quick-actions .button { min-width: 0; padding-inline: 5px; }
   .detail-pane, .review-pane, .page-card { padding: 12px; }

@@ -6,6 +6,8 @@ const ANALYSIS_COMPARISON_META = {
   match: { label: "MATCH", description: "GT 与模型输出一致" },
   none: { label: "NONE", description: "该 Run 未预测" },
 };
+const REVIEW_COMPARISON_STATUSES = ANALYSIS_COMPARISON_STATUSES;
+const REVIEW_COMPARISON_META = ANALYSIS_COMPARISON_META;
 const PAGE_ROUTES = {
   review: { path: "/review", title: "RA Triage Workbench", eyebrow: "EVALUATION BASELINE · 0508" },
   analysis: { path: "/review-analysis", title: "Review 原因聚类", eyebrow: "REVIEW ERROR ANALYSIS" },
@@ -44,6 +46,7 @@ const state = {
   },
   batchDraftSource: "",
   selectedRunId: "",
+  reviewComparisonStatus: "all",
   failureOnly: false,
   clusterKey: "",
   reviewQueueStale: false,
@@ -77,6 +80,50 @@ const $ = (selector) => document.querySelector(selector);
 function normalizedAnalysisComparisonStatus(value, fallback = "all") {
   const normalized = String(value || "").trim().toLowerCase();
   return ANALYSIS_COMPARISON_STATUSES.includes(normalized) ? normalized : fallback;
+}
+
+function normalizedReviewComparisonStatus(value, fallback = "all") {
+  const normalized = String(value || "").trim().toLowerCase();
+  return REVIEW_COMPARISON_STATUSES.includes(normalized) ? normalized : fallback;
+}
+
+function setReviewComparisonStatus(
+  comparisonStatus,
+  { hasRun = Boolean($("#modelRunFilter")?.value) } = {}
+) {
+  let nextStatus = normalizedReviewComparisonStatus(comparisonStatus);
+  if (!hasRun && nextStatus !== "all") nextStatus = "all";
+  state.reviewComparisonStatus = nextStatus;
+  state.failureOnly = nextStatus === "mismatch";
+  const select = $("#comparisonFilter");
+  if (select) {
+    select.disabled = !hasRun;
+    select.value = nextStatus;
+    select.classList.remove(
+      "comparison-all",
+      "comparison-mismatch",
+      "comparison-match",
+      "comparison-none"
+    );
+    select.classList.add(`comparison-${nextStatus}`);
+  }
+  return nextStatus;
+}
+
+function selectedReviewComparisonStatus() {
+  const runId = $("#modelRunFilter")?.value || state.selectedRunId;
+  const status = normalizedReviewComparisonStatus(
+    $("#comparisonFilter")?.value,
+    state.reviewComparisonStatus || (state.failureOnly ? "mismatch" : "all")
+  );
+  return runId ? status : "all";
+}
+
+function routeReviewComparisonStatus(params) {
+  const requested = String(params.get("comparison") || "").trim().toLowerCase();
+  if (REVIEW_COMPARISON_STATUSES.includes(requested)) return requested;
+  if (params.get("failure") === "1") return "mismatch";
+  return params.has("run") ? "all" : null;
 }
 
 function routeAnalysisComparisonStatus(params) {
@@ -141,6 +188,7 @@ function parsePageRoute() {
     issues: issueIds,
     source: params.get("source") || "",
     runId: params.get("run") || "",
+    comparisonStatus: routeReviewComparisonStatus(params),
     failureOnly: params.has("failure") ? params.get("failure") === "1" : params.has("run") ? false : null,
     ...reviewFilters,
     analysisFilters: normalizedAnalysisRouteFilters(params),
@@ -158,6 +206,7 @@ function currentReviewRouteOptions(overrides = {}) {
   return {
     issue: state.selectedId,
     runId: state.selectedRunId,
+    comparisonStatus: state.reviewComparisonStatus,
     failureOnly: state.failureOnly,
     search: $("#searchInput")?.value.trim() || "",
     gtLabel: $("#gtFilter")?.value || "",
@@ -187,6 +236,22 @@ function applyReviewRouteControls(route) {
   }
   state.clusterKey = route.clusterKey || "";
   state.casePage = Math.max(1, Number(route.casePage) || 1);
+  if (route.comparisonStatus !== null && route.comparisonStatus !== undefined) {
+    state.reviewComparisonStatus = normalizedReviewComparisonStatus(
+      route.comparisonStatus,
+      state.reviewComparisonStatus || "all"
+    );
+  }
+  if (state.selectedRunId) {
+    setReviewComparisonStatus(state.reviewComparisonStatus, { hasRun: true });
+  } else {
+    state.failureOnly = state.reviewComparisonStatus === "mismatch";
+    const select = $("#comparisonFilter");
+    if (select) {
+      select.disabled = true;
+      select.value = "all";
+    }
+  }
 }
 
 function currentAnalysisRouteOptions(overrides = {}) {
@@ -259,10 +324,13 @@ function pageUrl(page, options = {}) {
     const review = currentReviewRouteOptions(options);
     const issueId = review.issue;
     const runId = review.runId;
-    const failureOnly = review.failureOnly;
+    const comparisonStatus = normalizedReviewComparisonStatus(
+      review.comparisonStatus,
+      review.failureOnly ? "mismatch" : "all"
+    );
     if (issueId) url.searchParams.set("issue", issueId);
     if (runId) url.searchParams.set("run", runId);
-    if (failureOnly && runId) url.searchParams.set("failure", "1");
+    if (runId) url.searchParams.set("comparison", runId ? comparisonStatus : "all");
     if (review.search) url.searchParams.set("q", review.search);
     if (review.gtLabel) url.searchParams.set("gt", review.gtLabel);
     if (review.annotationLabel) url.searchParams.set("annotation", review.annotationLabel);
@@ -784,11 +852,13 @@ async function loadRuns({ preferDefault = false, preserveEmpty = false } = {}) {
     .join("")}`;
   state.selectedRunId = state.modelRuns.some((run) => run.id === candidate) ? candidate : "";
   select.value = state.selectedRunId;
-  const failure = $("#failureOnlyInput");
-  failure.disabled = !state.selectedRunId;
-  if (preferDefault && !previousRunId && state.selectedRunId) state.failureOnly = true;
-  if (!state.selectedRunId) state.failureOnly = false;
-  failure.checked = state.failureOnly;
+  if (preferDefault && !previousRunId && state.selectedRunId) {
+    state.reviewComparisonStatus = "mismatch";
+  }
+  if (!state.selectedRunId) state.reviewComparisonStatus = "all";
+  setReviewComparisonStatus(state.reviewComparisonStatus, {
+    hasRun: Boolean(state.selectedRunId),
+  });
   renderAnalysisRunFilter();
   renderRunFilters();
   renderActiveRun();
@@ -961,17 +1031,25 @@ function renderRunManager() {
 async function useModelRun(runId) {
   if (!state.modelRuns.some((run) => run.id === runId)) return;
   state.selectedRunId = runId;
+  state.reviewComparisonStatus = "mismatch";
   state.failureOnly = true;
   state.selectedId = "";
   state.casePage = 1;
   state.galleryScrollY = 0;
   $("#modelRunFilter").value = runId;
-  $("#failureOnlyInput").disabled = false;
-  $("#failureOnlyInput").checked = true;
+  setReviewComparisonStatus("mismatch", { hasRun: true });
   renderActiveRun();
   renderRunManager();
   await Promise.all([loadCases({ keepSelection: false, page: 1 }), loadClusters(), loadOverview()]);
   navigatePage("review");
+}
+
+function reviewComparisonStatusForItem(item) {
+  if (!state.selectedRunId) return "";
+  const prediction = item?.prediction || {};
+  if (!prediction.model_run_id) return "none";
+  if (!LABELS.includes(prediction.label)) return "none";
+  return prediction.mismatch ? "mismatch" : "match";
 }
 
 function issueCard(item) {
@@ -981,7 +1059,9 @@ function issueCard(item) {
     rawTitle && !LABELS.includes(rawTitle) && rawTitle !== item.gt_label ? rawTitle : "";
   const annotation = item.annotation?.label;
   const prediction = item.prediction?.label;
-  const mismatch = item.prediction?.mismatch;
+  const comparisonStatus = reviewComparisonStatusForItem(item);
+  const comparisonMeta = REVIEW_COMPARISON_META[comparisonStatus];
+  const mismatch = comparisonStatus === "mismatch";
   const thumbnailUrl = safeSameOriginAssetUrl(item.thumbnail?.url);
   const thumbnailLabel = String(
     item.thumbnail?.label || (thumbnailUrl ? "BEV 关键帧" : "暂无缩略图")
@@ -993,7 +1073,7 @@ function issueCard(item) {
         <div class="issue-thumbnail-placeholder" aria-hidden="true"><span>RA</span><small>暂无 BEV 缩略图</small></div>
         ${thumbnailUrl ? `<img src="${escapeHtml(thumbnailUrl)}" alt="${escapeHtml(item.issue_id)} ${escapeHtml(thumbnailLabel)}" loading="lazy" decoding="async" data-case-thumbnail />` : ""}
         <span class="issue-thumbnail-label">${escapeHtml(thumbnailLabel)}</span>
-        ${mismatch ? '<span class="mismatch-chip issue-thumbnail-status">MISMATCH</span>' : ""}
+        ${comparisonMeta ? `<span class="comparison-chip comparison-${comparisonStatus} issue-thumbnail-status">${escapeHtml(comparisonMeta.label)}</span>` : ""}
       </div>
       <div class="issue-card-body">
         <div class="issue-card-heading">
@@ -1081,7 +1161,11 @@ function renderCases(data) {
   renderCaseNavigation();
   const list = $("#issueList");
   if (!state.cases.length) {
-    const hint = state.failureOnly ? "没有符合条件的模型失败 case。可切换 model run 或关闭失败筛选。" : "没有匹配的 Issue。";
+    const comparisonStatus = state.reviewComparisonStatus;
+    const comparisonMeta = REVIEW_COMPARISON_META[comparisonStatus];
+    const hint = comparisonStatus !== "all"
+      ? `没有符合 ${comparisonMeta?.label || comparisonStatus} 的 Issue，可切换模型判断结果筛选。`
+      : "没有匹配的 Issue。";
     list.innerHTML = `<div class="no-asset issue-grid-empty">${hint}</div>`;
     return;
   }
@@ -1184,13 +1268,16 @@ async function loadCases({
   const annotationLabel = $("#annotationFilter").value;
   const annotationAuthor = $("#reviewerFilter").value;
   state.selectedRunId = $("#modelRunFilter").value;
-  state.failureOnly = Boolean($("#failureOnlyInput").checked && state.selectedRunId);
+  state.reviewComparisonStatus = selectedReviewComparisonStatus();
+  state.failureOnly = state.reviewComparisonStatus === "mismatch";
   if (search) params.set("search", search);
   if (gtLabel) params.set("gt_label", gtLabel);
   if (annotationLabel) params.set("annotation_label", annotationLabel);
   if (annotationAuthor) params.set("annotation_author", annotationAuthor);
   if (state.selectedRunId) params.set("model_run_id", state.selectedRunId);
-  if (state.failureOnly) params.set("failure_only", "true");
+  if (state.selectedRunId && state.reviewComparisonStatus !== "all") {
+    params.set("comparison", state.reviewComparisonStatus);
+  }
   if (state.clusterKey) params.set("missing_evidence", state.clusterKey);
   params.set("page", String(state.casePage));
   params.set("page_size", String(state.casePageSize));
@@ -1523,8 +1610,9 @@ function applyAnalysisComparisonSelection() {
     state.reviewQueueStale = true;
   }
   $("#modelRunFilter").value = state.selectedRunId;
-  $("#failureOnlyInput").disabled = !state.selectedRunId;
-  $("#failureOnlyInput").checked = state.failureOnly;
+  setReviewComparisonStatus(state.reviewComparisonStatus, {
+    hasRun: Boolean(state.selectedRunId),
+  });
   renderActiveRun();
   renderRunManager();
 }
@@ -3119,17 +3207,19 @@ function bindEvents() {
   $("#modelRunFilter").addEventListener("change", async () => {
     const previousRunId = state.selectedRunId;
     state.selectedRunId = $("#modelRunFilter").value;
-    if (!state.selectedRunId) state.failureOnly = false;
-    if (state.selectedRunId && !previousRunId) state.failureOnly = true;
-    $("#failureOnlyInput").disabled = !state.selectedRunId;
-    $("#failureOnlyInput").checked = state.failureOnly;
+    if (!state.selectedRunId) state.reviewComparisonStatus = "all";
+    if (state.selectedRunId && !previousRunId) state.reviewComparisonStatus = "mismatch";
+    setReviewComparisonStatus(state.reviewComparisonStatus, {
+      hasRun: Boolean(state.selectedRunId),
+    });
     renderAnalysisRunFilter();
     renderActiveRun();
     renderRunManager();
     await reloadReviewGallery();
   });
-  $("#failureOnlyInput").addEventListener("change", async () => {
-    state.failureOnly = $("#failureOnlyInput").checked;
+  $("#comparisonFilter").addEventListener("change", async () => {
+    state.reviewComparisonStatus = selectedReviewComparisonStatus();
+    state.failureOnly = state.reviewComparisonStatus === "mismatch";
     renderAnalysisRunFilter();
     await reloadReviewGallery();
   });
@@ -3308,8 +3398,9 @@ function bindEvents() {
         state.reviewQueueStale = true;
       }
       $("#modelRunFilter").value = nextRunId;
-      $("#failureOnlyInput").checked = state.failureOnly;
-      $("#failureOnlyInput").disabled = !nextRunId;
+      setReviewComparisonStatus(state.reviewComparisonStatus, {
+        hasRun: Boolean(nextRunId),
+      });
       renderAnalysisRunFilter();
       applyAnalysisRouteControls(route);
       showPage("analysis", { restoreRoute: true });
@@ -3331,17 +3422,23 @@ function bindEvents() {
       });
       return;
     }
-    applyReviewRouteControls(route);
     const nextRunId =
       route.runId && state.modelRuns.some((run) => run.id === route.runId)
         ? route.runId
         : "";
-    const nextFailureOnly = Boolean(nextRunId && route.failureOnly);
+    const nextComparisonStatus = nextRunId
+      ? normalizedReviewComparisonStatus(
+          route.comparisonStatus,
+          route.failureOnly ? "mismatch" : "all"
+        )
+      : "all";
     state.selectedRunId = nextRunId;
     $("#modelRunFilter").value = nextRunId;
-    state.failureOnly = nextFailureOnly;
-    $("#failureOnlyInput").checked = state.failureOnly;
-    $("#failureOnlyInput").disabled = !nextRunId;
+    state.reviewComparisonStatus = nextComparisonStatus;
+    setReviewComparisonStatus(nextComparisonStatus, {
+      hasRun: Boolean(nextRunId),
+    });
+    applyReviewRouteControls(route);
     renderAnalysisRunFilter();
     renderActiveRun();
     renderRunManager();
@@ -3407,15 +3504,23 @@ async function bootstrap() {
       state.failureOnly =
         state.reviewAnalysis.comparisonStatus === "mismatch";
     } else {
-      state.failureOnly =
-        initialRoute.failureOnly ??
-        Boolean(state.config.default_failure_only && state.selectedRunId);
+      state.reviewComparisonStatus = state.selectedRunId
+        ? normalizedReviewComparisonStatus(
+            initialRoute.comparisonStatus,
+            initialRoute.failureOnly || state.config.default_failure_only
+              ? "mismatch"
+              : "all"
+          )
+        : "all";
+      state.failureOnly = state.reviewComparisonStatus === "mismatch";
     }
     await loadRuns({
       preferDefault: !initialRoute.runId,
       preserveEmpty: initialRoute.runId === "none",
     });
-    $("#failureOnlyInput").checked = state.failureOnly;
+    setReviewComparisonStatus(state.reviewComparisonStatus, {
+      hasRun: Boolean(state.selectedRunId),
+    });
     await loadReviewers();
     if (initialRoute.page === "review") applyReviewRouteControls(initialRoute);
     if (initialRoute.page === "analysis") applyAnalysisRouteControls(initialRoute);

@@ -245,8 +245,32 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
                 ["cn20003"],
             )
 
+            cases = database.list_cases(
+                baseline_scope=scope,
+                model_run_id=run["id"],
+                comparison_status="match",
+            )
+            self.assertEqual([item["issue_id"] for item in cases["items"]], ["cn20002"])
+            cases = database.list_cases(
+                baseline_scope=scope,
+                model_run_id=run["id"],
+                comparison_status="none",
+            )
+            self.assertEqual([item["issue_id"] for item in cases["items"]], ["cn20003"])
+            cases = database.list_cases(
+                baseline_scope=scope,
+                model_run_id=run["id"],
+                comparison_status="mismatch",
+            )
+            self.assertEqual([item["issue_id"] for item in cases["items"]], ["cn20001"])
+
             with self.assertRaisesRegex(ValueError, "requires model_run_id"):
                 database.review_reason_rows(
+                    baseline_scope=scope,
+                    comparison_status="match",
+                )
+            with self.assertRaisesRegex(ValueError, "requires model_run_id"):
+                database.list_cases(
                     baseline_scope=scope,
                     comparison_status="match",
                 )
