@@ -3511,7 +3511,7 @@ function renderImportExample(format = "csv") {
   const key = Object.prototype.hasOwnProperty.call(IMPORT_EXAMPLES, format) ? format : "csv";
   const example = IMPORT_EXAMPLES[key];
   const dialog = $("#importExamplesDialog");
-  if (dialog) dialog.dataset.importExampleFormat = key;
+  if (dialog) dialog.dataset.exampleFormat = key;
   document.querySelectorAll("[data-import-example-format]").forEach((tab) => {
     const active = tab.dataset.importExampleFormat === key;
     tab.classList.toggle("active", active);
@@ -3528,7 +3528,7 @@ function openImportExamples() {
 }
 
 async function copyImportExample() {
-  const format = $("#importExamplesDialog")?.dataset.importExampleFormat || "csv";
+  const format = $("#importExamplesDialog")?.dataset.exampleFormat || "csv";
   const example = IMPORT_EXAMPLES[format] || IMPORT_EXAMPLES.csv;
   try {
     if (navigator.clipboard?.writeText) {
