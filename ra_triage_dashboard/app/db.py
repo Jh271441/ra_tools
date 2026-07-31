@@ -749,6 +749,13 @@ class Database:
             ).fetchone()
         return str(row["id"]) if row else ""
 
+    def get_model_run(self, run_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM model_runs WHERE id = ?", (run_id,)
+            ).fetchone()
+        return self._run_dict(row) if row else None
+
     def set_default_model_run(self, run_id: str) -> dict[str, Any] | None:
         with self._write_lock, self.connect() as conn:
             row = conn.execute(

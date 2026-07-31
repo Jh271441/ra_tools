@@ -911,8 +911,14 @@ function runSourceReference(run) {
     const viewId = metadata.view_id || metadata.trail_view_id || String(run.source_name || "").match(/\d+/)?.[0] || "2410";
     return `<span class="run-source-ref">Trail view ${escapeHtml(viewId)}</span>`;
   }
-  const sourceName = String(run?.source_name || "").split(/[\\/]/).pop() || "文件名未记录";
-  return `<span class="run-source-ref" title="${escapeHtml(run?.source_name || "")}">原始文件 · ${escapeHtml(sourceName)}</span>`;
+  const source = run?.source_file && typeof run.source_file === "object" ? run.source_file : {};
+  const sourceName = String(source.filename || run?.source_name || "").split(/[\\/]/).pop() || "文件名未记录";
+  const previewUrl = safeSameOriginAssetUrl(source.preview_url);
+  const downloadUrl = safeSameOriginAssetUrl(source.download_url);
+  const actions = source.available && (previewUrl || downloadUrl)
+    ? `<span class="run-source-actions">${previewUrl ? `<a class="run-source-link" href="${escapeHtml(previewUrl)}" target="_blank" rel="noreferrer">预览</a>` : ""}${downloadUrl ? `<a class="run-source-link" href="${escapeHtml(downloadUrl)}" download>下载</a>` : ""}</span>`
+    : `<span class="run-source-unavailable">未归档</span>`;
+  return `<span class="run-source-ref" title="${escapeHtml(run?.source_name || sourceName)}">原始文件 · ${escapeHtml(sourceName)} ${actions}</span>`;
 }
 
 function renderRunSourceSummary() {
@@ -3038,6 +3044,7 @@ function activateRunSourceTab(kind = "upload") {
     const active = panel.dataset.runSourcePanel === targetKind;
     panel.classList.toggle("active", active);
     panel.hidden = !active;
+    panel.setAttribute("aria-hidden", String(!active));
   });
 }
 

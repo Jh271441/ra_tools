@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import math
+import mimetypes
 import re
 import shutil
 import threading
@@ -201,6 +202,65 @@ def _detail(status_code: int, message: str) -> HTTPException:
 def _safe_filename(name: str) -> str:
     result = re.sub(r"[^A-Za-z0-9._-]+", "_", name or "upload")
     return result.strip("._")[:120] or "upload"
+
+
+def _model_source_artifact_path(source_hash: str, filename: str) -> Path:
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".json", ".csv", ".xlsx", ".xlsm"}:
+        suffix = ".bin"
+    return settings.uploads_dir / f"model-run-{source_hash}{suffix}"
+
+
+def _store_model_source(content: bytes, filename: str, source_hash: str) -> dict[str, str]:
+    root = settings.uploads_dir.resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    path = _model_source_artifact_path(source_hash, filename).resolve()
+    if root not in path.parents:
+        raise OSError("模型结果来源文件路径越界。")
+    if not path.is_file():
+        path.write_bytes(content)
+    media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return {
+        "stored_name": path.name,
+        "filename": _safe_filename(filename),
+        "media_type": media_type,
+    }
+
+
+def _model_source_file(run: dict[str, Any]) -> tuple[Path, str] | None:
+    metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
+    artifact = metadata.get("source_artifact") if isinstance(metadata.get("source_artifact"), dict) else {}
+    stored_name = _as_text(artifact.get("stored_name"))
+    if stored_name:
+        root = settings.uploads_dir.resolve()
+        candidate = (root / stored_name).resolve()
+        if root in candidate.parents and candidate.is_file():
+            return candidate, _safe_filename(_as_text(artifact.get("filename")) or candidate.name)
+
+    # Runs created before source_artifact metadata was introduced can still be
+    # resolved by their immutable content hash when the archive was written.
+    source_hash = _as_text(run.get("source_sha256"))
+    source_name = _as_text(run.get("source_name"))
+    if source_hash and run.get("kind", "upload") == "upload":
+        root = settings.uploads_dir.resolve()
+        candidate = _model_source_artifact_path(source_hash, source_name).resolve()
+        if root in candidate.parents and candidate.is_file():
+            return candidate, _safe_filename(Path(source_name).name or candidate.name)
+
+    # Older runs may point at a source file that was already present on the
+    # server. Keep this fallback constrained to known dashboard/data roots.
+    if source_name:
+        candidate = Path(source_name).expanduser()
+        allowed_roots = (
+            settings.uploads_dir.resolve(),
+            settings.data_dir.resolve(),
+            settings.ra_auto_triage_root.resolve(),
+        )
+        if candidate.is_absolute() and candidate.is_file():
+            resolved = candidate.resolve()
+            if any(root == resolved or root in resolved.parents for root in allowed_roots):
+                return resolved, _safe_filename(resolved.name)
+    return None
 
 
 def _as_text(value: Any) -> str:
@@ -1509,10 +1569,48 @@ async def create_annotation_with_attachments(
 
 @app.get("/api/model-runs")
 async def model_runs() -> dict[str, Any]:
+    items = database.list_model_runs(settings.baseline_scope)
+    for item in items:
+        if item.get("kind") != "upload":
+            continue
+        source_file = _model_source_file(item)
+        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        artifact = metadata.get("source_artifact") if isinstance(metadata.get("source_artifact"), dict) else {}
+        filename = _safe_filename(
+            _as_text(artifact.get("filename")) or Path(_as_text(item.get("source_name"))).name
+        )
+        item["source_file"] = {
+            "filename": filename,
+            "available": bool(source_file),
+            "preview_url": f"/api/model-runs/{quote(str(item['id']), safe='')}/source",
+            "download_url": f"/api/model-runs/{quote(str(item['id']), safe='')}/source?download=1",
+        }
     return {
-        "items": database.list_model_runs(settings.baseline_scope),
+        "items": items,
         "default_model_run_id": database.default_model_run_id(),
     }
+
+
+@app.get("/api/model-runs/{run_id}/source")
+async def get_model_run_source(run_id: str, download: bool = False) -> FileResponse:
+    run = database.get_model_run(run_id)
+    if run is None:
+        raise _detail(404, "模型 Run 不存在。")
+    source_file = _model_source_file(run)
+    if source_file is None:
+        raise _detail(404, "该 Run 的原始文件未归档或已不可访问。")
+    path, filename = source_file
+    media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    disposition = "attachment" if download else "inline"
+    return FileResponse(
+        path,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'{disposition}; filename="{filename}"',
+            "Cache-Control": "private, max-age=300, must-revalidate",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @app.post("/api/model-runs/{run_id}/default")
@@ -1790,6 +1888,17 @@ async def import_model_results(
             400,
             "未找到有效结果；需要 issue_id 和 model_label（或 ra_stuck_auto_result）。",
         )
+    try:
+        source_artifact = await asyncio.to_thread(
+            _store_model_source,
+            content,
+            filename,
+            source_hash,
+        )
+    except OSError as exc:
+        raise _detail(507, f"无法归档模型结果原文件：{exc}")
+    metadata = dict(metadata)
+    metadata["source_artifact"] = source_artifact
     experiment = metadata.get("experiment") if isinstance(metadata.get("experiment"), dict) else {}
     default_name = _as_text(experiment.get("model_name")) or Path(filename).stem
     actor, actor_source, actor_verified = _action_actor(request, created_by)

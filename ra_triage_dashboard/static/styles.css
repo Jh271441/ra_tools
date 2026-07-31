@@ -115,9 +115,9 @@ a:hover { color: var(--accent); }
 .runs-source-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .runs-source-heading h3 { margin-top: 2px; font-size: 16px; }
 .runs-source-heading small { color: var(--faint); font-size: 10px; }
-.run-source-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.run-source-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 7px; }
 .run-source-tab {
-  min-width: 0; min-height: 54px; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 9px;
+  min-width: 0; min-height: 0; align-self: start; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 7px; padding: 6px 8px;
   border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: var(--overlay); text-align: left; transition: border-color 130ms ease-out, background 130ms ease-out;
 }
 .run-source-tab:hover { border-color: rgba(34,211,238,.38); background: var(--overlay-2); }
@@ -125,16 +125,20 @@ a:hover { color: var(--accent); }
 .run-source-tab > span:nth-child(2) { min-width: 0; display: grid; gap: 2px; }
 .run-source-tab strong { overflow: hidden; color: var(--text); font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .run-source-tab small { overflow: hidden; color: var(--faint); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-.run-source-icon { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 7px; color: var(--accent); background: var(--accent-soft); font-size: 13px; font-weight: 800; }
+.run-source-icon { width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 6px; color: var(--accent); background: var(--accent-soft); font-size: 11px; font-weight: 800; }
 .run-source-tab em { min-width: 25px; color: #cbd7e5; font-size: 11px; font-style: normal; font-variant-numeric: tabular-nums; text-align: right; }
 .source-trail .run-source-icon { color: #aab7c8; background: rgba(148,163,184,.1); }
 .source-autotriage .run-source-icon { color: #f8d58b; background: rgba(251,191,36,.1); }
 .run-source-note { color: var(--faint); font-size: 10px; line-height: 1.55; }
-.run-source-panels { min-height: 318px; overflow: hidden; border-top: 1px solid var(--line); }
-.run-source-panel { min-height: 318px; }
-.run-source-panel[hidden] { display: none; }
-.run-source-panel .run-import-body { min-height: 318px; }
-.run-source-panel .trail-import-body { min-height: 318px; box-sizing: border-box; align-content: space-between; }
+.run-source-panels { display: grid; overflow: hidden; border-top: 1px solid var(--line); }
+.run-source-panel {
+  grid-area: 1 / 1; min-height: 0; max-height: 0; overflow: hidden; opacity: 0; visibility: hidden; transform: translateY(5px);
+  transition: max-height 220ms ease, opacity 160ms ease, transform 220ms ease, visibility 0s linear 220ms;
+}
+.run-source-panel.active { max-height: 520px; opacity: 1; visibility: visible; transform: translateY(0); transition-delay: 0s; }
+.run-source-panel[hidden] { display: grid; }
+.run-source-panel .run-import-body { min-height: 0; }
+.run-source-panel .trail-import-body { min-height: 0; box-sizing: border-box; align-content: start; }
 .runs-page-card { display: grid; gap: 12px; min-width: 0; }
 .runs-page-card .run-manager-list { max-height: none; }
 .tool-page-grid { display: grid; grid-template-columns: 260px minmax(0, 1fr); align-items: start; gap: 12px; }
@@ -603,6 +607,8 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .run-row-meta { display: flex; flex-wrap: wrap; gap: 5px 11px; color: var(--faint); font-size: 10px; }
 .run-row-meta b { color: #cbd7e5; font-weight: 600; }
 .run-source-ref { color: #aebccc; }
+.run-source-actions { display: inline-flex; gap: 6px; margin-left: 4px; }
+.run-source-unavailable { margin-left: 4px; color: var(--faint); font-size: 10px; }
 .run-source-link { color: #8fe0e7; text-decoration: underline; text-decoration-color: rgba(143,224,231,.35); text-underline-offset: 2px; }
 .run-meta-value { max-width: 240px; display: inline-block; overflow: hidden; vertical-align: bottom; text-overflow: ellipsis; white-space: nowrap; }
 .run-failure-count { color: #e8a2a2; }
