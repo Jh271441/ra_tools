@@ -377,16 +377,14 @@
                         <button class="button button-quiet import-example-trigger" id="openImportExamplesButton" type="button">查看示例</button>
                       </div>
                       <p>文件至少需要 <code>issue_id</code> 与 <code>model_label</code> 或 <code>ra_stuck_auto_result</code>；可附带 reason、confidence、ra_stuck_auto_result_info 等字段。</p>
-                      <p>模型结果按 SHA-256 创建不可变 Run，不覆盖 0508 GT、不自动切换默认 Run。</p>
-                      <div class="actor-summary" id="modelImportActorSummary">创建人将在导入时记录；当前身份尚未读取。</div>
                     </aside>
                     <form class="tool-form" id="importForm">
+                      <label class="file-drop">
+                        <span>选择模型结果文件</span>
+                        <input id="importFile" type="file" accept=".json,.csv,.xlsx,.xlsm" required />
+                        <small id="importFileName">未选择文件</small>
+                      </label>
                       <div class="run-import-controls">
-                        <label class="file-drop">
-                          <span>选择模型结果文件</span>
-                          <input id="importFile" type="file" accept=".json,.csv,.xlsx,.xlsm" required />
-                          <small id="importFileName">未选择文件</small>
-                        </label>
                         <label id="runNameField">
                           <span>模型 Run 名（可选）</span>
                           <input id="runNameInput" placeholder="默认取 experiment.model_name 或文件名" autocomplete="off" />
