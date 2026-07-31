@@ -415,11 +415,8 @@ function showPage(
   document.title = `${PAGE_ROUTES[target].title} · RA Triage`;
   if (target === "runs") {
     renderRunManager();
-    const panel = $("#runImportPanel");
-    if (panel) {
-      panel.open = Boolean(importKind);
-      if (importKind) setImportKind(importKind);
-    }
+    if (importKind) setImportKind(importKind);
+    else activateRunSourceTab("upload");
   }
   if (target === "prediction") {
     const issueIds = issues.length ? issues : issue ? [issue] : [];
@@ -665,7 +662,7 @@ function renderConfig() {
   $(".header-metrics")?.setAttribute("title", baseline.message || "0508 baseline GT 只读");
   if ($("#trailScopeCount")) $("#trailScopeCount").textContent = baseline.count ?? "—";
   const trail = state.trailInspection || state.config?.trail_sync || {};
-  if ($("#trailViewId")) $("#trailViewId").textContent = trail.view_id ?? "1000";
+  if ($("#trailViewId")) $("#trailViewId").textContent = trail.view_id ?? "2410";
   renderTrailSyncState();
   renderBatchRuntimeSummary();
   updateFilteredPredictionButton();
@@ -904,6 +901,20 @@ function runSourceMeta(runOrKind) {
   };
 }
 
+function runSourceReference(run) {
+  const metadata = run?.metadata && typeof run.metadata === "object" ? run.metadata : {};
+  const recordUrl = safeUrl(metadata.record_url || metadata.records_url || "");
+  if (recordUrl) {
+    return `<a class="run-source-link" href="${escapeHtml(recordUrl)}" target="_blank" rel="noreferrer">原始 records</a>`;
+  }
+  if (run?.kind === "trail_snapshot") {
+    const viewId = metadata.view_id || metadata.trail_view_id || String(run.source_name || "").match(/\d+/)?.[0] || "2410";
+    return `<span class="run-source-ref">Trail view ${escapeHtml(viewId)}</span>`;
+  }
+  const sourceName = String(run?.source_name || "").split(/[\\/]/).pop() || "文件名未记录";
+  return `<span class="run-source-ref" title="${escapeHtml(run?.source_name || "")}">原始文件 · ${escapeHtml(sourceName)}</span>`;
+}
+
 function renderRunSourceSummary() {
   Object.entries(RUN_SOURCE_META).forEach(([kind, meta]) => {
     if (!meta.countId) return;
@@ -1056,6 +1067,7 @@ function renderRunManager() {
             ${modelName ? `<span>模型 · ${escapeHtml(modelName)}</span>` : ""}
             ${promptVersion ? `<span>Prompt · ${escapeHtml(promptVersion)}</span>` : ""}
             ${externalUser && externalUser !== owner ? `<span>平台用户 · ${escapeHtml(externalUser)}</span>` : ""}
+            <span>${runSourceReference(run)}</span>
             <span>${coverage} / ${state.config?.baseline?.count || "—"} 条</span>
             <span class="run-failure-count">错误 ${run.failure_count ?? 0}</span>
             <span>${formatTime(run.created_at)}</span>
@@ -3015,20 +3027,29 @@ function updateImportFields() {
   $("#runNameField")?.classList.remove("hidden");
 }
 
+function activateRunSourceTab(kind = "upload") {
+  const targetKind = ["upload", "autotriage", "trail"].includes(kind) ? kind : "upload";
+  document.querySelectorAll("[data-run-source-tab]").forEach((tab) => {
+    const active = tab.dataset.runSourceTab === targetKind;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", String(active));
+  });
+  document.querySelectorAll("[data-run-source-panel]").forEach((panel) => {
+    const active = panel.dataset.runSourcePanel === targetKind;
+    panel.classList.toggle("active", active);
+    panel.hidden = !active;
+  });
+}
+
 function setImportKind(kind) {
   updateImportFields();
+  activateRunSourceTab("upload");
 }
 
 function openRunImport(kind = "model") {
   navigatePage("runs", { importKind: "model" });
-  const panel = $("#runImportPanel");
-  if (panel) {
-    panel.open = true;
-    window.setTimeout(
-      () => panel.scrollIntoView({ behavior: "smooth", block: "start" }),
-      0
-    );
-  }
+  activateRunSourceTab("upload");
+  window.setTimeout(() => $("#runsSourceCard")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
 }
 
 async function submitImport(event) {
@@ -3055,14 +3076,8 @@ async function submitImport(event) {
 
 function openAutoTriageImport() {
   navigatePage("runs");
-  const panel = $("#autotriageImportPanel");
-  if (panel) {
-    panel.open = true;
-    window.setTimeout(
-      () => panel.scrollIntoView({ behavior: "smooth", block: "start" }),
-      0
-    );
-  }
+  activateRunSourceTab("autotriage");
+  window.setTimeout(() => $("#runsSourceCard")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
 }
 
 async function submitAutoTriageImport(event) {
@@ -3297,11 +3312,8 @@ function bindEvents() {
   $("#openAutoTriageImportButton").addEventListener("click", openAutoTriageImport);
   $("#openTrailImportButton").addEventListener("click", () => {
     navigatePage("runs");
-    const panel = $("#trailImportDetails");
-    if (panel) {
-      panel.open = true;
-      window.setTimeout(() => panel.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
-    }
+    activateRunSourceTab("trail");
+    window.setTimeout(() => $("#runsSourceCard")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   });
   $("#reviewUploadModelButton").addEventListener("click", () => openRunImport("model"));
   $("#predictFilteredButton").addEventListener("click", () => {

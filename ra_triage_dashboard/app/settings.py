@@ -113,7 +113,7 @@ class Settings:
             ).strip()
             or "release0508_1071_20260729",
             bootstrap_model_json=bootstrap,
-            trail_view_id=_integer("DASHBOARD_TRAIL_VIEW_ID", 1000),
+            trail_view_id=_integer("DASHBOARD_TRAIL_VIEW_ID", 2410),
             trail_sync_on_start=_bool("DASHBOARD_SYNC_TRAIL_ON_START", True),
             trail_sync_chunk_size=_integer("DASHBOARD_TRAIL_SYNC_CHUNK_SIZE", 160, 1),
             voyager_issue_base_url=os.getenv(

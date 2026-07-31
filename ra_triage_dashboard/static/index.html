@@ -358,41 +358,34 @@
           </section>
 
           <section class="app-page tool-page hidden" id="runsPage" data-page="runs">
-            <div class="runs-layout">
-              <aside class="runs-source-column" aria-label="Run 数据来源">
-                <section class="page-card runs-source-card">
-                  <div class="runs-source-heading">
-                    <div>
-                      <span class="eyebrow">RUN SOURCES</span>
-                      <h3>数据来源</h3>
-                    </div>
-                    <small>历史 Run 独立保留</small>
-                  </div>
-                  <div class="run-source-grid">
-                    <button class="run-source-tile source-upload" id="runManagerImportButton" type="button">
-                      <span class="run-source-icon" aria-hidden="true">⇧</span>
-                      <span><strong>模型结果文件</strong><small>JSON / CSV / XLSX</small></span>
-                      <em id="runSourceCountUpload">0</em>
-                    </button>
-                    <button class="run-source-tile source-autotriage" id="openAutoTriageImportButton" type="button">
-                      <span class="run-source-icon" aria-hidden="true">A</span>
-                      <span><strong>AutoTriage 快照</strong><small>固定接口只读拉取</small></span>
-                      <em id="runSourceCountAutotriage">0</em>
-                    </button>
-                    <button class="run-source-tile source-trail" id="openTrailImportButton" type="button">
-                      <span class="run-source-icon" aria-hidden="true">T</span>
-                      <span><strong>Trail 快照</strong><small>字段检查后创建本地 Run</small></span>
-                      <em id="runSourceCountTrail">0</em>
-                    </button>
-                  </div>
-                  <p class="run-source-note">Issue / GT 上传入口已关闭；0508 baseline 真值保持不变。网页 Batch 预测会在历史列表中标为独立来源。</p>
-                </section>
-
-                <details class="page-card run-import-panel" id="runImportPanel">
-                  <summary>
-                    <span>上传模型结果</span>
-                    <small>不可变 Run · SHA-256 去重</small>
-                  </summary>
+            <section class="page-card runs-source-card" id="runsSourceCard" aria-label="Run 数据来源">
+              <div class="runs-source-heading">
+                <div>
+                  <span class="eyebrow">RUN SOURCES</span>
+                  <h3>导入或拉取模型结果</h3>
+                </div>
+                <small>三种来源统一入口 · 历史 Run 独立保留</small>
+              </div>
+              <div class="run-source-tabs" role="tablist" aria-label="Run 数据来源">
+                <button class="run-source-tab active source-upload" id="runManagerImportButton" type="button" role="tab" aria-selected="true" aria-controls="runImportPanel" data-run-source-tab="upload">
+                  <span class="run-source-icon" aria-hidden="true">⇧</span>
+                  <span><strong>模型结果文件</strong><small>JSON / CSV / XLSX</small></span>
+                  <em id="runSourceCountUpload">0</em>
+                </button>
+                <button class="run-source-tab source-autotriage" id="openAutoTriageImportButton" type="button" role="tab" aria-selected="false" aria-controls="autotriageImportPanel" data-run-source-tab="autotriage">
+                  <span class="run-source-icon" aria-hidden="true">A</span>
+                  <span><strong>AutoTriage 快照</strong><small>固定接口只读拉取</small></span>
+                  <em id="runSourceCountAutotriage">0</em>
+                </button>
+                <button class="run-source-tab source-trail" id="openTrailImportButton" type="button" role="tab" aria-selected="false" aria-controls="trailImportDetails" data-run-source-tab="trail">
+                  <span class="run-source-icon" aria-hidden="true">T</span>
+                  <span><strong>Trail 快照</strong><small>字段检查后创建本地 Run</small></span>
+                  <em id="runSourceCountTrail">0</em>
+                </button>
+              </div>
+              <p class="run-source-note">默认展示模型结果文件；Issue / GT 上传入口已关闭，0508 baseline 真值保持不变。网页 Batch 预测会在下方历史列表中标为独立来源。</p>
+              <div class="run-source-panels">
+                <section class="run-source-panel active" id="runImportPanel" role="tabpanel" data-run-source-panel="upload" aria-labelledby="runManagerImportButton">
                   <div class="run-import-body">
                     <aside class="run-import-copy">
                       <span class="eyebrow">MODEL RESULT IMPORT</span>
@@ -417,13 +410,9 @@
                       </div>
                     </form>
                   </div>
-                </details>
+                </section>
 
-                <details class="page-card run-import-panel" id="autotriageImportPanel">
-                  <summary>
-                    <span>从 AutoTriage 拉取模型结果</span>
-                    <small>固定内网只读接口 · 不改 GT / 默认 Run</small>
-                  </summary>
+                <section class="run-source-panel" id="autotriageImportPanel" role="tabpanel" data-run-source-panel="autotriage" aria-labelledby="openAutoTriageImportButton" hidden>
                   <div class="run-import-body">
                     <aside class="run-import-copy">
                       <span class="eyebrow">AUTOTRIAGE SNAPSHOT</span>
@@ -446,28 +435,28 @@
                       </div>
                     </form>
                   </div>
-                </details>
+                </section>
 
-                <details class="page-card trail-import-details" id="trailImportDetails">
-                  <summary>
-                    <span>从 Trail 导入模型结果</span>
-                    <small>只读 · 仅创建本地 Run · 不改 GT / 默认 Run</small>
-                  </summary>
+                <section class="run-source-panel" id="trailImportDetails" role="tabpanel" data-run-source-panel="trail" aria-labelledby="openTrailImportButton" hidden>
                   <div class="trail-import-body">
-                    <p>
-                      检查当前 <strong id="trailScopeCount">1071</strong> 条 baseline 在 Trail view
-                      <strong id="trailViewId">1000</strong> 中的模型字段；不会写 Trail、修改 GT 或改变默认 Run。
-                    </p>
+                    <div>
+                      <p>
+                        检查当前 <strong id="trailScopeCount">1071</strong> 条 baseline 在 Trail view
+                        <strong id="trailViewId">2410</strong> 中的模型字段；不会写 Trail、修改 GT 或改变默认 Run。
+                      </p>
+                      <p class="muted">检查仅创建或复用本地不可变 Run，不会改变团队默认 Run。</p>
+                    </div>
                     <div class="trail-sync-state" id="trailSyncState">等待读取当前 Trail 字段状态…</div>
                     <div class="trail-actions">
                       <button class="button button-quiet" id="checkTrailButton" type="button">检查字段</button>
                       <button class="button button-primary" id="syncTrailButton" type="button" disabled>创建 Run</button>
                     </div>
                   </div>
-                </details>
-              </aside>
+                </section>
+              </div>
+            </section>
 
-              <section class="page-card runs-page-card">
+            <section class="page-card runs-page-card">
                 <div class="runs-toolbar">
                   <p>按模型、人员、批次和来源管理预测结果</p>
                   <div class="run-manager-actions">
@@ -498,8 +487,7 @@
                 </div>
                 <div class="run-manager-summary" id="runManagerSummary">正在加载 Runs…</div>
                 <div class="run-manager-list" id="modelRunList"></div>
-              </section>
-            </div>
+            </section>
           </section>
 
           <section class="app-page tool-page hidden" id="predictionPage" data-page="prediction">
