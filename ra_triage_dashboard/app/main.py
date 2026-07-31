@@ -1332,7 +1332,10 @@ app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 @app.get("/inference", include_in_schema=False)
 @app.get("/batch-prediction", include_in_schema=False)
 async def index() -> FileResponse:
-    return FileResponse(settings.static_dir / "index.html")
+    return FileResponse(
+        settings.static_dir / "index.html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
 
 
 @app.get("/import", include_in_schema=False)
