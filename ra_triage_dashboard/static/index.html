@@ -169,11 +169,10 @@
           </section>
 
           <section class="app-page tool-page analysis-page hidden" id="reviewAnalysisPage" data-page="analysis">
-            <div class="compact-page-lead">
-              <button class="button button-quiet" type="button" data-page-target="review">返回判错复核</button>
-            </div>
-
             <section class="page-card analysis-filter-card">
+              <div class="analysis-filter-heading">
+                <button class="button button-quiet" type="button" data-page-target="review">返回判错复核</button>
+              </div>
               <form class="analysis-filters" id="reviewAnalysisFilterForm">
                 <label class="analysis-run-filter">
                   <span>对比模型 Run</span>
@@ -223,13 +222,13 @@
                     <option value="无需协助">无需协助</option>
                   </select>
                 </label>
-                <label>
+                <label class="analysis-evidence-filter">
                   <span>缺失信息</span>
                   <select id="analysisEvidenceFilter">
                     <option value="">全部缺失信息</option>
                   </select>
                 </label>
-                <label>
+                <label class="analysis-theme-filter">
                   <span>原因主题</span>
                   <select id="analysisThemeFilter">
                     <option value="">全部原因主题</option>
