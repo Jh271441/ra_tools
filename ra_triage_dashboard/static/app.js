@@ -1910,7 +1910,7 @@ function renderDetail(caseData) {
         ${caseData.summary ? `<p class="detail-summary">${escapeHtml(caseData.summary)}</p>` : ""}
         <div class="detail-actions">
           ${bevPreviewButton}
-          <button class="button button-primary" type="button" data-predict-current-case>API 推理</button>
+          <button class="button button-quiet" type="button" data-predict-current-case>API 推理</button>
           ${issueUrl ? `<a class="button button-quiet" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer">Issue link</a>` : ""}
           ${modelHistoryButton}
         </div>
