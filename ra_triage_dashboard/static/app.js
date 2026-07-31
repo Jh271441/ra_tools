@@ -192,12 +192,15 @@ function parsePageRoute() {
     failureOnly: params.has("failure") ? params.get("failure") === "1" : params.has("run") ? false : null,
     ...reviewFilters,
     analysisFilters: normalizedAnalysisRouteFilters(params),
+    // Issue / GT 上传已从页面移除；旧链接统一落到安全的模型结果导入区。
     importKind:
-      params.get("import") === "model" || params.get("kind") === "model"
+      params.get("import") === "model" ||
+      params.get("kind") === "model" ||
+      params.has("import") ||
+      params.has("kind") ||
+      legacyImport
         ? "model"
-        : params.has("import") || params.has("kind") || legacyImport
-          ? "issues"
-          : "",
+        : "",
     legacyRoute: legacyImport || window.location.pathname === "/inference" || Boolean(legacyHash),
   };
 }
@@ -364,7 +367,7 @@ function pageUrl(page, options = {}) {
     if (options.source) url.searchParams.set("source", options.source);
   }
   if (page === "runs" && options.importKind) {
-    url.searchParams.set("import", options.importKind === "model" ? "model" : "issues");
+    url.searchParams.set("import", "model");
   }
   return `${url.pathname}${url.search}`;
 }
@@ -861,8 +864,54 @@ async function loadRuns({ preferDefault = false, preserveEmpty = false } = {}) {
   });
   renderAnalysisRunFilter();
   renderRunFilters();
+  renderRunSourceSummary();
   renderActiveRun();
   renderRunManager();
+}
+
+const RUN_SOURCE_META = Object.freeze({
+  upload: {
+    label: "文件模型结果",
+    description: "JSON / CSV / XLSX",
+    className: "source-upload",
+    countId: "runSourceCountUpload",
+  },
+  trail_snapshot: {
+    label: "Trail 快照",
+    description: "Trail 只读字段",
+    className: "source-trail",
+    countId: "runSourceCountTrail",
+  },
+  autotriage_snapshot: {
+    label: "AutoTriage 快照",
+    description: "平台只读结果",
+    className: "source-autotriage",
+    countId: "runSourceCountAutotriage",
+  },
+  manual_batch: {
+    label: "网页 Batch 预测",
+    description: "服务器模型推理",
+    className: "source-batch",
+  },
+});
+
+function runSourceMeta(runOrKind) {
+  const kind = typeof runOrKind === "string" ? runOrKind : runOrKind?.kind;
+  return RUN_SOURCE_META[kind] || {
+    label: kind || "未知来源",
+    description: "未记录来源",
+    className: "source-unknown",
+  };
+}
+
+function renderRunSourceSummary() {
+  Object.entries(RUN_SOURCE_META).forEach(([kind, meta]) => {
+    if (!meta.countId) return;
+    const target = $(`#${meta.countId}`);
+    if (target) {
+      target.textContent = String(state.modelRuns.filter((run) => run.kind === kind).length);
+    }
+  });
 }
 
 function runOwner(run) {
@@ -934,13 +983,7 @@ function renderActiveRun(overview = null) {
   const coverage = overview?.predictions ?? run.baseline_prediction_count ?? 0;
   const failures = overview?.model_failures ?? run.failure_count ?? 0;
   const reviewed = overview?.reviewed_failures;
-  const sourceLabel =
-    {
-      trail_snapshot: "Trail 快照",
-      manual_batch: "网页 Batch",
-      autotriage_snapshot: "AutoTriage 快照",
-      upload: "文件导入",
-    }[run.kind] || run.kind || "模型 Run";
+  const sourceLabel = runSourceMeta(run).label;
   if (activeMeta) {
     activeMeta.textContent =
       `${coverage} / ${state.config?.baseline?.count || "—"} 覆盖 · ${failures} 条判断失败` +
@@ -994,6 +1037,7 @@ function renderRunManager() {
         const modelName = run.metadata?.model_name || run.metadata?.experiment?.model_name || "";
         const promptVersion = run.metadata?.prompt_version || run.metadata?.experiment?.prompt_version || "";
         const externalUser = run.metadata?.external_username || "";
+        const sourceMeta = runSourceMeta(run);
         const ownerTitle = run.created_by
           ? `提交人：${run.created_by}${run.declared_author && run.declared_author !== run.created_by ? `；结果包作者：${run.declared_author}` : ""}`
           : run.declared_author
@@ -1003,6 +1047,7 @@ function renderRunManager() {
         <div class="run-row-main">
           <div class="run-row-title">
             <strong>${escapeHtml(run.name)}</strong>
+            <span class="run-source-badge ${sourceMeta.className}" title="${escapeHtml(sourceMeta.description)}">${escapeHtml(sourceMeta.label)}</span>
             <span class="run-coverage-badge">${coverageLabel}</span>
           </div>
           <div class="run-row-meta">
@@ -2963,24 +3008,19 @@ async function publishPredictionBatch(batchId, button) {
 }
 
 function currentImportKind() {
-  return $("#importKind input[name='kind']:checked").value;
+  return "model";
 }
 
 function updateImportFields() {
-  const isModel = currentImportKind() === "model";
-  $("#runNameField").classList.toggle("hidden", !isModel);
-  $("#issueImportOptions").classList.toggle("hidden", isModel);
+  $("#runNameField")?.classList.remove("hidden");
 }
 
 function setImportKind(kind) {
-  const input = $(`#importKind input[name="kind"][value="${kind}"]`);
-  if (input) input.checked = true;
   updateImportFields();
 }
 
 function openRunImport(kind = "model") {
-  const targetKind = kind === "issues" ? "issues" : "model";
-  navigatePage("runs", { importKind: targetKind });
+  navigatePage("runs", { importKind: "model" });
   const panel = $("#runImportPanel");
   if (panel) {
     panel.open = true;
@@ -2995,25 +3035,17 @@ async function submitImport(event) {
   event.preventDefault();
   const file = $("#importFile").files[0];
   if (!file) return showToast("请选择文件。", true);
-  const kind = currentImportKind();
   const form = new FormData();
   form.append("file", file);
-  const endpoint = kind === "model" ? "/api/import/model-results" : "/api/import/issues";
-  if (kind === "model") {
-    form.append("run_name", $("#runNameInput").value.trim());
-    form.append("created_by", state.session.username || "");
-  }
-  else {
-    form.append("source", $("#issueSourceInput").value.trim() || "manual_upload");
-    form.append("replace_gt", String($("#replaceGtInput").checked));
-  }
+  form.append("run_name", $("#runNameInput").value.trim());
+  form.append("created_by", state.session.username || "");
   const target = $("#importResult");
   target.classList.remove("hidden");
   target.textContent = "正在导入…";
   try {
-    const result = await api(endpoint, { method: "POST", body: form });
+    const result = await api("/api/import/model-results", { method: "POST", body: form });
     target.textContent = JSON.stringify(result, null, 2);
-    showToast(kind === "model" ? "模型 run 已导入；可从列表切换对比。" : "Issue 工作集已导入。");
+    showToast("模型 Run 已导入；可从列表切换对比。");
     await Promise.all([loadRuns(), loadOverview(), loadCases({ keepSelection: true }), loadClusters()]);
   } catch (error) {
     target.textContent = `导入失败：${error.message}`;
@@ -3263,6 +3295,14 @@ function bindEvents() {
     openRunImport("model");
   });
   $("#openAutoTriageImportButton").addEventListener("click", openAutoTriageImport);
+  $("#openTrailImportButton").addEventListener("click", () => {
+    navigatePage("runs");
+    const panel = $("#trailImportDetails");
+    if (panel) {
+      panel.open = true;
+      window.setTimeout(() => panel.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+    }
+  });
   $("#reviewUploadModelButton").addEventListener("click", () => openRunImport("model"));
   $("#predictFilteredButton").addEventListener("click", () => {
     const limit = predictionBatchLimit();
@@ -3342,17 +3382,6 @@ function bindEvents() {
   });
   $("#sidebarToggle").addEventListener("click", toggleSidebar);
   document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => closeDialog(button.dataset.close)));
-  $("#importKind").querySelectorAll("input").forEach((input) => {
-    input.addEventListener("change", () => {
-      updateImportFields();
-      if (state.activePage === "runs") {
-        showPage("runs", {
-          historyMode: "replace",
-          importKind: currentImportKind(),
-        });
-      }
-    });
-  });
   $("#importFile").addEventListener("change", () => { $("#importFileName").textContent = $("#importFile").files[0]?.name || "未选择文件"; });
   $("#importForm").addEventListener("submit", submitImport);
   $("#autotriageImportForm").addEventListener("submit", submitAutoTriageImport);

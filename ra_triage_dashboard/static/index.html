@@ -358,129 +358,148 @@
           </section>
 
           <section class="app-page tool-page hidden" id="runsPage" data-page="runs">
-            <section class="page-card runs-page-card">
-              <div class="runs-toolbar">
-                <p>按模型、人员和批次管理预测结果</p>
-                <div class="run-manager-actions">
-                  <button class="button button-quiet" id="openAutoTriageImportButton" type="button">从 AutoTriage 拉取</button>
-                  <button class="button button-primary" id="runManagerImportButton" type="button">上传模型结果</button>
-                  <button class="button button-quiet" id="refreshRunsButton" type="button">刷新</button>
+            <div class="runs-layout">
+              <aside class="runs-source-column" aria-label="Run 数据来源">
+                <section class="page-card runs-source-card">
+                  <div class="runs-source-heading">
+                    <div>
+                      <span class="eyebrow">RUN SOURCES</span>
+                      <h3>数据来源</h3>
+                    </div>
+                    <small>历史 Run 独立保留</small>
+                  </div>
+                  <div class="run-source-grid">
+                    <button class="run-source-tile source-upload" id="runManagerImportButton" type="button">
+                      <span class="run-source-icon" aria-hidden="true">⇧</span>
+                      <span><strong>模型结果文件</strong><small>JSON / CSV / XLSX</small></span>
+                      <em id="runSourceCountUpload">0</em>
+                    </button>
+                    <button class="run-source-tile source-autotriage" id="openAutoTriageImportButton" type="button">
+                      <span class="run-source-icon" aria-hidden="true">A</span>
+                      <span><strong>AutoTriage 快照</strong><small>固定接口只读拉取</small></span>
+                      <em id="runSourceCountAutotriage">0</em>
+                    </button>
+                    <button class="run-source-tile source-trail" id="openTrailImportButton" type="button">
+                      <span class="run-source-icon" aria-hidden="true">T</span>
+                      <span><strong>Trail 快照</strong><small>字段检查后创建本地 Run</small></span>
+                      <em id="runSourceCountTrail">0</em>
+                    </button>
+                  </div>
+                  <p class="run-source-note">Issue / GT 上传入口已关闭；0508 baseline 真值保持不变。网页 Batch 预测会在历史列表中标为独立来源。</p>
+                </section>
+
+                <details class="page-card run-import-panel" id="runImportPanel">
+                  <summary>
+                    <span>上传模型结果</span>
+                    <small>不可变 Run · SHA-256 去重</small>
+                  </summary>
+                  <div class="run-import-body">
+                    <aside class="run-import-copy">
+                      <span class="eyebrow">MODEL RESULT IMPORT</span>
+                      <h3>模型结果契约</h3>
+                      <p>文件至少需要 <code>issue_id</code> 与 <code>model_label</code> 或 <code>ra_stuck_auto_result</code>；可附带 reason、confidence、ra_stuck_auto_result_info 等字段。</p>
+                      <p>模型结果按 SHA-256 创建不可变 Run，不覆盖 0508 GT、不自动切换默认 Run。</p>
+                      <div class="actor-summary" id="modelImportActorSummary">创建人将在导入时记录；当前身份尚未读取。</div>
+                    </aside>
+                    <form class="tool-form" id="importForm">
+                      <label class="file-drop">
+                        <span>选择模型结果文件</span>
+                        <input id="importFile" type="file" accept=".json,.csv,.xlsx,.xlsm" required />
+                        <small id="importFileName">未选择文件</small>
+                      </label>
+                      <label id="runNameField">
+                        <span>模型 Run 名（可选）</span>
+                        <input id="runNameInput" placeholder="默认取 experiment.model_name 或文件名" autocomplete="off" />
+                      </label>
+                      <div class="dialog-result hidden" id="importResult"></div>
+                      <div class="page-actions">
+                        <button class="button button-primary" type="submit">开始导入</button>
+                      </div>
+                    </form>
+                  </div>
+                </details>
+
+                <details class="page-card run-import-panel" id="autotriageImportPanel">
+                  <summary>
+                    <span>从 AutoTriage 拉取模型结果</span>
+                    <small>固定内网只读接口 · 不改 GT / 默认 Run</small>
+                  </summary>
+                  <div class="run-import-body">
+                    <aside class="run-import-copy">
+                      <span class="eyebrow">AUTOTRIAGE SNAPSHOT</span>
+                      <h3>按 Batch 拉取</h3>
+                      <p>输入 Batch ID 或 records 链接。服务端只访问固定 AutoTriage 内网地址，并校验声明总数、完成数、结果数和唯一 Issue 数。</p>
+                      <p>平台内容相同会复用已有 Run；平台结果变化时会生成新的内容快照。</p>
+                    </aside>
+                    <form class="tool-form" id="autotriageImportForm">
+                      <label>
+                        <span>Batch ID / records 链接</span>
+                        <input id="autotriageBatchInput" placeholder="例如 761，或 …/records/761?tab=results" autocomplete="off" required />
+                      </label>
+                      <label>
+                        <span>模型 Run 名（可选）</span>
+                        <input id="autotriageRunNameInput" placeholder="默认使用平台 Batch 名" maxlength="120" autocomplete="off" />
+                      </label>
+                      <div class="dialog-result hidden" id="autotriageImportResult"></div>
+                      <div class="page-actions">
+                        <button class="button button-primary" id="importAutoTriageButton" type="submit">拉取并创建 Run</button>
+                      </div>
+                    </form>
+                  </div>
+                </details>
+
+                <details class="page-card trail-import-details" id="trailImportDetails">
+                  <summary>
+                    <span>从 Trail 导入模型结果</span>
+                    <small>只读 · 仅创建本地 Run · 不改 GT / 默认 Run</small>
+                  </summary>
+                  <div class="trail-import-body">
+                    <p>
+                      检查当前 <strong id="trailScopeCount">1071</strong> 条 baseline 在 Trail view
+                      <strong id="trailViewId">1000</strong> 中的模型字段；不会写 Trail、修改 GT 或改变默认 Run。
+                    </p>
+                    <div class="trail-sync-state" id="trailSyncState">等待读取当前 Trail 字段状态…</div>
+                    <div class="trail-actions">
+                      <button class="button button-quiet" id="checkTrailButton" type="button">检查字段</button>
+                      <button class="button button-primary" id="syncTrailButton" type="button" disabled>创建 Run</button>
+                    </div>
+                  </div>
+                </details>
+              </aside>
+
+              <section class="page-card runs-page-card">
+                <div class="runs-toolbar">
+                  <p>按模型、人员、批次和来源管理预测结果</p>
+                  <div class="run-manager-actions">
+                    <button class="button button-quiet" id="refreshRunsButton" type="button">刷新</button>
+                  </div>
                 </div>
-              </div>
-              <div class="run-filter-bar run-filter-three">
-                <label>
-                  <span>模型 / 批次</span>
-                  <input id="runSearchInput" placeholder="搜索模型名、批次或文件" autocomplete="off" />
-                </label>
-                <label>
-                  <span>人员</span>
-                  <select id="runPersonFilter">
-                    <option value="">全部人员</option>
-                  </select>
-                </label>
-                <label>
-                  <span>来源类型</span>
-                  <select id="runKindFilter">
-                    <option value="">全部来源</option>
-                    <option value="upload">批量文件</option>
-                    <option value="trail_snapshot">Trail 快照</option>
-                    <option value="manual_batch">网页 Batch</option>
-                    <option value="autotriage_snapshot">AutoTriage 快照</option>
-                  </select>
-                </label>
-              </div>
-              <div class="run-manager-summary" id="runManagerSummary">正在加载 Runs…</div>
-              <div class="run-manager-list" id="modelRunList"></div>
-            </section>
-            <details class="page-card run-import-panel" id="runImportPanel">
-              <summary>
-                <span>上传 Issue / GT 或模型结果</span>
-                <small>JSON / CSV / XLSX · 模型 Run 按内容去重</small>
-              </summary>
-              <div class="run-import-body">
-                <aside class="run-import-copy">
-                  <span class="eyebrow">IMPORT CONTRACT</span>
-                  <h3>导入契约</h3>
-                  <p>Issue 文件至少需要 <code>issue_id</code>；模型结果至少需要 <code>issue_id</code> 与 <code>model_label</code> 或 <code>ra_stuck_auto_result</code>。</p>
-                  <p>模型结果按 SHA-256 创建不可变 Run，不覆盖历史输出，也不会自动切换团队默认 Run。</p>
-                  <div class="actor-summary" id="modelImportActorSummary">创建人将在导入时记录；当前身份尚未读取。</div>
-                </aside>
-                <form class="tool-form" id="importForm">
-                  <div class="segmented" id="importKind">
-                    <label><input type="radio" name="kind" value="issues" checked /> Issue / GT</label>
-                    <label><input type="radio" name="kind" value="model" /> 模型结果</label>
-                  </div>
-                  <label class="file-drop">
-                    <span>选择文件</span>
-                    <input id="importFile" type="file" accept=".json,.csv,.xlsx,.xlsm" required />
-                    <small id="importFileName">未选择文件</small>
-                  </label>
-                  <label id="runNameField" class="hidden">
-                    <span>模型 Run 名（可选）</span>
-                    <input id="runNameInput" placeholder="默认取 experiment.model_name 或文件名" autocomplete="off" />
-                  </label>
-                  <div id="issueImportOptions">
-                    <label>
-                      <span>数据源标记</span>
-                      <input id="issueSourceInput" value="manual_upload" autocomplete="off" />
-                    </label>
-                    <label class="toggle-row compact-toggle">
-                      <input id="replaceGtInput" type="checkbox" />
-                      <span><strong>明确覆盖已有 GT</strong><small>默认保留 0508 baseline 真值</small></span>
-                    </label>
-                  </div>
-                  <div class="dialog-result hidden" id="importResult"></div>
-                  <div class="page-actions">
-                    <button class="button button-primary" type="submit">开始导入</button>
-                  </div>
-                </form>
-              </div>
-            </details>
-            <details class="page-card run-import-panel" id="autotriageImportPanel">
-              <summary>
-                <span>从 AutoTriage 拉取模型结果</span>
-                <small>固定内网只读接口 · 创建不可变 Run · 不改 GT / 默认 Run</small>
-              </summary>
-              <div class="run-import-body">
-                <aside class="run-import-copy">
-                  <span class="eyebrow">AUTOTRIAGE SNAPSHOT</span>
-                  <h3>按 Batch 拉取</h3>
-                  <p>输入 Batch ID 或 records 链接。服务端只访问固定 AutoTriage 内网地址，并校验声明总数、完成数、结果数和唯一 Issue 数。</p>
-                  <p>平台内容相同会复用已有 Run；平台结果变化时会生成新的内容快照。</p>
-                </aside>
-                <form class="tool-form" id="autotriageImportForm">
+                <div class="run-filter-bar run-filter-three">
                   <label>
-                    <span>Batch ID / records 链接</span>
-                    <input id="autotriageBatchInput" placeholder="例如 761，或 …/records/761?tab=results" autocomplete="off" required />
+                    <span>模型 / 批次</span>
+                    <input id="runSearchInput" placeholder="搜索模型名、批次或文件" autocomplete="off" />
                   </label>
                   <label>
-                    <span>模型 Run 名（可选）</span>
-                    <input id="autotriageRunNameInput" placeholder="默认使用平台 Batch 名" maxlength="120" autocomplete="off" />
+                    <span>人员</span>
+                    <select id="runPersonFilter">
+                      <option value="">全部人员</option>
+                    </select>
                   </label>
-                  <div class="dialog-result hidden" id="autotriageImportResult"></div>
-                  <div class="page-actions">
-                    <button class="button button-primary" id="importAutoTriageButton" type="submit">拉取并创建 Run</button>
-                  </div>
-                </form>
-              </div>
-            </details>
-            <details class="page-card trail-import-details">
-              <summary>
-                <span>从 Trail 导入模型结果</span>
-                <small>只读 · 仅创建本地 Run · 不改 GT / 默认 Run</small>
-              </summary>
-              <div class="trail-import-body">
-                <p>
-                  检查当前 <strong id="trailScopeCount">1071</strong> 条 baseline 在 Trail view
-                  <strong id="trailViewId">1000</strong> 中的模型字段；不会写 Trail、修改 GT 或改变默认 Run。
-                </p>
-                <div class="trail-sync-state" id="trailSyncState">等待读取当前 Trail 字段状态…</div>
-                <div class="trail-actions">
-                  <button class="button button-quiet" id="checkTrailButton" type="button">检查字段</button>
-                  <button class="button button-primary" id="syncTrailButton" type="button" disabled>创建 Run</button>
+                  <label>
+                    <span>来源类型</span>
+                    <select id="runKindFilter">
+                      <option value="">全部来源</option>
+                      <option value="upload">文件模型结果</option>
+                      <option value="trail_snapshot">Trail 快照</option>
+                      <option value="manual_batch">网页 Batch 预测</option>
+                      <option value="autotriage_snapshot">AutoTriage 快照</option>
+                    </select>
+                  </label>
                 </div>
-              </div>
-            </details>
+                <div class="run-manager-summary" id="runManagerSummary">正在加载 Runs…</div>
+                <div class="run-manager-list" id="modelRunList"></div>
+              </section>
+            </div>
           </section>
 
           <section class="app-page tool-page hidden" id="predictionPage" data-page="prediction">

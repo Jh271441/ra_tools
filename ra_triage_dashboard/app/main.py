@@ -1189,8 +1189,9 @@ async def index() -> FileResponse:
 
 @app.get("/import", include_in_schema=False)
 async def legacy_import(kind: str = "issues") -> RedirectResponse:
-    import_kind = "model" if kind == "model" else "issues"
-    return RedirectResponse(url=f"/runs?import={import_kind}", status_code=307)
+    # The legacy Issue / GT upload UI is intentionally retired. Keep old
+    # bookmarks navigable, but land them in the safe model-result importer.
+    return RedirectResponse(url="/runs?import=model", status_code=307)
 
 
 @app.get("/health")
@@ -1696,6 +1697,8 @@ async def import_contract() -> dict[str, Any]:
     return {
         "formats": [".json", ".csv", ".xlsx", ".xlsm"],
         "issues": {
+            "enabled_in_ui": False,
+            "compatibility_only": True,
             "required": ["issue_id"],
             "optional": [
                 "trip_id",
@@ -1725,7 +1728,7 @@ async def import_contract() -> dict[str, Any]:
         },
         "notes": [
             "每次导入会创建不可变 model run，并按 SHA-256 去重。",
-            "Trail 真值不因模型导入而覆盖；只有 issues 导入且显式 replace_gt 才会覆盖已有 GT。",
+            "页面不提供 Issue / GT 上传；旧 issues 接口仅为兼容客户端保留。Trail 真值不因模型导入而覆盖；仅显式 issues API 调用且 replace_gt=true 才会覆盖已有 GT。",
         ],
     }
 
