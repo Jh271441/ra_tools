@@ -3203,8 +3203,7 @@ async function submitImport(event) {
 }
 
 function openAutoTriageImport() {
-  navigatePage("runs", { runSourceTab: "autotriage" });
-  window.setTimeout(() => $("#runsSourceCard")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  activateRunSourceTab("autotriage");
 }
 
 async function submitAutoTriageImport(event) {
@@ -3434,12 +3433,11 @@ function bindEvents() {
   $("#runManagerImportButton").addEventListener("click", () => {
     $("#importResult").classList.add("hidden");
     $("#importResult").textContent = "";
-    openRunImport("model");
+    activateRunSourceTab("upload");
   });
   $("#openAutoTriageImportButton").addEventListener("click", openAutoTriageImport);
   $("#openTrailImportButton").addEventListener("click", () => {
-    navigatePage("runs", { runSourceTab: "trail" });
-    window.setTimeout(() => $("#runsSourceCard")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+    activateRunSourceTab("trail");
   });
   $("#reviewUploadModelButton").addEventListener("click", () => openRunImport("model"));
   $("#predictFilteredButton").addEventListener("click", () => {
