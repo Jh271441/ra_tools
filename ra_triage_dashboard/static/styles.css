@@ -34,6 +34,10 @@ a:hover { color: var(--accent); }
 .hidden { display: none !important; }
 .muted { color: var(--muted); }
 .eyebrow { color: var(--faint); font-size: 10px; font-weight: 750; letter-spacing: .12em; line-height: 1.4; }
+.ui-lang-en { display: none; }
+html[data-ui-lang="en"] .ui-lang-zh { display: none; }
+html[data-ui-lang="en"] .ui-lang-en { display: inline; }
+html[data-ui-lang="zh"] .eyebrow { display: none; }
 
 .app-shell { min-height: 100vh; display: block; }
 .app-frame { min-width: 0; margin-left: 240px; container-type: inline-size; transition: margin-left 200ms ease-out; }
@@ -96,6 +100,7 @@ a:hover { color: var(--accent); }
 .top-actions { display: flex; gap: 7px; }
 
 .top-actions .button { padding: 5px 8px; }
+.language-toggle { min-width: 42px; }
 .main { width: 100%; max-width: none; margin: 0 auto; padding: 7px 12px 24px; }
 .app-page { min-width: 0; }
 .tool-page { width: min(1320px, 100%); display: grid; gap: 12px; margin: 0 auto; }
