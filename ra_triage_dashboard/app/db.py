@@ -12,6 +12,7 @@ from .sanitization import redact_sensitive_fields
 
 
 LABELS = ("误触发", "正确触发", "无需协助")
+COMPARISON_STATUSES = ("all", "mismatch", "match", "none")
 REVIEW_STATUSES = ("pending", "reviewed", "needs_gt_review")
 BATCH_JOB_STATUSES = ("queued", "running", "succeeded", "partial", "failed")
 BATCH_PUBLISH_STATUSES = (
@@ -176,6 +177,7 @@ class Database:
                     completed_count INTEGER NOT NULL DEFAULT 0 CHECK(completed_count >= 0),
                     success_count INTEGER NOT NULL DEFAULT 0 CHECK(success_count >= 0),
                     failed_count INTEGER NOT NULL DEFAULT 0 CHECK(failed_count >= 0),
+                    provider_id TEXT NOT NULL DEFAULT 'kylin',
                     requested_model_id TEXT NOT NULL DEFAULT '',
                     resolved_model_id TEXT NOT NULL DEFAULT '',
                     model_source TEXT NOT NULL DEFAULT '',
@@ -251,6 +253,12 @@ class Database:
             )
             self._ensure_column(
                 conn, "inference_jobs", "requested_by_verified", "INTEGER NOT NULL DEFAULT 0"
+            )
+            self._ensure_column(
+                conn,
+                "batch_prediction_jobs",
+                "provider_id",
+                "TEXT NOT NULL DEFAULT 'kylin'",
             )
             self._ensure_column(
                 conn,
@@ -748,6 +756,66 @@ class Database:
             ).fetchone()
         return str(row["id"]) if row else ""
 
+    def get_model_run(self, run_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM model_runs WHERE id = ?", (run_id,)
+            ).fetchone()
+        return self._run_dict(row) if row else None
+
+    def model_run_source_rows(self, run_id: str) -> list[dict[str, Any]]:
+        """Return redacted normalized/raw rows for legacy source reconstruction."""
+
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT issue_id, trip_id, model_label, model_reason,
+                       model_confidence, model_extra_json, raw_json
+                FROM model_predictions
+                WHERE model_run_id = ?
+                ORDER BY id ASC
+                """,
+                (run_id,),
+            ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            raw = _json_load(row["raw_json"], {})
+            if not isinstance(raw, dict):
+                raw = {}
+            item = dict(redact_sensitive_fields(raw))
+            item.setdefault("issue_id", row["issue_id"])
+            item.setdefault("trip_id", row["trip_id"])
+            item.setdefault("model_label", row["model_label"])
+            item.setdefault("model_reason", row["model_reason"])
+            if row["model_confidence"] is not None:
+                item.setdefault("model_confidence", row["model_confidence"])
+            extra = _json_load(row["model_extra_json"], {})
+            if isinstance(extra, dict):
+                for key, value in redact_sensitive_fields(extra).items():
+                    item.setdefault(key, value)
+            result.append(item)
+        return result
+
+    def delete_model_run(self, run_id: str) -> dict[str, Any] | None:
+        """Delete one non-default local Run and its prediction rows.
+
+        Model Runs are immutable while retained, but explicit user deletion is
+        useful for removing an obsolete upload.  SQLite foreign-key cascades
+        remove predictions and detach any Batch job's optional run pointer;
+        issues, GT and append-only human annotations are not deleted.
+        """
+
+        with self._write_lock, self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM model_runs WHERE id = ?", (run_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            if bool(row["is_default"]):
+                raise ValueError("当前团队默认 Run 不能删除，请先切换默认 Run。")
+            conn.execute("DELETE FROM model_runs WHERE id = ?", (run_id,))
+        return self._run_dict(row)
+
     def set_default_model_run(self, run_id: str) -> dict[str, Any] | None:
         with self._write_lock, self.connect() as conn:
             row = conn.execute(
@@ -851,6 +919,7 @@ class Database:
         annotation_label: str = "",
         annotation_author: str = "",
         model_run_id: str = "",
+        comparison_status: str = "all",
         failure_only: bool = False,
         missing_evidence: str = "",
         page: int = 1,
@@ -858,6 +927,13 @@ class Database:
     ) -> dict[str, Any]:
         page = max(1, page)
         page_size = min(max(1, page_size), 2000)
+        comparison_status = str(comparison_status or "all").strip().lower()
+        if failure_only:
+            comparison_status = "mismatch"
+        if comparison_status not in COMPARISON_STATUSES:
+            raise ValueError("unsupported comparison_status")
+        if comparison_status != "all" and not model_run_id:
+            raise ValueError("comparison_status requires model_run_id")
         where: list[str] = []
         params: list[Any] = []
         if baseline_scope:
@@ -881,11 +957,17 @@ class Database:
             # avoids treating a prefix as a different evidence item.
             where.append("ann.missing_evidence_json LIKE ?")
             params.append(f'%"{missing_evidence.strip()}"%')
-        if failure_only:
+        if comparison_status != "all":
             where.append("i.gt_label IN (?, ?, ?)")
-            where.append("mp.model_label IN (?, ?, ?)")
-            where.append("mp.model_label != i.gt_label")
-            params.extend((*LABELS, *LABELS))
+            params.extend(LABELS)
+            if comparison_status == "none":
+                where.append("(mp.model_label IS NULL OR mp.model_label NOT IN (?, ?, ?))")
+                params.extend(LABELS)
+            else:
+                where.append("mp.model_label IN (?, ?, ?)")
+                params.extend(LABELS)
+                operator = "=" if comparison_status == "match" else "!="
+                where.append(f"mp.model_label {operator} i.gt_label")
         condition = f"WHERE {' AND '.join(where)}" if where else ""
         common = f"""
             FROM issues i
@@ -911,10 +993,7 @@ class Database:
                        mp.model_label, mp.model_reason, mp.model_confidence, mp.model_run_id
                 {common}
                 {condition}
-                ORDER BY
-                    CASE WHEN ann.id IS NULL THEN 0 ELSE 1 END,
-                    CASE WHEN i.source = 'user_examples' THEN 0 ELSE 1 END,
-                    i.updated_at DESC, i.issue_id ASC
+                ORDER BY i.issue_id COLLATE BINARY ASC
                 LIMIT ? OFFSET ?
                 """,
                 (*model_args, *params, page_size, (page - 1) * page_size),
@@ -1092,6 +1171,146 @@ class Database:
                 "SELECT COALESCE(SUM(size_bytes), 0) AS total FROM review_attachments"
             ).fetchone()
         return int(row["total"] or 0)
+
+    def review_reason_rows(
+        self,
+        *,
+        baseline_scope: str,
+        model_run_id: str = "",
+        comparison_status: str = "all",
+        failure_only: bool = False,
+        annotation_author: str = "",
+        review_status: str = "",
+        gt_label: str = "",
+        annotation_label: str = "",
+        missing_evidence: str = "",
+        search: str = "",
+    ) -> list[dict[str, Any]]:
+        """Return one latest-review row per baseline issue for analysis.
+
+        Human Review is dataset-level rather than run-bound. ``model_run_id``
+        only adds the selected immutable prediction snapshot. ``comparison_status``
+        can narrow the slice to MATCH, MISMATCH, or NONE (no canonical
+        prediction). ``failure_only`` remains a compatibility alias for
+        MISMATCH.
+        """
+
+        comparison_status = str(comparison_status or "all").strip().lower()
+        if failure_only:
+            comparison_status = "mismatch"
+        if comparison_status not in {"all", "mismatch", "match", "none"}:
+            raise ValueError("unsupported comparison_status")
+        if comparison_status != "all" and not model_run_id:
+            raise ValueError("comparison_status requires model_run_id")
+
+        where = ["i.baseline_scope = ?", "ann.id IS NOT NULL"]
+        params: list[Any] = [model_run_id, baseline_scope]
+        if comparison_status != "all":
+            where.append("i.gt_label IN (?, ?, ?)")
+            params.extend(LABELS)
+            if comparison_status == "none":
+                where.append(
+                    "(mp.model_label IS NULL OR mp.model_label NOT IN (?, ?, ?))"
+                )
+                params.extend(LABELS)
+            else:
+                where.append("mp.model_label IN (?, ?, ?)")
+                params.extend(LABELS)
+                operator = "=" if comparison_status == "match" else "!="
+                where.append(f"mp.model_label {operator} i.gt_label")
+        if annotation_author.strip():
+            where.append("ann.author = ?")
+            params.append(annotation_author.strip())
+        if review_status in REVIEW_STATUSES:
+            where.append("ann.review_status = ?")
+            params.append(review_status)
+        if gt_label in LABELS:
+            where.append("i.gt_label = ?")
+            params.append(gt_label)
+        if annotation_label in LABELS:
+            where.append("ann.label = ?")
+            params.append(annotation_label)
+        if missing_evidence.strip():
+            where.append("ann.missing_evidence_json LIKE ?")
+            params.append(f'%"{missing_evidence.strip()}"%')
+        if search.strip():
+            term = f"%{search.strip()}%"
+            where.append(
+                "("
+                "i.issue_id LIKE ? OR i.title LIKE ? OR i.scenario LIKE ? "
+                "OR i.summary LIKE ? OR ann.note LIKE ? OR mp.model_reason LIKE ?"
+                ")"
+            )
+            params.extend([term, term, term, term, term, term])
+
+        query = f"""
+            SELECT i.issue_id, i.title, i.scenario, i.summary, i.gt_label,
+                   ann.id AS annotation_id,
+                   ann.label AS annotation_label,
+                   ann.review_status AS annotation_review_status,
+                   ann.tags_json AS annotation_tags_json,
+                   ann.missing_evidence_json AS annotation_missing_evidence_json,
+                   ann.note AS annotation_note,
+                   ann.author AS annotation_author,
+                   ann.author_source AS annotation_author_source,
+                   ann.author_verified AS annotation_author_verified,
+                   ann.created_at AS annotation_created_at,
+                   mp.model_run_id, mp.model_label, mp.model_reason,
+                   mp.model_confidence
+            FROM issues i
+            {self._latest_annotation_join()}
+            LEFT JOIN model_predictions mp
+              ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
+            WHERE {' AND '.join(where)}
+            ORDER BY ann.created_at DESC, i.issue_id ASC
+        """
+        with self.connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            model_label = str(row["model_label"] or "")
+            current_gt = str(row["gt_label"] or "")
+            comparable = current_gt in LABELS and model_label in LABELS
+            results.append(
+                {
+                    "issue_id": str(row["issue_id"]),
+                    "title": str(row["title"] or ""),
+                    "scenario": str(row["scenario"] or ""),
+                    "summary": str(row["summary"] or ""),
+                    "gt_label": current_gt,
+                    "annotation": {
+                        "id": int(row["annotation_id"]),
+                        "label": str(row["annotation_label"] or ""),
+                        "review_status": str(
+                            row["annotation_review_status"] or "pending"
+                        ),
+                        "tags": _json_load(row["annotation_tags_json"], []),
+                        "missing_evidence": _json_load(
+                            row["annotation_missing_evidence_json"], []
+                        ),
+                        "note": str(row["annotation_note"] or ""),
+                        "author": str(row["annotation_author"] or ""),
+                        "author_source": str(
+                            row["annotation_author_source"] or "legacy"
+                        ),
+                        "author_verified": bool(
+                            row["annotation_author_verified"]
+                        ),
+                        "created_at": str(row["annotation_created_at"] or ""),
+                    },
+                    "prediction": {
+                        "model_run_id": str(row["model_run_id"] or ""),
+                        "label": model_label,
+                        "reason": str(row["model_reason"] or ""),
+                        "confidence": row["model_confidence"],
+                        "comparable": comparable,
+                        "mismatch": bool(
+                            comparable and model_label != current_gt
+                        ),
+                    },
+                }
+            )
+        return results
 
     def review_clusters(
         self,
@@ -1272,6 +1491,7 @@ class Database:
         requested_by: str,
         requested_by_source: str = "legacy",
         requested_by_verified: bool = False,
+        provider_id: str = "kylin",
         requested_model_id: str,
         resolved_model_id: str,
         model_source: str,
@@ -1322,13 +1542,13 @@ class Database:
                 """
                 INSERT INTO batch_prediction_jobs (
                     id, name, status, requested_by, requested_by_source,
-                    requested_by_verified, total_count, requested_model_id,
+                    requested_by_verified, total_count, provider_id, requested_model_id,
                     resolved_model_id, model_source, catalog_sha256,
                     model_validation_status, model_name, prompt_version,
                     prompt_template, prompt_template_sha256, prompt_mode,
                     input_profile, input_config_json, created_at
                 ) VALUES (
-                    ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -1338,6 +1558,7 @@ class Database:
                     requested_by_source.strip() or "legacy",
                     int(requested_by_verified),
                     len(normalized_issue_ids),
+                    str(provider_id or "kylin").strip().lower() or "kylin",
                     requested_model_id.strip(),
                     resolved_model_id.strip(),
                     model_source.strip() or "ra_model_gateway",
@@ -1927,6 +2148,9 @@ class Database:
             "completed_count": int(row["completed_count"] or 0),
             "success_count": int(row["success_count"] or 0),
             "failed_count": int(row["failed_count"] or 0),
+            "provider_id": row["provider_id"]
+            if "provider_id" in row.keys()
+            else "kylin",
             "requested_model_id": row["requested_model_id"]
             if "requested_model_id" in row.keys()
             else "",
