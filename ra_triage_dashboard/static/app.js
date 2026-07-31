@@ -39,6 +39,7 @@ const state = {
   gatewayModels: [],
   gatewayModelStatus: null,
   selectedGatewayModelId: "",
+  selectedGatewayProviderId: "",
   batchPrompts: [],
   batchPromptStatus: null,
   batchFacets: {
@@ -1544,6 +1545,7 @@ function renderAnalysisClusterList(items, targetSelector, kind) {
 function renderAnalysisConfusion(data) {
   const target = $("#analysisConfusionMatrix");
   const summary = $("#analysisConfusionSummary");
+  if (!target || !summary) return;
   const run = data.scope?.model_run;
   const confusion = data.confusion || {};
   if (!run) {
@@ -2474,21 +2476,31 @@ function renderGatewayProviders() {
     target.innerHTML = '<div class="muted">未发现服务端 Provider 配置。</div>';
     return;
   }
+  const selectedId = state.selectedGatewayProviderId || catalog.active_provider_id || providers.find((item) => item.enabled)?.id || providers[0].id;
+  state.selectedGatewayProviderId = selectedId;
   target.innerHTML = providers
     .map((provider) => {
-      const active = provider.id === catalog.active_provider_id;
+      const active = provider.id === selectedId;
+      const selectable = Boolean(provider.enabled && provider.supports_batch);
       const endpoint = provider.endpoint || "endpoint 未暴露";
       const status = active
         ? "当前 Batch"
-        : provider.supports_batch
+        : selectable
           ? "可用"
           : "仅配置可见";
-      return `<div class="gateway-provider-option ${active ? "active" : ""} ${provider.supports_batch ? "" : "disabled"}">
+      return `<button type="button" class="gateway-provider-option ${active ? "active" : ""} ${selectable ? "" : "disabled"}" data-gateway-provider="${escapeHtml(provider.id)}" ${selectable ? "" : "disabled"} aria-pressed="${active ? "true" : "false"}">
         <strong>${escapeHtml(provider.display_name || provider.id)} · ${escapeHtml(status)}</strong>
         <small>${escapeHtml(endpoint)}${provider.credential_configured ? " · 服务端凭证已配置" : " · 未配置服务端凭证"}</small>
-      </div>`;
+      </button>`;
     })
     .join("");
+  target.querySelectorAll("[data-gateway-provider]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.disabled) return;
+      state.selectedGatewayProviderId = button.dataset.gatewayProvider || selectedId;
+      renderGatewayProviders();
+    });
+  });
 }
 
 function renderGatewayModels() {

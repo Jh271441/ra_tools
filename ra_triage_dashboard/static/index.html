@@ -255,13 +255,15 @@
                     <option value="">全部原因主题</option>
                   </select>
                 </label>
-                <label class="analysis-search-filter">
-                  <span>检索 Review 原因</span>
-                  <input id="analysisSearchInput" placeholder="Issue ID、场景、人工原因或模型说明" autocomplete="off" />
-                </label>
-                <div class="analysis-filter-actions">
-                  <button class="button button-quiet" id="resetReviewAnalysisButton" type="button">重置</button>
-                  <button class="button button-primary" type="submit">应用</button>
+                <div class="analysis-search-actions">
+                  <label class="analysis-search-filter">
+                    <span>检索 Review 原因</span>
+                    <input id="analysisSearchInput" placeholder="Issue ID、场景、人工原因或模型说明" autocomplete="off" />
+                  </label>
+                  <div class="analysis-filter-actions">
+                    <button class="button button-quiet" id="resetReviewAnalysisButton" type="button">重置</button>
+                    <button class="button button-primary" type="submit">应用</button>
+                  </div>
                 </div>
               </form>
               <div class="analysis-scope-note" id="analysisScopeNote">
@@ -317,19 +319,6 @@
                   <div class="analysis-empty">正在分析 Review 原因…</div>
                 </div>
               </article>
-            </section>
-
-            <section class="page-card analysis-confusion-card">
-              <div class="section-heading">
-                <div>
-                  <span class="eyebrow">MODEL COMPARISON</span>
-                  <h3>GT → 模型输出</h3>
-                </div>
-                <small id="analysisConfusionSummary">选择 Model Run 后显示混淆统计</small>
-              </div>
-              <div class="analysis-confusion-wrap" id="analysisConfusionMatrix">
-                <div class="analysis-empty">尚未选择可比较的 Model Run。</div>
-              </div>
             </section>
 
             <section class="page-card analysis-case-card">
@@ -501,7 +490,6 @@
                   <div id="gatewayProviderList" class="gateway-provider-list">
                     <div class="muted">正在读取 Provider…</div>
                   </div>
-                  <small class="gateway-provider-note">页面不接收 API Key 或任意 Base URL；自定义 Provider 需由管理员在 cloud_server 的服务端配置登记。</small>
                 </div>
                 <label>
                   <span>筛选模型</span>
@@ -524,7 +512,6 @@
                   <strong>正在读取服务器配置…</strong>
                   <span>Prompt 与 Camera 输入参数继续使用 ra_auto_triage 默认 Experiment。</span>
                 </div>
-                <div class="actor-summary" id="batchActorSummary">当前用户尚未读取。</div>
               </aside>
               <form class="page-card tool-form" id="predictionBatchForm">
                 <div class="batch-source-context hidden" id="predictionSourceSummary"></div>
