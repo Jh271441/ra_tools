@@ -996,7 +996,7 @@ class Database:
                 ORDER BY
                     CASE WHEN ann.id IS NULL THEN 0 ELSE 1 END,
                     CASE WHEN i.source = 'user_examples' THEN 0 ELSE 1 END,
-                    i.updated_at DESC, i.issue_id ASC
+                    i.updated_at DESC, i.issue_id COLLATE BINARY ASC
                 LIMIT ? OFFSET ?
                 """,
                 (*model_args, *params, page_size, (page - 1) * page_size),

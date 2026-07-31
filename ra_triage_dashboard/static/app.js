@@ -1448,8 +1448,9 @@ async function loadClusters() {
   params.set("failure_only", String(Boolean(state.failureOnly && state.selectedRunId)));
   const annotationAuthor = $("#reviewerFilter")?.value;
   if (annotationAuthor) params.set("annotation_author", annotationAuthor);
-  const data = await api(`/api/review-clusters?${params.toString()}`);
   const list = $("#clusterList");
+  if (!list) return;
+  const data = await api(`/api/review-clusters?${params.toString()}`);
   if (!(data.items || []).length) {
     list.innerHTML = '<span class="muted">标注缺失信息后，这里会按错误模式自动聚类。</span>';
     return;
@@ -3790,10 +3791,13 @@ function bindEvents() {
     renderAnalysisRunFilter();
     await reloadReviewGallery();
   });
-  $("#clearClusterButton").addEventListener("click", async () => {
-    state.clusterKey = "";
-    await reloadReviewGallery({ includeOverview: false });
-  });
+  const clearClusterButton = $("#clearClusterButton");
+  if (clearClusterButton) {
+    clearClusterButton.addEventListener("click", async () => {
+      state.clusterKey = "";
+      await reloadReviewGallery({ includeOverview: false });
+    });
+  }
   $("#casePagePrevious").addEventListener("click", () => {
     changeCasePage(-1).catch((error) => showToast(error.message, true));
   });
