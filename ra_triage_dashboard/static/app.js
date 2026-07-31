@@ -3453,6 +3453,103 @@ function currentImportKind() {
   return "model";
 }
 
+const IMPORT_EXAMPLES = Object.freeze({
+  csv: {
+    filename: "model_results.csv",
+    description: "平铺表格，每行一个 Issue",
+    content: [
+      "issue_id,model_label,reason,confidence,ra_stuck_auto_result_info",
+      'cn32171803,无需协助,"红灯持续亮起，前车停在停止线后，自车同步等待",0.96,"{""reason"":""红绿灯周期性等待"",""confidence"":0.96}"',
+      'cn31954847,误触发,"前方大车遮挡，但红灯转绿后车流正常放行",0.88,"{""reason"":""排队等灯"",""confidence"":0.88}"',
+      'cn32000543,正确触发,"前车双闪临停，右侧存在可通行空间",0.81,"{""reason"":""异常停车"",""confidence"":0.81}"',
+    ].join("\n"),
+  },
+  json: {
+    filename: "model_results.json",
+    description: "支持原生 experiment + results 结果包",
+    content: [
+      "{",
+      '  "experiment": {',
+      '    "model_name": "Qwen3.5-9B-finetuned/base",',
+      '    "prompt": "stuck_triage_auto_opt_api",',
+      '    "input_profile": "Camera 7 帧 + RA Events"',
+      "  },",
+      '  "results": [',
+      "    {",
+      '      "issue_id": "cn32171803",',
+      '      "model_label": "无需协助",',
+      '      "reason": "红绿灯周期性等待",',
+      '      "confidence": 0.96',
+      "    },",
+      "    {",
+      '      "issue_id": "cn31954847",',
+      '      "ra_stuck_auto_result": "误触发",',
+      '      "ra_stuck_auto_result_info": {',
+      '        "reason": "排队等灯",',
+      '        "confidence": 0.88',
+      "      }",
+      "    }",
+      "  ]",
+      "}",
+    ].join("\n"),
+  },
+  xlsx: {
+    filename: "model_results.xlsx",
+    description: "Sheet1：首行是表头，后续每行一个 Issue",
+    content: [
+      "Sheet1",
+      "",
+      "issue_id       | model_label | reason                          | confidence | ra_stuck_auto_result_info",
+      "cn32171803     | 无需协助     | 红绿灯周期性等待                  | 0.96       | {\"reason\":\"红绿灯周期性等待\"}",
+      "cn31954847     | 误触发       | 排队等灯，红灯转绿后正常放行        | 0.88       | {\"reason\":\"排队等灯\"}",
+      "cn32000543     | 正确触发     | 前车双闪临停，存在绕行空间          | 0.81       | {\"reason\":\"异常停车\"}",
+    ].join("\n"),
+  },
+});
+
+function renderImportExample(format = "csv") {
+  const key = Object.prototype.hasOwnProperty.call(IMPORT_EXAMPLES, format) ? format : "csv";
+  const example = IMPORT_EXAMPLES[key];
+  const dialog = $("#importExamplesDialog");
+  if (dialog) dialog.dataset.importExampleFormat = key;
+  document.querySelectorAll("[data-import-example-format]").forEach((tab) => {
+    const active = tab.dataset.importExampleFormat === key;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", String(active));
+  });
+  $("#importExampleFilename").textContent = example.filename;
+  $("#importExampleDescription").textContent = example.description;
+  $("#importExampleContent").textContent = example.content;
+}
+
+function openImportExamples() {
+  renderImportExample("csv");
+  openDialog("importExamplesDialog");
+}
+
+async function copyImportExample() {
+  const format = $("#importExamplesDialog")?.dataset.importExampleFormat || "csv";
+  const example = IMPORT_EXAMPLES[format] || IMPORT_EXAMPLES.csv;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(example.content);
+    } else {
+      const input = document.createElement("textarea");
+      input.value = example.content;
+      input.setAttribute("readonly", "");
+      input.style.position = "fixed";
+      input.style.opacity = "0";
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand("copy");
+      input.remove();
+    }
+    showToast(`已复制 ${example.filename} 示例。`);
+  } catch (error) {
+    showToast(`复制失败，请直接选中示例内容：${error.message || "浏览器未授权剪贴板"}`, true);
+  }
+}
+
 function updateImportFields() {
   $("#runNameField")?.classList.remove("hidden");
 }
@@ -3819,6 +3916,11 @@ function bindEvents() {
   $("#sidebarToggle").addEventListener("click", toggleSidebar);
   document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => closeDialog(button.dataset.close)));
   $("#importFile").addEventListener("change", () => { $("#importFileName").textContent = $("#importFile").files[0]?.name || "未选择文件"; });
+  $("#openImportExamplesButton").addEventListener("click", openImportExamples);
+  document.querySelectorAll("[data-import-example-format]").forEach((tab) => {
+    tab.addEventListener("click", () => renderImportExample(tab.dataset.importExampleFormat));
+  });
+  $("#copyImportExampleButton").addEventListener("click", () => copyImportExample().catch((error) => showToast(error.message, true)));
   $("#importForm").addEventListener("submit", submitImport);
   $("#autotriageImportForm").addEventListener("submit", submitAutoTriageImport);
   $("#predictionBatchIssues").addEventListener("input", () => {

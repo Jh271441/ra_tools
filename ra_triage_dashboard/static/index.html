@@ -369,8 +369,13 @@
                 <section class="run-source-panel active" id="runImportPanel" role="tabpanel" data-run-source-panel="upload" aria-labelledby="runManagerImportButton">
                   <div class="run-import-body">
                     <aside class="run-import-copy">
-                      <span class="eyebrow">MODEL RESULT IMPORT</span>
-                      <h3>模型结果契约</h3>
+                      <div class="run-import-copy-heading">
+                        <div>
+                          <span class="eyebrow">MODEL RESULT IMPORT</span>
+                          <h3>模型结果契约</h3>
+                        </div>
+                        <button class="button button-quiet import-example-trigger" id="openImportExamplesButton" type="button">查看示例</button>
+                      </div>
                       <p>文件至少需要 <code>issue_id</code> 与 <code>model_label</code> 或 <code>ra_stuck_auto_result</code>；可附带 reason、confidence、ra_stuck_auto_result_info 等字段。</p>
                       <p>模型结果按 SHA-256 创建不可变 Run，不覆盖 0508 GT、不自动切换默认 Run。</p>
                       <div class="actor-summary" id="modelImportActorSummary">创建人将在导入时记录；当前身份尚未读取。</div>
@@ -669,6 +674,48 @@
         <div class="source-preview-content" id="sourcePreviewContent">
           <div class="no-asset">选择 Run 行中的“预览”后在此查看。</div>
         </div>
+      </div>
+    </dialog>
+
+    <dialog class="dialog import-examples-dialog" id="importExamplesDialog">
+      <div class="dialog-card">
+        <div class="dialog-heading">
+          <div>
+            <span class="eyebrow">IMPORT EXAMPLES</span>
+            <h2>模型结果文件示例</h2>
+          </div>
+          <button class="icon-button" type="button" data-close="importExamplesDialog" aria-label="关闭">×</button>
+        </div>
+        <div class="import-example-tabs" role="tablist" aria-label="模型结果示例格式">
+          <button class="import-example-tab active" type="button" role="tab" aria-selected="true" data-import-example-format="csv">CSV</button>
+          <button class="import-example-tab" type="button" role="tab" aria-selected="false" data-import-example-format="json">JSON</button>
+          <button class="import-example-tab" type="button" role="tab" aria-selected="false" data-import-example-format="xlsx">XLSX</button>
+        </div>
+        <div class="import-example-layout">
+          <section class="import-example-contract" aria-label="导入字段说明">
+            <span class="eyebrow">FIELD CONTRACT</span>
+            <h3>字段要求</h3>
+            <div class="import-example-field-list">
+              <div><code>issue_id</code><span class="field-required">必填</span><small>Issue ID，例如 cn32171803</small></div>
+              <div><code>model_label</code> <span class="field-or">或</span> <code>ra_stuck_auto_result</code><span class="field-required">至少一个</span><small>误触发 / 正确触发 / 无需协助</small></div>
+              <div><code>reason</code> / <code>model_reason</code><span class="field-optional">可选</span><small>模型给出的判断理由</small></div>
+              <div><code>confidence</code> / <code>model_confidence</code><span class="field-optional">可选</span><small>0～1 置信度</small></div>
+              <div><code>ra_stuck_auto_result_info</code><span class="field-optional">可选</span><small>JSON 对象，可放 reason、confidence 等详情</small></div>
+            </div>
+            <p class="import-example-note">XLSX 只需把同样的字段放在首行表头；JSON 也支持 <code>{ experiment, results }</code> 原生结果包。</p>
+          </section>
+          <section class="import-example-preview" aria-label="示例内容">
+            <div class="import-example-preview-heading">
+              <div>
+                <strong id="importExampleFilename">model_results.csv</strong>
+                <small id="importExampleDescription">平铺表格，每行一个 Issue</small>
+              </div>
+              <button class="button button-quiet" id="copyImportExampleButton" type="button">复制示例</button>
+            </div>
+            <pre class="import-example-code" id="importExampleContent" tabindex="0"></pre>
+          </section>
+        </div>
+        <p class="import-example-footer">导入后会创建新的不可变 Model Run；不会覆盖 0508 baseline，也不会修改人工 Review。</p>
       </div>
     </dialog>
 

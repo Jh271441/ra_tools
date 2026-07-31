@@ -680,6 +680,36 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .source-preview-table td:first-child, .source-preview-table th:first-child { width: 48px; color: var(--faint); text-align: right; }
 .source-preview-json { margin: 0; padding: 12px; color: #bdd2df; font: 11px/1.55 "SFMono-Regular", Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
 .source-preview-notice { margin: 8px; padding: 8px 10px; border: 1px solid rgba(251,191,36,.28); border-radius: 6px; color: #f6d88b; background: rgba(120,75,10,.12); font-size: 10px; line-height: 1.5; }
+.import-examples-dialog { width: min(1180px, calc(100vw - 30px)); height: min(760px, calc(100dvh - 30px)); max-width: calc(100vw - 30px); max-height: calc(100dvh - 30px); overflow: hidden; }
+.import-examples-dialog .dialog-card { height: 100%; min-height: 0; max-height: 100%; grid-template-rows: auto auto minmax(0, 1fr) auto; }
+.run-import-copy-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.run-import-copy-heading > div { min-width: 0; }
+.import-example-trigger { flex: 0 0 auto; padding: 5px 8px; font-size: 10px; }
+.import-example-tabs { display: inline-flex; width: fit-content; overflow: hidden; border: 1px solid var(--line); border-radius: 7px; background: rgba(8,14,24,.55); }
+.import-example-tab { min-width: 76px; padding: 7px 11px; border: 0; border-right: 1px solid var(--line); color: var(--muted); background: transparent; font-size: 11px; font-weight: 700; }
+.import-example-tab:last-child { border-right: 0; }
+.import-example-tab:hover { color: var(--text); background: rgba(34,211,238,.06); }
+.import-example-tab.active { color: var(--accent); background: var(--accent-soft); }
+.import-example-layout { min-height: 0; display: grid; grid-template-columns: minmax(220px, .7fr) minmax(0, 1.6fr); gap: 12px; }
+.import-example-contract, .import-example-preview { min-height: 0; display: grid; align-content: start; gap: 9px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(8,14,24,.48); }
+.import-example-contract h3 { font-size: 15px; }
+.import-example-field-list { display: grid; gap: 7px; }
+.import-example-field-list > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 7px; align-items: baseline; padding-bottom: 7px; border-bottom: 1px solid var(--line-soft); }
+.import-example-field-list > div:last-child { padding-bottom: 0; border-bottom: 0; }
+.import-example-field-list code { min-width: 0; overflow-wrap: anywhere; }
+.import-example-field-list small { grid-column: 1 / -1; color: var(--faint); font-size: 10px; line-height: 1.4; }
+.field-required, .field-optional, .field-or { white-space: nowrap; font-size: 9px; }
+.field-required { color: #f2c4a1; }
+.field-optional { color: var(--faint); }
+.field-or { color: var(--faint); }
+.import-example-note, .import-example-footer { color: var(--muted); font-size: 10px; line-height: 1.5; }
+.import-example-preview { grid-template-rows: auto minmax(0, 1fr); }
+.import-example-preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 9px; }
+.import-example-preview-heading > div { min-width: 0; display: grid; gap: 3px; }
+.import-example-preview-heading strong { overflow: hidden; color: #dce8f2; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.import-example-preview-heading small { color: var(--faint); font-size: 10px; }
+.import-example-preview-heading .button { flex: 0 0 auto; padding: 5px 8px; font-size: 10px; }
+.import-example-code { min-height: 0; overflow: auto; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 7px; color: #c5d8e8; background: #0b1018; font: 11px/1.6 "SFMono-Regular", Consolas, monospace; white-space: pre; tab-size: 2; }
 .icon-button { padding: 0 4px; border: 0; color: var(--muted); background: transparent; font-size: 24px; line-height: 1; }
 .icon-button:hover { color: var(--text); }
 .segmented { display: inline-flex; width: fit-content; overflow: hidden; border: 1px solid var(--line); border-radius: 7px; }
@@ -1054,6 +1084,13 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
     width: calc(100vw - 12px); height: calc(100dvh - 12px);
     max-width: calc(100vw - 12px); max-height: calc(100dvh - 12px);
   }
+  .import-examples-dialog {
+    width: calc(100vw - 12px); height: calc(100dvh - 12px);
+    max-width: calc(100vw - 12px); max-height: calc(100dvh - 12px);
+  }
+  .import-examples-dialog .dialog-card { padding: 10px; }
+  .import-example-layout { grid-template-columns: minmax(0, 1fr); overflow: auto; }
+  .import-example-contract { min-height: auto; }
   .media-dialog-card { padding: 8px; }
   .media-stage { min-height: 240px; grid-template-columns: 34px minmax(0, 1fr) 34px; gap: 5px; }
   .media-nav { width: 32px; height: 32px; }
