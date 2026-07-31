@@ -1910,7 +1910,7 @@ function renderDetail(caseData) {
           <span>当前模型</span>${labelBadge(primary?.model_label, "未输出")}
           <strong class="${primary?.model_label && primary.model_label !== caseData.gt_label ? "comparison-fail" : "comparison-neutral"}">${primary?.model_label ? primary.model_label === caseData.gt_label ? "一致" : "不一致" : "不可比较"}</strong>
         </div>
-        <p class="detail-summary">${escapeHtml(caseData.summary || "请结合 BEV、Camera 与触发后时序复核。")}</p>
+        ${caseData.summary ? `<p class="detail-summary">${escapeHtml(caseData.summary)}</p>` : ""}
         <div class="detail-actions">
           ${bevPreviewButton}
           <button class="button button-primary" type="button" data-predict-current-case>API 推理</button>
