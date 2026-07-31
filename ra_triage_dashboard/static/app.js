@@ -1269,7 +1269,9 @@ async function loadCases({
   const annotationAuthor = $("#reviewerFilter").value;
   state.selectedRunId = $("#modelRunFilter").value;
   state.reviewComparisonStatus = selectedReviewComparisonStatus();
-  state.failureOnly = state.reviewComparisonStatus === "mismatch";
+  setReviewComparisonStatus(state.reviewComparisonStatus, {
+    hasRun: Boolean(state.selectedRunId),
+  });
   if (search) params.set("search", search);
   if (gtLabel) params.set("gt_label", gtLabel);
   if (annotationLabel) params.set("annotation_label", annotationLabel);
