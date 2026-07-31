@@ -1803,7 +1803,7 @@ function heroFrameIndex(frames) {
   return Math.floor(frames.length / 2);
 }
 
-function heroMediaSection(bev, camera) {
+function heroMediaSection(bev) {
   const frames = bev?.frames || [];
   const video = bev?.video;
   if (!bev?.available || (!frames.length && !video?.url)) {
@@ -1819,7 +1819,6 @@ function heroMediaSection(bev, camera) {
   }
   const index = heroFrameIndex(frames);
   const frame = frames[index];
-  const cameraCount = camera?.frames?.length || 0;
   const videoToggle = video?.url
     ? '<button type="button" class="button button-quiet hero-video-toggle" data-hero-video-toggle>播放视频</button>'
     : "";
@@ -1828,6 +1827,7 @@ function heroMediaSection(bev, camera) {
         <video src="${escapeHtml(video.url)}" controls preload="metadata" playsinline aria-label="Ares Capture BEV 视频"></video>
       </div>`
     : "";
+  const mediaControls = videoToggle ? `<div class="hero-media-meta">${videoToggle}</div>` : "";
   return `
     <section class="hero-media">
       <button type="button" class="hero-media-button" data-hero-frame-view data-media-kind="bev" data-media-index="${index}" aria-label="打开 Ares 与 Camera 时序预览">
@@ -1835,11 +1835,7 @@ function heroMediaSection(bev, camera) {
         <span class="hero-media-overlay">展开预览 · ${escapeHtml(frameLabel(frame))}</span>
       </button>
       ${videoCanvas}
-      <div class="hero-media-meta">
-        <span><b>${frames.length}</b> 帧 Ares 时序</span>
-        <span>${cameraCount ? `<b>${cameraCount}</b> 帧 Camera 可在预览中切换` : "Camera 暂不可用"}</span>
-        ${videoToggle}
-      </div>
+      ${mediaControls}
     </section>`;
 }
 
@@ -1921,7 +1917,7 @@ function renderDetail(caseData) {
       </div>
       ${caseData.review_note ? `<details class="review-note-details"><summary>查看历史备注</summary><div class="review-note"><span>历史备注</span>${escapeHtml(caseData.review_note)}</div></details>` : ""}
     </div>
-    ${heroMediaSection(caseData.assets, caseData.camera)}`;
+    ${heroMediaSection(caseData.assets)}`;
   $("#detailPane").querySelector("[data-predict-current-case]")?.addEventListener("click", () => {
     openBatchDraft([caseData.issue_id], "single");
   });
