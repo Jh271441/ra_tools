@@ -31,6 +31,8 @@ const state = {
   reviewers: [],
   predictionBatches: [],
   predictionBatchTotal: 0,
+  predictionBatchDetails: {},
+  expandedPredictionBatchId: "",
   predictionRequesters: [],
   batchListRequestSeq: 0,
   batchDefaultModel: null,
@@ -2372,6 +2374,7 @@ function renderGatewayModels() {
   const select = $("#predictionModelSelect");
   const statusTarget = $("#gatewayModelStatus");
   const endpointTarget = $("#gatewayModelsEndpoint");
+  const listTarget = $("#gatewayModelList");
   const createButton = $("#createPredictionBatchButton");
   if (!select || !statusTarget || !endpointTarget) return;
   const catalog = state.gatewayModelStatus || {};
@@ -2426,6 +2429,40 @@ function renderGatewayModels() {
     : '<option value="">没有匹配的 Qwen3 模型</option>';
   select.value = unavailableSelection ? previous : selectedModel?.id || "";
   state.selectedGatewayModelId = select.value;
+  if (listTarget) {
+    listTarget.innerHTML = displayModels.length
+      ? displayModels
+          .map((model) => {
+            const unavailable = Boolean(model.unavailable);
+            const active = !unavailable && model.id === state.selectedGatewayModelId;
+            const tier = unavailable
+              ? "不可用"
+              : model.validation_status === "validated"
+                ? "已验证"
+                : "实验";
+            const resolved = model.resolved_model_id && model.resolved_model_id !== model.id
+              ? model.resolved_model_id
+              : model.id;
+            const searchNote = model.pinnedBySearch ? " · 当前选择" : "";
+            return `<button class="gateway-model-option ${active ? "active" : ""} ${unavailable ? "unavailable" : ""}" type="button" data-gateway-model="${escapeHtml(model.id)}" ${unavailable ? "disabled" : ""}>
+              <span class="gateway-model-option-head">
+                <strong>${escapeHtml(model.display_name || model.id)}${escapeHtml(searchNote)}</strong>
+                <em>${tier}</em>
+              </span>
+              <small>${escapeHtml(resolved)}</small>
+            </button>`;
+          })
+          .join("")
+      : '<div class="muted">没有匹配的 Qwen3 模型。</div>';
+    listTarget.querySelectorAll("[data-gateway-model]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (button.disabled) return;
+        state.selectedGatewayModelId = button.dataset.gatewayModel || "";
+        select.value = state.selectedGatewayModelId;
+        renderGatewayModels();
+      });
+    });
+  }
   const selectedIsOnline = state.gatewayModels.some(
     (item) => item.id === state.selectedGatewayModelId
   );
@@ -2561,6 +2598,49 @@ function applyBatchInputPreset() {
   $("#predictionFrameOffsets").value = (preset.frame_offsets_ms || []).join(",");
   $("#predictionUseRaEvent").checked = Boolean(preset.use_ra_event);
   $("#predictionUseRaOptions").checked = Boolean(preset.use_ra_options);
+  syncCameraFramePreset();
+  renderBatchRuntimeSummary();
+}
+
+function cameraFramePresets() {
+  return [
+    {
+      id: "camera_7_frames",
+      frame_offsets_ms: [-3000, -2000, -1000, 0, 1000, 2000, 3000],
+    },
+    {
+      id: "camera_three_moments",
+      frame_offsets_ms: [-3000, 0, 3000],
+    },
+    {
+      id: "camera_single_frame",
+      frame_offsets_ms: [0],
+    },
+  ];
+}
+
+function syncCameraFramePreset() {
+  const select = $("#predictionCameraPreset");
+  const input = $("#predictionFrameOffsets");
+  if (!select || !input) return;
+  const offsets = String(input.value || "")
+    .split(/[\s,，;；]+/)
+    .filter(Boolean)
+    .map((value) => Number(value));
+  const matched = cameraFramePresets().find((preset) =>
+    preset.frame_offsets_ms.length === offsets.length &&
+    preset.frame_offsets_ms.every((value, index) => value === offsets[index])
+  );
+  select.value = matched?.id || "custom";
+}
+
+function applyCameraFramePreset() {
+  const select = $("#predictionCameraPreset");
+  const preset = cameraFramePresets().find(
+    (item) => item.id === select?.value
+  );
+  if (!preset) return;
+  $("#predictionFrameOffsets").value = preset.frame_offsets_ms.join(",");
   renderBatchRuntimeSummary();
 }
 
@@ -2812,6 +2892,81 @@ function renderBatchRequesterFilter() {
   select.value = previous === "__me__" || names.includes(previous) ? previous : "";
 }
 
+function batchInputSummary(batch) {
+  const input = batch.input_config || {};
+  const offsets = Array.isArray(input.frame_offsets_ms)
+    ? input.frame_offsets_ms.join(", ")
+    : "";
+  return [
+    batch.input_profile ? `Profile ${batch.input_profile}` : "",
+    offsets ? `Camera ${input.frame_offsets_ms.length} 帧 · ${offsets} ms` : "",
+    input.use_ra_event ? "RA Events" : "无 RA Events",
+    input.use_ra_options ? "RA / SWAG Options" : "",
+    input.use_bev_animation === false || input.use_ares_capture === false
+      ? "BEV / Ares 关闭"
+      : "",
+  ].filter(Boolean);
+}
+
+function batchOutputLines(batch) {
+  const summary = batch.summary && typeof batch.summary === "object"
+    ? batch.summary
+    : {};
+  return [
+    summary.ra_repo_commit ? `ra_auto_triage commit · ${summary.ra_repo_commit}` : "",
+    summary.trail_view_id ? `Trail view · ${summary.trail_view_id}` : "",
+    summary.model_run_duplicate ? "复用已有模型 Run" : "",
+    summary.bag_cache_read_only ? "Bag cache · read-only" : "",
+    summary.trail_write_enabled === false ? "Trail 写入 · 关闭" : "",
+    batch.error_text ? `任务错误 · ${batch.error_text}` : "",
+  ].filter(Boolean);
+}
+
+function renderPredictionBatchDetail(batch) {
+  if (!batch) {
+    return `<div class="batch-history-detail" data-batch-detail="loading"><span class="muted">正在读取运行输出…</span></div>`;
+  }
+  const counts = batchCounts(batch);
+  const items = Array.isArray(batch.items) ? batch.items : [];
+  const outputLines = batchOutputLines(batch);
+  return `<div class="batch-history-detail" data-batch-detail="${escapeHtml(batch.id || "")}">
+    <div class="batch-detail-heading">
+      <div>
+        <span class="eyebrow">BATCH OUTPUT</span>
+        <strong>运行输出 · ${escapeHtml(batch.name || batch.batch_name || batch.id || "")}</strong>
+      </div>
+      <span>${escapeHtml(batchStatusLabel(batch.status))} · ${counts.completed}/${counts.total} 完成 · 成功 ${counts.success} · 失败 ${counts.failed}</span>
+    </div>
+    <div class="batch-detail-meta">
+      <span>模型 ${escapeHtml(batch.resolved_model_id || batch.model_name || "—")}${batch.model_validation_status === "experimental" ? " · 实验" : ""}</span>
+      <span>Prompt ${escapeHtml(batch.prompt_version || "—")}${batch.prompt_mode === "custom" ? " · custom" : ""}</span>
+      ${batchInputSummary(batch).map((value) => `<span>${escapeHtml(value)}</span>`).join("")}
+      ${batch.model_run_id ? `<span>Model Run ${escapeHtml(batch.model_run_id)}</span>` : ""}
+      ${batch.finished_at ? `<span>结束 ${formatTime(batch.finished_at)}</span>` : ""}
+    </div>
+    ${outputLines.length ? `<div class="batch-output-lines">${outputLines.map((line) => `<code>${escapeHtml(line)}</code>`).join("")}</div>` : ""}
+    ${
+      items.length
+        ? `<div class="batch-result-items">${items
+            .map((item) => {
+              const detail = item.result?.result || item.result || {};
+              const issueUrl = safeUrl(item.voyager_issue_url || "");
+              return `<div class="batch-result-item">
+                <strong>${escapeHtml(item.issue_id)}</strong>
+                <span class="job-status status-${escapeHtml(item.status)}">${escapeHtml(batchStatusLabel(item.status))}</span>
+                ${detail.model_label ? labelBadge(detail.model_label, "—") : ""}
+                ${issueUrl ? `<a href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer">打开 Voyager Issue</a>` : ""}
+                ${detail.model_confidence != null ? `<small>confidence ${escapeHtml(detail.model_confidence)}</small>` : ""}
+                ${detail.model_reason ? `<small class="batch-item-reason">${escapeHtml(detail.model_reason)}</small>` : ""}
+                ${item.error_text ? `<small>${escapeHtml(item.error_text)}</small>` : ""}
+              </div>`;
+            })
+            .join("")}</div>`
+        : '<div class="muted">任务明细尚未生成。</div>'
+    }
+  </div>`;
+}
+
 function renderPredictionBatches(total = state.predictionBatches.length) {
   const list = $("#predictionBatchList");
   if (!list) return;
@@ -2848,6 +3003,8 @@ function renderPredictionBatches(total = state.predictionBatches.length) {
           ""
       );
       const summaryText = batchSummaryText(batch);
+      const expanded = state.expandedPredictionBatchId === batch.id;
+      const detail = state.predictionBatchDetails[batch.id];
       return `<article class="job-history-row batch-history-row">
         <div class="job-history-main">
           <div class="run-row-title">
@@ -2873,23 +3030,36 @@ function renderPredictionBatches(total = state.predictionBatches.length) {
           ${summaryText ? `<div class="job-result-preview">${escapeHtml(summaryText)}</div>` : ""}
         </div>
         <div class="run-row-actions">
-          <button class="button button-quiet" type="button" data-show-batch="${escapeHtml(batch.id)}">查看结果</button>
+          <button class="button button-quiet" type="button" data-show-batch="${escapeHtml(batch.id)}">${expanded ? "收起日志" : "查看日志"}</button>
           ${canPublish && publishEnabled ? `<button class="button button-primary" type="button" data-publish-batch="${escapeHtml(batch.id)}">推送 AutoTriage</button>` : ""}
           ${canPublish && !publishEnabled ? '<button class="button button-quiet" type="button" disabled title="生产写入需可信 SSO 域名">推送需 SSO</button>' : ""}
           ${["running", "publishing"].includes(publishStatus) ? '<button class="button button-quiet" type="button" disabled>推送中…</button>' : ""}
           ${batchUrl ? `<a class="button button-quiet" href="${escapeHtml(batchUrl)}" target="_blank" rel="noreferrer">打开 AutoTriage</a>` : ""}
         </div>
+        ${expanded ? renderPredictionBatchDetail(detail) : ""}
       </article>`;
     })
     .join("");
   list.querySelectorAll("[data-show-batch]").forEach((button) => {
     button.addEventListener("click", async () => {
+      const batchId = button.dataset.showBatch;
+      if (state.expandedPredictionBatchId === batchId) {
+        state.expandedPredictionBatchId = "";
+        renderPredictionBatches(state.predictionBatchTotal);
+        return;
+      }
+      state.expandedPredictionBatchId = batchId;
+      renderPredictionBatches(state.predictionBatchTotal);
       try {
         const data = await api(
-          `/api/prediction-batches/${encodeURIComponent(button.dataset.showBatch)}`
+          `/api/prediction-batches/${encodeURIComponent(batchId)}`
         );
         showPredictionBatch(data.batch || data.job || data);
       } catch (error) {
+        if (state.expandedPredictionBatchId === batchId) {
+          state.expandedPredictionBatchId = "";
+          renderPredictionBatches(state.predictionBatchTotal);
+        }
         showToast(error.message, true);
       }
     });
@@ -2900,42 +3070,15 @@ function renderPredictionBatches(total = state.predictionBatches.length) {
 }
 
 function showPredictionBatch(batch) {
-  const target = $("#predictionBatchResult");
-  if (!target) return;
-  const counts = batchCounts(batch);
-  const items = batch.items || [];
-  target.classList.remove("hidden");
-  target.innerHTML = `
-    <div class="batch-result-heading">
-      <strong>${escapeHtml(batch.name || batch.batch_name || batch.id)}</strong>
-      <span>${escapeHtml(batchStatusLabel(batch.status))} · ${counts.completed}/${counts.total} 完成 · 成功 ${counts.success} · 失败 ${counts.failed}</span>
-    </div>
-    <div class="run-row-meta">
-      <span>模型 ${escapeHtml(batch.resolved_model_id || batch.model_name || "—")}${batch.model_validation_status === "experimental" ? " · 实验" : ""}</span>
-      <span>Prompt ${escapeHtml(batch.prompt_version || "—")}${batch.prompt_mode === "custom" ? " · custom" : ""}</span>
-      <span>输入 ${escapeHtml(batch.input_profile || "—")}</span>
-      ${batch.prompt_template_sha256 ? `<span>Prompt SHA ${escapeHtml(batch.prompt_template_sha256.slice(0, 12))}…</span>` : ""}
-    </div>
-    ${
-      items.length
-        ? `<div class="batch-result-items">${items
-            .map((item) => {
-              const detail = item.result?.result || item.result || {};
-              const issueUrl = safeUrl(item.voyager_issue_url || "");
-              return `<div class="batch-result-item">
-                <strong>${escapeHtml(item.issue_id)}</strong>
-                <span class="job-status status-${escapeHtml(item.status)}">${escapeHtml(batchStatusLabel(item.status))}</span>
-                ${detail.model_label ? labelBadge(detail.model_label, "—") : ""}
-                ${issueUrl ? `<a href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer">打开 Voyager Issue</a>` : ""}
-                ${detail.model_confidence != null ? `<small>confidence ${escapeHtml(detail.model_confidence)}</small>` : ""}
-                ${detail.model_reason ? `<small class="batch-item-reason">${escapeHtml(detail.model_reason)}</small>` : ""}
-                ${item.error_text ? `<small>${escapeHtml(item.error_text)}</small>` : ""}
-              </div>`;
-            })
-            .join("")}</div>`
-        : '<div class="muted">任务明细尚未生成。</div>'
-    }`;
-  target.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (!batch?.id) return;
+  state.predictionBatchDetails[batch.id] = batch;
+  state.expandedPredictionBatchId = batch.id;
+  renderPredictionBatches(state.predictionBatchTotal);
+  requestAnimationFrame(() => {
+    document
+      .querySelector(`[data-batch-detail="${CSS.escape(batch.id)}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
 }
 
 async function loadPredictionBatches() {
@@ -3507,7 +3650,11 @@ function bindEvents() {
   $("#predictionPromptSelect").addEventListener("change", loadSelectedPromptTemplate);
   $("#predictionPromptTemplate").addEventListener("input", updatePromptEditorSummary);
   $("#predictionInputProfile").addEventListener("change", applyBatchInputPreset);
-  $("#predictionFrameOffsets").addEventListener("input", renderBatchRuntimeSummary);
+  $("#predictionCameraPreset").addEventListener("change", applyCameraFramePreset);
+  $("#predictionFrameOffsets").addEventListener("input", () => {
+    syncCameraFramePreset();
+    renderBatchRuntimeSummary();
+  });
   $("#predictionUseRaEvent").addEventListener("change", () => {
     if (!$("#predictionUseRaEvent").checked) $("#predictionUseRaOptions").checked = false;
     renderBatchRuntimeSummary();

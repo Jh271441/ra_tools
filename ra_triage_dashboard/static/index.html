@@ -495,11 +495,6 @@
               <p>从服务器模型网关选择模型并批量预测；完成后再显式推送到 AutoTriage。</p>
               <button class="button button-quiet" type="button" data-page-target="review">返回判错复核</button>
             </div>
-            <section class="object-semantics">
-              <strong>预测与推送分离</strong>
-              <span>模型列表由后端访问固定网关自动获取；API key 只保存在服务器，不进入浏览器、任务记录或日志。</span>
-              <span>预测完成不会自动写入 AutoTriage；请核对结果后，在任务列表中显式点击“推送 AutoTriage”。</span>
-            </section>
             <div class="tool-page-grid batch-page-grid">
               <aside class="page-card page-aside gateway-card">
                 <span class="eyebrow">MODEL GATEWAY</span>
@@ -523,6 +518,9 @@
                   </div>
                 </label>
                 <div class="gateway-model-status" id="gatewayModelStatus">正在自动获取模型列表…</div>
+                <div class="gateway-model-list" id="gatewayModelList" aria-label="可用模型列表">
+                  <div class="muted">正在读取模型目录…</div>
+                </div>
                 <div class="batch-runtime-summary" id="batchModelSummary">
                   <strong>正在读取服务器配置…</strong>
                   <span>Prompt 与 Camera 输入参数继续使用 ra_auto_triage 默认 Experiment。</span>
@@ -558,6 +556,22 @@
                         </select>
                       </label>
                     </div>
+                    <div class="batch-common-config">
+                      <label>
+                        <span>Camera 取帧预设</span>
+                        <select id="predictionCameraPreset">
+                          <option value="camera_7_frames">Camera 7 帧 · 默认</option>
+                          <option value="camera_three_moments">Camera 三时刻 · 前 / 当前 / 后</option>
+                          <option value="camera_single_frame">Camera 单帧 · 当前时刻</option>
+                          <option value="custom">自定义帧偏移</option>
+                        </select>
+                        <small>这里是时间帧预设，不代表三个物理摄像头。</small>
+                      </label>
+                      <label class="toggle-row compact-toggle config-disabled" title="当前 RA Batch 输入契约固定关闭 BEV / Ares Capture">
+                        <input id="predictionUseBev" type="checkbox" disabled />
+                        <span><strong>BEV / Ares Capture</strong><small>当前输入契约固定关闭</small></span>
+                      </label>
+                    </div>
                     <label>
                       <span>Prompt 正文（可编辑）</span>
                       <textarea class="batch-prompt-input" id="predictionPromptTemplate" rows="12" spellcheck="false" placeholder="选择 Prompt 后载入完整正文"></textarea>
@@ -585,7 +599,6 @@
                   <textarea class="batch-issue-input" id="predictionBatchIssues" rows="10" placeholder="每行一个，也支持逗号或空格分隔，例如：&#10;cn32171803&#10;cn31954847&#10;cn32000543" required></textarea>
                   <small id="predictionBatchIssueCount">已识别 0 个 Issue</small>
                 </label>
-                <div class="job-result hidden" id="predictionBatchResult"></div>
                 <div class="page-actions">
                   <button class="button button-primary" id="createPredictionBatchButton" type="submit">开始 Batch 预测</button>
                 </div>
