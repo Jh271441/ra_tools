@@ -47,6 +47,7 @@ const state = {
     input_profiles: [],
   },
   batchDraftSource: "",
+  batchDefaultName: "",
   selectedRunId: "",
   reviewComparisonStatus: "all",
   failureOnly: false,
@@ -417,9 +418,10 @@ function showPage(
   }
   if (target === "prediction") {
     const issueIds = issues.length ? issues : issue ? [issue] : [];
+    ensurePredictionBatchName();
     const issueInput = $("#predictionBatchIssues");
     if (issueInput && (issueIds.length || restoreRoute)) {
-      issueInput.value = [...new Set(issueIds)].join("\n");
+      issueInput.value = [...new Set(issueIds)].join(", ");
     }
     if (issueIds.length) {
       state.batchDraftSource = source || (issueIds.length === 1 ? "single" : "");
@@ -520,11 +522,15 @@ function formatTime(value) {
 }
 
 function evidenceLabel(key) {
-  return state.config?.missing_evidence_catalog?.find((item) => item.key === key)?.label || key;
+  const value = String(key || "");
+  if (value.startsWith("custom:")) return value.slice("custom:".length) || value;
+  return state.config?.missing_evidence_catalog?.find((item) => item.key === value)?.label || value;
 }
 
 function tagLabel(key) {
-  return state.config?.review_tag_catalog?.find((item) => item.key === key)?.label || key;
+  const value = String(key || "");
+  if (value.startsWith("custom:")) return value.slice("custom:".length) || value;
+  return state.config?.review_tag_catalog?.find((item) => item.key === value)?.label || value;
 }
 
 function frameLabel(frame) {
@@ -635,6 +641,7 @@ function renderSession() {
         ? `本次导入显示名：${username}（本机 LCA，未验证；不能用于权限）`
         : "当前没有可信 SSO；Run 创建人将记为未记录。";
   }
+  if (state.activePage === "prediction") ensurePredictionBatchName();
 }
 
 async function loadSession() {
@@ -1349,6 +1356,30 @@ function openBatchDraft(issueIds, source = "") {
   navigatePage("prediction", { issues: ids, source });
 }
 
+function predictionActorSlug() {
+  const username = String(state.session.username || "triage").trim();
+  const safe = username.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  return (safe || "triage").slice(0, 48);
+}
+
+function defaultPredictionBatchName() {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, "0");
+  const date = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+  const time = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  return `${predictionActorSlug()}_i_${date}_${time}`;
+}
+
+function ensurePredictionBatchName() {
+  const input = $("#predictionBatchName");
+  if (!input) return;
+  const current = input.value.trim();
+  if (current && current !== state.batchDefaultName) return;
+  const next = defaultPredictionBatchName();
+  input.value = next;
+  state.batchDefaultName = next;
+}
+
 function renderPredictionSourceSummary() {
   const target = $("#predictionSourceSummary");
   if (!target) return;
@@ -1451,7 +1482,7 @@ function reviewStatusLabel(status) {
   return (
     {
       pending: "待复核",
-      reviewed: "已复核",
+      reviewed: "已 Review",
       needs_gt_review: "GT 待复核",
     }[status] || status || "未记录"
   );
@@ -1843,11 +1874,24 @@ function renderDetail(caseData) {
       : "Issue Review";
   const primary = (caseData.predictions || []).find((item) => item.model_run_id === state.selectedRunId) || caseData.predictions?.[0];
   const issueUrl = safeUrl(caseData.voyager_issue_url || caseData.trail_url);
+  const bevFrames = caseData.assets?.frames || [];
+  const bevPreviewButton = bevFrames.length
+    ? `<button class="button button-primary hero-bev-open" type="button" data-open-bev-preview>查看 BEV</button>`
+    : "";
   $("#detailPane").innerHTML = `
+    <div class="case-detail-nav case-detail-nav-inline">
+      <button class="button button-quiet" id="backToGalleryButton" type="button">← 返回筛选结果</button>
+      <div class="case-detail-pager">
+        <button class="button button-quiet" id="previousIssueButton" type="button">← 上一 Issue</button>
+        <span id="detailQueuePosition">— / —</span>
+        <button class="button button-quiet" id="nextIssueButton" type="button">下一 Issue →</button>
+      </div>
+    </div>
     <div class="detail-header">
       <div class="detail-title-row">
         <div class="detail-title"><span class="eyebrow">CASE REVIEW</span><h2>${escapeHtml(title)}</h2><span class="detail-id">${escapeHtml(caseData.issue_id)}</span></div>
         <div class="detail-actions">
+          ${bevPreviewButton}
           <button class="button button-primary" type="button" data-predict-current-case>API 推理</button>
           ${issueUrl ? `<a class="button button-quiet" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer">打开 Voyager Issue</a>` : ""}
         </div>
@@ -1871,6 +1915,17 @@ function renderDetail(caseData) {
   $("#detailPane").querySelector("[data-predict-current-case]")?.addEventListener("click", () => {
     openBatchDraft([caseData.issue_id], "single");
   });
+  $("#detailPane").querySelector("[data-open-bev-preview]")?.addEventListener("click", () => {
+    openMedia("bev", heroFrameIndex(bevFrames));
+  });
+  $("#detailPane").querySelector("#backToGalleryButton")?.addEventListener("click", returnToReviewGallery);
+  $("#detailPane").querySelector("#previousIssueButton")?.addEventListener("click", () => {
+    navigateAdjacentCase(-1).catch((error) => showToast(error.message, true));
+  });
+  $("#detailPane").querySelector("#nextIssueButton")?.addEventListener("click", () => {
+    navigateAdjacentCase(1).catch((error) => showToast(error.message, true));
+  });
+  renderCaseNavigation();
   $("#detailPane").querySelectorAll("[data-media-kind]").forEach((button) => {
     button.addEventListener("click", () => openMedia(button.dataset.mediaKind, Number(button.dataset.mediaIndex)));
   });
@@ -1906,37 +1961,49 @@ function annotationHistory(annotations) {
 function renderReview(caseData) {
   const previous = caseData.annotations?.[0] || {};
   state.selectedAnnotationLabel = previous.label || "";
-  const chosenEvidence = new Set(previous.missing_evidence || []);
   const catalog = state.config?.missing_evidence_catalog || [];
   const tagCatalog = state.config?.review_tag_catalog || [];
-  const chosenTags = new Set(
-    (previous.tags || []).filter((tag) => tagCatalog.some((item) => item.key === tag))
+  const hasPreviousReview = Boolean(caseData.annotations?.length);
+  const chosenEvidence = new Set(
+    hasPreviousReview ? previous.missing_evidence || [] : ["routing_direction"]
   );
+  const catalogKeys = new Set(catalog.map((item) => item.key));
+  const customEvidenceKeys = [...chosenEvidence].filter((key) => !catalogKeys.has(key));
+  const chosenTags = new Set(previous.tags || []);
+  const tagCatalogKeys = new Set(tagCatalog.map((item) => item.key));
+  const customTagKeys = [...chosenTags].filter((tag) => !tagCatalogKeys.has(tag));
   const author = state.session.username || previous.author || "";
   const authorLocked = Boolean(state.session.verified && state.session.username);
+  const reviewStatus = previous.review_status === "needs_gt_review" ? "needs_gt_review" : "reviewed";
+  const evidenceOption = (item, selected) => `<label class="evidence-option" title="${escapeHtml(item.hint || "")}"><input type="checkbox" name="missingEvidence" value="${escapeHtml(item.key)}" ${selected ? "checked" : ""} /><span><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.hint || "")}</small></span></label>`;
+  const customEvidenceOptions = customEvidenceKeys
+    .map((key) => evidenceOption({ key, label: evidenceLabel(key), hint: "本条 Review 新建的缺失信息" }, true))
+    .join("");
+  const tagOption = (key, label, selected) => `<label class="tag-option"><input type="checkbox" name="reviewTags" value="${escapeHtml(key)}" ${selected ? "checked" : ""} /><span>${escapeHtml(label)}</span></label>`;
+  const customTagOptions = customTagKeys
+    .map((key) => tagOption(key, tagLabel(key), true))
+    .join("");
   $("#reviewPane").innerHTML = `
-    <div class="review-title"><div><span class="eyebrow">HUMAN REVIEW</span><h2>标注与错误归因</h2><small class="review-scope-note">人工 Review 按 Issue 共用；模型输出按 Run 区分</small></div><span class="review-issue">${escapeHtml(caseData.issue_id)}</span></div>
+    <div class="review-title"><div><span class="eyebrow">HUMAN REVIEW</span><h2>模型判错原因</h2><small class="review-scope-note">按 Issue 记录，模型输出仍按 Run 区分</small></div><span class="review-issue">${escapeHtml(caseData.issue_id)}</span></div>
     <form class="review-form" id="annotationForm">
-      <div><label><span>人工最终判断</span></label><div class="label-buttons">${LABELS.map((label) => `<button class="label-choice ${state.selectedAnnotationLabel === label ? "active" : ""}" data-annotation-label="${label}" type="button">${label}</button>`).join("")}</div></div>
-      <label><span>复核状态</span><select id="reviewStatusInput"><option value="pending">待补充</option><option value="reviewed" ${previous.review_status === "reviewed" ? "selected" : ""}>已复核</option><option value="needs_gt_review" ${previous.review_status === "needs_gt_review" ? "selected" : ""}>GT 需复核</option></select></label>
+      <label class="review-status-field"><span>复核状态</span><select id="reviewStatusInput"><option value="reviewed" ${reviewStatus === "reviewed" ? "selected" : ""}>已 Review</option><option value="pending" ${reviewStatus === "pending" ? "selected" : ""}>待补充</option><option value="needs_gt_review" ${reviewStatus === "needs_gt_review" ? "selected" : ""}>GT 需复核</option></select></label>
       <label class="review-reason">
         <span>模型为什么判错？</span>
-        <small>请写清交通灯、routing、绕行空间、时序或 RA / SWAG 操作链等关键依据。</small>
-        <textarea id="annotationNote" placeholder="例如：自车 routing 为右转，前车直行等灯；右侧存在可安全通行空间，模型只看到排队而遗漏 routing 与绕行条件。">${escapeHtml(previous.note || "")}</textarea>
+        <textarea id="annotationNote" rows="4" placeholder="简要说明模型漏掉的关键证据，例如 routing、绕行空间或时序。">${escapeHtml(previous.note || "")}</textarea>
       </label>
-      <details class="evidence-dropdown">
+      <details class="evidence-dropdown review-dropdown">
         <summary>缺失信息（多选）<span class="evidence-summary-count" id="evidenceSummaryCount">已选 ${chosenEvidence.size} 项</span></summary>
-        <div class="evidence-options">${catalog.map((item) => `<label class="evidence-option" title="${escapeHtml(item.hint || "")}"><input type="checkbox" name="missingEvidence" value="${escapeHtml(item.key)}" ${chosenEvidence.has(item.key) ? "checked" : ""} /><span><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.hint || "")}</small></span></label>`).join("")}</div>
+        <div class="evidence-options" id="missingEvidenceOptions">${catalog.map((item) => evidenceOption(item, chosenEvidence.has(item.key))).join("")}${customEvidenceOptions}<div class="custom-evidence-create" id="customEvidenceCreator"><input id="newMissingEvidence" maxlength="48" placeholder="输入新的缺失信息" autocomplete="off" /><button class="button button-quiet" id="addMissingEvidenceButton" type="button">新建标签</button></div></div>
       </details>
-      <details class="evidence-dropdown tag-dropdown">
+      <details class="evidence-dropdown review-dropdown tag-dropdown">
         <summary>场景 Tags（可选）<span class="evidence-summary-count" id="tagSummaryCount">已选 ${chosenTags.size} 项</span></summary>
-        <div class="tag-options">${tagCatalog.map((item) => `<label class="tag-option"><input type="checkbox" name="reviewTags" value="${escapeHtml(item.key)}" ${chosenTags.has(item.key) ? "checked" : ""} /><span>${escapeHtml(item.label)}</span></label>`).join("")}</div>
+        <div class="tag-options" id="reviewTagOptions">${tagCatalog.map((item) => tagOption(item.key, item.label, chosenTags.has(item.key))).join("")}${customTagOptions}<div class="custom-tag-create" id="customTagCreator"><input id="newSceneTag" maxlength="48" placeholder="输入新的场景 Tag" autocomplete="off" /><button class="button button-quiet" id="addSceneTagButton" type="button">新建标签</button></div></div>
       </details>
       <div class="review-attachment-field">
         <span>补充截图（可选）</span>
         <div class="screenshot-paste-zone" id="screenshotPasteZone" tabindex="0" role="group" aria-label="粘贴补充截图">
           <strong>粘贴截图</strong>
-          <small>点击此处后直接 Ctrl / ⌘ + V；最多 4 张，每张 8 MB。</small>
+          <small>点击后 Ctrl / ⌘ + V；最多 4 张。</small>
           <button class="screenshot-browse-button" id="reviewScreenshotBrowse" type="button">选择图片</button>
         </div>
         <input class="hidden" id="reviewScreenshotInput" type="file" accept="image/png,image/jpeg,image/webp" multiple />
@@ -1946,17 +2013,52 @@ function renderReview(caseData) {
       <button class="button button-primary full-width" type="submit">保存新的 review 版本</button>
     </form>
     <section class="annotation-history"><div class="subheading"><span>Review 历史</span><small>追加式，不覆盖旧记录</small></div>${annotationHistory(caseData.annotations)}</section>`;
-  $("#reviewPane").querySelectorAll("[data-annotation-label]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.selectedAnnotationLabel = button.dataset.annotationLabel;
-      $("#reviewPane").querySelectorAll("[data-annotation-label]").forEach((item) => item.classList.toggle("active", item === button));
-    });
-  });
   $("#reviewPane").querySelectorAll('input[name="missingEvidence"]').forEach((input) => {
     input.addEventListener("change", updateEvidenceSummary);
   });
   $("#reviewPane").querySelectorAll('input[name="reviewTags"]').forEach((input) => {
     input.addEventListener("change", updateTagSummary);
+  });
+  $("#reviewPane").querySelectorAll(".review-dropdown").forEach((dropdown) => {
+    dropdown.addEventListener("toggle", () => {
+      if (!dropdown.open) return;
+      $("#reviewPane").querySelectorAll(".review-dropdown").forEach((other) => {
+        if (other !== dropdown) other.open = false;
+      });
+    });
+  });
+  $("#addMissingEvidenceButton")?.addEventListener("click", () => {
+    const input = $("#newMissingEvidence");
+    const value = String(input?.value || "").trim();
+    if (!value) return showToast("请输入新的缺失信息。", true);
+    if (value.length > 48 || /[\x00-\x1f\x7f]/.test(value)) return showToast("缺失信息长度或字符不合法。", true);
+    const key = `custom:${value}`;
+    const exists = [...document.querySelectorAll('input[name="missingEvidence"]')].some((item) => item.value === key);
+    if (exists) return showToast("该缺失信息已经添加。", true);
+    const option = document.createElement("label");
+    option.className = "evidence-option custom-evidence-option";
+    option.innerHTML = `<input type="checkbox" name="missingEvidence" value="${escapeHtml(key)}" checked /><span><strong>${escapeHtml(value)}</strong><small>本条 Review 新建的缺失信息</small></span>`;
+    const creator = $("#customEvidenceCreator");
+    creator?.before(option);
+    option.querySelector("input")?.addEventListener("change", updateEvidenceSummary);
+    if (input) input.value = "";
+    updateEvidenceSummary();
+  });
+  $("#addSceneTagButton")?.addEventListener("click", () => {
+    const input = $("#newSceneTag");
+    const value = String(input?.value || "").trim();
+    if (!value) return showToast("请输入新的场景 Tag。", true);
+    if (value.length > 48 || /[\x00-\x1f\x7f]/.test(value)) return showToast("场景 Tag 长度或字符不合法。", true);
+    const key = `custom:${value}`;
+    const exists = [...document.querySelectorAll('input[name="reviewTags"]')].some((item) => item.value === key);
+    if (exists) return showToast("该场景 Tag 已经添加。", true);
+    const option = document.createElement("label");
+    option.className = "tag-option custom-tag-option";
+    option.innerHTML = `<input type="checkbox" name="reviewTags" value="${escapeHtml(key)}" checked /><span>${escapeHtml(value)}</span>`;
+    $("#customTagCreator")?.before(option);
+    option.querySelector("input")?.addEventListener("change", updateTagSummary);
+    if (input) input.value = "";
+    updateTagSummary();
   });
   const pasteZone = $("#screenshotPasteZone");
   const screenshotInput = $("#reviewScreenshotInput");
@@ -2368,6 +2470,32 @@ function updatePredictionBatchCount() {
     `已识别 ${ids.length} 个 Issue${maxIssues ? ` · 单批最多 ${maxIssues} 个` : ""}` +
     `${invalid.length ? ` · ${invalid.length} 个格式不合法` : ""}`;
   target.classList.toggle("input-warning", Boolean(invalid.length || overLimit));
+}
+
+function renderGatewayProviders() {
+  const target = $("#gatewayProviderList");
+  if (!target) return;
+  const catalog = state.config?.prediction_batch?.providers || {};
+  const providers = Array.isArray(catalog.providers) ? catalog.providers : [];
+  if (!providers.length) {
+    target.innerHTML = '<div class="muted">未发现服务端 Provider 配置。</div>';
+    return;
+  }
+  target.innerHTML = providers
+    .map((provider) => {
+      const active = provider.id === catalog.active_provider_id;
+      const endpoint = provider.endpoint || "endpoint 未暴露";
+      const status = active
+        ? "当前 Batch"
+        : provider.supports_batch
+          ? "可用"
+          : "仅配置可见";
+      return `<div class="gateway-provider-option ${active ? "active" : ""} ${provider.supports_batch ? "" : "disabled"}">
+        <strong>${escapeHtml(provider.display_name || provider.id)} · ${escapeHtml(status)}</strong>
+        <small>${escapeHtml(endpoint)}${provider.credential_configured ? " · 服务端凭证已配置" : " · 未配置服务端凭证"}</small>
+      </div>`;
+    })
+    .join("");
 }
 
 function renderGatewayModels() {
@@ -3136,6 +3264,7 @@ async function loadPredictionConfig() {
       ...data,
     },
   };
+  renderGatewayProviders();
   renderBatchRuntimeSummary();
   updatePredictionBatchCount();
   await Promise.all([loadGatewayModels(), loadBatchPrompts()]);
@@ -3550,13 +3679,6 @@ function bindEvents() {
   });
   $("#casePageNext").addEventListener("click", () => {
     changeCasePage(1).catch((error) => showToast(error.message, true));
-  });
-  $("#backToGalleryButton").addEventListener("click", returnToReviewGallery);
-  $("#previousIssueButton").addEventListener("click", () => {
-    navigateAdjacentCase(-1).catch((error) => showToast(error.message, true));
-  });
-  $("#nextIssueButton").addEventListener("click", () => {
-    navigateAdjacentCase(1).catch((error) => showToast(error.message, true));
   });
   $("#refreshButton").addEventListener("click", async () => {
     try {

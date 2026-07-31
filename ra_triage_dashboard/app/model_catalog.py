@@ -19,6 +19,7 @@ from .settings import Settings
 
 
 MODEL_ID_RE = re.compile(r"^[A-Za-z0-9._/@:+-]{1,160}$")
+PROVIDER_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 MAX_CATALOG_BYTES = 1024 * 1024
 MAX_MODELS = 500
 MAX_SECRET_BYTES = 4096
@@ -142,6 +143,150 @@ class ModelCatalog:
             "catalog_label": "ra-model.intra.xiaojukeji.com/v1/models",
             "default_model_id": self.settings.ra_model_default_id,
             "credential_source": "server",
+        }
+
+    def provider_catalog(self) -> dict[str, Any]:
+        """Return safe metadata for server-owned providers.
+
+        The RA checkout contains more provider profiles than the dashboard's
+        Camera-only Batch worker currently supports.  Expose their names and
+        sanitized endpoints for operator visibility, but never return a key
+        and never mark an unsupported provider as selectable from the browser.
+        """
+        providers: dict[str, dict[str, Any]] = {}
+
+        def endpoint_summary(value: Any) -> str:
+            parsed = urlsplit(str(value or "").strip())
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                return ""
+            host = parsed.hostname
+            if parsed.port:
+                host = f"{host}:{parsed.port}"
+            path = parsed.path.rstrip("/")
+            return f"{parsed.scheme}://{host}{path}"
+
+        def add_provider(
+            provider_id: str,
+            *,
+            base_url: Any = "",
+            configured: bool = False,
+            source: str = "ra_auto_triage/config.yml",
+            supports_batch: bool = False,
+            note: str = "",
+        ) -> None:
+            provider_id = str(provider_id or "").strip()
+            if not PROVIDER_ID_RE.fullmatch(provider_id):
+                return
+            endpoint = endpoint_summary(base_url)
+            providers[provider_id] = {
+                "id": provider_id,
+                "display_name": {
+                    "kylin": "Kylin · RA Model 网关",
+                    "tokenservice": "TokenService 网关",
+                }.get(provider_id, provider_id),
+                "endpoint": endpoint,
+                "credential_configured": bool(configured),
+                "credential_source": source,
+                "supports_batch": bool(supports_batch),
+                "enabled": bool(supports_batch and configured),
+                "note": note,
+            }
+
+        key_configured = False
+        try:
+            descriptor = _open_model_gateway_api_key(self.settings)
+        except (AttributeError, ModelCatalogError, OSError):
+            pass
+        else:
+            os.close(descriptor)
+            key_configured = True
+        add_provider(
+            "kylin",
+            base_url=getattr(self.settings, "ra_model_chat_url", ""),
+            configured=key_configured,
+            source="dashboard server key file",
+            supports_batch=True,
+            note="当前 Camera-only Batch 执行 Provider；Ares / BEV 固定关闭。",
+        )
+
+        # Read only provider names/endpoints from the checked-out RA config.
+        # This deliberately avoids a YAML dependency and never serializes the
+        # api_key value.  The file is an operator-owned server source of truth.
+        config_path = getattr(self.settings, "ra_auto_triage_root", None)
+        config_path = Path(config_path) / "config.yml" if config_path else None
+        if config_path and config_path.is_file():
+            try:
+                lines = config_path.read_text(encoding="utf-8").splitlines()
+            except (OSError, UnicodeDecodeError):
+                lines = []
+            inside = False
+            current = ""
+            current_base = ""
+            current_key = False
+
+            def flush() -> None:
+                nonlocal current, current_base, current_key
+                if current:
+                    add_provider(
+                        current,
+                        base_url=current_base,
+                        configured=current_key or (
+                            bool(providers.get(current, {}).get("credential_configured"))
+                            if current == "kylin"
+                            else False
+                        ),
+                        source=(
+                            "dashboard server key file"
+                            if current == "kylin"
+                            else "ra_auto_triage/config.yml"
+                        ),
+                        supports_batch=current == "kylin",
+                        note=(
+                            "源仓库已配置；当前 Dashboard Batch worker 尚未启用此 Provider。"
+                            if current != "kylin"
+                            else providers.get(current, {}).get("note", "")
+                        ),
+                    )
+                current = ""
+                current_base = ""
+                current_key = False
+
+            for line in lines:
+                if re.match(r"^vision_model:\s*$", line):
+                    inside = False
+                    flush()
+                    continue
+                if re.match(r"^\s{2}providers:\s*$", line):
+                    inside = True
+                    continue
+                if not inside:
+                    continue
+                provider_match = re.match(r"^\s{4}([A-Za-z0-9_.-]+):\s*$", line)
+                if provider_match:
+                    flush()
+                    current = provider_match.group(1)
+                    continue
+                if re.match(r"^\s{2}\S", line):
+                    flush()
+                    inside = False
+                    continue
+                if not current:
+                    continue
+                base_match = re.match(r"^\s{6}base_url:\s*(.*?)\s*$", line)
+                if base_match:
+                    current_base = base_match.group(1).strip().strip("\"'")
+                    continue
+                key_match = re.match(r"^\s{6}api_key:\s*(.*?)\s*$", line)
+                if key_match:
+                    raw_key = key_match.group(1).strip().strip("\"'")
+                    current_key = bool(raw_key and raw_key.lower() not in {"null", "none", "''", '""'})
+            flush()
+
+        return {
+            "providers": sorted(providers.values(), key=lambda item: (not item["enabled"], item["id"])),
+            "active_provider_id": "kylin",
+            "browser_credentials_allowed": False,
+            "custom_provider_supported": False,
         }
 
     def list_models(

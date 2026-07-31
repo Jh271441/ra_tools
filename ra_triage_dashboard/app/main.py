@@ -12,6 +12,7 @@ import shutil
 import threading
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -98,27 +99,36 @@ MISSING_EVIDENCE_CATALOG: tuple[dict[str, str], ...] = (
 )
 
 REVIEW_TAG_CATALOG: tuple[dict[str, str], ...] = (
-    {"key": "left_turn", "label": "左转"},
-    {"key": "right_turn", "label": "右转"},
-    {"key": "straight", "label": "直行"},
-    {"key": "traffic_light", "label": "信号灯"},
     {"key": "queue", "label": "排队"},
-    {"key": "temporary_stop", "label": "双闪 / 临停 / 故障车"},
-    {"key": "occlusion", "label": "遮挡"},
-    {"key": "vulnerable_road_user", "label": "摩自 / 行人"},
-    {"key": "passable_space", "label": "可绕行空间"},
-    {"key": "swag", "label": "SWAG / RA 操作"},
-    {"key": "gt_boundary", "label": "GT 边界"},
+    {"key": "yielding", "label": "让行"},
+    {"key": "u_turn", "label": "掉头"},
+    {"key": "park_in", "label": "泊入"},
+    {"key": "park_out", "label": "泊出"},
+    {"key": "traffic_light", "label": "红绿灯"},
+    {"key": "manual_trigger", "label": "人工触发"},
+    {"key": "perception_fp_cleared", "label": "感知FP消失"},
+    {"key": "lead_vehicle_departed", "label": "前车驶离"},
+    {"key": "system_decision_change", "label": "主系统决策变化"},
+    {"key": "obstacle_not_avoided", "label": "未避障"},
+    {"key": "close_distance", "label": "距离近"},
 )
 REVIEW_TAG_KEYS = frozenset(item["key"] for item in REVIEW_TAG_CATALOG)
 REVIEW_TAG_ALIASES = {
-    "左转": "left_turn",
-    "右转": "right_turn",
-    "直行": "straight",
-    "信号灯": "traffic_light",
     "红绿灯": "traffic_light",
     "等灯": "traffic_light",
     "排队": "queue",
+    "让行": "yielding",
+    "掉头": "u_turn",
+    "泊入": "park_in",
+    "泊出": "park_out",
+    "人工触发": "manual_trigger",
+    "感知FP消失": "perception_fp_cleared",
+    "前车驶离": "lead_vehicle_departed",
+    "主系统决策变化": "system_decision_change",
+    "未避障": "obstacle_not_avoided",
+    "距离近": "close_distance",
+    # Preserve common historical values while the new UI emits the compact catalog above.
+    "信号灯": "traffic_light",
     "双闪": "temporary_stop",
     "临停": "temporary_stop",
     "故障车": "temporary_stop",
@@ -2232,6 +2242,11 @@ async def batch_prediction_models(refresh: bool = False) -> dict[str, Any]:
         raise _detail(exc.status_code, exc.public_message)
 
 
+@app.get("/api/prediction-batches/providers")
+async def batch_prediction_providers() -> dict[str, Any]:
+    return model_catalog.provider_catalog()
+
+
 @app.get("/api/prediction-batches/prompts")
 async def batch_prediction_prompts() -> dict[str, Any]:
     try:
@@ -2259,6 +2274,7 @@ async def batch_prediction_config() -> dict[str, Any]:
             or "任务创建时固化服务器 Prompt",
         },
         "model_gateway": model_catalog.status(),
+        "providers": model_catalog.provider_catalog(),
         "prompt_policy": {
             "source": "cloud_server ra_auto_triage/vlm/prompts/versions",
             "editable": True,
@@ -2405,6 +2421,9 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
     actor, actor_source, actor_verified = _action_actor(
         request, body.get("requested_by")
     )
+    if not name:
+        actor_slug = re.sub(r"[^A-Za-z0-9._-]+", "-", actor).strip("-")[:48] or "triage"
+        name = f"{actor_slug}_i_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     job = database.create_batch_prediction_job(
         name=name,
         issue_ids=issue_ids,

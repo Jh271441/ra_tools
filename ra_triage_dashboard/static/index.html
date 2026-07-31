@@ -155,14 +155,6 @@
             </section>
 
             <section class="review-detail-view hidden" id="reviewDetailView">
-              <div class="case-detail-nav">
-                <button class="button button-quiet" id="backToGalleryButton" type="button">← 返回筛选结果</button>
-                <div class="case-detail-pager">
-                  <button class="button button-quiet" id="previousIssueButton" type="button">← 上一 Issue</button>
-                  <span id="detailQueuePosition">— / —</span>
-                  <button class="button button-quiet" id="nextIssueButton" type="button">下一 Issue →</button>
-                </div>
-              </div>
               <section class="review-detail-workspace">
                 <section class="detail-pane" id="detailPane">
                   <div class="empty-state">
@@ -504,6 +496,13 @@
                   <strong id="gatewayModelsEndpoint">正在读取…</strong>
                   <small>认证方式 · 服务端密钥</small>
                 </div>
+                <div class="gateway-provider-panel">
+                  <div class="gateway-provider-heading"><span>Provider</span><small>服务端已登记</small></div>
+                  <div id="gatewayProviderList" class="gateway-provider-list">
+                    <div class="muted">正在读取 Provider…</div>
+                  </div>
+                  <small class="gateway-provider-note">页面不接收 API Key 或任意 Base URL；自定义 Provider 需由管理员在 cloud_server 的服务端配置登记。</small>
+                </div>
                 <label>
                   <span>筛选模型</span>
                   <input id="predictionModelSearch" placeholder="输入 Qwen3 / checkpoint 关键词" autocomplete="off" />
@@ -530,9 +529,9 @@
               <form class="page-card tool-form" id="predictionBatchForm">
                 <div class="batch-source-context hidden" id="predictionSourceSummary"></div>
                 <label>
-                  <span>批次名（可选）</span>
-                  <input id="predictionBatchName" placeholder="例如 release-20260730-routing-review" maxlength="120" autocomplete="off" />
-                  <small>留空时由服务器按当前时间生成。</small>
+                  <span>批次名</span>
+                  <input id="predictionBatchName" placeholder="例如 xuhaoxuan_i_20260729_163454" maxlength="120" autocomplete="off" />
+                  <small>默认按「当前用户_i_YYYYMMDD_HHmmss」生成，仍可手动修改。</small>
                 </label>
                 <details class="batch-config-details" open>
                   <summary>
@@ -596,7 +595,7 @@
                 </details>
                 <label>
                   <span>Issue IDs</span>
-                  <textarea class="batch-issue-input" id="predictionBatchIssues" rows="10" placeholder="每行一个，也支持逗号或空格分隔，例如：&#10;cn32171803&#10;cn31954847&#10;cn32000543" required></textarea>
+                  <input class="batch-issue-input" id="predictionBatchIssues" type="text" placeholder="支持逗号或空格分隔，例如：cn32171803, cn31954847, cn32000543" required autocomplete="off" />
                   <small id="predictionBatchIssueCount">已识别 0 个 Issue</small>
                 </label>
                 <div class="page-actions">
