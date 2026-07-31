@@ -228,7 +228,12 @@ a:hover { color: var(--accent); }
   padding: 8px 10px; border: 1px solid rgba(34,211,238,.24); border-radius: 7px; color: #acdce1; background: rgba(34,211,238,.055);
   font-size: 10px; line-height: 1.5;
 }
-.batch-issue-input { height: 40px; min-height: 40px; font: 12px/1.4 "SFMono-Regular", Consolas, monospace; }
+.batch-issue-input {
+  height: 40px;
+  min-height: 40px;
+  resize: vertical;
+  font: 12px/1.4 "SFMono-Regular", Consolas, monospace;
+}
 .input-warning { color: var(--fail) !important; }
 .publish-status { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; color: var(--faint); background: rgba(255,255,255,.02); font-size: 9px; white-space: nowrap; }
 .publish-published, .publish-succeeded { border-color: rgba(52,211,153,.28); color: #9ae6c9; background: rgba(52,211,153,.06); }
