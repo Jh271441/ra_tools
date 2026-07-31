@@ -32,10 +32,13 @@ export DASHBOARD_BATCH_JOB_TIMEOUT_SECONDS="${DASHBOARD_BATCH_JOB_TIMEOUT_SECOND
 export DASHBOARD_BATCH_BAG_CACHE_DIR="${DASHBOARD_BATCH_BAG_CACHE_DIR:-$DASHBOARD_DATA_DIR/batch_bags}"
 export DASHBOARD_RA_MODEL_CATALOG_URL="${DASHBOARD_RA_MODEL_CATALOG_URL:-http://ra-model.intra.xiaojukeji.com/v1/models}"
 export DASHBOARD_RA_MODEL_CHAT_URL="${DASHBOARD_RA_MODEL_CHAT_URL:-http://ra-model.intra.xiaojukeji.com/v1/chat/completions}"
+export DASHBOARD_RA_MODEL_TOKENSERVICE_CATALOG_URL="${DASHBOARD_RA_MODEL_TOKENSERVICE_CATALOG_URL:-https://tokenservice-gateway-ys.intra.xiaojukeji.com/v1/models}"
+export DASHBOARD_RA_MODEL_TOKENSERVICE_CHAT_URL="${DASHBOARD_RA_MODEL_TOKENSERVICE_CHAT_URL:-https://tokenservice-gateway-ys.intra.xiaojukeji.com/v1/chat/completions}"
 export DASHBOARD_RA_MODEL_DEFAULT_ID="${DASHBOARD_RA_MODEL_DEFAULT_ID:-auto}"
 export DASHBOARD_RA_MODEL_CATALOG_TTL_SECONDS="${DASHBOARD_RA_MODEL_CATALOG_TTL_SECONDS:-300}"
 export DASHBOARD_RA_MODEL_PROFILE_PATH="${DASHBOARD_RA_MODEL_PROFILE_PATH:-$APP_ROOT/config/model_profiles.json}"
 export DASHBOARD_RA_MODEL_API_KEY_FILE="${DASHBOARD_RA_MODEL_API_KEY_FILE:-/volume/home/workspace/ra_triage_dashboard_data/model_gateway_api_key}"
+export DASHBOARD_RA_MODEL_TOKENSERVICE_API_KEY_FILE="${DASHBOARD_RA_MODEL_TOKENSERVICE_API_KEY_FILE:-/volume/home/workspace/ra_triage_dashboard_data/tokenservice_api_key}"
 export DASHBOARD_AUTO_TRIAGE_RECORD_BASE_URL="${DASHBOARD_AUTO_TRIAGE_RECORD_BASE_URL:-http://auto-triage.intra.xiaojukeji.com/ra/model_triage/records}"
 export DASHBOARD_AUTOTRIAGE_API_BASE_URL="${DASHBOARD_AUTOTRIAGE_API_BASE_URL:-http://10.190.57.183:8000}"
 

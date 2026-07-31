@@ -14,7 +14,7 @@
 - 原因聚类页只消费每个 Issue 最新一版 Review：稳定的 `missing_evidence[]` 是主聚类，Review 自由文本通过可解释关键词 v1 形成多标签主题，未填写和有文本但未命中主题的记录会单独计数。选择 Model Run 后，“模型判断结果”可按红色 `MISMATCH`、绿色 `MATCH`、灰色 `NONE（未预测）` 或全部切片，混淆矩阵与 Case 明细使用同一状态；这不会把数据集级 Review 伪装成绑定某个 Run，也不会反向修改人工结论或 GT。筛选、聚类和分页都写入 `/review-analysis` URL，可硬刷新并用浏览器前进/后退恢复。
 - 首页可把当前单个 Issue 或不超过 50 条的完整筛选结果预填到 Batch 页面；若前端只加载到部分结果或超过上限，会明确阻止而不是静默截断。模型目录保留 Profile 已验证项和网关当前在线的 Qwen3 生成模型，排除 Embedding；实验模型有明确标记且创建任务前需再次确认。默认 `Auto` 仍解析并分别记录 requested / resolved model ID。
 - 每个 Batch 固化请求人、模型验证层级、完整 Prompt 正文与 SHA-256、Prompt 基线版本/是否编辑、Camera 帧偏移、RA Events / RA-SWAG Options 和输入 Profile；任务历史可按人员、状态、模型、Prompt 精确版本（mode + SHA）和输入筛选，已下线模型与旧 Prompt 也保留在筛选项中。批次名默认按 `当前用户_i_YYYYMMDD_HHmmss` 生成，Issue IDs 使用紧凑单行输入但仍支持逗号/空格分隔。Prompt 只允许当前三分类构建器提供的变量，必须保留三个标准标签，并拒绝会输出「无法判断」等第四类的旧模板；Camera 偏移严格递增、包含 0、最多 18 帧。worker 会重新校验 Prompt/Input 快照并重建配置 Hash，预测与后续发布必须一致。
-- 网关 API key 只从服务用户持有的 `0600` 普通文件读取，经一次性 stdin 交给预测 worker，读取后立即从请求对象移除；不接受浏览器或父进程环境变量中的 key，也不会把 key 交给 AutoTriage publish worker。Batch 页会读取 `ra_auto_triage/config.yml` 的 Provider 名称与脱敏 endpoint 做只读展示；当前真正可执行的仍是服务端 Kylin Camera-only，TokenService 等其它 Provider 标为“仅配置可见”，自定义 Provider 必须先在 cloud_server 服务端登记。Ares / BEV 和轨迹摘要在 Batch 输入中强制关闭。
+- 网关 API key 只从服务用户持有的 `0600` 普通文件读取，经一次性 stdin 交给预测 worker，读取后立即从请求对象移除；不接受浏览器或父进程环境变量中的 key，也不会把 key 交给 AutoTriage publish worker。Batch 页只展示服务端登记的 Provider 列表，Kylin 与 TokenService 都可在已登记对应 key 文件时选择；模型目录、Provider、请求地址和凭证会随 Batch 固化但不会把 key 写入浏览器或 SQLite。TokenService 的在线 Qwen3 模型默认按实验模型处理，创建前需要确认；自定义 Provider 必须先在 cloud_server 服务端登记。Ares / BEV 和轨迹摘要在 Batch 输入中强制关闭。
 - Batch 采用两阶段写入：预测阶段只在 dashboard 自己的 `batch_bags/` 缓存中下载/复用 Camera 与 gateway bag，绝不修改 `ra_auto_triage/bags`；同时强制禁用 Ares、禁止 Trail 写和 AutoTriage 写。可信 SSO 用户显式点击「推送 AutoTriage」后，才用 cloud_server 固定服务身份创建生产 Batch、推送成功结果并关联 `records/{batch_id}?tab=results`。重复点击已有 Batch 的任务只返回原链接，不再次建批。
 
 ## 对象生命周期与人员归属
@@ -57,6 +57,7 @@ Runs 的「人员」统一显示/筛选创建人；旧 Run 没有创建人时回
 - Issue 缩略图缓存：`/volume/home/workspace/ra_triage_dashboard_data/case_thumbnails`（可重建）
 - Batch bag 缓存：`/volume/home/workspace/ra_triage_dashboard_data/batch_bags`（可重建、与 RA 仓库隔离）
 - 模型网关密钥：`/volume/home/workspace/ra_triage_dashboard_data/model_gateway_api_key`（服务用户持有的 `0600` 普通文件，不进入代码备份）
+- TokenService 网关密钥：`/volume/home/workspace/ra_triage_dashboard_data/tokenservice_api_key`（同样由服务用户持有、`0600`，不进入代码备份；未配置时 Provider 只读展示）
 - RA 模型 Profile：`config/model_profiles.json`（版本化兼容白名单，不含凭证）
 - Ares 输入资产：`/volume/home/workspace/ra_auto_triage/bags/ares_capture_bev`（只读）
 - Camera 输入资产：`/volume/home/workspace/ra_auto_triage/bags/camera`（只读）

@@ -49,7 +49,13 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _gateway_url(value: str, *, expected_path: str) -> str:
+_PROVIDER_HOSTS = {
+    "kylin": "ra-model.intra.xiaojukeji.com",
+    "tokenservice": "tokenservice-gateway-ys.intra.xiaojukeji.com",
+}
+
+
+def _gateway_url(value: str, *, expected_path: str, provider_id: str = "kylin") -> str:
     parsed = urlsplit(str(value or "").strip())
     host = (parsed.hostname or "").lower()
     if (
@@ -62,21 +68,65 @@ def _gateway_url(value: str, *, expected_path: str) -> str:
         or parsed.path.rstrip("/") != expected_path.rstrip("/")
     ):
         raise ModelCatalogError(503, "服务器模型网关地址配置非法。")
-    allowed = host == "ra-model.intra.xiaojukeji.com" or host in {
+    allowed_hosts = {
+        _PROVIDER_HOSTS.get(str(provider_id or "").strip(), ""),
+        # Localhost is useful for isolated smoke tests, but remains opt-in via
+        # the server environment and never comes from the browser.
         "localhost",
         "127.0.0.1",
     }
+    allowed = host in allowed_hosts
     if not allowed:
         raise ModelCatalogError(503, "服务器模型网关必须位于可信内网。")
     return parsed.geturl()
 
 
-def model_gateway_chat_url(settings: Settings) -> str:
-    return _gateway_url(settings.ra_model_chat_url, expected_path="/v1/chat/completions")
+def _provider_config(settings: Settings, provider_id: str) -> dict[str, Any]:
+    provider = str(provider_id or "kylin").strip().lower() or "kylin"
+    if provider == "kylin":
+        return {
+            "id": provider,
+            "catalog_url": getattr(
+                settings, "ra_model_catalog_url", "http://ra-model.intra.xiaojukeji.com/v1/models"
+            ),
+            "chat_url": getattr(
+                settings,
+                "ra_model_chat_url",
+                "http://ra-model.intra.xiaojukeji.com/v1/chat/completions",
+            ),
+            "key_file": getattr(settings, "ra_model_api_key_file", None),
+        }
+    if provider == "tokenservice":
+        return {
+            "id": provider,
+            "catalog_url": getattr(
+                settings,
+                "ra_model_tokenservice_catalog_url",
+                "https://tokenservice-gateway-ys.intra.xiaojukeji.com/v1/models",
+            ),
+            "chat_url": getattr(
+                settings,
+                "ra_model_tokenservice_chat_url",
+                "https://tokenservice-gateway-ys.intra.xiaojukeji.com/v1/chat/completions",
+            ),
+            "key_file": getattr(settings, "ra_model_tokenservice_api_key_file", None),
+        }
+    raise ModelCatalogError(400, "不支持的模型 Provider。")
 
 
-def _open_model_gateway_api_key(settings: Settings) -> int:
-    path = settings.ra_model_api_key_file
+def model_gateway_chat_url(settings: Settings, provider_id: str = "kylin") -> str:
+    config = _provider_config(settings, provider_id)
+    return _gateway_url(
+        config["chat_url"],
+        expected_path="/v1/chat/completions",
+        provider_id=config["id"],
+    )
+
+
+def _open_provider_api_key(settings: Settings, provider_id: str = "kylin") -> int:
+    path = _provider_config(settings, provider_id).get("key_file")
+    if not path:
+        raise ModelCatalogError(503, "服务器尚未配置模型网关密钥。")
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(path, flags)
@@ -101,8 +151,8 @@ def _open_model_gateway_api_key(settings: Settings) -> int:
         raise
 
 
-def read_model_gateway_api_key(settings: Settings) -> str:
-    descriptor = _open_model_gateway_api_key(settings)
+def read_provider_api_key(settings: Settings, provider_id: str = "kylin") -> str:
+    descriptor = _open_provider_api_key(settings, provider_id)
     try:
         raw = os.read(descriptor, MAX_SECRET_BYTES + 1)
     finally:
@@ -120,19 +170,29 @@ def read_model_gateway_api_key(settings: Settings) -> str:
     return value
 
 
+def _open_model_gateway_api_key(settings: Settings) -> int:
+    """Backward-compatible Kylin key helper for existing callers/tests."""
+    return _open_provider_api_key(settings, "kylin")
+
+
+def read_model_gateway_api_key(settings: Settings) -> str:
+    """Backward-compatible Kylin key helper for existing callers/tests."""
+    return read_provider_api_key(settings, "kylin")
+
+
 class ModelCatalog:
     """Server-owned Qwen3 discovery with validated and experimental tiers."""
 
     def __init__(self, settings: Settings):
         self.settings = settings
         self._lock = threading.Lock()
-        self._snapshot: dict[str, Any] | None = None
-        self._expires_at = 0.0
-        self._next_manual_refresh_at = 0.0
+        self._snapshots: dict[str, dict[str, Any]] = {}
+        self._expires_at: dict[str, float] = {}
+        self._next_manual_refresh_at: dict[str, float] = {}
 
     def status(self) -> dict[str, Any]:
         try:
-            descriptor = _open_model_gateway_api_key(self.settings)
+            descriptor = _open_provider_api_key(self.settings, "kylin")
         except ModelCatalogError:
             configured = False
         else:
@@ -148,10 +208,9 @@ class ModelCatalog:
     def provider_catalog(self) -> dict[str, Any]:
         """Return safe metadata for server-owned providers.
 
-        The RA checkout contains more provider profiles than the dashboard's
-        Camera-only Batch worker currently supports.  Expose their names and
-        sanitized endpoints for operator visibility, but never return a key
-        and never mark an unsupported provider as selectable from the browser.
+        Provider names/endpoints are server-owned.  The browser receives only
+        sanitized metadata; credentials are read from per-provider 0600 files
+        when a Batch worker is launched.
         """
         providers: dict[str, dict[str, Any]] = {}
 
@@ -209,6 +268,27 @@ class ModelCatalog:
             note="当前 Camera-only Batch 执行 Provider；Ares / BEV 固定关闭。",
         )
 
+        tokenservice_configured = False
+        try:
+            descriptor = _open_provider_api_key(self.settings, "tokenservice")
+        except (AttributeError, ModelCatalogError, OSError):
+            pass
+        else:
+            os.close(descriptor)
+            tokenservice_configured = True
+        add_provider(
+            "tokenservice",
+            base_url=getattr(
+                self.settings,
+                "ra_model_tokenservice_chat_url",
+                "https://tokenservice-gateway-ys.intra.xiaojukeji.com/v1/chat/completions",
+            ),
+            configured=tokenservice_configured,
+            source="dashboard server tokenservice key file",
+            supports_batch=True,
+            note="Camera-only Batch Provider；模型目录按 TokenService 网关读取，Ares / BEV 固定关闭。",
+        )
+
         # Read only provider names/endpoints from the checked-out RA config.
         # This deliberately avoids a YAML dependency and never serializes the
         # api_key value.  The file is an operator-owned server source of truth.
@@ -230,20 +310,28 @@ class ModelCatalog:
                     add_provider(
                         current,
                         base_url=current_base,
-                        configured=current_key or (
+                        # A config.yml api_key only proves that the source
+                        # checkout mentions a Provider.  Actual execution is
+                        # enabled only when its dashboard-owned 0600 key file
+                        # was provisioned above.
+                        configured=(
                             bool(providers.get(current, {}).get("credential_configured"))
-                            if current == "kylin"
+                            if current in {"kylin", "tokenservice"}
                             else False
                         ),
                         source=(
-                            "dashboard server key file"
-                            if current == "kylin"
+                            (
+                                "dashboard server key file"
+                                if current == "kylin"
+                                else "dashboard server tokenservice key file"
+                            )
+                            if current in {"kylin", "tokenservice"}
                             else "ra_auto_triage/config.yml"
                         ),
-                        supports_batch=current == "kylin",
+                        supports_batch=current in {"kylin", "tokenservice"},
                         note=(
-                            "源仓库已配置；当前 Dashboard Batch worker 尚未启用此 Provider。"
-                            if current != "kylin"
+                            "源仓库已配置；请先在 dashboard data 中登记 0600 Provider key。"
+                            if current not in {"kylin", "tokenservice"}
                             else providers.get(current, {}).get("note", "")
                         ),
                     )
@@ -294,38 +382,47 @@ class ModelCatalog:
         *,
         refresh: bool = False,
         allow_stale: bool = True,
+        provider_id: str = "kylin",
     ) -> dict[str, Any]:
+        provider = str(provider_id or "kylin").strip().lower() or "kylin"
+        _provider_config(self.settings, provider)
         now = time.monotonic()
         with self._lock:
+            snapshot = self._snapshots.get(provider)
             if refresh:
-                if now < self._next_manual_refresh_at:
+                if now < self._next_manual_refresh_at.get(provider, 0.0):
                     raise ModelCatalogError(429, "模型目录刚刚刷新过，请稍后再试。")
-                self._next_manual_refresh_at = now + MIN_MANUAL_REFRESH_SECONDS
-            if not refresh and self._snapshot is not None and now < self._expires_at:
-                return deepcopy(self._snapshot)
+                self._next_manual_refresh_at[provider] = now + MIN_MANUAL_REFRESH_SECONDS
+            if not refresh and snapshot is not None and now < self._expires_at.get(provider, 0.0):
+                return deepcopy(snapshot)
             try:
-                snapshot = self._fetch()
+                snapshot = self._fetch(provider)
             except ModelCatalogError as exc:
-                self._expires_at = 0.0
+                self._expires_at[provider] = 0.0
                 if not exc.stale_eligible:
-                    self._snapshot = None
+                    self._snapshots.pop(provider, None)
                 if (
                     allow_stale
                     and exc.stale_eligible
-                    and self._snapshot is not None
+                    and snapshot is not None
                 ):
-                    stale = deepcopy(self._snapshot)
+                    stale = deepcopy(snapshot)
                     stale["status"] = "stale"
                     stale["stale"] = True
                     stale["message"] = "模型目录刷新失败，当前仅展示上次成功缓存。"
                     return stale
                 raise
-            self._snapshot = snapshot
-            self._expires_at = now + self.settings.ra_model_catalog_ttl_seconds
+            self._snapshots[provider] = snapshot
+            self._expires_at[provider] = now + self.settings.ra_model_catalog_ttl_seconds
             return deepcopy(snapshot)
 
-    def resolve(self, requested_model_id: str) -> dict[str, Any]:
-        snapshot = self.list_models(refresh=False, allow_stale=False)
+    def resolve(self, requested_model_id: str, provider_id: str = "kylin") -> dict[str, Any]:
+        provider = str(provider_id or "kylin").strip().lower() or "kylin"
+        snapshot = self.list_models(
+            refresh=False,
+            allow_stale=False,
+            provider_id=provider,
+        )
         requested = str(
             requested_model_id or snapshot["default_model_id"]
         ).strip()
@@ -344,10 +441,83 @@ class ModelCatalog:
             "requested_model_id": requested,
             "resolved_model_id": selected["resolved_model_id"],
             "provider": selected["provider"],
+            "provider_id": provider,
             "validation_status": selected["validation_status"],
             "catalog_sha256": snapshot["catalog_sha256"],
             "profile_version": snapshot["profile_version"],
             "display_name": selected["display_name"],
+        }
+
+    def _fetch_tokenservice_snapshot(
+        self,
+        online: dict[str, dict[str, str]],
+    ) -> dict[str, Any]:
+        """Build TokenService's catalog from its server-owned online list."""
+        available: list[dict[str, str]] = []
+        for model_id in sorted(online):
+            lowered = model_id.lower()
+            if (
+                "qwen3" not in lowered
+                or "embedding" in lowered
+                or not MODEL_ID_RE.fullmatch(model_id)
+            ):
+                continue
+            available.append(
+                {
+                    "id": model_id,
+                    "display_name": model_id,
+                    "resolved_model_id": model_id,
+                    "provider": "tokenservice",
+                    "input_contract": "camera_only_ra_triage",
+                    "prompt_mode": "server_default",
+                    "validation_status": "experimental",
+                }
+            )
+        if not available:
+            raise ModelCatalogError(
+                503,
+                "TokenService 当前没有可用的 Qwen3 视觉模型。",
+                stale_eligible=True,
+            )
+        preferred = {"aliyun/qwen3-vl-plus", "aliyun/qwen3-vl-flash"}
+        default_model_id = next(
+            (item["id"] for item in available if item["id"].lower() in preferred),
+            available[0]["id"],
+        )
+        fingerprint = {
+            "provider": "tokenservice",
+            "online_ids": sorted(online),
+            "models": available,
+            "default_model_id": default_model_id,
+        }
+        catalog_sha256 = hashlib.sha256(
+            json.dumps(
+                fingerprint,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        return {
+            "status": "ready",
+            "stale": False,
+            "message": (
+                "TokenService 模型目录已刷新；"
+                f"在线 Qwen3 实验模型 {len(available)} 个，需创建 Batch 前确认。"
+            ),
+            "catalog_label": "tokenservice-gateway-ys.intra.xiaojukeji.com/v1/models",
+            "provider_id": "tokenservice",
+            "default_model_id": default_model_id,
+            "models": available,
+            "online_count": len(online),
+            "available_count": len(available),
+            "compatible_count": len(available),
+            "validated_count": 0,
+            "experimental_count": len(available),
+            "excluded_count": max(0, len(online) - len(available)),
+            "refreshed_at": _utc_now(),
+            "catalog_sha256": catalog_sha256,
+            "profile_version": "tokenservice-online-qwen3",
         }
 
     def _load_profiles(self) -> dict[str, Any]:
@@ -362,17 +532,29 @@ class ModelCatalog:
             raise ModelCatalogError(503, "服务器 RA 模型 Profile 格式非法。")
         return payload
 
-    def _fetch(self) -> dict[str, Any]:
+    def _fetch(self, provider_id: str = "kylin") -> dict[str, Any]:
+        provider = str(provider_id or "kylin").strip().lower() or "kylin"
+        provider_config = _provider_config(self.settings, provider)
         catalog_url = _gateway_url(
-            self.settings.ra_model_catalog_url,
+            provider_config["catalog_url"],
             expected_path="/v1/models",
+            provider_id=provider,
         )
-        api_key = read_model_gateway_api_key(self.settings)
+        api_key = (
+            read_model_gateway_api_key(self.settings)
+            if provider == "kylin"
+            else read_provider_api_key(self.settings, provider)
+        )
         opener = build_opener(ProxyHandler({}), _NoRedirect())
+        auth_headers = (
+            {"Authorization": f"Bearer {api_key}"}
+            if provider == "tokenservice"
+            else {"apikey": api_key}
+        )
         request = Request(
             catalog_url,
             method="GET",
-            headers={"Accept": "application/json", "apikey": api_key},
+            headers={"Accept": "application/json", **auth_headers},
         )
         try:
             with opener.open(request, timeout=10) as response:
@@ -430,6 +612,9 @@ class ModelCatalog:
                 "id": model_id,
                 "owned_by": str(row.get("owned_by") or "")[:120],
             }
+
+        if provider == "tokenservice":
+            return self._fetch_tokenservice_snapshot(online)
 
         profile = self._load_profiles()
         schema_version = profile.get("schema_version")

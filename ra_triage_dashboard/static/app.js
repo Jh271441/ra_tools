@@ -38,6 +38,7 @@ const state = {
   batchDefaultModel: null,
   gatewayModels: [],
   gatewayModelStatus: null,
+  gatewayModelRequestSeq: 0,
   selectedGatewayModelId: "",
   selectedGatewayProviderId: "",
   batchPrompts: [],
@@ -2476,7 +2477,10 @@ function renderGatewayProviders() {
     target.innerHTML = '<div class="muted">未发现服务端 Provider 配置。</div>';
     return;
   }
-  const selectedId = state.selectedGatewayProviderId || catalog.active_provider_id || providers.find((item) => item.enabled)?.id || providers[0].id;
+  const configuredSelected = state.selectedGatewayProviderId || catalog.active_provider_id;
+  const selectedId = providers.some((item) => item.id === configuredSelected && item.enabled)
+    ? configuredSelected
+    : providers.find((item) => item.enabled)?.id || providers[0].id;
   state.selectedGatewayProviderId = selectedId;
   target.innerHTML = providers
     .map((provider) => {
@@ -2495,11 +2499,15 @@ function renderGatewayProviders() {
     })
     .join("");
   target.querySelectorAll("[data-gateway-provider]").forEach((button) => {
-    button.addEventListener("click", () => {
-      if (button.disabled) return;
-      state.selectedGatewayProviderId = button.dataset.gatewayProvider || selectedId;
-      renderGatewayProviders();
-    });
+      button.addEventListener("click", () => {
+        if (button.disabled) return;
+        state.selectedGatewayProviderId = button.dataset.gatewayProvider || selectedId;
+        renderGatewayProviders();
+        state.selectedGatewayModelId = "";
+        loadGatewayModels({ providerId: state.selectedGatewayProviderId }).catch((error) => {
+          showToast(error.message, true);
+        });
+      });
   });
 }
 
@@ -2615,20 +2623,24 @@ function renderGatewayModels() {
   renderBatchRuntimeSummary();
 }
 
-async function loadGatewayModels({ refresh = false } = {}) {
+async function loadGatewayModels({ refresh = false, providerId = "" } = {}) {
+  const requestSeq = ++state.gatewayModelRequestSeq;
   const statusTarget = $("#gatewayModelStatus");
   if (statusTarget) {
     statusTarget.className = "gateway-model-status";
     statusTarget.textContent = refresh ? "正在刷新模型目录…" : "正在自动获取模型目录…";
   }
   try {
-    const data = await api(
-      `/api/prediction-batches/models${refresh ? "?refresh=true" : ""}`
-    );
+    const selectedProviderId = providerId || state.selectedGatewayProviderId || "kylin";
+    const params = new URLSearchParams({ provider_id: selectedProviderId });
+    if (refresh) params.set("refresh", "true");
+    const data = await api(`/api/prediction-batches/models?${params.toString()}`);
+    if (requestSeq !== state.gatewayModelRequestSeq) return;
     state.gatewayModelStatus = data;
     state.gatewayModels = data.models || [];
     renderGatewayModels();
   } catch (error) {
+    if (requestSeq !== state.gatewayModelRequestSeq) return;
     state.gatewayModelStatus = {
       status: "failed",
       stale: false,
@@ -2636,6 +2648,7 @@ async function loadGatewayModels({ refresh = false } = {}) {
       catalog_label:
         state.config?.prediction_batch?.model_gateway?.catalog_label ||
         "ra-model · /v1/models",
+      provider_id: providerId || state.selectedGatewayProviderId || "kylin",
     };
     state.gatewayModels = [];
     renderGatewayModels();
@@ -2930,7 +2943,7 @@ function renderBatchRuntimeSummary() {
       ? configured.prompt_version || configured.prompt || state.config?.prediction_batch?.prompt_version
       : "");
   const source = selectedGatewayModel
-    ? `网关解析 · ${selectedGatewayModel.resolved_model_id}`
+    ? `${state.selectedGatewayProviderId || selectedGatewayModel.provider || "kylin"} · ${selectedGatewayModel.resolved_model_id}`
     : typeof configured === "object"
       ? configured.experiment_source || configured.runtime || configured.source
       : "";
@@ -3071,7 +3084,7 @@ function renderPredictionBatchDetail(batch) {
       <span>${escapeHtml(batchStatusLabel(batch.status))} · ${counts.completed}/${counts.total} 完成 · 成功 ${counts.success} · 失败 ${counts.failed}</span>
     </div>
     <div class="batch-detail-meta">
-      <span>模型 ${escapeHtml(batch.resolved_model_id || batch.model_name || "—")}${batch.model_validation_status === "experimental" ? " · 实验" : ""}</span>
+      <span>${escapeHtml(batch.provider_id || "kylin")} · 模型 ${escapeHtml(batch.resolved_model_id || batch.model_name || "—")}${batch.model_validation_status === "experimental" ? " · 实验" : ""}</span>
       <span>Prompt ${escapeHtml(batch.prompt_version || "—")}${batch.prompt_mode === "custom" ? " · custom" : ""}</span>
       ${batchInputSummary(batch).map((value) => `<span>${escapeHtml(value)}</span>`).join("")}
       ${batch.model_run_id ? `<span>Model Run ${escapeHtml(batch.model_run_id)}</span>` : ""}
@@ -3146,6 +3159,7 @@ function renderPredictionBatches(total = state.predictionBatches.length) {
             <span class="publish-status publish-${escapeHtml(publishStatus)}">${escapeHtml(batchPublishLabel(publishStatus))}</span>
           </div>
           <div class="run-row-meta">
+            <span>Provider ${escapeHtml(batch.provider_id || "kylin")}</span>
             <span>${escapeHtml(
               batch.requested_model_id && batch.requested_model_id !== batch.model_name
                 ? `${batch.requested_model_id} → ${batch.model_name || batch.resolved_model_id}`
@@ -3359,6 +3373,7 @@ async function submitPredictionBatch(event) {
       method: "POST",
       body: JSON.stringify({
         issue_ids: issueIds,
+        provider_id: state.selectedGatewayProviderId || "kylin",
         model_id: modelId,
         allow_experimental_model: experimental,
         prompt_id: promptId,

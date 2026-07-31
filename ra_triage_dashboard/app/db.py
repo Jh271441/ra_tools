@@ -177,6 +177,7 @@ class Database:
                     completed_count INTEGER NOT NULL DEFAULT 0 CHECK(completed_count >= 0),
                     success_count INTEGER NOT NULL DEFAULT 0 CHECK(success_count >= 0),
                     failed_count INTEGER NOT NULL DEFAULT 0 CHECK(failed_count >= 0),
+                    provider_id TEXT NOT NULL DEFAULT 'kylin',
                     requested_model_id TEXT NOT NULL DEFAULT '',
                     resolved_model_id TEXT NOT NULL DEFAULT '',
                     model_source TEXT NOT NULL DEFAULT '',
@@ -252,6 +253,12 @@ class Database:
             )
             self._ensure_column(
                 conn, "inference_jobs", "requested_by_verified", "INTEGER NOT NULL DEFAULT 0"
+            )
+            self._ensure_column(
+                conn,
+                "batch_prediction_jobs",
+                "provider_id",
+                "TEXT NOT NULL DEFAULT 'kylin'",
             )
             self._ensure_column(
                 conn,
@@ -1487,6 +1494,7 @@ class Database:
         requested_by: str,
         requested_by_source: str = "legacy",
         requested_by_verified: bool = False,
+        provider_id: str = "kylin",
         requested_model_id: str,
         resolved_model_id: str,
         model_source: str,
@@ -1537,13 +1545,13 @@ class Database:
                 """
                 INSERT INTO batch_prediction_jobs (
                     id, name, status, requested_by, requested_by_source,
-                    requested_by_verified, total_count, requested_model_id,
+                    requested_by_verified, total_count, provider_id, requested_model_id,
                     resolved_model_id, model_source, catalog_sha256,
                     model_validation_status, model_name, prompt_version,
                     prompt_template, prompt_template_sha256, prompt_mode,
                     input_profile, input_config_json, created_at
                 ) VALUES (
-                    ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -1553,6 +1561,7 @@ class Database:
                     requested_by_source.strip() or "legacy",
                     int(requested_by_verified),
                     len(normalized_issue_ids),
+                    str(provider_id or "kylin").strip().lower() or "kylin",
                     requested_model_id.strip(),
                     resolved_model_id.strip(),
                     model_source.strip() or "ra_model_gateway",
@@ -2142,6 +2151,9 @@ class Database:
             "completed_count": int(row["completed_count"] or 0),
             "success_count": int(row["success_count"] or 0),
             "failed_count": int(row["failed_count"] or 0),
+            "provider_id": row["provider_id"]
+            if "provider_id" in row.keys()
+            else "kylin",
             "requested_model_id": row["requested_model_id"]
             if "requested_model_id" in row.keys()
             else "",

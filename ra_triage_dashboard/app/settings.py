@@ -50,10 +50,13 @@ class Settings:
     batch_bag_cache_dir: Path
     ra_model_catalog_url: str
     ra_model_chat_url: str
+    ra_model_tokenservice_catalog_url: str
+    ra_model_tokenservice_chat_url: str
     ra_model_default_id: str
     ra_model_catalog_ttl_seconds: int
     ra_model_profile_path: Path
     ra_model_api_key_file: Path
+    ra_model_tokenservice_api_key_file: Path
     auto_triage_record_base_url: str
     autotriage_api_base_url: str
     allowed_model_hosts: tuple[str, ...]
@@ -148,6 +151,16 @@ class Settings:
                 "http://ra-model.intra.xiaojukeji.com/v1/chat/completions",
             ).strip()
             or "http://ra-model.intra.xiaojukeji.com/v1/chat/completions",
+            ra_model_tokenservice_catalog_url=os.getenv(
+                "DASHBOARD_RA_MODEL_TOKENSERVICE_CATALOG_URL",
+                "https://tokenservice-gateway-ys.intra.xiaojukeji.com/v1/models",
+            ).strip()
+            or "https://tokenservice-gateway-ys.intra.xiaojukeji.com/v1/models",
+            ra_model_tokenservice_chat_url=os.getenv(
+                "DASHBOARD_RA_MODEL_TOKENSERVICE_CHAT_URL",
+                "https://tokenservice-gateway-ys.intra.xiaojukeji.com/v1/chat/completions",
+            ).strip()
+            or "https://tokenservice-gateway-ys.intra.xiaojukeji.com/v1/chat/completions",
             ra_model_default_id=os.getenv(
                 "DASHBOARD_RA_MODEL_DEFAULT_ID", "auto"
             ).strip()
@@ -162,6 +175,10 @@ class Settings:
             ra_model_api_key_file=_path(
                 "DASHBOARD_RA_MODEL_API_KEY_FILE",
                 data_dir / "model_gateway_api_key",
+            ),
+            ra_model_tokenservice_api_key_file=_path(
+                "DASHBOARD_RA_MODEL_TOKENSERVICE_API_KEY_FILE",
+                data_dir / "tokenservice_api_key",
             ),
             auto_triage_record_base_url=os.getenv(
                 "DASHBOARD_AUTO_TRIAGE_RECORD_BASE_URL",

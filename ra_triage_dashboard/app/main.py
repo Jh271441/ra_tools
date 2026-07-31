@@ -2241,12 +2241,16 @@ async def import_autotriage_results(
 
 
 @app.get("/api/prediction-batches/models")
-async def batch_prediction_models(refresh: bool = False) -> dict[str, Any]:
+async def batch_prediction_models(
+    refresh: bool = False,
+    provider_id: str = "kylin",
+) -> dict[str, Any]:
     try:
         return await asyncio.to_thread(
             model_catalog.list_models,
             refresh=refresh,
             allow_stale=True,
+            provider_id=provider_id,
         )
     except ModelCatalogError as exc:
         raise _detail(exc.status_code, exc.public_message)
@@ -2354,6 +2358,7 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
         "name",
         "issue_ids",
         "requested_by",
+        "provider_id",
         "model_id",
         "prompt_id",
         "prompt_template",
@@ -2385,6 +2390,18 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
             400,
             f"单批最多 {settings.batch_max_issues} 个 Issue；当前 {len(issue_ids)} 个。",
         )
+    provider_id = _as_text(body.get("provider_id") or "kylin").lower()
+    provider_catalog = model_catalog.provider_catalog()
+    provider = next(
+        (
+            item
+            for item in provider_catalog.get("providers", [])
+            if str(item.get("id") or "") == provider_id
+        ),
+        None,
+    )
+    if not provider or not provider.get("enabled"):
+        raise _detail(400, "所选 Provider 未在 cloud_server 登记可用的服务端凭证。")
     missing = [
         issue_id
         for issue_id in issue_ids
@@ -2404,6 +2421,7 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
         model_selection = await asyncio.to_thread(
             model_catalog.resolve,
             _as_text(body.get("model_id")),
+            provider_id,
         )
     except ModelCatalogError as exc:
         raise _detail(exc.status_code, exc.public_message)
@@ -2440,6 +2458,7 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
         requested_by=actor,
         requested_by_source=actor_source,
         requested_by_verified=actor_verified,
+        provider_id=provider_id,
         requested_model_id=model_selection["requested_model_id"],
         resolved_model_id=model_selection["resolved_model_id"],
         model_source="ra_model_gateway",
@@ -2478,6 +2497,7 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
         "safety": {
             "server_default_model": False,
             "server_model_gateway": True,
+            "provider_id": provider_id,
             "requested_model_id": model_selection["requested_model_id"],
             "resolved_model_id": model_selection["resolved_model_id"],
             "model_validation_status": validation_status,
