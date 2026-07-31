@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from ra_triage_dashboard.app.batch_prediction_worker import (
+    apply_gateway_model,
     apply_prediction_configuration,
 )
 from ra_triage_dashboard.app.prompt_catalog import (
@@ -147,3 +148,19 @@ class PromptInputContractTest(unittest.TestCase):
                     "input_config": unsafe_input,
                 },
             )
+
+    def test_tokenservice_gateway_keeps_bearer_key_mode(self) -> None:
+        experiment = SimpleNamespace()
+        request = {
+            "model_id": "aliyun/Qwen3-VL-Plus",
+            "_model_gateway": {
+                "provider": "tokenservice",
+                "chat_url": "https://tokenservice-gateway-ys.intra.xiaojukeji.com/v1/chat/completions",
+                "api_key": "tokenservice-secret",
+            },
+        }
+        source = apply_gateway_model(experiment, request)
+        self.assertEqual(source, "dashboard_ra_model_gateway")
+        self.assertEqual(experiment.provider, "tokenservice")
+        self.assertEqual(experiment.api_key, "tokenservice-secret")
+        self.assertEqual(request, {"model_id": "aliyun/Qwen3-VL-Plus"})
