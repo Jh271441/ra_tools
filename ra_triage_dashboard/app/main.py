@@ -957,6 +957,16 @@ def _normalise_review_tags(values: list[Any]) -> list[str]:
         raw = str(value).strip()
         if not raw:
             continue
+        if raw.startswith("custom:"):
+            custom_value = raw[len("custom:") :].strip()
+            if (
+                not custom_value
+                or len(custom_value) > 48
+                or re.search(r"[\x00-\x1f\x7f]", custom_value)
+            ):
+                raise _detail(400, "自定义 tag 长度或字符不合法。")
+            legacy.add(f"custom:{custom_value}")
+            continue
         if len(raw) > 48 or re.search(r"[\x00-\x1f\x7f]", raw):
             raise _detail(400, "tag 长度或字符不合法。")
         key = REVIEW_TAG_ALIASES.get(raw, raw)
