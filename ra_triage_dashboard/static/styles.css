@@ -721,6 +721,8 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .file-drop { padding: 13px; border: 1px dashed #3c4b60; border-radius: 8px; background: #0e131c; }
 .file-drop input { border: 0; background: transparent; }
 .file-drop small, label small { color: var(--faint); line-height: 1.45; }
+#runImportPanel .file-drop { gap: 4px; padding: 8px 11px; }
+#runImportPanel .file-drop input { padding-block: 6px; }
 code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 7px; }
 .dialog-result, .job-result { padding: 9px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: #0d121b; white-space: pre-wrap; word-break: break-word; font-size: 11px; line-height: 1.5; }

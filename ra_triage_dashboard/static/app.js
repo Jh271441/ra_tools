@@ -3915,7 +3915,10 @@ function bindEvents() {
   });
   $("#sidebarToggle").addEventListener("click", toggleSidebar);
   document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => closeDialog(button.dataset.close)));
-  $("#importFile").addEventListener("change", () => { $("#importFileName").textContent = $("#importFile").files[0]?.name || "未选择文件"; });
+  $("#importFile").addEventListener("change", () => {
+    const filename = $("#importFileName");
+    if (filename) filename.textContent = $("#importFile").files[0]?.name || "未选择文件";
+  });
   $("#openImportExamplesButton").addEventListener("click", openImportExamples);
   document.querySelectorAll("[data-import-example-format]").forEach((tab) => {
     tab.addEventListener("click", () => renderImportExample(tab.dataset.importExampleFormat));
