@@ -20,7 +20,7 @@
 
 * { box-sizing: border-box; }
 html, body { max-width: 100%; overflow-x: hidden; }
-html { scrollbar-gutter: stable; }
+html { overflow-y: scroll; scrollbar-gutter: stable; }
 body { margin: 0; color: var(--text); background: var(--bg); font-size: 14px; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
