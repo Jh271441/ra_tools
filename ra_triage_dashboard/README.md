@@ -10,7 +10,7 @@
 - Trail 操作分成「检查字段」和「创建 Run」两步，收在 Runs 页的默认折叠区；两步都不写回 Trail，快照只创建或复用本地不可变 Run，且不会修改团队默认 Run。启动时若启用 Trail 检查，也只执行第一步。
 - 可导入 issue / GT 与批量模型输出（JSON、CSV、XLSX）；也可按 AutoTriage Batch ID / records 链接经固定只读内网接口拉取结果。两者都按规范化内容 SHA-256 创建或复用不可变 Model Run，不覆盖 GT、不切换团队默认 Run；AutoTriage 拉取会显式比较声明数、完成数、结果数和唯一 Issue 数，并标记部分覆盖。
 - 人工标注为追加式历史，最新一条为当前标注，不覆盖旧 review；「模型为什么判错」是主输入，「模型缺失信息」收进紧凑的结构化多选下拉，并自动汇总为 routing、绕行空间、灯态、双闪、时序等错误聚类。每个 review 版本可粘贴或选择最多 4 张补充截图；场景 Tags 为可选的规范化多选项。
-- 原因聚类页只消费每个 Issue 最新一版 Review：稳定的 `missing_evidence[]` 是主聚类，Review 自由文本通过可解释关键词 v1 形成多标签主题，未填写和有文本但未命中主题的记录会单独计数。选择 Model Run 只叠加 GT→模型输出混淆统计或收窄到该 Run 的判断失败切片，不会把数据集级 Review 伪装成绑定某个 Run，也不会反向修改人工结论或 GT。筛选、聚类和分页都写入 `/review-analysis` URL，可硬刷新并用浏览器前进/后退恢复。
+- 原因聚类页只消费每个 Issue 最新一版 Review：稳定的 `missing_evidence[]` 是主聚类，Review 自由文本通过可解释关键词 v1 形成多标签主题，未填写和有文本但未命中主题的记录会单独计数。选择 Model Run 后，“模型判断结果”可按红色 `MISMATCH`、绿色 `MATCH`、灰色 `NONE（未预测）` 或全部切片，混淆矩阵与 Case 明细使用同一状态；这不会把数据集级 Review 伪装成绑定某个 Run，也不会反向修改人工结论或 GT。筛选、聚类和分页都写入 `/review-analysis` URL，可硬刷新并用浏览器前进/后退恢复。
 - 首页可把当前单个 Issue 或不超过 50 条的完整筛选结果预填到 Batch 页面；若前端只加载到部分结果或超过上限，会明确阻止而不是静默截断。模型目录保留 Profile 已验证项和网关当前在线的 Qwen3 生成模型，排除 Embedding；实验模型有明确标记且创建任务前需再次确认。默认 `Auto` 仍解析并分别记录 requested / resolved model ID。
 - 每个 Batch 固化请求人、模型验证层级、完整 Prompt 正文与 SHA-256、Prompt 基线版本/是否编辑、Camera 帧偏移、RA Events / RA-SWAG Options 和输入 Profile；任务历史可按人员、状态、模型、Prompt 精确版本（mode + SHA）和输入筛选，已下线模型与旧 Prompt 也保留在筛选项中。Prompt 只允许当前三分类构建器提供的变量，必须保留三个标准标签，并拒绝会输出「无法判断」等第四类的旧模板；Camera 偏移严格递增、包含 0、最多 18 帧。worker 会重新校验 Prompt/Input 快照并重建配置 Hash，预测与后续发布必须一致。
 - 网关 API key 只从服务用户持有的 `0600` 普通文件读取，经一次性 stdin 交给预测 worker，读取后立即从请求对象移除；不接受浏览器或父进程环境变量中的 key，也不会把 key 交给 AutoTriage publish worker。Ares / BEV 和轨迹摘要在 Batch 输入中强制关闭。
@@ -156,7 +156,7 @@ bash scripts/run_cloud_server.sh
 ```text
 /review-analysis
   ?run=<model_run_id>|none
-  &failure=1
+  &comparison=all|mismatch|match|none
   &reviewer=<author>
   &status=pending|reviewed|needs_gt_review
   &gt=<三分类标签>
@@ -167,8 +167,10 @@ bash scripts/run_cloud_server.sh
   &page=<positive_integer>
 ```
 
-`run=none` 明确表示查看全部最新 Review 且不叠加模型输出；只有选择真实 Run 时才允许
-`failure=1`。第一版原因主题是透明、确定性的多标签关键词规则，API 会返回主题说明与命中词；
+`run=none` 明确表示查看全部最新 Review 且不叠加模型输出，此时 `comparison` 只能为
+`all`。`NONE` 表示所选 Run 对该 baseline Issue 没有有效三分类预测。旧
+`failure=1` 链接仍会兼容解析为 `comparison=mismatch`。第一版原因主题是透明、确定性的
+多标签关键词规则，API 会返回主题说明与命中词；
 后续若加入 embedding / LLM 语义聚类，应使用新的方法版本并保留这一可复现基线，不能静默改变
 历史人工标注或现有主题 key。
 

@@ -42,7 +42,11 @@ from .prompt_catalog import (
     PromptCatalogError,
     normalise_input_config,
 )
-from .review_analysis import REASON_THEME_CATALOG, build_review_reason_analysis
+from .review_analysis import (
+    COMPARISON_STATUSES,
+    REASON_THEME_CATALOG,
+    build_review_reason_analysis,
+)
 from .sanitization import redact_sensitive_fields
 from .settings import Settings
 from .trail_sync import TRAIL_INFO_FIELD, TRAIL_RESULT_FIELD, read_trail_model_fields
@@ -1528,6 +1532,7 @@ async def review_clusters(
 @app.get("/api/review-reason-analysis")
 async def review_reason_analysis(
     model_run_id: str = "",
+    comparison: str = "",
     failure_only: bool = False,
     annotation_author: str = "",
     review_status: str = "",
@@ -1547,6 +1552,21 @@ async def review_reason_analysis(
         for item in MISSING_EVIDENCE_CATALOG
     }
     theme_keys = {str(item["key"]) for item in REASON_THEME_CATALOG}
+    requested_comparison = _as_text(comparison).strip().lower()
+    if requested_comparison and requested_comparison not in COMPARISON_STATUSES:
+        raise _detail(
+            400,
+            "comparison 仅支持 all、mismatch、match 或 none。",
+        )
+    if (
+        failure_only
+        and requested_comparison
+        and requested_comparison != "mismatch"
+    ):
+        raise _detail(400, "failure_only=true 与 comparison 参数冲突。")
+    comparison_status = requested_comparison or (
+        "mismatch" if failure_only else "all"
+    )
     if review_status and review_status not in REVIEW_STATUSES:
         raise _detail(400, "review_status 不在支持范围内。")
     if gt_label and gt_label not in LABELS:
@@ -1557,8 +1577,8 @@ async def review_reason_analysis(
         raise _detail(400, "missing_evidence 不在稳定字段目录中。")
     if theme and theme not in theme_keys:
         raise _detail(400, "theme 不在 Review 原因主题目录中。")
-    if failure_only and not model_run_id:
-        raise _detail(400, "只看模型判断失败时必须选择 Model Run。")
+    if comparison_status != "all" and not model_run_id:
+        raise _detail(400, "筛选模型对比关系时必须选择 Model Run。")
 
     selected_run: dict[str, Any] | None = None
     if model_run_id:
@@ -1576,7 +1596,7 @@ async def review_reason_analysis(
     rows = database.review_reason_rows(
         baseline_scope=settings.baseline_scope,
         model_run_id=model_run_id,
-        failure_only=failure_only,
+        comparison_status=comparison_status,
         annotation_author=_as_text(annotation_author)[:128],
         review_status=review_status,
         gt_label=gt_label,
@@ -1588,6 +1608,7 @@ async def review_reason_analysis(
         rows,
         theme=theme,
         evidence_catalog=evidence_catalog,
+        has_model_run=bool(model_run_id),
         page=page,
         page_size=page_size,
     )
@@ -1596,7 +1617,7 @@ async def review_reason_analysis(
         review_params = [f"issue={quote(issue_id, safe='')}"]
         if model_run_id:
             review_params.append(f"run={quote(model_run_id, safe='')}")
-        if failure_only and model_run_id:
+        if comparison_status == "mismatch" and model_run_id:
             review_params.append("failure=1")
         item["voyager_issue_url"] = _voyager_issue_url(issue_id)
         item["review_url"] = f"/review?{'&'.join(review_params)}"
@@ -1613,13 +1634,15 @@ async def review_reason_analysis(
             if selected_run
             else None
         ),
-        "failure_only": bool(failure_only and model_run_id),
+        "comparison_status": comparison_status,
+        "failure_only": comparison_status == "mismatch",
         "review_binding": "latest_annotation_per_issue",
         "review_is_run_bound": False,
     }
     result["filters"] = {
         "model_run_id": model_run_id,
-        "failure_only": bool(failure_only and model_run_id),
+        "comparison_status": comparison_status,
+        "failure_only": comparison_status == "mismatch",
         "annotation_author": _as_text(annotation_author)[:128],
         "review_status": review_status,
         "gt_label": gt_label,

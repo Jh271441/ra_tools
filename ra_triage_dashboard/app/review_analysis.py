@@ -7,6 +7,8 @@ from typing import Any, Iterable
 
 
 TRIAGE_LABELS = ("误触发", "正确触发", "无需协助")
+COMPARISON_STATUSES = ("all", "mismatch", "match", "none")
+NONE_PREDICTION_LABEL = "NONE"
 
 # Review notes remain free text.  These themes intentionally use a small,
 # inspectable keyword contract so reviewers can understand why a case appears
@@ -252,6 +254,7 @@ def build_review_reason_analysis(
     *,
     theme: str = "",
     evidence_catalog: dict[str, dict[str, str]] | None = None,
+    has_model_run: bool = False,
     page: int = 1,
     page_size: int = 50,
 ) -> dict[str, Any]:
@@ -269,6 +272,17 @@ def build_review_reason_analysis(
         annotation["note"] = str(annotation.get("note") or "").strip()
         item["annotation"] = annotation
         item["prediction"] = prediction
+        gt_label = str(item.get("gt_label") or "")
+        model_label = str(prediction.get("label") or "")
+        comparison_status = ""
+        if has_model_run:
+            if model_label not in TRIAGE_LABELS:
+                comparison_status = "none"
+            elif gt_label in TRIAGE_LABELS:
+                comparison_status = (
+                    "match" if model_label == gt_label else "mismatch"
+                )
+        item["comparison_status"] = comparison_status
         item["reason_themes"] = classify_review_reason(annotation["note"])
         materialized.append(item)
 
@@ -290,6 +304,7 @@ def build_review_reason_analysis(
     with_structured_evidence = 0
     unclustered_reason = 0
     comparable = 0
+    matches = 0
     mismatches = 0
     missing_predictions = 0
     manual_gt_disagreements = 0
@@ -297,6 +312,7 @@ def build_review_reason_analysis(
         gt_label: {model_label: 0 for model_label in TRIAGE_LABELS}
         for gt_label in TRIAGE_LABELS
     }
+    none_counts: dict[str, int] = {gt_label: 0 for gt_label in TRIAGE_LABELS}
 
     for item in materialized:
         annotation = item["annotation"]
@@ -321,12 +337,24 @@ def build_review_reason_analysis(
         annotation_label = str(annotation.get("label") or "")
         if gt_label in TRIAGE_LABELS and annotation_label in TRIAGE_LABELS:
             manual_gt_disagreements += int(annotation_label != gt_label)
-        if gt_label in TRIAGE_LABELS and model_label in TRIAGE_LABELS:
+        if (
+            has_model_run
+            and gt_label in TRIAGE_LABELS
+            and model_label in TRIAGE_LABELS
+        ):
             comparable += 1
             confusion_counts[gt_label][model_label] += 1
-            mismatches += int(gt_label != model_label)
-        elif model_label not in TRIAGE_LABELS:
+            if gt_label == model_label:
+                matches += 1
+            else:
+                mismatches += 1
+        elif (
+            has_model_run
+            and gt_label in TRIAGE_LABELS
+            and model_label not in TRIAGE_LABELS
+        ):
             missing_predictions += 1
+            none_counts[gt_label] += 1
 
     reason_catalog = {
         str(item["key"]): item for item in REASON_THEME_CATALOG
@@ -362,6 +390,7 @@ def build_review_reason_analysis(
             "with_structured_evidence": with_structured_evidence,
             "unclustered_reason": unclustered_reason,
             "comparable_predictions": comparable,
+            "model_matches": matches,
             "model_mismatches": mismatches,
             "missing_predictions": missing_predictions,
             "manual_gt_disagreements": manual_gt_disagreements,
@@ -377,19 +406,34 @@ def build_review_reason_analysis(
             catalog=reason_catalog,
         ),
         "confusion": {
-            "labels": list(TRIAGE_LABELS),
+            "labels": list(TRIAGE_LABELS)
+            + ([NONE_PREDICTION_LABEL] if has_model_run else []),
+            "gt_labels": list(TRIAGE_LABELS),
+            "model_labels": list(TRIAGE_LABELS)
+            + ([NONE_PREDICTION_LABEL] if has_model_run else []),
+            "total": comparable + missing_predictions,
             "comparable": comparable,
+            "matches": matches,
             "mismatches": mismatches,
+            "none": missing_predictions,
             "rows": [
                 {
                     "gt_label": gt_label,
-                    "total": sum(confusion_counts[gt_label].values()),
+                    "total": sum(confusion_counts[gt_label].values())
+                    + none_counts[gt_label],
                     "cells": [
                         {
                             "model_label": model_label,
-                            "count": confusion_counts[gt_label][model_label],
+                            "count": (
+                                none_counts[gt_label]
+                                if model_label == NONE_PREDICTION_LABEL
+                                else confusion_counts[gt_label][model_label]
+                            ),
                         }
-                        for model_label in TRIAGE_LABELS
+                        for model_label in (
+                            list(TRIAGE_LABELS)
+                            + ([NONE_PREDICTION_LABEL] if has_model_run else [])
+                        )
                     ],
                 }
                 for gt_label in TRIAGE_LABELS

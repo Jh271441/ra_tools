@@ -60,6 +60,18 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
                 },
                 "prediction": {"label": ""},
             },
+            {
+                "issue_id": "cn10003",
+                "gt_label": "正确触发",
+                "annotation": {
+                    "label": "正确触发",
+                    "review_status": "reviewed",
+                    "tags": [],
+                    "missing_evidence": [],
+                    "note": "",
+                },
+                "prediction": {"label": "正确触发"},
+            },
         ]
         result = build_review_reason_analysis(
             rows,
@@ -67,25 +79,55 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
                 "routing_direction": {"label": "routing 方向"},
                 "passable_space": {"label": "可绕行空间"},
             },
+            has_model_run=True,
             page=1,
             page_size=1,
         )
-        self.assertEqual(result["summary"]["latest_reviews"], 2)
+        self.assertEqual(result["summary"]["latest_reviews"], 3)
         self.assertEqual(result["summary"]["with_reason"], 2)
         self.assertEqual(result["summary"]["unclustered_reason"], 1)
+        self.assertEqual(result["summary"]["model_matches"], 1)
         self.assertEqual(result["summary"]["model_mismatches"], 1)
         self.assertEqual(result["summary"]["missing_predictions"], 1)
         self.assertEqual(result["summary"]["manual_gt_disagreements"], 1)
-        self.assertEqual(result["page_count"], 2)
+        self.assertEqual(result["page_count"], 3)
         self.assertEqual(len(result["items"]), 1)
+        self.assertEqual(result["items"][0]["comparison_status"], "mismatch")
+        self.assertEqual(
+            result["confusion"]["model_labels"],
+            ["误触发", "正确触发", "无需协助", "NONE"],
+        )
+        self.assertEqual(result["confusion"]["matches"], 1)
+        self.assertEqual(result["confusion"]["mismatches"], 1)
+        self.assertEqual(result["confusion"]["none"], 1)
+        none_row = next(
+            row
+            for row in result["confusion"]["rows"]
+            if row["gt_label"] == "无需协助"
+        )
+        self.assertEqual(none_row["cells"][-1]["count"], 1)
         self.assertEqual(
             [item["key"] for item in result["evidence_clusters"]],
             ["passable_space", "routing_direction"],
         )
 
-        routing = build_review_reason_analysis(rows, theme="routing_intent")
+        routing = build_review_reason_analysis(
+            rows,
+            theme="routing_intent",
+            has_model_run=True,
+        )
         self.assertEqual(routing["total"], 1)
         self.assertEqual(routing["items"][0]["issue_id"], "cn10001")
+
+        without_run = build_review_reason_analysis(rows)
+        self.assertEqual(without_run["summary"]["missing_predictions"], 0)
+        self.assertEqual(
+            without_run["confusion"]["model_labels"],
+            ["误触发", "正确触发", "无需协助"],
+        )
+        self.assertTrue(
+            all(not item["comparison_status"] for item in without_run["items"])
+        )
 
     def test_database_uses_only_latest_annotation_and_selected_run_failures(
         self,
@@ -105,6 +147,11 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
                         "issue_id": "cn20002",
                         "gt_label": "正确触发",
                         "title": "正常触发",
+                    },
+                    {
+                        "issue_id": "cn20003",
+                        "gt_label": "无需协助",
+                        "title": "未预测",
                     },
                 ],
                 source="test",
@@ -156,6 +203,15 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
                 note="判断正确",
                 author="alice",
             )
+            database.create_annotation(
+                issue_id="cn20003",
+                label="无需协助",
+                review_status="reviewed",
+                tags=[],
+                missing_evidence=[],
+                note="该 Run 没有输出",
+                author="alice",
+            )
 
             failures = database.review_reason_rows(
                 baseline_scope=scope,
@@ -168,6 +224,32 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
                 failures[0]["annotation"]["missing_evidence"],
                 ["hazard_signal"],
             )
+
+            matches = database.review_reason_rows(
+                baseline_scope=scope,
+                model_run_id=run["id"],
+                comparison_status="match",
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in matches],
+                ["cn20002"],
+            )
+
+            missing_predictions = database.review_reason_rows(
+                baseline_scope=scope,
+                model_run_id=run["id"],
+                comparison_status="none",
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in missing_predictions],
+                ["cn20003"],
+            )
+
+            with self.assertRaisesRegex(ValueError, "requires model_run_id"):
+                database.review_reason_rows(
+                    baseline_scope=scope,
+                    comparison_status="match",
+                )
 
             old_note_search = database.review_reason_rows(
                 baseline_scope=scope,

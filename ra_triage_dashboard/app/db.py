@@ -1098,6 +1098,7 @@ class Database:
         *,
         baseline_scope: str,
         model_run_id: str = "",
+        comparison_status: str = "all",
         failure_only: bool = False,
         annotation_author: str = "",
         review_status: str = "",
@@ -1108,22 +1109,36 @@ class Database:
     ) -> list[dict[str, Any]]:
         """Return one latest-review row per baseline issue for analysis.
 
-        Human Review is dataset-level rather than run-bound.  ``model_run_id``
-        only adds the selected immutable prediction snapshot and, when asked,
-        narrows the slice to comparable model failures.
+        Human Review is dataset-level rather than run-bound. ``model_run_id``
+        only adds the selected immutable prediction snapshot. ``comparison_status``
+        can narrow the slice to MATCH, MISMATCH, or NONE (no canonical
+        prediction). ``failure_only`` remains a compatibility alias for
+        MISMATCH.
         """
+
+        comparison_status = str(comparison_status or "all").strip().lower()
+        if failure_only:
+            comparison_status = "mismatch"
+        if comparison_status not in {"all", "mismatch", "match", "none"}:
+            raise ValueError("unsupported comparison_status")
+        if comparison_status != "all" and not model_run_id:
+            raise ValueError("comparison_status requires model_run_id")
 
         where = ["i.baseline_scope = ?", "ann.id IS NOT NULL"]
         params: list[Any] = [model_run_id, baseline_scope]
-        if failure_only and model_run_id:
-            where.extend(
-                [
-                    "i.gt_label IN (?, ?, ?)",
-                    "mp.model_label IN (?, ?, ?)",
-                    "mp.model_label != i.gt_label",
-                ]
-            )
-            params.extend((*LABELS, *LABELS))
+        if comparison_status != "all":
+            where.append("i.gt_label IN (?, ?, ?)")
+            params.extend(LABELS)
+            if comparison_status == "none":
+                where.append(
+                    "(mp.model_label IS NULL OR mp.model_label NOT IN (?, ?, ?))"
+                )
+                params.extend(LABELS)
+            else:
+                where.append("mp.model_label IN (?, ?, ?)")
+                params.extend(LABELS)
+                operator = "=" if comparison_status == "match" else "!="
+                where.append(f"mp.model_label {operator} i.gt_label")
         if annotation_author.strip():
             where.append("ann.author = ?")
             params.append(annotation_author.strip())

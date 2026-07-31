@@ -1,4 +1,11 @@
 const LABELS = ["误触发", "正确触发", "无需协助"];
+const ANALYSIS_COMPARISON_STATUSES = ["all", "mismatch", "match", "none"];
+const ANALYSIS_COMPARISON_META = {
+  all: { label: "全部", description: "不按模型判断结果收窄" },
+  mismatch: { label: "MISMATCH", description: "GT 与模型输出不一致" },
+  match: { label: "MATCH", description: "GT 与模型输出一致" },
+  none: { label: "NONE", description: "该 Run 未预测" },
+};
 const PAGE_ROUTES = {
   review: { path: "/review", title: "RA Triage Workbench", eyebrow: "EVALUATION BASELINE · 0508" },
   analysis: { path: "/review-analysis", title: "Review 原因聚类", eyebrow: "REVIEW ERROR ANALYSIS" },
@@ -45,6 +52,7 @@ const state = {
     pageSize: 50,
     requestSeq: 0,
     data: null,
+    comparisonStatus: "mismatch",
   },
   selectedAnnotationLabel: "",
   pollingBatchId: "",
@@ -65,6 +73,18 @@ const state = {
 };
 
 const $ = (selector) => document.querySelector(selector);
+
+function normalizedAnalysisComparisonStatus(value, fallback = "all") {
+  const normalized = String(value || "").trim().toLowerCase();
+  return ANALYSIS_COMPARISON_STATUSES.includes(normalized) ? normalized : fallback;
+}
+
+function routeAnalysisComparisonStatus(params) {
+  const requested = String(params.get("comparison") || "").trim().toLowerCase();
+  if (ANALYSIS_COMPARISON_STATUSES.includes(requested)) return requested;
+  if (params.get("failure") === "1") return "mismatch";
+  return params.has("run") ? "all" : null;
+}
 
 function normalizedReviewRouteFilters(params) {
   const gtLabel = params.get("gt") || "";
@@ -93,6 +113,7 @@ function normalizedAnalysisRouteFilters(params) {
       : "",
     missingEvidence: params.get("evidence") || "",
     theme: params.get("theme") || "",
+    comparisonStatus: routeAnalysisComparisonStatus(params),
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
   };
 }
@@ -171,7 +192,7 @@ function applyReviewRouteControls(route) {
 function currentAnalysisRouteOptions(overrides = {}) {
   return {
     runId: state.selectedRunId,
-    failureOnly: state.failureOnly,
+    comparisonStatus: state.reviewAnalysis.comparisonStatus,
     search: $("#analysisSearchInput")?.value.trim() || "",
     gtLabel: $("#analysisGtFilter")?.value || "",
     annotationLabel: $("#analysisAnnotationFilter")?.value || "",
@@ -220,6 +241,14 @@ function applyAnalysisRouteControls(route) {
         ? theme
         : "";
   }
+  const requestedComparison =
+    filters.comparisonStatus ||
+    (state.failureOnly && state.selectedRunId
+      ? "mismatch"
+      : state.reviewAnalysis.comparisonStatus);
+  setAnalysisComparisonStatus(requestedComparison, {
+    hasRun: Boolean($("#analysisRunFilter")?.value),
+  });
   state.reviewAnalysis.page = Math.max(1, Number(filters.page) || 1);
 }
 
@@ -244,7 +273,12 @@ function pageUrl(page, options = {}) {
   if (page === "analysis") {
     const analysis = currentAnalysisRouteOptions(options);
     url.searchParams.set("run", analysis.runId || "none");
-    if (analysis.failureOnly && analysis.runId) url.searchParams.set("failure", "1");
+    url.searchParams.set(
+      "comparison",
+      analysis.runId
+        ? normalizedAnalysisComparisonStatus(analysis.comparisonStatus)
+        : "all"
+    );
     if (analysis.search) url.searchParams.set("q", analysis.search);
     if (analysis.gtLabel) url.searchParams.set("gt", analysis.gtLabel);
     if (analysis.annotationLabel) url.searchParams.set("annotation", analysis.annotationLabel);
@@ -688,6 +722,29 @@ async function loadReviewers() {
   });
 }
 
+function checkedAnalysisComparisonStatus() {
+  return normalizedAnalysisComparisonStatus(
+    document.querySelector('input[name="analysisComparison"]:checked')?.value,
+    state.reviewAnalysis.comparisonStatus || "all"
+  );
+}
+
+function setAnalysisComparisonStatus(
+  comparisonStatus,
+  { hasRun = Boolean($("#analysisRunFilter")?.value) } = {}
+) {
+  let nextStatus = normalizedAnalysisComparisonStatus(comparisonStatus);
+  if (!hasRun && nextStatus !== "all") nextStatus = "all";
+  state.reviewAnalysis.comparisonStatus = nextStatus;
+  document
+    .querySelectorAll('input[name="analysisComparison"]')
+    .forEach((input) => {
+      input.disabled = !hasRun && input.value !== "all";
+      input.checked = input.value === nextStatus;
+    });
+  return nextStatus;
+}
+
 function renderAnalysisRunFilter() {
   const select = $("#analysisRunFilter");
   if (!select) return;
@@ -700,11 +757,9 @@ function renderAnalysisRunFilter() {
   select.value = state.modelRuns.some((run) => run.id === state.selectedRunId)
     ? state.selectedRunId
     : "";
-  const failure = $("#analysisFailureOnlyInput");
-  if (failure) {
-    failure.disabled = !select.value;
-    failure.checked = Boolean(state.failureOnly && select.value);
-  }
+  setAnalysisComparisonStatus(state.reviewAnalysis.comparisonStatus, {
+    hasRun: Boolean(select.value),
+  });
 }
 
 async function loadRuns({ preferDefault = false, preserveEmpty = false } = {}) {
@@ -1205,11 +1260,10 @@ function reviewStatusLabel(status) {
 }
 
 function analysisRequestOptions() {
+  const runId = $("#analysisRunFilter")?.value || "";
   return currentAnalysisRouteOptions({
-    runId: $("#analysisRunFilter")?.value || "",
-    failureOnly: Boolean(
-      $("#analysisRunFilter")?.value && $("#analysisFailureOnlyInput")?.checked
-    ),
+    runId,
+    comparisonStatus: runId ? checkedAnalysisComparisonStatus() : "all",
   });
 }
 
@@ -1269,11 +1323,14 @@ function renderAnalysisConfusion(data) {
     return;
   }
   summary.textContent =
-    `${run.name} · 可比较 ${confusion.comparable || 0} 条 · 判断失败 ${confusion.mismatches || 0} 条`;
-  const labels = confusion.labels || LABELS;
-  if (!confusion.comparable) {
+    `${run.name} · ` +
+    `MATCH ${confusion.matches || 0} · ` +
+    `MISMATCH ${confusion.mismatches || 0} · ` +
+    `NONE ${confusion.none || 0}`;
+  const labels = confusion.model_labels || confusion.labels || LABELS;
+  if (!confusion.total) {
     target.innerHTML =
-      '<div class="analysis-empty">当前 Review 切片没有同时具备有效 GT 与模型三分类输出的 Issue。</div>';
+      '<div class="analysis-empty">当前 Review 切片没有可统计的模型判断结果。</div>';
     return;
   }
   target.innerHTML = `<table class="analysis-confusion-table">
@@ -1286,8 +1343,17 @@ function renderAnalysisConfusion(data) {
           <th>${escapeHtml(row.gt_label)}</th>
           ${(row.cells || [])
             .map(
-              (cell) =>
-                `<td class="${cell.model_label === row.gt_label ? "confusion-match" : cell.count ? "confusion-mismatch" : ""}">${cell.count}</td>`
+              (cell) => {
+                const cellClass =
+                  cell.model_label === "NONE"
+                    ? "confusion-none"
+                    : cell.model_label === row.gt_label
+                      ? "confusion-match"
+                      : cell.count
+                        ? "confusion-mismatch"
+                        : "";
+                return `<td class="${cellClass}">${cell.count}</td>`;
+              }
             )
             .join("")}
           <td class="confusion-total">${row.total}</td>
@@ -1313,6 +1379,16 @@ function renderAnalysisCases(data) {
         const reasonThemes = item.reason_themes || [];
         const reviewUrl = safeSameOriginReviewUrl(item.review_url);
         const voyagerUrl = safeUrl(item.voyager_issue_url);
+        const comparisonStatus = normalizedAnalysisComparisonStatus(
+          item.comparison_status,
+          ""
+        );
+        const comparisonMeta = ANALYSIS_COMPARISON_META[comparisonStatus];
+        const comparisonBadge = comparisonMeta
+          ? `<span class="analysis-comparison-badge comparison-${comparisonStatus}" title="${escapeHtml(comparisonMeta.description)}">${escapeHtml(comparisonMeta.label)}${
+              comparisonStatus === "none" ? " · 未预测" : ""
+            }</span>`
+          : "";
         const confidence =
           prediction.confidence === null || prediction.confidence === undefined
             ? ""
@@ -1335,6 +1411,7 @@ function renderAnalysisCases(data) {
             <span>${escapeHtml(item.title || item.scenario || "未填写场景")}</span>
           </div>
           <div class="analysis-case-labels">
+            ${comparisonBadge}
             <span>GT ${labelBadge(item.gt_label)}</span>
             <span>模型 ${labelBadge(prediction.label)}${escapeHtml(confidence)}</span>
             <span>人工 ${labelBadge(annotation.label)}</span>
@@ -1372,15 +1449,17 @@ function renderReviewReasonAnalysis(data) {
   $("#analysisEvidenceCount").textContent = summary.with_structured_evidence ?? 0;
   $("#analysisUnclusteredCount").textContent = summary.unclustered_reason ?? 0;
   const run = data.scope?.model_run;
+  const comparisonStatus = normalizedAnalysisComparisonStatus(
+    data.scope?.comparison_status,
+    "all"
+  );
+  const comparisonMeta = ANALYSIS_COMPARISON_META[comparisonStatus];
   $("#analysisReviewScope").textContent = run
-    ? `${run.name}${data.scope.failure_only ? " · 仅判断失败" : ""}`
+    ? `${run.name}${comparisonStatus === "all" ? "" : ` · ${comparisonMeta.label}`}`
     : "全部最新 Review";
   $("#analysisScopeNote").textContent = run
-    ? `当前叠加 ${run.name}；Review 仍取每个 Issue 的最新版本，不绑定该 Run。${
-        data.scope.failure_only
-          ? ` 当前只保留 GT 与模型输出不一致的 ${summary.latest_reviews ?? 0} 条。`
-          : ""
-      }`
+    ? `当前叠加 ${run.name}；模型判断结果为 ${comparisonMeta.label}（${comparisonMeta.description}）。` +
+      ` Review 仍取每个 Issue 的最新版本，不绑定该 Run。`
     : "当前统计全部最新 Review，不叠加模型输出；选择 Run 只改变对比切片和混淆统计。";
   renderAnalysisClusterList(
     data.evidence_clusters || [],
@@ -1401,7 +1480,12 @@ async function loadReviewReasonAnalysis() {
   const options = analysisRequestOptions();
   const params = new URLSearchParams();
   if (options.runId) params.set("model_run_id", options.runId);
-  params.set("failure_only", String(Boolean(options.failureOnly && options.runId)));
+  params.set(
+    "comparison",
+    options.runId
+      ? normalizedAnalysisComparisonStatus(options.comparisonStatus)
+      : "all"
+  );
   if (options.annotationAuthor) params.set("annotation_author", options.annotationAuthor);
   if (options.reviewStatus) params.set("review_status", options.reviewStatus);
   if (options.gtLabel) params.set("gt_label", options.gtLabel);
@@ -1421,14 +1505,20 @@ async function loadReviewReasonAnalysis() {
 function applyAnalysisComparisonSelection() {
   const previousRunId = state.selectedRunId;
   const previousFailureOnly = state.failureOnly;
+  const previousComparisonStatus = state.reviewAnalysis.comparisonStatus;
   const runId = $("#analysisRunFilter").value;
   state.selectedRunId = state.modelRuns.some((run) => run.id === runId) ? runId : "";
+  state.reviewAnalysis.comparisonStatus = state.selectedRunId
+    ? checkedAnalysisComparisonStatus()
+    : "all";
   state.failureOnly = Boolean(
-    state.selectedRunId && $("#analysisFailureOnlyInput").checked
+    state.selectedRunId &&
+      state.reviewAnalysis.comparisonStatus === "mismatch"
   );
   if (
     previousRunId !== state.selectedRunId ||
-    previousFailureOnly !== state.failureOnly
+    previousFailureOnly !== state.failureOnly ||
+    previousComparisonStatus !== state.reviewAnalysis.comparisonStatus
   ) {
     state.reviewQueueStale = true;
   }
@@ -2992,16 +3082,20 @@ function bindEvents() {
   });
   $("#analysisRunFilter").addEventListener("change", () => {
     const runId = $("#analysisRunFilter").value;
-    const failure = $("#analysisFailureOnlyInput");
-    const wasDisabled = failure.disabled;
-    failure.disabled = !runId;
-    if (!runId) failure.checked = false;
-    else if (wasDisabled) failure.checked = true;
+    const mismatchInput = document.querySelector(
+      'input[name="analysisComparison"][value="mismatch"]'
+    );
+    const previouslyHadRun = Boolean(mismatchInput && !mismatchInput.disabled);
+    const nextStatus = !runId
+      ? "all"
+      : previouslyHadRun
+        ? checkedAnalysisComparisonStatus()
+        : "mismatch";
+    setAnalysisComparisonStatus(nextStatus, { hasRun: Boolean(runId) });
   });
   $("#resetReviewAnalysisButton").addEventListener("click", async () => {
     $("#analysisRunFilter").value = "";
-    $("#analysisFailureOnlyInput").checked = false;
-    $("#analysisFailureOnlyInput").disabled = true;
+    setAnalysisComparisonStatus("all", { hasRun: false });
     $("#analysisReviewerFilter").value = "";
     $("#analysisStatusFilter").value = "";
     $("#analysisGtFilter").value = "";
@@ -3190,15 +3284,26 @@ function bindEvents() {
     if (route.page === "analysis") {
       const previousRunId = state.selectedRunId;
       const previousFailureOnly = state.failureOnly;
+      const previousComparisonStatus = state.reviewAnalysis.comparisonStatus;
       const nextRunId =
         route.runId && state.modelRuns.some((run) => run.id === route.runId)
           ? route.runId
           : "";
+      const nextComparisonStatus = nextRunId
+        ? normalizedAnalysisComparisonStatus(
+            route.analysisFilters.comparisonStatus,
+            state.config?.default_failure_only ? "mismatch" : "all"
+          )
+        : "all";
       state.selectedRunId = nextRunId;
-      state.failureOnly = Boolean(nextRunId && route.failureOnly);
+      state.reviewAnalysis.comparisonStatus = nextComparisonStatus;
+      state.failureOnly = Boolean(
+        nextRunId && nextComparisonStatus === "mismatch"
+      );
       if (
         previousRunId !== state.selectedRunId ||
-        previousFailureOnly !== state.failureOnly
+        previousFailureOnly !== state.failureOnly ||
+        previousComparisonStatus !== state.reviewAnalysis.comparisonStatus
       ) {
         state.reviewQueueStale = true;
       }
@@ -3292,9 +3397,20 @@ async function bootstrap() {
       initialRoute.runId === "none"
         ? ""
         : initialRoute.runId || state.config.default_model_run_id || "";
-    state.failureOnly =
-      initialRoute.failureOnly ??
-      Boolean(state.config.default_failure_only && state.selectedRunId);
+    if (initialRoute.page === "analysis") {
+      state.reviewAnalysis.comparisonStatus = state.selectedRunId
+        ? normalizedAnalysisComparisonStatus(
+            initialRoute.analysisFilters.comparisonStatus,
+            state.config.default_failure_only ? "mismatch" : "all"
+          )
+        : "all";
+      state.failureOnly =
+        state.reviewAnalysis.comparisonStatus === "mismatch";
+    } else {
+      state.failureOnly =
+        initialRoute.failureOnly ??
+        Boolean(state.config.default_failure_only && state.selectedRunId);
+    }
     await loadRuns({
       preferDefault: !initialRoute.runId,
       preserveEmpty: initialRoute.runId === "none",

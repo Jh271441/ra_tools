@@ -194,10 +194,27 @@
                     <option value="">不叠加模型输出</option>
                   </select>
                 </label>
-                <label class="toggle-row compact-filter-toggle analysis-failure-toggle">
-                  <input id="analysisFailureOnlyInput" type="checkbox" />
-                  <span><strong>只看模型判断失败</strong></span>
-                </label>
+                <div class="analysis-comparison-filter">
+                  <span class="analysis-filter-label">模型判断结果</span>
+                  <div class="analysis-comparison-options" role="radiogroup" aria-label="模型判断结果">
+                    <label class="analysis-comparison-option comparison-all" title="不按模型判断结果收窄">
+                      <input name="analysisComparison" type="radio" value="all" />
+                      <span>全部</span>
+                    </label>
+                    <label class="analysis-comparison-option comparison-mismatch" title="GT 与模型输出不一致">
+                      <input name="analysisComparison" type="radio" value="mismatch" checked />
+                      <span>MISMATCH</span>
+                    </label>
+                    <label class="analysis-comparison-option comparison-match" title="GT 与模型输出一致">
+                      <input name="analysisComparison" type="radio" value="match" />
+                      <span>MATCH</span>
+                    </label>
+                    <label class="analysis-comparison-option comparison-none" title="该 Run 未预测">
+                      <input name="analysisComparison" type="radio" value="none" />
+                      <span>NONE</span>
+                    </label>
+                  </div>
+                </div>
                 <label>
                   <span>复核人</span>
                   <select id="analysisReviewerFilter">
