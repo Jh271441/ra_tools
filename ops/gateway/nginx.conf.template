@@ -34,6 +34,9 @@ server {
     listen 80 default_server;
     server_name _;
 
+    # Multimodal probe/chat posts base64 images in JSON; nginx default 1m returns 413.
+    client_max_body_size 256m;
+
     proxy_http_version 1.1;
     proxy_read_timeout 3600s;
     proxy_send_timeout 3600s;
