@@ -470,7 +470,10 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .detail-actions .history-inline-button {
   min-height: 34px; display: inline-flex; align-items: center; justify-content: center; padding: 6px 8px; border-radius: 7px;
 }
-.detail-actions .history-inline-button { font-size: 12px; font-weight: 650; line-height: normal; letter-spacing: normal; }
+.detail-actions .history-inline-button {
+  color: #c4cfdf; border-color: var(--line); background: var(--overlay);
+  font-size: 12px; font-weight: 650; line-height: normal; letter-spacing: normal;
+}
 .hero-bev-open { color: var(--accent); border-color: rgba(34,211,238,.72); background: var(--accent-soft); box-shadow: 0 0 0 2px rgba(34,211,238,.08); }
 .hero-bev-open:hover:not(:disabled) { color: #b9f5fb; border-color: var(--accent); background: rgba(34,211,238,.18); }
 .detail-context-row { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 7px 10px; margin-top: 6px; }
