@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-ui-lang="zh">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -10,30 +10,31 @@
   <body>
     <div class="app-shell" id="appShell">
       <aside class="app-sidebar" id="appSidebar">
-        <div class="sidebar-brand">
-          <div class="brand-mark" aria-hidden="true">RA</div>
-          <div class="sidebar-copy">
-            <strong>RA Triage</strong>
-            <span>Review Workbench</span>
+          <div class="sidebar-brand">
+            <div class="brand-mark" aria-hidden="true">RA</div>
+            <div class="sidebar-copy">
+              <strong>RA Triage</strong>
+              <span class="ui-lang-zh">工作台</span>
+              <span class="ui-lang-en">Review Workbench</span>
+            </div>
           </div>
-        </div>
 
         <nav class="sidebar-nav" aria-label="工作台工具">
           <a class="sidebar-item active" id="reviewNavButton" data-page-target="review" href="/review" title="判错复核">
             <span class="sidebar-icon" aria-hidden="true">R</span>
-            <span class="sidebar-label"><strong>判错复核</strong><small>Failure review</small></span>
+            <span class="sidebar-label"><strong class="ui-lang-zh">判错复核</strong><strong class="ui-lang-en">Failure review</strong></span>
           </a>
           <a class="sidebar-item" id="reviewAnalysisNavButton" data-page-target="analysis" href="/review-analysis" title="Review 原因聚类">
             <span class="sidebar-icon" aria-hidden="true">C</span>
-            <span class="sidebar-label"><strong>原因聚类</strong><small>Review analysis</small></span>
+            <span class="sidebar-label"><strong class="ui-lang-zh">原因聚类</strong><strong class="ui-lang-en">Review analysis</strong></span>
           </a>
           <a class="sidebar-item" id="openRunManagerButton" data-page-target="runs" href="/runs" title="模型 Runs">
             <span class="sidebar-icon" aria-hidden="true">M</span>
-            <span class="sidebar-label"><strong>模型 Runs</strong><small>导入与版本管理</small></span>
+            <span class="sidebar-label"><strong class="ui-lang-zh">模型结果</strong><strong class="ui-lang-en">Model Runs</strong></span>
           </a>
           <a class="sidebar-item" id="openBatchPredictionButton" data-page-target="prediction" href="/batch-prediction" title="Batch 预测">
             <span class="sidebar-icon" aria-hidden="true">▶</span>
-            <span class="sidebar-label"><strong>Batch 预测</strong><small>模型网关 · 批量推理</small></span>
+            <span class="sidebar-label"><strong class="ui-lang-zh">批次预测</strong><strong class="ui-lang-en">Batch prediction</strong></span>
           </a>
         </nav>
 
@@ -47,7 +48,7 @@
           </div>
           <button class="sidebar-collapse" id="sidebarToggle" type="button" aria-expanded="true" title="折叠工具栏">
             <span aria-hidden="true">‹</span>
-            <span class="sidebar-label">折叠工具栏</span>
+            <span class="sidebar-label"><span class="ui-lang-zh">折叠工具栏</span><span class="ui-lang-en">Collapse</span></span>
           </button>
         </div>
       </aside>
@@ -61,13 +62,14 @@
             </div>
           </div>
           <div class="header-metrics" aria-label="概览">
-            <div><span>Baseline</span><strong id="statIssues">—</strong></div>
-            <div class="metric-fail"><span>判断失败</span><strong id="statFailures">—</strong></div>
-            <div><span>人工复核</span><strong id="statReviewed">—</strong></div>
-            <div><span>模型输出</span><strong id="statPredictions">—</strong></div>
+            <div><span class="ui-lang-zh">基线</span><span class="ui-lang-en">Baseline</span><strong id="statIssues">—</strong></div>
+            <div class="metric-fail"><span class="ui-lang-zh">判断失败</span><span class="ui-lang-en">Mismatches</span><strong id="statFailures">—</strong></div>
+            <div><span class="ui-lang-zh">人工复核</span><span class="ui-lang-en">Reviewed</span><strong id="statReviewed">—</strong></div>
+            <div><span class="ui-lang-zh">模型输出</span><span class="ui-lang-en">Predictions</span><strong id="statPredictions">—</strong></div>
           </div>
           <div class="top-actions">
-            <button class="button button-quiet" id="refreshButton">刷新</button>
+            <button class="button button-quiet language-toggle" id="languageToggleButton" type="button" aria-label="切换到 English">EN</button>
+            <button class="button button-quiet" id="refreshButton"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
           </div>
         </header>
 

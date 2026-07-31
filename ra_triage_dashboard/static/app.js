@@ -9,10 +9,30 @@ const ANALYSIS_COMPARISON_META = {
 const REVIEW_COMPARISON_STATUSES = ANALYSIS_COMPARISON_STATUSES;
 const REVIEW_COMPARISON_META = ANALYSIS_COMPARISON_META;
 const PAGE_ROUTES = {
-  review: { path: "/review", title: "RA Triage Workbench", eyebrow: "EVALUATION BASELINE · 0508" },
-  analysis: { path: "/review-analysis", title: "Review 原因聚类", eyebrow: "REVIEW ERROR ANALYSIS" },
-  runs: { path: "/runs", title: "模型结果 Runs", eyebrow: "MODEL RUN REGISTRY" },
-  prediction: { path: "/batch-prediction", title: "Batch 模型预测", eyebrow: "BATCH MODEL INFERENCE" },
+  review: {
+    path: "/review",
+    titleZh: "RA Triage Workbench",
+    titleEn: "RA Triage Workbench",
+    eyebrow: "EVALUATION BASELINE · 0508",
+  },
+  analysis: {
+    path: "/review-analysis",
+    titleZh: "原因聚类",
+    titleEn: "Review Reason Clusters",
+    eyebrow: "REVIEW ERROR ANALYSIS",
+  },
+  runs: {
+    path: "/runs",
+    titleZh: "模型结果",
+    titleEn: "Model Runs",
+    eyebrow: "MODEL RUN REGISTRY",
+  },
+  prediction: {
+    path: "/batch-prediction",
+    titleZh: "批次预测",
+    titleEn: "Batch Model Inference",
+    eyebrow: "BATCH MODEL INFERENCE",
+  },
 };
 
 const state = {
@@ -75,6 +95,7 @@ const state = {
     can_manage_team_default: false,
   },
   sidebarCollapsed: false,
+  uiLanguage: "zh",
   activePage: "review",
   trailInspection: null,
   pendingReviewImages: [],
@@ -82,6 +103,39 @@ const state = {
 };
 
 const $ = (selector) => document.querySelector(selector);
+
+function normalizedUiLanguage(value) {
+  return String(value || "").toLowerCase() === "en" ? "en" : "zh";
+}
+
+function uiText(zh, en) {
+  return state.uiLanguage === "en" ? en : zh;
+}
+
+function renderPageChrome() {
+  const route = PAGE_ROUTES[state.activePage] || PAGE_ROUTES.review;
+  const title = state.uiLanguage === "en" ? route.titleEn : route.titleZh;
+  $("#pageTitle").textContent = title;
+  $("#pageEyebrow").textContent = route.eyebrow;
+  document.title = `${title} · RA Triage`;
+}
+
+function applyUiLanguage(language, { persist = true } = {}) {
+  state.uiLanguage = normalizedUiLanguage(language);
+  document.documentElement.dataset.uiLang = state.uiLanguage;
+  document.documentElement.lang = state.uiLanguage === "en" ? "en" : "zh-CN";
+  if (persist) localStorage.setItem("ra-triage-ui-language", state.uiLanguage);
+  const toggle = $("#languageToggleButton");
+  if (toggle) {
+    const english = state.uiLanguage === "en";
+    toggle.textContent = english ? "中文" : "EN";
+    toggle.setAttribute("aria-label", english ? "切换到中文" : "切换到 English");
+    toggle.title = english ? "切换到中文" : "Switch to English";
+  }
+  renderPageChrome();
+  applySidebarState();
+  renderSession();
+}
 
 function normalizedAnalysisComparisonStatus(value, fallback = "all") {
   const normalized = String(value || "").trim().toLowerCase();
@@ -410,9 +464,7 @@ function showPage(
     if (active) item.setAttribute("aria-current", "page");
     else item.removeAttribute("aria-current");
   });
-  $("#pageTitle").textContent = PAGE_ROUTES[target].title;
-  $("#pageEyebrow").textContent = PAGE_ROUTES[target].eyebrow;
-  document.title = `${PAGE_ROUTES[target].title} · RA Triage`;
+  renderPageChrome();
   if (target === "runs") {
     renderRunManager();
     if (importKind) setImportKind(importKind);
@@ -572,7 +624,9 @@ function showToast(message, isError = false) {
 function applySidebarState() {
   $("#appShell").classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
   $("#sidebarToggle").setAttribute("aria-expanded", String(!state.sidebarCollapsed));
-  $("#sidebarToggle").title = state.sidebarCollapsed ? "展开工具栏" : "折叠工具栏";
+  $("#sidebarToggle").title = state.sidebarCollapsed
+    ? uiText("展开工具栏", "Expand toolbar")
+    : uiText("折叠工具栏", "Collapse toolbar");
 }
 
 function toggleSidebar() {
@@ -615,13 +669,13 @@ async function browserLcaUsername() {
 
 function renderSession() {
   const username = state.session.username;
-  $("#sessionUserName").textContent = username || "SSO 未接入";
+  $("#sessionUserName").textContent = username || uiText("SSO 未接入", "SSO unavailable");
   $("#userAvatar").textContent = username ? username.slice(0, 1).toUpperCase() : "?";
   $("#sessionUserSource").textContent = state.session.verified
-    ? "企业 SSO · 已验证"
+    ? uiText("企业 SSO · 已验证", "Enterprise SSO · verified")
     : username
-      ? "本机 LCA · 未验证"
-      : "直接 IP 会话";
+      ? uiText("本机 LCA · 未验证", "Local LCA · unverified")
+      : uiText("直接 IP 会话", "Direct IP session");
   $("#sidebarUser").title = state.session.verified
     ? `可信代理认证：${username}`
     : username
@@ -630,18 +684,18 @@ function renderSession() {
   const batchActor = $("#batchActorSummary");
   if (batchActor) {
     batchActor.textContent = state.session.verified
-      ? `当前用户：${username}（企业 SSO 已验证）`
+      ? uiText(`当前用户：${username}（企业 SSO 已验证）`, `Current user: ${username} (enterprise SSO verified)`)
       : username
-        ? `当前用户：${username}（本机 LCA，仅作审计显示）`
-        : "当前用户未识别；服务器会按实际会话记录请求人。";
+        ? uiText(`当前用户：${username}（本机 LCA，仅作审计显示）`, `Current user: ${username} (local LCA, display only)`)
+        : uiText("当前用户未识别；服务器会按实际会话记录请求人。", "User not identified; the server records the actual requester.");
   }
   const importActor = $("#modelImportActorSummary");
   if (importActor) {
     importActor.textContent = state.session.verified
-      ? `本次导入创建人：${username}（企业 SSO 已验证）`
+      ? uiText(`本次导入创建人：${username}（企业 SSO 已验证）`, `Import owner: ${username} (enterprise SSO verified)`)
       : username
-        ? `本次导入显示名：${username}（本机 LCA，未验证；不能用于权限）`
-        : "当前没有可信 SSO；Run 创建人将记为未记录。";
+        ? uiText(`本次导入显示名：${username}（本机 LCA，未验证；不能用于权限）`, `Import display name: ${username} (local LCA, unverified; not for authorization)`)
+        : uiText("当前没有可信 SSO；Run 创建人将记为未记录。", "No trusted SSO; the Run creator will be recorded as unknown.");
   }
   if (state.activePage === "prediction") ensurePredictionBatchName();
 }
@@ -3909,6 +3963,9 @@ function bindEvents() {
     if ($("#predictionUseRaOptions").checked) $("#predictionUseRaEvent").checked = true;
     renderBatchRuntimeSummary();
   });
+  $("#languageToggleButton").addEventListener("click", () => {
+    applyUiLanguage(state.uiLanguage === "en" ? "zh" : "en");
+  });
   $("#sidebarToggle").addEventListener("click", toggleSidebar);
   document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => closeDialog(button.dataset.close)));
   $("#importFile").addEventListener("change", () => {
@@ -4050,6 +4107,7 @@ function bindEvents() {
 
 async function bootstrap() {
   const initialRoute = parsePageRoute();
+  applyUiLanguage(localStorage.getItem("ra-triage-ui-language") || "zh", { persist: false });
   const savedSidebarState = localStorage.getItem("ra-triage-sidebar-collapsed");
   state.sidebarCollapsed = savedSidebarState === "true";
   applySidebarState();
