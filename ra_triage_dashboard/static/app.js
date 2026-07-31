@@ -1804,15 +1804,11 @@ function heroMediaSection(bev, camera) {
   const frames = bev?.frames || [];
   const video = bev?.video;
   if (!bev?.available || (!frames.length && !video?.url)) {
-    return '<section class="hero-media"><div class="section-heading"><div><span class="eyebrow">PRIMARY REVIEW CANVAS</span><h3>BEV / 视频主视图</h3></div></div><div class="no-asset hero-media-placeholder"><span>当前没有可预览的 BEV 或视频。</span></div></section>';
+    return '<section class="hero-media"><div class="no-asset hero-media-placeholder"><span>当前没有可预览的 Ares 或视频。</span></div></section>';
   }
   if (!frames.length && video?.url) {
     return `
       <section class="hero-media">
-        <div class="section-heading">
-          <div><span class="eyebrow">PRIMARY REVIEW CANVAS</span><h3>Ares Capture · BEV 视频</h3></div>
-          <small>使用原生控件逐帧或连续播放</small>
-        </div>
         <div class="hero-media-button hero-media-video">
           <video src="${escapeHtml(video.url)}" controls preload="metadata" playsinline aria-label="Ares Capture BEV 视频"></video>
         </div>
@@ -1831,18 +1827,15 @@ function heroMediaSection(bev, camera) {
     : "";
   return `
     <section class="hero-media">
-      <div class="section-heading">
-        <div><span class="eyebrow">PRIMARY REVIEW CANVAS</span><h3>Ares Capture · BEV</h3></div>
-        <div class="hero-media-heading-actions"><small>默认 ${escapeHtml(frameLabel(frame))} · 点击进入时序预览</small>${videoToggle}</div>
-      </div>
-      <button type="button" class="hero-media-button" data-hero-frame-view data-media-kind="bev" data-media-index="${index}" aria-label="打开 BEV 与 Camera 时序预览">
+      <button type="button" class="hero-media-button" data-hero-frame-view data-media-kind="bev" data-media-index="${index}" aria-label="打开 Ares 与 Camera 时序预览">
         <img src="${escapeHtml(frame.url)}" alt="Ares Capture BEV ${escapeHtml(frameLabel(frame))}" />
         <span class="hero-media-overlay">展开预览 · ${escapeHtml(frameLabel(frame))}</span>
       </button>
       ${videoCanvas}
       <div class="hero-media-meta">
-        <span><b>${frames.length}</b> 帧 BEV 时序</span>
+        <span><b>${frames.length}</b> 帧 Ares 时序</span>
         <span>${cameraCount ? `<b>${cameraCount}</b> 帧 Camera 可在预览中切换` : "Camera 暂不可用"}</span>
+        ${videoToggle}
       </div>
     </section>`;
 }
@@ -1876,24 +1869,16 @@ function renderDetail(caseData) {
   const issueUrl = safeUrl(caseData.voyager_issue_url || caseData.trail_url);
   const bevFrames = caseData.assets?.frames || [];
   const bevPreviewButton = bevFrames.length
-    ? `<button class="button button-primary hero-bev-open" type="button" data-open-bev-preview>查看 BEV</button>`
+    ? `<button class="button button-primary hero-bev-open" type="button" data-open-bev-preview>查看 Ares</button>`
     : "";
   $("#detailPane").innerHTML = `
-    <div class="case-detail-nav case-detail-nav-inline">
-      <button class="button button-quiet" id="backToGalleryButton" type="button">← 返回筛选结果</button>
-      <div class="case-detail-pager">
-        <button class="button button-quiet" id="previousIssueButton" type="button">← 上一 Issue</button>
-        <span id="detailQueuePosition">— / —</span>
-        <button class="button button-quiet" id="nextIssueButton" type="button">下一 Issue →</button>
-      </div>
-    </div>
     <div class="detail-header">
       <div class="detail-title-row">
         <div class="detail-title"><span class="eyebrow">CASE REVIEW</span><h2>${escapeHtml(title)}</h2><span class="detail-id">${escapeHtml(caseData.issue_id)}</span></div>
         <div class="detail-actions">
           ${bevPreviewButton}
           <button class="button button-primary" type="button" data-predict-current-case>API 推理</button>
-          ${issueUrl ? `<a class="button button-quiet" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer">打开 Voyager Issue</a>` : ""}
+          ${issueUrl ? `<a class="button button-quiet" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer">Issue link</a>` : ""}
         </div>
       </div>
       <div class="detail-context-row">
@@ -1906,6 +1891,14 @@ function renderDetail(caseData) {
         <p class="detail-summary">${escapeHtml(caseData.summary || "请结合 BEV、Camera 与触发后时序复核。")}</p>
       </div>
       ${caseData.review_note ? `<details class="review-note-details"><summary>查看历史备注</summary><div class="review-note"><span>历史备注</span>${escapeHtml(caseData.review_note)}</div></details>` : ""}
+    </div>
+    <div class="case-detail-nav case-detail-nav-inline">
+      <button class="button button-quiet" id="backToGalleryButton" type="button">← 返回筛选结果</button>
+      <div class="case-detail-pager">
+        <button class="button button-quiet" id="previousIssueButton" type="button">← 上一 Issue</button>
+        <span id="detailQueuePosition">— / —</span>
+        <button class="button button-quiet" id="nextIssueButton" type="button">下一 Issue →</button>
+      </div>
     </div>
     ${heroMediaSection(caseData.assets, caseData.camera)}
     <details class="section model-history-details">
