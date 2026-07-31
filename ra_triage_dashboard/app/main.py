@@ -18,7 +18,7 @@ from urllib.parse import quote
 
 import openpyxl
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -78,6 +78,8 @@ MAX_REVIEW_ATTACHMENT_PIXELS = 40_000_000
 MAX_REVIEW_ATTACHMENT_STORAGE_BYTES = 20 * 1024 * 1024 * 1024
 MIN_REVIEW_ATTACHMENT_DISK_FREE = 256 * 1024 * 1024
 MAX_BATCH_JSON_REQUEST_BYTES = 256 * 1024
+MAX_SOURCE_PREVIEW_ROWS = 200
+MAX_SOURCE_PREVIEW_CELL_LENGTH = 2_000
 
 MISSING_EVIDENCE_CATALOG: tuple[dict[str, str], ...] = (
     {"key": "routing_direction", "label": "routing 方向", "hint": "未理解自车目标转向 / 车道任务"},
@@ -269,6 +271,74 @@ def _as_text(value: Any) -> str:
     if isinstance(value, float) and math.isnan(value):
         return ""
     return str(value).strip()
+
+
+def _source_preview_value(value: Any) -> str:
+    """Return a bounded, credential-redacted cell value for the preview UI."""
+
+    safe_value = redact_sensitive_fields(value)
+    if isinstance(safe_value, (dict, list, tuple)):
+        text = json.dumps(
+            safe_value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+    else:
+        text = _as_text(safe_value)
+    if len(text) <= MAX_SOURCE_PREVIEW_CELL_LENGTH:
+        return text
+    return text[: MAX_SOURCE_PREVIEW_CELL_LENGTH - 1] + "…"
+
+
+def _model_source_filename(run: dict[str, Any]) -> str:
+    metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
+    artifact = metadata.get("source_artifact") if isinstance(metadata.get("source_artifact"), dict) else {}
+    return _safe_filename(
+        _as_text(artifact.get("filename"))
+        or Path(_as_text(run.get("source_name"))).name
+        or "model-results.json"
+    )
+
+
+def _reconstructed_model_source(
+    run_id: str,
+    run: dict[str, Any],
+) -> tuple[bytes, str, str] | None:
+    """Rebuild a safe source copy for uploads made before file archiving."""
+
+    filename = _model_source_filename(run)
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".json", ".csv"}:
+        return None
+    rows = database.model_run_source_rows(run_id)
+    if not rows:
+        return None
+    if suffix == ".csv":
+        columns: list[str] = []
+        seen: set[str] = set()
+        for row in rows:
+            for key in row:
+                if key not in seen:
+                    seen.add(key)
+                    columns.append(key)
+        output = io.StringIO(newline="")
+        writer = csv.DictWriter(output, fieldnames=columns, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+        return output.getvalue().encode("utf-8-sig"), filename, "text/csv; charset=utf-8"
+    payload = {
+        "schema_version": "reconstructed-model-run-v1",
+        "source_name": _as_text(run.get("source_name")),
+        "source_sha256": _as_text(run.get("source_sha256")),
+        "results": rows,
+    }
+    return (
+        json.dumps(payload, ensure_ascii=False, indent=2, default=str).encode("utf-8"),
+        filename,
+        "application/json",
+    )
 
 
 def _voyager_issue_url(issue_id: str) -> str:
@@ -1574,15 +1644,24 @@ async def model_runs() -> dict[str, Any]:
         if item.get("kind") != "upload":
             continue
         source_file = _model_source_file(item)
-        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
-        artifact = metadata.get("source_artifact") if isinstance(metadata.get("source_artifact"), dict) else {}
-        filename = _safe_filename(
-            _as_text(artifact.get("filename")) or Path(_as_text(item.get("source_name"))).name
+        filename = _model_source_filename(item)
+        suffix = Path(filename).suffix.lower()
+        preview_supported = suffix in {".json", ".csv"}
+        reconstructed = (
+            source_file is None
+            and preview_supported
+            and bool(item.get("prediction_count"))
         )
         item["source_file"] = {
             "filename": filename,
-            "available": bool(source_file),
-            "preview_url": f"/api/model-runs/{quote(str(item['id']), safe='')}/source",
+            "available": bool(source_file) or reconstructed,
+            "reconstructed": reconstructed,
+            "preview_supported": preview_supported,
+            "preview_url": (
+                f"/api/model-runs/{quote(str(item['id']), safe='')}/source-preview"
+                if preview_supported
+                else f"/api/model-runs/{quote(str(item['id']), safe='')}/source"
+            ),
             "download_url": f"/api/model-runs/{quote(str(item['id']), safe='')}/source?download=1",
         }
     return {
@@ -1591,14 +1670,91 @@ async def model_runs() -> dict[str, Any]:
     }
 
 
+@app.get("/api/model-runs/{run_id}/source-preview")
+async def preview_model_run_source(run_id: str) -> dict[str, Any]:
+    run = database.get_model_run(run_id)
+    if run is None:
+        raise _detail(404, "模型 Run 不存在。")
+    source_file = _model_source_file(run)
+    reconstructed = False
+    if source_file is None:
+        filename = _model_source_filename(run)
+        suffix = Path(filename).suffix.lower()
+        reconstructed = True
+    else:
+        path, filename = source_file
+        suffix = path.suffix.lower()
+    if suffix not in {".json", ".csv"}:
+        raise _detail(415, "当前仅支持在页面内预览 CSV / JSON。")
+    if reconstructed:
+        source_rows = database.model_run_source_rows(run_id)
+        metadata = {
+            "source": "dashboard_reconstructed",
+            "notice": "原始文件未归档；以下内容由该 Run 已保存的脱敏预测行重建。",
+        }
+    else:
+        try:
+            if path.stat().st_size > MAX_UPLOAD_BYTES:
+                raise _detail(413, "来源文件过大，暂不生成页面预览；请使用下载。")
+            content = await asyncio.to_thread(path.read_bytes)
+            source_rows, metadata = parse_source_bytes(filename, content)
+        except HTTPException:
+            raise
+        except (OSError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
+            raise _detail(422, f"来源文件无法生成预览：{exc}")
+
+    preview_rows = [
+        {
+            str(key): _source_preview_value(value)
+            for key, value in row.items()
+        }
+        for row in source_rows[:MAX_SOURCE_PREVIEW_ROWS]
+    ]
+    columns: list[str] = []
+    seen_columns: set[str] = set()
+    for row in preview_rows:
+        for key in row:
+            if key not in seen_columns:
+                seen_columns.add(key)
+                columns.append(key)
+    metadata_preview = {
+        str(key): _source_preview_value(value)
+        for key, value in (metadata.items() if isinstance(metadata, dict) else [])
+    }
+    return {
+        "filename": filename,
+        "format": suffix[1:],
+        "columns": columns,
+        "rows": preview_rows,
+        "total_rows": len(source_rows),
+        "truncated": len(source_rows) > len(preview_rows),
+        "metadata": metadata_preview,
+        "reconstructed": reconstructed,
+    }
+
+
 @app.get("/api/model-runs/{run_id}/source")
-async def get_model_run_source(run_id: str, download: bool = False) -> FileResponse:
+async def get_model_run_source(run_id: str, download: bool = False) -> Response:
     run = database.get_model_run(run_id)
     if run is None:
         raise _detail(404, "模型 Run 不存在。")
     source_file = _model_source_file(run)
     if source_file is None:
-        raise _detail(404, "该 Run 的原始文件未归档或已不可访问。")
+        reconstructed = _reconstructed_model_source(run_id, run)
+        if reconstructed is None:
+            raise _detail(404, "该 Run 的原始文件未归档且无法从已保存结果重建。")
+        content, filename, media_type = reconstructed
+        disposition = "attachment" if download else "inline"
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'{disposition}; filename="{filename}"',
+                "Cache-Control": "private, max-age=300, must-revalidate",
+                "X-Content-Type-Options": "nosniff",
+                "X-RA-Source-Reconstructed": "1",
+            },
+        )
     path, filename = source_file
     media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
     disposition = "attachment" if download else "inline"
@@ -1611,6 +1767,38 @@ async def get_model_run_source(run_id: str, download: bool = False) -> FileRespo
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+@app.delete("/api/model-runs/{run_id}")
+async def delete_model_run(run_id: str) -> dict[str, Any]:
+    run = database.get_model_run(run_id)
+    if run is None:
+        raise _detail(404, "模型 Run 不存在。")
+    source_file = _model_source_file(run)
+    try:
+        deleted = database.delete_model_run(run_id)
+    except ValueError as exc:
+        raise _detail(409, str(exc))
+    if deleted is None:
+        raise _detail(404, "模型 Run 不存在。")
+
+    source_deleted = False
+    if source_file is not None:
+        path, _ = source_file
+        upload_root = settings.uploads_dir.resolve()
+        resolved = path.resolve()
+        if upload_root == resolved or upload_root in resolved.parents:
+            try:
+                resolved.unlink(missing_ok=True)
+                source_deleted = True
+            except OSError:
+                # The Run is already deleted; report the artifact separately so
+                # an operator can recover a permissions/disk cleanup issue.
+                source_deleted = False
+    return {
+        "deleted": deleted,
+        "source_deleted": source_deleted,
+    }
 
 
 @app.post("/api/model-runs/{run_id}/default")

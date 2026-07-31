@@ -756,6 +756,59 @@ class Database:
             ).fetchone()
         return self._run_dict(row) if row else None
 
+    def model_run_source_rows(self, run_id: str) -> list[dict[str, Any]]:
+        """Return redacted normalized/raw rows for legacy source reconstruction."""
+
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT issue_id, trip_id, model_label, model_reason,
+                       model_confidence, model_extra_json, raw_json
+                FROM model_predictions
+                WHERE model_run_id = ?
+                ORDER BY id ASC
+                """,
+                (run_id,),
+            ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            raw = _json_load(row["raw_json"], {})
+            if not isinstance(raw, dict):
+                raw = {}
+            item = dict(redact_sensitive_fields(raw))
+            item.setdefault("issue_id", row["issue_id"])
+            item.setdefault("trip_id", row["trip_id"])
+            item.setdefault("model_label", row["model_label"])
+            item.setdefault("model_reason", row["model_reason"])
+            if row["model_confidence"] is not None:
+                item.setdefault("model_confidence", row["model_confidence"])
+            extra = _json_load(row["model_extra_json"], {})
+            if isinstance(extra, dict):
+                for key, value in redact_sensitive_fields(extra).items():
+                    item.setdefault(key, value)
+            result.append(item)
+        return result
+
+    def delete_model_run(self, run_id: str) -> dict[str, Any] | None:
+        """Delete one non-default local Run and its prediction rows.
+
+        Model Runs are immutable while retained, but explicit user deletion is
+        useful for removing an obsolete upload.  SQLite foreign-key cascades
+        remove predictions and detach any Batch job's optional run pointer;
+        issues, GT and append-only human annotations are not deleted.
+        """
+
+        with self._write_lock, self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM model_runs WHERE id = ?", (run_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            if bool(row["is_default"]):
+                raise ValueError("当前团队默认 Run 不能删除，请先切换默认 Run。")
+            conn.execute("DELETE FROM model_runs WHERE id = ?", (run_id,))
+        return self._run_dict(row)
+
     def set_default_model_run(self, run_id: str) -> dict[str, Any] | None:
         with self._write_lock, self.connect() as conn:
             row = conn.execute(

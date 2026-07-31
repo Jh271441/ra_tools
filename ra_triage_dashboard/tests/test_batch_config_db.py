@@ -68,3 +68,35 @@ class BatchConfigDatabaseTest(unittest.TestCase):
                 filtered["facets"]["input_profiles"],
                 [{"id": "camera_ra_event", "job_count": 1}],
             )
+
+    def test_model_run_delete_cascades_predictions_but_keeps_issue(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "triage.sqlite3")
+            database.init()
+            database.upsert_issues(
+                [{"issue_id": "cn12345", "gt_label": "误触发"}],
+                source="test",
+                replace_gt=False,
+            )
+            run, duplicate = database.import_model_run(
+                name="delete me",
+                source_name="results.csv",
+                source_sha256="c" * 64,
+                metadata={},
+                rows=[
+                    {
+                        "issue_id": "cn12345",
+                        "model_label": "正确触发",
+                        "model_reason": "test",
+                        "raw": {"issue_id": "cn12345", "model_label": "正确触发"},
+                    }
+                ],
+            )
+            self.assertFalse(duplicate)
+            self.assertIsNotNone(database.get_case("cn12345"))
+            deleted = database.delete_model_run(run["id"])
+            self.assertEqual(deleted["id"], run["id"])
+            self.assertIsNone(database.get_model_run(run["id"]))
+            case = database.get_case("cn12345")
+            self.assertIsNotNone(case)
+            self.assertEqual(case["predictions"], [])

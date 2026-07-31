@@ -915,8 +915,16 @@ function runSourceReference(run) {
   const sourceName = String(source.filename || run?.source_name || "").split(/[\\/]/).pop() || "文件名未记录";
   const previewUrl = safeSameOriginAssetUrl(source.preview_url);
   const downloadUrl = safeSameOriginAssetUrl(source.download_url);
+  const reconstructed = source.reconstructed
+    ? '<span class="run-source-reconstructed">Run 重建</span>'
+    : "";
+  const previewAction = source.preview_supported
+    ? `<button class="run-source-preview" type="button" data-preview-run="${escapeHtml(run?.id || "")}">预览</button>`
+    : previewUrl
+      ? `<a class="run-source-link" href="${escapeHtml(previewUrl)}" target="_blank" rel="noreferrer">打开</a>`
+      : "";
   const actions = source.available && (previewUrl || downloadUrl)
-    ? `<span class="run-source-actions">${previewUrl ? `<a class="run-source-link" href="${escapeHtml(previewUrl)}" target="_blank" rel="noreferrer">预览</a>` : ""}${downloadUrl ? `<a class="run-source-link" href="${escapeHtml(downloadUrl)}" download>下载</a>` : ""}</span>`
+    ? `<span class="run-source-actions">${previewAction}${downloadUrl ? `<a class="run-source-link" href="${escapeHtml(downloadUrl)}" download>下载</a>` : ""}</span>${reconstructed}`
     : `<span class="run-source-unavailable">未归档</span>`;
   return `<span class="run-source-ref" title="${escapeHtml(run?.source_name || sourceName)}">原始文件 · ${escapeHtml(sourceName)} ${actions}</span>`;
 }
@@ -1081,6 +1089,7 @@ function renderRunManager() {
         </div>
         <div class="run-row-actions">
           <button class="button ${run.id === state.selectedRunId ? "button-primary" : "button-quiet"}" type="button" data-use-run="${escapeHtml(run.id)}">${run.id === state.selectedRunId ? "当前 Review" : "打开 Review"}</button>
+          ${run.is_default ? '<button class="button button-quiet" type="button" disabled title="先切换团队默认 Run 才能删除">默认 Run</button>' : `<button class="button button-danger" type="button" data-delete-run="${escapeHtml(run.id)}">删除</button>`}
         </div>
       </article>`;
       }
@@ -1088,6 +1097,12 @@ function renderRunManager() {
     .join("");
   list.querySelectorAll("[data-use-run]").forEach((button) => {
     button.addEventListener("click", () => useModelRun(button.dataset.useRun));
+  });
+  list.querySelectorAll("[data-preview-run]").forEach((button) => {
+    button.addEventListener("click", () => openSourcePreview(button.dataset.previewRun));
+  });
+  list.querySelectorAll("[data-delete-run]").forEach((button) => {
+    button.addEventListener("click", () => deleteModelRun(button.dataset.deleteRun));
   });
 }
 
@@ -1105,6 +1120,40 @@ async function useModelRun(runId) {
   renderRunManager();
   await Promise.all([loadCases({ keepSelection: false, page: 1 }), loadClusters(), loadOverview()]);
   navigatePage("review");
+}
+
+async function deleteModelRun(runId) {
+  const run = state.modelRuns.find((item) => item.id === runId);
+  if (!run) return;
+  if (run.is_default) {
+    showToast("当前团队默认 Run 不能删除，请先切换默认 Run。", true);
+    return;
+  }
+  const confirmed = window.confirm(
+    `确认删除模型 Run「${run.name}」？\n\n该操作会删除该 Run 的模型输出和来源归档，不会删除 0508 GT、Issue 或人工 review，且不可恢复。`
+  );
+  if (!confirmed) return;
+  const button = document.querySelector(`[data-delete-run="${CSS.escape(runId)}"]`);
+  if (button) {
+    button.disabled = true;
+    button.textContent = "删除中…";
+  }
+  try {
+    const result = await api(`/api/model-runs/${encodeURIComponent(runId)}`, { method: "DELETE" });
+    if (state.selectedRunId === runId) {
+      state.selectedRunId = "";
+      state.reviewComparisonStatus = "all";
+      state.failureOnly = false;
+    }
+    await Promise.all([loadRuns({ preserveEmpty: true }), loadOverview(), loadCases(), loadClusters()]);
+    showToast(`已删除 Run「${result.deleted?.name || run.name}」${result.source_deleted ? "及来源文件" : ""}。`);
+  } catch (error) {
+    showToast(error.message, true);
+    if (button?.isConnected) {
+      button.disabled = false;
+      button.textContent = "删除";
+    }
+  }
 }
 
 function reviewComparisonStatusForItem(item) {
@@ -2175,6 +2224,59 @@ function openDialog(id) {
 function closeDialog(id) {
   const dialog = $(`#${id}`);
   if (dialog?.open) dialog.close();
+}
+
+function renderSourcePreview(data) {
+  const format = String(data?.format || "").toUpperCase();
+  const rows = Array.isArray(data?.rows) ? data.rows : [];
+  const columns = Array.isArray(data?.columns) ? data.columns : [];
+  const metadata = data?.metadata && typeof data.metadata === "object" ? data.metadata : {};
+  const rowCount = Number(data?.total_rows || rows.length);
+  $("#sourcePreviewEyebrow").textContent = `${format || "SOURCE"} · MODEL RUN`;
+  $("#sourcePreviewTitle").textContent = data?.filename || "文件预览";
+  $("#sourcePreviewMeta").textContent = `${rowCount} 条结果${data?.truncated ? ` · 当前展示前 ${rows.length} 条` : ""}`;
+  const notice = data?.reconstructed
+    ? '<div class="source-preview-notice">原始上传文件未归档；当前内容由 Run 中已保存的脱敏预测行重建，仅用于复核。</div>'
+    : "";
+  const metadataBlock = Object.keys(metadata).length
+    ? `<details class="source-preview-metadata"><summary>文件元数据</summary><pre class="source-preview-json">${escapeHtml(JSON.stringify(metadata, null, 2))}</pre></details>`
+    : "";
+  if (!rows.length || !columns.length) {
+    $("#sourcePreviewContent").innerHTML = `${notice}${metadataBlock}<div class="no-asset">文件中没有可展示的结果行。</div>`;
+    return;
+  }
+  const header = columns.map((column) => `<th scope="col">${escapeHtml(column)}</th>`).join("");
+  const body = rows
+    .map((row, index) => {
+      const cells = columns
+        .map((column) => `<td>${escapeHtml(row?.[column] ?? "")}</td>`)
+        .join("");
+      return `<tr><td>${index + 1}</td>${cells}</tr>`;
+    })
+    .join("");
+  $("#sourcePreviewContent").innerHTML = `${notice}${metadataBlock}<table class="source-preview-table"><thead><tr><th scope="col">#</th>${header}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+async function openSourcePreview(runId) {
+  const run = state.modelRuns.find((item) => item.id === runId);
+  const source = run?.source_file && typeof run.source_file === "object" ? run.source_file : {};
+  const previewUrl = safeSameOriginAssetUrl(source.preview_url);
+  if (!run || !source.available || !source.preview_supported || !previewUrl) {
+    showToast("该 Run 没有可用的 CSV / JSON 页面预览，请重新上传原文件。", true);
+    return;
+  }
+  $("#sourcePreviewEyebrow").textContent = "MODEL SOURCE PREVIEW";
+  $("#sourcePreviewTitle").textContent = source.filename || "文件预览";
+  $("#sourcePreviewMeta").textContent = "正在读取…";
+  $("#sourcePreviewContent").innerHTML = '<div class="no-asset">正在生成预览…</div>';
+  openDialog("sourcePreviewDialog");
+  try {
+    const data = await api(previewUrl);
+    renderSourcePreview(data);
+  } catch (error) {
+    $("#sourcePreviewMeta").textContent = "预览失败";
+    $("#sourcePreviewContent").innerHTML = `<div class="no-asset">${escapeHtml(error.message)}</div>`;
+  }
 }
 
 function renderMediaDialog() {
