@@ -839,11 +839,10 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .analysis-page { width: min(1480px, 100%); gap: 6px; }
 .analysis-filter-card { display: grid; gap: 7px; padding: 8px 10px; }
 .analysis-filters {
-  display: grid; grid-template-columns: repeat(8, minmax(100px, 1fr)); align-items: end; gap: 6px;
+  display: grid; grid-template-columns: repeat(7, minmax(100px, 1fr)); align-items: end; gap: 6px;
 }
 .analysis-filters label { min-width: 0; gap: 3px; color: var(--faint); font-size: 9px; }
 .analysis-filters input, .analysis-filters select { height: 32px; min-width: 0; padding: 5px 29px 5px 7px; font-size: 10px; }
-.analysis-back-filter { grid-column: span 1; grid-row: 1; height: 32px; padding: 5px 8px; }
 .analysis-run-filter { grid-column: span 2; grid-row: 1; }
 .analysis-evidence-filter { grid-column: 1; grid-row: 2; }
 .analysis-theme-filter { grid-column: 2; grid-row: 2; }
@@ -898,7 +897,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .analysis-case-list { display: grid; gap: 5px; }
 .analysis-case-row {
   min-width: 0; display: grid; grid-template-columns: minmax(125px, .65fr) minmax(220px, 1fr) minmax(280px, 2.15fr) minmax(160px, .85fr);
-  align-items: start; gap: 6px; padding: 5px 7px; border: 1px solid var(--line-soft); border-radius: 7px; background: #0d121a;
+  align-items: center; gap: 6px; padding: 5px 7px; border: 1px solid var(--line-soft); border-radius: 7px; background: #0d121a;
 }
 .analysis-case-identity, .analysis-case-labels, .analysis-case-reason, .analysis-case-meta { min-width: 0; display: grid; gap: 3px; }
 .analysis-case-labels { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 5px; }
@@ -949,7 +948,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .run-filter-three { grid-template-columns: minmax(210px, 1.35fr) minmax(145px, 1fr) minmax(135px, .8fr); }
   .batch-result-item { grid-template-columns: minmax(105px, .7fr) auto auto minmax(100px, 1fr); }
   .analysis-filters { grid-template-columns: repeat(4, minmax(125px, 1fr)); }
-  .analysis-back-filter, .analysis-run-filter, .analysis-evidence-filter, .analysis-theme-filter, .analysis-search-actions { grid-column: auto; grid-row: auto; }
+  .analysis-run-filter, .analysis-evidence-filter, .analysis-theme-filter, .analysis-search-actions { grid-column: auto; grid-row: auto; }
   .analysis-run-filter { grid-column: span 2; }
   .analysis-search-actions { grid-column: 1 / -1; }
   .analysis-case-row { grid-template-columns: minmax(130px, .7fr) minmax(200px, 1fr) minmax(0, 2fr); }
@@ -977,7 +976,6 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .hero-media-button { height: clamp(400px, 62dvh, 720px); }
   .hero-media-placeholder { min-height: clamp(400px, 62dvh, 720px); }
   .analysis-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .analysis-back-filter { grid-column: 1 / -1; grid-row: auto; }
   .analysis-run-filter, .analysis-search-filter, .analysis-comparison-filter { grid-column: 1 / -1; }
   .analysis-evidence-filter, .analysis-theme-filter, .analysis-search-actions { grid-column: 1 / -1; grid-row: auto; }
   .analysis-summary-grid, .analysis-cluster-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1086,8 +1084,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .toast { right: 8px; bottom: 8px; max-width: calc(100vw - 16px); }
   .analysis-filters, .analysis-summary-grid, .analysis-cluster-grid { grid-template-columns: minmax(0, 1fr); }
   .analysis-search-actions { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) auto; }
-  .analysis-back-filter, .analysis-run-filter, .analysis-evidence-filter, .analysis-theme-filter, .analysis-search-actions { grid-column: auto; grid-row: auto; }
-  .analysis-back-filter { width: fit-content; }
+  .analysis-run-filter, .analysis-evidence-filter, .analysis-theme-filter, .analysis-search-actions { grid-column: auto; grid-row: auto; }
   .analysis-search-actions { grid-column: 1 / -1; }
   .analysis-search-filter, .analysis-comparison-filter { grid-column: auto; }
   .analysis-filter-actions { display: grid; grid-template-columns: 1fr 1fr; }
