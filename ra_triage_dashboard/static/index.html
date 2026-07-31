@@ -498,11 +498,6 @@
               <form class="page-card tool-form" id="predictionBatchForm">
                 <div class="batch-source-context hidden" id="predictionSourceSummary"></div>
                 <label>
-                  <span>批次名</span>
-                  <input id="predictionBatchName" placeholder="例如 xuhaoxuan_20260729_163454" maxlength="120" autocomplete="off" />
-                  <small>默认按「当前用户_YYYYMMDD_HHmmss」生成，仍可手动修改。</small>
-                </label>
-                <label>
                   <span>Issue IDs</span>
                   <textarea class="batch-issue-input" id="predictionBatchIssues" rows="1" placeholder="支持逗号或空格分隔，例如：cn32171803, cn31954847, cn32000543" required autocomplete="off"></textarea>
                   <small id="predictionBatchIssueCount">已识别 0 个 Issue；可拖拽右下角扩展多行</small>
@@ -567,6 +562,10 @@
                     </div>
                   </div>
                 </details>
+                <label>
+                  <span>批次名</span>
+                  <input id="predictionBatchName" placeholder="例如 xuhaoxuan_20260729_163454" maxlength="120" autocomplete="off" />
+                </label>
                 <div class="page-actions">
                   <button class="button button-primary" id="createPredictionBatchButton" type="submit">开始 Batch 预测</button>
                 </div>
