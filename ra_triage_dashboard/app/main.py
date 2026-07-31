@@ -83,19 +83,8 @@ MAX_SOURCE_PREVIEW_ROWS = 200
 MAX_SOURCE_PREVIEW_CELL_LENGTH = 2_000
 
 MISSING_EVIDENCE_CATALOG: tuple[dict[str, str], ...] = (
-    {"key": "routing_direction", "label": "routing 方向", "hint": "未理解自车目标转向 / 车道任务"},
-    {"key": "passable_space", "label": "可绕行空间", "hint": "未判断右侧/相邻车道是否可安全通过"},
-    {"key": "hazard_signal", "label": "异常停车信号", "hint": "双闪、故障或临停迹象缺失"},
-    {"key": "traffic_light_state", "label": "灯态与周期", "hint": "红绿灯当前状态或后续放行证据缺失"},
-    {"key": "stop_line_crosswalk", "label": "停止线 / 路口结构", "hint": "停止线、斑马线和路口语义缺失"},
-    {"key": "queue_vs_blocking", "label": "排队 vs 实质阻塞", "hint": "未区分正常车流等待与异常物理阻塞"},
-    {"key": "yielding_target", "label": "yielding 目标", "hint": "前方关键车辆 / 摩自关系识别不足"},
-    {"key": "post_trigger_recovery", "label": "触发后恢复", "hint": "未利用触发后的移动、通行或绕行结果"},
-    {"key": "ra_swag_action", "label": "RA / SWAG 操作链", "hint": "未核验 RA 协助后实际动作与效果"},
-    {"key": "temporal_evidence", "label": "时序证据", "hint": "单帧判断，缺少前后帧变化"},
-    {"key": "camera_view", "label": "Camera 证据", "hint": "需要相机视角确认交通灯、双闪或可通行性"},
-    {"key": "bev_topology", "label": "BEV 拓扑", "hint": "需要 BEV 复核车道、障碍物和绕行关系"},
-    {"key": "gt_needs_review", "label": "GT 需复核", "hint": "模型并非明显错，真值或边界定义待确认"},
+    {"key": "routing_direction", "label": "routing 方向缺失", "hint": "未识别自车目标转向 / 车道任务"},
+    {"key": "hazard_signal", "label": "双闪缺失", "hint": "未识别前方车辆双闪、临停或故障信号"},
 )
 
 REVIEW_TAG_CATALOG: tuple[dict[str, str], ...] = (
@@ -111,11 +100,20 @@ REVIEW_TAG_CATALOG: tuple[dict[str, str], ...] = (
     {"key": "system_decision_change", "label": "主系统决策变化"},
     {"key": "obstacle_not_avoided", "label": "未避障"},
     {"key": "close_distance", "label": "距离近"},
+    {"key": "traffic_light_wait", "label": "等灯"},
+    {"key": "passable_space", "label": "绕行空间"},
+    {"key": "no_passable_space", "label": "无绕行空间"},
+    {"key": "temporary_stop", "label": "双闪临停"},
+    {"key": "occlusion", "label": "前方大车遮挡"},
+    {"key": "right_turn", "label": "自车右转"},
+    {"key": "left_turn_wait", "label": "左转待转"},
+    {"key": "straight_lane_queue", "label": "直行车道排队"},
+    {"key": "swag_return_lane", "label": "SWAG 变道回原车道"},
 )
 REVIEW_TAG_KEYS = frozenset(item["key"] for item in REVIEW_TAG_CATALOG)
 REVIEW_TAG_ALIASES = {
     "红绿灯": "traffic_light",
-    "等灯": "traffic_light",
+    "等灯": "traffic_light_wait",
     "排队": "queue",
     "让行": "yielding",
     "掉头": "u_turn",
@@ -127,6 +125,17 @@ REVIEW_TAG_ALIASES = {
     "主系统决策变化": "system_decision_change",
     "未避障": "obstacle_not_avoided",
     "距离近": "close_distance",
+    "绕行空间": "passable_space",
+    "可绕行": "passable_space",
+    "无绕行空间": "no_passable_space",
+    "双闪临停": "temporary_stop",
+    "前方大车遮挡": "occlusion",
+    "大车遮挡": "occlusion",
+    "右转": "right_turn",
+    "自车右转": "right_turn",
+    "左转待转": "left_turn_wait",
+    "直行车道排队": "straight_lane_queue",
+    "SWAG 变道回原车道": "swag_return_lane",
     # Preserve common historical values while the new UI emits the compact catalog above.
     "信号灯": "traffic_light",
     "双闪": "temporary_stop",
@@ -135,8 +144,6 @@ REVIEW_TAG_ALIASES = {
     "遮挡": "occlusion",
     "摩自": "vulnerable_road_user",
     "行人": "vulnerable_road_user",
-    "可绕行": "passable_space",
-    "绕行空间": "passable_space",
     "SWAG": "swag",
     "RA": "swag",
     "GT": "gt_boundary",
