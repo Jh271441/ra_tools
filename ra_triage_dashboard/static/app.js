@@ -31,12 +31,16 @@ const state = {
   reviewers: [],
   predictionBatches: [],
   predictionBatchTotal: 0,
+  predictionBatchDetails: {},
+  expandedPredictionBatchId: "",
   predictionRequesters: [],
   batchListRequestSeq: 0,
   batchDefaultModel: null,
   gatewayModels: [],
   gatewayModelStatus: null,
+  gatewayModelRequestSeq: 0,
   selectedGatewayModelId: "",
+  selectedGatewayProviderId: "",
   batchPrompts: [],
   batchPromptStatus: null,
   batchFacets: {
@@ -45,6 +49,7 @@ const state = {
     input_profiles: [],
   },
   batchDraftSource: "",
+  batchDefaultName: "",
   selectedRunId: "",
   reviewComparisonStatus: "all",
   failureOnly: false,
@@ -61,6 +66,7 @@ const state = {
   pollingBatchId: "",
   pollTimer: null,
   media: { kind: "bev", index: 0 },
+  sourcePreview: { runId: "", page: 1, pageSize: 100, pageCount: 1 },
   session: {
     username: "",
     source: "anonymous",
@@ -99,13 +105,6 @@ function setReviewComparisonStatus(
   if (select) {
     select.disabled = !hasRun;
     select.value = nextStatus;
-    select.classList.remove(
-      "comparison-all",
-      "comparison-mismatch",
-      "comparison-match",
-      "comparison-none"
-    );
-    select.classList.add(`comparison-${nextStatus}`);
   }
   return nextStatus;
 }
@@ -192,12 +191,15 @@ function parsePageRoute() {
     failureOnly: params.has("failure") ? params.get("failure") === "1" : params.has("run") ? false : null,
     ...reviewFilters,
     analysisFilters: normalizedAnalysisRouteFilters(params),
+    // Issue / GT 上传已从页面移除；旧链接统一落到安全的模型结果导入区。
     importKind:
-      params.get("import") === "model" || params.get("kind") === "model"
+      params.get("import") === "model" ||
+      params.get("kind") === "model" ||
+      params.has("import") ||
+      params.has("kind") ||
+      legacyImport
         ? "model"
-        : params.has("import") || params.has("kind") || legacyImport
-          ? "issues"
-          : "",
+        : "",
     legacyRoute: legacyImport || window.location.pathname === "/inference" || Boolean(legacyHash),
   };
 }
@@ -364,7 +366,7 @@ function pageUrl(page, options = {}) {
     if (options.source) url.searchParams.set("source", options.source);
   }
   if (page === "runs" && options.importKind) {
-    url.searchParams.set("import", options.importKind === "model" ? "model" : "issues");
+    url.searchParams.set("import", "model");
   }
   return `${url.pathname}${url.search}`;
 }
@@ -393,6 +395,7 @@ function showPage(
     issues = [],
     source = "",
     importKind = "",
+    runSourceTab = "",
     restoreRoute = false,
   } = {}
 ) {
@@ -412,17 +415,15 @@ function showPage(
   document.title = `${PAGE_ROUTES[target].title} · RA Triage`;
   if (target === "runs") {
     renderRunManager();
-    const panel = $("#runImportPanel");
-    if (panel) {
-      panel.open = Boolean(importKind);
-      if (importKind) setImportKind(importKind);
-    }
+    if (importKind) setImportKind(importKind);
+    else activateRunSourceTab(runSourceTab || "upload");
   }
   if (target === "prediction") {
     const issueIds = issues.length ? issues : issue ? [issue] : [];
+    ensurePredictionBatchName();
     const issueInput = $("#predictionBatchIssues");
     if (issueInput && (issueIds.length || restoreRoute)) {
-      issueInput.value = [...new Set(issueIds)].join("\n");
+      issueInput.value = [...new Set(issueIds)].join(", ");
     }
     if (issueIds.length) {
       state.batchDraftSource = source || (issueIds.length === 1 ? "single" : "");
@@ -523,11 +524,15 @@ function formatTime(value) {
 }
 
 function evidenceLabel(key) {
-  return state.config?.missing_evidence_catalog?.find((item) => item.key === key)?.label || key;
+  const value = String(key || "");
+  if (value.startsWith("custom:")) return value.slice("custom:".length) || value;
+  return state.config?.missing_evidence_catalog?.find((item) => item.key === value)?.label || value;
 }
 
 function tagLabel(key) {
-  return state.config?.review_tag_catalog?.find((item) => item.key === key)?.label || key;
+  const value = String(key || "");
+  if (value.startsWith("custom:")) return value.slice("custom:".length) || value;
+  return state.config?.review_tag_catalog?.find((item) => item.key === value)?.label || value;
 }
 
 function frameLabel(frame) {
@@ -638,6 +643,7 @@ function renderSession() {
         ? `本次导入显示名：${username}（本机 LCA，未验证；不能用于权限）`
         : "当前没有可信 SSO；Run 创建人将记为未记录。";
   }
+  if (state.activePage === "prediction") ensurePredictionBatchName();
 }
 
 async function loadSession() {
@@ -662,7 +668,7 @@ function renderConfig() {
   $(".header-metrics")?.setAttribute("title", baseline.message || "0508 baseline GT 只读");
   if ($("#trailScopeCount")) $("#trailScopeCount").textContent = baseline.count ?? "—";
   const trail = state.trailInspection || state.config?.trail_sync || {};
-  if ($("#trailViewId")) $("#trailViewId").textContent = trail.view_id ?? "1000";
+  if ($("#trailViewId")) $("#trailViewId").textContent = trail.view_id ?? "2410";
   renderTrailSyncState();
   renderBatchRuntimeSummary();
   updateFilteredPredictionButton();
@@ -792,7 +798,7 @@ async function loadReviewers() {
 
 function checkedAnalysisComparisonStatus() {
   return normalizedAnalysisComparisonStatus(
-    document.querySelector('input[name="analysisComparison"]:checked')?.value,
+    $("#analysisComparisonFilter")?.value,
     state.reviewAnalysis.comparisonStatus || "all"
   );
 }
@@ -804,12 +810,11 @@ function setAnalysisComparisonStatus(
   let nextStatus = normalizedAnalysisComparisonStatus(comparisonStatus);
   if (!hasRun && nextStatus !== "all") nextStatus = "all";
   state.reviewAnalysis.comparisonStatus = nextStatus;
-  document
-    .querySelectorAll('input[name="analysisComparison"]')
-    .forEach((input) => {
-      input.disabled = !hasRun && input.value !== "all";
-      input.checked = input.value === nextStatus;
-    });
+  const select = $("#analysisComparisonFilter");
+  if (select) {
+    select.disabled = !hasRun;
+    select.value = nextStatus;
+  }
   return nextStatus;
 }
 
@@ -861,8 +866,82 @@ async function loadRuns({ preferDefault = false, preserveEmpty = false } = {}) {
   });
   renderAnalysisRunFilter();
   renderRunFilters();
+  renderRunSourceSummary();
   renderActiveRun();
   renderRunManager();
+}
+
+const RUN_SOURCE_META = Object.freeze({
+  upload: {
+    label: "文件模型结果",
+    description: "JSON / CSV / XLSX",
+    className: "source-upload",
+    countId: "runSourceCountUpload",
+  },
+  trail_snapshot: {
+    label: "Trail 快照",
+    description: "Trail 只读字段",
+    className: "source-trail",
+    countId: "runSourceCountTrail",
+  },
+  autotriage_snapshot: {
+    label: "AutoTriage 快照",
+    description: "平台只读结果",
+    className: "source-autotriage",
+    countId: "runSourceCountAutotriage",
+  },
+  manual_batch: {
+    label: "网页 Batch 预测",
+    description: "服务器模型推理",
+    className: "source-batch",
+  },
+});
+
+function runSourceMeta(runOrKind) {
+  const kind = typeof runOrKind === "string" ? runOrKind : runOrKind?.kind;
+  return RUN_SOURCE_META[kind] || {
+    label: kind || "未知来源",
+    description: "未记录来源",
+    className: "source-unknown",
+  };
+}
+
+function runSourceReference(run) {
+  const metadata = run?.metadata && typeof run.metadata === "object" ? run.metadata : {};
+  const recordUrl = safeUrl(metadata.record_url || metadata.records_url || "");
+  if (recordUrl) {
+    return `<a class="run-source-link" href="${escapeHtml(recordUrl)}" target="_blank" rel="noreferrer">原始 records</a>`;
+  }
+  if (run?.kind === "trail_snapshot") {
+    const viewId = metadata.view_id || metadata.trail_view_id || String(run.source_name || "").match(/\d+/)?.[0] || "2410";
+    return `<span class="run-source-ref">Trail view ${escapeHtml(viewId)}</span>`;
+  }
+  const source = run?.source_file && typeof run.source_file === "object" ? run.source_file : {};
+  const sourceName = String(source.filename || run?.source_name || "").split(/[\\/]/).pop() || "文件名未记录";
+  const previewUrl = safeSameOriginAssetUrl(source.preview_url);
+  const downloadUrl = safeSameOriginAssetUrl(source.download_url);
+  const reconstructed = source.reconstructed
+    ? '<span class="run-source-reconstructed">Run 重建</span>'
+    : "";
+  const previewAction = source.preview_supported
+    ? `<button class="run-source-preview" type="button" data-preview-run="${escapeHtml(run?.id || "")}">预览</button>`
+    : previewUrl
+      ? `<a class="run-source-link" href="${escapeHtml(previewUrl)}" target="_blank" rel="noreferrer">打开</a>`
+      : "";
+  const actions = source.available && (previewUrl || downloadUrl)
+    ? `<span class="run-source-actions">${previewAction}${downloadUrl ? `<a class="run-source-link" href="${escapeHtml(downloadUrl)}" download>下载</a>` : ""}</span>${reconstructed}`
+    : `<span class="run-source-unavailable">未归档</span>`;
+  return `<span class="run-source-ref" title="${escapeHtml(run?.source_name || sourceName)}">原始文件 · ${escapeHtml(sourceName)} ${actions}</span>`;
+}
+
+function renderRunSourceSummary() {
+  Object.entries(RUN_SOURCE_META).forEach(([kind, meta]) => {
+    if (!meta.countId) return;
+    const target = $(`#${meta.countId}`);
+    if (target) {
+      target.textContent = String(state.modelRuns.filter((run) => run.kind === kind).length);
+    }
+  });
 }
 
 function runOwner(run) {
@@ -934,13 +1013,7 @@ function renderActiveRun(overview = null) {
   const coverage = overview?.predictions ?? run.baseline_prediction_count ?? 0;
   const failures = overview?.model_failures ?? run.failure_count ?? 0;
   const reviewed = overview?.reviewed_failures;
-  const sourceLabel =
-    {
-      trail_snapshot: "Trail 快照",
-      manual_batch: "网页 Batch",
-      autotriage_snapshot: "AutoTriage 快照",
-      upload: "文件导入",
-    }[run.kind] || run.kind || "模型 Run";
+  const sourceLabel = runSourceMeta(run).label;
   if (activeMeta) {
     activeMeta.textContent =
       `${coverage} / ${state.config?.baseline?.count || "—"} 覆盖 · ${failures} 条判断失败` +
@@ -994,6 +1067,7 @@ function renderRunManager() {
         const modelName = run.metadata?.model_name || run.metadata?.experiment?.model_name || "";
         const promptVersion = run.metadata?.prompt_version || run.metadata?.experiment?.prompt_version || "";
         const externalUser = run.metadata?.external_username || "";
+        const sourceMeta = runSourceMeta(run);
         const ownerTitle = run.created_by
           ? `提交人：${run.created_by}${run.declared_author && run.declared_author !== run.created_by ? `；结果包作者：${run.declared_author}` : ""}`
           : run.declared_author
@@ -1003,6 +1077,7 @@ function renderRunManager() {
         <div class="run-row-main">
           <div class="run-row-title">
             <strong>${escapeHtml(run.name)}</strong>
+            <span class="run-source-badge ${sourceMeta.className}" title="${escapeHtml(sourceMeta.description)}">${escapeHtml(sourceMeta.label)}</span>
             <span class="run-coverage-badge">${coverageLabel}</span>
           </div>
           <div class="run-row-meta">
@@ -1011,6 +1086,7 @@ function renderRunManager() {
             ${modelName ? `<span>模型 · ${escapeHtml(modelName)}</span>` : ""}
             ${promptVersion ? `<span>Prompt · ${escapeHtml(promptVersion)}</span>` : ""}
             ${externalUser && externalUser !== owner ? `<span>平台用户 · ${escapeHtml(externalUser)}</span>` : ""}
+            <span>${runSourceReference(run)}</span>
             <span>${coverage} / ${state.config?.baseline?.count || "—"} 条</span>
             <span class="run-failure-count">错误 ${run.failure_count ?? 0}</span>
             <span>${formatTime(run.created_at)}</span>
@@ -1018,6 +1094,7 @@ function renderRunManager() {
         </div>
         <div class="run-row-actions">
           <button class="button ${run.id === state.selectedRunId ? "button-primary" : "button-quiet"}" type="button" data-use-run="${escapeHtml(run.id)}">${run.id === state.selectedRunId ? "当前 Review" : "打开 Review"}</button>
+          ${run.is_default ? '<button class="button button-quiet" type="button" disabled title="先切换团队默认 Run 才能删除">默认 Run</button>' : `<button class="button button-danger" type="button" data-delete-run="${escapeHtml(run.id)}">删除</button>`}
         </div>
       </article>`;
       }
@@ -1025,6 +1102,12 @@ function renderRunManager() {
     .join("");
   list.querySelectorAll("[data-use-run]").forEach((button) => {
     button.addEventListener("click", () => useModelRun(button.dataset.useRun));
+  });
+  list.querySelectorAll("[data-preview-run]").forEach((button) => {
+    button.addEventListener("click", () => openSourcePreview(button.dataset.previewRun));
+  });
+  list.querySelectorAll("[data-delete-run]").forEach((button) => {
+    button.addEventListener("click", () => deleteModelRun(button.dataset.deleteRun));
   });
 }
 
@@ -1042,6 +1125,40 @@ async function useModelRun(runId) {
   renderRunManager();
   await Promise.all([loadCases({ keepSelection: false, page: 1 }), loadClusters(), loadOverview()]);
   navigatePage("review");
+}
+
+async function deleteModelRun(runId) {
+  const run = state.modelRuns.find((item) => item.id === runId);
+  if (!run) return;
+  if (run.is_default) {
+    showToast("当前团队默认 Run 不能删除，请先切换默认 Run。", true);
+    return;
+  }
+  const confirmed = window.confirm(
+    `确认删除模型 Run「${run.name}」？\n\n该操作会删除该 Run 的模型输出和来源归档，不会删除 0508 GT、Issue 或人工 review，且不可恢复。`
+  );
+  if (!confirmed) return;
+  const button = document.querySelector(`[data-delete-run="${CSS.escape(runId)}"]`);
+  if (button) {
+    button.disabled = true;
+    button.textContent = "删除中…";
+  }
+  try {
+    const result = await api(`/api/model-runs/${encodeURIComponent(runId)}`, { method: "DELETE" });
+    if (state.selectedRunId === runId) {
+      state.selectedRunId = "";
+      state.reviewComparisonStatus = "all";
+      state.failureOnly = false;
+    }
+    await Promise.all([loadRuns({ preserveEmpty: true }), loadOverview(), loadCases(), loadClusters()]);
+    showToast(`已删除 Run「${result.deleted?.name || run.name}」${result.source_deleted ? "及来源文件" : ""}。`);
+  } catch (error) {
+    showToast(error.message, true);
+    if (button?.isConnected) {
+      button.disabled = false;
+      button.textContent = "删除";
+    }
+  }
 }
 
 function reviewComparisonStatusForItem(item) {
@@ -1240,6 +1357,30 @@ function openBatchDraft(issueIds, source = "") {
   navigatePage("prediction", { issues: ids, source });
 }
 
+function predictionActorSlug() {
+  const username = String(state.session.username || "triage").trim();
+  const safe = username.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  return (safe || "triage").slice(0, 48);
+}
+
+function defaultPredictionBatchName() {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, "0");
+  const date = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+  const time = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  return `${predictionActorSlug()}_${date}_${time}`;
+}
+
+function ensurePredictionBatchName() {
+  const input = $("#predictionBatchName");
+  if (!input) return;
+  const current = input.value.trim();
+  if (current && current !== state.batchDefaultName) return;
+  const next = defaultPredictionBatchName();
+  input.value = next;
+  state.batchDefaultName = next;
+}
+
 function renderPredictionSourceSummary() {
   const target = $("#predictionSourceSummary");
   if (!target) return;
@@ -1307,8 +1448,9 @@ async function loadClusters() {
   params.set("failure_only", String(Boolean(state.failureOnly && state.selectedRunId)));
   const annotationAuthor = $("#reviewerFilter")?.value;
   if (annotationAuthor) params.set("annotation_author", annotationAuthor);
-  const data = await api(`/api/review-clusters?${params.toString()}`);
   const list = $("#clusterList");
+  if (!list) return;
+  const data = await api(`/api/review-clusters?${params.toString()}`);
   if (!(data.items || []).length) {
     list.innerHTML = '<span class="muted">标注缺失信息后，这里会按错误模式自动聚类。</span>';
     return;
@@ -1342,7 +1484,7 @@ function reviewStatusLabel(status) {
   return (
     {
       pending: "待复核",
-      reviewed: "已复核",
+      reviewed: "已 Review",
       needs_gt_review: "GT 待复核",
     }[status] || status || "未记录"
   );
@@ -1404,6 +1546,7 @@ function renderAnalysisClusterList(items, targetSelector, kind) {
 function renderAnalysisConfusion(data) {
   const target = $("#analysisConfusionMatrix");
   const summary = $("#analysisConfusionSummary");
+  if (!target || !summary) return;
   const run = data.scope?.model_run;
   const confusion = data.confusion || {};
   if (!run) {
@@ -1546,10 +1689,6 @@ function renderReviewReasonAnalysis(data) {
   $("#analysisReviewScope").textContent = run
     ? `${run.name}${comparisonStatus === "all" ? "" : ` · ${comparisonMeta.label}`}`
     : "全部最新 Review";
-  $("#analysisScopeNote").textContent = run
-    ? `当前叠加 ${run.name}；模型判断结果为 ${comparisonMeta.label}（${comparisonMeta.description}）。` +
-      ` Review 仍取每个 Issue 的最新版本，不绑定该 Run。`
-    : "当前统计全部最新 Review，不叠加模型输出；选择 Run 只改变对比切片和混淆统计。";
   renderAnalysisClusterList(
     data.evidence_clusters || [],
     "#analysisEvidenceClusters",
@@ -1660,19 +1799,15 @@ function heroFrameIndex(frames) {
   return Math.floor(frames.length / 2);
 }
 
-function heroMediaSection(bev, camera) {
+function heroMediaSection(bev) {
   const frames = bev?.frames || [];
   const video = bev?.video;
   if (!bev?.available || (!frames.length && !video?.url)) {
-    return '<section class="hero-media"><div class="section-heading"><div><span class="eyebrow">PRIMARY REVIEW CANVAS</span><h3>BEV / 视频主视图</h3></div></div><div class="no-asset hero-media-placeholder"><span>当前没有可预览的 BEV 或视频。</span></div></section>';
+    return '<section class="hero-media"><div class="no-asset hero-media-placeholder"><span>当前没有可预览的 Ares 或视频。</span></div></section>';
   }
   if (!frames.length && video?.url) {
     return `
       <section class="hero-media">
-        <div class="section-heading">
-          <div><span class="eyebrow">PRIMARY REVIEW CANVAS</span><h3>Ares Capture · BEV 视频</h3></div>
-          <small>使用原生控件逐帧或连续播放</small>
-        </div>
         <div class="hero-media-button hero-media-video">
           <video src="${escapeHtml(video.url)}" controls preload="metadata" playsinline aria-label="Ares Capture BEV 视频"></video>
         </div>
@@ -1680,7 +1815,6 @@ function heroMediaSection(bev, camera) {
   }
   const index = heroFrameIndex(frames);
   const frame = frames[index];
-  const cameraCount = camera?.frames?.length || 0;
   const videoToggle = video?.url
     ? '<button type="button" class="button button-quiet hero-video-toggle" data-hero-video-toggle>播放视频</button>'
     : "";
@@ -1689,21 +1823,15 @@ function heroMediaSection(bev, camera) {
         <video src="${escapeHtml(video.url)}" controls preload="metadata" playsinline aria-label="Ares Capture BEV 视频"></video>
       </div>`
     : "";
+  const mediaControls = videoToggle ? `<div class="hero-media-meta">${videoToggle}</div>` : "";
   return `
     <section class="hero-media">
-      <div class="section-heading">
-        <div><span class="eyebrow">PRIMARY REVIEW CANVAS</span><h3>Ares Capture · BEV</h3></div>
-        <div class="hero-media-heading-actions"><small>默认 ${escapeHtml(frameLabel(frame))} · 点击进入时序预览</small>${videoToggle}</div>
-      </div>
-      <button type="button" class="hero-media-button" data-hero-frame-view data-media-kind="bev" data-media-index="${index}" aria-label="打开 BEV 与 Camera 时序预览">
+      <button type="button" class="hero-media-button" data-hero-frame-view data-media-kind="bev" data-media-index="${index}" aria-label="打开 Ares 与 Camera 时序预览">
         <img src="${escapeHtml(frame.url)}" alt="Ares Capture BEV ${escapeHtml(frameLabel(frame))}" />
         <span class="hero-media-overlay">展开预览 · ${escapeHtml(frameLabel(frame))}</span>
       </button>
       ${videoCanvas}
-      <div class="hero-media-meta">
-        <span><b>${frames.length}</b> 帧 BEV 时序</span>
-        <span>${cameraCount ? `<b>${cameraCount}</b> 帧 Camera 可在预览中切换` : "Camera 暂不可用"}</span>
-      </div>
+      ${mediaControls}
     </section>`;
 }
 
@@ -1726,6 +1854,22 @@ function predictionCards(caseData) {
     .join("")}</div>`;
 }
 
+function openHistoryDialog(kind, caseData) {
+  if (!caseData) return;
+  const isModel = kind === "model";
+  const predictions = caseData.predictions || [];
+  const annotations = caseData.annotations || [];
+  $("#historyDialogEyebrow").textContent = isModel ? "MODEL RUN HISTORY" : "REVIEW HISTORY";
+  $("#historyDialogTitle").textContent = isModel ? "评测 Run 输出历史" : "Review 历史";
+  $("#historyDialogMeta").textContent = isModel
+    ? `${predictions.length} 个模型 Run · 当前 Review Run 会高亮`
+    : `${annotations.length} 条历史 Review · 追加式，不覆盖旧记录`;
+  $("#historyDialogContent").innerHTML = isModel
+    ? predictionCards(caseData)
+    : annotationHistory(annotations);
+  openDialog("historyDialog");
+}
+
 function renderDetail(caseData) {
   const rawTitle = String(caseData.title || caseData.scenario || "").trim();
   const title =
@@ -1734,13 +1878,22 @@ function renderDetail(caseData) {
       : "Issue Review";
   const primary = (caseData.predictions || []).find((item) => item.model_run_id === state.selectedRunId) || caseData.predictions?.[0];
   const issueUrl = safeUrl(caseData.voyager_issue_url || caseData.trail_url);
+  const bevFrames = caseData.assets?.frames || [];
+  const bevPreviewButton = bevFrames.length
+    ? `<button class="button button-quiet hero-bev-open" type="button" data-open-bev-preview>查看 Ares</button>`
+    : "";
+  const modelHistoryButton = `<button class="history-inline-button" type="button" data-open-history="model">评测 Run 历史 · ${(caseData.predictions || []).length} 条</button>`;
   $("#detailPane").innerHTML = `
     <div class="detail-header">
       <div class="detail-title-row">
         <div class="detail-title"><span class="eyebrow">CASE REVIEW</span><h2>${escapeHtml(title)}</h2><span class="detail-id">${escapeHtml(caseData.issue_id)}</span></div>
-        <div class="detail-actions">
-          <button class="button button-primary" type="button" data-predict-current-case>API 推理</button>
-          ${issueUrl ? `<a class="button button-quiet" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer">打开 Voyager Issue</a>` : ""}
+        <div class="detail-navigation">
+          <button class="button button-quiet" id="backToGalleryButton" type="button">← 返回筛选结果</button>
+          <div class="case-detail-pager">
+            <button class="button button-quiet" id="previousIssueButton" type="button">← 上一 Issue</button>
+            <span id="detailQueuePosition">— / —</span>
+            <button class="button button-quiet" id="nextIssueButton" type="button">下一 Issue →</button>
+          </div>
         </div>
       </div>
       <div class="detail-context-row">
@@ -1750,18 +1903,34 @@ function renderDetail(caseData) {
           <span>当前模型</span>${labelBadge(primary?.model_label, "未输出")}
           <strong class="${primary?.model_label && primary.model_label !== caseData.gt_label ? "comparison-fail" : "comparison-neutral"}">${primary?.model_label ? primary.model_label === caseData.gt_label ? "一致" : "不一致" : "不可比较"}</strong>
         </div>
-        <p class="detail-summary">${escapeHtml(caseData.summary || "请结合 BEV、Camera 与触发后时序复核。")}</p>
+        ${caseData.summary ? `<p class="detail-summary">${escapeHtml(caseData.summary)}</p>` : ""}
+        <div class="detail-actions">
+          ${bevPreviewButton}
+          <button class="button button-quiet" type="button" data-predict-current-case>API 推理</button>
+          ${issueUrl ? `<a class="button button-quiet" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer">Issue link</a>` : ""}
+          ${modelHistoryButton}
+        </div>
       </div>
       ${caseData.review_note ? `<details class="review-note-details"><summary>查看历史备注</summary><div class="review-note"><span>历史备注</span>${escapeHtml(caseData.review_note)}</div></details>` : ""}
     </div>
-    ${heroMediaSection(caseData.assets, caseData.camera)}
-    <details class="section model-history-details">
-      <summary><span>评测 Run 输出历史</span><small>当前 Review Run 会高亮</small></summary>
-      ${predictionCards(caseData)}
-    </details>`;
+    ${heroMediaSection(caseData.assets)}`;
   $("#detailPane").querySelector("[data-predict-current-case]")?.addEventListener("click", () => {
     openBatchDraft([caseData.issue_id], "single");
   });
+  $("#detailPane").querySelector("[data-open-bev-preview]")?.addEventListener("click", () => {
+    openMedia("bev", heroFrameIndex(bevFrames));
+  });
+  $("#detailPane").querySelector("[data-open-history='model']")?.addEventListener("click", () => {
+    openHistoryDialog("model", caseData);
+  });
+  $("#detailPane").querySelector("#backToGalleryButton")?.addEventListener("click", returnToReviewGallery);
+  $("#detailPane").querySelector("#previousIssueButton")?.addEventListener("click", () => {
+    navigateAdjacentCase(-1).catch((error) => showToast(error.message, true));
+  });
+  $("#detailPane").querySelector("#nextIssueButton")?.addEventListener("click", () => {
+    navigateAdjacentCase(1).catch((error) => showToast(error.message, true));
+  });
+  renderCaseNavigation();
   $("#detailPane").querySelectorAll("[data-media-kind]").forEach((button) => {
     button.addEventListener("click", () => openMedia(button.dataset.mediaKind, Number(button.dataset.mediaIndex)));
   });
@@ -1797,37 +1966,49 @@ function annotationHistory(annotations) {
 function renderReview(caseData) {
   const previous = caseData.annotations?.[0] || {};
   state.selectedAnnotationLabel = previous.label || "";
-  const chosenEvidence = new Set(previous.missing_evidence || []);
   const catalog = state.config?.missing_evidence_catalog || [];
   const tagCatalog = state.config?.review_tag_catalog || [];
-  const chosenTags = new Set(
-    (previous.tags || []).filter((tag) => tagCatalog.some((item) => item.key === tag))
+  const hasPreviousReview = Boolean(caseData.annotations?.length);
+  const chosenEvidence = new Set(
+    hasPreviousReview ? previous.missing_evidence || [] : ["routing_direction"]
   );
+  const catalogKeys = new Set(catalog.map((item) => item.key));
+  const customEvidenceKeys = [...chosenEvidence].filter((key) => !catalogKeys.has(key));
+  const chosenTags = new Set(previous.tags || []);
+  const tagCatalogKeys = new Set(tagCatalog.map((item) => item.key));
+  const customTagKeys = [...chosenTags].filter((tag) => !tagCatalogKeys.has(tag));
   const author = state.session.username || previous.author || "";
   const authorLocked = Boolean(state.session.verified && state.session.username);
+  const reviewStatus = previous.review_status === "needs_gt_review" ? "needs_gt_review" : "reviewed";
+  const evidenceOption = (item, selected) => `<label class="evidence-option" title="${escapeHtml(item.hint || "")}"><input type="checkbox" name="missingEvidence" value="${escapeHtml(item.key)}" ${selected ? "checked" : ""} /><span><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.hint || "")}</small></span></label>`;
+  const customEvidenceOptions = customEvidenceKeys
+    .map((key) => evidenceOption({ key, label: evidenceLabel(key), hint: "本条 Review 新建的缺失信息" }, true))
+    .join("");
+  const tagOption = (key, label, selected) => `<label class="tag-option"><input type="checkbox" name="reviewTags" value="${escapeHtml(key)}" ${selected ? "checked" : ""} /><span>${escapeHtml(label)}</span></label>`;
+  const customTagOptions = customTagKeys
+    .map((key) => tagOption(key, tagLabel(key), true))
+    .join("");
   $("#reviewPane").innerHTML = `
-    <div class="review-title"><div><span class="eyebrow">HUMAN REVIEW</span><h2>标注与错误归因</h2></div><span class="review-issue">${escapeHtml(caseData.issue_id)}</span></div>
+    <div class="review-title"><div><span class="eyebrow">HUMAN REVIEW</span><h2>模型判错原因</h2><small class="review-scope-note">按 Issue 记录，模型输出仍按 Run 区分</small></div><span class="review-issue">${escapeHtml(caseData.issue_id)}</span></div>
     <form class="review-form" id="annotationForm">
-      <div><label><span>人工最终判断</span></label><div class="label-buttons">${LABELS.map((label) => `<button class="label-choice ${state.selectedAnnotationLabel === label ? "active" : ""}" data-annotation-label="${label}" type="button">${label}</button>`).join("")}</div></div>
-      <label><span>复核状态</span><select id="reviewStatusInput"><option value="pending">待补充</option><option value="reviewed" ${previous.review_status === "reviewed" ? "selected" : ""}>已复核</option><option value="needs_gt_review" ${previous.review_status === "needs_gt_review" ? "selected" : ""}>GT 需复核</option></select></label>
+      <label class="review-status-field"><span>复核状态</span><select id="reviewStatusInput"><option value="reviewed" ${reviewStatus === "reviewed" ? "selected" : ""}>已 Review</option><option value="pending" ${reviewStatus === "pending" ? "selected" : ""}>待补充</option><option value="needs_gt_review" ${reviewStatus === "needs_gt_review" ? "selected" : ""}>GT 需复核</option></select></label>
       <label class="review-reason">
         <span>模型为什么判错？</span>
-        <small>请写清交通灯、routing、绕行空间、时序或 RA / SWAG 操作链等关键依据。</small>
-        <textarea id="annotationNote" placeholder="例如：自车 routing 为右转，前车直行等灯；右侧存在可安全通行空间，模型只看到排队而遗漏 routing 与绕行条件。">${escapeHtml(previous.note || "")}</textarea>
+        <textarea id="annotationNote" rows="4" placeholder="简要说明模型漏掉的关键证据，例如 routing、绕行空间或时序。">${escapeHtml(previous.note || "")}</textarea>
       </label>
-      <details class="evidence-dropdown">
+      <details class="evidence-dropdown review-dropdown">
         <summary>缺失信息（多选）<span class="evidence-summary-count" id="evidenceSummaryCount">已选 ${chosenEvidence.size} 项</span></summary>
-        <div class="evidence-options">${catalog.map((item) => `<label class="evidence-option" title="${escapeHtml(item.hint || "")}"><input type="checkbox" name="missingEvidence" value="${escapeHtml(item.key)}" ${chosenEvidence.has(item.key) ? "checked" : ""} /><span><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.hint || "")}</small></span></label>`).join("")}</div>
+        <div class="evidence-options" id="missingEvidenceOptions">${catalog.map((item) => evidenceOption(item, chosenEvidence.has(item.key))).join("")}${customEvidenceOptions}<div class="custom-evidence-create" id="customEvidenceCreator"><input id="newMissingEvidence" maxlength="48" placeholder="输入新的缺失信息" autocomplete="off" /><button class="button button-quiet" id="addMissingEvidenceButton" type="button">新建标签</button></div></div>
       </details>
-      <details class="evidence-dropdown tag-dropdown">
+      <details class="evidence-dropdown review-dropdown tag-dropdown">
         <summary>场景 Tags（可选）<span class="evidence-summary-count" id="tagSummaryCount">已选 ${chosenTags.size} 项</span></summary>
-        <div class="tag-options">${tagCatalog.map((item) => `<label class="tag-option"><input type="checkbox" name="reviewTags" value="${escapeHtml(item.key)}" ${chosenTags.has(item.key) ? "checked" : ""} /><span>${escapeHtml(item.label)}</span></label>`).join("")}</div>
+        <div class="tag-options" id="reviewTagOptions">${tagCatalog.map((item) => tagOption(item.key, item.label, chosenTags.has(item.key))).join("")}${customTagOptions}<div class="custom-tag-create" id="customTagCreator"><input id="newSceneTag" maxlength="48" placeholder="输入新的场景 Tag" autocomplete="off" /><button class="button button-quiet" id="addSceneTagButton" type="button">新建标签</button></div></div>
       </details>
       <div class="review-attachment-field">
         <span>补充截图（可选）</span>
         <div class="screenshot-paste-zone" id="screenshotPasteZone" tabindex="0" role="group" aria-label="粘贴补充截图">
           <strong>粘贴截图</strong>
-          <small>点击此处后直接 Ctrl / ⌘ + V；最多 4 张，每张 8 MB。</small>
+          <small>点击后 Ctrl / ⌘ + V；最多 4 张。</small>
           <button class="screenshot-browse-button" id="reviewScreenshotBrowse" type="button">选择图片</button>
         </div>
         <input class="hidden" id="reviewScreenshotInput" type="file" accept="image/png,image/jpeg,image/webp" multiple />
@@ -1836,18 +2017,56 @@ function renderReview(caseData) {
       <label><span>标注人${authorLocked ? "（SSO）" : "（可编辑）"}</span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" ${authorLocked ? "readonly" : ""} /></label>
       <button class="button button-primary full-width" type="submit">保存新的 review 版本</button>
     </form>
-    <section class="annotation-history"><div class="subheading"><span>Review 历史</span><small>追加式，不覆盖旧记录</small></div>${annotationHistory(caseData.annotations)}</section>`;
-  $("#reviewPane").querySelectorAll("[data-annotation-label]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.selectedAnnotationLabel = button.dataset.annotationLabel;
-      $("#reviewPane").querySelectorAll("[data-annotation-label]").forEach((item) => item.classList.toggle("active", item === button));
-    });
-  });
+    <details class="review-history-toggle">
+      <summary><span><span class="eyebrow">REVIEW HISTORY</span><strong>Review 历史</strong></span><span class="history-launch-meta">${(caseData.annotations || []).length} 条</span></summary>
+      <div class="review-history-content">${annotationHistory(caseData.annotations)}</div>
+    </details>`;
   $("#reviewPane").querySelectorAll('input[name="missingEvidence"]').forEach((input) => {
     input.addEventListener("change", updateEvidenceSummary);
   });
   $("#reviewPane").querySelectorAll('input[name="reviewTags"]').forEach((input) => {
     input.addEventListener("change", updateTagSummary);
+  });
+  $("#reviewPane").querySelectorAll(".review-dropdown").forEach((dropdown) => {
+    dropdown.addEventListener("toggle", () => {
+      if (!dropdown.open) return;
+      $("#reviewPane").querySelectorAll(".review-dropdown").forEach((other) => {
+        if (other !== dropdown) other.open = false;
+      });
+    });
+  });
+  $("#addMissingEvidenceButton")?.addEventListener("click", () => {
+    const input = $("#newMissingEvidence");
+    const value = String(input?.value || "").trim();
+    if (!value) return showToast("请输入新的缺失信息。", true);
+    if (value.length > 48 || /[\x00-\x1f\x7f]/.test(value)) return showToast("缺失信息长度或字符不合法。", true);
+    const key = `custom:${value}`;
+    const exists = [...document.querySelectorAll('input[name="missingEvidence"]')].some((item) => item.value === key);
+    if (exists) return showToast("该缺失信息已经添加。", true);
+    const option = document.createElement("label");
+    option.className = "evidence-option custom-evidence-option";
+    option.innerHTML = `<input type="checkbox" name="missingEvidence" value="${escapeHtml(key)}" checked /><span><strong>${escapeHtml(value)}</strong><small>本条 Review 新建的缺失信息</small></span>`;
+    const creator = $("#customEvidenceCreator");
+    creator?.before(option);
+    option.querySelector("input")?.addEventListener("change", updateEvidenceSummary);
+    if (input) input.value = "";
+    updateEvidenceSummary();
+  });
+  $("#addSceneTagButton")?.addEventListener("click", () => {
+    const input = $("#newSceneTag");
+    const value = String(input?.value || "").trim();
+    if (!value) return showToast("请输入新的场景 Tag。", true);
+    if (value.length > 48 || /[\x00-\x1f\x7f]/.test(value)) return showToast("场景 Tag 长度或字符不合法。", true);
+    const key = `custom:${value}`;
+    const exists = [...document.querySelectorAll('input[name="reviewTags"]')].some((item) => item.value === key);
+    if (exists) return showToast("该场景 Tag 已经添加。", true);
+    const option = document.createElement("label");
+    option.className = "tag-option custom-tag-option";
+    option.innerHTML = `<input type="checkbox" name="reviewTags" value="${escapeHtml(key)}" checked /><span>${escapeHtml(value)}</span>`;
+    $("#customTagCreator")?.before(option);
+    option.querySelector("input")?.addEventListener("change", updateTagSummary);
+    if (input) input.value = "";
+    updateTagSummary();
   });
   const pasteZone = $("#screenshotPasteZone");
   const screenshotInput = $("#reviewScreenshotInput");
@@ -2114,6 +2333,83 @@ function closeDialog(id) {
   if (dialog?.open) dialog.close();
 }
 
+function renderSourcePreview(data) {
+  const format = String(data?.format || "").toUpperCase();
+  const rows = Array.isArray(data?.rows) ? data.rows : [];
+  const columns = Array.isArray(data?.columns) ? data.columns : [];
+  const metadata = data?.metadata && typeof data.metadata === "object" ? data.metadata : {};
+  const rowCount = Number(data?.total_rows || rows.length);
+  const page = Number(data?.page || 1);
+  const pageCount = Number(data?.page_count || 1);
+  const offset = Number(data?.offset || 0);
+  state.sourcePreview.page = page;
+  state.sourcePreview.pageCount = pageCount;
+  $("#sourcePreviewEyebrow").textContent = `${format || "SOURCE"} · MODEL RUN`;
+  $("#sourcePreviewTitle").textContent = data?.filename || "文件预览";
+  $("#sourcePreviewMeta").textContent = `${rowCount} 条结果 · 第 ${page} / ${pageCount} 页${data?.reconstructed ? " · Run 重建副本" : ""}`;
+  $("#sourcePreviewPageLabel").textContent = `第 ${page} / ${pageCount} 页`;
+  $("#sourcePreviewPrevious").disabled = !data?.has_previous;
+  $("#sourcePreviewNext").disabled = !data?.has_next;
+  const notice = data?.reconstructed
+    ? '<div class="source-preview-notice">原始上传文件未归档；当前内容由 Run 中已保存的脱敏预测行重建，仅用于复核。</div>'
+    : "";
+  const metadataBlock = Object.keys(metadata).length
+    ? `<details class="source-preview-metadata"><summary>文件元数据</summary><pre class="source-preview-json">${escapeHtml(JSON.stringify(metadata, null, 2))}</pre></details>`
+    : "";
+  if (!rows.length || !columns.length) {
+    $("#sourcePreviewContent").innerHTML = `${notice}${metadataBlock}<div class="no-asset">文件中没有可展示的结果行。</div>`;
+    return;
+  }
+  const header = columns.map((column) => `<th scope="col">${escapeHtml(column)}</th>`).join("");
+  const body = rows
+    .map((row, index) => {
+      const cells = columns
+        .map((column) => `<td>${escapeHtml(row?.[column] ?? "")}</td>`)
+        .join("");
+      return `<tr><td>${offset + index + 1}</td>${cells}</tr>`;
+    })
+    .join("");
+  $("#sourcePreviewContent").innerHTML = `${notice}${metadataBlock}<table class="source-preview-table"><thead><tr><th scope="col">#</th>${header}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+async function loadSourcePreviewPage(runId, page = 1) {
+  const run = state.modelRuns.find((item) => item.id === runId);
+  const source = run?.source_file && typeof run.source_file === "object" ? run.source_file : {};
+  const previewUrl = safeSameOriginAssetUrl(source.preview_url);
+  if (!run || !source.available || !source.preview_supported || !previewUrl) {
+    throw new Error("该 Run 没有可用的 CSV / JSON 页面预览。");
+  }
+  const separator = previewUrl.includes("?") ? "&" : "?";
+  const data = await api(`${previewUrl}${separator}page=${encodeURIComponent(Math.max(1, page))}&page_size=${state.sourcePreview.pageSize}`);
+  state.sourcePreview.runId = runId;
+  renderSourcePreview(data);
+}
+
+async function openSourcePreview(runId) {
+  const run = state.modelRuns.find((item) => item.id === runId);
+  const source = run?.source_file && typeof run.source_file === "object" ? run.source_file : {};
+  const previewUrl = safeSameOriginAssetUrl(source.preview_url);
+  if (!run || !source.available || !source.preview_supported || !previewUrl) {
+    showToast("该 Run 没有可用的 CSV / JSON 页面预览，请重新上传原文件。", true);
+    return;
+  }
+  $("#sourcePreviewEyebrow").textContent = "MODEL SOURCE PREVIEW";
+  $("#sourcePreviewTitle").textContent = source.filename || "文件预览";
+  $("#sourcePreviewMeta").textContent = "正在读取…";
+  $("#sourcePreviewPageLabel").textContent = "第 1 / … 页";
+  $("#sourcePreviewPrevious").disabled = true;
+  $("#sourcePreviewNext").disabled = true;
+  $("#sourcePreviewContent").innerHTML = '<div class="no-asset">正在生成预览…</div>';
+  openDialog("sourcePreviewDialog");
+  try {
+    state.sourcePreview = { runId, page: 1, pageSize: 100, pageCount: 1 };
+    await loadSourcePreviewPage(runId, 1);
+  } catch (error) {
+    $("#sourcePreviewMeta").textContent = "预览失败";
+    $("#sourcePreviewContent").innerHTML = `<div class="no-asset">${escapeHtml(error.message)}</div>`;
+  }
+}
+
 function renderMediaDialog() {
   const bev = mediaFrames("bev");
   const camera = mediaFrames("camera");
@@ -2184,10 +2480,49 @@ function updatePredictionBatchCount() {
   target.classList.toggle("input-warning", Boolean(invalid.length || overLimit));
 }
 
+function renderGatewayProviders() {
+  const target = $("#gatewayProviderSelect");
+  if (!target) return;
+  const catalog = state.config?.prediction_batch?.providers || {};
+  const providers = Array.isArray(catalog.providers) ? catalog.providers : [];
+  if (!providers.length) {
+    target.innerHTML = '<option value="">未发现服务端 Provider 配置</option>';
+    target.disabled = true;
+    return;
+  }
+  const configuredSelected = state.selectedGatewayProviderId || catalog.active_provider_id;
+  const selectedId = providers.some((item) => item.id === configuredSelected && item.enabled)
+    ? configuredSelected
+    : providers.find((item) => item.enabled)?.id || providers[0].id;
+  state.selectedGatewayProviderId = selectedId;
+  target.innerHTML = providers
+    .map((provider) => {
+      const selectable = Boolean(provider.enabled && provider.supports_batch);
+      const status = selectable ? "可用" : provider.credential_configured ? "暂不可用" : "未配置凭证";
+      return `<option value="${escapeHtml(provider.id)}" ${selectable ? "" : "disabled"}>${escapeHtml(provider.display_name || provider.id)} · ${escapeHtml(status)}</option>`;
+    })
+    .join("");
+  target.value = selectedId;
+  target.disabled = false;
+  target.onchange = () => {
+    const nextId = target.value || selectedId;
+    if (nextId === state.selectedGatewayProviderId) return;
+    state.selectedGatewayProviderId = nextId;
+    state.selectedGatewayModelId = "";
+    const modelSelect = $("#predictionModelSelect");
+    if (modelSelect) modelSelect.value = "";
+    renderGatewayProviders();
+    loadGatewayModels({ providerId: state.selectedGatewayProviderId }).catch((error) => {
+      showToast(error.message, true);
+    });
+  };
+}
+
 function renderGatewayModels() {
   const select = $("#predictionModelSelect");
   const statusTarget = $("#gatewayModelStatus");
   const endpointTarget = $("#gatewayModelsEndpoint");
+  const listTarget = $("#gatewayModelList");
   const createButton = $("#createPredictionBatchButton");
   if (!select || !statusTarget || !endpointTarget) return;
   const catalog = state.gatewayModelStatus || {};
@@ -2239,9 +2574,43 @@ function renderGatewayModels() {
           }
         )
         .join("")
-    : '<option value="">没有匹配的 Qwen3 模型</option>';
+    : '<option value="">没有匹配的模型</option>';
   select.value = unavailableSelection ? previous : selectedModel?.id || "";
   state.selectedGatewayModelId = select.value;
+  if (listTarget) {
+    listTarget.innerHTML = displayModels.length
+      ? displayModels
+          .map((model) => {
+            const unavailable = Boolean(model.unavailable);
+            const active = !unavailable && model.id === state.selectedGatewayModelId;
+            const tier = unavailable
+              ? "不可用"
+              : model.validation_status === "validated"
+                ? "已验证"
+                : "实验";
+            const resolved = model.resolved_model_id && model.resolved_model_id !== model.id
+              ? model.resolved_model_id
+              : model.id;
+            const searchNote = model.pinnedBySearch ? " · 当前选择" : "";
+            return `<button class="gateway-model-option ${active ? "active" : ""} ${unavailable ? "unavailable" : ""}" type="button" data-gateway-model="${escapeHtml(model.id)}" ${unavailable ? "disabled" : ""}>
+              <span class="gateway-model-option-head">
+                <strong>${escapeHtml(model.display_name || model.id)}${escapeHtml(searchNote)}</strong>
+                <em>${tier}</em>
+              </span>
+              <small>${escapeHtml(resolved)}</small>
+            </button>`;
+          })
+          .join("")
+      : '<div class="muted">没有匹配的模型。</div>';
+    listTarget.querySelectorAll("[data-gateway-model]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (button.disabled) return;
+        state.selectedGatewayModelId = button.dataset.gatewayModel || "";
+        select.value = state.selectedGatewayModelId;
+        renderGatewayModels();
+      });
+    });
+  }
   const selectedIsOnline = state.gatewayModels.some(
     (item) => item.id === state.selectedGatewayModelId
   );
@@ -2252,29 +2621,33 @@ function renderGatewayModels() {
     selectedIsOnline;
   statusTarget.className = `gateway-model-status ${ready ? "ok" : "warn"}`;
   statusTarget.textContent = unavailableSelection
-    ? `当前选择 ${previous} 已不在在线 Qwen3 目录；请选择其他模型后再提交。`
+    ? `当前选择 ${previous} 已不在当前 Provider 在线目录；请选择其他模型后再提交。`
     : ready
-      ? `已验证 ${catalog.validated_count ?? "—"} · 实验性 Qwen3 ${catalog.experimental_count ?? "—"} · 当前显示 ${visibleModels.length} / ${state.gatewayModels.length}`
+      ? `已验证 ${catalog.validated_count ?? "—"} · 实验模型 ${catalog.experimental_count ?? "—"} · 当前显示 ${visibleModels.length} / ${state.gatewayModels.length}`
       : catalog.message || "模型目录尚未就绪。";
   if (createButton) createButton.disabled = !ready;
   renderBatchCatalogFilters();
   renderBatchRuntimeSummary();
 }
 
-async function loadGatewayModels({ refresh = false } = {}) {
+async function loadGatewayModels({ refresh = false, providerId = "" } = {}) {
+  const requestSeq = ++state.gatewayModelRequestSeq;
   const statusTarget = $("#gatewayModelStatus");
   if (statusTarget) {
     statusTarget.className = "gateway-model-status";
     statusTarget.textContent = refresh ? "正在刷新模型目录…" : "正在自动获取模型目录…";
   }
   try {
-    const data = await api(
-      `/api/prediction-batches/models${refresh ? "?refresh=true" : ""}`
-    );
+    const selectedProviderId = providerId || state.selectedGatewayProviderId || "kylin";
+    const params = new URLSearchParams({ provider_id: selectedProviderId });
+    if (refresh) params.set("refresh", "true");
+    const data = await api(`/api/prediction-batches/models?${params.toString()}`);
+    if (requestSeq !== state.gatewayModelRequestSeq) return;
     state.gatewayModelStatus = data;
     state.gatewayModels = data.models || [];
     renderGatewayModels();
   } catch (error) {
+    if (requestSeq !== state.gatewayModelRequestSeq) return;
     state.gatewayModelStatus = {
       status: "failed",
       stale: false,
@@ -2282,6 +2655,7 @@ async function loadGatewayModels({ refresh = false } = {}) {
       catalog_label:
         state.config?.prediction_batch?.model_gateway?.catalog_label ||
         "ra-model · /v1/models",
+      provider_id: providerId || state.selectedGatewayProviderId || "kylin",
     };
     state.gatewayModels = [];
     renderGatewayModels();
@@ -2377,6 +2751,49 @@ function applyBatchInputPreset() {
   $("#predictionFrameOffsets").value = (preset.frame_offsets_ms || []).join(",");
   $("#predictionUseRaEvent").checked = Boolean(preset.use_ra_event);
   $("#predictionUseRaOptions").checked = Boolean(preset.use_ra_options);
+  syncCameraFramePreset();
+  renderBatchRuntimeSummary();
+}
+
+function cameraFramePresets() {
+  return [
+    {
+      id: "camera_7_frames",
+      frame_offsets_ms: [-3000, -2000, -1000, 0, 1000, 2000, 3000],
+    },
+    {
+      id: "camera_three_moments",
+      frame_offsets_ms: [-3000, 0, 3000],
+    },
+    {
+      id: "camera_single_frame",
+      frame_offsets_ms: [0],
+    },
+  ];
+}
+
+function syncCameraFramePreset() {
+  const select = $("#predictionCameraPreset");
+  const input = $("#predictionFrameOffsets");
+  if (!select || !input) return;
+  const offsets = String(input.value || "")
+    .split(/[\s,，;；]+/)
+    .filter(Boolean)
+    .map((value) => Number(value));
+  const matched = cameraFramePresets().find((preset) =>
+    preset.frame_offsets_ms.length === offsets.length &&
+    preset.frame_offsets_ms.every((value, index) => value === offsets[index])
+  );
+  select.value = matched?.id || "custom";
+}
+
+function applyCameraFramePreset() {
+  const select = $("#predictionCameraPreset");
+  const preset = cameraFramePresets().find(
+    (item) => item.id === select?.value
+  );
+  if (!preset) return;
+  $("#predictionFrameOffsets").value = preset.frame_offsets_ms.join(",");
   renderBatchRuntimeSummary();
 }
 
@@ -2533,7 +2950,7 @@ function renderBatchRuntimeSummary() {
       ? configured.prompt_version || configured.prompt || state.config?.prediction_batch?.prompt_version
       : "");
   const source = selectedGatewayModel
-    ? `网关解析 · ${selectedGatewayModel.resolved_model_id}`
+    ? `${state.selectedGatewayProviderId || selectedGatewayModel.provider || "kylin"} · ${selectedGatewayModel.resolved_model_id}`
     : typeof configured === "object"
       ? configured.experiment_source || configured.runtime || configured.source
       : "";
@@ -2628,6 +3045,81 @@ function renderBatchRequesterFilter() {
   select.value = previous === "__me__" || names.includes(previous) ? previous : "";
 }
 
+function batchInputSummary(batch) {
+  const input = batch.input_config || {};
+  const offsets = Array.isArray(input.frame_offsets_ms)
+    ? input.frame_offsets_ms.join(", ")
+    : "";
+  return [
+    batch.input_profile ? `Profile ${batch.input_profile}` : "",
+    offsets ? `Camera ${input.frame_offsets_ms.length} 帧 · ${offsets} ms` : "",
+    input.use_ra_event ? "RA Events" : "无 RA Events",
+    input.use_ra_options ? "RA / SWAG Options" : "",
+    input.use_bev_animation === false || input.use_ares_capture === false
+      ? "BEV / Ares 关闭"
+      : "",
+  ].filter(Boolean);
+}
+
+function batchOutputLines(batch) {
+  const summary = batch.summary && typeof batch.summary === "object"
+    ? batch.summary
+    : {};
+  return [
+    summary.ra_repo_commit ? `ra_auto_triage commit · ${summary.ra_repo_commit}` : "",
+    summary.trail_view_id ? `Trail view · ${summary.trail_view_id}` : "",
+    summary.model_run_duplicate ? "复用已有模型 Run" : "",
+    summary.bag_cache_read_only ? "Bag cache · read-only" : "",
+    summary.trail_write_enabled === false ? "Trail 写入 · 关闭" : "",
+    batch.error_text ? `任务错误 · ${batch.error_text}` : "",
+  ].filter(Boolean);
+}
+
+function renderPredictionBatchDetail(batch) {
+  if (!batch) {
+    return `<div class="batch-history-detail" data-batch-detail="loading"><span class="muted">正在读取运行输出…</span></div>`;
+  }
+  const counts = batchCounts(batch);
+  const items = Array.isArray(batch.items) ? batch.items : [];
+  const outputLines = batchOutputLines(batch);
+  return `<div class="batch-history-detail" data-batch-detail="${escapeHtml(batch.id || "")}">
+    <div class="batch-detail-heading">
+      <div>
+        <span class="eyebrow">BATCH OUTPUT</span>
+        <strong>运行输出 · ${escapeHtml(batch.name || batch.batch_name || batch.id || "")}</strong>
+      </div>
+      <span>${escapeHtml(batchStatusLabel(batch.status))} · ${counts.completed}/${counts.total} 完成 · 成功 ${counts.success} · 失败 ${counts.failed}</span>
+    </div>
+    <div class="batch-detail-meta">
+      <span>${escapeHtml(batch.provider_id || "kylin")} · 模型 ${escapeHtml(batch.resolved_model_id || batch.model_name || "—")}${batch.model_validation_status === "experimental" ? " · 实验" : ""}</span>
+      <span>Prompt ${escapeHtml(batch.prompt_version || "—")}${batch.prompt_mode === "custom" ? " · custom" : ""}</span>
+      ${batchInputSummary(batch).map((value) => `<span>${escapeHtml(value)}</span>`).join("")}
+      ${batch.model_run_id ? `<span>Model Run ${escapeHtml(batch.model_run_id)}</span>` : ""}
+      ${batch.finished_at ? `<span>结束 ${formatTime(batch.finished_at)}</span>` : ""}
+    </div>
+    ${outputLines.length ? `<div class="batch-output-lines">${outputLines.map((line) => `<code>${escapeHtml(line)}</code>`).join("")}</div>` : ""}
+    ${
+      items.length
+        ? `<div class="batch-result-items">${items
+            .map((item) => {
+              const detail = item.result?.result || item.result || {};
+              const issueUrl = safeUrl(item.voyager_issue_url || "");
+              return `<div class="batch-result-item">
+                <strong>${escapeHtml(item.issue_id)}</strong>
+                <span class="job-status status-${escapeHtml(item.status)}">${escapeHtml(batchStatusLabel(item.status))}</span>
+                ${detail.model_label ? labelBadge(detail.model_label, "—") : ""}
+                ${issueUrl ? `<a href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer">打开 Voyager Issue</a>` : ""}
+                ${detail.model_confidence != null ? `<small>confidence ${escapeHtml(detail.model_confidence)}</small>` : ""}
+                ${detail.model_reason ? `<small class="batch-item-reason">${escapeHtml(detail.model_reason)}</small>` : ""}
+                ${item.error_text ? `<small>${escapeHtml(item.error_text)}</small>` : ""}
+              </div>`;
+            })
+            .join("")}</div>`
+        : '<div class="muted">任务明细尚未生成。</div>'
+    }
+  </div>`;
+}
+
 function renderPredictionBatches(total = state.predictionBatches.length) {
   const list = $("#predictionBatchList");
   if (!list) return;
@@ -2664,6 +3156,8 @@ function renderPredictionBatches(total = state.predictionBatches.length) {
           ""
       );
       const summaryText = batchSummaryText(batch);
+      const expanded = state.expandedPredictionBatchId === batch.id;
+      const detail = state.predictionBatchDetails[batch.id];
       return `<article class="job-history-row batch-history-row">
         <div class="job-history-main">
           <div class="run-row-title">
@@ -2672,6 +3166,7 @@ function renderPredictionBatches(total = state.predictionBatches.length) {
             <span class="publish-status publish-${escapeHtml(publishStatus)}">${escapeHtml(batchPublishLabel(publishStatus))}</span>
           </div>
           <div class="run-row-meta">
+            <span>Provider ${escapeHtml(batch.provider_id || "kylin")}</span>
             <span>${escapeHtml(
               batch.requested_model_id && batch.requested_model_id !== batch.model_name
                 ? `${batch.requested_model_id} → ${batch.model_name || batch.resolved_model_id}`
@@ -2689,23 +3184,36 @@ function renderPredictionBatches(total = state.predictionBatches.length) {
           ${summaryText ? `<div class="job-result-preview">${escapeHtml(summaryText)}</div>` : ""}
         </div>
         <div class="run-row-actions">
-          <button class="button button-quiet" type="button" data-show-batch="${escapeHtml(batch.id)}">查看结果</button>
+          <button class="button button-quiet" type="button" data-show-batch="${escapeHtml(batch.id)}">${expanded ? "收起日志" : "查看日志"}</button>
           ${canPublish && publishEnabled ? `<button class="button button-primary" type="button" data-publish-batch="${escapeHtml(batch.id)}">推送 AutoTriage</button>` : ""}
           ${canPublish && !publishEnabled ? '<button class="button button-quiet" type="button" disabled title="生产写入需可信 SSO 域名">推送需 SSO</button>' : ""}
           ${["running", "publishing"].includes(publishStatus) ? '<button class="button button-quiet" type="button" disabled>推送中…</button>' : ""}
           ${batchUrl ? `<a class="button button-quiet" href="${escapeHtml(batchUrl)}" target="_blank" rel="noreferrer">打开 AutoTriage</a>` : ""}
         </div>
+        ${expanded ? renderPredictionBatchDetail(detail) : ""}
       </article>`;
     })
     .join("");
   list.querySelectorAll("[data-show-batch]").forEach((button) => {
     button.addEventListener("click", async () => {
+      const batchId = button.dataset.showBatch;
+      if (state.expandedPredictionBatchId === batchId) {
+        state.expandedPredictionBatchId = "";
+        renderPredictionBatches(state.predictionBatchTotal);
+        return;
+      }
+      state.expandedPredictionBatchId = batchId;
+      renderPredictionBatches(state.predictionBatchTotal);
       try {
         const data = await api(
-          `/api/prediction-batches/${encodeURIComponent(button.dataset.showBatch)}`
+          `/api/prediction-batches/${encodeURIComponent(batchId)}`
         );
         showPredictionBatch(data.batch || data.job || data);
       } catch (error) {
+        if (state.expandedPredictionBatchId === batchId) {
+          state.expandedPredictionBatchId = "";
+          renderPredictionBatches(state.predictionBatchTotal);
+        }
         showToast(error.message, true);
       }
     });
@@ -2716,42 +3224,15 @@ function renderPredictionBatches(total = state.predictionBatches.length) {
 }
 
 function showPredictionBatch(batch) {
-  const target = $("#predictionBatchResult");
-  if (!target) return;
-  const counts = batchCounts(batch);
-  const items = batch.items || [];
-  target.classList.remove("hidden");
-  target.innerHTML = `
-    <div class="batch-result-heading">
-      <strong>${escapeHtml(batch.name || batch.batch_name || batch.id)}</strong>
-      <span>${escapeHtml(batchStatusLabel(batch.status))} · ${counts.completed}/${counts.total} 完成 · 成功 ${counts.success} · 失败 ${counts.failed}</span>
-    </div>
-    <div class="run-row-meta">
-      <span>模型 ${escapeHtml(batch.resolved_model_id || batch.model_name || "—")}${batch.model_validation_status === "experimental" ? " · 实验" : ""}</span>
-      <span>Prompt ${escapeHtml(batch.prompt_version || "—")}${batch.prompt_mode === "custom" ? " · custom" : ""}</span>
-      <span>输入 ${escapeHtml(batch.input_profile || "—")}</span>
-      ${batch.prompt_template_sha256 ? `<span>Prompt SHA ${escapeHtml(batch.prompt_template_sha256.slice(0, 12))}…</span>` : ""}
-    </div>
-    ${
-      items.length
-        ? `<div class="batch-result-items">${items
-            .map((item) => {
-              const detail = item.result?.result || item.result || {};
-              const issueUrl = safeUrl(item.voyager_issue_url || "");
-              return `<div class="batch-result-item">
-                <strong>${escapeHtml(item.issue_id)}</strong>
-                <span class="job-status status-${escapeHtml(item.status)}">${escapeHtml(batchStatusLabel(item.status))}</span>
-                ${detail.model_label ? labelBadge(detail.model_label, "—") : ""}
-                ${issueUrl ? `<a href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer">打开 Voyager Issue</a>` : ""}
-                ${detail.model_confidence != null ? `<small>confidence ${escapeHtml(detail.model_confidence)}</small>` : ""}
-                ${detail.model_reason ? `<small class="batch-item-reason">${escapeHtml(detail.model_reason)}</small>` : ""}
-                ${item.error_text ? `<small>${escapeHtml(item.error_text)}</small>` : ""}
-              </div>`;
-            })
-            .join("")}</div>`
-        : '<div class="muted">任务明细尚未生成。</div>'
-    }`;
-  target.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (!batch?.id) return;
+  state.predictionBatchDetails[batch.id] = batch;
+  state.expandedPredictionBatchId = batch.id;
+  renderPredictionBatches(state.predictionBatchTotal);
+  requestAnimationFrame(() => {
+    document
+      .querySelector(`[data-batch-detail="${CSS.escape(batch.id)}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
 }
 
 async function loadPredictionBatches() {
@@ -2809,6 +3290,7 @@ async function loadPredictionConfig() {
       ...data,
     },
   };
+  renderGatewayProviders();
   renderBatchRuntimeSummary();
   updatePredictionBatchCount();
   await Promise.all([loadGatewayModels(), loadBatchPrompts()]);
@@ -2898,6 +3380,7 @@ async function submitPredictionBatch(event) {
       method: "POST",
       body: JSON.stringify({
         issue_ids: issueIds,
+        provider_id: state.selectedGatewayProviderId || "kylin",
         model_id: modelId,
         allow_experimental_model: experimental,
         prompt_id: promptId,
@@ -2963,57 +3446,151 @@ async function publishPredictionBatch(batchId, button) {
 }
 
 function currentImportKind() {
-  return $("#importKind input[name='kind']:checked").value;
+  return "model";
+}
+
+const IMPORT_EXAMPLES = Object.freeze({
+  csv: {
+    filename: "model_results.csv",
+    description: "平铺表格，每行一个 Issue",
+    content: [
+      "issue_id,model_label,reason,confidence,ra_stuck_auto_result_info",
+      'cn32171803,无需协助,"红灯持续亮起，前车停在停止线后，自车同步等待",0.96,"{""reason"":""红绿灯周期性等待"",""confidence"":0.96}"',
+      'cn31954847,误触发,"前方大车遮挡，但红灯转绿后车流正常放行",0.88,"{""reason"":""排队等灯"",""confidence"":0.88}"',
+      'cn32000543,正确触发,"前车双闪临停，右侧存在可通行空间",0.81,"{""reason"":""异常停车"",""confidence"":0.81}"',
+    ].join("\n"),
+  },
+  json: {
+    filename: "model_results.json",
+    description: "支持原生 experiment + results 结果包",
+    content: [
+      "{",
+      '  "experiment": {',
+      '    "model_name": "Qwen3.5-9B-finetuned/base",',
+      '    "prompt": "stuck_triage_auto_opt_api",',
+      '    "input_profile": "Camera 7 帧 + RA Events"',
+      "  },",
+      '  "results": [',
+      "    {",
+      '      "issue_id": "cn32171803",',
+      '      "model_label": "无需协助",',
+      '      "reason": "红绿灯周期性等待",',
+      '      "confidence": 0.96',
+      "    },",
+      "    {",
+      '      "issue_id": "cn31954847",',
+      '      "ra_stuck_auto_result": "误触发",',
+      '      "ra_stuck_auto_result_info": {',
+      '        "reason": "排队等灯",',
+      '        "confidence": 0.88',
+      "      }",
+      "    }",
+      "  ]",
+      "}",
+    ].join("\n"),
+  },
+  xlsx: {
+    filename: "model_results.xlsx",
+    description: "Sheet1：首行是表头，后续每行一个 Issue",
+    content: [
+      "Sheet1",
+      "",
+      "issue_id       | model_label | reason                          | confidence | ra_stuck_auto_result_info",
+      "cn32171803     | 无需协助     | 红绿灯周期性等待                  | 0.96       | {\"reason\":\"红绿灯周期性等待\"}",
+      "cn31954847     | 误触发       | 排队等灯，红灯转绿后正常放行        | 0.88       | {\"reason\":\"排队等灯\"}",
+      "cn32000543     | 正确触发     | 前车双闪临停，存在绕行空间          | 0.81       | {\"reason\":\"异常停车\"}",
+    ].join("\n"),
+  },
+});
+
+function renderImportExample(format = "csv") {
+  const key = Object.prototype.hasOwnProperty.call(IMPORT_EXAMPLES, format) ? format : "csv";
+  const example = IMPORT_EXAMPLES[key];
+  const dialog = $("#importExamplesDialog");
+  if (dialog) dialog.dataset.exampleFormat = key;
+  document.querySelectorAll("[data-import-example-format]").forEach((tab) => {
+    const active = tab.dataset.importExampleFormat === key;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", String(active));
+  });
+  $("#importExampleFilename").textContent = example.filename;
+  $("#importExampleDescription").textContent = example.description;
+  $("#importExampleContent").textContent = example.content;
+}
+
+function openImportExamples() {
+  renderImportExample("csv");
+  openDialog("importExamplesDialog");
+}
+
+async function copyImportExample() {
+  const format = $("#importExamplesDialog")?.dataset.exampleFormat || "csv";
+  const example = IMPORT_EXAMPLES[format] || IMPORT_EXAMPLES.csv;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(example.content);
+    } else {
+      const input = document.createElement("textarea");
+      input.value = example.content;
+      input.setAttribute("readonly", "");
+      input.style.position = "fixed";
+      input.style.opacity = "0";
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand("copy");
+      input.remove();
+    }
+    showToast(`已复制 ${example.filename} 示例。`);
+  } catch (error) {
+    showToast(`复制失败，请直接选中示例内容：${error.message || "浏览器未授权剪贴板"}`, true);
+  }
 }
 
 function updateImportFields() {
-  const isModel = currentImportKind() === "model";
-  $("#runNameField").classList.toggle("hidden", !isModel);
-  $("#issueImportOptions").classList.toggle("hidden", isModel);
+  $("#runNameField")?.classList.remove("hidden");
+}
+
+function activateRunSourceTab(kind = "upload") {
+  const targetKind = ["upload", "autotriage", "trail"].includes(kind) ? kind : "upload";
+  document.querySelectorAll("[data-run-source-tab]").forEach((tab) => {
+    const active = tab.dataset.runSourceTab === targetKind;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", String(active));
+  });
+  document.querySelectorAll("[data-run-source-panel]").forEach((panel) => {
+    const active = panel.dataset.runSourcePanel === targetKind;
+    panel.classList.toggle("active", active);
+    panel.hidden = !active;
+    panel.setAttribute("aria-hidden", String(!active));
+  });
 }
 
 function setImportKind(kind) {
-  const input = $(`#importKind input[name="kind"][value="${kind}"]`);
-  if (input) input.checked = true;
   updateImportFields();
+  activateRunSourceTab("upload");
 }
 
 function openRunImport(kind = "model") {
-  const targetKind = kind === "issues" ? "issues" : "model";
-  navigatePage("runs", { importKind: targetKind });
-  const panel = $("#runImportPanel");
-  if (panel) {
-    panel.open = true;
-    window.setTimeout(
-      () => panel.scrollIntoView({ behavior: "smooth", block: "start" }),
-      0
-    );
-  }
+  navigatePage("runs", { importKind: "model" });
+  activateRunSourceTab("upload");
+  window.setTimeout(() => $("#runsSourceCard")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
 }
 
 async function submitImport(event) {
   event.preventDefault();
   const file = $("#importFile").files[0];
   if (!file) return showToast("请选择文件。", true);
-  const kind = currentImportKind();
   const form = new FormData();
   form.append("file", file);
-  const endpoint = kind === "model" ? "/api/import/model-results" : "/api/import/issues";
-  if (kind === "model") {
-    form.append("run_name", $("#runNameInput").value.trim());
-    form.append("created_by", state.session.username || "");
-  }
-  else {
-    form.append("source", $("#issueSourceInput").value.trim() || "manual_upload");
-    form.append("replace_gt", String($("#replaceGtInput").checked));
-  }
+  form.append("run_name", $("#runNameInput").value.trim());
+  form.append("created_by", state.session.username || "");
   const target = $("#importResult");
   target.classList.remove("hidden");
   target.textContent = "正在导入…";
   try {
-    const result = await api(endpoint, { method: "POST", body: form });
+    const result = await api("/api/import/model-results", { method: "POST", body: form });
     target.textContent = JSON.stringify(result, null, 2);
-    showToast(kind === "model" ? "模型 run 已导入；可从列表切换对比。" : "Issue 工作集已导入。");
+    showToast("模型 Run 已导入；可从列表切换对比。");
     await Promise.all([loadRuns(), loadOverview(), loadCases({ keepSelection: true }), loadClusters()]);
   } catch (error) {
     target.textContent = `导入失败：${error.message}`;
@@ -3022,15 +3599,7 @@ async function submitImport(event) {
 }
 
 function openAutoTriageImport() {
-  navigatePage("runs");
-  const panel = $("#autotriageImportPanel");
-  if (panel) {
-    panel.open = true;
-    window.setTimeout(
-      () => panel.scrollIntoView({ behavior: "smooth", block: "start" }),
-      0
-    );
-  }
+  activateRunSourceTab("autotriage");
 }
 
 async function submitAutoTriageImport(event) {
@@ -3172,10 +3741,7 @@ function bindEvents() {
   });
   $("#analysisRunFilter").addEventListener("change", () => {
     const runId = $("#analysisRunFilter").value;
-    const mismatchInput = document.querySelector(
-      'input[name="analysisComparison"][value="mismatch"]'
-    );
-    const previouslyHadRun = Boolean(mismatchInput && !mismatchInput.disabled);
+    const previouslyHadRun = Boolean(state.selectedRunId);
     const nextStatus = !runId
       ? "all"
       : previouslyHadRun
@@ -3225,22 +3791,18 @@ function bindEvents() {
     renderAnalysisRunFilter();
     await reloadReviewGallery();
   });
-  $("#clearClusterButton").addEventListener("click", async () => {
-    state.clusterKey = "";
-    await reloadReviewGallery({ includeOverview: false });
-  });
+  const clearClusterButton = $("#clearClusterButton");
+  if (clearClusterButton) {
+    clearClusterButton.addEventListener("click", async () => {
+      state.clusterKey = "";
+      await reloadReviewGallery({ includeOverview: false });
+    });
+  }
   $("#casePagePrevious").addEventListener("click", () => {
     changeCasePage(-1).catch((error) => showToast(error.message, true));
   });
   $("#casePageNext").addEventListener("click", () => {
     changeCasePage(1).catch((error) => showToast(error.message, true));
-  });
-  $("#backToGalleryButton").addEventListener("click", returnToReviewGallery);
-  $("#previousIssueButton").addEventListener("click", () => {
-    navigateAdjacentCase(-1).catch((error) => showToast(error.message, true));
-  });
-  $("#nextIssueButton").addEventListener("click", () => {
-    navigateAdjacentCase(1).catch((error) => showToast(error.message, true));
   });
   $("#refreshButton").addEventListener("click", async () => {
     try {
@@ -3260,9 +3822,12 @@ function bindEvents() {
   $("#runManagerImportButton").addEventListener("click", () => {
     $("#importResult").classList.add("hidden");
     $("#importResult").textContent = "";
-    openRunImport("model");
+    activateRunSourceTab("upload");
   });
   $("#openAutoTriageImportButton").addEventListener("click", openAutoTriageImport);
+  $("#openTrailImportButton").addEventListener("click", () => {
+    activateRunSourceTab("trail");
+  });
   $("#reviewUploadModelButton").addEventListener("click", () => openRunImport("model"));
   $("#predictFilteredButton").addEventListener("click", () => {
     const limit = predictionBatchLimit();
@@ -3331,7 +3896,11 @@ function bindEvents() {
   $("#predictionPromptSelect").addEventListener("change", loadSelectedPromptTemplate);
   $("#predictionPromptTemplate").addEventListener("input", updatePromptEditorSummary);
   $("#predictionInputProfile").addEventListener("change", applyBatchInputPreset);
-  $("#predictionFrameOffsets").addEventListener("input", renderBatchRuntimeSummary);
+  $("#predictionCameraPreset").addEventListener("change", applyCameraFramePreset);
+  $("#predictionFrameOffsets").addEventListener("input", () => {
+    syncCameraFramePreset();
+    renderBatchRuntimeSummary();
+  });
   $("#predictionUseRaEvent").addEventListener("change", () => {
     if (!$("#predictionUseRaEvent").checked) $("#predictionUseRaOptions").checked = false;
     renderBatchRuntimeSummary();
@@ -3342,18 +3911,15 @@ function bindEvents() {
   });
   $("#sidebarToggle").addEventListener("click", toggleSidebar);
   document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => closeDialog(button.dataset.close)));
-  $("#importKind").querySelectorAll("input").forEach((input) => {
-    input.addEventListener("change", () => {
-      updateImportFields();
-      if (state.activePage === "runs") {
-        showPage("runs", {
-          historyMode: "replace",
-          importKind: currentImportKind(),
-        });
-      }
-    });
+  $("#importFile").addEventListener("change", () => {
+    const filename = $("#importFileName");
+    if (filename) filename.textContent = $("#importFile").files[0]?.name || "未选择文件";
   });
-  $("#importFile").addEventListener("change", () => { $("#importFileName").textContent = $("#importFile").files[0]?.name || "未选择文件"; });
+  $("#openImportExamplesButton").addEventListener("click", openImportExamples);
+  document.querySelectorAll("[data-import-example-format]").forEach((tab) => {
+    tab.addEventListener("click", () => renderImportExample(tab.dataset.importExampleFormat));
+  });
+  $("#copyImportExampleButton").addEventListener("click", () => copyImportExample().catch((error) => showToast(error.message, true)));
   $("#importForm").addEventListener("submit", submitImport);
   $("#autotriageImportForm").addEventListener("submit", submitAutoTriageImport);
   $("#predictionBatchIssues").addEventListener("input", () => {
@@ -3362,6 +3928,14 @@ function bindEvents() {
     renderPredictionSourceSummary();
   });
   $("#predictionBatchForm").addEventListener("submit", submitPredictionBatch);
+  $("#sourcePreviewPrevious").addEventListener("click", () => {
+    if (!state.sourcePreview.runId || state.sourcePreview.page <= 1) return;
+    loadSourcePreviewPage(state.sourcePreview.runId, state.sourcePreview.page - 1).catch((error) => showToast(error.message, true));
+  });
+  $("#sourcePreviewNext").addEventListener("click", () => {
+    if (!state.sourcePreview.runId || state.sourcePreview.page >= state.sourcePreview.pageCount) return;
+    loadSourcePreviewPage(state.sourcePreview.runId, state.sourcePreview.page + 1).catch((error) => showToast(error.message, true));
+  });
   $("#mediaPrevButton").addEventListener("click", () => moveMedia(-1));
   $("#mediaNextButton").addEventListener("click", () => moveMedia(1));
   document.addEventListener("keydown", (event) => {

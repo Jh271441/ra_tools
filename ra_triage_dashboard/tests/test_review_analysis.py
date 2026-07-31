@@ -264,6 +264,28 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
             )
             self.assertEqual([item["issue_id"] for item in cases["items"]], ["cn20001"])
 
+            # The gallery is ordered only by issue_id, so a repeated request
+            # with identical filters must preserve the same order.
+            first_order = [
+                item["issue_id"]
+                for item in database.list_cases(
+                    baseline_scope=scope,
+                    model_run_id=run["id"],
+                    comparison_status="all",
+                    page_size=50,
+                )["items"]
+            ]
+            second_order = [
+                item["issue_id"]
+                for item in database.list_cases(
+                    baseline_scope=scope,
+                    model_run_id=run["id"],
+                    comparison_status="all",
+                    page_size=50,
+                )["items"]
+            ]
+            self.assertEqual(first_order, second_order)
+
             with self.assertRaisesRegex(ValueError, "requires model_run_id"):
                 database.review_reason_rows(
                     baseline_scope=scope,

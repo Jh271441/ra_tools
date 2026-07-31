@@ -317,12 +317,22 @@ def load_default_experiment():
     return experiment, loaded.source
 
 
-def apply_gateway_model_metadata(experiment: Any, model_id: Any) -> str:
+SUPPORTED_GATEWAY_PROVIDERS = {"kylin", "tokenservice"}
+
+
+def apply_gateway_model_metadata(
+    experiment: Any,
+    model_id: Any,
+    provider: str = "kylin",
+) -> str:
     model_id = str(model_id or "").strip()
     if not MODEL_ID_RE.fullmatch(model_id):
         raise ValueError("Batch worker model_id 格式非法。")
     experiment.model_name = model_id
-    experiment.provider = "kylin"
+    provider = str(provider or "kylin").strip().lower() or "kylin"
+    if provider not in SUPPORTED_GATEWAY_PROVIDERS:
+        raise ValueError("Batch worker Provider 不受支持。")
+    experiment.provider = provider
     experiment.model_profile = ""
     # The selected gateway model is fully materialised. Refuse any merge which
     # could bring the old default model or review-only Ares inputs back.
@@ -338,20 +348,28 @@ def apply_gateway_model_metadata(experiment: Any, model_id: Any) -> str:
 
 
 def apply_gateway_model(experiment: Any, request: dict[str, Any]) -> str:
-    source = apply_gateway_model_metadata(experiment, request.get("model_id"))
     gateway = request.pop("_model_gateway", None)
     if not isinstance(gateway, dict):
         raise ValueError("Batch worker 缺少模型网关配置。")
-    provider = str(gateway.pop("provider", "") or "").strip()
+    provider = str(gateway.get("provider", "") or "").strip().lower()
+    source = apply_gateway_model_metadata(
+        experiment,
+        request.get("model_id"),
+        provider,
+    )
     chat_url = str(gateway.pop("chat_url", "") or "").strip()
     api_key = str(gateway.pop("api_key", "") or "").strip()
     gateway.clear()
     parsed = urlsplit(chat_url)
     host = (parsed.hostname or "").lower()
+    expected_host = {
+        "kylin": "ra-model.intra.xiaojukeji.com",
+        "tokenservice": "tokenservice-gateway-ys.intra.xiaojukeji.com",
+    }.get(provider, "")
     if (
-        provider != "kylin"
+        provider not in SUPPORTED_GATEWAY_PROVIDERS
         or parsed.scheme not in {"http", "https"}
-        or host != "ra-model.intra.xiaojukeji.com"
+        or host != expected_host
         or parsed.username
         or parsed.password
         or parsed.query
@@ -360,7 +378,11 @@ def apply_gateway_model(experiment: Any, request: dict[str, Any]) -> str:
         or not api_key
     ):
         raise ValueError("Batch worker 模型网关环境配置非法。")
-    auth_value = api_key if api_key.lower().startswith("apikey:") else f"apikey:{api_key}"
+    auth_value = (
+        api_key
+        if provider == "tokenservice" or api_key.lower().startswith("apikey:")
+        else f"apikey:{api_key}"
+    )
     register_sensitive_values(api_key, auth_value, chat_url)
     experiment.provider = provider
     experiment.base_url = chat_url
@@ -662,7 +684,7 @@ def predict(request: dict[str, Any], ra_root: Path) -> int:
         raise ValueError("Batch 模型输入策略校验失败：Ares/BEV 被重新启用。")
     if (
         str(reconstructed.model_name or "") != str(request.get("model_id") or "")
-        or str(reconstructed.provider or "") != "kylin"
+        or str(reconstructed.provider or "") not in SUPPORTED_GATEWAY_PROVIDERS
         or str(reconstructed.config_merge_mode or "") != "none"
         or not str(reconstructed.base_url or "")
         or not str(reconstructed.api_key or "")

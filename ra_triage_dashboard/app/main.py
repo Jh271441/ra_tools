@@ -6,18 +6,20 @@ import hashlib
 import io
 import json
 import math
+import mimetypes
 import re
 import shutil
 import threading
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
 import openpyxl
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -77,53 +79,62 @@ MAX_REVIEW_ATTACHMENT_PIXELS = 40_000_000
 MAX_REVIEW_ATTACHMENT_STORAGE_BYTES = 20 * 1024 * 1024 * 1024
 MIN_REVIEW_ATTACHMENT_DISK_FREE = 256 * 1024 * 1024
 MAX_BATCH_JSON_REQUEST_BYTES = 256 * 1024
+MAX_SOURCE_PREVIEW_ROWS = 200
+MAX_SOURCE_PREVIEW_CELL_LENGTH = 2_000
 
 MISSING_EVIDENCE_CATALOG: tuple[dict[str, str], ...] = (
-    {"key": "routing_direction", "label": "routing 方向", "hint": "未理解自车目标转向 / 车道任务"},
-    {"key": "passable_space", "label": "可绕行空间", "hint": "未判断右侧/相邻车道是否可安全通过"},
-    {"key": "hazard_signal", "label": "异常停车信号", "hint": "双闪、故障或临停迹象缺失"},
-    {"key": "traffic_light_state", "label": "灯态与周期", "hint": "红绿灯当前状态或后续放行证据缺失"},
-    {"key": "stop_line_crosswalk", "label": "停止线 / 路口结构", "hint": "停止线、斑马线和路口语义缺失"},
-    {"key": "queue_vs_blocking", "label": "排队 vs 实质阻塞", "hint": "未区分正常车流等待与异常物理阻塞"},
-    {"key": "yielding_target", "label": "yielding 目标", "hint": "前方关键车辆 / 摩自关系识别不足"},
-    {"key": "post_trigger_recovery", "label": "触发后恢复", "hint": "未利用触发后的移动、通行或绕行结果"},
-    {"key": "ra_swag_action", "label": "RA / SWAG 操作链", "hint": "未核验 RA 协助后实际动作与效果"},
-    {"key": "temporal_evidence", "label": "时序证据", "hint": "单帧判断，缺少前后帧变化"},
-    {"key": "camera_view", "label": "Camera 证据", "hint": "需要相机视角确认交通灯、双闪或可通行性"},
-    {"key": "bev_topology", "label": "BEV 拓扑", "hint": "需要 BEV 复核车道、障碍物和绕行关系"},
-    {"key": "gt_needs_review", "label": "GT 需复核", "hint": "模型并非明显错，真值或边界定义待确认"},
+    {"key": "routing_direction", "label": "routing 方向缺失", "hint": "未识别自车目标转向 / 车道任务"},
+    {"key": "hazard_signal", "label": "双闪缺失", "hint": "未识别前方车辆双闪、临停或故障信号"},
 )
 
 REVIEW_TAG_CATALOG: tuple[dict[str, str], ...] = (
-    {"key": "left_turn", "label": "左转"},
-    {"key": "right_turn", "label": "右转"},
-    {"key": "straight", "label": "直行"},
-    {"key": "traffic_light", "label": "信号灯"},
     {"key": "queue", "label": "排队"},
-    {"key": "temporary_stop", "label": "双闪 / 临停 / 故障车"},
-    {"key": "occlusion", "label": "遮挡"},
-    {"key": "vulnerable_road_user", "label": "摩自 / 行人"},
-    {"key": "passable_space", "label": "可绕行空间"},
-    {"key": "swag", "label": "SWAG / RA 操作"},
-    {"key": "gt_boundary", "label": "GT 边界"},
+    {"key": "yielding", "label": "让行"},
+    {"key": "u_turn", "label": "掉头"},
+    {"key": "park_in", "label": "泊入"},
+    {"key": "park_out", "label": "泊出"},
+    {"key": "traffic_light", "label": "红绿灯"},
+    {"key": "manual_trigger", "label": "人工触发"},
+    {"key": "perception_fp_cleared", "label": "感知FP消失"},
+    {"key": "lead_vehicle_departed", "label": "前车驶离"},
+    {"key": "system_decision_change", "label": "主系统决策变化"},
+    {"key": "obstacle_not_avoided", "label": "未避障"},
+    {"key": "close_distance", "label": "距离近"},
+    {"key": "occlusion", "label": "大车遮挡"},
+    {"key": "right_turn", "label": "右转"},
+    {"key": "left_turn", "label": "左转"},
+    {"key": "temporary_stop", "label": "前车双闪"},
 )
 REVIEW_TAG_KEYS = frozenset(item["key"] for item in REVIEW_TAG_CATALOG)
 REVIEW_TAG_ALIASES = {
-    "左转": "left_turn",
-    "右转": "right_turn",
-    "直行": "straight",
-    "信号灯": "traffic_light",
     "红绿灯": "traffic_light",
     "等灯": "traffic_light",
     "排队": "queue",
+    "让行": "yielding",
+    "掉头": "u_turn",
+    "泊入": "park_in",
+    "泊出": "park_out",
+    "人工触发": "manual_trigger",
+    "感知FP消失": "perception_fp_cleared",
+    "前车驶离": "lead_vehicle_departed",
+    "主系统决策变化": "system_decision_change",
+    "未避障": "obstacle_not_avoided",
+    "距离近": "close_distance",
+    "双闪临停": "temporary_stop",
+    "前方大车遮挡": "occlusion",
+    "大车遮挡": "occlusion",
+    "右转": "right_turn",
+    "自车右转": "right_turn",
+    "左转": "left_turn",
+    "左转待转": "left_turn",
+    # Preserve common historical values while the new UI emits the compact catalog above.
+    "信号灯": "traffic_light",
     "双闪": "temporary_stop",
     "临停": "temporary_stop",
     "故障车": "temporary_stop",
     "遮挡": "occlusion",
     "摩自": "vulnerable_road_user",
     "行人": "vulnerable_road_user",
-    "可绕行": "passable_space",
-    "绕行空间": "passable_space",
     "SWAG": "swag",
     "RA": "swag",
     "GT": "gt_boundary",
@@ -203,12 +214,139 @@ def _safe_filename(name: str) -> str:
     return result.strip("._")[:120] or "upload"
 
 
+def _model_source_artifact_path(source_hash: str, filename: str) -> Path:
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".json", ".csv", ".xlsx", ".xlsm"}:
+        suffix = ".bin"
+    return settings.uploads_dir / f"model-run-{source_hash}{suffix}"
+
+
+def _store_model_source(content: bytes, filename: str, source_hash: str) -> dict[str, str]:
+    root = settings.uploads_dir.resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    path = _model_source_artifact_path(source_hash, filename).resolve()
+    if root not in path.parents:
+        raise OSError("模型结果来源文件路径越界。")
+    if not path.is_file():
+        path.write_bytes(content)
+    media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return {
+        "stored_name": path.name,
+        "filename": _safe_filename(filename),
+        "media_type": media_type,
+    }
+
+
+def _model_source_file(run: dict[str, Any]) -> tuple[Path, str] | None:
+    metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
+    artifact = metadata.get("source_artifact") if isinstance(metadata.get("source_artifact"), dict) else {}
+    stored_name = _as_text(artifact.get("stored_name"))
+    if stored_name:
+        root = settings.uploads_dir.resolve()
+        candidate = (root / stored_name).resolve()
+        if root in candidate.parents and candidate.is_file():
+            return candidate, _safe_filename(_as_text(artifact.get("filename")) or candidate.name)
+
+    # Runs created before source_artifact metadata was introduced can still be
+    # resolved by their immutable content hash when the archive was written.
+    source_hash = _as_text(run.get("source_sha256"))
+    source_name = _as_text(run.get("source_name"))
+    if source_hash and run.get("kind", "upload") == "upload":
+        root = settings.uploads_dir.resolve()
+        candidate = _model_source_artifact_path(source_hash, source_name).resolve()
+        if root in candidate.parents and candidate.is_file():
+            return candidate, _safe_filename(Path(source_name).name or candidate.name)
+
+    # Older runs may point at a source file that was already present on the
+    # server. Keep this fallback constrained to known dashboard/data roots.
+    if source_name:
+        candidate = Path(source_name).expanduser()
+        allowed_roots = (
+            settings.uploads_dir.resolve(),
+            settings.data_dir.resolve(),
+            settings.ra_auto_triage_root.resolve(),
+        )
+        if candidate.is_absolute() and candidate.is_file():
+            resolved = candidate.resolve()
+            if any(root == resolved or root in resolved.parents for root in allowed_roots):
+                return resolved, _safe_filename(resolved.name)
+    return None
+
+
 def _as_text(value: Any) -> str:
     if value is None:
         return ""
     if isinstance(value, float) and math.isnan(value):
         return ""
     return str(value).strip()
+
+
+def _source_preview_value(value: Any) -> str:
+    """Return a bounded, credential-redacted cell value for the preview UI."""
+
+    safe_value = redact_sensitive_fields(value)
+    if isinstance(safe_value, (dict, list, tuple)):
+        text = json.dumps(
+            safe_value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+    else:
+        text = _as_text(safe_value)
+    if len(text) <= MAX_SOURCE_PREVIEW_CELL_LENGTH:
+        return text
+    return text[: MAX_SOURCE_PREVIEW_CELL_LENGTH - 1] + "…"
+
+
+def _model_source_filename(run: dict[str, Any]) -> str:
+    metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
+    artifact = metadata.get("source_artifact") if isinstance(metadata.get("source_artifact"), dict) else {}
+    return _safe_filename(
+        _as_text(artifact.get("filename"))
+        or Path(_as_text(run.get("source_name"))).name
+        or "model-results.json"
+    )
+
+
+def _reconstructed_model_source(
+    run_id: str,
+    run: dict[str, Any],
+) -> tuple[bytes, str, str] | None:
+    """Rebuild a safe source copy for uploads made before file archiving."""
+
+    filename = _model_source_filename(run)
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".json", ".csv"}:
+        return None
+    rows = database.model_run_source_rows(run_id)
+    if not rows:
+        return None
+    if suffix == ".csv":
+        columns: list[str] = []
+        seen: set[str] = set()
+        for row in rows:
+            for key in row:
+                if key not in seen:
+                    seen.add(key)
+                    columns.append(key)
+        output = io.StringIO(newline="")
+        writer = csv.DictWriter(output, fieldnames=columns, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+        return output.getvalue().encode("utf-8-sig"), filename, "text/csv; charset=utf-8"
+    payload = {
+        "schema_version": "reconstructed-model-run-v1",
+        "source_name": _as_text(run.get("source_name")),
+        "source_sha256": _as_text(run.get("source_sha256")),
+        "results": rows,
+    }
+    return (
+        json.dumps(payload, ensure_ascii=False, indent=2, default=str).encode("utf-8"),
+        filename,
+        "application/json",
+    )
 
 
 def _voyager_issue_url(issue_id: str) -> str:
@@ -817,6 +955,16 @@ def _normalise_review_tags(values: list[Any]) -> list[str]:
         raw = str(value).strip()
         if not raw:
             continue
+        if raw.startswith("custom:"):
+            custom_value = raw[len("custom:") :].strip()
+            if (
+                not custom_value
+                or len(custom_value) > 48
+                or re.search(r"[\x00-\x1f\x7f]", custom_value)
+            ):
+                raise _detail(400, "自定义 tag 长度或字符不合法。")
+            legacy.add(f"custom:{custom_value}")
+            continue
         if len(raw) > 48 or re.search(r"[\x00-\x1f\x7f]", raw):
             raise _detail(400, "tag 长度或字符不合法。")
         key = REVIEW_TAG_ALIASES.get(raw, raw)
@@ -1189,8 +1337,9 @@ async def index() -> FileResponse:
 
 @app.get("/import", include_in_schema=False)
 async def legacy_import(kind: str = "issues") -> RedirectResponse:
-    import_kind = "model" if kind == "model" else "issues"
-    return RedirectResponse(url=f"/runs?import={import_kind}", status_code=307)
+    # The legacy Issue / GT upload UI is intentionally retired. Keep old
+    # bookmarks navigable, but land them in the safe model-result importer.
+    return RedirectResponse(url="/runs?import=model", status_code=307)
 
 
 @app.get("/health")
@@ -1508,9 +1657,182 @@ async def create_annotation_with_attachments(
 
 @app.get("/api/model-runs")
 async def model_runs() -> dict[str, Any]:
+    items = database.list_model_runs(settings.baseline_scope)
+    for item in items:
+        if item.get("kind") != "upload":
+            continue
+        source_file = _model_source_file(item)
+        filename = _model_source_filename(item)
+        suffix = Path(filename).suffix.lower()
+        preview_supported = suffix in {".json", ".csv"}
+        reconstructed = (
+            source_file is None
+            and preview_supported
+            and bool(item.get("prediction_count"))
+        )
+        item["source_file"] = {
+            "filename": filename,
+            "available": bool(source_file) or reconstructed,
+            "reconstructed": reconstructed,
+            "preview_supported": preview_supported,
+            "preview_url": (
+                f"/api/model-runs/{quote(str(item['id']), safe='')}/source-preview"
+                if preview_supported
+                else f"/api/model-runs/{quote(str(item['id']), safe='')}/source"
+            ),
+            "download_url": f"/api/model-runs/{quote(str(item['id']), safe='')}/source?download=1",
+        }
     return {
-        "items": database.list_model_runs(settings.baseline_scope),
+        "items": items,
         "default_model_run_id": database.default_model_run_id(),
+    }
+
+
+@app.get("/api/model-runs/{run_id}/source-preview")
+async def preview_model_run_source(
+    run_id: str,
+    page: int = 1,
+    page_size: int = 100,
+) -> dict[str, Any]:
+    run = database.get_model_run(run_id)
+    if run is None:
+        raise _detail(404, "模型 Run 不存在。")
+    source_file = _model_source_file(run)
+    reconstructed = False
+    if source_file is None:
+        filename = _model_source_filename(run)
+        suffix = Path(filename).suffix.lower()
+        reconstructed = True
+    else:
+        path, filename = source_file
+        suffix = path.suffix.lower()
+    if suffix not in {".json", ".csv"}:
+        raise _detail(415, "当前仅支持在页面内预览 CSV / JSON。")
+    if reconstructed:
+        source_rows = database.model_run_source_rows(run_id)
+        metadata = {
+            "source": "dashboard_reconstructed",
+            "notice": "原始文件未归档；以下内容由该 Run 已保存的脱敏预测行重建。",
+        }
+    else:
+        try:
+            if path.stat().st_size > MAX_UPLOAD_BYTES:
+                raise _detail(413, "来源文件过大，暂不生成页面预览；请使用下载。")
+            content = await asyncio.to_thread(path.read_bytes)
+            source_rows, metadata = parse_source_bytes(filename, content)
+        except HTTPException:
+            raise
+        except (OSError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
+            raise _detail(422, f"来源文件无法生成预览：{exc}")
+
+    page = max(1, int(page))
+    page_size = min(max(1, int(page_size)), MAX_SOURCE_PREVIEW_ROWS)
+    total_rows = len(source_rows)
+    page_count = max(1, math.ceil(total_rows / page_size))
+    page = min(page, page_count)
+    page_start = (page - 1) * page_size
+    page_rows = source_rows[page_start : page_start + page_size]
+    preview_rows = [
+        {
+            str(key): _source_preview_value(value)
+            for key, value in row.items()
+        }
+        for row in page_rows
+    ]
+    columns: list[str] = []
+    seen_columns: set[str] = set()
+    for row in preview_rows:
+        for key in row:
+            if key not in seen_columns:
+                seen_columns.add(key)
+                columns.append(key)
+    metadata_preview = {
+        str(key): _source_preview_value(value)
+        for key, value in (metadata.items() if isinstance(metadata, dict) else [])
+    }
+    return {
+        "filename": filename,
+        "format": suffix[1:],
+        "columns": columns,
+        "rows": preview_rows,
+        "total_rows": total_rows,
+        "page": page,
+        "page_size": page_size,
+        "page_count": page_count,
+        "offset": page_start,
+        "has_previous": page > 1,
+        "has_next": page < page_count,
+        "truncated": total_rows > len(preview_rows),
+        "metadata": metadata_preview,
+        "reconstructed": reconstructed,
+    }
+
+
+@app.get("/api/model-runs/{run_id}/source")
+async def get_model_run_source(run_id: str, download: bool = False) -> Response:
+    run = database.get_model_run(run_id)
+    if run is None:
+        raise _detail(404, "模型 Run 不存在。")
+    source_file = _model_source_file(run)
+    if source_file is None:
+        reconstructed = _reconstructed_model_source(run_id, run)
+        if reconstructed is None:
+            raise _detail(404, "该 Run 的原始文件未归档且无法从已保存结果重建。")
+        content, filename, media_type = reconstructed
+        disposition = "attachment" if download else "inline"
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'{disposition}; filename="{filename}"',
+                "Cache-Control": "private, max-age=300, must-revalidate",
+                "X-Content-Type-Options": "nosniff",
+                "X-RA-Source-Reconstructed": "1",
+            },
+        )
+    path, filename = source_file
+    media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    disposition = "attachment" if download else "inline"
+    return FileResponse(
+        path,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'{disposition}; filename="{filename}"',
+            "Cache-Control": "private, max-age=300, must-revalidate",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@app.delete("/api/model-runs/{run_id}")
+async def delete_model_run(run_id: str) -> dict[str, Any]:
+    run = database.get_model_run(run_id)
+    if run is None:
+        raise _detail(404, "模型 Run 不存在。")
+    source_file = _model_source_file(run)
+    try:
+        deleted = database.delete_model_run(run_id)
+    except ValueError as exc:
+        raise _detail(409, str(exc))
+    if deleted is None:
+        raise _detail(404, "模型 Run 不存在。")
+
+    source_deleted = False
+    if source_file is not None:
+        path, _ = source_file
+        upload_root = settings.uploads_dir.resolve()
+        resolved = path.resolve()
+        if upload_root == resolved or upload_root in resolved.parents:
+            try:
+                resolved.unlink(missing_ok=True)
+                source_deleted = True
+            except OSError:
+                # The Run is already deleted; report the artifact separately so
+                # an operator can recover a permissions/disk cleanup issue.
+                source_deleted = False
+    return {
+        "deleted": deleted,
+        "source_deleted": source_deleted,
     }
 
 
@@ -1696,6 +2018,8 @@ async def import_contract() -> dict[str, Any]:
     return {
         "formats": [".json", ".csv", ".xlsx", ".xlsm"],
         "issues": {
+            "enabled_in_ui": False,
+            "compatibility_only": True,
             "required": ["issue_id"],
             "optional": [
                 "trip_id",
@@ -1725,7 +2049,7 @@ async def import_contract() -> dict[str, Any]:
         },
         "notes": [
             "每次导入会创建不可变 model run，并按 SHA-256 去重。",
-            "Trail 真值不因模型导入而覆盖；只有 issues 导入且显式 replace_gt 才会覆盖已有 GT。",
+            "页面不提供 Issue / GT 上传；旧 issues 接口仅为兼容客户端保留。Trail 真值不因模型导入而覆盖；仅显式 issues API 调用且 replace_gt=true 才会覆盖已有 GT。",
         ],
     }
 
@@ -1787,6 +2111,17 @@ async def import_model_results(
             400,
             "未找到有效结果；需要 issue_id 和 model_label（或 ra_stuck_auto_result）。",
         )
+    try:
+        source_artifact = await asyncio.to_thread(
+            _store_model_source,
+            content,
+            filename,
+            source_hash,
+        )
+    except OSError as exc:
+        raise _detail(507, f"无法归档模型结果原文件：{exc}")
+    metadata = dict(metadata)
+    metadata["source_artifact"] = source_artifact
     experiment = metadata.get("experiment") if isinstance(metadata.get("experiment"), dict) else {}
     default_name = _as_text(experiment.get("model_name")) or Path(filename).stem
     actor, actor_source, actor_verified = _action_actor(request, created_by)
@@ -1904,15 +2239,24 @@ async def import_autotriage_results(
 
 
 @app.get("/api/prediction-batches/models")
-async def batch_prediction_models(refresh: bool = False) -> dict[str, Any]:
+async def batch_prediction_models(
+    refresh: bool = False,
+    provider_id: str = "kylin",
+) -> dict[str, Any]:
     try:
         return await asyncio.to_thread(
             model_catalog.list_models,
             refresh=refresh,
             allow_stale=True,
+            provider_id=provider_id,
         )
     except ModelCatalogError as exc:
         raise _detail(exc.status_code, exc.public_message)
+
+
+@app.get("/api/prediction-batches/providers")
+async def batch_prediction_providers() -> dict[str, Any]:
+    return model_catalog.provider_catalog()
 
 
 @app.get("/api/prediction-batches/prompts")
@@ -1942,6 +2286,7 @@ async def batch_prediction_config() -> dict[str, Any]:
             or "任务创建时固化服务器 Prompt",
         },
         "model_gateway": model_catalog.status(),
+        "providers": model_catalog.provider_catalog(),
         "prompt_policy": {
             "source": "cloud_server ra_auto_triage/vlm/prompts/versions",
             "editable": True,
@@ -2011,6 +2356,7 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
         "name",
         "issue_ids",
         "requested_by",
+        "provider_id",
         "model_id",
         "prompt_id",
         "prompt_template",
@@ -2042,6 +2388,18 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
             400,
             f"单批最多 {settings.batch_max_issues} 个 Issue；当前 {len(issue_ids)} 个。",
         )
+    provider_id = _as_text(body.get("provider_id") or "kylin").lower()
+    provider_catalog = model_catalog.provider_catalog()
+    provider = next(
+        (
+            item
+            for item in provider_catalog.get("providers", [])
+            if str(item.get("id") or "") == provider_id
+        ),
+        None,
+    )
+    if not provider or not provider.get("enabled"):
+        raise _detail(400, "所选 Provider 未在 cloud_server 登记可用的服务端凭证。")
     missing = [
         issue_id
         for issue_id in issue_ids
@@ -2061,6 +2419,7 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
         model_selection = await asyncio.to_thread(
             model_catalog.resolve,
             _as_text(body.get("model_id")),
+            provider_id,
         )
     except ModelCatalogError as exc:
         raise _detail(exc.status_code, exc.public_message)
@@ -2088,12 +2447,16 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
     actor, actor_source, actor_verified = _action_actor(
         request, body.get("requested_by")
     )
+    if not name:
+        actor_slug = re.sub(r"[^A-Za-z0-9._-]+", "-", actor).strip("-")[:48] or "triage"
+        name = f"{actor_slug}_i_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     job = database.create_batch_prediction_job(
         name=name,
         issue_ids=issue_ids,
         requested_by=actor,
         requested_by_source=actor_source,
         requested_by_verified=actor_verified,
+        provider_id=provider_id,
         requested_model_id=model_selection["requested_model_id"],
         resolved_model_id=model_selection["resolved_model_id"],
         model_source="ra_model_gateway",
@@ -2132,6 +2495,7 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
         "safety": {
             "server_default_model": False,
             "server_model_gateway": True,
+            "provider_id": provider_id,
             "requested_model_id": model_selection["requested_model_id"],
             "resolved_model_id": model_selection["resolved_model_id"],
             "model_validation_status": validation_status,

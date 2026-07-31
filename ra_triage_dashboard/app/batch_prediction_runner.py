@@ -14,7 +14,7 @@ from typing import Any
 
 from .batch_prediction_worker import EVENT_PREFIX, LABELS, RESULT_PREFIX
 from .db import Database
-from .model_catalog import model_gateway_chat_url, read_model_gateway_api_key
+from .model_catalog import model_gateway_chat_url, read_provider_api_key
 from .settings import Settings
 
 
@@ -135,6 +135,7 @@ class BatchPredictionRunner:
                 payload={
                     "action": "predict",
                     "issue_ids": issue_ids,
+                    "provider_id": str(job.get("provider_id") or "kylin"),
                     "model_id": str(job.get("resolved_model_id") or ""),
                     "requested_model_id": str(
                         job.get("requested_model_id") or ""
@@ -248,6 +249,7 @@ class BatchPredictionRunner:
                         "requested_model_id": str(
                             job.get("requested_model_id") or ""
                         ),
+                        "provider_id": str(job.get("provider_id") or "kylin"),
                         "resolved_model_id": str(
                             job.get("resolved_model_id") or ""
                         ),
@@ -329,6 +331,7 @@ class BatchPredictionRunner:
                     "requested_model_id": str(
                         job.get("requested_model_id") or ""
                     ),
+                    "provider_id": str(job.get("provider_id") or "kylin"),
                     "resolved_model_id": str(
                         job.get("resolved_model_id") or ""
                     ),
@@ -509,12 +512,13 @@ class BatchPredictionRunner:
         redactions: list[str] = []
         worker_payload = dict(payload)
         if action == "predict" and str(payload.get("model_id") or "").strip():
-            model_api_key = read_model_gateway_api_key(self.settings)
-            model_chat_url = model_gateway_chat_url(self.settings)
+            provider_id = str(payload.get("provider_id") or "kylin").strip().lower()
+            model_api_key = read_provider_api_key(self.settings, provider_id)
+            model_chat_url = model_gateway_chat_url(self.settings, provider_id)
             worker_payload["_model_gateway"] = {
                 "api_key": model_api_key,
                 "chat_url": model_chat_url,
-                "provider": "kylin",
+                "provider": provider_id,
             }
             redactions.extend(
                 [model_api_key, f"apikey:{model_api_key}", model_chat_url]
