@@ -798,7 +798,7 @@ async function loadReviewers() {
 
 function checkedAnalysisComparisonStatus() {
   return normalizedAnalysisComparisonStatus(
-    document.querySelector('input[name="analysisComparison"]:checked')?.value,
+    $("#analysisComparisonFilter")?.value,
     state.reviewAnalysis.comparisonStatus || "all"
   );
 }
@@ -810,12 +810,11 @@ function setAnalysisComparisonStatus(
   let nextStatus = normalizedAnalysisComparisonStatus(comparisonStatus);
   if (!hasRun && nextStatus !== "all") nextStatus = "all";
   state.reviewAnalysis.comparisonStatus = nextStatus;
-  document
-    .querySelectorAll('input[name="analysisComparison"]')
-    .forEach((input) => {
-      input.disabled = !hasRun && input.value !== "all";
-      input.checked = input.value === nextStatus;
-    });
+  const select = $("#analysisComparisonFilter");
+  if (select) {
+    select.disabled = !hasRun;
+    select.value = nextStatus;
+  }
   return nextStatus;
 }
 
@@ -1689,10 +1688,6 @@ function renderReviewReasonAnalysis(data) {
   $("#analysisReviewScope").textContent = run
     ? `${run.name}${comparisonStatus === "all" ? "" : ` · ${comparisonMeta.label}`}`
     : "全部最新 Review";
-  $("#analysisScopeNote").textContent = run
-    ? `当前叠加 ${run.name}；模型判断结果为 ${comparisonMeta.label}（${comparisonMeta.description}）。` +
-      ` Review 仍取每个 Issue 的最新版本，不绑定该 Run。`
-    : "当前统计全部最新 Review，不叠加模型输出；选择 Run 只改变对比切片和混淆统计。";
   renderAnalysisClusterList(
     data.evidence_clusters || [],
     "#analysisEvidenceClusters",
@@ -3745,10 +3740,7 @@ function bindEvents() {
   });
   $("#analysisRunFilter").addEventListener("change", () => {
     const runId = $("#analysisRunFilter").value;
-    const mismatchInput = document.querySelector(
-      'input[name="analysisComparison"][value="mismatch"]'
-    );
-    const previouslyHadRun = Boolean(mismatchInput && !mismatchInput.disabled);
+    const previouslyHadRun = Boolean(state.selectedRunId);
     const nextStatus = !runId
       ? "all"
       : previouslyHadRun
