@@ -264,8 +264,8 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
             )
             self.assertEqual([item["issue_id"] for item in cases["items"]], ["cn20001"])
 
-            # The gallery uses a deterministic issue_id tie-breaker, so a
-            # repeated request with identical filters must preserve order.
+            # The gallery is ordered only by issue_id, so a repeated request
+            # with identical filters must preserve the same order.
             first_order = [
                 item["issue_id"]
                 for item in database.list_cases(
