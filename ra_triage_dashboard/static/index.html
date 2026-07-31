@@ -381,19 +381,21 @@
                       <div class="actor-summary" id="modelImportActorSummary">创建人将在导入时记录；当前身份尚未读取。</div>
                     </aside>
                     <form class="tool-form" id="importForm">
-                      <label class="file-drop">
-                        <span>选择模型结果文件</span>
-                        <input id="importFile" type="file" accept=".json,.csv,.xlsx,.xlsm" required />
-                        <small id="importFileName">未选择文件</small>
-                      </label>
-                      <label id="runNameField">
-                        <span>模型 Run 名（可选）</span>
-                        <input id="runNameInput" placeholder="默认取 experiment.model_name 或文件名" autocomplete="off" />
-                      </label>
-                      <div class="dialog-result hidden" id="importResult"></div>
-                      <div class="page-actions">
-                        <button class="button button-primary" type="submit">开始导入</button>
+                      <div class="run-import-controls">
+                        <label class="file-drop">
+                          <span>选择模型结果文件</span>
+                          <input id="importFile" type="file" accept=".json,.csv,.xlsx,.xlsm" required />
+                          <small id="importFileName">未选择文件</small>
+                        </label>
+                        <label id="runNameField">
+                          <span>模型 Run 名（可选）</span>
+                          <input id="runNameInput" placeholder="默认取 experiment.model_name 或文件名" autocomplete="off" />
+                        </label>
+                        <div class="page-actions">
+                          <button class="button button-primary" type="submit">开始导入</button>
+                        </div>
                       </div>
+                      <div class="dialog-result hidden" id="importResult"></div>
                     </form>
                   </div>
                 </section>
