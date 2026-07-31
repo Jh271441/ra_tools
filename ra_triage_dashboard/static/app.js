@@ -1884,7 +1884,7 @@ function renderDetail(caseData) {
   const issueUrl = safeUrl(caseData.voyager_issue_url || caseData.trail_url);
   const bevFrames = caseData.assets?.frames || [];
   const bevPreviewButton = bevFrames.length
-    ? `<button class="button button-primary hero-bev-open" type="button" data-open-bev-preview>查看 Ares</button>`
+    ? `<button class="button button-quiet hero-bev-open" type="button" data-open-bev-preview>查看 Ares</button>`
     : "";
   const modelHistoryButton = `<button class="history-inline-button" type="button" data-open-history="model">评测 Run 历史 · ${(caseData.predictions || []).length} 条</button>`;
   $("#detailPane").innerHTML = `
