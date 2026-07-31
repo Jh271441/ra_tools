@@ -2504,6 +2504,8 @@ function renderGatewayProviders() {
         state.selectedGatewayProviderId = button.dataset.gatewayProvider || selectedId;
         renderGatewayProviders();
         state.selectedGatewayModelId = "";
+        const modelSelect = $("#predictionModelSelect");
+        if (modelSelect) modelSelect.value = "";
         loadGatewayModels({ providerId: state.selectedGatewayProviderId }).catch((error) => {
           showToast(error.message, true);
         });
