@@ -517,7 +517,7 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 }
 .history-inline-button:hover { border-color: rgba(34,211,238,.48); color: var(--accent); background: rgba(34,211,238,.05); }
 .hero-media-meta .history-inline-button { margin-left: auto; }
-.history-inline-fallback { display: flex; justify-content: flex-end; margin-top: 7px; }
+.review-history-footer { display: flex; justify-content: flex-end; margin-top: 8px; }
 .frames { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .frame-card { position: relative; aspect-ratio: 16 / 9; overflow: hidden; padding: 0; border: 1px solid var(--line); border-radius: 7px; background: #0d1119; }
 .frame-card:hover { border-color: rgba(34,211,238,.6); }
@@ -571,8 +571,6 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
   gap: 4px; padding: 0; border: 0; border-radius: 0; background: transparent;
 }
 .review-reason > span { color: #d7edf0; font-size: 12px; font-weight: 700; }
-.review-reason-heading { display: flex; align-items: center; justify-content: space-between; gap: 7px; }
-.review-reason-heading b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .review-reason textarea { min-height: 88px; padding: 7px 8px; border-color: rgba(34,211,238,.24); background: #0b1119; font-size: 11px; line-height: 1.45; }
 .review-reason textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(34,211,238,.08); }
 .evidence-dropdown { position: relative; border: 1px solid var(--line); border-radius: 8px; background: #0e131c; }

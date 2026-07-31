@@ -1803,11 +1803,11 @@ function heroFrameIndex(frames) {
   return Math.floor(frames.length / 2);
 }
 
-function heroMediaSection(bev, camera, historyAction = "") {
+function heroMediaSection(bev, camera) {
   const frames = bev?.frames || [];
   const video = bev?.video;
   if (!bev?.available || (!frames.length && !video?.url)) {
-    return `<section class="hero-media"><div class="no-asset hero-media-placeholder"><span>当前没有可预览的 Ares 或视频。</span></div>${historyAction ? `<div class="history-inline-fallback">${historyAction}</div>` : ""}</section>`;
+    return '<section class="hero-media"><div class="no-asset hero-media-placeholder"><span>当前没有可预览的 Ares 或视频。</span></div></section>';
   }
   if (!frames.length && video?.url) {
     return `
@@ -1815,7 +1815,6 @@ function heroMediaSection(bev, camera, historyAction = "") {
         <div class="hero-media-button hero-media-video">
           <video src="${escapeHtml(video.url)}" controls preload="metadata" playsinline aria-label="Ares Capture BEV 视频"></video>
         </div>
-        ${historyAction ? `<div class="history-inline-fallback">${historyAction}</div>` : ""}
       </section>`;
   }
   const index = heroFrameIndex(frames);
@@ -1840,7 +1839,6 @@ function heroMediaSection(bev, camera, historyAction = "") {
         <span><b>${frames.length}</b> 帧 Ares 时序</span>
         <span>${cameraCount ? `<b>${cameraCount}</b> 帧 Camera 可在预览中切换` : "Camera 暂不可用"}</span>
         ${videoToggle}
-        ${historyAction}
       </div>
     </section>`;
 }
@@ -1892,7 +1890,7 @@ function renderDetail(caseData) {
   const bevPreviewButton = bevFrames.length
     ? `<button class="button button-primary hero-bev-open" type="button" data-open-bev-preview>查看 Ares</button>`
     : "";
-  const modelHistoryButton = `<button class="history-inline-button" type="button" data-open-history="model">评测 Run 历史 · ${(caseData.predictions || []).length} 条 →</button>`;
+  const modelHistoryButton = `<button class="history-inline-button" type="button" data-open-history="model">评测 Run 历史 · ${(caseData.predictions || []).length} 条</button>`;
   $("#detailPane").innerHTML = `
     <div class="detail-header">
       <div class="detail-title-row">
@@ -1918,11 +1916,12 @@ function renderDetail(caseData) {
           ${bevPreviewButton}
           <button class="button button-primary" type="button" data-predict-current-case>API 推理</button>
           ${issueUrl ? `<a class="button button-quiet" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer">Issue link</a>` : ""}
+          ${modelHistoryButton}
         </div>
       </div>
       ${caseData.review_note ? `<details class="review-note-details"><summary>查看历史备注</summary><div class="review-note"><span>历史备注</span>${escapeHtml(caseData.review_note)}</div></details>` : ""}
     </div>
-    ${heroMediaSection(caseData.assets, caseData.camera, modelHistoryButton)}`;
+    ${heroMediaSection(caseData.assets, caseData.camera)}`;
   $("#detailPane").querySelector("[data-predict-current-case]")?.addEventListener("click", () => {
     openBatchDraft([caseData.issue_id], "single");
   });
@@ -2002,7 +2001,7 @@ function renderReview(caseData) {
     <form class="review-form" id="annotationForm">
       <label class="review-status-field"><span>复核状态</span><select id="reviewStatusInput"><option value="reviewed" ${reviewStatus === "reviewed" ? "selected" : ""}>已 Review</option><option value="pending" ${reviewStatus === "pending" ? "selected" : ""}>待补充</option><option value="needs_gt_review" ${reviewStatus === "needs_gt_review" ? "selected" : ""}>GT 需复核</option></select></label>
       <label class="review-reason">
-        <span class="review-reason-heading"><b>模型为什么判错？</b><button class="history-inline-button" type="button" data-open-history="review">Review 历史 · ${(caseData.annotations || []).length} 条 →</button></span>
+        <span>模型为什么判错？</span>
         <textarea id="annotationNote" rows="4" placeholder="简要说明模型漏掉的关键证据，例如 routing、绕行空间或时序。">${escapeHtml(previous.note || "")}</textarea>
       </label>
       <details class="evidence-dropdown review-dropdown">
@@ -2026,7 +2025,9 @@ function renderReview(caseData) {
       <label><span>标注人${authorLocked ? "（SSO）" : "（可编辑）"}</span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" ${authorLocked ? "readonly" : ""} /></label>
       <button class="button button-primary full-width" type="submit">保存新的 review 版本</button>
     </form>
-    `;
+    <div class="review-history-footer">
+      <button class="history-inline-button" type="button" data-open-history="review">Review 历史 · ${(caseData.annotations || []).length} 条</button>
+    </div>`;
   $("#reviewPane").querySelector("[data-open-history='review']")?.addEventListener("click", () => {
     openHistoryDialog("review", caseData);
   });
