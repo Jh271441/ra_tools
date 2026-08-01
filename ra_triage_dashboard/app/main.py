@@ -1478,7 +1478,7 @@ async def list_cases(
         failure_only=failure_only,
         missing_evidence=missing_evidence,
         page=page,
-        page_size=page_size,
+        page_size=min(max(1, int(page_size)), 100),
     )
     items: list[dict[str, Any]] = []
     for item in result.get("items", []):

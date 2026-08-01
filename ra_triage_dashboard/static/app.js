@@ -1,4 +1,6 @@
 const LABELS = ["误触发", "正确触发", "无需协助"];
+const CASE_PAGE_SIZES = [10, 20, 50, 100];
+const DEFAULT_CASE_PAGE_SIZE = 20;
 const ANALYSIS_COMPARISON_STATUSES = ["all", "mismatch", "match", "none"];
 const ANALYSIS_COMPARISON_META = {
   all: { label: "全部", description: "不按模型判断结果收窄" },
@@ -36,7 +38,7 @@ const state = {
   cases: [],
   caseTotal: 0,
   casePage: 1,
-  casePageSize: 50,
+  casePageSize: DEFAULT_CASE_PAGE_SIZE,
   caseRequestSeq: 0,
   caseListRequestSeq: 0,
   reviewReloadSeq: 0,
@@ -186,6 +188,10 @@ function normalizedReviewRouteFilters(params) {
   const gtLabel = params.get("gt") || "";
   const annotationLabel = params.get("annotation") || "";
   const rawPage = Number.parseInt(params.get("page") || "1", 10);
+  const rawPageSize = Number.parseInt(
+    params.get("page_size") || String(DEFAULT_CASE_PAGE_SIZE),
+    10
+  );
   return {
     search: params.get("q") || "",
     gtLabel: LABELS.includes(gtLabel) ? gtLabel : "",
@@ -193,6 +199,9 @@ function normalizedReviewRouteFilters(params) {
     annotationAuthor: params.get("reviewer") || "",
     clusterKey: params.get("evidence") || "",
     casePage: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
+    casePageSize: CASE_PAGE_SIZES.includes(rawPageSize)
+      ? rawPageSize
+      : DEFAULT_CASE_PAGE_SIZE,
   };
 }
 
@@ -267,6 +276,7 @@ function currentReviewRouteOptions(overrides = {}) {
     annotationAuthor: $("#reviewerFilter")?.value || "",
     clusterKey: state.clusterKey,
     casePage: state.casePage,
+    casePageSize: state.casePageSize,
     ...overrides,
   };
 }
@@ -289,6 +299,10 @@ function applyReviewRouteControls(route) {
   }
   state.clusterKey = route.clusterKey || "";
   state.casePage = Math.max(1, Number(route.casePage) || 1);
+  state.casePageSize = CASE_PAGE_SIZES.includes(Number(route.casePageSize))
+    ? Number(route.casePageSize)
+    : DEFAULT_CASE_PAGE_SIZE;
+  if ($("#casePageSize")) $("#casePageSize").value = String(state.casePageSize);
   if (route.comparisonStatus !== null && route.comparisonStatus !== undefined) {
     state.reviewComparisonStatus = normalizedReviewComparisonStatus(
       route.comparisonStatus,
@@ -392,6 +406,9 @@ function pageUrl(page, options = {}) {
     if (review.annotationAuthor) url.searchParams.set("reviewer", review.annotationAuthor);
     if (review.clusterKey) url.searchParams.set("evidence", review.clusterKey);
     if (Number(review.casePage) > 1) url.searchParams.set("page", String(review.casePage));
+    if (Number(review.casePageSize) !== DEFAULT_CASE_PAGE_SIZE) {
+      url.searchParams.set("page_size", String(review.casePageSize));
+    }
   }
   if (page === "analysis") {
     const analysis = currentAnalysisRouteOptions(options);
@@ -1275,10 +1292,12 @@ function renderCasePagination() {
   const previous = $("#casePagePrevious");
   const next = $("#casePageNext");
   const summary = $("#casePageSummary");
+  const pageSize = $("#casePageSize");
   const result = $("#galleryResultSummary");
   if (previous) previous.disabled = state.casePage <= 1 || !state.caseTotal;
   if (next) next.disabled = state.casePage >= totalPages || !state.caseTotal;
   if (summary) summary.textContent = state.caseTotal ? `${state.casePage} / ${totalPages}` : "0 / 0";
+  if (pageSize) pageSize.value = String(state.casePageSize);
   if (result) {
     const start = state.caseTotal ? (state.casePage - 1) * state.casePageSize + 1 : 0;
     const end = Math.min(state.casePage * state.casePageSize, state.caseTotal);
@@ -1314,6 +1333,19 @@ async function changeCasePage(delta) {
   state.galleryScrollY = 0;
   clearPendingReviewImages();
   await loadCases({ keepSelection: false, page: targetPage });
+  showPage("review", { historyMode: "push", issue: "" });
+}
+
+async function changeCasePageSize(value) {
+  const nextPageSize = CASE_PAGE_SIZES.includes(Number(value))
+    ? Number(value)
+    : DEFAULT_CASE_PAGE_SIZE;
+  if (nextPageSize === state.casePageSize) return;
+  state.casePageSize = nextPageSize;
+  state.casePage = 1;
+  state.galleryScrollY = 0;
+  clearPendingReviewImages();
+  await loadCases({ keepSelection: false, page: 1 });
   showPage("review", { historyMode: "push", issue: "" });
 }
 
@@ -4050,6 +4082,9 @@ function bindEvents() {
   });
   $("#casePageNext").addEventListener("click", () => {
     changeCasePage(1).catch((error) => showToast(error.message, true));
+  });
+  $("#casePageSize").addEventListener("change", (event) => {
+    changeCasePageSize(event.target.value).catch((error) => showToast(error.message, true));
   });
   $("#refreshButton").addEventListener("click", async () => {
     try {

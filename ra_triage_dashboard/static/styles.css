@@ -364,7 +364,11 @@ html[data-ui-lang="en"] .ui-lang-en { display: inline; }
   display: flex; align-items: center; justify-content: center; gap: 10px;
   padding: 11px 13px 13px; border-top: 1px solid var(--line-soft);
 }
-.case-pagination > span { min-width: 58px; color: var(--muted); font-size: 11px; text-align: center; font-variant-numeric: tabular-nums; }
+.case-pagination > span, .case-pagination-main > span { min-width: 58px; color: var(--muted); font-size: 11px; text-align: center; font-variant-numeric: tabular-nums; }
+.gallery-pagination { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+.case-pagination-main { grid-column: 2; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.case-page-size { grid-column: 3; justify-self: end; display: inline-flex; align-items: center; gap: 5px; color: var(--faint); font-size: 10px; white-space: nowrap; }
+.case-page-size select { width: 66px; height: 30px; padding: 4px 25px 4px 8px; font-size: 11px; }
 .review-detail-view { display: grid; gap: 8px; }
 .case-detail-nav {
   min-height: 45px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -1080,6 +1084,8 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .main { padding: 7px 7px 18px; }
   .review-commandbar { padding: 6px; }
   .issue-grid { grid-template-columns: minmax(0, 1fr); padding: 8px; }
+  .gallery-pagination { grid-template-columns: minmax(0, 1fr); }
+  .case-pagination-main, .case-page-size { grid-column: 1; justify-self: center; }
   .gallery-heading, .case-detail-nav { align-items: flex-start; flex-direction: column; }
   .gallery-heading-meta, .case-detail-pager { width: 100%; justify-content: space-between; }
   .case-detail-pager .button { min-width: 0; padding-inline: 6px; }

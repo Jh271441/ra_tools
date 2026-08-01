@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RA Triage Workbench</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='%2309b8d4'/><text x='32' y='41' text-anchor='middle' font-size='28' font-family='sans-serif' font-weight='700' fill='%2309141d'>RA</text></svg>" />
-    <link rel="stylesheet" href="/static/styles.css?v=81de4b7" />
+    <link rel="stylesheet" href="/static/styles.css?v=4d4e2b1" />
   </head>
   <body>
     <div class="app-shell" id="appShell">
@@ -147,10 +147,22 @@
                   </div>
                 </div>
                 <div class="issue-grid" id="issueList" aria-live="polite"></div>
-                <nav class="case-pagination" aria-label="Issue 分页">
-                  <button class="button button-quiet" id="casePagePrevious" type="button">上一页</button>
-                  <span id="casePageSummary">— / —</span>
-                  <button class="button button-quiet" id="casePageNext" type="button">下一页</button>
+                <nav class="case-pagination gallery-pagination" aria-label="Issue 分页">
+                  <div class="case-pagination-main">
+                    <button class="button button-quiet" id="casePagePrevious" type="button">上一页</button>
+                    <span id="casePageSummary">— / —</span>
+                    <button class="button button-quiet" id="casePageNext" type="button">下一页</button>
+                  </div>
+                  <label class="case-page-size" for="casePageSize">
+                    <span>每页</span>
+                    <select id="casePageSize" aria-label="每页展示数量">
+                      <option value="10">10</option>
+                      <option value="20" selected>20</option>
+                      <option value="50">50</option>
+                      <option value="100">100</option>
+                    </select>
+                    <span>条</span>
+                  </label>
                 </nav>
               </section>
             </section>
@@ -741,6 +753,6 @@
     </dialog>
 
     <div class="toast hidden" id="toast"></div>
-    <script src="/static/app.js?v=81de4b7" defer></script>
+    <script src="/static/app.js?v=4d4e2b1" defer></script>
   </body>
 </html>
