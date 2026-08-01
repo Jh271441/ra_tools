@@ -878,12 +878,13 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .media-mode.active { border-color: rgba(34,211,238,.55); color: var(--accent); background: var(--accent-soft); }
 .media-mode span { color: var(--faint); font-variant-numeric: tabular-nums; }
 .media-content { min-width: 0; min-height: 0; height: 100%; }
+.media-stage[hidden], .media-video-stage[hidden] { display: none !important; }
 .media-stage {
   min-height: 0; height: 100%; display: grid; grid-template-columns: 45px minmax(0, 1fr) 45px; align-items: center; gap: 9px;
 }
 .media-video-stage { min-width: 0; min-height: 0; width: 100%; height: 100%; }
 .media-video-stage .hero-video-player { height: 100%; grid-template-rows: minmax(0, 1fr) auto; }
-.media-video-stage .hero-media-button { height: auto; min-height: 0; }
+.media-video-stage .hero-media-button { height: 100%; min-height: 0; }
 .media-video-stage video { width: 100%; height: 100%; display: block; object-fit: contain; background: #05070a; }
 .media-viewport {
   width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: auto; border: 1px solid var(--line);

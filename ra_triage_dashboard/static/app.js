@@ -89,7 +89,7 @@ const state = {
     index: 0,
     zoom: 1,
     drag: null,
-    caseData: null,
+    snapshot: null,
     requestSeq: 0,
   },
   sourcePreview: { runId: "", page: 1, pageSize: 100, pageCount: 1 },
@@ -2600,15 +2600,13 @@ async function saveAnnotation(event) {
 }
 
 function mediaFrames(kind) {
-  const caseData = state.media.caseData || state.selectedCase;
-  if (!caseData) return [];
-  return (kind === "bev" ? caseData.assets : caseData.camera)?.frames || [];
+  return kind === "bev"
+    ? state.media.snapshot?.bev || []
+    : state.media.snapshot?.camera || [];
 }
 
 function mediaVideo() {
-  const caseData = state.media.caseData || state.selectedCase;
-  const video = caseData?.assets?.video;
-  return video?.url ? video : null;
+  return state.media.snapshot?.video?.url ? state.media.snapshot.video : null;
 }
 
 function preferredMediaKind(caseData) {
@@ -2651,7 +2649,7 @@ function openDialog(id) {
 function cleanupMediaDialog() {
   const dialog = $("#mediaDialog");
   state.media.drag = null;
-  state.media.caseData = null;
+  state.media.snapshot = null;
   $("#mediaViewport")?.classList.remove("is-dragging");
   $("#mediaVideoStage")?.querySelector("video")?.pause();
   if ($("#mediaVideoStage")) {
@@ -2873,7 +2871,10 @@ async function toggleMediaFullscreen() {
 
 function switchMediaKind(kind) {
   const available = kind === "video" ? Boolean(mediaVideo()) : Boolean(mediaFrames(kind).length);
-  if (!available) return;
+  if (!available) {
+    showToast(`${kind === "video" ? "BEV 视频" : kind.toUpperCase()} 当前不可用。`, true);
+    return;
+  }
   if (state.media.kind === "video" && kind !== "video") {
     $("#mediaVideoStage")?.querySelector("video")?.pause();
   }
@@ -2883,7 +2884,7 @@ function switchMediaKind(kind) {
 }
 
 function renderMediaDialog() {
-  const caseData = state.media.caseData || state.selectedCase;
+  const snapshot = state.media.snapshot;
   const bev = mediaFrames("bev");
   const camera = mediaFrames("camera");
   const video = mediaVideo();
@@ -2916,7 +2917,7 @@ function renderMediaDialog() {
       videoStage.innerHTML = videoPlayerMarkup(video);
       bindBevVideoPlayers(videoStage);
     }
-    $("#mediaTitle").textContent = `${caseData?.issue_id || ""} · BEV 视频`;
+    $("#mediaTitle").textContent = `${snapshot?.issueId || ""} · BEV 视频`;
     $("#mediaTimeline").innerHTML = "";
     $("#mediaHelp").textContent = "← / → 按所选步长跳转 · 空格播放/暂停 · B/C/V 切媒体 · F 全屏 · Esc 退出";
     updateMediaViewControls();
@@ -2927,7 +2928,7 @@ function renderMediaDialog() {
   state.media.index = Math.max(0, Math.min(state.media.index, Math.max(frames.length - 1, 0)));
   const current = frames[state.media.index];
   if (!current) return;
-  $("#mediaTitle").textContent = `${caseData?.issue_id || ""} · ${frameLabel(current)} · ${state.media.index + 1}/${frames.length}`;
+  $("#mediaTitle").textContent = `${snapshot?.issueId || ""} · ${frameLabel(current)} · ${state.media.index + 1}/${frames.length}`;
   $("#mediaPreviewImage").src = current.url;
   $("#mediaPreviewImage").alt = `${state.media.kind} ${frameLabel(current)}`;
   setMediaZoom(state.media.zoom);
@@ -2942,7 +2943,12 @@ function renderMediaDialog() {
 }
 
 function openMedia(kind, index, { caseData = state.selectedCase } = {}) {
-  state.media.caseData = caseData;
+  state.media.snapshot = {
+    issueId: String(caseData?.issue_id || ""),
+    bev: [...(caseData?.assets?.frames || [])],
+    camera: [...(caseData?.camera?.frames || [])],
+    video: caseData?.assets?.video?.url ? { ...caseData.assets.video } : null,
+  };
   const requestedAvailable = kind === "video" ? Boolean(mediaVideo()) : Boolean(mediaFrames(kind).length);
   if (!requestedAvailable) kind = preferredMediaKind(caseData);
   if (!kind) return;
