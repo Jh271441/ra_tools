@@ -1934,9 +1934,11 @@ function renderDetail(caseData) {
   $("#detailPane").innerHTML = `
     <div class="detail-header">
       <div class="detail-title-row">
-        <div class="detail-title"><h2>${escapeHtml(title)}</h2><span class="detail-id">${escapeHtml(caseData.issue_id)}</span></div>
+        <div class="detail-title-group">
+          <button class="button button-quiet detail-back-button" id="backToGalleryButton" type="button">← 返回筛选结果</button>
+          <div class="detail-title"><h2>${escapeHtml(title)}</h2><span class="detail-id">${escapeHtml(caseData.issue_id)}</span></div>
+        </div>
         <div class="detail-navigation">
-          <button class="button button-quiet" id="backToGalleryButton" type="button">← 返回筛选结果</button>
           <div class="case-detail-pager">
             <button class="button button-quiet" id="previousIssueButton" type="button">← 上一 Issue</button>
             <span id="detailQueuePosition">— / —</span>

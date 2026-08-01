@@ -470,6 +470,8 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .empty-glyph { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 7px; color: var(--accent); font-size: 21px; }
 .detail-header { padding-bottom: 8px; border-bottom: 1px solid var(--line-soft); }
 .detail-title-row { display: flex; align-items: center; justify-content: space-between; gap: 9px; }
+.detail-title-group { min-width: 0; display: flex; align-items: center; gap: 10px; }
+.detail-back-button { flex: 0 0 auto; min-height: 34px; padding: 5px 9px; color: #a9b6c7; font-size: 10px; }
 .detail-navigation { min-width: 0; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px; }
 .detail-navigation .button { min-height: 34px; display: inline-flex; align-items: center; padding: 5px 9px; font-size: 10px; }
 .detail-title { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 5px 9px; }
@@ -1053,6 +1055,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .batch-config-grid, .batch-common-config, .batch-input-toggles, .batch-history-filters { grid-template-columns: minmax(0, 1fr); }
   .batch-submit-row { grid-template-columns: minmax(0, 1fr); }
   .page-actions, .detail-title-row, .section-heading, .batch-result-heading { align-items: flex-start; flex-direction: column; }
+  .detail-title-group { width: 100%; flex-wrap: wrap; }
   .detail-navigation { width: 100%; justify-content: space-between; }
   .batch-detail-heading { align-items: flex-start; flex-direction: column; }
   .batch-detail-heading > span { white-space: normal; }
