@@ -484,7 +484,7 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .detail-header { padding-bottom: 8px; border-bottom: 1px solid var(--line-soft); }
 .detail-title-row { display: flex; align-items: center; justify-content: space-between; gap: 9px; }
 .detail-title-group { min-width: 0; display: flex; align-items: center; gap: 10px; }
-.detail-back-button { flex: 0 0 auto; min-height: 34px; padding: 5px 9px; color: #a9b6c7; font-size: 11px; }
+.detail-back-button { flex: 0 0 auto; min-height: 34px; padding: 5px 9px; font-size: 11px; }
 .detail-navigation { min-width: 0; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px; }
 .detail-navigation .button { min-height: 34px; display: inline-flex; align-items: center; padding: 5px 9px; font-size: 11px; }
 .detail-title { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 5px 9px; }
