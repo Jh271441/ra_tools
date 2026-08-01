@@ -15,6 +15,11 @@ export DASHBOARD_DATA_DIR="${DASHBOARD_DATA_DIR:-/volume/home/workspace/ra_triag
 DEFAULT_DATABASE_URL_FILE="$DASHBOARD_DATA_DIR/postgres_url"
 if [[ -f "$DEFAULT_DATABASE_URL_FILE" ]]; then
   export DASHBOARD_DATABASE_URL_FILE="${DASHBOARD_DATABASE_URL_FILE:-$DEFAULT_DATABASE_URL_FILE}"
+  if command -v pg_isready >/dev/null 2>&1 && ! pg_isready --quiet; then
+    # cloud_server has no systemd init process, so recover PostgreSQL explicitly
+    # after a host/container restart before starting the dashboard.
+    sudo pg_ctlcluster 14 main start
+  fi
 fi
 export DASHBOARD_BUILD_COMMIT="${DASHBOARD_BUILD_COMMIT:-unverified}"
 export DASHBOARD_HOST="${DASHBOARD_HOST:-0.0.0.0}"
