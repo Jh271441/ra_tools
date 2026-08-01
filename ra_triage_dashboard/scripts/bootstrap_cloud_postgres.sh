@@ -18,10 +18,12 @@ fi
 
 sudo apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-14 postgresql-client-14
-if ! sudo systemctl enable --now postgresql 2>/dev/null; then
-  # cloud_server currently runs without systemd as PID 1. pg_ctlcluster starts
-  # the distro-managed cluster directly while preserving the same config/data.
-  sudo pg_ctlcluster 14 main start
+if ! pg_isready --quiet; then
+  if ! sudo systemctl enable --now postgresql 2>/dev/null; then
+    # cloud_server currently runs without systemd as PID 1. pg_ctlcluster starts
+    # the distro-managed cluster directly while preserving the same config/data.
+    sudo pg_ctlcluster 14 main start
+  fi
 fi
 
 if ! sudo -u postgres psql --dbname postgres --tuples-only --no-align \
