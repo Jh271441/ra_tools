@@ -618,10 +618,14 @@ function showToast(message, isError = false) {
 
 function applySidebarState() {
   $("#appShell").classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
-  $("#sidebarToggle").setAttribute("aria-expanded", String(!state.sidebarCollapsed));
-  $("#sidebarToggle").title = state.sidebarCollapsed
+  const expanded = String(!state.sidebarCollapsed);
+  const title = state.sidebarCollapsed
     ? uiText("展开工具栏", "Expand toolbar")
     : uiText("折叠工具栏", "Collapse toolbar");
+  $("#sidebarToggle").setAttribute("aria-expanded", expanded);
+  $("#sidebarToggle").title = title;
+  $("#sidebarBrandToggle").setAttribute("aria-expanded", expanded);
+  $("#sidebarBrandToggle").title = title;
 }
 
 function toggleSidebar() {
@@ -3958,6 +3962,7 @@ function bindEvents() {
     applyUiLanguage(state.uiLanguage === "en" ? "zh" : "en");
   });
   $("#sidebarToggle").addEventListener("click", toggleSidebar);
+  $("#sidebarBrandToggle").addEventListener("click", toggleSidebar);
   document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => closeDialog(button.dataset.close)));
   $("#importFile").addEventListener("change", () => {
     const filename = $("#importFileName");

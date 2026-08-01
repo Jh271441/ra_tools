@@ -85,8 +85,10 @@ html[data-ui-lang="en"] .ui-lang-en { display: inline; }
 .brand { min-width: 165px; display: flex; align-items: center; gap: 9px; }
 .brand-mark {
   width: 37px; height: 37px; display: grid; place-items: center; border: 1px solid rgba(34,211,238,.6); border-radius: 9px;
-  color: var(--accent); background: var(--accent-soft); font-size: 13px; font-weight: 800; letter-spacing: -.06em;
+  appearance: none; padding: 0; color: var(--accent); background: var(--accent-soft); font-size: 13px; font-weight: 800; letter-spacing: -.06em;
 }
+.brand-mark:hover { border-color: var(--accent); color: #b9f5fb; background: rgba(34,211,238,.18); }
+.brand-mark:focus-visible { outline: 2px solid rgba(34,211,238,.7); outline-offset: 2px; }
 .dataset-state { display: inline-flex; align-items: center; gap: 8px; color: #b8d9db; font-size: 12px; white-space: nowrap; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
 .header-metrics { display: flex; align-items: stretch; margin-left: auto; border: 1px solid var(--line); border-radius: 7px; background: #0e131c; }

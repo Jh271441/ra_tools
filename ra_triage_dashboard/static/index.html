@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RA Triage Workbench</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='%2309b8d4'/><text x='32' y='41' text-anchor='middle' font-size='28' font-family='sans-serif' font-weight='700' fill='%2309141d'>RA</text></svg>" />
-    <link rel="stylesheet" href="/static/styles.css?v=bf83a12" />
+    <link rel="stylesheet" href="/static/styles.css?v=d29c641" />
   </head>
   <body>
     <div class="app-shell" id="appShell">
       <aside class="app-sidebar" id="appSidebar">
           <div class="sidebar-brand">
-            <div class="brand-mark" aria-hidden="true">RA</div>
+            <button class="brand-mark" id="sidebarBrandToggle" type="button" aria-controls="appSidebar" aria-expanded="true" title="折叠工具栏">RA</button>
             <div class="sidebar-copy">
               <strong>RA Triage</strong>
               <span class="ui-lang-zh">工作台</span>
@@ -726,6 +726,6 @@
     </dialog>
 
     <div class="toast hidden" id="toast"></div>
-    <script src="/static/app.js?v=54f2ac8" defer></script>
+    <script src="/static/app.js?v=d29c641" defer></script>
   </body>
 </html>
