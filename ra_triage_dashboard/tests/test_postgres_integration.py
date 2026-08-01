@@ -81,6 +81,9 @@ class PostgresDatabaseIntegrationTest(unittest.TestCase):
                 input_config={"use_ra_event": True},
             )
             self.assertEqual(database.next_queued_batch_prediction_job()["id"], job["id"])
+            batch_jobs = database.list_batch_prediction_jobs(page=1, page_size=20)
+            self.assertEqual(batch_jobs["total"], 1)
+            self.assertEqual(batch_jobs["facets"]["models"][0]["id"], "profile")
             self.assertGreater(database.change_revision(), initial_revision)
             overview = database.overview(
                 baseline_scope="postgres_test", model_run_id=run["id"]

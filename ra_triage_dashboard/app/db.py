@@ -2170,7 +2170,7 @@ class Database:
                     SELECT id, TRIM(resolved_model_id) AS model_id
                     FROM batch_prediction_jobs
                     WHERE TRIM(resolved_model_id) != ''
-                )
+                ) AS model_catalog
                 GROUP BY model_id
                 ORDER BY job_count DESC, model_id ASC
                 """
