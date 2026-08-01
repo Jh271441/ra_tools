@@ -1972,8 +1972,10 @@ function videoPlayerMarkup(video) {
       data-event-time-sec="${escapeHtml(eventTimeSec)}"
       data-duration-sec="${escapeHtml(durationSec)}"
       data-frame-step-sec="${escapeHtml(frameStepSec)}">
-    <div class="hero-media-button hero-media-video">
-      <video src="${escapeHtml(video.url)}" controls preload="metadata" playsinline aria-label="Ares Capture BEV 视频"></video>
+    <div class="media-viewport media-video-viewport" data-video-viewport>
+      <div class="media-canvas media-video-canvas" data-video-canvas>
+        <video src="${escapeHtml(video.url)}" controls preload="metadata" playsinline draggable="false" aria-label="Ares Capture BEV 视频"></video>
+      </div>
     </div>
     <div class="bev-video-controls" aria-label="BEV 视频控制">
       <div class="bev-video-control-row">
@@ -2650,7 +2652,9 @@ function cleanupMediaDialog() {
   const dialog = $("#mediaDialog");
   state.media.drag = null;
   state.media.snapshot = null;
-  $("#mediaViewport")?.classList.remove("is-dragging");
+  document.querySelectorAll("#mediaDialog .media-viewport").forEach((viewport) => {
+    viewport.classList.remove("is-dragging");
+  });
   $("#mediaVideoStage")?.querySelector("video")?.pause();
   if ($("#mediaVideoStage")) {
     $("#mediaVideoStage").innerHTML = "";
@@ -2746,20 +2750,36 @@ const MEDIA_ZOOM_MIN = 0.5;
 const MEDIA_ZOOM_BASE_MAX = 4;
 const MEDIA_ZOOM_STEP = 0.25;
 
-function mediaOriginalZoom() {
-  const viewport = $("#mediaViewport");
+function activeMediaViewport() {
+  return state.media.kind === "video"
+    ? $("#mediaVideoStage")?.querySelector("[data-video-viewport]")
+    : $("#mediaViewport");
+}
+
+function activeMediaCanvas() {
+  return state.media.kind === "video"
+    ? $("#mediaVideoStage")?.querySelector("[data-video-canvas]")
+    : $("#mediaCanvas");
+}
+
+function activeMediaDimensions() {
+  if (state.media.kind === "video") {
+    const video = $("#mediaVideoStage")?.querySelector("video");
+    return { width: Number(video?.videoWidth || 0), height: Number(video?.videoHeight || 0) };
+  }
   const image = $("#mediaPreviewImage");
-  if (
-    !viewport?.clientWidth ||
-    !viewport?.clientHeight ||
-    !image?.naturalWidth ||
-    !image?.naturalHeight
-  ) {
+  return { width: Number(image?.naturalWidth || 0), height: Number(image?.naturalHeight || 0) };
+}
+
+function mediaOriginalZoom() {
+  const viewport = activeMediaViewport();
+  const dimensions = activeMediaDimensions();
+  if (!viewport?.clientWidth || !viewport?.clientHeight || !dimensions.width || !dimensions.height) {
     return null;
   }
   const fitScale = Math.min(
-    viewport.clientWidth / image.naturalWidth,
-    viewport.clientHeight / image.naturalHeight
+    viewport.clientWidth / dimensions.width,
+    viewport.clientHeight / dimensions.height
   );
   return fitScale > 0 ? 1 / fitScale : null;
 }
@@ -2772,8 +2792,7 @@ function mediaZoomMin() {
   return Math.min(MEDIA_ZOOM_MIN, mediaOriginalZoom() || 1);
 }
 
-function updateMediaPanState() {
-  const viewport = $("#mediaViewport");
+function updateMediaPanState(viewport = activeMediaViewport()) {
   if (!viewport) return;
   const pannable =
     viewport.scrollWidth > viewport.clientWidth + 1 ||
@@ -2804,9 +2823,10 @@ function updateMediaViewControls() {
     "active",
     Boolean(originalZoom && Math.abs(zoom - originalZoom) < 0.01)
   );
+  const dimensions = activeMediaDimensions();
   originalButton.title = originalZoom
-    ? `按图片原始像素 1:1 显示（${$("#mediaPreviewImage").naturalWidth} × ${$("#mediaPreviewImage").naturalHeight}）`
-    : "原图尺寸读取中";
+    ? `按媒体原始像素 1:1 显示（${dimensions.width} × ${dimensions.height}）`
+    : "媒体尺寸读取中";
   const fullscreen = mediaFullscreenActive();
   $("#mediaFullscreenButton").textContent = fullscreen ? "⤢" : "⛶";
   $("#mediaFullscreenButton").setAttribute("aria-label", fullscreen ? "退出全屏" : "进入全屏");
@@ -2814,8 +2834,8 @@ function updateMediaViewControls() {
 }
 
 function setMediaZoom(nextZoom, { resetScroll = false } = {}) {
-  const viewport = $("#mediaViewport");
-  const canvas = $("#mediaCanvas");
+  const viewport = activeMediaViewport();
+  const canvas = activeMediaCanvas();
   if (!viewport || !canvas) return;
   const centerRatioX = viewport.scrollWidth > 0
     ? (viewport.scrollLeft + viewport.clientWidth / 2) / viewport.scrollWidth
@@ -2880,7 +2900,51 @@ function switchMediaKind(kind) {
   }
   state.media.kind = kind;
   state.media.index = 0;
+  state.media.zoom = 1;
   renderMediaDialog();
+}
+
+function bindMediaPanViewport(viewport) {
+  if (!viewport || viewport.dataset.mediaPanBound === "true") return;
+  viewport.dataset.mediaPanBound = "true";
+  viewport.addEventListener("pointerdown", (event) => {
+    if (
+      !viewport.classList.contains("is-pannable") ||
+      (event.pointerType === "mouse" && event.button !== 0)
+    ) return;
+    event.preventDefault();
+    state.media.drag = {
+      viewport,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      scrollLeft: viewport.scrollLeft,
+      scrollTop: viewport.scrollTop,
+    };
+    viewport.setPointerCapture(event.pointerId);
+    viewport.classList.add("is-dragging");
+  });
+  viewport.addEventListener("pointermove", (event) => {
+    const drag = state.media.drag;
+    if (!drag || drag.viewport !== viewport || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    viewport.scrollLeft = drag.scrollLeft - (event.clientX - drag.startX);
+    viewport.scrollTop = drag.scrollTop - (event.clientY - drag.startY);
+  });
+  const endDrag = (event) => {
+    const drag = state.media.drag;
+    if (!drag || drag.viewport !== viewport || drag.pointerId !== event.pointerId) return;
+    if (viewport.hasPointerCapture(event.pointerId)) viewport.releasePointerCapture(event.pointerId);
+    state.media.drag = null;
+    viewport.classList.remove("is-dragging");
+  };
+  viewport.addEventListener("pointerup", endDrag);
+  viewport.addEventListener("pointercancel", endDrag);
+  viewport.addEventListener("wheel", (event) => {
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+    setMediaZoom(state.media.zoom + (event.deltaY < 0 ? MEDIA_ZOOM_STEP : -MEDIA_ZOOM_STEP));
+  }, { passive: false });
 }
 
 function renderMediaDialog() {
@@ -2899,9 +2963,6 @@ function renderMediaDialog() {
   const videoStage = $("#mediaVideoStage");
   imageStage.hidden = videoMode;
   videoStage.hidden = !videoMode;
-  ["#mediaZoomOutButton", "#mediaZoomResetButton", "#mediaZoomInButton", "#mediaOriginalSizeButton"].forEach((selector) => {
-    $(selector).hidden = videoMode;
-  });
   $("#mediaTimeline").hidden = videoMode;
   $("#mediaModeTabs").innerHTML = `
     <button type="button" class="media-mode ${state.media.kind === "bev" ? "active" : ""}" data-media-mode="bev" ${bev.length ? "" : "disabled"}>BEV <span>${bev.length}</span></button>
@@ -2916,11 +2977,17 @@ function renderMediaDialog() {
       videoStage.dataset.videoUrl = video.url;
       videoStage.innerHTML = videoPlayerMarkup(video);
       bindBevVideoPlayers(videoStage);
+      const viewport = videoStage.querySelector("[data-video-viewport]");
+      const videoElement = videoStage.querySelector("video");
+      bindMediaPanViewport(viewport);
+      videoElement.addEventListener("loadedmetadata", () => {
+        setMediaZoom(state.media.zoom, { resetScroll: true });
+      });
     }
     $("#mediaTitle").textContent = `${snapshot?.issueId || ""} · BEV 视频`;
     $("#mediaTimeline").innerHTML = "";
-    $("#mediaHelp").textContent = "← / → 按所选步长跳转 · 空格播放/暂停 · B/C/V 切媒体 · F 全屏 · Esc 退出";
-    updateMediaViewControls();
+    $("#mediaHelp").textContent = "← / → 按所选步长跳转 · 空格播放/暂停 · B/C/V 切媒体 · +/− 缩放 · 0 适配 · 放大后拖拽平移 · F 全屏 · Esc 退出";
+    setMediaZoom(state.media.zoom, { resetScroll: state.media.zoom === 1 });
     return;
   }
 
@@ -2957,7 +3024,7 @@ function openMedia(kind, index, { caseData = state.selectedCase } = {}) {
   state.media.zoom = 1;
   renderMediaDialog();
   openDialog("mediaDialog");
-  if (kind !== "video") setMediaZoom(1, { resetScroll: true });
+  setMediaZoom(1, { resetScroll: true });
 }
 
 function moveMedia(delta) {
@@ -4473,49 +4540,7 @@ function bindEvents() {
   $("#mediaPreviewImage").addEventListener("load", () => {
     setMediaZoom(state.media.zoom);
   });
-  $("#mediaViewport").addEventListener("pointerdown", (event) => {
-    const viewport = $("#mediaViewport");
-    if (
-      !viewport.classList.contains("is-pannable") ||
-      (event.pointerType === "mouse" && event.button !== 0)
-    ) {
-      return;
-    }
-    event.preventDefault();
-    state.media.drag = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      scrollLeft: viewport.scrollLeft,
-      scrollTop: viewport.scrollTop,
-    };
-    viewport.setPointerCapture(event.pointerId);
-    viewport.classList.add("is-dragging");
-  });
-  $("#mediaViewport").addEventListener("pointermove", (event) => {
-    const viewport = $("#mediaViewport");
-    const drag = state.media.drag;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    viewport.scrollLeft = drag.scrollLeft - (event.clientX - drag.startX);
-    viewport.scrollTop = drag.scrollTop - (event.clientY - drag.startY);
-  });
-  const endMediaDrag = (event) => {
-    const viewport = $("#mediaViewport");
-    if (!state.media.drag || state.media.drag.pointerId !== event.pointerId) return;
-    if (viewport.hasPointerCapture(event.pointerId)) {
-      viewport.releasePointerCapture(event.pointerId);
-    }
-    state.media.drag = null;
-    viewport.classList.remove("is-dragging");
-  };
-  $("#mediaViewport").addEventListener("pointerup", endMediaDrag);
-  $("#mediaViewport").addEventListener("pointercancel", endMediaDrag);
-  $("#mediaViewport").addEventListener("wheel", (event) => {
-    if (!event.ctrlKey && !event.metaKey) return;
-    event.preventDefault();
-    setMediaZoom(state.media.zoom + (event.deltaY < 0 ? MEDIA_ZOOM_STEP : -MEDIA_ZOOM_STEP));
-  }, { passive: false });
+  bindMediaPanViewport($("#mediaViewport"));
   document.addEventListener("fullscreenchange", () => {
     updateMediaViewControls();
     window.requestAnimationFrame(updateMediaPanState);
@@ -4531,15 +4556,11 @@ function bindEvents() {
       event.preventDefault();
       $("#mediaVideoStage")?.querySelector("[data-video-play]")?.click();
     }
-    if (["+", "="].includes(event.key) && state.media.kind !== "video") { event.preventDefault(); setMediaZoom(state.media.zoom + MEDIA_ZOOM_STEP); }
-    if (["-", "_"].includes(event.key) && state.media.kind !== "video") { event.preventDefault(); setMediaZoom(state.media.zoom - MEDIA_ZOOM_STEP); }
+    if (["+", "="].includes(event.key)) { event.preventDefault(); setMediaZoom(state.media.zoom + MEDIA_ZOOM_STEP); }
+    if (["-", "_"].includes(event.key)) { event.preventDefault(); setMediaZoom(state.media.zoom - MEDIA_ZOOM_STEP); }
     if (event.key === "0") {
       event.preventDefault();
-      if (state.media.kind === "video") {
-        $("#mediaVideoStage")?.querySelector("[data-video-t0]")?.click();
-      } else {
-        setMediaZoom(1, { resetScroll: true });
-      }
+      setMediaZoom(1, { resetScroll: true });
     }
     if (event.key.toLowerCase() === "f") { event.preventDefault(); toggleMediaFullscreen(); }
   });
