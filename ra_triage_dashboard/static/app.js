@@ -1943,6 +1943,141 @@ function heroFrameIndex(frames) {
   return Math.floor(frames.length / 2);
 }
 
+function videoPlayerMarkup(video, { hidden = false } = {}) {
+  const durationSec = Math.max(0, Number(video?.duration_ms || 0) / 1000);
+  const startOffsetSec = Number(video?.start_offset_sec ?? 0);
+  const eventTimeSec = Number(video?.event_time_sec ?? Math.max(0, -startOffsetSec));
+  const frameStepSec = Math.max(0.01, Number(video?.frame_step_ms || 100) / 1000);
+  const stepOptions = [...new Set([frameStepSec, 0.5, 1, 5])]
+    .sort((left, right) => left - right)
+    .map((step) => `<option value="${escapeHtml(step)}" ${step === 1 ? "selected" : ""}>${escapeHtml(step)}s${step === frameStepSec ? "（1 帧）" : ""}</option>`)
+    .join("");
+  return `<div class="hero-video-player" data-bev-video-player
+      data-start-offset-sec="${escapeHtml(startOffsetSec)}"
+      data-event-time-sec="${escapeHtml(eventTimeSec)}"
+      data-duration-sec="${escapeHtml(durationSec)}"
+      data-frame-step-sec="${escapeHtml(frameStepSec)}" ${hidden ? "hidden" : ""}>
+    <div class="hero-media-button hero-media-video">
+      <video src="${escapeHtml(video.url)}" controls preload="metadata" playsinline aria-label="Ares Capture BEV 视频"></video>
+    </div>
+    <div class="bev-video-controls" aria-label="BEV 视频控制">
+      <div class="bev-video-control-row">
+        <button class="button button-quiet" type="button" data-video-play>播放</button>
+        <button class="button button-quiet" type="button" data-video-jump="-1"><span data-video-jump-label>−1s</span></button>
+        <button class="button button-quiet" type="button" data-video-t0>回到 t0</button>
+        <button class="button button-quiet" type="button" data-video-jump="1"><span data-video-jump-label>+1s</span></button>
+        <label>跳转步长
+          <select data-video-step>
+            ${stepOptions}
+          </select>
+        </label>
+        <label>倍速
+          <select data-video-rate>
+            <option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="1.5">1.5×</option>
+            <option value="2">2×</option>
+          </select>
+        </label>
+        <button class="button button-quiet" type="button" data-video-fullscreen>全屏</button>
+      </div>
+      <div class="bev-video-progress-row">
+        <span data-video-relative-start>${escapeHtml(formatSignedSeconds(startOffsetSec))}</span>
+        <input data-video-seek type="range" min="0" max="${escapeHtml(durationSec || 40)}" value="0" step="0.01" aria-label="视频进度" />
+        <span data-video-time>${escapeHtml(formatSignedSeconds(startOffsetSec))} / ${escapeHtml(formatSignedSeconds(startOffsetSec + durationSec))}</span>
+      </div>
+      <small>← / → 按所选步长跳转 · 空格播放/暂停 · t0 位于视频 ${escapeHtml(eventTimeSec.toFixed(1))}s</small>
+    </div>
+  </div>`;
+}
+
+function formatSignedSeconds(value) {
+  const seconds = Number(value || 0);
+  if (Math.abs(seconds) < 0.05) return "t0";
+  return `${seconds > 0 ? "+" : ""}${seconds.toFixed(1)}s`;
+}
+
+function bindHeroVideoPlayers(root) {
+  root.querySelectorAll("[data-bev-video-player]").forEach((player) => {
+    const video = player.querySelector("video");
+    const playButton = player.querySelector("[data-video-play]");
+    const seek = player.querySelector("[data-video-seek]");
+    const stepSelect = player.querySelector("[data-video-step]");
+    const rateSelect = player.querySelector("[data-video-rate]");
+    const timeLabel = player.querySelector("[data-video-time]");
+    const startLabel = player.querySelector("[data-video-relative-start]");
+    const startOffsetSec = Number(player.dataset.startOffsetSec || 0);
+    const eventTimeSec = Number(player.dataset.eventTimeSec || 0);
+    const configuredDuration = Number(player.dataset.durationSec || 0);
+    const duration = () => Number.isFinite(video.duration) ? video.duration : configuredDuration;
+    const update = () => {
+      const total = Math.max(0, duration());
+      seek.max = String(total || configuredDuration || 40);
+      seek.value = String(Math.min(Number(seek.max), Math.max(0, video.currentTime || 0)));
+      startLabel.textContent = formatSignedSeconds(startOffsetSec);
+      timeLabel.textContent = `${formatSignedSeconds(startOffsetSec + (video.currentTime || 0))} / ${formatSignedSeconds(startOffsetSec + total)}`;
+      playButton.textContent = video.paused ? "播放" : "暂停";
+    };
+    const jump = (direction) => {
+      const step = Math.max(0.01, Number(stepSelect.value || 1));
+      video.currentTime = Math.min(
+        Math.max(0, duration()),
+        Math.max(0, video.currentTime + direction * step)
+      );
+      update();
+    };
+    const togglePlayback = () => {
+      if (video.paused) {
+        video.play().catch((error) => showToast(`视频播放失败：${error.message}`, true));
+      } else {
+        video.pause();
+      }
+    };
+    playButton.addEventListener("click", togglePlayback);
+    player.querySelectorAll("[data-video-jump]").forEach((button) => {
+      button.addEventListener("click", () => jump(Number(button.dataset.videoJump)));
+    });
+    player.querySelector("[data-video-t0]").addEventListener("click", () => {
+      video.currentTime = Math.min(Math.max(0, duration()), Math.max(0, eventTimeSec));
+      update();
+    });
+    stepSelect.addEventListener("change", () => {
+      const step = Number(stepSelect.value || 1);
+      player.querySelectorAll("[data-video-jump]").forEach((button) => {
+        const sign = Number(button.dataset.videoJump) < 0 ? "−" : "+";
+        button.querySelector("[data-video-jump-label]").textContent = `${sign}${step}s`;
+      });
+    });
+    rateSelect.addEventListener("change", () => {
+      video.playbackRate = Number(rateSelect.value || 1);
+    });
+    seek.addEventListener("input", () => {
+      video.currentTime = Number(seek.value || 0);
+      update();
+    });
+    player.querySelector("[data-video-fullscreen]").addEventListener("click", () => {
+      if (player.requestFullscreen) {
+        player.requestFullscreen().catch((error) => showToast(`无法全屏：${error.message}`, true));
+      }
+    });
+    ["loadedmetadata", "durationchange", "timeupdate", "play", "pause", "ended"].forEach(
+      (eventName) => video.addEventListener(eventName, update)
+    );
+    player.addEventListener("keydown", (event) => {
+      if (event.target.tagName === "SELECT") return;
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        jump(event.key === "ArrowLeft" ? -1 : 1);
+      } else if (event.key === " ") {
+        event.preventDefault();
+        togglePlayback();
+      }
+    });
+    player.tabIndex = 0;
+    update();
+  });
+}
+
 function heroMediaSection(bev) {
   const frames = bev?.frames || [];
   const video = bev?.video;
@@ -1952,20 +2087,19 @@ function heroMediaSection(bev) {
   if (!frames.length && video?.url) {
     return `
       <section class="hero-media">
-        <div class="hero-media-button hero-media-video">
-          <video src="${escapeHtml(video.url)}" controls preload="metadata" playsinline aria-label="Ares Capture BEV 视频"></video>
-        </div>
+        ${videoPlayerMarkup(video)}
       </section>`;
   }
   const index = heroFrameIndex(frames);
   const frame = frames[index];
   const videoToggle = video?.url
-    ? '<button type="button" class="button button-quiet hero-video-toggle" data-hero-video-toggle>播放视频</button>'
+    ? '<button type="button" class="button button-quiet hero-video-toggle" data-hero-video-toggle>查看 BEV 视频</button>'
     : "";
   const videoCanvas = video?.url
-    ? `<div class="hero-media-button hero-media-video" data-hero-video-view hidden>
-        <video src="${escapeHtml(video.url)}" controls preload="metadata" playsinline aria-label="Ares Capture BEV 视频"></video>
-      </div>`
+    ? videoPlayerMarkup(video, { hidden: true }).replace(
+        'data-bev-video-player',
+        'data-bev-video-player data-hero-video-view'
+      )
     : "";
   const mediaControls = videoToggle ? `<div class="hero-media-meta">${videoToggle}</div>` : "";
   return `
@@ -2021,8 +2155,12 @@ function renderDetail(caseData) {
     ? `<a class="detail-id detail-id-link" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" title="打开 Voyager Issue">${issueId}</a>`
     : `<span class="detail-id">${issueId}</span>`;
   const bevFrames = caseData.assets?.frames || [];
+  const bevVideo = caseData.assets?.video;
   const bevPreviewButton = bevFrames.length
     ? `<button class="button button-quiet hero-bev-open" type="button" data-open-bev-preview>查看 Ares</button>`
+    : "";
+  const bevVideoButton = bevFrames.length && bevVideo?.url
+    ? `<button class="button button-quiet hero-bev-video-open" type="button" data-open-bev-video>BEV 视频</button>`
     : "";
   const modelHistoryButton = `<button class="history-inline-button" type="button" data-open-history="model">评测 Run 历史 · ${(caseData.predictions || []).length} 条</button>`;
   $("#detailPane").innerHTML = `
@@ -2050,6 +2188,7 @@ function renderDetail(caseData) {
         ${caseData.summary ? `<p class="detail-summary">${escapeHtml(caseData.summary)}</p>` : ""}
         <div class="detail-actions">
           ${bevPreviewButton}
+          ${bevVideoButton}
           <button class="button button-quiet" type="button" data-predict-current-case>API 推理</button>
           ${modelHistoryButton}
         </div>
@@ -2074,21 +2213,25 @@ function renderDetail(caseData) {
     navigateAdjacentCase(1).catch((error) => showToast(error.message, true));
   });
   renderCaseNavigation();
+  bindHeroVideoPlayers($("#detailPane"));
   $("#detailPane").querySelectorAll("[data-media-kind]").forEach((button) => {
     button.addEventListener("click", () => openMedia(button.dataset.mediaKind, Number(button.dataset.mediaIndex)));
   });
-  const videoToggle = $("#detailPane").querySelector("[data-hero-video-toggle]");
-  if (videoToggle) {
-    videoToggle.addEventListener("click", () => {
+  const toggleHeroVideo = (forceVisible = null) => {
+      const videoToggle = $("#detailPane").querySelector("[data-hero-video-toggle]");
       const frameView = $("#detailPane").querySelector("[data-hero-frame-view]");
       const videoView = $("#detailPane").querySelector("[data-hero-video-view]");
+      if (!frameView || !videoView) return;
       const showingVideo = !videoView.hidden;
-      videoView.hidden = showingVideo;
-      frameView.hidden = !showingVideo;
-      videoToggle.textContent = showingVideo ? "播放视频" : "查看关键帧";
-      if (showingVideo) videoView.querySelector("video")?.pause();
-    });
-  }
+      const nextVisible = forceVisible === null ? !showingVideo : Boolean(forceVisible);
+      videoView.hidden = !nextVisible;
+      frameView.hidden = nextVisible;
+      if (videoToggle) videoToggle.textContent = nextVisible ? "查看关键帧" : "查看 BEV 视频";
+      if (!nextVisible) videoView.querySelector("video")?.pause();
+      if (nextVisible) videoView.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  };
+  $("#detailPane").querySelector("[data-hero-video-toggle]")?.addEventListener("click", () => toggleHeroVideo());
+  $("#detailPane").querySelector("[data-open-bev-video]")?.addEventListener("click", () => toggleHeroVideo(true));
 }
 
 function annotationHistory(annotations) {

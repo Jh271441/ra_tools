@@ -34,6 +34,7 @@ class Settings:
     ra_auto_triage_root: Path
     ares_manifest: Path
     camera_root: Path
+    ares_video_root: Path
     baseline_label_xlsx: Path
     baseline_dataset: str
     baseline_scope: str
@@ -78,6 +79,11 @@ class Settings:
             ra_root / "bags/ares_capture_bev/manifest.jsonl",
         )
         camera_root = _path("CAMERA_CACHE_ROOT", ra_root / "bags/camera")
+        ares_video_root = _path(
+            "ARES_CAPTURE_VIDEO_ROOT",
+            ra_root
+            / "bags/ares_capture_video_0508_1071_ra_stuck_swag_planning_2k_20260731",
+        )
         baseline_xlsx = _path(
             "DASHBOARD_BASELINE_LABEL_XLSX",
             ra_root / "data/trail_label_baseline_20260729.xlsx",
@@ -109,6 +115,7 @@ class Settings:
             ra_auto_triage_root=ra_root,
             ares_manifest=manifest,
             camera_root=camera_root,
+            ares_video_root=ares_video_root,
             baseline_label_xlsx=baseline_xlsx,
             baseline_dataset=os.getenv("DASHBOARD_BASELINE_DATASET", "0508").strip() or "0508",
             baseline_scope=os.getenv(

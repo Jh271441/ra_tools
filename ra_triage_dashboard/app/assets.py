@@ -321,3 +321,140 @@ class CameraIndex:
             return True
         except ValueError:
             return False
+
+
+class VideoIndex:
+    """Resolve captured Ares playback videos without exposing server paths.
+
+    Video batches are written below shard directories and may still be growing.
+    Resolve an Issue on demand from its captured ``meta.json`` rather than
+    trusting a partial shard manifest or allowing arbitrary path input.
+    """
+
+    _issue_id = re.compile(r"^[A-Za-z0-9_-]{3,128}$")
+
+    def __init__(self, video_root: Path):
+        self.video_root = video_root.resolve()
+        self._lock = threading.RLock()
+        self._assets: dict[str, dict[str, Path]] = {}
+
+    def get_video(self, issue_id: str) -> dict[str, Any] | None:
+        if not self._issue_id.fullmatch(issue_id) or not self.video_root.is_dir():
+            return None
+        meta_paths = [
+            path.resolve()
+            for path in self.video_root.glob(
+                f"shard-*-of-*/{issue_id}_*/meta.json"
+            )
+            if path.is_file() and self._within_root(path)
+        ]
+        meta_paths.sort(key=lambda path: path.stat().st_mtime_ns, reverse=True)
+        for meta_path in meta_paths:
+            video = self._video_from_meta(issue_id, meta_path)
+            if video is not None:
+                return video
+        return None
+
+    def get_asset_path(self, issue_id: str, asset_id: str) -> Path | None:
+        with self._lock:
+            path = self._assets.get(issue_id, {}).get(asset_id)
+        if path and path.is_file() and self._within_root(path):
+            return path
+        self.get_video(issue_id)
+        with self._lock:
+            path = self._assets.get(issue_id, {}).get(asset_id)
+        if path and path.is_file() and self._within_root(path):
+            return path
+        return None
+
+    def _video_from_meta(
+        self, issue_id: str, meta_path: Path
+    ) -> dict[str, Any] | None:
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        if (
+            str(meta.get("issue_id") or "") != issue_id
+            or str(meta.get("status") or "") != "captured"
+        ):
+            return None
+        variants = ((meta.get("capture_plan") or {}).get("variants") or [])
+        rendered_videos = (meta.get("render_metadata") or {}).get("videos") or []
+        for variant_index, variant in enumerate(variants):
+            relative_path = str(variant.get("video_relative_path") or "")
+            path = self._resolve_asset(meta_path.parent, relative_path)
+            if not path or not path.is_file() or path.suffix.lower() != ".mp4":
+                continue
+            render_meta = next(
+                (
+                    item
+                    for item in rendered_videos
+                    if str(item.get("relative_path") or "") == relative_path
+                ),
+                {},
+            )
+            asset_id = f"bev-video-{variant_index}"
+            with self._lock:
+                self._assets[issue_id] = {asset_id: path}
+            start_offset_sec = _number_or_none(
+                variant.get("video_start_offset_sec")
+            )
+            duration_ms = _number_or_none(
+                render_meta.get("visible_duration_ms")
+                or variant.get("video_duration_ms")
+            )
+            frame_step_ms = _number_or_none(
+                render_meta.get("frame_step_ms")
+                or variant.get("video_frame_step_ms")
+            )
+            frame_count = _number_or_none(render_meta.get("frame_count"))
+            size = variant.get("video_size") or {}
+            return {
+                "id": asset_id,
+                "url": f"/api/assets/{quote(issue_id)}/{asset_id}",
+                "size_bytes": path.stat().st_size,
+                "source": "ares_capture_video",
+                "duration_ms": duration_ms,
+                "start_offset_sec": start_offset_sec,
+                "event_time_sec": (
+                    max(0.0, -start_offset_sec)
+                    if start_offset_sec is not None
+                    else None
+                ),
+                "frame_step_ms": frame_step_ms,
+                "frame_count": frame_count,
+                "capture_mode": str(
+                    render_meta.get("capture_mode")
+                    or variant.get("video_capture_mode")
+                    or ""
+                ),
+                "width": _number_or_none(size.get("width")),
+                "height": _number_or_none(size.get("height")),
+            }
+        return None
+
+    def _resolve_asset(self, base: Path, relative_path: str) -> Path | None:
+        if not relative_path:
+            return None
+        candidate = (base / relative_path).resolve()
+        if not self._within_root(candidate):
+            return None
+        return candidate
+
+    def _within_root(self, path: Path) -> bool:
+        try:
+            path.resolve().relative_to(self.video_root)
+            return True
+        except ValueError:
+            return False
+
+
+def _number_or_none(value: Any) -> float | int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return int(number) if number.is_integer() else number
