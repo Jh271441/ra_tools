@@ -2295,7 +2295,7 @@ function renderDetail(caseData) {
     ? `<a class="detail-id detail-id-link" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" title="打开 Voyager Issue">${issueId}</a>`
     : `<span class="detail-id">${issueId}</span>`;
   const aresLinkMarkup = aresUrl
-    ? `<a class="detail-id detail-id-link" href="${escapeHtml(aresUrl)}" target="_blank" rel="noreferrer" title="在 Ares Studio 中打开事件前后各 10 秒">Ares Studio ↗</a>`
+    ? `<a class="detail-id detail-id-link detail-ares-link" href="${escapeHtml(aresUrl)}" target="_blank" rel="noreferrer" title="在 Ares Studio 中打开事件前后各 10 秒">Ares Studio ↗</a>`
     : "";
   ensureDetailMediaState(caseData);
   const modelHistoryButton = `<button class="history-inline-button" type="button" data-open-history="model">评测 Run 历史 · ${(caseData.predictions || []).length} 条</button>`;
