@@ -2129,7 +2129,7 @@ function heroMediaSection(caseData) {
   if (!frames.length && !camera.length && !video?.url) {
     return '<section class="hero-media"><div class="no-asset hero-media-placeholder"><span>当前没有可预览的 BEV、Camera 或视频。</span></div></section>';
   }
-  const available = ensureDetailMediaState(caseData);
+  ensureDetailMediaState(caseData);
   const kind = state.detailMedia.kind;
   const activeFrames = kind === "camera" ? camera : frames;
   const index = Math.max(0, Math.min(
@@ -2146,22 +2146,27 @@ function heroMediaSection(caseData) {
       </button>`;
   return `
     <section class="hero-media detail-hero-media" id="detailHeroMedia" tabindex="0" aria-label="Issue 媒体">
-      <div class="detail-media-toolbar">
-        <div class="media-mode-tabs" role="tablist" aria-label="媒体模式">
-          <button type="button" class="media-mode ${kind === "bev" ? "active" : ""}" data-detail-media-kind="bev" ${available.bev ? "" : "disabled"}>BEV 图片 <span>${frames.length}</span></button>
-          <button type="button" class="media-mode ${kind === "camera" ? "active" : ""}" data-detail-media-kind="camera" ${available.camera ? "" : "disabled"}>Camera 图片 <span>${camera.length}</span></button>
-          <button type="button" class="media-mode ${kind === "video" ? "active" : ""}" data-detail-media-kind="video" ${available.video ? "" : "disabled"}>Ares Studio 视频 <span>${available.video ? "1" : "0"}</span></button>
-        </div>
-        <div class="detail-media-actions">
-          <button class="button button-quiet" type="button" data-detail-media-previous ${kind === "video" ? "hidden" : ""}>← 上一帧</button>
-          <span class="detail-media-position" ${kind === "video" ? "hidden" : ""}>${activeFrames.length ? `${index + 1} / ${activeFrames.length}` : "—"}</span>
-          <button class="button button-quiet" type="button" data-detail-media-next ${kind === "video" ? "hidden" : ""}>下一帧 →</button>
-          <button class="button button-quiet detail-media-expand" type="button" data-detail-media-expand>展开查看</button>
-        </div>
-      </div>
       <div class="detail-media-content">${content}</div>
       <p class="detail-media-help">B / C / V 切换媒体 · ${kind === "video" ? "空格播放/暂停 · ←/→ 跳转" : "←/→ 切帧"} · F 展开查看</p>
     </section>`;
+}
+
+function detailMediaCommandMarkup(caseData) {
+  const available = ensureDetailMediaState(caseData);
+  const kind = state.detailMedia.kind;
+  const frames = kind === "camera" ? caseData?.camera?.frames || [] : caseData?.assets?.frames || [];
+  const index = kind === "video" ? 0 : Number(state.detailMedia.indexes[kind] || 0);
+  return `<div class="detail-media-command" aria-label="详情媒体控制">
+    <select class="detail-media-select" id="detailMediaKindSelect" aria-label="媒体类型">
+      <option value="bev" ${available.bev ? "" : "disabled"} ${kind === "bev" ? "selected" : ""}>BEV 图片 · ${caseData?.assets?.frames?.length || 0}</option>
+      <option value="camera" ${available.camera ? "" : "disabled"} ${kind === "camera" ? "selected" : ""}>Camera 图片 · ${caseData?.camera?.frames?.length || 0}</option>
+      <option value="video" ${available.video ? "" : "disabled"} ${kind === "video" ? "selected" : ""}>Ares Studio 视频 · ${available.video ? 1 : 0}</option>
+    </select>
+    <button class="button button-quiet" id="detailMediaPreviousButton" type="button" ${kind === "video" ? "hidden" : ""}>←</button>
+    <span class="detail-media-position" id="detailMediaPosition" ${kind === "video" ? "hidden" : ""}>${frames.length ? `${index + 1} / ${frames.length}` : "—"}</span>
+    <button class="button button-quiet" id="detailMediaNextButton" type="button" ${kind === "video" ? "hidden" : ""}>→</button>
+    <button class="button button-quiet detail-media-expand" id="detailMediaExpandButton" type="button">展开查看</button>
+  </div>`;
 }
 
 function bindDetailMedia(caseData) {
@@ -2193,11 +2198,33 @@ function bindDetailMedia(caseData) {
     state.detailMedia.kind === "video" ? 0 : state.detailMedia.indexes[state.detailMedia.kind],
     { caseData }
   );
-  root.querySelectorAll("[data-detail-media-kind]").forEach((button) => {
-    button.addEventListener("click", () => switchKind(button.dataset.detailMediaKind));
-  });
-  root.querySelector("[data-detail-media-previous]")?.addEventListener("click", () => move(-1));
-  root.querySelector("[data-detail-media-next]")?.addEventListener("click", () => move(1));
+  const kindSelect = $("#detailMediaKindSelect");
+  if (kindSelect) {
+    kindSelect.value = state.detailMedia.kind;
+    kindSelect.onchange = () => switchKind(kindSelect.value);
+  }
+  const previousButton = $("#detailMediaPreviousButton");
+  const nextButton = $("#detailMediaNextButton");
+  const position = $("#detailMediaPosition");
+  const videoMode = state.detailMedia.kind === "video";
+  if (previousButton) {
+    previousButton.hidden = videoMode;
+    previousButton.onclick = () => move(-1);
+  }
+  if (nextButton) {
+    nextButton.hidden = videoMode;
+    nextButton.onclick = () => move(1);
+  }
+  if (position) {
+    const activeFrames = state.detailMedia.kind === "camera"
+      ? caseData?.camera?.frames || []
+      : caseData?.assets?.frames || [];
+    const activeIndex = Number(state.detailMedia.indexes[state.detailMedia.kind] || 0);
+    position.hidden = videoMode;
+    position.textContent = activeFrames.length ? `${activeIndex + 1} / ${activeFrames.length}` : "—";
+  }
+  const expandButton = $("#detailMediaExpandButton");
+  if (expandButton) expandButton.onclick = expand;
   root.querySelectorAll("[data-detail-media-expand]").forEach((button) => button.addEventListener("click", expand));
   bindBevVideoPlayers(root);
   root.addEventListener("keydown", (event) => {
@@ -2257,6 +2284,7 @@ function renderDetail(caseData) {
   const issueIdMarkup = issueUrl
     ? `<a class="detail-id detail-id-link" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" title="打开 Voyager Issue">${issueId}</a>`
     : `<span class="detail-id">${issueId}</span>`;
+  ensureDetailMediaState(caseData);
   const modelHistoryButton = `<button class="history-inline-button" type="button" data-open-history="model">评测 Run 历史 · ${(caseData.predictions || []).length} 条</button>`;
   $("#detailPane").innerHTML = `
     <div class="detail-header">
@@ -2280,6 +2308,7 @@ function renderDetail(caseData) {
           <strong class="${primary?.model_label && primary.model_label !== caseData.gt_label ? "comparison-fail" : "comparison-neutral"}">${primary?.model_label ? primary.model_label === caseData.gt_label ? "一致" : "不一致" : "不可比较"}</strong>
         </div>
         <button class="button button-quiet detail-back-button" id="backToGalleryButton" type="button">← 返回筛选结果</button>
+        ${detailMediaCommandMarkup(caseData)}
         ${caseData.summary ? `<p class="detail-summary">${escapeHtml(caseData.summary)}</p>` : ""}
         <div class="detail-actions">
           <button class="button button-quiet" type="button" data-predict-current-case>API 推理</button>

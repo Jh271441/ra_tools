@@ -532,9 +532,15 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .hero-media { padding-top: 0; }
 .detail-hero-media { display: grid; gap: 6px; min-width: 0; }
 .detail-hero-media:focus, .detail-hero-media:focus-visible { outline: none; }
-.detail-media-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.detail-media-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
-.detail-media-actions .button { min-height: 30px; padding: 5px 8px; font-size: 10px; }
+.detail-media-command { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.detail-media-command .button,
+.detail-media-select {
+  height: 34px; min-height: 34px; padding: 5px 9px; border-radius: 7px; font-size: 10px;
+}
+.detail-media-select { width: 178px; padding-right: 28px; color: var(--accent); border-color: rgba(34,211,238,.45); background-color: var(--overlay); }
+.detail-media-command .detail-media-expand { min-width: 78px; color: var(--accent); border-color: rgba(34,211,238,.58); background: var(--accent-soft); }
+.detail-media-command #detailMediaPreviousButton,
+.detail-media-command #detailMediaNextButton { min-width: 34px; padding: 0; }
 .detail-media-position { min-width: 42px; color: var(--faint); font: 9px "SFMono-Regular", Consolas, monospace; text-align: center; }
 .detail-media-content { min-width: 0; }
 .detail-media-help { color: var(--faint); font-size: 9px; text-align: center; }
@@ -1187,8 +1193,8 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .media-dialog-card { padding: 8px; }
   .media-toolbar { align-items: stretch; flex-direction: column; gap: 6px; }
   .media-view-controls { justify-content: flex-end; flex-wrap: wrap; }
-  .detail-media-toolbar { align-items: stretch; flex-direction: column; }
-  .detail-media-actions { justify-content: space-between; }
+  .detail-media-command { width: 100%; flex-wrap: wrap; }
+  .detail-media-select { flex: 1; min-width: 180px; }
   .bev-video-controls { grid-template-columns: minmax(0, 1fr); }
   .media-stage { min-height: 240px; grid-template-columns: 34px minmax(0, 1fr) 34px; gap: 5px; }
   .media-nav { width: 32px; height: 32px; }
