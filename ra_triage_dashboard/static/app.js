@@ -1923,7 +1923,7 @@ function renderDetail(caseData) {
   const title =
     rawTitle && !LABELS.includes(rawTitle) && rawTitle !== caseData.gt_label
       ? rawTitle
-      : "Issue Review";
+      : "";
   const primary = (caseData.predictions || []).find((item) => item.model_run_id === state.selectedRunId) || caseData.predictions?.[0];
   const issueUrl = safeUrl(caseData.voyager_issue_url || caseData.trail_url);
   const bevFrames = caseData.assets?.frames || [];
@@ -1936,7 +1936,7 @@ function renderDetail(caseData) {
       <div class="detail-title-row">
         <div class="detail-title-group">
           <button class="button button-quiet detail-back-button" id="backToGalleryButton" type="button">← 返回筛选结果</button>
-          <div class="detail-title"><h2>${escapeHtml(title)}</h2><span class="detail-id">${escapeHtml(caseData.issue_id)}</span></div>
+          <div class="detail-title">${title ? `<h2>${escapeHtml(title)}</h2>` : ""}<span class="detail-id">${escapeHtml(caseData.issue_id)}</span></div>
         </div>
         <div class="detail-navigation">
           <div class="case-detail-pager">
