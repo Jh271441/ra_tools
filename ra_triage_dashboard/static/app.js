@@ -2144,9 +2144,16 @@ function heroMediaSection(caseData) {
         <img src="${escapeHtml(frame?.url || "")}" alt="${kind === "camera" ? "Camera" : "Ares Capture BEV"} ${escapeHtml(frameLabel(frame || {}))}" />
         <span class="hero-media-overlay">${escapeHtml(frameLabel(frame || {}))} · 点击展开</span>
       </button>`;
+  const frameControls = kind === "video" ? "" : `
+    <div class="detail-media-frame-controls" aria-label="图片帧切换">
+      <button class="button button-quiet" id="detailMediaPreviousButton" type="button" aria-label="上一帧">←</button>
+      <span class="detail-media-position" id="detailMediaPosition">${activeFrames.length ? `${index + 1} / ${activeFrames.length}` : "—"}</span>
+      <button class="button button-quiet" id="detailMediaNextButton" type="button" aria-label="下一帧">→</button>
+    </div>`;
   return `
     <section class="hero-media detail-hero-media" id="detailHeroMedia" tabindex="0" aria-label="Issue 媒体">
       <div class="detail-media-content">${content}</div>
+      ${frameControls}
       <p class="detail-media-help">B / C / V 切换媒体 · ${kind === "video" ? "空格播放/暂停 · ←/→ 跳转" : "←/→ 切帧"} · F 展开查看</p>
     </section>`;
 }
@@ -2154,17 +2161,12 @@ function heroMediaSection(caseData) {
 function detailMediaCommandMarkup(caseData) {
   const available = ensureDetailMediaState(caseData);
   const kind = state.detailMedia.kind;
-  const frames = kind === "camera" ? caseData?.camera?.frames || [] : caseData?.assets?.frames || [];
-  const index = kind === "video" ? 0 : Number(state.detailMedia.indexes[kind] || 0);
   return `<div class="detail-media-command" aria-label="详情媒体控制">
     <select class="detail-media-select" id="detailMediaKindSelect" aria-label="媒体类型">
       <option value="bev" ${available.bev ? "" : "disabled"} ${kind === "bev" ? "selected" : ""}>BEV 图片 · ${caseData?.assets?.frames?.length || 0}</option>
       <option value="camera" ${available.camera ? "" : "disabled"} ${kind === "camera" ? "selected" : ""}>Camera 图片 · ${caseData?.camera?.frames?.length || 0}</option>
       <option value="video" ${available.video ? "" : "disabled"} ${kind === "video" ? "selected" : ""}>Ares Studio 视频 · ${available.video ? 1 : 0}</option>
     </select>
-    <button class="button button-quiet" id="detailMediaPreviousButton" type="button" ${kind === "video" ? "hidden" : ""}>←</button>
-    <span class="detail-media-position" id="detailMediaPosition" ${kind === "video" ? "hidden" : ""}>${frames.length ? `${index + 1} / ${frames.length}` : "—"}</span>
-    <button class="button button-quiet" id="detailMediaNextButton" type="button" ${kind === "video" ? "hidden" : ""}>→</button>
     <button class="button button-quiet detail-media-expand" id="detailMediaExpandButton" type="button">展开查看</button>
   </div>`;
 }

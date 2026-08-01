@@ -540,8 +540,8 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 }
 .detail-media-select { width: 152px; padding-right: 26px; color: var(--accent); border-color: rgba(34,211,238,.45); background-color: var(--overlay); }
 .detail-media-command .detail-media-expand { min-width: 78px; color: var(--accent); border-color: rgba(34,211,238,.58); background: var(--accent-soft); }
-.detail-media-command #detailMediaPreviousButton,
-.detail-media-command #detailMediaNextButton { min-width: 34px; padding: 0; }
+.detail-media-frame-controls { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.detail-media-frame-controls .button { width: 38px; min-width: 38px; min-height: 30px; padding: 3px 7px; }
 .detail-media-position { min-width: 42px; color: var(--faint); font: 9px "SFMono-Regular", Consolas, monospace; text-align: center; }
 .detail-media-content { min-width: 0; }
 .detail-media-help { color: var(--faint); font-size: 9px; text-align: center; }
