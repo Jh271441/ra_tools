@@ -829,17 +829,36 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   height: 100%; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto; gap: 10px; padding: 14px;
 }
 .media-heading { padding: 0 2px; }
+.media-toolbar { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .media-mode-tabs { display: flex; gap: 6px; }
+.media-view-controls { display: flex; align-items: center; gap: 5px; }
+.media-control {
+  min-width: 31px; height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px;
+  color: #d8e2ef; background: var(--overlay); font-size: 14px; line-height: 1;
+}
+.media-control:hover:not(:disabled) { border-color: rgba(34,211,238,.5); color: var(--accent); }
+.media-control:disabled { opacity: .38; cursor: not-allowed; }
+.media-zoom-reset { min-width: 56px; font: 10px "SFMono-Regular", Consolas, monospace; }
+.media-fullscreen { margin-left: 3px; font-size: 16px; }
 .media-mode { display: inline-flex; align-items: center; gap: 5px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); background: var(--overlay); font-size: 11px; }
 .media-mode.active { border-color: rgba(34,211,238,.55); color: var(--accent); background: var(--accent-soft); }
 .media-mode span { color: var(--faint); font-variant-numeric: tabular-nums; }
 .media-stage {
   min-height: 0; height: 100%; display: grid; grid-template-columns: 45px minmax(0, 1fr) 45px; align-items: center; gap: 9px;
 }
-.media-stage img {
-  width: 100%; height: 100%; min-height: 0; display: block; border: 1px solid var(--line); border-radius: 7px;
-  background: #05070a; object-fit: contain;
+.media-viewport {
+  width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: auto; border: 1px solid var(--line);
+  border-radius: 7px; background: #05070a; overscroll-behavior: contain; scrollbar-color: #334155 #0b1017;
 }
+.media-canvas { width: 100%; height: 100%; margin: auto; }
+.media-stage img {
+  width: 100%; height: 100%; min-height: 0; display: block; background: #05070a; object-fit: contain;
+}
+.media-dialog-card:fullscreen,
+.media-dialog.media-fallback-fullscreen .media-dialog-card {
+  width: 100vw; height: 100vh; max-width: none; max-height: none; padding: 14px; border-radius: 0; background: var(--raised);
+}
+.media-dialog.media-fallback-fullscreen { position: fixed; inset: 0; z-index: 100; width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0; border: 0; border-radius: 0; }
 .media-nav { width: 39px; height: 39px; justify-self: center; border: 1px solid var(--line); border-radius: 7px; color: #d8e2ef; background: var(--overlay); font-size: 21px; }
 .media-nav:hover { border-color: rgba(34,211,238,.5); color: var(--accent); }
 .media-timeline { display: flex; justify-content: center; flex-wrap: wrap; gap: 5px; }
@@ -859,7 +878,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .analysis-filters input, .analysis-filters select { height: 34px; min-width: 0; padding: 5px 29px 5px 8px; font-size: 12px; }
 .analysis-run-filter { grid-column: span 2; grid-row: 1; }
 .analysis-evidence-filter { grid-column: 1; grid-row: 2; }
-.analysis-theme-filter { grid-column: 2; grid-row: 2; }
+.analysis-tag-filter { grid-column: 2; grid-row: 2; }
 .analysis-search-actions { min-width: 0; display: grid; grid-column: 3 / -1; grid-row: 2; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 6px; }
 .analysis-search-actions .analysis-search-filter { grid-column: auto; }
 .analysis-comparison-filter { min-width: 0; display: grid; grid-column: span 1; gap: 3px; }
@@ -966,7 +985,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .run-filter-three { grid-template-columns: minmax(210px, 1.35fr) minmax(145px, 1fr) minmax(135px, .8fr); }
   .batch-result-item { grid-template-columns: minmax(105px, .7fr) auto auto minmax(100px, 1fr); }
   .analysis-filters { grid-template-columns: repeat(4, minmax(125px, 1fr)); }
-  .analysis-run-filter, .analysis-evidence-filter, .analysis-theme-filter, .analysis-search-actions { grid-column: auto; grid-row: auto; }
+  .analysis-run-filter, .analysis-evidence-filter, .analysis-tag-filter, .analysis-search-actions { grid-column: auto; grid-row: auto; }
   .analysis-run-filter { grid-column: span 2; }
   .analysis-search-actions { grid-column: 1 / -1; }
   .analysis-case-row { grid-template-columns: minmax(130px, .7fr) minmax(200px, 1fr) minmax(0, 2fr); }
@@ -995,7 +1014,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .hero-media-placeholder { min-height: clamp(400px, 62dvh, 720px); }
   .analysis-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .analysis-run-filter, .analysis-search-filter, .analysis-comparison-filter { grid-column: 1 / -1; }
-  .analysis-evidence-filter, .analysis-theme-filter, .analysis-search-actions { grid-column: 1 / -1; grid-row: auto; }
+  .analysis-evidence-filter, .analysis-tag-filter, .analysis-search-actions { grid-column: 1 / -1; grid-row: auto; }
   .analysis-summary-grid, .analysis-cluster-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .analysis-case-row { grid-template-columns: minmax(120px, .7fr) minmax(0, 1.7fr); }
   .analysis-case-labels, .analysis-case-meta { grid-column: auto; display: grid; }
@@ -1103,7 +1122,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .toast { right: 8px; bottom: 8px; max-width: calc(100vw - 16px); }
   .analysis-filters, .analysis-summary-grid, .analysis-cluster-grid { grid-template-columns: minmax(0, 1fr); }
   .analysis-search-actions { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) auto; }
-  .analysis-run-filter, .analysis-evidence-filter, .analysis-theme-filter, .analysis-search-actions { grid-column: auto; grid-row: auto; }
+  .analysis-run-filter, .analysis-evidence-filter, .analysis-tag-filter, .analysis-search-actions { grid-column: auto; grid-row: auto; }
   .analysis-search-actions { grid-column: 1 / -1; }
   .analysis-search-filter, .analysis-comparison-filter { grid-column: auto; }
   .analysis-filter-actions { display: grid; grid-template-columns: 1fr 1fr; }

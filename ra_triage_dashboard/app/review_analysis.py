@@ -257,6 +257,7 @@ def build_review_reason_analysis(
     has_model_run: bool = False,
     page: int = 1,
     page_size: int = 50,
+    page_size_limit: int | None = 200,
 ) -> dict[str, Any]:
     """Aggregate latest-review rows and return one deterministic analysis page."""
 
@@ -360,7 +361,9 @@ def build_review_reason_analysis(
         str(item["key"]): item for item in REASON_THEME_CATALOG
     }
     page = max(1, int(page))
-    page_size = min(max(1, int(page_size)), 200)
+    page_size = max(1, int(page_size))
+    if page_size_limit is not None:
+        page_size = min(page_size, max(1, int(page_size_limit)))
     page_count = max(1, math.ceil(total / page_size))
     page = min(page, page_count)
     offset = (page - 1) * page_size

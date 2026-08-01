@@ -1869,8 +1869,8 @@ async def review_clusters(
     }
 
 
-@app.get("/api/review-reason-analysis")
-async def review_reason_analysis(
+def _review_reason_analysis_payload(
+    *,
     model_run_id: str = "",
     comparison: str = "",
     failure_only: bool = False,
@@ -1880,9 +1880,11 @@ async def review_reason_analysis(
     annotation_label: str = "",
     missing_evidence: str = "",
     theme: str = "",
+    tag: str = "",
     search: str = "",
     page: int = 1,
     page_size: int = 50,
+    unbounded: bool = False,
 ) -> dict[str, Any]:
     evidence_catalog = {
         str(item["key"]): {
@@ -1917,6 +1919,8 @@ async def review_reason_analysis(
         raise _detail(400, "missing_evidence 不在稳定字段目录中。")
     if theme and theme not in theme_keys:
         raise _detail(400, "theme 不在 Review 原因主题目录中。")
+    if tag and tag not in REVIEW_TAG_KEYS:
+        raise _detail(400, "tag 不在场景 Tags 目录中。")
     if comparison_status != "all" and not model_run_id:
         raise _detail(400, "筛选模型对比关系时必须选择 Model Run。")
 
@@ -1933,6 +1937,31 @@ async def review_reason_analysis(
         if selected_run is None:
             raise _detail(404, "Model Run 不存在。")
 
+    normalized_search = _as_text(search)[:256]
+    folded_search = normalized_search.casefold()
+    search_aliases = tuple(
+        str(item["key"])
+        for item in (*REVIEW_TAG_CATALOG, *MISSING_EVIDENCE_CATALOG)
+        if folded_search
+        and (
+            folded_search in str(item["label"]).casefold()
+            or str(item["label"]).casefold() in folded_search
+        )
+    )
+    status_labels = {
+        "待复核": "pending",
+        "已 Review": "reviewed",
+        "GT 待复核": "needs_gt_review",
+    }
+    search_aliases += tuple(
+        status
+        for label, status in status_labels.items()
+        if folded_search
+        and (
+            folded_search in label.casefold()
+            or label.casefold() in folded_search
+        )
+    )
     rows = database.review_reason_rows(
         baseline_scope=settings.baseline_scope,
         model_run_id=model_run_id,
@@ -1942,7 +1971,9 @@ async def review_reason_analysis(
         gt_label=gt_label,
         annotation_label=annotation_label,
         missing_evidence=missing_evidence,
-        search=_as_text(search)[:256],
+        tag=tag,
+        search=normalized_search,
+        search_aliases=search_aliases,
     )
     result = build_review_reason_analysis(
         rows,
@@ -1950,7 +1981,8 @@ async def review_reason_analysis(
         evidence_catalog=evidence_catalog,
         has_model_run=bool(model_run_id),
         page=page,
-        page_size=page_size,
+        page_size=max(len(rows), 1) if unbounded else page_size,
+        page_size_limit=None if unbounded else 200,
     )
     for item in result["items"]:
         issue_id = _as_text(item.get("issue_id"))
@@ -1989,9 +2021,194 @@ async def review_reason_analysis(
         "annotation_label": annotation_label,
         "missing_evidence": missing_evidence,
         "theme": theme,
-        "search": _as_text(search)[:256],
+        "tag": tag,
+        "search": normalized_search,
     }
     return result
+
+
+@app.get("/api/review-reason-analysis")
+async def review_reason_analysis(
+    model_run_id: str = "",
+    comparison: str = "",
+    failure_only: bool = False,
+    annotation_author: str = "",
+    review_status: str = "",
+    gt_label: str = "",
+    annotation_label: str = "",
+    missing_evidence: str = "",
+    theme: str = "",
+    tag: str = "",
+    search: str = "",
+    page: int = 1,
+    page_size: int = 50,
+) -> dict[str, Any]:
+    return _review_reason_analysis_payload(
+        model_run_id=model_run_id,
+        comparison=comparison,
+        failure_only=failure_only,
+        annotation_author=annotation_author,
+        review_status=review_status,
+        gt_label=gt_label,
+        annotation_label=annotation_label,
+        missing_evidence=missing_evidence,
+        theme=theme,
+        tag=tag,
+        search=search,
+        page=page,
+        page_size=page_size,
+    )
+
+
+REVIEW_ANALYSIS_EXPORT_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("issue_id", "Issue ID"),
+    ("scene", "场景"),
+    ("gt_label", "GT"),
+    ("model_label", "模型结论"),
+    ("comparison_status", "模型判断结果"),
+    ("model_reason", "模型说明"),
+    ("model_confidence", "模型置信度"),
+    ("review_label", "人工结论"),
+    ("review_status", "Review 状态"),
+    ("review_reason", "人工 Review 原因"),
+    ("tags", "场景 Tags"),
+    ("missing_evidence", "缺失信息"),
+    ("reason_themes", "原因主题"),
+    ("reviewer", "复核人"),
+    ("reviewed_at", "Review 时间"),
+    ("review_url", "Workbench 链接"),
+    ("voyager_issue_url", "Voyager Issue 链接"),
+)
+
+
+def _spreadsheet_safe(value: Any) -> Any:
+    if value is None:
+        return ""
+    if isinstance(value, str) and value.lstrip(" \t\r\n").startswith(
+        ("=", "+", "-", "@")
+    ):
+        return f"'{value}"
+    return value
+
+
+def _review_analysis_export_rows(result: dict[str, Any]) -> list[dict[str, Any]]:
+    tag_labels = {str(item["key"]): str(item["label"]) for item in REVIEW_TAG_CATALOG}
+    evidence_labels = {
+        str(item["key"]): str(item["label"])
+        for item in MISSING_EVIDENCE_CATALOG
+    }
+    exported: list[dict[str, Any]] = []
+    for item in result.get("items", []):
+        annotation = item.get("annotation") or {}
+        prediction = item.get("prediction") or {}
+        exported.append(
+            {
+                "issue_id": _as_text(item.get("issue_id")),
+                "scene": _as_text(item.get("title") or item.get("scenario")),
+                "gt_label": _as_text(item.get("gt_label")),
+                "model_label": _as_text(prediction.get("label")),
+                "comparison_status": _as_text(item.get("comparison_status")).upper(),
+                "model_reason": _as_text(prediction.get("reason")),
+                "model_confidence": prediction.get("confidence"),
+                "review_label": _as_text(annotation.get("label")),
+                "review_status": _as_text(annotation.get("review_status")),
+                "review_reason": _as_text(annotation.get("note")),
+                "tags": "、".join(
+                    tag_labels.get(_as_text(key), _as_text(key))
+                    for key in annotation.get("tags") or []
+                ),
+                "missing_evidence": "、".join(
+                    evidence_labels.get(_as_text(key), _as_text(key))
+                    for key in annotation.get("missing_evidence") or []
+                ),
+                "reason_themes": "、".join(
+                    _as_text(theme_item.get("label"))
+                    for theme_item in item.get("reason_themes") or []
+                ),
+                "reviewer": _as_text(annotation.get("author")),
+                "reviewed_at": _as_text(annotation.get("created_at")),
+                "review_url": _as_text(item.get("review_url")),
+                "voyager_issue_url": _as_text(item.get("voyager_issue_url")),
+            }
+        )
+    return exported
+
+
+def _review_analysis_export_response(
+    result: dict[str, Any], export_format: str
+) -> Response:
+    rows = _review_analysis_export_rows(result)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"review-analysis-{timestamp}.{export_format}"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    column_keys = [key for key, _ in REVIEW_ANALYSIS_EXPORT_COLUMNS]
+    column_labels = [label for _, label in REVIEW_ANALYSIS_EXPORT_COLUMNS]
+    if export_format == "csv":
+        stream = io.StringIO()
+        writer = csv.writer(stream, lineterminator="\n")
+        writer.writerow(column_labels)
+        for row in rows:
+            writer.writerow([_spreadsheet_safe(row.get(key)) for key in column_keys])
+        return Response(
+            content=("\ufeff" + stream.getvalue()).encode("utf-8"),
+            media_type="text/csv; charset=utf-8",
+            headers=headers,
+        )
+
+    workbook = openpyxl.Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Review 分析"
+    worksheet.append(column_labels)
+    for row in rows:
+        worksheet.append([_spreadsheet_safe(row.get(key)) for key in column_keys])
+    worksheet.freeze_panes = "A2"
+    worksheet.auto_filter.ref = worksheet.dimensions
+    for index, (_, label) in enumerate(REVIEW_ANALYSIS_EXPORT_COLUMNS, start=1):
+        worksheet.column_dimensions[openpyxl.utils.get_column_letter(index)].width = min(
+            42, max(12, len(label) * 2 + 4)
+        )
+    output = io.BytesIO()
+    workbook.save(output)
+    return Response(
+        content=output.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
+
+
+@app.get("/api/review-reason-analysis/export")
+async def export_review_reason_analysis(
+    format: str = "csv",
+    model_run_id: str = "",
+    comparison: str = "",
+    failure_only: bool = False,
+    annotation_author: str = "",
+    review_status: str = "",
+    gt_label: str = "",
+    annotation_label: str = "",
+    missing_evidence: str = "",
+    theme: str = "",
+    tag: str = "",
+    search: str = "",
+) -> Response:
+    export_format = _as_text(format).strip().lower()
+    if export_format not in {"csv", "xlsx"}:
+        raise _detail(400, "format 仅支持 csv 或 xlsx。")
+    result = _review_reason_analysis_payload(
+        model_run_id=model_run_id,
+        comparison=comparison,
+        failure_only=failure_only,
+        annotation_author=annotation_author,
+        review_status=review_status,
+        gt_label=gt_label,
+        annotation_label=annotation_label,
+        missing_evidence=missing_evidence,
+        theme=theme,
+        tag=tag,
+        search=search,
+        unbounded=True,
+    )
+    return _review_analysis_export_response(result, export_format)
 
 
 @app.post("/api/trail-model-sync")

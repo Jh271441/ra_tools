@@ -77,11 +77,12 @@ const state = {
     requestSeq: 0,
     data: null,
     comparisonStatus: "mismatch",
+    theme: "",
   },
   selectedAnnotationLabel: "",
   pollingBatchId: "",
   pollTimer: null,
-  media: { kind: "bev", index: 0 },
+  media: { kind: "bev", index: 0, zoom: 1 },
   sourcePreview: { runId: "", page: 1, pageSize: 100, pageCount: 1 },
   session: {
     username: "",
@@ -208,6 +209,7 @@ function normalizedAnalysisRouteFilters(params) {
       : "",
     missingEvidence: params.get("evidence") || "",
     theme: params.get("theme") || "",
+    tag: params.get("tag") || "",
     comparisonStatus: routeAnalysisComparisonStatus(params),
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
   };
@@ -315,7 +317,8 @@ function currentAnalysisRouteOptions(overrides = {}) {
     annotationAuthor: $("#analysisReviewerFilter")?.value || "",
     reviewStatus: $("#analysisStatusFilter")?.value || "",
     missingEvidence: $("#analysisEvidenceFilter")?.value || "",
-    theme: $("#analysisThemeFilter")?.value || "",
+    theme: state.reviewAnalysis.theme || "",
+    tag: $("#analysisTagFilter")?.value || "",
     page: state.reviewAnalysis.page,
     ...overrides,
   };
@@ -349,12 +352,13 @@ function applyAnalysisRouteControls(route) {
         ? evidence
         : "";
   }
-  if ($("#analysisThemeFilter")) {
-    const theme = filters.theme || "";
-    $("#analysisThemeFilter").value =
-      !theme ||
-      [...$("#analysisThemeFilter").options].some((option) => option.value === theme)
-        ? theme
+  state.reviewAnalysis.theme = filters.theme || "";
+  if ($("#analysisTagFilter")) {
+    const tag = filters.tag || "";
+    $("#analysisTagFilter").value =
+      !tag ||
+      [...$("#analysisTagFilter").options].some((option) => option.value === tag)
+        ? tag
         : "";
   }
   const requestedComparison =
@@ -405,6 +409,7 @@ function pageUrl(page, options = {}) {
     if (analysis.reviewStatus) url.searchParams.set("status", analysis.reviewStatus);
     if (analysis.missingEvidence) url.searchParams.set("evidence", analysis.missingEvidence);
     if (analysis.theme) url.searchParams.set("theme", analysis.theme);
+    if (analysis.tag) url.searchParams.set("tag", analysis.tag);
     if (Number(analysis.page) > 1) url.searchParams.set("page", String(analysis.page));
   }
   if (page === "prediction") {
@@ -744,16 +749,16 @@ function renderAnalysisCatalogFilters() {
       ? previous
       : "";
   }
-  const themeSelect = $("#analysisThemeFilter");
-  if (themeSelect) {
-    const previous = themeSelect.value;
-    themeSelect.innerHTML = [
-      '<option value="">全部原因主题</option>',
-      ...(state.config?.review_reason_theme_catalog || []).map(
+  const tagSelect = $("#analysisTagFilter");
+  if (tagSelect) {
+    const previous = tagSelect.value;
+    tagSelect.innerHTML = [
+      '<option value="">全部场景 Tags</option>',
+      ...(state.config?.review_tag_catalog || []).map(
         (item) => `<option value="${escapeHtml(item.key)}">${escapeHtml(item.label)}</option>`
       ),
     ].join("");
-    themeSelect.value = [...themeSelect.options].some(
+    tagSelect.value = [...tagSelect.options].some(
       (option) => option.value === previous
     )
       ? previous
@@ -1562,7 +1567,7 @@ function renderAnalysisClusterList(items, targetSelector, kind) {
   const activeValue =
     kind === "evidence"
       ? $("#analysisEvidenceFilter")?.value || ""
-      : $("#analysisThemeFilter")?.value || "";
+      : state.reviewAnalysis.theme || "";
   target.innerHTML = items
     .map((item) => {
       const percentage = Math.round(Number(item.share || 0) * 1000) / 10;
@@ -1581,14 +1586,17 @@ function renderAnalysisClusterList(items, targetSelector, kind) {
     .join("");
   target.querySelectorAll("[data-analysis-cluster-key]").forEach((button) => {
     button.addEventListener("click", () => {
-      const select =
-        button.dataset.analysisClusterKind === "evidence"
-          ? $("#analysisEvidenceFilter")
-          : $("#analysisThemeFilter");
-      select.value =
-        select.value === button.dataset.analysisClusterKey
+      if (button.dataset.analysisClusterKind === "evidence") {
+        const select = $("#analysisEvidenceFilter");
+        select.value = select.value === button.dataset.analysisClusterKey
           ? ""
           : button.dataset.analysisClusterKey;
+      } else {
+        state.reviewAnalysis.theme =
+          state.reviewAnalysis.theme === button.dataset.analysisClusterKey
+            ? ""
+            : button.dataset.analysisClusterKey;
+      }
       state.reviewAnalysis.page = 1;
       showPage("analysis", { historyMode: "push" });
       loadReviewReasonAnalysis().catch((error) => showToast(error.message, true));
@@ -1773,6 +1781,7 @@ async function loadReviewReasonAnalysis() {
   if (options.annotationLabel) params.set("annotation_label", options.annotationLabel);
   if (options.missingEvidence) params.set("missing_evidence", options.missingEvidence);
   if (options.theme) params.set("theme", options.theme);
+  if (options.tag) params.set("tag", options.tag);
   if (options.search) params.set("search", options.search);
   params.set("page", String(Math.max(1, Number(options.page) || 1)));
   params.set("page_size", String(state.reviewAnalysis.pageSize));
@@ -1781,6 +1790,32 @@ async function loadReviewReasonAnalysis() {
   if (requestSeq !== state.reviewAnalysis.requestSeq) return;
   state.reviewAnalysis.data = data;
   renderReviewReasonAnalysis(data);
+}
+
+function downloadReviewAnalysis(format) {
+  const options = analysisRequestOptions();
+  const params = new URLSearchParams({ format });
+  if (options.runId) params.set("model_run_id", options.runId);
+  params.set(
+    "comparison",
+    options.runId
+      ? normalizedAnalysisComparisonStatus(options.comparisonStatus)
+      : "all"
+  );
+  if (options.annotationAuthor) params.set("annotation_author", options.annotationAuthor);
+  if (options.reviewStatus) params.set("review_status", options.reviewStatus);
+  if (options.gtLabel) params.set("gt_label", options.gtLabel);
+  if (options.annotationLabel) params.set("annotation_label", options.annotationLabel);
+  if (options.missingEvidence) params.set("missing_evidence", options.missingEvidence);
+  if (options.theme) params.set("theme", options.theme);
+  if (options.tag) params.set("tag", options.tag);
+  if (options.search) params.set("search", options.search);
+  const link = document.createElement("a");
+  link.href = `/api/review-reason-analysis/export?${params.toString()}`;
+  link.download = "";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }
 
 function applyAnalysisComparisonSelection() {
@@ -2382,6 +2417,12 @@ function openDialog(id) {
 
 function closeDialog(id) {
   const dialog = $(`#${id}`);
+  if (id === "mediaDialog") {
+    dialog?.classList.remove("media-fallback-fullscreen");
+    if (document.fullscreenElement && dialog?.contains(document.fullscreenElement)) {
+      document.exitFullscreen().catch(() => {});
+    }
+  }
   if (dialog?.open) dialog.close();
 }
 
@@ -2459,6 +2500,75 @@ async function openSourcePreview(runId) {
   }
 }
 
+const MEDIA_ZOOM_MIN = 0.5;
+const MEDIA_ZOOM_MAX = 4;
+const MEDIA_ZOOM_STEP = 0.25;
+
+function mediaFullscreenActive() {
+  const dialog = $("#mediaDialog");
+  const card = dialog?.querySelector(".media-dialog-card");
+  return Boolean(document.fullscreenElement === card || dialog?.classList.contains("media-fallback-fullscreen"));
+}
+
+function updateMediaViewControls() {
+  const zoom = Math.min(MEDIA_ZOOM_MAX, Math.max(MEDIA_ZOOM_MIN, Number(state.media.zoom) || 1));
+  state.media.zoom = zoom;
+  $("#mediaZoomResetButton").textContent = `${Math.round(zoom * 100)}%`;
+  $("#mediaZoomOutButton").disabled = zoom <= MEDIA_ZOOM_MIN;
+  $("#mediaZoomInButton").disabled = zoom >= MEDIA_ZOOM_MAX;
+  const fullscreen = mediaFullscreenActive();
+  $("#mediaFullscreenButton").textContent = fullscreen ? "⤢" : "⛶";
+  $("#mediaFullscreenButton").setAttribute("aria-label", fullscreen ? "退出全屏" : "进入全屏");
+  $("#mediaFullscreenButton").title = fullscreen ? "退出全屏（F）" : "进入全屏（F）";
+}
+
+function setMediaZoom(nextZoom, { resetScroll = false } = {}) {
+  const viewport = $("#mediaViewport");
+  const canvas = $("#mediaCanvas");
+  if (!viewport || !canvas) return;
+  const centerRatioX = viewport.scrollWidth > 0
+    ? (viewport.scrollLeft + viewport.clientWidth / 2) / viewport.scrollWidth
+    : 0.5;
+  const centerRatioY = viewport.scrollHeight > 0
+    ? (viewport.scrollTop + viewport.clientHeight / 2) / viewport.scrollHeight
+    : 0.5;
+  state.media.zoom = Math.min(MEDIA_ZOOM_MAX, Math.max(MEDIA_ZOOM_MIN, Number(nextZoom) || 1));
+  const size = `${state.media.zoom * 100}%`;
+  canvas.style.width = size;
+  canvas.style.height = size;
+  updateMediaViewControls();
+  window.requestAnimationFrame(() => {
+    if (resetScroll) {
+      viewport.scrollLeft = Math.max(0, (viewport.scrollWidth - viewport.clientWidth) / 2);
+      viewport.scrollTop = Math.max(0, (viewport.scrollHeight - viewport.clientHeight) / 2);
+      return;
+    }
+    viewport.scrollLeft = Math.max(0, centerRatioX * viewport.scrollWidth - viewport.clientWidth / 2);
+    viewport.scrollTop = Math.max(0, centerRatioY * viewport.scrollHeight - viewport.clientHeight / 2);
+  });
+}
+
+async function toggleMediaFullscreen() {
+  const dialog = $("#mediaDialog");
+  const card = dialog?.querySelector(".media-dialog-card");
+  if (!dialog || !card) return;
+  try {
+    if (document.fullscreenElement === card) {
+      await document.exitFullscreen();
+    } else if (document.fullscreenElement) {
+      await document.exitFullscreen();
+      await card.requestFullscreen();
+    } else if (card.requestFullscreen) {
+      await card.requestFullscreen();
+    } else {
+      dialog.classList.toggle("media-fallback-fullscreen");
+    }
+  } catch (error) {
+    showToast(`无法切换全屏：${error.message}`, true);
+  }
+  updateMediaViewControls();
+}
+
 function renderMediaDialog() {
   const bev = mediaFrames("bev");
   const camera = mediaFrames("camera");
@@ -2470,6 +2580,7 @@ function renderMediaDialog() {
   $("#mediaTitle").textContent = `${state.selectedCase?.issue_id || ""} · ${frameLabel(current)} · ${state.media.index + 1}/${frames.length}`;
   $("#mediaPreviewImage").src = current.url;
   $("#mediaPreviewImage").alt = `${state.media.kind} ${frameLabel(current)}`;
+  setMediaZoom(state.media.zoom);
   $("#mediaModeTabs").innerHTML = `
     <button type="button" class="media-mode ${state.media.kind === "bev" ? "active" : ""}" data-media-mode="bev" ${bev.length ? "" : "disabled"}>BEV <span>${bev.length}</span></button>
     <button type="button" class="media-mode ${state.media.kind === "camera" ? "active" : ""}" data-media-mode="camera" ${camera.length ? "" : "disabled"}>Camera <span>${camera.length}</span></button>`;
@@ -2493,8 +2604,10 @@ function openMedia(kind, index) {
   if (!mediaFrames(kind).length) return;
   state.media.kind = kind;
   state.media.index = index;
+  state.media.zoom = 1;
   renderMediaDialog();
   openDialog("mediaDialog");
+  setMediaZoom(1, { resetScroll: true });
 }
 
 function moveMedia(delta) {
@@ -3804,7 +3917,8 @@ function bindEvents() {
     $("#analysisGtFilter").value = "";
     $("#analysisAnnotationFilter").value = "";
     $("#analysisEvidenceFilter").value = "";
-    $("#analysisThemeFilter").value = "";
+    $("#analysisTagFilter").value = "";
+    state.reviewAnalysis.theme = "";
     $("#analysisSearchInput").value = "";
     state.reviewAnalysis.page = 1;
     try {
@@ -3813,6 +3927,8 @@ function bindEvents() {
       showToast(error.message, true);
     }
   });
+  $("#exportReviewAnalysisCsvButton").addEventListener("click", () => downloadReviewAnalysis("csv"));
+  $("#exportReviewAnalysisXlsxButton").addEventListener("click", () => downloadReviewAnalysis("xlsx"));
   $("#analysisPagePrevious").addEventListener("click", () => {
     changeAnalysisPage(-1).catch((error) => showToast(error.message, true));
   });
@@ -3989,12 +4105,26 @@ function bindEvents() {
   });
   $("#mediaPrevButton").addEventListener("click", () => moveMedia(-1));
   $("#mediaNextButton").addEventListener("click", () => moveMedia(1));
+  $("#mediaZoomOutButton").addEventListener("click", () => setMediaZoom(state.media.zoom - MEDIA_ZOOM_STEP));
+  $("#mediaZoomResetButton").addEventListener("click", () => setMediaZoom(1, { resetScroll: true }));
+  $("#mediaZoomInButton").addEventListener("click", () => setMediaZoom(state.media.zoom + MEDIA_ZOOM_STEP));
+  $("#mediaFullscreenButton").addEventListener("click", () => toggleMediaFullscreen());
+  $("#mediaViewport").addEventListener("wheel", (event) => {
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+    setMediaZoom(state.media.zoom + (event.deltaY < 0 ? MEDIA_ZOOM_STEP : -MEDIA_ZOOM_STEP));
+  }, { passive: false });
+  document.addEventListener("fullscreenchange", updateMediaViewControls);
   document.addEventListener("keydown", (event) => {
     if (!$("#mediaDialog").open) return;
     if (["ArrowLeft", "ArrowUp"].includes(event.key)) { event.preventDefault(); moveMedia(-1); }
     if (["ArrowRight", "ArrowDown"].includes(event.key)) { event.preventDefault(); moveMedia(1); }
     if (event.key.toLowerCase() === "b" && mediaFrames("bev").length) { state.media.kind = "bev"; state.media.index = 0; renderMediaDialog(); }
     if (event.key.toLowerCase() === "c" && mediaFrames("camera").length) { state.media.kind = "camera"; state.media.index = 0; renderMediaDialog(); }
+    if (["+", "="].includes(event.key)) { event.preventDefault(); setMediaZoom(state.media.zoom + MEDIA_ZOOM_STEP); }
+    if (["-", "_"].includes(event.key)) { event.preventDefault(); setMediaZoom(state.media.zoom - MEDIA_ZOOM_STEP); }
+    if (event.key === "0") { event.preventDefault(); setMediaZoom(1, { resetScroll: true }); }
+    if (event.key.toLowerCase() === "f") { event.preventDefault(); toggleMediaFullscreen(); }
   });
   window.addEventListener("popstate", async () => {
     const route = parsePageRoute();

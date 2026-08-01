@@ -1184,7 +1184,9 @@ class Database:
         gt_label: str = "",
         annotation_label: str = "",
         missing_evidence: str = "",
+        tag: str = "",
         search: str = "",
+        search_aliases: tuple[str, ...] = (),
     ) -> list[dict[str, Any]]:
         """Return one latest-review row per baseline issue for analysis.
 
@@ -1233,15 +1235,27 @@ class Database:
         if missing_evidence.strip():
             where.append("ann.missing_evidence_json LIKE ?")
             params.append(f'%"{missing_evidence.strip()}"%')
+        if tag.strip():
+            where.append("ann.tags_json LIKE ?")
+            params.append(f'%"{tag.strip()}"%')
         if search.strip():
-            term = f"%{search.strip()}%"
-            where.append(
-                "("
-                "i.issue_id LIKE ? OR i.title LIKE ? OR i.scenario LIKE ? "
-                "OR i.summary LIKE ? OR ann.note LIKE ? OR mp.model_reason LIKE ?"
-                ")"
+            terms = tuple(
+                dict.fromkeys(
+                    text.strip()
+                    for text in (search, *search_aliases)
+                    if text.strip()
+                )
             )
-            params.extend([term, term, term, term, term, term])
+            search_clauses: list[str] = []
+            for text in terms:
+                term = f"%{text}%"
+                search_clauses.append(
+                    "(ann.note LIKE ? OR ann.author LIKE ? OR ann.label LIKE ? "
+                    "OR ann.review_status LIKE ? OR ann.tags_json LIKE ? "
+                    "OR ann.missing_evidence_json LIKE ?)"
+                )
+                params.extend([term, term, term, term, term, term])
+            where.append(f"({' OR '.join(search_clauses)})")
 
         query = f"""
             SELECT i.issue_id, i.title, i.scenario, i.summary, i.gt_label,
