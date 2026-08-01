@@ -11,7 +11,7 @@ const REVIEW_COMPARISON_META = ANALYSIS_COMPARISON_META;
 const PAGE_ROUTES = {
   review: {
     path: "/review",
-    titleZh: "RA Triage Workbench",
+    titleZh: "判错复核",
     titleEn: "RA Triage Workbench",
   },
   analysis: {
