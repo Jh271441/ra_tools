@@ -2648,22 +2648,25 @@ function openDialog(id) {
   if (dialog && !dialog.open) dialog.showModal();
 }
 
+function cleanupMediaDialog() {
+  const dialog = $("#mediaDialog");
+  state.media.drag = null;
+  state.media.caseData = null;
+  $("#mediaViewport")?.classList.remove("is-dragging");
+  $("#mediaVideoStage")?.querySelector("video")?.pause();
+  if ($("#mediaVideoStage")) {
+    $("#mediaVideoStage").innerHTML = "";
+    delete $("#mediaVideoStage").dataset.videoUrl;
+  }
+  dialog?.classList.remove("media-fallback-fullscreen");
+  if (document.fullscreenElement && dialog?.contains(document.fullscreenElement)) {
+    document.exitFullscreen().catch(() => {});
+  }
+}
+
 function closeDialog(id) {
   const dialog = $(`#${id}`);
-  if (id === "mediaDialog") {
-    state.media.drag = null;
-    state.media.caseData = null;
-    $("#mediaViewport")?.classList.remove("is-dragging");
-    $("#mediaVideoStage")?.querySelector("video")?.pause();
-    if ($("#mediaVideoStage")) {
-      $("#mediaVideoStage").innerHTML = "";
-      delete $("#mediaVideoStage").dataset.videoUrl;
-    }
-    dialog?.classList.remove("media-fallback-fullscreen");
-    if (document.fullscreenElement && dialog?.contains(document.fullscreenElement)) {
-      document.exitFullscreen().catch(() => {});
-    }
-  }
+  if (id === "mediaDialog") cleanupMediaDialog();
   if (dialog?.open) dialog.close();
 }
 
@@ -4428,6 +4431,7 @@ function bindEvents() {
   $("#sidebarToggle").addEventListener("click", toggleSidebar);
   $("#sidebarBrandToggle").addEventListener("click", toggleSidebar);
   document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => closeDialog(button.dataset.close)));
+  $("#mediaDialog").addEventListener("close", cleanupMediaDialog);
   $("#importFile").addEventListener("change", () => {
     const filename = $("#importFileName");
     if (filename) filename.textContent = $("#importFile").files[0]?.name || "未选择文件";
