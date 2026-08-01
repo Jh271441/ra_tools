@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RA Triage Workbench</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='%2309b8d4'/><text x='32' y='41' text-anchor='middle' font-size='28' font-family='sans-serif' font-weight='700' fill='%2309141d'>RA</text></svg>" />
-    <link rel="stylesheet" href="/static/styles.css?v=9bc75e4" />
+    <link rel="stylesheet" href="/static/styles.css?v=d4e8a12" />
   </head>
   <body>
     <div class="app-shell" id="appShell">
@@ -723,17 +723,20 @@
             <button class="media-control media-fullscreen" id="mediaFullscreenButton" type="button" aria-label="进入全屏" title="进入全屏（F）">⛶</button>
           </div>
         </div>
-        <div class="media-stage">
-          <button class="media-nav prev" id="mediaPrevButton" type="button" aria-label="上一帧">←</button>
-          <div class="media-viewport" id="mediaViewport">
-            <div class="media-canvas" id="mediaCanvas">
-              <img id="mediaPreviewImage" alt="RA review media" draggable="false" />
+        <div class="media-content">
+          <div class="media-stage" id="mediaImageStage">
+            <button class="media-nav prev" id="mediaPrevButton" type="button" aria-label="上一帧">←</button>
+            <div class="media-viewport" id="mediaViewport">
+              <div class="media-canvas" id="mediaCanvas">
+                <img id="mediaPreviewImage" alt="RA review media" draggable="false" />
+              </div>
             </div>
+            <button class="media-nav next" id="mediaNextButton" type="button" aria-label="下一帧">→</button>
           </div>
-          <button class="media-nav next" id="mediaNextButton" type="button" aria-label="下一帧">→</button>
+          <div class="media-video-stage" id="mediaVideoStage" hidden></div>
         </div>
         <div class="media-timeline" id="mediaTimeline"></div>
-        <p class="media-help">← / ↑ 上一帧 · → / ↓ 下一帧 · B/C 切媒体 · +/− 缩放 · 0 复位 · 放大后拖拽平移 · F 全屏 · Esc 退出</p>
+        <p class="media-help" id="mediaHelp">← / ↑ 上一帧 · → / ↓ 下一帧 · B/C/V 切媒体 · +/− 缩放 · 0 复位 · 放大后拖拽平移 · F 全屏 · Esc 退出</p>
       </div>
     </dialog>
 
@@ -753,6 +756,6 @@
     </dialog>
 
     <div class="toast hidden" id="toast"></div>
-    <script src="/static/app.js?v=9bc75e4" defer></script>
+    <script src="/static/app.js?v=d4e8a12" defer></script>
   </body>
 </html>
