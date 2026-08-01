@@ -493,6 +493,12 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .detail-id-link { border-bottom: 1px solid rgba(34,211,238,.32); }
 .detail-id-link:hover { color: #b9f5fb; border-bottom-color: var(--accent); }
 .detail-id-link:focus-visible { outline: 2px solid rgba(34,211,238,.65); outline-offset: 3px; border-radius: 2px; }
+.detail-ares-link {
+  display: inline-flex; align-items: center; min-height: 26px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px;
+  color: #b9c7d8; background: var(--overlay); font-size: 10px; font-weight: 650; white-space: nowrap;
+}
+.detail-ares-link:hover { color: #d8e6f2; border-color: #46546a; background: var(--overlay-2); }
+.detail-ares-link:focus-visible { outline: 2px solid rgba(34,211,238,.65); outline-offset: 2px; }
 .detail-actions {
   display: flex; align-items: center; flex-wrap: wrap; gap: 7px;
 }

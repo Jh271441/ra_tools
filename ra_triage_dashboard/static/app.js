@@ -584,6 +584,27 @@ function safeUrl(url) {
   }
 }
 
+function aresStudioUrl(caseData, issueUrl) {
+  const tripId = String(caseData?.assets?.capture?.trip_id || caseData?.trip_id || "").trim();
+  const issueId = String(caseData?.issue_id || "").trim();
+  const timestampMs = Number(
+    caseData?.assets?.capture?.timestamp_ms || caseData?.camera?.capture?.timestamp_ms
+  );
+  if (!issueUrl || !issueId || !tripId || !Number.isFinite(timestampMs) || timestampMs <= 0) return "";
+  try {
+    const url = new URL("/static/ares-studio/", issueUrl);
+    url.searchParams.set("ds", "voy-ws-car");
+    url.searchParams.set("ds.issue_id", issueId);
+    url.searchParams.set("ds.trip_id", tripId);
+    url.searchParams.set("ds.start", String(Math.round(timestampMs - 10000)));
+    url.searchParams.set("ds.end", String(Math.round(timestampMs + 10000)));
+    url.searchParams.set("entry_last_page", `/issue/${issueId}`);
+    return safeUrl(url.href);
+  } catch {
+    return "";
+  }
+}
+
 function safeSameOriginAssetUrl(url) {
   try {
     const parsed = new URL(String(url || ""), window.location.origin);
@@ -2282,17 +2303,21 @@ function openHistoryDialog(kind, caseData) {
 function renderDetail(caseData) {
   const primary = (caseData.predictions || []).find((item) => item.model_run_id === state.selectedRunId) || caseData.predictions?.[0];
   const issueUrl = safeUrl(caseData.voyager_issue_url || caseData.trail_url);
+  const aresUrl = aresStudioUrl(caseData, issueUrl);
   const issueId = escapeHtml(caseData.issue_id);
   const issueIdMarkup = issueUrl
     ? `<a class="detail-id detail-id-link" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" title="打开 Voyager Issue">${issueId}</a>`
     : `<span class="detail-id">${issueId}</span>`;
+  const aresLinkMarkup = aresUrl
+    ? `<a class="detail-ares-link" href="${escapeHtml(aresUrl)}" target="_blank" rel="noreferrer" title="在 Ares Studio 中打开事件前后各 10 秒">Ares Studio ↗</a>`
+    : "";
   ensureDetailMediaState(caseData);
   const modelHistoryButton = `<button class="history-inline-button" type="button" data-open-history="model">评测 Run 历史 · ${(caseData.predictions || []).length} 条</button>`;
   $("#detailPane").innerHTML = `
     <div class="detail-header">
       <div class="detail-title-row">
         <div class="detail-title-group">
-          <div class="detail-title"><h2><span class="ui-lang-zh">问题详情</span><span class="ui-lang-en">Issue Details</span></h2>${issueIdMarkup}</div>
+          <div class="detail-title"><h2><span class="ui-lang-zh">问题详情</span><span class="ui-lang-en">Issue Details</span></h2>${issueIdMarkup}${aresLinkMarkup}</div>
         </div>
         <div class="detail-navigation">
           <div class="case-detail-pager">
