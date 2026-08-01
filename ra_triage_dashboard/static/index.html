@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RA Triage Workbench</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='%2309b8d4'/><text x='32' y='41' text-anchor='middle' font-size='28' font-family='sans-serif' font-weight='700' fill='%2309141d'>RA</text></svg>" />
-    <link rel="stylesheet" href="/static/styles.css?v=9f84b2d" />
+    <link rel="stylesheet" href="/static/styles.css?v=a62d0c7" />
   </head>
   <body>
     <div class="app-shell" id="appShell">
@@ -537,10 +537,13 @@
                           <option value="custom">自定义帧偏移</option>
                         </select>
                       </label>
-                      <label class="toggle-row compact-toggle" title="使用服务端 stuck_triage_auto_opt_api 的默认 Ares Animation 配置">
-                        <input id="predictionUseBev" type="checkbox" checked />
-                        <span><strong>BEV / Ares Animation</strong><small>服务端 API 默认配置</small></span>
-                      </label>
+                      <div class="batch-bev-field">
+                        <span>Ares 输入</span>
+                        <label class="toggle-row compact-toggle batch-bev-toggle" title="使用服务端 stuck_triage_auto_opt_api 的默认 Ares Animation 配置">
+                          <input id="predictionUseBev" type="checkbox" checked />
+                          <span><strong>BEV / Ares Animation</strong><small>API 默认</small></span>
+                        </label>
+                      </div>
                     </div>
                     <label>
                       <span>Prompt 正文（可编辑）</span>
@@ -745,6 +748,6 @@
     </dialog>
 
     <div class="toast hidden" id="toast"></div>
-    <script src="/static/app.js?v=9f84b2d" defer></script>
+    <script src="/static/app.js?v=a62d0c7" defer></script>
   </body>
 </html>
