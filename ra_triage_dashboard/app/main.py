@@ -58,7 +58,11 @@ from .trail_sync import TRAIL_INFO_FIELD, TRAIL_RESULT_FIELD, read_trail_model_f
 
 logger = logging.getLogger("ra_triage_dashboard")
 settings = Settings.from_env()
-database = Database(settings.db_path)
+database = Database(
+    settings.database_url,
+    postgres_migrations_dir=settings.postgres_migrations_dir,
+    pool_size=10,
+)
 asset_index = AssetIndex(
     ra_root=settings.ra_auto_triage_root,
     manifest_path=settings.ares_manifest,
@@ -1263,6 +1267,7 @@ async def lifespan(_: FastAPI):
         yield
     finally:
         await asyncio.to_thread(batch_prediction_runner.shutdown)
+        await asyncio.to_thread(database.close)
 
 
 app = FastAPI(
@@ -1385,7 +1390,7 @@ async def health() -> dict[str, Any]:
         "autotriage_push_enabled": settings.autotriage_push_enabled,
         "model_gateway": model_catalog.status(),
         "change_revision": await asyncio.to_thread(database.change_revision),
-        "storage": "sqlite-mvp",
+        "storage": database.storage_label,
     }
 
 
@@ -1478,7 +1483,7 @@ async def status() -> dict[str, Any]:
         "autotriage_push_enabled": settings.autotriage_push_enabled,
         "batch_max_issues": settings.batch_max_issues,
         "model_gateway": model_catalog.status(),
-        "storage": "SQLite MVP / PostgreSQL migration prepared",
+        "storage": database.storage_label,
         "model_endpoint_policy": (
             "固定服务器网关；Profile 模型已验证，其他在线 Qwen3 显式实验；"
             "浏览器不能提交地址或凭证"

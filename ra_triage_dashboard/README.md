@@ -67,7 +67,7 @@ Runs 的「人员」统一显示/筛选创建人；旧 Run 没有创建人时回
 - 0508 GT 快照：`/volume/home/workspace/ra_auto_triage/data/trail_label_baseline_20260729.xlsx`（只读）
 - 模型 / Trail 逻辑：`/volume/home/workspace/ra_auto_triage`（代码与原有 bag 只读；Batch 新下载只写 dashboard 独立缓存）
 
-模型 endpoint 是服务端固定配置，API key 只存在于上述受限文件和预测 worker 的一次性 stdin，不进入浏览器 HTTP 请求、dashboard SQLite、argv、子进程环境或公共 API。Batch Run 只保存脱敏后的模型、Prompt、输入策略、目录 SHA-256 和配置 SHA-256；上传 JSON / CSV / XLSX 时，metadata、原始行和扩展字段中的 credential / endpoint key 也会在入库前递归脱敏，公共读取再执行一次同样的防护。模型结果原文件只通过同源 Run source endpoint 提供 inline 预览或 attachment 下载，不直接暴露服务器路径；遗留 Run 不会凭空补造归档文件。
+模型 endpoint 是服务端固定配置，API key 只存在于上述受限文件和预测 worker 的一次性 stdin，不进入浏览器 HTTP 请求、dashboard 数据库、argv、子进程环境或公共 API。Batch Run 只保存脱敏后的模型、Prompt、输入策略、目录 SHA-256 和配置 SHA-256；上传 JSON / CSV / XLSX 时，metadata、原始行和扩展字段中的 credential / endpoint key 也会在入库前递归脱敏，公共读取再执行一次同样的防护。模型结果原文件只通过同源 Run source endpoint 提供 inline 预览或 attachment 下载，不直接暴露服务器路径；遗留 Run 不会凭空补造归档文件。
 
 AutoTriage 拉取同样是服务端固定来源，默认
 `DASHBOARD_AUTOTRIAGE_API_BASE_URL=http://10.190.57.183:8000`。浏览器提供的
@@ -213,9 +213,9 @@ ssh -L 8785:127.0.0.1:8785 cloud_server
 
 ## SQLite 到 PostgreSQL
 
-MVP 使用 SQLite（WAL 模式）便于在 cloud_server 快速验证。它适合单机少并发验证，不是团队正式存储。
+运行时同时支持 SQLite（本地/回滚）与 PostgreSQL（正式多人环境）。PostgreSQL 使用 `psycopg_pool` 连接池，默认最大 10 个连接；`/health` 的 `storage` 会明确返回 `sqlite-mvp` 或 `postgresql`。数据库连接优先从 `DASHBOARD_DATABASE_URL` 读取，也可通过服务用户持有的 `0600` 普通文件 `DASHBOARD_DATABASE_URL_FILE` 读取，避免把凭证放进 tmux 命令、源码或日志。
 
-`migrations/postgres/001_initial.sql` 提供了与当前表一致的 PostgreSQL schema。已有旧 MVP schema 按需依次执行：
+`migrations/postgres/001_initial.sql` 提供完整 schema，应用启动时会按文件名顺序记录并执行尚未应用的 migration：
 
 1. `002_review_baseline_fields.sql`：补齐 baseline 与 review 字段。
 2. `003_identity_attribution.sql`：为 annotations、model_runs 和 inference_jobs 增加身份来源与可信状态，并为复核人、Run 创建人和任务请求人建立索引。
@@ -224,11 +224,15 @@ MVP 使用 SQLite（WAL 模式）便于在 cloud_server 快速验证。它适合
 5. `006_batch_model_selection.sql`：为既有 Batch Job 增加 requested / resolved 模型 ID、模型来源和目录指纹。
 6. `007_batch_prompt_input.sql`：增加模型验证层级、完整 Prompt 快照/Hash、输入 Profile 和输入配置 JSON 及筛选索引。
 7. `008_change_revision.sql`：增加跨页面共享 revision 及事务内更新 trigger，为轻量多人同步提供依据。
+8. `009_runtime_adapter.sql`：补齐 Provider、持久 FIFO 队列序号及团队默认 Run 的并发唯一约束。
 
-`003_identity_attribution.sql` 对旧行使用 `legacy` / `verified=false`，不会把历史自由填写姓名升级成可信 SSO。所有人工标注、模型结果、任务记录与附件元数据都保留历史行，因此迁移时是一次数据复制，不需要把旧记录扁平化或覆盖；附件二进制需另行迁移。上述 SQL 仍只是 PostgreSQL 目标 schema 与迁移准备；当前运行 adapter 仍是 SQLite。
+`003_identity_attribution.sql` 对旧行使用 `legacy` / `verified=false`，不会把历史自由填写姓名升级成可信 SSO。所有人工标注、模型结果、任务记录与附件元数据都保留历史行；附件二进制仍留在同一受限 `review_attachments/` 目录，PostgreSQL 保存其元数据。
 
-接入正式 PostgreSQL 后应同步完成：
+cloud_server 的一次性切换流程：
 
-1. 用 Alembic/SQLAlchemy 替换当前 SQLite storage adapter。
-2. 接入 SSO / 反向代理，将创建人、复核人和请求人统一绑定可信身份。
-3. 为导入、团队默认变更、推理和 Trail 回写（若后续开放）添加 RBAC 与审计。
+1. 运行 `scripts/bootstrap_cloud_server_env.sh` 安装包含 psycopg 的专用运行环境。
+2. 运行 `scripts/bootstrap_cloud_postgres.sh` 安装/启动本机 PostgreSQL 14，创建仅 Unix socket peer 访问的专用数据库，并写入尚未生效的 `0600` `postgres_url.pending`。
+3. 停止 Dashboard 写入后运行 `scripts/migrate_sqlite_to_postgres.py --source ... --backup ... --target-url-file ...`。工具会先生成只读 SQLite 备份，拒绝非空 PostgreSQL 目标，在单事务中复制数据并逐表核对行数与 SHA-256。
+4. 校验通过后把 `postgres_url.pending` 原子改名为 `postgres_url`，再重启 Dashboard；`run_cloud_server.sh` 仅检测正式文件并自动使用 PostgreSQL。确认 `/health`、1071 baseline、Runs、Review、附件和 Batch 历史后再结束维护窗口。
+
+回滚只需移走/改名 URL 文件并重启服务，原 SQLite 与附件目录未被迁移工具修改。正式启用可信 SSO 后，仍需为团队默认变更、推理与未来 Trail 写入补充 RBAC。
