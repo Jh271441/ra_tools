@@ -84,7 +84,19 @@ const state = {
   selectedAnnotationLabel: "",
   pollingBatchId: "",
   pollTimer: null,
-  media: { kind: "bev", index: 0, zoom: 1, drag: null },
+  media: {
+    kind: "bev",
+    index: 0,
+    zoom: 1,
+    drag: null,
+    snapshot: null,
+    requestSeq: 0,
+  },
+  detailMedia: {
+    issueId: "",
+    kind: "",
+    indexes: { bev: 0, camera: 0 },
+  },
   sourcePreview: { runId: "", page: 1, pageSize: 100, pageCount: 1 },
   session: {
     username: "",
@@ -451,6 +463,7 @@ function setReviewView(issueId = "") {
   detail.classList.toggle("hidden", !showingDetail);
   $("#reviewPage")?.classList.toggle("is-detail", showingDetail);
   if (!showingDetail) {
+    $("#detailHeroMedia")?.querySelector("video")?.pause();
     closeDialog("mediaDialog");
     window.requestAnimationFrame(() => {
       window.scrollTo({ top: state.galleryScrollY, behavior: "auto" });
@@ -471,6 +484,7 @@ function showPage(
   } = {}
 ) {
   const target = PAGE_ROUTES[page] ? page : "review";
+  if (target !== "review") $("#detailHeroMedia")?.querySelector("video")?.pause();
   state.activePage = target;
   document.querySelectorAll("[data-page]").forEach((section) => {
     section.classList.toggle("hidden", section.dataset.page !== target);
@@ -1265,6 +1279,7 @@ function issueCard(item) {
         <div class="issue-thumbnail-placeholder" aria-hidden="true"><span>RA</span><small>暂无 BEV 缩略图</small></div>
         ${thumbnailUrl ? `<img src="${escapeHtml(thumbnailUrl)}" alt="${escapeHtml(item.issue_id)} ${escapeHtml(thumbnailLabel)}" loading="lazy" decoding="async" data-case-thumbnail />` : ""}
         <span class="issue-thumbnail-label">${escapeHtml(thumbnailLabel)}</span>
+        <button class="issue-media-preview" type="button" data-case-media-preview="${escapeHtml(item.issue_id)}" aria-label="预览 ${escapeHtml(item.issue_id)} 的 BEV、Camera 和视频">媒体预览</button>
         ${comparisonMeta ? `<span class="comparison-chip comparison-${comparisonStatus} issue-thumbnail-status">${escapeHtml(comparisonMeta.label)}</span>` : ""}
       </div>
       <div class="issue-card-body">
@@ -1380,15 +1395,22 @@ function renderCases(data) {
   list.querySelectorAll("[data-issue-id]").forEach((element) => {
     const open = () => selectCase(element.dataset.issueId);
     element.addEventListener("click", (event) => {
-      if (event.target.closest("[data-card-link]")) return;
+      if (event.target.closest("[data-card-link], [data-case-media-preview]")) return;
       open();
     });
     element.addEventListener("keydown", (event) => {
-      if (event.target.closest("[data-card-link]")) return;
+      if (event.target.closest("[data-card-link], [data-case-media-preview]")) return;
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
         open();
       }
+    });
+  });
+  list.querySelectorAll("[data-case-media-preview]").forEach((button) => {
+    button.addEventListener("click", () => {
+      openCaseMediaPreview(button.dataset.caseMediaPreview, button).catch((error) => {
+        showToast(error.message, true);
+      });
     });
   });
   list.querySelectorAll("[data-case-thumbnail]").forEach((image) => {
@@ -1943,40 +1965,284 @@ function heroFrameIndex(frames) {
   return Math.floor(frames.length / 2);
 }
 
-function heroMediaSection(bev) {
-  const frames = bev?.frames || [];
-  const video = bev?.video;
-  if (!bev?.available || (!frames.length && !video?.url)) {
-    return '<section class="hero-media"><div class="no-asset hero-media-placeholder"><span>当前没有可预览的 Ares 或视频。</span></div></section>';
+function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {
+  const durationSec = Math.max(0, Number(video?.duration_ms || 0) / 1000);
+  const startOffsetSec = Number(video?.start_offset_sec ?? 0);
+  const eventTimeSec = Number(video?.event_time_sec ?? Math.max(0, -startOffsetSec));
+  const frameStepSec = Math.max(0.01, Number(video?.frame_step_ms || 100) / 1000);
+  const stepOptions = [...new Set([frameStepSec, 0.5, 1, 5])]
+    .sort((left, right) => left - right)
+    .map((step) => `<option value="${escapeHtml(step)}" ${step === 1 ? "selected" : ""}>${escapeHtml(step)}s${step === frameStepSec ? "（1 帧）" : ""}</option>`)
+    .join("");
+  const videoMarkup = `<video src="${escapeHtml(video.url)}" preload="metadata" playsinline draggable="false" aria-label="Ares Studio BEV 视频"></video>`;
+  const mediaMarkup = zoomable
+    ? `<div class="media-viewport media-video-viewport" data-video-viewport><div class="media-canvas media-video-canvas" data-video-canvas>${videoMarkup}</div></div>`
+    : `<div class="hero-media-button hero-media-video">${videoMarkup}</div>`;
+  return `<div class="hero-video-player ${compact ? "is-compact" : ""}" data-bev-video-player
+      data-start-offset-sec="${escapeHtml(startOffsetSec)}"
+      data-event-time-sec="${escapeHtml(eventTimeSec)}"
+      data-duration-sec="${escapeHtml(durationSec)}"
+      data-frame-step-sec="${escapeHtml(frameStepSec)}">
+    ${mediaMarkup}
+    <div class="bev-video-controls" aria-label="BEV 视频控制">
+      <div class="bev-video-control-row">
+        <button class="button button-quiet" type="button" data-video-play>播放</button>
+        <button class="button button-quiet" type="button" data-video-jump="-1"><span data-video-jump-label>−1s</span></button>
+        <button class="button button-quiet" type="button" data-video-t0>回到 t0</button>
+        <button class="button button-quiet" type="button" data-video-jump="1"><span data-video-jump-label>+1s</span></button>
+        <label>跳转步长
+          <select data-video-step>
+            ${stepOptions}
+          </select>
+        </label>
+        <label>倍速
+          <select data-video-rate>
+            <option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="1.5">1.5×</option>
+            <option value="2">2×</option>
+          </select>
+        </label>
+      </div>
+      <div class="bev-video-progress-row">
+        <span data-video-relative-start>${escapeHtml(formatSignedSeconds(startOffsetSec))}</span>
+        <input data-video-seek type="range" min="0" max="${escapeHtml(durationSec || 40)}" value="0" step="0.01" aria-label="视频进度" />
+        <span data-video-time>${escapeHtml(formatSignedSeconds(startOffsetSec))} / ${escapeHtml(formatSignedSeconds(startOffsetSec + durationSec))}</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function formatSignedSeconds(value) {
+  const seconds = Number(value || 0);
+  if (Math.abs(seconds) < 0.05) return "t0";
+  return `${seconds > 0 ? "+" : ""}${seconds.toFixed(1)}s`;
+}
+
+function bindBevVideoPlayers(root) {
+  root.querySelectorAll("[data-bev-video-player]").forEach((player) => {
+    const video = player.querySelector("video");
+    const playButton = player.querySelector("[data-video-play]");
+    const seek = player.querySelector("[data-video-seek]");
+    const stepSelect = player.querySelector("[data-video-step]");
+    const rateSelect = player.querySelector("[data-video-rate]");
+    const timeLabel = player.querySelector("[data-video-time]");
+    const startLabel = player.querySelector("[data-video-relative-start]");
+    const startOffsetSec = Number(player.dataset.startOffsetSec || 0);
+    const eventTimeSec = Number(player.dataset.eventTimeSec || 0);
+    const configuredDuration = Number(player.dataset.durationSec || 0);
+    const duration = () => Number.isFinite(video.duration) ? video.duration : configuredDuration;
+    const update = () => {
+      const total = Math.max(0, duration());
+      seek.max = String(total || configuredDuration || 40);
+      seek.value = String(Math.min(Number(seek.max), Math.max(0, video.currentTime || 0)));
+      startLabel.textContent = formatSignedSeconds(startOffsetSec);
+      timeLabel.textContent = `${formatSignedSeconds(startOffsetSec + (video.currentTime || 0))} / ${formatSignedSeconds(startOffsetSec + total)}`;
+      playButton.textContent = video.paused ? "播放" : "暂停";
+    };
+    const jump = (direction) => {
+      const step = Math.max(0.01, Number(stepSelect.value || 1));
+      video.currentTime = Math.min(
+        Math.max(0, duration()),
+        Math.max(0, video.currentTime + direction * step)
+      );
+      update();
+    };
+    const togglePlayback = () => {
+      if (video.paused) {
+        video.play().catch((error) => showToast(`视频播放失败：${error.message}`, true));
+      } else {
+        video.pause();
+      }
+    };
+    playButton.addEventListener("click", togglePlayback);
+    video.addEventListener("click", togglePlayback);
+    player.querySelectorAll("[data-video-jump]").forEach((button) => {
+      button.addEventListener("click", () => jump(Number(button.dataset.videoJump)));
+    });
+    player.querySelector("[data-video-t0]").addEventListener("click", () => {
+      video.currentTime = Math.min(Math.max(0, duration()), Math.max(0, eventTimeSec));
+      update();
+    });
+    stepSelect.addEventListener("change", () => {
+      const step = Number(stepSelect.value || 1);
+      player.querySelectorAll("[data-video-jump]").forEach((button) => {
+        const sign = Number(button.dataset.videoJump) < 0 ? "−" : "+";
+        button.querySelector("[data-video-jump-label]").textContent = `${sign}${step}s`;
+      });
+    });
+    rateSelect.addEventListener("change", () => {
+      video.playbackRate = Number(rateSelect.value || 1);
+    });
+    seek.addEventListener("input", () => {
+      video.currentTime = Number(seek.value || 0);
+      update();
+    });
+    ["loadedmetadata", "durationchange", "timeupdate", "play", "pause", "ended"].forEach(
+      (eventName) => video.addEventListener(eventName, update)
+    );
+    player.addEventListener("keydown", (event) => {
+      if (event.target.matches("select, input")) {
+        event.stopPropagation();
+        return;
+      }
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        event.stopPropagation();
+        jump(event.key === "ArrowLeft" ? -1 : 1);
+      } else if (event.key === " ") {
+        event.preventDefault();
+        event.stopPropagation();
+        togglePlayback();
+      }
+    });
+    player.tabIndex = 0;
+    update();
+  });
+}
+
+function ensureDetailMediaState(caseData) {
+  const issueId = String(caseData?.issue_id || "");
+  const available = {
+    bev: Boolean(caseData?.assets?.frames?.length),
+    camera: Boolean(caseData?.camera?.frames?.length),
+    video: Boolean(caseData?.assets?.video?.url),
+  };
+  if (state.detailMedia.issueId !== issueId) {
+    state.detailMedia = {
+      issueId,
+      kind: preferredMediaKind(caseData),
+      indexes: {
+        bev: heroFrameIndex(caseData?.assets?.frames || []),
+        camera: heroFrameIndex(caseData?.camera?.frames || []),
+      },
+    };
   }
-  if (!frames.length && video?.url) {
-    return `
-      <section class="hero-media">
-        <div class="hero-media-button hero-media-video">
-          <video src="${escapeHtml(video.url)}" controls preload="metadata" playsinline aria-label="Ares Capture BEV 视频"></video>
-        </div>
-      </section>`;
+  if (!available[state.detailMedia.kind]) state.detailMedia.kind = preferredMediaKind(caseData);
+  return available;
+}
+
+function heroMediaSection(caseData) {
+  const frames = caseData?.assets?.frames || [];
+  const video = caseData?.assets?.video;
+  const camera = caseData?.camera?.frames || [];
+  if (!frames.length && !camera.length && !video?.url) {
+    return '<section class="hero-media"><div class="no-asset hero-media-placeholder"><span>当前没有可预览的 BEV、Camera 或视频。</span></div></section>';
   }
-  const index = heroFrameIndex(frames);
-  const frame = frames[index];
-  const videoToggle = video?.url
-    ? '<button type="button" class="button button-quiet hero-video-toggle" data-hero-video-toggle>播放视频</button>'
-    : "";
-  const videoCanvas = video?.url
-    ? `<div class="hero-media-button hero-media-video" data-hero-video-view hidden>
-        <video src="${escapeHtml(video.url)}" controls preload="metadata" playsinline aria-label="Ares Capture BEV 视频"></video>
-      </div>`
-    : "";
-  const mediaControls = videoToggle ? `<div class="hero-media-meta">${videoToggle}</div>` : "";
+  ensureDetailMediaState(caseData);
+  const kind = state.detailMedia.kind;
+  const activeFrames = kind === "camera" ? camera : frames;
+  const index = Math.max(0, Math.min(
+    Number(state.detailMedia.indexes[kind] || 0),
+    Math.max(activeFrames.length - 1, 0)
+  ));
+  if (kind !== "video") state.detailMedia.indexes[kind] = index;
+  const frame = activeFrames[index];
+  const content = kind === "video" && video?.url
+    ? videoPlayerMarkup(video, { zoomable: false, compact: true })
+    : `<button type="button" class="hero-media-button" data-detail-media-expand aria-label="展开${kind === "camera" ? " Camera" : " BEV"}媒体预览">
+        <img src="${escapeHtml(frame?.url || "")}" alt="${kind === "camera" ? "Camera" : "Ares Capture BEV"} ${escapeHtml(frameLabel(frame || {}))}" />
+        <span class="hero-media-overlay">${escapeHtml(frameLabel(frame || {}))} · 点击展开</span>
+      </button>`;
+  const frameControls = kind === "video" ? "" : `
+    <div class="detail-media-frame-controls" aria-label="图片帧切换">
+      <button class="button button-quiet" id="detailMediaPreviousButton" type="button" aria-label="上一帧">←</button>
+      <span class="detail-media-position" id="detailMediaPosition">${activeFrames.length ? `${index + 1} / ${activeFrames.length}` : "—"}</span>
+      <button class="button button-quiet" id="detailMediaNextButton" type="button" aria-label="下一帧">→</button>
+    </div>`;
   return `
-    <section class="hero-media">
-      <button type="button" class="hero-media-button" data-hero-frame-view data-media-kind="bev" data-media-index="${index}" aria-label="打开 Ares 与 Camera 时序预览">
-        <img src="${escapeHtml(frame.url)}" alt="Ares Capture BEV ${escapeHtml(frameLabel(frame))}" />
-        <span class="hero-media-overlay">展开预览 · ${escapeHtml(frameLabel(frame))}</span>
-      </button>
-      ${videoCanvas}
-      ${mediaControls}
+    <section class="hero-media detail-hero-media" id="detailHeroMedia" tabindex="0" aria-label="Issue 媒体">
+      <div class="detail-media-content">${content}</div>
+      ${frameControls}
+      <p class="detail-media-help">B / C / V 切换媒体 · ${kind === "video" ? "空格播放/暂停 · ←/→ 跳转" : "←/→ 切帧"} · F 展开查看</p>
     </section>`;
+}
+
+function detailMediaCommandMarkup(caseData) {
+  const available = ensureDetailMediaState(caseData);
+  const kind = state.detailMedia.kind;
+  return `<div class="detail-media-command" aria-label="详情媒体控制">
+    <select class="detail-media-select" id="detailMediaKindSelect" aria-label="媒体类型">
+      <option value="bev" ${available.bev ? "" : "disabled"} ${kind === "bev" ? "selected" : ""}>BEV 图片 · ${caseData?.assets?.frames?.length || 0}</option>
+      <option value="camera" ${available.camera ? "" : "disabled"} ${kind === "camera" ? "selected" : ""}>Camera 图片 · ${caseData?.camera?.frames?.length || 0}</option>
+      <option value="video" ${available.video ? "" : "disabled"} ${kind === "video" ? "selected" : ""}>Ares Studio 视频 · ${available.video ? 1 : 0}</option>
+    </select>
+    <button class="button button-quiet detail-media-expand" id="detailMediaExpandButton" type="button">展开查看</button>
+  </div>`;
+}
+
+function bindDetailMedia(caseData) {
+  const root = $("#detailHeroMedia");
+  if (!root) return;
+  const render = () => {
+    root.outerHTML = heroMediaSection(caseData);
+    bindDetailMedia(caseData);
+  };
+  const switchKind = (kind) => {
+    const available = kind === "video"
+      ? Boolean(caseData?.assets?.video?.url)
+      : Boolean((kind === "camera" ? caseData?.camera?.frames : caseData?.assets?.frames)?.length);
+    if (!available || state.detailMedia.kind === kind) return;
+    root.querySelector("video")?.pause();
+    state.detailMedia.kind = kind;
+    render();
+  };
+  const move = (delta) => {
+    const kind = state.detailMedia.kind;
+    if (kind === "video") return;
+    const frames = kind === "camera" ? caseData?.camera?.frames || [] : caseData?.assets?.frames || [];
+    if (!frames.length) return;
+    state.detailMedia.indexes[kind] = (state.detailMedia.indexes[kind] + delta + frames.length) % frames.length;
+    render();
+  };
+  const expand = () => openMedia(
+    state.detailMedia.kind,
+    state.detailMedia.kind === "video" ? 0 : state.detailMedia.indexes[state.detailMedia.kind],
+    { caseData }
+  );
+  const kindSelect = $("#detailMediaKindSelect");
+  if (kindSelect) {
+    kindSelect.value = state.detailMedia.kind;
+    kindSelect.onchange = () => switchKind(kindSelect.value);
+  }
+  const previousButton = $("#detailMediaPreviousButton");
+  const nextButton = $("#detailMediaNextButton");
+  const position = $("#detailMediaPosition");
+  const videoMode = state.detailMedia.kind === "video";
+  if (previousButton) {
+    previousButton.hidden = videoMode;
+    previousButton.onclick = () => move(-1);
+  }
+  if (nextButton) {
+    nextButton.hidden = videoMode;
+    nextButton.onclick = () => move(1);
+  }
+  if (position) {
+    const activeFrames = state.detailMedia.kind === "camera"
+      ? caseData?.camera?.frames || []
+      : caseData?.assets?.frames || [];
+    const activeIndex = Number(state.detailMedia.indexes[state.detailMedia.kind] || 0);
+    position.hidden = videoMode;
+    position.textContent = activeFrames.length ? `${activeIndex + 1} / ${activeFrames.length}` : "—";
+  }
+  const expandButton = $("#detailMediaExpandButton");
+  if (expandButton) expandButton.onclick = expand;
+  root.querySelectorAll("[data-detail-media-expand]").forEach((button) => button.addEventListener("click", expand));
+  bindBevVideoPlayers(root);
+  root.addEventListener("keydown", (event) => {
+    if (event.target.matches("input, select")) return;
+    const key = event.key.toLowerCase();
+    if (["b", "c", "v"].includes(key)) {
+      event.preventDefault();
+      switchKind({ b: "bev", c: "camera", v: "video" }[key]);
+    } else if (state.detailMedia.kind !== "video" && ["arrowleft", "arrowup", "arrowright", "arrowdown"].includes(key)) {
+      event.preventDefault();
+      move(["arrowleft", "arrowup"].includes(key) ? -1 : 1);
+    } else if (key === "f") {
+      event.preventDefault();
+      expand();
+    }
+  });
 }
 
 function predictionCards(caseData) {
@@ -2020,10 +2286,7 @@ function renderDetail(caseData) {
   const issueIdMarkup = issueUrl
     ? `<a class="detail-id detail-id-link" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" title="打开 Voyager Issue">${issueId}</a>`
     : `<span class="detail-id">${issueId}</span>`;
-  const bevFrames = caseData.assets?.frames || [];
-  const bevPreviewButton = bevFrames.length
-    ? `<button class="button button-quiet hero-bev-open" type="button" data-open-bev-preview>查看 Ares</button>`
-    : "";
+  ensureDetailMediaState(caseData);
   const modelHistoryButton = `<button class="history-inline-button" type="button" data-open-history="model">评测 Run 历史 · ${(caseData.predictions || []).length} 条</button>`;
   $("#detailPane").innerHTML = `
     <div class="detail-header">
@@ -2048,20 +2311,19 @@ function renderDetail(caseData) {
         </div>
         <button class="button button-quiet detail-back-button" id="backToGalleryButton" type="button">← 返回筛选结果</button>
         ${caseData.summary ? `<p class="detail-summary">${escapeHtml(caseData.summary)}</p>` : ""}
-        <div class="detail-actions">
-          ${bevPreviewButton}
-          <button class="button button-quiet" type="button" data-predict-current-case>API 推理</button>
-          ${modelHistoryButton}
+        <div class="detail-context-actions">
+          ${detailMediaCommandMarkup(caseData)}
+          <div class="detail-actions">
+            <button class="button button-quiet" type="button" data-predict-current-case>API 推理</button>
+            ${modelHistoryButton}
+          </div>
         </div>
       </div>
       ${caseData.review_note ? `<details class="review-note-details"><summary>查看历史备注</summary><div class="review-note"><span>历史备注</span>${escapeHtml(caseData.review_note)}</div></details>` : ""}
     </div>
-    ${heroMediaSection(caseData.assets)}`;
+    ${heroMediaSection(caseData)}`;
   $("#detailPane").querySelector("[data-predict-current-case]")?.addEventListener("click", () => {
     openBatchDraft([caseData.issue_id], "single");
-  });
-  $("#detailPane").querySelector("[data-open-bev-preview]")?.addEventListener("click", () => {
-    openMedia("bev", heroFrameIndex(bevFrames));
   });
   $("#detailPane").querySelector("[data-open-history='model']")?.addEventListener("click", () => {
     openHistoryDialog("model", caseData);
@@ -2074,21 +2336,7 @@ function renderDetail(caseData) {
     navigateAdjacentCase(1).catch((error) => showToast(error.message, true));
   });
   renderCaseNavigation();
-  $("#detailPane").querySelectorAll("[data-media-kind]").forEach((button) => {
-    button.addEventListener("click", () => openMedia(button.dataset.mediaKind, Number(button.dataset.mediaIndex)));
-  });
-  const videoToggle = $("#detailPane").querySelector("[data-hero-video-toggle]");
-  if (videoToggle) {
-    videoToggle.addEventListener("click", () => {
-      const frameView = $("#detailPane").querySelector("[data-hero-frame-view]");
-      const videoView = $("#detailPane").querySelector("[data-hero-video-view]");
-      const showingVideo = !videoView.hidden;
-      videoView.hidden = showingVideo;
-      frameView.hidden = !showingVideo;
-      videoToggle.textContent = showingVideo ? "播放视频" : "查看关键帧";
-      if (showingVideo) videoView.querySelector("video")?.pause();
-    });
-  }
+  bindDetailMedia(caseData);
 }
 
 function annotationHistory(annotations) {
@@ -2462,8 +2710,46 @@ async function saveAnnotation(event) {
 }
 
 function mediaFrames(kind) {
-  if (!state.selectedCase) return [];
-  return (kind === "bev" ? state.selectedCase.assets : state.selectedCase.camera)?.frames || [];
+  return kind === "bev"
+    ? state.media.snapshot?.bev || []
+    : state.media.snapshot?.camera || [];
+}
+
+function mediaVideo() {
+  return state.media.snapshot?.video?.url ? state.media.snapshot.video : null;
+}
+
+function preferredMediaKind(caseData) {
+  if (caseData?.assets?.video?.url) return "video";
+  if (caseData?.assets?.frames?.length) return "bev";
+  if (caseData?.camera?.frames?.length) return "camera";
+  return "";
+}
+
+async function openCaseMediaPreview(issueId, button = null) {
+  if (!issueId) return;
+  const requestSeq = ++state.media.requestSeq;
+  const previousLabel = button?.textContent || "媒体预览";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "加载中…";
+  }
+  try {
+    const caseData = await api(`/api/cases/${encodeURIComponent(issueId)}`);
+    if (requestSeq !== state.media.requestSeq) return;
+    const kind = preferredMediaKind(caseData);
+    if (!kind) {
+      showToast(`${issueId} 暂无 BEV、Camera 或视频。`, true);
+      return;
+    }
+    const index = kind === "bev" ? heroFrameIndex(caseData.assets?.frames || []) : 0;
+    openMedia(kind, index, { caseData });
+  } finally {
+    if (button?.isConnected) {
+      button.disabled = false;
+      button.textContent = previousLabel;
+    }
+  }
 }
 
 function openDialog(id) {
@@ -2471,16 +2757,27 @@ function openDialog(id) {
   if (dialog && !dialog.open) dialog.showModal();
 }
 
+function cleanupMediaDialog() {
+  const dialog = $("#mediaDialog");
+  state.media.drag = null;
+  state.media.snapshot = null;
+  document.querySelectorAll("#mediaDialog .media-viewport").forEach((viewport) => {
+    viewport.classList.remove("is-dragging");
+  });
+  $("#mediaVideoStage")?.querySelector("video")?.pause();
+  if ($("#mediaVideoStage")) {
+    $("#mediaVideoStage").innerHTML = "";
+    delete $("#mediaVideoStage").dataset.videoUrl;
+  }
+  dialog?.classList.remove("media-fallback-fullscreen");
+  if (document.fullscreenElement && dialog?.contains(document.fullscreenElement)) {
+    document.exitFullscreen().catch(() => {});
+  }
+}
+
 function closeDialog(id) {
   const dialog = $(`#${id}`);
-  if (id === "mediaDialog") {
-    state.media.drag = null;
-    $("#mediaViewport")?.classList.remove("is-dragging");
-    dialog?.classList.remove("media-fallback-fullscreen");
-    if (document.fullscreenElement && dialog?.contains(document.fullscreenElement)) {
-      document.exitFullscreen().catch(() => {});
-    }
-  }
+  if (id === "mediaDialog") cleanupMediaDialog();
   if (dialog?.open) dialog.close();
 }
 
@@ -2562,20 +2859,36 @@ const MEDIA_ZOOM_MIN = 0.5;
 const MEDIA_ZOOM_BASE_MAX = 4;
 const MEDIA_ZOOM_STEP = 0.25;
 
-function mediaOriginalZoom() {
-  const viewport = $("#mediaViewport");
+function activeMediaViewport() {
+  return state.media.kind === "video"
+    ? $("#mediaVideoStage")?.querySelector("[data-video-viewport]")
+    : $("#mediaViewport");
+}
+
+function activeMediaCanvas() {
+  return state.media.kind === "video"
+    ? $("#mediaVideoStage")?.querySelector("[data-video-canvas]")
+    : $("#mediaCanvas");
+}
+
+function activeMediaDimensions() {
+  if (state.media.kind === "video") {
+    const video = $("#mediaVideoStage")?.querySelector("video");
+    return { width: Number(video?.videoWidth || 0), height: Number(video?.videoHeight || 0) };
+  }
   const image = $("#mediaPreviewImage");
-  if (
-    !viewport?.clientWidth ||
-    !viewport?.clientHeight ||
-    !image?.naturalWidth ||
-    !image?.naturalHeight
-  ) {
+  return { width: Number(image?.naturalWidth || 0), height: Number(image?.naturalHeight || 0) };
+}
+
+function mediaOriginalZoom() {
+  const viewport = activeMediaViewport();
+  const dimensions = activeMediaDimensions();
+  if (!viewport?.clientWidth || !viewport?.clientHeight || !dimensions.width || !dimensions.height) {
     return null;
   }
   const fitScale = Math.min(
-    viewport.clientWidth / image.naturalWidth,
-    viewport.clientHeight / image.naturalHeight
+    viewport.clientWidth / dimensions.width,
+    viewport.clientHeight / dimensions.height
   );
   return fitScale > 0 ? 1 / fitScale : null;
 }
@@ -2588,8 +2901,7 @@ function mediaZoomMin() {
   return Math.min(MEDIA_ZOOM_MIN, mediaOriginalZoom() || 1);
 }
 
-function updateMediaPanState() {
-  const viewport = $("#mediaViewport");
+function updateMediaPanState(viewport = activeMediaViewport()) {
   if (!viewport) return;
   const pannable =
     viewport.scrollWidth > viewport.clientWidth + 1 ||
@@ -2620,9 +2932,10 @@ function updateMediaViewControls() {
     "active",
     Boolean(originalZoom && Math.abs(zoom - originalZoom) < 0.01)
   );
+  const dimensions = activeMediaDimensions();
   originalButton.title = originalZoom
-    ? `按图片原始像素 1:1 显示（${$("#mediaPreviewImage").naturalWidth} × ${$("#mediaPreviewImage").naturalHeight}）`
-    : "原图尺寸读取中";
+    ? `按媒体原始像素 1:1 显示（${dimensions.width} × ${dimensions.height}）`
+    : "媒体尺寸读取中";
   const fullscreen = mediaFullscreenActive();
   $("#mediaFullscreenButton").textContent = fullscreen ? "⤢" : "⛶";
   $("#mediaFullscreenButton").setAttribute("aria-label", fullscreen ? "退出全屏" : "进入全屏");
@@ -2630,8 +2943,8 @@ function updateMediaViewControls() {
 }
 
 function setMediaZoom(nextZoom, { resetScroll = false } = {}) {
-  const viewport = $("#mediaViewport");
-  const canvas = $("#mediaCanvas");
+  const viewport = activeMediaViewport();
+  const canvas = activeMediaCanvas();
   if (!viewport || !canvas) return;
   const centerRatioX = viewport.scrollWidth > 0
     ? (viewport.scrollLeft + viewport.clientWidth / 2) / viewport.scrollWidth
@@ -2685,29 +2998,127 @@ async function toggleMediaFullscreen() {
   window.requestAnimationFrame(updateMediaPanState);
 }
 
+function switchMediaKind(kind) {
+  const available = kind === "video" ? Boolean(mediaVideo()) : Boolean(mediaFrames(kind).length);
+  if (!available) {
+      showToast(`${kind === "video" ? "Ares Studio 视频" : `${kind.toUpperCase()} 图片`} 当前不可用。`, true);
+    return;
+  }
+  if (state.media.kind === "video" && kind !== "video") {
+    $("#mediaVideoStage")?.querySelector("video")?.pause();
+  }
+  state.media.kind = kind;
+  state.media.index = 0;
+  state.media.zoom = 1;
+  renderMediaDialog();
+}
+
+function bindMediaPanViewport(viewport) {
+  if (!viewport || viewport.dataset.mediaPanBound === "true") return;
+  viewport.dataset.mediaPanBound = "true";
+  viewport.addEventListener("pointerdown", (event) => {
+    if (
+      !viewport.classList.contains("is-pannable") ||
+      (event.pointerType === "mouse" && event.button !== 0)
+    ) return;
+    event.preventDefault();
+    state.media.drag = {
+      viewport,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      scrollLeft: viewport.scrollLeft,
+      scrollTop: viewport.scrollTop,
+    };
+    viewport.setPointerCapture(event.pointerId);
+    viewport.classList.add("is-dragging");
+  });
+  viewport.addEventListener("pointermove", (event) => {
+    const drag = state.media.drag;
+    if (!drag || drag.viewport !== viewport || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    viewport.scrollLeft = drag.scrollLeft - (event.clientX - drag.startX);
+    viewport.scrollTop = drag.scrollTop - (event.clientY - drag.startY);
+  });
+  const endDrag = (event) => {
+    const drag = state.media.drag;
+    if (!drag || drag.viewport !== viewport || drag.pointerId !== event.pointerId) return;
+    if (viewport.hasPointerCapture(event.pointerId)) viewport.releasePointerCapture(event.pointerId);
+    state.media.drag = null;
+    viewport.classList.remove("is-dragging");
+  };
+  viewport.addEventListener("pointerup", endDrag);
+  viewport.addEventListener("pointercancel", endDrag);
+  viewport.addEventListener("wheel", (event) => {
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+    setMediaZoom(state.media.zoom + (event.deltaY < 0 ? MEDIA_ZOOM_STEP : -MEDIA_ZOOM_STEP));
+  }, { passive: false });
+}
+
 function renderMediaDialog() {
+  const snapshot = state.media.snapshot;
   const bev = mediaFrames("bev");
   const camera = mediaFrames("camera");
-  if (!mediaFrames(state.media.kind).length) state.media.kind = bev.length ? "bev" : "camera";
+  const video = mediaVideo();
+  const availableKinds = [
+    bev.length ? "bev" : "",
+    camera.length ? "camera" : "",
+    video ? "video" : "",
+  ].filter(Boolean);
+  if (!availableKinds.includes(state.media.kind)) state.media.kind = availableKinds[0] || "bev";
+  const videoMode = state.media.kind === "video";
+  const gtLabel = snapshot?.gtLabel || "";
+  const modelLabel = snapshot?.modelLabel || "";
+  const comparisonText = modelLabel ? (modelLabel === gtLabel ? "一致" : "不一致") : "未输出";
+  const comparisonClass = modelLabel && modelLabel !== gtLabel ? "comparison-fail" : "comparison-neutral";
+  $("#mediaDecisionSummary").innerHTML = `
+    <span>GT</span>${labelBadge(gtLabel, "缺失")}
+    <b aria-hidden="true">→</b>
+    <span>模型</span>${labelBadge(modelLabel, "未输出")}
+    <strong class="${comparisonClass}">${comparisonText}</strong>`;
+  const imageStage = $("#mediaImageStage");
+  const videoStage = $("#mediaVideoStage");
+  imageStage.hidden = videoMode;
+  videoStage.hidden = !videoMode;
+  $("#mediaTimeline").hidden = videoMode;
+  $("#mediaModeTabs").innerHTML = `
+    <button type="button" class="media-mode ${state.media.kind === "bev" ? "active" : ""}" data-media-mode="bev" ${bev.length ? "" : "disabled"}>BEV 图片 <span>${bev.length}</span></button>
+    <button type="button" class="media-mode ${state.media.kind === "camera" ? "active" : ""}" data-media-mode="camera" ${camera.length ? "" : "disabled"}>Camera 图片 <span>${camera.length}</span></button>
+    <button type="button" class="media-mode ${videoMode ? "active" : ""}" data-media-mode="video" ${video ? "" : "disabled"}>Ares Studio 视频 <span>${video ? "1" : "0"}</span></button>`;
+  $("#mediaModeTabs").querySelectorAll("[data-media-mode]").forEach((button) => {
+    button.addEventListener("click", () => switchMediaKind(button.dataset.mediaMode));
+  });
+
+  if (videoMode && video) {
+    if (videoStage.dataset.videoUrl !== video.url) {
+      videoStage.dataset.videoUrl = video.url;
+      videoStage.innerHTML = videoPlayerMarkup(video);
+      bindBevVideoPlayers(videoStage);
+      const viewport = videoStage.querySelector("[data-video-viewport]");
+      const videoElement = videoStage.querySelector("video");
+      bindMediaPanViewport(viewport);
+      videoElement.addEventListener("loadedmetadata", () => {
+        setMediaZoom(state.media.zoom, { resetScroll: true });
+      });
+    }
+    $("#mediaTitle").textContent = `${snapshot?.issueId || ""} · Ares Studio 视频`;
+    $("#mediaTimeline").innerHTML = "";
+    $("#mediaHelp").textContent = "← / → 按所选步长跳转 · 空格播放/暂停 · B/C/V 切媒体 · +/− 缩放 · 0 适配 · 放大后拖拽平移 · F 全屏 · Esc 退出";
+    setMediaZoom(state.media.zoom, { resetScroll: state.media.zoom === 1 });
+    return;
+  }
+
   const frames = mediaFrames(state.media.kind);
   state.media.index = Math.max(0, Math.min(state.media.index, Math.max(frames.length - 1, 0)));
   const current = frames[state.media.index];
   if (!current) return;
-  $("#mediaTitle").textContent = `${state.selectedCase?.issue_id || ""} · ${frameLabel(current)} · ${state.media.index + 1}/${frames.length}`;
+  $("#mediaTitle").textContent = `${snapshot?.issueId || ""} · ${frameLabel(current)} · ${state.media.index + 1}/${frames.length}`;
   $("#mediaPreviewImage").src = current.url;
   $("#mediaPreviewImage").alt = `${state.media.kind} ${frameLabel(current)}`;
   setMediaZoom(state.media.zoom);
-  $("#mediaModeTabs").innerHTML = `
-    <button type="button" class="media-mode ${state.media.kind === "bev" ? "active" : ""}" data-media-mode="bev" ${bev.length ? "" : "disabled"}>BEV <span>${bev.length}</span></button>
-    <button type="button" class="media-mode ${state.media.kind === "camera" ? "active" : ""}" data-media-mode="camera" ${camera.length ? "" : "disabled"}>Camera <span>${camera.length}</span></button>`;
+  $("#mediaHelp").textContent = "← / ↑ 上一帧 · → / ↓ 下一帧 · B/C/V 切媒体 · +/− 缩放 · 0 复位 · 放大后拖拽平移 · F 全屏 · Esc 退出";
   $("#mediaTimeline").innerHTML = frames.map((frame, index) => `<button type="button" class="timeline-dot ${index === state.media.index ? "active" : ""}" data-media-frame="${index}" title="${escapeHtml(frameLabel(frame))}">${escapeHtml(frameLabel(frame))}</button>`).join("");
-  $("#mediaModeTabs").querySelectorAll("[data-media-mode]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.media.kind = button.dataset.mediaMode;
-      state.media.index = 0;
-      renderMediaDialog();
-    });
-  });
   $("#mediaTimeline").querySelectorAll("[data-media-frame]").forEach((button) => {
     button.addEventListener("click", () => {
       state.media.index = Number(button.dataset.mediaFrame);
@@ -2716,10 +3127,23 @@ function renderMediaDialog() {
   });
 }
 
-function openMedia(kind, index) {
-  if (!mediaFrames(kind).length) return;
+function openMedia(kind, index, { caseData = state.selectedCase } = {}) {
+  const selectedPrediction = (caseData?.predictions || []).find(
+    (item) => item.model_run_id === state.selectedRunId
+  ) || caseData?.predictions?.[0];
+  state.media.snapshot = {
+    issueId: String(caseData?.issue_id || ""),
+    gtLabel: String(caseData?.gt_label || ""),
+    modelLabel: String(selectedPrediction?.model_label || ""),
+    bev: [...(caseData?.assets?.frames || [])],
+    camera: [...(caseData?.camera?.frames || [])],
+    video: caseData?.assets?.video?.url ? { ...caseData.assets.video } : null,
+  };
+  const requestedAvailable = kind === "video" ? Boolean(mediaVideo()) : Boolean(mediaFrames(kind).length);
+  if (!requestedAvailable) kind = preferredMediaKind(caseData);
+  if (!kind) return;
   state.media.kind = kind;
-  state.media.index = index;
+  state.media.index = Number.isFinite(Number(index)) ? Number(index) : 0;
   state.media.zoom = 1;
   renderMediaDialog();
   openDialog("mediaDialog");
@@ -2727,6 +3151,12 @@ function openMedia(kind, index) {
 }
 
 function moveMedia(delta) {
+  if (state.media.kind === "video") {
+    $("#mediaVideoStage")
+      ?.querySelector(`[data-video-jump="${delta < 0 ? -1 : 1}"]`)
+      ?.click();
+    return;
+  }
   const frames = mediaFrames(state.media.kind);
   if (!frames.length) return;
   state.media.index = (state.media.index + delta + frames.length) % frames.length;
@@ -4197,6 +4627,7 @@ function bindEvents() {
   $("#sidebarToggle").addEventListener("click", toggleSidebar);
   $("#sidebarBrandToggle").addEventListener("click", toggleSidebar);
   document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => closeDialog(button.dataset.close)));
+  $("#mediaDialog").addEventListener("close", cleanupMediaDialog);
   $("#importFile").addEventListener("change", () => {
     const filename = $("#importFileName");
     if (filename) filename.textContent = $("#importFile").files[0]?.name || "未选择文件";
@@ -4232,62 +4663,41 @@ function bindEvents() {
   $("#mediaPreviewImage").addEventListener("load", () => {
     setMediaZoom(state.media.zoom);
   });
-  $("#mediaViewport").addEventListener("pointerdown", (event) => {
-    const viewport = $("#mediaViewport");
-    if (
-      !viewport.classList.contains("is-pannable") ||
-      (event.pointerType === "mouse" && event.button !== 0)
-    ) {
-      return;
-    }
-    event.preventDefault();
-    state.media.drag = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      scrollLeft: viewport.scrollLeft,
-      scrollTop: viewport.scrollTop,
-    };
-    viewport.setPointerCapture(event.pointerId);
-    viewport.classList.add("is-dragging");
-  });
-  $("#mediaViewport").addEventListener("pointermove", (event) => {
-    const viewport = $("#mediaViewport");
-    const drag = state.media.drag;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    viewport.scrollLeft = drag.scrollLeft - (event.clientX - drag.startX);
-    viewport.scrollTop = drag.scrollTop - (event.clientY - drag.startY);
-  });
-  const endMediaDrag = (event) => {
-    const viewport = $("#mediaViewport");
-    if (!state.media.drag || state.media.drag.pointerId !== event.pointerId) return;
-    if (viewport.hasPointerCapture(event.pointerId)) {
-      viewport.releasePointerCapture(event.pointerId);
-    }
-    state.media.drag = null;
-    viewport.classList.remove("is-dragging");
-  };
-  $("#mediaViewport").addEventListener("pointerup", endMediaDrag);
-  $("#mediaViewport").addEventListener("pointercancel", endMediaDrag);
-  $("#mediaViewport").addEventListener("wheel", (event) => {
-    if (!event.ctrlKey && !event.metaKey) return;
-    event.preventDefault();
-    setMediaZoom(state.media.zoom + (event.deltaY < 0 ? MEDIA_ZOOM_STEP : -MEDIA_ZOOM_STEP));
-  }, { passive: false });
+  bindMediaPanViewport($("#mediaViewport"));
   document.addEventListener("fullscreenchange", () => {
     updateMediaViewControls();
     window.requestAnimationFrame(updateMediaPanState);
   });
   document.addEventListener("keydown", (event) => {
-    if (!$("#mediaDialog").open) return;
+    if (!$("#mediaDialog").open) {
+      const target = event.target instanceof Element ? event.target : null;
+      const interactiveTarget = target?.closest("input, textarea, select, button, a, [contenteditable='true']");
+      const detailVideoActive =
+        state.activePage === "review" &&
+        Boolean(state.selectedCase) &&
+        state.detailMedia.kind === "video" &&
+        !document.querySelector("dialog[open]");
+      if (event.key === " " && detailVideoActive && !interactiveTarget) {
+        event.preventDefault();
+        $("#detailHeroMedia")?.querySelector("[data-video-play]")?.click();
+      }
+      return;
+    }
     if (["ArrowLeft", "ArrowUp"].includes(event.key)) { event.preventDefault(); moveMedia(-1); }
     if (["ArrowRight", "ArrowDown"].includes(event.key)) { event.preventDefault(); moveMedia(1); }
-    if (event.key.toLowerCase() === "b" && mediaFrames("bev").length) { state.media.kind = "bev"; state.media.index = 0; renderMediaDialog(); }
-    if (event.key.toLowerCase() === "c" && mediaFrames("camera").length) { state.media.kind = "camera"; state.media.index = 0; renderMediaDialog(); }
+    if (event.key.toLowerCase() === "b") switchMediaKind("bev");
+    if (event.key.toLowerCase() === "c") switchMediaKind("camera");
+    if (event.key.toLowerCase() === "v") switchMediaKind("video");
+    if (event.key === " " && state.media.kind === "video") {
+      event.preventDefault();
+      $("#mediaVideoStage")?.querySelector("[data-video-play]")?.click();
+    }
     if (["+", "="].includes(event.key)) { event.preventDefault(); setMediaZoom(state.media.zoom + MEDIA_ZOOM_STEP); }
     if (["-", "_"].includes(event.key)) { event.preventDefault(); setMediaZoom(state.media.zoom - MEDIA_ZOOM_STEP); }
-    if (event.key === "0") { event.preventDefault(); setMediaZoom(1, { resetScroll: true }); }
+    if (event.key === "0") {
+      event.preventDefault();
+      setMediaZoom(1, { resetScroll: true });
+    }
     if (event.key.toLowerCase() === "f") { event.preventDefault(); toggleMediaFullscreen(); }
   });
   window.addEventListener("popstate", async () => {

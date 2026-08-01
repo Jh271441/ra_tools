@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from .assets import AssetIndex, CameraIndex
+from .assets import AssetIndex, CameraIndex, VideoIndex
 from .auth import normalise_username, request_identity
 from .autotriage_source import (
     AutoTriageSource,
@@ -61,6 +61,7 @@ asset_index = AssetIndex(
     manifest_path=settings.ares_manifest,
 )
 camera_index = CameraIndex(settings.camera_root)
+video_index = VideoIndex(settings.ares_video_root)
 model_catalog = ModelCatalog(settings)
 prompt_catalog = PromptCatalog(settings.ra_auto_triage_root)
 autotriage_source = AutoTriageSource(settings.autotriage_api_base_url)
@@ -1354,6 +1355,7 @@ async def health() -> dict[str, Any]:
         "ares_manifest_available": settings.ares_manifest.is_file(),
         "ares_indexed_issues": asset_index.refresh(),
         "camera_cache_root_available": settings.camera_root.is_dir(),
+        "ares_video_root_available": settings.ares_video_root.is_dir(),
         "baseline": runtime_state["baseline"],
         "trail_sync": runtime_state["trail_sync"],
         "trail_write_enabled": False,
@@ -1431,6 +1433,7 @@ async def status() -> dict[str, Any]:
         "ares_manifest_available": settings.ares_manifest.is_file(),
         "ares_indexed_issues": asset_index.refresh(),
         "camera_cache_root_available": settings.camera_root.is_dir(),
+        "ares_video_root_available": settings.ares_video_root.is_dir(),
         "baseline": runtime_state["baseline"],
         "trail_sync": runtime_state["trail_sync"],
         "batch_prediction_enabled": settings.batch_prediction_enabled,
@@ -1558,6 +1561,10 @@ async def get_case(issue_id: str) -> dict[str, Any]:
             for attachment in annotation.get("attachments", [])
         ]
     case["assets"] = asset_index.get_assets(issue_id)
+    captured_video = video_index.get_video(issue_id)
+    if captured_video is not None:
+        case["assets"]["video"] = captured_video
+        case["assets"]["available"] = True
     case["camera"] = camera_index.get_assets(
         issue_id, (case["assets"].get("capture") or {}).get("timestamp_ms")
     )
@@ -1570,8 +1577,10 @@ async def get_case(issue_id: str) -> dict[str, Any]:
 
 @app.get("/api/assets/{issue_id}/{asset_id}")
 async def get_asset(issue_id: str, asset_id: str) -> FileResponse:
-    path = asset_index.get_asset_path(issue_id, asset_id) or camera_index.get_asset_path(
-        issue_id, asset_id
+    path = (
+        asset_index.get_asset_path(issue_id, asset_id)
+        or camera_index.get_asset_path(issue_id, asset_id)
+        or video_index.get_asset_path(issue_id, asset_id)
     )
     if path is None:
         raise _detail(404, "Ares / Camera 资产不存在。")
@@ -1583,6 +1592,17 @@ async def get_asset(issue_id: str, asset_id: str) -> FileResponse:
         if suffix in {".jpg", ".jpeg"}
         else "image/png"
     )
+    if suffix == ".mp4":
+        return FileResponse(
+            path,
+            media_type=media_type,
+            headers={
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "private, max-age=300, must-revalidate",
+                "Content-Disposition": "inline",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
     return FileResponse(path, media_type=media_type, filename=path.name)
 
 
