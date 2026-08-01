@@ -1939,7 +1939,6 @@ function renderDetail(caseData) {
       <div class="detail-title-row">
         <div class="detail-title-group">
           <div class="detail-title"><h2><span class="ui-lang-zh">问题详情</span><span class="ui-lang-en">Issue Details</span></h2>${issueIdMarkup}</div>
-          <button class="button button-quiet detail-back-button" id="backToGalleryButton" type="button">← 返回筛选结果</button>
         </div>
         <div class="detail-navigation">
           <div class="case-detail-pager">
@@ -1956,6 +1955,7 @@ function renderDetail(caseData) {
           <span>当前模型</span>${labelBadge(primary?.model_label, "未输出")}
           <strong class="${primary?.model_label && primary.model_label !== caseData.gt_label ? "comparison-fail" : "comparison-neutral"}">${primary?.model_label ? primary.model_label === caseData.gt_label ? "一致" : "不一致" : "不可比较"}</strong>
         </div>
+        <button class="button button-quiet detail-back-button" id="backToGalleryButton" type="button">← 返回筛选结果</button>
         ${caseData.summary ? `<p class="detail-summary">${escapeHtml(caseData.summary)}</p>` : ""}
         <div class="detail-actions">
           ${bevPreviewButton}
