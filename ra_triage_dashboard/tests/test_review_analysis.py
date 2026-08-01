@@ -225,6 +225,35 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
                 ["hazard_signal"],
             )
 
+            tagged = database.review_reason_rows(
+                baseline_scope=scope,
+                tag="temporary_stop",
+            )
+            self.assertEqual([item["issue_id"] for item in tagged], ["cn20001"])
+
+            human_search = database.review_reason_rows(
+                baseline_scope=scope,
+                search="bob",
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in human_search],
+                ["cn20001"],
+            )
+            model_only_search = database.review_reason_rows(
+                baseline_scope=scope,
+                search="排队",
+            )
+            self.assertEqual(model_only_search, [])
+            translated_tag_search = database.review_reason_rows(
+                baseline_scope=scope,
+                search="前车双闪",
+                search_aliases=("temporary_stop",),
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in translated_tag_search],
+                ["cn20001"],
+            )
+
             matches = database.review_reason_rows(
                 baseline_scope=scope,
                 model_run_id=run["id"],

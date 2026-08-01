@@ -1,39 +1,48 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-ui-lang="zh">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RA Triage Workbench</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='%2309b8d4'/><text x='32' y='41' text-anchor='middle' font-size='28' font-family='sans-serif' font-weight='700' fill='%2309141d'>RA</text></svg>" />
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=4d4e2b1" />
   </head>
   <body>
     <div class="app-shell" id="appShell">
       <aside class="app-sidebar" id="appSidebar">
-        <div class="sidebar-brand">
-          <div class="brand-mark" aria-hidden="true">RA</div>
-          <div class="sidebar-copy">
-            <strong>RA Triage</strong>
-            <span>Review Workbench</span>
+          <div class="sidebar-brand">
+            <button class="brand-mark" id="sidebarBrandToggle" type="button" aria-controls="appSidebar" aria-expanded="true" title="折叠工具栏">RA</button>
+            <div class="sidebar-copy">
+              <strong>RA Triage</strong>
+              <span class="ui-lang-zh">工作台</span>
+              <span class="ui-lang-en">Review Workbench</span>
+            </div>
           </div>
-        </div>
 
         <nav class="sidebar-nav" aria-label="工作台工具">
           <a class="sidebar-item active" id="reviewNavButton" data-page-target="review" href="/review" title="判错复核">
-            <span class="sidebar-icon" aria-hidden="true">R</span>
-            <span class="sidebar-label"><strong>判错复核</strong><small>Failure review</small></span>
+            <span class="sidebar-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><path d="M8 4h8M9 3v3m6-3v3M7 5H5.8A1.8 1.8 0 0 0 4 6.8v11.4A1.8 1.8 0 0 0 5.8 20h12.4a1.8 1.8 0 0 0 1.8-1.8V6.8A1.8 1.8 0 0 0 18.2 5H17M8 11l2.2 2.2L16 8.5M8 17h8"/></svg>
+            </span>
+            <span class="sidebar-label"><strong class="ui-lang-zh">判错复核</strong><strong class="ui-lang-en">Failure review</strong></span>
           </a>
           <a class="sidebar-item" id="reviewAnalysisNavButton" data-page-target="analysis" href="/review-analysis" title="Review 原因聚类">
-            <span class="sidebar-icon" aria-hidden="true">C</span>
-            <span class="sidebar-label"><strong>原因聚类</strong><small>Review analysis</small></span>
+            <span class="sidebar-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><circle cx="7" cy="7" r="2.5"/><circle cx="17" cy="7" r="2.5"/><circle cx="12" cy="17" r="2.5"/><path d="m9 8.5 2 5.8m4-5.8-2 5.8M9.5 7h5"/></svg>
+            </span>
+            <span class="sidebar-label"><strong class="ui-lang-zh">原因聚类</strong><strong class="ui-lang-en">Review analysis</strong></span>
           </a>
           <a class="sidebar-item" id="openRunManagerButton" data-page-target="runs" href="/runs" title="模型 Runs">
-            <span class="sidebar-icon" aria-hidden="true">M</span>
-            <span class="sidebar-label"><strong>模型 Runs</strong><small>导入与版本管理</small></span>
+            <span class="sidebar-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><path d="M5 19V9m7 10V5m7 14v-7M3 19h18"/><path d="m5 7 7-4 7 6"/></svg>
+            </span>
+            <span class="sidebar-label"><strong class="ui-lang-zh">模型结果</strong><strong class="ui-lang-en">Model Runs</strong></span>
           </a>
           <a class="sidebar-item" id="openBatchPredictionButton" data-page-target="prediction" href="/batch-prediction" title="Batch 预测">
-            <span class="sidebar-icon" aria-hidden="true">▶</span>
-            <span class="sidebar-label"><strong>Batch 预测</strong><small>模型网关 · 批量推理</small></span>
+            <span class="sidebar-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><path d="M5 6.5A1.5 1.5 0 0 1 6.5 5h4A1.5 1.5 0 0 1 12 6.5v4a1.5 1.5 0 0 1-1.5 1.5h-4A1.5 1.5 0 0 1 5 10.5zM15.5 6.5h3M17 5v3M15.5 16h3M17 14.5v3M6.5 16h3M8 14.5v3"/><path d="m13.5 11 5 3-5 3z"/></svg>
+            </span>
+            <span class="sidebar-label"><strong class="ui-lang-zh">批次预测</strong><strong class="ui-lang-en">Batch prediction</strong></span>
           </a>
         </nav>
 
@@ -47,7 +56,7 @@
           </div>
           <button class="sidebar-collapse" id="sidebarToggle" type="button" aria-expanded="true" title="折叠工具栏">
             <span aria-hidden="true">‹</span>
-            <span class="sidebar-label">折叠工具栏</span>
+            <span class="sidebar-label"><span class="ui-lang-zh">折叠工具栏</span><span class="ui-lang-en">Collapse</span></span>
           </button>
         </div>
       </aside>
@@ -56,18 +65,18 @@
         <header class="topbar">
           <div class="brand">
             <div>
-              <div class="eyebrow" id="pageEyebrow">EVALUATION BASELINE · 0508</div>
               <h1 id="pageTitle">RA Triage Workbench</h1>
             </div>
           </div>
           <div class="header-metrics" aria-label="概览">
-            <div><span>Baseline</span><strong id="statIssues">—</strong></div>
-            <div class="metric-fail"><span>判断失败</span><strong id="statFailures">—</strong></div>
-            <div><span>人工复核</span><strong id="statReviewed">—</strong></div>
-            <div><span>模型输出</span><strong id="statPredictions">—</strong></div>
+            <div><span class="ui-lang-zh">基线</span><span class="ui-lang-en">Baseline</span><strong id="statIssues">—</strong></div>
+            <div class="metric-fail"><span class="ui-lang-zh">判断失败</span><span class="ui-lang-en">Mismatches</span><strong id="statFailures">—</strong></div>
+            <div><span class="ui-lang-zh">人工复核</span><span class="ui-lang-en">Reviewed</span><strong id="statReviewed">—</strong></div>
+            <div><span class="ui-lang-zh">模型输出</span><span class="ui-lang-en">Predictions</span><strong id="statPredictions">—</strong></div>
           </div>
           <div class="top-actions">
-            <button class="button button-quiet" id="refreshButton">刷新</button>
+            <button class="button button-quiet language-toggle" id="languageToggleButton" type="button" aria-label="切换到 English">EN</button>
+            <button class="button button-quiet" id="refreshButton"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
           </div>
         </header>
 
@@ -130,8 +139,7 @@
               <section class="gallery-panel">
                 <div class="gallery-heading">
                   <div>
-                    <span class="eyebrow">ISSUE REVIEW QUEUE</span>
-                    <h2>Issue Gallery</h2>
+                    <h2><span class="ui-lang-zh">问题图库</span><span class="ui-lang-en">Issue Gallery</span></h2>
                   </div>
                   <div class="gallery-heading-meta">
                     <span id="galleryResultSummary">正在加载 Issue…</span>
@@ -139,10 +147,22 @@
                   </div>
                 </div>
                 <div class="issue-grid" id="issueList" aria-live="polite"></div>
-                <nav class="case-pagination" aria-label="Issue 分页">
-                  <button class="button button-quiet" id="casePagePrevious" type="button">上一页</button>
-                  <span id="casePageSummary">— / —</span>
-                  <button class="button button-quiet" id="casePageNext" type="button">下一页</button>
+                <nav class="case-pagination gallery-pagination" aria-label="Issue 分页">
+                  <div class="case-pagination-main">
+                    <button class="button button-quiet" id="casePagePrevious" type="button">上一页</button>
+                    <span id="casePageSummary">— / —</span>
+                    <button class="button button-quiet" id="casePageNext" type="button">下一页</button>
+                  </div>
+                  <label class="case-page-size" for="casePageSize">
+                    <span>每页</span>
+                    <select id="casePageSize" aria-label="每页展示数量">
+                      <option value="10">10</option>
+                      <option value="20" selected>20</option>
+                      <option value="50">50</option>
+                      <option value="100">100</option>
+                    </select>
+                    <span>条</span>
+                  </label>
                 </nav>
               </section>
             </section>
@@ -159,7 +179,6 @@
 
                 <aside class="review-pane" id="reviewPane">
                   <div class="review-placeholder">
-                    <span class="eyebrow">HUMAN REVIEW</span>
                     <h2>人工复核</h2>
                     <p>记录最终结论，并选出模型遗漏的关键信息；这些字段会自动汇总为错误聚类。</p>
                   </div>
@@ -225,18 +244,20 @@
                     <option value="">全部缺失信息</option>
                   </select>
                 </label>
-                <label class="analysis-theme-filter">
-                  <span>原因主题</span>
-                  <select id="analysisThemeFilter">
-                    <option value="">全部原因主题</option>
+                <label class="analysis-tag-filter">
+                  <span>场景 Tags</span>
+                  <select id="analysisTagFilter">
+                    <option value="">全部场景 Tags</option>
                   </select>
                 </label>
                 <div class="analysis-search-actions">
                   <label class="analysis-search-filter">
                     <span>检索 Review 原因</span>
-                    <input id="analysisSearchInput" placeholder="Issue ID、场景、人工原因或模型说明" autocomplete="off" />
+                    <input id="analysisSearchInput" placeholder="人工原因、复核人、Tags 或缺失信息" autocomplete="off" />
                   </label>
                   <div class="analysis-filter-actions">
+                    <button class="button button-quiet" id="exportReviewAnalysisCsvButton" type="button">导出 CSV</button>
+                    <button class="button button-quiet" id="exportReviewAnalysisXlsxButton" type="button">导出 XLSX</button>
                     <button class="button button-quiet" id="resetReviewAnalysisButton" type="button">重置</button>
                     <button class="button button-primary" type="submit">应用</button>
                   </div>
@@ -271,7 +292,6 @@
               <article class="page-card analysis-cluster-card">
                 <div class="section-heading">
                   <div>
-                    <span class="eyebrow">STRUCTURED EVIDENCE</span>
                     <h3>缺失信息聚类</h3>
                   </div>
                   <small>人工复选字段 · 可直接筛选</small>
@@ -283,7 +303,6 @@
               <article class="page-card analysis-cluster-card">
                 <div class="section-heading">
                   <div>
-                    <span class="eyebrow">REVIEW REASON THEMES</span>
                     <h3>原因文本主题</h3>
                   </div>
                   <small>关键词 v1 · 单条可属于多个主题</small>
@@ -297,7 +316,6 @@
             <section class="page-card analysis-case-card">
               <div class="section-heading">
                 <div>
-                  <span class="eyebrow">CLUSTERED CASES</span>
                   <h3>Review 原因明细</h3>
                 </div>
                 <small id="analysisCaseSummary">正在加载…</small>
@@ -315,7 +333,6 @@
             <section class="page-card runs-source-card" id="runsSourceCard" aria-label="Run 数据来源">
               <div class="runs-source-heading">
                 <div>
-                  <span class="eyebrow">RUN SOURCES</span>
                   <h3>导入或拉取模型结果</h3>
                 </div>
                 <small>三种来源统一入口 · 历史 Run 独立保留</small>
@@ -343,7 +360,6 @@
                     <aside class="run-import-copy">
                       <div class="run-import-copy-heading">
                         <div>
-                          <span class="eyebrow">MODEL RESULT IMPORT</span>
                           <h3>模型结果契约</h3>
                         </div>
                         <button class="button button-quiet import-example-trigger" id="openImportExamplesButton" type="button">查看示例</button>
@@ -372,7 +388,6 @@
                 <section class="run-source-panel" id="autotriageImportPanel" role="tabpanel" data-run-source-panel="autotriage" aria-labelledby="openAutoTriageImportButton" aria-hidden="true">
                   <div class="run-import-body">
                     <aside class="run-import-copy">
-                      <span class="eyebrow">AUTOTRIAGE SNAPSHOT</span>
                       <h3>按 Batch 拉取</h3>
                       <p>输入 Batch ID 或 records 链接。服务端只访问固定 AutoTriage 内网地址，并校验声明总数、完成数、结果数和唯一 Issue 数。</p>
                       <p>平台内容相同会复用已有 Run；平台结果变化时会生成新的内容快照。</p>
@@ -458,7 +473,6 @@
             </div>
             <div class="tool-page-grid batch-page-grid">
               <aside class="page-card page-aside gateway-card">
-                <span class="eyebrow">MODEL GATEWAY</span>
                 <h3>服务器模型网关</h3>
                 <div class="gateway-endpoint">
                   <span>Models API</span>
@@ -576,7 +590,6 @@
             <section class="page-card job-history-card">
               <div class="section-heading">
                 <div>
-                  <span class="eyebrow">BATCH JOB HISTORY</span>
                   <h3>全员 Batch 任务</h3>
                 </div>
                 <button class="button button-quiet" id="refreshPredictionBatchesButton" type="button">刷新任务</button>
@@ -634,7 +647,6 @@
       <div class="dialog-card">
         <div class="dialog-heading">
           <div>
-            <span class="eyebrow" id="sourcePreviewEyebrow">MODEL SOURCE PREVIEW</span>
             <h2 id="sourcePreviewTitle">文件预览</h2>
           </div>
           <button class="icon-button" type="button" data-close="sourcePreviewDialog" aria-label="关闭">×</button>
@@ -657,7 +669,6 @@
       <div class="dialog-card">
         <div class="dialog-heading">
           <div>
-            <span class="eyebrow">IMPORT EXAMPLES</span>
             <h2>模型结果文件示例</h2>
           </div>
           <button class="icon-button" type="button" data-close="importExamplesDialog" aria-label="关闭">×</button>
@@ -669,7 +680,6 @@
         </div>
         <div class="import-example-layout">
           <section class="import-example-contract" aria-label="导入字段说明">
-            <span class="eyebrow">FIELD CONTRACT</span>
             <h3>字段要求</h3>
             <div class="import-example-field-list">
               <div><code>issue_id</code><span class="field-required">必填</span><small>Issue ID，例如 cn32171803</small></div>
@@ -699,19 +709,31 @@
       <div class="media-dialog-card">
         <div class="dialog-heading media-heading">
           <div>
-            <span class="eyebrow" id="mediaEyebrow">BEV / CAMERA</span>
             <h2 id="mediaTitle">媒体预览</h2>
           </div>
           <button class="icon-button" type="button" data-close="mediaDialog" aria-label="关闭">×</button>
         </div>
-        <div class="media-mode-tabs" id="mediaModeTabs"></div>
+        <div class="media-toolbar">
+          <div class="media-mode-tabs" id="mediaModeTabs"></div>
+          <div class="media-view-controls" aria-label="媒体视图控制">
+            <button class="media-control" id="mediaZoomOutButton" type="button" aria-label="缩小" title="缩小（−）">−</button>
+            <button class="media-control media-zoom-reset" id="mediaZoomResetButton" type="button" aria-label="还原缩放" title="还原缩放（0）">100%</button>
+            <button class="media-control" id="mediaZoomInButton" type="button" aria-label="放大" title="放大（+）">+</button>
+            <button class="media-control media-original-size" id="mediaOriginalSizeButton" type="button" aria-label="按图片原始像素显示" title="按图片原始像素 1:1 显示">1:1 原图</button>
+            <button class="media-control media-fullscreen" id="mediaFullscreenButton" type="button" aria-label="进入全屏" title="进入全屏（F）">⛶</button>
+          </div>
+        </div>
         <div class="media-stage">
           <button class="media-nav prev" id="mediaPrevButton" type="button" aria-label="上一帧">←</button>
-          <img id="mediaPreviewImage" alt="RA review media" />
+          <div class="media-viewport" id="mediaViewport">
+            <div class="media-canvas" id="mediaCanvas">
+              <img id="mediaPreviewImage" alt="RA review media" draggable="false" />
+            </div>
+          </div>
           <button class="media-nav next" id="mediaNextButton" type="button" aria-label="下一帧">→</button>
         </div>
         <div class="media-timeline" id="mediaTimeline"></div>
-        <p class="media-help">← / ↑ 上一帧 · → / ↓ 下一帧 · B 切 BEV · C 切 Camera · Esc 关闭</p>
+        <p class="media-help">← / ↑ 上一帧 · → / ↓ 下一帧 · B/C 切媒体 · +/− 缩放 · 0 复位 · 放大后拖拽平移 · F 全屏 · Esc 退出</p>
       </div>
     </dialog>
 
@@ -719,7 +741,6 @@
       <div class="dialog-card">
         <div class="dialog-heading">
           <div>
-            <span class="eyebrow" id="historyDialogEyebrow">HISTORY</span>
             <h2 id="historyDialogTitle">历史记录</h2>
           </div>
           <button class="icon-button" type="button" data-close="historyDialog" aria-label="关闭">×</button>
@@ -732,6 +753,6 @@
     </dialog>
 
     <div class="toast hidden" id="toast"></div>
-    <script src="/static/app.js" defer></script>
+    <script src="/static/app.js?v=4d4e2b1" defer></script>
   </body>
 </html>

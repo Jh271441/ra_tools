@@ -1,4 +1,6 @@
 const LABELS = ["误触发", "正确触发", "无需协助"];
+const CASE_PAGE_SIZES = [10, 20, 50, 100];
+const DEFAULT_CASE_PAGE_SIZE = 20;
 const ANALYSIS_COMPARISON_STATUSES = ["all", "mismatch", "match", "none"];
 const ANALYSIS_COMPARISON_META = {
   all: { label: "全部", description: "不按模型判断结果收窄" },
@@ -9,10 +11,26 @@ const ANALYSIS_COMPARISON_META = {
 const REVIEW_COMPARISON_STATUSES = ANALYSIS_COMPARISON_STATUSES;
 const REVIEW_COMPARISON_META = ANALYSIS_COMPARISON_META;
 const PAGE_ROUTES = {
-  review: { path: "/review", title: "RA Triage Workbench", eyebrow: "EVALUATION BASELINE · 0508" },
-  analysis: { path: "/review-analysis", title: "Review 原因聚类", eyebrow: "REVIEW ERROR ANALYSIS" },
-  runs: { path: "/runs", title: "模型结果 Runs", eyebrow: "MODEL RUN REGISTRY" },
-  prediction: { path: "/batch-prediction", title: "Batch 模型预测", eyebrow: "BATCH MODEL INFERENCE" },
+  review: {
+    path: "/review",
+    titleZh: "判错复核",
+    titleEn: "RA Triage Workbench",
+  },
+  analysis: {
+    path: "/review-analysis",
+    titleZh: "原因聚类",
+    titleEn: "Review Reason Clusters",
+  },
+  runs: {
+    path: "/runs",
+    titleZh: "模型结果",
+    titleEn: "Model Runs",
+  },
+  prediction: {
+    path: "/batch-prediction",
+    titleZh: "批次预测",
+    titleEn: "Batch Model Inference",
+  },
 };
 
 const state = {
@@ -20,7 +38,7 @@ const state = {
   cases: [],
   caseTotal: 0,
   casePage: 1,
-  casePageSize: 50,
+  casePageSize: DEFAULT_CASE_PAGE_SIZE,
   caseRequestSeq: 0,
   caseListRequestSeq: 0,
   reviewReloadSeq: 0,
@@ -61,11 +79,12 @@ const state = {
     requestSeq: 0,
     data: null,
     comparisonStatus: "mismatch",
+    theme: "",
   },
   selectedAnnotationLabel: "",
   pollingBatchId: "",
   pollTimer: null,
-  media: { kind: "bev", index: 0 },
+  media: { kind: "bev", index: 0, zoom: 1, drag: null },
   sourcePreview: { runId: "", page: 1, pageSize: 100, pageCount: 1 },
   session: {
     username: "",
@@ -75,6 +94,7 @@ const state = {
     can_manage_team_default: false,
   },
   sidebarCollapsed: false,
+  uiLanguage: "zh",
   activePage: "review",
   trailInspection: null,
   pendingReviewImages: [],
@@ -82,6 +102,38 @@ const state = {
 };
 
 const $ = (selector) => document.querySelector(selector);
+
+function normalizedUiLanguage(value) {
+  return String(value || "").toLowerCase() === "en" ? "en" : "zh";
+}
+
+function uiText(zh, en) {
+  return state.uiLanguage === "en" ? en : zh;
+}
+
+function renderPageChrome() {
+  const route = PAGE_ROUTES[state.activePage] || PAGE_ROUTES.review;
+  const title = state.uiLanguage === "en" ? route.titleEn : route.titleZh;
+  $("#pageTitle").textContent = title;
+  document.title = `${title} · RA Triage`;
+}
+
+function applyUiLanguage(language, { persist = true } = {}) {
+  state.uiLanguage = normalizedUiLanguage(language);
+  document.documentElement.dataset.uiLang = state.uiLanguage;
+  document.documentElement.lang = state.uiLanguage === "en" ? "en" : "zh-CN";
+  if (persist) localStorage.setItem("ra-triage-ui-language", state.uiLanguage);
+  const toggle = $("#languageToggleButton");
+  if (toggle) {
+    const english = state.uiLanguage === "en";
+    toggle.textContent = english ? "中文" : "EN";
+    toggle.setAttribute("aria-label", english ? "切换到中文" : "切换到 English");
+    toggle.title = english ? "切换到中文" : "Switch to English";
+  }
+  renderPageChrome();
+  applySidebarState();
+  renderSession();
+}
 
 function normalizedAnalysisComparisonStatus(value, fallback = "all") {
   const normalized = String(value || "").trim().toLowerCase();
@@ -136,6 +188,10 @@ function normalizedReviewRouteFilters(params) {
   const gtLabel = params.get("gt") || "";
   const annotationLabel = params.get("annotation") || "";
   const rawPage = Number.parseInt(params.get("page") || "1", 10);
+  const rawPageSize = Number.parseInt(
+    params.get("page_size") || String(DEFAULT_CASE_PAGE_SIZE),
+    10
+  );
   return {
     search: params.get("q") || "",
     gtLabel: LABELS.includes(gtLabel) ? gtLabel : "",
@@ -143,6 +199,9 @@ function normalizedReviewRouteFilters(params) {
     annotationAuthor: params.get("reviewer") || "",
     clusterKey: params.get("evidence") || "",
     casePage: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
+    casePageSize: CASE_PAGE_SIZES.includes(rawPageSize)
+      ? rawPageSize
+      : DEFAULT_CASE_PAGE_SIZE,
   };
 }
 
@@ -159,6 +218,7 @@ function normalizedAnalysisRouteFilters(params) {
       : "",
     missingEvidence: params.get("evidence") || "",
     theme: params.get("theme") || "",
+    tag: params.get("tag") || "",
     comparisonStatus: routeAnalysisComparisonStatus(params),
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
   };
@@ -216,6 +276,7 @@ function currentReviewRouteOptions(overrides = {}) {
     annotationAuthor: $("#reviewerFilter")?.value || "",
     clusterKey: state.clusterKey,
     casePage: state.casePage,
+    casePageSize: state.casePageSize,
     ...overrides,
   };
 }
@@ -238,6 +299,10 @@ function applyReviewRouteControls(route) {
   }
   state.clusterKey = route.clusterKey || "";
   state.casePage = Math.max(1, Number(route.casePage) || 1);
+  state.casePageSize = CASE_PAGE_SIZES.includes(Number(route.casePageSize))
+    ? Number(route.casePageSize)
+    : DEFAULT_CASE_PAGE_SIZE;
+  if ($("#casePageSize")) $("#casePageSize").value = String(state.casePageSize);
   if (route.comparisonStatus !== null && route.comparisonStatus !== undefined) {
     state.reviewComparisonStatus = normalizedReviewComparisonStatus(
       route.comparisonStatus,
@@ -266,7 +331,8 @@ function currentAnalysisRouteOptions(overrides = {}) {
     annotationAuthor: $("#analysisReviewerFilter")?.value || "",
     reviewStatus: $("#analysisStatusFilter")?.value || "",
     missingEvidence: $("#analysisEvidenceFilter")?.value || "",
-    theme: $("#analysisThemeFilter")?.value || "",
+    theme: state.reviewAnalysis.theme || "",
+    tag: $("#analysisTagFilter")?.value || "",
     page: state.reviewAnalysis.page,
     ...overrides,
   };
@@ -300,12 +366,13 @@ function applyAnalysisRouteControls(route) {
         ? evidence
         : "";
   }
-  if ($("#analysisThemeFilter")) {
-    const theme = filters.theme || "";
-    $("#analysisThemeFilter").value =
-      !theme ||
-      [...$("#analysisThemeFilter").options].some((option) => option.value === theme)
-        ? theme
+  state.reviewAnalysis.theme = filters.theme || "";
+  if ($("#analysisTagFilter")) {
+    const tag = filters.tag || "";
+    $("#analysisTagFilter").value =
+      !tag ||
+      [...$("#analysisTagFilter").options].some((option) => option.value === tag)
+        ? tag
         : "";
   }
   const requestedComparison =
@@ -339,6 +406,9 @@ function pageUrl(page, options = {}) {
     if (review.annotationAuthor) url.searchParams.set("reviewer", review.annotationAuthor);
     if (review.clusterKey) url.searchParams.set("evidence", review.clusterKey);
     if (Number(review.casePage) > 1) url.searchParams.set("page", String(review.casePage));
+    if (Number(review.casePageSize) !== DEFAULT_CASE_PAGE_SIZE) {
+      url.searchParams.set("page_size", String(review.casePageSize));
+    }
   }
   if (page === "analysis") {
     const analysis = currentAnalysisRouteOptions(options);
@@ -356,6 +426,7 @@ function pageUrl(page, options = {}) {
     if (analysis.reviewStatus) url.searchParams.set("status", analysis.reviewStatus);
     if (analysis.missingEvidence) url.searchParams.set("evidence", analysis.missingEvidence);
     if (analysis.theme) url.searchParams.set("theme", analysis.theme);
+    if (analysis.tag) url.searchParams.set("tag", analysis.tag);
     if (Number(analysis.page) > 1) url.searchParams.set("page", String(analysis.page));
   }
   if (page === "prediction") {
@@ -410,9 +481,7 @@ function showPage(
     if (active) item.setAttribute("aria-current", "page");
     else item.removeAttribute("aria-current");
   });
-  $("#pageTitle").textContent = PAGE_ROUTES[target].title;
-  $("#pageEyebrow").textContent = PAGE_ROUTES[target].eyebrow;
-  document.title = `${PAGE_ROUTES[target].title} · RA Triage`;
+  renderPageChrome();
   if (target === "runs") {
     renderRunManager();
     if (importKind) setImportKind(importKind);
@@ -571,8 +640,14 @@ function showToast(message, isError = false) {
 
 function applySidebarState() {
   $("#appShell").classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
-  $("#sidebarToggle").setAttribute("aria-expanded", String(!state.sidebarCollapsed));
-  $("#sidebarToggle").title = state.sidebarCollapsed ? "展开工具栏" : "折叠工具栏";
+  const expanded = String(!state.sidebarCollapsed);
+  const title = state.sidebarCollapsed
+    ? uiText("展开工具栏", "Expand toolbar")
+    : uiText("折叠工具栏", "Collapse toolbar");
+  $("#sidebarToggle").setAttribute("aria-expanded", expanded);
+  $("#sidebarToggle").title = title;
+  $("#sidebarBrandToggle").setAttribute("aria-expanded", expanded);
+  $("#sidebarBrandToggle").title = title;
 }
 
 function toggleSidebar() {
@@ -615,13 +690,13 @@ async function browserLcaUsername() {
 
 function renderSession() {
   const username = state.session.username;
-  $("#sessionUserName").textContent = username || "SSO 未接入";
+  $("#sessionUserName").textContent = username || uiText("SSO 未接入", "SSO unavailable");
   $("#userAvatar").textContent = username ? username.slice(0, 1).toUpperCase() : "?";
   $("#sessionUserSource").textContent = state.session.verified
-    ? "企业 SSO · 已验证"
+    ? uiText("企业 SSO · 已验证", "Enterprise SSO · verified")
     : username
-      ? "本机 LCA · 未验证"
-      : "直接 IP 会话";
+      ? uiText("本机 LCA · 未验证", "Local LCA · unverified")
+      : uiText("直接 IP 会话", "Direct IP session");
   $("#sidebarUser").title = state.session.verified
     ? `可信代理认证：${username}`
     : username
@@ -630,18 +705,18 @@ function renderSession() {
   const batchActor = $("#batchActorSummary");
   if (batchActor) {
     batchActor.textContent = state.session.verified
-      ? `当前用户：${username}（企业 SSO 已验证）`
+      ? uiText(`当前用户：${username}（企业 SSO 已验证）`, `Current user: ${username} (enterprise SSO verified)`)
       : username
-        ? `当前用户：${username}（本机 LCA，仅作审计显示）`
-        : "当前用户未识别；服务器会按实际会话记录请求人。";
+        ? uiText(`当前用户：${username}（本机 LCA，仅作审计显示）`, `Current user: ${username} (local LCA, display only)`)
+        : uiText("当前用户未识别；服务器会按实际会话记录请求人。", "User not identified; the server records the actual requester.");
   }
   const importActor = $("#modelImportActorSummary");
   if (importActor) {
     importActor.textContent = state.session.verified
-      ? `本次导入创建人：${username}（企业 SSO 已验证）`
+      ? uiText(`本次导入创建人：${username}（企业 SSO 已验证）`, `Import owner: ${username} (enterprise SSO verified)`)
       : username
-        ? `本次导入显示名：${username}（本机 LCA，未验证；不能用于权限）`
-        : "当前没有可信 SSO；Run 创建人将记为未记录。";
+        ? uiText(`本次导入显示名：${username}（本机 LCA，未验证；不能用于权限）`, `Import display name: ${username} (local LCA, unverified; not for authorization)`)
+        : uiText("当前没有可信 SSO；Run 创建人将记为未记录。", "No trusted SSO; the Run creator will be recorded as unknown.");
   }
   if (state.activePage === "prediction") ensurePredictionBatchName();
 }
@@ -691,16 +766,16 @@ function renderAnalysisCatalogFilters() {
       ? previous
       : "";
   }
-  const themeSelect = $("#analysisThemeFilter");
-  if (themeSelect) {
-    const previous = themeSelect.value;
-    themeSelect.innerHTML = [
-      '<option value="">全部原因主题</option>',
-      ...(state.config?.review_reason_theme_catalog || []).map(
+  const tagSelect = $("#analysisTagFilter");
+  if (tagSelect) {
+    const previous = tagSelect.value;
+    tagSelect.innerHTML = [
+      '<option value="">全部场景 Tags</option>',
+      ...(state.config?.review_tag_catalog || []).map(
         (item) => `<option value="${escapeHtml(item.key)}">${escapeHtml(item.label)}</option>`
       ),
     ].join("");
-    themeSelect.value = [...themeSelect.options].some(
+    tagSelect.value = [...tagSelect.options].some(
       (option) => option.value === previous
     )
       ? previous
@@ -1217,10 +1292,12 @@ function renderCasePagination() {
   const previous = $("#casePagePrevious");
   const next = $("#casePageNext");
   const summary = $("#casePageSummary");
+  const pageSize = $("#casePageSize");
   const result = $("#galleryResultSummary");
   if (previous) previous.disabled = state.casePage <= 1 || !state.caseTotal;
   if (next) next.disabled = state.casePage >= totalPages || !state.caseTotal;
   if (summary) summary.textContent = state.caseTotal ? `${state.casePage} / ${totalPages}` : "0 / 0";
+  if (pageSize) pageSize.value = String(state.casePageSize);
   if (result) {
     const start = state.caseTotal ? (state.casePage - 1) * state.casePageSize + 1 : 0;
     const end = Math.min(state.casePage * state.casePageSize, state.caseTotal);
@@ -1256,6 +1333,19 @@ async function changeCasePage(delta) {
   state.galleryScrollY = 0;
   clearPendingReviewImages();
   await loadCases({ keepSelection: false, page: targetPage });
+  showPage("review", { historyMode: "push", issue: "" });
+}
+
+async function changeCasePageSize(value) {
+  const nextPageSize = CASE_PAGE_SIZES.includes(Number(value))
+    ? Number(value)
+    : DEFAULT_CASE_PAGE_SIZE;
+  if (nextPageSize === state.casePageSize) return;
+  state.casePageSize = nextPageSize;
+  state.casePage = 1;
+  state.galleryScrollY = 0;
+  clearPendingReviewImages();
+  await loadCases({ keepSelection: false, page: 1 });
   showPage("review", { historyMode: "push", issue: "" });
 }
 
@@ -1509,7 +1599,7 @@ function renderAnalysisClusterList(items, targetSelector, kind) {
   const activeValue =
     kind === "evidence"
       ? $("#analysisEvidenceFilter")?.value || ""
-      : $("#analysisThemeFilter")?.value || "";
+      : state.reviewAnalysis.theme || "";
   target.innerHTML = items
     .map((item) => {
       const percentage = Math.round(Number(item.share || 0) * 1000) / 10;
@@ -1528,14 +1618,17 @@ function renderAnalysisClusterList(items, targetSelector, kind) {
     .join("");
   target.querySelectorAll("[data-analysis-cluster-key]").forEach((button) => {
     button.addEventListener("click", () => {
-      const select =
-        button.dataset.analysisClusterKind === "evidence"
-          ? $("#analysisEvidenceFilter")
-          : $("#analysisThemeFilter");
-      select.value =
-        select.value === button.dataset.analysisClusterKey
+      if (button.dataset.analysisClusterKind === "evidence") {
+        const select = $("#analysisEvidenceFilter");
+        select.value = select.value === button.dataset.analysisClusterKey
           ? ""
           : button.dataset.analysisClusterKey;
+      } else {
+        state.reviewAnalysis.theme =
+          state.reviewAnalysis.theme === button.dataset.analysisClusterKey
+            ? ""
+            : button.dataset.analysisClusterKey;
+      }
       state.reviewAnalysis.page = 1;
       showPage("analysis", { historyMode: "push" });
       loadReviewReasonAnalysis().catch((error) => showToast(error.message, true));
@@ -1611,6 +1704,11 @@ function renderAnalysisCases(data) {
         const reasonThemes = item.reason_themes || [];
         const reviewUrl = safeSameOriginReviewUrl(item.review_url);
         const voyagerUrl = safeUrl(item.voyager_issue_url);
+        const issueId = escapeHtml(item.issue_id);
+        const sceneLabel = item.title || item.scenario || "未填写场景";
+        const issueIdMarkup = voyagerUrl
+          ? `<a class="analysis-issue-link" href="${escapeHtml(voyagerUrl)}" target="_blank" rel="noreferrer" title="在 Voyager 中打开 ${issueId}">${issueId}</a>`
+          : `<strong>${issueId}</strong>`;
         const comparisonStatus = normalizedAnalysisComparisonStatus(
           item.comparison_status,
           ""
@@ -1639,14 +1737,18 @@ function renderAnalysisCases(data) {
           .join("");
         return `<article class="analysis-case-row">
           <div class="analysis-case-identity">
-            <strong>${escapeHtml(item.issue_id)}</strong>
-            <span>${escapeHtml(item.title || item.scenario || "未填写场景")}</span>
+            ${issueIdMarkup}
+            <span title="${escapeHtml(sceneLabel)}">${escapeHtml(sceneLabel)}</span>
           </div>
           <div class="analysis-case-labels">
             ${comparisonBadge}
-            <span>GT ${labelBadge(item.gt_label)}</span>
-            <span>模型 ${labelBadge(prediction.label)}${escapeHtml(confidence)}</span>
-            <span>人工 ${labelBadge(annotation.label)}</span>
+            <span title="0508 baseline GT">GT ${labelBadge(item.gt_label)}</span>
+            <button class="analysis-model-history-button" type="button"
+              data-analysis-model-history="${issueId}"
+              title="查看此 Issue 的全部评测 Run 输出历史"
+              aria-label="查看 ${issueId} 的评测 Run 输出历史">
+              <span>模型</span>${labelBadge(prediction.label, "未输出")}${escapeHtml(confidence)}
+            </button>
           </div>
           <div class="analysis-case-reason">
             <strong class="${annotation.note ? "" : "reason-empty"}">${escapeHtml(annotation.note || "未填写“模型为什么判错”")}</strong>
@@ -1657,13 +1759,28 @@ function renderAnalysisCases(data) {
             <span>${escapeHtml(annotation.author || "未记录复核人")}${annotation.author_verified ? " · SSO" : ""}</span>
             <span>${escapeHtml(reviewStatusLabel(annotation.review_status))} · ${formatTime(annotation.created_at)}</span>
             <span class="analysis-case-actions">
-              ${reviewUrl ? `<a class="text-link" href="${escapeHtml(reviewUrl)}">打开 Review</a>` : ""}
-              ${voyagerUrl ? `<a class="text-link" href="${escapeHtml(voyagerUrl)}" target="_blank" rel="noreferrer">Voyager ↗</a>` : ""}
+              ${reviewUrl ? `<a class="text-link" href="${escapeHtml(reviewUrl)}" title="打开问题详情与 Review">问题详情</a>` : ""}
             </span>
           </div>
         </article>`;
       })
       .join("");
+    target.querySelectorAll("[data-analysis-model-history]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (button.getAttribute("aria-busy") === "true") return;
+        button.setAttribute("aria-busy", "true");
+        try {
+          const caseData = await api(
+            `/api/cases/${encodeURIComponent(button.dataset.analysisModelHistory)}`
+          );
+          openHistoryDialog("model", caseData);
+        } catch (error) {
+          showToast(error.message, true);
+        } finally {
+          button.removeAttribute("aria-busy");
+        }
+      });
+    });
   }
   const page = Number(data.page || 1);
   const pageCount = Number(data.page_count || 1);
@@ -1720,6 +1837,7 @@ async function loadReviewReasonAnalysis() {
   if (options.annotationLabel) params.set("annotation_label", options.annotationLabel);
   if (options.missingEvidence) params.set("missing_evidence", options.missingEvidence);
   if (options.theme) params.set("theme", options.theme);
+  if (options.tag) params.set("tag", options.tag);
   if (options.search) params.set("search", options.search);
   params.set("page", String(Math.max(1, Number(options.page) || 1)));
   params.set("page_size", String(state.reviewAnalysis.pageSize));
@@ -1728,6 +1846,32 @@ async function loadReviewReasonAnalysis() {
   if (requestSeq !== state.reviewAnalysis.requestSeq) return;
   state.reviewAnalysis.data = data;
   renderReviewReasonAnalysis(data);
+}
+
+function downloadReviewAnalysis(format) {
+  const options = analysisRequestOptions();
+  const params = new URLSearchParams({ format });
+  if (options.runId) params.set("model_run_id", options.runId);
+  params.set(
+    "comparison",
+    options.runId
+      ? normalizedAnalysisComparisonStatus(options.comparisonStatus)
+      : "all"
+  );
+  if (options.annotationAuthor) params.set("annotation_author", options.annotationAuthor);
+  if (options.reviewStatus) params.set("review_status", options.reviewStatus);
+  if (options.gtLabel) params.set("gt_label", options.gtLabel);
+  if (options.annotationLabel) params.set("annotation_label", options.annotationLabel);
+  if (options.missingEvidence) params.set("missing_evidence", options.missingEvidence);
+  if (options.theme) params.set("theme", options.theme);
+  if (options.tag) params.set("tag", options.tag);
+  if (options.search) params.set("search", options.search);
+  const link = document.createElement("a");
+  link.href = `/api/review-reason-analysis/export?${params.toString()}`;
+  link.download = "";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }
 
 function applyAnalysisComparisonSelection() {
@@ -1788,7 +1932,7 @@ function clearDetail({ showGallery = true } = {}) {
       <p>从筛选结果中打开一个 Issue 后，这里会显示 BEV / Camera 与模型输出。</p>
     </div>`;
   $("#reviewPane").innerHTML = `
-    <div class="review-placeholder"><span class="eyebrow">HUMAN REVIEW</span><h2>人工复核</h2><p>选择 Issue 后记录结论和模型遗漏的关键信息。</p></div>`;
+    <div class="review-placeholder"><h2>人工复核</h2><p>选择 Issue 后记录结论和模型遗漏的关键信息。</p></div>`;
   renderCaseNavigation();
   if (showGallery) setReviewView("");
 }
@@ -1846,7 +1990,7 @@ function predictionCards(caseData) {
       const extra = prediction.model_extra?.ra_stuck_auto_result_info;
       const detail = prediction.model_reason || (typeof extra === "object" ? extra.text || "" : "") || "模型未返回解释。";
       return `<article class="model-card ${selected ? "active" : ""}">
-        <div class="model-card-head"><div><span class="eyebrow">${escapeHtml(prediction.run_kind || "model run")}</span><h3>${escapeHtml(prediction.run_name || "模型输出")}</h3></div>${labelBadge(prediction.model_label, "未输出")}</div>
+        <div class="model-card-head"><div><h3>${escapeHtml(prediction.run_name || "模型输出")}</h3></div>${labelBadge(prediction.model_label, "未输出")}</div>
         <p>${escapeHtml(detail)}</p>
         <div class="model-card-meta">${prediction.model_confidence ?? "—"} confidence · ${formatTime(prediction.created_at)}${prediction.run_created_by ? ` · 创建人 ${escapeHtml(prediction.run_created_by)}` : ""}</div>
       </article>`;
@@ -1859,7 +2003,6 @@ function openHistoryDialog(kind, caseData) {
   const isModel = kind === "model";
   const predictions = caseData.predictions || [];
   const annotations = caseData.annotations || [];
-  $("#historyDialogEyebrow").textContent = isModel ? "MODEL RUN HISTORY" : "REVIEW HISTORY";
   $("#historyDialogTitle").textContent = isModel ? "评测 Run 输出历史" : "Review 历史";
   $("#historyDialogMeta").textContent = isModel
     ? `${predictions.length} 个模型 Run · 当前 Review Run 会高亮`
@@ -1871,13 +2014,12 @@ function openHistoryDialog(kind, caseData) {
 }
 
 function renderDetail(caseData) {
-  const rawTitle = String(caseData.title || caseData.scenario || "").trim();
-  const title =
-    rawTitle && !LABELS.includes(rawTitle) && rawTitle !== caseData.gt_label
-      ? rawTitle
-      : "Issue Review";
   const primary = (caseData.predictions || []).find((item) => item.model_run_id === state.selectedRunId) || caseData.predictions?.[0];
   const issueUrl = safeUrl(caseData.voyager_issue_url || caseData.trail_url);
+  const issueId = escapeHtml(caseData.issue_id);
+  const issueIdMarkup = issueUrl
+    ? `<a class="detail-id detail-id-link" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" title="打开 Voyager Issue">${issueId}</a>`
+    : `<span class="detail-id">${issueId}</span>`;
   const bevFrames = caseData.assets?.frames || [];
   const bevPreviewButton = bevFrames.length
     ? `<button class="button button-quiet hero-bev-open" type="button" data-open-bev-preview>查看 Ares</button>`
@@ -1886,9 +2028,10 @@ function renderDetail(caseData) {
   $("#detailPane").innerHTML = `
     <div class="detail-header">
       <div class="detail-title-row">
-        <div class="detail-title"><span class="eyebrow">CASE REVIEW</span><h2>${escapeHtml(title)}</h2><span class="detail-id">${escapeHtml(caseData.issue_id)}</span></div>
+        <div class="detail-title-group">
+          <div class="detail-title"><h2><span class="ui-lang-zh">问题详情</span><span class="ui-lang-en">Issue Details</span></h2>${issueIdMarkup}</div>
+        </div>
         <div class="detail-navigation">
-          <button class="button button-quiet" id="backToGalleryButton" type="button">← 返回筛选结果</button>
           <div class="case-detail-pager">
             <button class="button button-quiet" id="previousIssueButton" type="button">← 上一 Issue</button>
             <span id="detailQueuePosition">— / —</span>
@@ -1903,11 +2046,11 @@ function renderDetail(caseData) {
           <span>当前模型</span>${labelBadge(primary?.model_label, "未输出")}
           <strong class="${primary?.model_label && primary.model_label !== caseData.gt_label ? "comparison-fail" : "comparison-neutral"}">${primary?.model_label ? primary.model_label === caseData.gt_label ? "一致" : "不一致" : "不可比较"}</strong>
         </div>
+        <button class="button button-quiet detail-back-button" id="backToGalleryButton" type="button">← 返回筛选结果</button>
         ${caseData.summary ? `<p class="detail-summary">${escapeHtml(caseData.summary)}</p>` : ""}
         <div class="detail-actions">
           ${bevPreviewButton}
           <button class="button button-quiet" type="button" data-predict-current-case>API 推理</button>
-          ${issueUrl ? `<a class="button button-quiet" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer">Issue link</a>` : ""}
           ${modelHistoryButton}
         </div>
       </div>
@@ -1989,7 +2132,7 @@ function renderReview(caseData) {
     .map((key) => tagOption(key, tagLabel(key), true))
     .join("");
   $("#reviewPane").innerHTML = `
-    <div class="review-title"><div><span class="eyebrow">HUMAN REVIEW</span><h2>模型判错原因</h2><small class="review-scope-note">按 Issue 记录，模型输出仍按 Run 区分</small></div><span class="review-issue">${escapeHtml(caseData.issue_id)}</span></div>
+    <div class="review-title"><div><h2>模型判错原因</h2><small class="review-scope-note">按 Issue 记录，模型输出仍按 Run 区分</small></div><span class="review-issue">${escapeHtml(caseData.issue_id)}</span></div>
     <form class="review-form" id="annotationForm">
       <label class="review-status-field"><span>复核状态</span><select id="reviewStatusInput"><option value="reviewed" ${reviewStatus === "reviewed" ? "selected" : ""}>已 Review</option><option value="pending" ${reviewStatus === "pending" ? "selected" : ""}>待补充</option><option value="needs_gt_review" ${reviewStatus === "needs_gt_review" ? "selected" : ""}>GT 需复核</option></select></label>
       <label class="review-reason">
@@ -2018,7 +2161,7 @@ function renderReview(caseData) {
       <button class="button button-primary full-width" type="submit">保存新的 review 版本</button>
     </form>
     <details class="review-history-toggle">
-      <summary><span><span class="eyebrow">REVIEW HISTORY</span><strong>Review 历史</strong></span><span class="history-launch-meta">${(caseData.annotations || []).length} 条</span></summary>
+      <summary><span><strong>Review 历史</strong></span><span class="history-launch-meta">${(caseData.annotations || []).length} 条</span></summary>
       <div class="review-history-content">${annotationHistory(caseData.annotations)}</div>
     </details>`;
   $("#reviewPane").querySelectorAll('input[name="missingEvidence"]').forEach((input) => {
@@ -2207,7 +2350,7 @@ async function selectCase(
       <p>正在读取模型输出、Ares BEV 与 Camera 时序。</p>
     </div>`;
   $("#reviewPane").innerHTML = `
-    <div class="review-placeholder"><span class="eyebrow">HUMAN REVIEW</span><h2>正在加载标注</h2><p>Issue 数据返回后即可继续 Review。</p></div>`;
+    <div class="review-placeholder"><h2>正在加载标注</h2><p>Issue 数据返回后即可继续 Review。</p></div>`;
   if (updateRoute && state.activePage === "review") {
     const nextUrl = pageUrl("review", { issue: issueId });
     if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
@@ -2330,11 +2473,18 @@ function openDialog(id) {
 
 function closeDialog(id) {
   const dialog = $(`#${id}`);
+  if (id === "mediaDialog") {
+    state.media.drag = null;
+    $("#mediaViewport")?.classList.remove("is-dragging");
+    dialog?.classList.remove("media-fallback-fullscreen");
+    if (document.fullscreenElement && dialog?.contains(document.fullscreenElement)) {
+      document.exitFullscreen().catch(() => {});
+    }
+  }
   if (dialog?.open) dialog.close();
 }
 
 function renderSourcePreview(data) {
-  const format = String(data?.format || "").toUpperCase();
   const rows = Array.isArray(data?.rows) ? data.rows : [];
   const columns = Array.isArray(data?.columns) ? data.columns : [];
   const metadata = data?.metadata && typeof data.metadata === "object" ? data.metadata : {};
@@ -2344,7 +2494,6 @@ function renderSourcePreview(data) {
   const offset = Number(data?.offset || 0);
   state.sourcePreview.page = page;
   state.sourcePreview.pageCount = pageCount;
-  $("#sourcePreviewEyebrow").textContent = `${format || "SOURCE"} · MODEL RUN`;
   $("#sourcePreviewTitle").textContent = data?.filename || "文件预览";
   $("#sourcePreviewMeta").textContent = `${rowCount} 条结果 · 第 ${page} / ${pageCount} 页${data?.reconstructed ? " · Run 重建副本" : ""}`;
   $("#sourcePreviewPageLabel").textContent = `第 ${page} / ${pageCount} 页`;
@@ -2393,7 +2542,6 @@ async function openSourcePreview(runId) {
     showToast("该 Run 没有可用的 CSV / JSON 页面预览，请重新上传原文件。", true);
     return;
   }
-  $("#sourcePreviewEyebrow").textContent = "MODEL SOURCE PREVIEW";
   $("#sourcePreviewTitle").textContent = source.filename || "文件预览";
   $("#sourcePreviewMeta").textContent = "正在读取…";
   $("#sourcePreviewPageLabel").textContent = "第 1 / … 页";
@@ -2410,6 +2558,133 @@ async function openSourcePreview(runId) {
   }
 }
 
+const MEDIA_ZOOM_MIN = 0.5;
+const MEDIA_ZOOM_BASE_MAX = 4;
+const MEDIA_ZOOM_STEP = 0.25;
+
+function mediaOriginalZoom() {
+  const viewport = $("#mediaViewport");
+  const image = $("#mediaPreviewImage");
+  if (
+    !viewport?.clientWidth ||
+    !viewport?.clientHeight ||
+    !image?.naturalWidth ||
+    !image?.naturalHeight
+  ) {
+    return null;
+  }
+  const fitScale = Math.min(
+    viewport.clientWidth / image.naturalWidth,
+    viewport.clientHeight / image.naturalHeight
+  );
+  return fitScale > 0 ? 1 / fitScale : null;
+}
+
+function mediaZoomMax() {
+  return Math.max(MEDIA_ZOOM_BASE_MAX, mediaOriginalZoom() || 1);
+}
+
+function mediaZoomMin() {
+  return Math.min(MEDIA_ZOOM_MIN, mediaOriginalZoom() || 1);
+}
+
+function updateMediaPanState() {
+  const viewport = $("#mediaViewport");
+  if (!viewport) return;
+  const pannable =
+    viewport.scrollWidth > viewport.clientWidth + 1 ||
+    viewport.scrollHeight > viewport.clientHeight + 1;
+  viewport.classList.toggle("is-pannable", pannable);
+  if (!pannable) {
+    state.media.drag = null;
+    viewport.classList.remove("is-dragging");
+  }
+}
+
+function mediaFullscreenActive() {
+  const dialog = $("#mediaDialog");
+  const card = dialog?.querySelector(".media-dialog-card");
+  return Boolean(document.fullscreenElement === card || dialog?.classList.contains("media-fallback-fullscreen"));
+}
+
+function updateMediaViewControls() {
+  const zoom = Math.min(mediaZoomMax(), Math.max(mediaZoomMin(), Number(state.media.zoom) || 1));
+  state.media.zoom = zoom;
+  $("#mediaZoomResetButton").textContent = `${Math.round(zoom * 100)}%`;
+  $("#mediaZoomOutButton").disabled = zoom <= mediaZoomMin();
+  $("#mediaZoomInButton").disabled = zoom >= mediaZoomMax();
+  const originalZoom = mediaOriginalZoom();
+  const originalButton = $("#mediaOriginalSizeButton");
+  originalButton.disabled = !originalZoom;
+  originalButton.classList.toggle(
+    "active",
+    Boolean(originalZoom && Math.abs(zoom - originalZoom) < 0.01)
+  );
+  originalButton.title = originalZoom
+    ? `按图片原始像素 1:1 显示（${$("#mediaPreviewImage").naturalWidth} × ${$("#mediaPreviewImage").naturalHeight}）`
+    : "原图尺寸读取中";
+  const fullscreen = mediaFullscreenActive();
+  $("#mediaFullscreenButton").textContent = fullscreen ? "⤢" : "⛶";
+  $("#mediaFullscreenButton").setAttribute("aria-label", fullscreen ? "退出全屏" : "进入全屏");
+  $("#mediaFullscreenButton").title = fullscreen ? "退出全屏（F）" : "进入全屏（F）";
+}
+
+function setMediaZoom(nextZoom, { resetScroll = false } = {}) {
+  const viewport = $("#mediaViewport");
+  const canvas = $("#mediaCanvas");
+  if (!viewport || !canvas) return;
+  const centerRatioX = viewport.scrollWidth > 0
+    ? (viewport.scrollLeft + viewport.clientWidth / 2) / viewport.scrollWidth
+    : 0.5;
+  const centerRatioY = viewport.scrollHeight > 0
+    ? (viewport.scrollTop + viewport.clientHeight / 2) / viewport.scrollHeight
+    : 0.5;
+  state.media.zoom = Math.min(mediaZoomMax(), Math.max(mediaZoomMin(), Number(nextZoom) || 1));
+  const size = `${state.media.zoom * 100}%`;
+  canvas.style.width = size;
+  canvas.style.height = size;
+  updateMediaViewControls();
+  window.requestAnimationFrame(() => {
+    if (resetScroll) {
+      viewport.scrollLeft = Math.max(0, (viewport.scrollWidth - viewport.clientWidth) / 2);
+      viewport.scrollTop = Math.max(0, (viewport.scrollHeight - viewport.clientHeight) / 2);
+      updateMediaPanState();
+      return;
+    }
+    viewport.scrollLeft = Math.max(0, centerRatioX * viewport.scrollWidth - viewport.clientWidth / 2);
+    viewport.scrollTop = Math.max(0, centerRatioY * viewport.scrollHeight - viewport.clientHeight / 2);
+    updateMediaPanState();
+  });
+}
+
+function showMediaAtOriginalSize() {
+  const originalZoom = mediaOriginalZoom();
+  if (!originalZoom) return;
+  setMediaZoom(originalZoom, { resetScroll: true });
+}
+
+async function toggleMediaFullscreen() {
+  const dialog = $("#mediaDialog");
+  const card = dialog?.querySelector(".media-dialog-card");
+  if (!dialog || !card) return;
+  try {
+    if (document.fullscreenElement === card) {
+      await document.exitFullscreen();
+    } else if (document.fullscreenElement) {
+      await document.exitFullscreen();
+      await card.requestFullscreen();
+    } else if (card.requestFullscreen) {
+      await card.requestFullscreen();
+    } else {
+      dialog.classList.toggle("media-fallback-fullscreen");
+    }
+  } catch (error) {
+    showToast(`无法切换全屏：${error.message}`, true);
+  }
+  updateMediaViewControls();
+  window.requestAnimationFrame(updateMediaPanState);
+}
+
 function renderMediaDialog() {
   const bev = mediaFrames("bev");
   const camera = mediaFrames("camera");
@@ -2418,10 +2693,10 @@ function renderMediaDialog() {
   state.media.index = Math.max(0, Math.min(state.media.index, Math.max(frames.length - 1, 0)));
   const current = frames[state.media.index];
   if (!current) return;
-  $("#mediaEyebrow").textContent = state.media.kind === "bev" ? "ARES CAPTURE / BEV" : "CAMERA / AFTER_COMPRESS";
   $("#mediaTitle").textContent = `${state.selectedCase?.issue_id || ""} · ${frameLabel(current)} · ${state.media.index + 1}/${frames.length}`;
   $("#mediaPreviewImage").src = current.url;
   $("#mediaPreviewImage").alt = `${state.media.kind} ${frameLabel(current)}`;
+  setMediaZoom(state.media.zoom);
   $("#mediaModeTabs").innerHTML = `
     <button type="button" class="media-mode ${state.media.kind === "bev" ? "active" : ""}" data-media-mode="bev" ${bev.length ? "" : "disabled"}>BEV <span>${bev.length}</span></button>
     <button type="button" class="media-mode ${state.media.kind === "camera" ? "active" : ""}" data-media-mode="camera" ${camera.length ? "" : "disabled"}>Camera <span>${camera.length}</span></button>`;
@@ -2445,8 +2720,10 @@ function openMedia(kind, index) {
   if (!mediaFrames(kind).length) return;
   state.media.kind = kind;
   state.media.index = index;
+  state.media.zoom = 1;
   renderMediaDialog();
   openDialog("mediaDialog");
+  setMediaZoom(1, { resetScroll: true });
 }
 
 function moveMedia(delta) {
@@ -3085,7 +3362,6 @@ function renderPredictionBatchDetail(batch) {
   return `<div class="batch-history-detail" data-batch-detail="${escapeHtml(batch.id || "")}">
     <div class="batch-detail-heading">
       <div>
-        <span class="eyebrow">BATCH OUTPUT</span>
         <strong>运行输出 · ${escapeHtml(batch.name || batch.batch_name || batch.id || "")}</strong>
       </div>
       <span>${escapeHtml(batchStatusLabel(batch.status))} · ${counts.completed}/${counts.total} 完成 · 成功 ${counts.success} · 失败 ${counts.failed}</span>
@@ -3757,7 +4033,8 @@ function bindEvents() {
     $("#analysisGtFilter").value = "";
     $("#analysisAnnotationFilter").value = "";
     $("#analysisEvidenceFilter").value = "";
-    $("#analysisThemeFilter").value = "";
+    $("#analysisTagFilter").value = "";
+    state.reviewAnalysis.theme = "";
     $("#analysisSearchInput").value = "";
     state.reviewAnalysis.page = 1;
     try {
@@ -3766,6 +4043,8 @@ function bindEvents() {
       showToast(error.message, true);
     }
   });
+  $("#exportReviewAnalysisCsvButton").addEventListener("click", () => downloadReviewAnalysis("csv"));
+  $("#exportReviewAnalysisXlsxButton").addEventListener("click", () => downloadReviewAnalysis("xlsx"));
   $("#analysisPagePrevious").addEventListener("click", () => {
     changeAnalysisPage(-1).catch((error) => showToast(error.message, true));
   });
@@ -3803,6 +4082,9 @@ function bindEvents() {
   });
   $("#casePageNext").addEventListener("click", () => {
     changeCasePage(1).catch((error) => showToast(error.message, true));
+  });
+  $("#casePageSize").addEventListener("change", (event) => {
+    changeCasePageSize(event.target.value).catch((error) => showToast(error.message, true));
   });
   $("#refreshButton").addEventListener("click", async () => {
     try {
@@ -3909,7 +4191,11 @@ function bindEvents() {
     if ($("#predictionUseRaOptions").checked) $("#predictionUseRaEvent").checked = true;
     renderBatchRuntimeSummary();
   });
+  $("#languageToggleButton").addEventListener("click", () => {
+    applyUiLanguage(state.uiLanguage === "en" ? "zh" : "en");
+  });
   $("#sidebarToggle").addEventListener("click", toggleSidebar);
+  $("#sidebarBrandToggle").addEventListener("click", toggleSidebar);
   document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => closeDialog(button.dataset.close)));
   $("#importFile").addEventListener("change", () => {
     const filename = $("#importFileName");
@@ -3938,12 +4224,71 @@ function bindEvents() {
   });
   $("#mediaPrevButton").addEventListener("click", () => moveMedia(-1));
   $("#mediaNextButton").addEventListener("click", () => moveMedia(1));
+  $("#mediaZoomOutButton").addEventListener("click", () => setMediaZoom(state.media.zoom - MEDIA_ZOOM_STEP));
+  $("#mediaZoomResetButton").addEventListener("click", () => setMediaZoom(1, { resetScroll: true }));
+  $("#mediaZoomInButton").addEventListener("click", () => setMediaZoom(state.media.zoom + MEDIA_ZOOM_STEP));
+  $("#mediaOriginalSizeButton").addEventListener("click", showMediaAtOriginalSize);
+  $("#mediaFullscreenButton").addEventListener("click", () => toggleMediaFullscreen());
+  $("#mediaPreviewImage").addEventListener("load", () => {
+    setMediaZoom(state.media.zoom);
+  });
+  $("#mediaViewport").addEventListener("pointerdown", (event) => {
+    const viewport = $("#mediaViewport");
+    if (
+      !viewport.classList.contains("is-pannable") ||
+      (event.pointerType === "mouse" && event.button !== 0)
+    ) {
+      return;
+    }
+    event.preventDefault();
+    state.media.drag = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      scrollLeft: viewport.scrollLeft,
+      scrollTop: viewport.scrollTop,
+    };
+    viewport.setPointerCapture(event.pointerId);
+    viewport.classList.add("is-dragging");
+  });
+  $("#mediaViewport").addEventListener("pointermove", (event) => {
+    const viewport = $("#mediaViewport");
+    const drag = state.media.drag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    viewport.scrollLeft = drag.scrollLeft - (event.clientX - drag.startX);
+    viewport.scrollTop = drag.scrollTop - (event.clientY - drag.startY);
+  });
+  const endMediaDrag = (event) => {
+    const viewport = $("#mediaViewport");
+    if (!state.media.drag || state.media.drag.pointerId !== event.pointerId) return;
+    if (viewport.hasPointerCapture(event.pointerId)) {
+      viewport.releasePointerCapture(event.pointerId);
+    }
+    state.media.drag = null;
+    viewport.classList.remove("is-dragging");
+  };
+  $("#mediaViewport").addEventListener("pointerup", endMediaDrag);
+  $("#mediaViewport").addEventListener("pointercancel", endMediaDrag);
+  $("#mediaViewport").addEventListener("wheel", (event) => {
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+    setMediaZoom(state.media.zoom + (event.deltaY < 0 ? MEDIA_ZOOM_STEP : -MEDIA_ZOOM_STEP));
+  }, { passive: false });
+  document.addEventListener("fullscreenchange", () => {
+    updateMediaViewControls();
+    window.requestAnimationFrame(updateMediaPanState);
+  });
   document.addEventListener("keydown", (event) => {
     if (!$("#mediaDialog").open) return;
     if (["ArrowLeft", "ArrowUp"].includes(event.key)) { event.preventDefault(); moveMedia(-1); }
     if (["ArrowRight", "ArrowDown"].includes(event.key)) { event.preventDefault(); moveMedia(1); }
     if (event.key.toLowerCase() === "b" && mediaFrames("bev").length) { state.media.kind = "bev"; state.media.index = 0; renderMediaDialog(); }
     if (event.key.toLowerCase() === "c" && mediaFrames("camera").length) { state.media.kind = "camera"; state.media.index = 0; renderMediaDialog(); }
+    if (["+", "="].includes(event.key)) { event.preventDefault(); setMediaZoom(state.media.zoom + MEDIA_ZOOM_STEP); }
+    if (["-", "_"].includes(event.key)) { event.preventDefault(); setMediaZoom(state.media.zoom - MEDIA_ZOOM_STEP); }
+    if (event.key === "0") { event.preventDefault(); setMediaZoom(1, { resetScroll: true }); }
+    if (event.key.toLowerCase() === "f") { event.preventDefault(); toggleMediaFullscreen(); }
   });
   window.addEventListener("popstate", async () => {
     const route = parsePageRoute();
@@ -4050,6 +4395,7 @@ function bindEvents() {
 
 async function bootstrap() {
   const initialRoute = parsePageRoute();
+  applyUiLanguage(localStorage.getItem("ra-triage-ui-language") || "zh", { persist: false });
   const savedSidebarState = localStorage.getItem("ra-triage-sidebar-collapsed");
   state.sidebarCollapsed = savedSidebarState === "true";
   applySidebarState();
