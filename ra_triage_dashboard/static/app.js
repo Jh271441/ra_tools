@@ -92,6 +92,11 @@ const state = {
     snapshot: null,
     requestSeq: 0,
   },
+  detailMedia: {
+    issueId: "",
+    kind: "",
+    indexes: { bev: 0, camera: 0 },
+  },
   sourcePreview: { runId: "", page: 1, pageSize: 100, pageCount: 1 },
   session: {
     username: "",
@@ -458,6 +463,7 @@ function setReviewView(issueId = "") {
   detail.classList.toggle("hidden", !showingDetail);
   $("#reviewPage")?.classList.toggle("is-detail", showingDetail);
   if (!showingDetail) {
+    $("#detailHeroMedia")?.querySelector("video")?.pause();
     closeDialog("mediaDialog");
     window.requestAnimationFrame(() => {
       window.scrollTo({ top: state.galleryScrollY, behavior: "auto" });
@@ -478,6 +484,7 @@ function showPage(
   } = {}
 ) {
   const target = PAGE_ROUTES[page] ? page : "review";
+  if (target !== "review") $("#detailHeroMedia")?.querySelector("video")?.pause();
   state.activePage = target;
   document.querySelectorAll("[data-page]").forEach((section) => {
     section.classList.toggle("hidden", section.dataset.page !== target);
@@ -1958,7 +1965,7 @@ function heroFrameIndex(frames) {
   return Math.floor(frames.length / 2);
 }
 
-function videoPlayerMarkup(video) {
+function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {
   const durationSec = Math.max(0, Number(video?.duration_ms || 0) / 1000);
   const startOffsetSec = Number(video?.start_offset_sec ?? 0);
   const eventTimeSec = Number(video?.event_time_sec ?? Math.max(0, -startOffsetSec));
@@ -1967,16 +1974,16 @@ function videoPlayerMarkup(video) {
     .sort((left, right) => left - right)
     .map((step) => `<option value="${escapeHtml(step)}" ${step === 1 ? "selected" : ""}>${escapeHtml(step)}s${step === frameStepSec ? "（1 帧）" : ""}</option>`)
     .join("");
-  return `<div class="hero-video-player" data-bev-video-player
+  const videoMarkup = `<video src="${escapeHtml(video.url)}" preload="metadata" playsinline draggable="false" aria-label="Ares Studio BEV 视频"></video>`;
+  const mediaMarkup = zoomable
+    ? `<div class="media-viewport media-video-viewport" data-video-viewport><div class="media-canvas media-video-canvas" data-video-canvas>${videoMarkup}</div></div>`
+    : `<div class="hero-media-button hero-media-video">${videoMarkup}</div>`;
+  return `<div class="hero-video-player ${compact ? "is-compact" : ""}" data-bev-video-player
       data-start-offset-sec="${escapeHtml(startOffsetSec)}"
       data-event-time-sec="${escapeHtml(eventTimeSec)}"
       data-duration-sec="${escapeHtml(durationSec)}"
       data-frame-step-sec="${escapeHtml(frameStepSec)}">
-    <div class="media-viewport media-video-viewport" data-video-viewport>
-      <div class="media-canvas media-video-canvas" data-video-canvas>
-        <video src="${escapeHtml(video.url)}" controls preload="metadata" playsinline draggable="false" aria-label="Ares Capture BEV 视频"></video>
-      </div>
-    </div>
+    ${mediaMarkup}
     <div class="bev-video-controls" aria-label="BEV 视频控制">
       <div class="bev-video-control-row">
         <button class="button button-quiet" type="button" data-video-play>播放</button>
@@ -2002,7 +2009,6 @@ function videoPlayerMarkup(video) {
         <input data-video-seek type="range" min="0" max="${escapeHtml(durationSec || 40)}" value="0" step="0.01" aria-label="视频进度" />
         <span data-video-time>${escapeHtml(formatSignedSeconds(startOffsetSec))} / ${escapeHtml(formatSignedSeconds(startOffsetSec + durationSec))}</span>
       </div>
-      <small>← / → 按所选步长跳转 · 空格播放/暂停 · t0 位于视频 ${escapeHtml(eventTimeSec.toFixed(1))}s</small>
     </div>
   </div>`;
 }
@@ -2050,6 +2056,7 @@ function bindBevVideoPlayers(root) {
       }
     };
     playButton.addEventListener("click", togglePlayback);
+    video.addEventListener("click", togglePlayback);
     player.querySelectorAll("[data-video-jump]").forEach((button) => {
       button.addEventListener("click", () => jump(Number(button.dataset.videoJump)));
     });
@@ -2094,6 +2101,27 @@ function bindBevVideoPlayers(root) {
   });
 }
 
+function ensureDetailMediaState(caseData) {
+  const issueId = String(caseData?.issue_id || "");
+  const available = {
+    bev: Boolean(caseData?.assets?.frames?.length),
+    camera: Boolean(caseData?.camera?.frames?.length),
+    video: Boolean(caseData?.assets?.video?.url),
+  };
+  if (state.detailMedia.issueId !== issueId) {
+    state.detailMedia = {
+      issueId,
+      kind: preferredMediaKind(caseData),
+      indexes: {
+        bev: heroFrameIndex(caseData?.assets?.frames || []),
+        camera: heroFrameIndex(caseData?.camera?.frames || []),
+      },
+    };
+  }
+  if (!available[state.detailMedia.kind]) state.detailMedia.kind = preferredMediaKind(caseData);
+  return available;
+}
+
 function heroMediaSection(caseData) {
   const frames = caseData?.assets?.frames || [];
   const video = caseData?.assets?.video;
@@ -2101,26 +2129,91 @@ function heroMediaSection(caseData) {
   if (!frames.length && !camera.length && !video?.url) {
     return '<section class="hero-media"><div class="no-asset hero-media-placeholder"><span>当前没有可预览的 BEV、Camera 或视频。</span></div></section>';
   }
-  if (!frames.length) {
-    const modes = [camera.length ? "Camera" : "", video?.url ? "BEV 视频" : ""]
-      .filter(Boolean)
-      .join(" / ");
-    return `
-      <section class="hero-media">
-        <button type="button" class="hero-media-placeholder hero-media-placeholder-button" data-open-media-preview>
-          <strong>展开媒体预览</strong><span>${escapeHtml(modes)}</span>
-        </button>
-      </section>`;
-  }
-  const index = heroFrameIndex(frames);
-  const frame = frames[index];
+  const available = ensureDetailMediaState(caseData);
+  const kind = state.detailMedia.kind;
+  const activeFrames = kind === "camera" ? camera : frames;
+  const index = Math.max(0, Math.min(
+    Number(state.detailMedia.indexes[kind] || 0),
+    Math.max(activeFrames.length - 1, 0)
+  ));
+  if (kind !== "video") state.detailMedia.indexes[kind] = index;
+  const frame = activeFrames[index];
+  const content = kind === "video" && video?.url
+    ? videoPlayerMarkup(video, { zoomable: false, compact: true })
+    : `<button type="button" class="hero-media-button" data-detail-media-expand aria-label="展开${kind === "camera" ? " Camera" : " BEV"}媒体预览">
+        <img src="${escapeHtml(frame?.url || "")}" alt="${kind === "camera" ? "Camera" : "Ares Capture BEV"} ${escapeHtml(frameLabel(frame || {}))}" />
+        <span class="hero-media-overlay">${escapeHtml(frameLabel(frame || {}))} · 点击展开</span>
+      </button>`;
   return `
-    <section class="hero-media">
-      <button type="button" class="hero-media-button" data-hero-frame-view data-media-kind="bev" data-media-index="${index}" aria-label="打开 Ares 与 Camera 时序预览">
-        <img src="${escapeHtml(frame.url)}" alt="Ares Capture BEV ${escapeHtml(frameLabel(frame))}" />
-        <span class="hero-media-overlay">展开媒体预览 · ${escapeHtml(frameLabel(frame))}</span>
-      </button>
+    <section class="hero-media detail-hero-media" id="detailHeroMedia" tabindex="0" aria-label="Issue 媒体">
+      <div class="detail-media-toolbar">
+        <div class="media-mode-tabs" role="tablist" aria-label="媒体模式">
+          <button type="button" class="media-mode ${kind === "bev" ? "active" : ""}" data-detail-media-kind="bev" ${available.bev ? "" : "disabled"}>BEV 图片 <span>${frames.length}</span></button>
+          <button type="button" class="media-mode ${kind === "camera" ? "active" : ""}" data-detail-media-kind="camera" ${available.camera ? "" : "disabled"}>Camera 图片 <span>${camera.length}</span></button>
+          <button type="button" class="media-mode ${kind === "video" ? "active" : ""}" data-detail-media-kind="video" ${available.video ? "" : "disabled"}>Ares Studio 视频 <span>${available.video ? "1" : "0"}</span></button>
+        </div>
+        <div class="detail-media-actions">
+          <button class="button button-quiet" type="button" data-detail-media-previous ${kind === "video" ? "hidden" : ""}>← 上一帧</button>
+          <span class="detail-media-position" ${kind === "video" ? "hidden" : ""}>${activeFrames.length ? `${index + 1} / ${activeFrames.length}` : "—"}</span>
+          <button class="button button-quiet" type="button" data-detail-media-next ${kind === "video" ? "hidden" : ""}>下一帧 →</button>
+          <button class="button button-quiet detail-media-expand" type="button" data-detail-media-expand>展开查看</button>
+        </div>
+      </div>
+      <div class="detail-media-content">${content}</div>
+      <p class="detail-media-help">B / C / V 切换媒体 · ${kind === "video" ? "空格播放/暂停 · ←/→ 跳转" : "←/→ 切帧"} · F 展开查看</p>
     </section>`;
+}
+
+function bindDetailMedia(caseData) {
+  const root = $("#detailHeroMedia");
+  if (!root) return;
+  const render = () => {
+    root.outerHTML = heroMediaSection(caseData);
+    bindDetailMedia(caseData);
+  };
+  const switchKind = (kind) => {
+    const available = kind === "video"
+      ? Boolean(caseData?.assets?.video?.url)
+      : Boolean((kind === "camera" ? caseData?.camera?.frames : caseData?.assets?.frames)?.length);
+    if (!available || state.detailMedia.kind === kind) return;
+    root.querySelector("video")?.pause();
+    state.detailMedia.kind = kind;
+    render();
+  };
+  const move = (delta) => {
+    const kind = state.detailMedia.kind;
+    if (kind === "video") return;
+    const frames = kind === "camera" ? caseData?.camera?.frames || [] : caseData?.assets?.frames || [];
+    if (!frames.length) return;
+    state.detailMedia.indexes[kind] = (state.detailMedia.indexes[kind] + delta + frames.length) % frames.length;
+    render();
+  };
+  const expand = () => openMedia(
+    state.detailMedia.kind,
+    state.detailMedia.kind === "video" ? 0 : state.detailMedia.indexes[state.detailMedia.kind],
+    { caseData }
+  );
+  root.querySelectorAll("[data-detail-media-kind]").forEach((button) => {
+    button.addEventListener("click", () => switchKind(button.dataset.detailMediaKind));
+  });
+  root.querySelector("[data-detail-media-previous]")?.addEventListener("click", () => move(-1));
+  root.querySelector("[data-detail-media-next]")?.addEventListener("click", () => move(1));
+  root.querySelectorAll("[data-detail-media-expand]").forEach((button) => button.addEventListener("click", expand));
+  bindBevVideoPlayers(root);
+  root.addEventListener("keydown", (event) => {
+    if (event.target.matches("input, select")) return;
+    const key = event.key.toLowerCase();
+    if (["b", "c", "v"].includes(key)) {
+      event.preventDefault();
+      switchKind({ b: "bev", c: "camera", v: "video" }[key]);
+    } else if (state.detailMedia.kind !== "video" && ["arrowleft", "arrowup", "arrowright", "arrowdown"].includes(key)) {
+      event.preventDefault();
+      move(["arrowleft", "arrowup"].includes(key) ? -1 : 1);
+    } else if (key === "f") {
+      event.preventDefault();
+      expand();
+    }
+  });
 }
 
 function predictionCards(caseData) {
@@ -2164,12 +2257,6 @@ function renderDetail(caseData) {
   const issueIdMarkup = issueUrl
     ? `<a class="detail-id detail-id-link" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" title="打开 Voyager Issue">${issueId}</a>`
     : `<span class="detail-id">${issueId}</span>`;
-  const bevFrames = caseData.assets?.frames || [];
-  const bevVideo = caseData.assets?.video;
-  const cameraFrames = caseData.camera?.frames || [];
-  const mediaPreviewButton = bevFrames.length || cameraFrames.length || bevVideo?.url
-    ? `<button class="button button-quiet hero-bev-open" type="button" data-open-media-preview>媒体预览</button>`
-    : "";
   const modelHistoryButton = `<button class="history-inline-button" type="button" data-open-history="model">评测 Run 历史 · ${(caseData.predictions || []).length} 条</button>`;
   $("#detailPane").innerHTML = `
     <div class="detail-header">
@@ -2195,7 +2282,6 @@ function renderDetail(caseData) {
         <button class="button button-quiet detail-back-button" id="backToGalleryButton" type="button">← 返回筛选结果</button>
         ${caseData.summary ? `<p class="detail-summary">${escapeHtml(caseData.summary)}</p>` : ""}
         <div class="detail-actions">
-          ${mediaPreviewButton}
           <button class="button button-quiet" type="button" data-predict-current-case>API 推理</button>
           ${modelHistoryButton}
         </div>
@@ -2205,11 +2291,6 @@ function renderDetail(caseData) {
     ${heroMediaSection(caseData)}`;
   $("#detailPane").querySelector("[data-predict-current-case]")?.addEventListener("click", () => {
     openBatchDraft([caseData.issue_id], "single");
-  });
-  $("#detailPane").querySelectorAll("[data-open-media-preview]").forEach((button) => {
-    button.addEventListener("click", () => {
-      openMedia(preferredMediaKind(caseData), heroFrameIndex(bevFrames), { caseData });
-    });
   });
   $("#detailPane").querySelector("[data-open-history='model']")?.addEventListener("click", () => {
     openHistoryDialog("model", caseData);
@@ -2222,13 +2303,7 @@ function renderDetail(caseData) {
     navigateAdjacentCase(1).catch((error) => showToast(error.message, true));
   });
   renderCaseNavigation();
-  $("#detailPane").querySelectorAll("[data-media-kind]").forEach((button) => {
-    button.addEventListener("click", () => openMedia(
-      button.dataset.mediaKind,
-      Number(button.dataset.mediaIndex),
-      { caseData }
-    ));
-  });
+  bindDetailMedia(caseData);
 }
 
 function annotationHistory(annotations) {
@@ -2612,9 +2687,10 @@ function mediaVideo() {
 }
 
 function preferredMediaKind(caseData) {
+  if (caseData?.assets?.video?.url) return "video";
   if (caseData?.assets?.frames?.length) return "bev";
   if (caseData?.camera?.frames?.length) return "camera";
-  return caseData?.assets?.video?.url ? "video" : "";
+  return "";
 }
 
 async function openCaseMediaPreview(issueId, button = null) {
@@ -2892,7 +2968,7 @@ async function toggleMediaFullscreen() {
 function switchMediaKind(kind) {
   const available = kind === "video" ? Boolean(mediaVideo()) : Boolean(mediaFrames(kind).length);
   if (!available) {
-    showToast(`${kind === "video" ? "BEV 视频" : kind.toUpperCase()} 当前不可用。`, true);
+      showToast(`${kind === "video" ? "Ares Studio 视频" : `${kind.toUpperCase()} 图片`} 当前不可用。`, true);
     return;
   }
   if (state.media.kind === "video" && kind !== "video") {
@@ -2965,9 +3041,9 @@ function renderMediaDialog() {
   videoStage.hidden = !videoMode;
   $("#mediaTimeline").hidden = videoMode;
   $("#mediaModeTabs").innerHTML = `
-    <button type="button" class="media-mode ${state.media.kind === "bev" ? "active" : ""}" data-media-mode="bev" ${bev.length ? "" : "disabled"}>BEV <span>${bev.length}</span></button>
-    <button type="button" class="media-mode ${state.media.kind === "camera" ? "active" : ""}" data-media-mode="camera" ${camera.length ? "" : "disabled"}>Camera <span>${camera.length}</span></button>
-    <button type="button" class="media-mode ${videoMode ? "active" : ""}" data-media-mode="video" ${video ? "" : "disabled"}>BEV 视频 <span>${video ? "1" : "0"}</span></button>`;
+    <button type="button" class="media-mode ${state.media.kind === "bev" ? "active" : ""}" data-media-mode="bev" ${bev.length ? "" : "disabled"}>BEV 图片 <span>${bev.length}</span></button>
+    <button type="button" class="media-mode ${state.media.kind === "camera" ? "active" : ""}" data-media-mode="camera" ${camera.length ? "" : "disabled"}>Camera 图片 <span>${camera.length}</span></button>
+    <button type="button" class="media-mode ${videoMode ? "active" : ""}" data-media-mode="video" ${video ? "" : "disabled"}>Ares Studio 视频 <span>${video ? "1" : "0"}</span></button>`;
   $("#mediaModeTabs").querySelectorAll("[data-media-mode]").forEach((button) => {
     button.addEventListener("click", () => switchMediaKind(button.dataset.mediaMode));
   });
@@ -2984,7 +3060,7 @@ function renderMediaDialog() {
         setMediaZoom(state.media.zoom, { resetScroll: true });
       });
     }
-    $("#mediaTitle").textContent = `${snapshot?.issueId || ""} · BEV 视频`;
+    $("#mediaTitle").textContent = `${snapshot?.issueId || ""} · Ares Studio 视频`;
     $("#mediaTimeline").innerHTML = "";
     $("#mediaHelp").textContent = "← / → 按所选步长跳转 · 空格播放/暂停 · B/C/V 切媒体 · +/− 缩放 · 0 适配 · 放大后拖拽平移 · F 全屏 · Esc 退出";
     setMediaZoom(state.media.zoom, { resetScroll: state.media.zoom === 1 });
