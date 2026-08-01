@@ -148,6 +148,7 @@ html[data-ui-lang="en"] .ui-lang-en { display: inline; }
 .runs-page-card { display: grid; gap: 12px; min-width: 0; }
 .runs-page-card .run-manager-list { max-height: none; }
 .tool-page-grid { display: grid; grid-template-columns: 260px minmax(0, 1fr); align-items: start; gap: 12px; }
+.batch-page-grid { align-items: stretch; }
 .page-aside { display: grid; gap: 12px; position: sticky; top: 64px; }
 .page-aside h3 { color: var(--text); font-size: 16px; }
 .page-aside p { color: var(--muted); font-size: 12px; line-height: 1.65; }
@@ -189,16 +190,20 @@ html[data-ui-lang="en"] .ui-lang-en { display: inline; }
 .batch-runtime-summary strong { color: #d8e8ef; font-size: 13px; overflow-wrap: anywhere; }
 .batch-runtime-summary span { color: var(--muted); font-size: 11px; line-height: 1.5; }
 .batch-runtime-summary small { color: var(--faint); font-size: 9px; line-height: 1.45; }
-.gateway-card { gap: 10px; }
+.gateway-card {
+  height: 100%; grid-template-rows: auto auto auto auto minmax(238px, 1fr) auto; align-content: stretch; gap: 10px;
+  position: static;
+}
 .gateway-endpoint {
-  display: grid; gap: 3px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: #0d121b;
+  min-width: 0; display: grid; gap: 3px;
 }
 .gateway-endpoint > span { color: var(--muted); font-size: 10px; }
 .gateway-endpoint select { min-width: 0; width: 100%; }
-.gateway-endpoint small { color: #77bf96; font-size: 9px; }
+.gateway-endpoint small { overflow: hidden; color: #77bf96; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .gateway-model-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+.gateway-model-control select { min-width: 0; width: 100%; }
 .gateway-model-control .button { padding-inline: 8px; }
-.gateway-model-list { max-height: 238px; display: grid; gap: 5px; overflow: auto; padding: 1px 2px 1px 0; }
+.gateway-model-list { min-height: 238px; max-height: none; display: grid; align-content: start; gap: 5px; overflow: auto; padding: 1px 2px 1px 0; }
 .gateway-model-option {
   min-width: 0; display: grid; gap: 3px; padding: 7px 8px; border: 1px solid var(--line);
   border-radius: 7px; color: var(--muted); background: #0b1018; text-align: left; transition: border-color 130ms ease-out, background 130ms ease-out;
@@ -1086,6 +1091,8 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .issue-list { max-height: 380px; }
   .tool-page-grid, .run-filter-three { grid-template-columns: minmax(0, 1fr); }
   .page-aside { position: static; }
+  .gateway-card { height: auto; grid-template-rows: none; }
+  .gateway-model-list { min-height: 0; max-height: 238px; }
   .run-import-body { grid-template-columns: minmax(0, 1fr); }
   .run-import-controls { grid-template-columns: minmax(0, 1fr); }
   .trail-state-row { grid-template-columns: minmax(0, 1fr); }
