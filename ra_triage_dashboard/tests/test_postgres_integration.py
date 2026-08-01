@@ -83,7 +83,10 @@ class PostgresDatabaseIntegrationTest(unittest.TestCase):
             self.assertEqual(database.next_queued_batch_prediction_job()["id"], job["id"])
             batch_jobs = database.list_batch_prediction_jobs(page_size=20)
             self.assertEqual(batch_jobs["total"], 1)
-            self.assertEqual(batch_jobs["facets"]["models"][0]["id"], "profile")
+            self.assertEqual(
+                {item["id"] for item in batch_jobs["facets"]["models"]},
+                {"profile", "Qwen3.5/base"},
+            )
             self.assertGreater(database.change_revision(), initial_revision)
             overview = database.overview(
                 baseline_scope="postgres_test", model_run_id=run["id"]
