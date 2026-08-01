@@ -81,7 +81,7 @@ html[data-ui-lang="en"] .ui-lang-en { display: inline; }
   border-bottom: 1px solid var(--line); background: rgba(11, 14, 20, .92); position: sticky; top: 0; z-index: 10;
   backdrop-filter: blur(12px);
 }
-.topbar h1 { font-size: 15px; }
+.topbar h1 { font-size: 17px; font-weight: 700; letter-spacing: -.015em; }
 .brand { min-width: 165px; display: flex; align-items: center; gap: 9px; }
 .brand-mark {
   width: 37px; height: 37px; display: grid; place-items: center; border: 1px solid rgba(34,211,238,.6); border-radius: 9px;
@@ -247,7 +247,7 @@ html[data-ui-lang="en"] .ui-lang-en { display: inline; }
 .batch-result-item small { grid-column: 1 / -1; color: #f3aaaa; font-size: 9px; line-height: 1.4; }
 .batch-result-item .batch-item-reason { color: var(--muted); }
 .review-commandbar {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 6px 8px; padding: 7px 8px; margin-bottom: 7px;
+  display: block; padding: 7px 8px; margin-bottom: 7px;
   border: 1px solid var(--line); border-radius: var(--radius); background: var(--raised);
 }
 .review-filters {
@@ -304,6 +304,7 @@ html[data-ui-lang="en"] .ui-lang-en { display: inline; }
   padding: 10px 13px; border-bottom: 1px solid var(--line-soft);
 }
 .gallery-heading > div:first-child { display: grid; gap: 2px; }
+.gallery-heading-actions { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
 .gallery-heading-meta { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 10px; }
 .issue-grid {
   display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: start; gap: 9px;
@@ -1137,7 +1138,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .sidebar-icon { width: 30px; height: 30px; flex-basis: 30px; }
   .sidebar-bottom { display: none; }
   .topbar { top: 56px; padding: 6px 8px; }
-  .topbar h1 { font-size: 14px; }
+  .topbar h1 { font-size: 16px; }
   .top-actions .button { padding-inline: 7px; }
   .header-metrics span { font-size: 7px; }
   .header-metrics strong { font-size: 11px; }
@@ -1148,12 +1149,13 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .gallery-pagination { grid-template-columns: minmax(0, 1fr); }
   .case-pagination-main, .case-page-size { grid-column: 1; justify-self: center; }
   .gallery-heading, .case-detail-nav { align-items: flex-start; flex-direction: column; }
+  .gallery-heading-actions { width: 100%; flex-wrap: wrap; justify-content: flex-start; }
   .gallery-heading-meta, .case-detail-pager { width: 100%; justify-content: space-between; }
   .case-detail-pager .button { min-width: 0; padding-inline: 6px; }
   .review-filters { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .filter-model-run, .filter-search { grid-column: 1 / -1; }
   .filter-comparison { grid-column: 1 / -1; }
-  .review-quick-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .review-quick-actions { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
   .review-quick-actions .button { min-width: 0; padding-inline: 5px; }
   .detail-pane, .review-pane, .page-card { padding: 12px; }
   .pane-heading { padding: 12px; }

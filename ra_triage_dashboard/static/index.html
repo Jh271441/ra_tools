@@ -130,10 +130,6 @@
                 </label>
                 <button class="button button-quiet filter-submit" type="submit">应用</button>
               </form>
-              <div class="review-quick-actions">
-                <button class="button button-quiet" id="reviewUploadModelButton" type="button">上传模型结果</button>
-                <button class="button button-primary" id="predictFilteredButton" type="button" disabled>预测当前筛选</button>
-              </div>
               </section>
 
               <section class="gallery-panel">
@@ -141,9 +137,15 @@
                   <div>
                     <h2><span class="ui-lang-zh">问题图库</span><span class="ui-lang-en">Issue Gallery</span></h2>
                   </div>
-                  <div class="gallery-heading-meta">
-                    <span id="galleryResultSummary">正在加载 Issue…</span>
-                    <span class="count-pill" id="caseCount">—</span>
+                  <div class="gallery-heading-actions">
+                    <div class="review-quick-actions">
+                      <button class="button button-quiet" id="reviewUploadModelButton" type="button">上传模型结果</button>
+                      <button class="button button-primary" id="predictFilteredButton" type="button" disabled>预测当前筛选</button>
+                    </div>
+                    <div class="gallery-heading-meta">
+                      <span id="galleryResultSummary">正在加载 Issue…</span>
+                      <span class="count-pill" id="caseCount">—</span>
+                    </div>
                   </div>
                 </div>
                 <div class="issue-grid" id="issueList" aria-live="polite"></div>
