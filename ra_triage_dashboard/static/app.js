@@ -2056,9 +2056,6 @@ function bindBevVideoPlayers(root) {
       }
     };
     playButton.addEventListener("click", togglePlayback);
-    video.addEventListener("pointerdown", () => {
-      player.focus({ preventScroll: true });
-    });
     video.addEventListener("click", togglePlayback);
     player.querySelectorAll("[data-video-jump]").forEach((button) => {
       button.addEventListener("click", () => jump(Number(button.dataset.videoJump)));
@@ -2313,11 +2310,11 @@ function renderDetail(caseData) {
         <button class="button button-quiet detail-back-button" id="backToGalleryButton" type="button">← 返回筛选结果</button>
         ${caseData.summary ? `<p class="detail-summary">${escapeHtml(caseData.summary)}</p>` : ""}
         <div class="detail-context-actions">
+          ${detailMediaCommandMarkup(caseData)}
           <div class="detail-actions">
             <button class="button button-quiet" type="button" data-predict-current-case>API 推理</button>
             ${modelHistoryButton}
           </div>
-          ${detailMediaCommandMarkup(caseData)}
         </div>
       </div>
       ${caseData.review_note ? `<details class="review-note-details"><summary>查看历史备注</summary><div class="review-note"><span>历史备注</span>${escapeHtml(caseData.review_note)}</div></details>` : ""}
@@ -4656,7 +4653,20 @@ function bindEvents() {
     window.requestAnimationFrame(updateMediaPanState);
   });
   document.addEventListener("keydown", (event) => {
-    if (!$("#mediaDialog").open) return;
+    if (!$("#mediaDialog").open) {
+      const target = event.target instanceof Element ? event.target : null;
+      const interactiveTarget = target?.closest("input, textarea, select, button, a, [contenteditable='true']");
+      const detailVideoActive =
+        state.activePage === "review" &&
+        Boolean(state.selectedCase) &&
+        state.detailMedia.kind === "video" &&
+        !document.querySelector("dialog[open]");
+      if (event.key === " " && detailVideoActive && !interactiveTarget) {
+        event.preventDefault();
+        $("#detailHeroMedia")?.querySelector("[data-video-play]")?.click();
+      }
+      return;
+    }
     if (["ArrowLeft", "ArrowUp"].includes(event.key)) { event.preventDefault(); moveMedia(-1); }
     if (["ArrowRight", "ArrowDown"].includes(event.key)) { event.preventDefault(); moveMedia(1); }
     if (event.key.toLowerCase() === "b") switchMediaKind("bev");

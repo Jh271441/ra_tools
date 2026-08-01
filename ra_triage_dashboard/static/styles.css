@@ -538,7 +538,7 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .detail-media-select {
   height: 34px; min-height: 34px; padding: 5px 9px; border-radius: 7px; font-size: 10px;
 }
-.detail-media-select { width: 178px; padding-right: 28px; color: var(--accent); border-color: rgba(34,211,238,.45); background-color: var(--overlay); }
+.detail-media-select { width: 152px; padding-right: 26px; color: var(--accent); border-color: rgba(34,211,238,.45); background-color: var(--overlay); }
 .detail-media-command .detail-media-expand { min-width: 78px; color: var(--accent); border-color: rgba(34,211,238,.58); background: var(--accent-soft); }
 .detail-media-command #detailMediaPreviousButton,
 .detail-media-command #detailMediaNextButton { min-width: 34px; padding: 0; }
@@ -1196,7 +1196,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .media-toolbar { align-items: stretch; flex-direction: column; gap: 6px; }
   .media-view-controls { justify-content: flex-end; flex-wrap: wrap; }
   .detail-media-command { width: 100%; flex-wrap: wrap; }
-  .detail-media-select { flex: 1; min-width: 180px; }
+  .detail-media-select { flex: 1; min-width: 150px; }
   .bev-video-controls { grid-template-columns: minmax(0, 1fr); }
   .media-stage { min-height: 240px; grid-template-columns: 34px minmax(0, 1fr) 34px; gap: 5px; }
   .media-nav { width: 32px; height: 32px; }
