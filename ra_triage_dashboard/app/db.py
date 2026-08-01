@@ -1135,6 +1135,8 @@ class Database:
             raise ValueError(f"不支持的标注标签: {label}")
         if review_status not in REVIEW_STATUSES:
             raise ValueError(f"不支持的 review 状态: {review_status}")
+        if not author.strip():
+            raise ValueError("复核人不能为空。")
         tags = sorted({str(tag).strip() for tag in tags if str(tag).strip()})
         missing_evidence = sorted(
             {str(item).strip() for item in missing_evidence if str(item).strip()}

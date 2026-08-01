@@ -2444,7 +2444,7 @@ function annotationHistory(annotations) {
         ${annotation.tags?.length ? `<div class="tags">${annotation.tags.map((tag) => `<span class="tag">${escapeHtml(tagLabel(tag))}</span>`).join("")}</div>` : ""}
         ${annotation.attachments?.length ? `<div class="history-attachments">${annotation.attachments.map((attachment, index) => `<a href="${escapeHtml(attachment.url)}" target="_blank" rel="noreferrer" title="打开补充截图 ${index + 1}"><img src="${escapeHtml(attachment.url)}" alt="补充截图 ${index + 1}" loading="lazy" /></a>`).join("")}</div>` : ""}
         ${annotation.note ? `<p>${escapeHtml(annotation.note)}</p>` : ""}
-        ${annotation.author ? `<small>${escapeHtml(annotation.author)}${annotation.author_verified ? " · SSO 已验证" : " · 未验证/历史"}</small>` : ""}
+        ${annotation.author ? `<small>复核人：${escapeHtml(annotation.author)}${annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}</small>` : `<small>复核人：历史记录未填写</small>`}
       </article>`)
     .join("");
 }
@@ -2502,10 +2502,10 @@ function renderReview(caseData) {
         <input class="hidden" id="reviewScreenshotInput" type="file" accept="image/png,image/jpeg,image/webp" multiple />
         <div class="pending-screenshot-list" id="pendingScreenshotList"></div>
       </div>
-      <label><span>标注人${authorLocked ? "（SSO）" : "（可编辑）"}</span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" ${authorLocked ? "readonly" : ""} /></label>
+      <label><span>复核人${authorLocked ? "（SSO）" : "（必填）"}</span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" required ${authorLocked ? "readonly" : ""} /></label>
       <button class="button button-primary full-width" type="submit">保存新的 review 版本</button>
     </form>
-    <details class="review-history-toggle">
+    <details class="review-history-toggle" open>
       <summary><span><strong>Review 历史</strong></span><span class="history-launch-meta">${(caseData.annotations || []).length} 条</span></summary>
       <div class="review-history-content">${annotationHistory(caseData.annotations)}</div>
     </details>`;

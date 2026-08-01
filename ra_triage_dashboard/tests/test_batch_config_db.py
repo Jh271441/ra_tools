@@ -50,6 +50,26 @@ class BatchConfigDatabaseTest(unittest.TestCase):
             )
             self.assertGreater(database.change_revision(), after_issue)
 
+    def test_annotation_requires_reviewer(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "triage.sqlite3")
+            database.init()
+            database.upsert_issues(
+                [{"issue_id": "cn12345", "gt_label": "误触发"}],
+                source="test",
+                replace_gt=False,
+            )
+            with self.assertRaisesRegex(ValueError, "复核人不能为空"):
+                database.create_annotation(
+                    issue_id="cn12345",
+                    label="误触发",
+                    review_status="reviewed",
+                    tags=[],
+                    missing_evidence=[],
+                    note="missing reviewer",
+                    author=" ",
+                )
+
     def test_queued_batch_survives_restart_and_remains_fifo(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "triage.sqlite3"
