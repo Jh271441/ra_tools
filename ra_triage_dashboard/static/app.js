@@ -1672,6 +1672,11 @@ function renderAnalysisCases(data) {
         const reasonThemes = item.reason_themes || [];
         const reviewUrl = safeSameOriginReviewUrl(item.review_url);
         const voyagerUrl = safeUrl(item.voyager_issue_url);
+        const issueId = escapeHtml(item.issue_id);
+        const sceneLabel = item.title || item.scenario || "未填写场景";
+        const issueIdMarkup = voyagerUrl
+          ? `<a class="analysis-issue-link" href="${escapeHtml(voyagerUrl)}" target="_blank" rel="noreferrer" title="在 Voyager 中打开 ${issueId}">${issueId}</a>`
+          : `<strong>${issueId}</strong>`;
         const comparisonStatus = normalizedAnalysisComparisonStatus(
           item.comparison_status,
           ""
@@ -1700,14 +1705,18 @@ function renderAnalysisCases(data) {
           .join("");
         return `<article class="analysis-case-row">
           <div class="analysis-case-identity">
-            <strong>${escapeHtml(item.issue_id)}</strong>
-            <span>${escapeHtml(item.title || item.scenario || "未填写场景")}</span>
+            ${issueIdMarkup}
+            <span title="${escapeHtml(sceneLabel)}">${escapeHtml(sceneLabel)}</span>
           </div>
           <div class="analysis-case-labels">
             ${comparisonBadge}
-            <span>GT ${labelBadge(item.gt_label)}</span>
-            <span>模型 ${labelBadge(prediction.label)}${escapeHtml(confidence)}</span>
-            <span>人工 ${labelBadge(annotation.label)}</span>
+            <span title="0508 baseline GT">GT ${labelBadge(item.gt_label)}</span>
+            <button class="analysis-model-history-button" type="button"
+              data-analysis-model-history="${issueId}"
+              title="查看此 Issue 的全部评测 Run 输出历史"
+              aria-label="查看 ${issueId} 的评测 Run 输出历史">
+              <span>模型</span>${labelBadge(prediction.label, "未输出")}${escapeHtml(confidence)}
+            </button>
           </div>
           <div class="analysis-case-reason">
             <strong class="${annotation.note ? "" : "reason-empty"}">${escapeHtml(annotation.note || "未填写“模型为什么判错”")}</strong>
@@ -1718,13 +1727,28 @@ function renderAnalysisCases(data) {
             <span>${escapeHtml(annotation.author || "未记录复核人")}${annotation.author_verified ? " · SSO" : ""}</span>
             <span>${escapeHtml(reviewStatusLabel(annotation.review_status))} · ${formatTime(annotation.created_at)}</span>
             <span class="analysis-case-actions">
-              ${reviewUrl ? `<a class="text-link" href="${escapeHtml(reviewUrl)}">打开 Review</a>` : ""}
-              ${voyagerUrl ? `<a class="text-link" href="${escapeHtml(voyagerUrl)}" target="_blank" rel="noreferrer">Voyager ↗</a>` : ""}
+              ${reviewUrl ? `<a class="text-link" href="${escapeHtml(reviewUrl)}" title="打开问题详情与 Review">问题详情</a>` : ""}
             </span>
           </div>
         </article>`;
       })
       .join("");
+    target.querySelectorAll("[data-analysis-model-history]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (button.getAttribute("aria-busy") === "true") return;
+        button.setAttribute("aria-busy", "true");
+        try {
+          const caseData = await api(
+            `/api/cases/${encodeURIComponent(button.dataset.analysisModelHistory)}`
+          );
+          openHistoryDialog("model", caseData);
+        } catch (error) {
+          showToast(error.message, true);
+        } finally {
+          button.removeAttribute("aria-busy");
+        }
+      });
+    });
   }
   const page = Number(data.page || 1);
   const pageCount = Number(data.page_count || 1);

@@ -934,9 +934,19 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 }
 .analysis-case-identity, .analysis-case-labels, .analysis-case-reason, .analysis-case-meta { min-width: 0; display: grid; gap: 3px; }
 .analysis-case-labels { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 5px; }
-.analysis-case-identity strong { color: #b9edf0; font: 12px "SFMono-Regular", Consolas, monospace; }
+.analysis-case-identity strong, .analysis-issue-link { color: #b9edf0; font: 12px "SFMono-Regular", Consolas, monospace; }
+.analysis-issue-link { width: fit-content; border-radius: 3px; text-decoration: none; }
+.analysis-issue-link:hover, .analysis-issue-link:focus-visible { color: var(--accent); background: rgba(34,211,238,.08); outline: none; }
 .analysis-case-identity span { overflow: hidden; color: var(--faint); font-size: 10px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
 .analysis-case-labels > span { display: flex; align-items: center; gap: 5px; color: var(--faint); font-size: 10px; }
+.analysis-model-history-button {
+  display: inline-flex; align-items: center; gap: 5px; padding: 0; border: 0; border-radius: 4px;
+  color: var(--faint); background: transparent; font-size: 10px; text-align: left;
+}
+.analysis-model-history-button:hover .label-badge,
+.analysis-model-history-button:focus-visible .label-badge { filter: brightness(1.16); box-shadow: 0 0 0 1px rgba(34,211,238,.22); }
+.analysis-model-history-button:focus-visible { outline: 1px solid rgba(34,211,238,.42); outline-offset: 2px; }
+.analysis-model-history-button[aria-busy="true"] { opacity: .62; cursor: progress; }
 .analysis-case-labels > .analysis-comparison-badge {
   width: fit-content; min-height: 20px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 999px;
   font: 700 9px "SFMono-Regular", Consolas, monospace; letter-spacing: .03em;
