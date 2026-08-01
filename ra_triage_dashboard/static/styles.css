@@ -843,7 +843,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .batch-common-config { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, .85fr); align-items: end; gap: 10px; }
 .batch-common-config small { color: var(--faint); font-size: 9px; line-height: 1.4; }
 .batch-bev-field { display: grid; gap: 5px; color: var(--muted); font-size: 12px; }
-.batch-bev-toggle { min-height: 32px; padding-block: 4px; }
+.batch-bev-toggle { height: 35px; min-height: 35px; padding-block: 4px; }
 .batch-bev-toggle span { display: flex; align-items: baseline; gap: 4px; }
 .batch-bev-toggle small { white-space: nowrap; }
 .config-disabled { opacity: .58; cursor: not-allowed; }
