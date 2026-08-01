@@ -935,7 +935,11 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .analysis-chip { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; color: var(--faint); background: var(--overlay); font-size: 9px; }
 .analysis-chip.theme-chip { border-color: rgba(34,211,238,.22); color: #8fd5dc; background: rgba(34,211,238,.045); }
 .analysis-chip.evidence-chip { border-color: rgba(251,191,36,.18); color: #d7bd79; background: rgba(251,191,36,.035); }
-.analysis-case-meta { color: var(--faint); font-size: 10px; line-height: 1.45; }
+.analysis-case-meta {
+  display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px 10px;
+  color: var(--faint); font-size: 10px; line-height: 1.45;
+}
+.analysis-case-meta > span { white-space: nowrap; }
 .analysis-case-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .text-link { color: #86dce4; }
 
