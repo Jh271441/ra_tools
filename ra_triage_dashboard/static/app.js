@@ -1923,13 +1923,12 @@ function openHistoryDialog(kind, caseData) {
 }
 
 function renderDetail(caseData) {
-  const rawTitle = String(caseData.title || caseData.scenario || "").trim();
-  const title =
-    rawTitle && !LABELS.includes(rawTitle) && rawTitle !== caseData.gt_label
-      ? rawTitle
-      : "";
   const primary = (caseData.predictions || []).find((item) => item.model_run_id === state.selectedRunId) || caseData.predictions?.[0];
   const issueUrl = safeUrl(caseData.voyager_issue_url || caseData.trail_url);
+  const issueId = escapeHtml(caseData.issue_id);
+  const issueIdMarkup = issueUrl
+    ? `<a class="detail-id detail-id-link" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" title="打开 Voyager Issue">${issueId}</a>`
+    : `<span class="detail-id">${issueId}</span>`;
   const bevFrames = caseData.assets?.frames || [];
   const bevPreviewButton = bevFrames.length
     ? `<button class="button button-quiet hero-bev-open" type="button" data-open-bev-preview>查看 Ares</button>`
@@ -1939,8 +1938,8 @@ function renderDetail(caseData) {
     <div class="detail-header">
       <div class="detail-title-row">
         <div class="detail-title-group">
+          <div class="detail-title"><h2><span class="ui-lang-zh">问题详情</span><span class="ui-lang-en">Issue Details</span></h2>${issueIdMarkup}</div>
           <button class="button button-quiet detail-back-button" id="backToGalleryButton" type="button">← 返回筛选结果</button>
-          <div class="detail-title">${title ? `<h2>${escapeHtml(title)}</h2>` : ""}<span class="detail-id">${escapeHtml(caseData.issue_id)}</span></div>
         </div>
         <div class="detail-navigation">
           <div class="case-detail-pager">
@@ -1961,7 +1960,6 @@ function renderDetail(caseData) {
         <div class="detail-actions">
           ${bevPreviewButton}
           <button class="button button-quiet" type="button" data-predict-current-case>API 推理</button>
-          ${issueUrl ? `<a class="button button-quiet" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer">Issue link</a>` : ""}
           ${modelHistoryButton}
         </div>
       </div>
