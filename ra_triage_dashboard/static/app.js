@@ -84,6 +84,11 @@ const state = {
   selectedAnnotationLabel: "",
   pollingBatchId: "",
   pollTimer: null,
+  changeRevision: null,
+  changePollTimer: null,
+  changePollInFlight: false,
+  reviewFormDirty: false,
+  deferredDetailRefresh: false,
   media: {
     kind: "bev",
     index: 0,
@@ -671,6 +676,85 @@ function showToast(message, isError = false) {
   if (isError) toast.classList.add("error");
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => toast.classList.add("hidden"), 4600);
+}
+
+async function refreshChangedData() {
+  if (state.activePage === "review") {
+    await Promise.all([
+      loadRuns({ preserveEmpty: !state.selectedRunId }),
+      loadOverview(),
+      loadCases({ keepSelection: true, page: state.casePage }),
+      loadClusters(),
+      loadReviewers(),
+    ]);
+    if (state.selectedId) {
+      if (
+        state.reviewFormDirty ||
+        state.savingAnnotation ||
+        state.pendingReviewImages.length
+      ) {
+        if (!state.deferredDetailRefresh) {
+          state.deferredDetailRefresh = true;
+          showToast("检测到新的协作更新；当前未保存内容已保留，保存后会合并最新数据。");
+        }
+      } else {
+        await selectCase(state.selectedId, { updateRoute: false });
+      }
+    }
+    return;
+  }
+  if (state.activePage === "analysis") {
+    await Promise.all([
+      loadRuns({ preserveEmpty: !state.selectedRunId }),
+      loadOverview(),
+      loadReviewers(),
+      loadReviewReasonAnalysis(),
+    ]);
+    return;
+  }
+  if (state.activePage === "runs") {
+    await Promise.all([loadRuns({ preserveEmpty: true }), loadOverview()]);
+    return;
+  }
+  if (state.activePage === "prediction") {
+    await Promise.all([loadPredictionBatches(), loadOverview()]);
+  }
+}
+
+function scheduleChangePoll(delay = 1800) {
+  clearTimeout(state.changePollTimer);
+  state.changePollTimer = window.setTimeout(pollChangeRevision, delay);
+}
+
+async function pollChangeRevision() {
+  if (state.changePollInFlight) return scheduleChangePoll();
+  if (document.hidden) return scheduleChangePoll(3000);
+  state.changePollInFlight = true;
+  let delay = 1800;
+  try {
+    const data = await api("/api/change-revision");
+    const revision = Number(data.revision || 0);
+    delay = Math.max(1000, Number(data.poll_after_ms || 1800));
+    if (state.changeRevision === null) {
+      state.changeRevision = revision;
+    } else if (revision !== state.changeRevision) {
+      await refreshChangedData();
+      state.changeRevision = revision;
+    }
+  } catch (error) {
+    delay = 5000;
+    console.warn("协作同步暂时不可用", error);
+  } finally {
+    state.changePollInFlight = false;
+    scheduleChangePoll(delay);
+  }
+}
+
+function startChangePolling() {
+  scheduleChangePoll(0);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) scheduleChangePoll(0);
+  });
 }
 
 function applySidebarState() {
@@ -2367,6 +2451,8 @@ function annotationHistory(annotations) {
 
 function renderReview(caseData) {
   const previous = caseData.annotations?.[0] || {};
+  state.reviewFormDirty = false;
+  state.deferredDetailRefresh = false;
   state.selectedAnnotationLabel = previous.label || "";
   const catalog = state.config?.missing_evidence_catalog || [];
   const tagCatalog = state.config?.review_tag_catalog || [];
@@ -2452,6 +2538,7 @@ function renderReview(caseData) {
     creator?.before(option);
     option.querySelector("input")?.addEventListener("change", updateEvidenceSummary);
     if (input) input.value = "";
+    state.reviewFormDirty = true;
     updateEvidenceSummary();
   });
   $("#addSceneTagButton")?.addEventListener("click", () => {
@@ -2468,6 +2555,7 @@ function renderReview(caseData) {
     $("#customTagCreator")?.before(option);
     option.querySelector("input")?.addEventListener("change", updateTagSummary);
     if (input) input.value = "";
+    state.reviewFormDirty = true;
     updateTagSummary();
   });
   const pasteZone = $("#screenshotPasteZone");
@@ -2495,7 +2583,14 @@ function renderReview(caseData) {
     screenshotInput.value = "";
   });
   renderPendingReviewImages();
-  $("#annotationForm").addEventListener("submit", saveAnnotation);
+  const annotationForm = $("#annotationForm");
+  annotationForm.addEventListener("input", () => {
+    state.reviewFormDirty = true;
+  });
+  annotationForm.addEventListener("change", () => {
+    state.reviewFormDirty = true;
+  });
+  annotationForm.addEventListener("submit", saveAnnotation);
 }
 
 function updateEvidenceSummary() {
@@ -2528,6 +2623,7 @@ function addPendingReviewImages(files) {
   const maxTotalBytes = Number(limits.max_bytes_total || 24 * 1024 * 1024);
   const allowed = new Set(limits.media_types || ["image/png", "image/jpeg", "image/webp"]);
   let rejected = "";
+  const previousCount = state.pendingReviewImages.length;
   files.forEach((file) => {
     if (state.pendingReviewImages.length >= maxCount) {
       rejected = `最多只能添加 ${maxCount} 张截图。`;
@@ -2555,6 +2651,9 @@ function addPendingReviewImages(files) {
       previewUrl: URL.createObjectURL(file),
     });
   });
+  if (state.pendingReviewImages.length !== previousCount) {
+    state.reviewFormDirty = true;
+  }
   renderPendingReviewImages();
   if (rejected) showToast(rejected, true);
 }
@@ -2582,6 +2681,7 @@ function renderPendingReviewImages() {
       if (index < 0) return;
       const previewUrl = state.pendingReviewImages[index].previewUrl;
       state.pendingReviewImages.splice(index, 1);
+      state.reviewFormDirty = true;
       renderPendingReviewImages();
       releasePreviewUrlLater(previewUrl);
     });
@@ -2703,6 +2803,8 @@ async function saveAnnotation(event) {
       });
     }
     const screenshotCount = state.pendingReviewImages.length;
+    state.reviewFormDirty = false;
+    state.deferredDetailRefresh = false;
     clearPendingReviewImages();
     showToast(
       `已保存新的 review 版本${screenshotCount ? `和 ${screenshotCount} 张截图` : ""}。`
@@ -4920,6 +5022,7 @@ async function bootstrap() {
   } catch (error) {
     showToast(`启动失败：${error.message}`, true);
   }
+  startChangePolling();
 }
 
 window.addEventListener("DOMContentLoaded", bootstrap);

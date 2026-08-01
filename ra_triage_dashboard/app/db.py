@@ -61,6 +61,13 @@ class Database:
         conn.execute("PRAGMA busy_timeout = 30000")
         return conn
 
+    def change_revision(self) -> int:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT revision FROM dashboard_change_revision WHERE id = 1"
+            ).fetchone()
+        return int(row["revision"] if row else 0)
+
     def init(self) -> None:
         with self._write_lock, self.connect() as conn:
             conn.executescript(
@@ -230,8 +237,44 @@ class Database:
                     ON batch_prediction_items(issue_id, job_id);
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_batch_prediction_items_ordinal
                     ON batch_prediction_items(job_id, ordinal);
+
+                CREATE TABLE IF NOT EXISTS dashboard_change_revision (
+                    id INTEGER PRIMARY KEY CHECK(id = 1),
+                    revision INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL
+                );
+                INSERT OR IGNORE INTO dashboard_change_revision (
+                    id, revision, updated_at
+                ) VALUES (1, 0, '');
                 """
             )
+            revision_tables = (
+                "issues",
+                "annotations",
+                "review_attachments",
+                "model_runs",
+                "model_predictions",
+                "inference_jobs",
+                "batch_prediction_jobs",
+                "batch_prediction_items",
+            )
+            for table in revision_tables:
+                for action in ("insert", "update", "delete"):
+                    conn.execute(
+                        f"""
+                        CREATE TRIGGER IF NOT EXISTS
+                            trg_{table}_{action}_change_revision
+                        AFTER {action.upper()} ON {table}
+                        BEGIN
+                            UPDATE dashboard_change_revision
+                            SET revision = revision + 1,
+                                updated_at = strftime(
+                                    '%Y-%m-%dT%H:%M:%fZ', 'now'
+                                )
+                            WHERE id = 1;
+                        END
+                        """
+                    )
             # Existing MVP databases are upgraded in place.  Each addition is
             # nullable/defaulted, so prior annotations and model runs survive.
             self._ensure_column(conn, "issues", "baseline_scope", "TEXT NOT NULL DEFAULT ''")
@@ -412,7 +455,7 @@ class Database:
                 """
                 SELECT id, model_run_id
                 FROM batch_prediction_jobs
-                WHERE status IN ('queued', 'running')
+                WHERE status = 'running'
                   AND model_run_id IS NOT NULL
                   AND TRIM(model_run_id) != ''
                 """
@@ -440,7 +483,7 @@ class Database:
                             finished_at = COALESCE(finished_at, ?)
                         WHERE job_id = ?
                           AND issue_id = ?
-                          AND status IN ('queued', 'running')
+                          AND status = 'running'
                         """,
                         (
                             _json(raw),
@@ -464,12 +507,12 @@ class Database:
                             '服务重启前 Batch 预测未完成。'
                         ELSE error_text
                     END
-                WHERE status IN ('queued', 'running')
+                WHERE status = 'running'
                   AND EXISTS (
                       SELECT 1
                       FROM batch_prediction_jobs bpj
                       WHERE bpj.id = batch_prediction_items.job_id
-                        AND bpj.status IN ('queued', 'running')
+                        AND bpj.status = 'running'
                   )
                 """,
                 (interrupted_at,),
@@ -527,7 +570,7 @@ class Database:
                             '服务重启前 Batch 预测未完成；请重新创建任务。'
                         ELSE error_text
                     END
-                WHERE status IN ('queued', 'running')
+                WHERE status = 'running'
                 """,
                 (interrupted_at,),
             )
@@ -1778,6 +1821,21 @@ class Database:
                     )
                 updated += 1
         return updated
+
+    def next_queued_batch_prediction_job(self) -> dict[str, Any] | None:
+        """Return the oldest durable prediction job waiting for the runner."""
+
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id
+                FROM batch_prediction_jobs
+                WHERE status = 'queued'
+                ORDER BY created_at ASC, rowid ASC
+                LIMIT 1
+                """
+            ).fetchone()
+        return self.get_batch_prediction_job(str(row["id"])) if row else None
 
     def get_batch_prediction_job(self, job_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
