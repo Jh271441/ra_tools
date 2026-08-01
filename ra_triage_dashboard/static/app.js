@@ -82,7 +82,7 @@ const state = {
   selectedAnnotationLabel: "",
   pollingBatchId: "",
   pollTimer: null,
-  media: { kind: "bev", index: 0, zoom: 1 },
+  media: { kind: "bev", index: 0, zoom: 1, drag: null },
   sourcePreview: { runId: "", page: 1, pageSize: 100, pageCount: 1 },
   session: {
     username: "",
@@ -2442,6 +2442,8 @@ function openDialog(id) {
 function closeDialog(id) {
   const dialog = $(`#${id}`);
   if (id === "mediaDialog") {
+    state.media.drag = null;
+    $("#mediaViewport")?.classList.remove("is-dragging");
     dialog?.classList.remove("media-fallback-fullscreen");
     if (document.fullscreenElement && dialog?.contains(document.fullscreenElement)) {
       document.exitFullscreen().catch(() => {});
@@ -2525,8 +2527,47 @@ async function openSourcePreview(runId) {
 }
 
 const MEDIA_ZOOM_MIN = 0.5;
-const MEDIA_ZOOM_MAX = 4;
+const MEDIA_ZOOM_BASE_MAX = 4;
 const MEDIA_ZOOM_STEP = 0.25;
+
+function mediaOriginalZoom() {
+  const viewport = $("#mediaViewport");
+  const image = $("#mediaPreviewImage");
+  if (
+    !viewport?.clientWidth ||
+    !viewport?.clientHeight ||
+    !image?.naturalWidth ||
+    !image?.naturalHeight
+  ) {
+    return null;
+  }
+  const fitScale = Math.min(
+    viewport.clientWidth / image.naturalWidth,
+    viewport.clientHeight / image.naturalHeight
+  );
+  return fitScale > 0 ? 1 / fitScale : null;
+}
+
+function mediaZoomMax() {
+  return Math.max(MEDIA_ZOOM_BASE_MAX, mediaOriginalZoom() || 1);
+}
+
+function mediaZoomMin() {
+  return Math.min(MEDIA_ZOOM_MIN, mediaOriginalZoom() || 1);
+}
+
+function updateMediaPanState() {
+  const viewport = $("#mediaViewport");
+  if (!viewport) return;
+  const pannable =
+    viewport.scrollWidth > viewport.clientWidth + 1 ||
+    viewport.scrollHeight > viewport.clientHeight + 1;
+  viewport.classList.toggle("is-pannable", pannable);
+  if (!pannable) {
+    state.media.drag = null;
+    viewport.classList.remove("is-dragging");
+  }
+}
 
 function mediaFullscreenActive() {
   const dialog = $("#mediaDialog");
@@ -2535,11 +2576,21 @@ function mediaFullscreenActive() {
 }
 
 function updateMediaViewControls() {
-  const zoom = Math.min(MEDIA_ZOOM_MAX, Math.max(MEDIA_ZOOM_MIN, Number(state.media.zoom) || 1));
+  const zoom = Math.min(mediaZoomMax(), Math.max(mediaZoomMin(), Number(state.media.zoom) || 1));
   state.media.zoom = zoom;
   $("#mediaZoomResetButton").textContent = `${Math.round(zoom * 100)}%`;
-  $("#mediaZoomOutButton").disabled = zoom <= MEDIA_ZOOM_MIN;
-  $("#mediaZoomInButton").disabled = zoom >= MEDIA_ZOOM_MAX;
+  $("#mediaZoomOutButton").disabled = zoom <= mediaZoomMin();
+  $("#mediaZoomInButton").disabled = zoom >= mediaZoomMax();
+  const originalZoom = mediaOriginalZoom();
+  const originalButton = $("#mediaOriginalSizeButton");
+  originalButton.disabled = !originalZoom;
+  originalButton.classList.toggle(
+    "active",
+    Boolean(originalZoom && Math.abs(zoom - originalZoom) < 0.01)
+  );
+  originalButton.title = originalZoom
+    ? `按图片原始像素 1:1 显示（${$("#mediaPreviewImage").naturalWidth} × ${$("#mediaPreviewImage").naturalHeight}）`
+    : "原图尺寸读取中";
   const fullscreen = mediaFullscreenActive();
   $("#mediaFullscreenButton").textContent = fullscreen ? "⤢" : "⛶";
   $("#mediaFullscreenButton").setAttribute("aria-label", fullscreen ? "退出全屏" : "进入全屏");
@@ -2556,7 +2607,7 @@ function setMediaZoom(nextZoom, { resetScroll = false } = {}) {
   const centerRatioY = viewport.scrollHeight > 0
     ? (viewport.scrollTop + viewport.clientHeight / 2) / viewport.scrollHeight
     : 0.5;
-  state.media.zoom = Math.min(MEDIA_ZOOM_MAX, Math.max(MEDIA_ZOOM_MIN, Number(nextZoom) || 1));
+  state.media.zoom = Math.min(mediaZoomMax(), Math.max(mediaZoomMin(), Number(nextZoom) || 1));
   const size = `${state.media.zoom * 100}%`;
   canvas.style.width = size;
   canvas.style.height = size;
@@ -2565,11 +2616,19 @@ function setMediaZoom(nextZoom, { resetScroll = false } = {}) {
     if (resetScroll) {
       viewport.scrollLeft = Math.max(0, (viewport.scrollWidth - viewport.clientWidth) / 2);
       viewport.scrollTop = Math.max(0, (viewport.scrollHeight - viewport.clientHeight) / 2);
+      updateMediaPanState();
       return;
     }
     viewport.scrollLeft = Math.max(0, centerRatioX * viewport.scrollWidth - viewport.clientWidth / 2);
     viewport.scrollTop = Math.max(0, centerRatioY * viewport.scrollHeight - viewport.clientHeight / 2);
+    updateMediaPanState();
   });
+}
+
+function showMediaAtOriginalSize() {
+  const originalZoom = mediaOriginalZoom();
+  if (!originalZoom) return;
+  setMediaZoom(originalZoom, { resetScroll: true });
 }
 
 async function toggleMediaFullscreen() {
@@ -2591,6 +2650,7 @@ async function toggleMediaFullscreen() {
     showToast(`无法切换全屏：${error.message}`, true);
   }
   updateMediaViewControls();
+  window.requestAnimationFrame(updateMediaPanState);
 }
 
 function renderMediaDialog() {
@@ -4132,13 +4192,58 @@ function bindEvents() {
   $("#mediaZoomOutButton").addEventListener("click", () => setMediaZoom(state.media.zoom - MEDIA_ZOOM_STEP));
   $("#mediaZoomResetButton").addEventListener("click", () => setMediaZoom(1, { resetScroll: true }));
   $("#mediaZoomInButton").addEventListener("click", () => setMediaZoom(state.media.zoom + MEDIA_ZOOM_STEP));
+  $("#mediaOriginalSizeButton").addEventListener("click", showMediaAtOriginalSize);
   $("#mediaFullscreenButton").addEventListener("click", () => toggleMediaFullscreen());
+  $("#mediaPreviewImage").addEventListener("load", () => {
+    setMediaZoom(state.media.zoom);
+  });
+  $("#mediaViewport").addEventListener("pointerdown", (event) => {
+    const viewport = $("#mediaViewport");
+    if (
+      !viewport.classList.contains("is-pannable") ||
+      (event.pointerType === "mouse" && event.button !== 0)
+    ) {
+      return;
+    }
+    event.preventDefault();
+    state.media.drag = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      scrollLeft: viewport.scrollLeft,
+      scrollTop: viewport.scrollTop,
+    };
+    viewport.setPointerCapture(event.pointerId);
+    viewport.classList.add("is-dragging");
+  });
+  $("#mediaViewport").addEventListener("pointermove", (event) => {
+    const viewport = $("#mediaViewport");
+    const drag = state.media.drag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    viewport.scrollLeft = drag.scrollLeft - (event.clientX - drag.startX);
+    viewport.scrollTop = drag.scrollTop - (event.clientY - drag.startY);
+  });
+  const endMediaDrag = (event) => {
+    const viewport = $("#mediaViewport");
+    if (!state.media.drag || state.media.drag.pointerId !== event.pointerId) return;
+    if (viewport.hasPointerCapture(event.pointerId)) {
+      viewport.releasePointerCapture(event.pointerId);
+    }
+    state.media.drag = null;
+    viewport.classList.remove("is-dragging");
+  };
+  $("#mediaViewport").addEventListener("pointerup", endMediaDrag);
+  $("#mediaViewport").addEventListener("pointercancel", endMediaDrag);
   $("#mediaViewport").addEventListener("wheel", (event) => {
     if (!event.ctrlKey && !event.metaKey) return;
     event.preventDefault();
     setMediaZoom(state.media.zoom + (event.deltaY < 0 ? MEDIA_ZOOM_STEP : -MEDIA_ZOOM_STEP));
   }, { passive: false });
-  document.addEventListener("fullscreenchange", updateMediaViewControls);
+  document.addEventListener("fullscreenchange", () => {
+    updateMediaViewControls();
+    window.requestAnimationFrame(updateMediaPanState);
+  });
   document.addEventListener("keydown", (event) => {
     if (!$("#mediaDialog").open) return;
     if (["ArrowLeft", "ArrowUp"].includes(event.key)) { event.preventDefault(); moveMedia(-1); }
