@@ -13,25 +13,21 @@ const PAGE_ROUTES = {
     path: "/review",
     titleZh: "RA Triage Workbench",
     titleEn: "RA Triage Workbench",
-    eyebrow: "EVALUATION BASELINE · 0508",
   },
   analysis: {
     path: "/review-analysis",
     titleZh: "原因聚类",
     titleEn: "Review Reason Clusters",
-    eyebrow: "REVIEW ERROR ANALYSIS",
   },
   runs: {
     path: "/runs",
     titleZh: "模型结果",
     titleEn: "Model Runs",
-    eyebrow: "MODEL RUN REGISTRY",
   },
   prediction: {
     path: "/batch-prediction",
     titleZh: "批次预测",
     titleEn: "Batch Model Inference",
-    eyebrow: "BATCH MODEL INFERENCE",
   },
 };
 
@@ -116,7 +112,6 @@ function renderPageChrome() {
   const route = PAGE_ROUTES[state.activePage] || PAGE_ROUTES.review;
   const title = state.uiLanguage === "en" ? route.titleEn : route.titleZh;
   $("#pageTitle").textContent = title;
-  $("#pageEyebrow").textContent = route.eyebrow;
   document.title = `${title} · RA Triage`;
 }
 
@@ -1842,7 +1837,7 @@ function clearDetail({ showGallery = true } = {}) {
       <p>从筛选结果中打开一个 Issue 后，这里会显示 BEV / Camera 与模型输出。</p>
     </div>`;
   $("#reviewPane").innerHTML = `
-    <div class="review-placeholder"><span class="eyebrow">HUMAN REVIEW</span><h2>人工复核</h2><p>选择 Issue 后记录结论和模型遗漏的关键信息。</p></div>`;
+    <div class="review-placeholder"><h2>人工复核</h2><p>选择 Issue 后记录结论和模型遗漏的关键信息。</p></div>`;
   renderCaseNavigation();
   if (showGallery) setReviewView("");
 }
@@ -1900,7 +1895,7 @@ function predictionCards(caseData) {
       const extra = prediction.model_extra?.ra_stuck_auto_result_info;
       const detail = prediction.model_reason || (typeof extra === "object" ? extra.text || "" : "") || "模型未返回解释。";
       return `<article class="model-card ${selected ? "active" : ""}">
-        <div class="model-card-head"><div><span class="eyebrow">${escapeHtml(prediction.run_kind || "model run")}</span><h3>${escapeHtml(prediction.run_name || "模型输出")}</h3></div>${labelBadge(prediction.model_label, "未输出")}</div>
+        <div class="model-card-head"><div><h3>${escapeHtml(prediction.run_name || "模型输出")}</h3></div>${labelBadge(prediction.model_label, "未输出")}</div>
         <p>${escapeHtml(detail)}</p>
         <div class="model-card-meta">${prediction.model_confidence ?? "—"} confidence · ${formatTime(prediction.created_at)}${prediction.run_created_by ? ` · 创建人 ${escapeHtml(prediction.run_created_by)}` : ""}</div>
       </article>`;
@@ -1913,7 +1908,6 @@ function openHistoryDialog(kind, caseData) {
   const isModel = kind === "model";
   const predictions = caseData.predictions || [];
   const annotations = caseData.annotations || [];
-  $("#historyDialogEyebrow").textContent = isModel ? "MODEL RUN HISTORY" : "REVIEW HISTORY";
   $("#historyDialogTitle").textContent = isModel ? "评测 Run 输出历史" : "Review 历史";
   $("#historyDialogMeta").textContent = isModel
     ? `${predictions.length} 个模型 Run · 当前 Review Run 会高亮`
@@ -1940,7 +1934,7 @@ function renderDetail(caseData) {
   $("#detailPane").innerHTML = `
     <div class="detail-header">
       <div class="detail-title-row">
-        <div class="detail-title"><span class="eyebrow">CASE REVIEW</span><h2>${escapeHtml(title)}</h2><span class="detail-id">${escapeHtml(caseData.issue_id)}</span></div>
+        <div class="detail-title"><h2>${escapeHtml(title)}</h2><span class="detail-id">${escapeHtml(caseData.issue_id)}</span></div>
         <div class="detail-navigation">
           <button class="button button-quiet" id="backToGalleryButton" type="button">← 返回筛选结果</button>
           <div class="case-detail-pager">
@@ -2043,7 +2037,7 @@ function renderReview(caseData) {
     .map((key) => tagOption(key, tagLabel(key), true))
     .join("");
   $("#reviewPane").innerHTML = `
-    <div class="review-title"><div><span class="eyebrow">HUMAN REVIEW</span><h2>模型判错原因</h2><small class="review-scope-note">按 Issue 记录，模型输出仍按 Run 区分</small></div><span class="review-issue">${escapeHtml(caseData.issue_id)}</span></div>
+    <div class="review-title"><div><h2>模型判错原因</h2><small class="review-scope-note">按 Issue 记录，模型输出仍按 Run 区分</small></div><span class="review-issue">${escapeHtml(caseData.issue_id)}</span></div>
     <form class="review-form" id="annotationForm">
       <label class="review-status-field"><span>复核状态</span><select id="reviewStatusInput"><option value="reviewed" ${reviewStatus === "reviewed" ? "selected" : ""}>已 Review</option><option value="pending" ${reviewStatus === "pending" ? "selected" : ""}>待补充</option><option value="needs_gt_review" ${reviewStatus === "needs_gt_review" ? "selected" : ""}>GT 需复核</option></select></label>
       <label class="review-reason">
@@ -2072,7 +2066,7 @@ function renderReview(caseData) {
       <button class="button button-primary full-width" type="submit">保存新的 review 版本</button>
     </form>
     <details class="review-history-toggle">
-      <summary><span><span class="eyebrow">REVIEW HISTORY</span><strong>Review 历史</strong></span><span class="history-launch-meta">${(caseData.annotations || []).length} 条</span></summary>
+      <summary><span><strong>Review 历史</strong></span><span class="history-launch-meta">${(caseData.annotations || []).length} 条</span></summary>
       <div class="review-history-content">${annotationHistory(caseData.annotations)}</div>
     </details>`;
   $("#reviewPane").querySelectorAll('input[name="missingEvidence"]').forEach((input) => {
@@ -2261,7 +2255,7 @@ async function selectCase(
       <p>正在读取模型输出、Ares BEV 与 Camera 时序。</p>
     </div>`;
   $("#reviewPane").innerHTML = `
-    <div class="review-placeholder"><span class="eyebrow">HUMAN REVIEW</span><h2>正在加载标注</h2><p>Issue 数据返回后即可继续 Review。</p></div>`;
+    <div class="review-placeholder"><h2>正在加载标注</h2><p>Issue 数据返回后即可继续 Review。</p></div>`;
   if (updateRoute && state.activePage === "review") {
     const nextUrl = pageUrl("review", { issue: issueId });
     if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
@@ -2388,7 +2382,6 @@ function closeDialog(id) {
 }
 
 function renderSourcePreview(data) {
-  const format = String(data?.format || "").toUpperCase();
   const rows = Array.isArray(data?.rows) ? data.rows : [];
   const columns = Array.isArray(data?.columns) ? data.columns : [];
   const metadata = data?.metadata && typeof data.metadata === "object" ? data.metadata : {};
@@ -2398,7 +2391,6 @@ function renderSourcePreview(data) {
   const offset = Number(data?.offset || 0);
   state.sourcePreview.page = page;
   state.sourcePreview.pageCount = pageCount;
-  $("#sourcePreviewEyebrow").textContent = `${format || "SOURCE"} · MODEL RUN`;
   $("#sourcePreviewTitle").textContent = data?.filename || "文件预览";
   $("#sourcePreviewMeta").textContent = `${rowCount} 条结果 · 第 ${page} / ${pageCount} 页${data?.reconstructed ? " · Run 重建副本" : ""}`;
   $("#sourcePreviewPageLabel").textContent = `第 ${page} / ${pageCount} 页`;
@@ -2447,7 +2439,6 @@ async function openSourcePreview(runId) {
     showToast("该 Run 没有可用的 CSV / JSON 页面预览，请重新上传原文件。", true);
     return;
   }
-  $("#sourcePreviewEyebrow").textContent = "MODEL SOURCE PREVIEW";
   $("#sourcePreviewTitle").textContent = source.filename || "文件预览";
   $("#sourcePreviewMeta").textContent = "正在读取…";
   $("#sourcePreviewPageLabel").textContent = "第 1 / … 页";
@@ -2472,7 +2463,6 @@ function renderMediaDialog() {
   state.media.index = Math.max(0, Math.min(state.media.index, Math.max(frames.length - 1, 0)));
   const current = frames[state.media.index];
   if (!current) return;
-  $("#mediaEyebrow").textContent = state.media.kind === "bev" ? "ARES CAPTURE / BEV" : "CAMERA / AFTER_COMPRESS";
   $("#mediaTitle").textContent = `${state.selectedCase?.issue_id || ""} · ${frameLabel(current)} · ${state.media.index + 1}/${frames.length}`;
   $("#mediaPreviewImage").src = current.url;
   $("#mediaPreviewImage").alt = `${state.media.kind} ${frameLabel(current)}`;
@@ -3139,7 +3129,6 @@ function renderPredictionBatchDetail(batch) {
   return `<div class="batch-history-detail" data-batch-detail="${escapeHtml(batch.id || "")}">
     <div class="batch-detail-heading">
       <div>
-        <span class="eyebrow">BATCH OUTPUT</span>
         <strong>运行输出 · ${escapeHtml(batch.name || batch.batch_name || batch.id || "")}</strong>
       </div>
       <span>${escapeHtml(batchStatusLabel(batch.status))} · ${counts.completed}/${counts.total} 完成 · 成功 ${counts.success} · 失败 ${counts.failed}</span>
