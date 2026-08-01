@@ -282,7 +282,10 @@ class BatchPredictionRunner:
                         "ra_repo_commit": str(result.get("ra_repo_commit") or ""),
                         "trail_view_id": result.get("trail_view_id"),
                         "input_policy": {
-                            "ares_bev_input": False,
+                            "ares_bev_input": bool(
+                                isinstance(job.get("input_config"), dict)
+                                and job["input_config"].get("use_bev_animation")
+                            ),
                             "bag_cache_read_only": False,
                             "bag_cache_scope": "dashboard_isolated",
                             "trail_write_enabled": False,
@@ -360,7 +363,10 @@ class BatchPredictionRunner:
                     if isinstance(job.get("input_config"), dict)
                     else {},
                     "model_run_duplicate": duplicate,
-                    "ares_bev_input": False,
+                    "ares_bev_input": bool(
+                        isinstance(job.get("input_config"), dict)
+                        and job["input_config"].get("use_bev_animation")
+                    ),
                     "bag_cache_read_only": False,
                     "bag_cache_scope": "dashboard_isolated",
                     "trail_write_enabled": False,

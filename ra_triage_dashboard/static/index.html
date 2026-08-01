@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RA Triage Workbench</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='%2309b8d4'/><text x='32' y='41' text-anchor='middle' font-size='28' font-family='sans-serif' font-weight='700' fill='%2309141d'>RA</text></svg>" />
-    <link rel="stylesheet" href="/static/styles.css?v=c31a76b" />
+    <link rel="stylesheet" href="/static/styles.css?v=9f84b2d" />
   </head>
   <body>
     <div class="app-shell" id="appShell">
@@ -474,22 +474,12 @@
             <div class="tool-page-grid batch-page-grid">
               <aside class="page-card page-aside gateway-card">
                 <h3>服务器模型网关</h3>
-                <div class="gateway-endpoint">
-                  <span>Models API</span>
-                  <strong id="gatewayModelsEndpoint">正在读取…</strong>
-                  <small>认证方式 · 服务端密钥</small>
-                </div>
-                <div class="gateway-provider-panel">
-                  <div class="gateway-provider-heading"><span>Provider</span><small>服务端已登记</small></div>
-                  <div id="gatewayProviderList" class="gateway-provider-list">
-                    <select id="gatewayProviderSelect" aria-label="选择模型 Provider">
-                      <option value="">正在读取 Provider…</option>
-                    </select>
-                  </div>
-                </div>
-                <label>
-                  <span>筛选模型</span>
-                  <input id="predictionModelSearch" placeholder="输入模型 / checkpoint 关键词" autocomplete="off" />
+                <label class="gateway-endpoint">
+                  <span>Provider</span>
+                  <select id="gatewayProviderSelect" aria-label="选择模型 Provider">
+                    <option value="">正在读取 Provider…</option>
+                  </select>
+                  <small><span id="gatewayModelsEndpoint">正在读取模型目录…</span> · 服务端密钥</small>
                 </label>
                 <label>
                   <span>模型</span>
@@ -511,10 +501,9 @@
               </aside>
               <form class="page-card tool-form" id="predictionBatchForm">
                 <div class="batch-source-context hidden" id="predictionSourceSummary"></div>
-                <label>
-                  <span>Issue IDs</span>
+                <label class="batch-issue-field">
+                  <span class="batch-field-heading"><span>Issue IDs</span><small id="predictionBatchIssueCount">0 个 · 单批最多 50 个</small></span>
                   <textarea class="batch-issue-input" id="predictionBatchIssues" rows="1" placeholder="支持逗号或空格分隔，例如：cn32171803, cn31954847, cn32000543" required autocomplete="off"></textarea>
-                  <small id="predictionBatchIssueCount">已识别 0 个 Issue；可拖拽右下角扩展多行</small>
                 </label>
                 <details class="batch-config-details" open>
                   <summary>
@@ -532,9 +521,9 @@
                       <label>
                         <span>输入 Profile</span>
                         <select id="predictionInputProfile">
-                          <option value="camera_ra_event">Camera 7 帧 + RA Events</option>
-                          <option value="camera_ra_options">Camera 7 帧 + RA Events + RA/SWAG Options</option>
-                          <option value="camera_only">Camera 7 帧</option>
+                          <option value="camera_ra_event">Camera 9 帧 + RA Events</option>
+                          <option value="camera_ra_options">Camera 9 帧 + RA Events + RA/SWAG Options</option>
+                          <option value="camera_only">Camera 9 帧</option>
                         </select>
                       </label>
                     </div>
@@ -542,16 +531,15 @@
                       <label>
                         <span>Camera 取帧预设</span>
                         <select id="predictionCameraPreset">
-                          <option value="camera_7_frames">Camera 7 帧 · 默认</option>
+                          <option value="camera_9_frames">Camera 9 帧 · -19s 至 +19s（默认）</option>
                           <option value="camera_three_moments">Camera 三时刻 · 前 / 当前 / 后</option>
                           <option value="camera_single_frame">Camera 单帧 · 当前时刻</option>
                           <option value="custom">自定义帧偏移</option>
                         </select>
-                        <small>这里是时间帧预设，不代表三个物理摄像头。</small>
                       </label>
-                      <label class="toggle-row compact-toggle config-disabled" title="当前 RA Batch 输入契约固定关闭 BEV / Ares Capture">
-                        <input id="predictionUseBev" type="checkbox" disabled />
-                        <span><strong>BEV / Ares Capture</strong><small>当前输入契约固定关闭</small></span>
+                      <label class="toggle-row compact-toggle" title="使用服务端 stuck_triage_auto_opt_api 的默认 Ares Animation 配置">
+                        <input id="predictionUseBev" type="checkbox" checked />
+                        <span><strong>BEV / Ares Animation</strong><small>服务端 API 默认配置</small></span>
                       </label>
                     </div>
                     <label>
@@ -561,7 +549,7 @@
                     </label>
                     <label>
                       <span>Camera 帧偏移（ms）</span>
-                      <input id="predictionFrameOffsets" value="-3000,-2000,-1000,0,1000,2000,3000" autocomplete="off" />
+                      <input id="predictionFrameOffsets" value="-19000,-15000,-10000,-5000,0,5000,10000,15000,19000" autocomplete="off" />
                       <small>严格递增、包含 0；最多 18 帧，范围 ±30000 ms。</small>
                     </label>
                     <div class="batch-input-toggles">
@@ -757,6 +745,6 @@
     </dialog>
 
     <div class="toast hidden" id="toast"></div>
-    <script src="/static/app.js?v=c31a76b" defer></script>
+    <script src="/static/app.js?v=9f84b2d" defer></script>
   </body>
 </html>

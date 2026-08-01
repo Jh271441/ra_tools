@@ -3298,7 +3298,7 @@ function updatePredictionBatchCount() {
   const maxIssues = Number(state.config?.prediction_batch?.max_issues || 0);
   const overLimit = maxIssues > 0 && ids.length > maxIssues;
   target.textContent =
-    `已识别 ${ids.length} 个 Issue${maxIssues ? ` · 单批最多 ${maxIssues} 个` : ""}` +
+    `${ids.length} 个${maxIssues ? ` · 单批最多 ${maxIssues} 个` : ""}` +
     `${invalid.length ? ` · ${invalid.length} 个格式不合法` : ""}`;
   target.classList.toggle("input-warning", Boolean(invalid.length || overLimit));
 }
@@ -3350,15 +3350,8 @@ function renderGatewayModels() {
   if (!select || !statusTarget || !endpointTarget) return;
   const catalog = state.gatewayModelStatus || {};
   const previous = state.selectedGatewayModelId || select.value;
-  const search = ($("#predictionModelSearch")?.value || "").trim().toLowerCase();
-  const visibleModels = state.gatewayModels.filter((model) =>
-    !search ||
-    [model.id, model.display_name, model.resolved_model_id]
-      .join(" ")
-      .toLowerCase()
-      .includes(search)
-  );
-  const defaultId = catalog.default_model_id || "";
+  const visibleModels = state.gatewayModels;
+  const defaultId = catalog.ui_default_model_id || catalog.default_model_id || "";
   const selectedModel = previous
     ? state.gatewayModels.find((item) => item.id === previous) || null
     : state.gatewayModels.find((item) => item.id === defaultId) ||
@@ -3366,12 +3359,6 @@ function renderGatewayModels() {
       null;
   const unavailableSelection = Boolean(previous && !selectedModel);
   const displayModels = [...visibleModels];
-  if (
-    selectedModel &&
-    !displayModels.some((item) => item.id === selectedModel.id)
-  ) {
-    displayModels.unshift({ ...selectedModel, pinnedBySearch: true });
-  }
   if (unavailableSelection) {
     displayModels.unshift({
       id: previous,
@@ -3392,8 +3379,7 @@ function renderGatewayModels() {
               : model.validation_status === "validated"
                 ? "已验证"
                 : "实验";
-            const searchNote = model.pinnedBySearch ? " · 当前选择（搜索未命中）" : "";
-            return `<option value="${escapeHtml(model.id)}">[${tier}] ${escapeHtml(model.display_name || model.id)}${searchNote}</option>`;
+            return `<option value="${escapeHtml(model.id)}">[${tier}] ${escapeHtml(model.display_name || model.id)}</option>`;
           }
         )
         .join("")
@@ -3414,10 +3400,9 @@ function renderGatewayModels() {
             const resolved = model.resolved_model_id && model.resolved_model_id !== model.id
               ? model.resolved_model_id
               : model.id;
-            const searchNote = model.pinnedBySearch ? " · 当前选择" : "";
             return `<button class="gateway-model-option ${active ? "active" : ""} ${unavailable ? "unavailable" : ""}" type="button" data-gateway-model="${escapeHtml(model.id)}" ${unavailable ? "disabled" : ""}>
               <span class="gateway-model-option-head">
-                <strong>${escapeHtml(model.display_name || model.id)}${escapeHtml(searchNote)}</strong>
+                <strong>${escapeHtml(model.display_name || model.id)}</strong>
                 <em>${tier}</em>
               </span>
               <small>${escapeHtml(resolved)}</small>
@@ -3446,7 +3431,7 @@ function renderGatewayModels() {
   statusTarget.textContent = unavailableSelection
     ? `当前选择 ${previous} 已不在当前 Provider 在线目录；请选择其他模型后再提交。`
     : ready
-      ? `已验证 ${catalog.validated_count ?? "—"} · 实验模型 ${catalog.experimental_count ?? "—"} · 当前显示 ${visibleModels.length} / ${state.gatewayModels.length}`
+      ? `已验证 ${state.gatewayModels.filter((model) => model.validation_status === "validated").length} · 实验模型 ${state.gatewayModels.filter((model) => model.validation_status !== "validated").length} · 当前显示 ${visibleModels.length}`
       : catalog.message || "模型目录尚未就绪。";
   if (createButton) createButton.disabled = !ready;
   renderBatchCatalogFilters();
@@ -3466,8 +3451,13 @@ async function loadGatewayModels({ refresh = false, providerId = "" } = {}) {
     if (refresh) params.set("refresh", "true");
     const data = await api(`/api/prediction-batches/models?${params.toString()}`);
     if (requestSeq !== state.gatewayModelRequestSeq) return;
-    state.gatewayModelStatus = data;
-    state.gatewayModels = data.models || [];
+    const models = data.models || [];
+    const autoModel = models.find((model) => model.id === "auto");
+    state.gatewayModelStatus = {
+      ...data,
+      ui_default_model_id: autoModel?.resolved_model_id || data.default_model_id,
+    };
+    state.gatewayModels = models.filter((model) => model.id !== "auto");
     renderGatewayModels();
   } catch (error) {
     if (requestSeq !== state.gatewayModelRequestSeq) return;
@@ -3547,19 +3537,19 @@ function batchInputPresets() {
     state.config?.prediction_batch?.input_policy?.profiles || [
       {
         id: "camera_ra_event",
-        frame_offsets_ms: [-3000, -2000, -1000, 0, 1000, 2000, 3000],
+        frame_offsets_ms: [-19000, -15000, -10000, -5000, 0, 5000, 10000, 15000, 19000],
         use_ra_event: true,
         use_ra_options: false,
       },
       {
         id: "camera_ra_options",
-        frame_offsets_ms: [-3000, -2000, -1000, 0, 1000, 2000, 3000],
+        frame_offsets_ms: [-19000, -15000, -10000, -5000, 0, 5000, 10000, 15000, 19000],
         use_ra_event: true,
         use_ra_options: true,
       },
       {
         id: "camera_only",
-        frame_offsets_ms: [-3000, -2000, -1000, 0, 1000, 2000, 3000],
+        frame_offsets_ms: [-19000, -15000, -10000, -5000, 0, 5000, 10000, 15000, 19000],
         use_ra_event: false,
         use_ra_options: false,
       },
@@ -3581,8 +3571,8 @@ function applyBatchInputPreset() {
 function cameraFramePresets() {
   return [
     {
-      id: "camera_7_frames",
-      frame_offsets_ms: [-3000, -2000, -1000, 0, 1000, 2000, 3000],
+      id: "camera_9_frames",
+      frame_offsets_ms: [-19000, -15000, -10000, -5000, 0, 5000, 10000, 15000, 19000],
     },
     {
       id: "camera_three_moments",
@@ -3777,17 +3767,12 @@ function renderBatchRuntimeSummary() {
     : typeof configured === "object"
       ? configured.experiment_source || configured.runtime || configured.source
       : "";
-  const media =
-    typeof configured === "object"
-      ? configured.media_summary ||
-        (configured.camera_frame_count
-          ? `Camera ${configured.camera_frame_count} 帧`
-          : configured.camera_frames
-            ? `Camera ${configured.camera_frames} 帧`
-            : Array.isArray(configured.frame_offsets_ms)
-              ? `Camera ${configured.frame_offsets_ms.length} 帧${configured.use_bev_animation === false ? " · Ares 关闭" : ""}`
-              : "")
-      : "";
+  const frameCount = String($("#predictionFrameOffsets")?.value || "")
+    .split(/[\s,，;；]+/)
+    .filter(Boolean).length;
+  const media = frameCount
+    ? `Camera ${frameCount} 帧 · Ares Animation ${$("#predictionUseBev")?.checked ? "开启" : "关闭"}`
+    : "";
   target.innerHTML = `
     <strong>${escapeHtml(model || "服务器模型网关")}</strong>
     <span>${prompt ? `Prompt · ${escapeHtml(prompt)}` : "尚未选择 Prompt"} · 输入 ${escapeHtml($("#predictionInputProfile")?.value || "camera_ra_event")}</span>
@@ -3878,9 +3863,7 @@ function batchInputSummary(batch) {
     offsets ? `Camera ${input.frame_offsets_ms.length} 帧 · ${offsets} ms` : "",
     input.use_ra_event ? "RA Events" : "无 RA Events",
     input.use_ra_options ? "RA / SWAG Options" : "",
-    input.use_bev_animation === false || input.use_ares_capture === false
-      ? "BEV / Ares 关闭"
-      : "",
+    input.use_bev_animation ? "Ares Animation · API 默认" : "Ares Animation 关闭",
   ].filter(Boolean);
 }
 
@@ -4212,6 +4195,7 @@ async function submitPredictionBatch(event) {
           frame_offsets_ms: frameOffsets,
           use_ra_event: useRaEvent,
           use_ra_options: useRaOptions,
+          use_bev_animation: Boolean($("#predictionUseBev")?.checked),
         },
         name: $("#predictionBatchName").value.trim() || "",
         requested_by: state.session.username || "",
@@ -4290,7 +4274,7 @@ const IMPORT_EXAMPLES = Object.freeze({
       '  "experiment": {',
       '    "model_name": "Qwen3.5-9B-finetuned/base",',
       '    "prompt": "stuck_triage_auto_opt_api",',
-      '    "input_profile": "Camera 7 帧 + RA Events"',
+      '    "input_profile": "Camera 9 帧 + RA Events + Ares Animation"',
       "  },",
       '  "results": [',
       "    {",
@@ -4720,7 +4704,6 @@ function bindEvents() {
     state.selectedGatewayModelId = $("#predictionModelSelect").value;
     renderGatewayModels();
   });
-  $("#predictionModelSearch").addEventListener("input", renderGatewayModels);
   $("#predictionPromptSelect").addEventListener("change", loadSelectedPromptTemplate);
   $("#predictionPromptTemplate").addEventListener("input", updatePromptEditorSummary);
   $("#predictionInputProfile").addEventListener("change", applyBatchInputPreset);
@@ -4737,6 +4720,7 @@ function bindEvents() {
     if ($("#predictionUseRaOptions").checked) $("#predictionUseRaEvent").checked = true;
     renderBatchRuntimeSummary();
   });
+  $("#predictionUseBev").addEventListener("change", renderBatchRuntimeSummary);
   $("#languageToggleButton").addEventListener("click", () => {
     applyUiLanguage(state.uiLanguage === "en" ? "zh" : "en");
   });
