@@ -2439,12 +2439,15 @@ function annotationHistory(annotations) {
   return annotations
     .map(
       (annotation) => `<article class="history-row">
-        <div class="history-head">${labelBadge(annotation.label, annotation.review_status === "needs_gt_review" ? "GT 待复核" : "已记录")}<span>${formatTime(annotation.created_at)}</span></div>
+        <div class="history-head">
+          ${labelBadge(annotation.label, annotation.review_status === "needs_gt_review" ? "GT 待复核" : "已记录")}
+          <span class="history-reviewer" title="${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}` : "复核人：历史记录未填写")}">${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO" : " · 未验证"}` : "复核人：未记录")}</span>
+          <span class="history-time">${formatTime(annotation.created_at)}</span>
+        </div>
         ${annotation.missing_evidence?.length ? `<div class="tags">${annotation.missing_evidence.map((key) => `<span class="tag evidence-tag">${escapeHtml(evidenceLabel(key))}</span>`).join("")}</div>` : ""}
         ${annotation.tags?.length ? `<div class="tags">${annotation.tags.map((tag) => `<span class="tag">${escapeHtml(tagLabel(tag))}</span>`).join("")}</div>` : ""}
         ${annotation.attachments?.length ? `<div class="history-attachments">${annotation.attachments.map((attachment, index) => `<a href="${escapeHtml(attachment.url)}" target="_blank" rel="noreferrer" title="打开补充截图 ${index + 1}"><img src="${escapeHtml(attachment.url)}" alt="补充截图 ${index + 1}" loading="lazy" /></a>`).join("")}</div>` : ""}
         ${annotation.note ? `<p>${escapeHtml(annotation.note)}</p>` : ""}
-        ${annotation.author ? `<small>复核人：${escapeHtml(annotation.author)}${annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}</small>` : `<small>复核人：历史记录未填写</small>`}
       </article>`)
     .join("");
 }

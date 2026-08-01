@@ -390,7 +390,7 @@ html[data-ui-lang="en"] .ui-lang-en { display: inline; }
   min-width: 82px; color: var(--faint); font: 10px "SFMono-Regular", Consolas, monospace; text-align: center;
 }
 .review-detail-workspace {
-  display: grid; grid-template-columns: minmax(0, 1fr) 350px; align-items: start; gap: 8px;
+  display: grid; grid-template-columns: minmax(0, 1fr) 350px; align-items: stretch; gap: 8px;
 }
 .review-detail-workspace > .detail-pane,
 .review-detail-workspace > .review-pane { min-height: calc(100dvh - 105px); }
@@ -646,7 +646,7 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .review-history-toggle > summary strong { font-size: 12px; }
 .review-history-content { display: grid; gap: 8px; max-height: 300px; overflow: auto; padding: 8px; border-top: 1px solid var(--line-soft); }
 
-.review-pane { max-height: calc(100dvh - 58px); overflow-y: auto; position: sticky; top: 51px; padding: 11px; }
+.review-pane { max-height: none; overflow: visible; position: static; padding: 11px; }
 .review-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 9px; margin-bottom: 8px; }
 .review-scope-note { display: block; margin-top: 4px; color: var(--faint); font-size: 10px; line-height: 1.4; }
 .review-title h2 { margin-top: 2px; }
@@ -718,10 +718,11 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .annotation-history { display: grid; gap: 8px; margin-top: 15px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
 .history-empty { font-size: 11px; }
 .history-row { display: grid; gap: 5px; padding: 7px; border-left: 2px solid var(--line); background: #0e131c; }
-.history-head { display: flex; align-items: center; justify-content: space-between; gap: 5px; }
+.history-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 5px; }
 .history-head > span { color: var(--faint); font-size: 9px; }
+.history-reviewer { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-time { text-align: right; white-space: nowrap; }
 .history-row p { color: var(--muted); font-size: 11px; line-height: 1.48; white-space: pre-wrap; }
-.history-row small { color: var(--faint); font-size: 9px; }
 .tags { display: flex; flex-wrap: wrap; gap: 3px; }
 .tag { padding: 2px 4px; border-radius: 3px; color: #c0ccdc; background: #1c2534; font-size: 9px; }
 .evidence-tag { color: #9ce7ed; background: rgba(34,211,238,.09); }
