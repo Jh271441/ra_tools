@@ -3068,6 +3068,15 @@ function renderMediaDialog() {
   ].filter(Boolean);
   if (!availableKinds.includes(state.media.kind)) state.media.kind = availableKinds[0] || "bev";
   const videoMode = state.media.kind === "video";
+  const gtLabel = snapshot?.gtLabel || "";
+  const modelLabel = snapshot?.modelLabel || "";
+  const comparisonText = modelLabel ? (modelLabel === gtLabel ? "一致" : "不一致") : "未输出";
+  const comparisonClass = modelLabel && modelLabel !== gtLabel ? "comparison-fail" : "comparison-neutral";
+  $("#mediaDecisionSummary").innerHTML = `
+    <span>GT</span>${labelBadge(gtLabel, "缺失")}
+    <b aria-hidden="true">→</b>
+    <span>模型</span>${labelBadge(modelLabel, "未输出")}
+    <strong class="${comparisonClass}">${comparisonText}</strong>`;
   const imageStage = $("#mediaImageStage");
   const videoStage = $("#mediaVideoStage");
   imageStage.hidden = videoMode;
@@ -3119,8 +3128,13 @@ function renderMediaDialog() {
 }
 
 function openMedia(kind, index, { caseData = state.selectedCase } = {}) {
+  const selectedPrediction = (caseData?.predictions || []).find(
+    (item) => item.model_run_id === state.selectedRunId
+  ) || caseData?.predictions?.[0];
   state.media.snapshot = {
     issueId: String(caseData?.issue_id || ""),
+    gtLabel: String(caseData?.gt_label || ""),
+    modelLabel: String(selectedPrediction?.model_label || ""),
     bev: [...(caseData?.assets?.frames || [])],
     camera: [...(caseData?.camera?.frames || [])],
     video: caseData?.assets?.video?.url ? { ...caseData.assets.video } : null,
