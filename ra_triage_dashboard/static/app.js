@@ -2250,20 +2250,6 @@ function bindDetailMedia(caseData) {
   if (expandButton) expandButton.onclick = expand;
   root.querySelectorAll("[data-detail-media-expand]").forEach((button) => button.addEventListener("click", expand));
   bindBevVideoPlayers(root);
-  root.addEventListener("keydown", (event) => {
-    if (event.target.matches("input, select")) return;
-    const key = event.key.toLowerCase();
-    if (["b", "c", "v"].includes(key)) {
-      event.preventDefault();
-      switchKind({ b: "bev", c: "camera", v: "video" }[key]);
-    } else if (state.detailMedia.kind !== "video" && ["arrowleft", "arrowup", "arrowright", "arrowdown"].includes(key)) {
-      event.preventDefault();
-      move(["arrowleft", "arrowup"].includes(key) ? -1 : 1);
-    } else if (key === "f") {
-      event.preventDefault();
-      expand();
-    }
-  });
 }
 
 function predictionCards(caseData) {
@@ -2309,7 +2295,7 @@ function renderDetail(caseData) {
     ? `<a class="detail-id detail-id-link" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" title="打开 Voyager Issue">${issueId}</a>`
     : `<span class="detail-id">${issueId}</span>`;
   const aresLinkMarkup = aresUrl
-    ? `<a class="detail-ares-link" href="${escapeHtml(aresUrl)}" target="_blank" rel="noreferrer" title="在 Ares Studio 中打开事件前后各 10 秒">Ares Studio ↗</a>`
+    ? `<a class="detail-id detail-id-link" href="${escapeHtml(aresUrl)}" target="_blank" rel="noreferrer" title="在 Ares Studio 中打开事件前后各 10 秒">Ares Studio ↗</a>`
     : "";
   ensureDetailMediaState(caseData);
   const modelHistoryButton = `<button class="history-inline-button" type="button" data-open-history="model">评测 Run 历史 · ${(caseData.predictions || []).length} 条</button>`;
@@ -4697,14 +4683,39 @@ function bindEvents() {
     if (!$("#mediaDialog").open) {
       const target = event.target instanceof Element ? event.target : null;
       const interactiveTarget = target?.closest("input, textarea, select, button, a, [contenteditable='true']");
-      const detailVideoActive =
+      const detailMediaActive =
         state.activePage === "review" &&
         Boolean(state.selectedCase) &&
-        state.detailMedia.kind === "video" &&
+        Boolean($("#detailHeroMedia")) &&
         !document.querySelector("dialog[open]");
-      if (event.key === " " && detailVideoActive && !interactiveTarget) {
+      if (!detailMediaActive || interactiveTarget || event.ctrlKey || event.metaKey || event.altKey) return;
+      const activate = (control) => {
+        if (!control || control.disabled) return false;
         event.preventDefault();
-        $("#detailHeroMedia")?.querySelector("[data-video-play]")?.click();
+        control.click();
+        return true;
+      };
+      const key = event.key.toLowerCase();
+      if (["b", "c", "v"].includes(key)) {
+        const kind = { b: "bev", c: "camera", v: "video" }[key];
+        const select = $("#detailMediaKindSelect");
+        const option = select?.querySelector(`option[value="${kind}"]`);
+        if (select && option && !option.disabled && select.value !== kind) {
+          event.preventDefault();
+          select.value = kind;
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      } else if (key === " " && state.detailMedia.kind === "video") {
+        event.preventDefault();
+        if (!event.repeat) $("#detailHeroMedia")?.querySelector("[data-video-play]")?.click();
+      } else if (key === "arrowleft" || key === "arrowright") {
+        const direction = key === "arrowleft" ? -1 : 1;
+        const control = state.detailMedia.kind === "video"
+          ? $("#detailHeroMedia")?.querySelector(`[data-video-jump="${direction}"]`)
+          : $(direction < 0 ? "#detailMediaPreviousButton" : "#detailMediaNextButton");
+        activate(control);
+      } else if (key === "f") {
+        if (!event.repeat) activate($("#detailMediaExpandButton"));
       }
       return;
     }
