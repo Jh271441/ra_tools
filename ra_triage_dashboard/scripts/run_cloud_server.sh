@@ -26,6 +26,7 @@ if [[ -f "$DEFAULT_DATABASE_URL_FILE" ]]; then
     echo "Refusing to start against non-persistent PostgreSQL data: $CONFIGURED_DATA_DIR" >&2
     exit 1
   fi
+  export DASHBOARD_POSTGRES_PERSISTENT_DATA=true
   if command -v pg_isready >/dev/null 2>&1 && ! pg_isready --quiet; then
     # cloud_server has no systemd init process, so recover PostgreSQL explicitly
     # after a host/container restart before starting the dashboard.

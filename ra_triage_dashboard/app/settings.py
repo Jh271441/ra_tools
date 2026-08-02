@@ -60,6 +60,7 @@ class Settings:
     static_dir: Path
     data_dir: Path
     database_url: str
+    postgres_persistent_data: bool
     ra_auto_triage_root: Path
     ares_manifest: Path
     camera_root: Path
@@ -138,6 +139,9 @@ class Settings:
             static_dir=app_root / "static",
             data_dir=data_dir,
             database_url=_database_url(data_dir),
+            postgres_persistent_data=_bool(
+                "DASHBOARD_POSTGRES_PERSISTENT_DATA", False
+            ),
             ra_auto_triage_root=ra_root,
             ares_manifest=manifest,
             camera_root=camera_root,

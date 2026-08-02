@@ -1475,7 +1475,10 @@ async def session(request: Request) -> dict[str, object]:
 async def status(response: Response) -> dict[str, Any]:
     response.headers["Cache-Control"] = "no-store, max-age=0"
     try:
-        database_state = await asyncio.to_thread(database.runtime_status)
+        database_state = await asyncio.to_thread(
+            database.runtime_status,
+            persistent_data=settings.postgres_persistent_data,
+        )
     except Exception:
         logger.exception("database status check failed")
         database_state = {

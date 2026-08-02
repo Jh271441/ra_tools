@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -62,6 +63,7 @@ class PostgresAdapterUnitTest(unittest.TestCase):
             self.assertTrue(runtime["ok"])
             self.assertEqual(runtime["backend"], "sqlite")
             self.assertEqual(runtime["revision"], 0)
+            self.assertFalse(runtime["persistent_data"])
             self.assertGreaterEqual(runtime["latency_ms"], 0)
 
     def test_postgres_requires_migration_directory_before_connecting(self) -> None:
@@ -70,6 +72,44 @@ class PostgresAdapterUnitTest(unittest.TestCase):
         self.assertEqual(database.storage_label, "postgresql")
         with self.assertRaisesRegex(RuntimeError, "migrations directory"):
             database._apply_postgres_migrations()
+
+    def test_postgres_runtime_status_uses_launcher_persistence_assertion(self) -> None:
+        database = Database(
+            "postgresql:///ra_triage_test",
+            postgres_migrations_dir=Path(__file__).parents[1]
+            / "migrations"
+            / "postgres",
+        )
+        queries: list[str] = []
+
+        class Cursor:
+            @staticmethod
+            def fetchone() -> _CompatRow:
+                return _CompatRow(
+                    {
+                        "server_version": "14.11",
+                        "revision": 42,
+                        "migration_count": 9,
+                    }
+                )
+
+        class Connection:
+            @staticmethod
+            def execute(sql: str) -> Cursor:
+                queries.append(sql)
+                return Cursor()
+
+        @contextmanager
+        def connect():
+            yield Connection()
+
+        database.connect = connect  # type: ignore[method-assign]
+        runtime = database.runtime_status(persistent_data=True)
+
+        self.assertTrue(runtime["ok"])
+        self.assertTrue(runtime["persistent_data"])
+        self.assertEqual(runtime["migration_count"], 9)
+        self.assertNotIn("data_directory", queries[0])
 
 
 if __name__ == "__main__":

@@ -293,26 +293,24 @@ class Database:
             ).fetchone()
         return int(row["revision"] if row else 0)
 
-    def runtime_status(self) -> dict[str, Any]:
+    def runtime_status(self, *, persistent_data: bool = False) -> dict[str, Any]:
         started = time.perf_counter()
         with self.connect() as conn:
             if self.backend == "postgresql":
                 row = conn.execute(
                     """
                     SELECT current_setting('server_version') AS server_version,
-                           current_setting('data_directory') AS data_directory,
                            (SELECT revision FROM dashboard_change_revision WHERE id = 1)
                                AS revision,
                            (SELECT COUNT(*) FROM dashboard_schema_migrations)
                                AS migration_count
                     """
                 ).fetchone()
-                data_directory = str(row["data_directory"] or "")
                 result = {
                     "ok": True,
                     "backend": "postgresql",
                     "server_version": str(row["server_version"] or ""),
-                    "persistent_data": data_directory.startswith("/volume/"),
+                    "persistent_data": persistent_data,
                     "revision": int(row["revision"] or 0),
                     "migration_count": int(row["migration_count"] or 0),
                     "pool_max_size": self.pool_size,
