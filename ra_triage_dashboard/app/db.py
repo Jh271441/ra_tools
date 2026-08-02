@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import threading
+import time
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -32,7 +35,9 @@ def _json(value: Any) -> str:
     return json.dumps(value if value is not None else {}, ensure_ascii=False)
 
 
-def _json_load(value: str | None, default: Any) -> Any:
+def _json_load(value: Any, default: Any) -> Any:
+    if isinstance(value, (dict, list)):
+        return value
     if not value:
         return default
     try:
@@ -41,27 +46,297 @@ def _json_load(value: str | None, default: Any) -> Any:
         return default
 
 
+def _postgres_sql(sql: str) -> str:
+    """Translate the deliberately small SQLite query subset to psycopg."""
+
+    output: list[str] = []
+    quoted = False
+    index = 0
+    while index < len(sql):
+        character = sql[index]
+        if character == "'":
+            output.append(character)
+            if quoted and index + 1 < len(sql) and sql[index + 1] == "'":
+                output.append("'")
+                index += 2
+                continue
+            quoted = not quoted
+        elif character == "?" and not quoted:
+            output.append("%s")
+        else:
+            output.append(character)
+        index += 1
+    translated = "".join(output).replace(" COLLATE BINARY", "")
+    translated = re.sub(
+        r"\b(ann\.(?:tags_json|missing_evidence_json))\s+LIKE\s+",
+        r"\1::text ILIKE ",
+        translated,
+        flags=re.IGNORECASE,
+    )
+    translated = re.sub(r"\s+LIKE\s+", " ILIKE ", translated, flags=re.IGNORECASE)
+    return translated
+
+
+class _CompatRow:
+    """Expose psycopg mapping rows through sqlite3.Row's tiny used surface."""
+
+    def __init__(self, values: dict[str, Any]):
+        self._values = values
+        self._keys = tuple(values.keys())
+
+    def __getitem__(self, key: str | int) -> Any:
+        if isinstance(key, int):
+            key = self._keys[key]
+        value = self._values[key]
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, uuid.UUID):
+            return str(value)
+        return value
+
+    def keys(self) -> tuple[str, ...]:
+        return self._keys
+
+
+class _PostgresCursor:
+    def __init__(self, cursor: Any):
+        self._cursor = cursor
+
+    @property
+    def rowcount(self) -> int:
+        return int(self._cursor.rowcount)
+
+    @property
+    def lastrowid(self) -> None:
+        return None
+
+    def fetchone(self) -> _CompatRow | None:
+        row = self._cursor.fetchone()
+        return _CompatRow(row) if row is not None else None
+
+    def fetchall(self) -> list[_CompatRow]:
+        return [_CompatRow(row) for row in self._cursor.fetchall()]
+
+
+class _NoopCursor:
+    rowcount = 0
+    lastrowid = None
+
+    @staticmethod
+    def fetchone() -> None:
+        return None
+
+    @staticmethod
+    def fetchall() -> list[Any]:
+        return []
+
+
+class _PostgresConnection:
+    def __init__(self, connection: Any):
+        self._connection = connection
+
+    def execute(self, sql: str, params: Iterable[Any] = ()) -> _PostgresCursor | _NoopCursor:
+        if sql.lstrip().upper().startswith("CREATE TRIGGER IF NOT EXISTS"):
+            return _NoopCursor()
+        return _PostgresCursor(
+            self._connection.execute(_postgres_sql(sql), tuple(params))
+        )
+
+    def executemany(
+        self, sql: str, params: Iterable[Iterable[Any]]
+    ) -> _PostgresCursor:
+        cursor = self._connection.cursor()
+        cursor.executemany(
+            _postgres_sql(sql), [tuple(values) for values in params]
+        )
+        return _PostgresCursor(
+            cursor
+        )
+
+    @staticmethod
+    def executescript(_: str) -> None:
+        # PostgreSQL schema and revision triggers are applied by migrations.
+        return None
+
+
 class Database:
-    """SQLite MVP storage with portable, append-only review history.
+    """SQLite/PostgreSQL storage with append-only review history.
 
     ``baseline_scope`` is intentionally stored on the issue rather than
     deleting old imports.  This lets the active 0508/1071 evaluation set stay
     stable while uploaded model runs and prior reviews remain recoverable.
     """
 
-    def __init__(self, path: Path):
-        self.path = path
+    def __init__(
+        self,
+        path_or_url: Path | str,
+        *,
+        postgres_migrations_dir: Path | None = None,
+        pool_size: int = 10,
+    ):
+        if isinstance(path_or_url, Path):
+            self.database_url = f"sqlite:///{path_or_url.expanduser().resolve()}"
+        else:
+            self.database_url = str(path_or_url).strip()
+        if self.database_url.startswith("postgres://"):
+            self.database_url = "postgresql://" + self.database_url[len("postgres://") :]
+        self.backend = (
+            "postgresql"
+            if self.database_url.startswith("postgresql://")
+            else "sqlite"
+        )
+        if self.backend == "sqlite":
+            prefix = "sqlite:///"
+            if not self.database_url.startswith(prefix):
+                raise RuntimeError("Unsupported database URL")
+            self.path = Path(self.database_url[len(prefix) :]).expanduser().resolve()
+        else:
+            self.path = None
+        self.postgres_migrations_dir = postgres_migrations_dir
+        self.pool_size = max(2, min(int(pool_size), 32))
+        self._pool: Any = None
         self._write_lock = threading.RLock()
 
-    def connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.path, timeout=30, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("PRAGMA journal_mode = WAL")
-        conn.execute("PRAGMA busy_timeout = 30000")
-        return conn
+    @property
+    def storage_label(self) -> str:
+        return "postgresql" if self.backend == "postgresql" else "sqlite-mvp"
+
+    @contextmanager
+    def connect(self) -> Any:
+        if self.backend == "sqlite":
+            assert self.path is not None
+            conn = sqlite3.connect(self.path, timeout=30, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA busy_timeout = 30000")
+            try:
+                yield conn
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+            return
+        self._ensure_postgres_pool()
+        with self._pool.connection() as connection:
+            with connection.transaction():
+                yield _PostgresConnection(connection)
+
+    def _postgres_dependencies(self) -> tuple[Any, Any, Any]:
+        try:
+            import psycopg
+            from psycopg.rows import dict_row
+            from psycopg_pool import ConnectionPool
+        except ImportError as exc:
+            raise RuntimeError(
+                "PostgreSQL 运行时需要 psycopg[binary] 与 psycopg_pool。"
+            ) from exc
+        return psycopg, dict_row, ConnectionPool
+
+    def _ensure_postgres_pool(self) -> None:
+        if self._pool is not None:
+            return
+        _, dict_row, connection_pool = self._postgres_dependencies()
+        self._pool = connection_pool(
+            conninfo=self.database_url,
+            min_size=1,
+            max_size=self.pool_size,
+            timeout=30,
+            kwargs={"autocommit": False, "row_factory": dict_row},
+            open=True,
+        )
+
+    def _apply_postgres_migrations(self) -> None:
+        if self.postgres_migrations_dir is None:
+            raise RuntimeError("PostgreSQL migrations directory is required")
+        migration_files = sorted(self.postgres_migrations_dir.glob("*.sql"))
+        if not migration_files:
+            raise RuntimeError("No PostgreSQL migrations found")
+        psycopg, dict_row, _ = self._postgres_dependencies()
+        with psycopg.connect(
+            self.database_url, autocommit=True, row_factory=dict_row
+        ) as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS dashboard_schema_migrations (
+                    version text PRIMARY KEY,
+                    applied_at timestamptz NOT NULL DEFAULT now()
+                )
+                """
+            )
+            applied = {
+                row["version"]
+                for row in connection.execute(
+                    "SELECT version FROM dashboard_schema_migrations"
+                ).fetchall()
+            }
+            for migration in migration_files:
+                if migration.name in applied:
+                    continue
+                connection.execute(migration.read_text(encoding="utf-8"))
+                connection.execute(
+                    "INSERT INTO dashboard_schema_migrations (version) VALUES (%s)",
+                    (migration.name,),
+                )
+
+    def close(self) -> None:
+        if self._pool is not None:
+            self._pool.close()
+            self._pool = None
+
+    def change_revision(self) -> int:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT revision FROM dashboard_change_revision WHERE id = 1"
+            ).fetchone()
+        return int(row["revision"] if row else 0)
+
+    def runtime_status(self, *, persistent_data: bool = False) -> dict[str, Any]:
+        started = time.perf_counter()
+        with self.connect() as conn:
+            if self.backend == "postgresql":
+                row = conn.execute(
+                    """
+                    SELECT current_setting('server_version') AS server_version,
+                           (SELECT revision FROM dashboard_change_revision WHERE id = 1)
+                               AS revision,
+                           (SELECT COUNT(*) FROM dashboard_schema_migrations)
+                               AS migration_count
+                    """
+                ).fetchone()
+                result = {
+                    "ok": True,
+                    "backend": "postgresql",
+                    "server_version": str(row["server_version"] or ""),
+                    "persistent_data": persistent_data,
+                    "revision": int(row["revision"] or 0),
+                    "migration_count": int(row["migration_count"] or 0),
+                    "pool_max_size": self.pool_size,
+                }
+            else:
+                row = conn.execute(
+                    "SELECT revision FROM dashboard_change_revision WHERE id = 1"
+                ).fetchone()
+                sqlite_version = conn.execute(
+                    "SELECT sqlite_version() AS version"
+                ).fetchone()
+                result = {
+                    "ok": True,
+                    "backend": "sqlite",
+                    "server_version": str(sqlite_version["version"] or ""),
+                    "persistent_data": False,
+                    "revision": int(row["revision"] if row else 0),
+                    "migration_count": 0,
+                    "pool_max_size": 0,
+                }
+        result["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
+        return result
 
     def init(self) -> None:
+        if self.backend == "postgresql":
+            self._apply_postgres_migrations()
         with self._write_lock, self.connect() as conn:
             conn.executescript(
                 """
@@ -230,8 +505,44 @@ class Database:
                     ON batch_prediction_items(issue_id, job_id);
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_batch_prediction_items_ordinal
                     ON batch_prediction_items(job_id, ordinal);
+
+                CREATE TABLE IF NOT EXISTS dashboard_change_revision (
+                    id INTEGER PRIMARY KEY CHECK(id = 1),
+                    revision INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL
+                );
+                INSERT OR IGNORE INTO dashboard_change_revision (
+                    id, revision, updated_at
+                ) VALUES (1, 0, '');
                 """
             )
+            revision_tables = (
+                "issues",
+                "annotations",
+                "review_attachments",
+                "model_runs",
+                "model_predictions",
+                "inference_jobs",
+                "batch_prediction_jobs",
+                "batch_prediction_items",
+            )
+            for table in revision_tables:
+                for action in ("insert", "update", "delete"):
+                    conn.execute(
+                        f"""
+                        CREATE TRIGGER IF NOT EXISTS
+                            trg_{table}_{action}_change_revision
+                        AFTER {action.upper()} ON {table}
+                        BEGIN
+                            UPDATE dashboard_change_revision
+                            SET revision = revision + 1,
+                                updated_at = strftime(
+                                    '%Y-%m-%dT%H:%M:%fZ', 'now'
+                                )
+                            WHERE id = 1;
+                        END
+                        """
+                    )
             # Existing MVP databases are upgraded in place.  Each addition is
             # nullable/defaulted, so prior annotations and model runs survive.
             self._ensure_column(conn, "issues", "baseline_scope", "TEXT NOT NULL DEFAULT ''")
@@ -412,7 +723,7 @@ class Database:
                 """
                 SELECT id, model_run_id
                 FROM batch_prediction_jobs
-                WHERE status IN ('queued', 'running')
+                WHERE status = 'running'
                   AND model_run_id IS NOT NULL
                   AND TRIM(model_run_id) != ''
                 """
@@ -440,7 +751,7 @@ class Database:
                             finished_at = COALESCE(finished_at, ?)
                         WHERE job_id = ?
                           AND issue_id = ?
-                          AND status IN ('queued', 'running')
+                          AND status = 'running'
                         """,
                         (
                             _json(raw),
@@ -464,12 +775,12 @@ class Database:
                             '服务重启前 Batch 预测未完成。'
                         ELSE error_text
                     END
-                WHERE status IN ('queued', 'running')
+                WHERE status = 'running'
                   AND EXISTS (
                       SELECT 1
                       FROM batch_prediction_jobs bpj
                       WHERE bpj.id = batch_prediction_items.job_id
-                        AND bpj.status IN ('queued', 'running')
+                        AND bpj.status = 'running'
                   )
                 """,
                 (interrupted_at,),
@@ -527,7 +838,7 @@ class Database:
                             '服务重启前 Batch 预测未完成；请重新创建任务。'
                         ELSE error_text
                     END
-                WHERE status IN ('queued', 'running')
+                WHERE status = 'running'
                 """,
                 (interrupted_at,),
             )
@@ -548,7 +859,9 @@ class Database:
             )
 
     @staticmethod
-    def _ensure_column(conn: sqlite3.Connection, table: str, column: str, declaration: str) -> None:
+    def _ensure_column(conn: Any, table: str, column: str, declaration: str) -> None:
+        if isinstance(conn, _PostgresConnection):
+            return
         columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
         if column not in columns:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
@@ -683,8 +996,8 @@ class Database:
             ).fetchone()
             if existing:
                 if make_default:
-                    conn.execute("UPDATE model_runs SET is_default = 0")
-                    conn.execute("UPDATE model_runs SET is_default = 1 WHERE id = ?", (existing["id"],))
+                    conn.execute("UPDATE model_runs SET is_default = FALSE")
+                    conn.execute("UPDATE model_runs SET is_default = TRUE WHERE id = ?", (existing["id"],))
                     existing = conn.execute(
                         "SELECT * FROM model_runs WHERE id = ?", (existing["id"],)
                     ).fetchone()
@@ -692,7 +1005,7 @@ class Database:
 
             run_id = str(uuid.uuid4())
             if make_default:
-                conn.execute("UPDATE model_runs SET is_default = 0")
+                conn.execute("UPDATE model_runs SET is_default = FALSE")
             conn.execute(
                 """
                 INSERT INTO model_runs (
@@ -708,10 +1021,10 @@ class Database:
                     source_sha256,
                     str(metadata.get("schema_version") or "v1"),
                     kind,
-                    int(make_default),
+                    bool(make_default),
                     created_by.strip(),
                     created_by_source.strip() or "legacy",
-                    int(created_by_verified),
+                    bool(created_by_verified),
                     _json(metadata),
                     now,
                 ),
@@ -752,7 +1065,7 @@ class Database:
     def default_model_run_id(self) -> str:
         with self.connect() as conn:
             row = conn.execute(
-                "SELECT id FROM model_runs WHERE is_default = 1 ORDER BY created_at DESC LIMIT 1"
+                "SELECT id FROM model_runs WHERE is_default = TRUE ORDER BY created_at DESC LIMIT 1"
             ).fetchone()
         return str(row["id"]) if row else ""
 
@@ -823,8 +1136,8 @@ class Database:
             ).fetchone()
             if row is None:
                 return None
-            conn.execute("UPDATE model_runs SET is_default = 0")
-            conn.execute("UPDATE model_runs SET is_default = 1 WHERE id = ?", (run_id,))
+            conn.execute("UPDATE model_runs SET is_default = FALSE")
+            conn.execute("UPDATE model_runs SET is_default = TRUE WHERE id = ?", (run_id,))
             updated = conn.execute(
                 "SELECT * FROM model_runs WHERE id = ?", (run_id,)
             ).fetchone()
@@ -872,9 +1185,9 @@ class Database:
             rows = conn.execute(
                 f"""
                 SELECT ann.author,
-                       SUM(CASE WHEN ann.author_verified = 1 THEN 1 ELSE 0 END)
+                       SUM(CASE WHEN ann.author_verified = TRUE THEN 1 ELSE 0 END)
                            AS verified_count,
-                       SUM(CASE WHEN ann.author_verified = 1 THEN 0 ELSE 1 END)
+                       SUM(CASE WHEN ann.author_verified = TRUE THEN 0 ELSE 1 END)
                            AS unverified_count,
                        COUNT(*) AS review_count
                 FROM issues i
@@ -993,7 +1306,7 @@ class Database:
                        mp.model_label, mp.model_reason, mp.model_confidence, mp.model_run_id
                 {common}
                 {condition}
-                ORDER BY i.issue_id COLLATE BINARY ASC
+                ORDER BY i.issue_id ASC
                 LIMIT ? OFFSET ?
                 """,
                 (*model_args, *params, page_size, (page - 1) * page_size),
@@ -1092,6 +1405,8 @@ class Database:
             raise ValueError(f"不支持的标注标签: {label}")
         if review_status not in REVIEW_STATUSES:
             raise ValueError(f"不支持的 review 状态: {review_status}")
+        if not author.strip():
+            raise ValueError("复核人不能为空。")
         tags = sorted({str(tag).strip() for tag in tags if str(tag).strip()})
         missing_evidence = sorted(
             {str(item).strip() for item in missing_evidence if str(item).strip()}
@@ -1102,13 +1417,16 @@ class Database:
             previous = conn.execute(
                 "SELECT id FROM annotations WHERE issue_id = ? ORDER BY id DESC LIMIT 1", (issue_id,)
             ).fetchone()
-            cursor = conn.execute(
-                """
+            annotation_sql = """
                 INSERT INTO annotations (
                     issue_id, label, review_status, tags_json, missing_evidence_json,
                     note, author, author_source, author_verified, supersedes_id, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
+            """
+            if self.backend == "postgresql":
+                annotation_sql += " RETURNING id"
+            cursor = conn.execute(
+                annotation_sql,
                 (
                     issue_id,
                     label or None,
@@ -1118,10 +1436,15 @@ class Database:
                     note.strip(),
                     author.strip(),
                     author_source.strip() or "legacy",
-                    int(author_verified),
+                    bool(author_verified),
                     previous["id"] if previous else None,
                     now,
                 ),
+            )
+            annotation_id = (
+                int(cursor.fetchone()["id"])
+                if self.backend == "postgresql"
+                else int(cursor.lastrowid)
             )
             conn.execute("UPDATE issues SET updated_at = ? WHERE issue_id = ?", (now, issue_id))
             for attachment in attachments:
@@ -1134,7 +1457,7 @@ class Database:
                     """,
                     (
                         str(attachment["id"]),
-                        cursor.lastrowid,
+                        annotation_id,
                         str(attachment.get("original_name") or ""),
                         str(attachment["stored_name"]),
                         str(attachment["media_type"]),
@@ -1145,12 +1468,12 @@ class Database:
                         now,
                     ),
                 )
-            row = conn.execute("SELECT * FROM annotations WHERE id = ?", (cursor.lastrowid,)).fetchone()
+            row = conn.execute("SELECT * FROM annotations WHERE id = ?", (annotation_id,)).fetchone()
         result = self._annotation_dict(row)
         result["attachments"] = [
             {
                 **attachment,
-                "annotation_id": int(cursor.lastrowid),
+                "annotation_id": annotation_id,
                 "created_at": now,
             }
             for attachment in attachments
@@ -1395,7 +1718,7 @@ class Database:
                     issue_id,
                     requested_by.strip(),
                     requested_by_source.strip() or "legacy",
-                    int(requested_by_verified),
+                    bool(requested_by_verified),
                     model_name.strip(),
                     base_url.strip(),
                     _json(config),
@@ -1470,9 +1793,9 @@ class Database:
             requester_rows = conn.execute(
                 """
                 SELECT requested_by,
-                       SUM(CASE WHEN requested_by_verified = 1 THEN 1 ELSE 0 END)
+                       SUM(CASE WHEN requested_by_verified = TRUE THEN 1 ELSE 0 END)
                            AS verified_count,
-                       SUM(CASE WHEN requested_by_verified = 1 THEN 0 ELSE 1 END)
+                       SUM(CASE WHEN requested_by_verified = TRUE THEN 0 ELSE 1 END)
                            AS unverified_count,
                        COUNT(*) AS job_count
                 FROM inference_jobs
@@ -1570,7 +1893,7 @@ class Database:
                     name.strip() or f"Batch {now[:16].replace('T', ' ')} UTC",
                     requested_by.strip(),
                     requested_by_source.strip() or "legacy",
-                    int(requested_by_verified),
+                    bool(requested_by_verified),
                     len(normalized_issue_ids),
                     str(provider_id or "kylin").strip().lower() or "kylin",
                     requested_model_id.strip(),
@@ -1779,6 +2102,22 @@ class Database:
                 updated += 1
         return updated
 
+    def next_queued_batch_prediction_job(self) -> dict[str, Any] | None:
+        """Return the oldest durable prediction job waiting for the runner."""
+
+        queue_order = "queue_order" if self.backend == "postgresql" else "rowid"
+        with self.connect() as conn:
+            row = conn.execute(
+                f"""
+                SELECT id
+                FROM batch_prediction_jobs
+                WHERE status = 'queued'
+                ORDER BY created_at ASC, {queue_order} ASC
+                LIMIT 1
+                """
+            ).fetchone()
+        return self.get_batch_prediction_job(str(row["id"])) if row else None
+
     def get_batch_prediction_job(self, job_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute(
@@ -1851,9 +2190,9 @@ class Database:
             requester_rows = conn.execute(
                 """
                 SELECT requested_by,
-                       SUM(CASE WHEN requested_by_verified = 1 THEN 1 ELSE 0 END)
+                       SUM(CASE WHEN requested_by_verified = TRUE THEN 1 ELSE 0 END)
                            AS verified_count,
-                       SUM(CASE WHEN requested_by_verified = 1 THEN 0 ELSE 1 END)
+                       SUM(CASE WHEN requested_by_verified = TRUE THEN 0 ELSE 1 END)
                            AS unverified_count,
                        COUNT(*) AS job_count
                 FROM batch_prediction_jobs
@@ -1873,7 +2212,7 @@ class Database:
                     SELECT id, TRIM(resolved_model_id) AS model_id
                     FROM batch_prediction_jobs
                     WHERE TRIM(resolved_model_id) != ''
-                )
+                ) AS model_catalog
                 GROUP BY model_id
                 ORDER BY job_count DESC, model_id ASC
                 """

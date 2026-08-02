@@ -8,6 +8,94 @@ from ra_triage_dashboard.app.db import Database
 
 
 class BatchConfigDatabaseTest(unittest.TestCase):
+    @staticmethod
+    def _create_job(database: Database, issue_id: str = "cn12345") -> dict:
+        return database.create_batch_prediction_job(
+            name="queued experiment",
+            issue_ids=[issue_id],
+            requested_by="jasper",
+            requested_model_id="auto",
+            resolved_model_id="Qwen3.5/base",
+            model_source="ra_model_gateway",
+            catalog_sha256="a" * 64,
+            model_validation_status="validated",
+            prompt_version="stuck_triage_auto_opt_api",
+            prompt_template="三分类：误触发、正确触发、无需协助。",
+            prompt_template_sha256="b" * 64,
+            prompt_mode="custom",
+            input_profile="camera_ra_event",
+            input_config={"profile_id": "camera_ra_event"},
+        )
+
+    def test_change_revision_tracks_committed_shared_updates(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "triage.sqlite3")
+            database.init()
+            initial = database.change_revision()
+            database.upsert_issues(
+                [{"issue_id": "cn12345", "gt_label": "误触发"}],
+                source="test",
+                replace_gt=False,
+            )
+            after_issue = database.change_revision()
+            self.assertGreater(after_issue, initial)
+            database.create_annotation(
+                issue_id="cn12345",
+                label="误触发",
+                review_status="reviewed",
+                tags=[],
+                missing_evidence=[],
+                note="shared update",
+                author="jasper",
+            )
+            self.assertGreater(database.change_revision(), after_issue)
+
+    def test_annotation_requires_reviewer(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "triage.sqlite3")
+            database.init()
+            database.upsert_issues(
+                [{"issue_id": "cn12345", "gt_label": "误触发"}],
+                source="test",
+                replace_gt=False,
+            )
+            with self.assertRaisesRegex(ValueError, "复核人不能为空"):
+                database.create_annotation(
+                    issue_id="cn12345",
+                    label="误触发",
+                    review_status="reviewed",
+                    tags=[],
+                    missing_evidence=[],
+                    note="missing reviewer",
+                    author=" ",
+                )
+
+    def test_queued_batch_survives_restart_and_remains_fifo(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "triage.sqlite3"
+            database = Database(path)
+            database.init()
+            database.upsert_issues(
+                [{"issue_id": "cn12345"}, {"issue_id": "cn12346"}],
+                source="test",
+                replace_gt=False,
+            )
+            first = self._create_job(database)
+            second = self._create_job(database, "cn12346")
+            with database.connect() as conn:
+                conn.execute(
+                    "UPDATE batch_prediction_jobs SET created_at = ? WHERE id IN (?, ?)",
+                    ("2026-08-02T00:00:00+00:00", first["id"], second["id"]),
+                )
+            restarted = Database(path)
+            restarted.init()
+            restored = restarted.get_batch_prediction_job(first["id"])
+            self.assertEqual(restored["status"], "queued")
+            self.assertEqual(
+                restarted.next_queued_batch_prediction_job()["id"],
+                first["id"],
+            )
+
     def test_job_keeps_exact_prompt_and_input_and_supports_filters(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             database = Database(Path(directory) / "triage.sqlite3")

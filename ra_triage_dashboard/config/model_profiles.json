@@ -5,7 +5,7 @@
     "auto": {
       "display_name": "Auto · RA Camera 基线",
       "resolved_model_id": "Qwen3.5-9B-finetuned/base",
-      "description": "服务端验证通过后启用的 Camera-only 三分类基线"
+      "description": "服务端验证通过的 Camera 主输入三分类基线，可选固定 Ares Animation"
     }
   },
   "models": {
@@ -15,7 +15,7 @@
       "provider": "kylin",
       "prompt_mode": "server_default",
       "input_contract": "camera_only_ra_triage",
-      "notes": "必须通过 Camera-only、Ares/BEV 关闭的单 Case smoke"
+      "notes": "必须通过 Camera 基线与固定服务端 Ares Animation 策略的单 Case smoke"
     }
   }
 }

@@ -12,9 +12,33 @@ if [[ ! -x "$PYTHON_BIN" ]]; then
 fi
 
 export DASHBOARD_DATA_DIR="${DASHBOARD_DATA_DIR:-/volume/home/workspace/ra_triage_dashboard_data}"
+DEFAULT_DATABASE_URL_FILE="$DASHBOARD_DATA_DIR/postgres_url"
+if [[ -f "$DEFAULT_DATABASE_URL_FILE" ]]; then
+  export DASHBOARD_DATABASE_URL_FILE="${DASHBOARD_DATABASE_URL_FILE:-$DEFAULT_DATABASE_URL_FILE}"
+  POSTGRES_DATA_DIR="${DASHBOARD_POSTGRES_DATA_DIR:-/volume/postgresql/14/main}"
+  if ! sudo test -f "$POSTGRES_DATA_DIR/PG_VERSION"; then
+    echo "Persistent PostgreSQL data directory is missing: $POSTGRES_DATA_DIR" >&2
+    echo "Run scripts/migrate_cloud_postgres_data.sh during a maintenance window." >&2
+    exit 1
+  fi
+  CONFIGURED_DATA_DIR="$(sudo pg_conftool 14 main show data_directory | sed -E 's/^[^=]*=[[:space:]]*//' | tr -d "'\"" | xargs)"
+  if [[ "$CONFIGURED_DATA_DIR" != "$POSTGRES_DATA_DIR" ]]; then
+    echo "Refusing to start against non-persistent PostgreSQL data: $CONFIGURED_DATA_DIR" >&2
+    exit 1
+  fi
+  export DASHBOARD_POSTGRES_PERSISTENT_DATA=true
+  if command -v pg_isready >/dev/null 2>&1 && ! pg_isready --quiet; then
+    # cloud_server has no systemd init process, so recover PostgreSQL explicitly
+    # after a host/container restart before starting the dashboard.
+    sudo pg_ctlcluster 14 main start
+  fi
+fi
 export DASHBOARD_BUILD_COMMIT="${DASHBOARD_BUILD_COMMIT:-unverified}"
 export DASHBOARD_HOST="${DASHBOARD_HOST:-0.0.0.0}"
 export DASHBOARD_PORT="${DASHBOARD_PORT:-8785}"
+# Root/direct-IP mode remains the default. For the Kylin rule that strips
+# /dashboard before proxying, start with DASHBOARD_BASE_PATH=/dashboard.
+export DASHBOARD_BASE_PATH="${DASHBOARD_BASE_PATH:-}"
 export RA_AUTO_TRIAGE_ROOT="/volume/home/workspace/ra_auto_triage"
 export ARES_CAPTURE_MANIFEST="/volume/home/workspace/ra_auto_triage/bags/ares_capture_bev/manifest.jsonl"
 export CAMERA_CACHE_ROOT="/volume/home/workspace/ra_auto_triage/bags/camera"

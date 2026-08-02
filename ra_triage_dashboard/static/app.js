@@ -10,6 +10,63 @@ const ANALYSIS_COMPARISON_META = {
 };
 const REVIEW_COMPARISON_STATUSES = ANALYSIS_COMPARISON_STATUSES;
 const REVIEW_COMPARISON_META = ANALYSIS_COMPARISON_META;
+
+function normalizeClientBasePath(value) {
+  const raw = String(value ?? "");
+  if (!raw || raw === "/") return "";
+  const normalized = raw.endsWith("/") ? raw.slice(0, -1) : raw;
+  if (
+    normalized.includes("..") ||
+    !/^\/(?:[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*)$/.test(normalized)
+  ) {
+    throw new Error("RA Triage base path 配置非法。");
+  }
+  return normalized;
+}
+
+const CONFIGURED_BASE_PATH = normalizeClientBasePath(
+  document.querySelector('meta[name="ra-triage-base"]')?.content || ""
+);
+const BASE_PATH = normalizeClientBasePath(
+  window.__RA_TRIAGE_BASE__ ?? CONFIGURED_BASE_PATH
+);
+
+function removeBasePath(path, basePath) {
+  if (!basePath) return path;
+  if (path === basePath) return "/";
+  if (path.startsWith(`${basePath}/`)) return path.slice(basePath.length);
+  if (path.startsWith(`${basePath}?`) || path.startsWith(`${basePath}#`)) {
+    return `/${path.slice(basePath.length)}`;
+  }
+  return path;
+}
+
+function withBase(path) {
+  const value = String(path || "");
+  if (/^https?:\/\//i.test(value) || value.startsWith("//")) return value;
+  if (!value.startsWith("/")) return value;
+  if (
+    BASE_PATH &&
+    (value === BASE_PATH ||
+      value.startsWith(`${BASE_PATH}/`) ||
+      value.startsWith(`${BASE_PATH}?`) ||
+      value.startsWith(`${BASE_PATH}#`))
+  ) {
+    return value;
+  }
+  const logicalPath = removeBasePath(value, CONFIGURED_BASE_PATH);
+  if (!BASE_PATH) return logicalPath;
+  return `${BASE_PATH}${logicalPath}`;
+}
+
+function stripBasePath(pathname) {
+  const value = String(pathname || "");
+  return removeBasePath(
+    removeBasePath(value, BASE_PATH),
+    CONFIGURED_BASE_PATH
+  );
+}
+
 const PAGE_ROUTES = {
   review: {
     path: "/review",
@@ -30,6 +87,11 @@ const PAGE_ROUTES = {
     path: "/batch-prediction",
     titleZh: "批次预测",
     titleEn: "Batch Model Inference",
+  },
+  status: {
+    path: "/system-status",
+    titleZh: "系统状态",
+    titleEn: "System Status",
   },
 };
 
@@ -84,6 +146,11 @@ const state = {
   selectedAnnotationLabel: "",
   pollingBatchId: "",
   pollTimer: null,
+  changeRevision: null,
+  changePollTimer: null,
+  changePollInFlight: false,
+  reviewFormDirty: false,
+  deferredDetailRefresh: false,
   media: {
     kind: "bev",
     index: 0,
@@ -108,6 +175,7 @@ const state = {
   sidebarCollapsed: false,
   uiLanguage: "zh",
   activePage: "review",
+  systemStatus: null,
   trailInspection: null,
   pendingReviewImages: [],
   savingAnnotation: false,
@@ -143,6 +211,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
     toggle.title = english ? "切换到中文" : "Switch to English";
   }
   renderPageChrome();
+  renderSystemStatus();
   applySidebarState();
   renderSession();
 }
@@ -237,18 +306,19 @@ function normalizedAnalysisRouteFilters(params) {
 }
 
 function parsePageRoute() {
-  const match = Object.entries(PAGE_ROUTES).find(([, config]) => config.path === window.location.pathname);
+  const pathname = stripBasePath(window.location.pathname);
+  const match = Object.entries(PAGE_ROUTES).find(([, config]) => config.path === pathname);
   const params = new URLSearchParams(window.location.search);
   const legacyHash = decodeURIComponent(window.location.hash.slice(1));
   const issueIds = params
     .getAll("issue")
     .filter((issueId) => /^[A-Za-z0-9_-]{3,128}$/.test(issueId));
-  const legacyImport = window.location.pathname === "/import";
+  const legacyImport = pathname === "/import";
   const reviewFilters = normalizedReviewRouteFilters(params);
   return {
     page:
       match?.[0] ||
-      (window.location.pathname === "/inference"
+      (pathname === "/inference"
         ? "prediction"
         : legacyImport
           ? "runs"
@@ -272,7 +342,7 @@ function parsePageRoute() {
       legacyImport
         ? "model"
         : "",
-    legacyRoute: legacyImport || window.location.pathname === "/inference" || Boolean(legacyHash),
+    legacyRoute: legacyImport || pathname === "/inference" || Boolean(legacyHash),
   };
 }
 
@@ -400,7 +470,7 @@ function applyAnalysisRouteControls(route) {
 
 function pageUrl(page, options = {}) {
   const config = PAGE_ROUTES[page] || PAGE_ROUTES.review;
-  const url = new URL(config.path, window.location.origin);
+  const url = new URL(withBase(config.path), window.location.origin);
   if (page === "review") {
     const review = currentReviewRouteOptions(options);
     const issueId = review.issue;
@@ -481,6 +551,7 @@ function showPage(
     importKind = "",
     runSourceTab = "",
     restoreRoute = false,
+    loadPageData = true,
   } = {}
 ) {
   const target = PAGE_ROUTES[page] ? page : "review";
@@ -516,10 +587,15 @@ function showPage(
     renderPredictionSourceSummary();
     updatePredictionBatchCount();
     renderBatchRuntimeSummary();
-    loadPredictionConfig().catch((error) => showToast(error.message, true));
-    loadPredictionBatches().catch((error) => showToast(error.message, true));
+    if (loadPageData) {
+      loadPredictionConfig().catch((error) => showToast(error.message, true));
+      loadPredictionBatches().catch((error) => showToast(error.message, true));
+    }
   }
   if (target === "analysis") renderAnalysisRunFilter();
+  if (target === "status" && loadPageData) {
+    loadStatus().catch((error) => showToast(error.message, true));
+  }
   if (target === "review") setReviewView(issue);
   const routeOptions =
     target === "review"
@@ -584,11 +660,33 @@ function safeUrl(url) {
   }
 }
 
+function aresStudioUrl(caseData, issueUrl) {
+  const tripId = String(caseData?.assets?.capture?.trip_id || caseData?.trip_id || "").trim();
+  const issueId = String(caseData?.issue_id || "").trim();
+  const timestampMs = Number(
+    caseData?.assets?.capture?.timestamp_ms || caseData?.camera?.capture?.timestamp_ms
+  );
+  if (!issueUrl || !issueId || !tripId || !Number.isFinite(timestampMs) || timestampMs <= 0) return "";
+  try {
+    const url = new URL("/static/ares-studio/", issueUrl);
+    url.searchParams.set("ds", "voy-ws-car");
+    url.searchParams.set("ds.issue_id", issueId);
+    url.searchParams.set("ds.trip_id", tripId);
+    url.searchParams.set("ds.start", String(Math.round(timestampMs - 10000)));
+    url.searchParams.set("ds.end", String(Math.round(timestampMs + 10000)));
+    url.searchParams.set("entry_last_page", `/issue/${issueId}`);
+    return safeUrl(url.href);
+  } catch {
+    return "";
+  }
+}
+
 function safeSameOriginAssetUrl(url) {
   try {
     const parsed = new URL(String(url || ""), window.location.origin);
-    if (parsed.origin !== window.location.origin || !parsed.pathname.startsWith("/api/")) return "";
-    return `${parsed.pathname}${parsed.search}`;
+    const pathname = stripBasePath(parsed.pathname);
+    if (parsed.origin !== window.location.origin || !pathname.startsWith("/api/")) return "";
+    return `${withBase(pathname)}${parsed.search}`;
   } catch {
     return "";
   }
@@ -630,15 +728,33 @@ function frameLabel(frame) {
   return frame.frame_number !== undefined ? `#${frame.frame_number}` : "帧";
 }
 
+function normalizeApiPayloadUrls(value) {
+  if (Array.isArray(value)) return value.map((item) => normalizeApiPayloadUrls(item));
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => {
+      if (
+        typeof item === "string" &&
+        (key === "url" || key.endsWith("_url"))
+      ) {
+        return [key, withBase(item)];
+      }
+      return [key, normalizeApiPayloadUrls(item)];
+    })
+  );
+}
+
 async function api(path, options = {}) {
-  const response = await fetch(path, {
+  const response = await fetch(withBase(path), {
     ...options,
     headers: {
       ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
       ...(options.headers || {}),
     },
   });
-  const payload = await response.json().catch(() => ({}));
+  const payload = normalizeApiPayloadUrls(
+    await response.json().catch(() => ({}))
+  );
   if (!response.ok) throw new Error(payload.detail || `请求失败 (${response.status})`);
   return payload;
 }
@@ -650,6 +766,89 @@ function showToast(message, isError = false) {
   if (isError) toast.classList.add("error");
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => toast.classList.add("hidden"), 4600);
+}
+
+async function refreshChangedData() {
+  if (state.activePage === "review") {
+    await Promise.all([
+      loadRuns({ preserveEmpty: !state.selectedRunId }),
+      loadOverview(),
+      loadCases({ keepSelection: true, page: state.casePage }),
+      loadClusters(),
+      loadReviewers(),
+    ]);
+    if (state.selectedId) {
+      if (
+        state.reviewFormDirty ||
+        state.savingAnnotation ||
+        state.pendingReviewImages.length
+      ) {
+        if (!state.deferredDetailRefresh) {
+          state.deferredDetailRefresh = true;
+          showToast("检测到新的协作更新；当前未保存内容已保留，保存后会合并最新数据。");
+        }
+      } else {
+        await selectCase(state.selectedId, { updateRoute: false });
+      }
+    }
+    return;
+  }
+  if (state.activePage === "analysis") {
+    await Promise.all([
+      loadRuns({ preserveEmpty: !state.selectedRunId }),
+      loadOverview(),
+      loadReviewers(),
+      loadReviewReasonAnalysis(),
+    ]);
+    return;
+  }
+  if (state.activePage === "runs") {
+    await Promise.all([loadRuns({ preserveEmpty: true }), loadOverview()]);
+    return;
+  }
+  if (state.activePage === "prediction") {
+    await Promise.all([loadPredictionBatches(), loadOverview()]);
+    return;
+  }
+  if (state.activePage === "status") {
+    await loadStatus();
+  }
+}
+
+function scheduleChangePoll(delay = 1800) {
+  clearTimeout(state.changePollTimer);
+  state.changePollTimer = window.setTimeout(pollChangeRevision, delay);
+}
+
+async function pollChangeRevision() {
+  if (state.changePollInFlight) return scheduleChangePoll();
+  if (document.hidden) return scheduleChangePoll(3000);
+  state.changePollInFlight = true;
+  let delay = 1800;
+  try {
+    const data = await api("/api/change-revision");
+    const revision = Number(data.revision || 0);
+    delay = Math.max(1000, Number(data.poll_after_ms || 1800));
+    if (state.changeRevision === null) {
+      state.changeRevision = revision;
+    } else if (revision !== state.changeRevision) {
+      await refreshChangedData();
+      state.changeRevision = revision;
+    }
+  } catch (error) {
+    delay = 5000;
+    console.warn("协作同步暂时不可用", error);
+  } finally {
+    state.changePollInFlight = false;
+    scheduleChangePoll(delay);
+  }
+}
+
+function startChangePolling() {
+  scheduleChangePoll(0);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) scheduleChangePoll(0);
+  });
 }
 
 function applySidebarState() {
@@ -849,8 +1048,177 @@ async function loadOverview() {
   renderOverview(await api(`/api/overview${query}`));
 }
 
+function formatStatusDuration(seconds) {
+  const value = Math.max(0, Number(seconds) || 0);
+  const days = Math.floor(value / 86400);
+  const hours = Math.floor((value % 86400) / 3600);
+  const minutes = Math.floor((value % 3600) / 60);
+  if (days) return uiText(`${days} 天 ${hours} 小时`, `${days}d ${hours}h`);
+  if (hours) return uiText(`${hours} 小时 ${minutes} 分`, `${hours}h ${minutes}m`);
+  return uiText(`${minutes} 分钟`, `${minutes}m`);
+}
+
+function formatStatusBytes(bytes) {
+  const value = Math.max(0, Number(bytes) || 0);
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  let index = 0;
+  let size = value;
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024;
+    index += 1;
+  }
+  const digits = index >= 3 ? 1 : index ? 1 : 0;
+  return `${size.toFixed(digits)} ${units[index]}`;
+}
+
+function systemStatusChip(label, tone = "ok") {
+  return `<span class="status-chip ${tone}">${escapeHtml(label)}</span>`;
+}
+
+function systemStatusRows(items) {
+  return `<div class="system-status-rows">${items
+    .map(
+      ([label, value]) => `<div class="system-status-row"><span>${escapeHtml(label)}</span><strong title="${escapeHtml(value)}">${escapeHtml(value)}</strong></div>`
+    )
+    .join("")}</div>`;
+}
+
+function systemStatusCard({ title, chip, tone = "ok", rows, extra = "" }) {
+  return `<article class="system-status-card">
+    <div class="system-status-card-head"><h3>${escapeHtml(title)}</h3>${systemStatusChip(chip, tone)}</div>
+    ${systemStatusRows(rows)}${extra}
+  </article>`;
+}
+
+function renderSystemStatus() {
+  const hero = $("#systemStatusHero");
+  const grid = $("#systemStatusGrid");
+  if (!hero || !grid) return;
+  const data = state.systemStatus;
+  if (!data) return;
+  const database = data.database || {};
+  const backups = data.backups || {};
+  const volume = data.volume || {};
+  const baseline = data.baseline || {};
+  const trail = data.trail_sync || {};
+  const gateway = data.model_gateway || {};
+  const application = data.application || {};
+  const overall = data.overall || { status: "degraded", problems: [] };
+  const healthy = overall.status === "healthy";
+  const problemLabels = {
+    database_unavailable: uiText("数据库不可用", "Database unavailable"),
+    database_not_persistent: uiText("数据库未使用持久卷", "Database is not persistent"),
+    baseline_unavailable: uiText("基线不可用", "Baseline unavailable"),
+    backup_missing: uiText("缺少数据库备份", "Database backup missing"),
+    backup_checksum_missing: uiText("备份缺少校验文件", "Backup checksum missing"),
+    backup_stale: uiText("最近备份已过期", "Latest backup is stale"),
+    backup_schedule_unregistered: uiText("备份计划未登记", "Backup schedule unregistered"),
+    disk_space_low: uiText("磁盘剩余空间不足", "Disk space is low"),
+  };
+  const problems = (overall.problems || []).map((key) => problemLabels[key] || key);
+  hero.classList.toggle("degraded", !healthy);
+  hero.innerHTML = `
+    <div class="system-status-summary">
+      <div class="system-status-indicator" aria-hidden="true">${healthy ? "✓" : "!"}</div>
+      <div>
+        <h2>${escapeHtml(healthy ? uiText("关键系统运行正常", "Core systems are healthy") : uiText("系统有项目需要关注", "System needs attention"))}</h2>
+        <p>${escapeHtml(healthy ? uiText("服务、持久化数据库与备份保护均已就绪。", "Service, persistent database, and backup protection are ready.") : problems.join(" · ") || uiText("请查看下方状态卡。", "Review the status cards below."))}</p>
+      </div>
+    </div>
+    <div class="system-status-build"><span>${escapeHtml(uiText("部署版本", "Build"))}</span><code>${escapeHtml(application.build_commit || data.build_commit || "unverified")}</code></div>`;
+
+  const backupAge = backups.latest_age_seconds == null
+    ? "—"
+    : formatStatusDuration(backups.latest_age_seconds);
+  const backupReady = Boolean(
+    backups.available && backups.latest_checksum_present && backups.schedule_registered
+  );
+  const databaseReady = Boolean(database.ok && (database.backend !== "postgresql" || database.persistent_data));
+  const baselineReady = baseline.status === "ready" && Number(baseline.count || 0) > 0;
+  const assetsReady = Boolean(
+    data.ra_auto_triage_root_available && data.ares_manifest_available && data.camera_cache_root_available
+  );
+  const gatewayReady = Boolean(gateway.configured);
+  const usedPercent = Math.max(0, Math.min(100, Number(volume.used_percent) || 0));
+  grid.innerHTML = [
+    systemStatusCard({
+      title: uiText("应用服务", "Application"),
+      chip: uiText("在线", "Online"),
+      rows: [
+        [uiText("运行时间", "Uptime"), formatStatusDuration(application.uptime_seconds)],
+        [uiText("启动时间", "Started"), formatTime(application.started_at)],
+        [uiText("共享数据版本", "Shared revision"), String(database.revision ?? "—")],
+      ],
+    }),
+    systemStatusCard({
+      title: uiText("数据库", "Database"),
+      chip: databaseReady ? uiText("正常", "Healthy") : uiText("异常", "Issue"),
+      tone: databaseReady ? "ok" : "fail",
+      rows: [
+        [uiText("存储引擎", "Backend"), database.backend === "postgresql" ? "PostgreSQL" : "SQLite"],
+        [uiText("持久化", "Persistence"), database.persistent_data ? uiText("/volume 持久卷", "/volume persistent") : uiText("本地存储", "Local storage")],
+        [uiText("连接延迟", "Latency"), database.latency_ms == null ? "—" : `${database.latency_ms} ms`],
+        [uiText("版本 / Migration", "Version / migrations"), `${database.server_version || "—"} · ${database.migration_count ?? 0}`],
+        [uiText("连接池上限", "Pool limit"), String(database.pool_max_size || "—")],
+      ],
+    }),
+    systemStatusCard({
+      title: uiText("数据库备份", "Database backups"),
+      chip: backupReady ? uiText("已保护", "Protected") : uiText("需关注", "Attention"),
+      tone: backupReady ? "ok" : "warn",
+      rows: [
+        [uiText("最近备份", "Latest backup"), backups.latest_created_at ? formatTime(backups.latest_created_at) : "—"],
+        [uiText("备份距今", "Backup age"), backupAge],
+        [uiText("大小 / 份数", "Size / copies"), `${formatStatusBytes(backups.latest_size_bytes)} · ${backups.count || 0}`],
+        [uiText("SHA-256 文件", "SHA-256 file"), backups.latest_checksum_present ? uiText("已生成", "Present") : uiText("缺失", "Missing")],
+        [uiText("自动计划", "Schedule"), backups.schedule_registered ? `${backups.schedule} · ${uiText("服务器时间", "server time")}` : uiText("未登记", "Not registered")],
+      ],
+    }),
+    systemStatusCard({
+      title: uiText("数据与媒体", "Dataset & media"),
+      chip: baselineReady && assetsReady ? uiText("就绪", "Ready") : uiText("部分可用", "Partial"),
+      tone: baselineReady && assetsReady ? "ok" : "warn",
+      rows: [
+        [uiText("0508 基线", "0508 baseline"), `${baseline.count ?? 0} · ${baseline.status || "—"}`],
+        [uiText("基线范围", "Baseline scope"), baseline.scope || "—"],
+        [uiText("Ares BEV", "Ares BEV"), data.ares_manifest_available ? `${data.ares_indexed_issues || 0} Issues` : uiText("不可用", "Unavailable")],
+        [uiText("Camera 缓存", "Camera cache"), data.camera_cache_root_available ? uiText("可用", "Available") : uiText("不可用", "Unavailable")],
+        [uiText("BEV 视频", "BEV video"), data.ares_video_root_available ? uiText("可用", "Available") : uiText("不可用", "Unavailable")],
+      ],
+    }),
+    systemStatusCard({
+      title: uiText("模型与集成", "Models & integrations"),
+      chip: gatewayReady ? uiText("网关就绪", "Gateway ready") : uiText("网关未配置", "Gateway unavailable"),
+      tone: gatewayReady ? "ok" : "warn",
+      rows: [
+        [uiText("模型网关", "Model gateway"), gateway.configured ? uiText("服务端凭证已配置", "Server credential configured") : uiText("未配置", "Not configured")],
+        [uiText("Batch 预测", "Batch prediction"), data.batch_prediction_enabled ? uiText("已启用", "Enabled") : uiText("已关闭", "Disabled")],
+        [uiText("AutoTriage 推送", "AutoTriage publish"), data.autotriage_push_enabled ? uiText("已启用", "Enabled") : uiText("关闭（安全默认）", "Off (safe default)")],
+        [uiText("Trail 字段", "Trail fields"), ["ready", "preview_ready"].includes(trail.status) ? uiText("可用", "Available") : uiText("当前不可用", "Currently unavailable")],
+      ],
+      extra: trail.message ? `<p class="system-status-note">${escapeHtml(trail.message)}</p>` : "",
+    }),
+    systemStatusCard({
+      title: uiText("持久卷容量", "Persistent volume"),
+      chip: volume.available && Number(volume.free_bytes || 0) >= 1024 ** 3 ? uiText("空间充足", "Capacity OK") : uiText("空间不足", "Low space"),
+      tone: volume.available && Number(volume.free_bytes || 0) >= 1024 ** 3 ? "ok" : "fail",
+      rows: [
+        [uiText("已使用", "Used"), `${formatStatusBytes(volume.used_bytes)} · ${usedPercent}%`],
+        [uiText("剩余", "Free"), formatStatusBytes(volume.free_bytes)],
+        [uiText("总容量", "Total"), formatStatusBytes(volume.total_bytes)],
+      ],
+      extra: `<div class="system-capacity"><div class="system-capacity-track"><span class="${usedPercent >= 95 ? "warn" : ""}" style="width:${usedPercent}%"></span></div></div>`,
+    }),
+  ].join("");
+  const updated = $("#systemStatusUpdatedAt");
+  if (updated) {
+    updated.textContent = `${uiText("更新于", "Updated")} ${formatTime(data.generated_at)}`;
+  }
+}
+
 async function loadStatus() {
   const data = await api("/api/status");
+  state.systemStatus = data;
   if (data.baseline || data.trail_sync) {
     state.config = {
       ...(state.config || {}),
@@ -859,6 +1227,7 @@ async function loadStatus() {
     };
     renderConfig();
   }
+  renderSystemStatus();
 }
 
 async function loadReviewers() {
@@ -1274,7 +1643,8 @@ function issueCard(item) {
   );
   const issueUrl = safeUrl(item.voyager_issue_url);
   return `
-    <article class="issue-card ${isSelected ? "selected" : ""}" data-issue-id="${escapeHtml(item.issue_id)}" role="button" tabindex="0" aria-label="打开 ${escapeHtml(item.issue_id)} Review">
+    <article class="issue-card ${isSelected ? "selected" : ""}" data-issue-id="${escapeHtml(item.issue_id)}">
+      <button class="issue-card-open" type="button" data-open-issue="${escapeHtml(item.issue_id)}" aria-label="打开 ${escapeHtml(item.issue_id)} Review"></button>
       <div class="issue-thumbnail">
         <div class="issue-thumbnail-placeholder" aria-hidden="true"><span>RA</span><small>暂无 BEV 缩略图</small></div>
         ${thumbnailUrl ? `<img src="${escapeHtml(thumbnailUrl)}" alt="${escapeHtml(item.issue_id)} ${escapeHtml(thumbnailLabel)}" loading="lazy" decoding="async" data-case-thumbnail />` : ""}
@@ -1392,19 +1762,8 @@ function renderCases(data) {
     return;
   }
   list.innerHTML = state.cases.map(issueCard).join("");
-  list.querySelectorAll("[data-issue-id]").forEach((element) => {
-    const open = () => selectCase(element.dataset.issueId);
-    element.addEventListener("click", (event) => {
-      if (event.target.closest("[data-card-link], [data-case-media-preview]")) return;
-      open();
-    });
-    element.addEventListener("keydown", (event) => {
-      if (event.target.closest("[data-card-link], [data-case-media-preview]")) return;
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        open();
-      }
-    });
+  list.querySelectorAll("[data-open-issue]").forEach((button) => {
+    button.addEventListener("click", () => selectCase(button.dataset.openIssue));
   });
   list.querySelectorAll("[data-case-media-preview]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -1585,8 +1944,9 @@ async function loadClusters() {
 function safeSameOriginReviewUrl(url) {
   try {
     const parsed = new URL(String(url || ""), window.location.origin);
-    if (parsed.origin !== window.location.origin || parsed.pathname !== "/review") return "";
-    return `${parsed.pathname}${parsed.search}`;
+    const pathname = stripBasePath(parsed.pathname);
+    if (parsed.origin !== window.location.origin || pathname !== "/review") return "";
+    return `${withBase(pathname)}${parsed.search}`;
   } catch {
     return "";
   }
@@ -1889,7 +2249,7 @@ function downloadReviewAnalysis(format) {
   if (options.tag) params.set("tag", options.tag);
   if (options.search) params.set("search", options.search);
   const link = document.createElement("a");
-  link.href = `/api/review-reason-analysis/export?${params.toString()}`;
+  link.href = withBase(`/api/review-reason-analysis/export?${params.toString()}`);
   link.download = "";
   document.body.appendChild(link);
   link.click();
@@ -2229,20 +2589,6 @@ function bindDetailMedia(caseData) {
   if (expandButton) expandButton.onclick = expand;
   root.querySelectorAll("[data-detail-media-expand]").forEach((button) => button.addEventListener("click", expand));
   bindBevVideoPlayers(root);
-  root.addEventListener("keydown", (event) => {
-    if (event.target.matches("input, select")) return;
-    const key = event.key.toLowerCase();
-    if (["b", "c", "v"].includes(key)) {
-      event.preventDefault();
-      switchKind({ b: "bev", c: "camera", v: "video" }[key]);
-    } else if (state.detailMedia.kind !== "video" && ["arrowleft", "arrowup", "arrowright", "arrowdown"].includes(key)) {
-      event.preventDefault();
-      move(["arrowleft", "arrowup"].includes(key) ? -1 : 1);
-    } else if (key === "f") {
-      event.preventDefault();
-      expand();
-    }
-  });
 }
 
 function predictionCards(caseData) {
@@ -2282,17 +2628,21 @@ function openHistoryDialog(kind, caseData) {
 function renderDetail(caseData) {
   const primary = (caseData.predictions || []).find((item) => item.model_run_id === state.selectedRunId) || caseData.predictions?.[0];
   const issueUrl = safeUrl(caseData.voyager_issue_url || caseData.trail_url);
+  const aresUrl = aresStudioUrl(caseData, issueUrl);
   const issueId = escapeHtml(caseData.issue_id);
   const issueIdMarkup = issueUrl
     ? `<a class="detail-id detail-id-link" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" title="打开 Voyager Issue">${issueId}</a>`
     : `<span class="detail-id">${issueId}</span>`;
+  const aresLinkMarkup = aresUrl
+    ? `<a class="detail-id detail-id-link detail-ares-link" href="${escapeHtml(aresUrl)}" target="_blank" rel="noreferrer" title="在 Ares Studio 中打开事件前后各 10 秒">Ares Studio ↗</a>`
+    : "";
   ensureDetailMediaState(caseData);
   const modelHistoryButton = `<button class="history-inline-button" type="button" data-open-history="model">评测 Run 历史 · ${(caseData.predictions || []).length} 条</button>`;
   $("#detailPane").innerHTML = `
     <div class="detail-header">
       <div class="detail-title-row">
         <div class="detail-title-group">
-          <div class="detail-title"><h2><span class="ui-lang-zh">问题详情</span><span class="ui-lang-en">Issue Details</span></h2>${issueIdMarkup}</div>
+          <div class="detail-title"><h2><span class="ui-lang-zh">问题详情</span><span class="ui-lang-en">Issue Details</span></h2>${issueIdMarkup}${aresLinkMarkup}</div>
         </div>
         <div class="detail-navigation">
           <div class="case-detail-pager">
@@ -2344,18 +2694,23 @@ function annotationHistory(annotations) {
   return annotations
     .map(
       (annotation) => `<article class="history-row">
-        <div class="history-head">${labelBadge(annotation.label, annotation.review_status === "needs_gt_review" ? "GT 待复核" : "已记录")}<span>${formatTime(annotation.created_at)}</span></div>
+        <div class="history-head">
+          ${labelBadge(annotation.label, annotation.review_status === "needs_gt_review" ? "GT 待复核" : "已记录")}
+          <span class="history-reviewer" title="${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}` : "复核人：历史记录未填写")}">${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO" : " · 未验证"}` : "复核人：未记录")}</span>
+          <span class="history-time">${formatTime(annotation.created_at)}</span>
+        </div>
         ${annotation.missing_evidence?.length ? `<div class="tags">${annotation.missing_evidence.map((key) => `<span class="tag evidence-tag">${escapeHtml(evidenceLabel(key))}</span>`).join("")}</div>` : ""}
         ${annotation.tags?.length ? `<div class="tags">${annotation.tags.map((tag) => `<span class="tag">${escapeHtml(tagLabel(tag))}</span>`).join("")}</div>` : ""}
         ${annotation.attachments?.length ? `<div class="history-attachments">${annotation.attachments.map((attachment, index) => `<a href="${escapeHtml(attachment.url)}" target="_blank" rel="noreferrer" title="打开补充截图 ${index + 1}"><img src="${escapeHtml(attachment.url)}" alt="补充截图 ${index + 1}" loading="lazy" /></a>`).join("")}</div>` : ""}
         ${annotation.note ? `<p>${escapeHtml(annotation.note)}</p>` : ""}
-        ${annotation.author ? `<small>${escapeHtml(annotation.author)}${annotation.author_verified ? " · SSO 已验证" : " · 未验证/历史"}</small>` : ""}
       </article>`)
     .join("");
 }
 
 function renderReview(caseData) {
   const previous = caseData.annotations?.[0] || {};
+  state.reviewFormDirty = false;
+  state.deferredDetailRefresh = false;
   state.selectedAnnotationLabel = previous.label || "";
   const catalog = state.config?.missing_evidence_catalog || [];
   const tagCatalog = state.config?.review_tag_catalog || [];
@@ -2405,10 +2760,10 @@ function renderReview(caseData) {
         <input class="hidden" id="reviewScreenshotInput" type="file" accept="image/png,image/jpeg,image/webp" multiple />
         <div class="pending-screenshot-list" id="pendingScreenshotList"></div>
       </div>
-      <label><span>标注人${authorLocked ? "（SSO）" : "（可编辑）"}</span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" ${authorLocked ? "readonly" : ""} /></label>
+      <label><span>复核人${authorLocked ? "（SSO）" : "（必填）"}</span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" required ${authorLocked ? "readonly" : ""} /></label>
       <button class="button button-primary full-width" type="submit">保存新的 review 版本</button>
     </form>
-    <details class="review-history-toggle">
+    <details class="review-history-toggle" open>
       <summary><span><strong>Review 历史</strong></span><span class="history-launch-meta">${(caseData.annotations || []).length} 条</span></summary>
       <div class="review-history-content">${annotationHistory(caseData.annotations)}</div>
     </details>`;
@@ -2441,6 +2796,7 @@ function renderReview(caseData) {
     creator?.before(option);
     option.querySelector("input")?.addEventListener("change", updateEvidenceSummary);
     if (input) input.value = "";
+    state.reviewFormDirty = true;
     updateEvidenceSummary();
   });
   $("#addSceneTagButton")?.addEventListener("click", () => {
@@ -2457,6 +2813,7 @@ function renderReview(caseData) {
     $("#customTagCreator")?.before(option);
     option.querySelector("input")?.addEventListener("change", updateTagSummary);
     if (input) input.value = "";
+    state.reviewFormDirty = true;
     updateTagSummary();
   });
   const pasteZone = $("#screenshotPasteZone");
@@ -2484,7 +2841,14 @@ function renderReview(caseData) {
     screenshotInput.value = "";
   });
   renderPendingReviewImages();
-  $("#annotationForm").addEventListener("submit", saveAnnotation);
+  const annotationForm = $("#annotationForm");
+  annotationForm.addEventListener("input", () => {
+    state.reviewFormDirty = true;
+  });
+  annotationForm.addEventListener("change", () => {
+    state.reviewFormDirty = true;
+  });
+  annotationForm.addEventListener("submit", saveAnnotation);
 }
 
 function updateEvidenceSummary() {
@@ -2517,6 +2881,7 @@ function addPendingReviewImages(files) {
   const maxTotalBytes = Number(limits.max_bytes_total || 24 * 1024 * 1024);
   const allowed = new Set(limits.media_types || ["image/png", "image/jpeg", "image/webp"]);
   let rejected = "";
+  const previousCount = state.pendingReviewImages.length;
   files.forEach((file) => {
     if (state.pendingReviewImages.length >= maxCount) {
       rejected = `最多只能添加 ${maxCount} 张截图。`;
@@ -2544,6 +2909,9 @@ function addPendingReviewImages(files) {
       previewUrl: URL.createObjectURL(file),
     });
   });
+  if (state.pendingReviewImages.length !== previousCount) {
+    state.reviewFormDirty = true;
+  }
   renderPendingReviewImages();
   if (rejected) showToast(rejected, true);
 }
@@ -2571,6 +2939,7 @@ function renderPendingReviewImages() {
       if (index < 0) return;
       const previewUrl = state.pendingReviewImages[index].previewUrl;
       state.pendingReviewImages.splice(index, 1);
+      state.reviewFormDirty = true;
       renderPendingReviewImages();
       releasePreviewUrlLater(previewUrl);
     });
@@ -2692,6 +3061,8 @@ async function saveAnnotation(event) {
       });
     }
     const screenshotCount = state.pendingReviewImages.length;
+    state.reviewFormDirty = false;
+    state.deferredDetailRefresh = false;
     clearPendingReviewImages();
     showToast(
       `已保存新的 review 版本${screenshotCount ? `和 ${screenshotCount} 张截图` : ""}。`
@@ -3182,7 +3553,7 @@ function updatePredictionBatchCount() {
   const maxIssues = Number(state.config?.prediction_batch?.max_issues || 0);
   const overLimit = maxIssues > 0 && ids.length > maxIssues;
   target.textContent =
-    `已识别 ${ids.length} 个 Issue${maxIssues ? ` · 单批最多 ${maxIssues} 个` : ""}` +
+    `${ids.length} 个${maxIssues ? ` · 单批最多 ${maxIssues} 个` : ""}` +
     `${invalid.length ? ` · ${invalid.length} 个格式不合法` : ""}`;
   target.classList.toggle("input-warning", Boolean(invalid.length || overLimit));
 }
@@ -3234,15 +3605,8 @@ function renderGatewayModels() {
   if (!select || !statusTarget || !endpointTarget) return;
   const catalog = state.gatewayModelStatus || {};
   const previous = state.selectedGatewayModelId || select.value;
-  const search = ($("#predictionModelSearch")?.value || "").trim().toLowerCase();
-  const visibleModels = state.gatewayModels.filter((model) =>
-    !search ||
-    [model.id, model.display_name, model.resolved_model_id]
-      .join(" ")
-      .toLowerCase()
-      .includes(search)
-  );
-  const defaultId = catalog.default_model_id || "";
+  const visibleModels = state.gatewayModels;
+  const defaultId = catalog.ui_default_model_id || catalog.default_model_id || "";
   const selectedModel = previous
     ? state.gatewayModels.find((item) => item.id === previous) || null
     : state.gatewayModels.find((item) => item.id === defaultId) ||
@@ -3250,12 +3614,6 @@ function renderGatewayModels() {
       null;
   const unavailableSelection = Boolean(previous && !selectedModel);
   const displayModels = [...visibleModels];
-  if (
-    selectedModel &&
-    !displayModels.some((item) => item.id === selectedModel.id)
-  ) {
-    displayModels.unshift({ ...selectedModel, pinnedBySearch: true });
-  }
   if (unavailableSelection) {
     displayModels.unshift({
       id: previous,
@@ -3276,8 +3634,7 @@ function renderGatewayModels() {
               : model.validation_status === "validated"
                 ? "已验证"
                 : "实验";
-            const searchNote = model.pinnedBySearch ? " · 当前选择（搜索未命中）" : "";
-            return `<option value="${escapeHtml(model.id)}">[${tier}] ${escapeHtml(model.display_name || model.id)}${searchNote}</option>`;
+            return `<option value="${escapeHtml(model.id)}">[${tier}] ${escapeHtml(model.display_name || model.id)}</option>`;
           }
         )
         .join("")
@@ -3298,10 +3655,9 @@ function renderGatewayModels() {
             const resolved = model.resolved_model_id && model.resolved_model_id !== model.id
               ? model.resolved_model_id
               : model.id;
-            const searchNote = model.pinnedBySearch ? " · 当前选择" : "";
             return `<button class="gateway-model-option ${active ? "active" : ""} ${unavailable ? "unavailable" : ""}" type="button" data-gateway-model="${escapeHtml(model.id)}" ${unavailable ? "disabled" : ""}>
               <span class="gateway-model-option-head">
-                <strong>${escapeHtml(model.display_name || model.id)}${escapeHtml(searchNote)}</strong>
+                <strong>${escapeHtml(model.display_name || model.id)}</strong>
                 <em>${tier}</em>
               </span>
               <small>${escapeHtml(resolved)}</small>
@@ -3330,7 +3686,7 @@ function renderGatewayModels() {
   statusTarget.textContent = unavailableSelection
     ? `当前选择 ${previous} 已不在当前 Provider 在线目录；请选择其他模型后再提交。`
     : ready
-      ? `已验证 ${catalog.validated_count ?? "—"} · 实验模型 ${catalog.experimental_count ?? "—"} · 当前显示 ${visibleModels.length} / ${state.gatewayModels.length}`
+      ? `已验证 ${state.gatewayModels.filter((model) => model.validation_status === "validated").length} · 实验模型 ${state.gatewayModels.filter((model) => model.validation_status !== "validated").length} · 当前显示 ${visibleModels.length}`
       : catalog.message || "模型目录尚未就绪。";
   if (createButton) createButton.disabled = !ready;
   renderBatchCatalogFilters();
@@ -3350,8 +3706,13 @@ async function loadGatewayModels({ refresh = false, providerId = "" } = {}) {
     if (refresh) params.set("refresh", "true");
     const data = await api(`/api/prediction-batches/models?${params.toString()}`);
     if (requestSeq !== state.gatewayModelRequestSeq) return;
-    state.gatewayModelStatus = data;
-    state.gatewayModels = data.models || [];
+    const models = data.models || [];
+    const autoModel = models.find((model) => model.id === "auto");
+    state.gatewayModelStatus = {
+      ...data,
+      ui_default_model_id: autoModel?.resolved_model_id || data.default_model_id,
+    };
+    state.gatewayModels = models.filter((model) => model.id !== "auto");
     renderGatewayModels();
   } catch (error) {
     if (requestSeq !== state.gatewayModelRequestSeq) return;
@@ -3431,19 +3792,19 @@ function batchInputPresets() {
     state.config?.prediction_batch?.input_policy?.profiles || [
       {
         id: "camera_ra_event",
-        frame_offsets_ms: [-3000, -2000, -1000, 0, 1000, 2000, 3000],
+        frame_offsets_ms: [-19000, -15000, -10000, -5000, 0, 5000, 10000, 15000, 19000],
         use_ra_event: true,
         use_ra_options: false,
       },
       {
         id: "camera_ra_options",
-        frame_offsets_ms: [-3000, -2000, -1000, 0, 1000, 2000, 3000],
+        frame_offsets_ms: [-19000, -15000, -10000, -5000, 0, 5000, 10000, 15000, 19000],
         use_ra_event: true,
         use_ra_options: true,
       },
       {
         id: "camera_only",
-        frame_offsets_ms: [-3000, -2000, -1000, 0, 1000, 2000, 3000],
+        frame_offsets_ms: [-19000, -15000, -10000, -5000, 0, 5000, 10000, 15000, 19000],
         use_ra_event: false,
         use_ra_options: false,
       },
@@ -3465,8 +3826,8 @@ function applyBatchInputPreset() {
 function cameraFramePresets() {
   return [
     {
-      id: "camera_7_frames",
-      frame_offsets_ms: [-3000, -2000, -1000, 0, 1000, 2000, 3000],
+      id: "camera_9_frames",
+      frame_offsets_ms: [-19000, -15000, -10000, -5000, 0, 5000, 10000, 15000, 19000],
     },
     {
       id: "camera_three_moments",
@@ -3661,17 +4022,12 @@ function renderBatchRuntimeSummary() {
     : typeof configured === "object"
       ? configured.experiment_source || configured.runtime || configured.source
       : "";
-  const media =
-    typeof configured === "object"
-      ? configured.media_summary ||
-        (configured.camera_frame_count
-          ? `Camera ${configured.camera_frame_count} 帧`
-          : configured.camera_frames
-            ? `Camera ${configured.camera_frames} 帧`
-            : Array.isArray(configured.frame_offsets_ms)
-              ? `Camera ${configured.frame_offsets_ms.length} 帧${configured.use_bev_animation === false ? " · Ares 关闭" : ""}`
-              : "")
-      : "";
+  const frameCount = String($("#predictionFrameOffsets")?.value || "")
+    .split(/[\s,，;；]+/)
+    .filter(Boolean).length;
+  const media = frameCount
+    ? `Camera ${frameCount} 帧 · Ares Animation ${$("#predictionUseBev")?.checked ? "开启" : "关闭"}`
+    : "";
   target.innerHTML = `
     <strong>${escapeHtml(model || "服务器模型网关")}</strong>
     <span>${prompt ? `Prompt · ${escapeHtml(prompt)}` : "尚未选择 Prompt"} · 输入 ${escapeHtml($("#predictionInputProfile")?.value || "camera_ra_event")}</span>
@@ -3762,9 +4118,7 @@ function batchInputSummary(batch) {
     offsets ? `Camera ${input.frame_offsets_ms.length} 帧 · ${offsets} ms` : "",
     input.use_ra_event ? "RA Events" : "无 RA Events",
     input.use_ra_options ? "RA / SWAG Options" : "",
-    input.use_bev_animation === false || input.use_ares_capture === false
-      ? "BEV / Ares 关闭"
-      : "",
+    input.use_bev_animation ? "Ares Animation · API 默认" : "Ares Animation 关闭",
   ].filter(Boolean);
 }
 
@@ -4096,6 +4450,7 @@ async function submitPredictionBatch(event) {
           frame_offsets_ms: frameOffsets,
           use_ra_event: useRaEvent,
           use_ra_options: useRaOptions,
+          use_bev_animation: Boolean($("#predictionUseBev")?.checked),
         },
         name: $("#predictionBatchName").value.trim() || "",
         requested_by: state.session.username || "",
@@ -4174,7 +4529,7 @@ const IMPORT_EXAMPLES = Object.freeze({
       '  "experiment": {',
       '    "model_name": "Qwen3.5-9B-finetuned/base",',
       '    "prompt": "stuck_triage_auto_opt_api",',
-      '    "input_profile": "Camera 7 帧 + RA Events"',
+      '    "input_profile": "Camera 9 帧 + RA Events + Ares Animation"',
       "  },",
       '  "results": [',
       "    {",
@@ -4529,6 +4884,18 @@ function bindEvents() {
       showToast(error.message, true);
     }
   });
+  $("#refreshSystemStatusButton").addEventListener("click", async () => {
+    const button = $("#refreshSystemStatusButton");
+    button.disabled = true;
+    try {
+      await loadStatus();
+      showToast(uiText("系统状态已刷新。", "System status refreshed."));
+    } catch (error) {
+      showToast(error.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  });
   $("#checkTrailButton").addEventListener("click", () => syncTrail("preview"));
   $("#syncTrailButton").addEventListener("click", () => syncTrail("create"));
   $("#runManagerImportButton").addEventListener("click", () => {
@@ -4604,7 +4971,6 @@ function bindEvents() {
     state.selectedGatewayModelId = $("#predictionModelSelect").value;
     renderGatewayModels();
   });
-  $("#predictionModelSearch").addEventListener("input", renderGatewayModels);
   $("#predictionPromptSelect").addEventListener("change", loadSelectedPromptTemplate);
   $("#predictionPromptTemplate").addEventListener("input", updatePromptEditorSummary);
   $("#predictionInputProfile").addEventListener("change", applyBatchInputPreset);
@@ -4621,6 +4987,7 @@ function bindEvents() {
     if ($("#predictionUseRaOptions").checked) $("#predictionUseRaEvent").checked = true;
     renderBatchRuntimeSummary();
   });
+  $("#predictionUseBev").addEventListener("change", renderBatchRuntimeSummary);
   $("#languageToggleButton").addEventListener("click", () => {
     applyUiLanguage(state.uiLanguage === "en" ? "zh" : "en");
   });
@@ -4672,14 +5039,39 @@ function bindEvents() {
     if (!$("#mediaDialog").open) {
       const target = event.target instanceof Element ? event.target : null;
       const interactiveTarget = target?.closest("input, textarea, select, button, a, [contenteditable='true']");
-      const detailVideoActive =
+      const detailMediaActive =
         state.activePage === "review" &&
         Boolean(state.selectedCase) &&
-        state.detailMedia.kind === "video" &&
+        Boolean($("#detailHeroMedia")) &&
         !document.querySelector("dialog[open]");
-      if (event.key === " " && detailVideoActive && !interactiveTarget) {
+      if (!detailMediaActive || interactiveTarget || event.ctrlKey || event.metaKey || event.altKey) return;
+      const activate = (control) => {
+        if (!control || control.disabled) return false;
         event.preventDefault();
-        $("#detailHeroMedia")?.querySelector("[data-video-play]")?.click();
+        control.click();
+        return true;
+      };
+      const key = event.key.toLowerCase();
+      if (["b", "c", "v"].includes(key)) {
+        const kind = { b: "bev", c: "camera", v: "video" }[key];
+        const select = $("#detailMediaKindSelect");
+        const option = select?.querySelector(`option[value="${kind}"]`);
+        if (select && option && !option.disabled && select.value !== kind) {
+          event.preventDefault();
+          select.value = kind;
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      } else if (key === " " && state.detailMedia.kind === "video") {
+        event.preventDefault();
+        if (!event.repeat) $("#detailHeroMedia")?.querySelector("[data-video-play]")?.click();
+      } else if (key === "arrowleft" || key === "arrowright") {
+        const direction = key === "arrowleft" ? -1 : 1;
+        const control = state.detailMedia.kind === "video"
+          ? $("#detailHeroMedia")?.querySelector(`[data-video-jump="${direction}"]`)
+          : $(direction < 0 ? "#detailMediaPreviousButton" : "#detailMediaNextButton");
+        activate(control);
+      } else if (key === "f") {
+        if (!event.repeat) activate($("#detailMediaExpandButton"));
       }
       return;
     }
@@ -4819,6 +5211,7 @@ async function bootstrap() {
     source: initialRoute.source,
     importKind: initialRoute.importKind,
     restoreRoute: true,
+    loadPageData: false,
   });
   try {
     await Promise.all([loadConfig(), loadSession()]);
@@ -4856,15 +5249,21 @@ async function bootstrap() {
     await loadReviewers();
     if (initialRoute.page === "review") applyReviewRouteControls(initialRoute);
     if (initialRoute.page === "analysis") applyAnalysisRouteControls(initialRoute);
-    await Promise.all([
-      loadStatus(),
-      loadOverview(),
-      loadCases({
-        keepSelection: Boolean(initialRoute.issue),
-        page: initialRoute.casePage,
-      }),
-      loadClusters(),
-    ]);
+    const initialPageRequests = [loadOverview()];
+    if (initialRoute.page === "review") {
+      initialPageRequests.push(
+        loadCases({
+          keepSelection: Boolean(initialRoute.issue),
+          page: initialRoute.casePage,
+        }),
+        loadClusters()
+      );
+    } else if (initialRoute.page === "status") {
+      initialPageRequests.push(loadStatus());
+    } else if (initialRoute.page === "prediction") {
+      initialPageRequests.push(loadPredictionConfig(), loadPredictionBatches());
+    }
+    await Promise.all(initialPageRequests);
     if (
       initialRoute.page === "review" &&
       initialRoute.issue &&
@@ -4879,11 +5278,17 @@ async function bootstrap() {
       source: initialRoute.source,
       importKind: initialRoute.importKind,
       restoreRoute: true,
+      loadPageData: false,
     });
     if (initialRoute.page === "analysis") await loadReviewReasonAnalysis();
   } catch (error) {
     showToast(`启动失败：${error.message}`, true);
   }
+  startChangePolling();
 }
 
-window.addEventListener("DOMContentLoaded", bootstrap);
+if (document.readyState === "loading") {
+  window.addEventListener("DOMContentLoaded", bootstrap, { once: true });
+} else {
+  bootstrap();
+}

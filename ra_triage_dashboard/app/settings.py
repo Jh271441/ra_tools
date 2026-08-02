@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import os
+import stat
 from dataclasses import dataclass
 from pathlib import Path
+
+from .web_paths import normalize_base_path
 
 
 def _path(name: str, default: Path) -> Path:
@@ -24,13 +27,43 @@ def _integer(name: str, default: int, minimum: int = 1) -> int:
         return default
 
 
+def _database_url(data_dir: Path) -> str:
+    direct = os.getenv("DASHBOARD_DATABASE_URL", "").strip()
+    if direct:
+        return direct
+    url_file_value = os.getenv("DASHBOARD_DATABASE_URL_FILE", "").strip()
+    if not url_file_value:
+        return f"sqlite:///{data_dir / 'triage.sqlite3'}"
+    url_file = Path(url_file_value).expanduser().absolute()
+    descriptor = os.open(url_file, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise RuntimeError("DASHBOARD_DATABASE_URL_FILE 必须是普通文件。")
+        if metadata.st_uid != os.getuid():
+            raise RuntimeError("DASHBOARD_DATABASE_URL_FILE 必须属于当前服务用户。")
+        if stat.S_IMODE(metadata.st_mode) & 0o077:
+            raise RuntimeError("DASHBOARD_DATABASE_URL_FILE 权限必须为 0600。")
+        value = os.read(descriptor, 16 * 1024 + 1)
+    finally:
+        os.close(descriptor)
+    if len(value) > 16 * 1024:
+        raise RuntimeError("DASHBOARD_DATABASE_URL_FILE 内容过长。")
+    database_url = value.decode("utf-8").strip()
+    if not database_url:
+        raise RuntimeError("DASHBOARD_DATABASE_URL_FILE 不能为空。")
+    return database_url
+
+
 @dataclass(frozen=True)
 class Settings:
     app_root: Path
     build_commit: str
+    base_path: str
     static_dir: Path
     data_dir: Path
     database_url: str
+    postgres_persistent_data: bool
     ra_auto_triage_root: Path
     ares_manifest: Path
     camera_root: Path
@@ -106,11 +139,12 @@ class Settings:
                 os.getenv("DASHBOARD_BUILD_COMMIT", "").strip()[:64]
                 or "unverified"
             ),
+            base_path=normalize_base_path(os.getenv("DASHBOARD_BASE_PATH", "")),
             static_dir=app_root / "static",
             data_dir=data_dir,
-            database_url=os.getenv(
-                "DASHBOARD_DATABASE_URL",
-                f"sqlite:///{data_dir / 'triage.sqlite3'}",
+            database_url=_database_url(data_dir),
+            postgres_persistent_data=_bool(
+                "DASHBOARD_POSTGRES_PERSISTENT_DATA", False
             ),
             ra_auto_triage_root=ra_root,
             ares_manifest=manifest,
@@ -213,11 +247,20 @@ class Settings:
     def db_path(self) -> Path:
         prefix = "sqlite:///"
         if not self.database_url.startswith(prefix):
-            raise RuntimeError(
-                "当前 MVP 仅启用 SQLite 运行时；PostgreSQL 表结构位于 "
-                "migrations/postgres/，接入正式实例时替换 storage adapter。"
-            )
+            raise RuntimeError("PostgreSQL 运行时没有本地 db_path。")
         return Path(self.database_url[len(prefix) :]).expanduser().resolve()
+
+    @property
+    def storage_backend(self) -> str:
+        if self.database_url.startswith("sqlite:///"):
+            return "sqlite"
+        if self.database_url.startswith(("postgresql://", "postgres://")):
+            return "postgresql"
+        raise RuntimeError("DASHBOARD_DATABASE_URL 仅支持 sqlite:/// 或 postgresql://。")
+
+    @property
+    def postgres_migrations_dir(self) -> Path:
+        return self.app_root / "migrations" / "postgres"
 
     @property
     def jobs_dir(self) -> Path:
@@ -242,4 +285,5 @@ class Settings:
         self.review_attachments_dir.mkdir(parents=True, exist_ok=True)
         self.case_thumbnails_dir.mkdir(parents=True, exist_ok=True)
         self.batch_bag_cache_dir.mkdir(parents=True, exist_ok=True)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        if self.storage_backend == "sqlite":
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)

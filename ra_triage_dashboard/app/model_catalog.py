@@ -265,7 +265,7 @@ class ModelCatalog:
             configured=key_configured,
             source="dashboard server key file",
             supports_batch=True,
-            note="当前 Camera-only Batch 执行 Provider；Ares / BEV 固定关闭。",
+            note="当前 RA Batch 执行 Provider；Ares Animation 使用服务端固定策略。",
         )
 
         tokenservice_configured = False
@@ -286,7 +286,7 @@ class ModelCatalog:
             configured=tokenservice_configured,
             source="dashboard server tokenservice key file",
             supports_batch=True,
-            note="Camera-only Batch Provider；模型目录按 TokenService 网关读取，Ares / BEV 固定关闭。",
+            note="RA Batch Provider；模型目录按 TokenService 网关读取，Ares Animation 使用服务端固定策略。",
         )
 
         # Read only provider names/endpoints from the checked-out RA config.

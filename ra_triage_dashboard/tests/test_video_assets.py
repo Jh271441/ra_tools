@@ -84,6 +84,20 @@ class VideoIndexTest(unittest.TestCase):
                 index.get_asset_path("cn31842459", "bev-video-0")
             )
 
+    def test_public_video_url_uses_configured_base_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_capture(root)
+            index = VideoIndex(root, base_path="/dashboard")
+
+            video = index.get_video("cn31842459")
+
+            self.assertIsNotNone(video)
+            self.assertEqual(
+                video["url"],
+                "/dashboard/api/assets/cn31842459/bev-video-0",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

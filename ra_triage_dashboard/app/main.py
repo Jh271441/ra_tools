@@ -5,21 +5,29 @@ import csv
 import hashlib
 import io
 import json
+import logging
 import math
 import mimetypes
 import re
 import shutil
 import threading
+import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
 import openpyxl
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -51,17 +59,25 @@ from .review_analysis import (
 )
 from .sanitization import redact_sensitive_fields
 from .settings import Settings
+from .system_status import backup_status, overall_status, volume_status
 from .trail_sync import TRAIL_INFO_FIELD, TRAIL_RESULT_FIELD, read_trail_model_fields
+from .web_paths import render_index_html, with_base_path
 
 
+logger = logging.getLogger("ra_triage_dashboard")
 settings = Settings.from_env()
-database = Database(settings.db_path)
+database = Database(
+    settings.database_url,
+    postgres_migrations_dir=settings.postgres_migrations_dir,
+    pool_size=10,
+)
 asset_index = AssetIndex(
     ra_root=settings.ra_auto_triage_root,
     manifest_path=settings.ares_manifest,
+    base_path=settings.base_path,
 )
-camera_index = CameraIndex(settings.camera_root)
-video_index = VideoIndex(settings.ares_video_root)
+camera_index = CameraIndex(settings.camera_root, base_path=settings.base_path)
+video_index = VideoIndex(settings.ares_video_root, base_path=settings.base_path)
 model_catalog = ModelCatalog(settings)
 prompt_catalog = PromptCatalog(settings.ra_auto_triage_root)
 autotriage_source = AutoTriageSource(settings.autotriage_api_base_url)
@@ -69,6 +85,12 @@ batch_prediction_runner = BatchPredictionRunner(settings, database)
 trail_sync_lock = threading.Lock()
 review_image_semaphore = asyncio.Semaphore(2)
 thumbnail_image_semaphore = asyncio.Semaphore(4)
+APP_STARTED_AT = datetime.now(timezone.utc)
+APP_STARTED_MONOTONIC = time.monotonic()
+INDEX_HTML = render_index_html(
+    (settings.static_dir / "index.html").read_text(encoding="utf-8"),
+    settings.base_path,
+)
 
 ISSUE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{3,128}$")
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
@@ -82,6 +104,11 @@ MIN_REVIEW_ATTACHMENT_DISK_FREE = 256 * 1024 * 1024
 MAX_BATCH_JSON_REQUEST_BYTES = 256 * 1024
 MAX_SOURCE_PREVIEW_ROWS = 200
 MAX_SOURCE_PREVIEW_CELL_LENGTH = 2_000
+
+
+def _public_path(path: str) -> str:
+    return with_base_path(settings.base_path, path)
+
 
 MISSING_EVIDENCE_CATALOG: tuple[dict[str, str], ...] = (
     {"key": "routing_direction", "label": "routing 方向缺失", "hint": "未识别自车目标转向 / 车道任务"},
@@ -943,7 +970,7 @@ def _public_review_attachment(attachment: dict[str, Any]) -> dict[str, Any]:
         "width": int(attachment["width"]),
         "height": int(attachment["height"]),
         "created_at": attachment.get("created_at"),
-        "url": f"/api/review-attachments/{attachment['id']}",
+        "url": _public_path(f"/api/review-attachments/{attachment['id']}"),
     }
 
 
@@ -1255,10 +1282,12 @@ async def lifespan(_: FastAPI):
             identity_verified=False,
             trigger="startup",
         )
+    batch_prediction_runner.resume_queued_predictions()
     try:
         yield
     finally:
         await asyncio.to_thread(batch_prediction_runner.shutdown)
+        await asyncio.to_thread(database.close)
 
 
 app = FastAPI(
@@ -1323,6 +1352,24 @@ async def request_size_guard(request: Request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def request_latency_observer(request: Request, call_next):
+    started = time.monotonic()
+    response = await call_next(request)
+    duration_ms = (time.monotonic() - started) * 1000
+    response.headers["Server-Timing"] = f'app;dur={duration_ms:.1f}'
+    response.headers["X-Request-Duration-Ms"] = f"{duration_ms:.1f}"
+    if request.url.path.startswith("/api/") and duration_ms >= 500:
+        logger.warning(
+            "slow_request method=%s path=%s status=%s duration_ms=%.1f",
+            request.method,
+            request.url.path,
+            response.status_code,
+            duration_ms,
+        )
+    return response
+
+
 app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 
 
@@ -1332,9 +1379,10 @@ app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 @app.get("/runs", include_in_schema=False)
 @app.get("/inference", include_in_schema=False)
 @app.get("/batch-prediction", include_in_schema=False)
-async def index() -> FileResponse:
-    return FileResponse(
-        settings.static_dir / "index.html",
+@app.get("/system-status", include_in_schema=False)
+async def index() -> HTMLResponse:
+    return HTMLResponse(
+        content=INDEX_HTML,
         headers={"Cache-Control": "no-store, max-age=0"},
     )
 
@@ -1343,7 +1391,12 @@ async def index() -> FileResponse:
 async def legacy_import(kind: str = "issues") -> RedirectResponse:
     # The legacy Issue / GT upload UI is intentionally retired. Keep old
     # bookmarks navigable, but land them in the safe model-result importer.
-    return RedirectResponse(url="/runs?import=model", status_code=307)
+    return RedirectResponse(
+        # Relative Location resolves to /runs for direct IP and
+        # /dashboard/runs through the browser-visible strip-proxy URL.
+        url="runs?import=model",
+        status_code=307,
+    )
 
 
 @app.get("/health")
@@ -1351,6 +1404,7 @@ async def health() -> dict[str, Any]:
     return {
         "ok": True,
         "build_commit": settings.build_commit,
+        "base_path": settings.base_path,
         "ra_auto_triage_root_available": (settings.ra_auto_triage_root / "vlm").is_dir(),
         "ares_manifest_available": settings.ares_manifest.is_file(),
         "ares_indexed_issues": asset_index.refresh(),
@@ -1362,14 +1416,30 @@ async def health() -> dict[str, Any]:
         "batch_prediction_enabled": settings.batch_prediction_enabled,
         "autotriage_push_enabled": settings.autotriage_push_enabled,
         "model_gateway": model_catalog.status(),
-        "storage": "sqlite-mvp",
+        "change_revision": await asyncio.to_thread(database.change_revision),
+        "storage": database.storage_label,
     }
 
 
 @app.get("/api/overview")
 async def overview(model_run_id: str = "") -> dict[str, Any]:
-    selected = model_run_id or database.default_model_run_id()
-    return database.overview(baseline_scope=settings.baseline_scope, model_run_id=selected)
+    selected = model_run_id or await asyncio.to_thread(
+        database.default_model_run_id
+    )
+    return await asyncio.to_thread(
+        database.overview,
+        baseline_scope=settings.baseline_scope,
+        model_run_id=selected,
+    )
+
+
+@app.get("/api/change-revision")
+async def change_revision(response: Response) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return {
+        "revision": await asyncio.to_thread(database.change_revision),
+        "poll_after_ms": 1800,
+    }
 
 
 @app.get("/api/dashboard-config")
@@ -1401,7 +1471,7 @@ async def dashboard_config() -> dict[str, Any]:
             "autotriage_push_enabled": settings.autotriage_push_enabled,
             "max_issues": settings.batch_max_issues,
             "input_policy": "server_model_gateway_profile",
-            "ares_bev_input": False,
+            "ares_bev_input": True,
             "trail_write_enabled": False,
             "model_gateway": model_catalog.status(),
         },
@@ -1425,8 +1495,46 @@ async def session(request: Request) -> dict[str, object]:
 
 
 @app.get("/api/status")
-async def status() -> dict[str, Any]:
+async def status(response: Response) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    try:
+        database_state = await asyncio.to_thread(
+            database.runtime_status,
+            persistent_data=settings.postgres_persistent_data,
+        )
+    except Exception:
+        logger.exception("database status check failed")
+        database_state = {
+            "ok": False,
+            "backend": database.backend,
+            "server_version": "",
+            "persistent_data": False,
+            "revision": 0,
+            "migration_count": 0,
+            "pool_max_size": database.pool_size,
+            "latency_ms": None,
+        }
+    backup_state, volume_state = await asyncio.gather(
+        asyncio.to_thread(backup_status, settings.data_dir),
+        asyncio.to_thread(volume_status, settings.data_dir),
+    )
+    baseline_state = runtime_state["baseline"]
+    overall = overall_status(
+        database=database_state,
+        baseline=baseline_state,
+        backups=backup_state,
+        volume=volume_state,
+    )
     return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "base_path": settings.base_path,
+        "overall": overall,
+        "application": {
+            "started_at": APP_STARTED_AT.isoformat(),
+            "uptime_seconds": max(0, int(time.monotonic() - APP_STARTED_MONOTONIC)),
+            "build_commit": settings.build_commit,
+            "base_path": settings.base_path,
+        },
         "trail_write_enabled": False,
         "build_commit": settings.build_commit,
         "ra_auto_triage_root_available": (settings.ra_auto_triage_root / "vlm").is_dir(),
@@ -1434,13 +1542,16 @@ async def status() -> dict[str, Any]:
         "ares_indexed_issues": asset_index.refresh(),
         "camera_cache_root_available": settings.camera_root.is_dir(),
         "ares_video_root_available": settings.ares_video_root.is_dir(),
-        "baseline": runtime_state["baseline"],
+        "baseline": baseline_state,
         "trail_sync": runtime_state["trail_sync"],
         "batch_prediction_enabled": settings.batch_prediction_enabled,
         "autotriage_push_enabled": settings.autotriage_push_enabled,
         "batch_max_issues": settings.batch_max_issues,
         "model_gateway": model_catalog.status(),
-        "storage": "SQLite MVP / PostgreSQL migration prepared",
+        "storage": database.storage_label,
+        "database": database_state,
+        "backups": backup_state,
+        "volume": volume_state,
         "model_endpoint_policy": (
             "固定服务器网关；Profile 模型已验证，其他在线 Qwen3 显式实验；"
             "浏览器不能提交地址或凭证"
@@ -1470,7 +1581,8 @@ async def list_cases(
     comparison_status = requested_comparison or ("mismatch" if failure_only else "all")
     if comparison_status != "all" and not model_run_id:
         raise _detail(400, "筛选模型对比关系时必须选择 Model Run。")
-    result = database.list_cases(
+    result = await asyncio.to_thread(
+        database.list_cases,
         baseline_scope=settings.baseline_scope,
         search=search,
         gt_label=gt_label,
@@ -1493,7 +1605,9 @@ async def list_cases(
         if include_thumbnail:
             public["thumbnail"] = (
                 {
-                    "url": f"/api/case-thumbnails/{quote(issue_id, safe='')}",
+                    "url": _public_path(
+                        f"/api/case-thumbnails/{quote(issue_id, safe='')}"
+                    ),
                     "kind": "bev",
                     "label": "BEV · t0 附近",
                 }
@@ -1512,12 +1626,18 @@ async def list_cases(
 
 @app.get("/api/reviewers")
 async def reviewers() -> dict[str, Any]:
-    return {"items": database.list_reviewers(settings.baseline_scope)}
+    return {
+        "items": await asyncio.to_thread(
+            database.list_reviewers, settings.baseline_scope
+        )
+    }
 
 
 @app.get("/api/case-thumbnails/{issue_id}")
 async def get_case_thumbnail(issue_id: str) -> FileResponse:
-    if not ISSUE_ID_RE.fullmatch(issue_id) or database.get_case(issue_id) is None:
+    if not ISSUE_ID_RE.fullmatch(issue_id) or await asyncio.to_thread(
+        database.get_case, issue_id
+    ) is None:
         raise _detail(404, "Issue 不存在。")
     source_info = await asyncio.to_thread(
         asset_index.get_thumbnail_source,
@@ -1552,7 +1672,7 @@ async def get_case_thumbnail(issue_id: str) -> FileResponse:
 
 @app.get("/api/cases/{issue_id}")
 async def get_case(issue_id: str) -> dict[str, Any]:
-    case = database.get_case(issue_id)
+    case = await asyncio.to_thread(database.get_case, issue_id)
     if case is None:
         raise _detail(404, "Issue 不存在。")
     for annotation in case.get("annotations", []):
@@ -1680,7 +1800,9 @@ async def create_annotation_with_attachments(
 
 @app.get("/api/model-runs")
 async def model_runs() -> dict[str, Any]:
-    items = database.list_model_runs(settings.baseline_scope)
+    items = await asyncio.to_thread(
+        database.list_model_runs, settings.baseline_scope
+    )
     for item in items:
         if item.get("kind") != "upload":
             continue
@@ -1698,12 +1820,14 @@ async def model_runs() -> dict[str, Any]:
             "available": bool(source_file) or reconstructed,
             "reconstructed": reconstructed,
             "preview_supported": preview_supported,
-            "preview_url": (
+            "preview_url": _public_path(
                 f"/api/model-runs/{quote(str(item['id']), safe='')}/source-preview"
                 if preview_supported
                 else f"/api/model-runs/{quote(str(item['id']), safe='')}/source"
             ),
-            "download_url": f"/api/model-runs/{quote(str(item['id']), safe='')}/source?download=1",
+            "download_url": _public_path(
+                f"/api/model-runs/{quote(str(item['id']), safe='')}/source?download=1"
+            ),
         }
     return {
         "items": items,
@@ -2012,7 +2136,7 @@ def _review_reason_analysis_payload(
         if comparison_status == "mismatch" and model_run_id:
             review_params.append("failure=1")
         item["voyager_issue_url"] = _voyager_issue_url(issue_id)
-        item["review_url"] = f"/review?{'&'.join(review_params)}"
+        item["review_url"] = _public_path(f"/review?{'&'.join(review_params)}")
     result["scope"] = {
         "baseline_scope": settings.baseline_scope,
         "model_run": (
@@ -2540,11 +2664,14 @@ async def batch_prediction_config() -> dict[str, Any]:
                 "frame_offsets_ms",
                 "use_ra_event",
                 "use_ra_options",
+                "use_bev_animation",
             ],
             "frame_count_max": MAX_FRAME_COUNT,
             "frame_offset_min_ms": MIN_FRAME_OFFSET_MS,
             "frame_offset_max_ms": MAX_FRAME_OFFSET_MS,
-            "ares_bev_input": False,
+            "ares_animation_input": True,
+            "ares_animation_policy": "server_default_stuck_triage_auto_opt_api",
+            "ares_capture_input": False,
             "browser_model_credentials": False,
             "bag_cache_read_only": False,
             "bag_cache_scope": "dashboard_isolated",
@@ -2712,7 +2839,7 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
         input_config=input_config,
     )
     if not batch_prediction_runner.launch_prediction(job):
-        error = "已有 Batch 预测或 AutoTriage 推送正在执行，请稍后重试。"
+        error = "Batch worker 正在停止，任务无法入队；请稍后重试。"
         database.update_batch_prediction_items(
             job["id"],
             [
@@ -2744,13 +2871,13 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
             "prompt_mode": prompt_selection["prompt_mode"],
             "input_profile": input_config["profile_id"],
             "browser_model_credentials": False,
-            "ares_bev_input": False,
+            "ares_bev_input": bool(input_config["use_bev_animation"]),
             "bag_cache_read_only": False,
             "bag_cache_scope": "dashboard_isolated",
             "trail_write_enabled": False,
             "autotriage_publish_automatic": False,
         },
-        "poll_url": f"/api/prediction-batches/{job['id']}",
+        "poll_url": _public_path(f"/api/prediction-batches/{job['id']}"),
     }
 
 
@@ -2765,7 +2892,8 @@ async def list_batch_predictions(
     input_profile: str = "",
     page_size: int = 100,
 ) -> dict[str, Any]:
-    result = database.list_batch_prediction_jobs(
+    result = await asyncio.to_thread(
+        database.list_batch_prediction_jobs,
         requested_by=requested_by,
         status=status,
         model_id=model_id,
@@ -2783,7 +2911,7 @@ async def list_batch_predictions(
 
 @app.get("/api/prediction-batches/{job_id}")
 async def get_batch_prediction(job_id: str) -> dict[str, Any]:
-    job = database.get_batch_prediction_job(job_id)
+    job = await asyncio.to_thread(database.get_batch_prediction_job, job_id)
     if job is None:
         raise _detail(404, "Batch 任务不存在。")
     return {"job": _public_batch_job(job, include_prompt=True)}
@@ -2869,7 +2997,7 @@ async def publish_batch_prediction(job_id: str, request: Request) -> dict[str, A
         ),
         "accepted": True,
         "destination": settings.auto_triage_record_base_url,
-        "poll_url": f"/api/prediction-batches/{job_id}",
+        "poll_url": _public_path(f"/api/prediction-batches/{job_id}"),
     }
 
 

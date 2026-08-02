@@ -10,7 +10,7 @@ PROMPT_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,96}$")
 MAX_PROMPT_BYTES = 128 * 1024
 MIN_PROMPT_CHARS = 32
 DEFAULT_PROMPT_ID = "stuck_triage_auto_opt_api"
-DEFAULT_FRAME_OFFSETS_MS = (-3000, -2000, -1000, 0, 1000, 2000, 3000)
+DEFAULT_FRAME_OFFSETS_MS = (-19000, -15000, -10000, -5000, 0, 5000, 10000, 15000, 19000)
 MAX_FRAME_COUNT = 18
 MIN_FRAME_OFFSET_MS = -30_000
 MAX_FRAME_OFFSET_MS = 30_000
@@ -40,7 +40,7 @@ ALLOWED_TEMPLATE_VARIABLES = frozenset(
 INPUT_PRESETS: tuple[dict[str, Any], ...] = (
     {
         "id": "camera_ra_event",
-        "display_name": "Camera 7 帧 + RA Events",
+        "display_name": "Camera 9 帧 + RA Events",
         "description": "当前 RA 三分类基线输入；保留触发后恢复与协助时序。",
         "frame_offsets_ms": list(DEFAULT_FRAME_OFFSETS_MS),
         "use_ra_event": True,
@@ -48,7 +48,7 @@ INPUT_PRESETS: tuple[dict[str, Any], ...] = (
     },
     {
         "id": "camera_ra_options",
-        "display_name": "Camera 7 帧 + RA Events + RA/SWAG Options",
+        "display_name": "Camera 9 帧 + RA Events + RA/SWAG Options",
         "description": "额外注入 RA 操作集合，适合分析 SWAG/人工协助链。",
         "frame_offsets_ms": list(DEFAULT_FRAME_OFFSETS_MS),
         "use_ra_event": True,
@@ -56,7 +56,7 @@ INPUT_PRESETS: tuple[dict[str, Any], ...] = (
     },
     {
         "id": "camera_only",
-        "display_name": "Camera 7 帧",
+        "display_name": "Camera 9 帧",
         "description": "只保留视觉与基础时序表，用于视觉输入消融。",
         "frame_offsets_ms": list(DEFAULT_FRAME_OFFSETS_MS),
         "use_ra_event": False,
@@ -205,6 +205,7 @@ def normalise_input_config(value: Any) -> dict[str, Any]:
         "frame_offsets_ms",
         "use_ra_event",
         "use_ra_options",
+        "use_bev_animation",
     }
     unknown = sorted(set(value) - allowed)
     if unknown:
@@ -245,8 +246,13 @@ def normalise_input_config(value: Any) -> dict[str, Any]:
 
     use_ra_event = value.get("use_ra_event", base["use_ra_event"])
     use_ra_options = value.get("use_ra_options", base["use_ra_options"])
-    if type(use_ra_event) is not bool or type(use_ra_options) is not bool:
-        raise PromptCatalogError("RA Events / RA Options 开关必须是布尔值。")
+    use_bev_animation = value.get("use_bev_animation", True)
+    if (
+        type(use_ra_event) is not bool
+        or type(use_ra_options) is not bool
+        or type(use_bev_animation) is not bool
+    ):
+        raise PromptCatalogError("RA Events / RA Options / Ares Animation 开关必须是布尔值。")
     if use_ra_options and not use_ra_event:
         raise PromptCatalogError("启用 RA/SWAG Options 时必须同时启用 RA Events。")
 
@@ -265,7 +271,7 @@ def normalise_input_config(value: Any) -> dict[str, Any]:
         "frame_offsets_ms": offsets,
         "use_ra_event": use_ra_event,
         "use_ra_options": use_ra_options,
+        "use_bev_animation": use_bev_animation,
         "use_trajectory_summary": False,
         "use_ares_capture": False,
-        "use_bev_animation": False,
     }

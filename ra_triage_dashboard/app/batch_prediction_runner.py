@@ -52,12 +52,19 @@ class BatchPredictionRunner:
             operation=f"predict:{job['id']}",
             target=self._predict,
             args=(job["id"],),
+            accept_if_busy=True,
             claim=lambda: self.database.update_batch_prediction_job(
                 job["id"],
                 status="running",
                 error_text="",
             ),
         )
+
+    def resume_queued_predictions(self) -> bool:
+        """Start the oldest durable queued job when the runner is idle."""
+
+        job = self.database.next_queued_batch_prediction_job()
+        return bool(job and self.launch_prediction(job))
 
     def launch_publish(self, job: dict[str, Any]) -> bool:
         return self._launch(
@@ -78,10 +85,13 @@ class BatchPredictionRunner:
         target: Any,
         args: tuple[Any, ...],
         claim: Any,
+        accept_if_busy: bool = False,
     ) -> bool:
         with self._lock:
-            if self._active_operation or self._shutting_down:
+            if self._shutting_down:
                 return False
+            if self._active_operation:
+                return accept_if_busy
             claim()
             self._active_operation = operation
             thread = threading.Thread(
@@ -102,6 +112,8 @@ class BatchPredictionRunner:
                 self._active_operation = ""
                 self._active_process = None
                 self._active_thread = None
+            if not self._shutting_down:
+                self.resume_queued_predictions()
 
     def shutdown(self) -> None:
         """Stop an active worker tree before the web process exits."""
@@ -270,7 +282,10 @@ class BatchPredictionRunner:
                         "ra_repo_commit": str(result.get("ra_repo_commit") or ""),
                         "trail_view_id": result.get("trail_view_id"),
                         "input_policy": {
-                            "ares_bev_input": False,
+                            "ares_bev_input": bool(
+                                isinstance(job.get("input_config"), dict)
+                                and job["input_config"].get("use_bev_animation")
+                            ),
                             "bag_cache_read_only": False,
                             "bag_cache_scope": "dashboard_isolated",
                             "trail_write_enabled": False,
@@ -348,7 +363,10 @@ class BatchPredictionRunner:
                     if isinstance(job.get("input_config"), dict)
                     else {},
                     "model_run_duplicate": duplicate,
-                    "ares_bev_input": False,
+                    "ares_bev_input": bool(
+                        isinstance(job.get("input_config"), dict)
+                        and job["input_config"].get("use_bev_animation")
+                    ),
                     "bag_cache_read_only": False,
                     "bag_cache_scope": "dashboard_isolated",
                     "trail_write_enabled": False,
