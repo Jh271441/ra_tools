@@ -21,7 +21,13 @@ from urllib.parse import quote
 
 import openpyxl
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -55,6 +61,7 @@ from .sanitization import redact_sensitive_fields
 from .settings import Settings
 from .system_status import backup_status, overall_status, volume_status
 from .trail_sync import TRAIL_INFO_FIELD, TRAIL_RESULT_FIELD, read_trail_model_fields
+from .web_paths import render_index_html, with_base_path
 
 
 logger = logging.getLogger("ra_triage_dashboard")
@@ -67,9 +74,10 @@ database = Database(
 asset_index = AssetIndex(
     ra_root=settings.ra_auto_triage_root,
     manifest_path=settings.ares_manifest,
+    base_path=settings.base_path,
 )
-camera_index = CameraIndex(settings.camera_root)
-video_index = VideoIndex(settings.ares_video_root)
+camera_index = CameraIndex(settings.camera_root, base_path=settings.base_path)
+video_index = VideoIndex(settings.ares_video_root, base_path=settings.base_path)
 model_catalog = ModelCatalog(settings)
 prompt_catalog = PromptCatalog(settings.ra_auto_triage_root)
 autotriage_source = AutoTriageSource(settings.autotriage_api_base_url)
@@ -79,6 +87,10 @@ review_image_semaphore = asyncio.Semaphore(2)
 thumbnail_image_semaphore = asyncio.Semaphore(4)
 APP_STARTED_AT = datetime.now(timezone.utc)
 APP_STARTED_MONOTONIC = time.monotonic()
+INDEX_HTML = render_index_html(
+    (settings.static_dir / "index.html").read_text(encoding="utf-8"),
+    settings.base_path,
+)
 
 ISSUE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{3,128}$")
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
@@ -92,6 +104,11 @@ MIN_REVIEW_ATTACHMENT_DISK_FREE = 256 * 1024 * 1024
 MAX_BATCH_JSON_REQUEST_BYTES = 256 * 1024
 MAX_SOURCE_PREVIEW_ROWS = 200
 MAX_SOURCE_PREVIEW_CELL_LENGTH = 2_000
+
+
+def _public_path(path: str) -> str:
+    return with_base_path(settings.base_path, path)
+
 
 MISSING_EVIDENCE_CATALOG: tuple[dict[str, str], ...] = (
     {"key": "routing_direction", "label": "routing 方向缺失", "hint": "未识别自车目标转向 / 车道任务"},
@@ -953,7 +970,7 @@ def _public_review_attachment(attachment: dict[str, Any]) -> dict[str, Any]:
         "width": int(attachment["width"]),
         "height": int(attachment["height"]),
         "created_at": attachment.get("created_at"),
-        "url": f"/api/review-attachments/{attachment['id']}",
+        "url": _public_path(f"/api/review-attachments/{attachment['id']}"),
     }
 
 
@@ -1363,9 +1380,9 @@ app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 @app.get("/inference", include_in_schema=False)
 @app.get("/batch-prediction", include_in_schema=False)
 @app.get("/system-status", include_in_schema=False)
-async def index() -> FileResponse:
-    return FileResponse(
-        settings.static_dir / "index.html",
+async def index() -> HTMLResponse:
+    return HTMLResponse(
+        content=INDEX_HTML,
         headers={"Cache-Control": "no-store, max-age=0"},
     )
 
@@ -1374,7 +1391,12 @@ async def index() -> FileResponse:
 async def legacy_import(kind: str = "issues") -> RedirectResponse:
     # The legacy Issue / GT upload UI is intentionally retired. Keep old
     # bookmarks navigable, but land them in the safe model-result importer.
-    return RedirectResponse(url="/runs?import=model", status_code=307)
+    return RedirectResponse(
+        # Relative Location resolves to /runs for direct IP and
+        # /dashboard/runs through the browser-visible strip-proxy URL.
+        url="runs?import=model",
+        status_code=307,
+    )
 
 
 @app.get("/health")
@@ -1382,6 +1404,7 @@ async def health() -> dict[str, Any]:
     return {
         "ok": True,
         "build_commit": settings.build_commit,
+        "base_path": settings.base_path,
         "ra_auto_triage_root_available": (settings.ra_auto_triage_root / "vlm").is_dir(),
         "ares_manifest_available": settings.ares_manifest.is_file(),
         "ares_indexed_issues": asset_index.refresh(),
@@ -1504,11 +1527,13 @@ async def status(response: Response) -> dict[str, Any]:
     )
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "base_path": settings.base_path,
         "overall": overall,
         "application": {
             "started_at": APP_STARTED_AT.isoformat(),
             "uptime_seconds": max(0, int(time.monotonic() - APP_STARTED_MONOTONIC)),
             "build_commit": settings.build_commit,
+            "base_path": settings.base_path,
         },
         "trail_write_enabled": False,
         "build_commit": settings.build_commit,
@@ -1580,7 +1605,9 @@ async def list_cases(
         if include_thumbnail:
             public["thumbnail"] = (
                 {
-                    "url": f"/api/case-thumbnails/{quote(issue_id, safe='')}",
+                    "url": _public_path(
+                        f"/api/case-thumbnails/{quote(issue_id, safe='')}"
+                    ),
                     "kind": "bev",
                     "label": "BEV · t0 附近",
                 }
@@ -1793,12 +1820,14 @@ async def model_runs() -> dict[str, Any]:
             "available": bool(source_file) or reconstructed,
             "reconstructed": reconstructed,
             "preview_supported": preview_supported,
-            "preview_url": (
+            "preview_url": _public_path(
                 f"/api/model-runs/{quote(str(item['id']), safe='')}/source-preview"
                 if preview_supported
                 else f"/api/model-runs/{quote(str(item['id']), safe='')}/source"
             ),
-            "download_url": f"/api/model-runs/{quote(str(item['id']), safe='')}/source?download=1",
+            "download_url": _public_path(
+                f"/api/model-runs/{quote(str(item['id']), safe='')}/source?download=1"
+            ),
         }
     return {
         "items": items,
@@ -2107,7 +2136,7 @@ def _review_reason_analysis_payload(
         if comparison_status == "mismatch" and model_run_id:
             review_params.append("failure=1")
         item["voyager_issue_url"] = _voyager_issue_url(issue_id)
-        item["review_url"] = f"/review?{'&'.join(review_params)}"
+        item["review_url"] = _public_path(f"/review?{'&'.join(review_params)}")
     result["scope"] = {
         "baseline_scope": settings.baseline_scope,
         "model_run": (
@@ -2848,7 +2877,7 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
             "trail_write_enabled": False,
             "autotriage_publish_automatic": False,
         },
-        "poll_url": f"/api/prediction-batches/{job['id']}",
+        "poll_url": _public_path(f"/api/prediction-batches/{job['id']}"),
     }
 
 
@@ -2968,7 +2997,7 @@ async def publish_batch_prediction(job_id: str, request: Request) -> dict[str, A
         ),
         "accepted": True,
         "destination": settings.auto_triage_record_base_url,
-        "poll_url": f"/api/prediction-batches/{job_id}",
+        "poll_url": _public_path(f"/api/prediction-batches/{job_id}"),
     }
 
 

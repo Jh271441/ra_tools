@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from .web_paths import with_base_path
+
 
 class AssetIndex:
     """Read-only index over Ares Capture manifest/meta files.
@@ -15,9 +17,16 @@ class AssetIndex:
     be used to browse arbitrary files on cloud_server.
     """
 
-    def __init__(self, *, ra_root: Path, manifest_path: Path):
+    def __init__(
+        self,
+        *,
+        ra_root: Path,
+        manifest_path: Path,
+        base_path: str = "",
+    ):
         self.ra_root = ra_root.resolve()
         self.manifest_path = manifest_path.resolve()
+        self.base_path = base_path
         self._lock = threading.RLock()
         self._manifest_mtime_ns = -1
         self._meta_paths: dict[str, Path] = {}
@@ -145,7 +154,10 @@ class AssetIndex:
                         "id": asset_id,
                         "offset_ms": frame.get("offset_ms"),
                         "offset_sec": frame.get("offset_sec"),
-                        "url": f"/api/assets/{quote(issue_id)}/{asset_id}",
+                        "url": with_base_path(
+                            self.base_path,
+                            f"/api/assets/{quote(issue_id)}/{asset_id}",
+                        ),
                         "size_bytes": path.stat().st_size,
                     }
                 )
@@ -160,7 +172,10 @@ class AssetIndex:
             assets[asset_id] = path
             video = {
                 "id": asset_id,
-                "url": f"/api/assets/{quote(issue_id)}/{asset_id}",
+                "url": with_base_path(
+                    self.base_path,
+                    f"/api/assets/{quote(issue_id)}/{asset_id}",
+                ),
                 "size_bytes": path.stat().st_size,
             }
             break
@@ -221,8 +236,9 @@ class CameraIndex:
     _numbered_image = re.compile(r"^(?P<index>\d+)\.(?:jpg|jpeg|png)$", re.IGNORECASE)
     _default_offsets = (-19, -14, -9, -4, 0, 4, 9, 14, 19)
 
-    def __init__(self, camera_root: Path):
+    def __init__(self, camera_root: Path, base_path: str = ""):
         self.camera_root = camera_root.resolve()
+        self.base_path = base_path
         self._lock = threading.RLock()
         self._assets: dict[str, dict[str, Path]] = {}
 
@@ -264,7 +280,10 @@ class CameraIndex:
                     "id": asset_id,
                     "frame_number": frame_number,
                     "offset_sec": offset,
-                    "url": f"/api/assets/{quote(issue_id)}/{asset_id}",
+                    "url": with_base_path(
+                        self.base_path,
+                        f"/api/assets/{quote(issue_id)}/{asset_id}",
+                    ),
                     "size_bytes": path.stat().st_size,
                 }
             )
@@ -333,8 +352,9 @@ class VideoIndex:
 
     _issue_id = re.compile(r"^[A-Za-z0-9_-]{3,128}$")
 
-    def __init__(self, video_root: Path):
+    def __init__(self, video_root: Path, base_path: str = ""):
         self.video_root = video_root.resolve()
+        self.base_path = base_path
         self._lock = threading.RLock()
         self._assets: dict[str, dict[str, Path]] = {}
 
@@ -412,7 +432,10 @@ class VideoIndex:
             size = variant.get("video_size") or {}
             return {
                 "id": asset_id,
-                "url": f"/api/assets/{quote(issue_id)}/{asset_id}",
+                "url": with_base_path(
+                    self.base_path,
+                    f"/api/assets/{quote(issue_id)}/{asset_id}",
+                ),
                 "size_bytes": path.stat().st_size,
                 "source": "ares_capture_video",
                 "duration_ms": duration_ms,

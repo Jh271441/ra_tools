@@ -10,6 +10,63 @@ const ANALYSIS_COMPARISON_META = {
 };
 const REVIEW_COMPARISON_STATUSES = ANALYSIS_COMPARISON_STATUSES;
 const REVIEW_COMPARISON_META = ANALYSIS_COMPARISON_META;
+
+function normalizeClientBasePath(value) {
+  const raw = String(value ?? "");
+  if (!raw || raw === "/") return "";
+  const normalized = raw.endsWith("/") ? raw.slice(0, -1) : raw;
+  if (
+    normalized.includes("..") ||
+    !/^\/(?:[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*)$/.test(normalized)
+  ) {
+    throw new Error("RA Triage base path 配置非法。");
+  }
+  return normalized;
+}
+
+const CONFIGURED_BASE_PATH = normalizeClientBasePath(
+  document.querySelector('meta[name="ra-triage-base"]')?.content || ""
+);
+const BASE_PATH = normalizeClientBasePath(
+  window.__RA_TRIAGE_BASE__ ?? CONFIGURED_BASE_PATH
+);
+
+function removeBasePath(path, basePath) {
+  if (!basePath) return path;
+  if (path === basePath) return "/";
+  if (path.startsWith(`${basePath}/`)) return path.slice(basePath.length);
+  if (path.startsWith(`${basePath}?`) || path.startsWith(`${basePath}#`)) {
+    return `/${path.slice(basePath.length)}`;
+  }
+  return path;
+}
+
+function withBase(path) {
+  const value = String(path || "");
+  if (/^https?:\/\//i.test(value) || value.startsWith("//")) return value;
+  if (!value.startsWith("/")) return value;
+  if (
+    BASE_PATH &&
+    (value === BASE_PATH ||
+      value.startsWith(`${BASE_PATH}/`) ||
+      value.startsWith(`${BASE_PATH}?`) ||
+      value.startsWith(`${BASE_PATH}#`))
+  ) {
+    return value;
+  }
+  const logicalPath = removeBasePath(value, CONFIGURED_BASE_PATH);
+  if (!BASE_PATH) return logicalPath;
+  return `${BASE_PATH}${logicalPath}`;
+}
+
+function stripBasePath(pathname) {
+  const value = String(pathname || "");
+  return removeBasePath(
+    removeBasePath(value, BASE_PATH),
+    CONFIGURED_BASE_PATH
+  );
+}
+
 const PAGE_ROUTES = {
   review: {
     path: "/review",
@@ -249,18 +306,19 @@ function normalizedAnalysisRouteFilters(params) {
 }
 
 function parsePageRoute() {
-  const match = Object.entries(PAGE_ROUTES).find(([, config]) => config.path === window.location.pathname);
+  const pathname = stripBasePath(window.location.pathname);
+  const match = Object.entries(PAGE_ROUTES).find(([, config]) => config.path === pathname);
   const params = new URLSearchParams(window.location.search);
   const legacyHash = decodeURIComponent(window.location.hash.slice(1));
   const issueIds = params
     .getAll("issue")
     .filter((issueId) => /^[A-Za-z0-9_-]{3,128}$/.test(issueId));
-  const legacyImport = window.location.pathname === "/import";
+  const legacyImport = pathname === "/import";
   const reviewFilters = normalizedReviewRouteFilters(params);
   return {
     page:
       match?.[0] ||
-      (window.location.pathname === "/inference"
+      (pathname === "/inference"
         ? "prediction"
         : legacyImport
           ? "runs"
@@ -284,7 +342,7 @@ function parsePageRoute() {
       legacyImport
         ? "model"
         : "",
-    legacyRoute: legacyImport || window.location.pathname === "/inference" || Boolean(legacyHash),
+    legacyRoute: legacyImport || pathname === "/inference" || Boolean(legacyHash),
   };
 }
 
@@ -412,7 +470,7 @@ function applyAnalysisRouteControls(route) {
 
 function pageUrl(page, options = {}) {
   const config = PAGE_ROUTES[page] || PAGE_ROUTES.review;
-  const url = new URL(config.path, window.location.origin);
+  const url = new URL(withBase(config.path), window.location.origin);
   if (page === "review") {
     const review = currentReviewRouteOptions(options);
     const issueId = review.issue;
@@ -626,8 +684,9 @@ function aresStudioUrl(caseData, issueUrl) {
 function safeSameOriginAssetUrl(url) {
   try {
     const parsed = new URL(String(url || ""), window.location.origin);
-    if (parsed.origin !== window.location.origin || !parsed.pathname.startsWith("/api/")) return "";
-    return `${parsed.pathname}${parsed.search}`;
+    const pathname = stripBasePath(parsed.pathname);
+    if (parsed.origin !== window.location.origin || !pathname.startsWith("/api/")) return "";
+    return `${withBase(pathname)}${parsed.search}`;
   } catch {
     return "";
   }
@@ -669,15 +728,33 @@ function frameLabel(frame) {
   return frame.frame_number !== undefined ? `#${frame.frame_number}` : "帧";
 }
 
+function normalizeApiPayloadUrls(value) {
+  if (Array.isArray(value)) return value.map((item) => normalizeApiPayloadUrls(item));
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => {
+      if (
+        typeof item === "string" &&
+        (key === "url" || key.endsWith("_url"))
+      ) {
+        return [key, withBase(item)];
+      }
+      return [key, normalizeApiPayloadUrls(item)];
+    })
+  );
+}
+
 async function api(path, options = {}) {
-  const response = await fetch(path, {
+  const response = await fetch(withBase(path), {
     ...options,
     headers: {
       ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
       ...(options.headers || {}),
     },
   });
-  const payload = await response.json().catch(() => ({}));
+  const payload = normalizeApiPayloadUrls(
+    await response.json().catch(() => ({}))
+  );
   if (!response.ok) throw new Error(payload.detail || `请求失败 (${response.status})`);
   return payload;
 }
@@ -1867,8 +1944,9 @@ async function loadClusters() {
 function safeSameOriginReviewUrl(url) {
   try {
     const parsed = new URL(String(url || ""), window.location.origin);
-    if (parsed.origin !== window.location.origin || parsed.pathname !== "/review") return "";
-    return `${parsed.pathname}${parsed.search}`;
+    const pathname = stripBasePath(parsed.pathname);
+    if (parsed.origin !== window.location.origin || pathname !== "/review") return "";
+    return `${withBase(pathname)}${parsed.search}`;
   } catch {
     return "";
   }
@@ -2171,7 +2249,7 @@ function downloadReviewAnalysis(format) {
   if (options.tag) params.set("tag", options.tag);
   if (options.search) params.set("search", options.search);
   const link = document.createElement("a");
-  link.href = `/api/review-reason-analysis/export?${params.toString()}`;
+  link.href = withBase(`/api/review-reason-analysis/export?${params.toString()}`);
   link.download = "";
   document.body.appendChild(link);
   link.click();
@@ -5209,4 +5287,8 @@ async function bootstrap() {
   startChangePolling();
 }
 
-window.addEventListener("DOMContentLoaded", bootstrap);
+if (document.readyState === "loading") {
+  window.addEventListener("DOMContentLoaded", bootstrap, { once: true });
+} else {
+  bootstrap();
+}

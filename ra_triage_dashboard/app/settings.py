@@ -5,6 +5,8 @@ import stat
 from dataclasses import dataclass
 from pathlib import Path
 
+from .web_paths import normalize_base_path
+
 
 def _path(name: str, default: Path) -> Path:
     value = os.getenv(name, "").strip()
@@ -57,6 +59,7 @@ def _database_url(data_dir: Path) -> str:
 class Settings:
     app_root: Path
     build_commit: str
+    base_path: str
     static_dir: Path
     data_dir: Path
     database_url: str
@@ -136,6 +139,7 @@ class Settings:
                 os.getenv("DASHBOARD_BUILD_COMMIT", "").strip()[:64]
                 or "unverified"
             ),
+            base_path=normalize_base_path(os.getenv("DASHBOARD_BASE_PATH", "")),
             static_dir=app_root / "static",
             data_dir=data_dir,
             database_url=_database_url(data_dir),

@@ -150,6 +150,29 @@ bash scripts/run_cloud_server.sh
 
 启动脚本默认使用 `/volume/home/workspace/ra_triage_dashboard_venv`，并监听 `0.0.0.0:8785`；可通过 `DASHBOARD_VENV_DIR`、`DASHBOARD_HOST`、`DASHBOARD_PORT` 和 `DASHBOARD_DATA_DIR` 覆盖，便于隔离 staging。该 venv 继承 cloud_server 已验证的 RA / Trail 依赖栈，并在环境内覆盖截图入口所需的安全版本；Batch worker 会先加载 Voyager 环境，再用同一 Python 调用 `ra_auto_triage`。当前试运行可从内网直接访问 `http://172.16.145.60:8785`。直接 IP 是明文 HTTP 且无可信 SSO，只适合受控内网试用；正式多人使用应迁到 HTTPS + SSO 认证代理。
 
+### 子路径 / Kylin 反代
+
+默认 `DASHBOARD_BASE_PATH` 为空，根路径和直连 IP 行为保持不变。域名模式使用：
+
+```bash
+export DASHBOARD_BASE_PATH=/dashboard
+bash scripts/run_cloud_server.sh
+```
+
+当前中经云线下 Kylin（`10.78.128.20`）必须按以下契约转发：
+
+```text
+域名: auto-triage.intra.xiaojukeji.com
+浏览器路径: /dashboard/*
+上游: 172.16.145.60:8785/*
+规则: 必须 strip /dashboard 前缀后再转发
+健康检查: 网关侧 GET /dashboard/health；上游侧 GET /health
+```
+
+后端路由仍是 `/`、`/static`、`/api`、`/review` 等根路径；浏览器位于 `/dashboard` 时，Shell、前端导航/API 请求和返回的同源资源 URL 使用 `/dashboard/...`。同一个配置了 `/dashboard` 的进程若从裸 IP 根路径访问，前端会自动回退到无前缀路径，因此直连预览不受影响。不要把域名根路径的 `/static` 或 `/api` 指向本看板，否则会占用 AutoTriage 主站路径。正式独立域名仍推荐挂根路径并保持 `DASHBOARD_BASE_PATH` 为空。
+
+配置只允许空值或 `/dashboard`、`/tools/triage` 这类路径段；`/` 等价于空值，尾斜杠会去除，全 URL、空格、`..` 和重复斜杠会拒绝启动。前端只在浏览器当前路径位于已配置前缀下时启用该前缀；否则按根路径运行。
+
 页面路由可直接访问：
 
 - `http://172.16.145.60:8785/review`

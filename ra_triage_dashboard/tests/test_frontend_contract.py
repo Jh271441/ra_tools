@@ -13,6 +13,18 @@ STYLES_CSS = (
 
 
 class FrontendContractTest(unittest.TestCase):
+    def test_frontend_uses_one_base_path_boundary(self) -> None:
+        self.assertIn('meta[name="ra-triage-base"]', APP_JS)
+        self.assertIn("const CONFIGURED_BASE_PATH = normalizeClientBasePath(", APP_JS)
+        self.assertIn("window.__RA_TRIAGE_BASE__ ?? CONFIGURED_BASE_PATH", APP_JS)
+        self.assertIn("function withBase(path)", APP_JS)
+        self.assertIn("function stripBasePath(pathname)", APP_JS)
+        self.assertIn("removeBasePath(value, CONFIGURED_BASE_PATH)", APP_JS)
+        self.assertIn("fetch(withBase(path)", APP_JS)
+        self.assertIn("function normalizeApiPayloadUrls(value)", APP_JS)
+        self.assertIn('key === "url" || key.endsWith("_url")', APP_JS)
+        self.assertIn("stripBasePath(window.location.pathname)", APP_JS)
+
     def test_gallery_card_does_not_nest_controls_under_button_role(self) -> None:
         self.assertIn('class="issue-card-open"', APP_JS)
         self.assertIn('data-open-issue="${escapeHtml(item.issue_id)}"', APP_JS)

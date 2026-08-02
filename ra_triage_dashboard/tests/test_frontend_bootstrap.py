@@ -10,6 +10,14 @@ APP_JS = (
 
 
 class FrontendBootstrapTest(unittest.TestCase):
+    def test_bootstrap_handles_dynamically_loaded_app_script(self) -> None:
+        self.assertIn('document.readyState === "loading"', APP_JS)
+        self.assertIn(
+            'window.addEventListener("DOMContentLoaded", bootstrap, { once: true })',
+            APP_JS,
+        )
+        self.assertIn("else {\n  bootstrap();\n}", APP_JS)
+
     def test_initial_route_owns_its_heavy_requests(self) -> None:
         self.assertIn("loadPageData = true", APP_JS)
         self.assertEqual(APP_JS.count("loadPageData: false"), 2)

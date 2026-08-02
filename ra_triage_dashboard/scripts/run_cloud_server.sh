@@ -36,6 +36,9 @@ fi
 export DASHBOARD_BUILD_COMMIT="${DASHBOARD_BUILD_COMMIT:-unverified}"
 export DASHBOARD_HOST="${DASHBOARD_HOST:-0.0.0.0}"
 export DASHBOARD_PORT="${DASHBOARD_PORT:-8785}"
+# Root/direct-IP mode remains the default. For the Kylin rule that strips
+# /dashboard before proxying, start with DASHBOARD_BASE_PATH=/dashboard.
+export DASHBOARD_BASE_PATH="${DASHBOARD_BASE_PATH:-}"
 export RA_AUTO_TRIAGE_ROOT="/volume/home/workspace/ra_auto_triage"
 export ARES_CAPTURE_MANIFEST="/volume/home/workspace/ra_auto_triage/bags/ares_capture_bev/manifest.jsonl"
 export CAMERA_CACHE_ROOT="/volume/home/workspace/ra_auto_triage/bags/camera"
