@@ -4,6 +4,7 @@ import json
 import re
 import sqlite3
 import threading
+import time
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -291,6 +292,49 @@ class Database:
                 "SELECT revision FROM dashboard_change_revision WHERE id = 1"
             ).fetchone()
         return int(row["revision"] if row else 0)
+
+    def runtime_status(self) -> dict[str, Any]:
+        started = time.perf_counter()
+        with self.connect() as conn:
+            if self.backend == "postgresql":
+                row = conn.execute(
+                    """
+                    SELECT current_setting('server_version') AS server_version,
+                           current_setting('data_directory') AS data_directory,
+                           (SELECT revision FROM dashboard_change_revision WHERE id = 1)
+                               AS revision,
+                           (SELECT COUNT(*) FROM dashboard_schema_migrations)
+                               AS migration_count
+                    """
+                ).fetchone()
+                data_directory = str(row["data_directory"] or "")
+                result = {
+                    "ok": True,
+                    "backend": "postgresql",
+                    "server_version": str(row["server_version"] or ""),
+                    "persistent_data": data_directory.startswith("/volume/"),
+                    "revision": int(row["revision"] or 0),
+                    "migration_count": int(row["migration_count"] or 0),
+                    "pool_max_size": self.pool_size,
+                }
+            else:
+                row = conn.execute(
+                    "SELECT revision FROM dashboard_change_revision WHERE id = 1"
+                ).fetchone()
+                sqlite_version = conn.execute(
+                    "SELECT sqlite_version() AS version"
+                ).fetchone()
+                result = {
+                    "ok": True,
+                    "backend": "sqlite",
+                    "server_version": str(sqlite_version["version"] or ""),
+                    "persistent_data": False,
+                    "revision": int(row["revision"] if row else 0),
+                    "migration_count": 0,
+                    "pool_max_size": 0,
+                }
+        result["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
+        return result
 
     def init(self) -> None:
         if self.backend == "postgresql":

@@ -14,7 +14,7 @@ import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -53,6 +53,7 @@ from .review_analysis import (
 )
 from .sanitization import redact_sensitive_fields
 from .settings import Settings
+from .system_status import backup_status, overall_status, volume_status
 from .trail_sync import TRAIL_INFO_FIELD, TRAIL_RESULT_FIELD, read_trail_model_fields
 
 
@@ -76,6 +77,8 @@ batch_prediction_runner = BatchPredictionRunner(settings, database)
 trail_sync_lock = threading.Lock()
 review_image_semaphore = asyncio.Semaphore(2)
 thumbnail_image_semaphore = asyncio.Semaphore(4)
+APP_STARTED_AT = datetime.now(timezone.utc)
+APP_STARTED_MONOTONIC = time.monotonic()
 
 ISSUE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{3,128}$")
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
@@ -1359,6 +1362,7 @@ app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 @app.get("/runs", include_in_schema=False)
 @app.get("/inference", include_in_schema=False)
 @app.get("/batch-prediction", include_in_schema=False)
+@app.get("/system-status", include_in_schema=False)
 async def index() -> FileResponse:
     return FileResponse(
         settings.static_dir / "index.html",
@@ -1468,8 +1472,41 @@ async def session(request: Request) -> dict[str, object]:
 
 
 @app.get("/api/status")
-async def status() -> dict[str, Any]:
+async def status(response: Response) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    try:
+        database_state = await asyncio.to_thread(database.runtime_status)
+    except Exception:
+        logger.exception("database status check failed")
+        database_state = {
+            "ok": False,
+            "backend": database.backend,
+            "server_version": "",
+            "persistent_data": False,
+            "revision": 0,
+            "migration_count": 0,
+            "pool_max_size": database.pool_size,
+            "latency_ms": None,
+        }
+    backup_state, volume_state = await asyncio.gather(
+        asyncio.to_thread(backup_status, settings.data_dir),
+        asyncio.to_thread(volume_status, settings.data_dir),
+    )
+    baseline_state = runtime_state["baseline"]
+    overall = overall_status(
+        database=database_state,
+        baseline=baseline_state,
+        backups=backup_state,
+        volume=volume_state,
+    )
     return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "overall": overall,
+        "application": {
+            "started_at": APP_STARTED_AT.isoformat(),
+            "uptime_seconds": max(0, int(time.monotonic() - APP_STARTED_MONOTONIC)),
+            "build_commit": settings.build_commit,
+        },
         "trail_write_enabled": False,
         "build_commit": settings.build_commit,
         "ra_auto_triage_root_available": (settings.ra_auto_triage_root / "vlm").is_dir(),
@@ -1477,13 +1514,16 @@ async def status() -> dict[str, Any]:
         "ares_indexed_issues": asset_index.refresh(),
         "camera_cache_root_available": settings.camera_root.is_dir(),
         "ares_video_root_available": settings.ares_video_root.is_dir(),
-        "baseline": runtime_state["baseline"],
+        "baseline": baseline_state,
         "trail_sync": runtime_state["trail_sync"],
         "batch_prediction_enabled": settings.batch_prediction_enabled,
         "autotriage_push_enabled": settings.autotriage_push_enabled,
         "batch_max_issues": settings.batch_max_issues,
         "model_gateway": model_catalog.status(),
         "storage": database.storage_label,
+        "database": database_state,
+        "backups": backup_state,
+        "volume": volume_state,
         "model_endpoint_policy": (
             "固定服务器网关；Profile 模型已验证，其他在线 Qwen3 显式实验；"
             "浏览器不能提交地址或凭证"

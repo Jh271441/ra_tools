@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RA Triage Workbench</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='%2309b8d4'/><text x='32' y='41' text-anchor='middle' font-size='28' font-family='sans-serif' font-weight='700' fill='%2309141d'>RA</text></svg>" />
-    <link rel="stylesheet" href="/static/styles.css?v=b714e9a" />
+    <link rel="stylesheet" href="/static/styles.css?v=system-status-1" />
   </head>
   <body>
     <div class="app-shell" id="appShell">
@@ -43,6 +43,12 @@
               <svg viewBox="0 0 24 24" focusable="false"><path d="M5 6.5A1.5 1.5 0 0 1 6.5 5h4A1.5 1.5 0 0 1 12 6.5v4a1.5 1.5 0 0 1-1.5 1.5h-4A1.5 1.5 0 0 1 5 10.5zM15.5 6.5h3M17 5v3M15.5 16h3M17 14.5v3M6.5 16h3M8 14.5v3"/><path d="m13.5 11 5 3-5 3z"/></svg>
             </span>
             <span class="sidebar-label"><strong class="ui-lang-zh">批次预测</strong><strong class="ui-lang-en">Batch prediction</strong></span>
+          </a>
+          <a class="sidebar-item" id="systemStatusNavButton" data-page-target="status" href="/system-status" title="系统状态">
+            <span class="sidebar-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><path d="M4 18h16M6 15V6.8A1.8 1.8 0 0 1 7.8 5h8.4A1.8 1.8 0 0 1 18 6.8V15"/><path d="M8 11h2l1.2-3 2 6 1.2-3H16"/></svg>
+            </span>
+            <span class="sidebar-label"><strong class="ui-lang-zh">系统状态</strong><strong class="ui-lang-en">System status</strong></span>
           </a>
         </nav>
 
@@ -632,6 +638,20 @@
               <div class="job-history-list" id="predictionBatchList"></div>
             </section>
           </section>
+
+          <section class="app-page tool-page system-status-page hidden" id="systemStatusPage" data-page="status">
+            <div class="compact-page-lead system-status-lead">
+              <p><span class="ui-lang-zh">只读查看服务、数据库、备份、容量与外部依赖；不会在此执行运维操作。</span><span class="ui-lang-en">Read-only service, database, backup, capacity, and dependency health.</span></p>
+              <div class="system-status-actions">
+                <span id="systemStatusUpdatedAt">—</span>
+                <button class="button button-quiet" id="refreshSystemStatusButton" type="button"><span class="ui-lang-zh">刷新状态</span><span class="ui-lang-en">Refresh status</span></button>
+              </div>
+            </div>
+            <section class="system-status-hero" id="systemStatusHero" aria-live="polite">
+              <div class="system-status-loading">正在读取系统状态…</div>
+            </section>
+            <div class="system-status-grid" id="systemStatusGrid"></div>
+          </section>
         </main>
       </div>
     </div>
@@ -750,6 +770,6 @@
     </dialog>
 
     <div class="toast hidden" id="toast"></div>
-    <script src="/static/app.js?v=b714e9a" defer></script>
+    <script src="/static/app.js?v=system-status-1" defer></script>
   </body>
 </html>

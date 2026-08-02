@@ -58,6 +58,11 @@ class PostgresAdapterUnitTest(unittest.TestCase):
             self.assertEqual(database.storage_label, "sqlite-mvp")
             database.init()
             self.assertEqual(database.change_revision(), 0)
+            runtime = database.runtime_status()
+            self.assertTrue(runtime["ok"])
+            self.assertEqual(runtime["backend"], "sqlite")
+            self.assertEqual(runtime["revision"], 0)
+            self.assertGreaterEqual(runtime["latency_ms"], 0)
 
     def test_postgres_requires_migration_directory_before_connecting(self) -> None:
         database = Database("postgresql:///ra_triage_test")

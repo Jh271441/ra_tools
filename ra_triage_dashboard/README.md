@@ -7,7 +7,7 @@
 - 默认工作集是 `trail_label_baseline_20260729.xlsx` 中 `dataset=0508` 的 **1071 条**；GT 只来自该快照，不因 Trail 查询或模型导入而改变。
 - 首页是服务端筛选的紧凑 Issue 缩略图队列（宽屏五列、随可用宽度降列），默认每页 20 条并可切换 10 / 20 / 50 / 100；页码和单页数量写入 URL，接口单页最多返回 100 条。BEV 缩略图按源文件版本生成 640×360 缓存并懒加载，不把 1071 张原图一次送进浏览器。点击 Issue 后才进入 URL 可恢复的详情态，加载大图、媒体、模型输出和人工 Review；详情支持返回列表及跨页上一/下一 Issue，并在具备 trip 与事件时间戳时提供同域 Ares Studio ±10 秒跳转链接。Issue 详情第二行通过紧凑下拉框切换 `BEV 图片 / Camera 图片 / Ares Studio 视频`，相邻的同尺寸按钮展开完整预览，有视频时默认展示视频；Gallery 卡片的“媒体预览”和详情媒体共用一个近乎占满浏览器视口的三模式弹窗，首页仅在点击预览时按需读取该 Issue 的完整资产。详情页媒体快捷键采用页面级监听：焦点不在输入、选择、按钮或链接时，`B/C/V`、空格、左右方向键和 `F` 无需聚焦播放器即可生效；打开弹窗后由弹窗接管。三种媒体都默认适配可视范围，并支持 1:1 原始像素、按钮/键盘/Ctrl/⌘+滚轮缩放、放大后指针拖拽平移以及全屏；进入或退出全屏不会重置缩放比例。BEV 视频使用 Workbench 自有的紧凑控制条，支持播放/暂停、0.5× / 1× / 1.5× / 2×、回到 t0、进度拖动、可配置 0.1 / 0.5 / 1 / 5 秒左右跳转和键盘控制；默认左右跳转 1 秒，元数据帧步长作为“1 帧”选项，切换到图片时暂停但保留播放位置。
 - 首页的“模型判断结果”是下拉筛选：选择模型 Run 后可切换 `全部`、红色 `MISMATCH`、绿色 `MATCH` 和灰色 `NONE（未预测）`；卡片右上角同步显示状态。旧 `failure=1` / `failure_only=true` 仍兼容为 `MISMATCH`，新 Review URL 使用 `comparison=all|mismatch|match|none`。
-- 左侧工具栏只接受用户手动折叠并记住偏好，不再根据分辨率、DPR 或窗口宽度自动改变。判错复核、原因聚类、模型 Runs / 导入、Batch 预测分别使用 `/review`、`/review-analysis`、`/runs`、`/batch-prediction` 独立路由，支持硬刷新和浏览器前进/后退。`/import` 会 307 跳转到 `/runs?import=...`，`/inference` 仅作为旧链接兼容入口。
+- 左侧工具栏只接受用户手动折叠并记住偏好，不再根据分辨率、DPR 或窗口宽度自动改变。判错复核、原因聚类、模型 Runs / 导入、Batch 预测、系统状态分别使用 `/review`、`/review-analysis`、`/runs`、`/batch-prediction`、`/system-status` 独立路由，支持硬刷新和浏览器前进/后退。系统状态页只读展示应用运行时间与版本、数据库连接/持久卷、最近备份/计划、容量、1071 基线、媒体与模型网关，不提供重启或写入操作。`/import` 会 307 跳转到 `/runs?import=...`，`/inference` 仅作为旧链接兼容入口。
 - Trail 操作分成「检查字段」和「创建 Run」两步，收在 Runs 页的默认折叠区；两步都不写回 Trail，快照只创建或复用本地不可变 Run，且不会修改团队默认 Run。启动时若启用 Trail 检查，也只执行第一步。
 - 页面只允许导入批量模型输出（JSON、CSV、XLSX），Issue / GT 上传入口已移除，避免误污染 0508 baseline；后端旧 `/api/import/issues` 仅保留兼容客户端，不由页面调用。Runs 页上方用三个自然高度 Tab 统一组织模型文件、AutoTriage 快照和 Trail 快照，页面标题始终固定为 `MODEL RUN REGISTRY / 模型结果 Runs`，不会随来源 Tab 改名；每条 Run 都显示来源徽标及原始 records 链接、文件名或 Trail view。新上传的模型结果原文件按 SHA-256 归档到 dashboard data 的 `uploads/`，Run 行可直接在页面内预览 CSV/JSON 或下载；历史 Run 若没有归档文件，会优先用已保存的脱敏预测行重建可复核副本，并明确标注“Run 重建”。Run 行提供带二次确认的删除按钮：只删除该 Run 的模型输出和来源归档，不删除 0508 GT、Issue 或人工 review；团队默认 Run 需先切换后才能删除。也可按 AutoTriage Batch ID / records 链接经固定只读内网接口拉取结果，或检查 Trail 字段后创建只读快照。所有模型结果都按规范化内容 SHA-256 创建或复用不可变 Model Run，不覆盖 GT、不切换团队默认 Run；AutoTriage 拉取会显式比较声明数、完成数、结果数和唯一 Issue 数，并标记部分覆盖。
 - 人工标注为追加式历史，最新一条为当前标注，不覆盖旧 review；「模型为什么判错」是主输入，「模型缺失信息」收进紧凑的结构化多选下拉，并自动汇总为 routing、绕行空间、灯态、双闪、时序等错误聚类。每个新版本必须记录复核人及其可信状态，右侧 Review 历史默认展开，并把状态、复核人和时间紧凑展示在同一行；详情左右外框在桌面端随较高一侧等高。每个版本可粘贴或选择最多 4 张补充截图，场景 Tags 为可选的规范化多选项。
@@ -156,6 +156,7 @@ bash scripts/run_cloud_server.sh
 - `http://172.16.145.60:8785/review-analysis`
 - `http://172.16.145.60:8785/runs`
 - `http://172.16.145.60:8785/batch-prediction`
+- `http://172.16.145.60:8785/system-status`
 - `http://172.16.145.60:8785/runs?import=model`
 
 Review 首页筛选参数可写入 URL：
@@ -234,7 +235,7 @@ cloud_server 的一次性切换流程：
 2. 运行 `scripts/bootstrap_cloud_postgres.sh` 安装/启动本机 PostgreSQL 14，创建仅 Unix socket peer 访问的专用数据库，并写入尚未生效的 `0600` `postgres_url.pending`。
 3. 停止 Dashboard 写入后运行 `scripts/migrate_sqlite_to_postgres.py --source ... --backup ... --target-url-file ...`。工具会先生成只读 SQLite 备份，拒绝非空 PostgreSQL 目标，在单事务中复制数据并逐表核对行数与 SHA-256。
 4. 校验通过后把 `postgres_url.pending` 原子改名为 `postgres_url`。停止 Dashboard 写入，运行 `scripts/migrate_cloud_postgres_data.sh`，把 PostgreSQL 物理数据从容器 overlay 迁移到 `/volume/postgresql/14/main`；脚本会先创建可恢复的 custom-format 逻辑备份、离线复制、逐表核对行数，并在失败时自动恢复原配置，旧物理目录不会删除。
-5. 运行 `scripts/install_cloud_postgres_backup_cron.sh` 安装每日 02:15 的备份任务。备份保存在 `/volume/home/workspace/ra_triage_dashboard_data/postgres_backups/`，每份都经过 `pg_restore --list` 校验并附带 SHA-256，默认保留最近 14 份。用 `scripts/verify_cloud_postgres_backup.sh` 将最新备份恢复进一次性数据库并逐表对比实时库行数。容器重建后重新运行 bootstrap 和 cron 安装脚本；bootstrap 会自动重新挂接已有的持久数据目录。
+5. 运行 `scripts/install_cloud_postgres_backup_cron.sh` 安装每日 02:15 的备份任务。备份保存在 `/volume/home/workspace/ra_triage_dashboard_data/postgres_backups/`，每份都经过 `pg_restore --list` 校验并附带 SHA-256，默认保留最近 14 份；安装脚本会写入不含路径或凭证的计划状态标记供系统状态页读取。用 `scripts/verify_cloud_postgres_backup.sh` 将最新备份恢复进一次性数据库并逐表对比实时库行数。容器重建后重新运行 bootstrap 和 cron 安装脚本；bootstrap 会自动重新挂接已有的持久数据目录。
 6. 重启 Dashboard；`run_cloud_server.sh` 会拒绝使用 overlay 上的 PostgreSQL 数据。确认 `/health`、实际 `SHOW data_directory`、1071 baseline、Runs、Review、附件、Batch 历史及最新备份可恢复后再结束维护窗口。
 
 数据库引擎切换回滚只需移走/改名 URL 文件并重启服务，原 SQLite 与附件目录未被迁移工具修改。物理目录迁移失败会自动回滚；成功后旧目录只作为切换时刻的短期回滚副本，之后新增写入应从 PostgreSQL 逻辑备份恢复。正式启用可信 SSO 后，仍需为团队默认变更、推理与未来 Trail 写入补充 RBAC。
