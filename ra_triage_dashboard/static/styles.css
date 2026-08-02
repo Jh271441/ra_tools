@@ -186,7 +186,7 @@ html[data-ui-lang="en"] .ui-lang-en { display: inline; }
 .runs-page-card { display: grid; gap: 12px; min-width: 0; }
 .runs-page-card .run-manager-list { max-height: none; }
 .tool-page-grid { display: grid; grid-template-columns: 260px minmax(0, 1fr); align-items: start; gap: 12px; }
-.batch-page-grid { align-items: start; }
+.batch-page-grid { align-items: stretch; }
 .page-aside { display: grid; gap: 12px; position: sticky; top: 64px; }
 .page-aside h3 { color: var(--text); font-size: 16px; }
 .page-aside p { color: var(--muted); font-size: 12px; line-height: 1.65; }
@@ -229,9 +229,9 @@ html[data-ui-lang="en"] .ui-lang-en { display: inline; }
 .batch-runtime-summary span { color: var(--muted); font-size: 11px; line-height: 1.5; }
 .batch-runtime-summary small { color: var(--faint); font-size: 9px; line-height: 1.45; }
 .gateway-card {
-  height: min(860px, calc(100dvh - 128px)); min-height: 0;
+  height: auto; min-height: 0;
   grid-template-rows: auto auto auto auto minmax(0, 1fr) auto; align-content: stretch; gap: 10px;
-  position: sticky; top: 64px;
+  position: static; top: auto;
 }
 .gateway-endpoint {
   min-width: 0; display: grid; gap: 3px;

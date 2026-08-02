@@ -22,9 +22,9 @@ class FrontendContractTest(unittest.TestCase):
             APP_JS,
         )
 
-    def test_batch_model_catalog_scrolls_without_stretching_form(self) -> None:
-        self.assertIn(".batch-page-grid { align-items: start; }", STYLES_CSS)
-        self.assertIn("height: min(860px, calc(100dvh - 128px))", STYLES_CSS)
+    def test_batch_gateway_aligns_to_form_and_catalog_scrolls(self) -> None:
+        self.assertIn(".batch-page-grid { align-items: stretch; }", STYLES_CSS)
+        self.assertIn("height: auto; min-height: 0", STYLES_CSS)
         self.assertIn("grid-template-rows: auto auto auto auto minmax(0, 1fr) auto", STYLES_CSS)
         self.assertIn("overscroll-behavior: contain; scrollbar-gutter: stable", STYLES_CSS)
 
