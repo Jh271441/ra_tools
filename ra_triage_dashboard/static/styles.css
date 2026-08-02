@@ -187,6 +187,7 @@ html[data-ui-lang="en"] .ui-lang-en { display: inline; }
 .runs-page-card .run-manager-list { max-height: none; }
 .tool-page-grid { display: grid; grid-template-columns: 260px minmax(0, 1fr); align-items: start; gap: 12px; }
 .batch-page-grid { align-items: stretch; }
+.batch-page-grid > .tool-form { align-self: start; }
 .page-aside { display: grid; gap: 12px; position: sticky; top: 64px; }
 .page-aside h3 { color: var(--text); font-size: 16px; }
 .page-aside p { color: var(--muted); font-size: 12px; line-height: 1.65; }
@@ -231,7 +232,7 @@ html[data-ui-lang="en"] .ui-lang-en { display: inline; }
 .gateway-card {
   height: auto; min-height: 0;
   grid-template-rows: auto auto auto auto minmax(0, 1fr) auto; align-content: stretch; gap: 10px;
-  position: static; top: auto;
+  contain: size; overflow: hidden; position: static; top: auto;
 }
 .gateway-endpoint {
   min-width: 0; display: grid; gap: 3px;
@@ -1138,7 +1139,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .issue-list { max-height: 380px; }
   .tool-page-grid, .run-filter-three { grid-template-columns: minmax(0, 1fr); }
   .page-aside { position: static; }
-  .gateway-card { height: auto; max-height: none; grid-template-rows: none; position: static; top: auto; }
+  .gateway-card { height: auto; max-height: none; grid-template-rows: none; contain: none; overflow: visible; position: static; top: auto; }
   .gateway-model-list { min-height: 0; max-height: 238px; }
   .run-import-body { grid-template-columns: minmax(0, 1fr); }
   .run-import-controls { grid-template-columns: minmax(0, 1fr); }

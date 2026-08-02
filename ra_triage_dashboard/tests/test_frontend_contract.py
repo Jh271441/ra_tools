@@ -24,7 +24,10 @@ class FrontendContractTest(unittest.TestCase):
 
     def test_batch_gateway_aligns_to_form_and_catalog_scrolls(self) -> None:
         self.assertIn(".batch-page-grid { align-items: stretch; }", STYLES_CSS)
+        self.assertIn(".batch-page-grid > .tool-form { align-self: start; }", STYLES_CSS)
         self.assertIn("height: auto; min-height: 0", STYLES_CSS)
+        self.assertIn("contain: size; overflow: hidden", STYLES_CSS)
+        self.assertIn("contain: none; overflow: visible", STYLES_CSS)
         self.assertIn("grid-template-rows: auto auto auto auto minmax(0, 1fr) auto", STYLES_CSS)
         self.assertIn("overscroll-behavior: contain; scrollbar-gutter: stable", STYLES_CSS)
 
