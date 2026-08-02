@@ -493,6 +493,7 @@ function showPage(
     importKind = "",
     runSourceTab = "",
     restoreRoute = false,
+    loadPageData = true,
   } = {}
 ) {
   const target = PAGE_ROUTES[page] ? page : "review";
@@ -528,11 +529,13 @@ function showPage(
     renderPredictionSourceSummary();
     updatePredictionBatchCount();
     renderBatchRuntimeSummary();
-    loadPredictionConfig().catch((error) => showToast(error.message, true));
-    loadPredictionBatches().catch((error) => showToast(error.message, true));
+    if (loadPageData) {
+      loadPredictionConfig().catch((error) => showToast(error.message, true));
+      loadPredictionBatches().catch((error) => showToast(error.message, true));
+    }
   }
   if (target === "analysis") renderAnalysisRunFilter();
-  if (target === "status") {
+  if (target === "status" && loadPageData) {
     loadStatus().catch((error) => showToast(error.message, true));
   }
   if (target === "review") setReviewView(issue);
@@ -1563,7 +1566,8 @@ function issueCard(item) {
   );
   const issueUrl = safeUrl(item.voyager_issue_url);
   return `
-    <article class="issue-card ${isSelected ? "selected" : ""}" data-issue-id="${escapeHtml(item.issue_id)}" role="button" tabindex="0" aria-label="打开 ${escapeHtml(item.issue_id)} Review">
+    <article class="issue-card ${isSelected ? "selected" : ""}" data-issue-id="${escapeHtml(item.issue_id)}">
+      <button class="issue-card-open" type="button" data-open-issue="${escapeHtml(item.issue_id)}" aria-label="打开 ${escapeHtml(item.issue_id)} Review"></button>
       <div class="issue-thumbnail">
         <div class="issue-thumbnail-placeholder" aria-hidden="true"><span>RA</span><small>暂无 BEV 缩略图</small></div>
         ${thumbnailUrl ? `<img src="${escapeHtml(thumbnailUrl)}" alt="${escapeHtml(item.issue_id)} ${escapeHtml(thumbnailLabel)}" loading="lazy" decoding="async" data-case-thumbnail />` : ""}
@@ -1681,19 +1685,8 @@ function renderCases(data) {
     return;
   }
   list.innerHTML = state.cases.map(issueCard).join("");
-  list.querySelectorAll("[data-issue-id]").forEach((element) => {
-    const open = () => selectCase(element.dataset.issueId);
-    element.addEventListener("click", (event) => {
-      if (event.target.closest("[data-card-link], [data-case-media-preview]")) return;
-      open();
-    });
-    element.addEventListener("keydown", (event) => {
-      if (event.target.closest("[data-card-link], [data-case-media-preview]")) return;
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        open();
-      }
-    });
+  list.querySelectorAll("[data-open-issue]").forEach((button) => {
+    button.addEventListener("click", () => selectCase(button.dataset.openIssue));
   });
   list.querySelectorAll("[data-case-media-preview]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -5140,6 +5133,7 @@ async function bootstrap() {
     source: initialRoute.source,
     importKind: initialRoute.importKind,
     restoreRoute: true,
+    loadPageData: false,
   });
   try {
     await Promise.all([loadConfig(), loadSession()]);
@@ -5177,15 +5171,21 @@ async function bootstrap() {
     await loadReviewers();
     if (initialRoute.page === "review") applyReviewRouteControls(initialRoute);
     if (initialRoute.page === "analysis") applyAnalysisRouteControls(initialRoute);
-    await Promise.all([
-      loadStatus(),
-      loadOverview(),
-      loadCases({
-        keepSelection: Boolean(initialRoute.issue),
-        page: initialRoute.casePage,
-      }),
-      loadClusters(),
-    ]);
+    const initialPageRequests = [loadOverview()];
+    if (initialRoute.page === "review") {
+      initialPageRequests.push(
+        loadCases({
+          keepSelection: Boolean(initialRoute.issue),
+          page: initialRoute.casePage,
+        }),
+        loadClusters()
+      );
+    } else if (initialRoute.page === "status") {
+      initialPageRequests.push(loadStatus());
+    } else if (initialRoute.page === "prediction") {
+      initialPageRequests.push(loadPredictionConfig(), loadPredictionBatches());
+    }
+    await Promise.all(initialPageRequests);
     if (
       initialRoute.page === "review" &&
       initialRoute.issue &&
@@ -5200,6 +5200,7 @@ async function bootstrap() {
       source: initialRoute.source,
       importKind: initialRoute.importKind,
       restoreRoute: true,
+      loadPageData: false,
     });
     if (initialRoute.page === "analysis") await loadReviewReasonAnalysis();
   } catch (error) {
