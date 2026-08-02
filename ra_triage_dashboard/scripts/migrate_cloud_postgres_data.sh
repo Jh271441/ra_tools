@@ -37,7 +37,7 @@ if [[ "$(findmnt -n -o FSTYPE -T /volume)" == "overlay" ]]; then
   exit 1
 fi
 
-configured_data_dir="$(sudo pg_conftool "$CLUSTER_VERSION" "$CLUSTER_NAME" show data_directory | tr -d "'\"" | xargs)"
+configured_data_dir="$(sudo pg_conftool "$CLUSTER_VERSION" "$CLUSTER_NAME" show data_directory | sed -E 's/^[^=]*=[[:space:]]*//' | tr -d "'\"" | xargs)"
 if [[ "$configured_data_dir" == "$TARGET_DATA_DIR" ]]; then
   sudo test -f "$TARGET_DATA_DIR/PG_VERSION" || {
     echo "Cluster config points at a missing persistent data directory" >&2

@@ -24,7 +24,7 @@ if sudo test -f "$POSTGRES_DATA_DIR/PG_VERSION"; then
     echo "Persistent PostgreSQL data directory is on overlay: $POSTGRES_DATA_DIR" >&2
     exit 1
   fi
-  CURRENT_DATA_DIR="$(sudo pg_conftool 14 main show data_directory | tr -d "'\"" | xargs)"
+  CURRENT_DATA_DIR="$(sudo pg_conftool 14 main show data_directory | sed -E 's/^[^=]*=[[:space:]]*//' | tr -d "'\"" | xargs)"
   if [[ "$CURRENT_DATA_DIR" != "$POSTGRES_DATA_DIR" ]]; then
     sudo pg_ctlcluster 14 main stop >/dev/null 2>&1 || true
     sudo pg_conftool 14 main set data_directory "$POSTGRES_DATA_DIR"

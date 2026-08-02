@@ -21,7 +21,7 @@ if [[ -f "$DEFAULT_DATABASE_URL_FILE" ]]; then
     echo "Run scripts/migrate_cloud_postgres_data.sh during a maintenance window." >&2
     exit 1
   fi
-  CONFIGURED_DATA_DIR="$(sudo pg_conftool 14 main show data_directory | tr -d "'\"" | xargs)"
+  CONFIGURED_DATA_DIR="$(sudo pg_conftool 14 main show data_directory | sed -E 's/^[^=]*=[[:space:]]*//' | tr -d "'\"" | xargs)"
   if [[ "$CONFIGURED_DATA_DIR" != "$POSTGRES_DATA_DIR" ]]; then
     echo "Refusing to start against non-persistent PostgreSQL data: $CONFIGURED_DATA_DIR" >&2
     exit 1
