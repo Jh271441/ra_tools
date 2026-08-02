@@ -233,6 +233,8 @@ cloud_server 的一次性切换流程：
 1. 运行 `scripts/bootstrap_cloud_server_env.sh` 安装包含 psycopg 的专用运行环境。
 2. 运行 `scripts/bootstrap_cloud_postgres.sh` 安装/启动本机 PostgreSQL 14，创建仅 Unix socket peer 访问的专用数据库，并写入尚未生效的 `0600` `postgres_url.pending`。
 3. 停止 Dashboard 写入后运行 `scripts/migrate_sqlite_to_postgres.py --source ... --backup ... --target-url-file ...`。工具会先生成只读 SQLite 备份，拒绝非空 PostgreSQL 目标，在单事务中复制数据并逐表核对行数与 SHA-256。
-4. 校验通过后把 `postgres_url.pending` 原子改名为 `postgres_url`，再重启 Dashboard；`run_cloud_server.sh` 仅检测正式文件并自动使用 PostgreSQL。确认 `/health`、1071 baseline、Runs、Review、附件和 Batch 历史后再结束维护窗口。
+4. 校验通过后把 `postgres_url.pending` 原子改名为 `postgres_url`。停止 Dashboard 写入，运行 `scripts/migrate_cloud_postgres_data.sh`，把 PostgreSQL 物理数据从容器 overlay 迁移到 `/volume/postgresql/14/main`；脚本会先创建可恢复的 custom-format 逻辑备份、离线复制、逐表核对行数，并在失败时自动恢复原配置，旧物理目录不会删除。
+5. 运行 `scripts/install_cloud_postgres_backup_cron.sh` 安装每日 02:15 的备份任务。备份保存在 `/volume/home/workspace/ra_triage_dashboard_data/postgres_backups/`，每份都经过 `pg_restore --list` 校验并附带 SHA-256，默认保留最近 14 份。用 `scripts/verify_cloud_postgres_backup.sh` 将最新备份恢复进一次性数据库并逐表对比实时库行数。容器重建后重新运行 bootstrap 和 cron 安装脚本；bootstrap 会自动重新挂接已有的持久数据目录。
+6. 重启 Dashboard；`run_cloud_server.sh` 会拒绝使用 overlay 上的 PostgreSQL 数据。确认 `/health`、实际 `SHOW data_directory`、1071 baseline、Runs、Review、附件、Batch 历史及最新备份可恢复后再结束维护窗口。
 
-回滚只需移走/改名 URL 文件并重启服务，原 SQLite 与附件目录未被迁移工具修改。正式启用可信 SSO 后，仍需为团队默认变更、推理与未来 Trail 写入补充 RBAC。
+数据库引擎切换回滚只需移走/改名 URL 文件并重启服务，原 SQLite 与附件目录未被迁移工具修改。物理目录迁移失败会自动回滚；成功后旧目录只作为切换时刻的短期回滚副本，之后新增写入应从 PostgreSQL 逻辑备份恢复。正式启用可信 SSO 后，仍需为团队默认变更、推理与未来 Trail 写入补充 RBAC。

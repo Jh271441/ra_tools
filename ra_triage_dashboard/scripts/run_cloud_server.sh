@@ -15,6 +15,17 @@ export DASHBOARD_DATA_DIR="${DASHBOARD_DATA_DIR:-/volume/home/workspace/ra_triag
 DEFAULT_DATABASE_URL_FILE="$DASHBOARD_DATA_DIR/postgres_url"
 if [[ -f "$DEFAULT_DATABASE_URL_FILE" ]]; then
   export DASHBOARD_DATABASE_URL_FILE="${DASHBOARD_DATABASE_URL_FILE:-$DEFAULT_DATABASE_URL_FILE}"
+  POSTGRES_DATA_DIR="${DASHBOARD_POSTGRES_DATA_DIR:-/volume/postgresql/14/main}"
+  if [[ ! -f "$POSTGRES_DATA_DIR/PG_VERSION" ]]; then
+    echo "Persistent PostgreSQL data directory is missing: $POSTGRES_DATA_DIR" >&2
+    echo "Run scripts/migrate_cloud_postgres_data.sh during a maintenance window." >&2
+    exit 1
+  fi
+  CONFIGURED_DATA_DIR="$(sudo pg_conftool 14 main show data_directory | tr -d "'\"" | xargs)"
+  if [[ "$CONFIGURED_DATA_DIR" != "$POSTGRES_DATA_DIR" ]]; then
+    echo "Refusing to start against non-persistent PostgreSQL data: $CONFIGURED_DATA_DIR" >&2
+    exit 1
+  fi
   if command -v pg_isready >/dev/null 2>&1 && ! pg_isready --quiet; then
     # cloud_server has no systemd init process, so recover PostgreSQL explicitly
     # after a host/container restart before starting the dashboard.

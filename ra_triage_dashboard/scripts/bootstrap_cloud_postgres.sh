@@ -6,6 +6,7 @@ DATABASE_NAME="${DASHBOARD_POSTGRES_DATABASE:-ra_triage_dashboard}"
 DATA_DIR="${DASHBOARD_DATA_DIR:-/volume/home/workspace/ra_triage_dashboard_data}"
 URL_FILE="${DASHBOARD_DATABASE_URL_FILE:-$DATA_DIR/postgres_url.pending}"
 VENV_DIR="${DASHBOARD_VENV_DIR:-/volume/home/workspace/ra_triage_dashboard_venv}"
+POSTGRES_DATA_DIR="${DASHBOARD_POSTGRES_DATA_DIR:-/volume/postgresql/14/main}"
 
 if [[ ! "$SERVICE_USER" =~ ^[a-z_][a-z0-9_-]{0,62}$ ]]; then
   echo "Invalid PostgreSQL service user: $SERVICE_USER" >&2
@@ -18,6 +19,17 @@ fi
 
 sudo apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-14 postgresql-client-14
+if [[ -f "$POSTGRES_DATA_DIR/PG_VERSION" ]]; then
+  if [[ "$(findmnt -n -o FSTYPE -T "$POSTGRES_DATA_DIR")" == "overlay" ]]; then
+    echo "Persistent PostgreSQL data directory is on overlay: $POSTGRES_DATA_DIR" >&2
+    exit 1
+  fi
+  CURRENT_DATA_DIR="$(sudo pg_conftool 14 main show data_directory | tr -d "'\"" | xargs)"
+  if [[ "$CURRENT_DATA_DIR" != "$POSTGRES_DATA_DIR" ]]; then
+    sudo pg_ctlcluster 14 main stop >/dev/null 2>&1 || true
+    sudo pg_conftool 14 main set data_directory "$POSTGRES_DATA_DIR"
+  fi
+fi
 if ! pg_isready --quiet; then
   if ! sudo systemctl enable --now postgresql 2>/dev/null; then
     # cloud_server currently runs without systemd as PID 1. pg_ctlcluster starts
@@ -47,4 +59,5 @@ chmod 600 "$URL_FILE"
   "$URL_FILE"
 
 pg_isready --dbname "$DATABASE_NAME"
-echo "PostgreSQL is ready. Migrate with $URL_FILE, then atomically promote it to $DATA_DIR/postgres_url."
+echo "PostgreSQL is ready. Persistent cluster data: $POSTGRES_DATA_DIR"
+echo "Migrate with $URL_FILE, then atomically promote it to $DATA_DIR/postgres_url."
