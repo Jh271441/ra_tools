@@ -28,7 +28,7 @@ if ss -H -ltn "sport = :$APP_PORT" | grep -q .; then
   echo "Dashboard port $APP_PORT is still listening; stop application writes first" >&2
   exit 1
 fi
-if [[ ! -f "$SOURCE_DATA_DIR/PG_VERSION" ]]; then
+if ! sudo test -f "$SOURCE_DATA_DIR/PG_VERSION"; then
   echo "Source PostgreSQL cluster is missing: $SOURCE_DATA_DIR" >&2
   exit 1
 fi
@@ -39,7 +39,7 @@ fi
 
 configured_data_dir="$(sudo pg_conftool "$CLUSTER_VERSION" "$CLUSTER_NAME" show data_directory | tr -d "'\"" | xargs)"
 if [[ "$configured_data_dir" == "$TARGET_DATA_DIR" ]]; then
-  [[ -f "$TARGET_DATA_DIR/PG_VERSION" ]] || {
+  sudo test -f "$TARGET_DATA_DIR/PG_VERSION" || {
     echo "Cluster config points at a missing persistent data directory" >&2
     exit 1
   }

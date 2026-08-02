@@ -19,7 +19,7 @@ fi
 
 sudo apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-14 postgresql-client-14
-if [[ -f "$POSTGRES_DATA_DIR/PG_VERSION" ]]; then
+if sudo test -f "$POSTGRES_DATA_DIR/PG_VERSION"; then
   if [[ "$(findmnt -n -o FSTYPE -T "$POSTGRES_DATA_DIR")" == "overlay" ]]; then
     echo "Persistent PostgreSQL data directory is on overlay: $POSTGRES_DATA_DIR" >&2
     exit 1

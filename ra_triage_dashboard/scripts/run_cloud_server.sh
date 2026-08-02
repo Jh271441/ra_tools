@@ -16,7 +16,7 @@ DEFAULT_DATABASE_URL_FILE="$DASHBOARD_DATA_DIR/postgres_url"
 if [[ -f "$DEFAULT_DATABASE_URL_FILE" ]]; then
   export DASHBOARD_DATABASE_URL_FILE="${DASHBOARD_DATABASE_URL_FILE:-$DEFAULT_DATABASE_URL_FILE}"
   POSTGRES_DATA_DIR="${DASHBOARD_POSTGRES_DATA_DIR:-/volume/postgresql/14/main}"
-  if [[ ! -f "$POSTGRES_DATA_DIR/PG_VERSION" ]]; then
+  if ! sudo test -f "$POSTGRES_DATA_DIR/PG_VERSION"; then
     echo "Persistent PostgreSQL data directory is missing: $POSTGRES_DATA_DIR" >&2
     echo "Run scripts/migrate_cloud_postgres_data.sh during a maintenance window." >&2
     exit 1
