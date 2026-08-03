@@ -7,7 +7,7 @@
 - 默认工作集是 `trail_label_baseline_20260729.xlsx` 中 `dataset=0508` 的 **1071 条**；GT 只来自该快照，不因 Trail 查询或模型导入而改变。
 - 首页是服务端筛选的紧凑 Issue 缩略图队列（宽屏五列、随可用宽度降列），默认每页 20 条并可切换 10 / 20 / 50 / 100；页码和单页数量写入 URL，接口单页最多返回 100 条。BEV 缩略图按源文件版本生成 640×360 缓存并懒加载，不把 1071 张原图一次送进浏览器。点击 Issue 后才进入 URL 可恢复的详情态，加载大图、媒体、模型输出和人工 Review；详情支持返回列表及跨页上一/下一 Issue，并在具备 trip 与事件时间戳时提供同域 Ares Studio ±10 秒跳转链接。Issue 详情第二行通过紧凑下拉框切换 `BEV 图片 / Camera 图片 / Ares Studio 视频`，相邻的同尺寸按钮展开完整预览，默认优先展示轻量 BEV 图片，视频按需切换；Gallery 卡片的“媒体预览”和详情媒体共用一个近乎占满浏览器视口的三模式弹窗，首页仅在点击预览时按需读取该 Issue 的完整资产。详情页媒体快捷键采用页面级监听：焦点不在输入、选择、按钮或链接时，`B/C/V`、空格、左右方向键和 `F` 无需聚焦播放器即可生效；打开弹窗后由弹窗接管。三种媒体都默认适配可视范围，并支持 1:1 原始像素、按钮/键盘/Ctrl/⌘+滚轮缩放、放大后指针拖拽平移以及全屏；进入或退出全屏不会重置缩放比例。BEV 视频使用 Workbench 自有的紧凑控制条，支持播放/暂停、0.5× / 1× / 1.5× / 2×、回到 t0、进度拖动、可配置 0.1 / 0.5 / 1 / 5 秒左右跳转和键盘控制；默认左右跳转 1 秒，元数据帧步长作为“1 帧”选项，切换到图片时暂停但保留播放位置。
 - 首页的“模型判断结果”是下拉筛选：选择模型 Run 后可切换 `全部`、红色 `MISMATCH`、绿色 `MATCH` 和灰色 `NONE（未预测）`；卡片右上角同步显示状态。旧 `failure=1` / `failure_only=true` 仍兼容为 `MISMATCH`，新 Review URL 使用 `comparison=all|mismatch|match|none`。
-- 左侧工具栏只接受用户手动折叠并记住偏好，不再根据分辨率、DPR 或窗口宽度自动改变。判错复核、原因聚类、模型 Runs / 导入、Batch 预测、系统状态分别使用 `/review`、`/review-analysis`、`/runs`、`/batch-prediction`、`/system-status` 独立路由，支持硬刷新和浏览器前进/后退。系统状态页只读展示应用运行时间与版本、数据库连接/持久卷、最近备份/计划、容量、1071 基线、媒体与模型网关，不提供重启或写入操作。`/import` 会 307 跳转到 `/runs?import=...`，`/inference` 仅作为旧链接兼容入口。
+- 左侧工具栏只接受用户手动折叠并记住偏好，不再根据分辨率、DPR 或窗口宽度自动改变。判错复核、原因聚类、模型 Runs / 导入、Batch 预测、系统状态分别使用 `/review`、`/review-analysis`、`/runs`、`/batch-prediction`、`/system-status` 独立路由，管理员另有 `/users` 用户管理路由；均支持硬刷新和浏览器前进/后退。系统状态页只读展示应用运行时间与版本、数据库连接/持久卷、最近备份/计划、容量、1071 基线、媒体与模型网关，不提供重启或写入操作。`/import` 会 307 跳转到 `/runs?import=...`，`/inference` 仅作为旧链接兼容入口。
 - 顶栏支持深色 / 浅色主题切换，默认仍为深色；用户选择保存在浏览器 `localStorage`，并在主样式加载前应用，避免刷新时先闪出错误主题。浅色模式覆盖页面框架、表单、卡片、下拉框和弹窗；Ares、BEV 与 Camera 媒体画布继续使用深色舞台，以保持原始画面和轨迹叠加层的对比度。
 - Trail 操作分成「检查字段」和「创建 Run」两步，收在 Runs 页的默认折叠区；两步都不写回 Trail，快照只创建或复用本地不可变 Run，且不会修改团队默认 Run。启动时若启用 Trail 检查，也只执行第一步。
 - 页面只允许导入批量模型输出（JSON、CSV、XLSX），Issue / GT 上传入口已移除，避免误污染 0508 baseline；后端旧 `/api/import/issues` 仅保留兼容客户端，不由页面调用。Runs 页上方用三个自然高度 Tab 统一组织模型文件、AutoTriage 快照和 Trail 快照，页面标题始终固定为 `MODEL RUN REGISTRY / 模型结果 Runs`，不会随来源 Tab 改名；每条 Run 都显示来源徽标及原始 records 链接、文件名或 Trail view。新上传的模型结果原文件按 SHA-256 归档到 dashboard data 的 `uploads/`，Run 行可直接在页面内预览 CSV/JSON 或下载；历史 Run 若没有归档文件，会优先用已保存的脱敏预测行重建可复核副本，并明确标注“Run 重建”。Run 行提供带二次确认的删除按钮：只删除该 Run 的模型输出和来源归档，不删除 0508 GT、Issue 或人工 review；团队默认 Run 需先切换后才能删除。也可按 AutoTriage Batch ID / records 链接经固定只读内网接口拉取结果，或检查 Trail 字段后创建只读快照。所有模型结果都按规范化内容 SHA-256 创建或复用不可变 Model Run，不覆盖 GT、不切换团队默认 Run；AutoTriage 拉取会显式比较声明数、完成数、结果数和唯一 Issue 数，并标记部分覆盖。
@@ -80,7 +80,7 @@ records 链接只用于提取数字 Batch ID，后端不会跟随其中的 hostn
 
 Review 截图绑定到单条追加式 annotation：前端粘贴后先本地预览，保存时才上传；后端在受限后台线程中解码并重新编码为 PNG/JPEG/WebP，去除原始元数据。每次最多 4 张、单张 8 MB、总计 24 MB，单图不超过 4000 万像素；HTTP 请求上限为 26 MB，缺少 `Content-Length` 或固定同源请求标记会在 multipart 解析前拒绝，应用级截图配额为 20 GB，并保留至少 256 MB 磁盘空间。API 只返回附件 ID、尺寸、类型和不含服务器路径的读取 URL。备份 SQLite 时必须同时备份 `review_attachments/`，否则历史记录仍在但图片文件无法恢复。
 
-场景 Tags 可以不选。新页面只提供固定 key：`queue`、`yielding`、`u_turn`、`park_in`、`park_out`、`traffic_light`、`manual_trigger`、`perception_fp_cleared`、`lead_vehicle_departed`、`system_decision_change`、`obstacle_not_avoided`、`close_distance`；常见旧中文值仍会按兼容规则保存并按原样展示。缺失信息默认预选 `routing_direction`，Review 内可新建 `custom:<文本>` 作为本条记录的结构化补充字段。
+场景 Tags 可以不选，只能从固定目录选择：`queue`、`yielding`、`u_turn`、`park_in`、`park_out`、`traffic_light`、`manual_trigger`、`perception_fp_cleared`、`lead_vehicle_departed`、`system_decision_change`、`obstacle_not_avoided`、`close_distance`、`occlusion`、`right_turn`、`left_turn`、`temporary_stop`；常见旧中文值会按兼容别名映射到这些 key，不提供自定义或删除入口。缺失信息默认预选 `routing_direction`，仍可在单条 Review 内新建 `custom:<文本>` 作为结构化补充字段。
 
 ## 用户身份、部署模式与 Kylin SSO
 
@@ -130,9 +130,11 @@ export DASHBOARD_TEAM_DEFAULT_MANAGERS=alice,bob
 
 Kylin 必须把 SSO 用户写入 `X-SSO-User`，把该文件中的值写入 `X-RA-Triage-Ingress`，且两个 header 都必须覆盖而非追加客户端值；不要把 marker 返回给浏览器。若实际用户名 header 或变量名不同，只改 `DASHBOARD_IDENTITY_HEADER`，代码无需修改。生产模式会在启动时校验 marker 文件为当前服务用户所有、普通文件、权限 0600、内容至少 32 字符；配置不安全时拒绝启动。
 
-`DASHBOARD_SSO_WRITE_USERS` 是应用级写入白名单：空值表示任意已验证 SSO 用户可写，非空时只有名单中的用户可写，其他已登录用户仍是只读。Kylin Portal 的「SSO 白名单」属于网关访问策略，可能是允许名单，也可能是免登录/降级名单，必须根据平台说明确认后再开，不能把它直接等同于本应用写白名单。建议 Kylin 负责“谁能访问”，应用名单负责“谁能写”。
+`DASHBOARD_SSO_WRITE_USERS` 与 `DASHBOARD_TEAM_DEFAULT_MANAGERS` 只在权限表为空时执行一次初始化。此后 PostgreSQL/SQLite 中的权限表是运行时权威来源：未列出的 SSO 用户与裸 IP 访问均为只读，`writer` 可执行普通 Review、Run 与 Tag 选择操作，`admin` 额外拥有独立的 `/users` 用户管理页。Kylin Portal 的「SSO 白名单」属于网关访问策略，不能直接等同于本应用写白名单。
 
-验证通过的 Kylin ticket 或可信代理身份会覆盖前端提交的 Run `created_by`、标注 `author` 和任务 `requested_by`，并记录身份来源及 `verified=true`。团队默认 Run 还需要用户名出现在 `DASHBOARD_TEAM_DEFAULT_MANAGERS`；空名单表示无人可修改，不能把“已登录”直接当成管理员权限。同名记录同时含可信与未验证来源时，筛选项显示为「混合身份」，不会把整组误标为 SSO。
+只有管理员能读取或修改 `/api/access-users`；前端隐藏入口不是权限边界。管理员可添加可写用户、提升管理员或移除写权限，服务端禁止降级或移除最后一个管理员。场景 Tag 固定使用内置目录，Review 中可以选择，但不提供新增、删除或 Tag 管理入口。
+
+验证通过的 Kylin ticket 或可信代理身份会覆盖前端提交的 Run `created_by`、标注 `author` 和任务 `requested_by`，并记录身份来源及 `verified=true`。团队默认 Run 与用户管理都要求持久权限表中的 `admin` 角色，不能把“已登录”直接当成管理员权限。同名记录同时含可信与未验证来源时，筛选项显示为「混合身份」，不会把整组误标为 SSO。
 
 切换步骤：先保持 `development`，通过域名登录后用 `/manual/api/session` 验证 `source=kylin_ticket`、`verified=true`，再把 cloud_server 切到 `production`。如果 Kylin cookie 没有转发到后端，再启用 Header + marker 备选方案。回退只需恢复 `DASHBOARD_DEPLOYMENT_MODE=development` 并重启；这会恢复裸 IP 可写，因此只用于明确的开发/故障排查窗口。
 

@@ -93,6 +93,11 @@ const PAGE_ROUTES = {
     titleZh: "系统状态",
     titleEn: "System Status",
   },
+  users: {
+    path: "/users",
+    titleZh: "用户管理",
+    titleEn: "User Access",
+  },
 };
 
 const state = {
@@ -175,6 +180,8 @@ const state = {
     identity_pending: true,
     authenticated: false,
     verified: false,
+    is_admin: false,
+    access_role: "viewer",
     can_manage_team_default: false,
     can_write: true,
     read_only: false,
@@ -184,6 +191,7 @@ const state = {
   uiLanguage: "zh",
   activePage: "review",
   systemStatus: null,
+  accessUsers: [],
   trailInspection: null,
   pendingReviewImages: [],
   savingAnnotation: false,
@@ -620,6 +628,9 @@ function showPage(
   if (target === "status" && loadPageData) {
     loadStatus().catch((error) => showToast(error.message, true));
   }
+  if (target === "users" && loadPageData) {
+    loadAccessUsers().catch((error) => showToast(error.message, true));
+  }
   if (target === "review") setReviewView(issue);
   const routeOptions =
     target === "review"
@@ -983,6 +994,8 @@ function renderSession() {
   document.documentElement.dataset.accessMode = state.session.read_only
     ? "read-only"
     : "write";
+  const userManagementNav = $("#userManagementNavButton");
+  if (userManagementNav) userManagementNav.hidden = !state.session.is_admin;
   const batchActor = $("#batchActorSummary");
   if (batchActor) {
     batchActor.textContent = state.session.verified
@@ -1015,6 +1028,8 @@ async function loadSession() {
     identity_pending: Boolean(serverSession.browser_lca_fallback),
     authenticated: false,
     verified: false,
+    is_admin: false,
+    access_role: "viewer",
     can_manage_team_default: false,
     can_write: serverSession.can_write !== false,
     read_only: Boolean(serverSession.read_only),
@@ -1081,6 +1096,38 @@ function renderAnalysisCatalogFilters() {
       ? previous
       : "";
   }
+}
+
+function renderAccessUsers() {
+  const target = $("#accessUserList");
+  if (!target) return;
+  if (!state.accessUsers.length) {
+    target.innerHTML = '<div class="no-asset">尚未配置可写用户。</div>';
+    return;
+  }
+  target.innerHTML = state.accessUsers.map((item) => `
+    <div class="access-row" data-access-user="${escapeHtml(item.username)}">
+      <div class="access-identity"><strong>${escapeHtml(item.username)}</strong><small>${item.role === "admin" ? "管理员 · 可管理用户" : "可写用户"}</small></div>
+      <select data-access-role aria-label="${escapeHtml(item.username)} 权限"><option value="writer"${item.role === "writer" ? " selected" : ""}>可写</option><option value="admin"${item.role === "admin" ? " selected" : ""}>管理员</option></select>
+      <div class="access-row-actions"><button class="button button-quiet" type="button" data-save-access-user>保存</button><button class="button button-danger" type="button" data-remove-access-user>移除权限</button></div>
+    </div>
+  `).join("");
+}
+
+async function loadAccessUsers() {
+  if (!state.session.is_admin) return;
+  const result = await api("/api/access-users");
+  state.accessUsers = result.items || [];
+  renderAccessUsers();
+}
+
+async function saveAccessUser(username, role) {
+  const result = await api(`/api/access-users/${encodeURIComponent(username)}`, {
+    method: "PUT",
+    body: JSON.stringify({ role }),
+  });
+  acknowledgeLocalChange(result);
+  await loadAccessUsers();
 }
 
 function renderTrailSyncState() {
@@ -3306,7 +3353,7 @@ function renderReview(caseData) {
       </details>
       <details class="evidence-dropdown review-dropdown tag-dropdown">
         <summary>场景 Tags（可选）<span class="evidence-summary-count" id="tagSummaryCount">已选 ${chosenTags.size} 项</span></summary>
-        <div class="tag-options" id="reviewTagOptions">${tagCatalog.map((item) => tagOption(item.key, item.label, chosenTags.has(item.key))).join("")}${customTagOptions}<div class="custom-tag-create" id="customTagCreator"><input id="newSceneTag" maxlength="48" placeholder="输入新的场景 Tag" autocomplete="off" /><button class="button button-quiet" id="addSceneTagButton" type="button">新建标签</button></div></div>
+        <div class="tag-options" id="reviewTagOptions">${tagCatalog.map((item) => tagOption(item.key, item.label, chosenTags.has(item.key))).join("")}${customTagOptions}<span id="customTagCreator" hidden></span></div>
       </details>
       <div class="review-attachment-field">
         <span>补充截图（可选）</span>
@@ -3356,23 +3403,6 @@ function renderReview(caseData) {
     if (input) input.value = "";
     state.reviewFormDirty = true;
     updateEvidenceSummary();
-  });
-  $("#addSceneTagButton")?.addEventListener("click", () => {
-    const input = $("#newSceneTag");
-    const value = String(input?.value || "").trim();
-    if (!value) return showToast("请输入新的场景 Tag。", true);
-    if (value.length > 48 || /[\x00-\x1f\x7f]/.test(value)) return showToast("场景 Tag 长度或字符不合法。", true);
-    const key = `custom:${value}`;
-    const exists = [...document.querySelectorAll('input[name="reviewTags"]')].some((item) => item.value === key);
-    if (exists) return showToast("该场景 Tag 已经添加。", true);
-    const option = document.createElement("label");
-    option.className = "tag-option custom-tag-option";
-    option.innerHTML = `<input type="checkbox" name="reviewTags" value="${escapeHtml(key)}" checked /><span>${escapeHtml(value)}</span>`;
-    $("#customTagCreator")?.before(option);
-    option.querySelector("input")?.addEventListener("change", updateTagSummary);
-    if (input) input.value = "";
-    state.reviewFormDirty = true;
-    updateTagSummary();
   });
   const pasteZone = $("#screenshotPasteZone");
   const screenshotInput = $("#reviewScreenshotInput");
@@ -5538,6 +5568,43 @@ function bindEvents() {
     activateRunSourceTab("trail");
   });
   $("#reviewUploadModelButton").addEventListener("click", () => openRunImport("model"));
+  $("#accessUserForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const input = $("#accessUserName");
+    const username = String(input.value || "").trim().toLowerCase();
+    if (!username) return showToast("请输入用户名。", true);
+    const submit = event.submitter || event.currentTarget.querySelector("button[type='submit']");
+    submit.disabled = true;
+    try {
+      await saveAccessUser(username, $("#accessUserRole").value);
+      input.value = "";
+      showToast("用户权限已保存。");
+    } catch (error) {
+      showToast(error.message, true);
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  $("#accessUserList").addEventListener("click", async (event) => {
+    const row = event.target.closest("[data-access-user]");
+    if (!row) return;
+    const username = row.dataset.accessUser;
+    if (event.target.closest("[data-save-access-user]")) {
+      try {
+        await saveAccessUser(username, row.querySelector("[data-access-role]").value);
+        showToast("用户权限已更新。");
+      } catch (error) { showToast(error.message, true); }
+    }
+    if (event.target.closest("[data-remove-access-user]")) {
+      if (!window.confirm(`确认移除 ${username} 的写入权限？`)) return;
+      try {
+        const result = await api(`/api/access-users/${encodeURIComponent(username)}`, { method: "DELETE" });
+        acknowledgeLocalChange(result);
+        await loadAccessUsers();
+        showToast("该用户已变为只读。");
+      } catch (error) { showToast(error.message, true); }
+    }
+  });
   $("#predictFilteredButton").addEventListener("click", () => {
     const limit = predictionBatchLimit();
     if (state.caseTotal > limit) {
@@ -5857,6 +5924,10 @@ async function bootstrap() {
   });
   try {
     await Promise.all([loadConfig(), loadSession()]);
+    if (initialRoute.page === "users" && !state.session.is_admin) {
+      initialRoute.page = "review";
+      showToast("用户管理仅对管理员开放。", true);
+    }
     state.selectedRunId =
       initialRoute.runId === "none"
         ? ""
@@ -5906,6 +5977,8 @@ async function bootstrap() {
       }
     } else if (initialRoute.page === "status") {
       initialPageRequests.push(loadStatus());
+    } else if (initialRoute.page === "users") {
+      initialPageRequests.push(loadAccessUsers());
     } else if (initialRoute.page === "prediction") {
       initialPageRequests.push(loadPredictionConfig(), loadPredictionBatches());
     }

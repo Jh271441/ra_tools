@@ -34,7 +34,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-7`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-9`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -98,6 +98,12 @@
               <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="4.5" y="4" width="15" height="13" rx="3"/><path d="M4 18h16M6 15V6.8A1.8 1.8 0 0 1 7.8 5h8.4A1.8 1.8 0 0 1 18 6.8V15"/><path class="icon-emphasis" d="M8 11h2l1.2-3 2 6 1.2-3H16"/></svg>
             </span>
             <span class="sidebar-label"><strong class="ui-lang-zh">系统状态</strong><strong class="ui-lang-en">System status</strong></span>
+          </a>
+          <a class="sidebar-item" id="userManagementNavButton" data-page-target="users" data-app-path="/users" href="/users" title="用户管理" hidden>
+            <span class="sidebar-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><circle class="icon-wash" cx="9" cy="8" r="3.5"/><path d="M3.5 18c.5-3.1 2.3-4.8 5.5-4.8s5 1.7 5.5 4.8M16 8.5h4M18 6.5v4M16 15.5h4"/></svg>
+            </span>
+            <span class="sidebar-label"><strong class="ui-lang-zh">用户管理</strong><strong class="ui-lang-en">User access</strong></span>
           </a>
         </nav>
 
@@ -702,6 +708,24 @@
             </section>
             <div class="system-status-grid" id="systemStatusGrid"></div>
           </section>
+
+          <section class="app-page tool-page access-page hidden" id="userManagementPage" data-page="users">
+            <section class="access-panel">
+              <div class="access-heading">
+                <div>
+                  <span class="eyebrow">ACCESS CONTROL</span>
+                  <h2><span class="ui-lang-zh">使用者权限</span><span class="ui-lang-en">User access</span></h2>
+                  <p><span class="ui-lang-zh">未列出的 SSO 用户与裸 IP 访问均为只读。</span><span class="ui-lang-en">Unlisted SSO users and direct-IP sessions are read-only.</span></p>
+                </div>
+              </div>
+              <form class="access-create" id="accessUserForm">
+                <label><span class="ui-lang-zh">用户名</span><span class="ui-lang-en">Username</span><input id="accessUserName" maxlength="64" autocomplete="off" placeholder="例如 xuhaoxuan_i" /></label>
+                <label><span class="ui-lang-zh">权限</span><span class="ui-lang-en">Role</span><select id="accessUserRole"><option value="writer">可写</option><option value="admin">管理员</option></select></label>
+                <button class="button button-primary" type="submit"><span class="ui-lang-zh">添加用户</span><span class="ui-lang-en">Add user</span></button>
+              </form>
+              <div class="access-list" id="accessUserList"><div class="no-asset">正在加载用户权限…</div></div>
+            </section>
+          </section>
         </main>
       </div>
     </div>
@@ -859,7 +883,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-7`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-10`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

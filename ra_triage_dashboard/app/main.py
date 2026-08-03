@@ -34,7 +34,6 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from .assets import AssetIndex, CameraIndex, VideoIndex
 from .auth import (
     has_same_origin_mutation_marker,
-    identity_can_write,
     identity_header_candidates,
     normalise_username,
     request_identity,
@@ -596,8 +595,23 @@ def _can_manage_team_default(request: Request) -> bool:
     return bool(
         identity.verified
         and identity.username
-        and identity.username in settings.team_default_managers
+        and database.access_role(identity.username) == "admin"
     )
+
+
+def _admin_identity(request: Request):
+    identity = request_identity(request, settings)
+    if not (
+        identity.verified
+        and identity.username
+        and database.access_role(identity.username) == "admin"
+    ):
+        raise _detail(403, "该操作仅限 Dashboard 管理员。")
+    return identity
+
+
+def _review_tag_catalog() -> tuple[dict[str, Any], ...]:
+    return tuple({**item, "builtin": True} for item in REVIEW_TAG_CATALOG)
 
 
 def _value(row: dict[str, Any], *names: str) -> Any:
@@ -1057,20 +1071,9 @@ def _normalise_review_tags(values: list[Any]) -> list[str]:
     if len(values) > 12:
         raise _detail(400, "每条 review 最多选择 12 个 tags。")
     normalized: set[str] = set()
-    legacy: set[str] = set()
     for value in values:
         raw = str(value).strip()
         if not raw:
-            continue
-        if raw.startswith("custom:"):
-            custom_value = raw[len("custom:") :].strip()
-            if (
-                not custom_value
-                or len(custom_value) > 48
-                or re.search(r"[\x00-\x1f\x7f]", custom_value)
-            ):
-                raise _detail(400, "自定义 tag 长度或字符不合法。")
-            legacy.add(f"custom:{custom_value}")
             continue
         if len(raw) > 48 or re.search(r"[\x00-\x1f\x7f]", raw):
             raise _detail(400, "tag 长度或字符不合法。")
@@ -1078,13 +1081,8 @@ def _normalise_review_tags(values: list[Any]) -> list[str]:
         if key in REVIEW_TAG_KEYS:
             normalized.add(key)
         else:
-            # Existing JSON clients historically supplied free-form tags.
-            # Preserve safe legacy values while the UI only offers the catalog.
-            legacy.add(raw)
-    return [
-        *[item["key"] for item in REVIEW_TAG_CATALOG if item["key"] in normalized],
-        *sorted(legacy),
-    ]
+            raise _detail(400, "tag 不在默认场景 Tags 目录中。")
+    return [item["key"] for item in REVIEW_TAG_CATALOG if item["key"] in normalized]
 
 
 def _create_annotation_record(
@@ -1348,6 +1346,10 @@ def sync_trail_model_fields(
 async def lifespan(_: FastAPI):
     settings.ensure_directories()
     database.init()
+    database.bootstrap_access_users(
+        writers=settings.sso_write_users,
+        administrators=settings.team_default_managers,
+    )
     database.seed_examples(EXAMPLE_CASES)
     bootstrap_baseline()
     asset_index.refresh(force=True)
@@ -1407,7 +1409,12 @@ async def production_write_guard(request: Request, call_next):
                 },
             )
         identity = await asyncio.to_thread(request_identity, request, settings)
-        if not identity_can_write(identity, settings):
+        role = (
+            await asyncio.to_thread(database.access_role, identity.username)
+            if identity.verified and identity.username
+            else ""
+        )
+        if role not in {"writer", "admin"}:
             return JSONResponse(
                 status_code=403,
                 content={
@@ -1500,6 +1507,7 @@ app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 @app.get("/inference", include_in_schema=False)
 @app.get("/batch-prediction", include_in_schema=False)
 @app.get("/system-status", include_in_schema=False)
+@app.get("/users", include_in_schema=False)
 async def index() -> HTMLResponse:
     return HTMLResponse(
         content=INDEX_HTML,
@@ -1571,7 +1579,7 @@ async def dashboard_config() -> dict[str, Any]:
         "default_model_run_id": database.default_model_run_id(),
         "trail_sync": runtime_state["trail_sync"],
         "missing_evidence_catalog": MISSING_EVIDENCE_CATALOG,
-        "review_tag_catalog": REVIEW_TAG_CATALOG,
+        "review_tag_catalog": await asyncio.to_thread(_review_tag_catalog),
         "review_reason_theme_catalog": tuple(
             {
                 "key": item["key"],
@@ -1603,10 +1611,16 @@ async def dashboard_config() -> dict[str, Any]:
 async def session(request: Request, response: Response) -> dict[str, object]:
     response.headers["Cache-Control"] = "no-store, max-age=0"
     identity = await asyncio.to_thread(request_identity, request, settings)
-    can_write = (
-        settings.deployment_mode != "production"
-        or identity_can_write(identity, settings)
+    access_role = (
+        await asyncio.to_thread(database.access_role, identity.username)
+        if identity.verified and identity.username
+        else ""
     )
+    is_admin = access_role == "admin"
+    can_write = settings.deployment_mode != "production" or access_role in {
+        "writer",
+        "admin",
+    }
     payload = identity.as_dict(
         trust_proxy_headers=settings.trust_proxy_identity_headers
     ) | {
@@ -1616,7 +1630,9 @@ async def session(request: Request, response: Response) -> dict[str, object]:
             if settings.trust_proxy_identity_headers
             else ""
         ),
-        "can_manage_team_default": _can_manage_team_default(request),
+        "access_role": access_role or "viewer",
+        "is_admin": is_admin,
+        "can_manage_team_default": is_admin,
         "deployment_mode": settings.deployment_mode,
         "can_write": can_write,
         "read_only": not can_write,
@@ -1628,6 +1644,59 @@ async def session(request: Request, response: Response) -> dict[str, object]:
     if settings.identity_diagnostics:
         payload["identity_header_candidates"] = identity_header_candidates(request)
     return payload
+
+
+@app.get("/api/access-users")
+async def list_access_users(request: Request) -> dict[str, Any]:
+    await asyncio.to_thread(_admin_identity, request)
+    return {"items": await asyncio.to_thread(database.list_access_users)}
+
+
+@app.put("/api/access-users/{username}")
+async def set_access_user(
+    username: str, request: Request
+) -> dict[str, Any]:
+    identity = await asyncio.to_thread(_admin_identity, request)
+    normalized = normalise_username(username)
+    if not normalized:
+        raise _detail(400, "用户名格式不合法。")
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        raise _detail(400, "请求 JSON 不合法。")
+    role = _as_text(body.get("role") if isinstance(body, dict) else "").lower()
+    try:
+        user = await asyncio.to_thread(
+            database.set_access_user,
+            username=normalized,
+            role=role,
+            actor=identity.username,
+        )
+    except ValueError as exc:
+        raise _detail(409, str(exc))
+    return {
+        "user": user,
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
+@app.delete("/api/access-users/{username}")
+async def delete_access_user(username: str, request: Request) -> dict[str, Any]:
+    await asyncio.to_thread(_admin_identity, request)
+    normalized = normalise_username(username)
+    if not normalized:
+        raise _detail(400, "用户名格式不合法。")
+    try:
+        deleted = await asyncio.to_thread(database.delete_access_user, normalized)
+    except ValueError as exc:
+        raise _detail(409, str(exc))
+    if not deleted:
+        raise _detail(404, "用户权限记录不存在。")
+    return {
+        "deleted": True,
+        "username": normalized,
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
 
 
 @app.get("/auth/logout")

@@ -50,6 +50,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('localStorage.setItem("ra-triage-color-theme"', APP_JS)
         self.assertIn('html[data-color-theme="light"]', STYLES_CSS)
         self.assertIn('color-scheme: light', STYLES_CSS)
+        self.assertIn('html[data-color-theme="light"] .issue-card { background: var(--raised); }', STYLES_CSS)
 
     def test_batch_gateway_aligns_to_form_and_catalog_scrolls(self) -> None:
         self.assertIn(".batch-page-grid { align-items: stretch; }", STYLES_CSS)
@@ -76,6 +77,17 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(method)', APP_JS)
         self.assertIn('document.documentElement.dataset.accessMode', APP_JS)
         self.assertIn('"X-RA-Triage-Request": "browser-v1"', APP_JS)
+
+    def test_tags_are_fixed_and_user_access_has_a_separate_admin_page(self) -> None:
+        self.assertNotIn('id="manageReviewTagsButton"', INDEX_HTML)
+        self.assertNotIn('id="tagManagerDialog"', INDEX_HTML)
+        self.assertNotIn('/api/review-tags', APP_JS)
+        self.assertIn('id="userManagementNavButton"', INDEX_HTML)
+        self.assertIn('data-app-path="/users"', INDEX_HTML)
+        self.assertIn('id="userManagementPage"', INDEX_HTML)
+        self.assertIn("userManagementNav.hidden = !state.session.is_admin", APP_JS)
+        self.assertIn('api("/api/access-users"', APP_JS)
+        self.assertNotIn('id="addSceneTagButton"', APP_JS)
 
     def test_review_save_updates_history_without_reselecting_the_case(self) -> None:
         save_start = APP_JS.index("async function saveAnnotation(event)")

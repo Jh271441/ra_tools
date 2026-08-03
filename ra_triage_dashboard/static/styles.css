@@ -58,6 +58,7 @@ html[data-ui-lang="en"] .ui-lang-en { display: inline; }
   width: 100%; min-height: 40px; display: flex; align-items: center; gap: 9px; overflow: hidden; padding: 5px 6px;
   border: 1px solid transparent; border-radius: 8px; color: var(--muted); background: transparent; text-align: left;
 }
+.sidebar-item[hidden] { display: none !important; }
 .sidebar-item:hover:not(:disabled), .sidebar-item.active { border-color: rgba(34,211,238,.18); color: var(--text); background: var(--accent-soft); }
 .sidebar-item:hover:not(:disabled) .sidebar-icon { border-color: rgba(34,211,238,.3); color: #caedf2; transform: translateY(-1px); }
 .sidebar-item.active .sidebar-icon {
@@ -1362,6 +1363,9 @@ html[data-color-theme="light"] {
 
 html[data-color-theme="light"] .app-sidebar { background: #f9fbfd; }
 html[data-color-theme="light"] .topbar { background: rgba(255, 255, 255, .92); }
+html[data-color-theme="light"] .issue-card { background: var(--raised); }
+html[data-color-theme="light"] .issue-card:hover,
+html[data-color-theme="light"] .issue-card:has(.issue-card-open:focus-visible) { background: #f3f8fb; }
 html[data-color-theme="light"] .sidebar-copy strong,
 html[data-color-theme="light"] .header-metrics strong,
 html[data-color-theme="light"] .system-status-row strong,
@@ -1471,3 +1475,16 @@ html[data-color-theme="light"] .toast { color: #075d6d; background: #e6f8fb; }
 html[data-color-theme="light"] .toast.error { color: #9f2938; background: #fff0f2; }
 html[data-color-theme="light"] .evidence-dropdown .evidence-options,
 html[data-color-theme="light"] .evidence-dropdown .tag-options { box-shadow: 0 14px 30px rgba(38, 52, 69, .16); }
+
+.access-panel { max-width: 980px; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.access-heading h2 { margin: 4px 0; }
+.access-heading p { margin: 0; color: var(--faint); font-size: 12px; }
+.access-create { display: grid; grid-template-columns: minmax(220px, 1fr) 180px auto; align-items: end; gap: 10px; margin: 18px 0; }
+.access-create label { display: grid; gap: 5px; color: var(--faint); font-size: 11px; }
+.access-create input, .access-create select { min-width: 0; }
+.access-list { display: grid; gap: 7px; }
+.access-row { display: grid; grid-template-columns: minmax(180px, 1fr) 180px auto; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--raised); }
+.access-identity strong { display: block; }
+.access-identity small { color: var(--faint); }
+.access-row-actions { display: flex; justify-content: flex-end; gap: 7px; }
+@media (max-width: 760px) { .access-create, .access-row { grid-template-columns: 1fr; } .access-row-actions { justify-content: flex-start; } }
