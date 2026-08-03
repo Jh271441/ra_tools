@@ -70,6 +70,28 @@ class BatchConfigDatabaseTest(unittest.TestCase):
                     author=" ",
                 )
 
+    def test_annotation_persists_issue_exclusion_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "triage.sqlite3")
+            database.init()
+            database.upsert_issues(
+                [{"issue_id": "cn12345", "gt_label": "误触发"}],
+                source="test",
+                replace_gt=False,
+            )
+            annotation = database.create_annotation(
+                issue_id="cn12345",
+                label="误触发",
+                review_status="needs_gt_review",
+                tags=["queue"],
+                missing_evidence=[],
+                note="not a model-scope case",
+                author="jasper",
+                is_excluded=True,
+            )
+            self.assertTrue(annotation["is_excluded"])
+            self.assertTrue(database.get_case("cn12345")["annotations"][0]["is_excluded"])
+
     def test_annotation_delete_reconnects_history_and_removes_attachments(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             database = Database(Path(directory) / "triage.sqlite3")

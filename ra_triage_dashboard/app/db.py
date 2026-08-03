@@ -484,6 +484,7 @@ class Database:
                     issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE CASCADE,
                     label TEXT,
                     review_status TEXT NOT NULL DEFAULT 'pending',
+                    is_excluded INTEGER NOT NULL DEFAULT 0,
                     tags_json TEXT NOT NULL DEFAULT '[]',
                     missing_evidence_json TEXT NOT NULL DEFAULT '[]',
                     note TEXT NOT NULL DEFAULT '',
@@ -686,6 +687,7 @@ class Database:
             # nullable/defaulted, so prior annotations and model runs survive.
             self._ensure_column(conn, "issues", "baseline_scope", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "annotations", "review_status", "TEXT NOT NULL DEFAULT 'pending'")
+            self._ensure_column(conn, "annotations", "is_excluded", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "annotations", "missing_evidence_json", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_column(conn, "annotations", "author_source", "TEXT NOT NULL DEFAULT 'legacy'")
             self._ensure_column(conn, "annotations", "author_verified", "INTEGER NOT NULL DEFAULT 0")
@@ -1436,6 +1438,7 @@ class Database:
             rows = conn.execute(
                 f"""
                 SELECT i.*, ann.label AS annotation_label, ann.review_status AS annotation_review_status,
+                       ann.is_excluded AS annotation_is_excluded,
                        ann.tags_json AS annotation_tags_json,
                        ann.missing_evidence_json AS annotation_missing_evidence_json,
                        ann.note AS annotation_note, ann.author AS annotation_author,
@@ -1539,6 +1542,7 @@ class Database:
         author_source: str = "legacy",
         author_verified: bool = False,
         attachments: list[dict[str, Any]] | None = None,
+        is_excluded: bool = False,
     ) -> dict[str, Any]:
         if label and label not in LABELS:
             raise ValueError(f"不支持的标注标签: {label}")
@@ -1558,9 +1562,9 @@ class Database:
             ).fetchone()
             annotation_sql = """
                 INSERT INTO annotations (
-                    issue_id, label, review_status, tags_json, missing_evidence_json,
+                    issue_id, label, review_status, is_excluded, tags_json, missing_evidence_json,
                     note, author, author_source, author_verified, supersedes_id, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             if self.backend == "postgresql":
                 annotation_sql += " RETURNING id"
@@ -1570,6 +1574,7 @@ class Database:
                     issue_id,
                     label or None,
                     review_status,
+                    bool(is_excluded),
                     _json(tags),
                     _json(missing_evidence),
                     note.strip(),
@@ -1759,6 +1764,7 @@ class Database:
                    ann.id AS annotation_id,
                    ann.label AS annotation_label,
                    ann.review_status AS annotation_review_status,
+                   ann.is_excluded AS annotation_is_excluded,
                    ann.tags_json AS annotation_tags_json,
                    ann.missing_evidence_json AS annotation_missing_evidence_json,
                    ann.note AS annotation_note,
@@ -1795,6 +1801,7 @@ class Database:
                         "review_status": str(
                             row["annotation_review_status"] or "pending"
                         ),
+                        "is_excluded": bool(row["annotation_is_excluded"]),
                         "tags": _json_load(row["annotation_tags_json"], []),
                         "missing_evidence": _json_load(
                             row["annotation_missing_evidence_json"], []
@@ -2533,6 +2540,7 @@ class Database:
                 "annotation": {
                     "label": row["annotation_label"] or "",
                     "review_status": row["annotation_review_status"] or "pending",
+                    "is_excluded": bool(row["annotation_is_excluded"]),
                     "tags": _json_load(row["annotation_tags_json"], []),
                     "missing_evidence": _json_load(row["annotation_missing_evidence_json"], []),
                     "note": row["annotation_note"] or "",
@@ -2560,6 +2568,7 @@ class Database:
             "issue_id": row["issue_id"],
             "label": row["label"] or "",
             "review_status": row["review_status"] if "review_status" in row.keys() else "pending",
+            "is_excluded": bool(row["is_excluded"]) if "is_excluded" in row.keys() else False,
             "tags": _json_load(row["tags_json"], []),
             "missing_evidence": _json_load(
                 row["missing_evidence_json"] if "missing_evidence_json" in row.keys() else "[]", []

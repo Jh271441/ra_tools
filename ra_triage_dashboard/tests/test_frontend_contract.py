@@ -37,6 +37,16 @@ class FrontendContractTest(unittest.TestCase):
             APP_JS,
         )
 
+    def test_gallery_reviewer_metadata_shares_the_label_row(self) -> None:
+        card_start = APP_JS.index("function issueCard(item)")
+        card_end = APP_JS.index("\nfunction caseGallerySignature", card_start)
+        card_body = APP_JS[card_start:card_end]
+        labels_start = card_body.index('<div class="issue-card-labels">')
+        labels_end = card_body.index('</div>', labels_start)
+        labels_body = card_body[labels_start:labels_end]
+        self.assertIn('class="issue-reviewer"', labels_body)
+        self.assertNotIn('<div class="issue-reviewer">', card_body)
+
     def test_manual_triage_brand_links_to_review_home(self) -> None:
         self.assertIn('class="sidebar-copy sidebar-home"', INDEX_HTML)
         self.assertIn('data-page-target="review" data-app-path="/review"', INDEX_HTML)
@@ -88,6 +98,16 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("userManagementNav.hidden = !state.session.is_admin", APP_JS)
         self.assertIn('api("/api/access-users"', APP_JS)
         self.assertNotIn('id="addSceneTagButton"', APP_JS)
+
+    def test_review_panel_separates_issue_tags_and_model_error(self) -> None:
+        self.assertIn("function renderReviewTagGroups", APP_JS)
+        self.assertIn('class="review-section issue-tag-section"', APP_JS)
+        self.assertIn('class="review-section model-error-section"', APP_JS)
+        self.assertIn('id="reviewExcludeInput"', APP_JS)
+        self.assertIn("is_excluded: Boolean($(\"#reviewExcludeInput\")?.checked)", APP_JS)
+        self.assertIn('"section": "scene"', Path(__file__).resolve().parents[1].joinpath("app", "main.py").read_text(encoding="utf-8"))
+        self.assertIn('"section": "egress"', Path(__file__).resolve().parents[1].joinpath("app", "main.py").read_text(encoding="utf-8"))
+        self.assertIn(".review-tag-groups { display: grid; grid-template-columns: repeat(2", STYLES_CSS)
 
     def test_review_save_updates_history_without_reselecting_the_case(self) -> None:
         save_start = APP_JS.index("async function saveAnnotation(event)")

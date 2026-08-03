@@ -1086,7 +1086,7 @@ function renderAnalysisCatalogFilters() {
     const previous = tagSelect.value;
     tagSelect.innerHTML = [
       '<option value="">全部场景 Tags</option>',
-      ...(state.config?.review_tag_catalog || []).map(
+      ...(state.config?.review_tag_catalog || []).filter((item) => item.visible !== false).map(
         (item) => `<option value="${escapeHtml(item.key)}">${escapeHtml(item.label)}</option>`
       ),
     ].join("");
@@ -1796,8 +1796,8 @@ function issueCard(item) {
         <div class="issue-card-labels">
           <span class="issue-label-pair"><small>GT</small>${labelBadge(item.gt_label, "—")}</span>
           <span class="issue-label-pair"><small>模型</small>${prediction ? labelBadge(prediction, "—") : labelBadge("", "—")}</span>
+          ${item.annotation?.author ? `<span class="issue-reviewer" title="复核人：${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}">复核 · ${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO" : ""}</span>` : ""}
         </div>
-        ${item.annotation?.author ? `<div class="issue-reviewer">复核 · ${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO" : ""}</div>` : ""}
         ${item.annotation?.missing_evidence?.length ? `<div class="row-evidence">${item.annotation.missing_evidence.map((key) => `<span>${escapeHtml(evidenceLabel(key))}</span>`).join("")}</div>` : ""}
       </div>
     </article>`;
@@ -3144,6 +3144,7 @@ function annotationHistory(annotations) {
       (annotation) => `<article class="history-row">
         <div class="history-head">
           ${labelBadge(annotation.label, annotation.review_status === "needs_gt_review" ? "GT 待复核" : "已记录")}
+          ${annotation.is_excluded ? '<span class="tag exclusion-tag">已排除</span>' : ""}
           <span class="history-reviewer" title="${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}` : "复核人：历史记录未填写")}">${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO" : " · 未验证"}` : "复核人：未记录")}</span>
           <span class="history-actions"><span class="history-time">${formatTime(annotation.created_at)}</span><button class="history-delete-button" type="button" data-delete-annotation="${escapeHtml(annotation.id)}" title="删除这条 Review 版本" aria-label="删除 ${escapeHtml(formatTime(annotation.created_at))} 的 Review 版本"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h12M8 3h4l1 2H7zM6 6l.7 11h6.6L14 6M8.5 9v5m3-5v5"/></svg></button></span>
         </div>
@@ -3196,6 +3197,51 @@ function refreshReviewDerivedData() {
   ]);
 }
 
+function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
+  const definitions = [
+    {
+      section: "scene",
+      label: "场景",
+      groups: [
+        { key: "false_trigger", label: "误触发" },
+        { key: "true_trigger", label: "应该触发" },
+      ],
+    },
+    {
+      section: "egress",
+      label: "如何驶离",
+      groups: [
+        { key: "ra", label: "RA" },
+        { key: "no_assist", label: "无需协助" },
+      ],
+    },
+  ];
+  const visible = (tagCatalog || []).filter((item) => item.visible !== false);
+  const sections = definitions.map((section) => `
+    <div class="review-tag-axis" data-tag-section="${escapeHtml(section.section)}">
+      <div class="review-tag-axis-title">${escapeHtml(section.label)}</div>
+      <div class="review-tag-groups">
+        ${section.groups.map((group) => {
+          const items = visible.filter(
+            (item) => item.section === section.section && item.group === group.key
+          );
+          return `<div class="review-tag-group">
+            <div class="review-tag-group-title">${escapeHtml(group.label)}</div>
+            <div class="review-tag-options">${items.map((item) => tagOption(item.key, item.label, chosenTags.has(item.key))).join("")}</div>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`).join("");
+  const legacy = (tagCatalog || []).filter(
+    (item) => item.visible === false && chosenTags.has(item.key)
+  );
+  if (legacy.length) {
+    return `${sections}
+      <div class="review-tag-legacy"><span>历史标签</span><div class="review-tag-options">${legacy.map((item) => tagOption(item.key, item.label, true)).join("")}</div></div>`;
+  }
+  return sections;
+}
+
 function syncReviewFormFromCase(caseData) {
   const reviewPane = $("#reviewPane");
   if (!reviewPane?.querySelector("#annotationForm")) {
@@ -3240,6 +3286,8 @@ function syncReviewFormFromCase(caseData) {
   reviewPane.querySelectorAll('input[name="reviewTags"]').forEach((input) => {
     input.checked = chosenTags.has(input.value);
   });
+  const excluded = $("#reviewExcludeInput");
+  if (excluded) excluded.checked = Boolean(previous.is_excluded);
   const status = $("#reviewStatusInput");
   if (status) {
     status.value = previous.review_status === "needs_gt_review"
@@ -3339,32 +3387,38 @@ function renderReview(caseData) {
   const customTagOptions = customTagKeys
     .map((key) => tagOption(key, tagLabel(key), true))
     .join("");
+  const issueTagGroups = renderReviewTagGroups(tagCatalog, chosenTags, tagOption);
   $("#reviewPane").innerHTML = `
-    <div class="review-title"><div><h2>模型判错原因</h2><small class="review-scope-note">按 Issue 记录，模型输出仍按 Run 区分</small></div><span class="review-issue">${escapeHtml(caseData.issue_id)}</span></div>
+    <div class="review-title"><div><h2>Review 标注</h2><small class="review-scope-note">按 Issue 记录，模型输出仍按 Run 区分</small></div><span class="review-issue">${escapeHtml(caseData.issue_id)}</span></div>
     <form class="review-form" id="annotationForm">
-      <label class="review-status-field"><span>复核状态</span><select id="reviewStatusInput"><option value="reviewed" ${reviewStatus === "reviewed" ? "selected" : ""}>已 Review</option><option value="pending" ${reviewStatus === "pending" ? "selected" : ""}>待补充</option><option value="needs_gt_review" ${reviewStatus === "needs_gt_review" ? "selected" : ""}>GT 需复核</option></select></label>
-      <label class="review-reason">
-        <span>模型为什么判错？</span>
-        <textarea id="annotationNote" rows="4" placeholder="简要说明模型漏掉的关键证据，例如 routing、绕行空间或时序。">${escapeHtml(previous.note || "")}</textarea>
-      </label>
-      <details class="evidence-dropdown review-dropdown">
-        <summary>缺失信息（多选）<span class="evidence-summary-count" id="evidenceSummaryCount">已选 ${chosenEvidence.size} 项</span></summary>
-        <div class="evidence-options" id="missingEvidenceOptions">${catalog.map((item) => evidenceOption(item, chosenEvidence.has(item.key))).join("")}${customEvidenceOptions}<div class="custom-evidence-create" id="customEvidenceCreator"><input id="newMissingEvidence" maxlength="48" placeholder="输入新的缺失信息" autocomplete="off" /><button class="button button-quiet" id="addMissingEvidenceButton" type="button">新建标签</button></div></div>
-      </details>
-      <details class="evidence-dropdown review-dropdown tag-dropdown">
-        <summary>场景 Tags（可选）<span class="evidence-summary-count" id="tagSummaryCount">已选 ${chosenTags.size} 项</span></summary>
-        <div class="tag-options" id="reviewTagOptions">${tagCatalog.map((item) => tagOption(item.key, item.label, chosenTags.has(item.key))).join("")}${customTagOptions}<span id="customTagCreator" hidden></span></div>
-      </details>
-      <div class="review-attachment-field">
-        <span>补充截图（可选）</span>
-        <div class="screenshot-paste-zone" id="screenshotPasteZone" tabindex="0" role="group" aria-label="粘贴补充截图">
-          <strong>粘贴截图</strong>
-          <small>点击后 Ctrl / ⌘ + V；最多 4 张。</small>
-          <button class="screenshot-browse-button" id="reviewScreenshotBrowse" type="button">选择图片</button>
+      <section class="review-section issue-tag-section">
+        <div class="review-section-heading"><div><span class="review-section-kicker">ISSUE TAG</span><h3>Issue 标签</h3></div><span class="evidence-summary-count" id="tagSummaryCount">已选 ${chosenTags.size} 项</span></div>
+        <p class="review-section-help">先描述 Issue 场景和可行驶离方式；以下标签支持多选。</p>
+        <div class="review-tag-groups-shell">${issueTagGroups}${customTagOptions ? `<div class="review-tag-legacy"><span>历史标签</span><div class="review-tag-options">${customTagOptions}</div></div>` : ""}<span id="customTagCreator" hidden></span></div>
+        <label class="review-exclude-toggle"><input id="reviewExcludeInput" type="checkbox" ${previous.is_excluded ? "checked" : ""} /><span><strong>是否应该排除</strong><small>不是模型需要解决的场景 case</small></span></label>
+      </section>
+      <section class="review-section model-error-section">
+        <div class="review-section-heading"><div><span class="review-section-kicker">MODEL ERROR</span><h3>模型判错</h3></div></div>
+        <label class="review-status-field"><span>复核状态</span><select id="reviewStatusInput"><option value="reviewed" ${reviewStatus === "reviewed" ? "selected" : ""}>已 Review</option><option value="pending" ${reviewStatus === "pending" ? "selected" : ""}>待补充</option><option value="needs_gt_review" ${reviewStatus === "needs_gt_review" ? "selected" : ""}>GT 需复核</option></select></label>
+        <label class="review-reason">
+          <span>模型为什么判错？</span>
+          <textarea id="annotationNote" rows="4" placeholder="简要说明模型漏掉的关键证据，例如 routing、绕行空间或时序。">${escapeHtml(previous.note || "")}</textarea>
+        </label>
+        <details class="evidence-dropdown review-dropdown">
+          <summary>缺失信息（多选）<span class="evidence-summary-count" id="evidenceSummaryCount">已选 ${chosenEvidence.size} 项</span></summary>
+          <div class="evidence-options" id="missingEvidenceOptions">${catalog.map((item) => evidenceOption(item, chosenEvidence.has(item.key))).join("")}${customEvidenceOptions}<div class="custom-evidence-create" id="customEvidenceCreator"><input id="newMissingEvidence" maxlength="48" placeholder="输入新的缺失信息" autocomplete="off" /><button class="button button-quiet" id="addMissingEvidenceButton" type="button">新建标签</button></div></div>
+        </details>
+        <div class="review-attachment-field">
+          <span>补充截图（可选）</span>
+          <div class="screenshot-paste-zone" id="screenshotPasteZone" tabindex="0" role="group" aria-label="粘贴补充截图">
+            <strong>粘贴截图</strong>
+            <small>点击后 Ctrl / ⌘ + V；最多 4 张。</small>
+            <button class="screenshot-browse-button" id="reviewScreenshotBrowse" type="button">选择图片</button>
+          </div>
+          <input class="hidden" id="reviewScreenshotInput" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+          <div class="pending-screenshot-list" id="pendingScreenshotList"></div>
         </div>
-        <input class="hidden" id="reviewScreenshotInput" type="file" accept="image/png,image/jpeg,image/webp" multiple />
-        <div class="pending-screenshot-list" id="pendingScreenshotList"></div>
-      </div>
+      </section>
       <label><span>复核人${authorLocked ? "（SSO）" : "（必填）"}</span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" required ${authorLocked ? "readonly" : ""} /></label>
       <button class="button button-primary full-width" type="submit">保存新的 review 版本</button>
     </form>
@@ -3633,6 +3687,7 @@ async function saveAnnotation(event) {
   const payload = {
     label: state.selectedAnnotationLabel,
     review_status: $("#reviewStatusInput").value,
+    is_excluded: Boolean($("#reviewExcludeInput")?.checked),
     tags: [...document.querySelectorAll('input[name="reviewTags"]:checked')].map(
       (input) => input.value
     ),

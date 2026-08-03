@@ -129,23 +129,40 @@ MISSING_EVIDENCE_CATALOG: tuple[dict[str, str], ...] = (
     {"key": "hazard_signal", "label": "双闪缺失", "hint": "未识别前方车辆双闪、临停或故障信号"},
 )
 
-REVIEW_TAG_CATALOG: tuple[dict[str, str], ...] = (
-    {"key": "queue", "label": "排队"},
-    {"key": "yielding", "label": "让行"},
-    {"key": "u_turn", "label": "掉头"},
-    {"key": "park_in", "label": "泊入"},
-    {"key": "park_out", "label": "泊出"},
-    {"key": "traffic_light", "label": "红绿灯"},
-    {"key": "manual_trigger", "label": "人工触发"},
-    {"key": "perception_fp_cleared", "label": "感知FP消失"},
-    {"key": "lead_vehicle_departed", "label": "前车驶离"},
-    {"key": "system_decision_change", "label": "主系统决策变化"},
-    {"key": "obstacle_not_avoided", "label": "未避障"},
-    {"key": "close_distance", "label": "距离近"},
-    {"key": "occlusion", "label": "大车遮挡"},
-    {"key": "right_turn", "label": "右转"},
-    {"key": "left_turn", "label": "左转"},
-    {"key": "temporary_stop", "label": "前车双闪"},
+REVIEW_TAG_CATALOG: tuple[dict[str, Any], ...] = (
+    # Issue description: what kind of scene was this?
+    {"key": "traffic_light", "label": "等灯", "section": "scene", "group": "false_trigger"},
+    {"key": "queue", "label": "排队", "section": "scene", "group": "false_trigger"},
+    {"key": "yielding", "label": "让行", "section": "scene", "group": "false_trigger"},
+    {"key": "u_turn", "label": "掉头", "section": "scene", "group": "false_trigger"},
+    {"key": "park_in", "label": "泊入", "section": "scene", "group": "false_trigger"},
+    {"key": "park_out", "label": "泊出", "section": "scene", "group": "false_trigger"},
+    {"key": "scene_false_other", "label": "其他", "section": "scene", "group": "false_trigger"},
+    {"key": "obstacle_not_avoided", "label": "未避障", "section": "scene", "group": "true_trigger"},
+    {"key": "close_distance", "label": "距离近", "section": "scene", "group": "true_trigger"},
+    {"key": "perception_fp", "label": "感知FP", "section": "scene", "group": "true_trigger"},
+    {"key": "scene_true_other", "label": "其他", "section": "scene", "group": "true_trigger"},
+    # Issue resolution: how could the vehicle leave the scene?
+    {"key": "egress_swag", "label": "SWAG", "section": "egress", "group": "ra"},
+    {"key": "egress_detour", "label": "左右绕行", "section": "egress", "group": "ra"},
+    {"key": "egress_waypoint", "label": "Waypoint", "section": "egress", "group": "ra"},
+    {"key": "egress_reverse", "label": "倒车", "section": "egress", "group": "ra"},
+    {"key": "egress_traffic_light", "label": "红绿灯通行", "section": "egress", "group": "ra"},
+    {"key": "egress_ra_other", "label": "其他", "section": "egress", "group": "ra"},
+    {"key": "lead_vehicle_departed", "label": "前车驶离", "section": "egress", "group": "no_assist"},
+    {"key": "system_decision_change", "label": "主系统决策变化", "section": "egress", "group": "no_assist"},
+    {"key": "perception_fp_change", "label": "感知FP变化", "section": "egress", "group": "no_assist"},
+    {"key": "egress_no_assist_other", "label": "其他", "section": "egress", "group": "no_assist"},
+    # Legacy values remain readable in Review history but are no longer offered
+    # as new Issue tags.  Keeping them in the contract avoids losing old data.
+    {"key": "manual_trigger", "label": "人工触发", "section": "legacy", "group": "legacy", "visible": False},
+    {"key": "perception_fp_cleared", "label": "感知FP消失", "section": "legacy", "group": "legacy", "visible": False},
+    {"key": "occlusion", "label": "大车遮挡", "section": "legacy", "group": "legacy", "visible": False},
+    {"key": "right_turn", "label": "右转", "section": "legacy", "group": "legacy", "visible": False},
+    {"key": "left_turn", "label": "左转", "section": "legacy", "group": "legacy", "visible": False},
+    {"key": "temporary_stop", "label": "前车双闪", "section": "legacy", "group": "legacy", "visible": False},
+    {"key": "vulnerable_road_user", "label": "摩自/行人", "section": "legacy", "group": "legacy", "visible": False},
+    {"key": "gt_boundary", "label": "GT 待复核", "section": "legacy", "group": "legacy", "visible": False},
 )
 REVIEW_TAG_KEYS = frozenset(item["key"] for item in REVIEW_TAG_CATALOG)
 REVIEW_TAG_ALIASES = {
@@ -158,10 +175,16 @@ REVIEW_TAG_ALIASES = {
     "泊出": "park_out",
     "人工触发": "manual_trigger",
     "感知FP消失": "perception_fp_cleared",
+    "感知FP": "perception_fp",
     "前车驶离": "lead_vehicle_departed",
     "主系统决策变化": "system_decision_change",
     "未避障": "obstacle_not_avoided",
     "距离近": "close_distance",
+    "红绿灯通行": "egress_traffic_light",
+    "左右绕行": "egress_detour",
+    "Waypoint": "egress_waypoint",
+    "倒车": "egress_reverse",
+    "感知FP变化": "perception_fp_change",
     "双闪临停": "temporary_stop",
     "前方大车遮挡": "occlusion",
     "大车遮挡": "occlusion",
@@ -177,8 +200,8 @@ REVIEW_TAG_ALIASES = {
     "遮挡": "occlusion",
     "摩自": "vulnerable_road_user",
     "行人": "vulnerable_road_user",
-    "SWAG": "swag",
-    "RA": "swag",
+    "SWAG": "egress_swag",
+    "RA": "egress_swag",
     "GT": "gt_boundary",
     "GT待复核": "gt_boundary",
 }
@@ -1068,8 +1091,8 @@ def _public_review_attachment(attachment: dict[str, Any]) -> dict[str, Any]:
 
 
 def _normalise_review_tags(values: list[Any]) -> list[str]:
-    if len(values) > 12:
-        raise _detail(400, "每条 review 最多选择 12 个 tags。")
+    if len(values) > 24:
+        raise _detail(400, "每条 review 最多选择 24 个 tags。")
     normalized: set[str] = set()
     for value in values:
         raw = str(value).strip()
@@ -1085,6 +1108,22 @@ def _normalise_review_tags(values: list[Any]) -> list[str]:
     return [item["key"] for item in REVIEW_TAG_CATALOG if item["key"] in normalized]
 
 
+def _normalise_review_excluded(value: Any) -> bool:
+    """Parse the explicit Issue-level exclusion flag without truthiness traps."""
+
+    if value is None or value is False or value == 0:
+        return False
+    if value is True or value == 1:
+        return True
+    if isinstance(value, str):
+        normalized = value.strip().casefold()
+        if normalized in {"", "0", "false", "no", "否", "不排除"}:
+            return False
+        if normalized in {"1", "true", "yes", "是", "排除"}:
+            return True
+    raise _detail(400, "is_excluded 必须是布尔值。")
+
+
 def _create_annotation_record(
     *,
     issue_id: str,
@@ -1094,6 +1133,7 @@ def _create_annotation_record(
 ) -> dict[str, Any]:
     label = _as_text(body.get("label"))
     review_status = _as_text(body.get("review_status") or "pending")
+    is_excluded = _normalise_review_excluded(body.get("is_excluded", False))
     tags = body.get("tags") or []
     missing_evidence = body.get("missing_evidence") or []
     if not isinstance(tags, list):
@@ -1107,6 +1147,7 @@ def _create_annotation_record(
             issue_id=issue_id,
             label=label,
             review_status=review_status,
+            is_excluded=is_excluded,
             tags=tags,
             missing_evidence=missing_evidence,
             note=_as_text(body.get("note")),

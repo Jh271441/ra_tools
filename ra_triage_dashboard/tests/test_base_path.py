@@ -70,7 +70,7 @@ class BasePathTest(unittest.TestCase):
         self.assertIn('content="/manual"', subpath_shell)
         self.assertIn('window.__RA_TRIAGE_BASE__ = activeBase', subpath_shell)
         self.assertIn('`${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`', subpath_shell)
-        self.assertIn('/static/app.js?v=manual-triage-10', subpath_shell)
+        self.assertIn('/static/app.js?v=manual-triage-14', subpath_shell)
 
 
 if __name__ == "__main__":
