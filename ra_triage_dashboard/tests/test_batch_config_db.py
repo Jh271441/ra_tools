@@ -70,6 +70,78 @@ class BatchConfigDatabaseTest(unittest.TestCase):
                     author=" ",
                 )
 
+    def test_annotation_delete_reconnects_history_and_removes_attachments(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "triage.sqlite3")
+            database.init()
+            database.upsert_issues(
+                [{"issue_id": "cn12345", "gt_label": "误触发"}],
+                source="test",
+                replace_gt=False,
+            )
+            first = database.create_annotation(
+                issue_id="cn12345",
+                label="误触发",
+                review_status="reviewed",
+                tags=[],
+                missing_evidence=[],
+                note="first",
+                author="jasper",
+            )
+            second = database.create_annotation(
+                issue_id="cn12345",
+                label="正确触发",
+                review_status="reviewed",
+                tags=[],
+                missing_evidence=[],
+                note="second",
+                author="jasper",
+                attachments=[
+                    {
+                        "id": "attachment-1",
+                        "original_name": "review.png",
+                        "stored_name": "stored-review.png",
+                        "media_type": "image/png",
+                        "size_bytes": 12,
+                        "width": 2,
+                        "height": 2,
+                        "sha256": "a" * 64,
+                    }
+                ],
+            )
+            third = database.create_annotation(
+                issue_id="cn12345",
+                label="无需协助",
+                review_status="reviewed",
+                tags=[],
+                missing_evidence=[],
+                note="third",
+                author="jasper",
+            )
+            revision = database.change_revision()
+
+            deleted = database.delete_annotation(
+                issue_id="cn12345",
+                annotation_id=second["id"],
+            )
+
+            self.assertEqual(deleted["id"], second["id"])
+            self.assertEqual(deleted["attachments"][0]["id"], "attachment-1")
+            case = database.get_case("cn12345")
+            self.assertEqual(
+                [item["id"] for item in case["annotations"]],
+                [third["id"], first["id"]],
+            )
+            self.assertEqual(case["annotations"][0]["supersedes_id"], first["id"])
+            self.assertIsNone(database.get_review_attachment("attachment-1"))
+            self.assertGreater(database.change_revision(), revision)
+            self.assertIsNone(
+                database.delete_annotation(
+                    issue_id="cn12345",
+                    annotation_id=second["id"],
+                )
+            )
+
     def test_queued_batch_survives_restart_and_remains_fifo(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "triage.sqlite3"

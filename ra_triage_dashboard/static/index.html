@@ -4,10 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="ra-triage-base" content="{{RA_TRIAGE_BASE_PATH}}" />
-    <title>RA Triage Workbench</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='%2309b8d4'/><text x='32' y='41' text-anchor='middle' font-size='28' font-family='sans-serif' font-weight='700' fill='%2309141d'>RA</text></svg>" />
+    <title>Manual Triage Workbench</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='17' fill='%230d1119'/><g fill='%2324d3ef'><circle cx='16' cy='18' r='4'/><circle cx='16' cy='32' r='4'/><circle cx='16' cy='46' r='4'/></g><path d='M20 18h7l7 14m-14 0h14m-14 14h7l7-14' fill='none' stroke='%2388a4b4' stroke-width='4' stroke-linecap='round'/><path d='m35 34 6 6 11-14' fill='none' stroke='%23edf2fb' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/></svg>" />
+    <style>
+      html { background: #0b0e14; color-scheme: dark; }
+      html.ra-styles-loading body { visibility: hidden; }
+    </style>
     <script>
       (() => {
+        const loadingClass = "ra-styles-loading";
+        document.documentElement.classList.add(loadingClass);
         const configuredBase = document.querySelector('meta[name="ra-triage-base"]')?.content || "";
         const activeBase = configuredBase && (
           window.location.pathname === configuredBase ||
@@ -16,7 +22,16 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=base-path-2`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-6`;
+        let stylesSettled = false;
+        const revealShell = () => {
+          if (stylesSettled) return;
+          stylesSettled = true;
+          document.documentElement.classList.remove(loadingClass);
+        };
+        styles.addEventListener("load", revealShell, { once: true });
+        styles.addEventListener("error", revealShell, { once: true });
+        window.setTimeout(revealShell, 5000);
         document.head.appendChild(styles);
       })();
     </script>
@@ -25,42 +40,50 @@
     <div class="app-shell" id="appShell">
       <aside class="app-sidebar" id="appSidebar">
           <div class="sidebar-brand">
-            <button class="brand-mark" id="sidebarBrandToggle" type="button" aria-controls="appSidebar" aria-expanded="true" title="折叠工具栏">RA</button>
-            <div class="sidebar-copy">
-              <strong>RA Triage</strong>
-              <span class="ui-lang-zh">工作台</span>
-              <span class="ui-lang-en">Review Workbench</span>
-            </div>
+            <button class="brand-mark" id="sidebarBrandToggle" type="button" aria-controls="appSidebar" aria-expanded="true" title="折叠工具栏" aria-label="折叠工具栏">
+              <svg class="brand-triage-icon" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                <circle class="icon-emphasis" cx="4.5" cy="5" r="1.5"/>
+                <circle class="icon-emphasis" cx="4.5" cy="12" r="1.5"/>
+                <circle class="icon-emphasis" cx="4.5" cy="19" r="1.5"/>
+                <path d="M6 5h3l3 7M6 12h6M6 19h3l3-7"/>
+                <path class="icon-emphasis" d="m13 13 2.5 2.5L21 9"/>
+              </svg>
+            </button>
+            <a class="sidebar-copy sidebar-home" data-page-target="review" data-app-path="/review" href="/review" title="返回问题图库" aria-label="Manual Triage 首页">
+              <strong>Manual Triage</strong>
+              <span class="ui-lang-zh">RA 复核工作台</span>
+              <span class="ui-lang-en">RA Review Workbench</span>
+            </a>
           </div>
 
         <nav class="sidebar-nav" aria-label="工作台工具">
           <a class="sidebar-item active" id="reviewNavButton" data-page-target="review" data-app-path="/review" href="/review" title="判错复核">
             <span class="sidebar-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><path d="M8 4h8M9 3v3m6-3v3M7 5H5.8A1.8 1.8 0 0 0 4 6.8v11.4A1.8 1.8 0 0 0 5.8 20h12.4a1.8 1.8 0 0 0 1.8-1.8V6.8A1.8 1.8 0 0 0 18.2 5H17M8 11l2.2 2.2L16 8.5M8 17h8"/></svg>
+              <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="3.5" y="4.5" width="17" height="16" rx="3"/><path d="M8 4h8M9 3v3m6-3v3M7 5H5.8A1.8 1.8 0 0 0 4 6.8v11.4A1.8 1.8 0 0 0 5.8 20h12.4a1.8 1.8 0 0 0 1.8-1.8V6.8A1.8 1.8 0 0 0 18.2 5H17"/><path class="icon-emphasis" d="m8 12 2.1 2.1L16.4 8.8"/><path d="M8 17h8"/></svg>
             </span>
             <span class="sidebar-label"><strong class="ui-lang-zh">判错复核</strong><strong class="ui-lang-en">Failure review</strong></span>
           </a>
           <a class="sidebar-item" id="reviewAnalysisNavButton" data-page-target="analysis" data-app-path="/review-analysis" href="/review-analysis" title="Review 原因聚类">
             <span class="sidebar-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><circle cx="7" cy="7" r="2.5"/><circle cx="17" cy="7" r="2.5"/><circle cx="12" cy="17" r="2.5"/><path d="m9 8.5 2 5.8m4-5.8-2 5.8M9.5 7h5"/></svg>
+              <svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M7 3.5 19.8 6v12L12 21 4.2 18V6z"/><path d="m8.8 8.3 2 5.8m4.4-5.8-2 5.8M9.6 7h4.8"/><circle cx="7" cy="7" r="2.5"/><circle cx="17" cy="7" r="2.5"/><circle class="icon-emphasis" cx="12" cy="17" r="2.5"/></svg>
             </span>
             <span class="sidebar-label"><strong class="ui-lang-zh">原因聚类</strong><strong class="ui-lang-en">Review analysis</strong></span>
           </a>
           <a class="sidebar-item" id="openRunManagerButton" data-page-target="runs" data-app-path="/runs" href="/runs" title="模型 Runs">
             <span class="sidebar-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><path d="M5 19V9m7 10V5m7 14v-7M3 19h18"/><path d="m5 7 7-4 7 6"/></svg>
+              <svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="m4 8 8-5 8 5v11H4z"/><path d="M5 19V9m7 10V5m7 14v-7M3 19h18"/><path class="icon-emphasis" d="m5 7 7-4 7 6"/><path d="M8.5 15v-3m7 3V9"/></svg>
             </span>
             <span class="sidebar-label"><strong class="ui-lang-zh">模型结果</strong><strong class="ui-lang-en">Model Runs</strong></span>
           </a>
           <a class="sidebar-item" id="openBatchPredictionButton" data-page-target="prediction" data-app-path="/batch-prediction" href="/batch-prediction" title="Batch 预测">
             <span class="sidebar-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><path d="M5 6.5A1.5 1.5 0 0 1 6.5 5h4A1.5 1.5 0 0 1 12 6.5v4a1.5 1.5 0 0 1-1.5 1.5h-4A1.5 1.5 0 0 1 5 10.5zM15.5 6.5h3M17 5v3M15.5 16h3M17 14.5v3M6.5 16h3M8 14.5v3"/><path d="m13.5 11 5 3-5 3z"/></svg>
+              <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="3.5" y="3.5" width="9" height="9" rx="2.5"/><path d="M5 6.5A1.5 1.5 0 0 1 6.5 5h4A1.5 1.5 0 0 1 12 6.5v4a1.5 1.5 0 0 1-1.5 1.5h-4A1.5 1.5 0 0 1 5 10.5zM15.5 6.5h3M17 5v3M15.5 17h3M17 15.5v3M6.5 17h3M8 15.5v3"/><path class="icon-emphasis" d="m13.5 11 5 3-5 3z"/></svg>
             </span>
             <span class="sidebar-label"><strong class="ui-lang-zh">批次预测</strong><strong class="ui-lang-en">Batch prediction</strong></span>
           </a>
           <a class="sidebar-item" id="systemStatusNavButton" data-page-target="status" data-app-path="/system-status" href="/system-status" title="系统状态">
             <span class="sidebar-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><path d="M4 18h16M6 15V6.8A1.8 1.8 0 0 1 7.8 5h8.4A1.8 1.8 0 0 1 18 6.8V15"/><path d="M8 11h2l1.2-3 2 6 1.2-3H16"/></svg>
+              <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="4.5" y="4" width="15" height="13" rx="3"/><path d="M4 18h16M6 15V6.8A1.8 1.8 0 0 1 7.8 5h8.4A1.8 1.8 0 0 1 18 6.8V15"/><path class="icon-emphasis" d="M8 11h2l1.2-3 2 6 1.2-3H16"/></svg>
             </span>
             <span class="sidebar-label"><strong class="ui-lang-zh">系统状态</strong><strong class="ui-lang-en">System status</strong></span>
           </a>
@@ -70,8 +93,9 @@
           <div class="sidebar-user" id="sidebarUser" title="当前会话">
             <span class="user-avatar" id="userAvatar" aria-hidden="true">?</span>
             <span class="sidebar-label">
-              <strong id="sessionUserName">SSO 未接入</strong>
-              <small id="sessionUserSource">直接 IP 会话</small>
+              <strong id="sessionUserName">身份识别中…</strong>
+              <small id="sessionUserSource">页面可先使用</small>
+              <a class="sidebar-session-action" id="sessionLogoutLink" href="#" hidden>退出</a>
             </span>
           </div>
           <button class="sidebar-collapse" id="sidebarToggle" type="button" aria-expanded="true" title="折叠工具栏">
@@ -85,7 +109,7 @@
         <header class="topbar">
           <div class="brand">
             <div>
-              <h1 id="pageTitle">RA Triage Workbench</h1>
+              <h1 id="pageTitle">Manual Triage Workbench</h1>
             </div>
           </div>
           <div class="header-metrics" aria-label="概览">
@@ -655,7 +679,6 @@
 
           <section class="app-page tool-page system-status-page hidden" id="systemStatusPage" data-page="status">
             <div class="compact-page-lead system-status-lead">
-              <p><span class="ui-lang-zh">只读查看服务、数据库、备份、容量与外部依赖；不会在此执行运维操作。</span><span class="ui-lang-en">Read-only service, database, backup, capacity, and dependency health.</span></p>
               <div class="system-status-actions">
                 <span id="systemStatusUpdatedAt">—</span>
                 <button class="button button-quiet" id="refreshSystemStatusButton" type="button"><span class="ui-lang-zh">刷新状态</span><span class="ui-lang-en">Refresh status</span></button>
@@ -783,13 +806,47 @@
       </div>
     </dialog>
 
+    <dialog class="dialog ra-event-dialog" id="raEventDialog">
+      <div class="dialog-card">
+        <div class="dialog-heading">
+          <div>
+            <h2>RA Event</h2>
+            <div class="ra-event-dialog-meta">
+              <span id="raEventDialogMeta"></span>
+              <a class="ra-event-trail-link" id="raEventTrailLink" href="#" target="_blank" rel="noreferrer" hidden>打开 Trail Issue ↗</a>
+            </div>
+          </div>
+          <button class="icon-button" type="button" data-close="raEventDialog" aria-label="关闭">×</button>
+        </div>
+        <div class="ra-event-search-row">
+          <input id="raEventSearchInput" type="search" placeholder="Please Enter Event Name." autocomplete="off" aria-label="搜索 RA Event" />
+          <button class="button button-quiet ra-event-search-button" id="raEventSearchButton" type="button" aria-label="搜索" title="搜索">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.25"></circle><path d="m12.5 12.5 4 4"></path></svg>
+          </button>
+        </div>
+        <div class="ra-event-table-wrap">
+          <table class="ra-event-table">
+            <thead>
+              <tr><th>event</th><th>value</th><th>timestamp</th><th>Formatted timestamp</th></tr>
+            </thead>
+            <tbody id="raEventTableBody"></tbody>
+          </table>
+          <div class="ra-event-empty" id="raEventEmpty" hidden>没有匹配的 RA Event。</div>
+        </div>
+        <div class="dialog-actions ra-event-dialog-actions">
+          <button class="button button-quiet" type="button" data-close="raEventDialog">取消</button>
+          <button class="button button-primary" type="button" data-close="raEventDialog">确定</button>
+        </div>
+      </div>
+    </dialog>
+
     <div class="toast hidden" id="toast"></div>
     <script>
       document.querySelectorAll("[data-app-path]").forEach((link) => {
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=base-path-2`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-6`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

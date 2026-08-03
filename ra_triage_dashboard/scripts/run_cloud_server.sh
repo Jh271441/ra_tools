@@ -39,6 +39,15 @@ export DASHBOARD_PORT="${DASHBOARD_PORT:-8785}"
 # Root/direct-IP mode remains the default. For the Kylin rule that strips
 # /dashboard before proxying, start with DASHBOARD_BASE_PATH=/dashboard.
 export DASHBOARD_BASE_PATH="${DASHBOARD_BASE_PATH:-}"
+# Access policy defaults to development for backward compatibility: direct-IP
+# requests may write and any displayed LCA username remains unverified. To make
+# direct IP a read-only preview, configure all five values before starting:
+#   DASHBOARD_DEPLOYMENT_MODE=production
+#   DASHBOARD_TRUST_PROXY_IDENTITY_HEADERS=true
+#   DASHBOARD_IDENTITY_HEADER=<Kylin-injected-user-header>
+#   DASHBOARD_TRUSTED_INGRESS_TOKEN_FILE=<0600-file>
+#   DASHBOARD_SSO_WRITE_USERS=alice,bob  # optional; empty permits every verified SSO user
+export DASHBOARD_DEPLOYMENT_MODE="${DASHBOARD_DEPLOYMENT_MODE:-development}"
 export RA_AUTO_TRIAGE_ROOT="/volume/home/workspace/ra_auto_triage"
 export ARES_CAPTURE_MANIFEST="/volume/home/workspace/ra_auto_triage/bags/ares_capture_bev/manifest.jsonl"
 export CAMERA_CACHE_ROOT="/volume/home/workspace/ra_auto_triage/bags/camera"
@@ -50,6 +59,9 @@ export DASHBOARD_TRAIL_VIEW_ID="${DASHBOARD_TRAIL_VIEW_ID:-2410}"
 export DASHBOARD_SYNC_TRAIL_ON_START="${DASHBOARD_SYNC_TRAIL_ON_START:-true}"
 export DASHBOARD_VOYAGER_ISSUE_BASE_URL="${DASHBOARD_VOYAGER_ISSUE_BASE_URL:-https://voyager.intra.xiaojukeji.com/static/management/#/issue}"
 export DASHBOARD_VOYAGER_ISSUE_VIEW_ID="${DASHBOARD_VOYAGER_ISSUE_VIEW_ID:-2410}"
+export DASHBOARD_TRAIL_DETAIL_METADATA_ENABLED="${DASHBOARD_TRAIL_DETAIL_METADATA_ENABLED:-true}"
+export DASHBOARD_TRAIL_DETAIL_METADATA_CACHE_SECONDS="${DASHBOARD_TRAIL_DETAIL_METADATA_CACHE_SECONDS:-300}"
+export DASHBOARD_RA_RECORDING_BASE_URL="${DASHBOARD_RA_RECORDING_BASE_URL:-https://s3-gzpu-inter.didistatic.com/voyager-fe/operation-platform/ra/dashboard/index.html#/tasks}"
 export DASHBOARD_BATCH_PREDICTION_ENABLED="${DASHBOARD_BATCH_PREDICTION_ENABLED:-true}"
 export DASHBOARD_AUTOTRIAGE_PUSH_ENABLED="${DASHBOARD_AUTOTRIAGE_PUSH_ENABLED:-false}"
 export DASHBOARD_BATCH_MAX_ISSUES="${DASHBOARD_BATCH_MAX_ISSUES:-50}"

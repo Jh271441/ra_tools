@@ -20,6 +20,7 @@ class BasePathTest(unittest.TestCase):
         self.assertEqual(normalize_base_path(""), "")
         self.assertEqual(normalize_base_path("/"), "")
         self.assertEqual(normalize_base_path("/dashboard/"), "/dashboard")
+        self.assertEqual(normalize_base_path("/manual/"), "/manual")
         self.assertEqual(normalize_base_path("/tools/ra_triage"), "/tools/ra_triage")
 
     def test_rejects_unsafe_or_ambiguous_values(self) -> None:
@@ -42,6 +43,10 @@ class BasePathTest(unittest.TestCase):
             "/dashboard/api/status",
         )
         self.assertEqual(
+            with_base_path("/manual", "/api/status"),
+            "/manual/api/status",
+        )
+        self.assertEqual(
             with_base_path("/dashboard", "/dashboard/api/status"),
             "/dashboard/api/status",
         )
@@ -54,14 +59,18 @@ class BasePathTest(unittest.TestCase):
         root_shell = render_index_html(INDEX_HTML, "")
         self.assertIn('content=""', root_shell)
         self.assertIn('styles.href = `${activeBase}/static/styles.css', root_shell)
+        self.assertIn('html.ra-styles-loading body { visibility: hidden; }', root_shell)
+        self.assertIn('styles.addEventListener("load", revealShell', root_shell)
+        self.assertIn('styles.addEventListener("error", revealShell', root_shell)
+        self.assertIn('window.setTimeout(revealShell, 5000)', root_shell)
         self.assertIn('data-app-path="/review"', root_shell)
         self.assertNotIn("{{RA_TRIAGE_BASE_PATH}}", root_shell)
 
-        subpath_shell = render_index_html(INDEX_HTML, "/dashboard/")
-        self.assertIn('content="/dashboard"', subpath_shell)
+        subpath_shell = render_index_html(INDEX_HTML, "/manual/")
+        self.assertIn('content="/manual"', subpath_shell)
         self.assertIn('window.__RA_TRIAGE_BASE__ = activeBase', subpath_shell)
         self.assertIn('`${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`', subpath_shell)
-        self.assertIn('/static/app.js?v=base-path-2', subpath_shell)
+        self.assertIn('/static/app.js?v=manual-triage-6', subpath_shell)
 
 
 if __name__ == "__main__":

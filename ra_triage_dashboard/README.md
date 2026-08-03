@@ -5,7 +5,7 @@
 ## 当前 MVP（v1.7）
 
 - 默认工作集是 `trail_label_baseline_20260729.xlsx` 中 `dataset=0508` 的 **1071 条**；GT 只来自该快照，不因 Trail 查询或模型导入而改变。
-- 首页是服务端筛选的紧凑 Issue 缩略图队列（宽屏五列、随可用宽度降列），默认每页 20 条并可切换 10 / 20 / 50 / 100；页码和单页数量写入 URL，接口单页最多返回 100 条。BEV 缩略图按源文件版本生成 640×360 缓存并懒加载，不把 1071 张原图一次送进浏览器。点击 Issue 后才进入 URL 可恢复的详情态，加载大图、媒体、模型输出和人工 Review；详情支持返回列表及跨页上一/下一 Issue，并在具备 trip 与事件时间戳时提供同域 Ares Studio ±10 秒跳转链接。Issue 详情第二行通过紧凑下拉框切换 `BEV 图片 / Camera 图片 / Ares Studio 视频`，相邻的同尺寸按钮展开完整预览，有视频时默认展示视频；Gallery 卡片的“媒体预览”和详情媒体共用一个近乎占满浏览器视口的三模式弹窗，首页仅在点击预览时按需读取该 Issue 的完整资产。详情页媒体快捷键采用页面级监听：焦点不在输入、选择、按钮或链接时，`B/C/V`、空格、左右方向键和 `F` 无需聚焦播放器即可生效；打开弹窗后由弹窗接管。三种媒体都默认适配可视范围，并支持 1:1 原始像素、按钮/键盘/Ctrl/⌘+滚轮缩放、放大后指针拖拽平移以及全屏；进入或退出全屏不会重置缩放比例。BEV 视频使用 Workbench 自有的紧凑控制条，支持播放/暂停、0.5× / 1× / 1.5× / 2×、回到 t0、进度拖动、可配置 0.1 / 0.5 / 1 / 5 秒左右跳转和键盘控制；默认左右跳转 1 秒，元数据帧步长作为“1 帧”选项，切换到图片时暂停但保留播放位置。
+- 首页是服务端筛选的紧凑 Issue 缩略图队列（宽屏五列、随可用宽度降列），默认每页 20 条并可切换 10 / 20 / 50 / 100；页码和单页数量写入 URL，接口单页最多返回 100 条。BEV 缩略图按源文件版本生成 640×360 缓存并懒加载，不把 1071 张原图一次送进浏览器。点击 Issue 后才进入 URL 可恢复的详情态，加载大图、媒体、模型输出和人工 Review；详情支持返回列表及跨页上一/下一 Issue，并在具备 trip 与事件时间戳时提供同域 Ares Studio ±10 秒跳转链接。Issue 详情第二行通过紧凑下拉框切换 `BEV 图片 / Camera 图片 / Ares Studio 视频`，相邻的同尺寸按钮展开完整预览，默认优先展示轻量 BEV 图片，视频按需切换；Gallery 卡片的“媒体预览”和详情媒体共用一个近乎占满浏览器视口的三模式弹窗，首页仅在点击预览时按需读取该 Issue 的完整资产。详情页媒体快捷键采用页面级监听：焦点不在输入、选择、按钮或链接时，`B/C/V`、空格、左右方向键和 `F` 无需聚焦播放器即可生效；打开弹窗后由弹窗接管。三种媒体都默认适配可视范围，并支持 1:1 原始像素、按钮/键盘/Ctrl/⌘+滚轮缩放、放大后指针拖拽平移以及全屏；进入或退出全屏不会重置缩放比例。BEV 视频使用 Workbench 自有的紧凑控制条，支持播放/暂停、0.5× / 1× / 1.5× / 2×、回到 t0、进度拖动、可配置 0.1 / 0.5 / 1 / 5 秒左右跳转和键盘控制；默认左右跳转 1 秒，元数据帧步长作为“1 帧”选项，切换到图片时暂停但保留播放位置。
 - 首页的“模型判断结果”是下拉筛选：选择模型 Run 后可切换 `全部`、红色 `MISMATCH`、绿色 `MATCH` 和灰色 `NONE（未预测）`；卡片右上角同步显示状态。旧 `failure=1` / `failure_only=true` 仍兼容为 `MISMATCH`，新 Review URL 使用 `comparison=all|mismatch|match|none`。
 - 左侧工具栏只接受用户手动折叠并记住偏好，不再根据分辨率、DPR 或窗口宽度自动改变。判错复核、原因聚类、模型 Runs / 导入、Batch 预测、系统状态分别使用 `/review`、`/review-analysis`、`/runs`、`/batch-prediction`、`/system-status` 独立路由，支持硬刷新和浏览器前进/后退。系统状态页只读展示应用运行时间与版本、数据库连接/持久卷、最近备份/计划、容量、1071 基线、媒体与模型网关，不提供重启或写入操作。`/import` 会 307 跳转到 `/runs?import=...`，`/inference` 仅作为旧链接兼容入口。
 - Trail 操作分成「检查字段」和「创建 Run」两步，收在 Runs 页的默认折叠区；两步都不写回 Trail，快照只创建或复用本地不可变 Run，且不会修改团队默认 Run。启动时若启用 Trail 检查，也只执行第一步。
@@ -13,6 +13,7 @@
 - 人工标注为追加式历史，最新一条为当前标注，不覆盖旧 review；「模型为什么判错」是主输入，「模型缺失信息」收进紧凑的结构化多选下拉，并自动汇总为 routing、绕行空间、灯态、双闪、时序等错误聚类。每个新版本必须记录复核人及其可信状态，右侧 Review 历史默认展开，并把状态、复核人和时间紧凑展示在同一行；详情左右外框在桌面端随较高一侧等高。每个版本可粘贴或选择最多 4 张补充截图，场景 Tags 为可选的规范化多选项。
 - 页面每约 1.8 秒只读检查一次共享数据 revision；只有 Issue、Review、Run、预测或 Batch 状态确实变化时才刷新当前页面。多人同时 Review 时，正在编辑的表单和待上传截图不会被后台刷新覆盖，而会在保存后合并最新数据。API 响应包含 `Server-Timing` 与 `X-Request-Duration-Ms`，超过 500 ms 的 API 请求写入服务慢请求日志。
 - 原因聚类页只消费每个 Issue 最新一版 Review：稳定的 `missing_evidence[]` 是主聚类，Review 自由文本通过可解释关键词 v1 形成多标签主题，未填写和有文本但未命中主题的记录会单独计数。顶部可按场景 Tags 筛选；检索只匹配最新人工 Review 的原因、复核人、标签、状态与缺失信息，不检索模型说明或 Issue 场景文本。选择 Model Run 后，“模型判断结果”可按红色 `MISMATCH`、绿色 `MATCH`、灰色 `NONE（未预测）` 或全部切片，混淆矩阵与 Case 明细使用同一状态；明细行以 Issue ID 直接链接 Voyager，模型标签点击后按需加载并复用评测 Run 历史弹窗，不再显示冗余的空人工标签。当前筛选结果可导出 UTF-8 CSV 或 XLSX；筛选、聚类和分页都写入 `/review-analysis` URL，可硬刷新并用浏览器前进/后退恢复。
+- Issue 详情先渲染本地模型、媒体和 Review；随后在 Voyager / Ares Studio 链接之后后台按需补齐 Trail 2410 视图中的只读 `ra_id` 对应的 `RA 录屏`，以及有 `ra_event` 时的 `RA Event` 入口。Trail 请求的延迟、超时或不可用不会阻塞 Issue 首屏，入口会在元数据返回后增量出现。`RA Event` 会直接打开与 Trail 一致的事件表弹窗，支持按事件名/值筛选，并保留 Trail Issue 外链；录屏 URL 由服务端使用 canonical `ra_id` 构造，浏览器不根据时间戳猜任务 ID；Trail 不可用或字段缺失时两个入口自动隐藏。该元数据查询只允许 `ra_id`、`ra_event`、`car_id`、`trip_id` 和 RA 起止时间等字段，独立于模型结果同步，不创建 Run、不写回 Trail。
 - 首页可把当前单个 Issue 或不超过 50 条的完整筛选结果预填到 Batch 页面；若前端只加载到部分结果或超过上限，会明确阻止而不是静默截断。Batch 页直接选择服务端 Provider，模型列表隐藏仅用于服务端解析的 `Auto` 别名，并保留 Profile 已验证项和网关当前在线的 Qwen3 生成模型，排除 Embedding；实验模型有明确标记且创建任务前需再次确认。默认 Camera 输入与 `stuck_triage_auto_opt_api` 对齐为 -19s 至 +19s 的单前视 9 帧，Ares Animation 可切换且只使用服务端固定的 API 默认 manifest/时间点，浏览器不能提交路径或 Ares Capture 配置。
 - 每个 Batch 固化请求人、模型验证层级、完整 Prompt 正文与 SHA-256、Prompt 基线版本/是否编辑、Camera 帧偏移、RA Events / RA-SWAG Options 和输入 Profile；任务历史可按人员、状态、模型、Prompt 精确版本（mode + SHA）和输入筛选，已下线模型与旧 Prompt 也保留在筛选项中。批次名默认按 `当前用户_i_YYYYMMDD_HHmmss` 生成，Issue IDs 使用紧凑单行输入但仍支持逗号/空格分隔。Prompt 只允许当前三分类构建器提供的变量，必须保留三个标准标签，并拒绝会输出「无法判断」等第四类的旧模板；Camera 偏移严格递增、包含 0、最多 18 帧。worker 会重新校验 Prompt/Input 快照并重建配置 Hash，预测与后续发布必须一致。
 - 网关 API key 只从服务用户持有的 `0600` 普通文件读取，经一次性 stdin 交给预测 worker，读取后立即从请求对象移除；不接受浏览器或父进程环境变量中的 key，也不会把 key 交给 AutoTriage publish worker。Batch 页只展示服务端登记的 Provider 列表，Kylin 与 TokenService 都可在已登记对应 key 文件时选择；模型目录、Provider、请求地址和凭证会随 Batch 固化但不会把 key 写入浏览器或 SQLite。TokenService 的在线 Qwen3 模型默认按实验模型处理，创建前需要确认；自定义 Provider 必须先在 cloud_server 服务端登记。轨迹摘要与 Ares Capture 在 Batch 输入中强制关闭，Ares Animation 只能选择固定的服务端 API 默认策略。
@@ -80,25 +81,58 @@ Review 截图绑定到单条追加式 annotation：前端粘贴后先本地预�
 
 场景 Tags 可以不选。新页面只提供固定 key：`queue`、`yielding`、`u_turn`、`park_in`、`park_out`、`traffic_light`、`manual_trigger`、`perception_fp_cleared`、`lead_vehicle_departed`、`system_decision_change`、`obstacle_not_avoided`、`close_distance`；常见旧中文值仍会按兼容规则保存并按原样展示。缺失信息默认预选 `routing_direction`，Review 内可新建 `custom:<文本>` 作为本条记录的结构化补充字段。
 
-## 用户身份与后续 SSO
+## 用户身份、部署模式与 Kylin SSO
 
-当前直接 IP 部署没有可信的 SSO ingress，后端默认不信任任何客户端身份 header。页面会尝试从访问者本机 LCA `/lcainfo` 响应中**只提取** `LocalUserAccount`，用作页面显示和默认标注人；不会上传、返回或保存 LCA 响应中的 token。该用户名在 UI 中明确标记为「未验证」，不能用于权限判断，也不会成为 AutoTriage writer。
+`DASHBOARD_DEPLOYMENT_MODE` 是裸 IP 行为的单一切换开关：
+
+- `development`（默认）：保持历史兼容，裸 IP 可读写。页面可从访问者本机 LCA `/lcainfo` **只提取** `LocalUserAccount` 作为显示名和默认标注人；不会上传、返回或保存 LCA token。该身份明确标为「未验证」，不能用于管理权限或 AutoTriage writer。
+- `production`：所有写接口都要求服务端验证通过的 Kylin ticket（推荐），或「可信 ingress marker + 代理注入 SSO 用户」；裸 IP 没有有效会话时自动成为只读预览。
+
+默认主流程复用 Kylin 写入当前域的 `_kylin_ticket` 与 `_kylin_username`。后端用 `app_id=2103794` 调用公司 `check_user_ticket`，并要求返回用户名与 cookie 用户名严格一致；原始 ticket 不写日志，短缓存只使用 ticket 的 SHA-256。校验只发生在 `/api/session` 与写操作，不阻塞图库、Issue 详情或媒体请求。登录跳转由 Kylin ingress 负责，`/auth/logout` 清理本站 cookie 后跳转到公司 SSO logout。
+
+```bash
+export DASHBOARD_KYLIN_SSO_ENABLED=true
+export DASHBOARD_KYLIN_SSO_APP_ID=2103794
+export DASHBOARD_KYLIN_SSO_CHECK_URL=https://mis.diditaxi.com.cn/auth/sso/api/check_user_ticket
+export DASHBOARD_KYLIN_SSO_LOGOUT_URL='https://mis.diditaxi.com.cn/auth/ldap/logout?app_id=2103794'
+export DASHBOARD_KYLIN_SSO_TIMEOUT_SECONDS=1.5
+export DASHBOARD_KYLIN_SSO_CACHE_SECONDS=300
+export DASHBOARD_DEPLOYMENT_MODE=production
+```
+
+不要使用 `Host`、`X-Forwarded-For`、LCA 用户名或未验证的 `_kylin_username` 授权。若改用 Header 模式，直连 8785 的客户端能伪造 Header，因此 Kylin 必须覆盖用户名 Header，并同时注入仅网关与服务端知道的随机 ingress marker。marker 保存在 cloud_server 的 0600 文件中，不能写入代码、环境脚本、数据库或日志。
+
+生产模式下的写请求还必须携带页面自动添加的 `X-RA-Triage-Request` 同源标记。该非简单请求头会让跨站脚本先触发 CORS 预检，并阻止普通跨站表单借用已登录 SSO 会话发起写操作；Kylin 应原样转发该 header，但不能用它替代 SSO 身份或 ingress marker。
 
 AutoTriage 推送默认关闭（`DASHBOARD_AUTOTRIAGE_PUSH_ENABLED=false`），即使打开开关也必须通过后端验证的 SSO 身份；自定义请求头和浏览器提交姓名只用于请求完整性/展示，不能授权生产写入。套好内网域名、清除客户端伪造 header 并由 ingress 注入可信身份后，再显式打开该开关。Batch 预测本身不依赖此开关。
 
-当前数据和 Review 截图都属于看板团队共享内容：任何能访问直接 IP 的用户都可以读取，不能在截图中粘贴超出该协作范围的敏感信息。正式多人使用必须通过 HTTPS + SSO ingress 限制访问，并在 ingress 再配置请求体大小、速率和审计策略。
+当前数据和 Review 截图都属于看板团队共享内容：任何能访问域名或直接 IP 的用户仍可读取，不能在截图中粘贴超出该协作范围的敏感信息。正式多人使用应通过 HTTPS + SSO ingress 限制域名访问，并在 ingress 配置请求体大小、速率和审计策略；若还要求裸 IP 完全不可读，需要另加网络 ACL，应用的 production flag 只保证裸 IP 不可写。
 
-直接 IP / 本机 LCA 下填写的创建人、复核人或请求人可以作为协作线索保存，但会同时记录为未验证来源；不能据此授权「设为团队默认」等共享操作。结果文件中的实验作者同样只是声明信息。当前后端只有可信代理 SSO 用户可以设置团队默认 Run。
+直接 IP / 本机 LCA 下填写的创建人、复核人或请求人可以作为协作线索保存，但会同时记录为未验证来源；不能据此授权「设为团队默认」等共享操作。结果文件中的实验作者同样只是声明信息。当前后端只有服务端验证通过的 SSO 用户可以设置团队默认 Run。
 
-套内网域名并接入 SSO 代理后，应由 ingress 先清除客户端同名 header，再注入唯一身份 header，并确保服务只能从该代理访问。完成这些网络约束后才启用：
+Header + marker 是 Kylin ticket 校验不可用时的备选方式，配置如下：
 
 ```bash
+umask 077
+openssl rand -hex 32 > /volume/home/workspace/ra_triage_dashboard_data/kylin_ingress_token
+chmod 600 /volume/home/workspace/ra_triage_dashboard_data/kylin_ingress_token
+
+export DASHBOARD_DEPLOYMENT_MODE=production
 export DASHBOARD_TRUST_PROXY_IDENTITY_HEADERS=true
 export DASHBOARD_IDENTITY_HEADER=X-SSO-User
+export DASHBOARD_TRUSTED_INGRESS_HEADER=X-RA-Triage-Ingress
+export DASHBOARD_TRUSTED_INGRESS_TOKEN_FILE=/volume/home/workspace/ra_triage_dashboard_data/kylin_ingress_token
+export DASHBOARD_SSO_WRITE_USERS=alice,bob
 export DASHBOARD_TEAM_DEFAULT_MANAGERS=alice,bob
 ```
 
-可信代理身份会覆盖前端提交的 Run `created_by`、标注 `author` 和任务 `requested_by`，并记录身份来源及 `verified=true`。团队默认 Run 还需要用户名出现在 `DASHBOARD_TEAM_DEFAULT_MANAGERS`；空名单表示无人可修改，不能把“已登录”直接当成管理员权限。在完成上述约束前保持代理身份开关为默认 `false`；Runs、复核和任务列表仍展示所有人的数据，只是不会把未验证姓名当作权限依据。同名记录同时含可信与未验证来源时，筛选项显示为「混合身份」，不会把整组误标为 SSO。
+Kylin 必须把 SSO 用户写入 `X-SSO-User`，把该文件中的值写入 `X-RA-Triage-Ingress`，且两个 header 都必须覆盖而非追加客户端值；不要把 marker 返回给浏览器。若实际用户名 header 或变量名不同，只改 `DASHBOARD_IDENTITY_HEADER`，代码无需修改。生产模式会在启动时校验 marker 文件为当前服务用户所有、普通文件、权限 0600、内容至少 32 字符；配置不安全时拒绝启动。
+
+`DASHBOARD_SSO_WRITE_USERS` 是应用级写入白名单：空值表示任意已验证 SSO 用户可写，非空时只有名单中的用户可写，其他已登录用户仍是只读。Kylin Portal 的「SSO 白名单」属于网关访问策略，可能是允许名单，也可能是免登录/降级名单，必须根据平台说明确认后再开，不能把它直接等同于本应用写白名单。建议 Kylin 负责“谁能访问”，应用名单负责“谁能写”。
+
+验证通过的 Kylin ticket 或可信代理身份会覆盖前端提交的 Run `created_by`、标注 `author` 和任务 `requested_by`，并记录身份来源及 `verified=true`。团队默认 Run 还需要用户名出现在 `DASHBOARD_TEAM_DEFAULT_MANAGERS`；空名单表示无人可修改，不能把“已登录”直接当成管理员权限。同名记录同时含可信与未验证来源时，筛选项显示为「混合身份」，不会把整组误标为 SSO。
+
+切换步骤：先保持 `development`，通过域名登录后用 `/manual/api/session` 验证 `source=kylin_ticket`、`verified=true`，再把 cloud_server 切到 `production`。如果 Kylin cookie 没有转发到后端，再启用 Header + marker 备选方案。回退只需恢复 `DASHBOARD_DEPLOYMENT_MODE=development` 并重启；这会恢复裸 IP 可写，因此只用于明确的开发/故障排查窗口。
 
 ## 结果导入契约
 
@@ -140,6 +174,12 @@ Trail 只消费 `ra_stuck_auto_result` 和 `ra_stuck_auto_result_info`。可通�
 
 只有全部 baseline issue 分片完整返回时才允许创建快照；任一分片失败、返回不完整、结果字段不可见或没有三分类标准标签，都不会创建 Run。查询完整不代表预测必须全量：模型字段可只有部分 issue 有有效预测，页面会明确显示实际覆盖数；`nan`、`<NA>` 或未知字符串不会被误计为可用标签。Trail 检查和快照均不写回 Trail、不修改 GT 或人工复核，也不改变团队默认 Run。如果 view 没有展示字段，页面会明确提示并保留 CSV/JSON/XLSX 上传入口。
 
+Issue 详情的外部 RA 链接可通过以下只读配置控制：
+
+- `DASHBOARD_TRAIL_DETAIL_METADATA_ENABLED=true`：是否在详情渲染后后台查询当前 Issue 的 Trail 元数据；不会阻塞 Issue 详情或模型 Run 同步，关闭后仅隐藏可选 RA 入口。
+- `DASHBOARD_TRAIL_DETAIL_METADATA_CACHE_SECONDS=300`：单 Issue 元数据缓存时长。
+- `DASHBOARD_RA_RECORDING_BASE_URL`：RA 录屏任务 URL 前缀，默认是 `https://s3-gzpu-inter.didistatic.com/voyager-fe/operation-platform/ra/dashboard/index.html#/tasks`；服务端在末尾拼接 URL 编码后的 `ra_id` 和 `?returnUrl=`。
+
 ## cloud_server 启动
 
 ```bash
@@ -155,7 +195,7 @@ bash scripts/run_cloud_server.sh
 默认 `DASHBOARD_BASE_PATH` 为空，根路径和直连 IP 行为保持不变。域名模式使用：
 
 ```bash
-export DASHBOARD_BASE_PATH=/dashboard
+export DASHBOARD_BASE_PATH=/manual
 bash scripts/run_cloud_server.sh
 ```
 
@@ -163,15 +203,15 @@ bash scripts/run_cloud_server.sh
 
 ```text
 域名: auto-triage.intra.xiaojukeji.com
-浏览器路径: /dashboard/*
+浏览器路径: /manual/*
 上游: 172.16.145.60:8785/*
-规则: 必须 strip /dashboard 前缀后再转发
-健康检查: 网关侧 GET /dashboard/health；上游侧 GET /health
+规则: 必须 strip /manual 前缀后再转发
+健康检查: 网关侧 GET /manual/health；上游侧 GET /health
 ```
 
-后端路由仍是 `/`、`/static`、`/api`、`/review` 等根路径；浏览器位于 `/dashboard` 时，Shell、前端导航/API 请求和返回的同源资源 URL 使用 `/dashboard/...`。同一个配置了 `/dashboard` 的进程若从裸 IP 根路径访问，前端会自动回退到无前缀路径，因此直连预览不受影响。不要把域名根路径的 `/static` 或 `/api` 指向本看板，否则会占用 AutoTriage 主站路径。正式独立域名仍推荐挂根路径并保持 `DASHBOARD_BASE_PATH` 为空。
+后端路由仍是 `/`、`/static`、`/api`、`/review` 等根路径；浏览器位于 `/manual` 时，Shell、前端导航/API 请求和返回的同源资源 URL 使用 `/manual/...`。同一个配置了 `/manual` 的进程若从裸 IP 根路径访问，前端会自动回退到无前缀路径，因此直连预览不受影响。不要把域名根路径的 `/static` 或 `/api` 指向本看板，否则会占用 AutoTriage 主站路径。正式独立域名仍推荐挂根路径并保持 `DASHBOARD_BASE_PATH` 为空。
 
-配置只允许空值或 `/dashboard`、`/tools/triage` 这类路径段；`/` 等价于空值，尾斜杠会去除，全 URL、空格、`..` 和重复斜杠会拒绝启动。前端只在浏览器当前路径位于已配置前缀下时启用该前缀；否则按根路径运行。
+配置只允许空值或 `/manual`、`/tools/triage` 这类路径段；`/` 等价于空值，尾斜杠会去除，全 URL、空格、`..` 和重复斜杠会拒绝启动。前端只在浏览器当前路径位于已配置前缀下时启用该前缀；否则按根路径运行。
 
 页面路由可直接访问：
 

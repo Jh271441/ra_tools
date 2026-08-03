@@ -71,7 +71,7 @@ const PAGE_ROUTES = {
   review: {
     path: "/review",
     titleZh: "判错复核",
-    titleEn: "RA Triage Workbench",
+    titleEn: "Manual Triage Review",
   },
   analysis: {
     path: "/review-analysis",
@@ -147,6 +147,7 @@ const state = {
   pollingBatchId: "",
   pollTimer: null,
   changeRevision: null,
+  changePollEpoch: 0,
   changePollTimer: null,
   changePollInFlight: false,
   reviewFormDirty: false,
@@ -158,19 +159,25 @@ const state = {
     drag: null,
     snapshot: null,
     requestSeq: 0,
+    imageRequestSeq: 0,
   },
   detailMedia: {
     issueId: "",
     kind: "",
     indexes: { bev: 0, camera: 0 },
+    loadSeq: 0,
   },
+  raEventDialog: { issueId: "", events: [], trailUrl: "" },
   sourcePreview: { runId: "", page: 1, pageSize: 100, pageCount: 1 },
   session: {
     username: "",
     source: "anonymous",
+    identity_pending: true,
     authenticated: false,
     verified: false,
     can_manage_team_default: false,
+    can_write: true,
+    read_only: false,
   },
   sidebarCollapsed: false,
   uiLanguage: "zh",
@@ -195,7 +202,7 @@ function renderPageChrome() {
   const route = PAGE_ROUTES[state.activePage] || PAGE_ROUTES.review;
   const title = state.uiLanguage === "en" ? route.titleEn : route.titleZh;
   $("#pageTitle").textContent = title;
-  document.title = `${title} · RA Triage`;
+  document.title = `${title} · Manual Triage`;
 }
 
 function applyUiLanguage(language, { persist = true } = {}) {
@@ -745,10 +752,24 @@ function normalizeApiPayloadUrls(value) {
 }
 
 async function api(path, options = {}) {
+  const method = String(options.method || "GET").toUpperCase();
+  const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+  if (
+    state.session?.read_only &&
+    isMutation
+  ) {
+    throw new Error(
+      uiText(
+        "当前入口为只读预览；请通过获准的企业 SSO 域名访问。",
+        "This endpoint is read-only; use the approved enterprise SSO domain."
+      )
+    );
+  }
   const response = await fetch(withBase(path), {
     ...options,
     headers: {
       ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+      ...(isMutation ? { "X-RA-Triage-Request": "browser-v1" } : {}),
       ...(options.headers || {}),
     },
   });
@@ -766,6 +787,15 @@ function showToast(message, isError = false) {
   if (isError) toast.classList.add("error");
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => toast.classList.add("hidden"), 4600);
+}
+
+function acknowledgeLocalChange(payload) {
+  const revision = Number(payload?.change_revision);
+  if (Number.isFinite(revision)) state.changeRevision = revision;
+  // A poll that started before this mutation can still return the old
+  // revision.  Invalidate that response so it cannot reselect the case.
+  state.changePollEpoch += 1;
+  state.deferredDetailRefresh = false;
 }
 
 async function refreshChangedData() {
@@ -824,9 +854,11 @@ async function pollChangeRevision() {
   if (state.changePollInFlight) return scheduleChangePoll();
   if (document.hidden) return scheduleChangePoll(3000);
   state.changePollInFlight = true;
+  const pollEpoch = state.changePollEpoch;
   let delay = 1800;
   try {
     const data = await api("/api/change-revision");
+    if (pollEpoch !== state.changePollEpoch) return;
     const revision = Number(data.revision || 0);
     delay = Math.max(1000, Number(data.poll_after_ms || 1800));
     if (state.changeRevision === null) {
@@ -903,18 +935,37 @@ async function browserLcaUsername() {
 
 function renderSession() {
   const username = state.session.username;
-  $("#sessionUserName").textContent = username || uiText("SSO 未接入", "SSO unavailable");
+  const identityPending = Boolean(state.session.identity_pending);
+  $("#sessionUserName").textContent = username || (identityPending
+    ? uiText("身份识别中…", "Identifying user…")
+    : uiText("用户未识别", "User not identified"));
   $("#userAvatar").textContent = username ? username.slice(0, 1).toUpperCase() : "?";
-  $("#sessionUserSource").textContent = state.session.verified
+  $("#sessionUserSource").textContent = state.session.read_only
+    ? uiText("只读预览", "Read-only preview")
+    : state.session.verified
     ? uiText("企业 SSO · 已验证", "Enterprise SSO · verified")
-    : username
+    : identityPending
+      ? uiText("页面可先使用", "Page ready")
+      : username
       ? uiText("本机 LCA · 未验证", "Local LCA · unverified")
-      : uiText("直接 IP 会话", "Direct IP session");
+      : uiText("当前会话", "Current session");
   $("#sidebarUser").title = state.session.verified
     ? `可信代理认证：${username}`
     : username
       ? `本机 LCA 用户：${username}（仅作显示与默认标注人）`
       : "当前没有可用的用户名";
+  const logoutLink = $("#sessionLogoutLink");
+  if (logoutLink) {
+    const logoutUrl = String(state.session.logout_url || "");
+    logoutLink.hidden = !logoutUrl || identityPending;
+    logoutLink.href = logoutUrl || "#";
+    logoutLink.textContent = state.session.verified
+      ? uiText("退出", "Sign out")
+      : uiText("重新登录", "Sign in again");
+  }
+  document.documentElement.dataset.accessMode = state.session.read_only
+    ? "read-only"
+    : "write";
   const batchActor = $("#batchActorSummary");
   if (batchActor) {
     batchActor.textContent = state.session.verified
@@ -938,17 +989,36 @@ async function loadSession() {
   const serverSession = await api("/api/session");
   if (serverSession.authenticated && validDisplayName(serverSession.username)) {
     state.session = serverSession;
-  } else {
-    const username = serverSession.browser_lca_fallback ? await browserLcaUsername() : "";
+    renderSession();
+    return;
+  }
+  state.session = {
+    username: "",
+    source: "anonymous",
+    identity_pending: Boolean(serverSession.browser_lca_fallback),
+    authenticated: false,
+    verified: false,
+    can_manage_team_default: false,
+    can_write: serverSession.can_write !== false,
+    read_only: Boolean(serverSession.read_only),
+  };
+  renderSession();
+  if (!serverSession.browser_lca_fallback) return;
+  // Local LCA is only a display-name fallback.  It can take up to 1.5s and
+  // must never hold the Review gallery or a deep-linked Issue behind it.
+  void browserLcaUsername().then((username) => {
+    if (state.session.authenticated || state.session.verified) return;
     state.session = {
+      ...state.session,
       username,
       source: username ? "browser_lca_unverified" : "anonymous",
-      authenticated: false,
-      verified: false,
-      can_manage_team_default: false,
+      identity_pending: false,
     };
-  }
-  renderSession();
+    renderSession();
+  }).catch(() => {
+    state.session = { ...state.session, identity_pending: false };
+    renderSession();
+  });
 }
 
 function renderConfig() {
@@ -1191,6 +1261,7 @@ function renderSystemStatus() {
       chip: gatewayReady ? uiText("网关就绪", "Gateway ready") : uiText("网关未配置", "Gateway unavailable"),
       tone: gatewayReady ? "ok" : "warn",
       rows: [
+        [uiText("运行模式", "Deployment mode"), data.application?.deployment_mode === "production" ? uiText("生产", "Production") : uiText("开发", "Development")],
         [uiText("模型网关", "Model gateway"), gateway.configured ? uiText("服务端凭证已配置", "Server credential configured") : uiText("未配置", "Not configured")],
         [uiText("Batch 预测", "Batch prediction"), data.batch_prediction_enabled ? uiText("已启用", "Enabled") : uiText("已关闭", "Disabled")],
         [uiText("AutoTriage 推送", "AutoTriage publish"), data.autotriage_push_enabled ? uiText("已启用", "Enabled") : uiText("关闭（安全默认）", "Off (safe default)")],
@@ -1668,6 +1739,52 @@ function issueCard(item) {
     </article>`;
 }
 
+function caseGallerySignature(items) {
+  return JSON.stringify({
+    selectedId: state.selectedId,
+    items: (items || []).map((item) => ({
+      issue_id: item.issue_id,
+      title: item.title || item.scenario || "",
+      gt_label: item.gt_label || "",
+      prediction: item.prediction
+        ? {
+            label: item.prediction.label || "",
+            model_run_id: item.prediction.model_run_id || "",
+          }
+        : null,
+      annotation: item.annotation
+        ? {
+            label: item.annotation.label || "",
+            author: item.annotation.author || "",
+            author_verified: Boolean(item.annotation.author_verified),
+            missing_evidence: item.annotation.missing_evidence || [],
+          }
+        : null,
+      thumbnail: item.thumbnail?.url || "",
+      voyager_issue_url: item.voyager_issue_url || "",
+    })),
+  });
+}
+
+function reuseGalleryThumbnails(list, previousThumbnails) {
+  if (!list || !previousThumbnails?.size) return;
+  list.querySelectorAll("article[data-issue-id]").forEach((card) => {
+    const nextImage = card.querySelector("img[data-case-thumbnail]");
+    const previous = previousThumbnails.get(card.dataset.issueId);
+    if (
+      !nextImage ||
+      !previous ||
+      previous.image === nextImage ||
+      previous.url !== nextImage.src ||
+      !previous.image.complete ||
+      previous.image.naturalWidth <= 0
+    ) {
+      return;
+    }
+    nextImage.replaceWith(previous.image);
+  });
+}
+
 function totalCasePages() {
   return Math.max(1, Math.ceil(Number(state.caseTotal || 0) / state.casePageSize));
 }
@@ -1752,6 +1869,16 @@ function renderCases(data) {
   renderCasePagination();
   renderCaseNavigation();
   const list = $("#issueList");
+  const signature = caseGallerySignature(state.cases);
+  if (list.dataset.gallerySignature === signature) {
+    return;
+  }
+  const previousThumbnails = new Map();
+  list.querySelectorAll("article[data-issue-id]").forEach((card) => {
+    const image = card.querySelector("img[data-case-thumbnail]");
+    if (image) previousThumbnails.set(card.dataset.issueId, { image, url: image.src });
+  });
+  list.dataset.gallerySignature = signature;
   if (!state.cases.length) {
     const comparisonStatus = state.reviewComparisonStatus;
     const comparisonMeta = REVIEW_COMPARISON_META[comparisonStatus];
@@ -1762,6 +1889,7 @@ function renderCases(data) {
     return;
   }
   list.innerHTML = state.cases.map(issueCard).join("");
+  reuseGalleryThumbnails(list, previousThumbnails);
   list.querySelectorAll("[data-open-issue]").forEach((button) => {
     button.addEventListener("click", () => selectCase(button.dataset.openIssue));
   });
@@ -2325,7 +2453,7 @@ function heroFrameIndex(frames) {
   return Math.floor(frames.length / 2);
 }
 
-function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {
+function videoPlayerMarkup(video, { zoomable = true, compact = false, posterUrl = "" } = {}) {
   const durationSec = Math.max(0, Number(video?.duration_ms || 0) / 1000);
   const startOffsetSec = Number(video?.start_offset_sec ?? 0);
   const eventTimeSec = Number(video?.event_time_sec ?? Math.max(0, -startOffsetSec));
@@ -2334,7 +2462,8 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {
     .sort((left, right) => left - right)
     .map((step) => `<option value="${escapeHtml(step)}" ${step === 1 ? "selected" : ""}>${escapeHtml(step)}s${step === frameStepSec ? "（1 帧）" : ""}</option>`)
     .join("");
-  const videoMarkup = `<video src="${escapeHtml(video.url)}" preload="metadata" playsinline draggable="false" aria-label="Ares Studio BEV 视频"></video>`;
+  const posterAttribute = posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : "";
+  const videoMarkup = `<video src="${escapeHtml(video.url)}"${posterAttribute} preload="metadata" playsinline draggable="false" aria-label="Ares Studio BEV 视频"></video>`;
   const mediaMarkup = zoomable
     ? `<div class="media-viewport media-video-viewport" data-video-viewport><div class="media-canvas media-video-canvas" data-video-canvas>${videoMarkup}</div></div>`
     : `<div class="hero-media-button hero-media-video">${videoMarkup}</div>`;
@@ -2476,6 +2605,7 @@ function ensureDetailMediaState(caseData) {
         bev: heroFrameIndex(caseData?.assets?.frames || []),
         camera: heroFrameIndex(caseData?.camera?.frames || []),
       },
+      loadSeq: 0,
     };
   }
   if (!available[state.detailMedia.kind]) state.detailMedia.kind = preferredMediaKind(caseData);
@@ -2499,9 +2629,13 @@ function heroMediaSection(caseData) {
   if (kind !== "video") state.detailMedia.indexes[kind] = index;
   const frame = activeFrames[index];
   const content = kind === "video" && video?.url
-    ? videoPlayerMarkup(video, { zoomable: false, compact: true })
+    ? videoPlayerMarkup(video, {
+        zoomable: false,
+        compact: true,
+        posterUrl: frames[heroFrameIndex(frames)]?.url || "",
+      })
     : `<button type="button" class="hero-media-button" data-detail-media-expand aria-label="展开${kind === "camera" ? " Camera" : " BEV"}媒体预览">
-        <img src="${escapeHtml(frame?.url || "")}" alt="${kind === "camera" ? "Camera" : "Ares Capture BEV"} ${escapeHtml(frameLabel(frame || {}))}" />
+        <img class="detail-media-image" src="${escapeHtml(frame?.url || "")}" alt="${kind === "camera" ? "Camera" : "Ares Capture BEV"} ${escapeHtml(frameLabel(frame || {}))}" />
         <span class="hero-media-overlay">${escapeHtml(frameLabel(frame || {}))} · 点击展开</span>
       </button>`;
   const frameControls = kind === "video" ? "" : `
@@ -2516,6 +2650,101 @@ function heroMediaSection(caseData) {
       ${frameControls}
       <p class="detail-media-help">B / C / V 切换媒体 · ${kind === "video" ? "空格播放/暂停 · ←/→ 跳转" : "←/→ 切帧"} · F 展开查看</p>
     </section>`;
+}
+
+function preloadDetailImage(caseData, kind, index, root, onReady) {
+  const issueId = String(caseData?.issue_id || "");
+  const frames = kind === "camera" ? caseData?.camera?.frames || [] : caseData?.assets?.frames || [];
+  const frame = frames[index];
+  const url = frame?.url;
+  if (!issueId || !url || !root) return;
+  const requestSeq = Number(state.detailMedia.loadSeq || 0) + 1;
+  state.detailMedia.loadSeq = requestSeq;
+  root.setAttribute("aria-busy", "true");
+  root.querySelectorAll("#detailMediaPreviousButton, #detailMediaNextButton").forEach((control) => {
+    control.disabled = true;
+  });
+  const image = new Image();
+  image.decoding = "async";
+  let settled = false;
+  const isCurrent = () => (
+    requestSeq === state.detailMedia.loadSeq &&
+    root.isConnected &&
+    state.detailMedia.issueId === issueId &&
+    state.selectedId === issueId &&
+    String(state.selectedCase?.issue_id || "") === issueId
+  );
+  const finish = (loaded) => {
+    if (settled) return;
+    settled = true;
+    if (!isCurrent()) return;
+    root.removeAttribute("aria-busy");
+    root.querySelectorAll("#detailMediaPreviousButton, #detailMediaNextButton").forEach((control) => {
+      control.disabled = false;
+    });
+    if (loaded) onReady(image);
+    else showToast("媒体图片加载失败，已保留当前画面。", true);
+  };
+  image.onload = () => {
+    let decoded;
+    try {
+      decoded = typeof image.decode === "function" ? image.decode() : Promise.resolve();
+    } catch {
+      decoded = Promise.resolve();
+    }
+    Promise.resolve(decoded).catch(() => {}).then(() => finish(true));
+  };
+  image.onerror = () => finish(false);
+  image.src = url;
+}
+
+function applyDetailImageFrame(root, caseData, kind, index, loadedImage = null) {
+  const frames = kind === "camera" ? caseData?.camera?.frames || [] : caseData?.assets?.frames || [];
+  const frame = frames[index];
+  const image = root?.querySelector(".detail-media-image");
+  const button = root?.querySelector("[data-detail-media-expand]");
+  const overlay = root?.querySelector(".hero-media-overlay");
+  if (!frame?.url || !image || !button || !overlay) return false;
+  const nextImage = loadedImage || image;
+  nextImage.className = "detail-media-image";
+  nextImage.alt = `${kind === "camera" ? "Camera" : "Ares Capture BEV"} ${frameLabel(frame)}`;
+  nextImage.decoding = "async";
+  nextImage.draggable = false;
+  nextImage.style.transition = "none";
+  nextImage.style.animation = "none";
+  nextImage.style.opacity = "1";
+  if (nextImage !== image) {
+    // Keep the current frame above the already-decoded next frame until the
+    // browser has had two rendering opportunities.  One requestAnimationFrame
+    // callback runs before paint and is not a guarantee that a large image has
+    // reached the compositor yet.
+    nextImage.style.position = "absolute";
+    nextImage.style.inset = "0";
+    nextImage.style.zIndex = "0";
+    nextImage.style.visibility = "visible";
+    image.style.position = "absolute";
+    image.style.inset = "0";
+    image.style.zIndex = "1";
+    overlay.style.zIndex = "2";
+    image.before(nextImage);
+    const commit = () => {
+      if (!nextImage.isConnected) return;
+      nextImage.style.zIndex = "1";
+      image.remove();
+    };
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(commit));
+    } else commit();
+  } else {
+    nextImage.src = frame.url;
+  }
+  button.setAttribute("aria-label", `展开${kind === "camera" ? " Camera" : " BEV"}媒体预览`);
+  overlay.textContent = `${frameLabel(frame)} · 点击展开`;
+  const position = root.querySelector("#detailMediaPosition");
+  if (position) position.textContent = `${index + 1} / ${frames.length}`;
+  const kindSelect = root.querySelector("#detailMediaKindSelect");
+  if (kindSelect) kindSelect.value = kind;
+  return true;
 }
 
 function detailMediaCommandMarkup(caseData) {
@@ -2544,16 +2773,33 @@ function bindDetailMedia(caseData) {
       : Boolean((kind === "camera" ? caseData?.camera?.frames : caseData?.assets?.frames)?.length);
     if (!available || state.detailMedia.kind === kind) return;
     root.querySelector("video")?.pause();
-    state.detailMedia.kind = kind;
-    render();
+    if (kind === "video") {
+      state.detailMedia.loadSeq += 1;
+      state.detailMedia.kind = kind;
+      render();
+      return;
+    }
+    const frames = kind === "camera" ? caseData?.camera?.frames || [] : caseData?.assets?.frames || [];
+    const index = Math.max(0, Math.min(
+      Number(state.detailMedia.indexes[kind] || 0),
+      Math.max(frames.length - 1, 0)
+    ));
+    preloadDetailImage(caseData, kind, index, root, (loadedImage) => {
+      state.detailMedia.kind = kind;
+      state.detailMedia.indexes[kind] = index;
+      if (!applyDetailImageFrame(root, caseData, kind, index, loadedImage)) render();
+    });
   };
   const move = (delta) => {
     const kind = state.detailMedia.kind;
     if (kind === "video") return;
     const frames = kind === "camera" ? caseData?.camera?.frames || [] : caseData?.assets?.frames || [];
     if (!frames.length) return;
-    state.detailMedia.indexes[kind] = (state.detailMedia.indexes[kind] + delta + frames.length) % frames.length;
-    render();
+    const nextIndex = (Number(state.detailMedia.indexes[kind] || 0) + delta + frames.length) % frames.length;
+    preloadDetailImage(caseData, kind, nextIndex, root, (loadedImage) => {
+      state.detailMedia.indexes[kind] = nextIndex;
+      if (!applyDetailImageFrame(root, caseData, kind, nextIndex, loadedImage)) render();
+    });
   };
   const expand = () => openMedia(
     state.detailMedia.kind,
@@ -2622,27 +2868,164 @@ function openHistoryDialog(kind, caseData) {
   $("#historyDialogContent").innerHTML = isModel
     ? predictionCards(caseData)
     : annotationHistory(annotations);
+  if (!isModel) bindAnnotationHistory($("#historyDialogContent"), caseData);
   openDialog("historyDialog");
+}
+
+function formatRaEventTimestamp(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return "—";
+  const date = new Date(numeric);
+  return Number.isNaN(date.getTime())
+    ? "—"
+    : date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function renderRaEventRows(events, query = "") {
+  const normalizedQuery = String(query || "").trim().toLowerCase();
+  const rows = (Array.isArray(events) ? events : []).filter((item) => {
+    if (!normalizedQuery) return true;
+    return [item?.event, item?.value]
+      .map((value) => String(value ?? "").toLowerCase())
+      .some((value) => value.includes(normalizedQuery));
+  });
+  const body = $("#raEventTableBody");
+  if (body) {
+    body.innerHTML = rows
+      .map((item) => {
+        const timestamp = item?.timestamp;
+        return `<tr>
+          <td>${escapeHtml(item?.event || "—")}</td>
+          <td>${escapeHtml(item?.value ?? "—")}</td>
+          <td class="ra-event-timestamp">${escapeHtml(timestamp ?? "—")}</td>
+          <td>${escapeHtml(formatRaEventTimestamp(timestamp))}</td>
+        </tr>`;
+      })
+      .join("");
+  }
+  const empty = $("#raEventEmpty");
+  if (empty) empty.hidden = rows.length > 0;
+  return rows.length;
+}
+
+function openRaEventDialog(caseData) {
+  if (!caseData) return;
+  const externalLinks = caseData.external_links || {};
+  const events = Array.isArray(externalLinks.ra_events) ? externalLinks.ra_events : [];
+  state.raEventDialog = {
+    issueId: String(caseData.issue_id || ""),
+    events,
+    trailUrl: safeUrl(externalLinks.ra_event_url),
+  };
+  const input = $("#raEventSearchInput");
+  if (input) input.value = "";
+  const meta = $("#raEventDialogMeta");
+  if (meta) meta.textContent = `${events.length} 条 · ${caseData.issue_id || "当前 Issue"}`;
+  const trailLink = $("#raEventTrailLink");
+  if (trailLink) {
+    trailLink.hidden = !state.raEventDialog.trailUrl;
+    trailLink.href = state.raEventDialog.trailUrl || "#";
+  }
+  renderRaEventRows(events);
+  openDialog("raEventDialog");
+}
+
+function detailExternalLinksMarkup(caseData) {
+  const issueUrl = safeUrl(caseData?.voyager_issue_url || caseData?.trail_url);
+  const aresUrl = aresStudioUrl(caseData, issueUrl);
+  const externalLinks = caseData?.external_links || {};
+  const raRecordingUrl = safeUrl(externalLinks.ra_recording_url);
+  const raEventUrl = safeUrl(externalLinks.ra_event_url);
+  const raEvents = Array.isArray(externalLinks.ra_events) ? externalLinks.ra_events : [];
+  const aresLinkMarkup = aresUrl
+    ? "<a class=\"detail-id detail-id-link detail-ares-link\" href=\"" + escapeHtml(aresUrl) + "\" target=\"_blank\" rel=\"noreferrer\" title=\"在 Ares Studio 中打开事件前后各 10 秒\">Ares Studio ↗</a>"
+    : "";
+  const raRecordingLinkMarkup = raRecordingUrl
+    ? "<a class=\"detail-id detail-id-link detail-external-link\" href=\"" + escapeHtml(raRecordingUrl) + "\" target=\"_blank\" rel=\"noreferrer\" title=\"打开 RA 录屏" + (externalLinks.ra_task_id ? "：" + escapeHtml(externalLinks.ra_task_id) : "") + "\">RA 录屏 ↗</a>"
+    : "";
+  const raEventLinkMarkup = raEvents.length
+    ? "<button class=\"detail-id detail-id-link detail-external-link detail-inline-button\" type=\"button\" data-open-ra-event title=\"查看 RA Event（" + raEvents.length + " 条）\">RA Event · " + raEvents.length + "</button>"
+    : raEventUrl
+      ? "<a class=\"detail-id detail-id-link detail-external-link\" href=\"" + escapeHtml(raEventUrl) + "\" target=\"_blank\" rel=\"noreferrer\" title=\"在 Trail Issue 中查看 RA Event（" + Number(externalLinks.ra_event_count || 0) + " 条）\">RA Event ↗</a>"
+      : "";
+  const pending = caseData?.trail_metadata_status === "pending" && !raRecordingUrl && !raEventUrl;
+  const pendingMarkup = pending
+    ? '<span class="detail-external-status" data-trail-metadata-pending>Trail 信息加载中…</span>'
+    : "";
+  return aresLinkMarkup + raRecordingLinkMarkup + raEventLinkMarkup + pendingMarkup;
+}
+
+function bindDetailExternalLinks(caseData) {
+  const root = $("#detailExternalLinks");
+  root?.querySelector("[data-open-ra-event]")?.addEventListener("click", () => {
+    openRaEventDialog(caseData);
+  });
+}
+
+function renderDetailExternalLinks(caseData) {
+  const root = $("#detailExternalLinks");
+  if (!root) return;
+  root.innerHTML = detailExternalLinksMarkup(caseData);
+  bindDetailExternalLinks(caseData);
+}
+
+async function loadTrailDetailMetadata(issueId, requestSeq) {
+  try {
+    const result = await api(
+      "/api/cases/" + encodeURIComponent(issueId) + "/trail-metadata"
+    );
+    if (
+      requestSeq !== state.caseRequestSeq ||
+      state.selectedId !== issueId ||
+      !state.selectedCase
+    ) {
+      return;
+    }
+    state.selectedCase.external_links = result.external_links || {};
+    state.selectedCase.trail_metadata_status = result.status || "unavailable";
+    renderDetailExternalLinks(state.selectedCase);
+  } catch {
+    if (
+      requestSeq !== state.caseRequestSeq ||
+      state.selectedId !== issueId ||
+      !state.selectedCase
+    ) {
+      return;
+    }
+    state.selectedCase.trail_metadata_status = "unavailable";
+    renderDetailExternalLinks(state.selectedCase);
+  }
+}
+
+function scheduleTrailDetailMetadata(issueId, requestSeq) {
+  const start = () => {
+    if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId) {
+      return;
+    }
+    void loadTrailDetailMetadata(issueId, requestSeq);
+  };
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(start, { timeout: 1500 });
+  } else {
+    window.setTimeout(start, 180);
+  }
 }
 
 function renderDetail(caseData) {
   const primary = (caseData.predictions || []).find((item) => item.model_run_id === state.selectedRunId) || caseData.predictions?.[0];
   const issueUrl = safeUrl(caseData.voyager_issue_url || caseData.trail_url);
-  const aresUrl = aresStudioUrl(caseData, issueUrl);
   const issueId = escapeHtml(caseData.issue_id);
   const issueIdMarkup = issueUrl
     ? `<a class="detail-id detail-id-link" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" title="打开 Voyager Issue">${issueId}</a>`
     : `<span class="detail-id">${issueId}</span>`;
-  const aresLinkMarkup = aresUrl
-    ? `<a class="detail-id detail-id-link detail-ares-link" href="${escapeHtml(aresUrl)}" target="_blank" rel="noreferrer" title="在 Ares Studio 中打开事件前后各 10 秒">Ares Studio ↗</a>`
-    : "";
   ensureDetailMediaState(caseData);
   const modelHistoryButton = `<button class="history-inline-button" type="button" data-open-history="model">评测 Run 历史 · ${(caseData.predictions || []).length} 条</button>`;
   $("#detailPane").innerHTML = `
     <div class="detail-header">
       <div class="detail-title-row">
         <div class="detail-title-group">
-          <div class="detail-title"><h2><span class="ui-lang-zh">问题详情</span><span class="ui-lang-en">Issue Details</span></h2>${issueIdMarkup}${aresLinkMarkup}</div>
+          <div class="detail-title"><h2><span class="ui-lang-zh">问题详情</span><span class="ui-lang-en">Issue Details</span></h2>${issueIdMarkup}<span id="detailExternalLinks" class="detail-external-links">${detailExternalLinksMarkup(caseData)}</span></div>
         </div>
         <div class="detail-navigation">
           <div class="case-detail-pager">
@@ -2678,6 +3061,7 @@ function renderDetail(caseData) {
   $("#detailPane").querySelector("[data-open-history='model']")?.addEventListener("click", () => {
     openHistoryDialog("model", caseData);
   });
+  bindDetailExternalLinks(caseData);
   $("#detailPane").querySelector("#backToGalleryButton")?.addEventListener("click", returnToReviewGallery);
   $("#detailPane").querySelector("#previousIssueButton")?.addEventListener("click", () => {
     navigateAdjacentCase(-1).catch((error) => showToast(error.message, true));
@@ -2697,7 +3081,7 @@ function annotationHistory(annotations) {
         <div class="history-head">
           ${labelBadge(annotation.label, annotation.review_status === "needs_gt_review" ? "GT 待复核" : "已记录")}
           <span class="history-reviewer" title="${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}` : "复核人：历史记录未填写")}">${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO" : " · 未验证"}` : "复核人：未记录")}</span>
-          <span class="history-time">${formatTime(annotation.created_at)}</span>
+          <span class="history-actions"><span class="history-time">${formatTime(annotation.created_at)}</span><button class="history-delete-button" type="button" data-delete-annotation="${escapeHtml(annotation.id)}" title="删除这条 Review 版本" aria-label="删除 ${escapeHtml(formatTime(annotation.created_at))} 的 Review 版本"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h12M8 3h4l1 2H7zM6 6l.7 11h6.6L14 6M8.5 9v5m3-5v5"/></svg></button></span>
         </div>
         ${annotation.missing_evidence?.length ? `<div class="tags">${annotation.missing_evidence.map((key) => `<span class="tag evidence-tag">${escapeHtml(evidenceLabel(key))}</span>`).join("")}</div>` : ""}
         ${annotation.tags?.length ? `<div class="tags">${annotation.tags.map((tag) => `<span class="tag">${escapeHtml(tagLabel(tag))}</span>`).join("")}</div>` : ""}
@@ -2705,6 +3089,159 @@ function annotationHistory(annotations) {
         ${annotation.note ? `<p>${escapeHtml(annotation.note)}</p>` : ""}
       </article>`)
     .join("");
+}
+
+function bindAnnotationHistory(root, caseData) {
+  if (!root || !caseData) return;
+  root.querySelectorAll("[data-delete-annotation]").forEach((button) => {
+    button.addEventListener("click", () => {
+      deleteAnnotationVersion(caseData, button.dataset.deleteAnnotation, button);
+    });
+  });
+}
+
+function updateReviewHistory(caseData) {
+  if (!caseData || state.selectedId !== caseData.issue_id) return;
+  const annotations = caseData.annotations || [];
+  const reviewPane = $("#reviewPane");
+  const content = reviewPane?.querySelector(".review-history-content");
+  const count = reviewPane?.querySelector(".history-launch-meta");
+  if (content) {
+    content.innerHTML = annotationHistory(annotations);
+    bindAnnotationHistory(content, caseData);
+  }
+  if (count) count.textContent = `${annotations.length} 条`;
+  const dialog = $("#historyDialog");
+  const dialogContent = $("#historyDialogContent");
+  if (
+    dialog?.open &&
+    dialogContent &&
+    $("#historyDialogTitle")?.textContent === "Review 历史"
+  ) {
+    dialogContent.innerHTML = annotationHistory(annotations);
+    bindAnnotationHistory(dialogContent, caseData);
+  }
+}
+
+function refreshReviewDerivedData() {
+  void Promise.allSettled([
+    loadOverview(),
+    loadClusters(),
+    loadCases(),
+    loadReviewers(),
+  ]);
+}
+
+function syncReviewFormFromCase(caseData) {
+  const reviewPane = $("#reviewPane");
+  if (!reviewPane?.querySelector("#annotationForm")) {
+    renderReview(caseData);
+    return;
+  }
+  const previous = caseData.annotations?.[0] || {};
+  const hasPreviousReview = Boolean(caseData.annotations?.length);
+  const chosenEvidence = new Set(
+    hasPreviousReview ? previous.missing_evidence || [] : ["routing_direction"]
+  );
+  const chosenTags = new Set(previous.tags || []);
+  const evidenceCatalog = state.config?.missing_evidence_catalog || [];
+  const tagCatalog = state.config?.review_tag_catalog || [];
+  const evidenceKeys = new Set(evidenceCatalog.map((item) => item.key));
+  const tagKeys = new Set(tagCatalog.map((item) => item.key));
+
+  reviewPane.querySelectorAll(".custom-evidence-option").forEach((node) => node.remove());
+  reviewPane.querySelectorAll(".custom-tag-option").forEach((node) => node.remove());
+  const evidenceCreator = $("#customEvidenceCreator");
+  for (const key of chosenEvidence) {
+    if (evidenceKeys.has(key) || !evidenceCreator) continue;
+    const option = document.createElement("label");
+    option.className = "evidence-option custom-evidence-option";
+    option.title = "本条 Review 新建的缺失信息";
+    option.innerHTML = `<input type="checkbox" name="missingEvidence" value="${escapeHtml(key)}" checked /><span><strong>${escapeHtml(evidenceLabel(key))}</strong><small>本条 Review 新建的缺失信息</small></span>`;
+    evidenceCreator.before(option);
+    option.querySelector("input")?.addEventListener("change", updateEvidenceSummary);
+  }
+  const tagCreator = $("#customTagCreator");
+  for (const key of chosenTags) {
+    if (tagKeys.has(key) || !tagCreator) continue;
+    const option = document.createElement("label");
+    option.className = "tag-option custom-tag-option";
+    option.innerHTML = `<input type="checkbox" name="reviewTags" value="${escapeHtml(key)}" checked /><span>${escapeHtml(tagLabel(key))}</span>`;
+    tagCreator.before(option);
+    option.querySelector("input")?.addEventListener("change", updateTagSummary);
+  }
+  reviewPane.querySelectorAll('input[name="missingEvidence"]').forEach((input) => {
+    input.checked = chosenEvidence.has(input.value);
+  });
+  reviewPane.querySelectorAll('input[name="reviewTags"]').forEach((input) => {
+    input.checked = chosenTags.has(input.value);
+  });
+  const status = $("#reviewStatusInput");
+  if (status) {
+    status.value = previous.review_status === "needs_gt_review"
+      ? "needs_gt_review"
+      : previous.review_status === "pending"
+        ? "pending"
+        : "reviewed";
+  }
+  const note = $("#annotationNote");
+  if (note) note.value = previous.note || "";
+  const author = $("#annotationAuthor");
+  if (author && !(state.session.verified && state.session.username)) {
+    author.value = state.session.username || previous.author || "";
+  }
+  state.selectedAnnotationLabel = previous.label || "";
+  state.reviewFormDirty = false;
+  state.deferredDetailRefresh = false;
+  clearPendingReviewImages();
+  updateEvidenceSummary();
+  updateTagSummary();
+  updateReviewHistory(caseData);
+}
+
+async function deleteAnnotationVersion(caseData, annotationId, button) {
+  if (state.savingAnnotation) return;
+  const annotation = (caseData.annotations || []).find(
+    (item) => String(item.id) === String(annotationId)
+  );
+  if (!annotation) return;
+  const deletingLatest = String(caseData.annotations?.[0]?.id) === String(annotationId);
+  const unsavedWarning = deletingLatest && state.reviewFormDirty
+    ? "\n当前表单有未保存编辑，删除后会恢复上一版本并丢弃这些编辑。"
+    : "";
+  const confirmed = window.confirm(
+    `确认删除 ${formatTime(annotation.created_at)} 保存的 Review 版本？\n\n复核人：${annotation.author || "未记录"}\n该操作不可恢复；如果删除当前版本，会自动恢复上一版本为当前 Review。${unsavedWarning}`
+  );
+  if (!confirmed) return;
+  state.savingAnnotation = true;
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  try {
+    const result = await api(
+      `/api/cases/${encodeURIComponent(caseData.issue_id)}/annotations/${encodeURIComponent(annotationId)}`,
+      { method: "DELETE" }
+    );
+    acknowledgeLocalChange(result);
+    caseData.annotations = (caseData.annotations || []).filter(
+      (item) => String(item.id) !== String(annotationId)
+    );
+    if (state.selectedCase?.issue_id === caseData.issue_id && deletingLatest) {
+      state.selectedCase = caseData;
+      syncReviewFormFromCase(caseData);
+    } else {
+      updateReviewHistory(caseData);
+    }
+    showToast("已删除该 Review 版本。");
+    refreshReviewDerivedData();
+  } catch (error) {
+    showToast(error.message, true);
+    if (button.isConnected) {
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+    }
+  } finally {
+    state.savingAnnotation = false;
+  }
 }
 
 function renderReview(caseData) {
@@ -2725,7 +3262,11 @@ function renderReview(caseData) {
   const customTagKeys = [...chosenTags].filter((tag) => !tagCatalogKeys.has(tag));
   const author = state.session.username || previous.author || "";
   const authorLocked = Boolean(state.session.verified && state.session.username);
-  const reviewStatus = previous.review_status === "needs_gt_review" ? "needs_gt_review" : "reviewed";
+  const reviewStatus = previous.review_status === "needs_gt_review"
+    ? "needs_gt_review"
+    : previous.review_status === "pending"
+      ? "pending"
+      : "reviewed";
   const evidenceOption = (item, selected) => `<label class="evidence-option" title="${escapeHtml(item.hint || "")}"><input type="checkbox" name="missingEvidence" value="${escapeHtml(item.key)}" ${selected ? "checked" : ""} /><span><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.hint || "")}</small></span></label>`;
   const customEvidenceOptions = customEvidenceKeys
     .map((key) => evidenceOption({ key, label: evidenceLabel(key), hint: "本条 Review 新建的缺失信息" }, true))
@@ -2849,6 +3390,7 @@ function renderReview(caseData) {
     state.reviewFormDirty = true;
   });
   annotationForm.addEventListener("submit", saveAnnotation);
+  bindAnnotationHistory($("#reviewPane"), caseData);
 }
 
 function updateEvidenceSummary() {
@@ -2956,18 +3498,25 @@ async function selectCase(
     state.galleryScrollY = window.scrollY;
   }
   if (state.selectedId && state.selectedId !== issueId) clearPendingReviewImages();
+  const hadDetail = Boolean(state.selectedCase);
   state.selectedId = issueId;
   state.selectedCase = null;
   const requestSeq = ++state.caseRequestSeq;
   renderCaseNavigation();
-  $("#detailPane").innerHTML = `
-    <div class="empty-state detail-loading-state">
-      <div class="empty-glyph" aria-hidden="true">…</div>
-      <h2>正在加载 ${escapeHtml(issueId)}</h2>
-      <p>正在读取模型输出、Ares BEV 与 Camera 时序。</p>
-    </div>`;
-  $("#reviewPane").innerHTML = `
-    <div class="review-placeholder"><h2>正在加载标注</h2><p>Issue 数据返回后即可继续 Review。</p></div>`;
+  let loadingTimer = null;
+  if (!hadDetail) {
+    loadingTimer = window.setTimeout(() => {
+      if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId) return;
+      $("#detailPane").innerHTML = `
+        <div class="empty-state detail-loading-state">
+          <div class="empty-glyph" aria-hidden="true">…</div>
+          <h2>正在加载 ${escapeHtml(issueId)}</h2>
+          <p>正在读取 Issue 媒体与模型输出。</p>
+        </div>`;
+      $("#reviewPane").innerHTML = `
+        <div class="review-placeholder"><h2>正在加载标注</h2><p>Issue 数据返回后即可继续 Review。</p></div>`;
+    }, 140);
+  }
   if (updateRoute && state.activePage === "review") {
     const nextUrl = pageUrl("review", { issue: issueId });
     if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
@@ -2982,11 +3531,20 @@ async function selectCase(
   try {
     const data = await api(`/api/cases/${encodeURIComponent(issueId)}`);
     if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId) return;
+    if (loadingTimer !== null) {
+      window.clearTimeout(loadingTimer);
+      loadingTimer = null;
+    }
     state.selectedCase = data;
     renderDetail(data);
     renderReview(data);
+    scheduleTrailDetailMetadata(issueId, requestSeq);
   } catch (error) {
     if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId) return;
+    if (loadingTimer !== null) {
+      window.clearTimeout(loadingTimer);
+      loadingTimer = null;
+    }
     $("#detailPane").innerHTML = `
       <div class="empty-state">
         <div class="empty-glyph" aria-hidden="true">!</div>
@@ -3036,6 +3594,7 @@ async function saveAnnotation(event) {
     author: $("#annotationAuthor").value,
   };
   try {
+    let result;
     if (state.pendingReviewImages.length) {
       const form = new FormData();
       form.append("payload", JSON.stringify(payload));
@@ -3046,7 +3605,7 @@ async function saveAnnotation(event) {
           item.file.name || `clipboard-${index + 1}.png`
         );
       });
-      await api(
+      result = await api(
         `/api/cases/${encodeURIComponent(state.selectedId)}/annotations-with-attachments`,
         {
           method: "POST",
@@ -3055,20 +3614,29 @@ async function saveAnnotation(event) {
         }
       );
     } else {
-      await api(`/api/cases/${encodeURIComponent(state.selectedId)}/annotations`, {
+      result = await api(`/api/cases/${encodeURIComponent(state.selectedId)}/annotations`, {
         method: "POST",
         body: JSON.stringify(payload),
       });
     }
+    acknowledgeLocalChange(result);
     const screenshotCount = state.pendingReviewImages.length;
     state.reviewFormDirty = false;
     state.deferredDetailRefresh = false;
     clearPendingReviewImages();
+    if (result?.annotation && state.selectedCase?.issue_id === state.selectedId) {
+      state.selectedCase.annotations = [
+        result.annotation,
+        ...(state.selectedCase.annotations || []).filter(
+          (item) => String(item.id) !== String(result.annotation.id)
+        ),
+      ];
+      updateReviewHistory(state.selectedCase);
+    }
     showToast(
       `已保存新的 review 版本${screenshotCount ? `和 ${screenshotCount} 张截图` : ""}。`
     );
-    await Promise.all([loadOverview(), loadClusters(), loadCases(), loadReviewers()]);
-    await selectCase(state.selectedId, { updateRoute: false });
+    refreshReviewDerivedData();
   } catch (error) {
     showToast(error.message, true);
   } finally {
@@ -3427,6 +3995,28 @@ function bindMediaPanViewport(viewport) {
   }, { passive: false });
 }
 
+function preloadMediaDialogImage(url, onReady) {
+  const requestSeq = Number(state.media.imageRequestSeq || 0) + 1;
+  state.media.imageRequestSeq = requestSeq;
+  const image = new Image();
+  image.decoding = "async";
+  image.onload = () => {
+    let decoded;
+    try {
+      decoded = typeof image.decode === "function" ? image.decode() : Promise.resolve();
+    } catch {
+      decoded = Promise.resolve();
+    }
+    Promise.resolve(decoded).catch(() => {}).then(() => {
+      if (requestSeq === state.media.imageRequestSeq) onReady();
+    });
+  };
+  image.onerror = () => {
+    if (requestSeq === state.media.imageRequestSeq) showToast("媒体图片加载失败，已保留当前画面。", true);
+  };
+  image.src = url;
+}
+
 function renderMediaDialog() {
   const snapshot = state.media.snapshot;
   const bev = mediaFrames("bev");
@@ -3462,9 +4052,12 @@ function renderMediaDialog() {
   });
 
   if (videoMode && video) {
+    state.media.imageRequestSeq += 1;
     if (videoStage.dataset.videoUrl !== video.url) {
       videoStage.dataset.videoUrl = video.url;
-      videoStage.innerHTML = videoPlayerMarkup(video);
+      videoStage.innerHTML = videoPlayerMarkup(video, {
+        posterUrl: bev[heroFrameIndex(bev)]?.url || "",
+      });
       bindBevVideoPlayers(videoStage);
       const viewport = videoStage.querySelector("[data-video-viewport]");
       const videoElement = videoStage.querySelector("video");
@@ -3485,9 +4078,29 @@ function renderMediaDialog() {
   const current = frames[state.media.index];
   if (!current) return;
   $("#mediaTitle").textContent = `${snapshot?.issueId || ""} · ${frameLabel(current)} · ${state.media.index + 1}/${frames.length}`;
-  $("#mediaPreviewImage").src = current.url;
-  $("#mediaPreviewImage").alt = `${state.media.kind} ${frameLabel(current)}`;
-  setMediaZoom(state.media.zoom);
+  const previewImage = $("#mediaPreviewImage");
+  const targetUrl = String(current.url || "");
+  const targetKind = state.media.kind;
+  const targetIndex = state.media.index;
+  const targetIssueId = String(snapshot?.issueId || "");
+  state.media.imageRequestSeq += 1;
+  const applyImage = () => {
+    if (
+      state.media.kind !== targetKind ||
+      state.media.index !== targetIndex ||
+      String(state.media.snapshot?.issueId || "") !== targetIssueId
+    ) return;
+    previewImage.src = targetUrl;
+    previewImage.alt = `${targetKind} ${frameLabel(current)}`;
+    previewImage.dataset.mediaUrl = targetUrl;
+    setMediaZoom(state.media.zoom);
+  };
+  if (previewImage.dataset.mediaUrl === targetUrl) {
+    previewImage.alt = `${targetKind} ${frameLabel(current)}`;
+    setMediaZoom(state.media.zoom);
+  } else if (targetUrl) {
+    preloadMediaDialogImage(targetUrl, applyImage);
+  }
   $("#mediaHelp").textContent = "← / ↑ 上一帧 · → / ↓ 下一帧 · B/C/V 切媒体 · +/− 缩放 · 0 复位 · 放大后拖拽平移 · F 全屏 · Esc 退出";
   $("#mediaTimeline").innerHTML = frames.map((frame, index) => `<button type="button" class="timeline-dot ${index === state.media.index ? "active" : ""}" data-media-frame="${index}" title="${escapeHtml(frameLabel(frame))}">${escapeHtml(frameLabel(frame))}</button>`).join("");
   $("#mediaTimeline").querySelectorAll("[data-media-frame]").forEach((button) => {
@@ -4995,6 +5608,13 @@ function bindEvents() {
   $("#sidebarBrandToggle").addEventListener("click", toggleSidebar);
   document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => closeDialog(button.dataset.close)));
   $("#mediaDialog").addEventListener("close", cleanupMediaDialog);
+  $("#raEventSearchInput").addEventListener("input", (event) => {
+    renderRaEventRows(state.raEventDialog.events, event.target.value);
+  });
+  $("#raEventSearchButton").addEventListener("click", () => $("#raEventSearchInput")?.focus());
+  $("#raEventDialog").addEventListener("close", () => {
+    state.raEventDialog = { issueId: "", events: [], trailUrl: "" };
+  });
   $("#importFile").addEventListener("change", () => {
     const filename = $("#importFileName");
     if (filename) filename.textContent = $("#importFile").files[0]?.name || "未选择文件";
@@ -5186,8 +5806,6 @@ function bindEvents() {
           setReviewView(route.issue);
           renderCaseNavigation();
         }
-      } else {
-        renderCases({ items: state.cases, total: state.caseTotal });
       }
     } catch (error) {
       showToast(error.message, true);
@@ -5250,6 +5868,7 @@ async function bootstrap() {
     if (initialRoute.page === "review") applyReviewRouteControls(initialRoute);
     if (initialRoute.page === "analysis") applyAnalysisRouteControls(initialRoute);
     const initialPageRequests = [loadOverview()];
+    let initialDetailRequest = null;
     if (initialRoute.page === "review") {
       initialPageRequests.push(
         loadCases({
@@ -5258,18 +5877,21 @@ async function bootstrap() {
         }),
         loadClusters()
       );
+      if (initialRoute.issue) {
+        initialDetailRequest = selectCase(initialRoute.issue, { updateRoute: false });
+      }
     } else if (initialRoute.page === "status") {
       initialPageRequests.push(loadStatus());
     } else if (initialRoute.page === "prediction") {
       initialPageRequests.push(loadPredictionConfig(), loadPredictionBatches());
     }
-    await Promise.all(initialPageRequests);
-    if (
-      initialRoute.page === "review" &&
-      initialRoute.issue &&
-      initialRoute.issue !== state.selectedId
-    ) {
-      await selectCase(initialRoute.issue, { updateRoute: false });
+    if (initialDetailRequest) {
+      void Promise.all(initialPageRequests).catch((error) => {
+        showToast(`辅助数据加载失败：${error.message}`, true);
+      });
+      await initialDetailRequest;
+    } else {
+      await Promise.all(initialPageRequests);
     }
     showPage(initialRoute.page, {
       historyMode: "replace",

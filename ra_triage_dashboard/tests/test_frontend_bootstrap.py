@@ -26,6 +26,21 @@ class FrontendBootstrapTest(unittest.TestCase):
         self.assertIn('initialRoute.page === "status"', APP_JS)
         self.assertIn('initialRoute.page === "prediction"', APP_JS)
 
+    def test_optional_lca_and_deep_link_support_data_do_not_block_first_content(self) -> None:
+        session_start = APP_JS.index("async function loadSession()")
+        session_end = APP_JS.index("\nfunction renderConfig()", session_start)
+        session_body = APP_JS[session_start:session_end]
+        self.assertIn("void browserLcaUsername().then", session_body)
+        self.assertNotIn("await browserLcaUsername()", session_body)
+        self.assertIn("let initialDetailRequest = null", APP_JS)
+        self.assertIn(
+            "initialDetailRequest = selectCase(initialRoute.issue, { updateRoute: false })",
+            APP_JS,
+        )
+        self.assertIn("void Promise.all(initialPageRequests).catch", APP_JS)
+        self.assertIn("await initialDetailRequest", APP_JS)
+        self.assertIn('issue: initialRoute.issue', APP_JS)
+
 
 if __name__ == "__main__":
     unittest.main()

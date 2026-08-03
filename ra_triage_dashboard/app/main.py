@@ -32,7 +32,14 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from .assets import AssetIndex, CameraIndex, VideoIndex
-from .auth import normalise_username, request_identity
+from .auth import (
+    has_same_origin_mutation_marker,
+    identity_can_write,
+    identity_header_candidates,
+    normalise_username,
+    request_identity,
+    validate_identity_settings,
+)
 from .autotriage_source import (
     AutoTriageSource,
     AutoTriageSourceError,
@@ -60,12 +67,19 @@ from .review_analysis import (
 from .sanitization import redact_sensitive_fields
 from .settings import Settings
 from .system_status import backup_status, overall_status, volume_status
-from .trail_sync import TRAIL_INFO_FIELD, TRAIL_RESULT_FIELD, read_trail_model_fields
+from .trail_sync import (
+    TRAIL_INFO_FIELD,
+    TRAIL_RESULT_FIELD,
+    read_trail_issue_metadata,
+    read_trail_model_fields,
+)
 from .web_paths import render_index_html, with_base_path
 
 
 logger = logging.getLogger("ra_triage_dashboard")
+_identity_diagnostic_observations: set[tuple[str, tuple[tuple[str, str], ...]]] = set()
 settings = Settings.from_env()
+validate_identity_settings(settings)
 database = Database(
     settings.database_url,
     postgres_migrations_dir=settings.postgres_migrations_dir,
@@ -85,6 +99,7 @@ batch_prediction_runner = BatchPredictionRunner(settings, database)
 trail_sync_lock = threading.Lock()
 review_image_semaphore = asyncio.Semaphore(2)
 thumbnail_image_semaphore = asyncio.Semaphore(4)
+trail_detail_semaphore = asyncio.Semaphore(2)
 APP_STARTED_AT = datetime.now(timezone.utc)
 APP_STARTED_MONOTONIC = time.monotonic()
 INDEX_HTML = render_index_html(
@@ -382,6 +397,70 @@ def _voyager_issue_url(issue_id: str) -> str:
         f"{settings.voyager_issue_base_url.rstrip('/')}/"
         f"{quote(issue_id, safe='')}?view_id={settings.voyager_issue_view_id}"
     )
+
+
+def _ra_recording_url(ra_id: Any) -> str:
+    """Build the read-only RA dashboard URL from Trail's canonical ra_id."""
+
+    value = _as_text(ra_id)
+    if not value:
+        return ""
+    return (
+        f"{settings.ra_recording_base_url.rstrip('/')}/"
+        f"{quote(value, safe='')}?returnUrl="
+    )
+
+
+def _case_external_links(issue_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
+    """Expose the small, read-only RA link/event subset to the browser."""
+
+    events = metadata.get("ra_event")
+    if isinstance(events, str):
+        try:
+            events = json.loads(events)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            events = []
+    safe_events: list[dict[str, Any]] = []
+    if isinstance(events, (list, tuple)):
+        for item in events:
+            if not isinstance(item, dict):
+                continue
+            event = str(item.get("event") or "").strip()[:128]
+            if not event:
+                continue
+            raw_timestamp = item.get("timestamp")
+            try:
+                timestamp = int(raw_timestamp) if raw_timestamp is not None else None
+            except (TypeError, ValueError, OverflowError):
+                timestamp = None
+            raw_value = item.get("value")
+            if isinstance(raw_value, (str, int, float, bool)) or raw_value is None:
+                value = raw_value
+            else:
+                value = str(raw_value)[:256]
+            safe_events.append({"event": event, "value": value, "timestamp": timestamp})
+    safe_events = safe_events[:64]
+    event_count = len(safe_events)
+    return {
+        "ra_recording_url": _ra_recording_url(metadata.get("ra_id")),
+        "ra_event_url": _voyager_issue_url(issue_id) if event_count else "",
+        "ra_task_id": _as_text(metadata.get("ra_id")),
+        "ra_event_count": event_count,
+        "ra_events": safe_events,
+    }
+
+
+def _case_link_metadata_fallback(case: dict[str, Any]) -> dict[str, Any]:
+    """Use explicitly imported RA fields when Trail detail lookup is disabled."""
+
+    fallback: dict[str, Any] = {}
+    for source in (case, case.get("extra")):
+        if not isinstance(source, dict):
+            continue
+        for key in ("ra_id", "ra_event"):
+            if key not in fallback and source.get(key) not in (None, "", []):
+                fallback[key] = source[key]
+    return fallback
 
 
 def _autotriage_record_url(batch_id: str) -> str:
@@ -1298,6 +1377,47 @@ app = FastAPI(
 
 
 @app.middleware("http")
+async def identity_ingress_diagnostics(request: Request, call_next):
+    if settings.identity_diagnostics and request.url.path.startswith("/api/"):
+        candidates = identity_header_candidates(request)
+        client_host = request.client.host if request.client else "unknown"
+        observation = (client_host, tuple(sorted(candidates.items())))
+        if observation not in _identity_diagnostic_observations:
+            _identity_diagnostic_observations.add(observation)
+            logger.warning(
+                "SSO ingress diagnostic client=%s identity_candidates=%s",
+                client_host,
+                candidates,
+            )
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def production_write_guard(request: Request, call_next):
+    if (
+        settings.deployment_mode == "production"
+        and request.method in {"POST", "PUT", "PATCH", "DELETE"}
+        and request.url.path.startswith("/api/")
+    ):
+        if not has_same_origin_mutation_marker(request):
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "detail": "写请求缺少同源校验标记，请刷新页面后重试。"
+                },
+            )
+        identity = await asyncio.to_thread(request_identity, request, settings)
+        if not identity_can_write(identity, settings):
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "detail": "当前入口为只读预览；请通过获准的企业 SSO 域名访问。"
+                },
+            )
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def request_size_guard(request: Request, call_next):
     if request.method == "POST" and request.url.path in {
         "/api/prediction-batches",
@@ -1393,7 +1513,7 @@ async def legacy_import(kind: str = "issues") -> RedirectResponse:
     # bookmarks navigable, but land them in the safe model-result importer.
     return RedirectResponse(
         # Relative Location resolves to /runs for direct IP and
-        # /dashboard/runs through the browser-visible strip-proxy URL.
+        # /manual/runs through the browser-visible strip-proxy URL.
         url="runs?import=model",
         status_code=307,
     )
@@ -1405,6 +1525,7 @@ async def health() -> dict[str, Any]:
         "ok": True,
         "build_commit": settings.build_commit,
         "base_path": settings.base_path,
+        "deployment_mode": settings.deployment_mode,
         "ra_auto_triage_root_available": (settings.ra_auto_triage_root / "vlm").is_dir(),
         "ares_manifest_available": settings.ares_manifest.is_file(),
         "ares_indexed_issues": asset_index.refresh(),
@@ -1479,9 +1600,14 @@ async def dashboard_config() -> dict[str, Any]:
 
 
 @app.get("/api/session")
-async def session(request: Request) -> dict[str, object]:
-    identity = request_identity(request, settings)
-    return identity.as_dict(
+async def session(request: Request, response: Response) -> dict[str, object]:
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    identity = await asyncio.to_thread(request_identity, request, settings)
+    can_write = (
+        settings.deployment_mode != "production"
+        or identity_can_write(identity, settings)
+    )
+    payload = identity.as_dict(
         trust_proxy_headers=settings.trust_proxy_identity_headers
     ) | {
         "browser_lca_fallback": not identity.authenticated,
@@ -1491,7 +1617,25 @@ async def session(request: Request) -> dict[str, object]:
             else ""
         ),
         "can_manage_team_default": _can_manage_team_default(request),
+        "deployment_mode": settings.deployment_mode,
+        "can_write": can_write,
+        "read_only": not can_write,
+        "login_managed_by": "kylin" if settings.kylin_sso_enabled else "",
+        "logout_url": with_base_path(settings.base_path, "/auth/logout")
+        if settings.kylin_sso_enabled
+        else "",
     }
+    if settings.identity_diagnostics:
+        payload["identity_header_candidates"] = identity_header_candidates(request)
+    return payload
+
+
+@app.get("/auth/logout")
+async def logout() -> RedirectResponse:
+    response = RedirectResponse(settings.kylin_sso_logout_url, status_code=302)
+    for cookie_name in ("_kylin_ticket", "_kylin_username"):
+        response.delete_cookie(cookie_name, path="/")
+    return response
 
 
 @app.get("/api/status")
@@ -1534,6 +1678,7 @@ async def status(response: Response) -> dict[str, Any]:
             "uptime_seconds": max(0, int(time.monotonic() - APP_STARTED_MONOTONIC)),
             "build_commit": settings.build_commit,
             "base_path": settings.base_path,
+            "deployment_mode": settings.deployment_mode,
         },
         "trail_write_enabled": False,
         "build_commit": settings.build_commit,
@@ -1670,6 +1815,51 @@ async def get_case_thumbnail(issue_id: str) -> FileResponse:
     )
 
 
+@app.get("/api/cases/{issue_id}/trail-metadata")
+async def get_case_trail_metadata(issue_id: str) -> dict[str, Any]:
+    """Load optional Trail metadata without delaying the Issue detail API.
+
+    The Issue detail response intentionally exposes only local data and any
+    metadata already imported with the case.  Trail is a best-effort external
+    dependency and is fetched by the browser after the detail has rendered.
+    """
+
+    case = await asyncio.to_thread(database.get_case, issue_id)
+    if case is None:
+        raise _detail(404, "Issue 不存在。")
+
+    trail_metadata = _case_link_metadata_fallback(case)
+    status = "disabled"
+    if settings.trail_detail_metadata_enabled:
+        status = "unavailable"
+        try:
+            async with trail_detail_semaphore:
+                fetched = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        read_trail_issue_metadata,
+                        ra_root=settings.ra_auto_triage_root,
+                        issue_id=issue_id,
+                        view_id=settings.trail_view_id,
+                        cache_seconds=settings.trail_detail_metadata_cache_seconds,
+                    ),
+                    timeout=8.0,
+                )
+            trail_metadata.update(fetched)
+            status = "ready" if fetched else "unavailable"
+        except asyncio.TimeoutError:
+            status = "timeout"
+            logger.warning("Trail detail metadata timed out issue_id=%s", issue_id)
+        except Exception:
+            status = "unavailable"
+            logger.warning("Trail detail metadata unavailable issue_id=%s", issue_id)
+
+    return {
+        "issue_id": issue_id,
+        "status": status,
+        "external_links": _case_external_links(issue_id, trail_metadata),
+    }
+
+
 @app.get("/api/cases/{issue_id}")
 async def get_case(issue_id: str) -> dict[str, Any]:
     case = await asyncio.to_thread(database.get_case, issue_id)
@@ -1689,6 +1879,12 @@ async def get_case(issue_id: str) -> dict[str, Any]:
         issue_id, (case["assets"].get("capture") or {}).get("timestamp_ms")
     )
     case["voyager_issue_url"] = _voyager_issue_url(issue_id)
+    case["external_links"] = _case_external_links(
+        issue_id, _case_link_metadata_fallback(case)
+    )
+    case["trail_metadata_status"] = (
+        "pending" if settings.trail_detail_metadata_enabled else "disabled"
+    )
     case["batch_jobs"] = [
         _public_batch_job(job) for job in case.get("batch_jobs", [])
     ]
@@ -1761,7 +1957,10 @@ async def create_annotation(issue_id: str, request: Request) -> dict[str, Any]:
         request=request,
         body=body,
     )
-    return {"annotation": annotation}
+    return {
+        "annotation": annotation,
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
 
 
 @app.post("/api/cases/{issue_id}/annotations-with-attachments")
@@ -1795,7 +1994,48 @@ async def create_annotation_with_attachments(
         _public_review_attachment(attachment)
         for attachment in annotation.get("attachments", [])
     ]
-    return {"annotation": annotation}
+    return {
+        "annotation": annotation,
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
+@app.delete("/api/cases/{issue_id}/annotations/{annotation_id}")
+async def delete_annotation(issue_id: str, annotation_id: int) -> dict[str, Any]:
+    if annotation_id <= 0:
+        raise _detail(400, "Review 版本 ID 不合法。")
+    deleted = await asyncio.to_thread(
+        database.delete_annotation,
+        issue_id=issue_id,
+        annotation_id=annotation_id,
+    )
+    if deleted is None:
+        raise _detail(404, "Review 版本不存在或已被删除。")
+    attachment_root = settings.review_attachments_dir.resolve()
+    for attachment in deleted.get("attachments", []):
+        path = (attachment_root / str(attachment.get("stored_name") or "")).resolve()
+        if attachment_root not in path.parents:
+            logger.warning(
+                "Skipped unsafe deleted review attachment path annotation_id=%s",
+                annotation_id,
+            )
+            continue
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            logger.exception(
+                "Failed to remove deleted review attachment annotation_id=%s attachment_id=%s",
+                annotation_id,
+                attachment.get("id"),
+            )
+    deleted["attachments"] = [
+        _public_review_attachment(attachment)
+        for attachment in deleted.get("attachments", [])
+    ]
+    return {
+        "deleted": deleted,
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
 
 
 @app.get("/api/model-runs")
@@ -3029,3 +3269,4 @@ async def get_inference_job(job_id: str) -> dict[str, Any]:
     if job is None:
         raise _detail(404, "任务不存在。")
     return {"job": job}
+    identity_header_candidates,

@@ -160,7 +160,7 @@ class _PostgresConnection:
 
 
 class Database:
-    """SQLite/PostgreSQL storage with append-only review history.
+    """SQLite/PostgreSQL storage with versioned review history.
 
     ``baseline_scope`` is intentionally stored on the issue rather than
     deleting old imports.  This lets the active 0508/1071 evaluation set stay
@@ -1478,6 +1478,41 @@ class Database:
             }
             for attachment in attachments
         ]
+        return result
+
+    def delete_annotation(
+        self,
+        *,
+        issue_id: str,
+        annotation_id: int,
+    ) -> dict[str, Any] | None:
+        """Delete one review version and reconnect its superseding chain."""
+        now = utc_now()
+        with self._write_lock, self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM annotations WHERE id = ? AND issue_id = ?",
+                (annotation_id, issue_id),
+            ).fetchone()
+            if row is None:
+                return None
+            attachments = conn.execute(
+                "SELECT * FROM review_attachments WHERE annotation_id = ? ORDER BY created_at ASC",
+                (annotation_id,),
+            ).fetchall()
+            conn.execute(
+                "UPDATE annotations SET supersedes_id = ? WHERE supersedes_id = ?",
+                (row["supersedes_id"], annotation_id),
+            )
+            conn.execute(
+                "DELETE FROM annotations WHERE id = ? AND issue_id = ?",
+                (annotation_id, issue_id),
+            )
+            conn.execute(
+                "UPDATE issues SET updated_at = ? WHERE issue_id = ?",
+                (now, issue_id),
+            )
+        result = self._annotation_dict(row)
+        result["attachments"] = [self._attachment_dict(item) for item in attachments]
         return result
 
     def get_review_attachment(self, attachment_id: str) -> dict[str, Any] | None:
