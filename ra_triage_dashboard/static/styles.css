@@ -116,6 +116,7 @@ html[data-ui-lang="en"] .ui-lang-en { display: inline; }
 
 .top-actions .button { padding: 5px 8px; }
 .language-toggle { min-width: 42px; }
+.theme-toggle { min-width: 34px; font-size: 16px; line-height: 1; }
 .main { width: 100%; max-width: none; margin: 0 auto; padding: 7px 12px 24px; }
 .app-page { min-width: 0; }
 .tool-page { width: min(1320px, 100%); display: grid; gap: 12px; margin: 0 auto; }
@@ -1338,3 +1339,135 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .hero-media-button { height: clamp(400px, calc(100dvh - 190px), 650px); }
   .hero-media-placeholder { min-height: clamp(400px, calc(100dvh - 190px), 650px); }
 }
+
+/* Optional light workspace. Media canvases intentionally remain dark because
+   Ares/Camera pixels and their overlays are authored for a black stage. */
+html[data-color-theme="light"] {
+  color-scheme: light;
+  --bg: #eef3f8;
+  --raised: #ffffff;
+  --overlay: #f6f8fb;
+  --overlay-2: #edf2f7;
+  --line: #cfd8e3;
+  --line-soft: #e4eaf1;
+  --text: #172033;
+  --muted: #566579;
+  --faint: #748298;
+  --accent: #078ba6;
+  --accent-soft: rgba(7, 139, 166, .1);
+  --ok: #087a58;
+  --fail: #c23f4d;
+  --warn: #9a6500;
+}
+
+html[data-color-theme="light"] .app-sidebar { background: #f9fbfd; }
+html[data-color-theme="light"] .topbar { background: rgba(255, 255, 255, .92); }
+html[data-color-theme="light"] .sidebar-copy strong,
+html[data-color-theme="light"] .header-metrics strong,
+html[data-color-theme="light"] .system-status-row strong,
+html[data-color-theme="light"] .system-status-build code { color: var(--text); }
+html[data-color-theme="light"] .sidebar-icon,
+html[data-color-theme="light"] .user-avatar {
+  color: #53657b;
+  background: linear-gradient(145deg, #ffffff, #e8eef5);
+}
+html[data-color-theme="light"] .user-avatar { color: #063843; background: #67e8f9; }
+html[data-color-theme="light"] .sidebar-collapse,
+html[data-color-theme="light"] .header-metrics,
+html[data-color-theme="light"] input,
+html[data-color-theme="light"] select,
+html[data-color-theme="light"] textarea,
+html[data-color-theme="light"] .toggle-row,
+html[data-color-theme="light"] .trail-sync-state,
+html[data-color-theme="light"] .batch-runtime-summary,
+html[data-color-theme="light"] .gateway-model-option,
+html[data-color-theme="light"] .gateway-model-status,
+html[data-color-theme="light"] .batch-result-item,
+html[data-color-theme="light"] .detail-media-command,
+html[data-color-theme="light"] .history-inline-button,
+html[data-color-theme="light"] .no-asset,
+html[data-color-theme="light"] .history-launch-button,
+html[data-color-theme="light"] .review-history-toggle,
+html[data-color-theme="light"] .label-choice,
+html[data-color-theme="light"] .review-reason textarea,
+html[data-color-theme="light"] .evidence-dropdown,
+html[data-color-theme="light"] .evidence-option:hover,
+html[data-color-theme="light"] .tag-option,
+html[data-color-theme="light"] .screenshot-paste-zone,
+html[data-color-theme="light"] .history-row,
+html[data-color-theme="light"] .dialog-result,
+html[data-color-theme="light"] .job-result,
+html[data-color-theme="light"] .file-drop,
+html[data-color-theme="light"] .analysis-cluster-row,
+html[data-color-theme="light"] .analysis-confusion-table th,
+html[data-color-theme="light"] .analysis-confusion-table td,
+html[data-color-theme="light"] .analysis-case-row,
+html[data-color-theme="light"] .timeline-dot { background: var(--overlay); }
+
+html[data-color-theme="light"] select option,
+html[data-color-theme="light"] .evidence-dropdown .evidence-options,
+html[data-color-theme="light"] .evidence-dropdown .tag-options,
+html[data-color-theme="light"] .source-preview-table th,
+html[data-color-theme="light"] .ra-event-table th {
+  color: var(--text);
+  background: #edf2f7;
+}
+
+html[data-color-theme="light"] .source-preview-content,
+html[data-color-theme="light"] .ra-event-table-wrap,
+html[data-color-theme="light"] .import-example-contract,
+html[data-color-theme="light"] .import-example-preview,
+html[data-color-theme="light"] .import-example-code,
+html[data-color-theme="light"] .import-example-tabs { background: #f8fafc; }
+
+html[data-color-theme="light"] .button-quiet,
+html[data-color-theme="light"] .button-danger,
+html[data-color-theme="light"] .button-limit-warning {
+  color: #08758d;
+  border-color: rgba(7, 139, 166, .38);
+  background: rgba(7, 139, 166, .08);
+}
+html[data-color-theme="light"] .button-quiet:hover:not(:disabled),
+html[data-color-theme="light"] .button-danger:hover:not(:disabled),
+html[data-color-theme="light"] .button-limit-warning:hover:not(:disabled) {
+  color: #05566a;
+  border-color: #078ba6;
+  background: rgba(7, 139, 166, .14);
+}
+
+html[data-color-theme="light"] .dataset-state,
+html[data-color-theme="light"] .cluster-chip,
+html[data-color-theme="light"] .detail-action-button,
+html[data-color-theme="light"] .detail-media-command .detail-media-expand,
+html[data-color-theme="light"] .history-inline-button,
+html[data-color-theme="light"] .tag,
+html[data-color-theme="light"] .run-source-badge,
+html[data-color-theme="light"] .media-nav { color: #4e6075; }
+
+html[data-color-theme="light"] .status-succeeded,
+html[data-color-theme="light"] .status-completed,
+html[data-color-theme="light"] .label-正确触发,
+html[data-color-theme="light"] .comparison-chip.comparison-match,
+html[data-color-theme="light"] .analysis-comparison-badge.comparison-match,
+html[data-color-theme="light"] .analysis-confusion-table .confusion-match { color: #087a58; }
+html[data-color-theme="light"] .status-failed,
+html[data-color-theme="light"] .label-误触发,
+html[data-color-theme="light"] .mismatch-chip,
+html[data-color-theme="light"] .comparison-chip.comparison-mismatch,
+html[data-color-theme="light"] .analysis-comparison-badge.comparison-mismatch,
+html[data-color-theme="light"] .analysis-confusion-table .confusion-mismatch { color: #bd3746; }
+html[data-color-theme="light"] .status-partial,
+html[data-color-theme="light"] .status-partially_succeeded,
+html[data-color-theme="light"] .label-无需协助 { color: #946100; }
+html[data-color-theme="light"] .status-queued,
+html[data-color-theme="light"] .status-running,
+html[data-color-theme="light"] .run-source-preview,
+html[data-color-theme="light"] .evidence-tag,
+html[data-color-theme="light"] .analysis-chip.theme-chip { color: #08758d; }
+
+html[data-color-theme="light"] .dialog::backdrop,
+html[data-color-theme="light"] .media-dialog::backdrop { background: rgba(26, 37, 51, .48); }
+html[data-color-theme="light"] .toast { color: #075d6d; background: #e6f8fb; }
+html[data-color-theme="light"] .toast.error { color: #9f2938; background: #fff0f2; }
+html[data-color-theme="light"] .evidence-dropdown .evidence-options,
+html[data-color-theme="light"] .evidence-dropdown .tag-options { box-shadow: 0 14px 30px rgba(38, 52, 69, .16); }

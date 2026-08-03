@@ -42,6 +42,15 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('data-page-target="review" data-app-path="/review"', INDEX_HTML)
         self.assertIn('aria-label="Manual Triage 首页"', INDEX_HTML)
 
+    def test_color_theme_is_persisted_and_applied_before_first_paint(self) -> None:
+        self.assertIn('data-color-theme="dark"', INDEX_HTML)
+        self.assertIn('localStorage.getItem("ra-triage-color-theme")', INDEX_HTML)
+        self.assertIn('id="themeToggleButton"', INDEX_HTML)
+        self.assertIn("function applyColorTheme(theme", APP_JS)
+        self.assertIn('localStorage.setItem("ra-triage-color-theme"', APP_JS)
+        self.assertIn('html[data-color-theme="light"]', STYLES_CSS)
+        self.assertIn('color-scheme: light', STYLES_CSS)
+
     def test_batch_gateway_aligns_to_form_and_catalog_scrolls(self) -> None:
         self.assertIn(".batch-page-grid { align-items: stretch; }", STYLES_CSS)
         self.assertIn(".batch-page-grid > .tool-form { align-self: start; }", STYLES_CSS)

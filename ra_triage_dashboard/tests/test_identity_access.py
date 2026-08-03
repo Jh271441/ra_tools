@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
 
 from starlette.requests import Request
 
@@ -76,6 +77,39 @@ class IdentityAccessTest(unittest.TestCase):
         self.assertFalse(settings.trust_proxy_identity_headers)
         self.assertTrue(settings.kylin_sso_enabled)
         self.assertEqual(settings.kylin_sso_app_id, "2103794")
+
+    def test_kylin_logout_is_bound_to_manual_return_path(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"DASHBOARD_BASE_PATH": "/manual"},
+            clear=True,
+        ):
+            settings = Settings.from_env()
+        parsed = urlparse(settings.kylin_sso_logout_url)
+        query = parse_qs(parsed.query)
+        self.assertEqual(query["app_id"], ["2103794"])
+        self.assertEqual(
+            query["jumpto"],
+            ["https://auto-triage.intra.xiaojukeji.com/manual/review"],
+        )
+        self.assertEqual(
+            settings.kylin_sso_return_url,
+            "https://auto-triage.intra.xiaojukeji.com/manual/review",
+        )
+
+    def test_kylin_return_url_cannot_escape_manual_application(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "DASHBOARD_BASE_PATH": "/manual",
+                "DASHBOARD_KYLIN_SSO_RETURN_URL": (
+                    "https://auto-triage.intra.xiaojukeji.com/review"
+                ),
+            },
+            clear=True,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "/manual/"):
+                Settings.from_env()
 
     def test_production_requires_trusted_proxy_and_token_file(self) -> None:
         with patch.dict(

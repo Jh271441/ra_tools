@@ -5,7 +5,7 @@ import re
 import stat
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from .web_paths import normalize_base_path
 
@@ -38,6 +38,31 @@ def _company_sso_url(name: str, value: str) -> str:
     if parsed.scheme != "https" or parsed.hostname != "mis.diditaxi.com.cn":
         raise RuntimeError(f"{name} 必须是 mis.diditaxi.com.cn 的 HTTPS 地址。")
     return value
+
+
+def _dashboard_return_url(name: str, value: str, base_path: str) -> str:
+    parsed = urlparse(value)
+    expected_prefix = f"{base_path}/" if base_path else "/"
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "auto-triage.intra.xiaojukeji.com"
+        or parsed.username
+        or parsed.password
+        or parsed.port not in {None, 443}
+        or not parsed.path.startswith(expected_prefix)
+        or parsed.fragment
+    ):
+        raise RuntimeError(
+            f"{name} 必须是 auto-triage.intra.xiaojukeji.com 的 {expected_prefix} HTTPS 地址。"
+        )
+    return value
+
+
+def _kylin_logout_url(endpoint: str, app_id: str, return_url: str) -> str:
+    parsed = urlparse(endpoint)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query.update({"app_id": app_id, "jumpto": return_url})
+    return urlunparse(parsed._replace(query=urlencode(query)))
 
 
 def _database_url(data_dir: Path) -> str:
@@ -121,6 +146,7 @@ class Settings:
     kylin_sso_app_id: str
     kylin_sso_check_url: str
     kylin_sso_logout_url: str
+    kylin_sso_return_url: str
     kylin_sso_timeout_seconds: float
     kylin_sso_cache_seconds: int
     sso_write_users: tuple[str, ...]
@@ -129,6 +155,7 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         app_root = Path(__file__).resolve().parents[1]
+        base_path = normalize_base_path(os.getenv("DASHBOARD_BASE_PATH", ""))
         data_dir = _path("DASHBOARD_DATA_DIR", app_root / ".data")
         ra_root = _path(
             "RA_AUTO_TRIAGE_ROOT",
@@ -220,12 +247,25 @@ class Settings:
                 "https://mis.diditaxi.com.cn/auth/sso/api/check_user_ticket",
             ).strip(),
         )
-        kylin_sso_logout_url = _company_sso_url(
+        kylin_sso_logout_endpoint = _company_sso_url(
             "DASHBOARD_KYLIN_SSO_LOGOUT_URL",
             os.getenv(
                 "DASHBOARD_KYLIN_SSO_LOGOUT_URL",
-                f"https://mis.diditaxi.com.cn/auth/ldap/logout?app_id={kylin_sso_app_id}",
+                "https://mis.diditaxi.com.cn/auth/ldap/logout",
             ).strip(),
+        )
+        kylin_sso_return_url = _dashboard_return_url(
+            "DASHBOARD_KYLIN_SSO_RETURN_URL",
+            os.getenv(
+                "DASHBOARD_KYLIN_SSO_RETURN_URL",
+                f"https://auto-triage.intra.xiaojukeji.com{base_path}/review",
+            ).strip(),
+            base_path,
+        )
+        kylin_sso_logout_url = _kylin_logout_url(
+            kylin_sso_logout_endpoint,
+            kylin_sso_app_id,
+            kylin_sso_return_url,
         )
         if not HEADER_NAME_RE.fullmatch(identity_header):
             raise RuntimeError("DASHBOARD_IDENTITY_HEADER 不是合法的 HTTP header 名。")
@@ -247,7 +287,7 @@ class Settings:
                 os.getenv("DASHBOARD_BUILD_COMMIT", "").strip()[:64]
                 or "unverified"
             ),
-            base_path=normalize_base_path(os.getenv("DASHBOARD_BASE_PATH", "")),
+            base_path=base_path,
             static_dir=app_root / "static",
             data_dir=data_dir,
             database_url=_database_url(data_dir),
@@ -362,6 +402,7 @@ class Settings:
             kylin_sso_app_id=kylin_sso_app_id,
             kylin_sso_check_url=kylin_sso_check_url,
             kylin_sso_logout_url=kylin_sso_logout_url,
+            kylin_sso_return_url=kylin_sso_return_url,
             kylin_sso_timeout_seconds=kylin_sso_timeout_seconds,
             kylin_sso_cache_seconds=_integer(
                 "DASHBOARD_KYLIN_SSO_CACHE_SECONDS", 300, 1

@@ -180,6 +180,7 @@ const state = {
     read_only: false,
   },
   sidebarCollapsed: false,
+  colorTheme: "dark",
   uiLanguage: "zh",
   activePage: "review",
   systemStatus: null,
@@ -189,6 +190,22 @@ const state = {
 };
 
 const $ = (selector) => document.querySelector(selector);
+
+function normalizedColorTheme(value) {
+  return String(value || "").toLowerCase() === "light" ? "light" : "dark";
+}
+
+function applyColorTheme(theme, { persist = true } = {}) {
+  state.colorTheme = normalizedColorTheme(theme);
+  document.documentElement.dataset.colorTheme = state.colorTheme;
+  if (persist) localStorage.setItem("ra-triage-color-theme", state.colorTheme);
+  const toggle = $("#themeToggleButton");
+  if (!toggle) return;
+  const light = state.colorTheme === "light";
+  toggle.textContent = light ? "☾" : "☀";
+  toggle.setAttribute("aria-label", light ? "切换到深色模式" : "切换到浅色模式");
+  toggle.title = light ? "切换到深色模式" : "切换到浅色模式";
+}
 
 function normalizedUiLanguage(value) {
   return String(value || "").toLowerCase() === "en" ? "en" : "zh";
@@ -5604,6 +5621,9 @@ function bindEvents() {
   $("#languageToggleButton").addEventListener("click", () => {
     applyUiLanguage(state.uiLanguage === "en" ? "zh" : "en");
   });
+  $("#themeToggleButton").addEventListener("click", () => {
+    applyColorTheme(state.colorTheme === "light" ? "dark" : "light");
+  });
   $("#sidebarToggle").addEventListener("click", toggleSidebar);
   $("#sidebarBrandToggle").addEventListener("click", toggleSidebar);
   document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => closeDialog(button.dataset.close)));
@@ -5815,6 +5835,10 @@ function bindEvents() {
 
 async function bootstrap() {
   const initialRoute = parsePageRoute();
+  applyColorTheme(
+    localStorage.getItem("ra-triage-color-theme") || document.documentElement.dataset.colorTheme,
+    { persist: false }
+  );
   applyUiLanguage(localStorage.getItem("ra-triage-ui-language") || "zh", { persist: false });
   const savedSidebarState = localStorage.getItem("ra-triage-sidebar-collapsed");
   state.sidebarCollapsed = savedSidebarState === "true";

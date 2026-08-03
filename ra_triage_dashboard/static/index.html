@@ -1,13 +1,25 @@
 <!doctype html>
-<html lang="zh-CN" data-ui-lang="zh">
+<html lang="zh-CN" data-ui-lang="zh" data-color-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="ra-triage-base" content="{{RA_TRIAGE_BASE_PATH}}" />
     <title>Manual Triage Workbench</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='17' fill='%230d1119'/><g fill='%2324d3ef'><circle cx='16' cy='18' r='4'/><circle cx='16' cy='32' r='4'/><circle cx='16' cy='46' r='4'/></g><path d='M20 18h7l7 14m-14 0h14m-14 14h7l7-14' fill='none' stroke='%2388a4b4' stroke-width='4' stroke-linecap='round'/><path d='m35 34 6 6 11-14' fill='none' stroke='%23edf2fb' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/></svg>" />
+    <script>
+      (() => {
+        let theme = "dark";
+        try {
+          theme = localStorage.getItem("ra-triage-color-theme") === "light" ? "light" : "dark";
+        } catch (_error) {
+          // Storage can be unavailable in hardened browser contexts; dark is safe.
+        }
+        document.documentElement.dataset.colorTheme = theme;
+      })();
+    </script>
     <style>
       html { background: #0b0e14; color-scheme: dark; }
+      html[data-color-theme="light"] { background: #eef3f8; color-scheme: light; }
       html.ra-styles-loading body { visibility: hidden; }
     </style>
     <script>
@@ -22,7 +34,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-6`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-7`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -119,6 +131,7 @@
             <div><span class="ui-lang-zh">模型输出</span><span class="ui-lang-en">Predictions</span><strong id="statPredictions">—</strong></div>
           </div>
           <div class="top-actions">
+            <button class="button button-quiet theme-toggle" id="themeToggleButton" type="button" aria-label="切换到浅色模式" title="切换到浅色模式">☀</button>
             <button class="button button-quiet language-toggle" id="languageToggleButton" type="button" aria-label="切换到 English">EN</button>
             <button class="button button-quiet" id="refreshButton"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
           </div>
@@ -846,7 +859,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-6`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-7`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
