@@ -4,6 +4,7 @@
  * ES modules without auditing cross-file function/state dependencies.
  */
 function bindEvents() {
+  bindWorkSplitControls();
   document.querySelectorAll("[data-page-target]").forEach((element) => {
     element.addEventListener("click", (event) => {
       if (
@@ -18,6 +19,7 @@ function bindEvents() {
   });
   $("#filterForm").addEventListener("submit", async (event) => {
     event.preventDefault();
+    state.reviewIssueIds = [];
     await reloadReviewGallery();
   });
   $("#reviewAnalysisFilterForm").addEventListener("submit", async (event) => {
@@ -551,6 +553,7 @@ async function bootstrap() {
           preserveEmpty: initialRoute.runId === "none",
         }),
         loadReviewers(),
+        loadWorkAssignees(),
       ],
       "共享数据"
     );

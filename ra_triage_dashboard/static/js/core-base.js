@@ -114,6 +114,8 @@ const state = {
   caseTotal: 0,
   casePage: 1,
   casePageSize: DEFAULT_CASE_PAGE_SIZE,
+  reviewIssueIds: [],
+  workAssignees: [],
   caseRequestSeq: 0,
   caseListRequestSeq: 0,
   reviewReloadSeq: 0,

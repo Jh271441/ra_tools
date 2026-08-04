@@ -164,17 +164,19 @@ function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
             (item) => item.section === section.section && item.group === group.key
           );
           const selectedCount = items.filter((item) => chosenTags.has(item.key)).length;
-          const creator = section.section === "scene" ? `<div class="custom-tag-create" data-review-tag-creator="${escapeHtml(group.key)}">
-              <input data-new-review-tag maxlength="48" placeholder="新增场景标签" autocomplete="off" />
-              <input data-new-review-tag-hint maxlength="160" placeholder="补充说明（可选）" autocomplete="off" />
-              <button class="button button-quiet tag-catalog-save-button" data-add-review-tag data-tag-create-group="${escapeHtml(group.key)}" type="button" aria-label="保存新场景标签" title="保存新场景标签">✓</button>
-            </div>` : "";
           const creatorAction = section.section === "scene"
-            ? `<button class="tag-catalog-add-button" type="button" data-open-review-tag-creator="${escapeHtml(group.key)}" aria-label="新增${escapeHtml(group.label)}标签" title="新增${escapeHtml(group.label)}标签">＋</button>`
+            ? `<button class="tag-catalog-add-button" type="button" data-open-review-tag-creator="${escapeHtml(group.key)}" data-tag-create-group-label="${escapeHtml(group.label)}" aria-label="新增${escapeHtml(group.label)}标签" title="新增${escapeHtml(group.label)}标签">＋</button>`
             : "";
           return `<details class="review-tag-dropdown review-dropdown" data-tag-dropdown-group="${escapeHtml(group.key)}">
-            <summary><span>${escapeHtml(group.label)}</span><span class="tag-group-summary" data-tag-summary="${escapeHtml(group.key)}">${selectedCount} 项</span>${creatorAction}</summary>
-            <div class="review-tag-options">${creator}${items.map((item) => tagOption(item.key, item.label, chosenTags.has(item.key), group.key, item)).join("")}</div>
+            <summary>
+              <span class="tag-group-label">${escapeHtml(group.label)}</span>
+              <span class="tag-group-trailing">
+                ${creatorAction}
+                <span class="tag-group-summary" data-tag-summary="${escapeHtml(group.key)}">${selectedCount} 项</span>
+                <span class="tag-group-chevron" aria-hidden="true"></span>
+              </span>
+            </summary>
+            <div class="review-tag-options">${items.map((item) => tagOption(item.key, item.label, chosenTags.has(item.key), group.key, item)).join("") || '<div class="review-tag-empty">暂无标签，点 ＋ 添加</div>'}</div>
           </details>`;
         }).join("")}
       </div>
@@ -677,6 +679,79 @@ function markDeletedReviewTagOption(item) {
   updateTagSummary();
 }
 
+function sceneTagGroupLabel(group = "environment") {
+  const key = String(group || "environment");
+  if (key === "self_intent") return "自车意图";
+  if (key === "environment") return "环境";
+  return key;
+}
+
+function openReviewTagEditorDialog({
+  mode = "create",
+  group = "environment",
+  groupLabel = "",
+  key = "",
+  label = "",
+  hint = "",
+} = {}) {
+  const dialog = $("#reviewTagCreateDialog");
+  const form = $("#reviewTagCreateForm");
+  const modeInput = $("#reviewTagCreateMode");
+  const keyInput = $("#reviewTagCreateKey");
+  const groupInput = $("#reviewTagCreateGroup");
+  const labelInput = $("#reviewTagCreateLabel");
+  const hintInput = $("#reviewTagCreateHint");
+  const title = $("#reviewTagCreateDialogTitle");
+  const copy = $("#reviewTagCreateDialogHint");
+  const submit = $("#reviewTagCreateSubmit");
+  if (!dialog || !form || !groupInput || !labelInput) return;
+  const resolvedMode = mode === "edit" ? "edit" : "create";
+  const resolvedGroup = String(group || "environment");
+  const resolvedLabel = String(groupLabel || sceneTagGroupLabel(resolvedGroup));
+  if (modeInput) modeInput.value = resolvedMode;
+  if (keyInput) keyInput.value = resolvedMode === "edit" ? String(key || "") : "";
+  groupInput.value = resolvedGroup;
+  labelInput.value = resolvedMode === "edit" ? String(label || "") : "";
+  if (hintInput) hintInput.value = resolvedMode === "edit" ? String(hint || "") : "";
+  if (title) {
+    title.textContent = resolvedMode === "edit"
+      ? `编辑${resolvedLabel}标签`
+      : `新增${resolvedLabel}标签`;
+  }
+  if (copy) {
+    copy.textContent = resolvedMode === "edit"
+      ? `修改「${resolvedLabel}」共享目录中的标签；历史 Review 中的 key 不变。`
+      : `添加到「${resolvedLabel}」共享目录；所有用户与 Issue 均可使用。`;
+  }
+  if (submit) submit.textContent = resolvedMode === "edit" ? "保存修改" : "添加标签";
+  openDialog("reviewTagCreateDialog");
+  window.requestAnimationFrame(() => {
+    labelInput.focus();
+    if (resolvedMode === "edit") labelInput.select();
+  });
+}
+
+function openReviewTagCreateDialog(group = "environment", groupLabel = "") {
+  openReviewTagEditorDialog({ mode: "create", group, groupLabel });
+}
+
+function appendReviewTagOptionToGroup(item, group) {
+  const key = String(item?.key || "");
+  if (!key || reviewTagCatalogOptionRow(key)) return;
+  const groupKey = String(group || "").replace(/["\\]/g, "");
+  const list = document.querySelector(
+    `.review-tag-dropdown[data-tag-dropdown-group="${groupKey}"] .review-tag-options`
+  );
+  if (!list) return;
+  list.querySelector(".review-tag-empty")?.remove();
+  const template = document.createElement("template");
+  template.innerHTML = reviewTagOptionMarkup(item, true, group, true);
+  const option = template.content.firstElementChild;
+  list.appendChild(option);
+  option?.querySelector('input[name="reviewTags"]')?.addEventListener("change", updateTagSummary);
+  bindReviewTagCatalogControls(option || list);
+}
+
 function bindReviewTagCatalogControls(root = document) {
   root.querySelectorAll("[data-open-review-tag-creator]").forEach((button) => {
     if (button.dataset.reviewTagBound === "1") return;
@@ -684,91 +759,92 @@ function bindReviewTagCatalogControls(root = document) {
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      const dropdown = button.closest(".review-tag-dropdown");
-      const creator = dropdown?.querySelector("[data-review-tag-creator]");
-      const input = creator?.querySelector("[data-new-review-tag]");
-      if (!dropdown || !creator) return;
-      dropdown.open = true;
-      window.requestAnimationFrame(() => input?.focus());
+      openReviewTagCreateDialog(
+        button.dataset.openReviewTagCreator || "environment",
+        button.dataset.tagCreateGroupLabel || ""
+      );
     });
   });
-  root.querySelectorAll("[data-add-review-tag]").forEach((button) => {
-    if (button.dataset.reviewTagBound === "1") return;
-    button.dataset.reviewTagBound = "1";
-    button.addEventListener("click", async (event) => {
+  // Dialog lives outside the review pane; bind once from document.
+  const createForm = $("#reviewTagCreateForm");
+  if (createForm && createForm.dataset.reviewTagBound !== "1") {
+    createForm.dataset.reviewTagBound = "1";
+    createForm.addEventListener("submit", async (event) => {
       event.preventDefault();
-      event.stopPropagation();
-      const creator = button.closest("[data-review-tag-creator]");
-      const input = creator?.querySelector("[data-new-review-tag]");
-      const hintInput = creator?.querySelector("[data-new-review-tag-hint]");
-      const value = String(input?.value || "").trim();
-      const hint = String(hintInput?.value || "").trim();
-      const group = String(button.dataset.tagCreateGroup || "environment");
-      if (!value) return showToast("请输入新的场景标签。", true);
+      const mode = String($("#reviewTagCreateMode")?.value || "create");
+      const key = String($("#reviewTagCreateKey")?.value || "").trim();
+      const group = String($("#reviewTagCreateGroup")?.value || "environment");
+      const value = String($("#reviewTagCreateLabel")?.value || "").trim();
+      const hint = String($("#reviewTagCreateHint")?.value || "").trim();
+      const submit = $("#reviewTagCreateSubmit");
+      if (!value) return showToast("请输入场景标签标题。", true);
       if (value.length > 48 || /[\x00-\x1f\x7f]/.test(value)) {
         return showToast("场景标签标题长度或字符不合法。", true);
       }
       if (hint.length > 160 || /[\x00-\x1f\x7f]/.test(hint)) {
         return showToast("场景标签说明长度或字符不合法。", true);
       }
-      button.disabled = true;
-      button.setAttribute("aria-busy", "true");
+      if (mode === "edit" && !key) {
+        return showToast("缺少要编辑的场景标签。", true);
+      }
+      if (submit) {
+        submit.disabled = true;
+        submit.setAttribute("aria-busy", "true");
+      }
       try {
-        const result = await api("/api/review-tags", {
-          method: "POST",
-          body: JSON.stringify({ label: value, hint, group }),
-        });
-        setReviewTagCatalogFromResult(result);
-        const item = result.item || {};
-        if (item.key && creator && !reviewTagCatalogOptionRow(item.key)) {
-          const template = document.createElement("template");
-          template.innerHTML = reviewTagOptionMarkup(item, true, group, true);
-          const option = template.content.firstElementChild;
-          creator.after(option);
-          option?.querySelector('input[name="reviewTags"]')?.addEventListener("change", updateTagSummary);
-          bindReviewTagCatalogControls(option || creator);
+        if (mode === "edit") {
+          const result = await api(`/api/review-tags/${encodeURIComponent(key)}`, {
+            method: "PUT",
+            body: JSON.stringify({ label: value, hint, group }),
+          });
+          setReviewTagCatalogFromResult(result);
+          updateReviewTagOptionRow(result.item || { key, label: value, hint });
+          closeDialog("reviewTagCreateDialog");
+          showToast("场景标签已更新。");
+        } else {
+          const result = await api("/api/review-tags", {
+            method: "POST",
+            body: JSON.stringify({ label: value, hint, group }),
+          });
+          setReviewTagCatalogFromResult(result);
+          const item = result.item || {};
+          appendReviewTagOptionToGroup(item, group);
+          state.reviewFormDirty = true;
+          updateTagSummary();
+          closeDialog("reviewTagCreateDialog");
+          showToast("场景标签已加入共享目录，所有用户和 Issue 均可使用。");
         }
-        if (input) input.value = "";
-        if (hintInput) hintInput.value = "";
-        state.reviewFormDirty = true;
-        updateTagSummary();
-        showToast("场景标签已加入共享目录，所有用户和 Issue 均可使用。 ");
       } catch (error) {
         showToast(error.message, true);
       } finally {
-        button.disabled = false;
-        button.removeAttribute("aria-busy");
+        if (submit) {
+          submit.disabled = false;
+          submit.removeAttribute("aria-busy");
+        }
       }
     });
-  });
+  }
   root.querySelectorAll("[data-edit-review-tag]").forEach((button) => {
     if (button.dataset.reviewTagBound === "1") return;
     button.dataset.reviewTagBound = "1";
-    button.addEventListener("click", async (event) => {
+    button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
       const key = String(button.dataset.editReviewTag || "");
       const item = reviewTagCatalogItem(key);
-      if (!item || item.deleted || item.builtin) return;
-      const label = window.prompt("场景标签标题", String(item.label || ""));
-      if (label === null) return;
-      const hint = window.prompt("补充说明（可选）", String(item.hint || ""));
-      if (hint === null) return;
-      if (!String(label).trim()) return showToast("场景标签标题不能为空。", true);
-      button.disabled = true;
-      try {
-        const result = await api(`/api/review-tags/${encodeURIComponent(key)}`, {
-          method: "PUT",
-          body: JSON.stringify({ label: String(label).trim(), hint: String(hint).trim(), group: item.group || "environment" }),
-        });
-        setReviewTagCatalogFromResult(result);
-        updateReviewTagOptionRow(result.item || { key, label, hint });
-        showToast("场景标签已更新。 ");
-      } catch (error) {
-        showToast(error.message, true);
-      } finally {
-        button.disabled = false;
-      }
+      if (!item || item.deleted) return;
+      // Scene editor only for scene groups; non-scene built-ins keep group fixed.
+      openReviewTagEditorDialog({
+        mode: "edit",
+        group: item.group || "environment",
+        groupLabel:
+          item.section === "scene"
+            ? sceneTagGroupLabel(item.group || "environment")
+            : String(item.label || "标签"),
+        key,
+        label: item.label || "",
+        hint: item.hint || "",
+      });
     });
   });
   root.querySelectorAll("[data-delete-review-tag]").forEach((button) => {
@@ -779,7 +855,7 @@ function bindReviewTagCatalogControls(root = document) {
       event.stopPropagation();
       const key = String(button.dataset.deleteReviewTag || "");
       const item = reviewTagCatalogItem(key);
-      if (!item || item.deleted || item.builtin) return;
+      if (!item || item.deleted) return;
       if (!window.confirm(`确认删除“${item.label}”？\n历史 Review 仍会保留该标签。`)) return;
       button.disabled = true;
       try {

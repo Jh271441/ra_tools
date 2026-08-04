@@ -62,6 +62,7 @@ from .review_analysis import (
     COMPARISON_STATUSES,
     build_review_reason_analysis,
 )
+from .work_split import distribute_issue_ids
 from .sanitization import redact_sensitive_fields
 from .settings import Settings
 from .system_status import backup_status, overall_status, volume_status
@@ -656,7 +657,11 @@ def _admin_identity(request: Request):
 
 
 def _review_tag_catalog() -> tuple[dict[str, Any], ...]:
-    """Return built-in tags plus shared scene tags from the database."""
+    """Return built-in tags plus shared scene tags from the database.
+
+    Built-ins remain source-controlled, but a database row can override their
+    label/hint/group or soft-delete them (same pattern as missing evidence).
+    """
 
     merged: dict[str, dict[str, Any]] = {
         str(item["key"]): {
@@ -666,21 +671,28 @@ def _review_tag_catalog() -> tuple[dict[str, Any], ...]:
         }
         for item in REVIEW_TAG_CATALOG
     }
+    builtin_keys = set(merged)
     for row in database.list_review_tag_catalog(include_inactive=True):
         key = str(row.get("key") or "").strip()
-        if not key or key in merged:
+        if not key:
             continue
         item = {
             str(name): value
             for name, value in row.items()
             if str(name) != "active"
         }
+        if "group_key" in item and "group" not in item:
+            item["group"] = item.pop("group_key")
         item.setdefault("section", "scene")
-        item.setdefault("group", item.pop("group_key", "environment"))
+        item.setdefault("group", "environment")
         item.setdefault("hint", "")
-        item["builtin"] = False
+        item["builtin"] = key in builtin_keys
         item["deleted"] = not bool(row.get("active", 1))
-        merged[key] = item
+        if key in merged:
+            merged[key].update(item)
+            merged[key]["builtin"] = True
+        else:
+            merged[key] = item
     return tuple(merged.values())
 
 
@@ -1824,15 +1836,30 @@ async def update_review_tag(key: str, request: Request) -> dict[str, Any]:
         (item for item in _review_tag_catalog() if item["key"] == normalized_key),
         None,
     )
-    if current is None or bool(current.get("builtin")):
-        raise _detail(404, "可编辑的场景标签不存在。")
+    if current is None:
+        raise _detail(404, "场景标签目录项不存在。")
+    if bool(current.get("deleted")):
+        raise _detail(409, "该场景标签已经删除。")
     try:
         body = await request.json()
     except (TypeError, ValueError):
         raise _detail(400, "场景标签目录请求必须是 JSON。")
     if not isinstance(body, dict):
         raise _detail(400, "场景标签目录请求必须是 JSON 对象。")
-    label, hint, group = _validate_scene_tag_input(body)
+    section = str(current.get("section") or "scene")
+    if section == "scene":
+        label, hint, group = _validate_scene_tag_input(body)
+    else:
+        # Trigger/egress/legacy built-ins keep section/group; only label/hint edit.
+        label = _as_text(body.get("label"))
+        hint = _as_text(body.get("hint"))
+        group = str(current.get("group") or "environment")
+        if not label:
+            raise _detail(400, "场景标签标题不能为空。")
+        if len(label) > 48 or re.search(r"[\x00-\x1f\x7f]", label):
+            raise _detail(400, "场景标签标题长度或字符不合法。")
+        if len(hint) > 160 or re.search(r"[\x00-\x1f\x7f]", hint):
+            raise _detail(400, "场景标签说明长度或字符不合法。")
     actor, _, _ = _action_actor(request, body.get("updated_by"))
     if not actor:
         raise _detail(400, "无法确认场景标签目录编辑人。")
@@ -1849,14 +1876,17 @@ async def update_review_tag(key: str, request: Request) -> dict[str, Any]:
             key=normalized_key,
             label=label,
             hint=hint,
-            section="scene",
+            section=section,
             group_key=group,
             updated_by=actor,
         )
     except ValueError as exc:
         raise _detail(409, str(exc))
+    payload = _review_tag_payload(item, builtin=bool(current.get("builtin")))
+    payload["section"] = section
+    payload["group"] = group
     return {
-        "item": _review_tag_payload(item),
+        "item": payload,
         "review_tag_catalog": await asyncio.to_thread(_review_tag_catalog),
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
@@ -1871,8 +1901,10 @@ async def delete_review_tag(key: str, request: Request) -> dict[str, Any]:
         (item for item in _review_tag_catalog() if item["key"] == normalized_key),
         None,
     )
-    if current is None or bool(current.get("builtin")):
-        raise _detail(404, "可删除的场景标签不存在。")
+    if current is None:
+        raise _detail(404, "场景标签目录项不存在。")
+    if bool(current.get("deleted")):
+        raise _detail(409, "该场景标签已经删除。")
     actor, _, _ = _action_actor(request, "")
     if not actor:
         raise _detail(400, "无法确认场景标签目录删除人。")
@@ -1881,11 +1913,17 @@ async def delete_review_tag(key: str, request: Request) -> dict[str, Any]:
             database.delete_review_tag,
             key=normalized_key,
             deleted_by=actor,
+            label=str(current.get("label") or ""),
+            hint=str(current.get("hint") or ""),
+            section=str(current.get("section") or "scene"),
+            group_key=str(current.get("group") or "environment"),
         )
     except ValueError as exc:
         raise _detail(409, str(exc))
+    payload = _review_tag_payload(item, builtin=bool(current.get("builtin")))
+    payload["deleted"] = True
     return {
-        "item": _review_tag_payload(item),
+        "item": payload,
         "review_tag_catalog": await asyncio.to_thread(_review_tag_catalog),
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
@@ -2194,8 +2232,25 @@ async def status(response: Response) -> dict[str, Any]:
     }
 
 
-@app.get("/api/cases")
-async def list_cases(
+def _parse_issue_id_filter(raw: str) -> list[str]:
+    tokens = re.split(r"[\s,;|]+", _as_text(raw))
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for token in tokens:
+        issue_id = token.strip()
+        if not issue_id or issue_id in seen:
+            continue
+        if not re.fullmatch(r"[A-Za-z0-9_-]{3,128}", issue_id):
+            continue
+        seen.add(issue_id)
+        cleaned.append(issue_id)
+        if len(cleaned) >= 2000:
+            break
+    return cleaned
+
+
+def _case_filter_kwargs(
+    *,
     search: str = "",
     gt_label: str = "",
     model_label: str = "",
@@ -2205,9 +2260,8 @@ async def list_cases(
     comparison: str = "",
     failure_only: bool = False,
     missing_evidence: str = "",
-    page: int = 1,
-    page_size: int = 100,
-    include_thumbnail: bool = False,
+    issue_ids: str = "",
+    work_assignee: str = "",
 ) -> dict[str, Any]:
     requested_comparison = _as_text(comparison).strip().lower()
     if requested_comparison and requested_comparison not in COMPARISON_STATUSES:
@@ -2221,18 +2275,56 @@ async def list_cases(
         raise _detail(400, "model_label 不在三分类范围内。")
     if model_label and not model_run_id:
         raise _detail(400, "按模型标注筛选时必须选择 Model Run。")
-    result = await asyncio.to_thread(
-        database.list_cases,
-        baseline_scope=settings.baseline_scope,
+    return {
+        "baseline_scope": settings.baseline_scope,
+        "search": search,
+        "gt_label": gt_label,
+        "model_label": model_label,
+        "annotation_label": annotation_label,
+        "annotation_author": annotation_author,
+        "model_run_id": model_run_id,
+        "comparison_status": comparison_status,
+        "failure_only": failure_only,
+        "missing_evidence": missing_evidence,
+        "issue_ids": _parse_issue_id_filter(issue_ids),
+        "work_assignee": _as_text(work_assignee).strip(),
+    }
+
+
+@app.get("/api/cases")
+async def list_cases(
+    search: str = "",
+    gt_label: str = "",
+    model_label: str = "",
+    annotation_label: str = "",
+    annotation_author: str = "",
+    model_run_id: str = "",
+    comparison: str = "",
+    failure_only: bool = False,
+    missing_evidence: str = "",
+    issue_ids: str = "",
+    work_assignee: str = "",
+    page: int = 1,
+    page_size: int = 100,
+    include_thumbnail: bool = False,
+) -> dict[str, Any]:
+    filters = _case_filter_kwargs(
         search=search,
         gt_label=gt_label,
         model_label=model_label,
         annotation_label=annotation_label,
         annotation_author=annotation_author,
         model_run_id=model_run_id,
-        comparison_status=comparison_status,
+        comparison=comparison,
         failure_only=failure_only,
         missing_evidence=missing_evidence,
+        issue_ids=issue_ids,
+        work_assignee=work_assignee,
+    )
+    comparison_status = filters["comparison_status"]
+    result = await asyncio.to_thread(
+        database.list_cases,
+        **filters,
         page=page,
         page_size=min(max(1, int(page_size)), 100),
     )
@@ -2261,8 +2353,139 @@ async def list_cases(
         "model_run_id": model_run_id,
         "comparison_status": comparison_status,
         "failure_only": comparison_status == "mismatch",
+        "issue_ids": filters["issue_ids"],
+        "work_assignee": filters["work_assignee"],
     }
     return result
+
+
+@app.get("/api/cases/issue-ids")
+async def list_case_issue_ids(
+    search: str = "",
+    gt_label: str = "",
+    model_label: str = "",
+    annotation_label: str = "",
+    annotation_author: str = "",
+    model_run_id: str = "",
+    comparison: str = "",
+    failure_only: bool = False,
+    missing_evidence: str = "",
+    issue_ids: str = "",
+    work_assignee: str = "",
+) -> dict[str, Any]:
+    """Return all matching issue IDs for the current Review filters (capped)."""
+
+    filters = _case_filter_kwargs(
+        search=search,
+        gt_label=gt_label,
+        model_label=model_label,
+        annotation_label=annotation_label,
+        annotation_author=annotation_author,
+        model_run_id=model_run_id,
+        comparison=comparison,
+        failure_only=failure_only,
+        missing_evidence=missing_evidence,
+        issue_ids=issue_ids,
+        work_assignee=work_assignee,
+    )
+    ids = await asyncio.to_thread(database.list_case_issue_ids, **filters, limit=5000)
+    return {
+        "issue_ids": ids,
+        "total": len(ids),
+        "truncated": len(ids) >= 5000,
+        "filters": {
+            "model_run_id": model_run_id,
+            "comparison_status": filters["comparison_status"],
+            "failure_only": filters["comparison_status"] == "mismatch",
+            "issue_ids": filters["issue_ids"],
+            "work_assignee": filters["work_assignee"],
+        },
+    }
+
+
+@app.get("/api/work-assignees")
+async def work_assignees() -> dict[str, Any]:
+    """Assignees currently attached to Issues via work-split."""
+
+    return {
+        "items": await asyncio.to_thread(database.list_work_assignees),
+    }
+
+
+@app.post("/api/cases/work-split")
+async def split_case_work(request: Request) -> dict[str, Any]:
+    """Admin-only: randomly assign filtered issues and persist ownership."""
+
+    identity = _admin_identity(request)
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        raise _detail(400, "均分任务请求必须是 JSON。")
+    if not isinstance(body, dict):
+        raise _detail(400, "均分任务请求必须是 JSON 对象。")
+    filter_body = body.get("filters") if isinstance(body.get("filters"), dict) else {}
+    filters = _case_filter_kwargs(
+        search=_as_text(filter_body.get("search")),
+        gt_label=_as_text(filter_body.get("gt_label")),
+        model_label=_as_text(filter_body.get("model_label")),
+        annotation_label=_as_text(filter_body.get("annotation_label")),
+        annotation_author=_as_text(filter_body.get("annotation_author")),
+        model_run_id=_as_text(filter_body.get("model_run_id")),
+        comparison=_as_text(filter_body.get("comparison") or filter_body.get("comparison_status")),
+        failure_only=bool(filter_body.get("failure_only")),
+        missing_evidence=_as_text(filter_body.get("missing_evidence")),
+        issue_ids=_as_text(filter_body.get("issue_ids")),
+        work_assignee=_as_text(filter_body.get("work_assignee")),
+    )
+    issue_ids = await asyncio.to_thread(database.list_case_issue_ids, **filters, limit=5000)
+    assignees = body.get("assignees")
+    if not isinstance(assignees, list):
+        raise _detail(400, "assignees 必须是数组。")
+    raw_seed = body.get("seed", None)
+    seed: int | None
+    if raw_seed in (None, ""):
+        seed = None
+    else:
+        try:
+            seed = int(raw_seed)
+        except (TypeError, ValueError):
+            raise _detail(400, "seed 必须是整数。")
+    try:
+        assignments = distribute_issue_ids(issue_ids, assignees, seed=seed)
+        saved = await asyncio.to_thread(
+            database.apply_work_split,
+            assignments=assignments,
+            created_by=identity.username,
+            seed=seed,
+            filter_snapshot={
+                "model_run_id": filters["model_run_id"],
+                "comparison_status": filters["comparison_status"],
+                "search": filters["search"],
+                "gt_label": filters["gt_label"],
+                "model_label": filters["model_label"],
+                "annotation_author": filters["annotation_author"],
+                "missing_evidence": filters["missing_evidence"],
+            },
+        )
+    except ValueError as exc:
+        raise _detail(400, str(exc))
+    return {
+        "total": len(issue_ids),
+        "truncated": len(issue_ids) >= 5000,
+        "seed": seed,
+        "split_id": saved["split_id"],
+        "created_by": saved["created_by"],
+        "created_at": saved["created_at"],
+        "assignments": assignments,
+        "work_assignees": await asyncio.to_thread(database.list_work_assignees),
+        "change_revision": await asyncio.to_thread(database.change_revision),
+        "filters": {
+            "model_run_id": filters["model_run_id"],
+            "comparison_status": filters["comparison_status"],
+            "failure_only": filters["comparison_status"] == "mismatch",
+            "work_assignee": filters["work_assignee"],
+        },
+    }
 
 
 @app.get("/api/reviewers")

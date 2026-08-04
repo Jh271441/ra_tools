@@ -536,6 +536,7 @@ class Database:
         normalized_hint = str(hint or "").strip()
         normalized_section = str(section or "scene").strip()
         normalized_group = str(group_key or "environment").strip()
+        normalized_author = str(updated_by or "").strip()
         if not normalized_key:
             raise ValueError("场景标签 key 不能为空。")
         if not normalized_label:
@@ -544,37 +545,62 @@ class Database:
             raise ValueError("场景标签标题长度或字符不合法。")
         if len(normalized_hint) > 160 or re.search(r"[\x00-\x1f\x7f]", normalized_hint):
             raise ValueError("场景标签说明长度或字符不合法。")
-        if normalized_section != "scene" or normalized_group not in {"environment", "self_intent"}:
+        if normalized_section == "scene" and normalized_group not in {
+            "environment",
+            "self_intent",
+        }:
             raise ValueError("场景标签分组不合法。")
-        if not str(updated_by or "").strip():
+        if not normalized_author:
             raise ValueError("编辑人不能为空。")
         with self._write_lock, self.connect() as conn:
             current = conn.execute(
                 "SELECT key FROM review_tag_catalog WHERE key = ?",
                 (normalized_key,),
             ).fetchone()
-            if not current:
-                raise ValueError("场景标签目录项不存在。")
             existing = conn.execute(
                 "SELECT key FROM review_tag_catalog WHERE label = ? AND key <> ? AND active",
                 (normalized_label, normalized_key),
             ).fetchone()
             if existing:
                 raise ValueError("该场景标签标题已经存在。")
-            conn.execute(
-                """
-                UPDATE review_tag_catalog
-                SET label = ?, hint = ?, section = ?, group_key = ?, active = TRUE
-                WHERE key = ?
-                """,
-                (
-                    normalized_label,
-                    normalized_hint,
-                    normalized_section,
-                    normalized_group,
-                    normalized_key,
-                ),
-            )
+            try:
+                if current:
+                    conn.execute(
+                        """
+                        UPDATE review_tag_catalog
+                        SET label = ?, hint = ?, section = ?, group_key = ?, active = TRUE
+                        WHERE key = ?
+                        """,
+                        (
+                            normalized_label,
+                            normalized_hint,
+                            normalized_section,
+                            normalized_group,
+                            normalized_key,
+                        ),
+                    )
+                else:
+                    # Upsert override for built-in catalog keys not yet in the table.
+                    conn.execute(
+                        """
+                        INSERT INTO review_tag_catalog (
+                            key, label, hint, section, group_key, created_by, created_at, active
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, TRUE)
+                        """,
+                        (
+                            normalized_key,
+                            normalized_label,
+                            normalized_hint,
+                            normalized_section,
+                            normalized_group,
+                            normalized_author,
+                            utc_now(),
+                        ),
+                    )
+            except Exception as exc:
+                if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+                    raise ValueError("该场景标签标题已经存在。") from exc
+                raise
             row = conn.execute(
                 """
                 SELECT key, label, hint, section, group_key, created_by, created_at, active
@@ -586,7 +612,18 @@ class Database:
             raise RuntimeError("场景标签目录更新后无法读取。")
         return {name: row[name] for name in row.keys()}
 
-    def delete_review_tag(self, *, key: str, deleted_by: str) -> dict[str, Any]:
+    def delete_review_tag(
+        self,
+        *,
+        key: str,
+        deleted_by: str,
+        label: str = "",
+        hint: str = "",
+        section: str = "scene",
+        group_key: str = "environment",
+    ) -> dict[str, Any]:
+        """Soft-delete a shared entry; built-ins get an inactive override row."""
+
         normalized_key = str(key or "").strip()
         if not normalized_key:
             raise ValueError("场景标签 key 不能为空。")
@@ -597,12 +634,31 @@ class Database:
                 "SELECT key FROM review_tag_catalog WHERE key = ?",
                 (normalized_key,),
             ).fetchone()
-            if not current:
-                raise ValueError("场景标签目录项不存在。")
-            conn.execute(
-                "UPDATE review_tag_catalog SET active = FALSE WHERE key = ?",
-                (normalized_key,),
-            )
+            if current:
+                conn.execute(
+                    "UPDATE review_tag_catalog SET active = FALSE WHERE key = ?",
+                    (normalized_key,),
+                )
+            else:
+                normalized_label = str(label or "").strip()
+                if not normalized_label:
+                    raise ValueError("场景标签标题不能为空。")
+                conn.execute(
+                    """
+                    INSERT INTO review_tag_catalog (
+                        key, label, hint, section, group_key, created_by, created_at, active
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, FALSE)
+                    """,
+                    (
+                        normalized_key,
+                        normalized_label,
+                        str(hint or "").strip(),
+                        str(section or "scene").strip() or "scene",
+                        str(group_key or "environment").strip() or "environment",
+                        str(deleted_by).strip(),
+                        utc_now(),
+                    ),
+                )
             row = conn.execute(
                 """
                 SELECT key, label, hint, section, group_key, created_by, created_at, active
@@ -1052,6 +1108,26 @@ class Database:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS issue_work_splits (
+                    id TEXT PRIMARY KEY,
+                    created_by TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    seed INTEGER,
+                    total_count INTEGER NOT NULL DEFAULT 0,
+                    filter_json TEXT NOT NULL DEFAULT '{}',
+                    assignees_json TEXT NOT NULL DEFAULT '[]'
+                );
+
+                CREATE TABLE IF NOT EXISTS issue_work_assignments (
+                    issue_id TEXT PRIMARY KEY REFERENCES issues(issue_id) ON DELETE CASCADE,
+                    assignee TEXT NOT NULL DEFAULT '',
+                    split_id TEXT NOT NULL DEFAULT '',
+                    assigned_by TEXT NOT NULL DEFAULT '',
+                    assigned_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_issue_work_assignments_assignee
+                    ON issue_work_assignments(assignee, assigned_at DESC);
                 """
             )
             revision_tables = (
@@ -1066,6 +1142,8 @@ class Database:
                 "review_tag_catalog",
                 "missing_evidence_catalog",
                 "access_users",
+                "issue_work_splits",
+                "issue_work_assignments",
             )
             for table in revision_tables:
                 for action in ("insert", "update", "delete"):
@@ -1770,7 +1848,7 @@ class Database:
               )
         """
 
-    def list_cases(
+    def _case_list_filters(
         self,
         *,
         baseline_scope: str = "",
@@ -1783,11 +1861,9 @@ class Database:
         comparison_status: str = "all",
         failure_only: bool = False,
         missing_evidence: str = "",
-        page: int = 1,
-        page_size: int = 100,
-    ) -> dict[str, Any]:
-        page = max(1, page)
-        page_size = min(max(1, page_size), 2000)
+        issue_ids: list[str] | None = None,
+        work_assignee: str = "",
+    ) -> tuple[str, list[Any], list[Any], str]:
         comparison_status = str(comparison_status or "all").strip().lower()
         if failure_only:
             comparison_status = "mismatch"
@@ -1821,6 +1897,21 @@ class Database:
             # avoids treating a prefix as a different evidence item.
             where.append("ann.missing_evidence_json LIKE ?")
             params.append(f'%"{missing_evidence.strip()}"%')
+        cleaned_ids = [
+            str(item).strip()
+            for item in (issue_ids or [])
+            if str(item or "").strip()
+        ][:2000]
+        if cleaned_ids:
+            placeholders = ", ".join("?" for _ in cleaned_ids)
+            where.append(f"i.issue_id IN ({placeholders})")
+            params.extend(cleaned_ids)
+        assignee_filter = str(work_assignee or "").strip()
+        if assignee_filter in {"__none__", "none", "未分配"}:
+            where.append("(wa.assignee IS NULL OR wa.assignee = '')")
+        elif assignee_filter:
+            where.append("wa.assignee = ?")
+            params.append(assignee_filter)
         if comparison_status != "all":
             where.append("i.gt_label IN (?, ?, ?)")
             params.extend(LABELS)
@@ -1839,8 +1930,46 @@ class Database:
             LEFT JOIN model_predictions mp
               ON mp.issue_id = i.issue_id
              AND mp.model_run_id = ?
+            LEFT JOIN issue_work_assignments wa
+              ON wa.issue_id = i.issue_id
         """
         model_args = [model_run_id]
+        return condition, params, model_args, common
+
+    def list_cases(
+        self,
+        *,
+        baseline_scope: str = "",
+        search: str = "",
+        gt_label: str = "",
+        model_label: str = "",
+        annotation_label: str = "",
+        annotation_author: str = "",
+        model_run_id: str = "",
+        comparison_status: str = "all",
+        failure_only: bool = False,
+        missing_evidence: str = "",
+        issue_ids: list[str] | None = None,
+        work_assignee: str = "",
+        page: int = 1,
+        page_size: int = 100,
+    ) -> dict[str, Any]:
+        page = max(1, page)
+        page_size = min(max(1, page_size), 2000)
+        condition, params, model_args, common = self._case_list_filters(
+            baseline_scope=baseline_scope,
+            search=search,
+            gt_label=gt_label,
+            model_label=model_label,
+            annotation_label=annotation_label,
+            annotation_author=annotation_author,
+            model_run_id=model_run_id,
+            comparison_status=comparison_status,
+            failure_only=failure_only,
+            missing_evidence=missing_evidence,
+            issue_ids=issue_ids,
+            work_assignee=work_assignee,
+        )
         with self.connect() as conn:
             total = conn.execute(
                 f"SELECT COUNT(DISTINCT i.issue_id) {common} {condition}", (*model_args, *params)
@@ -1855,7 +1984,9 @@ class Database:
                        ann.author_source AS annotation_author_source,
                        ann.author_verified AS annotation_author_verified,
                        ann.created_at AS annotation_created_at,
-                       mp.model_label, mp.model_reason, mp.model_confidence, mp.model_run_id
+                       mp.model_label, mp.model_reason, mp.model_confidence, mp.model_run_id,
+                       COALESCE(wa.assignee, '') AS work_assignee,
+                       COALESCE(wa.split_id, '') AS work_split_id
                 {common}
                 {condition}
                 ORDER BY i.issue_id ASC
@@ -1869,6 +2000,53 @@ class Database:
             "page": page,
             "page_size": page_size,
         }
+
+    def list_case_issue_ids(
+        self,
+        *,
+        baseline_scope: str = "",
+        search: str = "",
+        gt_label: str = "",
+        model_label: str = "",
+        annotation_label: str = "",
+        annotation_author: str = "",
+        model_run_id: str = "",
+        comparison_status: str = "all",
+        failure_only: bool = False,
+        missing_evidence: str = "",
+        issue_ids: list[str] | None = None,
+        work_assignee: str = "",
+        limit: int = 5000,
+    ) -> list[str]:
+        """Return ordered issue IDs matching the same filters as list_cases."""
+
+        condition, params, model_args, common = self._case_list_filters(
+            baseline_scope=baseline_scope,
+            search=search,
+            gt_label=gt_label,
+            model_label=model_label,
+            annotation_label=annotation_label,
+            annotation_author=annotation_author,
+            model_run_id=model_run_id,
+            comparison_status=comparison_status,
+            failure_only=failure_only,
+            missing_evidence=missing_evidence,
+            issue_ids=issue_ids,
+            work_assignee=work_assignee,
+        )
+        limit = min(max(1, int(limit)), 5000)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT DISTINCT i.issue_id
+                {common}
+                {condition}
+                ORDER BY i.issue_id ASC
+                LIMIT ?
+                """,
+                (*model_args, *params, limit),
+            ).fetchall()
+        return [str(row["issue_id"] if hasattr(row, "keys") else row[0]) for row in rows]
 
     def get_case(self, issue_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
@@ -2957,8 +3135,17 @@ class Database:
         data = cls._issue_dict(row)
         model_label = row["model_label"] or ""
         comparable = bool(data["gt_label"] in LABELS and model_label in LABELS)
+        keys = set(row.keys()) if hasattr(row, "keys") else set()
+        work_assignee = (
+            str(row["work_assignee"] or "") if "work_assignee" in keys else ""
+        )
+        work_split_id = (
+            str(row["work_split_id"] or "") if "work_split_id" in keys else ""
+        )
         data.update(
             {
+                "work_assignee": work_assignee,
+                "work_split_id": work_split_id,
                 "annotation": {
                     "label": row["annotation_label"] or "",
                     "review_status": row["annotation_review_status"] or "pending",
@@ -2982,6 +3169,97 @@ class Database:
             }
         )
         return data
+
+    def list_work_assignees(self) -> list[dict[str, Any]]:
+        """Distinct people currently assigned via work-split."""
+
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT assignee, COUNT(*) AS issue_count
+                FROM issue_work_assignments
+                WHERE assignee <> ''
+                GROUP BY assignee
+                ORDER BY assignee ASC
+                """
+            ).fetchall()
+        return [
+            {
+                "username": str(row["assignee"] or ""),
+                "issue_count": int(row["issue_count"] or 0),
+            }
+            for row in rows
+            if str(row["assignee"] or "").strip()
+        ]
+
+    def apply_work_split(
+        self,
+        *,
+        assignments: list[dict[str, Any]],
+        created_by: str,
+        seed: int | None = None,
+        filter_snapshot: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Persist a work-split batch and overwrite assignments for its issues."""
+
+        actor = str(created_by or "").strip()
+        if not actor:
+            raise ValueError("均分操作人不能为空。")
+        if not assignments:
+            raise ValueError("分配结果为空。")
+        split_id = f"split-{uuid.uuid4().hex}"
+        now = utc_now()
+        rows: list[tuple[str, str, str, str, str]] = []
+        for item in assignments:
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
+            for issue_id in item.get("issue_ids") or []:
+                cleaned = str(issue_id or "").strip()
+                if not cleaned:
+                    continue
+                rows.append((cleaned, name, split_id, actor, now))
+        if not rows:
+            raise ValueError("没有可写入的 Issue 分配。")
+        with self._write_lock, self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO issue_work_splits (
+                    id, created_by, created_at, seed, total_count, filter_json, assignees_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    split_id,
+                    actor,
+                    now,
+                    seed,
+                    len(rows),
+                    json.dumps(filter_snapshot or {}, ensure_ascii=False),
+                    json.dumps(assignments, ensure_ascii=False),
+                ),
+            )
+            for issue_id, assignee, sid, assigned_by, assigned_at in rows:
+                conn.execute(
+                    """
+                    INSERT INTO issue_work_assignments (
+                        issue_id, assignee, split_id, assigned_by, assigned_at
+                    ) VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(issue_id) DO UPDATE SET
+                        assignee = excluded.assignee,
+                        split_id = excluded.split_id,
+                        assigned_by = excluded.assigned_by,
+                        assigned_at = excluded.assigned_at
+                    """,
+                    (issue_id, assignee, sid, assigned_by, assigned_at),
+                )
+        return {
+            "split_id": split_id,
+            "created_by": actor,
+            "created_at": now,
+            "seed": seed,
+            "total": len(rows),
+            "assignments": assignments,
+        }
 
     @staticmethod
     def _annotation_dict(row: sqlite3.Row) -> dict[str, Any]:

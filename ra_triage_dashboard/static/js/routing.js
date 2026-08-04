@@ -115,6 +115,7 @@ function normalizedReviewRouteFilters(params) {
     gtLabel: LABELS.includes(gtLabel) ? gtLabel : "",
     modelLabel: LABELS.includes(modelLabel) ? modelLabel : "",
     annotationAuthor: params.get("reviewer") || "",
+    workAssignee: params.get("work_assignee") || params.get("assignee") || "",
     clusterKey: params.get("evidence") || "",
     casePage: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
     casePageSize: CASE_PAGE_SIZES.includes(rawPageSize)
@@ -196,6 +197,7 @@ function currentReviewRouteOptions(overrides = {}) {
     gtLabel: $("#gtFilter")?.value || "",
     modelLabel: $("#annotationFilter")?.value || "",
     annotationAuthor: $("#reviewerFilter")?.value || "",
+    workAssignee: $("#workAssigneeFilter")?.value || "",
     clusterKey: state.clusterKey,
     casePage: state.casePage,
     casePageSize: state.casePageSize,
@@ -211,6 +213,14 @@ function applyReviewRouteControls(route) {
     $("#annotationFilter").value = LABELS.includes(route.modelLabel)
       ? route.modelLabel
       : "";
+  }
+  if ($("#workAssigneeFilter")) {
+    const assignee = route.workAssignee || "";
+    $("#workAssigneeFilter").value =
+      !assignee ||
+      [...$("#workAssigneeFilter").options].some((option) => option.value === assignee)
+        ? assignee
+        : "";
   }
   if ($("#reviewerFilter")) {
     const reviewer = route.annotationAuthor || "";
@@ -335,6 +345,7 @@ function pageUrl(page, options = {}) {
     if (review.gtLabel) url.searchParams.set("gt", review.gtLabel);
     if (review.modelLabel) url.searchParams.set("model_label", review.modelLabel);
     if (review.annotationAuthor) url.searchParams.set("reviewer", review.annotationAuthor);
+    if (review.workAssignee) url.searchParams.set("work_assignee", review.workAssignee);
     if (review.clusterKey) url.searchParams.set("evidence", review.clusterKey);
     if (Number(review.casePage) > 1) url.searchParams.set("page", String(review.casePage));
     if (Number(review.casePageSize) !== DEFAULT_CASE_PAGE_SIZE) {

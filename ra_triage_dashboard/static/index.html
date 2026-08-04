@@ -34,7 +34,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-35`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-42`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -191,6 +191,13 @@
                     <option value="">全部复核人</option>
                   </select>
                 </label>
+                <label>
+                  <span>任务负责人</span>
+                  <select id="workAssigneeFilter" aria-label="均分任务负责人筛选">
+                    <option value="">全部负责人</option>
+                    <option value="__none__">未分配</option>
+                  </select>
+                </label>
                 <button class="button button-quiet filter-submit" type="submit">应用</button>
               </form>
               </section>
@@ -203,6 +210,7 @@
                   <div class="gallery-heading-actions">
                     <div class="review-quick-actions">
                       <button class="button button-quiet" id="reviewUploadModelButton" type="button">上传模型结果</button>
+                      <button class="button button-quiet" id="splitFilteredButton" type="button" disabled>均分任务</button>
                       <button class="button button-primary" id="predictFilteredButton" type="button" disabled>预测当前筛选</button>
                     </div>
                     <div class="gallery-heading-meta">
@@ -838,6 +846,61 @@
       </div>
     </dialog>
 
+    <dialog class="dialog work-split-dialog" id="workSplitDialog">
+      <div class="dialog-card">
+        <div class="dialog-heading">
+          <div>
+            <h2>均分 Review 任务</h2>
+            <p class="dialog-copy" id="workSplitDialogHint">对当前筛选结果随机分配；可给部分人指定数量，其余人再均分剩余 Issue。</p>
+          </div>
+          <button class="icon-button" type="button" data-close="workSplitDialog" aria-label="关闭">×</button>
+        </div>
+        <div class="work-split-summary" id="workSplitSummary">当前筛选：—</div>
+        <div class="work-split-people" id="workSplitPeople" aria-label="复核人列表"></div>
+        <div class="work-split-toolbar">
+          <button class="button button-quiet" id="workSplitAddPerson" type="button">添加人员</button>
+          <label class="work-split-seed">
+            <span>随机种子（可选）</span>
+            <input id="workSplitSeed" type="number" inputmode="numeric" placeholder="留空则每次不同" />
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <button class="button button-quiet" type="button" data-close="workSplitDialog">取消</button>
+          <button class="button button-primary" id="workSplitGenerate" type="button">生成分配</button>
+        </div>
+        <div class="work-split-results hidden" id="workSplitResults" aria-live="polite"></div>
+      </div>
+    </dialog>
+
+    <dialog class="dialog review-tag-create-dialog" id="reviewTagCreateDialog">
+      <div class="dialog-card">
+        <div class="dialog-heading">
+          <div>
+            <h2 id="reviewTagCreateDialogTitle">新增场景标签</h2>
+            <p class="dialog-copy" id="reviewTagCreateDialogHint">写入共享目录后，所有用户与 Issue 均可使用。</p>
+          </div>
+          <button class="icon-button" type="button" data-close="reviewTagCreateDialog" aria-label="关闭">×</button>
+        </div>
+        <form class="review-tag-create-form" id="reviewTagCreateForm">
+          <input type="hidden" id="reviewTagCreateMode" value="create" />
+          <input type="hidden" id="reviewTagCreateKey" value="" />
+          <input type="hidden" id="reviewTagCreateGroup" value="environment" />
+          <label>
+            <span>标签名称</span>
+            <input id="reviewTagCreateLabel" type="text" maxlength="48" placeholder="例如：环岛" autocomplete="off" required />
+          </label>
+          <label>
+            <span>补充说明（可选）</span>
+            <input id="reviewTagCreateHint" type="text" maxlength="160" placeholder="给其他复核人看的短说明" autocomplete="off" />
+          </label>
+          <div class="dialog-actions">
+            <button class="button button-quiet" type="button" data-close="reviewTagCreateDialog">取消</button>
+            <button class="button button-primary" id="reviewTagCreateSubmit" type="submit">添加标签</button>
+          </div>
+        </form>
+      </div>
+    </dialog>
+
     <dialog class="dialog ra-event-dialog" id="raEventDialog">
       <div class="dialog-card">
         <div class="dialog-heading">
@@ -878,7 +941,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-37`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-42`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

@@ -36,6 +36,9 @@ async function browserLcaUsername() {
 }
 
 function renderSession() {
+  if (typeof updateWorkSplitAdminVisibility === "function") {
+    updateWorkSplitAdminVisibility();
+  }
   const username = state.session.username;
   const identityPending = Boolean(state.session.identity_pending);
   $("#sessionUserName").textContent = username || (identityPending

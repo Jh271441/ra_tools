@@ -122,8 +122,7 @@ function reviewTagOptionMarkup(item, selected = false, groupKey = "", manage = t
   const label = String(item?.label || tagLabel(key));
   const hint = String(item?.hint || "");
   const deleted = Boolean(item?.deleted);
-  const custom = Boolean(item && item.builtin === false);
-  const canManage = Boolean(manage && custom && !deleted);
+  const canManage = Boolean(manage && !deleted);
   const option = `<label class="tag-option${deleted ? " tag-option-deleted" : ""}"${hint ? ` title="${escapeHtml(hint)}"` : ""}>
       <input type="checkbox" name="reviewTags" value="${escapeHtml(key)}"${groupKey ? ` data-tag-group="${escapeHtml(groupKey)}"` : ""} ${selected ? "checked" : ""} />
       <span>${escapeHtml(label)}</span>

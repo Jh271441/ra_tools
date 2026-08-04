@@ -236,17 +236,40 @@ function predictionBatchLimit() {
 }
 
 function updateFilteredPredictionButton() {
-  const button = $("#predictFilteredButton");
-  if (!button) return;
   const total = Number(state.caseTotal || 0);
   const limit = predictionBatchLimit();
-  button.disabled = total === 0 || state.config?.batch_prediction?.enabled === false;
-  button.textContent = total ? `预测当前筛选 · ${total}` : "预测当前筛选";
-  button.title =
-    total > limit
-      ? `单批最多 ${limit} 个 Issue，请继续收窄筛选后再发起。`
-      : `把当前 ${total} 个筛选结果带入 Batch 页面；不会立即运行或自动推送。`;
-  button.classList.toggle("button-limit-warning", total > limit);
+  const predict = $("#predictFilteredButton");
+  if (predict) {
+    predict.disabled = total === 0 || state.config?.batch_prediction?.enabled === false;
+    predict.textContent = total ? `预测当前筛选 · ${total}` : "预测当前筛选";
+    predict.title =
+      total > limit
+        ? `单批最多 ${limit} 个 Issue，请继续收窄筛选后再发起。`
+        : `把当前 ${total} 个筛选结果带入 Batch 页面；不会立即运行或自动推送。`;
+    predict.classList.toggle("button-limit-warning", total > limit);
+  }
+  updateWorkSplitAdminVisibility();
+  const split = $("#splitFilteredButton");
+  if (split && !split.hidden) {
+    split.disabled = total === 0;
+    split.textContent = total ? `均分任务 · ${total}` : "均分任务";
+    split.title = total
+      ? `管理员：把当前 ${total} 个筛选 Issue 写入任务负责人；可指定数量，剩余均分。`
+      : "当前筛选没有 Issue。";
+  }
+  const summary = $("#galleryResultSummary");
+  if (summary) {
+    const assignee = $("#workAssigneeFilter")?.value || "";
+    if (assignee && assignee !== "__none__") {
+      summary.textContent = `任务负责人 ${assignee} · ${total} 个 Issue`;
+    } else if (assignee === "__none__") {
+      summary.textContent = total ? `未分配任务 · ${total} 个 Issue` : "没有未分配 Issue";
+    } else if (state.reviewIssueIds?.length) {
+      summary.textContent = `自定义 Issue 列表 · ${state.reviewIssueIds.length}`;
+    } else {
+      summary.textContent = total ? `当前筛选 ${total} 个 Issue` : "没有匹配的 Issue";
+    }
+  }
 }
 
 function openBatchDraft(issueIds, source = "") {
@@ -320,6 +343,7 @@ async function loadCases({
   const gtLabel = $("#gtFilter").value;
   const modelLabel = $("#annotationFilter").value;
   const annotationAuthor = $("#reviewerFilter").value;
+  const workAssignee = $("#workAssigneeFilter")?.value || "";
   state.selectedRunId = $("#modelRunFilter").value;
   state.reviewComparisonStatus = selectedReviewComparisonStatus();
   setReviewComparisonStatus(state.reviewComparisonStatus, {
@@ -329,11 +353,15 @@ async function loadCases({
   if (gtLabel) params.set("gt_label", gtLabel);
   if (modelLabel) params.set("model_label", modelLabel);
   if (annotationAuthor) params.set("annotation_author", annotationAuthor);
+  if (workAssignee) params.set("work_assignee", workAssignee);
   if (state.selectedRunId) params.set("model_run_id", state.selectedRunId);
   if (state.selectedRunId && state.reviewComparisonStatus !== "all") {
     params.set("comparison", state.reviewComparisonStatus);
   }
   if (state.clusterKey) params.set("missing_evidence", state.clusterKey);
+  if (Array.isArray(state.reviewIssueIds) && state.reviewIssueIds.length) {
+    params.set("issue_ids", state.reviewIssueIds.join(","));
+  }
   params.set("page", String(state.casePage));
   params.set("page_size", String(state.casePageSize));
   params.set("include_thumbnail", "true");
