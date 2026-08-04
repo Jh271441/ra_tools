@@ -163,13 +163,16 @@ class Settings:
         )
         manifest = _path(
             "ARES_CAPTURE_MANIFEST",
-            ra_root / "bags/ares_capture_bev/manifest.jsonl",
+            ra_root
+            / "bags/ares_capture_bev_ra_stuck_swag_planning_2k_from_cloud_server_2_20260804"
+            / "7f4b2d9f-1218-4cd4-a93d-0654603173b9"
+            / "manifest.jsonl",
         )
         camera_root = _path("CAMERA_CACHE_ROOT", ra_root / "bags/camera")
         ares_video_root = _path(
             "ARES_CAPTURE_VIDEO_ROOT",
             ra_root
-            / "bags/ares_capture_video_0508_1071_ra_stuck_swag_planning_2k_20260731",
+            / "bags/ares_capture_video_0508_1071_ra_stuck_swag_planning_2k_aggregate_20260804",
         )
         baseline_xlsx = _path(
             "DASHBOARD_BASELINE_LABEL_XLSX",

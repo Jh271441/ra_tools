@@ -361,15 +361,23 @@ class VideoIndex:
     def get_video(self, issue_id: str) -> dict[str, Any] | None:
         if not self._issue_id.fullmatch(issue_id) or not self.video_root.is_dir():
             return None
-        meta_paths = [
+        # Support both shard layout and flat aggregate layout:
+        #   shard-*-of-*/{issue_id}_{ts}/meta.json
+        #   {issue_id}_{ts}/meta.json
+        # Match only by issue_id prefix; pick the newest captured meta.
+        meta_paths = {
             path.resolve()
-            for path in self.video_root.glob(
-                f"shard-*-of-*/{issue_id}_*/meta.json"
+            for pattern in (
+                f"shard-*-of-*/{issue_id}_*/meta.json",
+                f"{issue_id}_*/meta.json",
             )
+            for path in self.video_root.glob(pattern)
             if path.is_file() and self._within_root(path)
-        ]
-        meta_paths.sort(key=lambda path: path.stat().st_mtime_ns, reverse=True)
-        for meta_path in meta_paths:
+        }
+        ordered = sorted(
+            meta_paths, key=lambda path: path.stat().st_mtime_ns, reverse=True
+        )
+        for meta_path in ordered:
             video = self._video_from_meta(issue_id, meta_path)
             if video is not None:
                 return video

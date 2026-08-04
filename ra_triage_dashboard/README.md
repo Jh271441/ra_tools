@@ -63,8 +63,8 @@ Runs 的「人员」统一显示/筛选创建人；旧 Run 没有创建人时回
 - 模型网关密钥：`/volume/home/workspace/ra_triage_dashboard_data/model_gateway_api_key`（服务用户持有的 `0600` 普通文件，不进入代码备份）
 - TokenService 网关密钥：`/volume/home/workspace/ra_triage_dashboard_data/tokenservice_api_key`（同样由服务用户持有、`0600`，不进入代码备份；未配置时 Provider 只读展示）
 - RA 模型 Profile：`config/model_profiles.json`（版本化兼容白名单，不含凭证）
-- Ares 输入资产：`/volume/home/workspace/ra_auto_triage/bags/ares_capture_bev`（只读）
-- Ares BEV 视频资产：`/volume/home/workspace/ra_auto_triage/bags/ares_capture_video_0508_1071_ra_stuck_swag_planning_2k_20260731`（只读，可用 `ARES_CAPTURE_VIDEO_ROOT` 覆盖）
+- Ares BEV 图片资产：`/volume/home/workspace/ra_auto_triage/bags/ares_capture_bev_ra_stuck_swag_planning_2k_from_cloud_server_2_20260804`（只读，0508/1071 完整；可用 `ARES_CAPTURE_MANIFEST` 覆盖）
+- Ares BEV 视频资产：`/volume/home/workspace/ra_auto_triage/bags/ares_capture_video_0508_1071_ra_stuck_swag_planning_2k_aggregate_20260804`（只读，按 issue_id 匹配，可用 `ARES_CAPTURE_VIDEO_ROOT` 覆盖）
 - Camera 输入资产：`/volume/home/workspace/ra_auto_triage/bags/camera`（只读）
 - 0508 GT 快照：`/volume/home/workspace/ra_auto_triage/data/trail_label_baseline_20260729.xlsx`（只读）
 - 模型 / Trail 逻辑：`/volume/home/workspace/ra_auto_triage`（代码与原有 bag 只读；Batch 新下载只写 dashboard 独立缓存）

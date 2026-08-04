@@ -13,8 +13,14 @@ class VideoIndexTest(unittest.TestCase):
         *,
         issue_id: str = "cn31842459",
         relative_path: str = "videos/video_only.mp4",
+        layout: str = "shard",
+        timestamp_ms: int = 1778504337849,
     ) -> tuple[Path, Path]:
-        capture = root / "shard-006-of-008" / f"{issue_id}_1778504337849"
+        capture_name = f"{issue_id}_{timestamp_ms}"
+        if layout == "flat":
+            capture = root / capture_name
+        else:
+            capture = root / "shard-006-of-008" / capture_name
         video = capture / "videos" / "video_only.mp4"
         video.parent.mkdir(parents=True)
         video.write_bytes(b"not-a-real-video")
@@ -68,6 +74,28 @@ class VideoIndexTest(unittest.TestCase):
                 index.get_asset_path("cn31842459", "bev-video-0"),
                 video_path.resolve(),
             )
+
+    def test_resolves_flat_aggregate_layout_by_issue_id(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, video_path = self._write_capture(root, layout="flat")
+            # Unrelated issue must not match the prefix search.
+            self._write_capture(
+                root,
+                issue_id="cn318424590",
+                layout="flat",
+                timestamp_ms=1778504337850,
+            )
+            index = VideoIndex(root)
+
+            video = index.get_video("cn31842459")
+
+            self.assertIsNotNone(video)
+            self.assertEqual(
+                index.get_asset_path("cn31842459", "bev-video-0"),
+                video_path.resolve(),
+            )
+            self.assertIsNotNone(index.get_video("cn318424590"))
 
     def test_rejects_path_escape_and_invalid_issue_id(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
