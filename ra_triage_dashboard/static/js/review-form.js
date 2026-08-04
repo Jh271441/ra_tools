@@ -66,8 +66,10 @@ function renderDetail(caseData) {
 }
 
 function annotationHistory(annotations) {
-  if (!annotations?.length) return '<p class="muted history-empty">尚无人工 review；保存后会保留旧版本。</p>';
-  return annotations
+  if (!annotations?.length) {
+    return '<div class="annotation-history"><p class="muted history-empty">尚无人工 review；保存后会保留旧版本。</p></div>';
+  }
+  return `<div class="annotation-history">${annotations
     .map(
       (annotation) => `<article class="history-row">
         <div class="history-head">
@@ -80,8 +82,9 @@ function annotationHistory(annotations) {
         ${annotation.tags?.length ? `<div class="tags">${annotation.tags.map((tag) => `<span class="tag">${escapeHtml(tagLabel(tag))}</span>`).join("")}</div>` : ""}
         ${annotation.attachments?.length ? `<div class="history-attachments">${annotation.attachments.map((attachment, index) => `<a href="${escapeHtml(attachment.url)}" target="_blank" rel="noreferrer" title="打开补充截图 ${index + 1}"><img src="${escapeHtml(attachment.url)}" alt="补充截图 ${index + 1}" loading="lazy" /></a>`).join("")}</div>` : ""}
         ${annotation.note ? `<p>${escapeHtml(annotation.note)}</p>` : ""}
-      </article>`)
-    .join("");
+      </article>`
+    )
+    .join("")}</div>`;
 }
 
 function bindAnnotationHistory(root, caseData) {
@@ -452,13 +455,19 @@ function renderReview(caseData) {
   const pasteZone = $("#screenshotPasteZone");
   const screenshotInput = $("#reviewScreenshotInput");
   const screenshotBrowse = $("#reviewScreenshotBrowse");
-  if (pasteZone && screenshotInput && screenshotBrowse) {
-    pasteZone.addEventListener("click", (event) => {
-      if (event.target !== screenshotBrowse) pasteZone.focus();
-    });
-    screenshotBrowse.addEventListener("click", (event) => {
-      event.stopPropagation();
+  if (pasteZone && screenshotInput) {
+    const openScreenshotPicker = () => {
       screenshotInput.click();
+    };
+    pasteZone.addEventListener("click", (event) => {
+      event.preventDefault();
+      openScreenshotPicker();
+    });
+    pasteZone.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openScreenshotPicker();
+      }
     });
     pasteZone.addEventListener("paste", (event) => {
       const files = [...(event.clipboardData?.items || [])]
