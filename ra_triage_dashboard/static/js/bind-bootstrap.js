@@ -104,18 +104,15 @@ function bindEvents() {
     state.selectedRunId = $("#modelRunFilter").value;
     if (!state.selectedRunId) state.reviewComparisonStatus = "all";
     if (state.selectedRunId && !previousRunId) state.reviewComparisonStatus = "mismatch";
+    if (typeof renderReviewCatalogFilters === "function") {
+      renderReviewCatalogFilters();
+    }
     setReviewComparisonStatus(state.reviewComparisonStatus, {
       hasRun: Boolean(state.selectedRunId),
     });
     renderAnalysisRunFilter();
     renderActiveRun();
     renderRunManager();
-    await reloadReviewGallery();
-  });
-  $("#comparisonFilter").addEventListener("change", async () => {
-    state.reviewComparisonStatus = selectedReviewComparisonStatus();
-    state.failureOnly = state.reviewComparisonStatus === "mismatch";
-    renderAnalysisRunFilter();
     await reloadReviewGallery();
   });
   const clearClusterButton = $("#clearClusterButton");

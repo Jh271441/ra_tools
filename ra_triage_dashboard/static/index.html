@@ -34,7 +34,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-63`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-66`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -156,12 +156,7 @@
                 </label>
                 <label class="filter-comparison">
                   <span>模型判断结果</span>
-                  <select id="comparisonFilter" aria-label="模型判断结果筛选">
-                    <option value="all">全部</option>
-                    <option value="mismatch">MISMATCH · 判断失败</option>
-                    <option value="match">MATCH · 判断一致</option>
-                    <option value="none">NONE · 未预测</option>
-                  </select>
+                  <div class="multi-filter" id="comparisonFilter" data-placeholder="全部结果" aria-label="模型判断结果筛选"></div>
                 </label>
                 <label class="filter-search">
                   <span>检索</span>
@@ -919,7 +914,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-63`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-66`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

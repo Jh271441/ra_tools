@@ -2263,12 +2263,24 @@ def _case_filter_kwargs(
     issue_ids: str = "",
     work_assignee: str = "",
 ) -> dict[str, Any]:
-    requested_comparison = _as_text(comparison).strip().lower()
-    if requested_comparison and requested_comparison not in COMPARISON_STATUSES:
-        raise _detail(400, "comparison 仅支持 all、mismatch、match 或 none。")
-    if failure_only and requested_comparison and requested_comparison != "mismatch":
-        raise _detail(400, "failure_only=true 与 comparison 参数冲突。")
-    comparison_status = requested_comparison or ("mismatch" if failure_only else "all")
+    comparison_values = [
+        value
+        for value in _csv_filter_values(comparison)
+        if value in COMPARISON_STATUSES and value != "all"
+    ]
+    if failure_only and comparison_values and comparison_values != ["mismatch"]:
+        # Legacy failure_only=true only expands empty comparison to mismatch.
+        if comparison and set(comparison_values) != {"mismatch"}:
+            raise _detail(400, "failure_only=true 与 comparison 参数冲突。")
+    if failure_only and not comparison_values:
+        comparison_values = ["mismatch"]
+    if comparison_values and set(comparison_values) == {
+        "match",
+        "mismatch",
+        "none",
+    }:
+        comparison_values = []
+    comparison_status = ",".join(comparison_values) if comparison_values else "all"
     if comparison_status != "all" and not model_run_id:
         raise _detail(400, "筛选模型对比关系时必须选择 Model Run。")
     model_labels = _csv_filter_values(model_label)

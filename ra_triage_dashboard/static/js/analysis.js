@@ -305,7 +305,7 @@ function renderAnalysisClusterPanels(data) {
   if (!panels.length) {
     const legacy = data.evidence_clusters || [];
     target.innerHTML = `<article class="page-card analysis-cluster-card">
-      <div class="section-heading"><div><h3>缺失信息</h3></div><small>hover 查看详情</small></div>
+      <div class="section-heading"><div><h3>缺失信息</h3></div></div>
       <div class="analysis-pie-groups single">${renderAnalysisClusterGroup(
         {
           key: "all",
@@ -329,7 +329,6 @@ function renderAnalysisClusterPanels(data) {
         return `<article class="page-card analysis-cluster-card layout-${escapeHtml(panel.layout || "single")}" data-panel="${escapeHtml(panel.key)}">
           <div class="section-heading">
             <div><h3>${escapeHtml(panel.label)}</h3></div>
-            <small>hover 查看详情 · 筛选用上方</small>
           </div>
           <div class="analysis-pie-groups ${dual ? "dual" : "single"}">${body}</div>
         </article>`;

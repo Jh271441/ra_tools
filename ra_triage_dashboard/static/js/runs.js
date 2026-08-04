@@ -38,6 +38,29 @@ async function loadReviewers() {
 
 function renderReviewCatalogFilters() {
   const onChange = () => scheduleReviewFilterReload?.(0);
+  renderMultiFilter($("#comparisonFilter"), {
+    options: [
+      { value: "mismatch", label: "MISMATCH · 判断失败" },
+      { value: "match", label: "MATCH · 判断一致" },
+      { value: "none", label: "NONE · 未预测" },
+    ],
+    selected: parseComparisonStatuses(
+      getMultiFilterValues($("#comparisonFilter")).length
+        ? getMultiFilterValues($("#comparisonFilter"))
+        : state.reviewComparisonStatus
+    ),
+    onChange: () => {
+      state.reviewComparisonStatus = selectedReviewComparisonStatus();
+      state.failureOnly = state.reviewComparisonStatus === "mismatch";
+      onChange();
+    },
+  });
+  const hasRun = Boolean($("#modelRunFilter")?.value || state.selectedRunId);
+  $("#comparisonFilter")?.classList.toggle("is-disabled", !hasRun);
+  $("#comparisonFilter")
+    ?.querySelector(".multi-filter-trigger")
+    ?.toggleAttribute("disabled", !hasRun);
+  if (!hasRun) setMultiFilterValues($("#comparisonFilter"), []);
   renderMultiFilter($("#gtFilter"), {
     options: LABELS.map((label) => ({ value: label, label })),
     selected: getMultiFilterValues($("#gtFilter")),

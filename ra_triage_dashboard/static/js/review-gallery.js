@@ -361,9 +361,7 @@ async function loadCases({
   );
   state.selectedRunId = $("#modelRunFilter").value;
   state.reviewComparisonStatus = selectedReviewComparisonStatus();
-  setReviewComparisonStatus(state.reviewComparisonStatus, {
-    hasRun: Boolean(state.selectedRunId),
-  });
+  state.failureOnly = state.reviewComparisonStatus === "mismatch";
   if (search) params.set("search", search);
   if (gtLabel) params.set("gt_label", gtLabel);
   if (modelLabel) params.set("model_label", modelLabel);

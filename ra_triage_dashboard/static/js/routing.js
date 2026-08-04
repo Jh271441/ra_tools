@@ -68,33 +68,66 @@ function normalizedReviewComparisonStatus(value, fallback = "all") {
   return REVIEW_COMPARISON_STATUSES.includes(normalized) ? normalized : fallback;
 }
 
+function parseComparisonStatuses(value, fallback = []) {
+  const values = parseFilterList(value).filter((item) =>
+    ["match", "mismatch", "none"].includes(item)
+  );
+  if (values.length) return values;
+  if (Array.isArray(fallback)) return fallback.filter((item) =>
+    ["match", "mismatch", "none"].includes(item)
+  );
+  const single = normalizedReviewComparisonStatus(fallback, "");
+  return single && single !== "all" ? [single] : [];
+}
+
+function comparisonStatusParam(values) {
+  const list = parseComparisonStatuses(values);
+  if (!list.length || list.length === 3) return "all";
+  return list.join(",");
+}
+
 function setReviewComparisonStatus(
   comparisonStatus,
   { hasRun = Boolean($("#modelRunFilter")?.value) } = {}
 ) {
-  let nextStatus = normalizedReviewComparisonStatus(comparisonStatus);
-  if (!hasRun && nextStatus !== "all") nextStatus = "all";
+  let nextValues = parseComparisonStatuses(comparisonStatus);
+  if (!hasRun) nextValues = [];
+  const nextStatus = comparisonStatusParam(nextValues);
   state.reviewComparisonStatus = nextStatus;
   state.failureOnly = nextStatus === "mismatch";
-  const select = $("#comparisonFilter");
-  if (select) {
-    select.disabled = !hasRun;
-    select.value = nextStatus;
+  const root = $("#comparisonFilter");
+  if (root) {
+    root.classList.toggle("is-disabled", !hasRun);
+    root.querySelector(".multi-filter-trigger")?.toggleAttribute("disabled", !hasRun);
+    if (root.matches?.("select")) {
+      root.disabled = !hasRun;
+      root.value = nextStatus === "all" ? "all" : nextValues[0] || "all";
+    } else {
+      setMultiFilterValues(root, nextValues);
+      if (!hasRun) setMultiFilterValues(root, []);
+    }
   }
   return nextStatus;
 }
 
 function selectedReviewComparisonStatus() {
   const runId = $("#modelRunFilter")?.value || state.selectedRunId;
-  const status = normalizedReviewComparisonStatus(
-    $("#comparisonFilter")?.value,
+  if (!runId) return "all";
+  const values = parseComparisonStatuses(
+    getMultiFilterValues($("#comparisonFilter")),
     state.reviewComparisonStatus || (state.failureOnly ? "mismatch" : "all")
   );
-  return runId ? status : "all";
+  return comparisonStatusParam(values);
 }
 
 function routeReviewComparisonStatus(params) {
   const requested = String(params.get("comparison") || "").trim().toLowerCase();
+  if (!requested) {
+    if (params.get("failure") === "1") return "mismatch";
+    return params.has("run") ? "all" : null;
+  }
+  const values = parseComparisonStatuses(requested);
+  if (values.length) return comparisonStatusParam(values);
   if (REVIEW_COMPARISON_STATUSES.includes(requested)) return requested;
   if (params.get("failure") === "1") return "mismatch";
   return params.has("run") ? "all" : null;
@@ -235,21 +268,11 @@ function applyReviewRouteControls(route) {
     : DEFAULT_CASE_PAGE_SIZE;
   if ($("#casePageSize")) $("#casePageSize").value = String(state.casePageSize);
   if (route.comparisonStatus !== null && route.comparisonStatus !== undefined) {
-    state.reviewComparisonStatus = normalizedReviewComparisonStatus(
-      route.comparisonStatus,
-      state.reviewComparisonStatus || "all"
-    );
+    state.reviewComparisonStatus = comparisonStatusParam(route.comparisonStatus);
   }
-  if (state.selectedRunId) {
-    setReviewComparisonStatus(state.reviewComparisonStatus, { hasRun: true });
-  } else {
-    state.failureOnly = state.reviewComparisonStatus === "mismatch";
-    const select = $("#comparisonFilter");
-    if (select) {
-      select.disabled = true;
-      select.value = "all";
-    }
-  }
+  setReviewComparisonStatus(state.reviewComparisonStatus, {
+    hasRun: Boolean(state.selectedRunId || $("#modelRunFilter")?.value),
+  });
 }
 
 function currentAnalysisRouteOptions(overrides = {}) {
@@ -310,13 +333,14 @@ function pageUrl(page, options = {}) {
     const review = currentReviewRouteOptions(options);
     const issueId = review.issue;
     const runId = review.runId;
-    const comparisonStatus = normalizedReviewComparisonStatus(
-      review.comparisonStatus,
-      review.failureOnly ? "mismatch" : "all"
+    const comparisonStatus = comparisonStatusParam(
+      review.comparisonStatus || (review.failureOnly ? "mismatch" : "all")
     );
     if (issueId) url.searchParams.set("issue", issueId);
     if (runId) url.searchParams.set("run", runId);
-    if (runId) url.searchParams.set("comparison", runId ? comparisonStatus : "all");
+    if (runId && comparisonStatus !== "all") {
+      url.searchParams.set("comparison", comparisonStatus);
+    }
     if (review.search) url.searchParams.set("q", review.search);
     const gt = joinFilterList(review.gtLabel);
     const modelLabel = joinFilterList(review.modelLabel);

@@ -1958,17 +1958,36 @@ class Database:
                 )
                 params.extend(named)
             where.append(f"({' OR '.join(assignee_clauses)})")
-        if comparison_status != "all":
+        comparison_statuses = tuple(
+            value
+            for value in _multi_values(comparison_status)
+            if value in {"match", "mismatch", "none"}
+        )
+        if comparison_statuses and set(comparison_statuses) != {
+            "match",
+            "mismatch",
+            "none",
+        }:
             where.append("i.gt_label IN (?, ?, ?)")
             params.extend(LABELS)
-            if comparison_status == "none":
-                where.append("(mp.model_label IS NULL OR mp.model_label NOT IN (?, ?, ?))")
-                params.extend(LABELS)
-            else:
-                where.append("mp.model_label IN (?, ?, ?)")
-                params.extend(LABELS)
-                operator = "=" if comparison_status == "match" else "!="
-                where.append(f"mp.model_label {operator} i.gt_label")
+            status_clauses: list[str] = []
+            for status in comparison_statuses:
+                if status == "none":
+                    status_clauses.append(
+                        "(mp.model_label IS NULL OR mp.model_label NOT IN (?, ?, ?))"
+                    )
+                    params.extend(LABELS)
+                elif status == "match":
+                    status_clauses.append(
+                        "(mp.model_label IN (?, ?, ?) AND mp.model_label = i.gt_label)"
+                    )
+                    params.extend(LABELS)
+                else:
+                    status_clauses.append(
+                        "(mp.model_label IN (?, ?, ?) AND mp.model_label != i.gt_label)"
+                    )
+                    params.extend(LABELS)
+            where.append(f"({' OR '.join(status_clauses)})")
         condition = f"WHERE {' AND '.join(where)}" if where else ""
         common = f"""
             FROM issues i
