@@ -60,7 +60,6 @@ from .prompt_catalog import (
 )
 from .review_analysis import (
     COMPARISON_STATUSES,
-    REASON_THEME_CATALOG,
     build_review_reason_analysis,
 )
 from .sanitization import redact_sensitive_fields
@@ -137,6 +136,7 @@ REVIEW_TAG_CATALOG: tuple[dict[str, Any], ...] = (
     {"key": "gate", "label": "道闸", "section": "scene", "group": "environment"},
     {"key": "park_entrance", "label": "园区出入口", "section": "scene", "group": "environment"},
     {"key": "environment_u_turn", "label": "掉头", "section": "scene", "group": "environment"},
+    {"key": "environment_other", "label": "其他", "section": "scene", "group": "environment"},
     {"key": "intent_straight", "label": "直行", "section": "scene", "group": "self_intent"},
     {"key": "intent_left_turn", "label": "左转", "section": "scene", "group": "self_intent"},
     {"key": "intent_right_turn", "label": "右转", "section": "scene", "group": "self_intent"},
@@ -176,6 +176,7 @@ REVIEW_TAG_CATALOG: tuple[dict[str, Any], ...] = (
     {"key": "scene_other", "label": "其他（旧交互决策）", "section": "legacy", "group": "legacy", "visible": False},
 )
 REVIEW_TAG_KEYS = frozenset(item["key"] for item in REVIEW_TAG_CATALOG)
+REVIEW_TAG_SCENE_GROUPS = frozenset({"environment", "self_intent"})
 REVIEW_TAG_ALIASES = {
     "红绿灯": "traffic_light",
     "等灯": "traffic_light",
@@ -187,6 +188,7 @@ REVIEW_TAG_ALIASES = {
     "变更区域": "construction_change",
     "道闸": "gate",
     "园区出入口": "park_entrance",
+    "场景其他": "environment_other",
     "直行": "intent_straight",
     "自车直行": "intent_straight",
     "自车左转": "intent_left_turn",
@@ -654,7 +656,32 @@ def _admin_identity(request: Request):
 
 
 def _review_tag_catalog() -> tuple[dict[str, Any], ...]:
-    return tuple({**item, "builtin": True} for item in REVIEW_TAG_CATALOG)
+    """Return built-in tags plus shared scene tags from the database."""
+
+    merged: dict[str, dict[str, Any]] = {
+        str(item["key"]): {
+            **item,
+            "builtin": True,
+            "deleted": False,
+        }
+        for item in REVIEW_TAG_CATALOG
+    }
+    for row in database.list_review_tag_catalog(include_inactive=True):
+        key = str(row.get("key") or "").strip()
+        if not key or key in merged:
+            continue
+        item = {
+            str(name): value
+            for name, value in row.items()
+            if str(name) != "active"
+        }
+        item.setdefault("section", "scene")
+        item.setdefault("group", item.pop("group_key", "environment"))
+        item.setdefault("hint", "")
+        item["builtin"] = False
+        item["deleted"] = not bool(row.get("active", 1))
+        merged[key] = item
+    return tuple(merged.values())
 
 
 def _missing_evidence_catalog() -> tuple[dict[str, Any], ...]:
@@ -1150,6 +1177,7 @@ def _public_review_attachment(attachment: dict[str, Any]) -> dict[str, Any]:
 def _normalise_review_tags(values: list[Any]) -> list[str]:
     if len(values) > 24:
         raise _detail(400, "每条 review 最多选择 24 个 tags。")
+    catalog_keys = {str(item["key"]) for item in _review_tag_catalog()}
     normalized: set[str] = set()
     for value in values:
         raw = str(value).strip()
@@ -1158,11 +1186,11 @@ def _normalise_review_tags(values: list[Any]) -> list[str]:
         if len(raw) > 48 or re.search(r"[\x00-\x1f\x7f]", raw):
             raise _detail(400, "tag 长度或字符不合法。")
         key = REVIEW_TAG_ALIASES.get(raw, raw)
-        if key in REVIEW_TAG_KEYS:
+        if key in catalog_keys:
             normalized.add(key)
         else:
             raise _detail(400, "tag 不在默认场景 Tags 目录中。")
-    return [item["key"] for item in REVIEW_TAG_CATALOG if item["key"] in normalized]
+    return [item["key"] for item in _review_tag_catalog() if item["key"] in normalized]
 
 
 def _normalise_missing_evidence(values: list[Any]) -> list[str]:
@@ -1700,14 +1728,9 @@ async def dashboard_config() -> dict[str, Any]:
         "trail_sync": runtime_state["trail_sync"],
         "missing_evidence_catalog": await asyncio.to_thread(_missing_evidence_catalog),
         "review_tag_catalog": await asyncio.to_thread(_review_tag_catalog),
-        "review_reason_theme_catalog": tuple(
-            {
-                "key": item["key"],
-                "label": item["label"],
-                "description": item["description"],
-            }
-            for item in REASON_THEME_CATALOG
-        ),
+        # Free-text keyword themes were an earlier experiment and are not
+        # exposed by the current structured Review workflow.
+        "review_reason_theme_catalog": (),
         "review_attachment_limits": {
             "max_count": MAX_REVIEW_ATTACHMENTS,
             "max_bytes_each": MAX_REVIEW_ATTACHMENT_BYTES,
@@ -1724,6 +1747,147 @@ async def dashboard_config() -> dict[str, Any]:
             "trail_write_enabled": False,
             "model_gateway": model_catalog.status(),
         },
+    }
+
+
+def _review_tag_payload(item: dict[str, Any], *, builtin: bool = False) -> dict[str, Any]:
+    payload = {
+        **item,
+        "builtin": bool(item.get("builtin", builtin)),
+        "deleted": not bool(item.get("active", 1))
+        if "active" in item
+        else bool(item.get("deleted", False)),
+    }
+    payload.pop("active", None)
+    payload.setdefault("section", "scene")
+    payload.setdefault("group", payload.pop("group_key", "environment"))
+    payload.setdefault("hint", "")
+    return payload
+
+
+def _validate_scene_tag_input(body: dict[str, Any]) -> tuple[str, str, str]:
+    label = _as_text(body.get("label"))
+    hint = _as_text(body.get("hint"))
+    group = _as_text(body.get("group") or "environment")
+    if not label:
+        raise _detail(400, "场景标签标题不能为空。")
+    if len(label) > 48 or re.search(r"[\x00-\x1f\x7f]", label):
+        raise _detail(400, "场景标签标题长度或字符不合法。")
+    if len(hint) > 160 or re.search(r"[\x00-\x1f\x7f]", hint):
+        raise _detail(400, "场景标签说明长度或字符不合法。")
+    if group not in REVIEW_TAG_SCENE_GROUPS:
+        raise _detail(400, "场景标签分组不合法。")
+    return label, hint, group
+
+
+@app.post("/api/review-tags")
+async def create_review_tag(request: Request) -> dict[str, Any]:
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        raise _detail(400, "场景标签目录请求必须是 JSON。")
+    if not isinstance(body, dict):
+        raise _detail(400, "场景标签目录请求必须是 JSON 对象。")
+    label, hint, group = _validate_scene_tag_input(body)
+    actor, _, _ = _action_actor(request, body.get("created_by"))
+    if not actor:
+        raise _detail(400, "无法确认场景标签目录创建人。")
+    if any(
+        str(item.get("label")) == label and not bool(item.get("deleted"))
+        for item in _review_tag_catalog()
+    ):
+        raise _detail(409, "该场景标签标题已经存在。")
+    try:
+        item = await asyncio.to_thread(
+            database.create_review_tag,
+            label=label,
+            hint=hint,
+            section="scene",
+            group_key=group,
+            created_by=actor,
+        )
+    except ValueError as exc:
+        raise _detail(409, str(exc))
+    return {
+        "item": _review_tag_payload(item),
+        "review_tag_catalog": await asyncio.to_thread(_review_tag_catalog),
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
+@app.put("/api/review-tags/{key:path}")
+async def update_review_tag(key: str, request: Request) -> dict[str, Any]:
+    normalized_key = _as_text(key).strip()
+    if not normalized_key or len(normalized_key) > 160:
+        raise _detail(400, "场景标签 key 不合法。")
+    current = next(
+        (item for item in _review_tag_catalog() if item["key"] == normalized_key),
+        None,
+    )
+    if current is None or bool(current.get("builtin")):
+        raise _detail(404, "可编辑的场景标签不存在。")
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        raise _detail(400, "场景标签目录请求必须是 JSON。")
+    if not isinstance(body, dict):
+        raise _detail(400, "场景标签目录请求必须是 JSON 对象。")
+    label, hint, group = _validate_scene_tag_input(body)
+    actor, _, _ = _action_actor(request, body.get("updated_by"))
+    if not actor:
+        raise _detail(400, "无法确认场景标签目录编辑人。")
+    if any(
+        item["key"] != normalized_key
+        and str(item.get("label")) == label
+        and not bool(item.get("deleted"))
+        for item in _review_tag_catalog()
+    ):
+        raise _detail(409, "该场景标签标题已经存在。")
+    try:
+        item = await asyncio.to_thread(
+            database.update_review_tag,
+            key=normalized_key,
+            label=label,
+            hint=hint,
+            section="scene",
+            group_key=group,
+            updated_by=actor,
+        )
+    except ValueError as exc:
+        raise _detail(409, str(exc))
+    return {
+        "item": _review_tag_payload(item),
+        "review_tag_catalog": await asyncio.to_thread(_review_tag_catalog),
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
+@app.delete("/api/review-tags/{key:path}")
+async def delete_review_tag(key: str, request: Request) -> dict[str, Any]:
+    normalized_key = _as_text(key).strip()
+    if not normalized_key or len(normalized_key) > 160:
+        raise _detail(400, "场景标签 key 不合法。")
+    current = next(
+        (item for item in _review_tag_catalog() if item["key"] == normalized_key),
+        None,
+    )
+    if current is None or bool(current.get("builtin")):
+        raise _detail(404, "可删除的场景标签不存在。")
+    actor, _, _ = _action_actor(request, "")
+    if not actor:
+        raise _detail(400, "无法确认场景标签目录删除人。")
+    try:
+        item = await asyncio.to_thread(
+            database.delete_review_tag,
+            key=normalized_key,
+            deleted_by=actor,
+        )
+    except ValueError as exc:
+        raise _detail(409, str(exc))
+    return {
+        "item": _review_tag_payload(item),
+        "review_tag_catalog": await asyncio.to_thread(_review_tag_catalog),
+        "change_revision": await asyncio.to_thread(database.change_revision),
     }
 
 
@@ -2594,9 +2758,13 @@ def _review_reason_analysis_payload(
     review_status: str = "",
     gt_label: str = "",
     annotation_label: str = "",
+    model_label: str = "",
     missing_evidence: str = "",
     theme: str = "",
     tag: str = "",
+    scene_tag: str = "",
+    trigger_tag: str = "",
+    egress_tag: str = "",
     search: str = "",
     page: int = 1,
     page_size: int = 50,
@@ -2610,7 +2778,10 @@ def _review_reason_analysis_payload(
         }
         for item in missing_evidence_catalog
     }
-    theme_keys = {str(item["key"]) for item in REASON_THEME_CATALOG}
+    # Free-text keyword themes are not part of the current Review contract.
+    # Ignore the retired theme parameter so old bookmarked URLs remain usable;
+    # the canonical response and UI no longer expose or apply it.
+    theme = ""
     requested_comparison = _as_text(comparison).strip().lower()
     if requested_comparison and requested_comparison not in COMPARISON_STATUSES:
         raise _detail(
@@ -2632,12 +2803,31 @@ def _review_reason_analysis_payload(
         raise _detail(400, "gt_label 不在三分类范围内。")
     if annotation_label and annotation_label not in LABELS:
         raise _detail(400, "annotation_label 不在三分类范围内。")
+    if model_label and model_label not in LABELS:
+        raise _detail(400, "model_label 不在三分类范围内。")
+    if model_label and not model_run_id:
+        raise _detail(400, "按模型预测筛选时必须选择 Model Run。")
     if missing_evidence and missing_evidence not in evidence_catalog:
         raise _detail(400, "missing_evidence 不在稳定字段目录中。")
-    if theme and theme not in theme_keys:
-        raise _detail(400, "theme 不在 Review 原因主题目录中。")
-    if tag and tag not in REVIEW_TAG_KEYS:
-        raise _detail(400, "tag 不在场景 Tags 目录中。")
+    tag_catalog = _review_tag_catalog()
+    tag_by_key = {str(item["key"]): item for item in tag_catalog}
+    requested_tags = tuple(
+        dict.fromkeys(
+            value.strip()
+            for value in (tag, scene_tag, trigger_tag, egress_tag)
+            if value and value.strip()
+        )
+    )
+    for requested_tag in requested_tags:
+        item = tag_by_key.get(requested_tag)
+        if item is None:
+            raise _detail(400, "场景 Tags 不在共享目录中。")
+    if scene_tag and tag_by_key[scene_tag].get("section") != "scene":
+        raise _detail(400, "scene_tag 必须属于场景 Tags。")
+    if trigger_tag and tag_by_key[trigger_tag].get("section") != "interaction_decision":
+        raise _detail(400, "trigger_tag 必须属于触发判定 Tags。")
+    if egress_tag and tag_by_key[egress_tag].get("section") != "egress":
+        raise _detail(400, "egress_tag 必须属于如何脱困 Tags。")
     if comparison_status != "all" and not model_run_id:
         raise _detail(400, "筛选模型对比关系时必须选择 Model Run。")
 
@@ -2658,7 +2848,7 @@ def _review_reason_analysis_payload(
     folded_search = normalized_search.casefold()
     search_aliases = tuple(
         str(item["key"])
-        for item in (*REVIEW_TAG_CATALOG, *missing_evidence_catalog)
+        for item in (*_review_tag_catalog(), *missing_evidence_catalog)
         if folded_search
         and (
             folded_search in str(item["label"]).casefold()
@@ -2687,16 +2877,18 @@ def _review_reason_analysis_payload(
         review_status=review_status,
         gt_label=gt_label,
         annotation_label=annotation_label,
+        model_label=model_label,
         missing_evidence=missing_evidence,
-        tag=tag,
+        tag_filters=requested_tags,
         search=normalized_search,
         search_aliases=search_aliases,
     )
     result = build_review_reason_analysis(
         rows,
-        theme=theme,
+        theme="",
         evidence_catalog=evidence_catalog,
         has_model_run=bool(model_run_id),
+        include_reason_themes=False,
         page=page,
         page_size=max(len(rows), 1) if unbounded else page_size,
         page_size_limit=None if unbounded else 200,
@@ -2736,9 +2928,13 @@ def _review_reason_analysis_payload(
         "review_status": review_status,
         "gt_label": gt_label,
         "annotation_label": annotation_label,
+        "model_label": model_label,
         "missing_evidence": missing_evidence,
         "theme": theme,
         "tag": tag,
+        "scene_tag": scene_tag,
+        "trigger_tag": trigger_tag,
+        "egress_tag": egress_tag,
         "search": normalized_search,
     }
     return result
@@ -2753,9 +2949,13 @@ async def review_reason_analysis(
     review_status: str = "",
     gt_label: str = "",
     annotation_label: str = "",
+    model_label: str = "",
     missing_evidence: str = "",
     theme: str = "",
     tag: str = "",
+    scene_tag: str = "",
+    trigger_tag: str = "",
+    egress_tag: str = "",
     search: str = "",
     page: int = 1,
     page_size: int = 50,
@@ -2768,9 +2968,13 @@ async def review_reason_analysis(
         review_status=review_status,
         gt_label=gt_label,
         annotation_label=annotation_label,
+        model_label=model_label,
         missing_evidence=missing_evidence,
         theme=theme,
         tag=tag,
+        scene_tag=scene_tag,
+        trigger_tag=trigger_tag,
+        egress_tag=egress_tag,
         search=search,
         page=page,
         page_size=page_size,
@@ -2790,7 +2994,6 @@ REVIEW_ANALYSIS_EXPORT_COLUMNS: tuple[tuple[str, str], ...] = (
     ("review_reason", "人工 Review 原因"),
     ("tags", "场景 Tags"),
     ("missing_evidence", "缺失信息"),
-    ("reason_themes", "原因主题"),
     ("reviewer", "复核人"),
     ("reviewed_at", "Review 时间"),
     ("review_url", "Workbench 链接"),
@@ -2809,10 +3012,10 @@ def _spreadsheet_safe(value: Any) -> Any:
 
 
 def _review_analysis_export_rows(result: dict[str, Any]) -> list[dict[str, Any]]:
-    tag_labels = {str(item["key"]): str(item["label"]) for item in REVIEW_TAG_CATALOG}
+    tag_labels = {str(item["key"]): str(item["label"]) for item in _review_tag_catalog()}
     evidence_labels = {
         str(item["key"]): str(item["label"])
-        for item in MISSING_EVIDENCE_CATALOG
+        for item in _missing_evidence_catalog()
     }
     exported: list[dict[str, Any]] = []
     for item in result.get("items", []):
@@ -2837,10 +3040,6 @@ def _review_analysis_export_rows(result: dict[str, Any]) -> list[dict[str, Any]]
                 "missing_evidence": "、".join(
                     evidence_labels.get(_as_text(key), _as_text(key))
                     for key in annotation.get("missing_evidence") or []
-                ),
-                "reason_themes": "、".join(
-                    _as_text(theme_item.get("label"))
-                    for theme_item in item.get("reason_themes") or []
                 ),
                 "reviewer": _as_text(annotation.get("author")),
                 "reviewed_at": _as_text(annotation.get("created_at")),
@@ -2903,9 +3102,13 @@ async def export_review_reason_analysis(
     review_status: str = "",
     gt_label: str = "",
     annotation_label: str = "",
+    model_label: str = "",
     missing_evidence: str = "",
     theme: str = "",
     tag: str = "",
+    scene_tag: str = "",
+    trigger_tag: str = "",
+    egress_tag: str = "",
     search: str = "",
 ) -> Response:
     export_format = _as_text(format).strip().lower()
@@ -2919,9 +3122,13 @@ async def export_review_reason_analysis(
         review_status=review_status,
         gt_label=gt_label,
         annotation_label=annotation_label,
+        model_label=model_label,
         missing_evidence=missing_evidence,
         theme=theme,
         tag=tag,
+        scene_tag=scene_tag,
+        trigger_tag=trigger_tag,
+        egress_tag=egress_tag,
         search=search,
         unbounded=True,
     )

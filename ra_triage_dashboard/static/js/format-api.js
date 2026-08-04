@@ -1,0 +1,359 @@
+/* ra_triage_dashboard/static/js/format-api.js
+ * Formatters, API client, change polling, sidebar
+ * Loaded as a classic script (shared global scope). Do not convert to
+ * ES modules without auditing cross-file function/state dependencies.
+ */
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function safeUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return ["http:", "https:"].includes(parsed.protocol) ? parsed.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function aresStudioUrl(caseData, issueUrl) {
+  const tripId = String(caseData?.assets?.capture?.trip_id || caseData?.trip_id || "").trim();
+  const issueId = String(caseData?.issue_id || "").trim();
+  const timestampMs = Number(
+    caseData?.assets?.capture?.timestamp_ms || caseData?.camera?.capture?.timestamp_ms
+  );
+  if (!issueUrl || !issueId || !tripId || !Number.isFinite(timestampMs) || timestampMs <= 0) return "";
+  try {
+    const url = new URL("/static/ares-studio/", issueUrl);
+    url.searchParams.set("ds", "voy-ws-car");
+    url.searchParams.set("ds.issue_id", issueId);
+    url.searchParams.set("ds.trip_id", tripId);
+    url.searchParams.set("ds.start", String(Math.round(timestampMs - 10000)));
+    url.searchParams.set("ds.end", String(Math.round(timestampMs + 10000)));
+    url.searchParams.set("entry_last_page", `/issue/${issueId}`);
+    return safeUrl(url.href);
+  } catch {
+    return "";
+  }
+}
+
+function safeSameOriginAssetUrl(url) {
+  try {
+    const parsed = new URL(String(url || ""), window.location.origin);
+    const pathname = stripBasePath(parsed.pathname);
+    if (parsed.origin !== window.location.origin || !pathname.startsWith("/api/")) return "";
+    return `${withBase(pathname)}${parsed.search}`;
+  } catch {
+    return "";
+  }
+}
+
+function labelBadge(label, fallback = "—") {
+  const actual = label || "";
+  const className = LABELS.includes(actual) ? `label-${actual}` : "label-empty";
+  return `<span class="label-badge ${className}">${escapeHtml(actual || fallback)}</span>`;
+}
+
+function formatTime(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? escapeHtml(value) : date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function evidenceLabel(key) {
+  const value = String(key || "");
+  const catalogItem = state.config?.missing_evidence_catalog?.find(
+    (item) => String(item.key) === value
+  );
+  if (catalogItem?.label) return catalogItem.label;
+  if (value.startsWith("custom:")) {
+    const legacyLabel = value.slice("custom:".length);
+    return legacyLabel && !/^[a-f0-9]{24,64}$/i.test(legacyLabel)
+      ? legacyLabel
+      : "自定义缺失信息";
+  }
+  return value;
+}
+
+function missingEvidenceOptionMarkup(item, selected = false, manage = true) {
+  const key = String(item?.key || "");
+  const deleted = Boolean(item?.deleted);
+  const label = String(item?.label || evidenceLabel(key));
+  const hint = String(
+    item?.hint || (deleted ? "已从共享目录删除；当前 Review 仍保留此历史值" : "")
+  );
+  // Every active shared-catalog entry, including the seeded built-ins, can be
+  // maintained through the same global directory controls. Built-ins are
+  // persisted as overrides/tombstones rather than mutating the static source
+  // list, so editing or removing one remains reversible for historical data.
+  const canManage = Boolean(manage && !deleted);
+  return `<div class="evidence-option${deleted ? " evidence-option-deleted" : ""}" data-evidence-option="${escapeHtml(key)}">
+    <label class="evidence-option-choice" title="${escapeHtml(hint)}">
+      <input type="checkbox" name="missingEvidence" value="${escapeHtml(key)}" ${selected ? "checked" : ""} />
+      <span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(hint)}</small></span>
+    </label>
+    ${canManage ? `<span class="evidence-option-actions"><button class="tag-catalog-icon-button" type="button" data-edit-missing-evidence="${escapeHtml(key)}" aria-label="编辑缺失信息" title="编辑缺失信息">✎</button><button class="tag-catalog-icon-button tag-catalog-icon-button-danger" type="button" data-delete-missing-evidence="${escapeHtml(key)}" aria-label="删除缺失信息" title="删除缺失信息">×</button></span>` : ""}
+  </div>`;
+}
+
+function tagLabel(key) {
+  const value = String(key || "");
+  const catalogItem = state.config?.review_tag_catalog?.find(
+    (item) => String(item.key) === value
+  );
+  if (catalogItem?.label) return catalogItem.label;
+  if (value.startsWith("custom:")) return value.slice("custom:".length) || value;
+  return value;
+}
+
+function reviewTagCatalogItem(key) {
+  return (state.config?.review_tag_catalog || []).find(
+    (item) => String(item.key) === String(key)
+  );
+}
+
+function reviewTagOptionMarkup(item, selected = false, groupKey = "", manage = true) {
+  const key = String(item?.key || "");
+  const label = String(item?.label || tagLabel(key));
+  const hint = String(item?.hint || "");
+  const deleted = Boolean(item?.deleted);
+  const custom = Boolean(item && item.builtin === false);
+  const canManage = Boolean(manage && custom && !deleted);
+  const option = `<label class="tag-option${deleted ? " tag-option-deleted" : ""}"${hint ? ` title="${escapeHtml(hint)}"` : ""}>
+      <input type="checkbox" name="reviewTags" value="${escapeHtml(key)}"${groupKey ? ` data-tag-group="${escapeHtml(groupKey)}"` : ""} ${selected ? "checked" : ""} />
+      <span>${escapeHtml(label)}</span>
+    </label>`;
+  if (!canManage) return option;
+  return `<div class="review-tag-option-row" data-review-tag-option="${escapeHtml(key)}">
+    ${option}
+    <span class="evidence-option-actions">
+      <button class="tag-catalog-icon-button" type="button" data-edit-review-tag="${escapeHtml(key)}" aria-label="编辑场景标签" title="编辑场景标签">✎</button>
+      <button class="tag-catalog-icon-button tag-catalog-icon-button-danger" type="button" data-delete-review-tag="${escapeHtml(key)}" aria-label="删除场景标签" title="删除场景标签">×</button>
+    </span>
+  </div>`;
+}
+
+function frameLabel(frame) {
+  if (frame.offset_ms !== undefined && frame.offset_ms !== null) {
+    const seconds = Math.round(Number(frame.offset_ms) / 1000);
+    return `${seconds >= 0 ? "+" : ""}${seconds}s`;
+  }
+  if (frame.offset_sec !== undefined && frame.offset_sec !== null) {
+    const seconds = Number(frame.offset_sec);
+    return `${seconds >= 0 ? "+" : ""}${seconds}s`;
+  }
+  return frame.frame_number !== undefined ? `#${frame.frame_number}` : "帧";
+}
+
+function normalizeApiPayloadUrls(value) {
+  if (Array.isArray(value)) return value.map((item) => normalizeApiPayloadUrls(item));
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => {
+      if (
+        typeof item === "string" &&
+        (key === "url" || key.endsWith("_url"))
+      ) {
+        return [key, withBase(item)];
+      }
+      return [key, normalizeApiPayloadUrls(item)];
+    })
+  );
+}
+
+async function api(path, options = {}) {
+  const method = String(options.method || "GET").toUpperCase();
+  const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+  const retryableGet = method === "GET";
+  if (
+    state.session?.read_only &&
+    isMutation
+  ) {
+    throw new Error(
+      uiText(
+        "当前入口为只读预览；请通过获准的企业 SSO 域名访问。",
+        "This endpoint is read-only; use the approved enterprise SSO domain."
+      )
+    );
+  }
+  let lastError = null;
+  for (let attempt = 0; attempt < (retryableGet ? API_GET_MAX_ATTEMPTS : 1); attempt += 1) {
+    const controller = retryableGet && !options.signal ? new AbortController() : null;
+    const timeoutId = controller
+      ? window.setTimeout(() => controller.abort(), API_GET_TIMEOUT_MS)
+      : null;
+    let response;
+    let payload = {};
+    try {
+      response = await fetch(withBase(path), {
+        ...options,
+        ...(controller ? { signal: controller.signal } : {}),
+        headers: {
+          ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+          ...(isMutation ? { "X-RA-Triage-Request": "browser-v1" } : {}),
+          ...(options.headers || {}),
+        },
+      });
+      payload = normalizeApiPayloadUrls(
+        await response.json().catch((error) => {
+          if (error?.name === "AbortError") throw error;
+          return {};
+        })
+      );
+    } catch (error) {
+      response = null;
+      lastError = error;
+      const timedOut = error?.name === "AbortError";
+      const callerAborted = Boolean(options.signal?.aborted);
+      if (!retryableGet || callerAborted || attempt >= API_GET_MAX_ATTEMPTS - 1) {
+        if (timedOut) throw new Error("请求超时，请稍后重试。");
+        throw error;
+      }
+    } finally {
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    }
+    if (response) {
+      if (response.ok) return payload;
+      const message = payload.detail || `请求失败 (${response.status})`;
+      if (
+        !retryableGet ||
+        !API_GET_RETRYABLE_STATUSES.has(response.status) ||
+        attempt >= API_GET_MAX_ATTEMPTS - 1
+      ) {
+        throw new Error(message);
+      }
+      lastError = new Error(message);
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
+  }
+  throw lastError || new Error("请求失败，请稍后重试。");
+}
+
+function showToast(message, isError = false) {
+  const toast = $("#toast");
+  toast.textContent = message;
+  toast.classList.remove("hidden", "error");
+  if (isError) toast.classList.add("error");
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => toast.classList.add("hidden"), 4600);
+}
+
+function acknowledgeLocalChange(payload) {
+  const revision = Number(payload?.change_revision);
+  if (Number.isFinite(revision)) state.changeRevision = revision;
+  // A poll that started before this mutation can still return the old
+  // revision.  Invalidate that response so it cannot reselect the case.
+  state.changePollEpoch += 1;
+  state.deferredDetailRefresh = false;
+}
+
+async function refreshChangedData() {
+  if (state.activePage === "review") {
+    await Promise.all([
+      loadConfig(),
+      loadRuns({ preserveEmpty: !state.selectedRunId }),
+      loadOverview(),
+      loadCases({ keepSelection: true, page: state.casePage }),
+      loadClusters(),
+      loadReviewers(),
+    ]);
+    if (state.selectedId) {
+      if (
+        state.reviewFormDirty ||
+        state.savingAnnotation ||
+        state.pendingReviewImages.length
+      ) {
+        if (!state.deferredDetailRefresh) {
+          state.deferredDetailRefresh = true;
+          showToast("检测到新的协作更新；当前未保存内容已保留，保存后会合并最新数据。");
+        }
+      } else {
+        await selectCase(state.selectedId, { updateRoute: false });
+      }
+    }
+    return;
+  }
+  if (state.activePage === "analysis") {
+    await Promise.all([
+      loadConfig(),
+      loadRuns({ preserveEmpty: !state.selectedRunId }),
+      loadOverview(),
+      loadReviewers(),
+      loadReviewReasonAnalysis(),
+    ]);
+    return;
+  }
+  if (state.activePage === "runs") {
+    await Promise.all([loadRuns({ preserveEmpty: true }), loadOverview()]);
+    return;
+  }
+  if (state.activePage === "prediction") {
+    await Promise.all([loadPredictionBatches(), loadOverview()]);
+    return;
+  }
+  if (state.activePage === "status") {
+    await loadStatus();
+  }
+}
+
+function scheduleChangePoll(delay = 1800) {
+  clearTimeout(state.changePollTimer);
+  state.changePollTimer = window.setTimeout(pollChangeRevision, delay);
+}
+
+async function pollChangeRevision() {
+  if (state.changePollInFlight) return scheduleChangePoll();
+  if (document.hidden) return scheduleChangePoll(3000);
+  state.changePollInFlight = true;
+  const pollEpoch = state.changePollEpoch;
+  let delay = 1800;
+  try {
+    const data = await api("/api/change-revision");
+    if (pollEpoch !== state.changePollEpoch) return;
+    const revision = Number(data.revision || 0);
+    delay = Math.max(1000, Number(data.poll_after_ms || 1800));
+    if (state.changeRevision === null) {
+      state.changeRevision = revision;
+    } else if (revision !== state.changeRevision) {
+      await refreshChangedData();
+      state.changeRevision = revision;
+    }
+  } catch (error) {
+    delay = 5000;
+    console.warn("协作同步暂时不可用", error);
+  } finally {
+    state.changePollInFlight = false;
+    scheduleChangePoll(delay);
+  }
+}
+
+function startChangePolling() {
+  scheduleChangePoll(0);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) scheduleChangePoll(0);
+  });
+}
+
+function applySidebarState() {
+  $("#appShell").classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
+  const expanded = String(!state.sidebarCollapsed);
+  const title = state.sidebarCollapsed
+    ? uiText("展开工具栏", "Expand toolbar")
+    : uiText("折叠工具栏", "Collapse toolbar");
+  $("#sidebarToggle").setAttribute("aria-expanded", expanded);
+  $("#sidebarToggle").title = title;
+  $("#sidebarBrandToggle").setAttribute("aria-expanded", expanded);
+  $("#sidebarBrandToggle").title = title;
+}
+
+function toggleSidebar() {
+  state.sidebarCollapsed = !state.sidebarCollapsed;
+  localStorage.setItem("ra-triage-sidebar-collapsed", String(state.sidebarCollapsed));
+  applySidebarState();
+}
+

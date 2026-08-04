@@ -3,19 +3,45 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
+from frontend_js import (  # type: ignore  # unittest discover puts tests/ on sys.path
+    JS_DIR,
+    MANIFEST_PATH,
+    STATIC_DIR,
+    load_app_entry_js,
+    load_app_js,
+)
 
-APP_JS = (
-    Path(__file__).resolve().parents[1] / "static" / "app.js"
-).read_text(encoding="utf-8")
-STYLES_CSS = (
-    Path(__file__).resolve().parents[1] / "static" / "styles.css"
-).read_text(encoding="utf-8")
-INDEX_HTML = (
-    Path(__file__).resolve().parents[1] / "static" / "index.html"
-).read_text(encoding="utf-8")
+
+APP_JS = load_app_js()
+APP_ENTRY_JS = load_app_entry_js()
+STYLES_CSS = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
+INDEX_HTML = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 
 
 class FrontendContractTest(unittest.TestCase):
+    def test_frontend_modules_load_in_manifest_order_from_thin_entry(self) -> None:
+        names = [
+            line.strip()
+            for line in MANIFEST_PATH.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        self.assertGreaterEqual(len(names), 8)
+        self.assertEqual(names[0], "core-base.js")
+        self.assertEqual(names[-1], "bind-bootstrap.js")
+        for name in names:
+            self.assertTrue((JS_DIR / name).is_file(), name)
+            self.assertIn(f'"{name}"', APP_ENTRY_JS)
+        self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
+        self.assertIn("manual-triage-37", APP_ENTRY_JS)
+        self.assertIn("/static/js/", APP_ENTRY_JS)
+        self.assertIn("script.async = false", APP_ENTRY_JS)
+        self.assertIn("app.js?v=manual-triage-37", INDEX_HTML)
+        # Product logic must live in domain modules, not the entry loader.
+        self.assertNotIn("async function bootstrap", APP_ENTRY_JS)
+        self.assertNotIn("function withBase(path)", APP_ENTRY_JS)
+        self.assertIn("async function bootstrap", APP_JS)
+        self.assertIn("function withBase(path)", APP_JS)
+
     def test_frontend_uses_one_base_path_boundary(self) -> None:
         self.assertIn('meta[name="ra-triage-base"]', APP_JS)
         self.assertIn("const CONFIGURED_BASE_PATH = normalizeClientBasePath(", APP_JS)
@@ -75,11 +101,19 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('styles.css?v=manual-triage-30', INDEX_HTML)
+        self.assertIn('styles.css?v=manual-triage-35', INDEX_HTML)
         self.assertIn('<span>模型标注</span>', INDEX_HTML)
         self.assertNotIn('<span>人工标注</span>', INDEX_HTML)
         self.assertIn('params.set("model_label", modelLabel)', APP_JS)
         self.assertIn('url.searchParams.set("model_label", review.modelLabel)', APP_JS)
+        self.assertIn('id="analysisModelLabelFilter"', INDEX_HTML)
+        self.assertIn('id="analysisSceneFilter"', INDEX_HTML)
+        self.assertIn('id="analysisTriggerFilter"', INDEX_HTML)
+        self.assertIn('id="analysisEgressFilter"', INDEX_HTML)
+        self.assertNotIn('id="analysisAnnotationFilter"', INDEX_HTML)
+        self.assertNotIn('id="analysisTagFilter"', INDEX_HTML)
+        self.assertNotIn('id="analysisReasonClusters"', INDEX_HTML)
+        self.assertNotIn('原因文本主题', INDEX_HTML)
 
     def test_batch_gateway_aligns_to_form_and_catalog_scrolls(self) -> None:
         self.assertIn(".batch-page-grid { align-items: stretch; }", STYLES_CSS)
@@ -107,10 +141,10 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('document.documentElement.dataset.accessMode', APP_JS)
         self.assertIn('"X-RA-Triage-Request": "browser-v1"', APP_JS)
 
-    def test_tags_are_fixed_and_user_access_has_a_separate_admin_page(self) -> None:
+    def test_tags_have_shared_scene_catalog_and_user_access_has_a_separate_admin_page(self) -> None:
         self.assertNotIn('id="manageReviewTagsButton"', INDEX_HTML)
         self.assertNotIn('id="tagManagerDialog"', INDEX_HTML)
-        self.assertNotIn('/api/review-tags', APP_JS)
+        self.assertIn('/api/review-tags', APP_JS)
         self.assertIn('id="userManagementNavButton"', INDEX_HTML)
         self.assertIn('data-app-path="/users"', INDEX_HTML)
         self.assertIn('id="userManagementPage"', INDEX_HTML)
@@ -134,6 +168,8 @@ class FrontendContractTest(unittest.TestCase):
         self.assertNotIn("完整 Config", APP_JS)
         self.assertNotIn("原始输出对象", APP_JS)
         self.assertIn('id="reviewExcludeInput"', APP_JS)
+        self.assertIn('<strong>应该排除</strong>', APP_JS)
+        self.assertNotIn('<strong>是否应该排除</strong>', APP_JS)
         self.assertNotIn('class="review-title"', APP_JS)
         self.assertIn('<h2>Issue 标签</h2>', APP_JS)
         self.assertIn('<h2>模型判错</h2>', APP_JS)
@@ -150,14 +186,23 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('label: "环境"', APP_JS)
         self.assertIn('label: "自车意图"', APP_JS)
         self.assertIn('label: "场景"', APP_JS)
-        self.assertIn('label: "交互决策"', APP_JS)
+        self.assertIn('label: "触发判定"', APP_JS)
         self.assertIn('label: "误触发"', APP_JS)
+        self.assertIn('label: "应该触发"', APP_JS)
         self.assertIn('label: "正确触发"', APP_JS)
-        self.assertIn(".review-tag-groups { display: flex; flex-wrap: wrap;", STYLES_CSS)
+        self.assertIn(
+            ".review-tag-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px;",
+            STYLES_CSS,
+        )
         self.assertIn(".review-tag-dropdown > summary", STYLES_CSS)
+        self.assertIn(".custom-tag-create { position: sticky;", STYLES_CSS)
+        self.assertIn("grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px;", STYLES_CSS)
+        self.assertIn(".custom-tag-create .button { width: 28px;", STYLES_CSS)
+        self.assertIn(".custom-evidence-create { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px;", STYLES_CSS)
+        self.assertIn(".custom-evidence-create .button { width: 28px;", STYLES_CSS)
         self.assertIn("left: -1px; right: -1px; z-index: 22", STYLES_CSS)
-        self.assertIn("display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px", STYLES_CSS)
-        self.assertIn("flex: 0 1 auto; width: auto; min-width: 0; max-width: 100%; justify-content: center", STYLES_CSS)
+        self.assertIn("display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px", STYLES_CSS)
+        self.assertIn("width: 100%; min-width: 0; max-width: 100%; justify-content: flex-start", STYLES_CSS)
         self.assertNotIn("grid-template-columns: repeat(2, minmax(min-content, max-content))", STYLES_CSS)
         self.assertNotIn(".review-tag-dropdown .review-tag-options .tag-option:last-child:nth-child(odd)", STYLES_CSS)
         self.assertNotIn("width: max-content; min-width: calc(100% + 2px); max-width: min(320px, calc(100vw - 24px))", STYLES_CSS)
@@ -167,6 +212,16 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('textarea id="annotationNote" rows="2"', APP_JS)
         self.assertIn(".review-reason textarea { min-height: 54px; height: 54px;", STYLES_CSS)
         self.assertIn(".review-section { display: grid; gap: 7px; padding: 0; border: 0", STYLES_CSS)
+        self.assertIn('data-add-review-tag', APP_JS)
+        self.assertIn('data-open-review-tag-creator', APP_JS)
+        self.assertIn('tag-catalog-icon-button', APP_JS)
+        self.assertIn('scheduleAnalysisFilterReload', APP_JS)
+        self.assertNotIn('<button class="button button-primary" type="submit">应用</button>', INDEX_HTML)
+        self.assertIn(".custom-tag-create { position: sticky;", STYLES_CSS)
+        self.assertIn(".tag-catalog-add-button", STYLES_CSS)
+        self.assertIn(".tag-catalog-icon-button-danger", STYLES_CSS)
+        self.assertIn('api("/api/review-tags"', APP_JS)
+        self.assertIn('"key": "environment_other"', main_py)
 
     def test_detail_media_reuses_frame_timeline_outside_modal(self) -> None:
         self.assertIn("function mediaTimelineMarkup", APP_JS)
@@ -190,6 +245,8 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function missingEvidenceOptionMarkup", APP_JS)
         self.assertIn('data-edit-missing-evidence=', APP_JS)
         self.assertIn('data-delete-missing-evidence=', APP_JS)
+        self.assertIn('aria-label="编辑缺失信息"', APP_JS)
+        self.assertIn('aria-label="删除缺失信息"', APP_JS)
         self.assertIn('method: "PUT"', APP_JS)
         self.assertIn('method: "DELETE"', APP_JS)
         self.assertIn("loadConfig()", APP_JS[APP_JS.index("async function refreshChangedData"):])

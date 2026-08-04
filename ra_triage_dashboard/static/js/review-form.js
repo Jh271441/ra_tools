@@ -1,0 +1,1045 @@
+/* ra_triage_dashboard/static/js/review-form.js
+ * Review form, tags, evidence, save/delete
+ * Loaded as a classic script (shared global scope). Do not convert to
+ * ES modules without auditing cross-file function/state dependencies.
+ */
+function renderDetail(caseData) {
+  const primary = (caseData.predictions || []).find((item) => item.model_run_id === state.selectedRunId) || caseData.predictions?.[0];
+  const issueUrl = safeUrl(caseData.voyager_issue_url || caseData.trail_url);
+  const issueId = escapeHtml(caseData.issue_id);
+  const issueIdMarkup = issueUrl
+    ? `<a class="detail-id detail-id-link" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" title="打开 Voyager Issue">${issueId}</a>`
+    : `<span class="detail-id">${issueId}</span>`;
+  ensureDetailMediaState(caseData);
+  const modelHistoryButton = `<button class="history-inline-button" type="button" data-open-history="model">评测 Run 历史 · ${(caseData.predictions || []).length} 条</button>`;
+  $("#detailPane").innerHTML = `
+    <div class="detail-header">
+      <div class="detail-title-row">
+        <div class="detail-title-group">
+          <div class="detail-title"><h2><span class="ui-lang-zh">问题详情</span><span class="ui-lang-en">Issue Details</span></h2>${issueIdMarkup}<span id="detailExternalLinks" class="detail-external-links">${detailExternalLinksMarkup(caseData)}</span></div>
+        </div>
+        <div class="detail-navigation">
+          <div class="case-detail-pager">
+            <button class="button button-quiet" id="previousIssueButton" type="button">← 上一 Issue</button>
+            <span id="detailQueuePosition">— / —</span>
+            <button class="button button-quiet" id="nextIssueButton" type="button">下一 Issue →</button>
+          </div>
+        </div>
+      </div>
+      <div class="detail-context-row">
+        <div class="comparison-summary" aria-label="GT 与当前模型对比">
+          <span>GT</span>${labelBadge(caseData.gt_label, "缺失")}
+          <b aria-hidden="true">→</b>
+          <span>当前模型</span>${labelBadge(primary?.model_label, "未输出")}
+          <strong class="${primary?.model_label && primary.model_label !== caseData.gt_label ? "comparison-fail" : "comparison-neutral"}">${primary?.model_label ? primary.model_label === caseData.gt_label ? "一致" : "不一致" : "不可比较"}</strong>
+        </div>
+        <button class="button button-quiet detail-back-button" id="backToGalleryButton" type="button">← 返回筛选结果</button>
+        ${caseData.summary ? `<p class="detail-summary">${escapeHtml(caseData.summary)}</p>` : ""}
+        <div class="detail-context-actions">
+          ${detailMediaCommandMarkup(caseData)}
+          <div class="detail-actions">
+            <button class="button button-quiet" type="button" data-predict-current-case>API 推理</button>
+            ${modelHistoryButton}
+          </div>
+        </div>
+      </div>
+      ${caseData.review_note ? `<details class="review-note-details"><summary>查看历史备注</summary><div class="review-note"><span>历史备注</span>${escapeHtml(caseData.review_note)}</div></details>` : ""}
+    </div>
+    ${currentRunOutputMarkup(caseData, primary)}
+    ${heroMediaSection(caseData)}`;
+  $("#detailPane").querySelector("[data-predict-current-case]")?.addEventListener("click", () => {
+    openBatchDraft([caseData.issue_id], "single");
+  });
+  $("#detailPane").querySelector("[data-open-history='model']")?.addEventListener("click", () => {
+    openHistoryDialog("model", caseData);
+  });
+  bindDetailExternalLinks(caseData);
+  $("#detailPane").querySelector("#backToGalleryButton")?.addEventListener("click", returnToReviewGallery);
+  $("#detailPane").querySelector("#previousIssueButton")?.addEventListener("click", () => {
+    navigateAdjacentCase(-1).catch((error) => showToast(error.message, true));
+  });
+  $("#detailPane").querySelector("#nextIssueButton")?.addEventListener("click", () => {
+    navigateAdjacentCase(1).catch((error) => showToast(error.message, true));
+  });
+  renderCaseNavigation();
+  bindDetailMedia(caseData);
+}
+
+function annotationHistory(annotations) {
+  if (!annotations?.length) return '<p class="muted history-empty">尚无人工 review；保存后会保留旧版本。</p>';
+  return annotations
+    .map(
+      (annotation) => `<article class="history-row">
+        <div class="history-head">
+          ${labelBadge(annotation.label, annotation.review_status === "needs_gt_review" ? "GT 待复核" : "已记录")}
+          ${annotation.is_excluded ? '<span class="tag exclusion-tag">已排除</span>' : ""}
+          <span class="history-reviewer" title="${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}` : "复核人：历史记录未填写")}">${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO" : " · 未验证"}` : "复核人：未记录")}</span>
+          <span class="history-actions"><span class="history-time">${formatTime(annotation.created_at)}</span><button class="history-delete-button" type="button" data-delete-annotation="${escapeHtml(annotation.id)}" title="删除这条 Review 版本" aria-label="删除 ${escapeHtml(formatTime(annotation.created_at))} 的 Review 版本"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h12M8 3h4l1 2H7zM6 6l.7 11h6.6L14 6M8.5 9v5m3-5v5"/></svg></button></span>
+        </div>
+        ${annotation.missing_evidence?.length ? `<div class="tags">${annotation.missing_evidence.map((key) => `<span class="tag evidence-tag">${escapeHtml(evidenceLabel(key))}</span>`).join("")}</div>` : ""}
+        ${annotation.tags?.length ? `<div class="tags">${annotation.tags.map((tag) => `<span class="tag">${escapeHtml(tagLabel(tag))}</span>`).join("")}</div>` : ""}
+        ${annotation.attachments?.length ? `<div class="history-attachments">${annotation.attachments.map((attachment, index) => `<a href="${escapeHtml(attachment.url)}" target="_blank" rel="noreferrer" title="打开补充截图 ${index + 1}"><img src="${escapeHtml(attachment.url)}" alt="补充截图 ${index + 1}" loading="lazy" /></a>`).join("")}</div>` : ""}
+        ${annotation.note ? `<p>${escapeHtml(annotation.note)}</p>` : ""}
+      </article>`)
+    .join("");
+}
+
+function bindAnnotationHistory(root, caseData) {
+  if (!root || !caseData) return;
+  root.querySelectorAll("[data-delete-annotation]").forEach((button) => {
+    button.addEventListener("click", () => {
+      deleteAnnotationVersion(caseData, button.dataset.deleteAnnotation, button);
+    });
+  });
+}
+
+function updateReviewHistory(caseData) {
+  if (!caseData || state.selectedId !== caseData.issue_id) return;
+  const annotations = caseData.annotations || [];
+  const reviewPane = $("#reviewPane");
+  const content = reviewPane?.querySelector(".review-history-content");
+  const count = reviewPane?.querySelector(".history-launch-meta");
+  if (content) {
+    content.innerHTML = annotationHistory(annotations);
+    bindAnnotationHistory(content, caseData);
+  }
+  if (count) count.textContent = `${annotations.length} 条`;
+  const dialog = $("#historyDialog");
+  const dialogContent = $("#historyDialogContent");
+  if (
+    dialog?.open &&
+    dialogContent &&
+    $("#historyDialogTitle")?.textContent === "Review 历史"
+  ) {
+    dialogContent.innerHTML = annotationHistory(annotations);
+    bindAnnotationHistory(dialogContent, caseData);
+  }
+}
+
+function refreshReviewDerivedData() {
+  void Promise.allSettled([
+    loadOverview(),
+    loadClusters(),
+    loadCases(),
+    loadReviewers(),
+  ]);
+}
+
+function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
+  const definitions = [
+    {
+      section: "scene",
+      label: "场景",
+      groups: [
+        { key: "environment", label: "环境" },
+        { key: "self_intent", label: "自车意图" },
+      ],
+    },
+    {
+      section: "interaction_decision",
+      label: "触发判定",
+      groups: [
+        { key: "false_trigger", label: "误触发" },
+        { key: "true_trigger", label: "应该触发" },
+      ],
+    },
+    {
+      section: "egress",
+      label: "如何驶离",
+      groups: [
+        { key: "ra", label: "正确触发" },
+        { key: "no_assist", label: "无需协助" },
+      ],
+    },
+  ];
+  const visible = (tagCatalog || []).filter(
+    (item) => item.visible !== false && !item.deleted
+  );
+  const sections = definitions.map((section) => `
+    <div class="review-tag-axis" data-tag-section="${escapeHtml(section.section)}">
+      <div class="review-tag-axis-title">${escapeHtml(section.label)}</div>
+      <div class="review-tag-groups">
+        ${section.groups.map((group) => {
+          const items = visible.filter(
+            (item) => item.section === section.section && item.group === group.key
+          );
+          const selectedCount = items.filter((item) => chosenTags.has(item.key)).length;
+          const creator = section.section === "scene" ? `<div class="custom-tag-create" data-review-tag-creator="${escapeHtml(group.key)}">
+              <input data-new-review-tag maxlength="48" placeholder="新增场景标签" autocomplete="off" />
+              <input data-new-review-tag-hint maxlength="160" placeholder="补充说明（可选）" autocomplete="off" />
+              <button class="button button-quiet tag-catalog-save-button" data-add-review-tag data-tag-create-group="${escapeHtml(group.key)}" type="button" aria-label="保存新场景标签" title="保存新场景标签">✓</button>
+            </div>` : "";
+          const creatorAction = section.section === "scene"
+            ? `<button class="tag-catalog-add-button" type="button" data-open-review-tag-creator="${escapeHtml(group.key)}" aria-label="新增${escapeHtml(group.label)}标签" title="新增${escapeHtml(group.label)}标签">＋</button>`
+            : "";
+          return `<details class="review-tag-dropdown review-dropdown" data-tag-dropdown-group="${escapeHtml(group.key)}">
+            <summary><span>${escapeHtml(group.label)}</span><span class="tag-group-summary" data-tag-summary="${escapeHtml(group.key)}">${selectedCount} 项</span>${creatorAction}</summary>
+            <div class="review-tag-options">${creator}${items.map((item) => tagOption(item.key, item.label, chosenTags.has(item.key), group.key, item)).join("")}</div>
+          </details>`;
+        }).join("")}
+      </div>
+    </div>`).join("");
+  const legacy = (tagCatalog || []).filter(
+    (item) => (item.visible === false || item.deleted) && chosenTags.has(item.key)
+  );
+  if (legacy.length) {
+    return `${sections}
+      <div class="review-tag-legacy"><span>历史标签</span><div class="review-tag-options">${legacy.map((item) => tagOption(item.key, item.label, true)).join("")}</div></div>`;
+  }
+  return sections;
+}
+
+function syncReviewFormFromCase(caseData) {
+  const reviewPane = $("#reviewPane");
+  if (!reviewPane?.querySelector("#annotationForm")) {
+    renderReview(caseData);
+    return;
+  }
+  const previous = caseData.annotations?.[0] || {};
+  const hasPreviousReview = Boolean(caseData.annotations?.length);
+  const chosenEvidence = new Set(
+    hasPreviousReview ? previous.missing_evidence || [] : ["routing_direction"]
+  );
+  const chosenTags = new Set(previous.tags || []);
+  const evidenceCatalog = state.config?.missing_evidence_catalog || [];
+  const tagCatalog = state.config?.review_tag_catalog || [];
+  const evidenceKeys = new Set(evidenceCatalog.map((item) => item.key));
+  const tagKeys = new Set(tagCatalog.map((item) => item.key));
+
+  reviewPane.querySelectorAll(".custom-evidence-option").forEach((node) => node.remove());
+  reviewPane.querySelectorAll(".custom-tag-option").forEach((node) => node.remove());
+  const evidenceCreator = $("#customEvidenceCreator");
+  for (const key of chosenEvidence) {
+    if (evidenceKeys.has(key) || !evidenceCreator) continue;
+    const template = document.createElement("template");
+    template.innerHTML = missingEvidenceOptionMarkup({
+      key,
+      label: evidenceLabel(key),
+      hint: "本条 Review 新建的缺失信息",
+      builtin: false,
+    }, true, false);
+    const option = template.content.firstElementChild;
+    option.classList.add("custom-evidence-option");
+    evidenceCreator.before(option);
+    option.querySelector("input")?.addEventListener("change", updateEvidenceSummary);
+  }
+  let tagHistory = reviewPane.querySelector(".review-tag-legacy");
+  let tagHistoryOptions = tagHistory?.querySelector(".review-tag-options");
+  for (const key of chosenTags) {
+    if (tagKeys.has(key)) continue;
+    if (!tagHistoryOptions) {
+      tagHistory = document.createElement("div");
+      tagHistory.className = "review-tag-legacy";
+      tagHistory.innerHTML = '<span>历史标签</span><div class="review-tag-options"></div>';
+      reviewPane.querySelector(".review-exclude-toggle")?.before(tagHistory);
+      tagHistoryOptions = tagHistory.querySelector(".review-tag-options");
+    }
+    if (!tagHistoryOptions) continue;
+    const template = document.createElement("template");
+    template.innerHTML = reviewTagOptionMarkup(
+      { key, label: tagLabel(key), builtin: false },
+      true,
+      "",
+      false,
+    );
+    const option = template.content.firstElementChild;
+    option?.classList.add("custom-tag-option");
+    tagHistoryOptions.append(option);
+    option.querySelector("input")?.addEventListener("change", updateTagSummary);
+  }
+  reviewPane.querySelectorAll('input[name="missingEvidence"]').forEach((input) => {
+    input.checked = chosenEvidence.has(input.value);
+  });
+  reviewPane.querySelectorAll('input[name="reviewTags"]').forEach((input) => {
+    input.checked = chosenTags.has(input.value);
+  });
+  const excluded = $("#reviewExcludeInput");
+  if (excluded) excluded.checked = Boolean(previous.is_excluded);
+  const status = $("#reviewStatusInput");
+  if (status) {
+    status.value = previous.review_status === "needs_gt_review"
+      ? "needs_gt_review"
+      : previous.review_status === "pending"
+        ? "pending"
+        : "reviewed";
+  }
+  const note = $("#annotationNote");
+  if (note) note.value = previous.note || "";
+  const author = $("#annotationAuthor");
+  if (author && !(state.session.verified && state.session.username)) {
+    author.value = state.session.username || previous.author || "";
+  }
+  state.selectedAnnotationLabel = previous.label || "";
+  state.reviewFormDirty = false;
+  state.deferredDetailRefresh = false;
+  clearPendingReviewImages();
+  updateEvidenceSummary();
+  updateTagSummary();
+  bindMissingEvidenceCatalogControls(reviewPane);
+  bindReviewTagCatalogControls(reviewPane);
+  updateReviewHistory(caseData);
+}
+
+async function deleteAnnotationVersion(caseData, annotationId, button) {
+  if (state.savingAnnotation) return;
+  const annotation = (caseData.annotations || []).find(
+    (item) => String(item.id) === String(annotationId)
+  );
+  if (!annotation) return;
+  const deletingLatest = String(caseData.annotations?.[0]?.id) === String(annotationId);
+  const unsavedWarning = deletingLatest && state.reviewFormDirty
+    ? "\n当前表单有未保存编辑，删除后会恢复上一版本并丢弃这些编辑。"
+    : "";
+  const confirmed = window.confirm(
+    `确认删除 ${formatTime(annotation.created_at)} 保存的 Review 版本？\n\n复核人：${annotation.author || "未记录"}\n该操作不可恢复；如果删除当前版本，会自动恢复上一版本为当前 Review。${unsavedWarning}`
+  );
+  if (!confirmed) return;
+  state.savingAnnotation = true;
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  try {
+    const result = await api(
+      `/api/cases/${encodeURIComponent(caseData.issue_id)}/annotations/${encodeURIComponent(annotationId)}`,
+      { method: "DELETE" }
+    );
+    acknowledgeLocalChange(result);
+    caseData.annotations = (caseData.annotations || []).filter(
+      (item) => String(item.id) !== String(annotationId)
+    );
+    if (state.selectedCase?.issue_id === caseData.issue_id && deletingLatest) {
+      state.selectedCase = caseData;
+      syncReviewFormFromCase(caseData);
+    } else {
+      updateReviewHistory(caseData);
+    }
+    showToast("已删除该 Review 版本。");
+    refreshReviewDerivedData();
+  } catch (error) {
+    showToast(error.message, true);
+    if (button.isConnected) {
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+    }
+  } finally {
+    state.savingAnnotation = false;
+  }
+}
+
+function renderReview(caseData) {
+  const previous = caseData.annotations?.[0] || {};
+  state.reviewFormDirty = false;
+  state.deferredDetailRefresh = false;
+  state.selectedAnnotationLabel = previous.label || "";
+  const catalog = state.config?.missing_evidence_catalog || [];
+  const tagCatalog = state.config?.review_tag_catalog || [];
+  const hasPreviousReview = Boolean(caseData.annotations?.length);
+  const chosenEvidence = new Set(
+    hasPreviousReview ? previous.missing_evidence || [] : ["routing_direction"]
+  );
+  const catalogKeys = new Set(catalog.map((item) => item.key));
+  const visibleCatalog = catalog.filter((item) => !item.deleted);
+  const selectedDeletedEvidence = catalog.filter(
+    (item) => item.deleted && chosenEvidence.has(item.key)
+  );
+  const customEvidenceKeys = [...chosenEvidence].filter((key) => !catalogKeys.has(key));
+  const chosenTags = new Set(previous.tags || []);
+  const tagCatalogKeys = new Set(tagCatalog.map((item) => item.key));
+  const customTagKeys = [...chosenTags].filter((tag) => !tagCatalogKeys.has(tag));
+  const author = state.session.username || previous.author || "";
+  const authorLocked = Boolean(state.session.verified && state.session.username);
+  const reviewStatus = previous.review_status === "needs_gt_review"
+    ? "needs_gt_review"
+    : previous.review_status === "pending"
+      ? "pending"
+      : "reviewed";
+  const customEvidenceOptions = customEvidenceKeys
+    .map((key) => missingEvidenceOptionMarkup({ key, label: evidenceLabel(key), hint: "本条 Review 新建的缺失信息", builtin: false }, true, false))
+    .join("");
+  const deletedEvidenceOptions = selectedDeletedEvidence
+    .map((item) => missingEvidenceOptionMarkup(item, true, false))
+    .join("");
+  const tagOption = (key, label, selected, groupKey = "", item = null) => reviewTagOptionMarkup(
+    item || { key, label, builtin: true },
+    selected,
+    groupKey,
+  );
+  const customTagOptions = customTagKeys
+    .map((key) => tagOption(key, tagLabel(key), true))
+    .join("");
+  const issueTagGroups = renderReviewTagGroups(tagCatalog, chosenTags, tagOption);
+  $("#reviewPane").innerHTML = `
+    <form class="review-form" id="annotationForm">
+      <section class="review-section issue-tag-section">
+        <div class="review-section-heading"><div><h2>Issue 标签</h2></div><span class="evidence-summary-count" id="tagSummaryCount">已选 ${chosenTags.size} 项</span></div>
+        <div class="review-tag-groups-shell">${issueTagGroups}${customTagOptions ? `<div class="review-tag-legacy"><span>历史标签</span><div class="review-tag-options">${customTagOptions}</div></div>` : ""}</div>
+        <label class="review-exclude-toggle"><input id="reviewExcludeInput" type="checkbox" ${previous.is_excluded ? "checked" : ""} /><span><strong>应该排除</strong><small>不是模型需要解决的场景 case</small></span></label>
+      </section>
+      <section class="review-section model-error-section">
+        <div class="review-section-heading"><div><h2>模型判错</h2></div></div>
+        <label class="review-status-field"><span>复核状态</span><select id="reviewStatusInput"><option value="reviewed" ${reviewStatus === "reviewed" ? "selected" : ""}>已 Review</option><option value="pending" ${reviewStatus === "pending" ? "selected" : ""}>待补充</option><option value="needs_gt_review" ${reviewStatus === "needs_gt_review" ? "selected" : ""}>GT 需复核</option></select></label>
+        <label class="review-reason">
+          <span>模型为什么判错？</span>
+          <textarea id="annotationNote" rows="2" placeholder="简要说明模型漏掉的关键证据，例如 routing、绕行空间或时序。">${escapeHtml(previous.note || "")}</textarea>
+        </label>
+        <details class="evidence-dropdown review-dropdown">
+          <summary>缺失信息（多选）<span class="evidence-summary-count" id="evidenceSummaryCount">已选 ${chosenEvidence.size} 项</span></summary>
+          <div class="evidence-options" id="missingEvidenceOptions">${visibleCatalog.map((item) => missingEvidenceOptionMarkup(item, chosenEvidence.has(item.key), true)).join("")}${deletedEvidenceOptions}${customEvidenceOptions}<div class="custom-evidence-create" id="customEvidenceCreator"><input id="newMissingEvidence" maxlength="48" placeholder="新增缺失信息标题" autocomplete="off" /><input id="newMissingEvidenceHint" maxlength="160" placeholder="补充说明（可选）" autocomplete="off" /><button class="button button-quiet" id="addMissingEvidenceButton" type="button">加入共享目录</button></div></div>
+        </details>
+        <div class="review-attachment-field">
+          <span>补充截图（可选）</span>
+          <div class="screenshot-paste-zone" id="screenshotPasteZone" tabindex="0" role="group" aria-label="粘贴补充截图">
+            <strong>粘贴截图</strong>
+            <small>点击后 Ctrl / ⌘ + V；最多 4 张。</small>
+            <button class="screenshot-browse-button" id="reviewScreenshotBrowse" type="button">选择图片</button>
+          </div>
+          <input class="hidden" id="reviewScreenshotInput" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+          <div class="pending-screenshot-list" id="pendingScreenshotList"></div>
+        </div>
+      </section>
+      <label><span>复核人${authorLocked ? "（SSO）" : "（必填）"}</span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" required ${authorLocked ? "readonly" : ""} /></label>
+      <button class="button button-primary full-width" type="submit">保存新的 review 版本</button>
+    </form>
+    <details class="review-history-toggle" open>
+      <summary><span><strong>Review 历史</strong></span><span class="history-launch-meta">${(caseData.annotations || []).length} 条</span></summary>
+      <div class="review-history-content">${annotationHistory(caseData.annotations)}</div>
+    </details>`;
+  $("#reviewPane").querySelectorAll('input[name="missingEvidence"]').forEach((input) => {
+    input.addEventListener("change", updateEvidenceSummary);
+  });
+  bindMissingEvidenceCatalogControls($("#reviewPane"));
+  bindReviewTagCatalogControls($("#reviewPane"));
+  $("#reviewPane").querySelectorAll('input[name="reviewTags"]').forEach((input) => {
+    input.addEventListener("change", updateTagSummary);
+  });
+  $("#reviewPane").querySelectorAll(".review-dropdown").forEach((dropdown) => {
+    dropdown.addEventListener("toggle", () => {
+      if (!dropdown.open) return;
+      $("#reviewPane").querySelectorAll(".review-dropdown").forEach((other) => {
+        if (other !== dropdown) other.open = false;
+      });
+    });
+  });
+  $("#addMissingEvidenceButton")?.addEventListener("click", async () => {
+    const input = $("#newMissingEvidence");
+    const hintInput = $("#newMissingEvidenceHint");
+    const button = $("#addMissingEvidenceButton");
+    const value = String(input?.value || "").trim();
+    const hint = String(hintInput?.value || "").trim();
+    if (!value) return showToast("请输入新的缺失信息。", true);
+    if (value.length > 48 || /[\x00-\x1f\x7f]/.test(value)) return showToast("缺失信息长度或字符不合法。", true);
+    if (hint.length > 160 || /[\x00-\x1f\x7f]/.test(hint)) return showToast("缺失信息说明长度或字符不合法。", true);
+    if (button) {
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+    }
+    try {
+      const result = await api("/api/missing-evidence", {
+        method: "POST",
+        body: JSON.stringify({ label: value, hint }),
+      });
+      setMissingEvidenceCatalogFromResult(result);
+      const item = result.item || {};
+      const key = String(item.key || "");
+      const exists = key && [...document.querySelectorAll('input[name="missingEvidence"]')].some((node) => node.value === key);
+      if (!exists && key) {
+        const template = document.createElement("template");
+        template.innerHTML = missingEvidenceOptionMarkup({
+          ...item,
+          label: item.label || value,
+          hint: item.hint || hint,
+          builtin: false,
+        }, true, true);
+        const option = template.content.firstElementChild;
+        const creator = $("#customEvidenceCreator");
+        creator?.before(option);
+        option.querySelector("input")?.addEventListener("change", updateEvidenceSummary);
+        bindMissingEvidenceCatalogControls(option);
+      }
+      if (input) input.value = "";
+      if (hintInput) hintInput.value = "";
+      state.reviewFormDirty = true;
+      updateEvidenceSummary();
+      showToast("已加入共享目录，所有用户和 Issue 均可使用。 ");
+    } catch (error) {
+      showToast(error.message, true);
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.removeAttribute("aria-busy");
+      }
+    }
+  });
+  const pasteZone = $("#screenshotPasteZone");
+  const screenshotInput = $("#reviewScreenshotInput");
+  const screenshotBrowse = $("#reviewScreenshotBrowse");
+  pasteZone.addEventListener("click", (event) => {
+    if (event.target !== screenshotBrowse) pasteZone.focus();
+  });
+  screenshotBrowse.addEventListener("click", (event) => {
+    event.stopPropagation();
+    screenshotInput.click();
+  });
+  pasteZone.addEventListener("paste", (event) => {
+    const files = [...(event.clipboardData?.items || [])]
+      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .map((item) => item.getAsFile())
+      .filter(Boolean);
+    if (files.length) {
+      event.preventDefault();
+      addPendingReviewImages(files);
+    }
+  });
+  screenshotInput.addEventListener("change", () => {
+    addPendingReviewImages([...screenshotInput.files]);
+    screenshotInput.value = "";
+  });
+  renderPendingReviewImages();
+  const annotationForm = $("#annotationForm");
+  annotationForm.addEventListener("input", () => {
+    state.reviewFormDirty = true;
+  });
+  annotationForm.addEventListener("change", () => {
+    state.reviewFormDirty = true;
+  });
+  annotationForm.addEventListener("submit", saveAnnotation);
+  bindAnnotationHistory($("#reviewPane"), caseData);
+}
+
+function updateEvidenceSummary() {
+  const count = document.querySelectorAll('input[name="missingEvidence"]:checked').length;
+  const target = $("#evidenceSummaryCount");
+  if (target) target.textContent = `已选 ${count} 项`;
+}
+
+function setMissingEvidenceCatalogFromResult(result) {
+  if (!result || !Array.isArray(result.missing_evidence_catalog)) return;
+  state.config = {
+    ...(state.config || {}),
+    missing_evidence_catalog: result.missing_evidence_catalog,
+  };
+  acknowledgeLocalChange(result);
+  renderConfig();
+}
+
+function missingEvidenceCatalogItem(key) {
+  return (state.config?.missing_evidence_catalog || []).find(
+    (item) => String(item.key) === String(key)
+  );
+}
+
+function updateMissingEvidenceOptionRow(item) {
+  const row = [...document.querySelectorAll("[data-evidence-option]")].find(
+    (node) => node.dataset.evidenceOption === String(item?.key || "")
+  );
+  if (!row) return;
+  const label = row.querySelector("strong");
+  const hint = row.querySelector("small");
+  const choice = row.querySelector(".evidence-option-choice");
+  if (label) label.textContent = String(item?.label || evidenceLabel(item?.key));
+  if (hint) hint.textContent = String(item?.hint || "");
+  if (choice) choice.title = String(item?.hint || "");
+}
+
+function markDeletedMissingEvidenceOption(item) {
+  const row = [...document.querySelectorAll("[data-evidence-option]")].find(
+    (node) => node.dataset.evidenceOption === String(item?.key || "")
+  );
+  if (!row) return;
+  const checkbox = row.querySelector('input[name="missingEvidence"]');
+  if (checkbox?.checked) {
+    row.classList.add("evidence-option-deleted");
+    const hint = row.querySelector("small");
+    if (hint) hint.textContent = "已从共享目录删除；当前 Review 仍保留此历史值";
+    row.querySelector(".evidence-option-actions")?.remove();
+  } else {
+    row.remove();
+  }
+  updateEvidenceSummary();
+}
+
+function bindMissingEvidenceCatalogControls(root = document) {
+  root.querySelectorAll("[data-edit-missing-evidence]").forEach((button) => {
+    if (button.dataset.missingEvidenceBound === "1") return;
+    button.dataset.missingEvidenceBound = "1";
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const key = String(button.dataset.editMissingEvidence || "");
+      const item = missingEvidenceCatalogItem(key);
+      if (!item || item.deleted) return;
+      const label = window.prompt("缺失信息标题", String(item.label || ""));
+      if (label === null) return;
+      const hint = window.prompt("补充说明（可选）", String(item.hint || ""));
+      if (hint === null) return;
+      if (!String(label).trim()) return showToast("缺失信息标题不能为空。", true);
+      if (String(label).length > 48 || /[\x00-\x1f\x7f]/.test(String(label))) {
+        return showToast("缺失信息标题长度或字符不合法。", true);
+      }
+      if (String(hint).length > 160 || /[\x00-\x1f\x7f]/.test(String(hint))) {
+        return showToast("缺失信息说明长度或字符不合法。", true);
+      }
+      button.disabled = true;
+      try {
+        const result = await api(`/api/missing-evidence/${encodeURIComponent(key)}`, {
+          method: "PUT",
+          body: JSON.stringify({ label: String(label).trim(), hint: String(hint).trim() }),
+        });
+        setMissingEvidenceCatalogFromResult(result);
+        updateMissingEvidenceOptionRow(result.item || { key, label, hint });
+        showToast("缺失信息已更新。 ");
+      } catch (error) {
+        showToast(error.message, true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+  root.querySelectorAll("[data-delete-missing-evidence]").forEach((button) => {
+    if (button.dataset.missingEvidenceBound === "1") return;
+    button.dataset.missingEvidenceBound = "1";
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const key = String(button.dataset.deleteMissingEvidence || "");
+      const item = missingEvidenceCatalogItem(key);
+      if (!item || item.deleted) return;
+      if (!window.confirm(`确认删除“${item.label}”？\n历史 Review 仍会保留该标签。`)) return;
+      button.disabled = true;
+      try {
+        const result = await api(`/api/missing-evidence/${encodeURIComponent(key)}`, {
+          method: "DELETE",
+          body: JSON.stringify({}),
+        });
+        setMissingEvidenceCatalogFromResult(result);
+        markDeletedMissingEvidenceOption(result.item || { key });
+        showToast("缺失信息已删除。 ");
+      } catch (error) {
+        showToast(error.message, true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+}
+
+function updateTagSummary() {
+  const inputs = [...document.querySelectorAll('input[name="reviewTags"]')];
+  const count = inputs.filter((input) => input.checked).length;
+  const target = $("#tagSummaryCount");
+  if (target) target.textContent = `已选 ${count} 项`;
+  document.querySelectorAll("[data-tag-summary]").forEach((summary) => {
+    const group = summary.dataset.tagSummary || "";
+    const groupCount = inputs.filter(
+      (input) => input.checked && input.dataset.tagGroup === group
+    ).length;
+    summary.textContent = `${groupCount} 项`;
+  });
+}
+
+function setReviewTagCatalogFromResult(result) {
+  if (!result || !Array.isArray(result.review_tag_catalog)) return;
+  state.config = {
+    ...(state.config || {}),
+    review_tag_catalog: result.review_tag_catalog,
+  };
+  acknowledgeLocalChange(result);
+  renderConfig();
+}
+
+function reviewTagCatalogOptionRow(key) {
+  return [...document.querySelectorAll("[data-review-tag-option]")].find(
+    (node) => node.dataset.reviewTagOption === String(key || "")
+  );
+}
+
+function updateReviewTagOptionRow(item) {
+  const row = reviewTagCatalogOptionRow(item?.key);
+  if (!row) return;
+  const option = row.querySelector(".tag-option");
+  const label = option?.querySelector("span");
+  if (label) label.textContent = String(item?.label || tagLabel(item?.key));
+  if (option) {
+    if (item?.hint) option.title = String(item.hint);
+    else option.removeAttribute("title");
+  }
+}
+
+function markDeletedReviewTagOption(item) {
+  const row = reviewTagCatalogOptionRow(item?.key);
+  if (!row) return;
+  const checkbox = row.querySelector('input[name="reviewTags"]');
+  if (checkbox?.checked) {
+    row.classList.add("tag-option-deleted");
+    row.querySelector(".evidence-option-actions")?.remove();
+  } else {
+    row.remove();
+  }
+  updateTagSummary();
+}
+
+function bindReviewTagCatalogControls(root = document) {
+  root.querySelectorAll("[data-open-review-tag-creator]").forEach((button) => {
+    if (button.dataset.reviewTagBound === "1") return;
+    button.dataset.reviewTagBound = "1";
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const dropdown = button.closest(".review-tag-dropdown");
+      const creator = dropdown?.querySelector("[data-review-tag-creator]");
+      const input = creator?.querySelector("[data-new-review-tag]");
+      if (!dropdown || !creator) return;
+      dropdown.open = true;
+      window.requestAnimationFrame(() => input?.focus());
+    });
+  });
+  root.querySelectorAll("[data-add-review-tag]").forEach((button) => {
+    if (button.dataset.reviewTagBound === "1") return;
+    button.dataset.reviewTagBound = "1";
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const creator = button.closest("[data-review-tag-creator]");
+      const input = creator?.querySelector("[data-new-review-tag]");
+      const hintInput = creator?.querySelector("[data-new-review-tag-hint]");
+      const value = String(input?.value || "").trim();
+      const hint = String(hintInput?.value || "").trim();
+      const group = String(button.dataset.tagCreateGroup || "environment");
+      if (!value) return showToast("请输入新的场景标签。", true);
+      if (value.length > 48 || /[\x00-\x1f\x7f]/.test(value)) {
+        return showToast("场景标签标题长度或字符不合法。", true);
+      }
+      if (hint.length > 160 || /[\x00-\x1f\x7f]/.test(hint)) {
+        return showToast("场景标签说明长度或字符不合法。", true);
+      }
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+      try {
+        const result = await api("/api/review-tags", {
+          method: "POST",
+          body: JSON.stringify({ label: value, hint, group }),
+        });
+        setReviewTagCatalogFromResult(result);
+        const item = result.item || {};
+        if (item.key && creator && !reviewTagCatalogOptionRow(item.key)) {
+          const template = document.createElement("template");
+          template.innerHTML = reviewTagOptionMarkup(item, true, group, true);
+          const option = template.content.firstElementChild;
+          creator.after(option);
+          option?.querySelector('input[name="reviewTags"]')?.addEventListener("change", updateTagSummary);
+          bindReviewTagCatalogControls(option || creator);
+        }
+        if (input) input.value = "";
+        if (hintInput) hintInput.value = "";
+        state.reviewFormDirty = true;
+        updateTagSummary();
+        showToast("场景标签已加入共享目录，所有用户和 Issue 均可使用。 ");
+      } catch (error) {
+        showToast(error.message, true);
+      } finally {
+        button.disabled = false;
+        button.removeAttribute("aria-busy");
+      }
+    });
+  });
+  root.querySelectorAll("[data-edit-review-tag]").forEach((button) => {
+    if (button.dataset.reviewTagBound === "1") return;
+    button.dataset.reviewTagBound = "1";
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const key = String(button.dataset.editReviewTag || "");
+      const item = reviewTagCatalogItem(key);
+      if (!item || item.deleted || item.builtin) return;
+      const label = window.prompt("场景标签标题", String(item.label || ""));
+      if (label === null) return;
+      const hint = window.prompt("补充说明（可选）", String(item.hint || ""));
+      if (hint === null) return;
+      if (!String(label).trim()) return showToast("场景标签标题不能为空。", true);
+      button.disabled = true;
+      try {
+        const result = await api(`/api/review-tags/${encodeURIComponent(key)}`, {
+          method: "PUT",
+          body: JSON.stringify({ label: String(label).trim(), hint: String(hint).trim(), group: item.group || "environment" }),
+        });
+        setReviewTagCatalogFromResult(result);
+        updateReviewTagOptionRow(result.item || { key, label, hint });
+        showToast("场景标签已更新。 ");
+      } catch (error) {
+        showToast(error.message, true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+  root.querySelectorAll("[data-delete-review-tag]").forEach((button) => {
+    if (button.dataset.reviewTagBound === "1") return;
+    button.dataset.reviewTagBound = "1";
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const key = String(button.dataset.deleteReviewTag || "");
+      const item = reviewTagCatalogItem(key);
+      if (!item || item.deleted || item.builtin) return;
+      if (!window.confirm(`确认删除“${item.label}”？\n历史 Review 仍会保留该标签。`)) return;
+      button.disabled = true;
+      try {
+        const result = await api(`/api/review-tags/${encodeURIComponent(key)}`, {
+          method: "DELETE",
+          body: JSON.stringify({}),
+        });
+        setReviewTagCatalogFromResult(result);
+        markDeletedReviewTagOption(result.item || { key });
+        showToast("场景标签已删除。 ");
+      } catch (error) {
+        showToast(error.message, true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+}
+
+function releasePreviewUrlLater(previewUrl) {
+  window.setTimeout(() => URL.revokeObjectURL(previewUrl), 5000);
+}
+
+function clearPendingReviewImages() {
+  const previewUrls = state.pendingReviewImages.map((item) => item.previewUrl);
+  state.pendingReviewImages = [];
+  renderPendingReviewImages();
+  previewUrls.forEach(releasePreviewUrlLater);
+}
+
+function addPendingReviewImages(files) {
+  const limits = state.config?.review_attachment_limits || {};
+  const maxCount = Number(limits.max_count || 4);
+  const maxBytes = Number(limits.max_bytes_each || 8 * 1024 * 1024);
+  const maxTotalBytes = Number(limits.max_bytes_total || 24 * 1024 * 1024);
+  const allowed = new Set(limits.media_types || ["image/png", "image/jpeg", "image/webp"]);
+  let rejected = "";
+  const previousCount = state.pendingReviewImages.length;
+  files.forEach((file) => {
+    if (state.pendingReviewImages.length >= maxCount) {
+      rejected = `最多只能添加 ${maxCount} 张截图。`;
+      return;
+    }
+    if (!allowed.has(file.type)) {
+      rejected = "仅支持 PNG、JPEG 或 WebP 图片。";
+      return;
+    }
+    if (file.size > maxBytes) {
+      rejected = "单张截图不能超过 8 MB。";
+      return;
+    }
+    const currentBytes = state.pendingReviewImages.reduce(
+      (sum, item) => sum + item.file.size,
+      0
+    );
+    if (currentBytes + file.size > maxTotalBytes) {
+      rejected = "本次截图总大小不能超过 24 MB。";
+      return;
+    }
+    state.pendingReviewImages.push({
+      id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+      file,
+      previewUrl: URL.createObjectURL(file),
+    });
+  });
+  if (state.pendingReviewImages.length !== previousCount) {
+    state.reviewFormDirty = true;
+  }
+  renderPendingReviewImages();
+  if (rejected) showToast(rejected, true);
+}
+
+function renderPendingReviewImages() {
+  const target = $("#pendingScreenshotList");
+  if (!target) return;
+  if (!state.pendingReviewImages.length) {
+    target.innerHTML = "";
+    return;
+  }
+  target.innerHTML = state.pendingReviewImages
+    .map(
+      (item) => `<div class="pending-screenshot">
+        <img src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.file.name || "待上传截图")}" />
+        <button type="button" data-remove-screenshot="${escapeHtml(item.id)}" aria-label="移除截图">×</button>
+      </div>`
+    )
+    .join("");
+  target.querySelectorAll("[data-remove-screenshot]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = state.pendingReviewImages.findIndex(
+        (item) => item.id === button.dataset.removeScreenshot
+      );
+      if (index < 0) return;
+      const previewUrl = state.pendingReviewImages[index].previewUrl;
+      state.pendingReviewImages.splice(index, 1);
+      state.reviewFormDirty = true;
+      renderPendingReviewImages();
+      releasePreviewUrlLater(previewUrl);
+    });
+  });
+}
+
+async function selectCase(
+  issueId,
+  { updateRoute = true, historyMode = "push" } = {}
+) {
+  if (!issueId) return;
+  const gallery = $("#reviewGalleryView");
+  if (gallery && !gallery.classList.contains("hidden")) {
+    state.galleryScrollY = window.scrollY;
+  }
+  if (state.selectedId && state.selectedId !== issueId) clearPendingReviewImages();
+  const hadDetail = Boolean(state.selectedCase);
+  state.selectedId = issueId;
+  state.selectedCase = null;
+  const requestSeq = ++state.caseRequestSeq;
+  renderCaseNavigation();
+  let loadingTimer = null;
+  if (!hadDetail) {
+    loadingTimer = window.setTimeout(() => {
+      if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId) return;
+      $("#detailPane").innerHTML = `
+        <div class="empty-state detail-loading-state">
+          <div class="empty-glyph" aria-hidden="true">…</div>
+          <h2>正在加载 ${escapeHtml(issueId)}</h2>
+          <p>正在读取 Issue 媒体与模型输出。</p>
+        </div>`;
+      $("#reviewPane").innerHTML = `
+        <div class="review-placeholder"><h2>正在加载标注</h2><p>Issue 数据返回后即可继续 Review。</p></div>`;
+    }, 140);
+  }
+  if (updateRoute && state.activePage === "review") {
+    const nextUrl = pageUrl("review", { issue: issueId });
+    if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
+      showPage("review", { historyMode, issue: issueId });
+    } else {
+      setReviewView(issueId);
+    }
+  } else {
+    setReviewView(issueId);
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }
+  try {
+    const data = await api(`/api/cases/${encodeURIComponent(issueId)}`);
+    if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId) return;
+    if (loadingTimer !== null) {
+      window.clearTimeout(loadingTimer);
+      loadingTimer = null;
+    }
+    state.selectedCase = data;
+    renderDetail(data);
+    renderReview(data);
+    scheduleTrailDetailMetadata(issueId, requestSeq);
+  } catch (error) {
+    if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId) return;
+    if (loadingTimer !== null) {
+      window.clearTimeout(loadingTimer);
+      loadingTimer = null;
+    }
+    $("#detailPane").innerHTML = `
+      <div class="empty-state">
+        <div class="empty-glyph" aria-hidden="true">!</div>
+        <h2>Issue 加载失败</h2>
+        <p>${escapeHtml(error.message)}</p>
+      </div>`;
+    showToast(error.message, true);
+  }
+}
+
+async function navigateAdjacentCase(delta) {
+  if (!state.selectedId || ![-1, 1].includes(delta)) return;
+  let index = state.cases.findIndex((item) => item.issue_id === state.selectedId);
+  if (index < 0) return;
+  let targetIndex = index + delta;
+  if (targetIndex < 0 && state.casePage > 1) {
+    await loadCases({ keepSelection: true, page: state.casePage - 1 });
+    targetIndex = state.cases.length - 1;
+  } else if (
+    targetIndex >= state.cases.length &&
+    state.casePage * state.casePageSize < state.caseTotal
+  ) {
+    await loadCases({ keepSelection: true, page: state.casePage + 1 });
+    targetIndex = 0;
+  }
+  const target = state.cases[targetIndex];
+  if (target) await selectCase(target.issue_id, { historyMode: "replace" });
+}
+
+async function saveAnnotation(event) {
+  event.preventDefault();
+  if (!state.selectedId || state.savingAnnotation) return;
+  state.savingAnnotation = true;
+  const submitButton = event.submitter || $("#annotationForm button[type='submit']");
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.setAttribute("aria-busy", "true");
+  }
+  const payload = {
+    label: state.selectedAnnotationLabel,
+    review_status: $("#reviewStatusInput").value,
+    is_excluded: Boolean($("#reviewExcludeInput")?.checked),
+    tags: [...document.querySelectorAll('input[name="reviewTags"]:checked')].map(
+      (input) => input.value
+    ),
+    missing_evidence: [...document.querySelectorAll('input[name="missingEvidence"]:checked')].map((input) => input.value),
+    note: $("#annotationNote").value,
+    author: $("#annotationAuthor").value,
+  };
+  try {
+    let result;
+    if (state.pendingReviewImages.length) {
+      const form = new FormData();
+      form.append("payload", JSON.stringify(payload));
+      state.pendingReviewImages.forEach((item, index) => {
+        form.append(
+          "attachments",
+          item.file,
+          item.file.name || `clipboard-${index + 1}.png`
+        );
+      });
+      result = await api(
+        `/api/cases/${encodeURIComponent(state.selectedId)}/annotations-with-attachments`,
+        {
+          method: "POST",
+          body: form,
+          headers: { "X-RA-Triage-Request": "review-v1" },
+        }
+      );
+    } else {
+      result = await api(`/api/cases/${encodeURIComponent(state.selectedId)}/annotations`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    }
+    acknowledgeLocalChange(result);
+    const screenshotCount = state.pendingReviewImages.length;
+    state.reviewFormDirty = false;
+    state.deferredDetailRefresh = false;
+    clearPendingReviewImages();
+    if (result?.annotation && state.selectedCase?.issue_id === state.selectedId) {
+      state.selectedCase.annotations = [
+        result.annotation,
+        ...(state.selectedCase.annotations || []).filter(
+          (item) => String(item.id) !== String(result.annotation.id)
+        ),
+      ];
+      updateReviewHistory(state.selectedCase);
+    }
+    showToast(
+      `已保存新的 review 版本${screenshotCount ? `和 ${screenshotCount} 张截图` : ""}。`
+    );
+    refreshReviewDerivedData();
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    state.savingAnnotation = false;
+    if (submitButton?.isConnected) {
+      submitButton.disabled = false;
+      submitButton.removeAttribute("aria-busy");
+    }
+  }
+}
+

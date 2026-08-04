@@ -34,7 +34,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-30`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-35`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -295,9 +295,9 @@
                   </select>
                 </label>
                 <label>
-                  <span>人工结论</span>
-                  <select id="analysisAnnotationFilter">
-                    <option value="">全部结论</option>
+                  <span>模型预测</span>
+                  <select id="analysisModelLabelFilter">
+                    <option value="">全部模型预测</option>
                     <option value="误触发">误触发</option>
                     <option value="正确触发">正确触发</option>
                     <option value="无需协助">无需协助</option>
@@ -310,9 +310,21 @@
                   </select>
                 </label>
                 <label class="analysis-tag-filter">
-                  <span>场景 Tags</span>
-                  <select id="analysisTagFilter">
-                    <option value="">全部场景 Tags</option>
+                  <span>场景</span>
+                  <select id="analysisSceneFilter">
+                    <option value="">全部场景</option>
+                  </select>
+                </label>
+                <label class="analysis-trigger-filter">
+                  <span>触发判定</span>
+                  <select id="analysisTriggerFilter">
+                    <option value="">全部触发判定</option>
+                  </select>
+                </label>
+                <label class="analysis-egress-filter">
+                  <span>如何脱困</span>
+                  <select id="analysisEgressFilter">
+                    <option value="">全部脱困方式</option>
                   </select>
                 </label>
                 <div class="analysis-search-actions">
@@ -324,7 +336,6 @@
                     <button class="button button-quiet" id="exportReviewAnalysisCsvButton" type="button">导出 CSV</button>
                     <button class="button button-quiet" id="exportReviewAnalysisXlsxButton" type="button">导出 XLSX</button>
                     <button class="button button-quiet" id="resetReviewAnalysisButton" type="button">重置</button>
-                    <button class="button button-primary" type="submit">应用</button>
                   </div>
                 </div>
               </form>
@@ -346,11 +357,6 @@
                 <strong id="analysisEvidenceCount">—</strong>
                 <small>至少选择 1 项</small>
               </article>
-              <article class="analysis-stat-card analysis-stat-warn">
-                <span>文本未归类</span>
-                <strong id="analysisUnclusteredCount">—</strong>
-                <small>有原因、未命中当前主题</small>
-              </article>
             </section>
 
             <section class="analysis-cluster-grid">
@@ -363,17 +369,6 @@
                 </div>
                 <div class="analysis-cluster-list" id="analysisEvidenceClusters">
                   <div class="analysis-empty">正在统计缺失信息…</div>
-                </div>
-              </article>
-              <article class="page-card analysis-cluster-card">
-                <div class="section-heading">
-                  <div>
-                    <h3>原因文本主题</h3>
-                  </div>
-                  <small>关键词 v1 · 单条可属于多个主题</small>
-                </div>
-                <div class="analysis-cluster-list" id="analysisReasonClusters">
-                  <div class="analysis-empty">正在分析 Review 原因…</div>
                 </div>
               </article>
             </section>
@@ -883,7 +878,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-30`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-37`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

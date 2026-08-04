@@ -129,6 +129,17 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
             all(not item["comparison_status"] for item in without_run["items"])
         )
 
+        structured_only = build_review_reason_analysis(
+            rows,
+            has_model_run=True,
+            include_reason_themes=False,
+        )
+        self.assertEqual(structured_only["method"]["id"], "structured-review-fields-v1")
+        self.assertEqual(structured_only["method"]["catalog"], [])
+        self.assertEqual(structured_only["reason_clusters"], [])
+        self.assertEqual(structured_only["summary"]["unclustered_reason"], 0)
+        self.assertTrue(all(item["reason_themes"] == [] for item in structured_only["items"]))
+
     def test_database_uses_only_latest_annotation_and_selected_run_failures(
         self,
     ) -> None:
@@ -230,6 +241,14 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
                 tag="temporary_stop",
             )
             self.assertEqual([item["issue_id"] for item in tagged], ["cn20001"])
+
+            structured_filters = database.review_reason_rows(
+                baseline_scope=scope,
+                model_run_id=run["id"],
+                model_label="正确触发",
+                tag_filters=("temporary_stop",),
+            )
+            self.assertEqual([item["issue_id"] for item in structured_filters], ["cn20001"])
 
             human_search = database.review_reason_rows(
                 baseline_scope=scope,

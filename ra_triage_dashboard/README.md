@@ -11,9 +11,9 @@
 - 顶栏支持深色 / 浅色主题切换，默认仍为深色；用户选择保存在浏览器 `localStorage`，并在主样式加载前应用，避免刷新时先闪出错误主题。浅色模式覆盖页面框架、表单、卡片、下拉框和弹窗；Ares、BEV 与 Camera 媒体画布继续使用深色舞台，以保持原始画面和轨迹叠加层的对比度。
 - Trail 操作分成「检查字段」和「创建 Run」两步，收在 Runs 页的默认折叠区；两步都不写回 Trail，快照只创建或复用本地不可变 Run，且不会修改团队默认 Run。启动时若启用 Trail 检查，也只执行第一步。
 - 页面只允许导入批量模型输出（JSON、CSV、XLSX），Issue / GT 上传入口已移除，避免误污染 0508 baseline；后端旧 `/api/import/issues` 仅保留兼容客户端，不由页面调用。Runs 页上方用三个自然高度 Tab 统一组织模型文件、AutoTriage 快照和 Trail 快照，页面标题始终固定为 `MODEL RUN REGISTRY / 模型结果 Runs`，不会随来源 Tab 改名；每条 Run 都显示来源徽标及原始 records 链接、文件名或 Trail view。新上传的模型结果原文件按 SHA-256 归档到 dashboard data 的 `uploads/`，Run 行可直接在页面内预览 CSV/JSON 或下载；历史 Run 若没有归档文件，会优先用已保存的脱敏预测行重建可复核副本，并明确标注“Run 重建”。Run 行提供带二次确认的删除按钮：只删除该 Run 的模型输出和来源归档，不删除 0508 GT、Issue 或人工 review；团队默认 Run 需先切换后才能删除。也可按 AutoTriage Batch ID / records 链接经固定只读内网接口拉取结果，或检查 Trail 字段后创建只读快照。所有模型结果都按规范化内容 SHA-256 创建或复用不可变 Model Run，不覆盖 GT、不切换团队默认 Run；AutoTriage 拉取会显式比较声明数、完成数、结果数和唯一 Issue 数，并标记部分覆盖。
-- 人工标注为追加式历史，最新一条为当前标注，不覆盖旧 review。详情右侧分为两个区域：`Issue 标签` 先按「场景（误触发 / 应该触发）」和「如何驶离（RA / 无需协助）」多选描述问题，并提供 `is_excluded`（是否应该排除、非模型需要解决的场景）布尔开关；`模型判错` 保留复核状态、模型为什么判错、缺失信息和补充截图。每个新版本必须记录复核人及其可信状态，右侧 Review 历史默认展开，并把状态、复核人和时间紧凑展示在同一行；详情左右外框在桌面端随较高一侧等高。每个版本可粘贴或选择最多 4 张补充截图，标签只能从固定目录多选。
+- 人工标注为追加式历史，最新一条为当前标注，不覆盖旧 review。详情右侧分为两个区域：`Issue 标签` 将场景拆成「环境 / 自车意图」，将触发判定拆成「误触发 / 应该触发」，并把脱困方式拆成「正确触发 / 无需协助」；同时提供 `is_excluded`（应该排除、非模型需要解决的场景）布尔开关。`模型判错` 保留复核状态、模型为什么判错、缺失信息和补充截图。每个新版本必须记录复核人及其可信状态，右侧 Review 历史默认展开，并把状态、复核人和时间紧凑展示在同一行；详情左右外框在桌面端随较高一侧等高。每个版本可粘贴或选择最多 4 张补充截图，标签只能从固定目录多选。
 - 页面每约 1.8 秒只读检查一次共享数据 revision；只有 Issue、Review、Run、预测或 Batch 状态确实变化时才刷新当前页面。多人同时 Review 时，正在编辑的表单和待上传截图不会被后台刷新覆盖，而会在保存后合并最新数据。API 响应包含 `Server-Timing` 与 `X-Request-Duration-Ms`，超过 500 ms 的 API 请求写入服务慢请求日志。
-- 原因聚类页只消费每个 Issue 最新一版 Review：稳定的 `missing_evidence[]` 是主聚类，Review 自由文本通过可解释关键词 v1 形成多标签主题，未填写和有文本但未命中主题的记录会单独计数。顶部可按场景 Tags 筛选；检索只匹配最新人工 Review 的原因、复核人、标签、状态与缺失信息，不检索模型说明或 Issue 场景文本。选择 Model Run 后，“模型判断结果”可按红色 `MISMATCH`、绿色 `MATCH`、灰色 `NONE（未预测）` 或全部切片，混淆矩阵与 Case 明细使用同一状态；明细行以 Issue ID 直接链接 Voyager，模型标签点击后按需加载并复用评测 Run 历史弹窗，不再显示冗余的空人工标签。当前筛选结果可导出 UTF-8 CSV 或 XLSX；筛选、聚类和分页都写入 `/review-analysis` URL，可硬刷新并用浏览器前进/后退恢复。
+- 原因聚类页只消费每个 Issue 最新一版 Review：稳定的 `missing_evidence[]` 是主聚类，Review 结构化 Tags 按「场景 / 触发判定 / 如何脱困」分别筛选；下拉筛选选择后立即刷新，搜索输入短暂防抖后立即刷新，不再需要额外点击“应用”；自由文本只作为明细中的解释，不再生成并展示旧的关键词主题卡片。自定义缺失信息按共享目录的正式标题展示，不泄露 `custom:` 或哈希 key。检索只匹配最新人工 Review 的原因、复核人、标签、状态与缺失信息，不检索模型说明或 Issue 场景文本。选择 Model Run 后，“模型预测”可按三分类标签筛选，另可按红色 `MISMATCH`、绿色 `MATCH`、灰色 `NONE（未预测）` 或全部切片，混淆矩阵与 Case 明细使用同一状态；明细行以 Issue ID 直接链接 Voyager，模型标签点击后按需加载并复用评测 Run 历史弹窗。当前筛选结果可导出 UTF-8 CSV 或 XLSX；筛选、聚类和分页都写入 `/review-analysis` URL，可硬刷新并用浏览器前进/后退恢复。
 - Issue 详情先渲染本地模型、媒体和 Review；随后在 Voyager / Ares Studio 链接之后后台按需补齐 Trail 2410 视图中的只读 `ra_id` 对应的 `RA 录屏`，以及有 `ra_event` 时的 `RA Event` 入口。Trail 请求的延迟、超时或不可用不会阻塞 Issue 首屏，入口会在元数据返回后增量出现。`RA Event` 会直接打开与 Trail 一致的事件表弹窗，支持按事件名/值筛选，并保留 Trail Issue 外链；录屏 URL 由服务端使用 canonical `ra_id` 构造，浏览器不根据时间戳猜任务 ID；Trail 不可用或字段缺失时两个入口自动隐藏。该元数据查询只允许 `ra_id`、`ra_event`、`car_id`、`trip_id` 和 RA 起止时间等字段，独立于模型结果同步，不创建 Run、不写回 Trail。
 - 首页可把当前单个 Issue 或不超过 50 条的完整筛选结果预填到 Batch 页面；若前端只加载到部分结果或超过上限，会明确阻止而不是静默截断。Batch 页直接选择服务端 Provider，模型列表隐藏仅用于服务端解析的 `Auto` 别名，并保留 Profile 已验证项和网关当前在线的 Qwen3 生成模型，排除 Embedding；实验模型有明确标记且创建任务前需再次确认。默认 Camera 输入与 `stuck_triage_auto_opt_api` 对齐为 -19s 至 +19s 的单前视 9 帧，Ares Animation 可切换且只使用服务端固定的 API 默认 manifest/时间点，浏览器不能提交路径或 Ares Capture 配置。
 - 每个 Batch 固化请求人、模型验证层级、完整 Prompt 正文与 SHA-256、Prompt 基线版本/是否编辑、Camera 帧偏移、RA Events / RA-SWAG Options 和输入 Profile；任务历史可按人员、状态、模型、Prompt 精确版本（mode + SHA）和输入筛选，已下线模型与旧 Prompt 也保留在筛选项中。批次名默认按 `当前用户_i_YYYYMMDD_HHmmss` 生成，Issue IDs 使用紧凑单行输入但仍支持逗号/空格分隔。Prompt 只允许当前三分类构建器提供的变量，必须保留三个标准标签，并拒绝会输出「无法判断」等第四类的旧模板；Camera 偏移严格递增、包含 0、最多 18 帧。worker 会重新校验 Prompt/Input 快照并重建配置 Hash，预测与后续发布必须一致。
@@ -31,7 +31,7 @@ Trail 只读字段检查 ──> 显式创建/复用不可变 Trail Run ──> 
 AutoTriage Batch 只读拉取 ──> 不可变 autotriage_snapshot Run ──> Review 与统计
 Issue 列表 ──> Batch Prediction Job ──> 不可变 manual_batch Run
                                       └─> 显式推送 ──> AutoTriage Batch 链接
-最新人工 Review ──> 稳定缺失信息聚类 + 可解释原因主题 ──> 返回单 Issue 复核
+最新人工 Review ──> 稳定缺失信息聚类 + 结构化 Tags 筛选 ──> 返回单 Issue 复核
 ```
 
 - **Model Run** 是一组模型输出的不可变快照。Review 每次选择一个 Run 与 0508 GT 对比；切换当前 Run 不会修改 GT、人工复核或团队默认 Run。
@@ -80,7 +80,7 @@ records 链接只用于提取数字 Batch ID，后端不会跟随其中的 hostn
 
 Review 截图绑定到单条追加式 annotation：前端粘贴后先本地预览，保存时才上传；后端在受限后台线程中解码并重新编码为 PNG/JPEG/WebP，去除原始元数据。每次最多 4 张、单张 8 MB、总计 24 MB，单图不超过 4000 万像素；HTTP 请求上限为 26 MB，缺少 `Content-Length` 或固定同源请求标记会在 multipart 解析前拒绝，应用级截图配额为 20 GB，并保留至少 256 MB 磁盘空间。API 只返回附件 ID、尺寸、类型和不含服务器路径的读取 URL。备份 SQLite 时必须同时备份 `review_attachments/`，否则历史记录仍在但图片文件无法恢复。
 
-Issue 标签可以不选，前端按三层语义分组：`场景` 包括 `environment`（环境）和 `self_intent`（自车意图，含 `intent_straight`、`intent_left_turn`、`intent_right_turn`、`intent_u_turn`）；`交互决策` 保留 `误触发`（`traffic_light`、`queue`、`yielding`、`u_turn`、`park_in`、`park_out`、`scene_false_other`）和 `正确触发`（`obstacle_not_avoided`、`close_distance`、`perception_fp`、`scene_true_other`）；`如何驶离` 仍包括 RA 与无需协助两组。历史标签 key 保持可读，常见旧中文值按兼容别名映射，不提供自定义或删除入口。缺失信息默认预选 `routing_direction`；共享目录中的自定义缺失信息可由有写权限的用户编辑标题/说明或软删除单条目录项，删除不会影响历史 Review，目录变更对所有用户和 Issue 生效。`is_excluded` 与 Review 版本一起追加保存。
+Issue 标签可以不选，前端按三层语义分组：`场景` 包括 `environment`（环境，含施工/变更区域、道闸、园区出入口、掉头、其他）和 `self_intent`（自车意图，含 `intent_straight`、`intent_left_turn`、`intent_right_turn`、`intent_u_turn`）；`触发判定` 保留 `误触发`（`traffic_light`、`queue`、`yielding`、`u_turn`、`park_in`、`park_out`、`scene_false_other`）和 `应该触发`（`obstacle_not_avoided`、`close_distance`、`perception_fp`、`scene_true_other`）；`如何驶离` 仍包括正确触发与无需协助两组。场景下拉框按单列全宽展示，新增入口固定在下拉标题栏，创建表单不会因选项过多而需要滚动；有写权限的用户可将自定义场景标签加入共享目录，编辑/删除使用紧凑图标操作。自定义标签可以编辑或软删除，删除不会影响历史 Review，目录变更对所有用户和 Issue 生效。缺失信息默认预选 `routing_direction`；共享目录中的缺失信息可由有写权限的用户编辑标题/说明或软删除单条目录项。`is_excluded` 与 Review 版本一起追加保存。
 
 ## 用户身份、部署模式与 Kylin SSO
 
@@ -235,7 +235,7 @@ Review 首页筛选参数可写入 URL：
   &failure=1                 # 旧链接，等价于 comparison=mismatch
   &q=<search>
   &gt=<三分类标签>
-  &annotation=<三分类标签>
+  &model_label=<三分类标签>
   &reviewer=<author>
   &evidence=<stable_missing_evidence_key>
   &page=<positive_integer>
@@ -250,20 +250,21 @@ Review 首页筛选参数可写入 URL：
   &reviewer=<author>
   &status=pending|reviewed|needs_gt_review
   &gt=<三分类标签>
-  &annotation=<三分类标签>
+  &model_label=<三分类标签>
   &evidence=<stable_missing_evidence_key>
-  &theme=<stable_reason_theme_key>
-  &tag=<stable_scenario_tag_key>
+  &scene_tag=<stable_scene_tag_key>
+  &trigger_tag=<stable_trigger_tag_key>
+  &egress_tag=<stable_egress_tag_key>
   &q=<search>
   &page=<positive_integer>
 ```
 
 `run=none` 明确表示查看全部最新 Review 且不叠加模型输出，此时 `comparison` 只能为
 `all`。`NONE` 表示所选 Run 对该 baseline Issue 没有有效三分类预测。旧
-`failure=1` 链接仍会兼容解析为 `comparison=mismatch`。第一版原因主题是透明、确定性的
-多标签关键词规则，API 会返回主题说明与命中词；
-后续若加入 embedding / LLM 语义聚类，应使用新的方法版本并保留这一可复现基线，不能静默改变
-历史人工标注或现有主题 key。
+`failure=1` 链接仍会兼容解析为 `comparison=mismatch`。旧版 `annotation`、`tag` 与
+`theme` 参数只作为兼容输入解析；当前页面只发出 `model_label`、三个结构化 Tag
+筛选参数和稳定缺失信息 key。原因分析 API 的生产聚合不再计算旧的自由文本关键词主题，
+避免把并不存在的主题误呈现为业务字段。
 
 原因聚类数据接口为 `GET /api/review-reason-analysis`；同一组筛选参数可传给
 `GET /api/review-reason-analysis/export?format=csv|xlsx` 导出全部命中行（不受页面
@@ -298,6 +299,7 @@ ssh -L 8785:127.0.0.1:8785 cloud_server
 11. `012_review_exclusion.sql`：增加 Issue 级排除标记。
 12. `013_missing_evidence_catalog.sql`：增加共享缺失信息目录。
 13. `014_missing_evidence_management.sql`：为共享缺失信息增加可软删除的 active 标记，保留历史标签可读性。
+14. `015_review_tag_management.sql`：为共享场景标签增加说明、分组和可软删除字段。
 
 `003_identity_attribution.sql` 对旧行使用 `legacy` / `verified=false`，不会把历史自由填写姓名升级成可信 SSO。所有人工标注、模型结果、任务记录与附件元数据都保留历史行；附件二进制仍留在同一受限 `review_attachments/` 目录，PostgreSQL 保存其元数据。
 

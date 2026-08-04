@@ -93,6 +93,36 @@ class BatchConfigDatabaseTest(unittest.TestCase):
                     created_by="other",
                 )
 
+    def test_review_tag_catalog_is_shared_and_soft_deleted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "triage.sqlite3")
+            database.init()
+            item = database.create_review_tag(
+                label="施工围挡",
+                hint="施工区域边界发生变化",
+                section="scene",
+                group_key="environment",
+                created_by="jasperchen",
+            )
+            self.assertTrue(item["key"].startswith("custom:tag:"))
+            self.assertEqual(item["group_key"], "environment")
+            updated = database.update_review_tag(
+                key=item["key"],
+                label="施工围挡与变更区域",
+                hint="施工区域边界发生变化或临时调整",
+                section="scene",
+                group_key="environment",
+                updated_by="other",
+            )
+            self.assertEqual(updated["key"], item["key"])
+            self.assertEqual(updated["active"], 1)
+            deleted = database.delete_review_tag(key=item["key"], deleted_by="other")
+            self.assertEqual(deleted["active"], 0)
+            self.assertEqual(
+                database.list_review_tag_catalog(include_inactive=False),
+                [],
+            )
+
     def test_annotation_requires_reviewer(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             database = Database(Path(directory) / "triage.sqlite3")

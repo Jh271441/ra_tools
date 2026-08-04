@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import unittest
-from pathlib import Path
+
+from frontend_js import load_app_entry_js, load_app_js  # type: ignore
 
 
-APP_JS = (
-    Path(__file__).resolve().parents[1] / "static" / "app.js"
-).read_text(encoding="utf-8")
+APP_JS = load_app_js()
+APP_ENTRY_JS = load_app_entry_js()
 
 
 class FrontendBootstrapTest(unittest.TestCase):
@@ -17,6 +17,9 @@ class FrontendBootstrapTest(unittest.TestCase):
             APP_JS,
         )
         self.assertIn("else {\n  bootstrap();\n}", APP_JS)
+        # Entry remains a thin ordered loader for static/js/* modules.
+        self.assertIn("script.async = false", APP_ENTRY_JS)
+        self.assertIn("/static/js/", APP_ENTRY_JS)
 
     def test_initial_route_owns_its_heavy_requests(self) -> None:
         self.assertIn("loadPageData = true", APP_JS)

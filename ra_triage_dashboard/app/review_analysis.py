@@ -10,9 +10,9 @@ TRIAGE_LABELS = ("误触发", "正确触发", "无需协助")
 COMPARISON_STATUSES = ("all", "mismatch", "match", "none")
 NONE_PREDICTION_LABEL = "NONE"
 
-# Review notes remain free text.  These themes intentionally use a small,
-# inspectable keyword contract so reviewers can understand why a case appears
-# in a cluster.  A note can match more than one theme.
+# Legacy compatibility vocabulary for callers that still import the original
+# helper. Production reason analysis uses structured Review fields and does not
+# aggregate or display these free-text themes.
 REASON_THEME_CATALOG: tuple[dict[str, Any], ...] = (
     {
         "key": "routing_intent",
@@ -255,6 +255,7 @@ def build_review_reason_analysis(
     theme: str = "",
     evidence_catalog: dict[str, dict[str, str]] | None = None,
     has_model_run: bool = False,
+    include_reason_themes: bool = True,
     page: int = 1,
     page_size: int = 50,
     page_size_limit: int | None = 200,
@@ -284,10 +285,14 @@ def build_review_reason_analysis(
                     "match" if model_label == gt_label else "mismatch"
                 )
         item["comparison_status"] = comparison_status
-        item["reason_themes"] = classify_review_reason(annotation["note"])
+        item["reason_themes"] = (
+            classify_review_reason(annotation["note"])
+            if include_reason_themes
+            else []
+        )
         materialized.append(item)
 
-    selected_theme = theme.strip()
+    selected_theme = theme.strip() if include_reason_themes else ""
     if selected_theme:
         materialized = [
             item
@@ -323,7 +328,7 @@ def build_review_reason_analysis(
         themes = item["reason_themes"]
         if note:
             with_reason += 1
-            if not themes:
+            if include_reason_themes and not themes:
                 unclustered_reason += 1
         if evidences:
             with_structured_evidence += 1
@@ -359,7 +364,7 @@ def build_review_reason_analysis(
 
     reason_catalog = {
         str(item["key"]): item for item in REASON_THEME_CATALOG
-    }
+    } if include_reason_themes else {}
     page = max(1, int(page))
     page_size = max(1, int(page_size))
     if page_size_limit is not None:
@@ -371,9 +376,9 @@ def build_review_reason_analysis(
 
     return {
         "method": {
-            "id": "deterministic-keywords-v1",
-            "label": "可解释关键词聚类 v1",
-            "multi_label": True,
+            "id": "structured-review-fields-v1" if not include_reason_themes else "deterministic-keywords-v1",
+            "label": "结构化 Review 字段 v1" if not include_reason_themes else "可解释关键词聚类 v1",
+            "multi_label": bool(include_reason_themes),
             "latest_annotation_only": True,
             "mutates_review": False,
             "catalog": [
@@ -384,7 +389,7 @@ def build_review_reason_analysis(
                     "keywords": list(item["keywords"]),
                 }
                 for item in REASON_THEME_CATALOG
-            ],
+            ] if include_reason_themes else [],
         },
         "summary": {
             "latest_reviews": total,
