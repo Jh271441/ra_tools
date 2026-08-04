@@ -60,34 +60,32 @@ function bindEvents() {
         : "mismatch";
     setAnalysisComparisonStatus(nextStatus, { hasRun: Boolean(runId) });
   });
-  [
-    "#analysisRunFilter",
-    "#analysisComparisonFilter",
-    "#analysisReviewerFilter",
-    "#analysisStatusFilter",
-    "#analysisGtFilter",
-    "#analysisModelLabelFilter",
-    "#analysisEvidenceFilter",
-    "#analysisSceneFilter",
-    "#analysisTriggerFilter",
-    "#analysisEgressFilter",
-  ].forEach((selector) => {
+  ["#analysisRunFilter", "#analysisComparisonFilter"].forEach((selector) => {
     $(selector)?.addEventListener("change", () => scheduleAnalysisFilterReload());
   });
   $("#analysisSearchInput")?.addEventListener("input", () => {
     scheduleAnalysisFilterReload(220);
   });
+  document.addEventListener("click", () => closeAllMultiFilters());
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeAllMultiFilters();
+      hideAnalysisPieTooltip?.();
+    }
+  });
   $("#resetReviewAnalysisButton").addEventListener("click", async () => {
     $("#analysisRunFilter").value = "";
     setAnalysisComparisonStatus("all", { hasRun: false });
-    $("#analysisReviewerFilter").value = "";
-    $("#analysisStatusFilter").value = "";
-    $("#analysisGtFilter").value = "";
-    $("#analysisModelLabelFilter").value = "";
-    $("#analysisEvidenceFilter").value = "";
-    $("#analysisSceneFilter").value = "";
-    $("#analysisTriggerFilter").value = "";
-    $("#analysisEgressFilter").value = "";
+    [
+      "#analysisReviewerFilter",
+      "#analysisStatusFilter",
+      "#analysisGtFilter",
+      "#analysisModelLabelFilter",
+      "#analysisEvidenceFilter",
+      "#analysisSceneFilter",
+      "#analysisTriggerFilter",
+      "#analysisEgressFilter",
+    ].forEach((selector) => setMultiFilterValues($(selector), []));
     $("#analysisSearchInput").value = "";
     state.reviewAnalysis.page = 1;
     try {

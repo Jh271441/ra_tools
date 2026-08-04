@@ -6,25 +6,43 @@
 async function loadReviewers() {
   const data = await api("/api/reviewers");
   state.reviewers = data.items || [];
-  ["#reviewerFilter", "#analysisReviewerFilter"].forEach((selector) => {
-    const select = $(selector);
-    if (!select) return;
-    const previous = select.value;
-    select.innerHTML = `<option value="">全部复核人</option>${state.reviewers
-      .map(
-        (item) => {
-          const trust =
-            item.verified_count > 0 && item.unverified_count > 0
-              ? " · 混合身份"
-              : item.verified
-                ? " · SSO"
-                : "";
-          return `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)} · ${item.review_count} 条${trust}</option>`;
-        }
-      )
+  const reviewSelect = $("#reviewerFilter");
+  if (reviewSelect) {
+    const previous = reviewSelect.value;
+    reviewSelect.innerHTML = `<option value="">全部复核人</option>${state.reviewers
+      .map((item) => {
+        const trust =
+          item.verified_count > 0 && item.unverified_count > 0
+            ? " · 混合身份"
+            : item.verified
+              ? " · SSO"
+              : "";
+        return `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)} · ${item.review_count} 条${trust}</option>`;
+      })
       .join("")}`;
-    select.value = state.reviewers.some((item) => item.name === previous) ? previous : "";
-  });
+    reviewSelect.value = state.reviewers.some((item) => item.name === previous)
+      ? previous
+      : "";
+  }
+  const analysisReviewer = $("#analysisReviewerFilter");
+  if (analysisReviewer) {
+    renderMultiFilter(analysisReviewer, {
+      options: state.reviewers.map((item) => {
+        const trust =
+          item.verified_count > 0 && item.unverified_count > 0
+            ? " · 混合身份"
+            : item.verified
+              ? " · SSO"
+              : "";
+        return {
+          value: item.name,
+          label: `${item.name} · ${item.review_count} 条${trust}`,
+        };
+      }),
+      selected: getMultiFilterValues(analysisReviewer),
+      onChange: () => scheduleAnalysisFilterReload(),
+    });
+  }
 }
 
 function checkedAnalysisComparisonStatus() {

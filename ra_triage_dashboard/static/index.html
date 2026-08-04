@@ -34,7 +34,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-52`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-54`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -280,60 +280,35 @@
                 </label>
                 <label>
                   <span>复核人</span>
-                  <select id="analysisReviewerFilter">
-                    <option value="">全部复核人</option>
-                  </select>
+                  <div class="multi-filter" id="analysisReviewerFilter" data-placeholder="全部复核人"></div>
                 </label>
                 <label>
                   <span>Review 状态</span>
-                  <select id="analysisStatusFilter">
-                    <option value="">全部状态</option>
-                    <option value="pending">待复核</option>
-                    <option value="reviewed">已复核</option>
-                    <option value="needs_gt_review">GT 待复核</option>
-                  </select>
+                  <div class="multi-filter" id="analysisStatusFilter" data-placeholder="全部状态"></div>
                 </label>
                 <label>
                   <span>GT</span>
-                  <select id="analysisGtFilter">
-                    <option value="">全部 GT</option>
-                    <option value="误触发">误触发</option>
-                    <option value="正确触发">正确触发</option>
-                    <option value="无需协助">无需协助</option>
-                  </select>
+                  <div class="multi-filter" id="analysisGtFilter" data-placeholder="全部 GT"></div>
                 </label>
                 <label>
                   <span>模型预测</span>
-                  <select id="analysisModelLabelFilter">
-                    <option value="">全部模型预测</option>
-                    <option value="误触发">误触发</option>
-                    <option value="正确触发">正确触发</option>
-                    <option value="无需协助">无需协助</option>
-                  </select>
+                  <div class="multi-filter" id="analysisModelLabelFilter" data-placeholder="全部模型预测"></div>
                 </label>
                 <label class="analysis-evidence-filter">
                   <span>缺失信息</span>
-                  <select id="analysisEvidenceFilter">
-                    <option value="">全部缺失信息</option>
-                  </select>
+                  <div class="multi-filter" id="analysisEvidenceFilter" data-placeholder="全部缺失信息"></div>
                 </label>
                 <label class="analysis-tag-filter">
                   <span>场景</span>
-                  <select id="analysisSceneFilter">
-                    <option value="">全部场景</option>
-                  </select>
+                  <div class="multi-filter" id="analysisSceneFilter" data-placeholder="全部场景"></div>
                 </label>
                 <label class="analysis-trigger-filter">
                   <span>触发判定</span>
-                  <select id="analysisTriggerFilter">
-                    <option value="">全部触发判定</option>
-                  </select>
+                  <div class="multi-filter" id="analysisTriggerFilter" data-placeholder="全部触发判定"></div>
                 </label>
                 <label class="analysis-egress-filter">
                   <span>如何脱困</span>
-                  <select id="analysisEgressFilter">
-                    <option value="">全部脱困方式</option>
-                  </select>
+                  <div class="multi-filter" id="analysisEgressFilter" data-placeholder="全部脱困方式"></div>
                 </label>
                 <div class="analysis-search-actions">
                   <label class="analysis-search-filter">
@@ -959,7 +934,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-52`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-54`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

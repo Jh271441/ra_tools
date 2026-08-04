@@ -130,6 +130,90 @@ async function loadSession() {
   });
 }
 
+function multiFilterOptionHtml(item, selectedSet) {
+  const value = String(item.value ?? item.key ?? "");
+  const label = String(item.label ?? value);
+  return `<label class="multi-filter-option">
+    <input type="checkbox" data-multi-value="${escapeHtml(value)}" data-label="${escapeHtml(label)}" value="${escapeHtml(value)}"${selectedSet.has(value) ? " checked" : ""} />
+    <span>${escapeHtml(label)}</span>
+  </label>`;
+}
+
+function multiFilterAllValues(root) {
+  if (!root) return [];
+  return [...root.querySelectorAll('input[type="checkbox"][data-multi-value]')].map(
+    (input) => input.value
+  );
+}
+
+function renderMultiFilter(root, { options = [], groups = null, selected = null, onChange = null } = {}) {
+  if (!root || root.matches?.("select")) return;
+  const previous = selected == null ? getMultiFilterValues(root) : parseFilterList(selected);
+  const selectedSet = new Set(previous);
+  const body = groups?.length
+    ? groups
+        .map(
+          (group) => `<div class="multi-filter-group">
+        <div class="multi-filter-group-label">${escapeHtml(group.label)}</div>
+        ${(group.items || []).map((item) => multiFilterOptionHtml(item, selectedSet)).join("")}
+      </div>`
+        )
+        .join("")
+    : options.map((item) => multiFilterOptionHtml(item, selectedSet)).join("");
+  root.innerHTML = `
+    <button type="button" class="multi-filter-trigger" aria-haspopup="listbox" aria-expanded="false">
+      <span class="multi-filter-summary"></span>
+      <span class="multi-filter-caret" aria-hidden="true"></span>
+    </button>
+    <div class="multi-filter-panel" hidden>
+      <div class="multi-filter-toolbar">
+        <button type="button" class="multi-filter-action" data-multi-select-all>全选</button>
+        <button type="button" class="multi-filter-action" data-multi-invert>反选</button>
+        <button type="button" class="multi-filter-action" data-multi-clear>清除</button>
+      </div>
+      <div class="multi-filter-options">${body || '<div class="multi-filter-empty">暂无选项</div>'}</div>
+    </div>`;
+  updateMultiFilterSummary(root);
+  const trigger = root.querySelector(".multi-filter-trigger");
+  const panel = root.querySelector(".multi-filter-panel");
+  const emitChange = () => {
+    updateMultiFilterSummary(root);
+    onChange?.(getMultiFilterValues(root));
+  };
+  trigger?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const willOpen = Boolean(panel?.hidden);
+    closeAllMultiFilters();
+    if (willOpen && panel) {
+      panel.hidden = false;
+      root.classList.add("is-open");
+      trigger.setAttribute("aria-expanded", "true");
+    }
+  });
+  panel?.addEventListener("click", (event) => event.stopPropagation());
+  root.querySelector("[data-multi-select-all]")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    setMultiFilterValues(root, multiFilterAllValues(root));
+    emitChange();
+  });
+  root.querySelector("[data-multi-invert]")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    const selectedNow = new Set(getMultiFilterValues(root));
+    const inverted = multiFilterAllValues(root).filter((value) => !selectedNow.has(value));
+    setMultiFilterValues(root, inverted);
+    emitChange();
+  });
+  root.querySelector("[data-multi-clear]")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    setMultiFilterValues(root, []);
+    emitChange();
+  });
+  root.querySelectorAll('input[data-multi-value]').forEach((input) => {
+    input.addEventListener("change", () => emitChange());
+  });
+}
+
 function renderConfig() {
   const baseline = state.config?.baseline || {};
   $(".header-metrics")?.setAttribute("title", baseline.message || "0508 baseline GT 只读");
@@ -143,21 +227,33 @@ function renderConfig() {
 }
 
 function renderAnalysisCatalogFilters() {
-  const evidenceSelect = $("#analysisEvidenceFilter");
-  if (evidenceSelect) {
-    const previous = evidenceSelect.value;
-    evidenceSelect.innerHTML = [
-      '<option value="">全部缺失信息</option>',
-      ...(state.config?.missing_evidence_catalog || []).filter((item) => !item.deleted).map(
-        (item) => `<option value="${escapeHtml(item.key)}">${escapeHtml(item.label)}</option>`
-      ),
-    ].join("");
-    evidenceSelect.value = [...evidenceSelect.options].some(
-      (option) => option.value === previous
-    )
-      ? previous
-      : "";
-  }
+  const onChange = () => scheduleAnalysisFilterReload();
+  renderMultiFilter($("#analysisStatusFilter"), {
+    options: [
+      { value: "pending", label: "待复核" },
+      { value: "reviewed", label: "已复核" },
+      { value: "needs_gt_review", label: "GT 待复核" },
+    ],
+    selected: getMultiFilterValues($("#analysisStatusFilter")),
+    onChange,
+  });
+  renderMultiFilter($("#analysisGtFilter"), {
+    options: LABELS.map((label) => ({ value: label, label })),
+    selected: getMultiFilterValues($("#analysisGtFilter")),
+    onChange,
+  });
+  renderMultiFilter($("#analysisModelLabelFilter"), {
+    options: LABELS.map((label) => ({ value: label, label })),
+    selected: getMultiFilterValues($("#analysisModelLabelFilter")),
+    onChange,
+  });
+  renderMultiFilter($("#analysisEvidenceFilter"), {
+    options: (state.config?.missing_evidence_catalog || [])
+      .filter((item) => !item.deleted)
+      .map((item) => ({ value: item.key, label: item.label })),
+    selected: getMultiFilterValues($("#analysisEvidenceFilter")),
+    onChange,
+  });
   const groupLabels = {
     environment: "环境",
     self_intent: "自车意图",
@@ -169,10 +265,9 @@ function renderAnalysisCatalogFilters() {
   const tagCatalog = (state.config?.review_tag_catalog || []).filter(
     (item) => item.visible !== false && !item.deleted
   );
-  const renderTagSelect = (selector, section, placeholder) => {
-    const select = $(selector);
-    if (!select) return;
-    const previous = select.value;
+  const renderTagMulti = (selector, section) => {
+    const root = $(selector);
+    if (!root) return;
     const groups = [];
     tagCatalog
       .filter((item) => item.section === section)
@@ -180,26 +275,20 @@ function renderAnalysisCatalogFilters() {
         const key = item.group || "other";
         let group = groups.find((entry) => entry.key === key);
         if (!group) {
-          group = { key, items: [] };
+          group = { key, label: groupLabels[key] || key, items: [] };
           groups.push(group);
         }
-        group.items.push(item);
+        group.items.push({ value: item.key, label: item.label });
       });
-    select.innerHTML = [
-      `<option value="">${escapeHtml(placeholder)}</option>`,
-      ...groups.map(
-        (group) => `<optgroup label="${escapeHtml(groupLabels[group.key] || group.key)}">${group.items
-          .map((item) => `<option value="${escapeHtml(item.key)}">${escapeHtml(item.label)}</option>`)
-          .join("")}</optgroup>`
-      ),
-    ].join("");
-    select.value = [...select.options].some((option) => option.value === previous)
-      ? previous
-      : "";
+    renderMultiFilter(root, {
+      groups,
+      selected: getMultiFilterValues(root),
+      onChange,
+    });
   };
-  renderTagSelect("#analysisSceneFilter", "scene", "全部场景");
-  renderTagSelect("#analysisTriggerFilter", "interaction_decision", "全部触发判定");
-  renderTagSelect("#analysisEgressFilter", "egress", "全部脱困方式");
+  renderTagMulti("#analysisSceneFilter", "scene");
+  renderTagMulti("#analysisTriggerFilter", "interaction_decision");
+  renderTagMulti("#analysisEgressFilter", "egress");
 }
 
 function renderAccessUsers() {

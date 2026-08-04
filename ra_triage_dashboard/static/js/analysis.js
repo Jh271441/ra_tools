@@ -60,151 +60,215 @@ function analysisRequestOptions() {
   });
 }
 
-const ANALYSIS_DONUT_PALETTES = {
-  evidence: ["#22d3ee", "#38bdf8", "#818cf8", "#a78bfa", "#fbbf24", "#34d399", "#94a3b8"],
-  scene: ["#a78bfa", "#818cf8", "#6366f1", "#c084fc", "#67e8f9", "#94a3b8"],
-  trigger: ["#fbbf24", "#f59e0b", "#f97316", "#34d399", "#4ade80", "#94a3b8"],
-  egress: ["#2dd4bf", "#14b8a6", "#38bdf8", "#64748b", "#94a3b8", "#cbd5e1"],
-};
+// Saturated flat palette inspired by common analytics pie charts.
+const ANALYSIS_PIE_COLORS = [
+  "#3b82f6",
+  "#22c55e",
+  "#eab308",
+  "#ef4444",
+  "#a855f7",
+  "#06b6d4",
+  "#f97316",
+  "#84cc16",
+  "#ec4899",
+  "#64748b",
+];
 
-function analysisFilterSelectForKind(kind) {
-  if (kind === "evidence") return $("#analysisEvidenceFilter");
-  if (kind === "scene") return $("#analysisSceneFilter");
-  if (kind === "trigger") return $("#analysisTriggerFilter");
-  if (kind === "egress") return $("#analysisEgressFilter");
-  return null;
-}
-
-function analysisActiveFilterKey(kind) {
-  return analysisFilterSelectForKind(kind)?.value || "";
-}
-
-function applyAnalysisClusterFilter(kind, key) {
-  const select = analysisFilterSelectForKind(kind);
-  if (!select) return;
-  select.value = select.value === key ? "" : key;
-  state.reviewAnalysis.page = 1;
-  showPage("analysis", { historyMode: "push" });
-  loadReviewReasonAnalysis().catch((error) => showToast(error.message, true));
-}
-
-function analysisDonutArcs(items) {
+function analysisPieArcs(items) {
   const rows = (items || []).filter((item) => Number(item.count) > 0);
   const sum = rows.reduce((acc, item) => acc + Number(item.count || 0), 0);
-  if (!sum) return [];
+  if (!sum) return { arcs: [], sum: 0 };
   let angle = -Math.PI / 2;
-  return rows.map((item, index) => {
+  const arcs = rows.map((item, index) => {
     const fraction = Number(item.count || 0) / sum;
     const start = angle;
     const end = angle + fraction * Math.PI * 2;
     angle = end;
-    return { item, index, start, end, fraction };
+    return { item, index, start, end, fraction, mid: (start + end) / 2 };
   });
+  return { arcs, sum };
 }
 
-function analysisDonutPath(cx, cy, radius, inner, start, end) {
+function analysisPieSlicePath(cx, cy, radius, start, end) {
   const large = end - start > Math.PI ? 1 : 0;
   const polar = (r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
   const [x1, y1] = polar(radius, start);
   const [x2, y2] = polar(radius, end);
-  const [x3, y3] = polar(inner, end);
-  const [x4, y4] = polar(inner, start);
   if (end - start >= Math.PI * 2 - 1e-6) {
-    const mid = start + Math.PI;
-    const [mx1, my1] = polar(radius, mid);
-    const [mx2, my2] = polar(inner, mid);
     return [
-      `M ${x1} ${y1}`,
-      `A ${radius} ${radius} 0 1 1 ${mx1} ${my1}`,
-      `A ${radius} ${radius} 0 1 1 ${x1} ${y1}`,
-      `L ${x4} ${y4}`,
-      `A ${inner} ${inner} 0 1 0 ${mx2} ${my2}`,
-      `A ${inner} ${inner} 0 1 0 ${x4} ${y4}`,
-      "Z",
+      `M ${cx} ${cy}`,
+      `m ${-radius} 0`,
+      `a ${radius} ${radius} 0 1 0 ${radius * 2} 0`,
+      `a ${radius} ${radius} 0 1 0 ${-radius * 2} 0`,
     ].join(" ");
   }
   return [
-    `M ${x1} ${y1}`,
+    `M ${cx} ${cy}`,
+    `L ${x1} ${y1}`,
     `A ${radius} ${radius} 0 ${large} 1 ${x2} ${y2}`,
-    `L ${x3} ${y3}`,
-    `A ${inner} ${inner} 0 ${large} 0 ${x4} ${y4}`,
     "Z",
   ].join(" ");
 }
 
-function renderAnalysisDonutSvg(items, { size = 118, palette = [], activeKey = "" } = {}) {
+function analysisPiePercent(item, sum) {
+  // Pie-relative share so legend angles sum to ~100% (matches reference charts).
+  if (!sum) return 0;
+  return Math.round((Number(item.count || 0) / sum) * 1000) / 10;
+}
+
+function hideAnalysisPieTooltip() {
+  const tip = $("#analysisPieTooltip");
+  if (tip) tip.hidden = true;
+}
+
+function showAnalysisPieTooltip(event, item, percent) {
+  let tip = $("#analysisPieTooltip");
+  if (!tip) {
+    tip = document.createElement("div");
+    tip.id = "analysisPieTooltip";
+    tip.className = "analysis-pie-tooltip";
+    document.body.appendChild(tip);
+  }
+  const desc = item.description ? `<small>${escapeHtml(item.description)}</small>` : "";
+  tip.innerHTML = `<strong>${escapeHtml(item.label)}</strong>
+    <span>${item.count} 条 · ${percent}%</span>
+    ${desc}`;
+  tip.hidden = false;
+  const pad = 12;
+  const rect = tip.getBoundingClientRect();
+  let left = event.clientX + pad;
+  let top = event.clientY + pad;
+  if (left + rect.width > window.innerWidth - 8) left = event.clientX - rect.width - pad;
+  if (top + rect.height > window.innerHeight - 8) top = event.clientY - rect.height - pad;
+  tip.style.left = `${Math.max(8, left)}px`;
+  tip.style.top = `${Math.max(8, top)}px`;
+}
+
+function renderAnalysisPieSvg(items, { size = 148 } = {}) {
   const cx = size / 2;
   const cy = size / 2;
   const radius = size * 0.42;
-  const inner = size * 0.26;
-  const arcs = analysisDonutArcs(items);
+  const { arcs, sum } = analysisPieArcs(items);
   if (!arcs.length) {
-    return `<svg class="analysis-donut-svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-hidden="true">
-      <circle cx="${cx}" cy="${cy}" r="${(radius + inner) / 2}" fill="none" stroke="#243041" stroke-width="${radius - inner}" />
+    return `<svg class="analysis-pie-svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-hidden="true">
+      <circle cx="${cx}" cy="${cy}" r="${radius}" fill="#1a2332" stroke="#2a3548" stroke-width="1" />
     </svg>`;
   }
   const slices = arcs
-    .map(({ item, index, start, end }) => {
-      const color = palette[index % palette.length] || "#64748b";
-      const active = activeKey && activeKey === item.key ? " is-active" : "";
-      return `<path class="analysis-donut-slice${active}" data-analysis-cluster-key="${escapeHtml(item.key)}"
-        d="${analysisDonutPath(cx, cy, radius, inner, start, end)}"
-        fill="${color}" stroke="#0b1119" stroke-width="1.2">
-        <title>${escapeHtml(item.label)} · ${item.count}</title>
-      </path>`;
+    .map(({ item, index, start, end, fraction }) => {
+      const color = ANALYSIS_PIE_COLORS[index % ANALYSIS_PIE_COLORS.length];
+      const percent = analysisPiePercent(item, sum);
+      return `<path class="analysis-pie-slice" data-pie-index="${index}"
+        data-pie-key="${escapeHtml(item.key)}"
+        data-pie-label="${escapeHtml(item.label)}"
+        data-pie-count="${item.count}"
+        data-pie-percent="${percent}"
+        data-pie-desc="${escapeHtml(item.description || "")}"
+        d="${analysisPieSlicePath(cx, cy, radius, start, end)}"
+        fill="${color}" stroke="#0b1119" stroke-width="1.5"></path>`;
     })
     .join("");
-  return `<svg class="analysis-donut-svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img">
-    ${slices}
+  // Percent labels on slices large enough to read (>= 8%).
+  const labels = arcs
+    .filter(({ fraction }) => fraction >= 0.08)
+    .map(({ item, mid, fraction }) => {
+      const r = radius * 0.62;
+      const x = cx + r * Math.cos(mid);
+      const y = cy + r * Math.sin(mid);
+      const percent = Math.round(fraction * 100);
+      return `<text class="analysis-pie-label" x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle">${percent}%</text>`;
+    })
+    .join("");
+  return `<svg class="analysis-pie-svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img">
+    ${slices}${labels}
   </svg>`;
 }
 
 function renderAnalysisClusterGroup(group, panel, { dual = false } = {}) {
   const items = group.items || [];
-  const activeKey = analysisActiveFilterKey(panel.filter_kind);
-  const palette = ANALYSIS_DONUT_PALETTES[panel.key] || ANALYSIS_DONUT_PALETTES.evidence;
-  const size = dual ? 96 : 124;
+  const size = dual ? 120 : 150;
+  const { sum } = analysisPieArcs(items);
   const legend = items.length
     ? items
         .map((item, index) => {
-          const percentage = Math.round(Number(item.share || 0) * 1000) / 10;
-          const active = activeKey === item.key ? " active" : "";
-          return `<button class="analysis-donut-legend-row${active}" type="button"
-              data-analysis-cluster-kind="${escapeHtml(panel.filter_kind)}"
-              data-analysis-cluster-key="${escapeHtml(item.key)}"
-              title="${escapeHtml(item.description || item.label)}">
-            <span class="analysis-donut-swatch" style="background:${palette[index % palette.length]}"></span>
-            <span class="analysis-donut-legend-copy">
+          const percent = analysisPiePercent(item, sum);
+          const color = ANALYSIS_PIE_COLORS[index % ANALYSIS_PIE_COLORS.length];
+          return `<div class="analysis-pie-legend-row"
+              data-pie-key="${escapeHtml(item.key)}"
+              data-pie-label="${escapeHtml(item.label)}"
+              data-pie-count="${item.count}"
+              data-pie-percent="${percent}"
+              data-pie-desc="${escapeHtml(item.description || "")}">
+            <span class="analysis-pie-swatch" style="background:${color}"></span>
+            <span class="analysis-pie-legend-copy">
               <strong>${escapeHtml(item.label)}</strong>
-              <small>${item.count} · ${percentage}%</small>
+              <small>${item.count}, ${percent}%</small>
             </span>
-          </button>`;
+          </div>`;
         })
         .join("")
     : `<div class="analysis-donut-empty">暂无数据</div>`;
-  return `<div class="analysis-donut-group ${dual ? "is-dual" : "is-single"}">
-    <div class="analysis-donut-figure">
-      ${renderAnalysisDonutSvg(items, { size, palette, activeKey })}
-      <div class="analysis-donut-center">
+  return `<div class="analysis-pie-group ${dual ? "is-dual" : "is-single"}">
+    <div class="analysis-pie-figure" data-group-label="${escapeHtml(group.label || "")}">
+      ${renderAnalysisPieSvg(items, { size })}
+      <div class="analysis-pie-center">
         <b>${group.annotated_count ?? 0}</b>
         <small>${escapeHtml(group.label || "")}</small>
       </div>
     </div>
-    <div class="analysis-donut-legend">${legend}</div>
+    <div class="analysis-pie-legend">${legend}</div>
   </div>`;
+}
+
+function bindAnalysisPieHover(root) {
+  const nodes = root.querySelectorAll(".analysis-pie-slice, .analysis-pie-legend-row");
+  nodes.forEach((node) => {
+    const payload = () => ({
+      key: node.dataset.pieKey,
+      label: node.dataset.pieLabel,
+      count: Number(node.dataset.pieCount || 0),
+      description: node.dataset.pieDesc || "",
+      share: Number(node.dataset.piePercent || 0) / 100,
+    });
+    node.addEventListener("pointerenter", (event) => {
+      const item = payload();
+      const percent = Number(node.dataset.piePercent || 0);
+      root
+        .querySelectorAll(`[data-pie-key="${CSS.escape(item.key)}"]`)
+        .forEach((el) => el.classList.add("is-hover"));
+      showAnalysisPieTooltip(event, item, percent);
+    });
+    node.addEventListener("pointermove", (event) => {
+      const item = payload();
+      const percent = Number(node.dataset.piePercent || 0);
+      showAnalysisPieTooltip(event, item, percent);
+    });
+    node.addEventListener("pointerleave", () => {
+      const key = node.dataset.pieKey;
+      root
+        .querySelectorAll(`[data-pie-key="${CSS.escape(key)}"]`)
+        .forEach((el) => el.classList.remove("is-hover"));
+      hideAnalysisPieTooltip();
+    });
+  });
 }
 
 function renderAnalysisClusterPanels(data) {
   const target = $("#analysisClusterPanels");
   if (!target) return;
+  hideAnalysisPieTooltip();
   const panels = data.cluster_panels || [];
   if (!panels.length) {
-    // Fallback for older API responses: evidence list only.
     const legacy = data.evidence_clusters || [];
     target.innerHTML = `<article class="page-card analysis-cluster-card">
-      <div class="section-heading"><div><h3>缺失信息</h3></div><small>兼容旧接口</small></div>
-      <div class="analysis-donut-groups">${renderAnalysisClusterGroup(
-        { key: "all", label: "缺失信息", annotated_count: data.summary?.with_structured_evidence || 0, items: legacy },
+      <div class="section-heading"><div><h3>缺失信息</h3></div><small>hover 查看详情</small></div>
+      <div class="analysis-pie-groups single">${renderAnalysisClusterGroup(
+        {
+          key: "all",
+          label: "缺失信息",
+          annotated_count: data.summary?.with_structured_evidence || 0,
+          items: legacy,
+        },
         { key: "evidence", filter_kind: "evidence" }
       )}</div>
     </article>`;
@@ -221,33 +285,14 @@ function renderAnalysisClusterPanels(data) {
         return `<article class="page-card analysis-cluster-card layout-${escapeHtml(panel.layout || "single")}" data-panel="${escapeHtml(panel.key)}">
           <div class="section-heading">
             <div><h3>${escapeHtml(panel.label)}</h3></div>
-            <small>${dual ? "双组甜甜圈 · 点击筛选" : "甜甜圈 · 点击筛选"}</small>
+            <small>hover 查看详情 · 筛选用上方</small>
           </div>
-          <div class="analysis-donut-groups ${dual ? "dual" : "single"}">${body}</div>
+          <div class="analysis-pie-groups ${dual ? "dual" : "single"}">${body}</div>
         </article>`;
       })
       .join("");
   }
-  target.querySelectorAll("[data-analysis-cluster-key]").forEach((node) => {
-    node.addEventListener("click", (event) => {
-      event.preventDefault();
-      const kind =
-        node.dataset.analysisClusterKind ||
-        node.closest("[data-panel]")?.dataset.panel ||
-        "evidence";
-      const key = node.dataset.analysisClusterKey;
-      if (!key) return;
-      const filterKind =
-        node.dataset.analysisClusterKind ||
-        ({
-          evidence: "evidence",
-          scene: "scene",
-          trigger: "trigger",
-          egress: "egress",
-        }[kind] || kind);
-      applyAnalysisClusterFilter(filterKind, key);
-    });
-  });
+  bindAnalysisPieHover(target);
 }
 
 function renderAnalysisConfusion(data) {
@@ -431,14 +476,22 @@ async function loadReviewReasonAnalysis() {
       ? normalizedAnalysisComparisonStatus(options.comparisonStatus)
       : "all"
   );
-  if (options.annotationAuthor) params.set("annotation_author", options.annotationAuthor);
-  if (options.reviewStatus) params.set("review_status", options.reviewStatus);
-  if (options.gtLabel) params.set("gt_label", options.gtLabel);
-  if (options.modelLabel) params.set("model_label", options.modelLabel);
-  if (options.missingEvidence) params.set("missing_evidence", options.missingEvidence);
-  if (options.sceneTag) params.set("scene_tag", options.sceneTag);
-  if (options.triggerTag) params.set("trigger_tag", options.triggerTag);
-  if (options.egressTag) params.set("egress_tag", options.egressTag);
+  const author = joinFilterList(options.annotationAuthor);
+  const status = joinFilterList(options.reviewStatus);
+  const gt = joinFilterList(options.gtLabel);
+  const modelLabel = joinFilterList(options.modelLabel);
+  const evidence = joinFilterList(options.missingEvidence);
+  const sceneTag = joinFilterList(options.sceneTag);
+  const triggerTag = joinFilterList(options.triggerTag);
+  const egressTag = joinFilterList(options.egressTag);
+  if (author) params.set("annotation_author", author);
+  if (status) params.set("review_status", status);
+  if (gt) params.set("gt_label", gt);
+  if (modelLabel) params.set("model_label", modelLabel);
+  if (evidence) params.set("missing_evidence", evidence);
+  if (sceneTag) params.set("scene_tag", sceneTag);
+  if (triggerTag) params.set("trigger_tag", triggerTag);
+  if (egressTag) params.set("egress_tag", egressTag);
   if (options.search) params.set("search", options.search);
   params.set("page", String(Math.max(1, Number(options.page) || 1)));
   params.set("page_size", String(state.reviewAnalysis.pageSize));
@@ -459,14 +512,22 @@ function downloadReviewAnalysis(format) {
       ? normalizedAnalysisComparisonStatus(options.comparisonStatus)
       : "all"
   );
-  if (options.annotationAuthor) params.set("annotation_author", options.annotationAuthor);
-  if (options.reviewStatus) params.set("review_status", options.reviewStatus);
-  if (options.gtLabel) params.set("gt_label", options.gtLabel);
-  if (options.modelLabel) params.set("model_label", options.modelLabel);
-  if (options.missingEvidence) params.set("missing_evidence", options.missingEvidence);
-  if (options.sceneTag) params.set("scene_tag", options.sceneTag);
-  if (options.triggerTag) params.set("trigger_tag", options.triggerTag);
-  if (options.egressTag) params.set("egress_tag", options.egressTag);
+  const author = joinFilterList(options.annotationAuthor);
+  const status = joinFilterList(options.reviewStatus);
+  const gt = joinFilterList(options.gtLabel);
+  const modelLabel = joinFilterList(options.modelLabel);
+  const evidence = joinFilterList(options.missingEvidence);
+  const sceneTag = joinFilterList(options.sceneTag);
+  const triggerTag = joinFilterList(options.triggerTag);
+  const egressTag = joinFilterList(options.egressTag);
+  if (author) params.set("annotation_author", author);
+  if (status) params.set("review_status", status);
+  if (gt) params.set("gt_label", gt);
+  if (modelLabel) params.set("model_label", modelLabel);
+  if (evidence) params.set("missing_evidence", evidence);
+  if (sceneTag) params.set("scene_tag", sceneTag);
+  if (triggerTag) params.set("trigger_tag", triggerTag);
+  if (egressTag) params.set("egress_tag", egressTag);
   if (options.search) params.set("search", options.search);
   const link = document.createElement("a");
   link.href = withBase(`/api/review-reason-analysis/export?${params.toString()}`);

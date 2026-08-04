@@ -2274,9 +2274,12 @@ class Database:
         gt_label: str = "",
         annotation_label: str = "",
         model_label: str = "",
-        missing_evidence: str = "",
+        missing_evidence: str | list[str] | tuple[str, ...] = "",
         tag: str = "",
         tag_filters: tuple[str, ...] = (),
+        scene_tags: tuple[str, ...] = (),
+        trigger_tags: tuple[str, ...] = (),
+        egress_tags: tuple[str, ...] = (),
         search: str = "",
         search_aliases: tuple[str, ...] = (),
     ) -> list[dict[str, Any]]:
@@ -2288,6 +2291,28 @@ class Database:
         prediction). ``failure_only`` remains a compatibility alias for
         MISMATCH.
         """
+
+        def _multi_values(*raw: Any) -> tuple[str, ...]:
+            values: list[str] = []
+            for item in raw:
+                if item is None:
+                    continue
+                if isinstance(item, (list, tuple, set)):
+                    for nested in item:
+                        text = str(nested or "").strip()
+                        if text:
+                            values.append(text)
+                    continue
+                text = str(item or "").strip()
+                if not text:
+                    continue
+                if "," in text:
+                    values.extend(
+                        part.strip() for part in text.split(",") if part.strip()
+                    )
+                else:
+                    values.append(text)
+            return tuple(dict.fromkeys(values))
 
         comparison_status = str(comparison_status or "all").strip().lower()
         if failure_only:
@@ -2312,32 +2337,60 @@ class Database:
                 params.extend(LABELS)
                 operator = "=" if comparison_status == "match" else "!="
                 where.append(f"mp.model_label {operator} i.gt_label")
-        if annotation_author.strip():
-            where.append("ann.author = ?")
-            params.append(annotation_author.strip())
-        if review_status in REVIEW_STATUSES:
-            where.append("ann.review_status = ?")
-            params.append(review_status)
-        if gt_label in LABELS:
-            where.append("i.gt_label = ?")
-            params.append(gt_label)
-        if annotation_label in LABELS:
-            where.append("ann.label = ?")
-            params.append(annotation_label)
-        if model_label in LABELS:
-            where.append("mp.model_label = ?")
-            params.append(model_label)
-        if missing_evidence.strip():
-            where.append("ann.missing_evidence_json LIKE ?")
-            params.append(f'%"{missing_evidence.strip()}"%')
-        requested_tags = tuple(
-            dict.fromkeys(
-                value.strip()
-                for value in (tag, *tag_filters)
-                if value and value.strip()
+        authors = _multi_values(annotation_author)
+        if authors:
+            where.append(
+                f"ann.author IN ({', '.join('?' for _ in authors)})"
             )
+            params.extend(authors)
+        statuses = tuple(
+            value for value in _multi_values(review_status) if value in REVIEW_STATUSES
         )
-        for requested_tag in requested_tags:
+        if statuses:
+            where.append(
+                f"ann.review_status IN ({', '.join('?' for _ in statuses)})"
+            )
+            params.extend(statuses)
+        gt_labels = tuple(value for value in _multi_values(gt_label) if value in LABELS)
+        if gt_labels:
+            where.append(f"i.gt_label IN ({', '.join('?' for _ in gt_labels)})")
+            params.extend(gt_labels)
+        annotation_labels = tuple(
+            value for value in _multi_values(annotation_label) if value in LABELS
+        )
+        if annotation_labels:
+            where.append(
+                f"ann.label IN ({', '.join('?' for _ in annotation_labels)})"
+            )
+            params.extend(annotation_labels)
+        model_labels = tuple(
+            value for value in _multi_values(model_label) if value in LABELS
+        )
+        if model_labels:
+            where.append(
+                f"mp.model_label IN ({', '.join('?' for _ in model_labels)})"
+            )
+            params.extend(model_labels)
+        evidence_keys = _multi_values(missing_evidence)
+        if evidence_keys:
+            evidence_clauses = [
+                "ann.missing_evidence_json LIKE ?" for _ in evidence_keys
+            ]
+            where.append(f"({' OR '.join(evidence_clauses)})")
+            params.extend(f'%"{key}"%' for key in evidence_keys)
+        def _or_tag_group(keys: tuple[str, ...]) -> None:
+            if not keys:
+                return
+            clauses = ["ann.tags_json LIKE ?" for _ in keys]
+            where.append(f"({' OR '.join(clauses)})")
+            params.extend(f'%"{key}"%' for key in keys)
+
+        # Section-scoped multi-selects: OR within group, AND across groups.
+        _or_tag_group(_multi_values(*scene_tags))
+        _or_tag_group(_multi_values(*trigger_tags))
+        _or_tag_group(_multi_values(*egress_tags))
+        # Legacy flat tag filters remain AND-all for older callers.
+        for requested_tag in _multi_values(tag, *tag_filters):
             where.append("ann.tags_json LIKE ?")
             params.append(f'%"{requested_tag}"%')
         if search.strip():

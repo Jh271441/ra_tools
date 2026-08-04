@@ -19,6 +19,92 @@ const API_GET_TIMEOUT_MS = 6000;
 const API_GET_MAX_ATTEMPTS = 3;
 const API_GET_RETRYABLE_STATUSES = new Set([408, 429, 502, 503, 504]);
 
+function parseFilterList(value) {
+  if (Array.isArray(value)) {
+    return [
+      ...new Set(
+        value
+          .map((item) => String(item || "").trim())
+          .filter(Boolean)
+      ),
+    ];
+  }
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function joinFilterList(values) {
+  return parseFilterList(values).join(",");
+}
+
+function getMultiFilterValues(root) {
+  if (!root) return [];
+  if (root.matches?.("select")) {
+    if (root.multiple) {
+      return [...root.selectedOptions].map((option) => option.value).filter(Boolean);
+    }
+    return root.value ? [root.value] : [];
+  }
+  return [...root.querySelectorAll('input[type="checkbox"][data-multi-value]:checked')].map(
+    (input) => input.value
+  );
+}
+
+function updateMultiFilterSummary(root) {
+  if (!root || root.matches?.("select")) return;
+  const summary = root.querySelector(".multi-filter-summary");
+  if (!summary) return;
+  const values = getMultiFilterValues(root);
+  const placeholder = root.dataset.placeholder || "全部";
+  if (!values.length) {
+    summary.textContent = placeholder;
+    summary.classList.remove("has-value");
+    return;
+  }
+  const labels = values.map((value) => {
+    const input = root.querySelector(
+      `input[data-multi-value="${CSS.escape(value)}"]`
+    );
+    return input?.dataset.label || value;
+  });
+  summary.textContent =
+    labels.length <= 2
+      ? labels.join("、")
+      : `${labels[0]} 等 ${labels.length} 项`;
+  summary.classList.add("has-value");
+}
+
+function setMultiFilterValues(root, values) {
+  if (!root) return;
+  const selected = new Set(parseFilterList(values));
+  if (root.matches?.("select")) {
+    if (root.multiple) {
+      [...root.options].forEach((option) => {
+        option.selected = selected.has(option.value);
+      });
+    } else {
+      root.value = [...selected][0] || "";
+    }
+    return;
+  }
+  root.querySelectorAll('input[type="checkbox"][data-multi-value]').forEach((input) => {
+    input.checked = selected.has(input.value);
+  });
+  updateMultiFilterSummary(root);
+}
+
+function closeAllMultiFilters(except = null) {
+  document.querySelectorAll(".multi-filter.is-open").forEach((root) => {
+    if (except && root === except) return;
+    root.classList.remove("is-open");
+    const panel = root.querySelector(".multi-filter-panel");
+    if (panel) panel.hidden = true;
+    root.querySelector(".multi-filter-trigger")?.setAttribute("aria-expanded", "false");
+  });
+}
+
 function normalizeClientBasePath(value) {
   const raw = String(value ?? "");
   if (!raw || raw === "/") return "";

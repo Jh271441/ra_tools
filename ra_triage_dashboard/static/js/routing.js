@@ -125,21 +125,26 @@ function normalizedReviewRouteFilters(params) {
 }
 
 function normalizedAnalysisRouteFilters(params) {
-  const reviewStatus = params.get("status") || "";
   const rawPage = Number.parseInt(params.get("page") || "1", 10);
-  const modelLabel = params.get("model_label") || params.get("annotation") || "";
+  const statuses = parseFilterList(params.get("status")).filter((value) =>
+    ["pending", "reviewed", "needs_gt_review"].includes(value)
+  );
+  const gtLabels = parseFilterList(params.get("gt")).filter((value) =>
+    LABELS.includes(value)
+  );
+  const modelLabels = parseFilterList(
+    params.get("model_label") || params.get("annotation") || ""
+  ).filter((value) => LABELS.includes(value));
   return {
     search: params.get("q") || "",
-    gtLabel: LABELS.includes(params.get("gt")) ? params.get("gt") : "",
-    modelLabel: LABELS.includes(modelLabel) ? modelLabel : "",
-    annotationAuthor: params.get("reviewer") || "",
-    reviewStatus: ["pending", "reviewed", "needs_gt_review"].includes(reviewStatus)
-      ? reviewStatus
-      : "",
-    missingEvidence: params.get("evidence") || "",
-    sceneTag: params.get("scene_tag") || "",
-    triggerTag: params.get("trigger_tag") || "",
-    egressTag: params.get("egress_tag") || "",
+    gtLabel: gtLabels,
+    modelLabel: modelLabels,
+    annotationAuthor: parseFilterList(params.get("reviewer")),
+    reviewStatus: statuses,
+    missingEvidence: parseFilterList(params.get("evidence")),
+    sceneTag: parseFilterList(params.get("scene_tag")),
+    triggerTag: parseFilterList(params.get("trigger_tag")),
+    egressTag: parseFilterList(params.get("egress_tag")),
     legacyTag: params.get("tag") || "",
     comparisonStatus: routeAnalysisComparisonStatus(params),
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
@@ -258,14 +263,14 @@ function currentAnalysisRouteOptions(overrides = {}) {
     runId: state.selectedRunId,
     comparisonStatus: state.reviewAnalysis.comparisonStatus,
     search: $("#analysisSearchInput")?.value.trim() || "",
-    gtLabel: $("#analysisGtFilter")?.value || "",
-    modelLabel: $("#analysisModelLabelFilter")?.value || "",
-    annotationAuthor: $("#analysisReviewerFilter")?.value || "",
-    reviewStatus: $("#analysisStatusFilter")?.value || "",
-    missingEvidence: $("#analysisEvidenceFilter")?.value || "",
-    sceneTag: $("#analysisSceneFilter")?.value || "",
-    triggerTag: $("#analysisTriggerFilter")?.value || "",
-    egressTag: $("#analysisEgressFilter")?.value || "",
+    gtLabel: getMultiFilterValues($("#analysisGtFilter")),
+    modelLabel: getMultiFilterValues($("#analysisModelLabelFilter")),
+    annotationAuthor: getMultiFilterValues($("#analysisReviewerFilter")),
+    reviewStatus: getMultiFilterValues($("#analysisStatusFilter")),
+    missingEvidence: getMultiFilterValues($("#analysisEvidenceFilter")),
+    sceneTag: getMultiFilterValues($("#analysisSceneFilter")),
+    triggerTag: getMultiFilterValues($("#analysisTriggerFilter")),
+    egressTag: getMultiFilterValues($("#analysisEgressFilter")),
     page: state.reviewAnalysis.page,
     ...overrides,
   };
@@ -274,48 +279,25 @@ function currentAnalysisRouteOptions(overrides = {}) {
 function applyAnalysisRouteControls(route) {
   const filters = route?.analysisFilters || route || {};
   if ($("#analysisSearchInput")) $("#analysisSearchInput").value = filters.search || "";
-  if ($("#analysisGtFilter")) {
-    $("#analysisGtFilter").value = LABELS.includes(filters.gtLabel) ? filters.gtLabel : "";
-  }
-  if ($("#analysisModelLabelFilter")) {
-    $("#analysisModelLabelFilter").value = LABELS.includes(filters.modelLabel)
-      ? filters.modelLabel
-      : "";
-  }
-  if ($("#analysisStatusFilter")) $("#analysisStatusFilter").value = filters.reviewStatus || "";
-  if ($("#analysisReviewerFilter")) {
-    const reviewer = filters.annotationAuthor || "";
-    $("#analysisReviewerFilter").value =
-      !reviewer ||
-      [...$("#analysisReviewerFilter").options].some((option) => option.value === reviewer)
-        ? reviewer
-        : "";
-  }
-  if ($("#analysisEvidenceFilter")) {
-    const evidence = filters.missingEvidence || "";
-    $("#analysisEvidenceFilter").value =
-      !evidence ||
-      [...$("#analysisEvidenceFilter").options].some((option) => option.value === evidence)
-        ? evidence
-        : "";
-  }
+  setMultiFilterValues($("#analysisGtFilter"), filters.gtLabel);
+  setMultiFilterValues($("#analysisModelLabelFilter"), filters.modelLabel);
+  setMultiFilterValues($("#analysisStatusFilter"), filters.reviewStatus);
+  setMultiFilterValues($("#analysisReviewerFilter"), filters.annotationAuthor);
+  setMultiFilterValues($("#analysisEvidenceFilter"), filters.missingEvidence);
   const catalog = state.config?.review_tag_catalog || [];
   const legacyTag = filters.legacyTag || "";
   const legacyItem = catalog.find((item) => item.key === legacyTag);
-  const sceneTag = filters.sceneTag || (legacyItem?.section === "scene" ? legacyTag : "");
-  const triggerTag = filters.triggerTag || (legacyItem?.section === "interaction_decision" ? legacyTag : "");
-  const egressTag = filters.egressTag || (legacyItem?.section === "egress" ? legacyTag : "");
-  [
-    ["#analysisSceneFilter", sceneTag],
-    ["#analysisTriggerFilter", triggerTag],
-    ["#analysisEgressFilter", egressTag],
-  ].forEach(([selector, value]) => {
-    const select = $(selector);
-    if (!select) return;
-    select.value = !value || [...select.options].some((option) => option.value === value)
-      ? value
-      : "";
-  });
+  const sceneTag = parseFilterList(filters.sceneTag);
+  const triggerTag = parseFilterList(filters.triggerTag);
+  const egressTag = parseFilterList(filters.egressTag);
+  if (legacyItem?.section === "scene" && !sceneTag.length) sceneTag.push(legacyTag);
+  if (legacyItem?.section === "interaction_decision" && !triggerTag.length) {
+    triggerTag.push(legacyTag);
+  }
+  if (legacyItem?.section === "egress" && !egressTag.length) egressTag.push(legacyTag);
+  setMultiFilterValues($("#analysisSceneFilter"), sceneTag);
+  setMultiFilterValues($("#analysisTriggerFilter"), triggerTag);
+  setMultiFilterValues($("#analysisEgressFilter"), egressTag);
   const requestedComparison =
     filters.comparisonStatus ||
     (state.failureOnly && state.selectedRunId
@@ -362,14 +344,22 @@ function pageUrl(page, options = {}) {
         : "all"
     );
     if (analysis.search) url.searchParams.set("q", analysis.search);
-    if (analysis.gtLabel) url.searchParams.set("gt", analysis.gtLabel);
-    if (analysis.modelLabel) url.searchParams.set("model_label", analysis.modelLabel);
-    if (analysis.annotationAuthor) url.searchParams.set("reviewer", analysis.annotationAuthor);
-    if (analysis.reviewStatus) url.searchParams.set("status", analysis.reviewStatus);
-    if (analysis.missingEvidence) url.searchParams.set("evidence", analysis.missingEvidence);
-    if (analysis.sceneTag) url.searchParams.set("scene_tag", analysis.sceneTag);
-    if (analysis.triggerTag) url.searchParams.set("trigger_tag", analysis.triggerTag);
-    if (analysis.egressTag) url.searchParams.set("egress_tag", analysis.egressTag);
+    const gt = joinFilterList(analysis.gtLabel);
+    const modelLabel = joinFilterList(analysis.modelLabel);
+    const reviewer = joinFilterList(analysis.annotationAuthor);
+    const status = joinFilterList(analysis.reviewStatus);
+    const evidence = joinFilterList(analysis.missingEvidence);
+    const sceneTag = joinFilterList(analysis.sceneTag);
+    const triggerTag = joinFilterList(analysis.triggerTag);
+    const egressTag = joinFilterList(analysis.egressTag);
+    if (gt) url.searchParams.set("gt", gt);
+    if (modelLabel) url.searchParams.set("model_label", modelLabel);
+    if (reviewer) url.searchParams.set("reviewer", reviewer);
+    if (status) url.searchParams.set("status", status);
+    if (evidence) url.searchParams.set("evidence", evidence);
+    if (sceneTag) url.searchParams.set("scene_tag", sceneTag);
+    if (triggerTag) url.searchParams.set("trigger_tag", triggerTag);
+    if (egressTag) url.searchParams.set("egress_tag", egressTag);
     if (Number(analysis.page) > 1) url.searchParams.set("page", String(analysis.page));
   }
   if (page === "prediction") {

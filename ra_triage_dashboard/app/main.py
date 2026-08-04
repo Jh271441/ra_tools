@@ -2972,6 +2972,21 @@ async def review_clusters(
     }
 
 
+def _csv_filter_values(raw: str | list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+    values: list[str] = []
+    if raw is None:
+        return ()
+    if isinstance(raw, (list, tuple)):
+        parts = raw
+    else:
+        parts = str(raw).split(",")
+    for part in parts:
+        text = _as_text(part).strip()
+        if text:
+            values.append(text)
+    return tuple(dict.fromkeys(values))
+
+
 def _review_reason_analysis_payload(
     *,
     model_run_id: str = "",
@@ -3020,37 +3035,48 @@ def _review_reason_analysis_payload(
     comparison_status = requested_comparison or (
         "mismatch" if failure_only else "all"
     )
-    if review_status and review_status not in REVIEW_STATUSES:
-        raise _detail(400, "review_status 不在支持范围内。")
-    if gt_label and gt_label not in LABELS:
-        raise _detail(400, "gt_label 不在三分类范围内。")
-    if annotation_label and annotation_label not in LABELS:
-        raise _detail(400, "annotation_label 不在三分类范围内。")
-    if model_label and model_label not in LABELS:
-        raise _detail(400, "model_label 不在三分类范围内。")
-    if model_label and not model_run_id:
+    authors = _csv_filter_values(annotation_author)
+    statuses = _csv_filter_values(review_status)
+    gt_labels = _csv_filter_values(gt_label)
+    annotation_labels = _csv_filter_values(annotation_label)
+    model_labels = _csv_filter_values(model_label)
+    evidence_keys = _csv_filter_values(missing_evidence)
+    for status in statuses:
+        if status not in REVIEW_STATUSES:
+            raise _detail(400, "review_status 不在支持范围内。")
+    for label in gt_labels:
+        if label not in LABELS:
+            raise _detail(400, "gt_label 不在三分类范围内。")
+    for label in annotation_labels:
+        if label not in LABELS:
+            raise _detail(400, "annotation_label 不在三分类范围内。")
+    for label in model_labels:
+        if label not in LABELS:
+            raise _detail(400, "model_label 不在三分类范围内。")
+    if model_labels and not model_run_id:
         raise _detail(400, "按模型预测筛选时必须选择 Model Run。")
-    if missing_evidence and missing_evidence not in evidence_catalog:
-        raise _detail(400, "missing_evidence 不在稳定字段目录中。")
+    for key in evidence_keys:
+        if key not in evidence_catalog:
+            raise _detail(400, "missing_evidence 不在稳定字段目录中。")
     tag_catalog = _review_tag_catalog()
     tag_by_key = {str(item["key"]): item for item in tag_catalog}
-    requested_tags = tuple(
-        dict.fromkeys(
-            value.strip()
-            for value in (tag, scene_tag, trigger_tag, egress_tag)
-            if value and value.strip()
-        )
-    )
-    for requested_tag in requested_tags:
+    scene_tags = _csv_filter_values(scene_tag)
+    trigger_tags = _csv_filter_values(trigger_tag)
+    egress_tags = _csv_filter_values(egress_tag)
+    legacy_tags = _csv_filter_values(tag)
+    for requested_tag in (*legacy_tags, *scene_tags, *trigger_tags, *egress_tags):
         item = tag_by_key.get(requested_tag)
         if item is None:
             raise _detail(400, "场景 Tags 不在共享目录中。")
-    if scene_tag and tag_by_key[scene_tag].get("section") != "scene":
-        raise _detail(400, "scene_tag 必须属于场景 Tags。")
-    if trigger_tag and tag_by_key[trigger_tag].get("section") != "interaction_decision":
-        raise _detail(400, "trigger_tag 必须属于触发判定 Tags。")
-    if egress_tag and tag_by_key[egress_tag].get("section") != "egress":
-        raise _detail(400, "egress_tag 必须属于如何脱困 Tags。")
+    for key in scene_tags:
+        if tag_by_key[key].get("section") != "scene":
+            raise _detail(400, "scene_tag 必须属于场景 Tags。")
+    for key in trigger_tags:
+        if tag_by_key[key].get("section") != "interaction_decision":
+            raise _detail(400, "trigger_tag 必须属于触发判定 Tags。")
+    for key in egress_tags:
+        if tag_by_key[key].get("section") != "egress":
+            raise _detail(400, "egress_tag 必须属于如何脱困 Tags。")
     if comparison_status != "all" and not model_run_id:
         raise _detail(400, "筛选模型对比关系时必须选择 Model Run。")
 
@@ -3096,13 +3122,16 @@ def _review_reason_analysis_payload(
         baseline_scope=settings.baseline_scope,
         model_run_id=model_run_id,
         comparison_status=comparison_status,
-        annotation_author=_as_text(annotation_author)[:128],
-        review_status=review_status,
-        gt_label=gt_label,
-        annotation_label=annotation_label,
-        model_label=model_label,
-        missing_evidence=missing_evidence,
-        tag_filters=requested_tags,
+        annotation_author=",".join(authors),
+        review_status=",".join(statuses),
+        gt_label=",".join(gt_labels),
+        annotation_label=",".join(annotation_labels),
+        model_label=",".join(model_labels),
+        missing_evidence=list(evidence_keys),
+        tag_filters=legacy_tags,
+        scene_tags=scene_tags,
+        trigger_tags=trigger_tags,
+        egress_tags=egress_tags,
         search=normalized_search,
         search_aliases=search_aliases,
     )
@@ -3157,17 +3186,17 @@ def _review_reason_analysis_payload(
         "model_run_id": model_run_id,
         "comparison_status": comparison_status,
         "failure_only": comparison_status == "mismatch",
-        "annotation_author": _as_text(annotation_author)[:128],
-        "review_status": review_status,
-        "gt_label": gt_label,
-        "annotation_label": annotation_label,
-        "model_label": model_label,
-        "missing_evidence": missing_evidence,
+        "annotation_author": list(authors),
+        "review_status": list(statuses),
+        "gt_label": list(gt_labels),
+        "annotation_label": list(annotation_labels),
+        "model_label": list(model_labels),
+        "missing_evidence": list(evidence_keys),
         "theme": theme,
-        "tag": tag,
-        "scene_tag": scene_tag,
-        "trigger_tag": trigger_tag,
-        "egress_tag": egress_tag,
+        "tag": list(legacy_tags),
+        "scene_tag": list(scene_tags),
+        "trigger_tag": list(trigger_tags),
+        "egress_tag": list(egress_tags),
         "search": normalized_search,
     }
     return result
