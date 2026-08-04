@@ -37,9 +37,19 @@ class FrontendBootstrapTest(unittest.TestCase):
             "initialDetailRequest = selectCase(initialRoute.issue, { updateRoute: false })",
             APP_JS,
         )
-        self.assertIn("void Promise.all(initialPageRequests).catch", APP_JS)
-        self.assertIn("await initialDetailRequest", APP_JS)
+        self.assertIn("const sessionRequest = resolveSessionInBackground()", APP_JS)
+        self.assertIn("const initialPageResults = settleInitialRequests(", APP_JS)
+        self.assertIn("await settleInitialRequests([initialDetailRequest], \"问题详情\")", APP_JS)
+        self.assertIn("Promise.allSettled", APP_JS)
+        self.assertIn("void initialPageResults", APP_JS)
         self.assertIn('issue: initialRoute.issue', APP_JS)
+
+    def test_read_only_gets_timeout_and_transient_gateway_retries(self) -> None:
+        self.assertIn("const API_GET_TIMEOUT_MS = 6000", APP_JS)
+        self.assertIn("const API_GET_MAX_ATTEMPTS = 3", APP_JS)
+        self.assertIn("const API_GET_RETRYABLE_STATUSES", APP_JS)
+        self.assertIn("new AbortController()", APP_JS)
+        self.assertIn("API_GET_RETRYABLE_STATUSES.has(response.status)", APP_JS)
 
 
 if __name__ == "__main__":

@@ -292,6 +292,26 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
                 comparison_status="mismatch",
             )
             self.assertEqual([item["issue_id"] for item in cases["items"]], ["cn20001"])
+            model_label_cases = database.list_cases(
+                baseline_scope=scope,
+                model_run_id=run["id"],
+                comparison_status="mismatch",
+                model_label="正确触发",
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in model_label_cases["items"]],
+                ["cn20001"],
+            )
+            human_label_cases = database.list_cases(
+                baseline_scope=scope,
+                model_run_id=run["id"],
+                comparison_status="mismatch",
+                annotation_label="误触发",
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in human_label_cases["items"]],
+                ["cn20001"],
+            )
 
             # The gallery is ordered only by issue_id, so a repeated request
             # with identical filters must preserve the same order.

@@ -34,7 +34,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-13`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-30`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -177,7 +177,7 @@
                   </select>
                 </label>
                 <label>
-                  <span>人工标注</span>
+                  <span>模型标注</span>
                   <select id="annotationFilter">
                     <option value="">全部</option>
                     <option value="误触发">误触发</option>
@@ -883,7 +883,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-14`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-30`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

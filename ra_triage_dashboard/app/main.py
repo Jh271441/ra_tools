@@ -130,18 +130,28 @@ MISSING_EVIDENCE_CATALOG: tuple[dict[str, str], ...] = (
 )
 
 REVIEW_TAG_CATALOG: tuple[dict[str, Any], ...] = (
-    # Issue description: what kind of scene was this?
-    {"key": "traffic_light", "label": "等灯", "section": "scene", "group": "false_trigger"},
-    {"key": "queue", "label": "排队", "section": "scene", "group": "false_trigger"},
-    {"key": "yielding", "label": "让行", "section": "scene", "group": "false_trigger"},
-    {"key": "u_turn", "label": "掉头", "section": "scene", "group": "false_trigger"},
-    {"key": "park_in", "label": "泊入", "section": "scene", "group": "false_trigger"},
-    {"key": "park_out", "label": "泊出", "section": "scene", "group": "false_trigger"},
-    {"key": "scene_false_other", "label": "其他", "section": "scene", "group": "false_trigger"},
-    {"key": "obstacle_not_avoided", "label": "未避障", "section": "scene", "group": "true_trigger"},
-    {"key": "close_distance", "label": "距离近", "section": "scene", "group": "true_trigger"},
-    {"key": "perception_fp", "label": "感知FP", "section": "scene", "group": "true_trigger"},
-    {"key": "scene_true_other", "label": "其他", "section": "scene", "group": "true_trigger"},
+    # Issue description: keep scene context separate from interaction
+    # decisions.  The false/true-trigger buckets are retained because they are
+    # part of the existing Review vocabulary and historical annotations.
+    {"key": "construction_change", "label": "施工/变更区域", "section": "scene", "group": "environment"},
+    {"key": "gate", "label": "道闸", "section": "scene", "group": "environment"},
+    {"key": "park_entrance", "label": "园区出入口", "section": "scene", "group": "environment"},
+    {"key": "environment_u_turn", "label": "掉头", "section": "scene", "group": "environment"},
+    {"key": "intent_straight", "label": "直行", "section": "scene", "group": "self_intent"},
+    {"key": "intent_left_turn", "label": "左转", "section": "scene", "group": "self_intent"},
+    {"key": "intent_right_turn", "label": "右转", "section": "scene", "group": "self_intent"},
+    {"key": "intent_u_turn", "label": "掉头", "section": "scene", "group": "self_intent"},
+    {"key": "traffic_light", "label": "等灯", "section": "interaction_decision", "group": "false_trigger"},
+    {"key": "queue", "label": "排队", "section": "interaction_decision", "group": "false_trigger"},
+    {"key": "yielding", "label": "让行", "section": "interaction_decision", "group": "false_trigger"},
+    {"key": "u_turn", "label": "掉头", "section": "interaction_decision", "group": "false_trigger"},
+    {"key": "park_in", "label": "泊入", "section": "interaction_decision", "group": "false_trigger"},
+    {"key": "park_out", "label": "泊出", "section": "interaction_decision", "group": "false_trigger"},
+    {"key": "scene_false_other", "label": "其他", "section": "interaction_decision", "group": "false_trigger"},
+    {"key": "obstacle_not_avoided", "label": "未避障", "section": "interaction_decision", "group": "true_trigger"},
+    {"key": "close_distance", "label": "距离近", "section": "interaction_decision", "group": "true_trigger"},
+    {"key": "perception_fp", "label": "感知FP", "section": "interaction_decision", "group": "true_trigger"},
+    {"key": "scene_true_other", "label": "其他", "section": "interaction_decision", "group": "true_trigger"},
     # Issue resolution: how could the vehicle leave the scene?
     {"key": "egress_swag", "label": "SWAG", "section": "egress", "group": "ra"},
     {"key": "egress_detour", "label": "左右绕行", "section": "egress", "group": "ra"},
@@ -163,6 +173,7 @@ REVIEW_TAG_CATALOG: tuple[dict[str, Any], ...] = (
     {"key": "temporary_stop", "label": "前车双闪", "section": "legacy", "group": "legacy", "visible": False},
     {"key": "vulnerable_road_user", "label": "摩自/行人", "section": "legacy", "group": "legacy", "visible": False},
     {"key": "gt_boundary", "label": "GT 待复核", "section": "legacy", "group": "legacy", "visible": False},
+    {"key": "scene_other", "label": "其他（旧交互决策）", "section": "legacy", "group": "legacy", "visible": False},
 )
 REVIEW_TAG_KEYS = frozenset(item["key"] for item in REVIEW_TAG_CATALOG)
 REVIEW_TAG_ALIASES = {
@@ -171,6 +182,16 @@ REVIEW_TAG_ALIASES = {
     "排队": "queue",
     "让行": "yielding",
     "掉头": "u_turn",
+    "施工/变更区域": "construction_change",
+    "施工区域": "construction_change",
+    "变更区域": "construction_change",
+    "道闸": "gate",
+    "园区出入口": "park_entrance",
+    "直行": "intent_straight",
+    "自车直行": "intent_straight",
+    "自车左转": "intent_left_turn",
+    "自车右转": "intent_right_turn",
+    "自车掉头": "intent_u_turn",
     "泊入": "park_in",
     "泊出": "park_out",
     "人工触发": "manual_trigger",
@@ -188,10 +209,9 @@ REVIEW_TAG_ALIASES = {
     "双闪临停": "temporary_stop",
     "前方大车遮挡": "occlusion",
     "大车遮挡": "occlusion",
-    "右转": "right_turn",
-    "自车右转": "right_turn",
-    "左转": "left_turn",
-    "左转待转": "left_turn",
+    "右转": "intent_right_turn",
+    "左转": "intent_left_turn",
+    "左转待转": "intent_left_turn",
     # Preserve common historical values while the new UI emits the compact catalog above.
     "信号灯": "traffic_light",
     "双闪": "temporary_stop",
@@ -635,6 +655,43 @@ def _admin_identity(request: Request):
 
 def _review_tag_catalog() -> tuple[dict[str, Any], ...]:
     return tuple({**item, "builtin": True} for item in REVIEW_TAG_CATALOG)
+
+
+def _missing_evidence_catalog() -> tuple[dict[str, Any], ...]:
+    """Return the merged catalog, including soft-deleted historical entries.
+
+    Built-ins remain source-controlled, but a database row can override their
+    label/hint or retire them.  Retired entries stay in the payload so old
+    annotations remain readable; the Review form hides them unless selected
+    by the current version.
+    """
+
+    merged: dict[str, dict[str, Any]] = {
+        str(item["key"]): {
+            **item,
+            "builtin": True,
+            "deleted": False,
+        }
+        for item in MISSING_EVIDENCE_CATALOG
+    }
+    builtin_keys = set(merged)
+    for row in database.list_missing_evidence_catalog(include_inactive=True):
+        key = str(row.get("key") or "").strip()
+        if not key:
+            continue
+        item = {
+            str(name): value
+            for name, value in row.items()
+            if str(name) != "active"
+        }
+        item["builtin"] = key in builtin_keys
+        item["deleted"] = not bool(row.get("active", 1))
+        if key in merged:
+            merged[key].update(item)
+            merged[key]["builtin"] = True
+        else:
+            merged[key] = item
+    return tuple(merged.values())
 
 
 def _value(row: dict[str, Any], *names: str) -> Any:
@@ -1108,6 +1165,27 @@ def _normalise_review_tags(values: list[Any]) -> list[str]:
     return [item["key"] for item in REVIEW_TAG_CATALOG if item["key"] in normalized]
 
 
+def _normalise_missing_evidence(values: list[Any]) -> list[str]:
+    if len(values) > 24:
+        raise _detail(400, "每条 review 最多选择 24 个缺失信息。")
+    catalog_keys = {str(item["key"]) for item in _missing_evidence_catalog()}
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        raw = str(value).strip()
+        if not raw or raw in seen:
+            continue
+        if len(raw) > 160 or re.search(r"[\x00-\x1f\x7f]", raw):
+            raise _detail(400, "缺失信息字段长度或字符不合法。")
+        # Legacy per-Review custom values remain readable and editable. New
+        # values are opaque keys from the shared catalog above.
+        if raw not in catalog_keys and not raw.startswith("custom:"):
+            raise _detail(400, "缺失信息不在共享目录中。")
+        seen.add(raw)
+        normalized.append(raw)
+    return normalized
+
+
 def _normalise_review_excluded(value: Any) -> bool:
     """Parse the explicit Issue-level exclusion flag without truthiness traps."""
 
@@ -1141,6 +1219,7 @@ def _create_annotation_record(
     if not isinstance(missing_evidence, list):
         raise _detail(400, "missing_evidence 必须是数组。")
     tags = _normalise_review_tags(tags)
+    missing_evidence = _normalise_missing_evidence(missing_evidence)
     author, author_source, author_verified = _action_actor(request, body.get("author"))
     try:
         return database.create_annotation(
@@ -1619,7 +1698,7 @@ async def dashboard_config() -> dict[str, Any]:
         "build_commit": settings.build_commit,
         "default_model_run_id": database.default_model_run_id(),
         "trail_sync": runtime_state["trail_sync"],
-        "missing_evidence_catalog": MISSING_EVIDENCE_CATALOG,
+        "missing_evidence_catalog": await asyncio.to_thread(_missing_evidence_catalog),
         "review_tag_catalog": await asyncio.to_thread(_review_tag_catalog),
         "review_reason_theme_catalog": tuple(
             {
@@ -1645,6 +1724,143 @@ async def dashboard_config() -> dict[str, Any]:
             "trail_write_enabled": False,
             "model_gateway": model_catalog.status(),
         },
+    }
+
+
+@app.post("/api/missing-evidence")
+async def create_missing_evidence(request: Request) -> dict[str, Any]:
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        raise _detail(400, "缺失信息目录请求必须是 JSON。")
+    if not isinstance(body, dict):
+        raise _detail(400, "缺失信息目录请求必须是 JSON 对象。")
+    label = _as_text(body.get("label"))
+    hint = _as_text(body.get("hint"))
+    actor, _, _ = _action_actor(request, body.get("created_by"))
+    if not actor:
+        raise _detail(400, "无法确认缺失信息目录创建人。")
+    if any(
+        str(item["label"]) == label and not bool(item.get("deleted"))
+        for item in _missing_evidence_catalog()
+    ):
+        raise _detail(409, "该缺失信息标题已经存在于内置目录。")
+    try:
+        item = await asyncio.to_thread(
+            database.create_missing_evidence,
+            label=label,
+            hint=hint,
+            created_by=actor,
+        )
+    except ValueError as exc:
+        raise _detail(409, str(exc))
+    item = {
+        **item,
+        "builtin": False,
+        "deleted": not bool(item.get("active", 1)),
+    }
+    item.pop("active", None)
+    return {
+        "item": item,
+        "missing_evidence_catalog": await asyncio.to_thread(_missing_evidence_catalog),
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
+@app.put("/api/missing-evidence/{key:path}")
+async def update_missing_evidence(key: str, request: Request) -> dict[str, Any]:
+    normalized_key = _as_text(key).strip()
+    if not normalized_key or len(normalized_key) > 160:
+        raise _detail(400, "缺失信息 key 不合法。")
+    current = next(
+        (item for item in _missing_evidence_catalog() if item["key"] == normalized_key),
+        None,
+    )
+    if current is None:
+        raise _detail(404, "缺失信息目录项不存在。")
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        raise _detail(400, "缺失信息目录请求必须是 JSON。")
+    if not isinstance(body, dict):
+        raise _detail(400, "缺失信息目录请求必须是 JSON 对象。")
+    label = _as_text(body.get("label"))
+    hint = _as_text(body.get("hint"))
+    actor, _, _ = _action_actor(request, body.get("updated_by"))
+    if not actor:
+        raise _detail(400, "无法确认缺失信息目录编辑人。")
+    if any(
+        item["key"] != normalized_key
+        and not bool(item.get("deleted"))
+        and str(item["label"]) == label
+        for item in _missing_evidence_catalog()
+    ):
+        raise _detail(409, "该缺失信息标题已经存在。")
+    try:
+        item = await asyncio.to_thread(
+            database.update_missing_evidence,
+            key=normalized_key,
+            label=label,
+            hint=hint,
+            updated_by=actor,
+        )
+    except ValueError as exc:
+        raise _detail(409, str(exc))
+    item = {
+        **item,
+        "builtin": bool(current.get("builtin")),
+        "deleted": not bool(item.get("active", 1)),
+    }
+    item.pop("active", None)
+    return {
+        "item": item,
+        "missing_evidence_catalog": await asyncio.to_thread(_missing_evidence_catalog),
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
+@app.delete("/api/missing-evidence/{key:path}")
+async def delete_missing_evidence(key: str, request: Request) -> dict[str, Any]:
+    normalized_key = _as_text(key).strip()
+    if not normalized_key or len(normalized_key) > 160:
+        raise _detail(400, "缺失信息 key 不合法。")
+    current = next(
+        (item for item in _missing_evidence_catalog() if item["key"] == normalized_key),
+        None,
+    )
+    if current is None:
+        raise _detail(404, "缺失信息目录项不存在。")
+    if bool(current.get("deleted")):
+        raise _detail(409, "该缺失信息已经删除。")
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    actor, _, _ = _action_actor(request, body.get("deleted_by"))
+    if not actor:
+        raise _detail(400, "无法确认缺失信息目录删除人。")
+    try:
+        item = await asyncio.to_thread(
+            database.delete_missing_evidence,
+            key=normalized_key,
+            label=str(current.get("label") or ""),
+            hint=str(current.get("hint") or ""),
+            deleted_by=actor,
+        )
+    except ValueError as exc:
+        raise _detail(409, str(exc))
+    item = {
+        **item,
+        "builtin": bool(current.get("builtin")),
+        "deleted": True,
+    }
+    item.pop("active", None)
+    return {
+        "item": item,
+        "missing_evidence_catalog": await asyncio.to_thread(_missing_evidence_catalog),
+        "change_revision": await asyncio.to_thread(database.change_revision),
     }
 
 
@@ -1818,6 +2034,7 @@ async def status(response: Response) -> dict[str, Any]:
 async def list_cases(
     search: str = "",
     gt_label: str = "",
+    model_label: str = "",
     annotation_label: str = "",
     annotation_author: str = "",
     model_run_id: str = "",
@@ -1836,11 +2053,16 @@ async def list_cases(
     comparison_status = requested_comparison or ("mismatch" if failure_only else "all")
     if comparison_status != "all" and not model_run_id:
         raise _detail(400, "筛选模型对比关系时必须选择 Model Run。")
+    if model_label and model_label not in LABELS:
+        raise _detail(400, "model_label 不在三分类范围内。")
+    if model_label and not model_run_id:
+        raise _detail(400, "按模型标注筛选时必须选择 Model Run。")
     result = await asyncio.to_thread(
         database.list_cases,
         baseline_scope=settings.baseline_scope,
         search=search,
         gt_label=gt_label,
+        model_label=model_label,
         annotation_label=annotation_label,
         annotation_author=annotation_author,
         model_run_id=model_run_id,
@@ -2380,12 +2602,13 @@ def _review_reason_analysis_payload(
     page_size: int = 50,
     unbounded: bool = False,
 ) -> dict[str, Any]:
+    missing_evidence_catalog = _missing_evidence_catalog()
     evidence_catalog = {
         str(item["key"]): {
             "label": str(item["label"]),
             "description": str(item["hint"]),
         }
-        for item in MISSING_EVIDENCE_CATALOG
+        for item in missing_evidence_catalog
     }
     theme_keys = {str(item["key"]) for item in REASON_THEME_CATALOG}
     requested_comparison = _as_text(comparison).strip().lower()
@@ -2435,7 +2658,7 @@ def _review_reason_analysis_payload(
     folded_search = normalized_search.casefold()
     search_aliases = tuple(
         str(item["key"])
-        for item in (*REVIEW_TAG_CATALOG, *MISSING_EVIDENCE_CATALOG)
+        for item in (*REVIEW_TAG_CATALOG, *missing_evidence_catalog)
         if folded_search
         and (
             folded_search in str(item["label"]).casefold()

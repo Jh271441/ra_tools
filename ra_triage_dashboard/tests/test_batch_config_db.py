@@ -50,6 +50,49 @@ class BatchConfigDatabaseTest(unittest.TestCase):
             )
             self.assertGreater(database.change_revision(), after_issue)
 
+    def test_missing_evidence_catalog_is_shared_and_descriptive(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "triage.sqlite3")
+            database.init()
+            initial = database.change_revision()
+            item = database.create_missing_evidence(
+                label="绕行空间缺失",
+                hint="未确认相邻车道是否存在可行绕行空间",
+                created_by="jasperchen",
+            )
+            self.assertTrue(item["key"].startswith("custom:"))
+            self.assertEqual(item["label"], "绕行空间缺失")
+            self.assertEqual(
+                database.list_missing_evidence_catalog(),
+                [item],
+            )
+            self.assertGreater(database.change_revision(), initial)
+            updated = database.update_missing_evidence(
+                key=item["key"],
+                label="绕行空间与时序缺失",
+                hint="未确认可行绕行空间或关键时序证据",
+                updated_by="other",
+            )
+            self.assertEqual(updated["key"], item["key"])
+            self.assertEqual(updated["label"], "绕行空间与时序缺失")
+            self.assertEqual(updated["active"], 1)
+            deleted = database.delete_missing_evidence(
+                key=item["key"],
+                deleted_by="other",
+            )
+            self.assertEqual(deleted["key"], item["key"])
+            self.assertEqual(deleted["active"], 0)
+            self.assertEqual(
+                database.list_missing_evidence_catalog(include_inactive=False),
+                [],
+            )
+            with self.assertRaisesRegex(ValueError, "已经存在"):
+                database.create_missing_evidence(
+                    label="绕行空间与时序缺失",
+                    hint="另一个说明",
+                    created_by="other",
+                )
+
     def test_annotation_requires_reviewer(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             database = Database(Path(directory) / "triage.sqlite3")

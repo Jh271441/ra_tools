@@ -10,6 +10,9 @@ const ANALYSIS_COMPARISON_META = {
 };
 const REVIEW_COMPARISON_STATUSES = ANALYSIS_COMPARISON_STATUSES;
 const REVIEW_COMPARISON_META = ANALYSIS_COMPARISON_META;
+const API_GET_TIMEOUT_MS = 6000;
+const API_GET_MAX_ATTEMPTS = 3;
+const API_GET_RETRYABLE_STATUSES = new Set([408, 429, 502, 503, 504]);
 
 function normalizeClientBasePath(value) {
   const raw = String(value ?? "");
@@ -151,6 +154,7 @@ const state = {
   selectedAnnotationLabel: "",
   pollingBatchId: "",
   pollTimer: null,
+  sessionRetryTimer: null,
   changeRevision: null,
   changePollEpoch: 0,
   changePollTimer: null,
@@ -299,7 +303,7 @@ function routeAnalysisComparisonStatus(params) {
 
 function normalizedReviewRouteFilters(params) {
   const gtLabel = params.get("gt") || "";
-  const annotationLabel = params.get("annotation") || "";
+  const modelLabel = params.get("model_label") || params.get("annotation") || "";
   const rawPage = Number.parseInt(params.get("page") || "1", 10);
   const rawPageSize = Number.parseInt(
     params.get("page_size") || String(DEFAULT_CASE_PAGE_SIZE),
@@ -308,7 +312,7 @@ function normalizedReviewRouteFilters(params) {
   return {
     search: params.get("q") || "",
     gtLabel: LABELS.includes(gtLabel) ? gtLabel : "",
-    annotationLabel: LABELS.includes(annotationLabel) ? annotationLabel : "",
+    modelLabel: LABELS.includes(modelLabel) ? modelLabel : "",
     annotationAuthor: params.get("reviewer") || "",
     clusterKey: params.get("evidence") || "",
     casePage: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
@@ -386,7 +390,7 @@ function currentReviewRouteOptions(overrides = {}) {
     failureOnly: state.failureOnly,
     search: $("#searchInput")?.value.trim() || "",
     gtLabel: $("#gtFilter")?.value || "",
-    annotationLabel: $("#annotationFilter")?.value || "",
+    modelLabel: $("#annotationFilter")?.value || "",
     annotationAuthor: $("#reviewerFilter")?.value || "",
     clusterKey: state.clusterKey,
     casePage: state.casePage,
@@ -400,8 +404,8 @@ function applyReviewRouteControls(route) {
   if ($("#searchInput")) $("#searchInput").value = route.search || "";
   if ($("#gtFilter")) $("#gtFilter").value = LABELS.includes(route.gtLabel) ? route.gtLabel : "";
   if ($("#annotationFilter")) {
-    $("#annotationFilter").value = LABELS.includes(route.annotationLabel)
-      ? route.annotationLabel
+    $("#annotationFilter").value = LABELS.includes(route.modelLabel)
+      ? route.modelLabel
       : "";
   }
   if ($("#reviewerFilter")) {
@@ -516,7 +520,7 @@ function pageUrl(page, options = {}) {
     if (runId) url.searchParams.set("comparison", runId ? comparisonStatus : "all");
     if (review.search) url.searchParams.set("q", review.search);
     if (review.gtLabel) url.searchParams.set("gt", review.gtLabel);
-    if (review.annotationLabel) url.searchParams.set("annotation", review.annotationLabel);
+    if (review.modelLabel) url.searchParams.set("model_label", review.modelLabel);
     if (review.annotationAuthor) url.searchParams.set("reviewer", review.annotationAuthor);
     if (review.clusterKey) url.searchParams.set("evidence", review.clusterKey);
     if (Number(review.casePage) > 1) url.searchParams.set("page", String(review.casePage));
@@ -745,6 +749,27 @@ function evidenceLabel(key) {
   return state.config?.missing_evidence_catalog?.find((item) => item.key === value)?.label || value;
 }
 
+function missingEvidenceOptionMarkup(item, selected = false, manage = true) {
+  const key = String(item?.key || "");
+  const deleted = Boolean(item?.deleted);
+  const label = String(item?.label || evidenceLabel(key));
+  const hint = String(
+    item?.hint || (deleted ? "已从共享目录删除；当前 Review 仍保留此历史值" : "")
+  );
+  // Every active shared-catalog entry, including the seeded built-ins, can be
+  // maintained through the same global directory controls. Built-ins are
+  // persisted as overrides/tombstones rather than mutating the static source
+  // list, so editing or removing one remains reversible for historical data.
+  const canManage = Boolean(manage && !deleted);
+  return `<div class="evidence-option${deleted ? " evidence-option-deleted" : ""}" data-evidence-option="${escapeHtml(key)}">
+    <label class="evidence-option-choice" title="${escapeHtml(hint)}">
+      <input type="checkbox" name="missingEvidence" value="${escapeHtml(key)}" ${selected ? "checked" : ""} />
+      <span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(hint)}</small></span>
+    </label>
+    ${canManage ? `<span class="evidence-option-actions"><button class="evidence-action-button" type="button" data-edit-missing-evidence="${escapeHtml(key)}" title="编辑缺失信息">编辑</button><button class="evidence-action-button evidence-action-danger" type="button" data-delete-missing-evidence="${escapeHtml(key)}" title="删除缺失信息">删除</button></span>` : ""}
+  </div>`;
+}
+
 function tagLabel(key) {
   const value = String(key || "");
   if (value.startsWith("custom:")) return value.slice("custom:".length) || value;
@@ -782,6 +807,7 @@ function normalizeApiPayloadUrls(value) {
 async function api(path, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
   const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+  const retryableGet = method === "GET";
   if (
     state.session?.read_only &&
     isMutation
@@ -793,19 +819,57 @@ async function api(path, options = {}) {
       )
     );
   }
-  const response = await fetch(withBase(path), {
-    ...options,
-    headers: {
-      ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
-      ...(isMutation ? { "X-RA-Triage-Request": "browser-v1" } : {}),
-      ...(options.headers || {}),
-    },
-  });
-  const payload = normalizeApiPayloadUrls(
-    await response.json().catch(() => ({}))
-  );
-  if (!response.ok) throw new Error(payload.detail || `请求失败 (${response.status})`);
-  return payload;
+  let lastError = null;
+  for (let attempt = 0; attempt < (retryableGet ? API_GET_MAX_ATTEMPTS : 1); attempt += 1) {
+    const controller = retryableGet && !options.signal ? new AbortController() : null;
+    const timeoutId = controller
+      ? window.setTimeout(() => controller.abort(), API_GET_TIMEOUT_MS)
+      : null;
+    let response;
+    let payload = {};
+    try {
+      response = await fetch(withBase(path), {
+        ...options,
+        ...(controller ? { signal: controller.signal } : {}),
+        headers: {
+          ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+          ...(isMutation ? { "X-RA-Triage-Request": "browser-v1" } : {}),
+          ...(options.headers || {}),
+        },
+      });
+      payload = normalizeApiPayloadUrls(
+        await response.json().catch((error) => {
+          if (error?.name === "AbortError") throw error;
+          return {};
+        })
+      );
+    } catch (error) {
+      response = null;
+      lastError = error;
+      const timedOut = error?.name === "AbortError";
+      const callerAborted = Boolean(options.signal?.aborted);
+      if (!retryableGet || callerAborted || attempt >= API_GET_MAX_ATTEMPTS - 1) {
+        if (timedOut) throw new Error("请求超时，请稍后重试。");
+        throw error;
+      }
+    } finally {
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    }
+    if (response) {
+      if (response.ok) return payload;
+      const message = payload.detail || `请求失败 (${response.status})`;
+      if (
+        !retryableGet ||
+        !API_GET_RETRYABLE_STATUSES.has(response.status) ||
+        attempt >= API_GET_MAX_ATTEMPTS - 1
+      ) {
+        throw new Error(message);
+      }
+      lastError = new Error(message);
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
+  }
+  throw lastError || new Error("请求失败，请稍后重试。");
 }
 
 function showToast(message, isError = false) {
@@ -829,6 +893,7 @@ function acknowledgeLocalChange(payload) {
 async function refreshChangedData() {
   if (state.activePage === "review") {
     await Promise.all([
+      loadConfig(),
       loadRuns({ preserveEmpty: !state.selectedRunId }),
       loadOverview(),
       loadCases({ keepSelection: true, page: state.casePage }),
@@ -853,6 +918,7 @@ async function refreshChangedData() {
   }
   if (state.activePage === "analysis") {
     await Promise.all([
+      loadConfig(),
       loadRuns({ preserveEmpty: !state.selectedRunId }),
       loadOverview(),
       loadReviewers(),
@@ -1071,7 +1137,7 @@ function renderAnalysisCatalogFilters() {
     const previous = evidenceSelect.value;
     evidenceSelect.innerHTML = [
       '<option value="">全部缺失信息</option>',
-      ...(state.config?.missing_evidence_catalog || []).map(
+      ...(state.config?.missing_evidence_catalog || []).filter((item) => !item.deleted).map(
         (item) => `<option value="${escapeHtml(item.key)}">${escapeHtml(item.label)}</option>`
       ),
     ].join("");
@@ -1167,6 +1233,50 @@ function renderTrailSyncState() {
 async function loadConfig() {
   state.config = await api("/api/dashboard-config");
   renderConfig();
+}
+
+function markSessionUnavailable() {
+  state.session = {
+    ...state.session,
+    username: "",
+    source: "session_unavailable",
+    identity_pending: false,
+    authenticated: false,
+    verified: false,
+    is_admin: false,
+    access_role: "viewer",
+    can_manage_team_default: false,
+    can_write: false,
+    read_only: true,
+  };
+  renderSession();
+}
+
+function resolveSessionInBackground() {
+  const request = loadSession().catch(() => {
+    markSessionUnavailable();
+    showToast("身份暂时无法确认，页面已按只读模式打开；稍后会自动重试。", true);
+    if (!state.sessionRetryTimer) {
+      state.sessionRetryTimer = window.setTimeout(() => {
+        state.sessionRetryTimer = null;
+        loadSession().catch(() => markSessionUnavailable());
+      }, 5000);
+    }
+    return null;
+  });
+  return request;
+}
+
+async function settleInitialRequests(requests, scope) {
+  const results = await Promise.allSettled(requests);
+  const failures = results.filter((result) => result.status === "rejected");
+  if (failures.length) {
+    showToast(
+      `${scope}有 ${failures.length} 项暂时未加载；可点击刷新重试。`,
+      true
+    );
+  }
+  return results;
 }
 
 function renderOverview(data) {
@@ -2069,7 +2179,7 @@ async function loadCases({
   const params = new URLSearchParams();
   const search = $("#searchInput").value.trim();
   const gtLabel = $("#gtFilter").value;
-  const annotationLabel = $("#annotationFilter").value;
+  const modelLabel = $("#annotationFilter").value;
   const annotationAuthor = $("#reviewerFilter").value;
   state.selectedRunId = $("#modelRunFilter").value;
   state.reviewComparisonStatus = selectedReviewComparisonStatus();
@@ -2078,7 +2188,7 @@ async function loadCases({
   });
   if (search) params.set("search", search);
   if (gtLabel) params.set("gt_label", gtLabel);
-  if (annotationLabel) params.set("annotation_label", annotationLabel);
+  if (modelLabel) params.set("model_label", modelLabel);
   if (annotationAuthor) params.set("annotation_author", annotationAuthor);
   if (state.selectedRunId) params.set("model_run_id", state.selectedRunId);
   if (state.selectedRunId && state.reviewComparisonStatus !== "all") {
@@ -2517,7 +2627,7 @@ function heroFrameIndex(frames) {
   return Math.floor(frames.length / 2);
 }
 
-function videoPlayerMarkup(video, { zoomable = true, compact = false, posterUrl = "" } = {}) {
+function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {
   const durationSec = Math.max(0, Number(video?.duration_ms || 0) / 1000);
   const startOffsetSec = Number(video?.start_offset_sec ?? 0);
   const eventTimeSec = Number(video?.event_time_sec ?? Math.max(0, -startOffsetSec));
@@ -2526,8 +2636,7 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false, posterUrl 
     .sort((left, right) => left - right)
     .map((step) => `<option value="${escapeHtml(step)}" ${step === 1 ? "selected" : ""}>${escapeHtml(step)}s${step === frameStepSec ? "（1 帧）" : ""}</option>`)
     .join("");
-  const posterAttribute = posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : "";
-  const videoMarkup = `<video src="${escapeHtml(video.url)}"${posterAttribute} preload="metadata" playsinline draggable="false" aria-label="Ares Studio BEV 视频"></video>`;
+  const videoMarkup = `<video src="${escapeHtml(video.url)}" preload="metadata" playsinline draggable="false" aria-label="Ares Studio BEV 视频"></video>`;
   const mediaMarkup = zoomable
     ? `<div class="media-viewport media-video-viewport" data-video-viewport><div class="media-canvas media-video-canvas" data-video-canvas>${videoMarkup}</div></div>`
     : `<div class="hero-media-button hero-media-video">${videoMarkup}</div>`;
@@ -2696,7 +2805,6 @@ function heroMediaSection(caseData) {
     ? videoPlayerMarkup(video, {
         zoomable: false,
         compact: true,
-        posterUrl: frames[heroFrameIndex(frames)]?.url || "",
       })
     : `<button type="button" class="hero-media-button" data-detail-media-expand aria-label="展开${kind === "camera" ? " Camera" : " BEV"}媒体预览">
         <img class="detail-media-image" src="${escapeHtml(frame?.url || "")}" alt="${kind === "camera" ? "Camera" : "Ares Capture BEV"} ${escapeHtml(frameLabel(frame || {}))}" />
@@ -2708,12 +2816,30 @@ function heroMediaSection(caseData) {
       <span class="detail-media-position" id="detailMediaPosition">${activeFrames.length ? `${index + 1} / ${activeFrames.length}` : "—"}</span>
       <button class="button button-quiet" id="detailMediaNextButton" type="button" aria-label="下一帧">→</button>
     </div>`;
+  const quickTimeline = kind === "video" ? "" : mediaTimelineMarkup(activeFrames, index, "detail-media-frame");
   return `
     <section class="hero-media detail-hero-media" id="detailHeroMedia" tabindex="0" aria-label="Issue 媒体">
       <div class="detail-media-content">${content}</div>
       ${frameControls}
+      ${quickTimeline}
       <p class="detail-media-help">B / C / V 切换媒体 · ${kind === "video" ? "空格播放/暂停 · ←/→ 跳转" : "←/→ 切帧"} · F 展开查看</p>
     </section>`;
+}
+
+function mediaTimelineMarkup(frames, activeIndex, dataName, className = "detail-media-timeline media-timeline") {
+  const buttons = mediaTimelineButtonsMarkup(frames, activeIndex, dataName);
+  if (!buttons) return "";
+  return `<div class="${className}" aria-label="媒体时间点快速跳转">${buttons}</div>`;
+}
+
+function mediaTimelineButtonsMarkup(frames, activeIndex, dataName) {
+  if (!Array.isArray(frames) || !frames.length) return "";
+  return frames
+    .map((frame, index) => {
+      const label = frameLabel(frame);
+      return `<button type="button" class="timeline-dot ${index === activeIndex ? "active" : ""}" data-${escapeHtml(dataName)}="${index}" title="跳转到 ${escapeHtml(label)}">${escapeHtml(label)}</button>`;
+    })
+    .join("");
 }
 
 function preloadDetailImage(caseData, kind, index, root, onReady) {
@@ -2726,6 +2852,9 @@ function preloadDetailImage(caseData, kind, index, root, onReady) {
   state.detailMedia.loadSeq = requestSeq;
   root.setAttribute("aria-busy", "true");
   root.querySelectorAll("#detailMediaPreviousButton, #detailMediaNextButton").forEach((control) => {
+    control.disabled = true;
+  });
+  root.querySelectorAll("[data-detail-media-frame]").forEach((control) => {
     control.disabled = true;
   });
   const image = new Image();
@@ -2744,6 +2873,9 @@ function preloadDetailImage(caseData, kind, index, root, onReady) {
     if (!isCurrent()) return;
     root.removeAttribute("aria-busy");
     root.querySelectorAll("#detailMediaPreviousButton, #detailMediaNextButton").forEach((control) => {
+      control.disabled = false;
+    });
+    root.querySelectorAll("[data-detail-media-frame]").forEach((control) => {
       control.disabled = false;
     });
     if (loaded) onReady(image);
@@ -2806,6 +2938,9 @@ function applyDetailImageFrame(root, caseData, kind, index, loadedImage = null) 
   overlay.textContent = `${frameLabel(frame)} · 点击展开`;
   const position = root.querySelector("#detailMediaPosition");
   if (position) position.textContent = `${index + 1} / ${frames.length}`;
+  root.querySelectorAll("[data-detail-media-frame]").forEach((timelineButton) => {
+    timelineButton.classList.toggle("active", Number(timelineButton.dataset.detailMediaFrame) === index);
+  });
   const kindSelect = root.querySelector("#detailMediaKindSelect");
   if (kindSelect) kindSelect.value = kind;
   return true;
@@ -2822,6 +2957,33 @@ function detailMediaCommandMarkup(caseData) {
     </select>
     <button class="button button-quiet detail-media-expand" id="detailMediaExpandButton" type="button">展开查看</button>
   </div>`;
+}
+
+function refreshDetailMediaTimeline(root, caseData) {
+  const kind = state.detailMedia.kind;
+  if (kind === "video") return;
+  const frames = kind === "camera" ? caseData?.camera?.frames || [] : caseData?.assets?.frames || [];
+  const timeline = root?.querySelector(".detail-media-timeline");
+  if (!timeline || !frames.length) return;
+  const index = Number(state.detailMedia.indexes[kind] || 0);
+  timeline.outerHTML = mediaTimelineMarkup(frames, index, "detail-media-frame");
+}
+
+function bindDetailMediaTimeline(root, caseData, onRender = null) {
+  root.querySelectorAll("[data-detail-media-frame]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const kind = state.detailMedia.kind;
+      if (kind === "video") return;
+      const frames = kind === "camera" ? caseData?.camera?.frames || [] : caseData?.assets?.frames || [];
+      const nextIndex = Number(button.dataset.detailMediaFrame);
+      if (!Number.isInteger(nextIndex) || nextIndex < 0 || nextIndex >= frames.length) return;
+      if (nextIndex === Number(state.detailMedia.indexes[kind] || 0)) return;
+      preloadDetailImage(caseData, kind, nextIndex, root, (loadedImage) => {
+        state.detailMedia.indexes[kind] = nextIndex;
+        if (!applyDetailImageFrame(root, caseData, kind, nextIndex, loadedImage) && onRender) onRender();
+      });
+    });
+  });
 }
 
 function bindDetailMedia(caseData) {
@@ -2851,7 +3013,12 @@ function bindDetailMedia(caseData) {
     preloadDetailImage(caseData, kind, index, root, (loadedImage) => {
       state.detailMedia.kind = kind;
       state.detailMedia.indexes[kind] = index;
-      if (!applyDetailImageFrame(root, caseData, kind, index, loadedImage)) render();
+      if (!applyDetailImageFrame(root, caseData, kind, index, loadedImage)) {
+        render();
+        return;
+      }
+      refreshDetailMediaTimeline(root, caseData);
+      bindDetailMediaTimeline(root, caseData, render);
     });
   };
   const move = (delta) => {
@@ -2898,6 +3065,7 @@ function bindDetailMedia(caseData) {
   const expandButton = $("#detailMediaExpandButton");
   if (expandButton) expandButton.onclick = expand;
   root.querySelectorAll("[data-detail-media-expand]").forEach((button) => button.addEventListener("click", expand));
+  bindDetailMediaTimeline(root, caseData, render);
   bindBevVideoPlayers(root);
 }
 
@@ -2918,6 +3086,18 @@ function predictionCards(caseData) {
       </article>`;
     })
     .join("")}</div>`;
+}
+
+function currentRunOutputMarkup(_caseData, prediction) {
+  if (!prediction) return "";
+  const reason = String(prediction.model_reason || "").trim();
+  return `<section class="current-run-output" aria-label="当前 Run Reason">
+    <div class="current-run-output-heading">
+      <div><span>当前 Run Reason</span><strong>${escapeHtml(prediction.run_name || "模型输出")}</strong></div>
+      <span>${labelBadge(prediction.model_label, "未输出")}${prediction.model_confidence === null || prediction.model_confidence === undefined ? "" : ` · ${escapeHtml(prediction.model_confidence)} confidence`}</span>
+    </div>
+    <p class="current-run-reason">${escapeHtml(reason || "模型未返回 reason。")}</p>
+  </section>`;
 }
 
 function openHistoryDialog(kind, caseData) {
@@ -3118,6 +3298,7 @@ function renderDetail(caseData) {
       </div>
       ${caseData.review_note ? `<details class="review-note-details"><summary>查看历史备注</summary><div class="review-note"><span>历史备注</span>${escapeHtml(caseData.review_note)}</div></details>` : ""}
     </div>
+    ${currentRunOutputMarkup(caseData, primary)}
     ${heroMediaSection(caseData)}`;
   $("#detailPane").querySelector("[data-predict-current-case]")?.addEventListener("click", () => {
     openBatchDraft([caseData.issue_id], "single");
@@ -3203,8 +3384,16 @@ function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
       section: "scene",
       label: "场景",
       groups: [
+        { key: "environment", label: "环境" },
+        { key: "self_intent", label: "自车意图" },
+      ],
+    },
+    {
+      section: "interaction_decision",
+      label: "交互决策",
+      groups: [
         { key: "false_trigger", label: "误触发" },
-        { key: "true_trigger", label: "应该触发" },
+        { key: "true_trigger", label: "正确触发" },
       ],
     },
     {
@@ -3225,10 +3414,11 @@ function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
           const items = visible.filter(
             (item) => item.section === section.section && item.group === group.key
           );
-          return `<div class="review-tag-group">
-            <div class="review-tag-group-title">${escapeHtml(group.label)}</div>
-            <div class="review-tag-options">${items.map((item) => tagOption(item.key, item.label, chosenTags.has(item.key))).join("")}</div>
-          </div>`;
+          const selectedCount = items.filter((item) => chosenTags.has(item.key)).length;
+          return `<details class="review-tag-dropdown review-dropdown" data-tag-dropdown-group="${escapeHtml(group.key)}">
+            <summary><span>${escapeHtml(group.label)}</span><span class="tag-group-summary" data-tag-summary="${escapeHtml(group.key)}">${selectedCount} 项</span></summary>
+            <div class="review-tag-options">${items.map((item) => tagOption(item.key, item.label, chosenTags.has(item.key), group.key)).join("")}</div>
+          </details>`;
         }).join("")}
       </div>
     </div>`).join("");
@@ -3264,10 +3454,15 @@ function syncReviewFormFromCase(caseData) {
   const evidenceCreator = $("#customEvidenceCreator");
   for (const key of chosenEvidence) {
     if (evidenceKeys.has(key) || !evidenceCreator) continue;
-    const option = document.createElement("label");
-    option.className = "evidence-option custom-evidence-option";
-    option.title = "本条 Review 新建的缺失信息";
-    option.innerHTML = `<input type="checkbox" name="missingEvidence" value="${escapeHtml(key)}" checked /><span><strong>${escapeHtml(evidenceLabel(key))}</strong><small>本条 Review 新建的缺失信息</small></span>`;
+    const template = document.createElement("template");
+    template.innerHTML = missingEvidenceOptionMarkup({
+      key,
+      label: evidenceLabel(key),
+      hint: "本条 Review 新建的缺失信息",
+      builtin: false,
+    }, true, false);
+    const option = template.content.firstElementChild;
+    option.classList.add("custom-evidence-option");
     evidenceCreator.before(option);
     option.querySelector("input")?.addEventListener("change", updateEvidenceSummary);
   }
@@ -3308,6 +3503,7 @@ function syncReviewFormFromCase(caseData) {
   clearPendingReviewImages();
   updateEvidenceSummary();
   updateTagSummary();
+  bindMissingEvidenceCatalogControls(reviewPane);
   updateReviewHistory(caseData);
 }
 
@@ -3368,6 +3564,10 @@ function renderReview(caseData) {
     hasPreviousReview ? previous.missing_evidence || [] : ["routing_direction"]
   );
   const catalogKeys = new Set(catalog.map((item) => item.key));
+  const visibleCatalog = catalog.filter((item) => !item.deleted);
+  const selectedDeletedEvidence = catalog.filter(
+    (item) => item.deleted && chosenEvidence.has(item.key)
+  );
   const customEvidenceKeys = [...chosenEvidence].filter((key) => !catalogKeys.has(key));
   const chosenTags = new Set(previous.tags || []);
   const tagCatalogKeys = new Set(tagCatalog.map((item) => item.key));
@@ -3379,34 +3579,34 @@ function renderReview(caseData) {
     : previous.review_status === "pending"
       ? "pending"
       : "reviewed";
-  const evidenceOption = (item, selected) => `<label class="evidence-option" title="${escapeHtml(item.hint || "")}"><input type="checkbox" name="missingEvidence" value="${escapeHtml(item.key)}" ${selected ? "checked" : ""} /><span><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.hint || "")}</small></span></label>`;
   const customEvidenceOptions = customEvidenceKeys
-    .map((key) => evidenceOption({ key, label: evidenceLabel(key), hint: "本条 Review 新建的缺失信息" }, true))
+    .map((key) => missingEvidenceOptionMarkup({ key, label: evidenceLabel(key), hint: "本条 Review 新建的缺失信息", builtin: false }, true, false))
     .join("");
-  const tagOption = (key, label, selected) => `<label class="tag-option"><input type="checkbox" name="reviewTags" value="${escapeHtml(key)}" ${selected ? "checked" : ""} /><span>${escapeHtml(label)}</span></label>`;
+  const deletedEvidenceOptions = selectedDeletedEvidence
+    .map((item) => missingEvidenceOptionMarkup(item, true, false))
+    .join("");
+  const tagOption = (key, label, selected, groupKey = "") => `<label class="tag-option"><input type="checkbox" name="reviewTags" value="${escapeHtml(key)}"${groupKey ? ` data-tag-group="${escapeHtml(groupKey)}"` : ""} ${selected ? "checked" : ""} /><span>${escapeHtml(label)}</span></label>`;
   const customTagOptions = customTagKeys
     .map((key) => tagOption(key, tagLabel(key), true))
     .join("");
   const issueTagGroups = renderReviewTagGroups(tagCatalog, chosenTags, tagOption);
   $("#reviewPane").innerHTML = `
-    <div class="review-title"><div><h2>Review 标注</h2><small class="review-scope-note">按 Issue 记录，模型输出仍按 Run 区分</small></div><span class="review-issue">${escapeHtml(caseData.issue_id)}</span></div>
     <form class="review-form" id="annotationForm">
       <section class="review-section issue-tag-section">
-        <div class="review-section-heading"><div><span class="review-section-kicker">ISSUE TAG</span><h3>Issue 标签</h3></div><span class="evidence-summary-count" id="tagSummaryCount">已选 ${chosenTags.size} 项</span></div>
-        <p class="review-section-help">先描述 Issue 场景和可行驶离方式；以下标签支持多选。</p>
+        <div class="review-section-heading"><div><h2>Issue 标签</h2></div><span class="evidence-summary-count" id="tagSummaryCount">已选 ${chosenTags.size} 项</span></div>
         <div class="review-tag-groups-shell">${issueTagGroups}${customTagOptions ? `<div class="review-tag-legacy"><span>历史标签</span><div class="review-tag-options">${customTagOptions}</div></div>` : ""}<span id="customTagCreator" hidden></span></div>
         <label class="review-exclude-toggle"><input id="reviewExcludeInput" type="checkbox" ${previous.is_excluded ? "checked" : ""} /><span><strong>是否应该排除</strong><small>不是模型需要解决的场景 case</small></span></label>
       </section>
       <section class="review-section model-error-section">
-        <div class="review-section-heading"><div><span class="review-section-kicker">MODEL ERROR</span><h3>模型判错</h3></div></div>
+        <div class="review-section-heading"><div><h2>模型判错</h2></div></div>
         <label class="review-status-field"><span>复核状态</span><select id="reviewStatusInput"><option value="reviewed" ${reviewStatus === "reviewed" ? "selected" : ""}>已 Review</option><option value="pending" ${reviewStatus === "pending" ? "selected" : ""}>待补充</option><option value="needs_gt_review" ${reviewStatus === "needs_gt_review" ? "selected" : ""}>GT 需复核</option></select></label>
         <label class="review-reason">
           <span>模型为什么判错？</span>
-          <textarea id="annotationNote" rows="4" placeholder="简要说明模型漏掉的关键证据，例如 routing、绕行空间或时序。">${escapeHtml(previous.note || "")}</textarea>
+          <textarea id="annotationNote" rows="2" placeholder="简要说明模型漏掉的关键证据，例如 routing、绕行空间或时序。">${escapeHtml(previous.note || "")}</textarea>
         </label>
         <details class="evidence-dropdown review-dropdown">
           <summary>缺失信息（多选）<span class="evidence-summary-count" id="evidenceSummaryCount">已选 ${chosenEvidence.size} 项</span></summary>
-          <div class="evidence-options" id="missingEvidenceOptions">${catalog.map((item) => evidenceOption(item, chosenEvidence.has(item.key))).join("")}${customEvidenceOptions}<div class="custom-evidence-create" id="customEvidenceCreator"><input id="newMissingEvidence" maxlength="48" placeholder="输入新的缺失信息" autocomplete="off" /><button class="button button-quiet" id="addMissingEvidenceButton" type="button">新建标签</button></div></div>
+          <div class="evidence-options" id="missingEvidenceOptions">${visibleCatalog.map((item) => missingEvidenceOptionMarkup(item, chosenEvidence.has(item.key), true)).join("")}${deletedEvidenceOptions}${customEvidenceOptions}<div class="custom-evidence-create" id="customEvidenceCreator"><input id="newMissingEvidence" maxlength="48" placeholder="新增缺失信息标题" autocomplete="off" /><input id="newMissingEvidenceHint" maxlength="160" placeholder="补充说明（可选）" autocomplete="off" /><button class="button button-quiet" id="addMissingEvidenceButton" type="button">加入共享目录</button></div></div>
         </details>
         <div class="review-attachment-field">
           <span>补充截图（可选）</span>
@@ -3429,6 +3629,7 @@ function renderReview(caseData) {
   $("#reviewPane").querySelectorAll('input[name="missingEvidence"]').forEach((input) => {
     input.addEventListener("change", updateEvidenceSummary);
   });
+  bindMissingEvidenceCatalogControls($("#reviewPane"));
   $("#reviewPane").querySelectorAll('input[name="reviewTags"]').forEach((input) => {
     input.addEventListener("change", updateTagSummary);
   });
@@ -3440,23 +3641,55 @@ function renderReview(caseData) {
       });
     });
   });
-  $("#addMissingEvidenceButton")?.addEventListener("click", () => {
+  $("#addMissingEvidenceButton")?.addEventListener("click", async () => {
     const input = $("#newMissingEvidence");
+    const hintInput = $("#newMissingEvidenceHint");
+    const button = $("#addMissingEvidenceButton");
     const value = String(input?.value || "").trim();
+    const hint = String(hintInput?.value || "").trim();
     if (!value) return showToast("请输入新的缺失信息。", true);
     if (value.length > 48 || /[\x00-\x1f\x7f]/.test(value)) return showToast("缺失信息长度或字符不合法。", true);
-    const key = `custom:${value}`;
-    const exists = [...document.querySelectorAll('input[name="missingEvidence"]')].some((item) => item.value === key);
-    if (exists) return showToast("该缺失信息已经添加。", true);
-    const option = document.createElement("label");
-    option.className = "evidence-option custom-evidence-option";
-    option.innerHTML = `<input type="checkbox" name="missingEvidence" value="${escapeHtml(key)}" checked /><span><strong>${escapeHtml(value)}</strong><small>本条 Review 新建的缺失信息</small></span>`;
-    const creator = $("#customEvidenceCreator");
-    creator?.before(option);
-    option.querySelector("input")?.addEventListener("change", updateEvidenceSummary);
-    if (input) input.value = "";
-    state.reviewFormDirty = true;
-    updateEvidenceSummary();
+    if (hint.length > 160 || /[\x00-\x1f\x7f]/.test(hint)) return showToast("缺失信息说明长度或字符不合法。", true);
+    if (button) {
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+    }
+    try {
+      const result = await api("/api/missing-evidence", {
+        method: "POST",
+        body: JSON.stringify({ label: value, hint }),
+      });
+      setMissingEvidenceCatalogFromResult(result);
+      const item = result.item || {};
+      const key = String(item.key || "");
+      const exists = key && [...document.querySelectorAll('input[name="missingEvidence"]')].some((node) => node.value === key);
+      if (!exists && key) {
+        const template = document.createElement("template");
+        template.innerHTML = missingEvidenceOptionMarkup({
+          ...item,
+          label: item.label || value,
+          hint: item.hint || hint,
+          builtin: false,
+        }, true, true);
+        const option = template.content.firstElementChild;
+        const creator = $("#customEvidenceCreator");
+        creator?.before(option);
+        option.querySelector("input")?.addEventListener("change", updateEvidenceSummary);
+        bindMissingEvidenceCatalogControls(option);
+      }
+      if (input) input.value = "";
+      if (hintInput) hintInput.value = "";
+      state.reviewFormDirty = true;
+      updateEvidenceSummary();
+      showToast("已加入共享目录，所有用户和 Issue 均可使用。 ");
+    } catch (error) {
+      showToast(error.message, true);
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.removeAttribute("aria-busy");
+      }
+    }
   });
   const pasteZone = $("#screenshotPasteZone");
   const screenshotInput = $("#reviewScreenshotInput");
@@ -3500,10 +3733,129 @@ function updateEvidenceSummary() {
   if (target) target.textContent = `已选 ${count} 项`;
 }
 
+function setMissingEvidenceCatalogFromResult(result) {
+  if (!result || !Array.isArray(result.missing_evidence_catalog)) return;
+  state.config = {
+    ...(state.config || {}),
+    missing_evidence_catalog: result.missing_evidence_catalog,
+  };
+  acknowledgeLocalChange(result);
+  renderConfig();
+}
+
+function missingEvidenceCatalogItem(key) {
+  return (state.config?.missing_evidence_catalog || []).find(
+    (item) => String(item.key) === String(key)
+  );
+}
+
+function updateMissingEvidenceOptionRow(item) {
+  const row = [...document.querySelectorAll("[data-evidence-option]")].find(
+    (node) => node.dataset.evidenceOption === String(item?.key || "")
+  );
+  if (!row) return;
+  const label = row.querySelector("strong");
+  const hint = row.querySelector("small");
+  const choice = row.querySelector(".evidence-option-choice");
+  if (label) label.textContent = String(item?.label || evidenceLabel(item?.key));
+  if (hint) hint.textContent = String(item?.hint || "");
+  if (choice) choice.title = String(item?.hint || "");
+}
+
+function markDeletedMissingEvidenceOption(item) {
+  const row = [...document.querySelectorAll("[data-evidence-option]")].find(
+    (node) => node.dataset.evidenceOption === String(item?.key || "")
+  );
+  if (!row) return;
+  const checkbox = row.querySelector('input[name="missingEvidence"]');
+  if (checkbox?.checked) {
+    row.classList.add("evidence-option-deleted");
+    const hint = row.querySelector("small");
+    if (hint) hint.textContent = "已从共享目录删除；当前 Review 仍保留此历史值";
+    row.querySelector(".evidence-option-actions")?.remove();
+  } else {
+    row.remove();
+  }
+  updateEvidenceSummary();
+}
+
+function bindMissingEvidenceCatalogControls(root = document) {
+  root.querySelectorAll("[data-edit-missing-evidence]").forEach((button) => {
+    if (button.dataset.missingEvidenceBound === "1") return;
+    button.dataset.missingEvidenceBound = "1";
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const key = String(button.dataset.editMissingEvidence || "");
+      const item = missingEvidenceCatalogItem(key);
+      if (!item || item.deleted) return;
+      const label = window.prompt("缺失信息标题", String(item.label || ""));
+      if (label === null) return;
+      const hint = window.prompt("补充说明（可选）", String(item.hint || ""));
+      if (hint === null) return;
+      if (!String(label).trim()) return showToast("缺失信息标题不能为空。", true);
+      if (String(label).length > 48 || /[\x00-\x1f\x7f]/.test(String(label))) {
+        return showToast("缺失信息标题长度或字符不合法。", true);
+      }
+      if (String(hint).length > 160 || /[\x00-\x1f\x7f]/.test(String(hint))) {
+        return showToast("缺失信息说明长度或字符不合法。", true);
+      }
+      button.disabled = true;
+      try {
+        const result = await api(`/api/missing-evidence/${encodeURIComponent(key)}`, {
+          method: "PUT",
+          body: JSON.stringify({ label: String(label).trim(), hint: String(hint).trim() }),
+        });
+        setMissingEvidenceCatalogFromResult(result);
+        updateMissingEvidenceOptionRow(result.item || { key, label, hint });
+        showToast("缺失信息已更新。 ");
+      } catch (error) {
+        showToast(error.message, true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+  root.querySelectorAll("[data-delete-missing-evidence]").forEach((button) => {
+    if (button.dataset.missingEvidenceBound === "1") return;
+    button.dataset.missingEvidenceBound = "1";
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const key = String(button.dataset.deleteMissingEvidence || "");
+      const item = missingEvidenceCatalogItem(key);
+      if (!item || item.deleted) return;
+      if (!window.confirm(`确认删除“${item.label}”？\n历史 Review 仍会保留该标签。`)) return;
+      button.disabled = true;
+      try {
+        const result = await api(`/api/missing-evidence/${encodeURIComponent(key)}`, {
+          method: "DELETE",
+          body: JSON.stringify({}),
+        });
+        setMissingEvidenceCatalogFromResult(result);
+        markDeletedMissingEvidenceOption(result.item || { key });
+        showToast("缺失信息已删除。 ");
+      } catch (error) {
+        showToast(error.message, true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+}
+
 function updateTagSummary() {
-  const count = document.querySelectorAll('input[name="reviewTags"]:checked').length;
+  const inputs = [...document.querySelectorAll('input[name="reviewTags"]')];
+  const count = inputs.filter((input) => input.checked).length;
   const target = $("#tagSummaryCount");
   if (target) target.textContent = `已选 ${count} 项`;
+  document.querySelectorAll("[data-tag-summary]").forEach((summary) => {
+    const group = summary.dataset.tagSummary || "";
+    const groupCount = inputs.filter(
+      (input) => input.checked && input.dataset.tagGroup === group
+    ).length;
+    summary.textContent = `${groupCount} 项`;
+  });
 }
 
 function releasePreviewUrlLater(previewUrl) {
@@ -4157,9 +4509,7 @@ function renderMediaDialog() {
     state.media.imageRequestSeq += 1;
     if (videoStage.dataset.videoUrl !== video.url) {
       videoStage.dataset.videoUrl = video.url;
-      videoStage.innerHTML = videoPlayerMarkup(video, {
-        posterUrl: bev[heroFrameIndex(bev)]?.url || "",
-      });
+      videoStage.innerHTML = videoPlayerMarkup(video);
       bindBevVideoPlayers(videoStage);
       const viewport = videoStage.querySelector("[data-video-viewport]");
       const videoElement = videoStage.querySelector("video");
@@ -4204,7 +4554,7 @@ function renderMediaDialog() {
     preloadMediaDialogImage(targetUrl, applyImage);
   }
   $("#mediaHelp").textContent = "← / ↑ 上一帧 · → / ↓ 下一帧 · B/C/V 切媒体 · +/− 缩放 · 0 复位 · 放大后拖拽平移 · F 全屏 · Esc 退出";
-  $("#mediaTimeline").innerHTML = frames.map((frame, index) => `<button type="button" class="timeline-dot ${index === state.media.index ? "active" : ""}" data-media-frame="${index}" title="${escapeHtml(frameLabel(frame))}">${escapeHtml(frameLabel(frame))}</button>`).join("");
+  $("#mediaTimeline").innerHTML = mediaTimelineButtonsMarkup(frames, state.media.index, "media-frame");
   $("#mediaTimeline").querySelectorAll("[data-media-frame]").forEach((button) => {
     button.addEventListener("click", () => {
       state.media.index = Number(button.dataset.mediaFrame);
@@ -5977,21 +6327,26 @@ async function bootstrap() {
     restoreRoute: true,
     loadPageData: false,
   });
+  const sessionRequest = resolveSessionInBackground();
   try {
-    await Promise.all([loadConfig(), loadSession()]);
+    await settleInitialRequests([loadConfig()], "基础配置");
+    if (initialRoute.page === "users") {
+      await sessionRequest;
+    }
     if (initialRoute.page === "users" && !state.session.is_admin) {
       initialRoute.page = "review";
       showToast("用户管理仅对管理员开放。", true);
     }
+    const defaultFailureOnly = Boolean(state.config?.default_failure_only);
     state.selectedRunId =
       initialRoute.runId === "none"
         ? ""
-        : initialRoute.runId || state.config.default_model_run_id || "";
+        : initialRoute.runId || state.config?.default_model_run_id || "";
     if (initialRoute.page === "analysis") {
       state.reviewAnalysis.comparisonStatus = state.selectedRunId
         ? normalizedAnalysisComparisonStatus(
             initialRoute.analysisFilters.comparisonStatus,
-            state.config.default_failure_only ? "mismatch" : "all"
+            defaultFailureOnly ? "mismatch" : "all"
           )
         : "all";
       state.failureOnly =
@@ -6000,21 +6355,26 @@ async function bootstrap() {
       state.reviewComparisonStatus = state.selectedRunId
         ? normalizedReviewComparisonStatus(
             initialRoute.comparisonStatus,
-            initialRoute.failureOnly || state.config.default_failure_only
+            initialRoute.failureOnly || defaultFailureOnly
               ? "mismatch"
               : "all"
           )
         : "all";
       state.failureOnly = state.reviewComparisonStatus === "mismatch";
     }
-    await loadRuns({
-      preferDefault: !initialRoute.runId,
-      preserveEmpty: initialRoute.runId === "none",
-    });
+    await settleInitialRequests(
+      [
+        loadRuns({
+          preferDefault: !initialRoute.runId,
+          preserveEmpty: initialRoute.runId === "none",
+        }),
+        loadReviewers(),
+      ],
+      "共享数据"
+    );
     setReviewComparisonStatus(state.reviewComparisonStatus, {
       hasRun: Boolean(state.selectedRunId),
     });
-    await loadReviewers();
     if (initialRoute.page === "review") applyReviewRouteControls(initialRoute);
     if (initialRoute.page === "analysis") applyAnalysisRouteControls(initialRoute);
     const initialPageRequests = [loadOverview()];
@@ -6037,13 +6397,15 @@ async function bootstrap() {
     } else if (initialRoute.page === "prediction") {
       initialPageRequests.push(loadPredictionConfig(), loadPredictionBatches());
     }
+    if (initialRoute.page === "analysis") {
+      initialPageRequests.push(loadReviewReasonAnalysis());
+    }
+    const initialPageResults = settleInitialRequests(
+      initialPageRequests,
+      initialRoute.page === "review" ? "首页" : "页面"
+    );
     if (initialDetailRequest) {
-      void Promise.all(initialPageRequests).catch((error) => {
-        showToast(`辅助数据加载失败：${error.message}`, true);
-      });
-      await initialDetailRequest;
-    } else {
-      await Promise.all(initialPageRequests);
+      await settleInitialRequests([initialDetailRequest], "问题详情");
     }
     showPage(initialRoute.page, {
       historyMode: "replace",
@@ -6054,7 +6416,7 @@ async function bootstrap() {
       restoreRoute: true,
       loadPageData: false,
     });
-    if (initialRoute.page === "analysis") await loadReviewReasonAnalysis();
+    void initialPageResults;
   } catch (error) {
     showToast(`启动失败：${error.message}`, true);
   }

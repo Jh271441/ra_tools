@@ -415,6 +415,218 @@ class Database:
             )
             return cursor.rowcount > 0
 
+    def list_missing_evidence_catalog(
+        self, *, include_inactive: bool = True
+    ) -> list[dict[str, Any]]:
+        """Return the shared missing-evidence entries.
+
+        Entries are soft-deleted so historical annotations can continue to
+        resolve their opaque keys and display the original label.  Callers
+        that render an editable catalog can filter ``active`` themselves, or
+        request only active entries with ``include_inactive=False``.
+        """
+
+        where = "" if include_inactive else "WHERE active"
+
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT key, label, hint, created_by, created_at, active
+                FROM missing_evidence_catalog
+                {where}
+                ORDER BY created_at ASC, label ASC
+                """
+            ).fetchall()
+        return [{key: row[key] for key in row.keys()} for row in rows]
+
+    def create_missing_evidence(
+        self, *, label: str, hint: str, created_by: str
+    ) -> dict[str, Any]:
+        """Create one shared missing-evidence definition.
+
+        The key is immutable and deliberately opaque so changing the display
+        text never changes historical annotation values.
+        """
+
+        normalized_label = str(label or "").strip()
+        normalized_hint = str(hint or "").strip()
+        normalized_author = str(created_by or "").strip()
+        if not normalized_label:
+            raise ValueError("缺失信息标题不能为空。")
+        if len(normalized_label) > 48 or re.search(r"[\x00-\x1f\x7f]", normalized_label):
+            raise ValueError("缺失信息标题长度或字符不合法。")
+        if len(normalized_hint) > 160 or re.search(r"[\x00-\x1f\x7f]", normalized_hint):
+            raise ValueError("缺失信息说明长度或字符不合法。")
+        if not normalized_author:
+            raise ValueError("创建人不能为空。")
+        now = utc_now()
+        key = f"custom:{uuid.uuid4().hex}"
+        with self._write_lock, self.connect() as conn:
+            existing = conn.execute(
+                "SELECT key FROM missing_evidence_catalog WHERE label = ?",
+                (normalized_label,),
+            ).fetchone()
+            if existing:
+                raise ValueError("该缺失信息标题已经存在。")
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO missing_evidence_catalog (
+                        key, label, hint, created_by, created_at, active
+                    ) VALUES (?, ?, ?, ?, ?, TRUE)
+                    """,
+                    (key, normalized_label, normalized_hint, normalized_author, now),
+                )
+            except Exception as exc:
+                # Keep concurrent duplicate creation a user-facing conflict,
+                # while allowing real connection/schema errors to propagate.
+                if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+                    raise ValueError("该缺失信息标题已经存在。") from exc
+                raise
+            row = conn.execute(
+                """
+                SELECT key, label, hint, created_by, created_at, active
+                FROM missing_evidence_catalog
+                WHERE key = ?
+                """,
+                (key,),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("缺失信息目录写入后无法读取。")
+        return {key: row[key] for key in row.keys()}
+
+    def update_missing_evidence(
+        self, *, key: str, label: str, hint: str, updated_by: str
+    ) -> dict[str, Any]:
+        """Update a shared entry while keeping its stable key unchanged."""
+
+        normalized_key = str(key or "").strip()
+        normalized_label = str(label or "").strip()
+        normalized_hint = str(hint or "").strip()
+        normalized_author = str(updated_by or "").strip()
+        if not normalized_key:
+            raise ValueError("缺失信息 key 不能为空。")
+        if not normalized_label:
+            raise ValueError("缺失信息标题不能为空。")
+        if len(normalized_label) > 48 or re.search(r"[\x00-\x1f\x7f]", normalized_label):
+            raise ValueError("缺失信息标题长度或字符不合法。")
+        if len(normalized_hint) > 160 or re.search(r"[\x00-\x1f\x7f]", normalized_hint):
+            raise ValueError("缺失信息说明长度或字符不合法。")
+        if not normalized_author:
+            raise ValueError("编辑人不能为空。")
+        with self._write_lock, self.connect() as conn:
+            current = conn.execute(
+                "SELECT key FROM missing_evidence_catalog WHERE key = ?",
+                (normalized_key,),
+            ).fetchone()
+            existing = conn.execute(
+                "SELECT key FROM missing_evidence_catalog WHERE label = ? AND key <> ?",
+                (normalized_label, normalized_key),
+            ).fetchone()
+            if existing:
+                raise ValueError("该缺失信息标题已经存在。")
+            try:
+                if current:
+                    conn.execute(
+                        """
+                        UPDATE missing_evidence_catalog
+                        SET label = ?, hint = ?, active = TRUE
+                        WHERE key = ?
+                        """,
+                        (normalized_label, normalized_hint, normalized_key),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        INSERT INTO missing_evidence_catalog (
+                            key, label, hint, created_by, created_at, active
+                        ) VALUES (?, ?, ?, ?, ?, TRUE)
+                        """,
+                        (
+                            normalized_key,
+                            normalized_label,
+                            normalized_hint,
+                            normalized_author,
+                            utc_now(),
+                        ),
+                    )
+            except Exception as exc:
+                if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+                    raise ValueError("该缺失信息标题已经存在。") from exc
+                raise
+            row = conn.execute(
+                """
+                SELECT key, label, hint, created_by, created_at, active
+                FROM missing_evidence_catalog
+                WHERE key = ?
+                """,
+                (normalized_key,),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("缺失信息目录更新后无法读取。")
+        return {name: row[name] for name in row.keys()}
+
+    def delete_missing_evidence(
+        self,
+        *,
+        key: str,
+        deleted_by: str,
+        label: str = "",
+        hint: str = "",
+    ) -> dict[str, Any]:
+        """Soft-delete a shared entry and retain it for historical reviews."""
+
+        normalized_key = str(key or "").strip()
+        if not normalized_key:
+            raise ValueError("缺失信息 key 不能为空。")
+        if not str(deleted_by or "").strip():
+            raise ValueError("删除人不能为空。")
+        with self._write_lock, self.connect() as conn:
+            current = conn.execute(
+                "SELECT key FROM missing_evidence_catalog WHERE key = ?",
+                (normalized_key,),
+            ).fetchone()
+            if current:
+                conn.execute(
+                    "UPDATE missing_evidence_catalog SET active = FALSE WHERE key = ?",
+                    (normalized_key,),
+                )
+            else:
+                normalized_label = str(label or "").strip()
+                normalized_hint = str(hint or "").strip()
+                if not normalized_label:
+                    raise ValueError("缺失信息标题不能为空。")
+                try:
+                    conn.execute(
+                        """
+                        INSERT INTO missing_evidence_catalog (
+                            key, label, hint, created_by, created_at, active
+                        ) VALUES (?, ?, ?, ?, ?, FALSE)
+                        """,
+                        (
+                            normalized_key,
+                            normalized_label,
+                            normalized_hint,
+                            str(deleted_by).strip(),
+                            utc_now(),
+                        ),
+                    )
+                except Exception as exc:
+                    if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+                        raise ValueError("该缺失信息标题已经存在。") from exc
+                    raise
+            row = conn.execute(
+                """
+                SELECT key, label, hint, created_by, created_at, active
+                FROM missing_evidence_catalog
+                WHERE key = ?
+                """,
+                (normalized_key,),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("缺失信息目录删除后无法读取。")
+        return {name: row[name] for name in row.keys()}
+
     def runtime_status(self, *, persistent_data: bool = False) -> dict[str, Any]:
         started = time.perf_counter()
         with self.connect() as conn:
@@ -645,6 +857,15 @@ class Database:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS missing_evidence_catalog (
+                    key TEXT PRIMARY KEY,
+                    label TEXT NOT NULL UNIQUE,
+                    hint TEXT NOT NULL DEFAULT '',
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    active INTEGER NOT NULL DEFAULT 1
+                );
+
                 CREATE TABLE IF NOT EXISTS access_users (
                     username TEXT PRIMARY KEY,
                     role TEXT NOT NULL CHECK(role IN ('writer', 'admin')),
@@ -664,6 +885,7 @@ class Database:
                 "batch_prediction_jobs",
                 "batch_prediction_items",
                 "review_tag_catalog",
+                "missing_evidence_catalog",
                 "access_users",
             )
             for table in revision_tables:
@@ -691,6 +913,7 @@ class Database:
             self._ensure_column(conn, "annotations", "missing_evidence_json", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_column(conn, "annotations", "author_source", "TEXT NOT NULL DEFAULT 'legacy'")
             self._ensure_column(conn, "annotations", "author_verified", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "missing_evidence_catalog", "active", "INTEGER NOT NULL DEFAULT 1")
             self._ensure_column(conn, "model_runs", "kind", "TEXT NOT NULL DEFAULT 'upload'")
             self._ensure_column(conn, "model_runs", "is_default", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "model_runs", "created_by", "TEXT NOT NULL DEFAULT ''")
@@ -1370,6 +1593,7 @@ class Database:
         baseline_scope: str = "",
         search: str = "",
         gt_label: str = "",
+        model_label: str = "",
         annotation_label: str = "",
         annotation_author: str = "",
         model_run_id: str = "",
@@ -1400,6 +1624,9 @@ class Database:
         if gt_label in LABELS:
             where.append("i.gt_label = ?")
             params.append(gt_label)
+        if model_label in LABELS:
+            where.append("mp.model_label = ?")
+            params.append(model_label)
         if annotation_label in LABELS:
             where.append("ann.label = ?")
             params.append(annotation_label)
