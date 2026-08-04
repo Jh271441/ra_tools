@@ -511,6 +511,7 @@ async function bootstrap() {
   state.sidebarCollapsed = savedSidebarState === "true";
   applySidebarState();
   markUiReady();
+  bindMobileFilterDrawers();
   if (initialRoute.page === "review") applyReviewRouteControls(initialRoute);
   bindEvents();
   updateImportFields();

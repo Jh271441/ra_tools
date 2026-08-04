@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-75`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-76`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -151,7 +151,14 @@
           <section class="app-page" id="reviewPage" data-page="review">
             <section class="review-gallery-view" id="reviewGalleryView">
               <section class="review-commandbar" aria-label="Review 筛选与快捷操作">
-              <form class="review-filters" id="filterForm">
+              <div class="mobile-filter-bar">
+                <button class="button button-quiet mobile-filter-toggle" type="button"
+                  data-mobile-filter-toggle="reviewFilters" aria-expanded="false" aria-controls="filterForm">
+                  <span class="ui-lang-zh">筛选</span><span class="ui-lang-en">Filters</span>
+                  <span class="mobile-filter-hint" data-mobile-filter-hint="reviewFilters">展开条件</span>
+                </button>
+              </div>
+              <form class="review-filters" id="filterForm" data-mobile-filter-panel="reviewFilters">
                 <label class="filter-model-run">
                   <span>对比模型 Run</span>
                   <select id="modelRunFilter">
@@ -246,7 +253,14 @@
 
           <section class="app-page tool-page analysis-page hidden" id="reviewAnalysisPage" data-page="analysis">
             <section class="page-card analysis-filter-card">
-              <form class="analysis-filters" id="reviewAnalysisFilterForm">
+              <div class="mobile-filter-bar">
+                <button class="button button-quiet mobile-filter-toggle" type="button"
+                  data-mobile-filter-toggle="analysisFilters" aria-expanded="false" aria-controls="reviewAnalysisFilterForm">
+                  <span class="ui-lang-zh">筛选</span><span class="ui-lang-en">Filters</span>
+                  <span class="mobile-filter-hint" data-mobile-filter-hint="analysisFilters">展开条件</span>
+                </button>
+              </div>
+              <form class="analysis-filters" id="reviewAnalysisFilterForm" data-mobile-filter-panel="analysisFilters">
                 <label class="analysis-run-filter">
                   <span>对比模型 Run</span>
                   <select id="analysisRunFilter">
@@ -918,7 +932,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-75`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-76`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

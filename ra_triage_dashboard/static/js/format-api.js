@@ -394,6 +394,54 @@ function markUiReady() {
   });
 }
 
+/** Mobile: collapse dense filter forms so gallery/charts appear above the fold. */
+function bindMobileFilterDrawers() {
+  const mq = window.matchMedia("(max-width: 639px)");
+  const panels = [...document.querySelectorAll("[data-mobile-filter-panel]")];
+  if (!panels.length) return;
+
+  const setOpen = (panel, open) => {
+    const key = panel.dataset.mobileFilterPanel;
+    panel.classList.toggle("is-open", open);
+    document
+      .querySelectorAll(`[data-mobile-filter-toggle="${CSS.escape(key)}"]`)
+      .forEach((button) => {
+        button.setAttribute("aria-expanded", String(open));
+        button.classList.toggle("is-active", open);
+        const hint = button.querySelector(`[data-mobile-filter-hint="${CSS.escape(key)}"]`);
+        if (hint) {
+          hint.textContent = open
+            ? uiText("收起", "Hide")
+            : uiText("展开条件", "Show filters");
+        }
+      });
+  };
+
+  const syncToViewport = () => {
+    panels.forEach((panel) => setOpen(panel, !mq.matches));
+  };
+
+  document.querySelectorAll("[data-mobile-filter-toggle]").forEach((button) => {
+    if (button.dataset.boundMobileFilter === "1") return;
+    button.dataset.boundMobileFilter = "1";
+    button.addEventListener("click", () => {
+      const key = button.dataset.mobileFilterToggle;
+      const panel = document.querySelector(
+        `[data-mobile-filter-panel="${CSS.escape(key)}"]`
+      );
+      if (!panel) return;
+      setOpen(panel, !panel.classList.contains("is-open"));
+    });
+  });
+
+  if (typeof mq.addEventListener === "function") {
+    mq.addEventListener("change", syncToViewport);
+  } else if (typeof mq.addListener === "function") {
+    mq.addListener(syncToViewport);
+  }
+  syncToViewport();
+}
+
 function toggleSidebar() {
   state.sidebarCollapsed = !state.sidebarCollapsed;
   localStorage.setItem("ra-triage-sidebar-collapsed", String(state.sidebarCollapsed));
