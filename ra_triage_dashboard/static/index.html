@@ -34,7 +34,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-42`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-52`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -198,7 +198,7 @@
                     <option value="__none__">未分配</option>
                   </select>
                 </label>
-                <button class="button button-quiet filter-submit" type="submit">应用</button>
+                <button class="button button-quiet filter-submit" id="resetReviewFiltersButton" type="button">重置</button>
               </form>
               </section>
 
@@ -367,18 +367,8 @@
               </article>
             </section>
 
-            <section class="analysis-cluster-grid">
-              <article class="page-card analysis-cluster-card">
-                <div class="section-heading">
-                  <div>
-                    <h3>缺失信息聚类</h3>
-                  </div>
-                  <small>人工复选字段 · 可直接筛选</small>
-                </div>
-                <div class="analysis-cluster-list" id="analysisEvidenceClusters">
-                  <div class="analysis-empty">正在统计缺失信息…</div>
-                </div>
-              </article>
+            <section class="analysis-cluster-grid" id="analysisClusterPanels" aria-label="结构化聚类图">
+              <div class="analysis-empty">正在统计结构化字段…</div>
             </section>
 
             <section class="page-card analysis-case-card">
@@ -901,6 +891,34 @@
       </div>
     </dialog>
 
+    <dialog class="dialog review-tag-create-dialog" id="missingEvidenceCreateDialog">
+      <div class="dialog-card">
+        <div class="dialog-heading">
+          <div>
+            <h2 id="missingEvidenceCreateDialogTitle">新增缺失信息</h2>
+            <p class="dialog-copy" id="missingEvidenceCreateDialogHint">写入共享目录后，所有用户与 Issue 均可使用。</p>
+          </div>
+          <button class="icon-button" type="button" data-close="missingEvidenceCreateDialog" aria-label="关闭">×</button>
+        </div>
+        <form class="review-tag-create-form" id="missingEvidenceCreateForm">
+          <input type="hidden" id="missingEvidenceCreateMode" value="create" />
+          <input type="hidden" id="missingEvidenceCreateKey" value="" />
+          <label>
+            <span>标题</span>
+            <input id="missingEvidenceCreateLabel" type="text" maxlength="48" placeholder="例如：规划缺失" autocomplete="off" required />
+          </label>
+          <label>
+            <span>补充说明（可选）</span>
+            <input id="missingEvidenceCreateHint" type="text" maxlength="160" placeholder="给其他复核人看的短说明" autocomplete="off" />
+          </label>
+          <div class="dialog-actions">
+            <button class="button button-quiet" type="button" data-close="missingEvidenceCreateDialog">取消</button>
+            <button class="button button-primary" id="missingEvidenceCreateSubmit" type="submit">添加条目</button>
+          </div>
+        </form>
+      </div>
+    </dialog>
+
     <dialog class="dialog ra-event-dialog" id="raEventDialog">
       <div class="dialog-card">
         <div class="dialog-heading">
@@ -941,7 +959,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-42`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-52`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

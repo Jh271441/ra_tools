@@ -26,6 +26,15 @@ function issueCard(item) {
     item.thumbnail?.label || (thumbnailUrl ? "BEV 关键帧" : "暂无缩略图")
   );
   const issueUrl = safeUrl(item.voyager_issue_url);
+  const evidenceKeys = Array.isArray(item.annotation?.missing_evidence)
+    ? item.annotation.missing_evidence
+    : [];
+  const evidenceTitle = evidenceKeys.map((key) => evidenceLabel(key)).join(" · ");
+  const evidenceRow = evidenceKeys.length
+    ? `<div class="row-evidence" title="${escapeHtml(evidenceTitle)}">${evidenceKeys
+        .map((key) => `<span>${escapeHtml(evidenceLabel(key))}</span>`)
+        .join("")}</div>`
+    : "";
   return `
     <article class="issue-card ${isSelected ? "selected" : ""}" data-issue-id="${escapeHtml(item.issue_id)}">
       <button class="issue-card-open" type="button" data-open-issue="${escapeHtml(item.issue_id)}" aria-label="打开 ${escapeHtml(item.issue_id)} Review"></button>
@@ -38,7 +47,10 @@ function issueCard(item) {
       </div>
       <div class="issue-card-body">
         <div class="issue-card-heading">
-          ${issueUrl ? `<a class="issue-id" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" data-card-link title="打开 Voyager Issue">${escapeHtml(item.issue_id)}</a>` : `<span class="issue-id">${escapeHtml(item.issue_id)}</span>`}
+          <div class="issue-card-heading-main">
+            ${issueUrl ? `<a class="issue-id" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" data-card-link title="打开 Voyager Issue">${escapeHtml(item.issue_id)}</a>` : `<span class="issue-id">${escapeHtml(item.issue_id)}</span>`}
+            ${evidenceRow}
+          </div>
           ${!mismatch ? labelBadge(annotation, "待 review") : ""}
         </div>
         ${title ? `<div class="issue-title">${escapeHtml(title)}</div>` : ""}
@@ -47,7 +59,6 @@ function issueCard(item) {
           <span class="issue-label-pair"><small>模型</small>${prediction ? labelBadge(prediction, "—") : labelBadge("", "—")}</span>
           ${item.annotation?.author ? `<span class="issue-reviewer" title="复核人：${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}">复核 · ${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO" : ""}</span>` : ""}
         </div>
-        ${item.annotation?.missing_evidence?.length ? `<div class="row-evidence">${item.annotation.missing_evidence.map((key) => `<span>${escapeHtml(evidenceLabel(key))}</span>`).join("")}</div>` : ""}
       </div>
     </article>`;
 }

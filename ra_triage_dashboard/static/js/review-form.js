@@ -210,9 +210,16 @@ function syncReviewFormFromCase(caseData) {
 
   reviewPane.querySelectorAll(".custom-evidence-option").forEach((node) => node.remove());
   reviewPane.querySelectorAll(".custom-tag-option").forEach((node) => node.remove());
-  const evidenceCreator = $("#customEvidenceCreator");
+  const evidenceList = $("#missingEvidenceOptions");
   for (const key of chosenEvidence) {
-    if (evidenceKeys.has(key) || !evidenceCreator) continue;
+    if (evidenceKeys.has(key) || !evidenceList) continue;
+    if (
+      [...evidenceList.querySelectorAll('input[name="missingEvidence"]')].some(
+        (node) => node.value === key
+      )
+    ) {
+      continue;
+    }
     const template = document.createElement("template");
     template.innerHTML = missingEvidenceOptionMarkup({
       key,
@@ -222,7 +229,7 @@ function syncReviewFormFromCase(caseData) {
     }, true, false);
     const option = template.content.firstElementChild;
     option.classList.add("custom-evidence-option");
-    evidenceCreator.before(option);
+    evidenceList.appendChild(option);
     option.querySelector("input")?.addEventListener("change", updateEvidenceSummary);
   }
   let tagHistory = reviewPane.querySelector(".review-tag-legacy");
@@ -383,9 +390,16 @@ function renderReview(caseData) {
           <span>模型为什么判错？</span>
           <textarea id="annotationNote" rows="2" placeholder="简要说明模型漏掉的关键证据，例如 routing、绕行空间或时序。">${escapeHtml(previous.note || "")}</textarea>
         </label>
-        <details class="evidence-dropdown review-dropdown">
-          <summary>缺失信息（多选）<span class="evidence-summary-count" id="evidenceSummaryCount">已选 ${chosenEvidence.size} 项</span></summary>
-          <div class="evidence-options" id="missingEvidenceOptions">${visibleCatalog.map((item) => missingEvidenceOptionMarkup(item, chosenEvidence.has(item.key), true)).join("")}${deletedEvidenceOptions}${customEvidenceOptions}<div class="custom-evidence-create" id="customEvidenceCreator"><input id="newMissingEvidence" maxlength="48" placeholder="新增缺失信息标题" autocomplete="off" /><input id="newMissingEvidenceHint" maxlength="160" placeholder="补充说明（可选）" autocomplete="off" /><button class="button button-quiet" id="addMissingEvidenceButton" type="button">加入共享目录</button></div></div>
+        <details class="evidence-dropdown review-dropdown review-tag-dropdown">
+          <summary>
+            <span class="tag-group-label">缺失信息（多选）</span>
+            <span class="tag-group-trailing">
+              <button class="tag-catalog-add-button" type="button" data-open-missing-evidence-creator aria-label="新增缺失信息" title="新增缺失信息">＋</button>
+              <span class="evidence-summary-count tag-group-summary" id="evidenceSummaryCount">已选 ${chosenEvidence.size} 项</span>
+              <span class="tag-group-chevron" aria-hidden="true"></span>
+            </span>
+          </summary>
+          <div class="evidence-options review-tag-options" id="missingEvidenceOptions">${visibleCatalog.map((item) => missingEvidenceOptionMarkup(item, chosenEvidence.has(item.key), true)).join("")}${deletedEvidenceOptions}${customEvidenceOptions}${!visibleCatalog.length && !deletedEvidenceOptions && !customEvidenceOptions ? '<div class="review-tag-empty">暂无条目，点 ＋ 添加</div>' : ""}</div>
         </details>
         <div class="review-attachment-field">
           <span>补充截图（可选）</span>
@@ -420,56 +434,6 @@ function renderReview(caseData) {
         if (other !== dropdown) other.open = false;
       });
     });
-  });
-  $("#addMissingEvidenceButton")?.addEventListener("click", async () => {
-    const input = $("#newMissingEvidence");
-    const hintInput = $("#newMissingEvidenceHint");
-    const button = $("#addMissingEvidenceButton");
-    const value = String(input?.value || "").trim();
-    const hint = String(hintInput?.value || "").trim();
-    if (!value) return showToast("请输入新的缺失信息。", true);
-    if (value.length > 48 || /[\x00-\x1f\x7f]/.test(value)) return showToast("缺失信息长度或字符不合法。", true);
-    if (hint.length > 160 || /[\x00-\x1f\x7f]/.test(hint)) return showToast("缺失信息说明长度或字符不合法。", true);
-    if (button) {
-      button.disabled = true;
-      button.setAttribute("aria-busy", "true");
-    }
-    try {
-      const result = await api("/api/missing-evidence", {
-        method: "POST",
-        body: JSON.stringify({ label: value, hint }),
-      });
-      setMissingEvidenceCatalogFromResult(result);
-      const item = result.item || {};
-      const key = String(item.key || "");
-      const exists = key && [...document.querySelectorAll('input[name="missingEvidence"]')].some((node) => node.value === key);
-      if (!exists && key) {
-        const template = document.createElement("template");
-        template.innerHTML = missingEvidenceOptionMarkup({
-          ...item,
-          label: item.label || value,
-          hint: item.hint || hint,
-          builtin: false,
-        }, true, true);
-        const option = template.content.firstElementChild;
-        const creator = $("#customEvidenceCreator");
-        creator?.before(option);
-        option.querySelector("input")?.addEventListener("change", updateEvidenceSummary);
-        bindMissingEvidenceCatalogControls(option);
-      }
-      if (input) input.value = "";
-      if (hintInput) hintInput.value = "";
-      state.reviewFormDirty = true;
-      updateEvidenceSummary();
-      showToast("已加入共享目录，所有用户和 Issue 均可使用。 ");
-    } catch (error) {
-      showToast(error.message, true);
-    } finally {
-      if (button) {
-        button.disabled = false;
-        button.removeAttribute("aria-busy");
-      }
-    }
   });
   const pasteZone = $("#screenshotPasteZone");
   const screenshotInput = $("#reviewScreenshotInput");
@@ -534,12 +498,13 @@ function updateMissingEvidenceOptionRow(item) {
     (node) => node.dataset.evidenceOption === String(item?.key || "")
   );
   if (!row) return;
-  const label = row.querySelector("strong");
-  const hint = row.querySelector("small");
-  const choice = row.querySelector(".evidence-option-choice");
+  const label = row.querySelector(".tag-option-check span, span");
+  const shell = row.querySelector(".tag-option") || row;
   if (label) label.textContent = String(item?.label || evidenceLabel(item?.key));
-  if (hint) hint.textContent = String(item?.hint || "");
-  if (choice) choice.title = String(item?.hint || "");
+  if (shell) {
+    if (item?.hint) shell.title = String(item.hint);
+    else shell.removeAttribute("title");
+  }
 }
 
 function markDeletedMissingEvidenceOption(item) {
@@ -549,51 +514,167 @@ function markDeletedMissingEvidenceOption(item) {
   if (!row) return;
   const checkbox = row.querySelector('input[name="missingEvidence"]');
   if (checkbox?.checked) {
-    row.classList.add("evidence-option-deleted");
-    const hint = row.querySelector("small");
-    if (hint) hint.textContent = "已从共享目录删除；当前 Review 仍保留此历史值";
-    row.querySelector(".evidence-option-actions")?.remove();
+    row.classList.add("tag-option-deleted", "evidence-option-deleted");
+    row.querySelector(".tag-option")?.classList.add("tag-option-deleted");
+    row.querySelector(".tag-option-menu")?.remove();
+    const shell = row.querySelector(".tag-option") || row;
+    shell.title = "已从共享目录删除；当前 Review 仍保留此历史值";
   } else {
     row.remove();
   }
   updateEvidenceSummary();
 }
 
+function openMissingEvidenceEditorDialog({
+  mode = "create",
+  key = "",
+  label = "",
+  hint = "",
+} = {}) {
+  const dialog = $("#missingEvidenceCreateDialog");
+  const form = $("#missingEvidenceCreateForm");
+  const modeInput = $("#missingEvidenceCreateMode");
+  const keyInput = $("#missingEvidenceCreateKey");
+  const labelInput = $("#missingEvidenceCreateLabel");
+  const hintInput = $("#missingEvidenceCreateHint");
+  const title = $("#missingEvidenceCreateDialogTitle");
+  const copy = $("#missingEvidenceCreateDialogHint");
+  const submit = $("#missingEvidenceCreateSubmit");
+  if (!dialog || !form || !labelInput) return;
+  const resolvedMode = mode === "edit" ? "edit" : "create";
+  if (modeInput) modeInput.value = resolvedMode;
+  if (keyInput) keyInput.value = resolvedMode === "edit" ? String(key || "") : "";
+  labelInput.value = resolvedMode === "edit" ? String(label || "") : "";
+  if (hintInput) hintInput.value = resolvedMode === "edit" ? String(hint || "") : "";
+  if (title) title.textContent = resolvedMode === "edit" ? "编辑缺失信息" : "新增缺失信息";
+  if (copy) {
+    copy.textContent =
+      resolvedMode === "edit"
+        ? "修改共享目录条目；历史 Review 中的 key 不变。"
+        : "写入共享目录后，所有用户与 Issue 均可使用。";
+  }
+  if (submit) submit.textContent = resolvedMode === "edit" ? "保存修改" : "添加条目";
+  openDialog("missingEvidenceCreateDialog");
+  window.requestAnimationFrame(() => {
+    labelInput.focus();
+    if (resolvedMode === "edit") labelInput.select();
+  });
+}
+
+function appendMissingEvidenceOption(item) {
+  const key = String(item?.key || "");
+  if (!key) return;
+  const list = $("#missingEvidenceOptions");
+  if (!list) return;
+  if (
+    [...document.querySelectorAll('input[name="missingEvidence"]')].some(
+      (node) => node.value === key
+    )
+  ) {
+    return;
+  }
+  list.querySelector(".review-tag-empty")?.remove();
+  const template = document.createElement("template");
+  template.innerHTML = missingEvidenceOptionMarkup(
+    {
+      ...item,
+      label: item.label || evidenceLabel(key),
+      hint: item.hint || "",
+      builtin: false,
+    },
+    true,
+    true
+  );
+  const option = template.content.firstElementChild;
+  list.appendChild(option);
+  option?.querySelector("input")?.addEventListener("change", updateEvidenceSummary);
+  bindMissingEvidenceCatalogControls(option || list);
+  bindReviewTagCatalogControls(option || list);
+}
+
 function bindMissingEvidenceCatalogControls(root = document) {
-  root.querySelectorAll("[data-edit-missing-evidence]").forEach((button) => {
+  root.querySelectorAll("[data-open-missing-evidence-creator]").forEach((button) => {
     if (button.dataset.missingEvidenceBound === "1") return;
     button.dataset.missingEvidenceBound = "1";
-    button.addEventListener("click", async (event) => {
+    button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      const key = String(button.dataset.editMissingEvidence || "");
-      const item = missingEvidenceCatalogItem(key);
-      if (!item || item.deleted) return;
-      const label = window.prompt("缺失信息标题", String(item.label || ""));
-      if (label === null) return;
-      const hint = window.prompt("补充说明（可选）", String(item.hint || ""));
-      if (hint === null) return;
-      if (!String(label).trim()) return showToast("缺失信息标题不能为空。", true);
-      if (String(label).length > 48 || /[\x00-\x1f\x7f]/.test(String(label))) {
+      openMissingEvidenceEditorDialog({ mode: "create" });
+    });
+  });
+  // Dialog form lives outside the review pane; bind once from document.
+  const createForm = $("#missingEvidenceCreateForm");
+  if (createForm && createForm.dataset.missingEvidenceBound !== "1") {
+    createForm.dataset.missingEvidenceBound = "1";
+    createForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const mode = String($("#missingEvidenceCreateMode")?.value || "create");
+      const key = String($("#missingEvidenceCreateKey")?.value || "").trim();
+      const value = String($("#missingEvidenceCreateLabel")?.value || "").trim();
+      const hint = String($("#missingEvidenceCreateHint")?.value || "").trim();
+      const submit = $("#missingEvidenceCreateSubmit");
+      if (!value) return showToast("请输入缺失信息标题。", true);
+      if (value.length > 48 || /[\x00-\x1f\x7f]/.test(value)) {
         return showToast("缺失信息标题长度或字符不合法。", true);
       }
-      if (String(hint).length > 160 || /[\x00-\x1f\x7f]/.test(String(hint))) {
+      if (hint.length > 160 || /[\x00-\x1f\x7f]/.test(hint)) {
         return showToast("缺失信息说明长度或字符不合法。", true);
       }
-      button.disabled = true;
+      if (mode === "edit" && !key) {
+        return showToast("缺少要编辑的缺失信息。", true);
+      }
+      if (submit) {
+        submit.disabled = true;
+        submit.setAttribute("aria-busy", "true");
+      }
       try {
-        const result = await api(`/api/missing-evidence/${encodeURIComponent(key)}`, {
-          method: "PUT",
-          body: JSON.stringify({ label: String(label).trim(), hint: String(hint).trim() }),
-        });
-        setMissingEvidenceCatalogFromResult(result);
-        updateMissingEvidenceOptionRow(result.item || { key, label, hint });
-        showToast("缺失信息已更新。 ");
+        if (mode === "edit") {
+          const result = await api(`/api/missing-evidence/${encodeURIComponent(key)}`, {
+            method: "PUT",
+            body: JSON.stringify({ label: value, hint }),
+          });
+          setMissingEvidenceCatalogFromResult(result);
+          updateMissingEvidenceOptionRow(result.item || { key, label: value, hint });
+          closeDialog("missingEvidenceCreateDialog");
+          showToast("缺失信息已更新。");
+        } else {
+          const result = await api("/api/missing-evidence", {
+            method: "POST",
+            body: JSON.stringify({ label: value, hint }),
+          });
+          setMissingEvidenceCatalogFromResult(result);
+          appendMissingEvidenceOption(result.item || {});
+          state.reviewFormDirty = true;
+          updateEvidenceSummary();
+          closeDialog("missingEvidenceCreateDialog");
+          showToast("已加入共享目录，所有用户和 Issue 均可使用。");
+        }
       } catch (error) {
         showToast(error.message, true);
       } finally {
-        button.disabled = false;
+        if (submit) {
+          submit.disabled = false;
+          submit.removeAttribute("aria-busy");
+        }
       }
+    });
+  }
+  root.querySelectorAll("[data-edit-missing-evidence]").forEach((button) => {
+    if (button.dataset.missingEvidenceBound === "1") return;
+    button.dataset.missingEvidenceBound = "1";
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      closeAllTagOptionMenus();
+      const key = String(button.dataset.editMissingEvidence || "");
+      const item = missingEvidenceCatalogItem(key);
+      if (!item || item.deleted) return;
+      openMissingEvidenceEditorDialog({
+        mode: "edit",
+        key,
+        label: item.label || "",
+        hint: item.hint || "",
+      });
     });
   });
   root.querySelectorAll("[data-delete-missing-evidence]").forEach((button) => {
@@ -602,6 +683,7 @@ function bindMissingEvidenceCatalogControls(root = document) {
     button.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
+      closeAllTagOptionMenus();
       const key = String(button.dataset.deleteMissingEvidence || "");
       const item = missingEvidenceCatalogItem(key);
       if (!item || item.deleted) return;
@@ -614,7 +696,7 @@ function bindMissingEvidenceCatalogControls(root = document) {
         });
         setMissingEvidenceCatalogFromResult(result);
         markDeletedMissingEvidenceOption(result.item || { key });
-        showToast("缺失信息已删除。 ");
+        showToast("缺失信息已删除。");
       } catch (error) {
         showToast(error.message, true);
       } finally {
@@ -658,7 +740,7 @@ function updateReviewTagOptionRow(item) {
   const row = reviewTagCatalogOptionRow(item?.key);
   if (!row) return;
   const option = row.querySelector(".tag-option");
-  const label = option?.querySelector("span");
+  const label = option?.querySelector(".tag-option-check span, span");
   if (label) label.textContent = String(item?.label || tagLabel(item?.key));
   if (option) {
     if (item?.hint) option.title = String(item.hint);
@@ -672,7 +754,8 @@ function markDeletedReviewTagOption(item) {
   const checkbox = row.querySelector('input[name="reviewTags"]');
   if (checkbox?.checked) {
     row.classList.add("tag-option-deleted");
-    row.querySelector(".evidence-option-actions")?.remove();
+    row.querySelector(".tag-option")?.classList.add("tag-option-deleted");
+    row.querySelector(".tag-option-menu")?.remove();
   } else {
     row.remove();
   }
@@ -752,6 +835,17 @@ function appendReviewTagOptionToGroup(item, group) {
   bindReviewTagCatalogControls(option || list);
 }
 
+function closeAllTagOptionMenus(except = null) {
+  document.querySelectorAll(".tag-option-menu.is-open").forEach((menu) => {
+    if (except && menu === except) return;
+    menu.classList.remove("is-open");
+    const toggle = menu.querySelector("[data-tag-menu-toggle]");
+    const panel = menu.querySelector(".tag-option-menu-panel");
+    if (toggle) toggle.setAttribute("aria-expanded", "false");
+    if (panel) panel.hidden = true;
+  });
+}
+
 function bindReviewTagCatalogControls(root = document) {
   root.querySelectorAll("[data-open-review-tag-creator]").forEach((button) => {
     if (button.dataset.reviewTagBound === "1") return;
@@ -765,6 +859,40 @@ function bindReviewTagCatalogControls(root = document) {
       );
     });
   });
+  root.querySelectorAll("[data-tag-menu-toggle]").forEach((button) => {
+    if (button.dataset.reviewTagBound === "1") return;
+    button.dataset.reviewTagBound = "1";
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const menu = button.closest(".tag-option-menu");
+      const panel = menu?.querySelector(".tag-option-menu-panel");
+      if (!menu || !panel) return;
+      const willOpen = panel.hidden;
+      closeAllTagOptionMenus(willOpen ? menu : null);
+      panel.hidden = !willOpen;
+      menu.classList.toggle("is-open", willOpen);
+      button.setAttribute("aria-expanded", willOpen ? "true" : "false");
+    });
+  });
+  if (!document.documentElement.dataset.tagMenuDismissBound) {
+    document.documentElement.dataset.tagMenuDismissBound = "1";
+    document.addEventListener(
+      "click",
+      (event) => {
+        if (event.target.closest(".tag-option-menu")) return;
+        closeAllTagOptionMenus();
+      },
+      true
+    );
+    document.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key === "Escape") closeAllTagOptionMenus();
+      },
+      true
+    );
+  }
   // Dialog lives outside the review pane; bind once from document.
   const createForm = $("#reviewTagCreateForm");
   if (createForm && createForm.dataset.reviewTagBound !== "1") {
@@ -830,6 +958,7 @@ function bindReviewTagCatalogControls(root = document) {
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      closeAllTagOptionMenus();
       const key = String(button.dataset.editReviewTag || "");
       const item = reviewTagCatalogItem(key);
       if (!item || item.deleted) return;
@@ -853,6 +982,7 @@ function bindReviewTagCatalogControls(root = document) {
     button.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
+      closeAllTagOptionMenus();
       const key = String(button.dataset.deleteReviewTag || "");
       const item = reviewTagCatalogItem(key);
       if (!item || item.deleted) return;

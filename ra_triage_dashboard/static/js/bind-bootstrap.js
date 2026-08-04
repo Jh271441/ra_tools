@@ -19,8 +19,27 @@ function bindEvents() {
   });
   $("#filterForm").addEventListener("submit", async (event) => {
     event.preventDefault();
-    state.reviewIssueIds = [];
-    await reloadReviewGallery();
+    // Filters auto-apply on change; form submit is treated as reset.
+    await resetReviewFilters();
+  });
+  $("#resetReviewFiltersButton")?.addEventListener("click", () => {
+    resetReviewFilters().catch((error) => showToast(error.message, true));
+  });
+  let reviewSearchTimer = null;
+  const scheduleReviewFilterReload = (delay = 0) => {
+    if (reviewSearchTimer) window.clearTimeout(reviewSearchTimer);
+    reviewSearchTimer = window.setTimeout(() => {
+      reviewSearchTimer = null;
+      state.reviewIssueIds = [];
+      state.casePage = 1;
+      reloadReviewGallery({ includeOverview: false, historyMode: "replace" }).catch(
+        (error) => showToast(error.message, true)
+      );
+    }, Math.max(0, Number(delay) || 0));
+  };
+  $("#searchInput")?.addEventListener("input", () => scheduleReviewFilterReload(280));
+  ["#gtFilter", "#annotationFilter", "#reviewerFilter"].forEach((selector) => {
+    $(selector)?.addEventListener("change", () => scheduleReviewFilterReload(0));
   });
   $("#reviewAnalysisFilterForm").addEventListener("submit", async (event) => {
     event.preventDefault();

@@ -129,6 +129,96 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
             all(not item["comparison_status"] for item in without_run["items"])
         )
 
+        tagged_rows = [
+            {
+                "issue_id": "cn10001",
+                "gt_label": "误触发",
+                "annotation": {
+                    "label": "误触发",
+                    "review_status": "reviewed",
+                    "tags": ["gate", "intent_straight", "traffic_light", "egress_swag"],
+                    "missing_evidence": ["routing_direction"],
+                    "note": "双环聚类样例",
+                },
+                "prediction": {"label": "误触发"},
+            },
+            {
+                "issue_id": "cn10002",
+                "gt_label": "正确触发",
+                "annotation": {
+                    "label": "正确触发",
+                    "review_status": "reviewed",
+                    "tags": ["obstacle_not_avoided", "lead_vehicle_departed"],
+                    "missing_evidence": [],
+                    "note": "应触发与无需协助",
+                },
+                "prediction": {"label": "正确触发"},
+            },
+        ]
+        tag_catalog = {
+            "gate": {
+                "label": "道闸",
+                "section": "scene",
+                "group": "environment",
+            },
+            "intent_straight": {
+                "label": "直行",
+                "section": "scene",
+                "group": "self_intent",
+            },
+            "traffic_light": {
+                "label": "等灯",
+                "section": "interaction_decision",
+                "group": "false_trigger",
+            },
+            "obstacle_not_avoided": {
+                "label": "未避障",
+                "section": "interaction_decision",
+                "group": "true_trigger",
+            },
+            "egress_swag": {
+                "label": "SWAG",
+                "section": "egress",
+                "group": "ra",
+            },
+            "lead_vehicle_departed": {
+                "label": "前车驶离",
+                "section": "egress",
+                "group": "no_assist",
+            },
+        }
+        clustered = build_review_reason_analysis(
+            tagged_rows,
+            evidence_catalog={"routing_direction": {"label": "routing 方向"}},
+            tag_catalog=tag_catalog,
+            include_reason_themes=False,
+        )
+        panels = {panel["key"]: panel for panel in clustered["cluster_panels"]}
+        self.assertEqual(
+            [panel["key"] for panel in clustered["cluster_panels"]],
+            ["evidence", "scene", "trigger", "egress"],
+        )
+        self.assertEqual(panels["evidence"]["layout"], "single")
+        self.assertEqual(panels["scene"]["layout"], "dual")
+        self.assertEqual(
+            [group["key"] for group in panels["scene"]["groups"]],
+            ["environment", "self_intent"],
+        )
+        self.assertEqual(panels["scene"]["groups"][0]["annotated_count"], 1)
+        self.assertEqual(
+            [item["key"] for item in panels["scene"]["groups"][0]["items"]],
+            ["gate"],
+        )
+        self.assertEqual(
+            [group["key"] for group in panels["trigger"]["groups"]],
+            ["false_trigger", "true_trigger"],
+        )
+        self.assertEqual(
+            [group["key"] for group in panels["egress"]["groups"]],
+            ["ra", "no_assist"],
+        )
+        self.assertEqual(panels["evidence"]["groups"][0]["annotated_count"], 1)
+
         structured_only = build_review_reason_analysis(
             rows,
             has_model_run=True,

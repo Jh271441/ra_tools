@@ -87,17 +87,28 @@ function missingEvidenceOptionMarkup(item, selected = false, manage = true) {
   const hint = String(
     item?.hint || (deleted ? "已从共享目录删除；当前 Review 仍保留此历史值" : "")
   );
-  // Every active shared-catalog entry, including the seeded built-ins, can be
-  // maintained through the same global directory controls. Built-ins are
-  // persisted as overrides/tombstones rather than mutating the static source
-  // list, so editing or removing one remains reversible for historical data.
+  // Match Issue-tag chips: compact option + in-chip ⋯ menu for edit/delete.
   const canManage = Boolean(manage && !deleted);
-  return `<div class="evidence-option${deleted ? " evidence-option-deleted" : ""}" data-evidence-option="${escapeHtml(key)}">
-    <label class="evidence-option-choice" title="${escapeHtml(hint)}">
+  if (!canManage) {
+    return `<label class="tag-option evidence-tag-option${deleted ? " tag-option-deleted" : ""}" data-evidence-option="${escapeHtml(key)}"${hint ? ` title="${escapeHtml(hint)}"` : ""}>
       <input type="checkbox" name="missingEvidence" value="${escapeHtml(key)}" ${selected ? "checked" : ""} />
-      <span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(hint)}</small></span>
-    </label>
-    ${canManage ? `<span class="evidence-option-actions"><button class="tag-catalog-icon-button" type="button" data-edit-missing-evidence="${escapeHtml(key)}" aria-label="编辑缺失信息" title="编辑缺失信息">✎</button><button class="tag-catalog-icon-button tag-catalog-icon-button-danger" type="button" data-delete-missing-evidence="${escapeHtml(key)}" aria-label="删除缺失信息" title="删除缺失信息">×</button></span>` : ""}
+      <span>${escapeHtml(label)}</span>
+    </label>`;
+  }
+  return `<div class="review-tag-option-row" data-evidence-option="${escapeHtml(key)}">
+    <div class="tag-option tag-option-with-menu evidence-tag-option${deleted ? " tag-option-deleted" : ""}"${hint ? ` title="${escapeHtml(hint)}"` : ""}>
+      <label class="tag-option-check">
+        <input type="checkbox" name="missingEvidence" value="${escapeHtml(key)}" ${selected ? "checked" : ""} />
+        <span>${escapeHtml(label)}</span>
+      </label>
+      <div class="tag-option-menu">
+        <button class="tag-option-menu-toggle" type="button" data-tag-menu-toggle="evidence-${escapeHtml(key)}" aria-label="缺失信息操作" aria-haspopup="menu" aria-expanded="false" title="更多操作">⋯</button>
+        <div class="tag-option-menu-panel" role="menu" hidden>
+          <button class="tag-option-menu-item" type="button" role="menuitem" data-edit-missing-evidence="${escapeHtml(key)}">修改</button>
+          <button class="tag-option-menu-item is-danger" type="button" role="menuitem" data-delete-missing-evidence="${escapeHtml(key)}">删除</button>
+        </div>
+      </div>
+    </div>
   </div>`;
 }
 
@@ -123,17 +134,27 @@ function reviewTagOptionMarkup(item, selected = false, groupKey = "", manage = t
   const hint = String(item?.hint || "");
   const deleted = Boolean(item?.deleted);
   const canManage = Boolean(manage && !deleted);
-  const option = `<label class="tag-option${deleted ? " tag-option-deleted" : ""}"${hint ? ` title="${escapeHtml(hint)}"` : ""}>
+  if (!canManage) {
+    return `<label class="tag-option${deleted ? " tag-option-deleted" : ""}"${hint ? ` title="${escapeHtml(hint)}"` : ""}>
       <input type="checkbox" name="reviewTags" value="${escapeHtml(key)}"${groupKey ? ` data-tag-group="${escapeHtml(groupKey)}"` : ""} ${selected ? "checked" : ""} />
       <span>${escapeHtml(label)}</span>
     </label>`;
-  if (!canManage) return option;
+  }
+  // Manage actions live inside the option chip via a ⋯ menu (edit / delete).
   return `<div class="review-tag-option-row" data-review-tag-option="${escapeHtml(key)}">
-    ${option}
-    <span class="evidence-option-actions">
-      <button class="tag-catalog-icon-button" type="button" data-edit-review-tag="${escapeHtml(key)}" aria-label="编辑场景标签" title="编辑场景标签">✎</button>
-      <button class="tag-catalog-icon-button tag-catalog-icon-button-danger" type="button" data-delete-review-tag="${escapeHtml(key)}" aria-label="删除场景标签" title="删除场景标签">×</button>
-    </span>
+    <div class="tag-option tag-option-with-menu${deleted ? " tag-option-deleted" : ""}"${hint ? ` title="${escapeHtml(hint)}"` : ""}>
+      <label class="tag-option-check">
+        <input type="checkbox" name="reviewTags" value="${escapeHtml(key)}"${groupKey ? ` data-tag-group="${escapeHtml(groupKey)}"` : ""} ${selected ? "checked" : ""} />
+        <span>${escapeHtml(label)}</span>
+      </label>
+      <div class="tag-option-menu">
+        <button class="tag-option-menu-toggle" type="button" data-tag-menu-toggle="${escapeHtml(key)}" aria-label="标签操作" aria-haspopup="menu" aria-expanded="false" title="更多操作">⋯</button>
+        <div class="tag-option-menu-panel" role="menu" hidden>
+          <button class="tag-option-menu-item" type="button" role="menuitem" data-edit-review-tag="${escapeHtml(key)}">修改</button>
+          <button class="tag-option-menu-item is-danger" type="button" role="menuitem" data-delete-review-tag="${escapeHtml(key)}">删除</button>
+        </div>
+      </div>
+    </div>
   </div>`;
 }
 

@@ -492,17 +492,38 @@ function navigatePage(page, options = {}) {
     page === "prediction" &&
     !options.issue &&
     !(Array.isArray(options.issues) && options.issues.length);
-  if (page === "review" && previousPage === "analysis" && state.reviewQueueStale) {
+  const enteringReviewHome =
+    page === "review" && previousPage !== "review" && !options.issue;
+  if (enteringReviewHome && state.reviewQueueStale) {
     state.casePage = 1;
+  }
+  // Keep gallery comparison in sync when returning from reason analysis.
+  if (page === "review" && previousPage === "analysis" && state.selectedRunId) {
+    state.reviewComparisonStatus = normalizedReviewComparisonStatus(
+      state.reviewAnalysis.comparisonStatus,
+      state.reviewComparisonStatus || "all"
+    );
+    setReviewComparisonStatus(state.reviewComparisonStatus, { hasRun: true });
   }
   showPage(page, { ...options, restoreRoute, historyMode: "push" });
   if (page === "analysis" && state.config) {
     loadReviewReasonAnalysis().catch((error) => showToast(error.message, true));
   }
-  if (page === "review" && previousPage === "analysis" && state.reviewQueueStale) {
-    reloadReviewGallery({ includeOverview: false, historyMode: "" }).catch((error) =>
-      showToast(error.message, true)
-    );
+  if (enteringReviewHome) {
+    const list = $("#issueList");
+    const hasCards = Boolean(list?.querySelector("article[data-issue-id], .issue-grid-empty"));
+    const needsReload =
+      state.reviewQueueStale ||
+      !Array.isArray(state.cases) ||
+      !state.cases.length ||
+      !hasCards;
+    if (needsReload) {
+      reloadReviewGallery({ includeOverview: false, historyMode: "" }).catch((error) =>
+        showToast(error.message, true)
+      );
+    } else {
+      setReviewView("");
+    }
   }
 }
 

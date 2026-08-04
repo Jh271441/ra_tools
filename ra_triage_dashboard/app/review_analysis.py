@@ -249,11 +249,96 @@ def _cluster_items(
     return items
 
 
+# Structured Issue-tag panels for the reason-analysis page. Layout dual = one
+# donut per group (matches the Review form columns).
+TAG_CLUSTER_PANELS: tuple[dict[str, Any], ...] = (
+    {
+        "key": "scene",
+        "label": "场景",
+        "section": "scene",
+        "filter_kind": "scene",
+        "layout": "dual",
+        "groups": (
+            {"key": "environment", "label": "环境"},
+            {"key": "self_intent", "label": "自车意图"},
+        ),
+    },
+    {
+        "key": "trigger",
+        "label": "触发判定",
+        "section": "interaction_decision",
+        "filter_kind": "trigger",
+        "layout": "dual",
+        "groups": (
+            {"key": "false_trigger", "label": "误触发"},
+            {"key": "true_trigger", "label": "应该触发"},
+        ),
+    },
+    {
+        "key": "egress",
+        "label": "如何脱困",
+        "section": "egress",
+        "filter_kind": "egress",
+        "layout": "dual",
+        "groups": (
+            {"key": "ra", "label": "正确触发"},
+            {"key": "no_assist", "label": "无需协助"},
+        ),
+    },
+)
+
+
+def _build_tag_cluster_panels(
+    tag_counts: dict[str, int],
+    *,
+    group_issue_counts: dict[tuple[str, str], int],
+    total: int,
+    tag_catalog: dict[str, dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    catalog = tag_catalog or {}
+    panels: list[dict[str, Any]] = []
+    for panel in TAG_CLUSTER_PANELS:
+        section = str(panel["section"])
+        groups_out: list[dict[str, Any]] = []
+        for group in panel["groups"]:
+            group_key = str(group["key"])
+            group_counts = {
+                key: count
+                for key, count in tag_counts.items()
+                if str((catalog.get(key) or {}).get("section") or "") == section
+                and str((catalog.get(key) or {}).get("group") or "") == group_key
+            }
+            groups_out.append(
+                {
+                    "key": group_key,
+                    "label": str(group["label"]),
+                    "annotated_count": int(
+                        group_issue_counts.get((section, group_key), 0)
+                    ),
+                    "items": _cluster_items(
+                        group_counts, total=total, catalog=catalog
+                    ),
+                }
+            )
+        panels.append(
+            {
+                "key": str(panel["key"]),
+                "label": str(panel["label"]),
+                "section": section,
+                "filter_kind": str(panel["filter_kind"]),
+                "layout": str(panel["layout"]),
+                "groups": groups_out,
+            }
+        )
+    return panels
+
+
 def build_review_reason_analysis(
     rows: Iterable[dict[str, Any]],
     *,
     theme: str = "",
     evidence_catalog: dict[str, dict[str, str]] | None = None,
+    tag_catalog: dict[str, dict[str, Any]] | None = None,
     has_model_run: bool = False,
     include_reason_themes: bool = True,
     page: int = 1,
@@ -305,6 +390,8 @@ def build_review_reason_analysis(
 
     total = len(materialized)
     evidence_counts: dict[str, int] = {}
+    tag_counts: dict[str, int] = {}
+    tag_group_issue_counts: dict[tuple[str, str], int] = {}
     theme_counts: dict[str, int] = {}
     with_reason = 0
     with_structured_evidence = 0
@@ -319,12 +406,16 @@ def build_review_reason_analysis(
         for gt_label in TRIAGE_LABELS
     }
     none_counts: dict[str, int] = {gt_label: 0 for gt_label in TRIAGE_LABELS}
+    resolved_tag_catalog = {
+        str(key): dict(value) for key, value in (tag_catalog or {}).items()
+    }
 
     for item in materialized:
         annotation = item["annotation"]
         prediction = item["prediction"]
         note = annotation["note"]
         evidences = annotation["missing_evidence"]
+        tags = annotation["tags"]
         themes = item["reason_themes"]
         if note:
             with_reason += 1
@@ -334,6 +425,18 @@ def build_review_reason_analysis(
             with_structured_evidence += 1
         for key in evidences:
             evidence_counts[key] = evidence_counts.get(key, 0) + 1
+        seen_groups: set[tuple[str, str]] = set()
+        for key in tags:
+            tag_counts[key] = tag_counts.get(key, 0) + 1
+            meta = resolved_tag_catalog.get(key) or {}
+            section = str(meta.get("section") or "")
+            group = str(meta.get("group") or "")
+            if section and group:
+                seen_groups.add((section, group))
+        for group_key in seen_groups:
+            tag_group_issue_counts[group_key] = (
+                tag_group_issue_counts.get(group_key, 0) + 1
+            )
         for match in themes:
             key = str(match["key"])
             theme_counts[key] = theme_counts.get(key, 0) + 1
@@ -365,6 +468,35 @@ def build_review_reason_analysis(
     reason_catalog = {
         str(item["key"]): item for item in REASON_THEME_CATALOG
     } if include_reason_themes else {}
+    evidence_clusters = _cluster_items(
+        evidence_counts,
+        total=total,
+        catalog=evidence_catalog or {},
+    )
+    tag_cluster_panels = _build_tag_cluster_panels(
+        tag_counts,
+        group_issue_counts=tag_group_issue_counts,
+        total=total,
+        tag_catalog=resolved_tag_catalog,
+    )
+    cluster_panels: list[dict[str, Any]] = [
+        {
+            "key": "evidence",
+            "label": "缺失信息",
+            "section": "evidence",
+            "filter_kind": "evidence",
+            "layout": "single",
+            "groups": [
+                {
+                    "key": "all",
+                    "label": "缺失信息",
+                    "annotated_count": with_structured_evidence,
+                    "items": evidence_clusters,
+                }
+            ],
+        },
+        *tag_cluster_panels,
+    ]
     page = max(1, int(page))
     page_size = max(1, int(page_size))
     if page_size_limit is not None:
@@ -403,11 +535,8 @@ def build_review_reason_analysis(
             "missing_predictions": missing_predictions,
             "manual_gt_disagreements": manual_gt_disagreements,
         },
-        "evidence_clusters": _cluster_items(
-            evidence_counts,
-            total=total,
-            catalog=evidence_catalog or {},
-        ),
+        "evidence_clusters": evidence_clusters,
+        "cluster_panels": cluster_panels,
         "reason_clusters": _cluster_items(
             theme_counts,
             total=total,

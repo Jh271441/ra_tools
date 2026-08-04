@@ -271,3 +271,24 @@ async function reloadReviewGallery({
   showPage("review", { historyMode, issue: "" });
 }
 
+async function resetReviewFilters() {
+  state.reviewIssueIds = [];
+  state.clusterKey = "";
+  state.casePage = 1;
+  if ($("#searchInput")) $("#searchInput").value = "";
+  if ($("#gtFilter")) $("#gtFilter").value = "";
+  if ($("#annotationFilter")) $("#annotationFilter").value = "";
+  if ($("#reviewerFilter")) $("#reviewerFilter").value = "";
+  if ($("#workAssigneeFilter")) $("#workAssigneeFilter").value = "";
+  if ($("#modelRunFilter")) $("#modelRunFilter").value = "";
+  state.selectedRunId = "";
+  state.reviewComparisonStatus = "all";
+  state.failureOnly = false;
+  setReviewComparisonStatus("all", { hasRun: false });
+  renderAnalysisRunFilter();
+  renderActiveRun();
+  renderRunManager();
+  await reloadReviewGallery({ includeOverview: true, historyMode: "replace" });
+  showToast("筛选已重置。");
+}
+

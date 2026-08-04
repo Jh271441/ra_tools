@@ -3106,10 +3106,20 @@ def _review_reason_analysis_payload(
         search=normalized_search,
         search_aliases=search_aliases,
     )
+    tag_catalog_for_analysis = {
+        str(item["key"]): {
+            "label": str(item["label"]),
+            "description": str(item.get("hint") or item.get("description") or ""),
+            "section": str(item.get("section") or ""),
+            "group": str(item.get("group") or ""),
+        }
+        for item in tag_catalog
+    }
     result = build_review_reason_analysis(
         rows,
         theme="",
         evidence_catalog=evidence_catalog,
+        tag_catalog=tag_catalog_for_analysis,
         has_model_run=bool(model_run_id),
         include_reason_themes=False,
         page=page,

@@ -60,43 +60,192 @@ function analysisRequestOptions() {
   });
 }
 
-function renderAnalysisClusterList(items, targetSelector, kind) {
-  const target = $(targetSelector);
-  if (!target) return;
-  if (!items.length) {
-    target.innerHTML =
-      '<div class="analysis-empty">当前筛选范围内还没有可统计的聚类。</div>';
-    return;
+const ANALYSIS_DONUT_PALETTES = {
+  evidence: ["#22d3ee", "#38bdf8", "#818cf8", "#a78bfa", "#fbbf24", "#34d399", "#94a3b8"],
+  scene: ["#a78bfa", "#818cf8", "#6366f1", "#c084fc", "#67e8f9", "#94a3b8"],
+  trigger: ["#fbbf24", "#f59e0b", "#f97316", "#34d399", "#4ade80", "#94a3b8"],
+  egress: ["#2dd4bf", "#14b8a6", "#38bdf8", "#64748b", "#94a3b8", "#cbd5e1"],
+};
+
+function analysisFilterSelectForKind(kind) {
+  if (kind === "evidence") return $("#analysisEvidenceFilter");
+  if (kind === "scene") return $("#analysisSceneFilter");
+  if (kind === "trigger") return $("#analysisTriggerFilter");
+  if (kind === "egress") return $("#analysisEgressFilter");
+  return null;
+}
+
+function analysisActiveFilterKey(kind) {
+  return analysisFilterSelectForKind(kind)?.value || "";
+}
+
+function applyAnalysisClusterFilter(kind, key) {
+  const select = analysisFilterSelectForKind(kind);
+  if (!select) return;
+  select.value = select.value === key ? "" : key;
+  state.reviewAnalysis.page = 1;
+  showPage("analysis", { historyMode: "push" });
+  loadReviewReasonAnalysis().catch((error) => showToast(error.message, true));
+}
+
+function analysisDonutArcs(items) {
+  const rows = (items || []).filter((item) => Number(item.count) > 0);
+  const sum = rows.reduce((acc, item) => acc + Number(item.count || 0), 0);
+  if (!sum) return [];
+  let angle = -Math.PI / 2;
+  return rows.map((item, index) => {
+    const fraction = Number(item.count || 0) / sum;
+    const start = angle;
+    const end = angle + fraction * Math.PI * 2;
+    angle = end;
+    return { item, index, start, end, fraction };
+  });
+}
+
+function analysisDonutPath(cx, cy, radius, inner, start, end) {
+  const large = end - start > Math.PI ? 1 : 0;
+  const polar = (r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+  const [x1, y1] = polar(radius, start);
+  const [x2, y2] = polar(radius, end);
+  const [x3, y3] = polar(inner, end);
+  const [x4, y4] = polar(inner, start);
+  if (end - start >= Math.PI * 2 - 1e-6) {
+    const mid = start + Math.PI;
+    const [mx1, my1] = polar(radius, mid);
+    const [mx2, my2] = polar(inner, mid);
+    return [
+      `M ${x1} ${y1}`,
+      `A ${radius} ${radius} 0 1 1 ${mx1} ${my1}`,
+      `A ${radius} ${radius} 0 1 1 ${x1} ${y1}`,
+      `L ${x4} ${y4}`,
+      `A ${inner} ${inner} 0 1 0 ${mx2} ${my2}`,
+      `A ${inner} ${inner} 0 1 0 ${x4} ${y4}`,
+      "Z",
+    ].join(" ");
   }
-  const activeValue =
-    $("#analysisEvidenceFilter")?.value || "";
-  target.innerHTML = items
-    .map((item) => {
-      const percentage = Math.round(Number(item.share || 0) * 1000) / 10;
-      const width = Math.max(2, Math.min(100, percentage));
-      return `<button class="analysis-cluster-row ${activeValue === item.key ? "active" : ""}" type="button"
-          data-analysis-cluster-kind="${kind}" data-analysis-cluster-key="${escapeHtml(item.key)}"
-          title="${escapeHtml(item.description || item.label)}">
-        <span class="analysis-cluster-copy">
-          <strong>${escapeHtml(item.label)}</strong>
-          <small>${escapeHtml(item.description || "")}</small>
-        </span>
-        <span class="analysis-cluster-value"><b>${item.count}</b><small>${percentage}%</small></span>
-        <span class="analysis-bar-track" aria-hidden="true"><span style="width:${width}%"></span></span>
-      </button>`;
+  return [
+    `M ${x1} ${y1}`,
+    `A ${radius} ${radius} 0 ${large} 1 ${x2} ${y2}`,
+    `L ${x3} ${y3}`,
+    `A ${inner} ${inner} 0 ${large} 0 ${x4} ${y4}`,
+    "Z",
+  ].join(" ");
+}
+
+function renderAnalysisDonutSvg(items, { size = 118, palette = [], activeKey = "" } = {}) {
+  const cx = size / 2;
+  const cy = size / 2;
+  const radius = size * 0.42;
+  const inner = size * 0.26;
+  const arcs = analysisDonutArcs(items);
+  if (!arcs.length) {
+    return `<svg class="analysis-donut-svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-hidden="true">
+      <circle cx="${cx}" cy="${cy}" r="${(radius + inner) / 2}" fill="none" stroke="#243041" stroke-width="${radius - inner}" />
+    </svg>`;
+  }
+  const slices = arcs
+    .map(({ item, index, start, end }) => {
+      const color = palette[index % palette.length] || "#64748b";
+      const active = activeKey && activeKey === item.key ? " is-active" : "";
+      return `<path class="analysis-donut-slice${active}" data-analysis-cluster-key="${escapeHtml(item.key)}"
+        d="${analysisDonutPath(cx, cy, radius, inner, start, end)}"
+        fill="${color}" stroke="#0b1119" stroke-width="1.2">
+        <title>${escapeHtml(item.label)} · ${item.count}</title>
+      </path>`;
     })
     .join("");
-  target.querySelectorAll("[data-analysis-cluster-key]").forEach((button) => {
-    button.addEventListener("click", () => {
-      if (button.dataset.analysisClusterKind === "evidence") {
-        const select = $("#analysisEvidenceFilter");
-        select.value = select.value === button.dataset.analysisClusterKey
-          ? ""
-          : button.dataset.analysisClusterKey;
-      }
-      state.reviewAnalysis.page = 1;
-      showPage("analysis", { historyMode: "push" });
-      loadReviewReasonAnalysis().catch((error) => showToast(error.message, true));
+  return `<svg class="analysis-donut-svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img">
+    ${slices}
+  </svg>`;
+}
+
+function renderAnalysisClusterGroup(group, panel, { dual = false } = {}) {
+  const items = group.items || [];
+  const activeKey = analysisActiveFilterKey(panel.filter_kind);
+  const palette = ANALYSIS_DONUT_PALETTES[panel.key] || ANALYSIS_DONUT_PALETTES.evidence;
+  const size = dual ? 96 : 124;
+  const legend = items.length
+    ? items
+        .map((item, index) => {
+          const percentage = Math.round(Number(item.share || 0) * 1000) / 10;
+          const active = activeKey === item.key ? " active" : "";
+          return `<button class="analysis-donut-legend-row${active}" type="button"
+              data-analysis-cluster-kind="${escapeHtml(panel.filter_kind)}"
+              data-analysis-cluster-key="${escapeHtml(item.key)}"
+              title="${escapeHtml(item.description || item.label)}">
+            <span class="analysis-donut-swatch" style="background:${palette[index % palette.length]}"></span>
+            <span class="analysis-donut-legend-copy">
+              <strong>${escapeHtml(item.label)}</strong>
+              <small>${item.count} · ${percentage}%</small>
+            </span>
+          </button>`;
+        })
+        .join("")
+    : `<div class="analysis-donut-empty">暂无数据</div>`;
+  return `<div class="analysis-donut-group ${dual ? "is-dual" : "is-single"}">
+    <div class="analysis-donut-figure">
+      ${renderAnalysisDonutSvg(items, { size, palette, activeKey })}
+      <div class="analysis-donut-center">
+        <b>${group.annotated_count ?? 0}</b>
+        <small>${escapeHtml(group.label || "")}</small>
+      </div>
+    </div>
+    <div class="analysis-donut-legend">${legend}</div>
+  </div>`;
+}
+
+function renderAnalysisClusterPanels(data) {
+  const target = $("#analysisClusterPanels");
+  if (!target) return;
+  const panels = data.cluster_panels || [];
+  if (!panels.length) {
+    // Fallback for older API responses: evidence list only.
+    const legacy = data.evidence_clusters || [];
+    target.innerHTML = `<article class="page-card analysis-cluster-card">
+      <div class="section-heading"><div><h3>缺失信息</h3></div><small>兼容旧接口</small></div>
+      <div class="analysis-donut-groups">${renderAnalysisClusterGroup(
+        { key: "all", label: "缺失信息", annotated_count: data.summary?.with_structured_evidence || 0, items: legacy },
+        { key: "evidence", filter_kind: "evidence" }
+      )}</div>
+    </article>`;
+  } else {
+    target.innerHTML = panels
+      .map((panel) => {
+        const dual = panel.layout === "dual" || (panel.groups || []).length > 1;
+        const groups = panel.groups || [];
+        const body = groups.length
+          ? groups
+              .map((group) => renderAnalysisClusterGroup(group, panel, { dual }))
+              .join("")
+          : `<div class="analysis-empty">当前筛选范围内还没有可统计的聚类。</div>`;
+        return `<article class="page-card analysis-cluster-card layout-${escapeHtml(panel.layout || "single")}" data-panel="${escapeHtml(panel.key)}">
+          <div class="section-heading">
+            <div><h3>${escapeHtml(panel.label)}</h3></div>
+            <small>${dual ? "双组甜甜圈 · 点击筛选" : "甜甜圈 · 点击筛选"}</small>
+          </div>
+          <div class="analysis-donut-groups ${dual ? "dual" : "single"}">${body}</div>
+        </article>`;
+      })
+      .join("");
+  }
+  target.querySelectorAll("[data-analysis-cluster-key]").forEach((node) => {
+    node.addEventListener("click", (event) => {
+      event.preventDefault();
+      const kind =
+        node.dataset.analysisClusterKind ||
+        node.closest("[data-panel]")?.dataset.panel ||
+        "evidence";
+      const key = node.dataset.analysisClusterKey;
+      if (!key) return;
+      const filterKind =
+        node.dataset.analysisClusterKind ||
+        ({
+          evidence: "evidence",
+          scene: "scene",
+          trigger: "trigger",
+          egress: "egress",
+        }[kind] || kind);
+      applyAnalysisClusterFilter(filterKind, key);
     });
   });
 }
@@ -266,11 +415,7 @@ function renderReviewReasonAnalysis(data) {
   $("#analysisReviewScope").textContent = run
     ? `${run.name}${comparisonStatus === "all" ? "" : ` · ${comparisonMeta.label}`}`
     : "全部最新 Review";
-  renderAnalysisClusterList(
-    data.evidence_clusters || [],
-    "#analysisEvidenceClusters",
-    "evidence"
-  );
+  renderAnalysisClusterPanels(data);
   renderAnalysisConfusion(data);
   renderAnalysisCases(data);
 }
