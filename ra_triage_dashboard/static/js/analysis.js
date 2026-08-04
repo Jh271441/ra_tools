@@ -60,6 +60,39 @@ function analysisRequestOptions() {
   });
 }
 
+/** Shared query builder for analysis JSON + export endpoints. */
+function buildAnalysisQueryParams({ format = "", includePagination = true } = {}) {
+  const options = analysisRequestOptions();
+  const params = new URLSearchParams();
+  if (format) params.set("format", format);
+  if (options.runId) params.set("model_run_id", options.runId);
+  params.set(
+    "comparison",
+    options.runId
+      ? normalizedAnalysisComparisonStatus(options.comparisonStatus)
+      : "all"
+  );
+  const fields = [
+    ["annotation_author", joinFilterList(options.annotationAuthor)],
+    ["review_status", joinFilterList(options.reviewStatus)],
+    ["gt_label", joinFilterList(options.gtLabel)],
+    ["model_label", joinFilterList(options.modelLabel)],
+    ["missing_evidence", joinFilterList(options.missingEvidence)],
+    ["scene_tag", joinFilterList(options.sceneTag)],
+    ["trigger_tag", joinFilterList(options.triggerTag)],
+    ["egress_tag", joinFilterList(options.egressTag)],
+    ["search", options.search || ""],
+  ];
+  for (const [key, value] of fields) {
+    if (value) params.set(key, value);
+  }
+  if (includePagination) {
+    params.set("page", String(Math.max(1, Number(options.page) || 1)));
+    params.set("page_size", String(state.reviewAnalysis.pageSize));
+  }
+  return params;
+}
+
 // Cool theme-aligned palettes (no warm reds/ambers).
 // Dark: brighter cyan for black stage. Light: deeper tones so slices don't glow on white.
 const ANALYSIS_PIE_BASE_DARK = [
@@ -184,16 +217,20 @@ function showAnalysisPieTooltip(event, item, percent) {
   tip.style.top = `${Math.max(8, top)}px`;
 }
 
-function renderAnalysisPieSvg(items, { size = 148, palette = ANALYSIS_PIE_COLORS } = {}) {
+function renderAnalysisPieSvg(
+  items,
+  { size = 148, palette = ANALYSIS_PIE_COLORS, animatePies = true } = {}
+) {
   const cx = size / 2;
   const cy = size / 2;
   // Thicker ring + smaller hole so the center label sits tighter.
   const outer = size * 0.46;
   const inner = size * 0.20;
+  const pieClass = animatePies ? "analysis-pie-svg is-enter" : "analysis-pie-svg";
   const { arcs, sum } = analysisPieArcs(items);
   if (!arcs.length) {
     const mid = (outer + inner) / 2;
-    return `<svg class="analysis-pie-svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-hidden="true">
+    return `<svg class="${pieClass}" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-hidden="true">
       <circle class="analysis-pie-empty-ring" cx="${cx}" cy="${cy}" r="${mid}" fill="none" stroke-width="${outer - inner}" />
     </svg>`;
   }
@@ -222,12 +259,12 @@ function renderAnalysisPieSvg(items, { size = 148, palette = ANALYSIS_PIE_COLORS
       return `<text class="analysis-pie-label" x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle">${percent}%</text>`;
     })
     .join("");
-  return `<svg class="analysis-pie-svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img">
+  return `<svg class="${pieClass}" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img">
     ${slices}${labels}
   </svg>`;
 }
 
-function renderAnalysisClusterGroup(group, panel, { dual = false } = {}) {
+function renderAnalysisClusterGroup(group, panel, { dual = false, animatePies = true } = {}) {
   const items = group.items || [];
   const size = dual ? 120 : 150;
   const palette = analysisPiePalette(panel?.key);
@@ -254,7 +291,7 @@ function renderAnalysisClusterGroup(group, panel, { dual = false } = {}) {
     : `<div class="analysis-donut-empty">暂无数据</div>`;
   return `<div class="analysis-pie-group ${dual ? "is-dual" : "is-single"}">
     <div class="analysis-pie-figure" data-group-label="${escapeHtml(group.label || "")}">
-      ${renderAnalysisPieSvg(items, { size, palette })}
+      ${renderAnalysisPieSvg(items, { size, palette, animatePies })}
       <div class="analysis-pie-center">
         <b>${group.annotated_count ?? 0}</b>
         <small>${escapeHtml(group.label || "")}</small>
@@ -297,7 +334,7 @@ function bindAnalysisPieHover(root) {
   });
 }
 
-function renderAnalysisClusterPanels(data) {
+function renderAnalysisClusterPanels(data, { animatePies = true } = {}) {
   const target = $("#analysisClusterPanels");
   if (!target) return;
   hideAnalysisPieTooltip();
@@ -313,7 +350,8 @@ function renderAnalysisClusterPanels(data) {
           annotated_count: data.summary?.with_structured_evidence || 0,
           items: legacy,
         },
-        { key: "evidence", filter_kind: "evidence" }
+        { key: "evidence", filter_kind: "evidence" },
+        { animatePies }
       )}</div>
     </article>`;
   } else {
@@ -323,7 +361,9 @@ function renderAnalysisClusterPanels(data) {
         const groups = panel.groups || [];
         const body = groups.length
           ? groups
-              .map((group) => renderAnalysisClusterGroup(group, panel, { dual }))
+              .map((group) =>
+                renderAnalysisClusterGroup(group, panel, { dual, animatePies })
+              )
               .join("")
           : `<div class="analysis-empty">当前筛选范围内还没有可统计的聚类。</div>`;
         return `<article class="page-card analysis-cluster-card layout-${escapeHtml(panel.layout || "single")}" data-panel="${escapeHtml(panel.key)}">
@@ -336,6 +376,15 @@ function renderAnalysisClusterPanels(data) {
       .join("");
   }
   bindAnalysisPieHover(target);
+  clearAnalysisPieEnterAnimations(target);
+}
+
+function clearAnalysisPieEnterAnimations(root) {
+  root?.querySelectorAll(".analysis-pie-svg.is-enter").forEach((svg) => {
+    const clear = () => svg.classList.remove("is-enter");
+    svg.addEventListener("animationend", clear, { once: true });
+    window.setTimeout(clear, 500);
+  });
 }
 
 function renderAnalysisConfusion(data) {
@@ -487,7 +536,7 @@ function renderAnalysisCases(data) {
   $("#analysisPageNext").disabled = page >= pageCount;
 }
 
-function renderReviewReasonAnalysis(data) {
+function renderReviewReasonAnalysis(data, { animatePies = true } = {}) {
   const summary = data.summary || {};
   state.reviewAnalysis.page = Number(data.page || 1);
   $("#analysisReviewCount").textContent = summary.latest_reviews ?? 0;
@@ -503,75 +552,50 @@ function renderReviewReasonAnalysis(data) {
   $("#analysisReviewScope").textContent = run
     ? `${run.name}${comparisonStatus === "all" ? "" : ` · ${comparisonMeta.label}`}`
     : "全部最新 Review";
-  renderAnalysisClusterPanels(data);
+  renderAnalysisClusterPanels(data, { animatePies });
   renderAnalysisConfusion(data);
   renderAnalysisCases(data);
 }
 
-async function loadReviewReasonAnalysis() {
+function paintAnalysisFromCache() {
+  const data = state.reviewAnalysis?.data;
+  if (!data) return false;
+  // Quiet repaint when revisiting the tab — pie spin is for real data loads only.
+  renderReviewReasonAnalysis(data, { animatePies: false });
+  return true;
+}
+
+/**
+ * Enter/revisit the analysis page: paint cache immediately (if any), then revalidate.
+ * Used by sidebar navigation and popstate so tab switches stay snappy without blanking.
+ */
+async function enterAnalysisPage({ includeOverview = false } = {}) {
+  if (!state.config) return;
+  const painted = paintAnalysisFromCache();
+  const loads = [loadReviewReasonAnalysis({ keepPainted: painted })];
+  if (includeOverview) loads.push(loadOverview());
+  await Promise.all(loads);
+}
+
+async function loadReviewReasonAnalysis({ keepPainted = false } = {}) {
   const requestSeq = ++state.reviewAnalysis.requestSeq;
-  const options = analysisRequestOptions();
-  const params = new URLSearchParams();
-  if (options.runId) params.set("model_run_id", options.runId);
-  params.set(
-    "comparison",
-    options.runId
-      ? normalizedAnalysisComparisonStatus(options.comparisonStatus)
-      : "all"
-  );
-  const author = joinFilterList(options.annotationAuthor);
-  const status = joinFilterList(options.reviewStatus);
-  const gt = joinFilterList(options.gtLabel);
-  const modelLabel = joinFilterList(options.modelLabel);
-  const evidence = joinFilterList(options.missingEvidence);
-  const sceneTag = joinFilterList(options.sceneTag);
-  const triggerTag = joinFilterList(options.triggerTag);
-  const egressTag = joinFilterList(options.egressTag);
-  if (author) params.set("annotation_author", author);
-  if (status) params.set("review_status", status);
-  if (gt) params.set("gt_label", gt);
-  if (modelLabel) params.set("model_label", modelLabel);
-  if (evidence) params.set("missing_evidence", evidence);
-  if (sceneTag) params.set("scene_tag", sceneTag);
-  if (triggerTag) params.set("trigger_tag", triggerTag);
-  if (egressTag) params.set("egress_tag", egressTag);
-  if (options.search) params.set("search", options.search);
-  params.set("page", String(Math.max(1, Number(options.page) || 1)));
-  params.set("page_size", String(state.reviewAnalysis.pageSize));
-  $("#analysisCaseSummary").textContent = "正在加载最新 Review…";
+  const params = buildAnalysisQueryParams({ includePagination: true });
+  // Keep existing paint when revisiting the tab; avoid blanking for a snappier switch.
+  if (!keepPainted) {
+    $("#analysisCaseSummary").textContent = "正在加载最新 Review…";
+  }
   const data = await api(`/api/review-reason-analysis?${params.toString()}`);
   if (requestSeq !== state.reviewAnalysis.requestSeq) return;
   state.reviewAnalysis.data = data;
-  renderReviewReasonAnalysis(data);
+  // Spin on first paint / filter reloads; skip when quietly revalidating a painted tab.
+  renderReviewReasonAnalysis(data, { animatePies: !keepPainted });
 }
 
 function downloadReviewAnalysis(format) {
-  const options = analysisRequestOptions();
-  const params = new URLSearchParams({ format });
-  if (options.runId) params.set("model_run_id", options.runId);
-  params.set(
-    "comparison",
-    options.runId
-      ? normalizedAnalysisComparisonStatus(options.comparisonStatus)
-      : "all"
-  );
-  const author = joinFilterList(options.annotationAuthor);
-  const status = joinFilterList(options.reviewStatus);
-  const gt = joinFilterList(options.gtLabel);
-  const modelLabel = joinFilterList(options.modelLabel);
-  const evidence = joinFilterList(options.missingEvidence);
-  const sceneTag = joinFilterList(options.sceneTag);
-  const triggerTag = joinFilterList(options.triggerTag);
-  const egressTag = joinFilterList(options.egressTag);
-  if (author) params.set("annotation_author", author);
-  if (status) params.set("review_status", status);
-  if (gt) params.set("gt_label", gt);
-  if (modelLabel) params.set("model_label", modelLabel);
-  if (evidence) params.set("missing_evidence", evidence);
-  if (sceneTag) params.set("scene_tag", sceneTag);
-  if (triggerTag) params.set("trigger_tag", triggerTag);
-  if (egressTag) params.set("egress_tag", egressTag);
-  if (options.search) params.set("search", options.search);
+  const params = buildAnalysisQueryParams({
+    format,
+    includePagination: false,
+  });
   const link = document.createElement("a");
   link.href = withBase(`/api/review-reason-analysis/export?${params.toString()}`);
   link.download = "";

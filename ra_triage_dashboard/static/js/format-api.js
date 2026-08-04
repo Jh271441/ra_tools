@@ -368,6 +368,12 @@ function startChangePolling() {
 
 function applySidebarState() {
   $("#appShell").classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
+  // Keep early-paint pref in sync so hard refresh matches the collapsed width without layout transition.
+  if (state.sidebarCollapsed) {
+    document.documentElement.dataset.sidebarPref = "collapsed";
+  } else {
+    delete document.documentElement.dataset.sidebarPref;
+  }
   const expanded = String(!state.sidebarCollapsed);
   const title = state.sidebarCollapsed
     ? uiText("展开工具栏", "Expand toolbar")
@@ -376,6 +382,16 @@ function applySidebarState() {
   $("#sidebarToggle").title = title;
   $("#sidebarBrandToggle").setAttribute("aria-expanded", expanded);
   $("#sidebarBrandToggle").title = title;
+}
+
+function markUiReady() {
+  // Enable layout transitions only after the first settled frame (avoids CSS-load LTR wipe).
+  if (document.documentElement.classList.contains("ra-ui-ready")) return;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      document.documentElement.classList.add("ra-ui-ready");
+    });
+  });
 }
 
 function toggleSidebar() {

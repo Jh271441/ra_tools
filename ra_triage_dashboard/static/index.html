@@ -11,6 +11,10 @@
         let theme = "dark";
         try {
           theme = localStorage.getItem("ra-triage-color-theme") === "light" ? "light" : "dark";
+          // Apply sidebar width before first paint so content does not slide in from the left.
+          if (localStorage.getItem("ra-triage-sidebar-collapsed") === "true") {
+            document.documentElement.dataset.sidebarPref = "collapsed";
+          }
         } catch (_error) {
           // Storage can be unavailable in hardened browser contexts; dark is safe.
         }
@@ -34,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-71`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-75`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -914,7 +918,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-71`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-75`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

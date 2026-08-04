@@ -40,13 +40,17 @@ html[data-ui-lang="en"] .ui-lang-zh { display: none; }
 html[data-ui-lang="en"] .ui-lang-en { display: inline; }
 
 .app-shell { min-height: 100vh; display: block; }
-.app-frame { min-width: 0; margin-left: 240px; container-type: inline-size; transition: margin-left 200ms ease-out; }
-.app-shell.sidebar-collapsed .app-frame { margin-left: 64px; }
+/* No margin transition on first paint — CSS load would animate 0→240 and feel like LTR wipe. */
+.app-frame { min-width: 0; margin-left: 240px; container-type: inline-size; }
+html.ra-ui-ready .app-frame { transition: margin-left 200ms ease-out; }
+.app-shell.sidebar-collapsed .app-frame,
+html[data-sidebar-pref="collapsed"] .app-frame { margin-left: 64px; }
 .app-sidebar {
   width: 240px; height: 100dvh; min-width: 0; display: flex; flex-direction: column; overflow: hidden; position: fixed; inset: 0 auto 0 0; z-index: 20;
   border-right: 1px solid var(--line); background: #0d1119;
 }
-.app-shell.sidebar-collapsed .app-sidebar { width: 64px; }
+.app-shell.sidebar-collapsed .app-sidebar,
+html[data-sidebar-pref="collapsed"] .app-sidebar { width: 64px; }
 .sidebar-brand { min-height: 60px; display: flex; align-items: center; gap: 10px; padding: 10px 11px; border-bottom: 1px solid var(--line); }
 .sidebar-copy, .sidebar-label { min-width: 0; }
 .sidebar-copy { display: grid; gap: 2px; white-space: nowrap; }
@@ -88,10 +92,25 @@ html[data-ui-lang="en"] .ui-lang-en { display: inline; }
 .sidebar-collapse:hover { color: var(--accent); border-color: rgba(34,211,238,.35); }
 .sidebar-collapse > span:first-child { width: 32px; flex: 0 0 32px; text-align: center; font-size: 22px; line-height: 1; transition: transform 200ms ease-out; }
 .sidebar-collapse .sidebar-label { display: block; font-size: 10px; }
-.app-shell.sidebar-collapsed .sidebar-copy, .app-shell.sidebar-collapsed .sidebar-label { display: none; }
-.app-shell.sidebar-collapsed .sidebar-brand, .app-shell.sidebar-collapsed .sidebar-item,
-.app-shell.sidebar-collapsed .sidebar-user, .app-shell.sidebar-collapsed .sidebar-collapse { justify-content: center; padding-inline: 6px; }
-.app-shell.sidebar-collapsed .sidebar-collapse > span:first-child { transform: rotate(180deg); }
+/* Runtime class + early-paint data-attr stay in lockstep (see applySidebarState / index head). */
+.app-shell.sidebar-collapsed .sidebar-copy,
+.app-shell.sidebar-collapsed .sidebar-label,
+html[data-sidebar-pref="collapsed"] .sidebar-copy,
+html[data-sidebar-pref="collapsed"] .sidebar-label { display: none; }
+.app-shell.sidebar-collapsed .sidebar-brand,
+.app-shell.sidebar-collapsed .sidebar-item,
+.app-shell.sidebar-collapsed .sidebar-user,
+.app-shell.sidebar-collapsed .sidebar-collapse,
+html[data-sidebar-pref="collapsed"] .sidebar-brand,
+html[data-sidebar-pref="collapsed"] .sidebar-item,
+html[data-sidebar-pref="collapsed"] .sidebar-user,
+html[data-sidebar-pref="collapsed"] .sidebar-collapse {
+  justify-content: center; padding-inline: 6px;
+}
+.app-shell.sidebar-collapsed .sidebar-collapse > span:first-child,
+html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
+  transform: rotate(180deg);
+}
 .topbar {
   min-height: 44px; display: flex; align-items: center; gap: 9px; padding: 4px clamp(8px, 1vw, 14px);
   border-bottom: 1px solid var(--line); background: rgba(11, 14, 20, .92); position: sticky; top: 0; z-index: 10;
@@ -1409,7 +1428,21 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: center;
 }
 .analysis-pie-figure { position: relative; width: max-content; margin: 0 auto; }
-.analysis-pie-svg { display: block; filter: drop-shadow(0 2px 8px rgba(0,0,0,.18)); }
+.analysis-pie-svg {
+  display: block; filter: drop-shadow(0 2px 8px rgba(0,0,0,.18));
+  transform-origin: 50% 50%;
+}
+/* One-shot restrained spin when a pie is (re)mounted — not a page-load wipe. */
+.analysis-pie-svg.is-enter {
+  animation: analysis-pie-enter 420ms cubic-bezier(.2, .7, .2, 1) both;
+}
+@keyframes analysis-pie-enter {
+  from { transform: rotate(-14deg); opacity: .72; }
+  to { transform: rotate(0deg); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .analysis-pie-svg.is-enter { animation: none; }
+}
 .analysis-pie-empty-ring { stroke: #243041; }
 .analysis-pie-slice {
   stroke: #0b1119; stroke-width: 1.2; cursor: default;

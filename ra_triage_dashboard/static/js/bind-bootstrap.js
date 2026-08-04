@@ -437,7 +437,7 @@ function bindEvents() {
       renderActiveRun();
       renderRunManager();
       try {
-        await Promise.all([loadReviewReasonAnalysis(), loadOverview()]);
+        await enterAnalysisPage({ includeOverview: true });
       } catch (error) {
         showToast(error.message, true);
       }
@@ -510,6 +510,7 @@ async function bootstrap() {
   const savedSidebarState = localStorage.getItem("ra-triage-sidebar-collapsed");
   state.sidebarCollapsed = savedSidebarState === "true";
   applySidebarState();
+  markUiReady();
   if (initialRoute.page === "review") applyReviewRouteControls(initialRoute);
   bindEvents();
   updateImportFields();

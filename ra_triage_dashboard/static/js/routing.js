@@ -21,7 +21,7 @@ function applyColorTheme(theme, { persist = true } = {}) {
   }
   // Pie slice colors are painted into SVG; re-render when theme flips.
   if (state.reviewAnalysis?.data && typeof renderAnalysisClusterPanels === "function") {
-    renderAnalysisClusterPanels(state.reviewAnalysis.data);
+    renderAnalysisClusterPanels(state.reviewAnalysis.data, { animatePies: false });
   }
 }
 
@@ -493,8 +493,9 @@ function showPage(
   if (historyMode === "replace") {
     history.replaceState(historyState, "", pageUrl(target, routeOptions));
   }
+  // Instant scroll keeps tab switches snappy; avoid smooth-scroll lag between pages.
   if (target !== "review" || issue) {
-    window.scrollTo({ top: 0, behavior: historyMode === "push" ? "smooth" : "auto" });
+    window.scrollTo({ top: 0, behavior: "auto" });
   }
 }
 
@@ -518,8 +519,8 @@ function navigatePage(page, options = {}) {
     setReviewComparisonStatus(state.reviewComparisonStatus, { hasRun: true });
   }
   showPage(page, { ...options, restoreRoute, historyMode: "push" });
-  if (page === "analysis" && state.config) {
-    loadReviewReasonAnalysis().catch((error) => showToast(error.message, true));
+  if (page === "analysis") {
+    enterAnalysisPage().catch((error) => showToast(error.message, true));
   }
   if (enteringReviewHome) {
     const list = $("#issueList");
