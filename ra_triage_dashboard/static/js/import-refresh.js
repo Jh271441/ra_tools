@@ -276,10 +276,10 @@ async function resetReviewFilters() {
   state.clusterKey = "";
   state.casePage = 1;
   if ($("#searchInput")) $("#searchInput").value = "";
-  if ($("#gtFilter")) $("#gtFilter").value = "";
-  if ($("#annotationFilter")) $("#annotationFilter").value = "";
-  if ($("#reviewerFilter")) $("#reviewerFilter").value = "";
-  if ($("#workAssigneeFilter")) $("#workAssigneeFilter").value = "";
+  setMultiFilterValues($("#gtFilter"), []);
+  setMultiFilterValues($("#annotationFilter"), []);
+  setMultiFilterValues($("#reviewerFilter"), []);
+  setMultiFilterValues($("#workAssigneeFilter"), []);
   if ($("#modelRunFilter")) $("#modelRunFilter").value = "";
   state.selectedRunId = "";
   state.reviewComparisonStatus = "all";

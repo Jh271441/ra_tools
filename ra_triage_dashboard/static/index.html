@@ -34,7 +34,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-54`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-63`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -169,34 +169,19 @@
                 </label>
                 <label>
                   <span>GT</span>
-                  <select id="gtFilter">
-                    <option value="">全部</option>
-                    <option value="误触发">误触发</option>
-                    <option value="正确触发">正确触发</option>
-                    <option value="无需协助">无需协助</option>
-                  </select>
+                  <div class="multi-filter" id="gtFilter" data-placeholder="全部 GT"></div>
                 </label>
                 <label>
                   <span>模型标注</span>
-                  <select id="annotationFilter">
-                    <option value="">全部</option>
-                    <option value="误触发">误触发</option>
-                    <option value="正确触发">正确触发</option>
-                    <option value="无需协助">无需协助</option>
-                  </select>
+                  <div class="multi-filter" id="annotationFilter" data-placeholder="全部模型标注"></div>
                 </label>
                 <label>
                   <span>复核人</span>
-                  <select id="reviewerFilter">
-                    <option value="">全部复核人</option>
-                  </select>
+                  <div class="multi-filter" id="reviewerFilter" data-placeholder="全部复核人"></div>
                 </label>
                 <label>
                   <span>任务负责人</span>
-                  <select id="workAssigneeFilter" aria-label="均分任务负责人筛选">
-                    <option value="">全部负责人</option>
-                    <option value="__none__">未分配</option>
-                  </select>
+                  <div class="multi-filter" id="workAssigneeFilter" data-placeholder="全部负责人" aria-label="均分任务负责人筛选"></div>
                 </label>
                 <button class="button button-quiet filter-submit" id="resetReviewFiltersButton" type="button">重置</button>
               </form>
@@ -934,7 +919,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-54`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-63`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

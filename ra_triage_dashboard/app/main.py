@@ -2271,15 +2271,21 @@ def _case_filter_kwargs(
     comparison_status = requested_comparison or ("mismatch" if failure_only else "all")
     if comparison_status != "all" and not model_run_id:
         raise _detail(400, "筛选模型对比关系时必须选择 Model Run。")
-    if model_label and model_label not in LABELS:
-        raise _detail(400, "model_label 不在三分类范围内。")
-    if model_label and not model_run_id:
+    model_labels = _csv_filter_values(model_label)
+    for label in model_labels:
+        if label not in LABELS:
+            raise _detail(400, "model_label 不在三分类范围内。")
+    if model_labels and not model_run_id:
         raise _detail(400, "按模型标注筛选时必须选择 Model Run。")
+    gt_labels = _csv_filter_values(gt_label)
+    for label in gt_labels:
+        if label not in LABELS:
+            raise _detail(400, "gt_label 不在三分类范围内。")
     return {
         "baseline_scope": settings.baseline_scope,
         "search": search,
-        "gt_label": gt_label,
-        "model_label": model_label,
+        "gt_label": ",".join(gt_labels),
+        "model_label": ",".join(model_labels),
         "annotation_label": annotation_label,
         "annotation_author": annotation_author,
         "model_run_id": model_run_id,

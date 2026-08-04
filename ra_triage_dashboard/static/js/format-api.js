@@ -59,6 +59,13 @@ function labelBadge(label, fallback = "—") {
   return `<span class="label-badge ${className}">${escapeHtml(actual || fallback)}</span>`;
 }
 
+function formatModelConfidence(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return String(value);
+  return numeric.toFixed(3);
+}
+
 function formatTime(value) {
   if (!value) return "—";
   const date = new Date(value);

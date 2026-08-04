@@ -96,23 +96,26 @@ function bindAnnotationHistory(root, caseData) {
 function updateReviewHistory(caseData) {
   if (!caseData || state.selectedId !== caseData.issue_id) return;
   const annotations = caseData.annotations || [];
-  const reviewPane = $("#reviewPane");
-  const content = reviewPane?.querySelector(".review-history-content");
-  const count = reviewPane?.querySelector(".history-launch-meta");
-  if (content) {
-    content.innerHTML = annotationHistory(annotations);
-    bindAnnotationHistory(content, caseData);
+  const launch = $("#reviewHistoryLaunchButton");
+  if (launch) {
+    launch.innerHTML = `<span class="ui-lang-zh">Review 历史 · ${annotations.length} 条</span><span class="ui-lang-en">Review history · ${annotations.length}</span>`;
   }
-  if (count) count.textContent = `${annotations.length} 条`;
   const dialog = $("#historyDialog");
   const dialogContent = $("#historyDialogContent");
+  const title = $("#historyDialogTitle")?.textContent || "";
   if (
     dialog?.open &&
     dialogContent &&
-    $("#historyDialogTitle")?.textContent === "Review 历史"
+    (title === "Review 历史" || title === "Review history")
   ) {
     dialogContent.innerHTML = annotationHistory(annotations);
     bindAnnotationHistory(dialogContent, caseData);
+    if ($("#historyDialogMeta")) {
+      $("#historyDialogMeta").textContent =
+        state.uiLanguage === "en"
+          ? `${annotations.length} reviews · append-only history`
+          : `${annotations.length} 条历史 Review · 追加式，不覆盖旧记录`;
+    }
   }
 }
 
@@ -379,20 +382,31 @@ function renderReview(caseData) {
   $("#reviewPane").innerHTML = `
     <form class="review-form" id="annotationForm">
       <section class="review-section issue-tag-section">
-        <div class="review-section-heading"><div><h2>Issue 标签</h2></div><span class="evidence-summary-count" id="tagSummaryCount">已选 ${chosenTags.size} 项</span></div>
+        <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span></h2></div><span class="evidence-summary-count" id="tagSummaryCount">已选 ${chosenTags.size} 项</span></div>
         <div class="review-tag-groups-shell">${issueTagGroups}${customTagOptions ? `<div class="review-tag-legacy"><span>历史标签</span><div class="review-tag-options">${customTagOptions}</div></div>` : ""}</div>
         <label class="review-exclude-toggle"><input id="reviewExcludeInput" type="checkbox" ${previous.is_excluded ? "checked" : ""} /><span><strong>应该排除</strong><small>不是模型需要解决的场景 case</small></span></label>
       </section>
       <section class="review-section model-error-section">
-        <div class="review-section-heading"><div><h2>模型判错</h2></div></div>
-        <label class="review-status-field"><span>复核状态</span><select id="reviewStatusInput"><option value="reviewed" ${reviewStatus === "reviewed" ? "selected" : ""}>已 Review</option><option value="pending" ${reviewStatus === "pending" ? "selected" : ""}>待补充</option><option value="needs_gt_review" ${reviewStatus === "needs_gt_review" ? "selected" : ""}>GT 需复核</option></select></label>
+        <div class="review-section-heading">
+          <div>
+            <h2>
+              <span class="ui-lang-zh">模型结果 Review</span>
+              <span class="ui-lang-en">Model Result Review</span>
+            </h2>
+          </div>
+          <button class="history-inline-button" type="button" data-open-history="review" id="reviewHistoryLaunchButton">
+            <span class="ui-lang-zh">Review 历史 · ${(caseData.annotations || []).length} 条</span>
+            <span class="ui-lang-en">Review history · ${(caseData.annotations || []).length}</span>
+          </button>
+        </div>
+        <label class="review-status-field"><span><span class="ui-lang-zh">复核状态</span><span class="ui-lang-en">Review status</span></span><select id="reviewStatusInput"><option value="reviewed" ${reviewStatus === "reviewed" ? "selected" : ""}>已 Review</option><option value="pending" ${reviewStatus === "pending" ? "selected" : ""}>待补充</option><option value="needs_gt_review" ${reviewStatus === "needs_gt_review" ? "selected" : ""}>GT 需复核</option></select></label>
         <label class="review-reason">
-          <span>模型为什么判错？</span>
+          <span><span class="ui-lang-zh">模型为什么判错？</span><span class="ui-lang-en">Why was the model wrong?</span></span>
           <textarea id="annotationNote" rows="2" placeholder="简要说明模型漏掉的关键证据，例如 routing、绕行空间或时序。">${escapeHtml(previous.note || "")}</textarea>
         </label>
         <details class="evidence-dropdown review-dropdown review-tag-dropdown">
           <summary>
-            <span class="tag-group-label">缺失信息（多选）</span>
+            <span class="tag-group-label"><span class="ui-lang-zh">缺失信息（多选）</span><span class="ui-lang-en">Missing evidence</span></span>
             <span class="tag-group-trailing">
               <button class="tag-catalog-add-button" type="button" data-open-missing-evidence-creator aria-label="新增缺失信息" title="新增缺失信息">＋</button>
               <span class="evidence-summary-count tag-group-summary" id="evidenceSummaryCount">已选 ${chosenEvidence.size} 项</span>
@@ -402,23 +416,20 @@ function renderReview(caseData) {
           <div class="evidence-options review-tag-options" id="missingEvidenceOptions">${visibleCatalog.map((item) => missingEvidenceOptionMarkup(item, chosenEvidence.has(item.key), true)).join("")}${deletedEvidenceOptions}${customEvidenceOptions}${!visibleCatalog.length && !deletedEvidenceOptions && !customEvidenceOptions ? '<div class="review-tag-empty">暂无条目，点 ＋ 添加</div>' : ""}</div>
         </details>
         <div class="review-attachment-field">
-          <span>补充截图（可选）</span>
-          <div class="screenshot-paste-zone" id="screenshotPasteZone" tabindex="0" role="group" aria-label="粘贴补充截图">
-            <strong>粘贴截图</strong>
-            <small>点击后 Ctrl / ⌘ + V；最多 4 张。</small>
-            <button class="screenshot-browse-button" id="reviewScreenshotBrowse" type="button">选择图片</button>
+          <div class="screenshot-paste-zone is-compact" id="screenshotPasteZone" tabindex="0" role="group" aria-label="粘贴补充截图">
+            <span class="screenshot-paste-copy">
+              <strong><span class="ui-lang-zh">补充截图</span><span class="ui-lang-en">Screenshots</span></strong>
+              <small><span class="ui-lang-zh">粘贴 Ctrl/⌘+V · 最多 4 张</span><span class="ui-lang-en">Paste Ctrl/⌘+V · max 4</span></small>
+            </span>
+            <button class="screenshot-browse-button" id="reviewScreenshotBrowse" type="button"><span class="ui-lang-zh">选择图片</span><span class="ui-lang-en">Browse</span></button>
           </div>
           <input class="hidden" id="reviewScreenshotInput" type="file" accept="image/png,image/jpeg,image/webp" multiple />
           <div class="pending-screenshot-list" id="pendingScreenshotList"></div>
         </div>
       </section>
-      <label><span>复核人${authorLocked ? "（SSO）" : "（必填）"}</span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" required ${authorLocked ? "readonly" : ""} /></label>
-      <button class="button button-primary full-width" type="submit">保存新的 review 版本</button>
-    </form>
-    <details class="review-history-toggle" open>
-      <summary><span><strong>Review 历史</strong></span><span class="history-launch-meta">${(caseData.annotations || []).length} 条</span></summary>
-      <div class="review-history-content">${annotationHistory(caseData.annotations)}</div>
-    </details>`;
+      <label><span><span class="ui-lang-zh">复核人${authorLocked ? "（SSO）" : "（必填）"}</span><span class="ui-lang-en">Reviewer${authorLocked ? " (SSO)" : " (required)"}</span></span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" required ${authorLocked ? "readonly" : ""} /></label>
+      <button class="button button-primary full-width" type="submit"><span class="ui-lang-zh">保存新的 review 版本</span><span class="ui-lang-en">Save new review version</span></button>
+    </form>`;
   $("#reviewPane").querySelectorAll('input[name="missingEvidence"]').forEach((input) => {
     input.addEventListener("change", updateEvidenceSummary);
   });
@@ -435,30 +446,35 @@ function renderReview(caseData) {
       });
     });
   });
+  $("#reviewPane").querySelector("[data-open-history='review']")?.addEventListener("click", () => {
+    openHistoryDialog("review", caseData);
+  });
   const pasteZone = $("#screenshotPasteZone");
   const screenshotInput = $("#reviewScreenshotInput");
   const screenshotBrowse = $("#reviewScreenshotBrowse");
-  pasteZone.addEventListener("click", (event) => {
-    if (event.target !== screenshotBrowse) pasteZone.focus();
-  });
-  screenshotBrowse.addEventListener("click", (event) => {
-    event.stopPropagation();
-    screenshotInput.click();
-  });
-  pasteZone.addEventListener("paste", (event) => {
-    const files = [...(event.clipboardData?.items || [])]
-      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
-      .map((item) => item.getAsFile())
-      .filter(Boolean);
-    if (files.length) {
-      event.preventDefault();
-      addPendingReviewImages(files);
-    }
-  });
-  screenshotInput.addEventListener("change", () => {
-    addPendingReviewImages([...screenshotInput.files]);
-    screenshotInput.value = "";
-  });
+  if (pasteZone && screenshotInput && screenshotBrowse) {
+    pasteZone.addEventListener("click", (event) => {
+      if (event.target !== screenshotBrowse) pasteZone.focus();
+    });
+    screenshotBrowse.addEventListener("click", (event) => {
+      event.stopPropagation();
+      screenshotInput.click();
+    });
+    pasteZone.addEventListener("paste", (event) => {
+      const files = [...(event.clipboardData?.items || [])]
+        .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+        .map((item) => item.getAsFile())
+        .filter(Boolean);
+      if (files.length) {
+        event.preventDefault();
+        addPendingReviewImages(files);
+      }
+    });
+    screenshotInput.addEventListener("change", () => {
+      addPendingReviewImages([...screenshotInput.files]);
+      screenshotInput.value = "";
+    });
+  }
   renderPendingReviewImages();
   const annotationForm = $("#annotationForm");
   annotationForm.addEventListener("input", () => {

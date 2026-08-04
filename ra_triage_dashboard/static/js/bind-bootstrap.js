@@ -38,9 +38,6 @@ function bindEvents() {
     }, Math.max(0, Number(delay) || 0));
   };
   $("#searchInput")?.addEventListener("input", () => scheduleReviewFilterReload(280));
-  ["#gtFilter", "#annotationFilter", "#reviewerFilter"].forEach((selector) => {
-    $(selector)?.addEventListener("change", () => scheduleReviewFilterReload(0));
-  });
   $("#reviewAnalysisFilterForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     state.reviewAnalysis.page = 1;

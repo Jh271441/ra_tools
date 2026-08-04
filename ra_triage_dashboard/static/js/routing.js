@@ -13,11 +13,16 @@ function applyColorTheme(theme, { persist = true } = {}) {
   document.documentElement.dataset.colorTheme = state.colorTheme;
   if (persist) localStorage.setItem("ra-triage-color-theme", state.colorTheme);
   const toggle = $("#themeToggleButton");
-  if (!toggle) return;
-  const light = state.colorTheme === "light";
-  toggle.textContent = light ? "☾" : "☀";
-  toggle.setAttribute("aria-label", light ? "切换到深色模式" : "切换到浅色模式");
-  toggle.title = light ? "切换到深色模式" : "切换到浅色模式";
+  if (toggle) {
+    const light = state.colorTheme === "light";
+    toggle.textContent = light ? "☾" : "☀";
+    toggle.setAttribute("aria-label", light ? "切换到深色模式" : "切换到浅色模式");
+    toggle.title = light ? "切换到深色模式" : "切换到浅色模式";
+  }
+  // Pie slice colors are painted into SVG; re-render when theme flips.
+  if (state.reviewAnalysis?.data && typeof renderAnalysisClusterPanels === "function") {
+    renderAnalysisClusterPanels(state.reviewAnalysis.data);
+  }
 }
 
 function normalizedUiLanguage(value) {
@@ -112,10 +117,16 @@ function normalizedReviewRouteFilters(params) {
   );
   return {
     search: params.get("q") || "",
-    gtLabel: LABELS.includes(gtLabel) ? gtLabel : "",
-    modelLabel: LABELS.includes(modelLabel) ? modelLabel : "",
-    annotationAuthor: params.get("reviewer") || "",
-    workAssignee: params.get("work_assignee") || params.get("assignee") || "",
+    gtLabel: parseFilterList(params.get("gt") || gtLabel).filter((value) =>
+      LABELS.includes(value)
+    ),
+    modelLabel: parseFilterList(modelLabel).filter((value) =>
+      LABELS.includes(value)
+    ),
+    annotationAuthor: parseFilterList(params.get("reviewer")),
+    workAssignee: parseFilterList(
+      params.get("work_assignee") || params.get("assignee") || ""
+    ),
     clusterKey: params.get("evidence") || "",
     casePage: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
     casePageSize: CASE_PAGE_SIZES.includes(rawPageSize)
@@ -199,10 +210,10 @@ function currentReviewRouteOptions(overrides = {}) {
     comparisonStatus: state.reviewComparisonStatus,
     failureOnly: state.failureOnly,
     search: $("#searchInput")?.value.trim() || "",
-    gtLabel: $("#gtFilter")?.value || "",
-    modelLabel: $("#annotationFilter")?.value || "",
-    annotationAuthor: $("#reviewerFilter")?.value || "",
-    workAssignee: $("#workAssigneeFilter")?.value || "",
+    gtLabel: getMultiFilterValues($("#gtFilter")),
+    modelLabel: getMultiFilterValues($("#annotationFilter")),
+    annotationAuthor: getMultiFilterValues($("#reviewerFilter")),
+    workAssignee: getMultiFilterValues($("#workAssigneeFilter")),
     clusterKey: state.clusterKey,
     casePage: state.casePage,
     casePageSize: state.casePageSize,
@@ -213,27 +224,10 @@ function currentReviewRouteOptions(overrides = {}) {
 function applyReviewRouteControls(route) {
   if (!route) return;
   if ($("#searchInput")) $("#searchInput").value = route.search || "";
-  if ($("#gtFilter")) $("#gtFilter").value = LABELS.includes(route.gtLabel) ? route.gtLabel : "";
-  if ($("#annotationFilter")) {
-    $("#annotationFilter").value = LABELS.includes(route.modelLabel)
-      ? route.modelLabel
-      : "";
-  }
-  if ($("#workAssigneeFilter")) {
-    const assignee = route.workAssignee || "";
-    $("#workAssigneeFilter").value =
-      !assignee ||
-      [...$("#workAssigneeFilter").options].some((option) => option.value === assignee)
-        ? assignee
-        : "";
-  }
-  if ($("#reviewerFilter")) {
-    const reviewer = route.annotationAuthor || "";
-    $("#reviewerFilter").value =
-      !reviewer || [...$("#reviewerFilter").options].some((option) => option.value === reviewer)
-        ? reviewer
-        : "";
-  }
+  setMultiFilterValues($("#gtFilter"), route.gtLabel);
+  setMultiFilterValues($("#annotationFilter"), route.modelLabel);
+  setMultiFilterValues($("#workAssigneeFilter"), route.workAssignee);
+  setMultiFilterValues($("#reviewerFilter"), route.annotationAuthor);
   state.clusterKey = route.clusterKey || "";
   state.casePage = Math.max(1, Number(route.casePage) || 1);
   state.casePageSize = CASE_PAGE_SIZES.includes(Number(route.casePageSize))
@@ -324,10 +318,14 @@ function pageUrl(page, options = {}) {
     if (runId) url.searchParams.set("run", runId);
     if (runId) url.searchParams.set("comparison", runId ? comparisonStatus : "all");
     if (review.search) url.searchParams.set("q", review.search);
-    if (review.gtLabel) url.searchParams.set("gt", review.gtLabel);
-    if (review.modelLabel) url.searchParams.set("model_label", review.modelLabel);
-    if (review.annotationAuthor) url.searchParams.set("reviewer", review.annotationAuthor);
-    if (review.workAssignee) url.searchParams.set("work_assignee", review.workAssignee);
+    const gt = joinFilterList(review.gtLabel);
+    const modelLabel = joinFilterList(review.modelLabel);
+    const reviewer = joinFilterList(review.annotationAuthor);
+    const assignee = joinFilterList(review.workAssignee);
+    if (gt) url.searchParams.set("gt", gt);
+    if (modelLabel) url.searchParams.set("model_label", modelLabel);
+    if (reviewer) url.searchParams.set("reviewer", reviewer);
+    if (assignee) url.searchParams.set("work_assignee", assignee);
     if (review.clusterKey) url.searchParams.set("evidence", review.clusterKey);
     if (Number(review.casePage) > 1) url.searchParams.set("page", String(review.casePage));
     if (Number(review.casePageSize) !== DEFAULT_CASE_PAGE_SIZE) {

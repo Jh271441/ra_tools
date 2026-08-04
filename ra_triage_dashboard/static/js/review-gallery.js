@@ -351,10 +351,14 @@ async function loadCases({
   state.casePage = Math.max(1, Number(page) || 1);
   const params = new URLSearchParams();
   const search = $("#searchInput").value.trim();
-  const gtLabel = $("#gtFilter").value;
-  const modelLabel = $("#annotationFilter").value;
-  const annotationAuthor = $("#reviewerFilter").value;
-  const workAssignee = $("#workAssigneeFilter")?.value || "";
+  const gtLabel = joinFilterList(getMultiFilterValues($("#gtFilter")));
+  const modelLabel = joinFilterList(getMultiFilterValues($("#annotationFilter")));
+  const annotationAuthor = joinFilterList(
+    getMultiFilterValues($("#reviewerFilter"))
+  );
+  const workAssignee = joinFilterList(
+    getMultiFilterValues($("#workAssigneeFilter"))
+  );
   state.selectedRunId = $("#modelRunFilter").value;
   state.reviewComparisonStatus = selectedReviewComparisonStatus();
   setReviewComparisonStatus(state.reviewComparisonStatus, {

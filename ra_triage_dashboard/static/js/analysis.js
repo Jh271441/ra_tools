@@ -60,19 +60,50 @@ function analysisRequestOptions() {
   });
 }
 
-// Saturated flat palette inspired by common analytics pie charts.
-const ANALYSIS_PIE_COLORS = [
-  "#3b82f6",
-  "#22c55e",
-  "#eab308",
-  "#ef4444",
-  "#a855f7",
-  "#06b6d4",
-  "#f97316",
-  "#84cc16",
-  "#ec4899",
-  "#64748b",
+// Cool theme-aligned palettes (no warm reds/ambers).
+// Dark: brighter cyan for black stage. Light: deeper tones so slices don't glow on white.
+const ANALYSIS_PIE_BASE_DARK = [
+  "#24d3ef",
+  "#38bdf8",
+  "#22d3ee",
+  "#2dd4bf",
+  "#14b8a6",
+  "#67e8f9",
+  "#60a5fa",
+  "#818cf8",
+  "#a5b4fc",
+  "#94a3b8",
 ];
+// Light: cool cyan/teal/blue/slate only — avoid purple/indigo (too loud on white).
+const ANALYSIS_PIE_BASE_LIGHT = [
+  "#0e7490", // deep accent cyan
+  "#0369a1", // sky-700
+  "#0f766e", // teal-700
+  "#0891b2", // cyan-600
+  "#0284c7", // sky-600
+  "#0d9488", // teal-600
+  "#155e75", // cyan-800
+  "#1e3a5f", // deep navy-blue
+  "#475569", // slate-600
+  "#64748b", // slate-500
+];
+
+function analysisPieBaseColors() {
+  const theme =
+    state?.colorTheme ||
+    document.documentElement.dataset.colorTheme ||
+    "dark";
+  return theme === "light" ? ANALYSIS_PIE_BASE_LIGHT : ANALYSIS_PIE_BASE_DARK;
+}
+
+function analysisPiePalette(panelKey) {
+  const base = analysisPieBaseColors();
+  const offsets = { evidence: 0, scene: 5, trigger: 2, egress: 1 };
+  const start = offsets[panelKey] || 0;
+  return [...base.slice(start), ...base.slice(0, start)];
+}
+
+const ANALYSIS_PIE_COLORS = ANALYSIS_PIE_BASE_DARK;
 
 function analysisPieArcs(items) {
   const rows = (items || []).filter((item) => Number(item.count) > 0);
@@ -89,23 +120,32 @@ function analysisPieArcs(items) {
   return { arcs, sum };
 }
 
-function analysisPieSlicePath(cx, cy, radius, start, end) {
+function analysisDonutSlicePath(cx, cy, outer, inner, start, end) {
   const large = end - start > Math.PI ? 1 : 0;
   const polar = (r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
-  const [x1, y1] = polar(radius, start);
-  const [x2, y2] = polar(radius, end);
+  const [x1, y1] = polar(outer, start);
+  const [x2, y2] = polar(outer, end);
+  const [x3, y3] = polar(inner, end);
+  const [x4, y4] = polar(inner, start);
   if (end - start >= Math.PI * 2 - 1e-6) {
+    const mid = start + Math.PI;
+    const [mx1, my1] = polar(outer, mid);
+    const [mx2, my2] = polar(inner, mid);
     return [
-      `M ${cx} ${cy}`,
-      `m ${-radius} 0`,
-      `a ${radius} ${radius} 0 1 0 ${radius * 2} 0`,
-      `a ${radius} ${radius} 0 1 0 ${-radius * 2} 0`,
+      `M ${x1} ${y1}`,
+      `A ${outer} ${outer} 0 1 1 ${mx1} ${my1}`,
+      `A ${outer} ${outer} 0 1 1 ${x1} ${y1}`,
+      `L ${x4} ${y4}`,
+      `A ${inner} ${inner} 0 1 0 ${mx2} ${my2}`,
+      `A ${inner} ${inner} 0 1 0 ${x4} ${y4}`,
+      "Z",
     ].join(" ");
   }
   return [
-    `M ${cx} ${cy}`,
-    `L ${x1} ${y1}`,
-    `A ${radius} ${radius} 0 ${large} 1 ${x2} ${y2}`,
+    `M ${x1} ${y1}`,
+    `A ${outer} ${outer} 0 ${large} 1 ${x2} ${y2}`,
+    `L ${x3} ${y3}`,
+    `A ${inner} ${inner} 0 ${large} 0 ${x4} ${y4}`,
     "Z",
   ].join(" ");
 }
@@ -144,19 +184,22 @@ function showAnalysisPieTooltip(event, item, percent) {
   tip.style.top = `${Math.max(8, top)}px`;
 }
 
-function renderAnalysisPieSvg(items, { size = 148 } = {}) {
+function renderAnalysisPieSvg(items, { size = 148, palette = ANALYSIS_PIE_COLORS } = {}) {
   const cx = size / 2;
   const cy = size / 2;
-  const radius = size * 0.42;
+  // Thicker ring + smaller hole so the center label sits tighter.
+  const outer = size * 0.46;
+  const inner = size * 0.20;
   const { arcs, sum } = analysisPieArcs(items);
   if (!arcs.length) {
+    const mid = (outer + inner) / 2;
     return `<svg class="analysis-pie-svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-hidden="true">
-      <circle cx="${cx}" cy="${cy}" r="${radius}" fill="#1a2332" stroke="#2a3548" stroke-width="1" />
+      <circle class="analysis-pie-empty-ring" cx="${cx}" cy="${cy}" r="${mid}" fill="none" stroke-width="${outer - inner}" />
     </svg>`;
   }
   const slices = arcs
-    .map(({ item, index, start, end, fraction }) => {
-      const color = ANALYSIS_PIE_COLORS[index % ANALYSIS_PIE_COLORS.length];
+    .map(({ item, index, start, end }) => {
+      const color = palette[index % palette.length];
       const percent = analysisPiePercent(item, sum);
       return `<path class="analysis-pie-slice" data-pie-index="${index}"
         data-pie-key="${escapeHtml(item.key)}"
@@ -164,17 +207,17 @@ function renderAnalysisPieSvg(items, { size = 148 } = {}) {
         data-pie-count="${item.count}"
         data-pie-percent="${percent}"
         data-pie-desc="${escapeHtml(item.description || "")}"
-        d="${analysisPieSlicePath(cx, cy, radius, start, end)}"
-        fill="${color}" stroke="#0b1119" stroke-width="1.5"></path>`;
+        d="${analysisDonutSlicePath(cx, cy, outer, inner, start, end)}"
+        fill="${color}"></path>`;
     })
     .join("");
-  // Percent labels on slices large enough to read (>= 8%).
+  // Percent labels sit on the ring mid-radius when the arc is large enough.
+  const labelR = (outer + inner) / 2;
   const labels = arcs
-    .filter(({ fraction }) => fraction >= 0.08)
-    .map(({ item, mid, fraction }) => {
-      const r = radius * 0.62;
-      const x = cx + r * Math.cos(mid);
-      const y = cy + r * Math.sin(mid);
+    .filter(({ fraction }) => fraction >= 0.1)
+    .map(({ mid, fraction }) => {
+      const x = cx + labelR * Math.cos(mid);
+      const y = cy + labelR * Math.sin(mid);
       const percent = Math.round(fraction * 100);
       return `<text class="analysis-pie-label" x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle">${percent}%</text>`;
     })
@@ -187,12 +230,13 @@ function renderAnalysisPieSvg(items, { size = 148 } = {}) {
 function renderAnalysisClusterGroup(group, panel, { dual = false } = {}) {
   const items = group.items || [];
   const size = dual ? 120 : 150;
+  const palette = analysisPiePalette(panel?.key);
   const { sum } = analysisPieArcs(items);
   const legend = items.length
     ? items
         .map((item, index) => {
           const percent = analysisPiePercent(item, sum);
-          const color = ANALYSIS_PIE_COLORS[index % ANALYSIS_PIE_COLORS.length];
+          const color = palette[index % palette.length];
           return `<div class="analysis-pie-legend-row"
               data-pie-key="${escapeHtml(item.key)}"
               data-pie-label="${escapeHtml(item.label)}"
@@ -200,7 +244,7 @@ function renderAnalysisClusterGroup(group, panel, { dual = false } = {}) {
               data-pie-percent="${percent}"
               data-pie-desc="${escapeHtml(item.description || "")}">
             <span class="analysis-pie-swatch" style="background:${color}"></span>
-            <span class="analysis-pie-legend-copy">
+            <span class="analysis-pie-legend-line">
               <strong>${escapeHtml(item.label)}</strong>
               <small>${item.count}, ${percent}%</small>
             </span>
@@ -210,7 +254,7 @@ function renderAnalysisClusterGroup(group, panel, { dual = false } = {}) {
     : `<div class="analysis-donut-empty">暂无数据</div>`;
   return `<div class="analysis-pie-group ${dual ? "is-dual" : "is-single"}">
     <div class="analysis-pie-figure" data-group-label="${escapeHtml(group.label || "")}">
-      ${renderAnalysisPieSvg(items, { size })}
+      ${renderAnalysisPieSvg(items, { size, palette })}
       <div class="analysis-pie-center">
         <b>${group.annotated_count ?? 0}</b>
         <small>${escapeHtml(group.label || "")}</small>

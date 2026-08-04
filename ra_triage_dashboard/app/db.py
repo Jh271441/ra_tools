@@ -1876,22 +1876,56 @@ class Database:
         if baseline_scope:
             where.append("i.baseline_scope = ?")
             params.append(baseline_scope)
+        def _multi_values(*raw: Any) -> tuple[str, ...]:
+            values: list[str] = []
+            for item in raw:
+                if item is None:
+                    continue
+                if isinstance(item, (list, tuple, set)):
+                    for nested in item:
+                        text = str(nested or "").strip()
+                        if text:
+                            values.append(text)
+                    continue
+                text = str(item or "").strip()
+                if not text:
+                    continue
+                if "," in text:
+                    values.extend(
+                        part.strip() for part in text.split(",") if part.strip()
+                    )
+                else:
+                    values.append(text)
+            return tuple(dict.fromkeys(values))
+
         if search.strip():
             term = f"%{search.strip()}%"
             where.append("(i.issue_id LIKE ? OR i.title LIKE ? OR i.scenario LIKE ? OR i.summary LIKE ?)")
             params.extend([term, term, term, term])
-        if gt_label in LABELS:
-            where.append("i.gt_label = ?")
-            params.append(gt_label)
-        if model_label in LABELS:
-            where.append("mp.model_label = ?")
-            params.append(model_label)
-        if annotation_label in LABELS:
-            where.append("ann.label = ?")
-            params.append(annotation_label)
-        if annotation_author.strip():
-            where.append("ann.author = ?")
-            params.append(annotation_author.strip())
+        gt_labels = tuple(value for value in _multi_values(gt_label) if value in LABELS)
+        if gt_labels:
+            where.append(f"i.gt_label IN ({', '.join('?' for _ in gt_labels)})")
+            params.extend(gt_labels)
+        model_labels = tuple(
+            value for value in _multi_values(model_label) if value in LABELS
+        )
+        if model_labels:
+            where.append(
+                f"mp.model_label IN ({', '.join('?' for _ in model_labels)})"
+            )
+            params.extend(model_labels)
+        annotation_labels = tuple(
+            value for value in _multi_values(annotation_label) if value in LABELS
+        )
+        if annotation_labels:
+            where.append(
+                f"ann.label IN ({', '.join('?' for _ in annotation_labels)})"
+            )
+            params.extend(annotation_labels)
+        authors = _multi_values(annotation_author)
+        if authors:
+            where.append(f"ann.author IN ({', '.join('?' for _ in authors)})")
+            params.extend(authors)
         if missing_evidence.strip():
             # Values are serialized as a JSON array; matching the quoted token
             # avoids treating a prefix as a different evidence item.
@@ -1906,12 +1940,24 @@ class Database:
             placeholders = ", ".join("?" for _ in cleaned_ids)
             where.append(f"i.issue_id IN ({placeholders})")
             params.extend(cleaned_ids)
-        assignee_filter = str(work_assignee or "").strip()
-        if assignee_filter in {"__none__", "none", "未分配"}:
-            where.append("(wa.assignee IS NULL OR wa.assignee = '')")
-        elif assignee_filter:
-            where.append("wa.assignee = ?")
-            params.append(assignee_filter)
+        assignees = _multi_values(work_assignee)
+        if assignees:
+            assignee_clauses: list[str] = []
+            if any(
+                value in {"__none__", "none", "未分配"} for value in assignees
+            ):
+                assignee_clauses.append("(wa.assignee IS NULL OR wa.assignee = '')")
+            named = [
+                value
+                for value in assignees
+                if value not in {"__none__", "none", "未分配"}
+            ]
+            if named:
+                assignee_clauses.append(
+                    f"wa.assignee IN ({', '.join('?' for _ in named)})"
+                )
+                params.extend(named)
+            where.append(f"({' OR '.join(assignee_clauses)})")
         if comparison_status != "all":
             where.append("i.gt_label IN (?, ?, ?)")
             params.extend(LABELS)

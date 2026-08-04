@@ -223,6 +223,9 @@ function renderConfig() {
   renderTrailSyncState();
   renderBatchRuntimeSummary();
   updateFilteredPredictionButton();
+  if (typeof renderReviewCatalogFilters === "function") {
+    renderReviewCatalogFilters();
+  }
   renderAnalysisCatalogFilters();
 }
 

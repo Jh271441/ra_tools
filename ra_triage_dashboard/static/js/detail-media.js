@@ -467,7 +467,7 @@ function predictionCards(caseData) {
       return `<article class="model-card ${selected ? "active" : ""}">
         <div class="model-card-head"><div><h3>${escapeHtml(prediction.run_name || "模型输出")}</h3></div>${labelBadge(prediction.model_label, "未输出")}</div>
         <p>${escapeHtml(detail)}</p>
-        <div class="model-card-meta">${prediction.model_confidence ?? "—"} confidence · ${formatTime(prediction.created_at)}${prediction.run_created_by ? ` · 创建人 ${escapeHtml(prediction.run_created_by)}` : ""}</div>
+        <div class="model-card-meta">${formatModelConfidence(prediction.model_confidence)} confidence · ${formatTime(prediction.created_at)}${prediction.run_created_by ? ` · 创建人 ${escapeHtml(prediction.run_created_by)}` : ""}</div>
       </article>`;
     })
     .join("")}</div>`;
@@ -479,7 +479,7 @@ function currentRunOutputMarkup(_caseData, prediction) {
   return `<section class="current-run-output" aria-label="当前 Run Reason">
     <div class="current-run-output-heading">
       <div><span>当前 Run Reason</span><strong>${escapeHtml(prediction.run_name || "模型输出")}</strong></div>
-      <span>${labelBadge(prediction.model_label, "未输出")}${prediction.model_confidence === null || prediction.model_confidence === undefined ? "" : ` · ${escapeHtml(prediction.model_confidence)} confidence`}</span>
+      <span>${labelBadge(prediction.model_label, "未输出")}${prediction.model_confidence === null || prediction.model_confidence === undefined ? "" : ` · ${escapeHtml(formatModelConfidence(prediction.model_confidence))} confidence`}</span>
     </div>
     <p class="current-run-reason">${escapeHtml(reason || "模型未返回 reason。")}</p>
   </section>`;
@@ -490,10 +490,18 @@ function openHistoryDialog(kind, caseData) {
   const isModel = kind === "model";
   const predictions = caseData.predictions || [];
   const annotations = caseData.annotations || [];
-  $("#historyDialogTitle").textContent = isModel ? "评测 Run 输出历史" : "Review 历史";
+  $("#historyDialogTitle").textContent = isModel
+    ? uiText("评测 Run 输出历史", "Model run history")
+    : uiText("Review 历史", "Review history");
   $("#historyDialogMeta").textContent = isModel
-    ? `${predictions.length} 个模型 Run · 当前 Review Run 会高亮`
-    : `${annotations.length} 条历史 Review · 追加式，不覆盖旧记录`;
+    ? uiText(
+        `${predictions.length} 个模型 Run · 当前 Review Run 会高亮`,
+        `${predictions.length} model runs · current review run is highlighted`
+      )
+    : uiText(
+        `${annotations.length} 条历史 Review · 追加式，不覆盖旧记录`,
+        `${annotations.length} reviews · append-only history`
+      );
   $("#historyDialogContent").innerHTML = isModel
     ? predictionCards(caseData)
     : annotationHistory(annotations);

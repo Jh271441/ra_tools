@@ -5,9 +5,9 @@
 function currentReviewFilterPayload() {
   return {
     search: $("#searchInput")?.value.trim() || "",
-    gt_label: $("#gtFilter")?.value || "",
-    model_label: $("#annotationFilter")?.value || "",
-    annotation_author: $("#reviewerFilter")?.value || "",
+    gt_label: joinFilterList(getMultiFilterValues($("#gtFilter"))),
+    model_label: joinFilterList(getMultiFilterValues($("#annotationFilter"))),
+    annotation_author: joinFilterList(getMultiFilterValues($("#reviewerFilter"))),
     model_run_id: state.selectedRunId || $("#modelRunFilter")?.value || "",
     comparison:
       state.selectedRunId || $("#modelRunFilter")?.value
@@ -67,25 +67,20 @@ function readWorkSplitAssignees() {
 }
 
 function renderWorkAssigneeFilter() {
-  const select = $("#workAssigneeFilter");
-  if (!select) return;
-  const current = select.value || "";
+  const root = $("#workAssigneeFilter");
+  if (!root) return;
   const items = Array.isArray(state.workAssignees) ? state.workAssignees : [];
-  const options = [
-    `<option value="">全部负责人</option>`,
-    `<option value="__none__">未分配</option>`,
-    ...items.map(
-      (item) =>
-        `<option value="${escapeHtml(item.username)}">${escapeHtml(
-          item.username
-        )} · ${Number(item.issue_count || 0)}</option>`
-    ),
-  ];
-  select.innerHTML = options.join("");
-  select.value =
-    !current || [...select.options].some((option) => option.value === current)
-      ? current
-      : "";
+  renderMultiFilter(root, {
+    options: [
+      { value: "__none__", label: "未分配" },
+      ...items.map((item) => ({
+        value: item.username,
+        label: `${item.username} · ${Number(item.issue_count || 0)}`,
+      })),
+    ],
+    selected: getMultiFilterValues(root),
+    onChange: () => scheduleReviewFilterReload?.(0),
+  });
 }
 
 async function loadWorkAssignees() {
@@ -249,7 +244,7 @@ function filterGalleryByWorkAssignee(assignee) {
   const name = String(assignee || "").trim();
   if (!name) return;
   state.reviewIssueIds = [];
-  if ($("#workAssigneeFilter")) $("#workAssigneeFilter").value = name;
+  setMultiFilterValues($("#workAssigneeFilter"), [name]);
   state.casePage = 1;
   closeDialog("workSplitDialog");
   loadCases({ keepSelection: false, page: 1 })
