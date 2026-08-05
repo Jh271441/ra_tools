@@ -841,15 +841,15 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 }
 .tag-option-check {
   min-width: 0; flex: 1 1 auto; display: inline-flex; align-items: center; gap: 5px;
-  cursor: pointer;
+  color: #f2f6fb; cursor: pointer;
 }
 .tag-option-check span {
-  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0; overflow: hidden; color: #f2f6fb; font-weight: 560; text-overflow: ellipsis; white-space: nowrap;
 }
 .tag-option-menu { position: relative; flex: 0 0 auto; }
 .tag-option-menu-toggle {
   width: 22px; height: 22px; display: inline-grid; place-items: center; padding: 0;
-  border: 0; border-radius: 5px; color: var(--faint); background: transparent;
+  border: 0; border-radius: 5px; color: #b7c5d4; background: transparent;
   cursor: pointer; font-size: 16px; line-height: 1; letter-spacing: 0;
 }
 .tag-option-menu-toggle:hover,
@@ -2079,6 +2079,10 @@ html[data-color-theme="light"] .tag { background: #e9eef5; }
 html[data-color-theme="light"] .evidence-tag { background: rgba(8, 117, 141, .08); }
 html[data-color-theme="light"] .exclusion-tag { background: rgba(148, 97, 0, .09); }
 html[data-color-theme="light"] .tag-option { color: #34465b; background: #f8fafc; }
+html[data-color-theme="light"] .tag-option-check,
+html[data-color-theme="light"] .tag-option-check span { color: #34465b; background: transparent; }
+html[data-color-theme="light"] .tag-option:has(input:checked) .tag-option-check span { color: #075f75; }
+html[data-color-theme="light"] .tag-option-menu-toggle { color: #53647a; }
 
 html[data-color-theme="light"] select option,
 html[data-color-theme="light"] .evidence-dropdown .evidence-options,
