@@ -138,7 +138,11 @@ async function loadRuns({ preferDefault = false, preserveEmpty = false } = {}) {
   state.selectedRunId = state.modelRuns.some((run) => run.id === candidate) ? candidate : "";
   select.value = state.selectedRunId;
   if (preferDefault && !previousRunId && state.selectedRunId) {
-    state.reviewComparisonStatus = "mismatch";
+    // A Run is an overlay on the immutable 0508 baseline.  Selecting or
+    // importing it must keep the complete baseline queue visible; callers can
+    // still opt into MISMATCH explicitly through the filter/URL.
+    state.reviewComparisonStatus = "all";
+    state.failureOnly = false;
   }
   if (!state.selectedRunId) state.reviewComparisonStatus = "all";
   setReviewComparisonStatus(state.reviewComparisonStatus, {
@@ -394,13 +398,16 @@ function renderRunManager() {
 async function useModelRun(runId) {
   if (!state.modelRuns.some((run) => run.id === runId)) return;
   state.selectedRunId = runId;
-  state.reviewComparisonStatus = "mismatch";
-  state.failureOnly = true;
+  // Keep all baseline Issues in the Review queue.  Missing predictions are
+  // represented as NONE by the comparison overlay rather than dropping the
+  // Issue from the baseline.
+  state.reviewComparisonStatus = "all";
+  state.failureOnly = false;
   state.selectedId = "";
   state.casePage = 1;
   state.galleryScrollY = 0;
   $("#modelRunFilter").value = runId;
-  setReviewComparisonStatus("mismatch", { hasRun: true });
+  setReviewComparisonStatus("all", { hasRun: true });
   renderActiveRun();
   renderRunManager();
   await Promise.all([loadCases({ keepSelection: false, page: 1 }), loadClusters(), loadOverview()]);

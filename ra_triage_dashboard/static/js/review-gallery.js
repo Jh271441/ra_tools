@@ -21,6 +21,7 @@ function issueCard(item) {
   const comparisonStatus = reviewComparisonStatusForItem(item);
   const comparisonMeta = REVIEW_COMPARISON_META[comparisonStatus];
   const mismatch = comparisonStatus === "mismatch";
+  const displayPrediction = prediction || (comparisonStatus === "none" ? "NONE" : "");
   const thumbnailUrl = safeSameOriginAssetUrl(item.thumbnail?.url);
   const thumbnailLabel = String(
     item.thumbnail?.label || (thumbnailUrl ? "BEV 关键帧" : "暂无缩略图")
@@ -56,7 +57,7 @@ function issueCard(item) {
         ${title ? `<div class="issue-title">${escapeHtml(title)}</div>` : ""}
         <div class="issue-card-labels">
           <span class="issue-label-pair"><small>GT</small>${labelBadge(item.gt_label, "—")}</span>
-          <span class="issue-label-pair"><small>模型</small>${prediction ? labelBadge(prediction, "—") : labelBadge("", "—")}</span>
+          <span class="issue-label-pair"><small>模型</small>${displayPrediction ? labelBadge(displayPrediction, "—") : labelBadge("", "—")}</span>
           ${item.annotation?.author ? `<span class="issue-reviewer" title="复核人：${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}">复核 · ${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO" : ""}</span>` : ""}
         </div>
       </div>
@@ -394,4 +395,3 @@ async function loadCases({
     clearDetail({ showGallery: state.activePage === "review" });
   }
 }
-

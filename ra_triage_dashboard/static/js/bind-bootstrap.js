@@ -103,7 +103,13 @@ function bindEvents() {
     const previousRunId = state.selectedRunId;
     state.selectedRunId = $("#modelRunFilter").value;
     if (!state.selectedRunId) state.reviewComparisonStatus = "all";
-    if (state.selectedRunId && !previousRunId) state.reviewComparisonStatus = "mismatch";
+    if (state.selectedRunId && !previousRunId) {
+      // Run selection changes the prediction overlay, not the immutable
+      // baseline queue.  Keep all 1071 Issues visible unless the user chose a
+      // comparison filter explicitly.
+      state.reviewComparisonStatus = "all";
+      state.failureOnly = false;
+    }
     if (typeof renderReviewCatalogFilters === "function") {
       renderReviewCatalogFilters();
     }
@@ -552,9 +558,7 @@ async function bootstrap() {
       state.reviewComparisonStatus = state.selectedRunId
         ? normalizedReviewComparisonStatus(
             initialRoute.comparisonStatus,
-            initialRoute.failureOnly || defaultFailureOnly
-              ? "mismatch"
-              : "all"
+            initialRoute.failureOnly ? "mismatch" : "all"
           )
         : "all";
       state.failureOnly = state.reviewComparisonStatus === "mismatch";
