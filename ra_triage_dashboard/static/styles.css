@@ -652,22 +652,31 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .current-run-output-heading > div > span { color: var(--faint); font-size: 9px; font-weight: 700; }
 .current-run-output-heading strong { overflow: hidden; color: var(--text); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .current-run-reason { max-height: 72px; overflow: auto; margin: 0; color: var(--text); font-size: 10px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
-.comparison-summary {
-  width: fit-content; max-width: 100%; display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin: 0;
-  padding: 5px 7px; border: 1px solid var(--line); border-radius: 7px; background: #0e131c;
+.comparison-summary,
+.media-decision-summary {
+  width: fit-content; max-width: 100%; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0;
+  padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; background: #0e131c;
 }
-.comparison-summary > span { color: var(--faint); font-size: 9px; }
-.comparison-summary > .comparison-side-label {
-  color: #dbe7f3; font-size: 10px; font-weight: 750; letter-spacing: .01em;
+.comparison-summary > span,
+.media-decision-summary > span { color: var(--faint); font-size: 10px; }
+.comparison-summary > .comparison-side-label,
+.media-decision-summary > .comparison-side-label {
+  color: #e4edf7; font-size: 11px; font-weight: 800; letter-spacing: .01em;
 }
-.comparison-summary > .label-badge {
-  min-height: 22px; padding: 3px 8px; border-width: 1px; font-size: 11px; font-weight: 750;
+.comparison-summary > .label-badge,
+.media-decision-summary > .label-badge {
+  min-height: 26px; padding: 4px 10px; border-width: 1px; border-radius: 6px; font-size: 12px; font-weight: 800;
 }
-.comparison-summary > .label-误触发 { border-color: rgba(248,113,113,.62); color: #fecaca; background: rgba(248,113,113,.16); }
-.comparison-summary > .label-正确触发 { border-color: rgba(52,211,153,.62); color: #bbf7d0; background: rgba(52,211,153,.15); }
-.comparison-summary > .label-无需协助 { border-color: rgba(251,191,36,.62); color: #fde68a; background: rgba(251,191,36,.15); }
-.comparison-summary > b { color: var(--faint); font-size: 11px; font-weight: 500; }
-.comparison-summary > strong { margin-left: 2px; font-size: 10px; }
+.comparison-summary > .label-误触发,
+.media-decision-summary > .label-误触发 { border-color: rgba(248,113,113,.72); color: #fecaca; background: rgba(248,113,113,.2); }
+.comparison-summary > .label-正确触发,
+.media-decision-summary > .label-正确触发 { border-color: rgba(52,211,153,.72); color: #bbf7d0; background: rgba(52,211,153,.2); }
+.comparison-summary > .label-无需协助,
+.media-decision-summary > .label-无需协助 { border-color: rgba(251,191,36,.72); color: #fde68a; background: rgba(251,191,36,.2); }
+.comparison-summary > b,
+.media-decision-summary > b { color: var(--faint); font-size: 12px; font-weight: 600; }
+.comparison-summary > strong,
+.media-decision-summary > strong { margin-left: 2px; font-size: 12px; font-weight: 800; }
 .comparison-fail { color: #fca5a5; }
 .comparison-neutral { color: var(--muted); }
 .review-note-details { margin-top: 6px; color: var(--faint); font-size: 10px; }
@@ -1378,12 +1387,8 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .media-heading-main { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; }
 .media-heading-main h2 { flex: 0 1 auto; }
 .media-decision-summary {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 5px; padding: 4px 7px;
-  border: 1px solid var(--line); border-radius: 7px; background: var(--overlay);
+  background: var(--overlay);
 }
-.media-decision-summary > span { color: var(--faint); font-size: 9px; }
-.media-decision-summary > b { color: var(--faint); font-size: 11px; font-weight: 500; }
-.media-decision-summary > strong { margin-left: 2px; font-size: 10px; }
 .media-toolbar { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .media-mode-tabs { display: flex; gap: 6px; }
 .media-view-controls { display: flex; align-items: center; gap: 5px; }
@@ -2084,6 +2089,7 @@ html[data-color-theme="light"] .analysis-case-row,
 html[data-color-theme="light"] .timeline-dot { background: var(--overlay); }
 
 html[data-color-theme="light"] .comparison-summary,
+html[data-color-theme="light"] .media-decision-summary,
 html[data-color-theme="light"] .bev-video-controls,
 html[data-color-theme="light"] .batch-config-details,
 html[data-color-theme="light"] .batch-history-detail,
