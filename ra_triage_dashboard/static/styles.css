@@ -1798,6 +1798,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 
 /* Mobile filter drawer chrome (hidden on desktop). */
 .mobile-filter-bar { display: none; }
+.mobile-sidebar-backdrop { display: none; }
 
 @media (max-width: 639px) {
   .app-shell, .app-shell.sidebar-collapsed { display: block; }
@@ -1957,6 +1958,99 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
     position: fixed; left: 8px; right: 8px; width: auto; max-width: none;
     max-height: min(55dvh, 360px);
   }
+
+  /* On phones the sidebar is a logo rail, not a second horizontal tab bar.
+     Tapping the logo opens the full navigation as an overlay drawer. */
+  .app-sidebar,
+  .app-shell.sidebar-collapsed .app-sidebar,
+  html[data-sidebar-pref="collapsed"] .app-sidebar {
+    width: 64px;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 60;
+    padding-top: env(safe-area-inset-top, 0px);
+    border-right: 1px solid var(--line);
+    border-bottom: 0;
+    transform: translateX(0);
+    transition: width 160ms ease-out, box-shadow 160ms ease-out;
+  }
+  .app-shell.sidebar-mobile-open .app-sidebar {
+    width: min(280px, calc(100vw - 24px));
+    box-shadow: 18px 0 42px rgba(0,0,0,.42);
+  }
+  .app-frame,
+  .app-shell.sidebar-collapsed .app-frame,
+  html[data-sidebar-pref="collapsed"] .app-frame {
+    margin-left: 64px;
+  }
+  .topbar { top: 0; }
+  .sidebar-brand {
+    width: 64px;
+    min-height: 60px;
+    flex: 0 0 60px;
+    justify-content: center;
+    padding: 10px 6px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .sidebar-brand .brand-mark { width: 38px; height: 38px; }
+  .sidebar-nav {
+    min-height: 0;
+    display: grid;
+    flex: 1;
+    align-content: start;
+    gap: 3px;
+    padding: 8px;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .sidebar-item {
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    flex: none;
+    padding: 5px 6px;
+  }
+  .sidebar-icon { width: 30px; height: 30px; flex-basis: 30px; }
+  .sidebar-bottom {
+    display: grid;
+    padding: 9px;
+  }
+  .app-shell:not(.sidebar-mobile-open) .sidebar-nav,
+  .app-shell:not(.sidebar-mobile-open) .sidebar-bottom {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .app-shell.sidebar-mobile-open .sidebar-brand {
+    width: 100%;
+    justify-content: flex-start;
+    padding-inline: 11px;
+  }
+  .app-shell.sidebar-mobile-open .sidebar-item,
+  .app-shell.sidebar-mobile-open .sidebar-user,
+  .app-shell.sidebar-mobile-open .sidebar-collapse {
+    justify-content: flex-start;
+    padding-inline: 6px;
+  }
+  .app-shell.sidebar-mobile-open .sidebar-copy,
+  .app-shell.sidebar-mobile-open .sidebar-label { display: grid; }
+  .app-shell.sidebar-mobile-open .sidebar-collapse .sidebar-label { display: block; }
+  .app-shell.sidebar-mobile-open .sidebar-brand .brand-mark { width: 37px; height: 37px; }
+  .app-shell.sidebar-mobile-open #sidebarToggle { display: none; }
+  .mobile-sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    display: block;
+    border: 0;
+    padding: 0;
+    background: rgba(3, 8, 15, .54);
+    cursor: default;
+  }
+  .mobile-sidebar-backdrop[hidden] { display: none !important; }
 }
 
 @media (min-width: 640px) {

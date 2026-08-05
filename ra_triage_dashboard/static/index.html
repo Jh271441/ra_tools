@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-88`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-89`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -125,7 +125,8 @@
             <span class="sidebar-label"><span class="ui-lang-zh">折叠工具栏</span><span class="ui-lang-en">Collapse</span></span>
           </button>
         </div>
-      </aside>
+        </aside>
+        <button class="mobile-sidebar-backdrop" id="mobileSidebarBackdrop" type="button" aria-label="关闭工具栏" hidden></button>
 
       <div class="app-frame">
         <header class="topbar">
@@ -941,7 +942,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-88`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-89`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

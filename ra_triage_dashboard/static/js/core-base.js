@@ -286,6 +286,7 @@ const state = {
     read_only: false,
   },
   sidebarCollapsed: false,
+  mobileSidebarOpen: false,
   colorTheme: "dark",
   uiLanguage: "zh",
   activePage: "review",

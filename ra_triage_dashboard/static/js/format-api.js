@@ -366,22 +366,41 @@ function startChangePolling() {
   });
 }
 
+function isMobileSidebarViewport() {
+  return typeof window.matchMedia === "function" && window.matchMedia("(max-width: 639px)").matches;
+}
+
 function applySidebarState() {
-  $("#appShell").classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
+  const mobile = isMobileSidebarViewport();
+  const shell = $("#appShell");
+  // Phones keep a narrow logo rail; the existing desktop collapse preference must
+  // not turn the mobile drawer into a horizontal tab bar or change desktop state.
+  shell.classList.toggle("sidebar-collapsed", mobile ? true : state.sidebarCollapsed);
+  shell.classList.toggle("sidebar-mobile-open", mobile && state.mobileSidebarOpen);
   // Keep early-paint pref in sync so hard refresh matches the collapsed width without layout transition.
-  if (state.sidebarCollapsed) {
+  if (!mobile && state.sidebarCollapsed) {
     document.documentElement.dataset.sidebarPref = "collapsed";
   } else {
     delete document.documentElement.dataset.sidebarPref;
   }
-  const expanded = String(!state.sidebarCollapsed);
-  const title = state.sidebarCollapsed
-    ? uiText("展开工具栏", "Expand toolbar")
-    : uiText("折叠工具栏", "Collapse toolbar");
+  const expanded = String(mobile ? state.mobileSidebarOpen : !state.sidebarCollapsed);
+  const title = mobile
+    ? (state.mobileSidebarOpen
+      ? uiText("关闭工具栏", "Close navigation")
+      : uiText("打开工具栏", "Open navigation"))
+    : (state.sidebarCollapsed
+      ? uiText("展开工具栏", "Expand toolbar")
+      : uiText("折叠工具栏", "Collapse toolbar"));
   $("#sidebarToggle").setAttribute("aria-expanded", expanded);
   $("#sidebarToggle").title = title;
+  $("#sidebarToggle").setAttribute("aria-label", title);
+  $("#sidebarToggle").hidden = mobile;
   $("#sidebarBrandToggle").setAttribute("aria-expanded", expanded);
   $("#sidebarBrandToggle").title = title;
+  $("#sidebarBrandToggle").setAttribute("aria-label", title);
+  const backdrop = $("#mobileSidebarBackdrop");
+  if (backdrop) backdrop.hidden = !(mobile && state.mobileSidebarOpen);
+  document.documentElement.classList.toggle("mobile-sidebar-open", mobile && state.mobileSidebarOpen);
 }
 
 function markUiReady() {
@@ -443,8 +462,18 @@ function bindMobileFilterDrawers() {
 }
 
 function toggleSidebar() {
+  if (isMobileSidebarViewport()) {
+    state.mobileSidebarOpen = !state.mobileSidebarOpen;
+    applySidebarState();
+    return;
+  }
   state.sidebarCollapsed = !state.sidebarCollapsed;
   localStorage.setItem("ra-triage-sidebar-collapsed", String(state.sidebarCollapsed));
   applySidebarState();
 }
 
+function closeMobileSidebar() {
+  if (!state.mobileSidebarOpen) return;
+  state.mobileSidebarOpen = false;
+  applySidebarState();
+}
