@@ -225,12 +225,17 @@ function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
             (item) => item.section === section.section && item.group === group.key
           );
           const selectedCount = items.filter((item) => chosenTags.has(item.key)).length;
+          const selectedMarkup = items
+            .filter((item) => chosenTags.has(item.key))
+            .map((item) => `<button class="tag-group-selected-chip" type="button" data-remove-review-tag="${escapeHtml(item.key)}" data-remove-review-tag-group="${escapeHtml(group.key)}" title="取消选择 ${escapeHtml(item.label)}"><span>${escapeHtml(item.label)}</span><b aria-hidden="true">×</b></button>`)
+            .join("");
           const creatorAction = section.section === "scene"
             ? `<button class="tag-catalog-add-button" type="button" data-open-review-tag-creator="${escapeHtml(group.key)}" data-tag-create-group-label="${escapeHtml(group.label)}" aria-label="新增${escapeHtml(group.label)}标签" title="新增${escapeHtml(group.label)}标签">＋</button>`
             : "";
           return `<details class="review-tag-dropdown review-dropdown" data-tag-dropdown-group="${escapeHtml(group.key)}">
             <summary>
               <span class="tag-group-label">${escapeHtml(group.label)}</span>
+              <span class="tag-group-selected" data-selected-tags-group="${escapeHtml(group.key)}"${selectedMarkup ? "" : " hidden"}>${selectedMarkup}</span>
               <span class="tag-group-trailing">
                 ${creatorAction}
                 <span class="tag-group-summary" data-tag-summary="${escapeHtml(group.key)}">${selectedCount} 项</span>
@@ -518,6 +523,7 @@ function renderReview(caseData) {
       <label><span><span class="ui-lang-zh">复核人${authorLocked ? "（SSO）" : "（必填）"}</span><span class="ui-lang-en">Reviewer${authorLocked ? " (SSO)" : " (required)"}</span></span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" required ${authorLocked ? "readonly" : ""} /></label>
       <button class="button button-primary full-width" type="submit"><span class="ui-lang-zh">保存新的 review 版本</span><span class="ui-lang-en">Save new review version</span></button>
     </form>`;
+  bindSelectedReviewTagControls($("#reviewPane"));
   $("#reviewPane").querySelectorAll('input[name="missingEvidence"]').forEach((input) => {
     input.addEventListener("change", updateEvidenceSummary);
   });
@@ -828,6 +834,39 @@ function updateTagSummary() {
       (input) => input.checked && input.dataset.tagGroup === group
     ).length;
     summary.textContent = `${groupCount} 项`;
+  });
+  document.querySelectorAll("[data-selected-tags-group]").forEach((container) => {
+    const group = container.dataset.selectedTagsGroup || "";
+    const root = container.closest(".review-tag-dropdown");
+    if (!root) return;
+    const selected = [...root.querySelectorAll('input[name="reviewTags"]')]
+      .filter((input) => input.checked && input.dataset.tagGroup === group)
+      .map((input) => ({
+        key: input.value,
+        label: input.parentElement?.querySelector("span")?.textContent?.trim() || input.value,
+      }));
+    container.innerHTML = selected
+      .map((item) => `<button class="tag-group-selected-chip" type="button" data-remove-review-tag="${escapeHtml(item.key)}" data-remove-review-tag-group="${escapeHtml(group)}" title="取消选择 ${escapeHtml(item.label)}"><span>${escapeHtml(item.label)}</span><b aria-hidden="true">×</b></button>`)
+      .join("");
+    container.hidden = selected.length === 0;
+  });
+}
+
+function bindSelectedReviewTagControls(root) {
+  if (!root || root.dataset.selectedReviewTagControlsBound === "1") return;
+  root.dataset.selectedReviewTagControlsBound = "1";
+  root.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-remove-review-tag]");
+    if (!button || !root.contains(button)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const key = button.dataset.removeReviewTag || "";
+    const input = root.querySelector(
+      `input[name="reviewTags"][value="${CSS.escape(key)}"]`
+    );
+    if (!input) return;
+    input.checked = false;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
   });
 }
 
