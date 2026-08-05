@@ -39,6 +39,108 @@ function currentReviewAnnotation(caseData) {
   return reviewAnnotationsForCurrentRun(caseData)[0] || {};
 }
 
+const REVIEW_DRAFT_STORAGE_PREFIX = "ra-triage-review-draft:v1:";
+const REVIEW_DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const REVIEW_DRAFT_FIELDS = [
+  "label",
+  "review_status",
+  "is_excluded",
+  "tags",
+  "missing_evidence",
+  "note",
+  "author",
+];
+
+function reviewDraftStorageKey(issueId, runId = "") {
+  return `${REVIEW_DRAFT_STORAGE_PREFIX}${encodeURIComponent(String(issueId || ""))}:${encodeURIComponent(String(runId || "legacy"))}`;
+}
+
+function readReviewDraft(issueId, runId = "") {
+  if (!issueId || typeof window === "undefined" || !window.localStorage) return null;
+  const key = reviewDraftStorageKey(issueId, runId);
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const draft = JSON.parse(raw);
+    const savedAt = Number(draft?.saved_at || 0);
+    if (draft?.version !== 1 || !savedAt || Date.now() - savedAt > REVIEW_DRAFT_MAX_AGE_MS) {
+      window.localStorage.removeItem(key);
+      return null;
+    }
+    return draft;
+  } catch {
+    return null;
+  }
+}
+
+function clearReviewDraft(issueId, runId = "") {
+  if (!issueId || typeof window === "undefined" || !window.localStorage) return;
+  try {
+    window.localStorage.removeItem(reviewDraftStorageKey(issueId, runId));
+  } catch {
+    // Storage can be unavailable in private browsing; the Review itself still works.
+  }
+}
+
+function annotationTimestamp(annotation) {
+  const value = annotation?.updated_at || annotation?.created_at || "";
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function reviewDraftForCase(caseData) {
+  const runId = currentReviewRunId(caseData);
+  const draft = readReviewDraft(caseData?.issue_id, runId);
+  if (!draft) return null;
+  const serverAnnotation = reviewAnnotationsForCurrentRun(caseData)[0];
+  if (serverAnnotation && Number(draft.saved_at) <= annotationTimestamp(serverAnnotation)) {
+    clearReviewDraft(caseData.issue_id, runId);
+    return null;
+  }
+  return draft;
+}
+
+function applyReviewDraft(annotation, draft) {
+  if (!draft) return annotation || {};
+  const next = { ...(annotation || {}), _review_draft: true };
+  REVIEW_DRAFT_FIELDS.forEach((field) => {
+    if (Object.prototype.hasOwnProperty.call(draft, field)) next[field] = draft[field];
+  });
+  return next;
+}
+
+function persistReviewDraft(caseData) {
+  const form = $("#annotationForm");
+  if (!caseData?.issue_id || !form || typeof window === "undefined" || !window.localStorage) return;
+  const runId = state.reviewEditRunId || currentReviewRunId(caseData);
+  const draft = {
+    version: 1,
+    issue_id: caseData.issue_id,
+    model_run_id: runId,
+    saved_at: Date.now(),
+    label: state.selectedAnnotationLabel || "",
+    review_status: $("#reviewStatusInput")?.value || "reviewed",
+    is_excluded: Boolean($("#reviewExcludeInput")?.checked),
+    tags: [...form.querySelectorAll('input[name="reviewTags"]:checked')].map((input) => input.value),
+    missing_evidence: [...form.querySelectorAll('input[name="missingEvidence"]:checked')].map((input) => input.value),
+    note: $("#annotationNote")?.value || "",
+    author: $("#annotationAuthor")?.value || "",
+  };
+  try {
+    window.localStorage.setItem(reviewDraftStorageKey(caseData.issue_id, runId), JSON.stringify(draft));
+  } catch {
+    // Draft persistence is best effort and must never block Review input.
+  }
+}
+
+function bindReviewDraftLifecycle() {
+  if (typeof window === "undefined" || window.__raTriageReviewDraftBound) return;
+  window.__raTriageReviewDraftBound = true;
+  window.addEventListener("beforeunload", () => {
+    if (state.reviewFormDirty && state.selectedCase) persistReviewDraft(state.selectedCase);
+  });
+}
+
 function currentReviewBaseAnnotationId(annotation, runId) {
   if (!annotation?.id) return null;
   const annotationRunId = String(annotation.model_run_id || "").trim();
@@ -79,9 +181,9 @@ function renderDetail(caseData) {
       </div>
       <div class="detail-context-row">
         <div class="comparison-summary" aria-label="GT 与当前模型对比">
-          <span>GT</span>${labelBadge(caseData.gt_label, "缺失")}
+          <span class="comparison-side-label comparison-side-gt">GT</span>${labelBadge(caseData.gt_label, "缺失")}
           <b aria-hidden="true">→</b>
-          <span>当前模型</span>${labelBadge(primary?.model_label, "未输出")}
+          <span class="comparison-side-label comparison-side-model">当前模型</span>${labelBadge(primary?.model_label, "未输出")}
           <strong class="${primary?.model_label && primary.model_label !== caseData.gt_label ? "comparison-fail" : "comparison-neutral"}">${primary?.model_label ? primary.model_label === caseData.gt_label ? "一致" : "不一致" : "不可比较"}</strong>
         </div>
         <button class="button button-quiet detail-back-button" id="backToGalleryButton" type="button">← 返回筛选结果</button>
@@ -269,9 +371,11 @@ function syncReviewFormFromCase(caseData) {
     renderReview(caseData);
     return;
   }
-  const previous = currentReviewAnnotation(caseData);
+  const serverPrevious = currentReviewAnnotation(caseData);
+  const draft = reviewDraftForCase(caseData);
+  const previous = applyReviewDraft(serverPrevious, draft);
   const runAnnotations = reviewAnnotationsForCurrentRun(caseData);
-  const hasPreviousReview = Boolean(runAnnotations.length);
+  const hasPreviousReview = Boolean(runAnnotations.length || draft);
   const chosenEvidence = new Set(
     hasPreviousReview ? previous.missing_evidence || [] : []
   );
@@ -361,7 +465,7 @@ function syncReviewFormFromCase(caseData) {
     previous,
     state.reviewEditRunId
   );
-  state.reviewFormDirty = false;
+  state.reviewFormDirty = Boolean(draft);
   state.deferredDetailRefresh = false;
   clearPendingReviewImages();
   updateEvidenceSummary();
@@ -432,7 +536,9 @@ function renderReview(caseData) {
   const reviewRunId = currentReviewRunId(caseData);
   const runAnnotations = reviewAnnotationsForCurrentRun(caseData);
   const allAnnotations = reviewAnnotationsForAllRuns(caseData);
-  const previous = runAnnotations[0] || {};
+  const serverPrevious = runAnnotations[0] || {};
+  const draft = reviewDraftForCase(caseData);
+  const previous = applyReviewDraft(serverPrevious, draft);
   state.reviewEditRunId = reviewRunId;
   state.reviewEditBaseAnnotationId = currentReviewBaseAnnotationId(
     previous,
@@ -443,7 +549,7 @@ function renderReview(caseData) {
   state.selectedAnnotationLabel = previous.label || "";
   const catalog = state.config?.missing_evidence_catalog || [];
   const tagCatalog = state.config?.review_tag_catalog || [];
-  const hasPreviousReview = Boolean(runAnnotations.length);
+  const hasPreviousReview = Boolean(runAnnotations.length || draft);
   const chosenEvidence = new Set(
     hasPreviousReview ? previous.missing_evidence || [] : []
   );
@@ -586,12 +692,14 @@ function renderReview(caseData) {
   }
   renderPendingReviewImages();
   const annotationForm = $("#annotationForm");
-  annotationForm.addEventListener("input", () => {
+  const markDraftDirty = () => {
     state.reviewFormDirty = true;
-  });
-  annotationForm.addEventListener("change", () => {
-    state.reviewFormDirty = true;
-  });
+    persistReviewDraft(caseData);
+  };
+  annotationForm.addEventListener("input", markDraftDirty);
+  annotationForm.addEventListener("change", markDraftDirty);
+  bindReviewDraftLifecycle();
+  state.reviewFormDirty = Boolean(draft);
   annotationForm.addEventListener("submit", saveAnnotation);
   bindAnnotationHistory($("#reviewPane"), caseData);
 }
@@ -1428,6 +1536,7 @@ async function saveAnnotation(event) {
       state.reviewEditRunId = result.annotation.model_run_id || state.reviewEditRunId;
       state.reviewEditBaseAnnotationId = result.annotation.id || null;
     }
+    clearReviewDraft(state.selectedId, payload.model_run_id);
     const screenshotCount = state.pendingReviewImages.length;
     state.reviewFormDirty = false;
     state.deferredDetailRefresh = false;
