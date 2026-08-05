@@ -2580,7 +2580,7 @@ class Database:
             LEFT JOIN model_predictions mp
               ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
             WHERE {' AND '.join(where)}
-            ORDER BY ann.created_at DESC, i.issue_id ASC
+            ORDER BY i.issue_id ASC
             """
         with self.connect() as conn:
             rows = conn.execute(query, params).fetchall()
