@@ -49,9 +49,15 @@ export DASHBOARD_BASE_PATH="${DASHBOARD_BASE_PATH:-}"
 #   DASHBOARD_SSO_WRITE_USERS=alice,bob  # optional; empty permits every verified SSO user
 export DASHBOARD_DEPLOYMENT_MODE="${DASHBOARD_DEPLOYMENT_MODE:-development}"
 export RA_AUTO_TRIAGE_ROOT="/volume/home/workspace/ra_auto_triage"
-export ARES_CAPTURE_MANIFEST="${ARES_CAPTURE_MANIFEST:-/volume/home/workspace/ra_auto_triage/bags/ares_capture_bev_ra_stuck_swag_planning_2k_from_cloud_server_2_20260804/7f4b2d9f-1218-4cd4-a93d-0654603173b9/manifest.jsonl}"
-export CAMERA_CACHE_ROOT="/volume/home/workspace/ra_auto_triage/bags/camera"
-export ARES_CAPTURE_VIDEO_ROOT="${ARES_CAPTURE_VIDEO_ROOT:-/volume/home/workspace/ra_auto_triage/bags/ares_capture_video_0508_1071_ra_stuck_swag_planning_2k_aggregate_20260804}"
+# Product media lives under dashboard data media_layouts (outside Git / bags workspace).
+# Layout id release0508_1071_20260729 (alias 0508): switch layout by changing these three
+# paths together, or point at another layout's env_mapping from layout.json.
+_MEDIA_LAYOUT_ROOT="${DASHBOARD_MEDIA_LAYOUT_ROOT:-/volume/home/workspace/ra_triage_dashboard_data/media_layouts}"
+_MEDIA_LAYOUT_ID="${DASHBOARD_MEDIA_LAYOUT:-release0508_1071_20260729}"
+_MEDIA_LAYOUT="${_MEDIA_LAYOUT_ROOT}/${_MEDIA_LAYOUT_ID}"
+export ARES_CAPTURE_MANIFEST="${ARES_CAPTURE_MANIFEST:-${_MEDIA_LAYOUT}/bev/7f4b2d9f-1218-4cd4-a93d-0654603173b9/manifest.jsonl}"
+export CAMERA_CACHE_ROOT="${CAMERA_CACHE_ROOT:-${_MEDIA_LAYOUT}/camera/102}"
+export ARES_CAPTURE_VIDEO_ROOT="${ARES_CAPTURE_VIDEO_ROOT:-${_MEDIA_LAYOUT}/video}"
 export DASHBOARD_BASELINE_LABEL_XLSX="/volume/home/workspace/ra_auto_triage/data/trail_label_baseline_20260729.xlsx"
 export DASHBOARD_BASELINE_DATASET="0508"
 export DASHBOARD_BASELINE_SCOPE="release0508_1071_20260729"

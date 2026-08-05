@@ -63,11 +63,15 @@ Runs 的「人员」统一显示/筛选创建人；旧 Run 没有创建人时回
 - 模型网关密钥：`/volume/home/workspace/ra_triage_dashboard_data/model_gateway_api_key`（服务用户持有的 `0600` 普通文件，不进入代码备份）
 - TokenService 网关密钥：`/volume/home/workspace/ra_triage_dashboard_data/tokenservice_api_key`（同样由服务用户持有、`0600`，不进入代码备份；未配置时 Provider 只读展示）
 - RA 模型 Profile：`config/model_profiles.json`（版本化兼容白名单，不含凭证）
-- Ares BEV 图片资产：`/volume/home/workspace/ra_auto_triage/bags/ares_capture_bev_ra_stuck_swag_planning_2k_from_cloud_server_2_20260804`（只读，0508/1071 完整；可用 `ARES_CAPTURE_MANIFEST` 覆盖）
-- Ares BEV 视频资产：`/volume/home/workspace/ra_auto_triage/bags/ares_capture_video_0508_1071_ra_stuck_swag_planning_2k_aggregate_20260804`（只读，按 issue_id 匹配，可用 `ARES_CAPTURE_VIDEO_ROOT` 覆盖）
-- Camera 输入资产：`/volume/home/workspace/ra_auto_triage/bags/camera`（只读）
+- 产品媒体 layout（只读，与 `ra_auto_triage/bags` 工作区分离）：
+  `/volume/home/workspace/ra_triage_dashboard_data/media_layouts/release0508_1071_20260729`
+  - BEV 图：`…/bev/<run_id>/manifest.jsonl`（`ARES_CAPTURE_MANIFEST`）
+  - BEV 视频：`…/video`（`ARES_CAPTURE_VIDEO_ROOT`）
+  - Camera 默认通道 102：`…/camera/102`（`CAMERA_CACHE_ROOT`）
+  - 切换数据集：改 `DASHBOARD_MEDIA_LAYOUT`（layout id 或后续 alias）或覆盖上述三个变量；见 layout 内 `layout.json`
+  - 从 bags 刷新：`rsync -aH` 到对应 layout 子目录（同盘可硬链接，几乎不占额外空间）
 - 0508 GT 快照：`/volume/home/workspace/ra_auto_triage/data/trail_label_baseline_20260729.xlsx`（只读）
-- 模型 / Trail 逻辑：`/volume/home/workspace/ra_auto_triage`（代码与原有 bag 只读；Batch 新下载只写 dashboard 独立缓存）
+- 模型 / Trail 逻辑：`/volume/home/workspace/ra_auto_triage`（代码与 bags 采集工作区只读；Batch 新下载只写 dashboard 独立缓存）
 
 模型 endpoint 是服务端固定配置，API key 只存在于上述受限文件和预测 worker 的一次性 stdin，不进入浏览器 HTTP 请求、dashboard 数据库、argv、子进程环境或公共 API。Batch Run 只保存脱敏后的模型、Prompt、输入策略、目录 SHA-256 和配置 SHA-256；上传 JSON / CSV / XLSX 时，metadata、原始行和扩展字段中的 credential / endpoint key 也会在入库前递归脱敏，公共读取再执行一次同样的防护。模型结果原文件只通过同源 Run source endpoint 提供 inline 预览或 attachment 下载，不直接暴露服务器路径；遗留 Run 不会凭空补造归档文件。
 
