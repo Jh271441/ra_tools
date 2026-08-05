@@ -173,6 +173,7 @@ function normalizedReviewRouteFilters(params) {
 
 function normalizedAnalysisRouteFilters(params) {
   const rawPage = Number.parseInt(params.get("page") || "1", 10);
+  const rawPageSize = Number.parseInt(params.get("page_size") || "", 10);
   const statuses = parseFilterList(params.get("status")).filter((value) =>
     ["pending", "reviewed", "needs_gt_review"].includes(value)
   );
@@ -195,6 +196,7 @@ function normalizedAnalysisRouteFilters(params) {
     legacyTag: params.get("tag") || "",
     comparisonStatus: routeAnalysisComparisonStatus(params),
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
+    pageSize: CASE_PAGE_SIZES.includes(rawPageSize) ? rawPageSize : DEFAULT_CASE_PAGE_SIZE,
   };
 }
 
@@ -292,6 +294,7 @@ function currentAnalysisRouteOptions(overrides = {}) {
     triggerTag: getMultiFilterValues($("#analysisTriggerFilter")),
     egressTag: getMultiFilterValues($("#analysisEgressFilter")),
     page: state.reviewAnalysis.page,
+    pageSize: state.reviewAnalysis.pageSize,
     ...overrides,
   };
 }
@@ -327,6 +330,10 @@ function applyAnalysisRouteControls(route) {
     hasRun: Boolean($("#analysisRunFilter")?.value),
   });
   state.reviewAnalysis.page = Math.max(1, Number(filters.page) || 1);
+  state.reviewAnalysis.pageSize = CASE_PAGE_SIZES.includes(Number(filters.pageSize))
+    ? Number(filters.pageSize)
+    : DEFAULT_CASE_PAGE_SIZE;
+  if ($("#analysisPageSize")) $("#analysisPageSize").value = String(state.reviewAnalysis.pageSize);
 }
 
 function pageUrl(page, options = {}) {
@@ -386,6 +393,9 @@ function pageUrl(page, options = {}) {
     if (triggerTag) url.searchParams.set("trigger_tag", triggerTag);
     if (egressTag) url.searchParams.set("egress_tag", egressTag);
     if (Number(analysis.page) > 1) url.searchParams.set("page", String(analysis.page));
+    if (Number(analysis.pageSize) !== DEFAULT_CASE_PAGE_SIZE) {
+      url.searchParams.set("page_size", String(analysis.pageSize));
+    }
   }
   if (page === "prediction") {
     const issueIds = options.issues ?? (options.issue ? [options.issue] : []);

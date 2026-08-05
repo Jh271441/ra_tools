@@ -3050,7 +3050,7 @@ def _review_reason_analysis_payload(
     egress_tag: str = "",
     search: str = "",
     page: int = 1,
-    page_size: int = 50,
+    page_size: int = 20,
     unbounded: bool = False,
 ) -> dict[str, Any]:
     missing_evidence_catalog = _missing_evidence_catalog()
@@ -3265,7 +3265,7 @@ async def review_reason_analysis(
     egress_tag: str = "",
     search: str = "",
     page: int = 1,
-    page_size: int = 50,
+    page_size: int = 20,
 ) -> dict[str, Any]:
     return _review_reason_analysis_payload(
         model_run_id=model_run_id,

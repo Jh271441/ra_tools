@@ -100,6 +100,9 @@ function bindEvents() {
   $("#analysisPageNext").addEventListener("click", () => {
     changeAnalysisPage(1).catch((error) => showToast(error.message, true));
   });
+  $("#analysisPageSize")?.addEventListener("change", (event) => {
+    changeAnalysisPageSize(event.target.value).catch((error) => showToast(error.message, true));
+  });
   $("#modelRunFilter").addEventListener("change", async () => {
     const previousRunId = state.selectedRunId;
     state.selectedRunId = $("#modelRunFilter").value;

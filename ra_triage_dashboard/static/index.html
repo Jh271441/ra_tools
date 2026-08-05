@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-93`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-94`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -353,10 +353,22 @@
                 <small id="analysisCaseSummary">正在加载…</small>
               </div>
               <div class="analysis-case-list" id="analysisCaseList" aria-live="polite"></div>
-              <nav class="case-pagination" aria-label="原因明细分页">
-                <button class="button button-quiet" id="analysisPagePrevious" type="button">上一页</button>
-                <span id="analysisPageSummary">— / —</span>
-                <button class="button button-quiet" id="analysisPageNext" type="button">下一页</button>
+              <nav class="case-pagination gallery-pagination" aria-label="原因明细分页">
+                <div class="case-pagination-main">
+                  <button class="button button-quiet" id="analysisPagePrevious" type="button">上一页</button>
+                  <span id="analysisPageSummary">— / —</span>
+                  <button class="button button-quiet" id="analysisPageNext" type="button">下一页</button>
+                </div>
+                <label class="case-page-size" for="analysisPageSize">
+                  <span>每页</span>
+                  <select id="analysisPageSize" aria-label="原因明细每页展示数量">
+                    <option value="10">10</option>
+                    <option value="20" selected>20</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                  </select>
+                  <span>条</span>
+                </label>
               </nav>
             </section>
           </section>
@@ -942,7 +954,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-93`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-94`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

@@ -238,7 +238,7 @@ const state = {
   reviewQueueStale: false,
   reviewAnalysis: {
     page: 1,
-    pageSize: 50,
+    pageSize: DEFAULT_CASE_PAGE_SIZE,
     requestSeq: 0,
     filterTimer: null,
     data: null,

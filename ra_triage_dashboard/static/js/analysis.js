@@ -536,7 +536,12 @@ function renderAnalysisCases(data) {
   }
   const page = Number(data.page || 1);
   const pageCount = Number(data.page_count || 1);
+  const pageSize = CASE_PAGE_SIZES.includes(Number(data.page_size))
+    ? Number(data.page_size)
+    : state.reviewAnalysis.pageSize;
+  state.reviewAnalysis.pageSize = pageSize;
   $("#analysisPageSummary").textContent = `${page} / ${pageCount}`;
+  $("#analysisPageSize").value = String(pageSize);
   $("#analysisPagePrevious").disabled = page <= 1;
   $("#analysisPageNext").disabled = page >= pageCount;
 }
@@ -664,6 +669,18 @@ async function changeAnalysisPage(delta) {
   );
   if (target === state.reviewAnalysis.page) return;
   state.reviewAnalysis.page = target;
+  showPage("analysis", { historyMode: "push" });
+  await loadReviewReasonAnalysis();
+  window.scrollTo({ top: $("#analysisCaseList").offsetTop - 72, behavior: "smooth" });
+}
+
+async function changeAnalysisPageSize(value) {
+  const nextPageSize = CASE_PAGE_SIZES.includes(Number(value))
+    ? Number(value)
+    : DEFAULT_CASE_PAGE_SIZE;
+  if (nextPageSize === state.reviewAnalysis.pageSize) return;
+  state.reviewAnalysis.pageSize = nextPageSize;
+  state.reviewAnalysis.page = 1;
   showPage("analysis", { historyMode: "push" });
   await loadReviewReasonAnalysis();
   window.scrollTo({ top: $("#analysisCaseList").offsetTop - 72, behavior: "smooth" });
