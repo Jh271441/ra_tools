@@ -511,6 +511,7 @@ function renderReview(caseData) {
               <span class="evidence-summary-count tag-group-summary" id="evidenceSummaryCount">已选 ${chosenEvidence.size} 项</span>
               <span class="tag-group-chevron" aria-hidden="true"></span>
             </span>
+            <span class="review-axis-selected review-evidence-selected" data-selected-missing-evidence${chosenEvidence.size ? "" : " hidden"}></span>
           </summary>
           <div class="evidence-options review-tag-options" id="missingEvidenceOptions">${visibleCatalog.map((item) => missingEvidenceOptionMarkup(item, chosenEvidence.has(item.key), true)).join("")}${deletedEvidenceOptions}${customEvidenceOptions}${!visibleCatalog.length && !deletedEvidenceOptions && !customEvidenceOptions ? '<div class="review-tag-empty">暂无条目，点 ＋ 添加</div>' : ""}</div>
         </details>
@@ -533,6 +534,7 @@ function renderReview(caseData) {
   $("#reviewPane").querySelectorAll('input[name="missingEvidence"]').forEach((input) => {
     input.addEventListener("change", updateEvidenceSummary);
   });
+  updateEvidenceSummary();
   bindMissingEvidenceCatalogControls($("#reviewPane"));
   bindReviewTagCatalogControls($("#reviewPane"));
   bindReviewDropdownDismiss();
@@ -595,9 +597,20 @@ function renderReview(caseData) {
 }
 
 function updateEvidenceSummary() {
-  const count = document.querySelectorAll('input[name="missingEvidence"]:checked').length;
+  const root = $("#reviewPane") || document;
+  const selected = [...root.querySelectorAll('input[name="missingEvidence"]:checked')].map((input) => ({
+    key: input.value,
+    label: input.parentElement?.querySelector("span")?.textContent?.trim() || evidenceLabel(input.value),
+  }));
+  const count = selected.length;
   const target = $("#evidenceSummaryCount");
   if (target) target.textContent = `已选 ${count} 项`;
+  const selectedContainer = root.querySelector("[data-selected-missing-evidence]");
+  if (!selectedContainer) return;
+  selectedContainer.innerHTML = selected
+    .map((item) => `<button class="tag-group-selected-chip missing-evidence-selected-chip" type="button" data-remove-review-evidence="${escapeHtml(item.key)}" title="取消选择 ${escapeHtml(item.label)}"><span>${escapeHtml(item.label)}</span><b aria-hidden="true">×</b></button>`)
+    .join("");
+  selectedContainer.hidden = selected.length === 0;
 }
 
 function setMissingEvidenceCatalogFromResult(result) {
@@ -863,13 +876,16 @@ function bindSelectedReviewTagControls(root) {
   if (!root || root.dataset.selectedReviewTagControlsBound === "1") return;
   root.dataset.selectedReviewTagControlsBound = "1";
   root.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-remove-review-tag]");
+    const button = event.target.closest("[data-remove-review-tag], [data-remove-review-evidence]");
     if (!button || !root.contains(button)) return;
     event.preventDefault();
     event.stopPropagation();
-    const key = button.dataset.removeReviewTag || "";
+    const isEvidence = button.hasAttribute("data-remove-review-evidence");
+    const key = isEvidence
+      ? button.dataset.removeReviewEvidence || ""
+      : button.dataset.removeReviewTag || "";
     const input = root.querySelector(
-      `input[name="reviewTags"][value="${CSS.escape(key)}"]`
+      `${isEvidence ? 'input[name="missingEvidence"]' : 'input[name="reviewTags"]'}[value="${CSS.escape(key)}"]`
     );
     if (!input) return;
     input.checked = false;
