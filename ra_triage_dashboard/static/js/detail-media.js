@@ -570,9 +570,11 @@ function openHistoryDialog(kind, caseData) {
   if (!caseData) return;
   const isModel = kind === "model";
   const predictions = caseData.predictions || [];
-  const annotations = typeof reviewAnnotationsForCurrentRun === "function"
-    ? reviewAnnotationsForCurrentRun(caseData)
-    : (caseData.annotations || []);
+  const annotations = isModel
+    ? []
+    : typeof reviewAnnotationsForAllRuns === "function"
+      ? reviewAnnotationsForAllRuns(caseData)
+      : (caseData.annotations || []);
   $("#historyDialogTitle").textContent = isModel
     ? uiText("评测 Run 输出历史", "Model run history")
     : uiText("Review 历史", "Review history");
@@ -581,10 +583,15 @@ function openHistoryDialog(kind, caseData) {
         `${predictions.length} 个模型 Run · 当前 Review Run 会高亮`,
         `${predictions.length} model runs · current review run is highlighted`
       )
-    : uiText(
-        `${annotations.length} 条历史 Review · 追加式，不覆盖旧记录`,
-        `${annotations.length} reviews · append-only history`
-      );
+    : (() => {
+        const runCount = new Set(
+          annotations.map((item) => String(item.model_run_id || "legacy"))
+        ).size;
+        return uiText(
+          `${annotations.length} 条历史 Review · 跨 ${runCount} 个 Model Run`,
+          `${annotations.length} reviews · across ${runCount} model runs`
+        );
+      })();
   $("#historyDialogContent").innerHTML = isModel
     ? predictionCards(caseData)
     : annotationHistory(annotations);

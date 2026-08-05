@@ -27,6 +27,14 @@ function reviewAnnotationsForCurrentRun(caseData) {
     : bound;
 }
 
+// The edit form is scoped to the selected Run, while the Issue-level history
+// is a complete append-only audit trail across every model Run.
+function reviewAnnotationsForAllRuns(caseData) {
+  return [...(caseData?.annotations || [])].sort(
+    (left, right) => Number(right?.id || 0) - Number(left?.id || 0)
+  );
+}
+
 function currentReviewAnnotation(caseData) {
   return reviewAnnotationsForCurrentRun(caseData)[0] || {};
 }
@@ -142,7 +150,7 @@ function bindAnnotationHistory(root, caseData) {
 
 function updateReviewHistory(caseData) {
   if (!caseData || state.selectedId !== caseData.issue_id) return;
-  const annotations = reviewAnnotationsForCurrentRun(caseData);
+  const annotations = reviewAnnotationsForAllRuns(caseData);
   const launch = $("#reviewHistoryLaunchButton");
   if (launch) {
     launch.innerHTML = `<span class="ui-lang-zh">Review 历史 · ${annotations.length} 条</span><span class="ui-lang-en">Review history · ${annotations.length}</span>`;
@@ -158,10 +166,13 @@ function updateReviewHistory(caseData) {
     dialogContent.innerHTML = annotationHistory(annotations);
     bindAnnotationHistory(dialogContent, caseData);
     if ($("#historyDialogMeta")) {
+      const runCount = new Set(
+        annotations.map((item) => String(item.model_run_id || "legacy"))
+      ).size;
       $("#historyDialogMeta").textContent =
         state.uiLanguage === "en"
-          ? `${annotations.length} reviews · append-only history`
-          : `${annotations.length} 条历史 Review · 追加式，不覆盖旧记录`;
+          ? `${annotations.length} reviews · across ${runCount} model runs`
+          : `${annotations.length} 条历史 Review · 跨 ${runCount} 个 Model Run`;
     }
   }
 }
@@ -398,6 +409,7 @@ async function deleteAnnotationVersion(caseData, annotationId, button) {
 function renderReview(caseData) {
   const reviewRunId = currentReviewRunId(caseData);
   const runAnnotations = reviewAnnotationsForCurrentRun(caseData);
+  const allAnnotations = reviewAnnotationsForAllRuns(caseData);
   const previous = runAnnotations[0] || {};
   state.reviewEditRunId = reviewRunId;
   state.reviewEditBaseAnnotationId = currentReviewBaseAnnotationId(
@@ -460,8 +472,8 @@ function renderReview(caseData) {
             </h2>
           </div>
           <button class="history-inline-button" type="button" data-open-history="review" id="reviewHistoryLaunchButton">
-            <span class="ui-lang-zh">Review 历史 · ${runAnnotations.length} 条</span>
-            <span class="ui-lang-en">Review history · ${runAnnotations.length}</span>
+            <span class="ui-lang-zh">Review 历史 · ${allAnnotations.length} 条</span>
+            <span class="ui-lang-en">Review history · ${allAnnotations.length}</span>
           </button>
         </div>
         <label class="review-status-field"><span><span class="ui-lang-zh">复核状态</span><span class="ui-lang-en">Review status</span></span><select id="reviewStatusInput"><option value="reviewed" ${reviewStatus === "reviewed" ? "selected" : ""}>已 Review</option><option value="pending" ${reviewStatus === "pending" ? "selected" : ""}>待补充</option><option value="needs_gt_review" ${reviewStatus === "needs_gt_review" ? "selected" : ""}>GT 需复核</option></select></label>

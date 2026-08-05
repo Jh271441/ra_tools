@@ -159,6 +159,8 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("Model Result Review", APP_JS)
         self.assertIn("function formatModelConfidence", APP_JS)
         self.assertIn("function reviewAnnotationsForCurrentRun", APP_JS)
+        self.assertIn("function reviewAnnotationsForAllRuns", APP_JS)
+        self.assertIn("across ${runCount} model runs", APP_JS)
         self.assertIn("model_run_id: state.reviewEditRunId", APP_JS)
         self.assertIn("expected_previous_annotation_id", APP_JS)
         self.assertIn("history-run", APP_JS)
