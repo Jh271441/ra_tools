@@ -166,6 +166,8 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function bindSelectedReviewTagControls", APP_JS)
         self.assertIn("const section = container.dataset.selectedTagsSection", APP_JS)
         self.assertIn("height: 20px; box-sizing: border-box", STYLES_CSS)
+        self.assertIn("min-height: 20px; line-height: 20px", STYLES_CSS)
+        self.assertIn("max-width: 100%; min-height: 20px", STYLES_CSS)
         self.assertIn("flex: 0 1 auto; max-width: 100%", STYLES_CSS)
         self.assertIn("position: absolute; right: 4px; top: 50%", STYLES_CSS)
         self.assertIn("padding-right: 17px", STYLES_CSS)
