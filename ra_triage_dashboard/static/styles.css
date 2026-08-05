@@ -1979,24 +1979,31 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   }
   .app-shell.sidebar-mobile-open .app-sidebar {
     width: min(280px, calc(100vw - 24px));
+    height: 100dvh;
+    min-height: 0;
+    border-right: 1px solid var(--line);
+    border-bottom: 0;
+    background: var(--panel);
+    overflow: hidden;
     box-shadow: 18px 0 42px rgba(0,0,0,.42);
   }
   .app-frame,
   .app-shell.sidebar-collapsed .app-frame,
   html[data-sidebar-pref="collapsed"] .app-frame {
-    margin-left: 64px;
+    margin-left: 0;
   }
-  .topbar { top: 0; }
+  .topbar { top: 0; padding-left: 68px; }
   .sidebar-brand {
-    width: 64px;
-    min-height: 60px;
-    flex: 0 0 60px;
+    width: 56px;
+    min-height: 56px;
+    flex: 0 0 56px;
     justify-content: center;
-    padding: 10px 6px;
+    padding: 7px;
     border-right: 0;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 0;
+    background: transparent;
   }
-  .sidebar-brand .brand-mark { width: 38px; height: 38px; }
+  .sidebar-brand .brand-mark { width: 42px; height: 42px; }
   .sidebar-nav {
     min-height: 0;
     display: grid;
@@ -2051,6 +2058,33 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
     cursor: default;
   }
   .mobile-sidebar-backdrop[hidden] { display: none !important; }
+
+  /* Keep the closed mobile rail as a logo-only overlay. The page itself
+     remains full width, so a collapsed toolbar never creates a blank column. */
+  .app-sidebar,
+  .app-shell.sidebar-collapsed .app-sidebar,
+  html[data-sidebar-pref="collapsed"] .app-sidebar {
+    width: 56px;
+    height: 56px;
+    min-height: 56px;
+    border: 0;
+    background: transparent;
+    overflow: visible;
+    box-shadow: none;
+  }
+  .app-shell.sidebar-mobile-open .app-sidebar {
+    width: min(280px, calc(100vw - 24px));
+    height: 100dvh;
+    min-height: 0;
+    border-right: 1px solid var(--line);
+    border-bottom: 0;
+    background: var(--panel);
+    overflow: hidden;
+    box-shadow: 18px 0 42px rgba(0,0,0,.42);
+  }
+
+  /* The desktop two-column review grouping remains two columns on phones. */
+  .review-tag-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 }
 
 @media (min-width: 640px) {
