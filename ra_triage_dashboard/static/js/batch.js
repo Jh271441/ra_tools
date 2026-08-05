@@ -65,6 +65,73 @@ function renderGatewayProviders() {
   };
 }
 
+function gatewayModelTier(model) {
+  return model?.unavailable
+    ? "不可用"
+    : model?.validation_status === "validated"
+      ? "已验证"
+      : "实验";
+}
+
+function gatewayModelOptionMarkup(model, active = false, attribute = "data-gateway-model") {
+  const unavailable = Boolean(model?.unavailable);
+  const tier = gatewayModelTier(model);
+  const resolved = model?.resolved_model_id && model.resolved_model_id !== model.id
+    ? model.resolved_model_id
+    : model?.id || "";
+  return `<button class="gateway-model-option ${active ? "active" : ""} ${unavailable ? "unavailable" : ""}" type="button" ${attribute}="${escapeHtml(model?.id || "")}" ${unavailable ? "disabled" : ""}>
+    <span class="gateway-model-option-head">
+      <strong>${escapeHtml(model?.display_name || model?.id || "未命名模型")}</strong>
+      <em>${tier}</em>
+    </span>
+    <small>${escapeHtml(resolved)}</small>
+  </button>`;
+}
+
+function closeGatewayModelPicker() {
+  const picker = $("#gatewayModelPicker");
+  const panel = $("#gatewayModelPickerPanel");
+  const trigger = $("#gatewayModelPickerTrigger");
+  if (!picker || !panel) return;
+  panel.hidden = true;
+  picker.classList.remove("is-open");
+  trigger?.setAttribute("aria-expanded", "false");
+}
+
+function bindGatewayModelPicker() {
+  const picker = $("#gatewayModelPicker");
+  const trigger = $("#gatewayModelPickerTrigger");
+  const panel = $("#gatewayModelPickerPanel");
+  const select = $("#predictionModelSelect");
+  if (!picker || !trigger || !panel || !select || picker.dataset.bound === "true") return;
+  picker.dataset.bound = "true";
+  trigger.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const willOpen = panel.hidden;
+    closeGatewayModelPicker();
+    if (!willOpen) return;
+    panel.hidden = false;
+    picker.classList.add("is-open");
+    trigger.setAttribute("aria-expanded", "true");
+  });
+  panel.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const option = event.target.closest("[data-gateway-picker-model]");
+    if (!option || option.disabled) return;
+    select.value = option.dataset.gatewayPickerModel || "";
+    state.selectedGatewayModelId = select.value;
+    closeGatewayModelPicker();
+    renderGatewayModels();
+  });
+  document.addEventListener("click", (event) => {
+    if (!picker.contains(event.target)) closeGatewayModelPicker();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeGatewayModelPicker();
+  });
+}
+
 function renderGatewayModels() {
   const select = $("#predictionModelSelect");
   const statusTarget = $("#gatewayModelStatus");
@@ -72,6 +139,7 @@ function renderGatewayModels() {
   const listTarget = $("#gatewayModelList");
   const createButton = $("#createPredictionBatchButton");
   if (!select || !statusTarget || !endpointTarget) return;
+  bindGatewayModelPicker();
   const catalog = state.gatewayModelStatus || {};
   const previous = state.selectedGatewayModelId || select.value;
   const visibleModels = state.gatewayModels;
@@ -110,29 +178,29 @@ function renderGatewayModels() {
     : '<option value="">没有匹配的模型</option>';
   select.value = unavailableSelection ? previous : selectedModel?.id || "";
   state.selectedGatewayModelId = select.value;
+  const pickerSummary = $("#gatewayModelPickerSummary");
+  const pickerOptions = $("#gatewayModelPickerOptions");
+  if (pickerSummary) {
+    const selectedForPicker = displayModels.find((model) => model.id === select.value);
+    pickerSummary.textContent = selectedForPicker
+      ? `[${gatewayModelTier(selectedForPicker)}] ${selectedForPicker.display_name || selectedForPicker.id}`
+      : "没有匹配的模型";
+  }
+  if (pickerOptions) {
+    pickerOptions.innerHTML = displayModels.length
+      ? displayModels.map((model) => gatewayModelOptionMarkup(
+          model,
+          !model.unavailable && model.id === state.selectedGatewayModelId,
+          "data-gateway-picker-model",
+        )).join("")
+      : '<div class="muted">没有匹配的模型。</div>';
+  }
   if (listTarget) {
     listTarget.innerHTML = displayModels.length
-      ? displayModels
-          .map((model) => {
-            const unavailable = Boolean(model.unavailable);
-            const active = !unavailable && model.id === state.selectedGatewayModelId;
-            const tier = unavailable
-              ? "不可用"
-              : model.validation_status === "validated"
-                ? "已验证"
-                : "实验";
-            const resolved = model.resolved_model_id && model.resolved_model_id !== model.id
-              ? model.resolved_model_id
-              : model.id;
-            return `<button class="gateway-model-option ${active ? "active" : ""} ${unavailable ? "unavailable" : ""}" type="button" data-gateway-model="${escapeHtml(model.id)}" ${unavailable ? "disabled" : ""}>
-              <span class="gateway-model-option-head">
-                <strong>${escapeHtml(model.display_name || model.id)}</strong>
-                <em>${tier}</em>
-              </span>
-              <small>${escapeHtml(resolved)}</small>
-            </button>`;
-          })
-          .join("")
+      ? displayModels.map((model) => gatewayModelOptionMarkup(
+          model,
+          !model.unavailable && model.id === state.selectedGatewayModelId,
+        )).join("")
       : '<div class="muted">没有匹配的模型。</div>';
     listTarget.querySelectorAll("[data-gateway-model]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -974,4 +1042,3 @@ async function publishPredictionBatch(batchId, button) {
     }
   }
 }
-

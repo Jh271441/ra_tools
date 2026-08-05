@@ -32,10 +32,10 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-80", APP_ENTRY_JS)
+        self.assertIn("manual-triage-81", APP_ENTRY_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-80", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-81", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
         self.assertNotIn("async function bootstrap", APP_ENTRY_JS)
@@ -102,7 +102,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('styles.css?v=manual-triage-80', INDEX_HTML)
+        self.assertIn('styles.css?v=manual-triage-81', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: nowrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -208,6 +208,16 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("contain: none; overflow: visible", STYLES_CSS)
         self.assertIn("grid-template-rows: auto auto auto auto minmax(0, 1fr) auto", STYLES_CSS)
         self.assertIn("overscroll-behavior: contain; scrollbar-gutter: stable", STYLES_CSS)
+
+    def test_batch_model_picker_uses_workspace_dropdown(self) -> None:
+        self.assertIn('id="gatewayModelPicker"', INDEX_HTML)
+        self.assertIn('id="gatewayModelPickerTrigger"', INDEX_HTML)
+        self.assertIn('id="gatewayModelPickerPanel"', INDEX_HTML)
+        self.assertIn('class="gateway-model-native-select"', INDEX_HTML)
+        self.assertIn("data-gateway-picker-model", APP_JS)
+        self.assertIn("bindGatewayModelPicker", APP_JS)
+        self.assertIn("gateway-model-picker-panel", STYLES_CSS)
+        self.assertIn("gateway-model-picker-trigger", STYLES_CSS)
 
     def test_review_filter_type_matches_analysis_filter_type(self) -> None:
         self.assertIn(".review-filters label { min-width: 0; display: grid; gap: 3px; color: var(--faint); font-size: 11px; }", STYLES_CSS)
