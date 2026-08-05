@@ -438,6 +438,7 @@ function renderReview(caseData) {
   });
   bindMissingEvidenceCatalogControls($("#reviewPane"));
   bindReviewTagCatalogControls($("#reviewPane"));
+  bindReviewDropdownDismiss();
   $("#reviewPane").querySelectorAll('input[name="reviewTags"]').forEach((input) => {
     input.addEventListener("change", updateTagSummary);
   });
@@ -869,6 +870,34 @@ function closeAllTagOptionMenus(except = null) {
     if (toggle) toggle.setAttribute("aria-expanded", "false");
     if (panel) panel.hidden = true;
   });
+}
+
+function closeAllReviewDropdowns(except = null) {
+  document.querySelectorAll(".review-dropdown[open]").forEach((dropdown) => {
+    if (except && dropdown === except) return;
+    dropdown.open = false;
+  });
+}
+
+function bindReviewDropdownDismiss() {
+  if (document.documentElement.dataset.reviewDropdownDismissBound === "1") return;
+  document.documentElement.dataset.reviewDropdownDismissBound = "1";
+  document.addEventListener(
+    "click",
+    (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const current = target?.closest(".review-dropdown") || null;
+      closeAllReviewDropdowns(current);
+    },
+    true
+  );
+  document.addEventListener(
+    "keydown",
+    (event) => {
+      if (event.key === "Escape") closeAllReviewDropdowns();
+    },
+    true
+  );
 }
 
 function bindReviewTagCatalogControls(root = document) {

@@ -2786,7 +2786,7 @@ async def model_runs() -> dict[str, Any]:
         source_file = _model_source_file(item)
         filename = _model_source_filename(item)
         suffix = Path(filename).suffix.lower()
-        preview_supported = suffix in {".json", ".csv"}
+        preview_supported = suffix in {".json", ".csv", ".xlsx", ".xlsm"}
         reconstructed = (
             source_file is None
             and preview_supported
@@ -2830,8 +2830,8 @@ async def preview_model_run_source(
     else:
         path, filename = source_file
         suffix = path.suffix.lower()
-    if suffix not in {".json", ".csv"}:
-        raise _detail(415, "当前仅支持在页面内预览 CSV / JSON。")
+    if suffix not in {".json", ".csv", ".xlsx", ".xlsm"}:
+        raise _detail(415, "当前仅支持在页面内预览 CSV / JSON / XLSX。")
     if reconstructed:
         source_rows = database.model_run_source_rows(run_id)
         metadata = {

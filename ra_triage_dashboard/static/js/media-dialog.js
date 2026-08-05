@@ -117,7 +117,7 @@ async function loadSourcePreviewPage(runId, page = 1) {
   const source = run?.source_file && typeof run.source_file === "object" ? run.source_file : {};
   const previewUrl = safeSameOriginAssetUrl(source.preview_url);
   if (!run || !source.available || !source.preview_supported || !previewUrl) {
-    throw new Error("该 Run 没有可用的 CSV / JSON 页面预览。");
+    throw new Error("该 Run 没有可用的 CSV / JSON / XLSX 页面预览。");
   }
   const separator = previewUrl.includes("?") ? "&" : "?";
   const data = await api(`${previewUrl}${separator}page=${encodeURIComponent(Math.max(1, page))}&page_size=${state.sourcePreview.pageSize}`);
@@ -130,7 +130,7 @@ async function openSourcePreview(runId) {
   const source = run?.source_file && typeof run.source_file === "object" ? run.source_file : {};
   const previewUrl = safeSameOriginAssetUrl(source.preview_url);
   if (!run || !source.available || !source.preview_supported || !previewUrl) {
-    showToast("该 Run 没有可用的 CSV / JSON 页面预览，请重新上传原文件。", true);
+    showToast("该 Run 没有可用的 CSV / JSON / XLSX 页面预览，请重新上传原文件。", true);
     return;
   }
   $("#sourcePreviewTitle").textContent = source.filename || "文件预览";
@@ -499,4 +499,3 @@ function moveMedia(delta) {
   state.media.index = (state.media.index + delta + frames.length) % frames.length;
   renderMediaDialog();
 }
-
