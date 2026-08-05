@@ -2042,6 +2042,22 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
     justify-content: flex-start;
     padding-inline: 6px;
   }
+  /* On a phone, keep the current destination expanded and turn the other
+     entries into compact icon buttons. This preserves order without making
+     the drawer a tall wall of repeated text. Their existing title remains
+     available as the accessible label/tooltip. */
+  .app-shell.sidebar-mobile-open .sidebar-item:not(.active) {
+    width: 42px;
+    min-width: 42px;
+    justify-self: start;
+    justify-content: center;
+    padding-inline: 5px;
+  }
+  .app-shell.sidebar-mobile-open .sidebar-item:not(.active) .sidebar-label { display: none; }
+  .app-shell.sidebar-mobile-open .sidebar-item.active {
+    width: 100%;
+    min-height: 44px;
+  }
   .app-shell.sidebar-mobile-open .sidebar-copy,
   .app-shell.sidebar-mobile-open .sidebar-label { display: grid; }
   .app-shell.sidebar-mobile-open .sidebar-collapse .sidebar-label { display: block; }
