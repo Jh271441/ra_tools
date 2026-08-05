@@ -216,8 +216,8 @@ function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
   const visible = (tagCatalog || []).filter(
     (item) => item.visible !== false && !item.deleted
   );
-  const selectedChipMarkup = (items) => items
-    .map((item) => `<button class="tag-group-selected-chip" type="button" data-remove-review-tag="${escapeHtml(item.key)}" data-remove-review-tag-group="${escapeHtml(item.group || "")}" title="取消选择 ${escapeHtml(item.label)}"><span>${escapeHtml(item.label)}</span><b aria-hidden="true">×</b></button>`)
+  const selectedChipMarkup = (items, section) => items
+    .map((item) => `<button class="tag-group-selected-chip" type="button" data-remove-review-tag="${escapeHtml(item.key)}" data-remove-review-tag-group="${escapeHtml(item.group || "")}" data-tag-section="${escapeHtml(section)}" data-tag-group="${escapeHtml(item.group || "")}" title="取消选择 ${escapeHtml(item.label)}"><span>${escapeHtml(item.label)}</span><b aria-hidden="true">×</b></button>`)
     .join("");
   const sections = definitions.map((section) => {
     const sectionItems = visible
@@ -227,7 +227,7 @@ function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
     <div class="review-tag-axis" data-tag-section="${escapeHtml(section.section)}">
       <div class="review-tag-axis-title">
         <span>${escapeHtml(section.label)}</span>
-        <span class="review-axis-selected" data-selected-tags-section="${escapeHtml(section.section)}"${sectionItems.length ? "" : " hidden"}>${selectedChipMarkup(sectionItems)}</span>
+        <span class="review-axis-selected" data-selected-tags-section="${escapeHtml(section.section)}"${sectionItems.length ? "" : " hidden"}>${selectedChipMarkup(sectionItems, section.section)}</span>
       </div>
       <div class="review-tag-groups">
         ${section.groups.map((group) => {
@@ -844,6 +844,7 @@ function updateTagSummary() {
   document.querySelectorAll("[data-selected-tags-section]").forEach((container) => {
     const root = container.closest(".review-tag-axis");
     if (!root) return;
+    const section = container.dataset.selectedTagsSection || "";
     const selected = [...root.querySelectorAll('input[name="reviewTags"]')]
       .filter((input) => input.checked)
       .map((input) => ({
@@ -852,7 +853,7 @@ function updateTagSummary() {
         group: input.dataset.tagGroup || "",
       }));
     container.innerHTML = selected
-      .map((item) => `<button class="tag-group-selected-chip" type="button" data-remove-review-tag="${escapeHtml(item.key)}" data-remove-review-tag-group="${escapeHtml(item.group)}" title="取消选择 ${escapeHtml(item.label)}"><span>${escapeHtml(item.label)}</span><b aria-hidden="true">×</b></button>`)
+      .map((item) => `<button class="tag-group-selected-chip" type="button" data-remove-review-tag="${escapeHtml(item.key)}" data-remove-review-tag-group="${escapeHtml(item.group)}" data-tag-section="${escapeHtml(section)}" data-tag-group="${escapeHtml(item.group)}" title="取消选择 ${escapeHtml(item.label)}"><span>${escapeHtml(item.label)}</span><b aria-hidden="true">×</b></button>`)
       .join("");
     container.hidden = selected.length === 0;
   });
