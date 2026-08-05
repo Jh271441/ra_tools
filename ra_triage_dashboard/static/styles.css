@@ -504,7 +504,7 @@ input, select, textarea {
 }
 select {
   appearance: none; -webkit-appearance: none; min-height: 32px; padding-right: 31px;
-  color: #e5edf7; border-color: #2b3546; background-color: #0d1119; font-weight: 560;
+  color: #eef4fa; border-color: #2b3546; background-color: #0d1119; font-weight: 560;
   background-image: linear-gradient(45deg, transparent 50%, #8290a4 50%), linear-gradient(135deg, #8290a4 50%, transparent 50%);
   background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
   background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
@@ -512,7 +512,7 @@ select {
 select:hover:not(:disabled) { border-color: #46546a; background-color: #101722; }
 select:focus { border-color: var(--accent); background-color: #0f151f; }
 select:disabled { color: #aebdd0; -webkit-text-fill-color: #aebdd0; border-color: var(--line); background-color: #0d1119; opacity: 1; }
-select option { color: #e5edf7; background: #111a27; font-weight: 560; }
+select option { color: #eef4fa; background: #111a27; font-weight: 560; }
 input:focus, select:focus, textarea:focus { border-color: var(--accent); background-color: #0f151f; }
 textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .filter-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -944,7 +944,7 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .evidence-option input { width: auto; margin: 2px 0 0; accent-color: var(--accent); }
 .evidence-option-choice > span { min-width: 0; display: grid; gap: 1px; }
 .evidence-option strong { color: #dbe7f3; font-size: 11px; font-weight: 600; overflow-wrap: anywhere; }
-.evidence-option small { color: #aebdd0; font-size: 9px; line-height: 1.35; overflow-wrap: anywhere; }
+.evidence-option small { color: #c1cfdd; font-size: 9px; line-height: 1.35; overflow-wrap: anywhere; }
 .evidence-option-deleted { opacity: .78; }
 .evidence-option-actions { display: inline-flex; align-items: center; gap: 3px; }
 .evidence-action-button { min-height: 23px; padding: 3px 5px; border: 1px solid var(--line-soft); border-radius: 4px; color: var(--faint); background: transparent; font-size: 9px; cursor: pointer; }
@@ -999,7 +999,7 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 }
 .tag-options { display: flex; flex-wrap: wrap; gap: 5px; padding: 8px; }
 .evidence-dropdown .tag-options { position: absolute; top: calc(100% + 4px); left: -1px; right: -1px; z-index: 22; max-height: 230px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 14px 30px rgba(0,0,0,.42); background: #111824; }
-.tag-option { display: inline-flex; grid-template-columns: none; align-items: center; gap: 5px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 5px; color: #d4e1ef; background: #0b1119; cursor: pointer; font-size: 10px; font-weight: 520; }
+.tag-option { display: inline-flex; grid-template-columns: none; align-items: center; gap: 5px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 5px; color: #e6eef7; background: #0b1119; cursor: pointer; font-size: 10px; font-weight: 520; }
 .tag-option:hover { border-color: rgba(34,211,238,.42); color: #cfeaec; }
 .tag-option:has(input:checked) { border-color: rgba(34,211,238,.48); color: #f4fcff; background: var(--accent-soft); font-weight: 650; }
 .tag-option input { width: auto; margin: 0; accent-color: var(--accent); }
@@ -1341,7 +1341,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .multi-filter-trigger {
   width: 100%; min-width: 0; height: 34px; display: grid; grid-template-columns: minmax(0, 1fr) 14px;
   align-items: center; gap: 6px; padding: 5px 29px 5px 8px; border: 1px solid #2b3546; border-radius: 7px;
-  color: #e5edf7; background: #0d1119; font-size: 12px; font-weight: 560; text-align: left; cursor: pointer;
+  color: #eef4fa; background: #0d1119; font-size: 12px; font-weight: 560; text-align: left; cursor: pointer;
 }
 .review-filters .multi-filter-trigger {
   height: 32px; padding: 5px 29px 5px 7px;
@@ -1351,7 +1351,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   border-color: #46546a; background: #101722;
 }
 .multi-filter-summary {
-  min-width: 0; overflow: hidden; color: #d9e5f2; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0; overflow: hidden; color: #edf3f9; text-overflow: ellipsis; white-space: nowrap;
 }
 .multi-filter-summary.has-value { color: #f4f8fd; font-weight: 650; }
 .multi-filter.is-disabled { pointer-events: none; }
@@ -1386,19 +1386,19 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .multi-filter-options { min-height: 0; overflow: auto; padding: 4px; display: grid; gap: 1px; }
 .multi-filter-group { display: grid; gap: 1px; margin-bottom: 4px; }
 .multi-filter-group-label {
-  padding: 4px 6px 2px; color: #aebdd0; font-size: 10px; font-weight: 700; letter-spacing: .02em;
+  padding: 4px 6px 2px; color: #c1cfdd; font-size: 10px; font-weight: 700; letter-spacing: .02em;
 }
 .multi-filter-option {
   display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 7px; align-items: center;
-  padding: 6px 7px; border-radius: 5px; color: #d9e5f2; font-size: 12px; font-weight: 520; cursor: pointer;
+  padding: 6px 7px; border-radius: 5px; color: #eef4fa; font-size: 12px; font-weight: 520; cursor: pointer;
 }
 .multi-filter-option:hover { background: #1a2230; color: #ffffff; }
 .multi-filter-option:has(input:checked) { color: #f7fcff; background: rgba(36,211,239,.13); font-weight: 650; }
 .multi-filter-option:has(input:checked):hover { background: rgba(36,211,239,.19); }
-.multi-filter-option input:disabled + span { color: #aebdd0; }
+.multi-filter-option input:disabled + span { color: #b7c5d4; }
 .multi-filter-option span { color: inherit; }
 .multi-filter-option input { width: 13px; height: 13px; margin: 0; accent-color: #24d3ef; }
-.multi-filter-empty { padding: 10px 6px; color: #8a94a6; font-size: 11px; text-align: center; }
+.multi-filter-empty { padding: 10px 6px; color: #b7c5d4; font-size: 11px; text-align: center; }
 .analysis-run-filter { grid-column: span 2; grid-row: 1; }
 .analysis-evidence-filter { grid-column: 1; grid-row: 2; }
 .analysis-tag-filter { grid-column: 2; grid-row: 2; }
