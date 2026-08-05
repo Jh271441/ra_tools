@@ -254,6 +254,8 @@ const state = {
   changePollInFlight: false,
   reviewFormDirty: false,
   deferredDetailRefresh: false,
+  reviewEditRunId: "",
+  reviewEditBaseAnnotationId: null,
   media: {
     kind: "bev",
     index: 0,

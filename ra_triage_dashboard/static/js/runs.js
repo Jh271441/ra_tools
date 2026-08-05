@@ -4,7 +4,10 @@
  * ES modules without auditing cross-file function/state dependencies.
  */
 async function loadReviewers() {
-  const data = await api("/api/reviewers");
+  const runId = String(state.selectedRunId || "").trim();
+  const data = await api(
+    runId ? `/api/reviewers?model_run_id=${encodeURIComponent(runId)}` : "/api/reviewers"
+  );
   state.reviewers = data.items || [];
   const reviewerOptions = state.reviewers.map((item) => {
     const trust =
@@ -437,4 +440,3 @@ async function deleteModelRun(runId) {
     }
   }
 }
-

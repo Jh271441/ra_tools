@@ -3,6 +3,49 @@
  * Loaded as a classic script (shared global scope). Do not convert to
  * ES modules without auditing cross-file function/state dependencies.
  */
+function currentReviewRunId(caseData) {
+  const selected = String(state.selectedRunId || "").trim();
+  if (selected) return selected;
+  // An empty selection means the legacy/unbound Review stream.  Do not
+  // silently attach those records to whichever prediction happens to be
+  // first in the case payload.
+  return "";
+}
+
+function reviewAnnotationsForCurrentRun(caseData) {
+  const runId = currentReviewRunId(caseData);
+  const annotations = caseData?.annotations || [];
+  const bound = annotations.filter(
+    (annotation) => String(annotation.model_run_id || "").trim() === runId
+  );
+  if (runId && bound.length) return bound;
+  // Existing pre-run-binding Reviews have no model_run_id.  Keep them
+  // visible as a compatibility fallback until this Issue is first reviewed
+  // in the selected Run; once a bound version exists, never mix the streams.
+  return runId
+    ? annotations.filter((annotation) => !String(annotation.model_run_id || "").trim())
+    : bound;
+}
+
+function currentReviewAnnotation(caseData) {
+  return reviewAnnotationsForCurrentRun(caseData)[0] || {};
+}
+
+function currentReviewBaseAnnotationId(annotation, runId) {
+  if (!annotation?.id) return null;
+  const annotationRunId = String(annotation.model_run_id || "").trim();
+  return annotationRunId === String(runId || "").trim()
+    ? annotation.id
+    : null;
+}
+
+function reviewRunLabel(runId) {
+  const normalized = String(runId || "").trim();
+  if (!normalized) return "未绑定 Model Run";
+  const run = (state.modelRuns || []).find((item) => String(item.id) === normalized);
+  return run?.name || normalized;
+}
+
 function renderDetail(caseData) {
   const primary = (caseData.predictions || []).find((item) => item.model_run_id === state.selectedRunId) || caseData.predictions?.[0];
   const issueUrl = safeUrl(caseData.voyager_issue_url || caseData.trail_url);
@@ -76,6 +119,7 @@ function annotationHistory(annotations) {
           ${labelBadge(annotation.label, annotation.review_status === "needs_gt_review" ? "GT 待复核" : "已记录")}
           ${annotation.is_excluded ? '<span class="tag exclusion-tag">已排除</span>' : ""}
           <span class="history-reviewer" title="${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}` : "复核人：历史记录未填写")}">${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO" : " · 未验证"}` : "复核人：未记录")}</span>
+          <span class="history-run" title="Review 绑定的 Model Run">Run · ${escapeHtml(reviewRunLabel(annotation.model_run_id))}</span>
           <span class="history-actions"><span class="history-time">${formatTime(annotation.created_at)}</span><button class="history-delete-button" type="button" data-delete-annotation="${escapeHtml(annotation.id)}" title="删除这条 Review 版本" aria-label="删除 ${escapeHtml(formatTime(annotation.created_at))} 的 Review 版本"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h12M8 3h4l1 2H7zM6 6l.7 11h6.6L14 6M8.5 9v5m3-5v5"/></svg></button></span>
         </div>
         ${annotation.missing_evidence?.length ? `<div class="tags">${annotation.missing_evidence.map((key) => `<span class="tag evidence-tag">${escapeHtml(evidenceLabel(key))}</span>`).join("")}</div>` : ""}
@@ -98,7 +142,7 @@ function bindAnnotationHistory(root, caseData) {
 
 function updateReviewHistory(caseData) {
   if (!caseData || state.selectedId !== caseData.issue_id) return;
-  const annotations = caseData.annotations || [];
+  const annotations = reviewAnnotationsForCurrentRun(caseData);
   const launch = $("#reviewHistoryLaunchButton");
   if (launch) {
     launch.innerHTML = `<span class="ui-lang-zh">Review 历史 · ${annotations.length} 条</span><span class="ui-lang-en">Review history · ${annotations.length}</span>`;
@@ -203,8 +247,9 @@ function syncReviewFormFromCase(caseData) {
     renderReview(caseData);
     return;
   }
-  const previous = caseData.annotations?.[0] || {};
-  const hasPreviousReview = Boolean(caseData.annotations?.length);
+  const previous = currentReviewAnnotation(caseData);
+  const runAnnotations = reviewAnnotationsForCurrentRun(caseData);
+  const hasPreviousReview = Boolean(runAnnotations.length);
   const chosenEvidence = new Set(
     hasPreviousReview ? previous.missing_evidence || [] : []
   );
@@ -285,6 +330,15 @@ function syncReviewFormFromCase(caseData) {
     author.value = state.session.username || previous.author || "";
   }
   state.selectedAnnotationLabel = previous.label || "";
+  state.reviewEditRunId = currentReviewRunId(caseData);
+  // A legacy unbound Review can be displayed as a read-only fallback when a
+  // selected Run has no bound version yet. It is not the optimistic-lock
+  // predecessor for that Run; the first save must therefore expect no bound
+  // annotation and create one for the selected Run.
+  state.reviewEditBaseAnnotationId = currentReviewBaseAnnotationId(
+    previous,
+    state.reviewEditRunId
+  );
   state.reviewFormDirty = false;
   state.deferredDetailRefresh = false;
   clearPendingReviewImages();
@@ -297,11 +351,12 @@ function syncReviewFormFromCase(caseData) {
 
 async function deleteAnnotationVersion(caseData, annotationId, button) {
   if (state.savingAnnotation) return;
-  const annotation = (caseData.annotations || []).find(
+  const runAnnotations = reviewAnnotationsForCurrentRun(caseData);
+  const annotation = runAnnotations.find(
     (item) => String(item.id) === String(annotationId)
   );
   if (!annotation) return;
-  const deletingLatest = String(caseData.annotations?.[0]?.id) === String(annotationId);
+  const deletingLatest = String(runAnnotations[0]?.id) === String(annotationId);
   const unsavedWarning = deletingLatest && state.reviewFormDirty
     ? "\n当前表单有未保存编辑，删除后会恢复上一版本并丢弃这些编辑。"
     : "";
@@ -341,13 +396,20 @@ async function deleteAnnotationVersion(caseData, annotationId, button) {
 }
 
 function renderReview(caseData) {
-  const previous = caseData.annotations?.[0] || {};
+  const reviewRunId = currentReviewRunId(caseData);
+  const runAnnotations = reviewAnnotationsForCurrentRun(caseData);
+  const previous = runAnnotations[0] || {};
+  state.reviewEditRunId = reviewRunId;
+  state.reviewEditBaseAnnotationId = currentReviewBaseAnnotationId(
+    previous,
+    reviewRunId
+  );
   state.reviewFormDirty = false;
   state.deferredDetailRefresh = false;
   state.selectedAnnotationLabel = previous.label || "";
   const catalog = state.config?.missing_evidence_catalog || [];
   const tagCatalog = state.config?.review_tag_catalog || [];
-  const hasPreviousReview = Boolean(caseData.annotations?.length);
+  const hasPreviousReview = Boolean(runAnnotations.length);
   const chosenEvidence = new Set(
     hasPreviousReview ? previous.missing_evidence || [] : []
   );
@@ -398,8 +460,8 @@ function renderReview(caseData) {
             </h2>
           </div>
           <button class="history-inline-button" type="button" data-open-history="review" id="reviewHistoryLaunchButton">
-            <span class="ui-lang-zh">Review 历史 · ${(caseData.annotations || []).length} 条</span>
-            <span class="ui-lang-en">Review history · ${(caseData.annotations || []).length}</span>
+            <span class="ui-lang-zh">Review 历史 · ${runAnnotations.length} 条</span>
+            <span class="ui-lang-en">Review history · ${runAnnotations.length}</span>
           </button>
         </div>
         <label class="review-status-field"><span><span class="ui-lang-zh">复核状态</span><span class="ui-lang-en">Review status</span></span><select id="reviewStatusInput"><option value="reviewed" ${reviewStatus === "reviewed" ? "selected" : ""}>已 Review</option><option value="pending" ${reviewStatus === "pending" ? "selected" : ""}>待补充</option><option value="needs_gt_review" ${reviewStatus === "needs_gt_review" ? "selected" : ""}>GT 需复核</option></select></label>
@@ -1238,6 +1300,8 @@ async function saveAnnotation(event) {
     submitButton.setAttribute("aria-busy", "true");
   }
   const payload = {
+    model_run_id: state.reviewEditRunId || currentReviewRunId(state.selectedCase),
+    expected_previous_annotation_id: state.reviewEditBaseAnnotationId || null,
     label: state.selectedAnnotationLabel,
     review_status: $("#reviewStatusInput").value,
     is_excluded: Boolean($("#reviewExcludeInput")?.checked),
@@ -1275,6 +1339,10 @@ async function saveAnnotation(event) {
       });
     }
     acknowledgeLocalChange(result);
+    if (result?.annotation) {
+      state.reviewEditRunId = result.annotation.model_run_id || state.reviewEditRunId;
+      state.reviewEditBaseAnnotationId = result.annotation.id || null;
+    }
     const screenshotCount = state.pendingReviewImages.length;
     state.reviewFormDirty = false;
     state.deferredDetailRefresh = false;

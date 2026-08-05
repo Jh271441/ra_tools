@@ -46,7 +46,12 @@ from .autotriage_source import (
 )
 from .baseline import load_label_baseline
 from .batch_prediction_runner import BatchPredictionRunner
-from .db import LABELS, REVIEW_STATUSES, Database
+from .db import (
+    LABELS,
+    REVIEW_STATUSES,
+    AnnotationConflictError,
+    Database,
+)
 from .model_catalog import MODEL_ID_RE, ModelCatalog, ModelCatalogError
 from .prompt_catalog import (
     INPUT_PRESETS,
@@ -1260,21 +1265,43 @@ def _create_annotation_record(
         raise _detail(400, "missing_evidence 必须是数组。")
     tags = _normalise_review_tags(tags)
     missing_evidence = _normalise_missing_evidence(missing_evidence)
+    model_run_id = _as_text(body.get("model_run_id"))
+    has_expected_previous = "expected_previous_annotation_id" in body
+    expected_previous_annotation_id: int | None = None
+    if has_expected_previous:
+        raw_expected = body.get("expected_previous_annotation_id")
+        if raw_expected in (None, "", 0, "0"):
+            expected_previous_annotation_id = None
+        else:
+            try:
+                expected_previous_annotation_id = int(raw_expected)
+            except (TypeError, ValueError) as exc:
+                raise _detail(400, "expected_previous_annotation_id 不合法。") from exc
+            if expected_previous_annotation_id <= 0:
+                raise _detail(400, "expected_previous_annotation_id 不合法。")
     author, author_source, author_verified = _action_actor(request, body.get("author"))
+    annotation_kwargs: dict[str, Any] = {
+        "issue_id": issue_id,
+        "model_run_id": model_run_id,
+        "label": label,
+        "review_status": review_status,
+        "is_excluded": is_excluded,
+        "tags": tags,
+        "missing_evidence": missing_evidence,
+        "note": _as_text(body.get("note")),
+        "author": author,
+        "author_source": author_source,
+        "author_verified": author_verified,
+        "attachments": attachments,
+    }
+    if has_expected_previous:
+        annotation_kwargs["expected_previous_annotation_id"] = expected_previous_annotation_id
     try:
         return database.create_annotation(
-            issue_id=issue_id,
-            label=label,
-            review_status=review_status,
-            is_excluded=is_excluded,
-            tags=tags,
-            missing_evidence=missing_evidence,
-            note=_as_text(body.get("note")),
-            author=author,
-            author_source=author_source,
-            author_verified=author_verified,
-            attachments=attachments,
+            **annotation_kwargs,
         )
+    except AnnotationConflictError as exc:
+        raise _detail(409, str(exc))
     except ValueError as exc:
         raise _detail(400, str(exc))
 
@@ -2507,10 +2534,10 @@ async def split_case_work(request: Request) -> dict[str, Any]:
 
 
 @app.get("/api/reviewers")
-async def reviewers() -> dict[str, Any]:
+async def reviewers(model_run_id: str = "") -> dict[str, Any]:
     return {
         "items": await asyncio.to_thread(
-            database.list_reviewers, settings.baseline_scope
+            database.list_reviewers, settings.baseline_scope, model_run_id
         )
     }
 

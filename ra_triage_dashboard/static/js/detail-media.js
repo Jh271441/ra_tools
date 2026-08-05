@@ -570,7 +570,9 @@ function openHistoryDialog(kind, caseData) {
   if (!caseData) return;
   const isModel = kind === "model";
   const predictions = caseData.predictions || [];
-  const annotations = caseData.annotations || [];
+  const annotations = typeof reviewAnnotationsForCurrentRun === "function"
+    ? reviewAnnotationsForCurrentRun(caseData)
+    : (caseData.annotations || []);
   $("#historyDialogTitle").textContent = isModel
     ? uiText("评测 Run 输出历史", "Model run history")
     : uiText("Review 历史", "Review history");

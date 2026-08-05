@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ra_triage_dashboard.app.db import Database
+from ra_triage_dashboard.app.db import AnnotationConflictError, Database
 
 
 class BatchConfigDatabaseTest(unittest.TestCase):
@@ -164,6 +164,99 @@ class BatchConfigDatabaseTest(unittest.TestCase):
             )
             self.assertTrue(annotation["is_excluded"])
             self.assertTrue(database.get_case("cn12345")["annotations"][0]["is_excluded"])
+
+    def test_annotations_are_bound_to_runs_and_reject_stale_saves(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "triage.sqlite3")
+            database.init()
+            database.upsert_issues(
+                [{"issue_id": "cn12345", "gt_label": "误触发"}],
+                source="test",
+                replace_gt=False,
+            )
+            run_a, _ = database.import_model_run(
+                name="run-a",
+                source_name="run-a.json",
+                source_sha256="a" * 64,
+                metadata={},
+                rows=[{"issue_id": "cn12345", "model_label": "正确触发"}],
+            )
+            run_b, _ = database.import_model_run(
+                name="run-b",
+                source_name="run-b.json",
+                source_sha256="b" * 64,
+                metadata={},
+                rows=[{"issue_id": "cn12345", "model_label": "无需协助"}],
+            )
+            first_a = database.create_annotation(
+                issue_id="cn12345",
+                model_run_id=run_a["id"],
+                label="误触发",
+                review_status="reviewed",
+                tags=[],
+                missing_evidence=[],
+                note="run A first",
+                author="jasper",
+                expected_previous_annotation_id=None,
+            )
+            first_b = database.create_annotation(
+                issue_id="cn12345",
+                model_run_id=run_b["id"],
+                label="无需协助",
+                review_status="reviewed",
+                tags=[],
+                missing_evidence=[],
+                note="run B first",
+                author="liang",
+                expected_previous_annotation_id=None,
+            )
+            self.assertEqual(first_a["model_run_id"], run_a["id"])
+            self.assertEqual(first_b["model_run_id"], run_b["id"])
+            self.assertIsNone(first_a["supersedes_id"])
+            self.assertIsNone(first_b["supersedes_id"])
+
+            second_a = database.create_annotation(
+                issue_id="cn12345",
+                model_run_id=run_a["id"],
+                label="正确触发",
+                review_status="reviewed",
+                tags=[],
+                missing_evidence=[],
+                note="run A second",
+                author="jasper",
+                expected_previous_annotation_id=first_a["id"],
+            )
+            self.assertEqual(second_a["supersedes_id"], first_a["id"])
+            with self.assertRaises(AnnotationConflictError):
+                database.create_annotation(
+                    issue_id="cn12345",
+                    model_run_id=run_a["id"],
+                    label="无需协助",
+                    review_status="reviewed",
+                    tags=[],
+                    missing_evidence=[],
+                    note="stale edit",
+                    author="other",
+                    expected_previous_annotation_id=first_a["id"],
+                )
+
+            case = database.get_case("cn12345")
+            self.assertEqual(
+                [item["model_run_id"] for item in case["annotations"][:3]],
+                [run_a["id"], run_b["id"], run_a["id"]],
+            )
+            run_a_case = database.list_cases(
+                model_run_id=run_a["id"], page=1, page_size=10
+            )["items"][0]
+            run_b_case = database.list_cases(
+                model_run_id=run_b["id"], page=1, page_size=10
+            )["items"][0]
+            self.assertEqual(run_a_case["annotation"]["model_run_id"], run_a["id"])
+            self.assertEqual(run_b_case["annotation"]["model_run_id"], run_b["id"])
+            overview_a = database.overview(baseline_scope="", model_run_id=run_a["id"])
+            overview_b = database.overview(baseline_scope="", model_run_id=run_b["id"])
+            self.assertEqual(overview_a["labelled"], 1)
+            self.assertEqual(overview_b["labelled"], 1)
 
     def test_annotation_delete_reconnects_history_and_removes_attachments(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

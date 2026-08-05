@@ -1076,6 +1076,7 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .history-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 5px; }
 .history-head > span { color: var(--faint); font-size: 9px; }
 .history-reviewer { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-run { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 10px; }
 .history-time { text-align: right; white-space: nowrap; }
 .history-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 5px; }
 .history-delete-button {

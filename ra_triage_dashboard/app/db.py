@@ -28,6 +28,16 @@ BATCH_PUBLISH_STATUSES = (
 ACCESS_ROLES = ("writer", "admin")
 
 
+class AnnotationConflictError(RuntimeError):
+    """Raised when a Review save is based on a stale version."""
+
+
+# ``None`` is a valid expected value (the editor saw no Review yet).  The
+# sentinel keeps direct/legacy Database callers backwards compatible while
+# the HTTP Review form always sends an explicit optimistic-lock value.
+_EXPECTED_ANNOTATION_UNSET = object()
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -925,6 +935,7 @@ class Database:
                 CREATE TABLE IF NOT EXISTS annotations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE CASCADE,
+                    model_run_id TEXT NOT NULL DEFAULT '',
                     label TEXT,
                     review_status TEXT NOT NULL DEFAULT 'pending',
                     is_excluded INTEGER NOT NULL DEFAULT 0,
@@ -939,6 +950,8 @@ class Database:
                 );
                 CREATE INDEX IF NOT EXISTS idx_annotations_issue_id
                     ON annotations(issue_id, id DESC);
+                CREATE INDEX IF NOT EXISTS idx_annotations_issue_run_id
+                    ON annotations(issue_id, model_run_id, id DESC);
 
                 CREATE TABLE IF NOT EXISTS review_attachments (
                     id TEXT PRIMARY KEY,
@@ -1166,10 +1179,15 @@ class Database:
             # nullable/defaulted, so prior annotations and model runs survive.
             self._ensure_column(conn, "issues", "baseline_scope", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "annotations", "review_status", "TEXT NOT NULL DEFAULT 'pending'")
+            self._ensure_column(conn, "annotations", "model_run_id", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "annotations", "is_excluded", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "annotations", "missing_evidence_json", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_column(conn, "annotations", "author_source", "TEXT NOT NULL DEFAULT 'legacy'")
             self._ensure_column(conn, "annotations", "author_verified", "INTEGER NOT NULL DEFAULT 0")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_annotations_issue_run_id "
+                "ON annotations(issue_id, model_run_id, id DESC)"
+            )
             self._ensure_column(conn, "missing_evidence_catalog", "active", "INTEGER NOT NULL DEFAULT 1")
             self._ensure_column(conn, "review_tag_catalog", "hint", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "review_tag_catalog", "section", "TEXT NOT NULL DEFAULT 'scene'")
@@ -1800,8 +1818,12 @@ class Database:
             for row in rows
         ]
 
-    def list_reviewers(self, baseline_scope: str = "") -> list[dict[str, Any]]:
-        params: list[Any] = []
+    def list_reviewers(
+        self, baseline_scope: str = "", model_run_id: str = ""
+    ) -> list[dict[str, Any]]:
+        params: list[Any] = (
+            [model_run_id, model_run_id] if model_run_id else []
+        )
         scope_filter = ""
         if baseline_scope:
             scope_filter = "AND i.baseline_scope = ?"
@@ -1816,7 +1838,7 @@ class Database:
                            AS unverified_count,
                        COUNT(*) AS review_count
                 FROM issues i
-                {self._latest_annotation_join()}
+                {self._latest_annotation_join(model_run_id)}
                 WHERE ann.id IS NOT NULL
                   AND TRIM(ann.author) != ''
                   {scope_filter}
@@ -1838,15 +1860,33 @@ class Database:
         ]
 
     @staticmethod
-    def _latest_annotation_join() -> str:
+    def _latest_annotation_join(model_run_id: str = "") -> str:
+        normalized_run = str(model_run_id or "").strip()
+        if normalized_run:
+            run_clause = """
+                    AND (
+                        a.model_run_id = ?
+                        OR (
+                            a.model_run_id = ''
+                            AND NOT EXISTS (
+                                SELECT 1 FROM annotations scoped
+                                WHERE scoped.issue_id = i.issue_id
+                                  AND scoped.model_run_id = ?
+                            )
+                        )
+                    )
+            """
+        else:
+            run_clause = ""
         return """
             LEFT JOIN annotations ann
               ON ann.id = (
                   SELECT a.id FROM annotations a
                   WHERE a.issue_id = i.issue_id
+                  {run_clause}
                   ORDER BY a.id DESC LIMIT 1
               )
-        """
+        """.format(run_clause=run_clause)
 
     def _case_list_filters(
         self,
@@ -1991,14 +2031,16 @@ class Database:
         condition = f"WHERE {' AND '.join(where)}" if where else ""
         common = f"""
             FROM issues i
-            {self._latest_annotation_join()}
+            {self._latest_annotation_join(model_run_id)}
             LEFT JOIN model_predictions mp
               ON mp.issue_id = i.issue_id
              AND mp.model_run_id = ?
             LEFT JOIN issue_work_assignments wa
               ON wa.issue_id = i.issue_id
         """
-        model_args = [model_run_id]
+        # The correlated annotation lookup appears before the prediction JOIN
+        # in the SQL, so its run id must be the first bound parameter.
+        model_args = ([model_run_id, model_run_id] if model_run_id else []) + [model_run_id]
         return condition, params, model_args, common
 
     def list_cases(
@@ -2041,7 +2083,8 @@ class Database:
             ).fetchone()[0]
             rows = conn.execute(
                 f"""
-                SELECT i.*, ann.label AS annotation_label, ann.review_status AS annotation_review_status,
+                SELECT i.*, ann.id AS annotation_id,
+                       ann.label AS annotation_label, ann.review_status AS annotation_review_status,
                        ann.is_excluded AS annotation_is_excluded,
                        ann.tags_json AS annotation_tags_json,
                        ann.missing_evidence_json AS annotation_missing_evidence_json,
@@ -2049,6 +2092,7 @@ class Database:
                        ann.author_source AS annotation_author_source,
                        ann.author_verified AS annotation_author_verified,
                        ann.created_at AS annotation_created_at,
+                       ann.model_run_id AS annotation_model_run_id,
                        mp.model_label, mp.model_reason, mp.model_confidence, mp.model_run_id,
                        COALESCE(wa.assignee, '') AS work_assignee,
                        COALESCE(wa.split_id, '') AS work_split_id
@@ -2186,6 +2230,7 @@ class Database:
         self,
         *,
         issue_id: str,
+        model_run_id: str = "",
         label: str,
         review_status: str,
         tags: list[str],
@@ -2196,6 +2241,7 @@ class Database:
         author_verified: bool = False,
         attachments: list[dict[str, Any]] | None = None,
         is_excluded: bool = False,
+        expected_previous_annotation_id: int | None | object = _EXPECTED_ANNOTATION_UNSET,
     ) -> dict[str, Any]:
         if label and label not in LABELS:
             raise ValueError(f"不支持的标注标签: {label}")
@@ -2203,6 +2249,7 @@ class Database:
             raise ValueError(f"不支持的 review 状态: {review_status}")
         if not author.strip():
             raise ValueError("复核人不能为空。")
+        model_run_id = str(model_run_id or "").strip()
         tags = sorted({str(tag).strip() for tag in tags if str(tag).strip()})
         missing_evidence = sorted(
             {str(item).strip() for item in missing_evidence if str(item).strip()}
@@ -2210,14 +2257,46 @@ class Database:
         attachments = attachments or []
         now = utc_now()
         with self._write_lock, self.connect() as conn:
+            if model_run_id:
+                model_run = conn.execute(
+                    "SELECT id FROM model_runs WHERE id = ?", (model_run_id,)
+                ).fetchone()
+                if model_run is None:
+                    raise ValueError("模型 Run 不存在。")
             previous = conn.execute(
-                "SELECT id FROM annotations WHERE issue_id = ? ORDER BY id DESC LIMIT 1", (issue_id,)
+                """
+                SELECT id FROM annotations
+                WHERE issue_id = ? AND model_run_id = ?
+                ORDER BY id DESC LIMIT 1
+                """,
+                (issue_id, model_run_id),
             ).fetchone()
+            if expected_previous_annotation_id is not _EXPECTED_ANNOTATION_UNSET:
+                expected_id = expected_previous_annotation_id
+                if expected_id in (None, "", 0, "0"):
+                    expected_id = None
+                else:
+                    try:
+                        expected_id = int(expected_id)
+                    except (TypeError, ValueError) as exc:
+                        raise ValueError("expected_previous_annotation_id 不合法。") from exc
+                    if expected_id <= 0:
+                        raise ValueError("expected_previous_annotation_id 不合法。")
+                current_id = int(previous["id"]) if previous else None
+                if current_id != expected_id:
+                    current_text = f"#{current_id}" if current_id is not None else "无"
+                    expected_text = f"#{expected_id}" if expected_id is not None else "无"
+                    raise AnnotationConflictError(
+                        "该 Issue 在当前 Model Run 下已被其他人更新；"
+                        f"当前版本为 {current_text}，你编辑时为 {expected_text}。"
+                        "请刷新 Review 后再保存。"
+                    )
             annotation_sql = """
                 INSERT INTO annotations (
-                    issue_id, label, review_status, is_excluded, tags_json, missing_evidence_json,
-                    note, author, author_source, author_verified, supersedes_id, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    issue_id, model_run_id, label, review_status, is_excluded,
+                    tags_json, missing_evidence_json, note, author, author_source,
+                    author_verified, supersedes_id, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             if self.backend == "postgresql":
                 annotation_sql += " RETURNING id"
@@ -2225,6 +2304,7 @@ class Database:
                 annotation_sql,
                 (
                     issue_id,
+                    model_run_id,
                     label or None,
                     review_status,
                     bool(is_excluded),
@@ -2350,11 +2430,11 @@ class Database:
     ) -> list[dict[str, Any]]:
         """Return one latest-review row per baseline issue for analysis.
 
-        Human Review is dataset-level rather than run-bound. ``model_run_id``
-        only adds the selected immutable prediction snapshot. ``comparison_status``
-        can narrow the slice to MATCH, MISMATCH, or NONE (no canonical
-        prediction). ``failure_only`` remains a compatibility alias for
-        MISMATCH.
+        When ``model_run_id`` is selected, the latest Review is resolved within
+        that immutable Run. Legacy annotations with an empty run id remain
+        available when no Run is selected. ``comparison_status`` can narrow the
+        slice to MATCH, MISMATCH, or NONE (no canonical prediction).
+        ``failure_only`` remains a compatibility alias for MISMATCH.
         """
 
         def _multi_values(*raw: Any) -> tuple[str, ...]:
@@ -2388,7 +2468,9 @@ class Database:
             raise ValueError("comparison_status requires model_run_id")
 
         where = ["i.baseline_scope = ?", "ann.id IS NOT NULL"]
-        params: list[Any] = [model_run_id, baseline_scope]
+        params: list[Any] = (
+            [model_run_id, model_run_id] if model_run_id else []
+        ) + [model_run_id, baseline_scope]
         if comparison_status != "all":
             where.append("i.gt_label IN (?, ?, ?)")
             params.extend(LABELS)
@@ -2490,15 +2572,16 @@ class Database:
                    ann.author_source AS annotation_author_source,
                    ann.author_verified AS annotation_author_verified,
                    ann.created_at AS annotation_created_at,
+                   ann.model_run_id AS annotation_model_run_id,
                    mp.model_run_id, mp.model_label, mp.model_reason,
                    mp.model_confidence
             FROM issues i
-            {self._latest_annotation_join()}
+            {self._latest_annotation_join(model_run_id)}
             LEFT JOIN model_predictions mp
               ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
             WHERE {' AND '.join(where)}
             ORDER BY ann.created_at DESC, i.issue_id ASC
-        """
+            """
         with self.connect() as conn:
             rows = conn.execute(query, params).fetchall()
         results: list[dict[str, Any]] = []
@@ -2515,6 +2598,7 @@ class Database:
                     "gt_label": current_gt,
                     "annotation": {
                         "id": int(row["annotation_id"]),
+                        "model_run_id": str(row["annotation_model_run_id"] or ""),
                         "label": str(row["annotation_label"] or ""),
                         "review_status": str(
                             row["annotation_review_status"] or "pending"
@@ -2557,7 +2641,9 @@ class Database:
         annotation_author: str = "",
     ) -> list[dict[str, Any]]:
         where = ["i.baseline_scope = ?", "ann.id IS NOT NULL"]
-        params: list[Any] = [model_run_id, baseline_scope]
+        params: list[Any] = (
+            [model_run_id, model_run_id] if model_run_id else []
+        ) + [model_run_id, baseline_scope]
         if failure_only and model_run_id:
             where.extend(
                 [
@@ -2573,7 +2659,7 @@ class Database:
         query = f"""
             SELECT ann.missing_evidence_json
             FROM issues i
-            {self._latest_annotation_join()}
+            {self._latest_annotation_join(model_run_id)}
             LEFT JOIN model_predictions mp
               ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
             WHERE {' AND '.join(where)}
@@ -3187,31 +3273,36 @@ class Database:
                 f"""
                 SELECT COUNT(*)
                 FROM issues i
-                {self._latest_annotation_join()}
+                {self._latest_annotation_join(model_run_id)}
                 {base_where} AND ann.id IS NOT NULL
                 """,
-                (baseline_scope,),
+                ((model_run_id, model_run_id, baseline_scope)
+                 if model_run_id else (baseline_scope,)),
             ).fetchone()[0]
             predictions = failures = reviewed_failures = 0
             if model_run_id:
                 common = f"""
                     FROM issues i
-                    {self._latest_annotation_join()}
+                    {self._latest_annotation_join(model_run_id)}
                     LEFT JOIN model_predictions mp
                       ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
                     WHERE i.baseline_scope = ?
                 """
                 predictions = conn.execute(
-                    f"SELECT COUNT(mp.id) {common}", (model_run_id, baseline_scope)
+                    f"SELECT COUNT(mp.id) {common}",
+                    ((model_run_id, model_run_id, model_run_id, baseline_scope)
+                     if model_run_id else (model_run_id, baseline_scope)),
                 ).fetchone()[0]
                 failure_condition = " AND i.gt_label IN (?, ?, ?) AND mp.model_label IN (?, ?, ?) AND mp.model_label != i.gt_label"
                 failures = conn.execute(
                     f"SELECT COUNT(*) {common}{failure_condition}",
-                    (model_run_id, baseline_scope, *LABELS, *LABELS),
+                    ((model_run_id, model_run_id, model_run_id, baseline_scope, *LABELS, *LABELS)
+                     if model_run_id else (model_run_id, baseline_scope, *LABELS, *LABELS)),
                 ).fetchone()[0]
                 reviewed_failures = conn.execute(
                     f"SELECT COUNT(*) {common}{failure_condition} AND ann.id IS NOT NULL",
-                    (model_run_id, baseline_scope, *LABELS, *LABELS),
+                    ((model_run_id, model_run_id, model_run_id, baseline_scope, *LABELS, *LABELS)
+                     if model_run_id else (model_run_id, baseline_scope, *LABELS, *LABELS)),
                 ).fetchone()[0]
             running = conn.execute(
                 "SELECT COUNT(*) FROM inference_jobs WHERE status IN ('queued', 'running')"
@@ -3265,6 +3356,12 @@ class Database:
                 "work_assignee": work_assignee,
                 "work_split_id": work_split_id,
                 "annotation": {
+                    "id": row["annotation_id"] if "annotation_id" in keys else None,
+                    "model_run_id": (
+                        str(row["annotation_model_run_id"] or "")
+                        if "annotation_model_run_id" in keys
+                        else ""
+                    ),
                     "label": row["annotation_label"] or "",
                     "review_status": row["annotation_review_status"] or "pending",
                     "is_excluded": bool(row["annotation_is_excluded"]),
@@ -3384,6 +3481,11 @@ class Database:
         return {
             "id": row["id"],
             "issue_id": row["issue_id"],
+            "model_run_id": (
+                str(row["model_run_id"] or "")
+                if "model_run_id" in row.keys()
+                else ""
+            ),
             "label": row["label"] or "",
             "review_status": row["review_status"] if "review_status" in row.keys() else "pending",
             "is_excluded": bool(row["is_excluded"]) if "is_excluded" in row.keys() else False,

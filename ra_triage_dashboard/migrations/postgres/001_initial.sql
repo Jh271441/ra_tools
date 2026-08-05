@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS issues (
 CREATE TABLE IF NOT EXISTS annotations (
     id bigserial PRIMARY KEY,
     issue_id varchar(128) NOT NULL REFERENCES issues(issue_id) ON DELETE CASCADE,
+    model_run_id varchar(36) NOT NULL DEFAULT '',
     label varchar(32),
     review_status varchar(32) NOT NULL DEFAULT 'pending',
     tags_json jsonb NOT NULL DEFAULT '[]'::jsonb,
@@ -41,6 +42,8 @@ CREATE TABLE IF NOT EXISTS annotations (
 );
 CREATE INDEX IF NOT EXISTS idx_annotations_issue_created
     ON annotations(issue_id, id DESC);
+CREATE INDEX IF NOT EXISTS idx_annotations_issue_run_created
+    ON annotations(issue_id, model_run_id, id DESC);
 
 CREATE TABLE IF NOT EXISTS review_attachments (
     id uuid PRIMARY KEY,
