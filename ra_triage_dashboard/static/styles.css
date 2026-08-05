@@ -1983,7 +1983,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
     min-height: 0;
     border-right: 1px solid var(--line);
     border-bottom: 0;
-    background: var(--panel);
+    background: var(--raised);
     overflow: hidden;
     box-shadow: 18px 0 42px rgba(0,0,0,.42);
   }
@@ -2078,7 +2078,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
     min-height: 0;
     border-right: 1px solid var(--line);
     border-bottom: 0;
-    background: var(--panel);
+    background: var(--raised);
     overflow: hidden;
     box-shadow: 18px 0 42px rgba(0,0,0,.42);
   }
