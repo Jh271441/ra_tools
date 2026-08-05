@@ -1386,17 +1386,17 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .multi-filter-options { min-height: 0; overflow: auto; padding: 4px; display: grid; gap: 1px; }
 .multi-filter-group { display: grid; gap: 1px; margin-bottom: 4px; }
 .multi-filter-group-label {
-  padding: 4px 6px 2px; color: #c1cfdd; font-size: 10px; font-weight: 700; letter-spacing: .02em;
+  padding: 4px 6px 2px; color: #d8e3ee; font-size: 10px; font-weight: 700; letter-spacing: .02em;
 }
 .multi-filter-option {
   display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 7px; align-items: center;
-  padding: 6px 7px; border-radius: 5px; color: #eef4fa; font-size: 12px; font-weight: 520; cursor: pointer;
+  padding: 6px 7px; border-radius: 5px; color: #f2f6fb; font-size: 12px; font-weight: 560; cursor: pointer;
 }
 .multi-filter-option:hover { background: #1a2230; color: #ffffff; }
 .multi-filter-option:has(input:checked) { color: #f7fcff; background: rgba(36,211,239,.13); font-weight: 650; }
 .multi-filter-option:has(input:checked):hover { background: rgba(36,211,239,.19); }
-.multi-filter-option input:disabled + span { color: #b7c5d4; }
-.multi-filter-option span { color: inherit; }
+.multi-filter-option input:disabled + span { color: #d8e3ee; }
+.multi-filter-option span { color: #f2f6fb; }
 .multi-filter-option input { width: 13px; height: 13px; margin: 0; accent-color: #24d3ef; }
 .multi-filter-empty { padding: 10px 6px; color: #b7c5d4; font-size: 11px; text-align: center; }
 .analysis-run-filter { grid-column: span 2; grid-row: 1; }
@@ -2199,7 +2199,8 @@ html[data-color-theme="light"] .multi-filter-action:hover {
   color: #0f172a; border-color: #8291a4; background: #f2f6fa;
 }
 html[data-color-theme="light"] .multi-filter-group-label { color: #566579; }
-html[data-color-theme="light"] .multi-filter-option { color: #0f172a; }
+html[data-color-theme="light"] .multi-filter-option,
+html[data-color-theme="light"] .multi-filter-option span { color: #0f172a; }
 html[data-color-theme="light"] .multi-filter-option:hover {
   background: #e4eaf1; color: #0f172a;
 }
