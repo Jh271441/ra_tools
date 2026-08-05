@@ -105,10 +105,10 @@ function bindEvents() {
     if (!state.selectedRunId) state.reviewComparisonStatus = "all";
     if (state.selectedRunId && !previousRunId) {
       // Run selection changes the prediction overlay, not the immutable
-      // baseline queue.  Keep all 1071 Issues visible unless the user chose a
-      // comparison filter explicitly.
-      state.reviewComparisonStatus = "all";
-      state.failureOnly = false;
+      // baseline queue.  Keep the established failure-focused default while
+      // retaining uncovered baseline Issues for the NONE/全部 filters.
+      state.reviewComparisonStatus = "mismatch";
+      state.failureOnly = true;
     }
     if (typeof renderReviewCatalogFilters === "function") {
       renderReviewCatalogFilters();
@@ -556,9 +556,9 @@ async function bootstrap() {
         state.reviewAnalysis.comparisonStatus === "mismatch";
     } else {
       state.reviewComparisonStatus = state.selectedRunId
-        ? normalizedReviewComparisonStatus(
+          ? normalizedReviewComparisonStatus(
             initialRoute.comparisonStatus,
-            initialRoute.failureOnly ? "mismatch" : "all"
+            "mismatch"
           )
         : "all";
       state.failureOnly = state.reviewComparisonStatus === "mismatch";

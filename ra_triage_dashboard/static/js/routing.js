@@ -124,13 +124,16 @@ function routeReviewComparisonStatus(params) {
   const requested = String(params.get("comparison") || "").trim().toLowerCase();
   if (!requested) {
     if (params.get("failure") === "1") return "mismatch";
-    return params.has("run") ? "all" : null;
+    // A direct Run URL without an explicit comparison keeps the Review page's
+    // established MISMATCH default.  The caller can request all/NONE through
+    // an explicit comparison query parameter.
+    return null;
   }
   const values = parseComparisonStatuses(requested);
   if (values.length) return comparisonStatusParam(values);
   if (REVIEW_COMPARISON_STATUSES.includes(requested)) return requested;
   if (params.get("failure") === "1") return "mismatch";
-  return params.has("run") ? "all" : null;
+  return null;
 }
 
 function routeAnalysisComparisonStatus(params) {
@@ -539,4 +542,3 @@ function navigatePage(page, options = {}) {
     }
   }
 }
-
