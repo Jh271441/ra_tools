@@ -362,12 +362,19 @@ function syncReviewFormFromCase(caseData) {
 
 async function deleteAnnotationVersion(caseData, annotationId, button) {
   if (state.savingAnnotation) return;
-  const runAnnotations = reviewAnnotationsForCurrentRun(caseData);
-  const annotation = runAnnotations.find(
+  const allAnnotations = reviewAnnotationsForAllRuns(caseData);
+  const annotation = allAnnotations.find(
     (item) => String(item.id) === String(annotationId)
   );
   if (!annotation) return;
-  const deletingLatest = String(runAnnotations[0]?.id) === String(annotationId);
+  const annotationRunId = String(annotation.model_run_id || "").trim();
+  const sameRunAnnotations = allAnnotations.filter(
+    (item) => String(item.model_run_id || "").trim() === annotationRunId
+  );
+  const deletingLatest = String(sameRunAnnotations[0]?.id) === String(annotationId);
+  const currentRunAnnotations = reviewAnnotationsForCurrentRun(caseData);
+  const deletingCurrentRunLatest =
+    String(currentRunAnnotations[0]?.id) === String(annotationId);
   const unsavedWarning = deletingLatest && state.reviewFormDirty
     ? "\n当前表单有未保存编辑，删除后会恢复上一版本并丢弃这些编辑。"
     : "";
@@ -387,7 +394,11 @@ async function deleteAnnotationVersion(caseData, annotationId, button) {
     caseData.annotations = (caseData.annotations || []).filter(
       (item) => String(item.id) !== String(annotationId)
     );
-    if (state.selectedCase?.issue_id === caseData.issue_id && deletingLatest) {
+    if (
+      state.selectedCase?.issue_id === caseData.issue_id &&
+      deletingLatest &&
+      deletingCurrentRunLatest
+    ) {
       state.selectedCase = caseData;
       syncReviewFormFromCase(caseData);
     } else {
