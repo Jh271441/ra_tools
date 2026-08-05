@@ -79,9 +79,11 @@ function gatewayModelOptionMarkup(model, active = false, attribute = "data-gatew
   const resolved = model?.resolved_model_id && model.resolved_model_id !== model.id
     ? model.resolved_model_id
     : model?.id || "";
-  return `<button class="gateway-model-option ${active ? "active" : ""} ${unavailable ? "unavailable" : ""}" type="button" ${attribute}="${escapeHtml(model?.id || "")}" ${unavailable ? "disabled" : ""}>
+  const displayName = model?.display_name || model?.id || "未命名模型";
+  const title = `${displayName} · ${resolved}`;
+  return `<button class="gateway-model-option ${active ? "active" : ""} ${unavailable ? "unavailable" : ""}" type="button" title="${escapeHtml(title)}" ${attribute}="${escapeHtml(model?.id || "")}" ${unavailable ? "disabled" : ""}>
     <span class="gateway-model-option-head">
-      <strong>${escapeHtml(model?.display_name || model?.id || "未命名模型")}</strong>
+      <strong>${escapeHtml(displayName)}</strong>
       <em>${tier}</em>
     </span>
     <small>${escapeHtml(resolved)}</small>

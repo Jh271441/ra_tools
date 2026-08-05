@@ -206,7 +206,7 @@ function syncReviewFormFromCase(caseData) {
   const previous = caseData.annotations?.[0] || {};
   const hasPreviousReview = Boolean(caseData.annotations?.length);
   const chosenEvidence = new Set(
-    hasPreviousReview ? previous.missing_evidence || [] : ["routing_direction"]
+    hasPreviousReview ? previous.missing_evidence || [] : []
   );
   const chosenTags = new Set(previous.tags || []);
   const evidenceCatalog = state.config?.missing_evidence_catalog || [];
@@ -349,7 +349,7 @@ function renderReview(caseData) {
   const tagCatalog = state.config?.review_tag_catalog || [];
   const hasPreviousReview = Boolean(caseData.annotations?.length);
   const chosenEvidence = new Set(
-    hasPreviousReview ? previous.missing_evidence || [] : ["routing_direction"]
+    hasPreviousReview ? previous.missing_evidence || [] : []
   );
   const catalogKeys = new Set(catalog.map((item) => item.key));
   const visibleCatalog = catalog.filter((item) => !item.deleted);
@@ -1273,4 +1273,3 @@ async function saveAnnotation(event) {
     }
   }
 }
-

@@ -76,6 +76,8 @@ function bindBevVideoPlayers(root) {
     const startOffsetSec = Number(player.dataset.startOffsetSec || 0);
     const eventTimeSec = Number(player.dataset.eventTimeSec || 0);
     const configuredDuration = Number(player.dataset.durationSec || 0);
+    let seekRequest = 0;
+    let cancelPendingSeek = null;
     const duration = () => Number.isFinite(video.duration) ? video.duration : configuredDuration;
     const update = () => {
       const total = Math.max(0, duration());
@@ -85,13 +87,59 @@ function bindBevVideoPlayers(root) {
       timeLabel.textContent = `${formatSignedSeconds(startOffsetSec + (video.currentTime || 0))} / ${formatSignedSeconds(startOffsetSec + total)}`;
       playButton.textContent = video.paused ? "播放" : "暂停";
     };
+    const focusPlayer = () => {
+      player.focus({ preventScroll: true });
+    };
+    const seekTo = (target) => {
+      const request = ++seekRequest;
+      cancelPendingSeek?.();
+      let settled = false;
+      let fallbackTimer = null;
+      const settle = () => {
+        if (settled || request !== seekRequest) return;
+        settled = true;
+        video.removeEventListener("seeked", settle);
+        if (fallbackTimer) window.clearTimeout(fallbackTimer);
+        cancelPendingSeek = null;
+        update();
+        // Some Chromium video decoders update currentTime before the paused
+        // frame reaches the compositor.  Waiting for a decoded video frame
+        // makes keyboard jumps visibly update the canvas instead of only the
+        // progress input.
+        if (typeof window.requestAnimationFrame === "function") {
+          window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+              if (request === seekRequest) update();
+            });
+          });
+        }
+        if (typeof video.requestVideoFrameCallback === "function") {
+          video.requestVideoFrameCallback(() => {
+            if (request === seekRequest) update();
+          });
+        }
+      };
+      cancelPendingSeek = () => {
+        video.removeEventListener("seeked", settle);
+        if (fallbackTimer) window.clearTimeout(fallbackTimer);
+        cancelPendingSeek = null;
+      };
+      video.addEventListener("seeked", settle);
+      video.pause();
+      video.currentTime = target;
+      update();
+      // A remote asset can delay seeked while metadata or the first keyframe
+      // is fetched. Keep controls responsive and reconcile once it arrives.
+      fallbackTimer = window.setTimeout(settle, 800);
+    };
     const jump = (direction) => {
       const step = Math.max(0.01, Number(stepSelect.value || 1));
-      video.currentTime = Math.min(
+      const currentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+      const target = Math.min(
         Math.max(0, duration()),
-        Math.max(0, video.currentTime + direction * step)
+        Math.max(0, currentTime + direction * step)
       );
-      update();
+      seekTo(target);
     };
     const togglePlayback = () => {
       if (video.paused) {
@@ -106,8 +154,7 @@ function bindBevVideoPlayers(root) {
       button.addEventListener("click", () => jump(Number(button.dataset.videoJump)));
     });
     player.querySelector("[data-video-t0]").addEventListener("click", () => {
-      video.currentTime = Math.min(Math.max(0, duration()), Math.max(0, eventTimeSec));
-      update();
+      seekTo(Math.min(Math.max(0, duration()), Math.max(0, eventTimeSec)));
     });
     stepSelect.addEventListener("change", () => {
       const step = Number(stepSelect.value || 1);
@@ -123,10 +170,24 @@ function bindBevVideoPlayers(root) {
       video.currentTime = Number(seek.value || 0);
       update();
     });
+    seek.addEventListener("change", () => {
+      seekTo(Number(seek.value || 0));
+      focusPlayer();
+    });
     ["loadedmetadata", "durationchange", "timeupdate", "play", "pause", "ended"].forEach(
       (eventName) => video.addEventListener(eventName, update)
     );
     player.addEventListener("keydown", (event) => {
+      if (event.target.matches("[data-video-seek]") && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+        // A focused range input otherwise consumes the arrow key itself and
+        // only moves the thumb. Route it through the decoded-frame seek path,
+        // then return focus to the media surface.
+        event.preventDefault();
+        event.stopPropagation();
+        jump(event.key === "ArrowLeft" ? -1 : 1);
+        focusPlayer();
+        return;
+      }
       if (event.target.matches("select, input")) {
         event.stopPropagation();
         return;
@@ -374,6 +435,11 @@ function bindDetailMediaTimeline(root, caseData, onRender = null) {
 function bindDetailMedia(caseData) {
   const root = $("#detailHeroMedia");
   if (!root) return;
+  const focusMediaSurface = () => {
+    const surface = $("#detailHeroMedia");
+    if (!surface) return;
+    surface.focus({ preventScroll: true });
+  };
   const render = () => {
     root.outerHTML = heroMediaSection(caseData);
     bindDetailMedia(caseData);
@@ -388,6 +454,7 @@ function bindDetailMedia(caseData) {
       state.detailMedia.loadSeq += 1;
       state.detailMedia.kind = kind;
       render();
+      focusMediaSurface();
       return;
     }
     const frames = kind === "camera" ? caseData?.camera?.frames || [] : caseData?.assets?.frames || [];
@@ -400,10 +467,12 @@ function bindDetailMedia(caseData) {
       state.detailMedia.indexes[kind] = index;
       if (!applyDetailImageFrame(root, caseData, kind, index, loadedImage)) {
         render();
+        focusMediaSurface();
         return;
       }
       refreshDetailMediaTimeline(root, caseData);
       bindDetailMediaTimeline(root, caseData, render);
+      focusMediaSurface();
     });
   };
   const move = (delta) => {
@@ -425,7 +494,19 @@ function bindDetailMedia(caseData) {
   const kindSelect = $("#detailMediaKindSelect");
   if (kindSelect) {
     kindSelect.value = state.detailMedia.kind;
-    kindSelect.onchange = () => switchKind(kindSelect.value);
+    kindSelect.onchange = () => {
+      const nextKind = kindSelect.value;
+      // The media surface owns the B/C/V and arrow shortcuts.  Do not leave
+      // focus on the native type selector after a choice is made, otherwise
+      // ArrowLeft/ArrowRight continue changing this selector instead of
+      // stepping frames or jumping the video.
+      kindSelect.blur();
+      if (nextKind === state.detailMedia.kind) {
+        focusMediaSurface();
+        return;
+      }
+      switchKind(nextKind);
+    };
   }
   const previousButton = $("#detailMediaPreviousButton");
   const nextButton = $("#detailMediaNextButton");
@@ -648,4 +729,3 @@ function scheduleTrailDetailMetadata(issueId, requestSeq) {
     window.setTimeout(start, 180);
   }
 }
-

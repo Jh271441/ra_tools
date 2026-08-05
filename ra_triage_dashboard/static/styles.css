@@ -272,6 +272,7 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
   grid-template-rows: auto auto auto auto minmax(0, 1fr) auto; align-content: stretch; gap: 10px;
   contain: size; overflow: hidden; position: static; top: auto;
 }
+.gateway-card:has(.gateway-model-picker.is-open) { overflow: visible; }
 .gateway-endpoint {
   min-width: 0; display: grid; gap: 3px;
 }
@@ -295,7 +296,7 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
 }
 .gateway-model-picker.is-open .gateway-model-picker-caret { transform: rotate(180deg); background: var(--accent); }
 .gateway-model-picker-panel {
-  position: absolute; z-index: 45; top: calc(100% + 4px); left: 0; right: 0; max-height: min(360px, 52dvh);
+  position: absolute; z-index: 45; top: calc(100% + 4px); left: 0; right: auto; width: min(500px, calc(100vw - 24px)); max-width: calc(100vw - 24px); max-height: min(360px, 52dvh);
   overflow: auto; padding: 5px; border: 1px solid #2b3546; border-radius: 8px; background: #111a27;
   box-shadow: 0 12px 28px rgba(0,0,0,.42);
 }
