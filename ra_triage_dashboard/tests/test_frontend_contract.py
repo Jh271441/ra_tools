@@ -161,7 +161,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function reviewAnnotationsForCurrentRun", APP_JS)
         self.assertIn("function reviewAnnotationsForAllRuns", APP_JS)
         self.assertIn("across ${runCount} model runs", APP_JS)
-        self.assertIn("data-selected-tags-group", APP_JS)
+        self.assertIn("data-selected-tags-section", APP_JS)
         self.assertIn("data-remove-review-tag", APP_JS)
         self.assertIn("function bindSelectedReviewTagControls", APP_JS)
         self.assertIn("model_run_id: state.reviewEditRunId", APP_JS)

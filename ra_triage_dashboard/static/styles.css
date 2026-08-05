@@ -806,7 +806,15 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .model-error-section { margin-top: 2px; padding-top: 9px; border-top: 1px solid var(--line-soft); }
 .review-tag-groups-shell { display: grid; gap: 7px; }
 .review-tag-axis { display: grid; gap: 4px; }
-.review-tag-axis-title { color: #cbd6e5; font-size: 11px; font-weight: 700; }
+.review-tag-axis-title {
+  display: flex; align-items: center; gap: 5px; min-width: 0;
+  color: #cbd6e5; font-size: 11px; font-weight: 700;
+}
+.review-axis-selected {
+  min-width: 0; flex: 1 1 auto; display: flex; align-items: center; gap: 3px;
+  overflow: hidden;
+}
+.review-axis-selected[hidden] { display: none; }
 .review-tag-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
 .review-tag-dropdown { position: relative; width: 100%; min-width: 0; container-type: inline-size; border: 1px solid var(--line); border-radius: 7px; background: #0e131c; }
 .review-tag-dropdown[open] { z-index: 20; }
@@ -816,11 +824,6 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 }
 .review-tag-dropdown > summary::-webkit-details-marker { display: none; }
 .tag-group-label { flex: 0 0 auto; min-width: 0; display: flex; align-items: center; }
-.tag-group-selected {
-  min-width: 0; flex: 1 1 auto; display: flex; align-items: center; gap: 3px;
-  overflow: hidden;
-}
-.tag-group-selected[hidden] { display: none; }
 .tag-group-selected-chip {
   min-width: 0; max-width: 100px; display: inline-flex; align-items: center; gap: 3px;
   padding: 3px 5px; border: 1px solid rgba(34,211,238,.25); border-radius: 4px;
