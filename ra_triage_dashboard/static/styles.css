@@ -2042,22 +2042,6 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
     justify-content: flex-start;
     padding-inline: 6px;
   }
-  /* On a phone, keep the current destination expanded and turn the other
-     entries into compact icon buttons. This preserves order without making
-     the drawer a tall wall of repeated text. Their existing title remains
-     available as the accessible label/tooltip. */
-  .app-shell.sidebar-mobile-open .sidebar-item:not(.active) {
-    width: 42px;
-    min-width: 42px;
-    justify-self: start;
-    justify-content: center;
-    padding-inline: 5px;
-  }
-  .app-shell.sidebar-mobile-open .sidebar-item:not(.active) .sidebar-label { display: none; }
-  .app-shell.sidebar-mobile-open .sidebar-item.active {
-    width: 100%;
-    min-height: 44px;
-  }
   .app-shell.sidebar-mobile-open .sidebar-copy,
   .app-shell.sidebar-mobile-open .sidebar-label { display: grid; }
   .app-shell.sidebar-mobile-open .sidebar-collapse .sidebar-label { display: block; }
@@ -2101,6 +2085,37 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 
   /* The desktop two-column review grouping remains two columns on phones. */
   .review-tag-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+
+  /* Model Results source tabs: expand the selected source and keep the other
+     two as compact icon buttons, so their long descriptions do not wrap into
+     a tall, hard-to-scan column on narrow screens. */
+  .runs-source-heading small { display: none; }
+  .run-source-tabs { display: flex; align-items: stretch; gap: 6px; }
+  .run-source-tab {
+    width: 50px;
+    min-width: 50px;
+    min-height: 58px;
+    flex: 0 0 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 6px;
+  }
+  .run-source-tab:not(.active) > span:nth-child(2),
+  .run-source-tab:not(.active) > em { display: none; }
+  .run-source-tab:not(.active) .run-source-icon { width: 32px; height: 32px; font-size: 13px; }
+  .run-source-tab.active {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    justify-content: stretch;
+    padding-inline: 8px;
+  }
+  .run-source-tab.active > span:nth-child(2) { display: grid; }
+  .run-source-tab.active strong,
+  .run-source-tab.active small { white-space: nowrap; }
 }
 
 @media (min-width: 640px) {
