@@ -389,9 +389,9 @@ function renderMediaDialog() {
   const comparisonText = modelLabel ? (modelLabel === gtLabel ? "一致" : "不一致") : "未输出";
   const comparisonClass = modelLabel && modelLabel !== gtLabel ? "comparison-fail" : "comparison-neutral";
   $("#mediaDecisionSummary").innerHTML = `
-    <span>GT</span>${labelBadge(gtLabel, "缺失")}
+    <span class="comparison-side-label comparison-side-gt">GT</span>${labelBadge(gtLabel, "缺失")}
     <b aria-hidden="true">→</b>
-    <span>模型</span>${labelBadge(modelLabel, "未输出")}
+    <span class="comparison-side-label comparison-side-model">模型</span>${labelBadge(modelLabel, "未输出")}
     <strong class="${comparisonClass}">${comparisonText}</strong>`;
   const imageStage = $("#mediaImageStage");
   const videoStage = $("#mediaVideoStage");
