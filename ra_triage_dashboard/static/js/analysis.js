@@ -480,7 +480,12 @@ function renderAnalysisCases(data) {
           )
           .join("");
         const tagChips = (annotation.tags || [])
-          .map((key) => `<span class="analysis-chip tag-chip">${escapeHtml(tagLabel(key))}</span>`)
+          .map((key) => {
+            const catalogItem = reviewTagCatalogItem(key) || {};
+            const section = String(catalogItem.section || "");
+            const group = String(catalogItem.group || "");
+            return `<span class="analysis-chip tag-chip"${section ? ` data-tag-section="${escapeHtml(section)}"` : ""}${group ? ` data-tag-group="${escapeHtml(group)}"` : ""}>${escapeHtml(tagLabel(key))}</span>`;
+          })
           .join("");
         return `<article class="analysis-case-row">
           <div class="analysis-case-identity">
