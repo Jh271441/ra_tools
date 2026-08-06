@@ -182,7 +182,19 @@ REVIEW_TAG_CATALOG: tuple[dict[str, Any], ...] = (
     {"key": "scene_other", "label": "其他（旧交互决策）", "section": "legacy", "group": "legacy", "visible": False},
 )
 REVIEW_TAG_KEYS = frozenset(item["key"] for item in REVIEW_TAG_CATALOG)
-REVIEW_TAG_SCENE_GROUPS = frozenset({"environment", "self_intent"})
+# Managed groups that reviewers may extend from the Review form ＋ control.
+# Map group_key → section so create/update stay aligned with the Issue-tag axes.
+REVIEW_TAG_MANAGED_GROUPS: dict[str, str] = {
+    "environment": "scene",
+    "self_intent": "scene",
+    "false_trigger": "interaction_decision",
+    "true_trigger": "interaction_decision",
+    "ra": "egress",
+    "no_assist": "egress",
+}
+REVIEW_TAG_SCENE_GROUPS = frozenset(
+    group for group, section in REVIEW_TAG_MANAGED_GROUPS.items() if section == "scene"
+)
 REVIEW_TAG_ALIASES = {
     "红绿灯": "traffic_light",
     "等灯": "traffic_light",
@@ -1804,19 +1816,26 @@ def _review_tag_payload(item: dict[str, Any], *, builtin: bool = False) -> dict[
     return payload
 
 
-def _validate_scene_tag_input(body: dict[str, Any]) -> tuple[str, str, str]:
+def _validate_review_tag_input(
+    body: dict[str, Any],
+    *,
+    default_group: str = "environment",
+) -> tuple[str, str, str, str]:
+    """Return (label, hint, group, section) for managed Issue-tag catalog rows."""
+
     label = _as_text(body.get("label"))
     hint = _as_text(body.get("hint"))
-    group = _as_text(body.get("group") or "environment")
+    group = _as_text(body.get("group") or default_group)
     if not label:
         raise _detail(400, "场景标签标题不能为空。")
     if len(label) > 48 or re.search(r"[\x00-\x1f\x7f]", label):
         raise _detail(400, "场景标签标题长度或字符不合法。")
     if len(hint) > 160 or re.search(r"[\x00-\x1f\x7f]", hint):
         raise _detail(400, "场景标签说明长度或字符不合法。")
-    if group not in REVIEW_TAG_SCENE_GROUPS:
+    section = REVIEW_TAG_MANAGED_GROUPS.get(group)
+    if section is None:
         raise _detail(400, "场景标签分组不合法。")
-    return label, hint, group
+    return label, hint, group, section
 
 
 @app.post("/api/review-tags")
@@ -1827,7 +1846,7 @@ async def create_review_tag(request: Request) -> dict[str, Any]:
         raise _detail(400, "场景标签目录请求必须是 JSON。")
     if not isinstance(body, dict):
         raise _detail(400, "场景标签目录请求必须是 JSON 对象。")
-    label, hint, group = _validate_scene_tag_input(body)
+    label, hint, group, section = _validate_review_tag_input(body)
     actor, _, _ = _action_actor(request, body.get("created_by"))
     if not actor:
         raise _detail(400, "无法确认场景标签目录创建人。")
@@ -1841,7 +1860,7 @@ async def create_review_tag(request: Request) -> dict[str, Any]:
             database.create_review_tag,
             label=label,
             hint=hint,
-            section="scene",
+            section=section,
             group_key=group,
             created_by=actor,
         )
@@ -1873,14 +1892,28 @@ async def update_review_tag(key: str, request: Request) -> dict[str, Any]:
         raise _detail(400, "场景标签目录请求必须是 JSON。")
     if not isinstance(body, dict):
         raise _detail(400, "场景标签目录请求必须是 JSON 对象。")
-    section = str(current.get("section") or "scene")
-    if section == "scene":
-        label, hint, group = _validate_scene_tag_input(body)
+    current_group = str(current.get("group") or "environment")
+    current_section = str(current.get("section") or "scene")
+    if current_group in REVIEW_TAG_MANAGED_GROUPS or current_section in {
+        "scene",
+        "interaction_decision",
+        "egress",
+    }:
+        # Keep the tag on its axis; group may only move within managed axes.
+        label, hint, group, section = _validate_review_tag_input(
+            body,
+            default_group=current_group if current_group in REVIEW_TAG_MANAGED_GROUPS else "environment",
+        )
+        # Editing a managed-axis tag must stay in the same section (axis).
+        if current_section in {"scene", "interaction_decision", "egress"} and section != current_section:
+            group = current_group
+            section = current_section
     else:
-        # Trigger/egress/legacy built-ins keep section/group; only label/hint edit.
+        # Legacy built-ins keep section/group; only label/hint edit.
         label = _as_text(body.get("label"))
         hint = _as_text(body.get("hint"))
-        group = str(current.get("group") or "environment")
+        group = current_group
+        section = current_section
         if not label:
             raise _detail(400, "场景标签标题不能为空。")
         if len(label) > 48 or re.search(r"[\x00-\x1f\x7f]", label):

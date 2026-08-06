@@ -486,7 +486,16 @@ class Database:
             raise ValueError("场景标签标题长度或字符不合法。")
         if len(normalized_hint) > 160 or re.search(r"[\x00-\x1f\x7f]", normalized_hint):
             raise ValueError("场景标签说明长度或字符不合法。")
-        if normalized_section != "scene" or normalized_group not in {"environment", "self_intent"}:
+        managed_groups = {
+            "environment": "scene",
+            "self_intent": "scene",
+            "false_trigger": "interaction_decision",
+            "true_trigger": "interaction_decision",
+            "ra": "egress",
+            "no_assist": "egress",
+        }
+        expected_section = managed_groups.get(normalized_group)
+        if expected_section is None or normalized_section != expected_section:
             raise ValueError("场景标签分组不合法。")
         if not normalized_author:
             raise ValueError("创建人不能为空。")
@@ -555,9 +564,22 @@ class Database:
             raise ValueError("场景标签标题长度或字符不合法。")
         if len(normalized_hint) > 160 or re.search(r"[\x00-\x1f\x7f]", normalized_hint):
             raise ValueError("场景标签说明长度或字符不合法。")
-        if normalized_section == "scene" and normalized_group not in {
-            "environment",
-            "self_intent",
+        managed_groups = {
+            "environment": "scene",
+            "self_intent": "scene",
+            "false_trigger": "interaction_decision",
+            "true_trigger": "interaction_decision",
+            "ra": "egress",
+            "no_assist": "egress",
+        }
+        expected_section = managed_groups.get(normalized_group)
+        # Legacy axes (e.g. group=legacy) may keep their original section/group.
+        if expected_section is not None and normalized_section != expected_section:
+            raise ValueError("场景标签分组不合法。")
+        if expected_section is None and normalized_section in {
+            "scene",
+            "interaction_decision",
+            "egress",
         }:
             raise ValueError("场景标签分组不合法。")
         if not normalized_author:

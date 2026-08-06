@@ -337,11 +337,8 @@ function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
             (item) => item.section === section.section && item.group === group.key
           );
           const selectedCount = items.filter((item) => chosenTags.has(item.key)).length;
-          // Shared catalog create is only supported for scene groups (环境 / 自车意图).
-          // Backend create_review_tag rejects non-scene sections.
-          const creatorAction = section.section === "scene"
-            ? `<button class="tag-catalog-add-button" type="button" data-open-review-tag-creator="${escapeHtml(group.key)}" data-tag-create-group-label="${escapeHtml(group.label)}" aria-label="新增${escapeHtml(group.label)}标签" title="新增${escapeHtml(group.label)}标签">＋</button>`
-            : "";
+          // All six managed axes (场景 / 触发判定 / 如何驶离) can extend the shared catalog.
+          const creatorAction = `<button class="tag-catalog-add-button" type="button" data-open-review-tag-creator="${escapeHtml(group.key)}" data-tag-create-group-label="${escapeHtml(group.label)}" aria-label="新增${escapeHtml(group.label)}标签" title="新增${escapeHtml(group.label)}标签">＋</button>`;
           return `<details class="review-tag-dropdown review-dropdown" data-tag-dropdown-group="${escapeHtml(group.key)}">
             <summary>
               <span class="tag-group-label">${escapeHtml(group.label)}</span>
@@ -351,7 +348,7 @@ function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
                 <span class="tag-group-chevron" aria-hidden="true"></span>
               </span>
             </summary>
-            <div class="review-tag-options">${items.map((item) => tagOption(item.key, item.label, chosenTags.has(item.key), group.key, item)).join("") || `<div class="review-tag-empty">${section.section === "scene" ? "暂无标签，点 ＋ 添加" : "暂无可选标签"}</div>`}</div>
+            <div class="review-tag-options">${items.map((item) => tagOption(item.key, item.label, chosenTags.has(item.key), group.key, item)).join("") || '<div class="review-tag-empty">暂无标签，点 ＋ 添加</div>'}</div>
           </details>`;
         }).join("")}
       </div>
@@ -1045,11 +1042,20 @@ function markDeletedReviewTagOption(item) {
   updateTagSummary();
 }
 
-function sceneTagGroupLabel(group = "environment") {
+function reviewTagGroupLabel(group = "environment") {
   const key = String(group || "environment");
-  if (key === "self_intent") return "自车意图";
   if (key === "environment") return "环境";
+  if (key === "self_intent") return "自车意图";
+  if (key === "false_trigger") return "误触发";
+  if (key === "true_trigger") return "应该触发";
+  if (key === "ra") return "正确触发";
+  if (key === "no_assist") return "无需协助";
   return key;
+}
+
+// Keep the historical name for any remaining callers.
+function sceneTagGroupLabel(group = "environment") {
+  return reviewTagGroupLabel(group);
 }
 
 function openReviewTagEditorDialog({
@@ -1073,7 +1079,7 @@ function openReviewTagEditorDialog({
   if (!dialog || !form || !groupInput || !labelInput) return;
   const resolvedMode = mode === "edit" ? "edit" : "create";
   const resolvedGroup = String(group || "environment");
-  const resolvedLabel = String(groupLabel || sceneTagGroupLabel(resolvedGroup));
+  const resolvedLabel = String(groupLabel || reviewTagGroupLabel(resolvedGroup));
   if (modeInput) modeInput.value = resolvedMode;
   if (keyInput) keyInput.value = resolvedMode === "edit" ? String(key || "") : "";
   groupInput.value = resolvedGroup;
@@ -1273,14 +1279,10 @@ function bindReviewTagCatalogControls(root = document) {
       const key = String(button.dataset.editReviewTag || "");
       const item = reviewTagCatalogItem(key);
       if (!item || item.deleted) return;
-      // Scene editor only for scene groups; non-scene built-ins keep group fixed.
       openReviewTagEditorDialog({
         mode: "edit",
         group: item.group || "environment",
-        groupLabel:
-          item.section === "scene"
-            ? sceneTagGroupLabel(item.group || "environment")
-            : String(item.label || "标签"),
+        groupLabel: reviewTagGroupLabel(item.group || "environment"),
         key,
         label: item.label || "",
         hint: item.hint || "",

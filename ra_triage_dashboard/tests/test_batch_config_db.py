@@ -123,6 +123,61 @@ class BatchConfigDatabaseTest(unittest.TestCase):
                 [],
             )
 
+    def test_review_tag_catalog_accepts_trigger_and_egress_groups(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "triage.sqlite3")
+            database.init()
+            false_trigger = database.create_review_tag(
+                label="临时施工误报",
+                hint="施工区误判为卡住",
+                section="interaction_decision",
+                group_key="false_trigger",
+                created_by="jasperchen",
+            )
+            true_trigger = database.create_review_tag(
+                label="近距未脱困",
+                hint="",
+                section="interaction_decision",
+                group_key="true_trigger",
+                created_by="jasperchen",
+            )
+            egress_ra = database.create_review_tag(
+                label="自定义绕障",
+                hint="需要人工路径",
+                section="egress",
+                group_key="ra",
+                created_by="jasperchen",
+            )
+            egress_none = database.create_review_tag(
+                label="等待条件恢复",
+                hint="",
+                section="egress",
+                group_key="no_assist",
+                created_by="jasperchen",
+            )
+            self.assertEqual(false_trigger["section"], "interaction_decision")
+            self.assertEqual(false_trigger["group_key"], "false_trigger")
+            self.assertEqual(true_trigger["group_key"], "true_trigger")
+            self.assertEqual(egress_ra["section"], "egress")
+            self.assertEqual(egress_ra["group_key"], "ra")
+            self.assertEqual(egress_none["group_key"], "no_assist")
+            with self.assertRaisesRegex(ValueError, "场景标签分组不合法"):
+                database.create_review_tag(
+                    label="非法分组",
+                    hint="",
+                    section="scene",
+                    group_key="false_trigger",
+                    created_by="jasperchen",
+                )
+            with self.assertRaisesRegex(ValueError, "场景标签分组不合法"):
+                database.create_review_tag(
+                    label="非法分组2",
+                    hint="",
+                    section="legacy",
+                    group_key="legacy",
+                    created_by="jasperchen",
+                )
+
     def test_annotation_requires_reviewer(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             database = Database(Path(directory) / "triage.sqlite3")

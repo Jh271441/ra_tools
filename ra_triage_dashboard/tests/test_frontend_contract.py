@@ -32,10 +32,10 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-96", APP_ENTRY_JS)
+        self.assertIn("manual-triage-97", APP_ENTRY_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-96", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-97", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
         self.assertNotIn("async function bootstrap", APP_ENTRY_JS)
@@ -102,7 +102,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('styles.css?v=manual-triage-96', INDEX_HTML)
+        self.assertIn('styles.css?v=manual-triage-97', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: nowrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -382,12 +382,17 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn(".review-reason textarea { min-height: 54px; height: 54px;", STYLES_CSS)
         self.assertIn(".review-section { display: grid; gap: 7px; padding: 0; border: 0", STYLES_CSS)
         self.assertIn('data-open-review-tag-creator', APP_JS)
-        # Scene groups must render the ＋ create control (regression guard).
-        self.assertIn(
-            'section.section === "scene"',
-            APP_JS,
-        )
+        # All six managed Issue-tag axes render the ＋ create control.
         self.assertIn('class="tag-catalog-add-button"', APP_JS)
+        self.assertIn("function reviewTagGroupLabel", APP_JS)
+        self.assertIn('key === "false_trigger"', APP_JS)
+        self.assertIn('key === "true_trigger"', APP_JS)
+        self.assertIn('key === "ra"', APP_JS)
+        self.assertIn('key === "no_assist"', APP_JS)
+        self.assertIn("暂无标签，点 ＋ 添加", APP_JS)
+        self.assertIn("REVIEW_TAG_MANAGED_GROUPS", main_py)
+        self.assertIn('"false_trigger": "interaction_decision"', main_py)
+        self.assertIn('"ra": "egress"', main_py)
         self.assertIn("tag-option-menu-toggle", APP_JS)
         self.assertIn("data-tag-menu-toggle", APP_JS)
         self.assertIn("function closeAllTagOptionMenus", APP_JS)
