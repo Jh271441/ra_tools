@@ -940,8 +940,9 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .analysis-chip.tag-chip[data-tag-group="no_assist"] {
   border-color: rgba(251,191,36,.3); color: #f7d78b; background: rgba(251,191,36,.09);
 }
+/* Coral-orange: distinct from Issue-tag no_assist amber and label-无需协助 gold. */
 .tag-group-selected-chip.missing-evidence-selected-chip {
-  border-color: rgba(251,191,36,.3); color: #f7d78b; background: rgba(251,191,36,.09);
+  border-color: rgba(251,146,60,.38); color: #ffc49a; background: rgba(251,146,60,.12);
 }
 .tag-group-selected-chip[data-tag-section="scene"]:hover,
 .tag-group-selected-chip[data-tag-section="scene"]:focus-visible { border-color: rgba(96,165,250,.68); background: rgba(96,165,250,.2); }
@@ -954,7 +955,9 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .tag-group-selected-chip[data-tag-group="no_assist"]:hover,
 .tag-group-selected-chip[data-tag-group="no_assist"]:focus-visible { border-color: rgba(251,191,36,.7); background: rgba(251,191,36,.2); }
 .tag-group-selected-chip.missing-evidence-selected-chip:hover,
-.tag-group-selected-chip.missing-evidence-selected-chip:focus-visible { border-color: rgba(251,191,36,.7); background: rgba(251,191,36,.2); }
+.tag-group-selected-chip.missing-evidence-selected-chip:focus-visible {
+  border-color: rgba(251,146,60,.72); color: #ffe0c4; background: rgba(251,146,60,.22);
+}
 .tag-group-trailing {
   flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: flex-end; gap: 5px;
   margin-left: auto;
@@ -1829,7 +1832,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .analysis-chip-list { display: flex; flex-wrap: wrap; gap: 3px; }
 .analysis-chip { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; color: var(--faint); background: var(--overlay); font-size: 9px; }
 .analysis-chip.theme-chip { border-color: rgba(34,211,238,.22); color: #8fd5dc; background: rgba(34,211,238,.045); }
-.analysis-chip.evidence-chip { border-color: rgba(251,191,36,.18); color: #d7bd79; background: rgba(251,191,36,.035); }
+.analysis-chip.evidence-chip { border-color: rgba(251,146,60,.22); color: #e8b48a; background: rgba(251,146,60,.05); }
 .analysis-case-meta {
   display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px 10px;
   color: var(--faint); font-size: 10px; line-height: 1.45;
@@ -2458,8 +2461,8 @@ html[data-color-theme="light"] .field-required { color: #8b4b1e; }
 html[data-color-theme="light"] .ra-event-table td:nth-child(4),
 html[data-color-theme="light"] .media-control { color: #4e6075; }
 html[data-color-theme="light"] .row-evidence span { color: #276b74; }
-html[data-color-theme="light"] .trail-field-state.warn,
-html[data-color-theme="light"] .analysis-chip.evidence-chip { color: #805700; }
+html[data-color-theme="light"] .trail-field-state.warn { color: #805700; }
+html[data-color-theme="light"] .analysis-chip.evidence-chip { color: #9a4a0a; }
 html[data-color-theme="light"] .batch-result-item small,
 html[data-color-theme="light"] .publish-failed { color: #a52c3d; }
 html[data-color-theme="light"] .publish-published,
@@ -2496,7 +2499,7 @@ html[data-color-theme="light"] .tag-group-selected-chip:focus-visible {
 }
 html[data-color-theme="light"] .tag-group-selected-chip.missing-evidence-selected-chip:hover,
 html[data-color-theme="light"] .tag-group-selected-chip.missing-evidence-selected-chip:focus-visible {
-  border-color: rgba(146,92,0,.58); color: #6f4a00; background: rgba(251,191,36,.2);
+  border-color: rgba(194,94,22,.58); color: #7a3a08; background: rgba(251,146,60,.2);
 }
 html[data-color-theme="light"] .tag-group-selected-chip[data-tag-section="scene"],
 html[data-color-theme="light"] .analysis-chip.tag-chip[data-tag-section="scene"] {
@@ -2519,7 +2522,7 @@ html[data-color-theme="light"] .analysis-chip.tag-chip[data-tag-group="no_assist
   border-color: rgba(146,92,0,.25); color: #805700; background: rgba(251,191,36,.14);
 }
 html[data-color-theme="light"] .tag-group-selected-chip.missing-evidence-selected-chip {
-  border-color: rgba(146,92,0,.25); color: #805700; background: rgba(251,191,36,.14);
+  border-color: rgba(194,94,22,.28); color: #9a4a0a; background: rgba(251,146,60,.14);
 }
 html[data-color-theme="light"] .sidebar-session-action:hover { color: #075f75; }
 html[data-color-theme="light"] .history-delete-button:hover:not(:disabled) { color: #9f2938; }
