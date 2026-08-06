@@ -57,6 +57,32 @@ function selectedBaselineQueryValue() {
   return ids.join(",");
 }
 
+/** Issue count of the currently selected dataset union (not the primary 0508 slot). */
+function currentWorksetIssueCount() {
+  const catalog = state.baselineCatalog.length
+    ? state.baselineCatalog
+    : state.config?.baselines || [];
+  const selected = new Set(normalizeBaselineIds(state.selectedBaselineIds));
+  let total = 0;
+  let matched = false;
+  for (const item of catalog) {
+    const id = String(item?.id || "");
+    if (!id || !selected.has(id)) continue;
+    const n = Number(item?.count);
+    if (Number.isFinite(n) && n >= 0) {
+      total += n;
+      matched = true;
+    }
+  }
+  if (matched) return total;
+  // Fallback: overview metric already reflects current union.
+  const stat = Number(
+    String($("#statIssues")?.textContent || "").replace(/[^\d]/g, "")
+  );
+  if (Number.isFinite(stat) && stat > 0) return stat;
+  return Number(state.config?.baseline?.count || 0) || 0;
+}
+
 function appendBaselineParams(params) {
   const value = selectedBaselineQueryValue();
   if (value) params.set("baselines", value);

@@ -305,9 +305,10 @@ function renderActiveRun(overview = null) {
   const failures = overview?.model_failures ?? run.failure_count ?? 0;
   const reviewed = overview?.reviewed_failures;
   const sourceLabel = runSourceMeta(run).label;
+  const worksetCount = currentWorksetIssueCount();
   if (activeMeta) {
     activeMeta.textContent =
-      `${coverage} / ${state.config?.baseline?.count || "—"} 覆盖 · ${failures} 条判断失败` +
+      `${coverage} / ${worksetCount || "—"} 覆盖 · ${failures} 条判断失败` +
       `${reviewed === undefined ? "" : ` · ${reviewed} 条已复核`}` +
       ` · ${sourceLabel}`;
   }
@@ -346,7 +347,9 @@ function renderRunManager() {
     list.innerHTML = '<div class="no-asset">当前筛选下没有 Run。</div>';
     return;
   }
-  const baselineCount = Number(state.config?.baseline?.count || 0);
+  // Denominator must follow the topbar dataset multi-select (union), not the
+  // legacy primary-only config.baseline (always 0508 / 1071).
+  const baselineCount = currentWorksetIssueCount();
   list.innerHTML = filteredRuns
     .map(
       (run) => {
@@ -378,7 +381,7 @@ function renderRunManager() {
             ${promptVersion ? `<span>Prompt · ${escapeHtml(promptVersion)}</span>` : ""}
             ${externalUser && externalUser !== owner ? `<span>平台用户 · ${escapeHtml(externalUser)}</span>` : ""}
             <span>${runSourceReference(run)}</span>
-            <span>${coverage} / ${state.config?.baseline?.count || "—"} 条</span>
+            <span title="相对当前数据集">${coverage} / ${baselineCount || "—"} 条</span>
             <span class="run-failure-count">错误 ${run.failure_count ?? 0}</span>
             <span>${formatTime(run.created_at)}</span>
           </div>
