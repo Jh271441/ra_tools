@@ -1549,15 +1549,24 @@ def _infer_baseline_ids_from_scope_coverage(
     return [baseline_id for baseline_id, _ in ordered]
 
 
-def enrich_model_run_baseline_hint(run: dict[str, Any] | None) -> dict[str, Any]:
-    """Attach per-scope coverage + inferred dataset ids for UI auto-select."""
+def enrich_model_run_baseline_hint(
+    run: dict[str, Any] | None,
+    *,
+    coverage: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Attach per-scope coverage + inferred dataset ids for UI auto-select.
+
+    Pass ``coverage`` when the caller already batched
+    ``model_run_scope_coverage_map`` so list endpoints stay O(1) SQL.
+    """
 
     if not isinstance(run, dict):
         return {}
     run_id = str(run.get("id") or "").strip()
     if not run_id:
         return run
-    coverage = database.model_run_scope_coverage(run_id)
+    if coverage is None:
+        coverage = database.model_run_scope_coverage(run_id)
     by_id: list[dict[str, Any]] = []
     unmatched = 0
     for item in coverage:
@@ -3156,7 +3165,17 @@ async def model_runs(request: Request, baselines: str = "") -> dict[str, Any]:
     items = await asyncio.to_thread(
         database.list_model_runs, baseline_scopes=scopes
     )
-    items = [enrich_model_run_baseline_hint(item) for item in items]
+    coverage_map = await asyncio.to_thread(
+        database.model_run_scope_coverage_map,
+        [str(item.get("id") or "") for item in items],
+    )
+    items = [
+        enrich_model_run_baseline_hint(
+            item,
+            coverage=coverage_map.get(str(item.get("id") or ""), []),
+        )
+        for item in items
+    ]
     for item in items:
         if item.get("kind") != "upload":
             continue

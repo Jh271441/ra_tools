@@ -1913,29 +1913,49 @@ class Database:
         under an empty scope key so callers can see unmatched rows.
         """
 
-        normalized = str(run_id or "").strip()
-        if not normalized:
-            return []
+        return self.model_run_scope_coverage_map([run_id]).get(
+            str(run_id or "").strip(), []
+        )
+
+    def model_run_scope_coverage_map(
+        self, run_ids: Sequence[str] | None = None
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Batch variant: one GROUP BY for many runs (avoids N+1 on list endpoints)."""
+
+        ids = [
+            str(run_id or "").strip()
+            for run_id in (run_ids or [])
+            if str(run_id or "").strip()
+        ]
+        if not ids:
+            return {}
+        placeholders = ", ".join("?" for _ in ids)
         with self.connect() as conn:
             rows = conn.execute(
-                """
-                SELECT COALESCE(i.baseline_scope, '') AS baseline_scope,
+                f"""
+                SELECT mp.model_run_id AS model_run_id,
+                       COALESCE(i.baseline_scope, '') AS baseline_scope,
                        COUNT(*) AS prediction_count
                 FROM model_predictions mp
                 LEFT JOIN issues i ON i.issue_id = mp.issue_id
-                WHERE mp.model_run_id = ?
-                GROUP BY COALESCE(i.baseline_scope, '')
-                ORDER BY prediction_count DESC, baseline_scope ASC
+                WHERE mp.model_run_id IN ({placeholders})
+                GROUP BY mp.model_run_id, COALESCE(i.baseline_scope, '')
+                ORDER BY mp.model_run_id ASC, prediction_count DESC, baseline_scope ASC
                 """,
-                (normalized,),
+                tuple(ids),
             ).fetchall()
-        return [
-            {
-                "baseline_scope": str(row["baseline_scope"] or ""),
-                "prediction_count": int(row["prediction_count"] or 0),
-            }
-            for row in rows
-        ]
+        out: dict[str, list[dict[str, Any]]] = {run_id: [] for run_id in ids}
+        for row in rows:
+            run_id = str(row["model_run_id"] or "").strip()
+            if not run_id:
+                continue
+            out.setdefault(run_id, []).append(
+                {
+                    "baseline_scope": str(row["baseline_scope"] or ""),
+                    "prediction_count": int(row["prediction_count"] or 0),
+                }
+            )
+        return out
 
     def list_reviewers(
         self,
