@@ -17,7 +17,7 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {
   const frameStepSec = Math.max(0.01, Number(video?.frame_step_ms || 100) / 1000);
   const stepOptions = [...new Set([frameStepSec, 0.5, 1, 5])]
     .sort((left, right) => left - right)
-    .map((step) => `<option value="${escapeHtml(step)}" ${step === 1 ? "selected" : ""}>${escapeHtml(step)}s${step === frameStepSec ? "（1 帧）" : ""}</option>`)
+    .map((step) => `<option value="${escapeHtml(step)}" ${step === 1 ? "selected" : ""}>${escapeHtml(step)}s${step === frameStepSec ? escapeHtml(t("media.frame_step")) : ""}</option>`)
     .join("");
   const videoMarkup = `<video src="${escapeHtml(video.url)}" preload="metadata" playsinline draggable="false" aria-label="Ares Studio BEV 视频"></video>`;
   const mediaMarkup = zoomable
@@ -31,16 +31,16 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {
     ${mediaMarkup}
     <div class="bev-video-controls" aria-label="BEV 视频控制">
       <div class="bev-video-control-row">
-        <button class="button button-quiet" type="button" data-video-play>播放</button>
+        <button class="button button-quiet" type="button" data-video-play>${escapeHtml(t("media.play"))}</button>
         <button class="button button-quiet" type="button" data-video-jump="-1"><span data-video-jump-label>−1s</span></button>
-        <button class="button button-quiet" type="button" data-video-t0>回到 t0</button>
+        <button class="button button-quiet" type="button" data-video-t0>${escapeHtml(t("media.back_t0"))}</button>
         <button class="button button-quiet" type="button" data-video-jump="1"><span data-video-jump-label>+1s</span></button>
-        <label>跳转步长
+        <label>${escapeHtml(t("media.step"))}
           <select data-video-step>
             ${stepOptions}
           </select>
         </label>
-        <label>倍速
+        <label>${escapeHtml(t("media.rate"))}
           <select data-video-rate>
             <option value="0.5">0.5×</option>
             <option value="1" selected>1×</option>
@@ -85,7 +85,7 @@ function bindBevVideoPlayers(root) {
       seek.value = String(Math.min(Number(seek.max), Math.max(0, video.currentTime || 0)));
       startLabel.textContent = formatSignedSeconds(startOffsetSec);
       timeLabel.textContent = `${formatSignedSeconds(startOffsetSec + (video.currentTime || 0))} / ${formatSignedSeconds(startOffsetSec + total)}`;
-      playButton.textContent = video.paused ? "播放" : "暂停";
+      playButton.textContent = video.paused ? t("media.play") : t("media.pause");
     };
     const focusPlayer = () => {
       player.focus({ preventScroll: true });
@@ -143,7 +143,7 @@ function bindBevVideoPlayers(root) {
     };
     const togglePlayback = () => {
       if (video.paused) {
-        video.play().catch((error) => showToast(`视频播放失败：${error.message}`, true));
+        video.play().catch((error) => showToast(t("media.play_fail", { msg: error.message }), true));
       } else {
         video.pause();
       }
@@ -234,7 +234,7 @@ function heroMediaSection(caseData) {
   const video = caseData?.assets?.video;
   const camera = caseData?.camera?.frames || [];
   if (!frames.length && !camera.length && !video?.url) {
-    return '<section class="hero-media"><div class="no-asset hero-media-placeholder"><span>当前没有可预览的 BEV、Camera 或视频。</span></div></section>';
+    return '<section class="hero-media"><div class="no-asset hero-media-placeholder"><span>${escapeHtml(t("media.no_assets"))}</span></div></section>';
   }
   ensureDetailMediaState(caseData);
   const kind = state.detailMedia.kind;
@@ -252,23 +252,23 @@ function heroMediaSection(caseData) {
       })
     : `<button type="button" class="hero-media-button" data-detail-media-expand aria-label="展开${kind === "camera" ? " Camera" : " BEV"}媒体预览">
         <img class="detail-media-image" src="${escapeHtml(frame?.url || "")}" alt="${kind === "camera" ? "Camera" : "Ares Capture BEV"} ${escapeHtml(frameLabel(frame || {}))}" />
-        <span class="hero-media-overlay">${escapeHtml(frameLabel(frame || {}))} · 点击展开</span>
+        <span class="hero-media-overlay">${escapeHtml(frameLabel(frame || {}))} · ${t("media.click_expand")}</span>
       </button>`;
   const quickTimeline = kind === "video" ? "" : mediaTimelineMarkup(activeFrames, index, "detail-media-frame");
   const frameControls = kind === "video" ? "" : `
     <div class="detail-media-frame-controls" aria-label="图片帧切换">
-      <button class="button button-quiet" id="detailMediaPreviousButton" type="button" aria-label="上一帧">← 上一帧</button>
+      <button class="button button-quiet" id="detailMediaPreviousButton" type="button" aria-label="${escapeHtml(t("media.prev_frame"))}">${escapeHtml(t("media.prev_frame"))}</button>
       <div class="detail-media-frame-center">
         <span class="detail-media-position" id="detailMediaPosition">${activeFrames.length ? `${index + 1} / ${activeFrames.length}` : "—"}</span>
         ${quickTimeline}
       </div>
-      <button class="button button-quiet" id="detailMediaNextButton" type="button" aria-label="下一帧">下一帧 →</button>
+      <button class="button button-quiet" id="detailMediaNextButton" type="button" aria-label="${escapeHtml(t("media.next_frame"))}">${escapeHtml(t("media.next_frame"))}</button>
     </div>`;
   return `
       <section class="hero-media detail-hero-media" id="detailHeroMedia" tabindex="0" aria-label="Issue 媒体">
       <div class="detail-media-content">${content}</div>
       ${frameControls}
-      <p class="detail-media-help">B / C / V 切换媒体 · ${kind === "video" ? "空格播放/暂停 · ←/→ 跳转" : "←/→ 切帧"} · F 展开查看</p>
+      <p class="detail-media-help">${escapeHtml(kind === "video" ? t("media.help_video") : t("media.help_image"))}</p>
     </section>`;
 }
 
@@ -325,7 +325,7 @@ function preloadDetailImage(caseData, kind, index, root, onReady) {
       control.disabled = false;
     });
     if (loaded) onReady(image);
-    else showToast("媒体图片加载失败，已保留当前画面。", true);
+    else showToast(t("media.load_fail"), true);
   };
   image.onload = () => {
     let decoded;
@@ -381,7 +381,7 @@ function applyDetailImageFrame(root, caseData, kind, index, loadedImage = null) 
     nextImage.src = frame.url;
   }
   button.setAttribute("aria-label", `展开${kind === "camera" ? " Camera" : " BEV"}媒体预览`);
-  overlay.textContent = `${frameLabel(frame)} · 点击展开`;
+  overlay.textContent = `${frameLabel(frame)} · ${t("media.click_expand")}`;
   const position = root.querySelector("#detailMediaPosition");
   if (position) position.textContent = `${index + 1} / ${frames.length}`;
   root.querySelectorAll("[data-detail-media-frame]").forEach((timelineButton) => {

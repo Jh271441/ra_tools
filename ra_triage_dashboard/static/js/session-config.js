@@ -278,9 +278,9 @@ function renderAnalysisCatalogFilters() {
   const onChange = () => scheduleAnalysisFilterReload();
   renderMultiFilter($("#analysisStatusFilter"), {
     options: [
-      { value: "pending", label: "待复核" },
-      { value: "reviewed", label: "已复核" },
-      { value: "needs_gt_review", label: "GT 待复核" },
+      { value: "pending", label: t("status.pending_review") },
+      { value: "reviewed", label: t("status.reviewed_short") },
+      { value: "needs_gt_review", label: t("status.needs_gt") },
     ],
     selected: getMultiFilterValues($("#analysisStatusFilter")),
     onChange,
@@ -343,14 +343,14 @@ function renderAccessUsers() {
   const target = $("#accessUserList");
   if (!target) return;
   if (!state.accessUsers.length) {
-    target.innerHTML = '<div class="no-asset">尚未配置可写用户。</div>';
+    target.innerHTML = `<div class="no-asset">${escapeHtml(t("access.empty"))}</div>`;
     return;
   }
   target.innerHTML = state.accessUsers.map((item) => `
     <div class="access-row" data-access-user="${escapeHtml(item.username)}">
-      <div class="access-identity"><strong>${escapeHtml(item.username)}</strong><small>${item.role === "admin" ? "管理员 · 可管理用户" : "可写用户"}</small></div>
-      <select data-access-role aria-label="${escapeHtml(item.username)} 权限"><option value="writer"${item.role === "writer" ? " selected" : ""}>可写</option><option value="admin"${item.role === "admin" ? " selected" : ""}>管理员</option></select>
-      <div class="access-row-actions"><button class="button button-quiet" type="button" data-save-access-user>保存</button><button class="button button-danger" type="button" data-remove-access-user>移除权限</button></div>
+      <div class="access-identity"><strong>${escapeHtml(item.username)}</strong><small>${escapeHtml(item.role === "admin" ? t("access.admin_user") : t("access.writer_user"))}</small></div>
+      <select data-access-role aria-label="${escapeHtml(t("access.role_aria", { user: item.username }))}"><option value="writer"${item.role === "writer" ? " selected" : ""}>${escapeHtml(t("access.writer"))}</option><option value="admin"${item.role === "admin" ? " selected" : ""}>${escapeHtml(t("access.admin"))}</option></select>
+      <div class="access-row-actions"><button class="button button-quiet" type="button" data-save-access-user>${escapeHtml(t("access.save"))}</button><button class="button button-danger" type="button" data-remove-access-user>${escapeHtml(t("access.remove"))}</button></div>
     </div>
   `).join("");
 }

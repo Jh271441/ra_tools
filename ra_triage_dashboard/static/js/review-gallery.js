@@ -24,7 +24,7 @@ function issueCard(item) {
   const displayPrediction = prediction || (comparisonStatus === "none" ? "NONE" : "");
   const thumbnailUrl = safeSameOriginAssetUrl(item.thumbnail?.url);
   const thumbnailLabel = String(
-    item.thumbnail?.label || (thumbnailUrl ? "BEV 关键帧" : "暂无缩略图")
+    item.thumbnail?.label || (thumbnailUrl ? t("gallery.bev_keyframe") : t("gallery.no_thumb"))
   );
   const issueUrl = safeUrl(item.voyager_issue_url);
   const evidenceKeys = Array.isArray(item.annotation?.missing_evidence)
@@ -40,7 +40,7 @@ function issueCard(item) {
     <article class="issue-card ${isSelected ? "selected" : ""}" data-issue-id="${escapeHtml(item.issue_id)}">
       <button class="issue-card-open" type="button" data-open-issue="${escapeHtml(item.issue_id)}" aria-label="打开 ${escapeHtml(item.issue_id)} Review"></button>
       <div class="issue-thumbnail">
-        <div class="issue-thumbnail-placeholder" aria-hidden="true"><span>RA</span><small>暂无 BEV 缩略图</small></div>
+        <div class="issue-thumbnail-placeholder" aria-hidden="true"><span>RA</span><small>${escapeHtml(t("gallery.no_bev_thumb"))}</small></div>
         ${thumbnailUrl ? `<img src="${escapeHtml(thumbnailUrl)}" alt="${escapeHtml(item.issue_id)} ${escapeHtml(thumbnailLabel)}" loading="lazy" decoding="async" data-case-thumbnail />` : ""}
         <span class="issue-thumbnail-label">${escapeHtml(thumbnailLabel)}</span>
         <button class="issue-media-preview" type="button" data-case-media-preview="${escapeHtml(item.issue_id)}" aria-label="${escapeHtml(uiText(`预览 ${item.issue_id} 的 BEV、Camera 和视频`, `Preview BEV, Camera, and video for ${item.issue_id}`))}"><span class="ui-lang-zh">媒体预览</span><span class="ui-lang-en">Media</span></button>
@@ -52,7 +52,7 @@ function issueCard(item) {
             ${issueUrl ? `<a class="issue-id" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" data-card-link title="打开 Voyager Issue">${escapeHtml(item.issue_id)}</a>` : `<span class="issue-id">${escapeHtml(item.issue_id)}</span>`}
             ${evidenceRow}
           </div>
-          ${!mismatch ? labelBadge(annotation, "待 review") : ""}
+          ${!mismatch ? labelBadge(annotation, t("gallery.pending_review")) : ""}
         </div>
         ${title ? `<div class="issue-title">${escapeHtml(title)}</div>` : ""}
         <div class="issue-card-labels">
@@ -164,8 +164,8 @@ function renderCaseNavigation() {
     input.placeholder = total > 0 ? "—" : "—";
     input.title =
       absolute == null
-        ? "当前 Issue 不在本页筛选结果中；仍可输入序号跳转"
-        : "输入筛选队列序号后回车跳转";
+        ? uiText("当前 Issue 不在本页筛选结果中；仍可输入序号跳转", "Issue not on this page; you can still jump by index")
+        : uiText("输入筛选队列序号后回车跳转", "Enter queue index and press Return");
     // Do not clobber in-progress typing while the field is focused.
     if (!focused) {
       input.value = absolute != null ? String(absolute) : "";
@@ -303,8 +303,8 @@ function renderCases(data) {
     const comparisonStatus = state.reviewComparisonStatus;
     const comparisonMeta = REVIEW_COMPARISON_META[comparisonStatus];
     const hint = comparisonStatus !== "all"
-      ? `没有符合 ${comparisonMeta?.label || comparisonStatus} 的 Issue，可切换模型判断结果筛选。`
-      : "没有匹配的 Issue。";
+      ? t("gallery.no_match_cmp", { label: comparisonMeta?.label || comparisonStatus })
+      : t("gallery.no_match_plain");
     list.innerHTML = `<div class="no-asset issue-grid-empty">${hint}</div>`;
     return;
   }

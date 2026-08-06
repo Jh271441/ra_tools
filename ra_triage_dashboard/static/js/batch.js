@@ -21,17 +21,18 @@ function updatePredictionBatchCount() {
   const invalid = ids.filter((issueId) => !/^[A-Za-z0-9_-]{3,128}$/.test(issueId));
   const maxIssues = Number(state.config?.prediction_batch?.max_issues || 0);
   const overLimit = maxIssues > 0 && ids.length > maxIssues;
-  target.textContent =
-    `${ids.length} 个${maxIssues ? ` · 单批最多 ${maxIssues} 个` : ""}` +
-    `${invalid.length ? ` · ${invalid.length} 个格式不合法` : ""}`;
+  const parts = [t("batch.issue_count_fmt", { n: ids.length })];
+  if (maxIssues) parts.push(t("batch.max_issues", { limit: maxIssues }));
+  if (invalid.length) parts.push(t("batch.invalid_ids", { n: invalid.length }));
+  target.textContent = parts.join(" · ");
   target.classList.toggle("input-warning", Boolean(invalid.length || overLimit));
 }
 
 function providerStatusLabel(provider) {
   const selectable = Boolean(provider?.enabled && provider?.supports_batch);
-  if (selectable) return "可用";
-  if (provider?.credential_configured) return "暂不可用";
-  return "未配置凭证";
+  if (selectable) return t("status.available");
+  if (provider?.credential_configured) return t("status.unavailable_now");
+  return t("status.no_credential");
 }
 
 function selectGatewayProvider(providerId, { reloadModels = true } = {}) {
@@ -125,10 +126,10 @@ function renderGatewayProviders() {
   const catalog = state.config?.prediction_batch?.providers || {};
   const providers = Array.isArray(catalog.providers) ? catalog.providers : [];
   if (!providers.length) {
-    target.innerHTML = '<option value="">未发现服务端 Provider 配置</option>';
+    target.innerHTML = `<option value="">${escapeHtml(t("batch.no_provider"))}</option>`;
     target.disabled = true;
-    if (summary) summary.textContent = "未发现服务端 Provider 配置";
-    if (options) options.innerHTML = '<div class="multi-filter-empty">暂无 Provider</div>';
+    if (summary) summary.textContent = t("batch.no_provider");
+    if (options) options.innerHTML = `<div class="multi-filter-empty">${escapeHtml(t("batch.no_providers"))}</div>`;
     if (trigger) trigger.disabled = true;
     closeGatewayProviderPicker();
     return;
@@ -153,7 +154,7 @@ function renderGatewayProviders() {
   if (summary) {
     summary.textContent = selectedProvider
       ? `${selectedProvider.display_name || selectedProvider.id} · ${providerStatusLabel(selectedProvider)}`
-      : "选择 Provider";
+      : t("batch.pick_provider");
   }
   if (options) {
     options.innerHTML = providers
@@ -173,10 +174,10 @@ function renderGatewayProviders() {
 
 function gatewayModelTier(model) {
   return model?.unavailable
-    ? "不可用"
+    ? t("status.unavailable")
     : model?.validation_status === "validated"
-      ? "已验证"
-      : "实验";
+      ? t("status.validated")
+      : t("status.experimental");
 }
 
 function gatewayModelOptionMarkup(model, active = false, attribute = "data-gateway-model") {
@@ -185,7 +186,7 @@ function gatewayModelOptionMarkup(model, active = false, attribute = "data-gatew
   const resolved = model?.resolved_model_id && model.resolved_model_id !== model.id
     ? model.resolved_model_id
     : model?.id || "";
-  const displayName = model?.display_name || model?.id || "未命名模型";
+  const displayName = model?.display_name || model?.id || t("batch.unnamed_model");
   const title = `${displayName} · ${resolved}`;
   return `<button class="gateway-model-option ${active ? "active" : ""} ${unavailable ? "unavailable" : ""}" type="button" title="${escapeHtml(title)}" ${attribute}="${escapeHtml(model?.id || "")}" ${unavailable ? "disabled" : ""}>
     <span class="gateway-model-option-head">
@@ -284,7 +285,7 @@ function renderGatewayModels() {
   if (unavailableSelection) {
     displayModels.unshift({
       id: previous,
-      display_name: `${previous} · 当前选择已不可用`,
+      display_name: `${previous}${t("batch.model_unavailable_suffix")}`,
       unavailable: true,
     });
   }
@@ -297,15 +298,15 @@ function renderGatewayModels() {
         .map(
           (model) => {
             const tier = model.unavailable
-              ? "不可用"
+              ? t("status.unavailable")
               : model.validation_status === "validated"
-                ? "已验证"
-                : "实验";
+                ? t("status.validated")
+                : t("status.experimental");
             return `<option value="${escapeHtml(model.id)}">[${tier}] ${escapeHtml(model.display_name || model.id)}</option>`;
           }
         )
         .join("")
-    : '<option value="">没有匹配的模型</option>';
+    : `<option value="">${escapeHtml(t("batch.no_models"))}</option>`;
   select.value = unavailableSelection ? previous : selectedModel?.id || "";
   state.selectedGatewayModelId = select.value;
   const pickerSummary = $("#gatewayModelPickerSummary");
@@ -314,7 +315,7 @@ function renderGatewayModels() {
     const selectedForPicker = displayModels.find((model) => model.id === select.value);
     pickerSummary.textContent = selectedForPicker
       ? `[${gatewayModelTier(selectedForPicker)}] ${selectedForPicker.display_name || selectedForPicker.id}`
-      : "没有匹配的模型";
+      : t("batch.no_models");
   }
   if (pickerOptions) {
     pickerOptions.innerHTML = displayModels.length
@@ -323,7 +324,7 @@ function renderGatewayModels() {
           !model.unavailable && model.id === state.selectedGatewayModelId,
           "data-gateway-picker-model",
         )).join("")
-      : '<div class="muted">没有匹配的模型。</div>';
+      : `<div class="muted">${escapeHtml(t("batch.no_models_dot"))}</div>`;
   }
   if (listTarget) {
     listTarget.innerHTML = displayModels.length
@@ -331,7 +332,7 @@ function renderGatewayModels() {
           model,
           !model.unavailable && model.id === state.selectedGatewayModelId,
         )).join("")
-      : '<div class="muted">没有匹配的模型。</div>';
+      : `<div class="muted">${escapeHtml(t("batch.no_models_dot"))}</div>`;
     listTarget.querySelectorAll("[data-gateway-model]").forEach((button) => {
       button.addEventListener("click", () => {
         if (button.disabled) return;
@@ -351,10 +352,13 @@ function renderGatewayModels() {
     selectedIsOnline;
   statusTarget.className = `gateway-model-status ${ready ? "ok" : "warn"}`;
   statusTarget.textContent = unavailableSelection
-    ? `当前选择 ${previous} 已不在当前 Provider 在线目录；请选择其他模型后再提交。`
+    ? t("batch.model_gone", { id: previous })
     : ready
-      ? `已验证 ${state.gatewayModels.filter((model) => model.validation_status === "validated").length} · 实验模型 ${state.gatewayModels.filter((model) => model.validation_status !== "validated").length} · 当前显示 ${visibleModels.length}`
-      : catalog.message || "模型目录尚未就绪。";
+      ? `${t("batch.model_counts", {
+          v: state.gatewayModels.filter((model) => model.validation_status === "validated").length,
+          e: state.gatewayModels.filter((model) => model.validation_status !== "validated").length,
+        })} · ${visibleModels.length}`
+      : catalog.message || t("batch.catalog_not_ready");
   if (createButton) createButton.disabled = !ready;
   renderBatchCatalogFilters();
   renderBatchRuntimeSummary();
@@ -365,7 +369,7 @@ async function loadGatewayModels({ refresh = false, providerId = "" } = {}) {
   const statusTarget = $("#gatewayModelStatus");
   if (statusTarget) {
     statusTarget.className = "gateway-model-status";
-    statusTarget.textContent = refresh ? "正在刷新模型目录…" : "正在自动获取模型目录…";
+    statusTarget.textContent = refresh ? t("batch.refreshing_catalog") : t("batch.fetching_catalog");
   }
   try {
     const selectedProviderId = providerId || state.selectedGatewayProviderId || "kylin";
@@ -899,7 +903,7 @@ function renderPredictionBatches(total = state.predictionBatches.length) {
                 ? `${batch.requested_model_id} → ${batch.model_name || batch.resolved_model_id}`
                 : batch.model_name || batch.resolved_model_id || "服务器模型网关"
             )}</span>
-            ${batch.model_validation_status === "experimental" ? "<span>实验模型</span>" : ""}
+            ${batch.model_validation_status === "experimental" ? `<span>${escapeHtml(t("status.experimental"))}</span>` : ""}
             ${batch.prompt_version ? `<span>Prompt ${escapeHtml(batch.prompt_version)}${batch.prompt_mode === "custom" ? ` · custom${batch.prompt_template_sha256 ? ` · ${escapeHtml(batch.prompt_template_sha256.slice(0, 10))}…` : ""}` : ""}</span>` : ""}
             ${batch.input_profile ? `<span>输入 ${escapeHtml(batch.input_profile)}</span>` : ""}
             <span>${counts.completed} / ${counts.total} 完成</span>
@@ -1073,7 +1077,7 @@ async function submitPredictionBatch(event) {
   if (!issueIds.length) return showToast("请至少输入一个 Issue ID。", true);
   if (invalid.length) return showToast(`Issue ID 格式不合法：${invalid.slice(0, 3).join("、")}`, true);
   if (!modelId || state.gatewayModelStatus?.status !== "ready" || state.gatewayModelStatus?.stale) {
-    return showToast("模型目录尚未就绪，请先刷新并选择可用模型。", true);
+    return showToast(t("batch.catalog_not_ready"), true);
   }
   if (!promptId || !promptTemplate.trim()) {
     return showToast("请选择 Prompt，并保留非空正文。", true);
@@ -1131,7 +1135,7 @@ async function submitPredictionBatch(event) {
   } catch (error) {
     showToast(error.message, true);
   } finally {
-    button.textContent = "开始 Batch 预测";
+    button.textContent = t("batch.start");
     renderGatewayModels();
   }
 }

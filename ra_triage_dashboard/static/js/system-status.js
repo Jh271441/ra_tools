@@ -8,9 +8,9 @@ function formatStatusDuration(seconds) {
   const days = Math.floor(value / 86400);
   const hours = Math.floor((value % 86400) / 3600);
   const minutes = Math.floor((value % 3600) / 60);
-  if (days) return uiText(`${days} 天 ${hours} 小时`, `${days}d ${hours}h`);
-  if (hours) return uiText(`${hours} 小时 ${minutes} 分`, `${hours}h ${minutes}m`);
-  return uiText(`${minutes} 分钟`, `${minutes}m`);
+  if (days) return t("system.duration_dh", { d: days, h: hours });
+  if (hours) return t("system.duration_hm", { h: hours, m: minutes });
+  return t("system.duration_m", { m: minutes });
 }
 
 function formatStatusBytes(bytes) {
@@ -61,14 +61,14 @@ function renderSystemStatus() {
   const overall = data.overall || { status: "degraded", problems: [] };
   const healthy = overall.status === "healthy";
   const problemLabels = {
-    database_unavailable: uiText("数据库不可用", "Database unavailable"),
-    database_not_persistent: uiText("数据库未使用持久卷", "Database is not persistent"),
-    baseline_unavailable: uiText("基线不可用", "Baseline unavailable"),
-    backup_missing: uiText("缺少数据库备份", "Database backup missing"),
-    backup_checksum_missing: uiText("备份缺少校验文件", "Backup checksum missing"),
-    backup_stale: uiText("最近备份已过期", "Latest backup is stale"),
-    backup_schedule_unregistered: uiText("备份计划未登记", "Backup schedule unregistered"),
-    disk_space_low: uiText("磁盘剩余空间不足", "Disk space is low"),
+    database_unavailable: t("system.problem.database_unavailable"),
+    database_not_persistent: t("system.problem.database_not_persistent"),
+    baseline_unavailable: t("system.problem.baseline_unavailable"),
+    backup_missing: t("system.problem.backup_missing"),
+    backup_checksum_missing: t("system.problem.backup_checksum_missing"),
+    backup_stale: t("system.problem.backup_stale"),
+    backup_schedule_unregistered: t("system.problem.backup_schedule_unregistered"),
+    disk_space_low: t("system.problem.disk_space_low"),
   };
   const problems = (overall.problems || []).map((key) => problemLabels[key] || key);
   hero.classList.toggle("degraded", !healthy);
@@ -76,11 +76,11 @@ function renderSystemStatus() {
     <div class="system-status-summary">
       <div class="system-status-indicator" aria-hidden="true">${healthy ? "✓" : "!"}</div>
       <div>
-        <h2>${escapeHtml(healthy ? uiText("关键系统运行正常", "Core systems are healthy") : uiText("系统有项目需要关注", "System needs attention"))}</h2>
-        <p>${escapeHtml(healthy ? uiText("服务、持久化数据库与备份保护均已就绪。", "Service, persistent database, and backup protection are ready.") : problems.join(" · ") || uiText("请查看下方状态卡。", "Review the status cards below."))}</p>
+        <h2>${escapeHtml(healthy ? t("system.healthy_title") : t("system.degraded_title"))}</h2>
+        <p>${escapeHtml(healthy ? t("system.healthy_body") : problems.join(" · ") || t("system.degraded_body"))}</p>
       </div>
     </div>
-    <div class="system-status-build"><span>${escapeHtml(uiText("部署版本", "Build"))}</span><code>${escapeHtml(application.build_commit || data.build_commit || "unverified")}</code></div>`;
+    <div class="system-status-build"><span>${escapeHtml(t("system.build"))}</span><code>${escapeHtml(application.build_commit || data.build_commit || "unverified")}</code></div>`;
 
   const backupAge = backups.latest_age_seconds == null
     ? "—"
@@ -97,78 +97,78 @@ function renderSystemStatus() {
   const usedPercent = Math.max(0, Math.min(100, Number(volume.used_percent) || 0));
   grid.innerHTML = [
     systemStatusCard({
-      title: uiText("应用服务", "Application"),
-      chip: uiText("在线", "Online"),
+      title: t("system.app"),
+      chip: t("status.online"),
       rows: [
-        [uiText("运行时间", "Uptime"), formatStatusDuration(application.uptime_seconds)],
-        [uiText("启动时间", "Started"), formatTime(application.started_at)],
-        [uiText("共享数据版本", "Shared revision"), String(database.revision ?? "—")],
+        [t("system.uptime"), formatStatusDuration(application.uptime_seconds)],
+        [t("system.started"), formatTime(application.started_at)],
+        [t("system.revision"), String(database.revision ?? "—")],
       ],
     }),
     systemStatusCard({
-      title: uiText("数据库", "Database"),
-      chip: databaseReady ? uiText("正常", "Healthy") : uiText("异常", "Issue"),
+      title: t("system.database"),
+      chip: databaseReady ? t("status.healthy") : t("status.issue"),
       tone: databaseReady ? "ok" : "fail",
       rows: [
-        [uiText("存储引擎", "Backend"), database.backend === "postgresql" ? "PostgreSQL" : "SQLite"],
-        [uiText("持久化", "Persistence"), database.persistent_data ? uiText("/volume 持久卷", "/volume persistent") : uiText("本地存储", "Local storage")],
-        [uiText("连接延迟", "Latency"), database.latency_ms == null ? "—" : `${database.latency_ms} ms`],
-        [uiText("版本 / Migration", "Version / migrations"), `${database.server_version || "—"} · ${database.migration_count ?? 0}`],
-        [uiText("连接池上限", "Pool limit"), String(database.pool_max_size || "—")],
+        [t("system.backend"), database.backend === "postgresql" ? "PostgreSQL" : "SQLite"],
+        [t("system.persistence"), database.persistent_data ? t("system.persistent_volume") : t("system.local_storage")],
+        [t("system.latency"), database.latency_ms == null ? "—" : `${database.latency_ms} ms`],
+        [t("system.version_mig"), `${database.server_version || "—"} · ${database.migration_count ?? 0}`],
+        [t("system.pool"), String(database.pool_max_size || "—")],
       ],
     }),
     systemStatusCard({
-      title: uiText("数据库备份", "Database backups"),
-      chip: backupReady ? uiText("已保护", "Protected") : uiText("需关注", "Attention"),
+      title: t("system.backups"),
+      chip: backupReady ? t("status.protected") : t("status.attention"),
       tone: backupReady ? "ok" : "warn",
       rows: [
-        [uiText("最近备份", "Latest backup"), backups.latest_created_at ? formatTime(backups.latest_created_at) : "—"],
-        [uiText("备份距今", "Backup age"), backupAge],
-        [uiText("大小 / 份数", "Size / copies"), `${formatStatusBytes(backups.latest_size_bytes)} · ${backups.count || 0}`],
-        [uiText("SHA-256 文件", "SHA-256 file"), backups.latest_checksum_present ? uiText("已生成", "Present") : uiText("缺失", "Missing")],
-        [uiText("自动计划", "Schedule"), backups.schedule_registered ? `${backups.schedule} · ${uiText("服务器时间", "server time")}` : uiText("未登记", "Not registered")],
+        [t("system.latest_backup"), backups.latest_created_at ? formatTime(backups.latest_created_at) : "—"],
+        [t("system.backup_age"), backupAge],
+        [t("system.size_copies"), `${formatStatusBytes(backups.latest_size_bytes)} · ${backups.count || 0}`],
+        [t("system.sha256"), backups.latest_checksum_present ? t("status.present") : t("status.missing_file")],
+        [t("system.schedule"), backups.schedule_registered ? `${backups.schedule} · ${t("system.server_time")}` : t("status.not_registered")],
       ],
     }),
     systemStatusCard({
-      title: uiText("数据与媒体", "Dataset & media"),
-      chip: baselineReady && assetsReady ? uiText("就绪", "Ready") : uiText("部分可用", "Partial"),
+      title: t("system.dataset_media"),
+      chip: baselineReady && assetsReady ? t("status.ready") : t("status.partial"),
       tone: baselineReady && assetsReady ? "ok" : "warn",
       rows: [
-        [uiText("0508 基线", "0508 baseline"), `${baseline.count ?? 0} · ${baseline.status || "—"}`],
-        [uiText("基线范围", "Baseline scope"), baseline.scope || "—"],
-        [uiText("Ares BEV", "Ares BEV"), data.ares_manifest_available ? `${data.ares_indexed_issues || 0} Issues` : uiText("不可用", "Unavailable")],
-        [uiText("Camera 缓存", "Camera cache"), data.camera_cache_root_available ? uiText("可用", "Available") : uiText("不可用", "Unavailable")],
-        [uiText("BEV 视频", "BEV video"), data.ares_video_root_available ? uiText("可用", "Available") : uiText("不可用", "Unavailable")],
+        [t("system.baseline_0508"), `${baseline.count ?? 0} · ${baseline.status || "—"}`],
+        [t("system.baseline_scope"), baseline.scope || "—"],
+        ["Ares BEV", data.ares_manifest_available ? `${data.ares_indexed_issues || 0} Issues` : t("status.unavailable")],
+        [t("system.camera_cache"), data.camera_cache_root_available ? t("status.available") : t("status.unavailable")],
+        [t("system.bev_video"), data.ares_video_root_available ? t("status.available") : t("status.unavailable")],
       ],
     }),
     systemStatusCard({
-      title: uiText("模型与集成", "Models & integrations"),
-      chip: gatewayReady ? uiText("网关就绪", "Gateway ready") : uiText("网关未配置", "Gateway unavailable"),
+      title: t("system.models"),
+      chip: gatewayReady ? t("system.gateway_ready") : t("system.gateway_missing"),
       tone: gatewayReady ? "ok" : "warn",
       rows: [
-        [uiText("运行模式", "Deployment mode"), data.application?.deployment_mode === "production" ? uiText("生产", "Production") : uiText("开发", "Development")],
-        [uiText("模型网关", "Model gateway"), gateway.configured ? uiText("服务端凭证已配置", "Server credential configured") : uiText("未配置", "Not configured")],
-        [uiText("Batch 预测", "Batch prediction"), data.batch_prediction_enabled ? uiText("已启用", "Enabled") : uiText("已关闭", "Disabled")],
-        [uiText("AutoTriage 推送", "AutoTriage publish"), data.autotriage_push_enabled ? uiText("已启用", "Enabled") : uiText("关闭（安全默认）", "Off (safe default)")],
-        [uiText("Trail 字段", "Trail fields"), ["ready", "preview_ready"].includes(trail.status) ? uiText("可用", "Available") : uiText("当前不可用", "Currently unavailable")],
+        [t("system.deploy_mode"), data.application?.deployment_mode === "production" ? t("status.production") : t("status.development")],
+        [t("system.model_gateway"), gateway.configured ? t("system.gateway_cred") : t("status.not_configured")],
+        [t("system.batch_pred"), data.batch_prediction_enabled ? t("status.enabled") : t("status.disabled")],
+        [t("system.autotriage_push"), data.autotriage_push_enabled ? t("status.enabled") : t("system.autotriage_off")],
+        [t("system.trail_fields"), ["ready", "preview_ready"].includes(trail.status) ? t("status.available") : t("system.trail_unavailable")],
       ],
       extra: trail.message ? `<p class="system-status-note">${escapeHtml(trail.message)}</p>` : "",
     }),
     systemStatusCard({
-      title: uiText("持久卷容量", "Persistent volume"),
-      chip: volume.available && Number(volume.free_bytes || 0) >= 1024 ** 3 ? uiText("空间充足", "Capacity OK") : uiText("空间不足", "Low space"),
+      title: t("system.volume"),
+      chip: volume.available && Number(volume.free_bytes || 0) >= 1024 ** 3 ? t("status.capacity_ok") : t("status.low_space"),
       tone: volume.available && Number(volume.free_bytes || 0) >= 1024 ** 3 ? "ok" : "fail",
       rows: [
-        [uiText("已使用", "Used"), `${formatStatusBytes(volume.used_bytes)} · ${usedPercent}%`],
-        [uiText("剩余", "Free"), formatStatusBytes(volume.free_bytes)],
-        [uiText("总容量", "Total"), formatStatusBytes(volume.total_bytes)],
+        [t("system.used"), `${formatStatusBytes(volume.used_bytes)} · ${usedPercent}%`],
+        [t("system.free"), formatStatusBytes(volume.free_bytes)],
+        [t("system.total"), formatStatusBytes(volume.total_bytes)],
       ],
       extra: `<div class="system-capacity"><div class="system-capacity-track"><span class="${usedPercent >= 95 ? "warn" : ""}" style="width:${usedPercent}%"></span></div></div>`,
     }),
   ].join("");
   const updated = $("#systemStatusUpdatedAt");
   if (updated) {
-    updated.textContent = `${uiText("更新于", "Updated")} ${formatTime(data.generated_at)}`;
+    updated.textContent = `${t("system.updated")} ${formatTime(data.generated_at)}`;
   }
 }
 

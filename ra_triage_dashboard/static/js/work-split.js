@@ -25,19 +25,19 @@ function currentReviewFilterPayload() {
 function workSplitPersonRow(name = "", count = "") {
   const users = Array.isArray(state.accessUsers) ? state.accessUsers : [];
   const options = [
-    `<option value="">选择人员</option>`,
+    `<option value="">${escapeHtml(t("work.pick_person"))}</option>`,
     ...users.map(
       (item) =>
         `<option value="${escapeHtml(item.username)}"${
           item.username === name ? " selected" : ""
         }>${escapeHtml(item.username)}${
-          item.role === "admin" ? " · 管理员" : ""
+          item.role === "admin" ? t("work.admin_suffix") : ""
         }</option>`
     ),
   ].join("");
   return `<div class="work-split-person-row">
     <select class="work-split-person-name" aria-label="复核人">${options}</select>
-    <input class="work-split-person-count" type="number" min="0" step="1" placeholder="均分" value="${escapeHtml(
+    <input class="work-split-person-count" type="number" min="0" step="1" placeholder="${escapeHtml(t("work.even_split"))}" value="${escapeHtml(
       count
     )}" title="留空=参与剩余均分；填数字=固定领取数量" />
     <button class="button button-quiet work-split-remove-person" type="button" aria-label="移除">×</button>
@@ -72,7 +72,7 @@ function renderWorkAssigneeFilter() {
   const items = Array.isArray(state.workAssignees) ? state.workAssignees : [];
   renderMultiFilter(root, {
     options: [
-      { value: "__none__", label: "未分配" },
+      { value: "__none__", label: t("work.unassigned") },
       ...items.map((item) => ({
         value: item.username,
         label: `${item.username} · ${Number(item.issue_count || 0)}`,
@@ -103,7 +103,7 @@ function updateWorkSplitAdminVisibility() {
 
 async function openWorkSplitDialog() {
   if (!state.session?.is_admin) {
-    showToast("仅管理员可以均分 Review 任务。", true);
+    showToast(t("work.split_admin_only"), true);
     return;
   }
   const total = Number(state.caseTotal || 0);
@@ -111,8 +111,8 @@ async function openWorkSplitDialog() {
   const results = $("#workSplitResults");
   if (summary) {
     summary.textContent = total
-      ? `当前筛选：${total} 个 Issue（完整筛选集合；分配后写入「任务负责人」）`
-      : "当前筛选没有 Issue。";
+      ? t("work.summary_n", { n: total })
+      : t("work.no_issues");
   }
   if (results) {
     results.classList.add("hidden");
@@ -123,7 +123,7 @@ async function openWorkSplitDialog() {
       await loadAccessUsers();
     }
   } catch (error) {
-    showToast(error.message || "无法加载可写用户列表。", true);
+    showToast(error.message || t("work.load_users_fail"), true);
     return;
   }
   const root = $("#workSplitPeople");
@@ -136,7 +136,7 @@ async function openWorkSplitDialog() {
       });
     } else {
       ensureWorkSplitPeople(2);
-      showToast("尚未配置可写用户；请先在用户管理中添加，或手动选择后分配。", true);
+      showToast(t("work.no_writers"), true);
     }
   }
   openDialog("workSplitDialog");
@@ -156,21 +156,21 @@ function renderWorkSplitResults(payload) {
       const ids = Array.isArray(item.issue_ids) ? item.issue_ids : [];
       const mode =
         item.mode === "fixed"
-          ? `指定 ${item.requested_count ?? "—"}`
-          : "均分剩余";
+          ? t("work.fixed_n", { n: item.requested_count ?? "—" })
+          : t("work.even_rest");
       return `<article class="work-split-card" data-work-split-index="${index}">
         <header>
-          <strong>${escapeHtml(item.name || "未命名")}</strong>
-          <span>${Number(item.count || 0)} 个 · ${escapeHtml(mode)}</span>
+          <strong>${escapeHtml(item.name || "—")}</strong>
+          <span>${escapeHtml(t("runs.count_n", { n: Number(item.count || 0) }))} · ${escapeHtml(mode)}</span>
         </header>
         <textarea class="work-split-ids" readonly rows="4">${escapeHtml(
           ids.join("\n")
         )}</textarea>
         <div class="work-split-card-actions">
-          <button class="button button-quiet" type="button" data-copy-work-split="${index}">复制 Issue ID</button>
+          <button class="button button-quiet" type="button" data-copy-work-split="${index}">${escapeHtml(t("work.copy_ids"))}</button>
           <button class="button button-primary" type="button" data-filter-work-assignee="${escapeHtml(
             item.name || ""
-          )}">按负责人筛选</button>
+          )}">${escapeHtml(t("work.filter_assignee"))}</button>
         </div>
       </article>`;
     })
@@ -178,10 +178,8 @@ function renderWorkSplitResults(payload) {
   root.classList.remove("hidden");
   root.innerHTML = `
     <div class="work-split-results-heading">
-      <strong>分配结果已写入 Issue</strong>
-      <span>共 ${Number(payload.total || 0)} 个 · split ${escapeHtml(
-        payload.split_id || ""
-      )}${payload.truncated ? "（已达 5000 上限）" : ""}</span>
+      <strong>${escapeHtml(t("work.result_title"))}</strong>
+      <span>${escapeHtml(t("work.result_meta", { n: Number(payload.total || 0), seed: payload.split_id || "" }))}${payload.truncated ? escapeHtml(t("work.truncated")) : ""}</span>
     </div>
     <div class="work-split-card-grid">${cards}</div>
   `;
@@ -190,12 +188,12 @@ function renderWorkSplitResults(payload) {
 
 async function generateWorkSplit() {
   if (!state.session?.is_admin) {
-    showToast("仅管理员可以均分 Review 任务。", true);
+    showToast(t("work.split_admin_only"), true);
     return;
   }
   const assignees = readWorkSplitAssignees();
   if (!assignees.length) {
-    showToast("请至少选择一名复核人。", true);
+    showToast(t("work.need_reviewer"), true);
     return;
   }
   const seedRaw = $("#workSplitSeed")?.value.trim() || "";
@@ -206,7 +204,7 @@ async function generateWorkSplit() {
   if (seedRaw !== "") {
     const seed = Number(seedRaw);
     if (!Number.isFinite(seed)) {
-      showToast("随机种子必须是整数。", true);
+      showToast(t("work.seed_int"), true);
       return;
     }
     body.seed = seed;
@@ -229,7 +227,7 @@ async function generateWorkSplit() {
       await loadWorkAssignees();
     }
     renderWorkSplitResults(result);
-    showToast("任务已分配并写入 Issue「任务负责人」。");
+    showToast(t("work.saved"));
   } catch (error) {
     showToast(error.message, true);
   } finally {
@@ -283,11 +281,11 @@ function copyWorkSplitAssignment(index) {
 function bindWorkSplitControls() {
   $("#splitFilteredButton")?.addEventListener("click", () => {
     if (!state.session?.is_admin) {
-      showToast("仅管理员可以均分 Review 任务。", true);
+      showToast(t("work.split_admin_only"), true);
       return;
     }
     if (!state.caseTotal) {
-      showToast("当前筛选没有 Issue。", true);
+      showToast(t("work.no_issues"), true);
       return;
     }
     openWorkSplitDialog().catch((error) => showToast(error.message, true));

@@ -137,7 +137,25 @@ function applyUiLanguage(language, { persist = true } = {}) {
     if (typeof renderCasePagination === "function") renderCasePagination();
   } catch (_) {}
   try {
-    if (typeof renderWorkSplitSummary === "function") renderWorkSplitSummary();
+    if (typeof updateFilteredPredictionButton === "function") updateFilteredPredictionButton();
+  } catch (_) {}
+  try {
+    if (typeof renderSystemStatus === "function") renderSystemStatus();
+  } catch (_) {}
+  try {
+    if (typeof renderAccessUsers === "function" && state.accessUsers) renderAccessUsers();
+  } catch (_) {}
+  try {
+    if (typeof renderRunManager === "function" && state.modelRuns?.length) renderRunManager();
+  } catch (_) {}
+  try {
+    if (typeof updatePredictionBatchCount === "function") updatePredictionBatchCount();
+  } catch (_) {}
+  try {
+    if (typeof renderGatewayProviders === "function") renderGatewayProviders();
+  } catch (_) {}
+  try {
+    if (typeof renderGatewayModels === "function") renderGatewayModels();
   } catch (_) {}
   try {
     if (typeof applyColorTheme === "function") {

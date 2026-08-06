@@ -7,12 +7,29 @@ const LABELS = ["误触发", "正确触发", "无需协助"];
 const CASE_PAGE_SIZES = [10, 20, 50, 100];
 const DEFAULT_CASE_PAGE_SIZE = 20;
 const ANALYSIS_COMPARISON_STATUSES = ["all", "mismatch", "match", "none"];
-const ANALYSIS_COMPARISON_META = {
-  all: { label: "全部", description: "不按模型判断结果收窄" },
-  mismatch: { label: "MISMATCH", description: "GT 与模型输出不一致" },
-  match: { label: "MATCH", description: "GT 与模型输出一致" },
-  none: { label: "NONE", description: "该 Run 未预测" },
-};
+/** Locale-aware comparison option meta (GT taxonomy stays Chinese elsewhere). */
+function comparisonStatusMeta(status) {
+  const key = String(status || "all");
+  const table = {
+    all: { label: () => t("common.all"), description: () => t("comparison.desc_all") },
+    mismatch: { label: () => "MISMATCH", description: () => t("comparison.desc_mismatch") },
+    match: { label: () => "MATCH", description: () => t("comparison.desc_match") },
+    none: { label: () => "NONE", description: () => t("comparison.desc_none") },
+  };
+  const entry = table[key] || table.all;
+  return { label: entry.label(), description: entry.description() };
+}
+const ANALYSIS_COMPARISON_META = new Proxy(
+  {},
+  {
+    get(_target, prop) {
+      if (prop === "all" || prop === "mismatch" || prop === "match" || prop === "none") {
+        return comparisonStatusMeta(prop);
+      }
+      return undefined;
+    },
+  }
+);
 const REVIEW_COMPARISON_STATUSES = ANALYSIS_COMPARISON_STATUSES;
 const REVIEW_COMPARISON_META = ANALYSIS_COMPARISON_META;
 const API_GET_TIMEOUT_MS = 6000;
@@ -200,11 +217,14 @@ function populateUiSelect(root, options, selectedValue = "") {
             </button>`;
           })
           .join("")
-      : '<div class="multi-filter-empty">暂无选项</div>';
+      : `<div class="multi-filter-empty">${escapeHtml(typeof t === "function" ? t("multi.empty") : "暂无选项")}</div>`;
   }
   if (summary) {
     const active = list.find((item) => String(item.value) === selected);
-    summary.textContent = active?.label || list[0]?.label || "请选择";
+    summary.textContent =
+      active?.label ||
+      list[0]?.label ||
+      (typeof t === "function" ? t("multi.pick") : "请选择");
   }
   root.classList.toggle("is-disabled", Boolean(native?.disabled));
   const trigger =

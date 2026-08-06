@@ -235,7 +235,7 @@ function bindEvents() {
       } catch (error) { showToast(error.message, true); }
     }
     if (event.target.closest("[data-remove-access-user]")) {
-      if (!window.confirm(`确认移除 ${username} 的写入权限？`)) return;
+      if (!window.confirm(t("access.confirm_remove", { user: username }))) return;
       try {
         const result = await api(`/api/access-users/${encodeURIComponent(username)}`, { method: "DELETE" });
         acknowledgeLocalChange(result);

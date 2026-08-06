@@ -13,7 +13,7 @@ async function loadClusters() {
   if (!list) return;
   const data = await api(`/api/review-clusters?${params.toString()}`);
   if (!(data.items || []).length) {
-    list.innerHTML = '<span class="muted">标注缺失信息后，这里会按错误模式自动聚类。</span>';
+    list.innerHTML = `<span class="muted">${escapeHtml(t("analysis.cluster_hint"))}</span>`;
     return;
   }
   list.innerHTML = data.items
@@ -45,10 +45,10 @@ function safeSameOriginReviewUrl(url) {
 function reviewStatusLabel(status) {
   return (
     {
-      pending: "待复核",
-      reviewed: "已 Review",
-      needs_gt_review: "GT 待复核",
-    }[status] || status || "未记录"
+      pending: t("status.pending_review"),
+      reviewed: t("status.reviewed"),
+      needs_gt_review: t("status.needs_gt"),
+    }[status] || status || t("status.recorded")
   );
 }
 
@@ -205,7 +205,7 @@ function showAnalysisPieTooltip(event, item, percent) {
   }
   const desc = item.description ? `<small>${escapeHtml(item.description)}</small>` : "";
   tip.innerHTML = `<strong>${escapeHtml(item.label)}</strong>
-    <span>${item.count} 条 · ${percent}%</span>
+    <span>${escapeHtml(t("analysis.count_pct", { n: item.count, p: percent }))}</span>
     ${desc}`;
   tip.hidden = false;
   const pad = 12;
@@ -289,7 +289,7 @@ function renderAnalysisClusterGroup(group, panel, { dual = false, animatePies = 
           </div>`;
         })
         .join("")
-    : `<div class="analysis-donut-empty">暂无数据</div>`;
+    : `<div class="analysis-donut-empty">${escapeHtml(t("analysis.no_data"))}</div>`;
   return `<div class="analysis-pie-group ${dual ? "is-dual" : "is-single"}">
     <div class="analysis-pie-figure" data-group-label="${escapeHtml(group.label || "")}">
       ${renderAnalysisPieSvg(items, { size, palette, animatePies })}
@@ -366,7 +366,7 @@ function renderAnalysisClusterPanels(data, { animatePies = true } = {}) {
                 renderAnalysisClusterGroup(group, panel, { dual, animatePies })
               )
               .join("")
-          : `<div class="analysis-empty">当前筛选范围内还没有可统计的聚类。</div>`;
+          : `<div class="analysis-empty">${escapeHtml(t("analysis.no_cluster"))}</div>`;
         return `<article class="page-card analysis-cluster-card layout-${escapeHtml(panel.layout || "single")}" data-panel="${escapeHtml(panel.key)}">
           <div class="section-heading">
             <div><h3>${escapeHtml(panel.label)}</h3></div>
@@ -395,8 +395,8 @@ function renderAnalysisConfusion(data) {
   const run = data.scope?.model_run;
   const confusion = data.confusion || {};
   if (!run) {
-    summary.textContent = "选择 Model Run 后显示混淆统计";
-    target.innerHTML = '<div class="analysis-empty">尚未选择可比较的 Model Run。</div>';
+    summary.textContent = t("analysis.confusion_need_run");
+    target.innerHTML = `<div class="analysis-empty">${escapeHtml(t("analysis.confusion_empty_run"))}</div>`;
     return;
   }
   summary.textContent =
@@ -407,13 +407,13 @@ function renderAnalysisConfusion(data) {
   const labels = confusion.model_labels || confusion.labels || LABELS;
   if (!confusion.total) {
     target.innerHTML =
-      '<div class="analysis-empty">当前 Review 切片没有可统计的模型判断结果。</div>';
+      `<div class="analysis-empty">${escapeHtml(t("analysis.confusion_empty_slice"))}</div>`;
     return;
   }
   target.innerHTML = `<table class="analysis-confusion-table">
-    <thead><tr><th>GT ↓ / 模型 →</th>${labels
+    <thead><tr><th>${escapeHtml(t("analysis.gt_model_matrix"))}</th>${labels
       .map((label) => `<th>${escapeHtml(label)}</th>`)
-      .join("")}<th>合计</th></tr></thead>
+      .join("")}<th>${escapeHtml(t("analysis.total_col"))}</th></tr></thead>
     <tbody>${(confusion.rows || [])
       .map(
         (row) => `<tr>
@@ -444,10 +444,10 @@ function renderAnalysisCases(data) {
   const target = $("#analysisCaseList");
   const items = data.items || [];
   $("#analysisCaseSummary").textContent =
-    `${data.total || 0} 条最新 Review · 当前显示 ${items.length} 条`;
+    t("analysis.case_summary", { total: data.total || 0, n: items.length });
   if (!items.length) {
     target.innerHTML =
-      '<div class="analysis-empty">当前筛选下没有 Review 原因明细。</div>';
+      `<div class="analysis-empty">${escapeHtml(t("analysis.case_empty"))}</div>`;
   } else {
     target.innerHTML = items
       .map((item) => {
@@ -456,7 +456,7 @@ function renderAnalysisCases(data) {
         const reviewUrl = safeSameOriginReviewUrl(item.review_url);
         const voyagerUrl = safeUrl(item.voyager_issue_url);
         const issueId = escapeHtml(item.issue_id);
-        const sceneLabel = item.title || item.scenario || "未填写场景";
+        const sceneLabel = item.title || item.scenario || t("analysis.no_scene");
         const issueIdMarkup = voyagerUrl
           ? `<a class="analysis-issue-link" href="${escapeHtml(voyagerUrl)}" target="_blank" rel="noreferrer" title="在 Voyager 中打开 ${issueId}">${issueId}</a>`
           : `<strong>${issueId}</strong>`;
@@ -467,7 +467,7 @@ function renderAnalysisCases(data) {
         const comparisonMeta = ANALYSIS_COMPARISON_META[comparisonStatus];
         const comparisonBadge = comparisonMeta
           ? `<span class="analysis-comparison-badge comparison-${comparisonStatus}" title="${escapeHtml(comparisonMeta.description)}">${escapeHtml(comparisonMeta.label)}${
-              comparisonStatus === "none" ? " · 未预测" : ""
+              comparisonStatus === "none" ? t("analysis.no_pred") : ""
             }</span>`
           : "";
         const confidence =
@@ -500,12 +500,12 @@ function renderAnalysisCases(data) {
               data-analysis-model-history="${issueId}"
               title="查看此 Issue 的全部评测 Run 输出历史"
               aria-label="查看 ${issueId} 的评测 Run 输出历史">
-              <span>模型</span>${labelBadge(prediction.label, "未输出")}${escapeHtml(confidence)}
+              <span>${escapeHtml(t("analysis.model"))}</span>${labelBadge(prediction.label, "未输出")}${escapeHtml(confidence)}
             </button>
           </div>
           <div class="analysis-case-reason">
-            <strong class="${annotation.note ? "" : "reason-empty"}">${escapeHtml(annotation.note || "未填写“模型为什么判错”")}</strong>
-            ${prediction.reason ? `<p>模型说明：${escapeHtml(prediction.reason)}</p>` : ""}
+            <strong class="${annotation.note ? "" : "reason-empty"}">${escapeHtml(annotation.note || t("analysis.empty_reason"))}</strong>
+            ${prediction.reason ? `<p>${escapeHtml(t("analysis.model_note", { note: prediction.reason }))}</p>` : ""}
             <div class="analysis-chip-list">${tagChips}${evidenceChips}</div>
           </div>
           <div class="analysis-case-meta">

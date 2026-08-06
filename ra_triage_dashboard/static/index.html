@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-121`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-122`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -791,7 +791,7 @@
                 <strong id="importExampleFilename">model_results.csv</strong>
                 <small id="importExampleDescription">平铺表格，每行一个 Issue</small>
               </div>
-              <button class="button button-quiet" id="copyImportExampleButton" type="button">复制示例</button>
+              <button class="button button-quiet" id="copyImportExampleButton" type="button"><span class="ui-lang-zh">复制示例</span><span class="ui-lang-en">Copy example</span></button>
             </div>
             <pre class="import-example-code" id="importExampleContent" tabindex="0"></pre>
           </section>
@@ -855,7 +855,7 @@
       <div class="dialog-card">
         <div class="dialog-heading">
           <div>
-            <h2>均分 Review 任务</h2>
+            <h2><span class="ui-lang-zh">均分 Review 任务</span><span class="ui-lang-en">Split review work</span></h2>
             <p class="dialog-copy" id="workSplitDialogHint">对当前筛选结果随机分配；可给部分人指定数量，其余人再均分剩余 Issue。</p>
           </div>
           <button class="icon-button" type="button" data-close="workSplitDialog" aria-label="关闭">×</button>
@@ -863,15 +863,15 @@
         <div class="work-split-summary" id="workSplitSummary">当前筛选：—</div>
         <div class="work-split-people" id="workSplitPeople" aria-label="复核人列表"></div>
         <div class="work-split-toolbar">
-          <button class="button button-quiet" id="workSplitAddPerson" type="button">添加人员</button>
+          <button class="button button-quiet" id="workSplitAddPerson" type="button"><span class="ui-lang-zh">添加人员</span><span class="ui-lang-en">Add person</span></button>
           <label class="work-split-seed">
             <span>随机种子（可选）</span>
             <input id="workSplitSeed" type="number" inputmode="numeric" placeholder="留空则每次不同" />
           </label>
         </div>
         <div class="dialog-actions">
-          <button class="button button-quiet" type="button" data-close="workSplitDialog">取消</button>
-          <button class="button button-primary" id="workSplitGenerate" type="button">生成分配</button>
+          <button class="button button-quiet" type="button" data-close="workSplitDialog"><span class="ui-lang-zh">取消</span><span class="ui-lang-en">Cancel</span></button>
+          <button class="button button-primary" id="workSplitGenerate" type="button"><span class="ui-lang-zh">生成分配</span><span class="ui-lang-en">Generate assignment</span></button>
         </div>
         <div class="work-split-results hidden" id="workSplitResults" aria-live="polite"></div>
       </div>
@@ -899,8 +899,8 @@
             <input id="reviewTagCreateHint" type="text" maxlength="160" placeholder="给其他复核人看的短说明" autocomplete="off" />
           </label>
           <div class="dialog-actions">
-            <button class="button button-quiet" type="button" data-close="reviewTagCreateDialog">取消</button>
-            <button class="button button-primary" id="reviewTagCreateSubmit" type="submit">添加标签</button>
+            <button class="button button-quiet" type="button" data-close="reviewTagCreateDialog"><span class="ui-lang-zh">取消</span><span class="ui-lang-en">Cancel</span></button>
+            <button class="button button-primary" id="reviewTagCreateSubmit" type="submit"><span class="ui-lang-zh">添加标签</span><span class="ui-lang-en">Add tag</span></button>
           </div>
         </form>
       </div>
@@ -927,8 +927,8 @@
             <input id="missingEvidenceCreateHint" type="text" maxlength="160" placeholder="给其他复核人看的短说明" autocomplete="off" />
           </label>
           <div class="dialog-actions">
-            <button class="button button-quiet" type="button" data-close="missingEvidenceCreateDialog">取消</button>
-            <button class="button button-primary" id="missingEvidenceCreateSubmit" type="submit">添加条目</button>
+            <button class="button button-quiet" type="button" data-close="missingEvidenceCreateDialog"><span class="ui-lang-zh">取消</span><span class="ui-lang-en">Cancel</span></button>
+            <button class="button button-primary" id="missingEvidenceCreateSubmit" type="submit"><span class="ui-lang-zh">添加条目</span><span class="ui-lang-en">Add item</span></button>
           </div>
         </form>
       </div>
@@ -962,8 +962,8 @@
           <div class="ra-event-empty" id="raEventEmpty" hidden>没有匹配的 RA Event。</div>
         </div>
         <div class="dialog-actions ra-event-dialog-actions">
-          <button class="button button-quiet" type="button" data-close="raEventDialog">取消</button>
-          <button class="button button-primary" type="button" data-close="raEventDialog">确定</button>
+          <button class="button button-quiet" type="button" data-close="raEventDialog"><span class="ui-lang-zh">取消</span><span class="ui-lang-en">Cancel</span></button>
+          <button class="button button-primary" type="button" data-close="raEventDialog"><span class="ui-lang-zh">确定</span><span class="ui-lang-en">OK</span></button>
         </div>
       </div>
     </dialog>
@@ -974,7 +974,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-121`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-122`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

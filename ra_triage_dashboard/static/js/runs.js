@@ -14,13 +14,13 @@ async function loadReviewers() {
   const reviewerOptions = state.reviewers.map((item) => {
     const trust =
       item.verified_count > 0 && item.unverified_count > 0
-        ? " · 混合身份"
+        ? t("runs.mixed_identity")
         : item.verified
           ? " · SSO"
           : "";
     return {
       value: item.name,
-      label: `${item.name} · ${item.review_count} 条${trust}`,
+      label: `${item.name} · ${t("runs.count_n", { n: item.review_count })}${trust}`,
     };
   });
   const reviewSelect = $("#reviewerFilter");
@@ -78,15 +78,15 @@ function analysisComparisonMultiOptions() {
   return [
     {
       value: "mismatch",
-      label: uiText("MISMATCH · 判断失败", "MISMATCH · model wrong"),
+      label: t("comparison.mismatch"),
     },
     {
       value: "match",
-      label: uiText("MATCH · 判断一致", "MATCH · model correct"),
+      label: t("comparison.match"),
     },
     {
       value: "none",
-      label: uiText("NONE · 未预测", "NONE · no prediction"),
+      label: t("comparison.none"),
     },
   ];
 }
@@ -166,12 +166,12 @@ function renderAnalysisRunFilter() {
   const picker = $("#analysisRunPicker");
   if (!select) return;
   const options = [
-    { value: "", label: "不叠加模型输出" },
+    { value: "", label: t("filter.no_overlay_run") },
     ...state.modelRuns.map((run) => {
-      const tag = run.is_default ? "默认 · " : "";
+      const tag = run.is_default ? t("runs.default_prefix") : "";
       return {
         value: run.id,
-        label: `${tag}${run.name} · ${run.baseline_prediction_count ?? 0} 条 · 错 ${run.failure_count ?? 0}`,
+        label: `${tag}${run.name} · ${t("runs.count_n", { n: run.baseline_prediction_count ?? 0 })} · ${t("runs.wrong_n", { n: run.failure_count ?? 0 })}`,
       };
     }),
   ];
@@ -212,16 +212,16 @@ async function loadRuns({ preferDefault = false, preserveEmpty = false } = {}) {
       ? state.selectedRunId
       : state.selectedRunId || data.default_model_run_id || state.config?.default_model_run_id || "";
   const runOptions = [
-    { value: "", label: "未选择模型 Run" },
+    { value: "", label: t("filter.no_run") },
     ...state.modelRuns.map((run) => {
-      const tag = run.is_default ? "默认 · " : "";
+      const tag = run.is_default ? t("runs.default_prefix") : "";
       const inferred = Array.isArray(run.inferred_baseline_ids)
         ? run.inferred_baseline_ids.filter(Boolean)
         : [];
       const setHint = inferred.length ? ` · ${inferred.join("+")}` : "";
       return {
         value: run.id,
-        label: `${tag}${run.name}${setHint} · 当前集 ${run.baseline_prediction_count ?? 0} 条 · 错 ${run.failure_count ?? 0}`,
+        label: `${tag}${run.name}${setHint} · ${t("runs.set_count")} ${run.baseline_prediction_count ?? 0} · ${t("runs.err_count")} ${run.failure_count ?? 0}`,
       };
     }),
   ];
@@ -259,26 +259,26 @@ async function loadRuns({ preferDefault = false, preserveEmpty = false } = {}) {
 
 const RUN_SOURCE_META = Object.freeze({
   upload: {
-    label: "文件模型结果",
+    label: t("runs.kind_upload"),
     description: "JSON / CSV / XLSX",
     className: "source-upload",
     countId: "runSourceCountUpload",
   },
   trail_snapshot: {
-    label: "Trail 快照",
-    description: "Trail 只读字段",
+    label: t("runs.kind_trail"),
+    description: t("runs.kind_trail_desc"),
     className: "source-trail",
     countId: "runSourceCountTrail",
   },
   autotriage_snapshot: {
-    label: "AutoTriage 快照",
-    description: "平台只读结果",
+    label: t("runs.kind_autotriage"),
+    description: t("runs.kind_auto_desc"),
     className: "source-autotriage",
     countId: "runSourceCountAutotriage",
   },
   manual_batch: {
-    label: "网页 Batch 预测",
-    description: "服务器模型推理",
+    label: t("runs.kind_batch"),
+    description: t("runs.kind_batch_desc"),
     className: "source-batch",
   },
 });
@@ -286,8 +286,8 @@ const RUN_SOURCE_META = Object.freeze({
 function runSourceMeta(runOrKind) {
   const kind = typeof runOrKind === "string" ? runOrKind : runOrKind?.kind;
   return RUN_SOURCE_META[kind] || {
-    label: kind || "未知来源",
-    description: "未记录来源",
+    label: kind || t("runs.kind_unknown"),
+    description: t("runs.kind_unknown_desc"),
     className: "source-unknown",
   };
 }
@@ -296,23 +296,23 @@ function runSourceReference(run) {
   const metadata = run?.metadata && typeof run.metadata === "object" ? run.metadata : {};
   const recordUrl = safeUrl(metadata.record_url || metadata.records_url || "");
   if (recordUrl) {
-    return `<a class="run-source-link" href="${escapeHtml(recordUrl)}" target="_blank" rel="noreferrer">原始 records</a>`;
+    return `<a class="run-source-link" href="${escapeHtml(recordUrl)}" target="_blank" rel="noreferrer">${escapeHtml(t("runs.raw_records"))}</a>`;
   }
   if (run?.kind === "trail_snapshot") {
     const viewId = metadata.view_id || metadata.trail_view_id || String(run.source_name || "").match(/\d+/)?.[0] || "2410";
     return `<span class="run-source-ref">Trail view ${escapeHtml(viewId)}</span>`;
   }
   const source = run?.source_file && typeof run.source_file === "object" ? run.source_file : {};
-  const sourceName = String(source.filename || run?.source_name || "").split(/[\\/]/).pop() || "文件名未记录";
+  const sourceName = String(source.filename || run?.source_name || "").split(/[\\/]/).pop() || t("runs.filename_missing");
   const previewUrl = safeSameOriginAssetUrl(source.preview_url);
   const downloadUrl = safeSameOriginAssetUrl(source.download_url);
   const reconstructed = source.reconstructed
-    ? '<span class="run-source-reconstructed">Run 重建</span>'
+    ? `<span class="run-source-reconstructed">${escapeHtml(t("runs.reconstructed"))}</span>`
     : "";
   const previewAction = source.preview_supported
-    ? `<button class="run-source-preview" type="button" data-preview-run="${escapeHtml(run?.id || "")}">预览</button>`
+    ? `<button class="run-source-preview" type="button" data-preview-run="${escapeHtml(run?.id || "")}">${escapeHtml(t("runs.preview"))}</button>`
     : previewUrl
-      ? `<a class="run-source-link" href="${escapeHtml(previewUrl)}" target="_blank" rel="noreferrer">打开</a>`
+      ? `<a class="run-source-link" href="${escapeHtml(previewUrl)}" target="_blank" rel="noreferrer">${escapeHtml(t("runs.open"))}</a>`
       : "";
   const actions = source.available && (previewUrl || downloadUrl)
     ? `<span class="run-source-actions">${previewAction}${downloadUrl ? `<a class="run-source-link" href="${escapeHtml(downloadUrl)}" download>下载</a>` : ""}</span>${reconstructed}`
