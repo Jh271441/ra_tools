@@ -975,6 +975,18 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
   border: 1px solid var(--line); border-radius: 8px;
   background: #121925; box-shadow: 0 10px 24px rgba(0,0,0,.42);
 }
+/* Fixed placement (set by JS) escapes the scrollable tag list overflow clip. */
+.tag-option-menu-panel.is-fixed-menu {
+  position: fixed; z-index: 80; right: auto; bottom: auto;
+  overflow: auto; overscroll-behavior: contain;
+}
+.tag-option-menu-panel.is-drop-up {
+  /* Anchor hint for non-fixed fallback; fixed coords come from JS. */
+  top: auto; bottom: calc(100% + 3px);
+}
+.tag-option-menu-panel.is-drop-down {
+  top: calc(100% + 3px); bottom: auto;
+}
 .tag-option-menu-panel[hidden] { display: none !important; }
 .tag-option-menu-item {
   display: block; width: 100%; min-height: 28px; padding: 5px 8px;

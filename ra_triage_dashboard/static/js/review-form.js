@@ -1124,6 +1124,82 @@ function appendReviewTagOptionToGroup(item, group) {
   bindReviewTagCatalogControls(option || list);
 }
 
+function resetTagOptionMenuPanel(panel) {
+  if (!panel) return;
+  panel.classList.remove("is-drop-up", "is-drop-down", "is-fixed-menu");
+  panel.style.position = "";
+  panel.style.top = "";
+  panel.style.left = "";
+  panel.style.right = "";
+  panel.style.bottom = "";
+  panel.style.maxHeight = "";
+  panel.style.visibility = "";
+}
+
+function positionTagOptionMenuPanel(menu) {
+  const toggle = menu?.querySelector("[data-tag-menu-toggle]");
+  const panel = menu?.querySelector(".tag-option-menu-panel");
+  if (!toggle || !panel || panel.hidden) return;
+
+  // Escape overflow:auto clip on .review-tag-options by fixing to the viewport.
+  panel.classList.add("is-fixed-menu");
+  panel.classList.remove("is-drop-up", "is-drop-down");
+  panel.style.position = "fixed";
+  panel.style.right = "auto";
+  panel.style.bottom = "auto";
+  panel.style.left = "0px";
+  panel.style.top = "0px";
+  panel.style.visibility = "hidden";
+  panel.style.maxHeight = "";
+
+  const toggleRect = toggle.getBoundingClientRect();
+  const panelRect = panel.getBoundingClientRect();
+  const gap = 3;
+  const margin = 6;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const scroller =
+    menu.closest(".review-tag-options") ||
+    menu.closest(".evidence-options") ||
+    null;
+  const clip = scroller?.getBoundingClientRect();
+  const clipTop = Math.max(0, clip?.top ?? 0);
+  const clipBottom = Math.min(vh, clip?.bottom ?? vh);
+  const spaceBelow = clipBottom - toggleRect.bottom - gap;
+  const spaceAbove = toggleRect.top - clipTop - gap;
+  const need = panelRect.height || 64;
+  const openUp =
+    spaceBelow < need && spaceAbove > spaceBelow
+      ? true
+      : spaceBelow < need && spaceAbove >= need
+        ? true
+        : false;
+
+  let top = openUp
+    ? toggleRect.top - panelRect.height - gap
+    : toggleRect.bottom + gap;
+  if (openUp) {
+    panel.classList.add("is-drop-up");
+    // If still short above, cap height and pin to the top of the clip area.
+    if (spaceAbove < need && spaceAbove > 40) {
+      panel.style.maxHeight = `${Math.floor(spaceAbove)}px`;
+      top = toggleRect.top - Math.min(panelRect.height, spaceAbove) - gap;
+    }
+  } else {
+    panel.classList.add("is-drop-down");
+    if (spaceBelow < need && spaceBelow > 40) {
+      panel.style.maxHeight = `${Math.floor(spaceBelow)}px`;
+    }
+  }
+
+  top = Math.max(margin, Math.min(top, vh - (panel.offsetHeight || panelRect.height) - margin));
+  let left = toggleRect.right - (panel.offsetWidth || panelRect.width);
+  left = Math.max(margin, Math.min(left, vw - (panel.offsetWidth || panelRect.width) - margin));
+  panel.style.top = `${Math.round(top)}px`;
+  panel.style.left = `${Math.round(left)}px`;
+  panel.style.visibility = "";
+}
+
 function closeAllTagOptionMenus(except = null) {
   document.querySelectorAll(".tag-option-menu.is-open").forEach((menu) => {
     if (except && menu === except) return;
@@ -1131,7 +1207,10 @@ function closeAllTagOptionMenus(except = null) {
     const toggle = menu.querySelector("[data-tag-menu-toggle]");
     const panel = menu.querySelector(".tag-option-menu-panel");
     if (toggle) toggle.setAttribute("aria-expanded", "false");
-    if (panel) panel.hidden = true;
+    if (panel) {
+      panel.hidden = true;
+      resetTagOptionMenuPanel(panel);
+    }
   });
 }
 
@@ -1190,6 +1269,12 @@ function bindReviewTagCatalogControls(root = document) {
       panel.hidden = !willOpen;
       menu.classList.toggle("is-open", willOpen);
       button.setAttribute("aria-expanded", willOpen ? "true" : "false");
+      if (willOpen) {
+        // Measure after paint so panel height is available for flip decision.
+        window.requestAnimationFrame(() => positionTagOptionMenuPanel(menu));
+      } else {
+        resetTagOptionMenuPanel(panel);
+      }
     });
   });
   if (!document.documentElement.dataset.tagMenuDismissBound) {
@@ -1209,6 +1294,23 @@ function bindReviewTagCatalogControls(root = document) {
       },
       true
     );
+    // List scroll or viewport resize would leave a fixed panel stranded.
+    document.addEventListener(
+      "scroll",
+      (event) => {
+        if (!document.querySelector(".tag-option-menu.is-open")) return;
+        const target = event.target;
+        if (
+          target instanceof Element &&
+          target.closest(".tag-option-menu-panel")
+        ) {
+          return;
+        }
+        closeAllTagOptionMenus();
+      },
+      true
+    );
+    window.addEventListener("resize", () => closeAllTagOptionMenus());
   }
   // Dialog lives outside the review pane; bind once from document.
   const createForm = $("#reviewTagCreateForm");
