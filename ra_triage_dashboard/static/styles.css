@@ -1987,11 +1987,8 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .review-tag-groups { grid-template-columns: minmax(0, 1fr); }
 }
 
-@media (max-width: 899px) {
-  .app-sidebar, .app-shell.sidebar-collapsed .app-sidebar { width: 60px; }
-  .app-frame, .app-shell.sidebar-collapsed .app-frame { margin-left: 60px; }
-  .sidebar-copy, .sidebar-label { display: none; }
-  .sidebar-brand, .sidebar-item, .sidebar-user, .sidebar-collapse { justify-content: center; padding-inline: 6px; }
+/* Narrow desktop/tablet: single-row topbar clips 基线/判断失败 — metrics take full row. */
+@media (max-width: 1200px) {
   .topbar { flex-wrap: wrap; align-items: center; }
   .brand {
     min-width: 0; flex: 1 1 auto; max-width: 100%;
@@ -2000,12 +1997,10 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
     min-width: 0; max-width: 100%;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  /* Dataset picker must not crush the page title when labels grow (e.g. "0508 · 1071"). */
   .topbar-baselines {
-    flex: 0 1 auto; min-width: 0; max-width: min(220px, 42vw);
+    flex: 0 1 auto; min-width: 0; max-width: min(240px, 36vw);
   }
-  .topbar-baselines-label { display: none; }
-  .topbar-baselines .baseline-filter { min-width: 0; width: 100%; max-width: 100%; }
+  .topbar-baselines .baseline-filter { min-width: 0; max-width: 100%; }
   .topbar-baselines .multi-filter-summary {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
@@ -2016,13 +2011,27 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   }
   .header-metrics > div {
     min-width: 0; max-width: 100%;
-    display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
-    gap: 2px; padding: 6px 5px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; gap: 2px; padding: 6px 5px;
   }
   .header-metrics span,
   .header-metrics strong {
-    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    width: 100%; max-width: 100%; text-align: center;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+}
+
+@media (max-width: 899px) {
+  .app-sidebar, .app-shell.sidebar-collapsed .app-sidebar { width: 60px; }
+  .app-frame, .app-shell.sidebar-collapsed .app-frame { margin-left: 60px; }
+  .sidebar-copy, .sidebar-label { display: none; }
+  .sidebar-brand, .sidebar-item, .sidebar-user, .sidebar-collapse { justify-content: center; padding-inline: 6px; }
+  /* Dataset picker must not crush the page title when labels grow (e.g. "0508 · 1071"). */
+  .topbar-baselines {
+    flex: 0 1 auto; min-width: 0; max-width: min(220px, 42vw);
+  }
+  .topbar-baselines-label { display: none; }
+  .topbar-baselines .baseline-filter { min-width: 0; width: 100%; max-width: 100%; }
   .page-heading { min-height: 70px; padding: 12px; }
   .page-heading h2 { font-size: 18px; }
   .job-history-row, .run-row { grid-template-columns: minmax(0, 1fr); }
@@ -2100,11 +2109,17 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   }
   .header-metrics > div {
     min-width: 0; max-width: 100%; flex: unset;
-    display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
-    gap: 2px; padding: 6px 5px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; gap: 2px; padding: 6px 5px;
   }
-  .header-metrics span { font-size: 8px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .header-metrics strong { font-size: 12px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .header-metrics span {
+    font-size: 8px; width: 100%; max-width: 100%; text-align: center;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .header-metrics strong {
+    font-size: 12px; width: 100%; max-width: 100%; text-align: center;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   .main { padding: 7px 8px calc(18px + env(safe-area-inset-bottom, 0px)); }
   .review-commandbar { padding: 8px; display: grid; gap: 8px; }
   .mobile-filter-bar {
