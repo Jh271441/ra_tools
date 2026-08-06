@@ -537,5 +537,13 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn(".history-delete-button", STYLES_CSS)
 
 
+    def test_detail_queue_index_is_editable_for_jump(self) -> None:
+        self.assertIn('id="detailQueueIndexInput"', APP_JS)
+        self.assertIn("function jumpToQueueIndex", APP_JS)
+        self.assertIn("function bindDetailQueueIndexJump", APP_JS)
+        self.assertIn(".detail-queue-index-input", STYLES_CSS)
+        self.assertIn("manual-triage-103", APP_ENTRY_JS)
+
+
 if __name__ == "__main__":
     unittest.main()
