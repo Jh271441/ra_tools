@@ -1,6 +1,7 @@
 # Load order for classic scripts (app.js loader + tests).
 # Keep in sync with MODULES in static/app.js.
 core-base.js
+i18n-messages.js
 i18n.js
 routing.js
 format-api.js
@@ -11,8 +12,13 @@ review-gallery.js
 work-split.js
 analysis.js
 detail-media.js
+review-draft.js
+review-history.js
+review-tags.js
 review-form.js
 media-dialog.js
+batch-gateway.js
+batch-config.js
 batch.js
 import-refresh.js
 bind-bootstrap.js
