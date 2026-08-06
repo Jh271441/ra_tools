@@ -651,11 +651,20 @@ function renderReview(caseData) {
     input.addEventListener("change", updateTagSummary);
   });
   $("#reviewPane").querySelectorAll(".review-dropdown").forEach((dropdown) => {
+    if (dropdown.dataset.reviewDropdownToggleBound === "1") return;
+    dropdown.dataset.reviewDropdownToggleBound = "1";
     dropdown.addEventListener("toggle", () => {
-      if (!dropdown.open) return;
+      if (!dropdown.open) {
+        resetReviewDropdownPanel(reviewDropdownPanel(dropdown));
+        return;
+      }
       $("#reviewPane").querySelectorAll(".review-dropdown").forEach((other) => {
-        if (other !== dropdown) other.open = false;
+        if (other === dropdown) return;
+        other.open = false;
+        resetReviewDropdownPanel(reviewDropdownPanel(other));
       });
+      // Measure after open paint so height/flip use real panel size.
+      window.requestAnimationFrame(() => positionReviewDropdownPanel(dropdown));
     });
   });
   $("#reviewPane").querySelector("[data-open-history='review']")?.addEventListener("click", () => {
@@ -1218,10 +1227,85 @@ function closeAllTagOptionMenus(except = null) {
   });
 }
 
+function reviewDropdownPanel(dropdown) {
+  if (!dropdown) return null;
+  return (
+    dropdown.querySelector(".review-tag-options") ||
+    dropdown.querySelector(".evidence-options") ||
+    null
+  );
+}
+
+function resetReviewDropdownPanel(panel) {
+  if (!panel) return;
+  panel.classList.remove("is-drop-up", "is-drop-down", "is-fixed-dropdown");
+  panel.style.position = "";
+  panel.style.top = "";
+  panel.style.left = "";
+  panel.style.right = "";
+  panel.style.bottom = "";
+  panel.style.width = "";
+  panel.style.maxHeight = "";
+  panel.style.visibility = "";
+  panel.style.zIndex = "";
+}
+
+function positionReviewDropdownPanel(dropdown) {
+  if (!dropdown?.open) return;
+  const summary = dropdown.querySelector(":scope > summary");
+  const panel = reviewDropdownPanel(dropdown);
+  if (!summary || !panel) return;
+
+  // Fixed to viewport so Review pane overflow does not clip long lists.
+  panel.classList.add("is-fixed-dropdown");
+  panel.classList.remove("is-drop-up", "is-drop-down");
+  panel.style.position = "fixed";
+  panel.style.right = "auto";
+  panel.style.bottom = "auto";
+  panel.style.left = "0px";
+  panel.style.top = "0px";
+  panel.style.visibility = "hidden";
+  panel.style.maxHeight = "";
+  panel.style.zIndex = "70";
+
+  const summaryRect = summary.getBoundingClientRect();
+  const width = Math.max(summaryRect.width, 180);
+  panel.style.width = `${Math.round(width)}px`;
+
+  // Natural height (uncapped) for flip decision, then cap to free space.
+  const naturalH = panel.scrollHeight || panel.getBoundingClientRect().height || 200;
+  const gap = 4;
+  const margin = 8;
+  const vh = window.innerHeight;
+  const vw = window.innerWidth;
+  const spaceBelow = vh - summaryRect.bottom - gap - margin;
+  const spaceAbove = summaryRect.top - gap - margin;
+  const openUp =
+    spaceBelow < Math.min(naturalH, 220) && spaceAbove > spaceBelow;
+
+  const available = Math.max(120, Math.floor(openUp ? spaceAbove : spaceBelow));
+  const maxH = Math.min(available, Math.floor(vh * 0.55), 420);
+  panel.style.maxHeight = `${maxH}px`;
+
+  const height = Math.min(panel.scrollHeight || naturalH, maxH);
+  let top = openUp
+    ? summaryRect.top - height - gap
+    : summaryRect.bottom + gap;
+  top = Math.max(margin, Math.min(top, vh - height - margin));
+  let left = summaryRect.left;
+  left = Math.max(margin, Math.min(left, vw - width - margin));
+
+  panel.style.top = `${Math.round(top)}px`;
+  panel.style.left = `${Math.round(left)}px`;
+  panel.classList.add(openUp ? "is-drop-up" : "is-drop-down");
+  panel.style.visibility = "";
+}
+
 function closeAllReviewDropdowns(except = null) {
   document.querySelectorAll(".review-dropdown[open]").forEach((dropdown) => {
     if (except && dropdown === except) return;
     dropdown.open = false;
+    resetReviewDropdownPanel(reviewDropdownPanel(dropdown));
   });
 }
 
@@ -1232,6 +1316,11 @@ function bindReviewDropdownDismiss() {
     "click",
     (event) => {
       const target = event.target instanceof Element ? event.target : null;
+      // Fixed panels live outside the details box hit-test for some events;
+      // keep clicks inside the open panel from dismissing.
+      if (target?.closest(".review-tag-options.is-fixed-dropdown, .evidence-options.is-fixed-dropdown")) {
+        return;
+      }
       const current = target?.closest(".review-dropdown") || null;
       closeAllReviewDropdowns(current);
     },
@@ -1244,6 +1333,24 @@ function bindReviewDropdownDismiss() {
     },
     true
   );
+  document.addEventListener(
+    "scroll",
+    (event) => {
+      if (!document.querySelector(".review-dropdown[open]")) return;
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest(
+          ".review-tag-options.is-fixed-dropdown, .evidence-options.is-fixed-dropdown, .tag-option-menu-panel"
+        )
+      ) {
+        return;
+      }
+      closeAllReviewDropdowns();
+    },
+    true
+  );
+  window.addEventListener("resize", () => closeAllReviewDropdowns());
 }
 
 function bindReviewTagCatalogControls(root = document) {

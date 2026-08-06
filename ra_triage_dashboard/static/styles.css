@@ -988,6 +988,12 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
   border-radius: 8px; box-shadow: 0 14px 30px rgba(0,0,0,.42); background: #111824;
   display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px;
 }
+/* JS positions these with fixed + flip; keep absolute rules as closed-state baseline. */
+.review-tag-dropdown .review-tag-options.is-fixed-dropdown,
+.evidence-dropdown .evidence-options.is-fixed-dropdown {
+  position: fixed; z-index: 70; right: auto; bottom: auto;
+  max-height: none; /* height capped inline from free space */
+}
 .review-tag-dropdown .review-tag-options .tag-option {
   width: 100%; min-width: 0; max-width: 100%; justify-content: flex-start; text-align: left;
   padding-inline: 7px;
