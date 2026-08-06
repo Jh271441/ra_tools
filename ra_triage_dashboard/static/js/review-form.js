@@ -174,7 +174,10 @@ function renderDetail(caseData) {
         <div class="detail-navigation">
           <div class="case-detail-pager">
             <button class="button button-quiet" id="previousIssueButton" type="button">← 上一 Issue</button>
-            <span id="detailQueuePosition">— / —</span>
+            <span class="detail-queue-position" id="detailQueuePosition" title="输入序号后回车跳转">
+              <input class="detail-queue-index-input" id="detailQueueIndexInput" type="number" min="1" step="1" inputmode="numeric" aria-label="跳转到筛选队列中的第几条" disabled />
+              <span class="detail-queue-total" id="detailQueueTotal">/ —</span>
+            </span>
             <button class="button button-quiet" id="nextIssueButton" type="button">下一 Issue →</button>
           </div>
         </div>
@@ -214,6 +217,7 @@ function renderDetail(caseData) {
   $("#detailPane").querySelector("#nextIssueButton")?.addEventListener("click", () => {
     navigateAdjacentCase(1).catch((error) => showToast(error.message, true));
   });
+  bindDetailQueueIndexJump($("#detailPane"));
   renderCaseNavigation();
   bindDetailMedia(caseData);
 }

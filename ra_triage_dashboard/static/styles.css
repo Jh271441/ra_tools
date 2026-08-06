@@ -529,8 +529,37 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
 }
 .case-detail-nav-inline .button { padding: 5px 7px; font-size: 10px; }
 .case-detail-pager { display: flex; align-items: center; gap: 7px; }
-.case-detail-pager > span {
+.case-detail-pager > span:not(.detail-queue-position) {
   min-width: 82px; color: var(--faint); font: 10px "SFMono-Regular", Consolas, monospace; text-align: center;
+}
+.detail-queue-position {
+  display: inline-flex; align-items: center; justify-content: center; gap: 3px;
+  min-width: 86px; color: var(--faint);
+  font: 10px "SFMono-Regular", Consolas, monospace;
+}
+.detail-queue-index-input {
+  width: 3.2em; min-width: 2.4em; height: 26px; margin: 0; padding: 0 4px;
+  border: 1px solid var(--line); border-radius: 6px; color: var(--text);
+  background: #0e131c; font: inherit; text-align: center;
+  -moz-appearance: textfield;
+}
+.detail-queue-index-input::-webkit-outer-spin-button,
+.detail-queue-index-input::-webkit-inner-spin-button {
+  -webkit-appearance: none; margin: 0;
+}
+.detail-queue-index-input:hover:not(:disabled),
+.detail-queue-index-input:focus {
+  border-color: rgba(34,211,238,.55); outline: none;
+  box-shadow: 0 0 0 2px rgba(34,211,238,.1);
+}
+.detail-queue-index-input:disabled {
+  opacity: .55; cursor: not-allowed;
+}
+.detail-queue-total {
+  flex: 0 0 auto; color: var(--faint); white-space: nowrap;
+}
+html[data-color-theme="light"] .detail-queue-index-input {
+  color: #0f172a; border-color: #b8c5d4; background: #f8fafc;
 }
 .review-detail-workspace {
   display: grid; grid-template-columns: minmax(0, 1fr) 350px; align-items: stretch; gap: 8px;

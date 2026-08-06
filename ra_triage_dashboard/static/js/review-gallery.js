@@ -138,7 +138,8 @@ function renderCaseNavigation() {
   const index = state.cases.findIndex((item) => item.issue_id === state.selectedId);
   const previous = $("#previousIssueButton");
   const next = $("#nextIssueButton");
-  const position = $("#detailQueuePosition");
+  const input = $("#detailQueueIndexInput");
+  const totalEl = $("#detailQueueTotal");
   const hasPrevious = index > 0 || (index === 0 && state.casePage > 1);
   const hasNext =
     index >= 0 &&
@@ -146,11 +147,105 @@ function renderCaseNavigation() {
       state.casePage * state.casePageSize < state.caseTotal);
   if (previous) previous.disabled = !hasPrevious;
   if (next) next.disabled = !hasNext;
-  if (position) {
-    position.textContent =
-      index >= 0
-        ? `${(state.casePage - 1) * state.casePageSize + index + 1} / ${state.caseTotal}`
-        : "不在当前筛选页";
+  const absolute =
+    index >= 0
+      ? (state.casePage - 1) * state.casePageSize + index + 1
+      : null;
+  const total = Math.max(0, Number(state.caseTotal) || 0);
+  if (totalEl) {
+    totalEl.textContent =
+      absolute != null ? `/ ${total}` : total ? `/ ${total}` : "/ —";
+  }
+  if (input) {
+    const focused = document.activeElement === input;
+    input.min = "1";
+    input.max = total > 0 ? String(total) : "";
+    input.disabled = total <= 0;
+    input.placeholder = total > 0 ? "—" : "—";
+    input.title =
+      absolute == null
+        ? "当前 Issue 不在本页筛选结果中；仍可输入序号跳转"
+        : "输入筛选队列序号后回车跳转";
+    // Do not clobber in-progress typing while the field is focused.
+    if (!focused) {
+      input.value = absolute != null ? String(absolute) : "";
+    }
+    input.dataset.queueTotal = String(total);
+    if (absolute != null) input.dataset.queueIndex = String(absolute);
+  }
+}
+
+function bindDetailQueueIndexJump(root = document) {
+  const input = root.querySelector?.("#detailQueueIndexInput") || $("#detailQueueIndexInput");
+  if (!input || input.dataset.queueJumpBound === "1") return;
+  input.dataset.queueJumpBound = "1";
+  const commit = () => {
+    void jumpToQueueIndex(input.value).catch((error) => showToast(error.message, true));
+  };
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.stopPropagation();
+      commit();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      renderCaseNavigation();
+      input.blur();
+    }
+  });
+  input.addEventListener("blur", () => {
+    // Restore canonical display if the user left an invalid draft.
+    if (input.dataset.queueJumpBusy === "1") return;
+    renderCaseNavigation();
+  });
+  input.addEventListener("focus", () => {
+    window.requestAnimationFrame(() => input.select());
+  });
+}
+
+async function jumpToQueueIndex(raw) {
+  const total = Math.max(0, Number(state.caseTotal) || 0);
+  if (total <= 0) {
+    showToast("当前没有可跳转的筛选结果。", true);
+    renderCaseNavigation();
+    return;
+  }
+  const text = String(raw ?? "").trim();
+  if (!/^\d+$/.test(text)) {
+    showToast(`请输入 1–${total} 的序号。`, true);
+    renderCaseNavigation();
+    return;
+  }
+  const target = Number.parseInt(text, 10);
+  if (!Number.isFinite(target) || target < 1 || target > total) {
+    showToast(`请输入 1–${total} 的序号。`, true);
+    renderCaseNavigation();
+    return;
+  }
+  const pageSize = Math.max(1, Number(state.casePageSize) || DEFAULT_CASE_PAGE_SIZE);
+  const targetPage = Math.max(1, Math.ceil(target / pageSize));
+  const indexOnPage = (target - 1) % pageSize;
+  const input = $("#detailQueueIndexInput");
+  if (input) input.dataset.queueJumpBusy = "1";
+  try {
+    if (targetPage !== state.casePage || !state.cases.length) {
+      await loadCases({ keepSelection: true, page: targetPage });
+    }
+    const item = state.cases[indexOnPage];
+    if (!item?.issue_id) {
+      showToast("该序号暂时无法打开，请刷新后重试。", true);
+      renderCaseNavigation();
+      return;
+    }
+    if (item.issue_id === state.selectedId) {
+      renderCaseNavigation();
+      return;
+    }
+    await selectCase(item.issue_id, { historyMode: "replace" });
+  } finally {
+    if (input) delete input.dataset.queueJumpBusy;
   }
 }
 
