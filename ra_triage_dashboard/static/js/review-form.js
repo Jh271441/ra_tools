@@ -653,6 +653,16 @@ function renderReview(caseData) {
   $("#reviewPane").querySelectorAll(".review-dropdown").forEach((dropdown) => {
     if (dropdown.dataset.reviewDropdownToggleBound === "1") return;
     dropdown.dataset.reviewDropdownToggleBound = "1";
+    const summary = dropdown.querySelector(":scope > summary");
+    // Park off-screen before <details> flips open so the first paint never uses absolute top:100%.
+    summary?.addEventListener(
+      "pointerdown",
+      () => {
+        if (dropdown.open) return;
+        prepareReviewDropdownPanelForMeasure(reviewDropdownPanel(dropdown));
+      },
+      true
+    );
     dropdown.addEventListener("toggle", () => {
       const panel = reviewDropdownPanel(dropdown);
       if (!dropdown.open) {
@@ -664,12 +674,9 @@ function renderReview(caseData) {
         other.open = false;
         resetReviewDropdownPanel(reviewDropdownPanel(other));
       });
-      // Hide immediately (same tick as open) so CSS absolute downward paint never flashes.
+      // Same tick as open: measure + place + reveal only at final coords (no rAF down-flash).
       prepareReviewDropdownPanelForMeasure(panel);
-      // Layout + place while still hidden; reveal only after final coords.
-      window.requestAnimationFrame(() => {
-        positionReviewDropdownPanel(dropdown);
-      });
+      positionReviewDropdownPanel(dropdown);
     });
   });
   $("#reviewPane").querySelector("[data-open-history='review']")?.addEventListener("click", () => {
@@ -1144,7 +1151,13 @@ function appendReviewTagOptionToGroup(item, group) {
 
 function resetTagOptionMenuPanel(panel) {
   if (!panel) return;
-  panel.classList.remove("is-drop-up", "is-drop-down", "is-fixed-menu");
+  panel.classList.remove(
+    "is-drop-up",
+    "is-drop-down",
+    "is-fixed-menu",
+    "is-positioned",
+    "is-measuring"
+  );
   panel.style.position = "";
   panel.style.top = "";
   panel.style.left = "";
@@ -1152,6 +1165,26 @@ function resetTagOptionMenuPanel(panel) {
   panel.style.bottom = "";
   panel.style.maxHeight = "";
   panel.style.visibility = "";
+  panel.style.opacity = "";
+  panel.style.pointerEvents = "";
+  panel.style.zIndex = "";
+}
+
+/** Park ⋯ menu off-screen before first paint so absolute top:100% never flashes down. */
+function prepareTagOptionMenuPanelForMeasure(panel) {
+  if (!panel) return;
+  panel.classList.add("is-fixed-menu", "is-measuring");
+  panel.classList.remove("is-positioned", "is-drop-up", "is-drop-down");
+  panel.style.position = "fixed";
+  panel.style.right = "auto";
+  panel.style.bottom = "auto";
+  panel.style.top = "0px";
+  panel.style.left = "-10000px";
+  panel.style.visibility = "hidden";
+  panel.style.opacity = "0";
+  panel.style.pointerEvents = "none";
+  panel.style.maxHeight = "";
+  panel.style.zIndex = "80";
 }
 
 function positionTagOptionMenuPanel(menu) {
@@ -1159,16 +1192,11 @@ function positionTagOptionMenuPanel(menu) {
   const panel = menu?.querySelector(".tag-option-menu-panel");
   if (!toggle || !panel || panel.hidden) return;
 
-  // Escape overflow:auto clip on .review-tag-options by fixing to the viewport.
-  panel.classList.add("is-fixed-menu");
-  panel.classList.remove("is-drop-up", "is-drop-down");
-  panel.style.position = "fixed";
-  panel.style.right = "auto";
-  panel.style.bottom = "auto";
+  // Stay hidden while measuring/placing (no intermediate absolute downward paint).
+  prepareTagOptionMenuPanelForMeasure(panel);
+  // Temporary origin for accurate getBoundingClientRect height/width.
   panel.style.left = "0px";
   panel.style.top = "0px";
-  panel.style.visibility = "hidden";
-  panel.style.maxHeight = "";
 
   const toggleRect = toggle.getBoundingClientRect();
   const panelRect = panel.getBoundingClientRect();
@@ -1215,7 +1243,12 @@ function positionTagOptionMenuPanel(menu) {
   left = Math.max(margin, Math.min(left, vw - (panel.offsetWidth || panelRect.width) - margin));
   panel.style.top = `${Math.round(top)}px`;
   panel.style.left = `${Math.round(left)}px`;
+  panel.classList.remove("is-measuring");
+  panel.classList.add("is-fixed-menu", "is-positioned");
+  // Reveal only at final coords (single paint — never down-then-up).
   panel.style.visibility = "";
+  panel.style.opacity = "";
+  panel.style.pointerEvents = "";
 }
 
 function closeAllTagOptionMenus(except = null) {
@@ -1406,13 +1439,15 @@ function bindReviewTagCatalogControls(root = document) {
       if (!menu || !panel) return;
       const willOpen = panel.hidden;
       closeAllTagOptionMenus(willOpen ? menu : null);
-      panel.hidden = !willOpen;
       menu.classList.toggle("is-open", willOpen);
       button.setAttribute("aria-expanded", willOpen ? "true" : "false");
       if (willOpen) {
-        // Measure after paint so panel height is available for flip decision.
-        window.requestAnimationFrame(() => positionTagOptionMenuPanel(menu));
+        // Unhide while parked off-screen, then place + reveal in the same tick.
+        panel.hidden = false;
+        prepareTagOptionMenuPanelForMeasure(panel);
+        positionTagOptionMenuPanel(menu);
       } else {
+        panel.hidden = true;
         resetTagOptionMenuPanel(panel);
       }
     });

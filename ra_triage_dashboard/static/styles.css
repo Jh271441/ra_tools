@@ -988,9 +988,10 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
   border-radius: 8px; box-shadow: 0 14px 30px rgba(0,0,0,.42); background: #111824;
   display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px;
 }
-/* Hide until JS finishes flip/place — prevents default absolute downward flash. */
-.review-tag-dropdown[open] .review-tag-options:not(.is-positioned),
-.evidence-dropdown[open] .evidence-options:not(.is-positioned) {
+/* Hide until JS finishes flip/place — prevents default absolute downward flash.
+   Also matches closed+pre-armed panels (pointerdown prepare) so open never paints top:100%. */
+.review-tag-dropdown .review-tag-options:not(.is-positioned),
+.evidence-dropdown .evidence-options:not(.is-positioned) {
   visibility: hidden !important;
   opacity: 0 !important;
   pointer-events: none !important;
@@ -1053,10 +1054,26 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
   border: 1px solid var(--line); border-radius: 8px;
   background: #121925; box-shadow: 0 10px 24px rgba(0,0,0,.42);
 }
+/* Hide ⋯ panel until JS places it — never paint default absolute-down first. */
+.tag-option-menu-panel:not([hidden]):not(.is-positioned) {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  position: fixed !important;
+  top: 0 !important;
+  left: -10000px !important;
+  right: auto !important;
+  z-index: 80;
+}
 /* Fixed placement (set by JS) escapes the scrollable tag list overflow clip. */
 .tag-option-menu-panel.is-fixed-menu {
   position: fixed; z-index: 80; right: auto; bottom: auto;
   overflow: auto; overscroll-behavior: contain;
+}
+.tag-option-menu-panel.is-positioned {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
 }
 .tag-option-menu-panel.is-drop-up {
   /* Anchor hint for non-fixed fallback; fixed coords come from JS. */
