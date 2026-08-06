@@ -90,6 +90,7 @@ function buildAnalysisQueryParams({ format = "", includePagination = true } = {}
     params.set("page", String(Math.max(1, Number(options.page) || 1)));
     params.set("page_size", String(state.reviewAnalysis.pageSize));
   }
+  appendBaselineParams(params);
   return params;
 }
 

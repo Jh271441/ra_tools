@@ -379,6 +379,7 @@ async function loadCases({
   params.set("page", String(state.casePage));
   params.set("page_size", String(state.casePageSize));
   params.set("include_thumbnail", "true");
+  appendBaselineParams(params);
   const data = await api(`/api/cases?${params.toString()}`);
   if (requestSeq !== state.caseListRequestSeq) return;
   const totalPages = Math.max(

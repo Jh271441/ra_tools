@@ -109,6 +109,8 @@ class Settings:
     baseline_label_xlsx: Path
     baseline_dataset: str
     baseline_scope: str
+    baselines_file: Path | None
+    baseline_overlap_mode: str
     bootstrap_model_json: Path | None
     trail_view_id: int
     trail_sync_on_start: bool
@@ -307,6 +309,15 @@ class Settings:
                 "DASHBOARD_BASELINE_SCOPE", "release0508_1071_20260729"
             ).strip()
             or "release0508_1071_20260729",
+            baselines_file=(
+                Path(os.getenv("DASHBOARD_BASELINES_FILE", "").strip()).expanduser()
+                if os.getenv("DASHBOARD_BASELINES_FILE", "").strip()
+                else (app_root / "config" / "baselines.json")
+            ),
+            baseline_overlap_mode=(
+                os.getenv("DASHBOARD_BASELINE_OVERLAP_MODE", "fail_skip").strip()
+                or "fail_skip"
+            ),
             bootstrap_model_json=bootstrap,
             trail_view_id=_integer("DASHBOARD_TRAIL_VIEW_ID", 2410),
             trail_sync_on_start=_bool("DASHBOARD_SYNC_TRAIL_ON_START", True),

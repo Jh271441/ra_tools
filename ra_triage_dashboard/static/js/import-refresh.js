@@ -148,8 +148,31 @@ async function submitImport(event) {
   try {
     const result = await api("/api/import/model-results", { method: "POST", body: form });
     target.textContent = JSON.stringify(result, null, 2);
-    showToast("模型 Run 已导入；可从列表切换对比。");
-    await Promise.all([loadRuns(), loadOverview(), loadCases({ keepSelection: true }), loadClusters()]);
+    const run = result.run || {};
+    if (run.id) {
+      state.selectedRunId = String(run.id);
+    }
+    // 测评 Run 通常只覆盖一个 GT 集：按 issue 命中自动勾选顶栏数据集。
+    const switched = await applyInferredBaselinesFromRun(run, { reason: "import" });
+    if (!switched) {
+      showToast(
+        result.duplicate
+          ? "已复用相同内容的模型 Run。"
+          : "模型 Run 已导入；可从列表切换对比。"
+      );
+    }
+    await Promise.all([
+      loadRuns({ preserveEmpty: true }),
+      loadOverview(),
+      loadCases({ keepSelection: true }),
+      loadClusters(),
+    ]);
+    if ($("#modelRunFilter") && state.selectedRunId) {
+      $("#modelRunFilter").value = state.selectedRunId;
+    }
+    setReviewComparisonStatus(state.reviewComparisonStatus || "mismatch", {
+      hasRun: Boolean(state.selectedRunId),
+    });
   } catch (error) {
     target.textContent = `导入失败：${error.message}`;
     showToast(error.message, true);

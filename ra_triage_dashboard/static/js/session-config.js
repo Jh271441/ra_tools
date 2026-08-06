@@ -130,13 +130,19 @@ async function loadSession() {
   });
 }
 
-function multiFilterOptionHtml(item, selectedSet) {
+function multiFilterOptionHtml(item, selectedSet, { onlyThis = false } = {}) {
   const value = String(item.value ?? item.key ?? "");
   const label = String(item.label ?? value);
-  return `<label class="multi-filter-option">
-    <input type="checkbox" data-multi-value="${escapeHtml(value)}" data-label="${escapeHtml(label)}" value="${escapeHtml(value)}"${selectedSet.has(value) ? " checked" : ""} />
-    <span>${escapeHtml(label)}</span>
-  </label>`;
+  const onlyButton = onlyThis
+    ? `<button type="button" class="multi-filter-only" data-multi-only="${escapeHtml(value)}" title="只选这一项" aria-label="只选 ${escapeHtml(label)}">仅此项</button>`
+    : "";
+  return `<div class="multi-filter-option-row${onlyThis ? " has-only" : ""}">
+    <label class="multi-filter-option">
+      <input type="checkbox" data-multi-value="${escapeHtml(value)}" data-label="${escapeHtml(label)}" value="${escapeHtml(value)}"${selectedSet.has(value) ? " checked" : ""} />
+      <span>${escapeHtml(label)}</span>
+    </label>
+    ${onlyButton}
+  </div>`;
 }
 
 function multiFilterAllValues(root) {
@@ -146,20 +152,35 @@ function multiFilterAllValues(root) {
   );
 }
 
-function renderMultiFilter(root, { options = [], groups = null, selected = null, onChange = null } = {}) {
+function renderMultiFilter(
+  root,
+  {
+    options = [],
+    groups = null,
+    selected = null,
+    onChange = null,
+    onlyThis = false,
+  } = {}
+) {
   if (!root || root.matches?.("select")) return;
   const previous = selected == null ? getMultiFilterValues(root) : parseFilterList(selected);
   const selectedSet = new Set(previous);
+  const optionOpts = { onlyThis: Boolean(onlyThis) };
   const body = groups?.length
     ? groups
         .map(
           (group) => `<div class="multi-filter-group">
         <div class="multi-filter-group-label">${escapeHtml(group.label)}</div>
-        ${(group.items || []).map((item) => multiFilterOptionHtml(item, selectedSet)).join("")}
+        ${(group.items || [])
+          .map((item) => multiFilterOptionHtml(item, selectedSet, optionOpts))
+          .join("")}
       </div>`
         )
         .join("")
-    : options.map((item) => multiFilterOptionHtml(item, selectedSet)).join("");
+    : options
+        .map((item) => multiFilterOptionHtml(item, selectedSet, optionOpts))
+        .join("");
+  root.classList.toggle("has-only-actions", Boolean(onlyThis));
   root.innerHTML = `
     <button type="button" class="multi-filter-trigger" aria-haspopup="listbox" aria-expanded="false">
       <span class="multi-filter-summary"></span>
@@ -208,6 +229,16 @@ function renderMultiFilter(root, { options = [], groups = null, selected = null,
     event.preventDefault();
     setMultiFilterValues(root, []);
     emitChange();
+  });
+  root.querySelectorAll("[data-multi-only]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const value = String(button.getAttribute("data-multi-only") || "").trim();
+      if (!value) return;
+      setMultiFilterValues(root, [value]);
+      emitChange();
+    });
   });
   root.querySelectorAll('input[data-multi-value]').forEach((input) => {
     input.addEventListener("change", () => emitChange());
@@ -362,6 +393,33 @@ function renderTrailSyncState() {
 
 async function loadConfig() {
   state.config = await api("/api/dashboard-config");
+  const catalog = Array.isArray(state.config?.baselines)
+    ? state.config.baselines
+    : [];
+  state.baselineCatalog = catalog;
+  const allowed = new Set(catalog.map((item) => String(item.id)));
+  const routeIds = normalizeBaselineIds(
+    new URLSearchParams(window.location.search).get("baselines"),
+    { allowed: allowed.size ? allowed : null, fallback: [] }
+  );
+  const storedIds = normalizeBaselineIds(readStoredBaselineIds(), {
+    allowed: allowed.size ? allowed : null,
+    fallback: [],
+  });
+  const defaults = defaultBaselineIdsFromConfig(state.config);
+  if (!state.selectedBaselineIds?.length || state.selectedBaselineIds.join(",") === "0508") {
+    state.selectedBaselineIds = normalizeBaselineIds(
+      routeIds.length ? routeIds : storedIds.length ? storedIds : defaults,
+      { allowed: allowed.size ? allowed : null, fallback: defaults }
+    );
+  } else {
+    state.selectedBaselineIds = normalizeBaselineIds(state.selectedBaselineIds, {
+      allowed: allowed.size ? allowed : null,
+      fallback: defaults,
+    });
+  }
+  persistBaselineIds(state.selectedBaselineIds);
+  renderBaselinePicker();
   renderConfig();
 }
 
@@ -418,6 +476,9 @@ function renderOverview(data) {
 }
 
 async function loadOverview() {
-  const query = state.selectedRunId ? `?model_run_id=${encodeURIComponent(state.selectedRunId)}` : "";
+  const params = new URLSearchParams();
+  if (state.selectedRunId) params.set("model_run_id", state.selectedRunId);
+  appendBaselineParams(params);
+  const query = params.toString() ? `?${params.toString()}` : "";
   renderOverview(await api(`/api/overview${query}`));
 }

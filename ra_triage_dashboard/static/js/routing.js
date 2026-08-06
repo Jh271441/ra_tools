@@ -407,6 +407,19 @@ function pageUrl(page, options = {}) {
   if (page === "runs" && options.importKind) {
     url.searchParams.set("import", "model");
   }
+  // Persist multi-baseline selection for shareable URLs on all pages.
+  const baselineValue =
+    options.baselines != null
+      ? normalizeBaselineIds(options.baselines).join(",")
+      : selectedBaselineQueryValue();
+  const defaults = defaultBaselineIdsFromConfig().join(",");
+  if (baselineValue && baselineValue !== defaults) {
+    url.searchParams.set("baselines", baselineValue);
+  } else if (baselineValue && baselineValue.split(",").length > 1) {
+    url.searchParams.set("baselines", baselineValue);
+  } else if (baselineValue && baselineValue !== "0508") {
+    url.searchParams.set("baselines", baselineValue);
+  }
   return `${url.pathname}${url.search}`;
 }
 

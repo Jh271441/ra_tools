@@ -44,7 +44,16 @@ from .autotriage_source import (
     AutoTriageSourceError,
     normalise_batch_id,
 )
-from .baseline import load_label_baseline
+from .baseline import load_baseline_entry, load_label_baseline
+from .baseline_registry import (
+    BaselineRegistry,
+    detect_issue_scope_overlaps,
+    ids_to_scopes,
+    legacy_registry_from_settings,
+    load_baseline_registry,
+    normalize_baseline_ids,
+)
+from .media_registry import MediaRegistry, build_media_registry
 from .batch_prediction_runner import BatchPredictionRunner
 from .db import (
     LABELS,
@@ -96,6 +105,34 @@ asset_index = AssetIndex(
 )
 camera_index = CameraIndex(settings.camera_root, base_path=settings.base_path)
 video_index = VideoIndex(settings.ares_video_root, base_path=settings.base_path)
+
+def _load_active_baseline_registry() -> BaselineRegistry:
+    path = settings.baselines_file
+    if path is not None and Path(path).is_file():
+        return load_baseline_registry(
+            Path(path),
+            ra_auto_triage_root=settings.ra_auto_triage_root,
+        )
+    return legacy_registry_from_settings(
+        baseline_id="0508",
+        label="0508",
+        scope=settings.baseline_scope,
+        dataset=settings.baseline_dataset,
+        xlsx=settings.baseline_label_xlsx,
+        layout_id=settings.baseline_scope,
+    )
+
+
+baseline_registry = _load_active_baseline_registry()
+media_registry = build_media_registry(
+    baseline_registry,
+    base_path=settings.base_path,
+    product_asset_index=asset_index,
+    product_camera_index=camera_index,
+    product_video_index=video_index,
+    data_dir=settings.data_dir,
+    ra_root=settings.ra_auto_triage_root,
+)
 model_catalog = ModelCatalog(settings)
 prompt_catalog = PromptCatalog(settings.ra_auto_triage_root)
 autotriage_source = AutoTriageSource(settings.autotriage_api_base_url)
@@ -248,6 +285,8 @@ REVIEW_TAG_ALIASES = {
 
 runtime_state: dict[str, Any] = {
     "baseline": {"status": "not_loaded", "message": "等待加载 0508 baseline。", "count": 0},
+    "baselines": [],
+    "baseline_conflicts": [],
     "trail_sync": {
         "status": "not_started",
         "message": "尚未检查 Trail 模型字段。",
@@ -1345,25 +1384,216 @@ def bootstrap_model_result() -> None:
 
 
 def bootstrap_baseline() -> dict[str, Any]:
-    loaded = load_label_baseline(settings.baseline_label_xlsx, settings.baseline_dataset)
-    state = {
-        "scope": settings.baseline_scope,
-        "dataset": settings.baseline_dataset,
-        "path": str(settings.baseline_label_xlsx),
-        "source_rows": loaded.source_rows,
-        "count": len(loaded.rows),
-        "skipped_rows": loaded.skipped_rows,
-        "message": loaded.message,
-        "status": "ready" if loaded.rows else "unavailable",
-    }
-    if loaded.rows:
-        state["upsert"] = database.replace_baseline_scope(
-            scope=settings.baseline_scope,
-            rows=loaded.rows,
-            source="trail_label_baseline",
+    """Load every registry baseline; keep legacy runtime_state["baseline"] = default 0508."""
+
+    return bootstrap_all_baselines()
+
+
+def bootstrap_all_baselines() -> dict[str, Any]:
+    summaries: list[dict[str, Any]] = []
+    memberships: list[tuple[str, str]] = []
+    overlap_mode = str(getattr(settings, "baseline_overlap_mode", "fail_skip") or "fail_skip")
+    for entry in baseline_registry.entries:
+        loaded = load_baseline_entry(
+            loader=entry.loader,
+            path=entry.xlsx,
+            dataset=entry.dataset,
         )
-    runtime_state["baseline"] = state
-    return state
+        item: dict[str, Any] = {
+            "id": entry.id,
+            "label": entry.label,
+            "scope": entry.scope,
+            "loader": entry.loader,
+            "dataset": entry.dataset,
+            "path": str(entry.xlsx),
+            "source_rows": loaded.source_rows,
+            "count": len(loaded.rows),
+            "skipped_rows": loaded.skipped_rows,
+            "message": loaded.message,
+            "status": "ready" if loaded.rows else "unavailable",
+            "default_selected": entry.default_selected,
+            "media_provider": entry.media.provider,
+        }
+        if loaded.rows:
+            # Overlap detection vs already-accepted memberships.
+            proposed = [str(row.get("issue_id") or "").strip() for row in loaded.rows]
+            existing_map: dict[str, str] = {issue: scope for issue, scope in memberships}
+            conflicts = [
+                issue for issue in proposed if issue and issue in existing_map
+            ]
+            if conflicts and overlap_mode != "last_writer":
+                conflict_set = set(conflicts)
+                kept = [
+                    row
+                    for row in loaded.rows
+                    if str(row.get("issue_id") or "").strip() not in conflict_set
+                ]
+                item["conflict_count"] = len(conflicts)
+                item["message"] = (
+                    f"{loaded.message}；跳过与其它 baseline 重叠的 {len(conflicts)} 条"
+                )
+                if not kept:
+                    item["status"] = "conflict"
+                    item["count"] = 0
+                    summaries.append(item)
+                    continue
+                loaded_rows = kept
+                item["count"] = len(kept)
+            else:
+                loaded_rows = list(loaded.rows)
+                item["conflict_count"] = len(conflicts)
+            item["upsert"] = database.replace_baseline_scope(
+                scope=entry.scope,
+                rows=loaded_rows,
+                source=entry.loader,
+            )
+            for row in loaded_rows:
+                issue = str(row.get("issue_id") or "").strip()
+                if issue:
+                    memberships.append((issue, entry.scope))
+        summaries.append(item)
+
+    overlaps = detect_issue_scope_overlaps(memberships)
+    runtime_state["baseline_conflicts"] = [
+        {"issue_id": issue, "scopes": scopes} for issue, scopes in sorted(overlaps.items())
+    ]
+    runtime_state["baselines"] = summaries
+    # Legacy primary baseline slot = default selected entry (usually 0508).
+    default_ids = baseline_registry.default_ids()
+    primary = next(
+        (item for item in summaries if item["id"] in default_ids),
+        summaries[0] if summaries else {
+            "status": "unavailable",
+            "message": "无 baseline registry 条目。",
+            "count": 0,
+            "scope": settings.baseline_scope,
+            "dataset": settings.baseline_dataset,
+        },
+    )
+    runtime_state["baseline"] = primary
+    return primary
+
+
+def resolve_request_baseline_ids(
+    raw: Any = None,
+    *,
+    request: Request | None = None,
+) -> list[str]:
+    """Resolve short baseline ids from query/header; never trust raw scopes."""
+
+    allowed = baseline_registry.allowed_ids()
+    default = baseline_registry.default_ids()
+    if not allowed:
+        return ["0508"]
+    candidate = raw
+    if (candidate is None or candidate == "") and request is not None:
+        candidate = request.query_params.get("baselines") or request.query_params.get(
+            "baseline_scopes"
+        )
+    return normalize_baseline_ids(candidate, allowed=allowed, default=default)
+
+
+def resolve_request_baseline_scopes(
+    raw: Any = None,
+    *,
+    request: Request | None = None,
+) -> list[str]:
+    ids = resolve_request_baseline_ids(raw, request=request)
+    scopes = ids_to_scopes(ids, baseline_registry)
+    if not scopes:
+        # Fail closed to default primary scope.
+        entry = baseline_registry.by_id(baseline_registry.default_ids()[0]) if baseline_registry.entries else None
+        return [entry.scope if entry else settings.baseline_scope]
+    return scopes
+
+
+def media_for_issue(issue_id: str, baseline_scope: str = "") -> Any:
+    provider = media_registry.resolve_for_issue(issue_id, baseline_scope=baseline_scope)
+    return provider or media_registry.for_baseline_id(baseline_registry.default_ids()[0])
+
+
+def _infer_baseline_ids_from_scope_coverage(
+    coverage: list[dict[str, Any]],
+    *,
+    dominant_ratio: float = 0.9,
+) -> list[str]:
+    """Map prediction-per-scope counts to short baseline ids for auto topbar select.
+
+    Evaluation runs almost always target a single GT workset. Prefer the single
+    dominant matched scope; fall back to every matched scope when mixed.
+    """
+
+    matched: list[tuple[str, int]] = []
+    for item in coverage:
+        scope = str(item.get("baseline_scope") or "").strip()
+        count = int(item.get("prediction_count") or 0)
+        if not scope or count <= 0:
+            continue
+        baseline_id = baseline_registry.scope_to_id(scope)
+        if not baseline_id:
+            continue
+        matched.append((baseline_id, count))
+    if not matched:
+        return []
+    # Merge duplicate ids if registry ever aliases (shouldn't).
+    by_id: dict[str, int] = {}
+    for baseline_id, count in matched:
+        by_id[baseline_id] = by_id.get(baseline_id, 0) + count
+    ordered = sorted(by_id.items(), key=lambda pair: (-pair[1], pair[0]))
+    total = sum(count for _, count in ordered)
+    if len(ordered) == 1:
+        return [ordered[0][0]]
+    top_id, top_count = ordered[0]
+    if total > 0 and top_count / total >= dominant_ratio:
+        return [top_id]
+    return [baseline_id for baseline_id, _ in ordered]
+
+
+def enrich_model_run_baseline_hint(
+    run: dict[str, Any] | None,
+    *,
+    coverage: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Attach per-scope coverage + inferred dataset ids for UI auto-select.
+
+    Pass ``coverage`` when the caller already batched
+    ``model_run_scope_coverage_map`` so list endpoints stay O(1) SQL.
+    """
+
+    if not isinstance(run, dict):
+        return {}
+    run_id = str(run.get("id") or "").strip()
+    if not run_id:
+        return run
+    if coverage is None:
+        coverage = database.model_run_scope_coverage(run_id)
+    by_id: list[dict[str, Any]] = []
+    unmatched = 0
+    for item in coverage:
+        scope = str(item.get("baseline_scope") or "").strip()
+        count = int(item.get("prediction_count") or 0)
+        if not scope:
+            unmatched += count
+            continue
+        baseline_id = baseline_registry.scope_to_id(scope) or ""
+        by_id.append(
+            {
+                "id": baseline_id,
+                "scope": scope,
+                "label": (
+                    baseline_registry.by_id(baseline_id).label
+                    if baseline_id and baseline_registry.by_id(baseline_id)
+                    else scope
+                ),
+                "prediction_count": count,
+            }
+        )
+    inferred = _infer_baseline_ids_from_scope_coverage(coverage)
+    payload = dict(run)
+    payload["baseline_coverage"] = by_id
+    payload["unmatched_prediction_count"] = unmatched
+    payload["inferred_baseline_ids"] = inferred
+    return payload
 
 
 def sync_trail_model_fields(
@@ -1397,7 +1627,10 @@ def sync_trail_model_fields(
         "action": "create" if create_run else "preview",
     }
     try:
-        issue_ids = database.baseline_issue_ids(settings.baseline_scope)
+        issue_ids = database.baseline_issue_ids(
+            baseline_scopes=ids_to_scopes(baseline_registry.default_ids(), baseline_registry)
+            or [settings.baseline_scope]
+        )
         result = read_trail_model_fields(
             ra_root=settings.ra_auto_triage_root,
             issue_ids=issue_ids,
@@ -1739,6 +1972,8 @@ async def health() -> dict[str, Any]:
         "camera_cache_root_available": settings.camera_root.is_dir(),
         "ares_video_root_available": settings.ares_video_root.is_dir(),
         "baseline": runtime_state["baseline"],
+        "baselines": runtime_state.get("baselines") or [],
+        "baseline_conflicts": runtime_state.get("baseline_conflicts") or [],
         "trail_sync": runtime_state["trail_sync"],
         "trail_write_enabled": False,
         "batch_prediction_enabled": settings.batch_prediction_enabled,
@@ -1750,15 +1985,24 @@ async def health() -> dict[str, Any]:
 
 
 @app.get("/api/overview")
-async def overview(model_run_id: str = "") -> dict[str, Any]:
+async def overview(
+    request: Request,
+    model_run_id: str = "",
+    baselines: str = "",
+) -> dict[str, Any]:
     selected = model_run_id or await asyncio.to_thread(
         database.default_model_run_id
     )
-    return await asyncio.to_thread(
+    scopes = resolve_request_baseline_scopes(baselines, request=request)
+    ids = resolve_request_baseline_ids(baselines, request=request)
+    payload = await asyncio.to_thread(
         database.overview,
-        baseline_scope=settings.baseline_scope,
+        baseline_scopes=scopes,
         model_run_id=selected,
     )
+    payload["baselines"] = ids
+    payload["baseline_scopes"] = scopes
+    return payload
 
 
 @app.get("/api/change-revision")
@@ -1770,10 +2014,34 @@ async def change_revision(response: Response) -> dict[str, Any]:
     }
 
 
+@app.get("/api/baselines")
+async def list_baselines() -> dict[str, Any]:
+    media = media_registry.media_ready_by_id()
+    items = []
+    for summary in runtime_state.get("baselines") or []:
+        baseline_id = str(summary.get("id") or "")
+        items.append(
+            {
+                **summary,
+                "media_ready": media.get(baseline_id, {}),
+            }
+        )
+    if not items:
+        items = baseline_registry.public_summaries()
+    return {
+        "items": items,
+        "default_ids": baseline_registry.default_ids(),
+        "conflicts": runtime_state.get("baseline_conflicts") or [],
+    }
+
+
 @app.get("/api/dashboard-config")
 async def dashboard_config() -> dict[str, Any]:
     return {
         "baseline": runtime_state["baseline"],
+        "baselines": runtime_state.get("baselines") or baseline_registry.public_summaries(),
+        "default_baseline_ids": baseline_registry.default_ids(),
+        "baseline_conflicts": runtime_state.get("baseline_conflicts") or [],
         "build_commit": settings.build_commit,
         "default_model_run_id": database.default_model_run_id(),
         "trail_sync": runtime_state["trail_sync"],
@@ -2276,6 +2544,8 @@ async def status(response: Response) -> dict[str, Any]:
         "camera_cache_root_available": settings.camera_root.is_dir(),
         "ares_video_root_available": settings.ares_video_root.is_dir(),
         "baseline": baseline_state,
+        "baselines": runtime_state.get("baselines") or [],
+        "baseline_conflicts": runtime_state.get("baseline_conflicts") or [],
         "trail_sync": runtime_state["trail_sync"],
         "batch_prediction_enabled": settings.batch_prediction_enabled,
         "autotriage_push_enabled": settings.autotriage_push_enabled,
@@ -2322,6 +2592,8 @@ def _case_filter_kwargs(
     missing_evidence: str = "",
     issue_ids: str = "",
     work_assignee: str = "",
+    baselines: str = "",
+    request: Request | None = None,
 ) -> dict[str, Any]:
     comparison_values = [
         value
@@ -2353,8 +2625,10 @@ def _case_filter_kwargs(
     for label in gt_labels:
         if label not in LABELS:
             raise _detail(400, "gt_label 不在三分类范围内。")
+    scopes = resolve_request_baseline_scopes(baselines, request=request)
     return {
-        "baseline_scope": settings.baseline_scope,
+        "baseline_scope": scopes[0] if len(scopes) == 1 else "",
+        "baseline_scopes": scopes,
         "search": search,
         "gt_label": ",".join(gt_labels),
         "model_label": ",".join(model_labels),
@@ -2371,6 +2645,7 @@ def _case_filter_kwargs(
 
 @app.get("/api/cases")
 async def list_cases(
+    request: Request,
     search: str = "",
     gt_label: str = "",
     model_label: str = "",
@@ -2382,6 +2657,7 @@ async def list_cases(
     missing_evidence: str = "",
     issue_ids: str = "",
     work_assignee: str = "",
+    baselines: str = "",
     page: int = 1,
     page_size: int = 100,
     include_thumbnail: bool = False,
@@ -2398,6 +2674,8 @@ async def list_cases(
         missing_evidence=missing_evidence,
         issue_ids=issue_ids,
         work_assignee=work_assignee,
+        baselines=baselines,
+        request=request,
     )
     comparison_status = filters["comparison_status"]
     result = await asyncio.to_thread(
@@ -2414,6 +2692,10 @@ async def list_cases(
             "voyager_issue_url": _voyager_issue_url(issue_id),
         }
         if include_thumbnail:
+            provider = media_for_issue(
+                issue_id, str(item.get("baseline_scope") or "")
+            )
+            has_thumb = bool(provider and provider.has_issue(issue_id))
             public["thumbnail"] = (
                 {
                     "url": _public_path(
@@ -2422,7 +2704,7 @@ async def list_cases(
                     "kind": "bev",
                     "label": "BEV · t0 附近",
                 }
-                if asset_index.has_issue(issue_id)
+                if has_thumb
                 else None
             )
         items.append(public)
@@ -2433,12 +2715,15 @@ async def list_cases(
         "failure_only": comparison_status == "mismatch",
         "issue_ids": filters["issue_ids"],
         "work_assignee": filters["work_assignee"],
+        "baselines": resolve_request_baseline_ids(baselines, request=request),
+        "baseline_scopes": filters.get("baseline_scopes") or [],
     }
     return result
 
 
 @app.get("/api/cases/issue-ids")
 async def list_case_issue_ids(
+    request: Request,
     search: str = "",
     gt_label: str = "",
     model_label: str = "",
@@ -2450,6 +2735,7 @@ async def list_case_issue_ids(
     missing_evidence: str = "",
     issue_ids: str = "",
     work_assignee: str = "",
+    baselines: str = "",
 ) -> dict[str, Any]:
     """Return all matching issue IDs for the current Review filters (capped)."""
 
@@ -2465,6 +2751,8 @@ async def list_case_issue_ids(
         missing_evidence=missing_evidence,
         issue_ids=issue_ids,
         work_assignee=work_assignee,
+        baselines=baselines,
+        request=request,
     )
     ids = await asyncio.to_thread(database.list_case_issue_ids, **filters, limit=5000)
     return {
@@ -2514,6 +2802,8 @@ async def split_case_work(request: Request) -> dict[str, Any]:
         missing_evidence=_as_text(filter_body.get("missing_evidence")),
         issue_ids=_as_text(filter_body.get("issue_ids")),
         work_assignee=_as_text(filter_body.get("work_assignee")),
+        baselines=_as_text(filter_body.get("baselines") or filter_body.get("baseline_scopes")),
+        request=request,
     )
     issue_ids = await asyncio.to_thread(database.list_case_issue_ids, **filters, limit=5000)
     assignees = body.get("assignees")
@@ -2543,6 +2833,13 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                 "model_label": filters["model_label"],
                 "annotation_author": filters["annotation_author"],
                 "missing_evidence": filters["missing_evidence"],
+                "baselines": filters.get("baseline_scopes") and resolve_request_baseline_ids(
+                    ",".join(
+                        baseline_registry.scope_to_id(s) or s
+                        for s in (filters.get("baseline_scopes") or [])
+                    )
+                ) or baseline_registry.default_ids(),
+                "baseline_scopes": filters.get("baseline_scopes") or [],
             },
         )
     except ValueError as exc:
@@ -2567,24 +2864,38 @@ async def split_case_work(request: Request) -> dict[str, Any]:
 
 
 @app.get("/api/reviewers")
-async def reviewers(model_run_id: str = "") -> dict[str, Any]:
+async def reviewers(
+    request: Request,
+    model_run_id: str = "",
+    baselines: str = "",
+) -> dict[str, Any]:
+    scopes = resolve_request_baseline_scopes(baselines, request=request)
     return {
         "items": await asyncio.to_thread(
-            database.list_reviewers, settings.baseline_scope, model_run_id
+            database.list_reviewers,
+            baseline_scopes=scopes,
+            model_run_id=model_run_id,
         )
     }
 
 
 @app.get("/api/case-thumbnails/{issue_id}")
 async def get_case_thumbnail(issue_id: str) -> FileResponse:
-    if not ISSUE_ID_RE.fullmatch(issue_id) or await asyncio.to_thread(
-        database.get_case, issue_id
-    ) is None:
+    if not ISSUE_ID_RE.fullmatch(issue_id):
         raise _detail(404, "Issue 不存在。")
-    source_info = await asyncio.to_thread(
-        asset_index.get_thumbnail_source,
-        issue_id,
-    )
+    case = await asyncio.to_thread(database.get_case, issue_id)
+    if case is None:
+        raise _detail(404, "Issue 不存在。")
+
+    def _thumbnail_source() -> dict[str, Any] | None:
+        provider = media_for_issue(issue_id, str(case.get("baseline_scope") or ""))
+        if provider is not None:
+            info = provider.get_thumbnail_source(issue_id)
+            if info:
+                return info
+        return asset_index.get_thumbnail_source(issue_id)
+
+    source_info = await asyncio.to_thread(_thumbnail_source)
     if not source_info or not isinstance(source_info.get("path"), Path):
         raise _detail(404, "该 Issue 暂无 BEV 缩略图。")
     source = source_info["path"]
@@ -2667,14 +2978,22 @@ async def get_case(issue_id: str) -> dict[str, Any]:
             _public_review_attachment(attachment)
             for attachment in annotation.get("attachments", [])
         ]
-    case["assets"] = asset_index.get_assets(issue_id)
-    captured_video = video_index.get_video(issue_id)
-    if captured_video is not None:
-        case["assets"]["video"] = captured_video
-        case["assets"]["available"] = True
-    case["camera"] = camera_index.get_assets(
-        issue_id, (case["assets"].get("capture") or {}).get("timestamp_ms")
-    )
+    scope = str(case.get("baseline_scope") or "")
+    provider = media_for_issue(issue_id, scope)
+    if provider is None:
+        case["assets"] = {"available": False, "issue_id": issue_id, "frames": [], "capture": {}}
+        case["camera"] = {"available": False, "issue_id": issue_id, "frames": [], "capture": {}}
+    else:
+        case["assets"] = provider.get_assets(issue_id)
+        captured_video = provider.get_video(issue_id)
+        if captured_video is not None:
+            case["assets"]["video"] = captured_video
+            case["assets"]["available"] = True
+        case["camera"] = provider.get_camera_assets(
+            issue_id, (case["assets"].get("capture") or {}).get("timestamp_ms")
+        )
+    entry = baseline_registry.by_scope(scope)
+    case["baseline_id"] = entry.id if entry else ""
     case["voyager_issue_url"] = _voyager_issue_url(issue_id)
     case["external_links"] = _case_external_links(
         issue_id, _case_link_metadata_fallback(case)
@@ -2690,11 +3009,16 @@ async def get_case(issue_id: str) -> dict[str, Any]:
 
 @app.get("/api/assets/{issue_id}/{asset_id}")
 async def get_asset(issue_id: str, asset_id: str) -> FileResponse:
-    path = (
-        asset_index.get_asset_path(issue_id, asset_id)
-        or camera_index.get_asset_path(issue_id, asset_id)
-        or video_index.get_asset_path(issue_id, asset_id)
-    )
+    case = await asyncio.to_thread(database.get_case, issue_id)
+    scope = str((case or {}).get("baseline_scope") or "")
+    provider = media_for_issue(issue_id, scope)
+    path = provider.get_asset_path(issue_id, asset_id) if provider else None
+    if path is None:
+        path = (
+            asset_index.get_asset_path(issue_id, asset_id)
+            or camera_index.get_asset_path(issue_id, asset_id)
+            or video_index.get_asset_path(issue_id, asset_id)
+        )
     if path is None:
         raise _detail(404, "Ares / Camera 资产不存在。")
     suffix = path.suffix.lower()
@@ -2836,10 +3160,22 @@ async def delete_annotation(issue_id: str, annotation_id: int) -> dict[str, Any]
 
 
 @app.get("/api/model-runs")
-async def model_runs() -> dict[str, Any]:
+async def model_runs(request: Request, baselines: str = "") -> dict[str, Any]:
+    scopes = resolve_request_baseline_scopes(baselines, request=request)
     items = await asyncio.to_thread(
-        database.list_model_runs, settings.baseline_scope
+        database.list_model_runs, baseline_scopes=scopes
     )
+    coverage_map = await asyncio.to_thread(
+        database.model_run_scope_coverage_map,
+        [str(item.get("id") or "") for item in items],
+    )
+    items = [
+        enrich_model_run_baseline_hint(
+            item,
+            coverage=coverage_map.get(str(item.get("id") or ""), []),
+        )
+        for item in items
+    ]
     for item in items:
         if item.get("kind") != "upload":
             continue
@@ -3036,13 +3372,16 @@ async def set_default_model_run(run_id: str, request: Request) -> dict[str, Any]
 
 @app.get("/api/review-clusters")
 async def review_clusters(
+    request: Request,
     model_run_id: str = "",
     failure_only: bool = True,
     annotation_author: str = "",
+    baselines: str = "",
 ) -> dict[str, Any]:
+    scopes = resolve_request_baseline_scopes(baselines, request=request)
     return {
         "items": database.review_clusters(
-            baseline_scope=settings.baseline_scope,
+            baseline_scopes=scopes,
             model_run_id=model_run_id,
             failure_only=failure_only,
             annotation_author=annotation_author,
@@ -3085,6 +3424,8 @@ def _review_reason_analysis_payload(
     page: int = 1,
     page_size: int = 20,
     unbounded: bool = False,
+    baselines: str = "",
+    baseline_scopes: list[str] | None = None,
 ) -> dict[str, Any]:
     missing_evidence_catalog = _missing_evidence_catalog()
     evidence_catalog = {
@@ -3163,7 +3504,10 @@ def _review_reason_analysis_payload(
         selected_run = next(
             (
                 run
-                for run in database.list_model_runs(settings.baseline_scope)
+                for run in database.list_model_runs(
+                    baseline_scopes=baseline_scopes
+                    or resolve_request_baseline_scopes(baselines)
+                )
                 if run["id"] == model_run_id
             ),
             None,
@@ -3196,8 +3540,9 @@ def _review_reason_analysis_payload(
             or label.casefold() in folded_search
         )
     )
+    scopes = baseline_scopes or resolve_request_baseline_scopes(baselines)
     rows = database.review_reason_rows(
-        baseline_scope=settings.baseline_scope,
+        baseline_scopes=scopes,
         model_run_id=model_run_id,
         comparison_status=comparison_status,
         annotation_author=",".join(authors),
@@ -3282,6 +3627,7 @@ def _review_reason_analysis_payload(
 
 @app.get("/api/review-reason-analysis")
 async def review_reason_analysis(
+    request: Request,
     model_run_id: str = "",
     comparison: str = "",
     failure_only: bool = False,
@@ -3299,8 +3645,10 @@ async def review_reason_analysis(
     search: str = "",
     page: int = 1,
     page_size: int = 20,
+    baselines: str = "",
 ) -> dict[str, Any]:
-    return _review_reason_analysis_payload(
+    scopes = resolve_request_baseline_scopes(baselines, request=request)
+    payload = _review_reason_analysis_payload(
         model_run_id=model_run_id,
         comparison=comparison,
         failure_only=failure_only,
@@ -3318,7 +3666,12 @@ async def review_reason_analysis(
         search=search,
         page=page,
         page_size=page_size,
+        baselines=baselines,
+        baseline_scopes=scopes,
     )
+    payload["baselines"] = resolve_request_baseline_ids(baselines, request=request)
+    payload["baseline_scopes"] = scopes
+    return payload
 
 
 REVIEW_ANALYSIS_EXPORT_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -3434,6 +3787,7 @@ def _review_analysis_export_response(
 
 @app.get("/api/review-reason-analysis/export")
 async def export_review_reason_analysis(
+    request: Request,
     format: str = "csv",
     model_run_id: str = "",
     comparison: str = "",
@@ -3450,10 +3804,12 @@ async def export_review_reason_analysis(
     trigger_tag: str = "",
     egress_tag: str = "",
     search: str = "",
+    baselines: str = "",
 ) -> Response:
     export_format = _as_text(format).strip().lower()
     if export_format not in {"csv", "xlsx"}:
         raise _detail(400, "format 仅支持 csv 或 xlsx。")
+    scopes = resolve_request_baseline_scopes(baselines, request=request)
     result = _review_reason_analysis_payload(
         model_run_id=model_run_id,
         comparison=comparison,
@@ -3471,7 +3827,10 @@ async def export_review_reason_analysis(
         egress_tag=egress_tag,
         search=search,
         unbounded=True,
+        baselines=baselines,
+        baseline_scopes=scopes,
     )
+    result["baselines"] = resolve_request_baseline_ids(baselines, request=request)
     return _review_analysis_export_response(result, export_format)
 
 
@@ -3619,6 +3978,7 @@ async def import_model_results(
         created_by_source=actor_source,
         created_by_verified=actor_verified,
     )
+    run = enrich_model_run_baseline_hint(run)
     return {
         "run": run,
         "duplicate": duplicate,
@@ -3626,6 +3986,8 @@ async def import_model_results(
         "parsed_rows": len(source_rows),
         "accepted_rows": len(rows),
         "rejected_rows": len(source_rows) - len(rows),
+        "inferred_baseline_ids": list(run.get("inferred_baseline_ids") or []),
+        "baseline_coverage": list(run.get("baseline_coverage") or []),
     }
 
 

@@ -232,6 +232,9 @@ const state = {
   batchDraftSource: "",
   batchDefaultName: "",
   selectedRunId: "",
+  // Short baseline ids from registry (e.g. ["0508"] or ["0508","0626"]).
+  selectedBaselineIds: ["0508"],
+  baselineCatalog: [],
   reviewComparisonStatus: "all",
   failureOnly: false,
   clusterKey: "",

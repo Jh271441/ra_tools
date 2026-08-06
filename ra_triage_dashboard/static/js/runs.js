@@ -5,9 +5,11 @@
  */
 async function loadReviewers() {
   const runId = String(state.selectedRunId || "").trim();
-  const data = await api(
-    runId ? `/api/reviewers?model_run_id=${encodeURIComponent(runId)}` : "/api/reviewers"
-  );
+  const params = new URLSearchParams();
+  if (runId) params.set("model_run_id", runId);
+  appendBaselineParams(params);
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const data = await api(`/api/reviewers${query}`);
   state.reviewers = data.items || [];
   const reviewerOptions = state.reviewers.map((item) => {
     const trust =
@@ -116,7 +118,7 @@ function renderAnalysisRunFilter() {
 }
 
 async function loadRuns({ preferDefault = false, preserveEmpty = false } = {}) {
-  const data = await api("/api/model-runs");
+  const data = await api(withBaselineQuery("/api/model-runs"));
   state.modelRuns = data.items || [];
   const select = $("#modelRunFilter");
   const previousRunId = state.selectedRunId;
@@ -132,7 +134,11 @@ async function loadRuns({ preferDefault = false, preserveEmpty = false } = {}) {
   select.innerHTML = `<option value="">未选择模型 run</option>${state.modelRuns
     .map((run) => {
       const tag = run.is_default ? "默认 · " : "";
-      return `<option value="${escapeHtml(run.id)}">${tag}${escapeHtml(run.name)} · ${run.baseline_prediction_count ?? 0} 条 · 错 ${run.failure_count ?? 0}</option>`;
+      const inferred = Array.isArray(run.inferred_baseline_ids)
+        ? run.inferred_baseline_ids.filter(Boolean)
+        : [];
+      const setHint = inferred.length ? ` · ${inferred.join("+")}` : "";
+      return `<option value="${escapeHtml(run.id)}">${tag}${escapeHtml(run.name)}${escapeHtml(setHint)} · 当前集 ${run.baseline_prediction_count ?? 0} 条 · 错 ${run.failure_count ?? 0}</option>`;
     })
     .join("")}`;
   state.selectedRunId = state.modelRuns.some((run) => run.id === candidate) ? candidate : "";
@@ -299,9 +305,10 @@ function renderActiveRun(overview = null) {
   const failures = overview?.model_failures ?? run.failure_count ?? 0;
   const reviewed = overview?.reviewed_failures;
   const sourceLabel = runSourceMeta(run).label;
+  const worksetCount = currentWorksetIssueCount();
   if (activeMeta) {
     activeMeta.textContent =
-      `${coverage} / ${state.config?.baseline?.count || "—"} 覆盖 · ${failures} 条判断失败` +
+      `${coverage} / ${worksetCount || "—"} 覆盖 · ${failures} 条判断失败` +
       `${reviewed === undefined ? "" : ` · ${reviewed} 条已复核`}` +
       ` · ${sourceLabel}`;
   }
@@ -340,7 +347,9 @@ function renderRunManager() {
     list.innerHTML = '<div class="no-asset">当前筛选下没有 Run。</div>';
     return;
   }
-  const baselineCount = Number(state.config?.baseline?.count || 0);
+  // Denominator must follow the topbar dataset multi-select (union), not the
+  // legacy primary-only config.baseline (always 0508 / 1071).
+  const baselineCount = currentWorksetIssueCount();
   list.innerHTML = filteredRuns
     .map(
       (run) => {
@@ -372,7 +381,7 @@ function renderRunManager() {
             ${promptVersion ? `<span>Prompt · ${escapeHtml(promptVersion)}</span>` : ""}
             ${externalUser && externalUser !== owner ? `<span>平台用户 · ${escapeHtml(externalUser)}</span>` : ""}
             <span>${runSourceReference(run)}</span>
-            <span>${coverage} / ${state.config?.baseline?.count || "—"} 条</span>
+            <span title="相对当前数据集">${coverage} / ${baselineCount || "—"} 条</span>
             <span class="run-failure-count">错误 ${run.failure_count ?? 0}</span>
             <span>${formatTime(run.created_at)}</span>
           </div>
