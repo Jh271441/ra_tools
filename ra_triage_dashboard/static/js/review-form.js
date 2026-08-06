@@ -654,8 +654,9 @@ function renderReview(caseData) {
     if (dropdown.dataset.reviewDropdownToggleBound === "1") return;
     dropdown.dataset.reviewDropdownToggleBound = "1";
     dropdown.addEventListener("toggle", () => {
+      const panel = reviewDropdownPanel(dropdown);
       if (!dropdown.open) {
-        resetReviewDropdownPanel(reviewDropdownPanel(dropdown));
+        resetReviewDropdownPanel(panel);
         return;
       }
       $("#reviewPane").querySelectorAll(".review-dropdown").forEach((other) => {
@@ -663,8 +664,12 @@ function renderReview(caseData) {
         other.open = false;
         resetReviewDropdownPanel(reviewDropdownPanel(other));
       });
-      // Measure after open paint so height/flip use real panel size.
-      window.requestAnimationFrame(() => positionReviewDropdownPanel(dropdown));
+      // Hide immediately (same tick as open) so CSS absolute downward paint never flashes.
+      prepareReviewDropdownPanelForMeasure(panel);
+      // Layout + place while still hidden; reveal only after final coords.
+      window.requestAnimationFrame(() => {
+        positionReviewDropdownPanel(dropdown);
+      });
     });
   });
   $("#reviewPane").querySelector("[data-open-history='review']")?.addEventListener("click", () => {
@@ -1238,7 +1243,13 @@ function reviewDropdownPanel(dropdown) {
 
 function resetReviewDropdownPanel(panel) {
   if (!panel) return;
-  panel.classList.remove("is-drop-up", "is-drop-down", "is-fixed-dropdown");
+  panel.classList.remove(
+    "is-drop-up",
+    "is-drop-down",
+    "is-fixed-dropdown",
+    "is-positioned",
+    "is-measuring"
+  );
   panel.style.position = "";
   panel.style.top = "";
   panel.style.left = "";
@@ -1247,7 +1258,26 @@ function resetReviewDropdownPanel(panel) {
   panel.style.width = "";
   panel.style.maxHeight = "";
   panel.style.visibility = "";
+  panel.style.opacity = "";
+  panel.style.pointerEvents = "";
   panel.style.zIndex = "";
+}
+
+/** Park panel off-screen/hidden before first paint so default absolute top:100% never flashes. */
+function prepareReviewDropdownPanelForMeasure(panel) {
+  if (!panel) return;
+  panel.classList.add("is-fixed-dropdown", "is-measuring");
+  panel.classList.remove("is-positioned", "is-drop-up", "is-drop-down");
+  panel.style.position = "fixed";
+  panel.style.right = "auto";
+  panel.style.bottom = "auto";
+  panel.style.top = "0px";
+  panel.style.left = "-10000px";
+  panel.style.visibility = "hidden";
+  panel.style.opacity = "0";
+  panel.style.pointerEvents = "none";
+  panel.style.maxHeight = "";
+  panel.style.zIndex = "70";
 }
 
 function positionReviewDropdownPanel(dropdown) {
@@ -1256,21 +1286,15 @@ function positionReviewDropdownPanel(dropdown) {
   const panel = reviewDropdownPanel(dropdown);
   if (!summary || !panel) return;
 
-  // Fixed to viewport so Review pane overflow does not clip long lists.
-  panel.classList.add("is-fixed-dropdown");
-  panel.classList.remove("is-drop-up", "is-drop-down");
-  panel.style.position = "fixed";
-  panel.style.right = "auto";
-  panel.style.bottom = "auto";
-  panel.style.left = "0px";
-  panel.style.top = "0px";
-  panel.style.visibility = "hidden";
-  panel.style.maxHeight = "";
-  panel.style.zIndex = "70";
+  // Stay hidden while measuring/placing (no intermediate downward absolute paint).
+  prepareReviewDropdownPanelForMeasure(panel);
 
   const summaryRect = summary.getBoundingClientRect();
   const width = Math.max(summaryRect.width, 180);
   panel.style.width = `${Math.round(width)}px`;
+  // Temporarily place at origin with full width for accurate scrollHeight.
+  panel.style.left = "0px";
+  panel.style.top = "0px";
 
   // Natural height (uncapped) for flip decision, then cap to free space.
   const naturalH = panel.scrollHeight || panel.getBoundingClientRect().height || 200;
@@ -1297,8 +1321,13 @@ function positionReviewDropdownPanel(dropdown) {
 
   panel.style.top = `${Math.round(top)}px`;
   panel.style.left = `${Math.round(left)}px`;
+  panel.classList.remove("is-measuring");
+  panel.classList.add("is-fixed-dropdown", "is-positioned");
   panel.classList.add(openUp ? "is-drop-up" : "is-drop-down");
+  // Reveal only at final coords (single paint).
   panel.style.visibility = "";
+  panel.style.opacity = "";
+  panel.style.pointerEvents = "";
 }
 
 function closeAllReviewDropdowns(except = null) {

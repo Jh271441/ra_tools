@@ -988,11 +988,29 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
   border-radius: 8px; box-shadow: 0 14px 30px rgba(0,0,0,.42); background: #111824;
   display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px;
 }
+/* Hide until JS finishes flip/place — prevents default absolute downward flash. */
+.review-tag-dropdown[open] .review-tag-options:not(.is-positioned),
+.evidence-dropdown[open] .evidence-options:not(.is-positioned) {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  position: fixed !important;
+  top: 0 !important;
+  left: -10000px !important;
+  right: auto !important;
+  z-index: 70;
+}
 /* JS positions these with fixed + flip; keep absolute rules as closed-state baseline. */
 .review-tag-dropdown .review-tag-options.is-fixed-dropdown,
 .evidence-dropdown .evidence-options.is-fixed-dropdown {
   position: fixed; z-index: 70; right: auto; bottom: auto;
   max-height: none; /* height capped inline from free space */
+}
+.review-tag-dropdown .review-tag-options.is-positioned,
+.evidence-dropdown .evidence-options.is-positioned {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
 }
 .review-tag-dropdown .review-tag-options .tag-option {
   width: 100%; min-width: 0; max-width: 100%; justify-content: flex-start; text-align: left;
