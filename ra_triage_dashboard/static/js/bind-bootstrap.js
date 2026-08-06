@@ -71,6 +71,22 @@ function bindEvents() {
       hideAnalysisPieTooltip?.();
     }
   });
+  document.addEventListener(
+    "scroll",
+    (event) => {
+      if (!document.querySelector(".multi-filter.is-open")) return;
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest(".multi-filter-panel.is-fixed-dropdown")
+      ) {
+        return;
+      }
+      closeAllMultiFilters();
+    },
+    true
+  );
+  window.addEventListener("resize", () => closeAllMultiFilters());
   $("#resetReviewAnalysisButton").addEventListener("click", async () => {
     $("#analysisRunFilter").value = "";
     setAnalysisComparisonStatus("all", { hasRun: false });

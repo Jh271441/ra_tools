@@ -1401,7 +1401,7 @@ function positionReviewDropdownPanel(dropdown) {
   panel.style.left = "0px";
   panel.style.top = "0px";
 
-  // Natural height (uncapped) for flip decision, then cap to free space.
+  // Prefer down; flip up only when below is short and above has more room.
   const naturalH = panel.scrollHeight || panel.getBoundingClientRect().height || 200;
   const gap = 4;
   const margin = 8;
@@ -1410,7 +1410,7 @@ function positionReviewDropdownPanel(dropdown) {
   const spaceBelow = vh - summaryRect.bottom - gap - margin;
   const spaceAbove = summaryRect.top - gap - margin;
   const openUp =
-    spaceBelow < Math.min(naturalH, 220) && spaceAbove > spaceBelow;
+    spaceBelow < Math.min(naturalH, 160) && spaceAbove > spaceBelow;
 
   const available = Math.max(120, Math.floor(openUp ? spaceAbove : spaceBelow));
   const maxH = Math.min(available, Math.floor(vh * 0.55), 420);

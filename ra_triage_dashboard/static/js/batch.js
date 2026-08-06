@@ -27,14 +27,107 @@ function updatePredictionBatchCount() {
   target.classList.toggle("input-warning", Boolean(invalid.length || overLimit));
 }
 
+function providerStatusLabel(provider) {
+  const selectable = Boolean(provider?.enabled && provider?.supports_batch);
+  if (selectable) return "可用";
+  if (provider?.credential_configured) return "暂不可用";
+  return "未配置凭证";
+}
+
+function selectGatewayProvider(providerId, { reloadModels = true } = {}) {
+  const nextId = String(providerId || "").trim();
+  if (!nextId || nextId === state.selectedGatewayProviderId) {
+    closeGatewayProviderPicker();
+    return;
+  }
+  state.selectedGatewayProviderId = nextId;
+  state.selectedGatewayModelId = "";
+  const modelSelect = $("#predictionModelSelect");
+  if (modelSelect) modelSelect.value = "";
+  renderGatewayProviders();
+  closeGatewayProviderPicker();
+  if (!reloadModels) return;
+  loadGatewayModels({ providerId: state.selectedGatewayProviderId }).catch((error) => {
+    showToast(error.message, true);
+  });
+}
+
+function closeGatewayProviderPicker() {
+  const picker = $("#gatewayProviderPicker");
+  const panel = $("#gatewayProviderPickerPanel");
+  const trigger = $("#gatewayProviderPickerTrigger");
+  if (!picker || !panel) return;
+  panel.hidden = true;
+  picker.classList.remove("is-open");
+  resetAnchoredPanel(panel);
+  trigger?.setAttribute("aria-expanded", "false");
+}
+
+function bindGatewayProviderPicker() {
+  const picker = $("#gatewayProviderPicker");
+  const trigger = $("#gatewayProviderPickerTrigger");
+  const panel = $("#gatewayProviderPickerPanel");
+  if (!picker || !trigger || !panel || picker.dataset.bound === "true") return;
+  picker.dataset.bound = "true";
+  trigger.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (trigger.disabled) return;
+    const willOpen = panel.hidden;
+    closeGatewayProviderPicker();
+    closeGatewayModelPicker();
+    closeAllMultiFilters();
+    if (!willOpen) return;
+    picker.classList.add("is-open");
+    trigger.setAttribute("aria-expanded", "true");
+    openAnchoredPanel(panel, trigger, {
+      maxHeight: 280,
+      minWidth: Math.max(trigger.getBoundingClientRect().width, 200),
+    });
+  });
+  panel.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const option = event.target.closest("[data-gateway-provider]");
+    if (!option || option.disabled || option.getAttribute("aria-disabled") === "true") return;
+    selectGatewayProvider(option.dataset.gatewayProvider || "");
+  });
+  document.addEventListener("click", (event) => {
+    if (!picker.contains(event.target) && !panel.contains(event.target)) {
+      closeGatewayProviderPicker();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeGatewayProviderPicker();
+  });
+  document.addEventListener(
+    "scroll",
+    (event) => {
+      if (!picker.classList.contains("is-open")) return;
+      const target = event.target;
+      if (target instanceof Element && target.closest(".gateway-provider-picker-panel")) return;
+      closeGatewayProviderPicker();
+    },
+    true
+  );
+  window.addEventListener("resize", () => closeGatewayProviderPicker());
+}
+
 function renderGatewayProviders() {
   const target = $("#gatewayProviderSelect");
+  const summary = $("#gatewayProviderPickerSummary");
+  const options = $("#gatewayProviderPickerOptions");
+  const trigger = $("#gatewayProviderPickerTrigger");
   if (!target) return;
+  bindGatewayProviderPicker();
   const catalog = state.config?.prediction_batch?.providers || {};
   const providers = Array.isArray(catalog.providers) ? catalog.providers : [];
   if (!providers.length) {
     target.innerHTML = '<option value="">未发现服务端 Provider 配置</option>';
     target.disabled = true;
+    if (summary) summary.textContent = "未发现服务端 Provider 配置";
+    if (options) options.innerHTML = '<div class="multi-filter-empty">暂无 Provider</div>';
+    if (trigger) trigger.disabled = true;
+    closeGatewayProviderPicker();
     return;
   }
   const configuredSelected = state.selectedGatewayProviderId || catalog.active_provider_id;
@@ -45,24 +138,34 @@ function renderGatewayProviders() {
   target.innerHTML = providers
     .map((provider) => {
       const selectable = Boolean(provider.enabled && provider.supports_batch);
-      const status = selectable ? "可用" : provider.credential_configured ? "暂不可用" : "未配置凭证";
+      const status = providerStatusLabel(provider);
       return `<option value="${escapeHtml(provider.id)}" ${selectable ? "" : "disabled"}>${escapeHtml(provider.display_name || provider.id)} · ${escapeHtml(status)}</option>`;
     })
     .join("");
   target.value = selectedId;
   target.disabled = false;
-  target.onchange = () => {
-    const nextId = target.value || selectedId;
-    if (nextId === state.selectedGatewayProviderId) return;
-    state.selectedGatewayProviderId = nextId;
-    state.selectedGatewayModelId = "";
-    const modelSelect = $("#predictionModelSelect");
-    if (modelSelect) modelSelect.value = "";
-    renderGatewayProviders();
-    loadGatewayModels({ providerId: state.selectedGatewayProviderId }).catch((error) => {
-      showToast(error.message, true);
-    });
-  };
+  if (trigger) trigger.disabled = false;
+  const selectedProvider =
+    providers.find((item) => item.id === selectedId) || providers[0] || null;
+  if (summary) {
+    summary.textContent = selectedProvider
+      ? `${selectedProvider.display_name || selectedProvider.id} · ${providerStatusLabel(selectedProvider)}`
+      : "选择 Provider";
+  }
+  if (options) {
+    options.innerHTML = providers
+      .map((provider) => {
+        const selectable = Boolean(provider.enabled && provider.supports_batch);
+        const active = provider.id === selectedId;
+        const status = providerStatusLabel(provider);
+        const label = `${provider.display_name || provider.id} · ${status}`;
+        return `<button class="gateway-provider-option${active ? " is-active" : ""}${selectable ? "" : " is-disabled"}" type="button" role="option" data-gateway-provider="${escapeHtml(provider.id)}" aria-selected="${active ? "true" : "false"}" ${selectable ? "" : "disabled aria-disabled=\"true\""} title="${escapeHtml(label)}">
+          <span class="gateway-provider-option-check" aria-hidden="true">${active ? "✓" : ""}</span>
+          <span class="gateway-provider-option-label">${escapeHtml(label)}</span>
+        </button>`;
+      })
+      .join("");
+  }
 }
 
 function gatewayModelTier(model) {
@@ -97,6 +200,7 @@ function closeGatewayModelPicker() {
   if (!picker || !panel) return;
   panel.hidden = true;
   picker.classList.remove("is-open");
+  resetAnchoredPanel(panel);
   trigger?.setAttribute("aria-expanded", "false");
 }
 
@@ -112,10 +216,15 @@ function bindGatewayModelPicker() {
     event.stopPropagation();
     const willOpen = panel.hidden;
     closeGatewayModelPicker();
+    closeGatewayProviderPicker();
+    closeAllMultiFilters();
     if (!willOpen) return;
-    panel.hidden = false;
     picker.classList.add("is-open");
     trigger.setAttribute("aria-expanded", "true");
+    openAnchoredPanel(panel, trigger, {
+      maxHeight: 360,
+      minWidth: Math.max(trigger.getBoundingClientRect().width, 240),
+    });
   });
   panel.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -127,11 +236,24 @@ function bindGatewayModelPicker() {
     renderGatewayModels();
   });
   document.addEventListener("click", (event) => {
-    if (!picker.contains(event.target)) closeGatewayModelPicker();
+    if (!picker.contains(event.target) && !panel.contains(event.target)) {
+      closeGatewayModelPicker();
+    }
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeGatewayModelPicker();
   });
+  document.addEventListener(
+    "scroll",
+    (event) => {
+      if (!picker.classList.contains("is-open")) return;
+      const target = event.target;
+      if (target instanceof Element && target.closest(".gateway-model-picker-panel")) return;
+      closeGatewayModelPicker();
+    },
+    true
+  );
+  window.addEventListener("resize", () => closeGatewayModelPicker());
 }
 
 function renderGatewayModels() {

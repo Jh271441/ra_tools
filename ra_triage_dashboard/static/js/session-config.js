@@ -206,10 +206,15 @@ function renderMultiFilter(
     event.stopPropagation();
     const willOpen = Boolean(panel?.hidden);
     closeAllMultiFilters();
+    if (typeof closeGatewayModelPicker === "function") closeGatewayModelPicker();
+    if (typeof closeGatewayProviderPicker === "function") closeGatewayProviderPicker();
     if (willOpen && panel) {
-      panel.hidden = false;
       root.classList.add("is-open");
       trigger.setAttribute("aria-expanded", "true");
+      openAnchoredPanel(panel, trigger, {
+        maxHeight: 280,
+        minWidth: Math.max(trigger.getBoundingClientRect().width, 168),
+      });
     }
   });
   panel?.addEventListener("click", (event) => event.stopPropagation());

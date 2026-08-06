@@ -100,9 +100,110 @@ function closeAllMultiFilters(except = null) {
     if (except && root === except) return;
     root.classList.remove("is-open");
     const panel = root.querySelector(".multi-filter-panel");
-    if (panel) panel.hidden = true;
+    if (panel) {
+      panel.hidden = true;
+      resetAnchoredPanel(panel);
+    }
     root.querySelector(".multi-filter-trigger")?.setAttribute("aria-expanded", "false");
   });
+}
+
+/** Park a dropdown panel off-screen before first paint (no absolute-down flash). */
+function prepareAnchoredPanel(panel) {
+  if (!panel) return;
+  panel.classList.add("is-fixed-dropdown", "is-measuring");
+  panel.classList.remove("is-positioned", "is-drop-up", "is-drop-down");
+  panel.style.position = "fixed";
+  panel.style.right = "auto";
+  panel.style.bottom = "auto";
+  panel.style.top = "0px";
+  panel.style.left = "-10000px";
+  panel.style.visibility = "hidden";
+  panel.style.opacity = "0";
+  panel.style.pointerEvents = "none";
+  panel.style.maxHeight = "";
+  panel.style.zIndex = "80";
+}
+
+function resetAnchoredPanel(panel) {
+  if (!panel) return;
+  panel.classList.remove(
+    "is-fixed-dropdown",
+    "is-positioned",
+    "is-measuring",
+    "is-drop-up",
+    "is-drop-down"
+  );
+  panel.style.position = "";
+  panel.style.top = "";
+  panel.style.left = "";
+  panel.style.right = "";
+  panel.style.bottom = "";
+  panel.style.width = "";
+  panel.style.maxHeight = "";
+  panel.style.visibility = "";
+  panel.style.opacity = "";
+  panel.style.pointerEvents = "";
+  panel.style.zIndex = "";
+}
+
+/**
+ * Place panel near anchor. Prefers opening downward; flips up only when below
+ * cannot fit the content and above has more free space.
+ */
+function positionAnchoredPanel(panel, anchor, options = {}) {
+  if (!panel || !anchor) return { openUp: false };
+  const gap = Number(options.gap ?? 4);
+  const margin = Number(options.margin ?? 8);
+  const maxHeightCap = Number(options.maxHeight ?? 360);
+  const minWidth = Number(options.minWidth ?? 0);
+  const matchAnchorWidth = options.matchAnchorWidth !== false;
+
+  prepareAnchoredPanel(panel);
+  const rect = anchor.getBoundingClientRect();
+  const width = Math.max(
+    matchAnchorWidth ? rect.width : 0,
+    minWidth,
+    120
+  );
+  panel.style.width = `${Math.round(width)}px`;
+  panel.style.left = "0px";
+  panel.style.top = "0px";
+
+  const naturalH = panel.scrollHeight || panel.getBoundingClientRect().height || 200;
+  const vh = window.innerHeight;
+  const vw = window.innerWidth;
+  const spaceBelow = vh - rect.bottom - gap - margin;
+  const spaceAbove = rect.top - gap - margin;
+  // Prefer down; flip only when below is too short and above is better.
+  const openUp =
+    spaceBelow < Math.min(naturalH, 160) && spaceAbove > spaceBelow;
+  const available = Math.max(100, Math.floor(openUp ? spaceAbove : spaceBelow));
+  const maxH = Math.min(available, maxHeightCap, Math.floor(vh * 0.55));
+  panel.style.maxHeight = `${maxH}px`;
+
+  const height = Math.min(panel.scrollHeight || naturalH, maxH);
+  let top = openUp ? rect.top - height - gap : rect.bottom + gap;
+  top = Math.max(margin, Math.min(top, vh - height - margin));
+  let left = rect.left;
+  left = Math.max(margin, Math.min(left, vw - width - margin));
+
+  panel.style.top = `${Math.round(top)}px`;
+  panel.style.left = `${Math.round(left)}px`;
+  panel.classList.remove("is-measuring");
+  panel.classList.add("is-fixed-dropdown", "is-positioned");
+  panel.classList.add(openUp ? "is-drop-up" : "is-drop-down");
+  panel.style.visibility = "";
+  panel.style.opacity = "";
+  panel.style.pointerEvents = "";
+  return { openUp };
+}
+
+function openAnchoredPanel(panel, anchor, options = {}) {
+  if (!panel || !anchor) return;
+  panel.hidden = false;
+  prepareAnchoredPanel(panel);
+  positionAnchoredPanel(panel, anchor, options);
 }
 
 function normalizeClientBasePath(value) {

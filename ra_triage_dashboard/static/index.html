@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-109`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-110`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -524,7 +524,16 @@
                 <h3>服务器模型网关</h3>
                 <label class="gateway-endpoint">
                   <span>Provider</span>
-                  <select id="gatewayProviderSelect" aria-label="选择模型 Provider">
+                  <div class="gateway-provider-picker" id="gatewayProviderPicker">
+                    <button class="gateway-provider-picker-trigger" id="gatewayProviderPickerTrigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="gatewayProviderPickerPanel" aria-label="选择模型 Provider">
+                      <span id="gatewayProviderPickerSummary">正在读取 Provider…</span>
+                      <span class="gateway-provider-picker-caret" aria-hidden="true"></span>
+                    </button>
+                    <div class="gateway-provider-picker-panel" id="gatewayProviderPickerPanel" role="listbox" hidden>
+                      <div class="gateway-provider-picker-options" id="gatewayProviderPickerOptions"></div>
+                    </div>
+                  </div>
+                  <select id="gatewayProviderSelect" class="gateway-model-native-select" aria-hidden="true" tabindex="-1">
                     <option value="">正在读取 Provider…</option>
                   </select>
                   <small><span id="gatewayModelsEndpoint">正在读取模型目录…</span> · 服务端密钥</small>
@@ -958,7 +967,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-109`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-110`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
