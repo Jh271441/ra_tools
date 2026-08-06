@@ -408,9 +408,17 @@ class FrontendContractTest(unittest.TestCase):
         self.assertNotIn('class="review-history-toggle"', APP_JS)
         self.assertIn(".review-section-heading h2 { color: var(--text); font-size: 16px; }", STYLES_CSS)
         self.assertIn("is_excluded: Boolean($(\"#reviewExcludeInput\")?.checked)", APP_JS)
-        main_py = Path(__file__).resolve().parents[1].joinpath("app", "main.py").read_text(encoding="utf-8")
+        app_root = Path(__file__).resolve().parents[1].joinpath("app")
+        main_py = "\n".join(
+            p.read_text(encoding="utf-8")
+            for p in [
+                app_root / "runtime.py",
+                app_root / "http_support.py",
+                app_root / "main.py",
+            ]
+        )
         self.assertIn('"section": "scene"', main_py)
-        self.assertIn('"section": "egress"', Path(__file__).resolve().parents[1].joinpath("app", "main.py").read_text(encoding="utf-8"))
+        self.assertIn('"section": "egress"', main_py)
         self.assertIn('"section": "interaction_decision"', main_py)
         self.assertIn('"group": "environment"', main_py)
         self.assertIn('"group": "self_intent"', main_py)
@@ -509,7 +517,11 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('if (event.key === "Escape") closeAllReviewDropdowns()', APP_JS)
 
     def test_model_source_preview_supports_excel_files(self) -> None:
-        main_py = Path(__file__).resolve().parents[1].joinpath("app", "main.py").read_text(encoding="utf-8")
+        app_root = Path(__file__).resolve().parents[1].joinpath("app")
+        main_py = "\n".join(
+            p.read_text(encoding="utf-8")
+            for p in sorted(app_root.rglob("*.py"))
+        )
         self.assertIn('preview_supported = suffix in {".json", ".csv", ".xlsx", ".xlsm"}', main_py)
         self.assertIn('if suffix not in {".json", ".csv", ".xlsx", ".xlsm"}:', main_py)
         self.assertIn("当前仅支持在页面内预览 CSV / JSON / XLSX", main_py)
