@@ -2,7 +2,7 @@
 
 一个独立于 `ra_auto_triage` 的 issue triage / 标注 / 模型结果对比看板。
 
-## 当前 MVP（v1.7）
+## 当前产品快照（v4.3，2026-08-06）
 
 - 默认工作集是 `trail_label_baseline_20260729.xlsx` 中 `dataset=0508` 的 **1071 条**；GT 只来自该快照，不因 Trail 查询或模型导入而改变。
 - 首页是服务端筛选的紧凑 Issue 缩略图队列（宽屏五列、随可用宽度降列），默认每页 20 条并可切换 10 / 20 / 50 / 100；页码和单页数量写入 URL，接口单页最多返回 100 条。BEV 缩略图按源文件版本生成 640×360 缓存并懒加载，不把 1071 张原图一次送进浏览器。点击 Issue 后才进入 URL 可恢复的详情态，加载大图、媒体、模型输出和人工 Review；详情支持返回列表及跨页上一/下一 Issue，并在具备 trip 与事件时间戳时提供同域 Ares Studio ±10 秒跳转链接。Issue 详情第二行通过紧凑下拉框切换 `BEV 图片 / Camera 图片 / Ares Studio 视频`，相邻的同尺寸按钮展开完整预览；有视频时详情默认展示视频首帧，没有视频时再展示 BEV / Camera 图片。Gallery 卡片的“媒体预览”和详情媒体共用一个近乎占满浏览器视口的三模式弹窗，首页仅在点击预览时按需读取该 Issue 的完整资产。详情页媒体快捷键采用页面级监听：焦点不在输入、选择、按钮或链接时，`B/C/V`、空格、左右方向键和 `F` 无需聚焦播放器即可生效；打开弹窗后由弹窗接管。三种媒体都默认适配可视范围，并支持 1:1 原始像素、按钮/键盘/Ctrl/⌘+滚轮缩放、放大后指针拖拽平移以及全屏；进入或退出全屏不会重置缩放比例。BEV 视频使用 Workbench 自有的紧凑控制条，支持播放/暂停、0.5× / 1× / 1.5× / 2×、回到 t0、进度拖动、可配置 0.1 / 0.5 / 1 / 5 秒左右跳转和键盘控制；默认左右跳转 1 秒，元数据帧步长作为“1 帧”选项，切换到图片时暂停但保留播放位置。
@@ -15,8 +15,9 @@
 - 页面每约 1.8 秒只读检查一次共享数据 revision；只有 Issue、Review、Run、预测或 Batch 状态确实变化时才刷新当前页面。多人同时 Review 时，正在编辑的表单和待上传截图不会被后台刷新覆盖，而会在保存后合并最新数据。API 响应包含 `Server-Timing` 与 `X-Request-Duration-Ms`，超过 500 ms 的 API 请求写入服务慢请求日志。
 - 原因聚类页只消费每个 Issue 最新一版 Review：稳定的 `missing_evidence[]` 是主聚类，Review 结构化 Tags 按「场景 / 触发判定 / 如何脱困」分别筛选；下拉筛选选择后立即刷新，搜索输入短暂防抖后立即刷新，不再需要额外点击“应用”；自由文本只作为明细中的解释，不再生成并展示旧的关键词主题卡片。自定义缺失信息按共享目录的正式标题展示，不泄露 `custom:` 或哈希 key。检索只匹配最新人工 Review 的原因、复核人、标签、状态与缺失信息，不检索模型说明或 Issue 场景文本。选择 Model Run 后，“模型预测”可按三分类标签筛选，另可按红色 `MISMATCH`、绿色 `MATCH`、灰色 `NONE（未预测）` 或全部切片，混淆矩阵与 Case 明细使用同一状态；明细行以 Issue ID 直接链接 Voyager，模型标签点击后按需加载并复用评测 Run 历史弹窗。当前筛选结果可导出 UTF-8 CSV 或 XLSX；筛选、聚类和分页都写入 `/review-analysis` URL，可硬刷新并用浏览器前进/后退恢复。
 - Issue 详情先渲染本地模型、媒体和 Review；随后在 Voyager / Ares Studio 链接之后后台按需补齐 Trail 2410 视图中的只读 `ra_id` 对应的 `RA 录屏`，以及有 `ra_event` 时的 `RA Event` 入口。Trail 请求的延迟、超时或不可用不会阻塞 Issue 首屏，入口会在元数据返回后增量出现。`RA Event` 会直接打开与 Trail 一致的事件表弹窗，支持按事件名/值筛选，并保留 Trail Issue 外链；录屏 URL 由服务端使用 canonical `ra_id` 构造，浏览器不根据时间戳猜任务 ID；Trail 不可用或字段缺失时两个入口自动隐藏。该元数据查询只允许 `ra_id`、`ra_event`、`car_id`、`trip_id` 和 RA 起止时间等字段，独立于模型结果同步，不创建 Run、不写回 Trail。
+- 原因聚类 `/review-analysis` 默认每页 20 条，可切换 10 / 20 / 50 / 100；筛选后的明细按 `issue_id` 升序稳定排序，页码和单页数量写入 URL，刷新或前进/后退不会改变顺序。
 - 首页可把当前单个 Issue 或不超过 50 条的完整筛选结果预填到 Batch 页面；若前端只加载到部分结果或超过上限，会明确阻止而不是静默截断。Batch 页直接选择服务端 Provider，模型列表隐藏仅用于服务端解析的 `Auto` 别名，并保留 Profile 已验证项和网关当前在线的 Qwen3 生成模型，排除 Embedding；实验模型有明确标记且创建任务前需再次确认。默认 Camera 输入与 `stuck_triage_auto_opt_api` 对齐为 -19s 至 +19s 的单前视 9 帧，Ares Animation 可切换且只使用服务端固定的 API 默认 manifest/时间点，浏览器不能提交路径或 Ares Capture 配置。
-- 每个 Batch 固化请求人、模型验证层级、完整 Prompt 正文与 SHA-256、Prompt 基线版本/是否编辑、Camera 帧偏移、RA Events / RA-SWAG Options 和输入 Profile；任务历史可按人员、状态、模型、Prompt 精确版本（mode + SHA）和输入筛选，已下线模型与旧 Prompt 也保留在筛选项中。批次名默认按 `当前用户_i_YYYYMMDD_HHmmss` 生成，Issue IDs 使用紧凑单行输入但仍支持逗号/空格分隔。Prompt 只允许当前三分类构建器提供的变量，必须保留三个标准标签，并拒绝会输出「无法判断」等第四类的旧模板；Camera 偏移严格递增、包含 0、最多 18 帧。worker 会重新校验 Prompt/Input 快照并重建配置 Hash，预测与后续发布必须一致。
+- 每个 Batch 固化请求人、模型验证层级、完整 Prompt 正文与 SHA-256、Prompt 基线版本/是否编辑、Camera 帧偏移、RA Events / RA-SWAG Options 和输入 Profile；任务历史可按人员、状态、模型、Prompt 精确版本（mode + SHA）和输入筛选，已下线模型与旧 Prompt 也保留在筛选项中。批次名默认按 `当前用户_YYYYMMDD_HHmmss` 生成（不再带实习生 `_i` 标识），Issue IDs 使用紧凑单行输入但仍支持逗号/空格分隔。Prompt 只允许当前三分类构建器提供的变量，必须保留三个标准标签，并拒绝会输出「无法判断」等第四类的旧模板；Camera 偏移严格递增、包含 0、最多 18 帧。worker 会重新校验 Prompt/Input 快照并重建配置 Hash，预测与后续发布必须一致。
 - 网关 API key 只从服务用户持有的 `0600` 普通文件读取，经一次性 stdin 交给预测 worker，读取后立即从请求对象移除；不接受浏览器或父进程环境变量中的 key，也不会把 key 交给 AutoTriage publish worker。Batch 页只展示服务端登记的 Provider 列表，Kylin 与 TokenService 都可在已登记对应 key 文件时选择；模型目录、Provider、请求地址和凭证会随 Batch 固化但不会把 key 写入浏览器或 SQLite。TokenService 的在线 Qwen3 模型默认按实验模型处理，创建前需要确认；自定义 Provider 必须先在 cloud_server 服务端登记。轨迹摘要与 Ares Capture 在 Batch 输入中强制关闭，Ares Animation 只能选择固定的服务端 API 默认策略。
 - Batch 采用两阶段写入：预测阶段只在 dashboard 自己的 `batch_bags/` 缓存中下载/复用 Camera 与 gateway bag，绝不修改 `ra_auto_triage/bags`；Ares Animation 只读服务端既有 manifest，并继续禁止 Trail 写和 AutoTriage 写。可信 SSO 用户显式点击「推送 AutoTriage」后，才用 cloud_server 固定服务身份创建生产 Batch、推送成功结果并关联 `records/{batch_id}?tab=results`。重复点击已有 Batch 的任务只返回原链接，不再次建批。
 - Batch 预测任务先持久化为 `queued`，单 worker 按创建时间顺序执行；runner 忙碌时新任务保留排队而不是返回 409 并标记失败。服务重启只终止原先的 `running` 任务，尚未开始的 `queued` 任务会在启动后自动续跑。
@@ -49,7 +50,7 @@ Issue 列表 ──> Batch Prediction Job ──> 不可变 manual_batch Run
 
 Runs 的「人员」统一显示/筛选创建人；旧 Run 没有创建人时回退到结果包实验作者，搜索框仍可检索两者。Review 提供复核人筛选，单 case 任务历史提供请求人及任务状态筛选。两者都不存在时显示为未记录。
 
-当前 cloud_server 上的 `Qwen3.5-9B-finetuned/base` Run 覆盖 **348 / 1071**，是结果文件本身的 `lowconf348` / `runtime_overrides.limit=348` 输入子集，不是 SSO 或页面按用户过滤得到的子集。
+某个 Model Run 可以只覆盖 0508 baseline 的输入子集；Run 注册表必须显示覆盖数，未覆盖的 baseline Issue 仍保留并显示 `NONE（未预测）`，不能误解为按 SSO 用户裁剪。
 
 ## 数据边界
 
@@ -84,7 +85,7 @@ records 链接只用于提取数字 Batch ID，后端不会跟随其中的 hostn
 
 Review 截图绑定到单条追加式 annotation：前端粘贴后先本地预览，保存时才上传；后端在受限后台线程中解码并重新编码为 PNG/JPEG/WebP，去除原始元数据。每次最多 4 张、单张 8 MB、总计 24 MB，单图不超过 4000 万像素；HTTP 请求上限为 26 MB，缺少 `Content-Length` 或固定同源请求标记会在 multipart 解析前拒绝，应用级截图配额为 20 GB，并保留至少 256 MB 磁盘空间。API 只返回附件 ID、尺寸、类型和不含服务器路径的读取 URL。备份 SQLite 时必须同时备份 `review_attachments/`，否则历史记录仍在但图片文件无法恢复。
 
-Issue 标签可以不选，前端按三层语义分组：`场景` 包括 `environment`（环境，含施工/变更区域、道闸、园区出入口、掉头、其他）和 `self_intent`（自车意图，含 `intent_straight`、`intent_left_turn`、`intent_right_turn`、`intent_u_turn`）；`触发判定` 保留 `误触发`（`traffic_light`、`queue`、`yielding`、`u_turn`、`park_in`、`park_out`、`scene_false_other`）和 `应该触发`（`obstacle_not_avoided`、`close_distance`、`perception_fp`、`scene_true_other`）；`如何驶离` 仍包括正确触发与无需协助两组。场景下拉框按单列全宽展示，新增入口固定在下拉标题栏，创建表单不会因选项过多而需要滚动；有写权限的用户可将自定义场景标签加入共享目录，编辑/删除使用紧凑图标操作。自定义标签可以编辑或软删除，删除不会影响历史 Review，目录变更对所有用户和 Issue 生效。缺失信息默认预选 `routing_direction`；共享目录中的缺失信息可由有写权限的用户编辑标题/说明或软删除单条目录项。`is_excluded` 与 Review 版本一起追加保存。
+Issue 标签可以不选，前端按三层语义分组：`场景` 包括 `environment`（环境，含施工/变更区域、道闸、园区出入口、掉头、其他）和 `self_intent`（自车意图，含 `intent_straight`、`intent_left_turn`、`intent_right_turn`、`intent_u_turn`）；`触发判定` 保留 `误触发`（`traffic_light`、`queue`、`yielding`、`u_turn`、`park_in`、`park_out`、`scene_false_other`）和 `应该触发`（`obstacle_not_avoided`、`close_distance`、`perception_fp`、`scene_true_other`）；`如何驶离` 仍包括正确触发与无需协助两组。场景和缺失信息使用共享的固定目录，以绝对定位弹出多选，不因选项展开而撑高 Review 面板；当前 Review UI 不提供新建、编辑或删除标签的入口，历史自定义 key 仍可读。缺失信息默认不选中，`is_excluded` 与 Review 版本一起追加保存。
 
 ## 用户身份、部署模式与 Kylin SSO
 

@@ -3903,7 +3903,7 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
     )
     if not name:
         actor_slug = re.sub(r"[^A-Za-z0-9._-]+", "-", actor).strip("-")[:48] or "triage"
-        name = f"{actor_slug}_i_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        name = f"{actor_slug}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     job = database.create_batch_prediction_job(
         name=name,
         issue_ids=issue_ids,
