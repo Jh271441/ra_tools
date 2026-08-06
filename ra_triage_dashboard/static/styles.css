@@ -1232,13 +1232,19 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .screenshot-paste-zone {
   min-height: 66px; display: grid; place-content: center; gap: 3px; padding: 9px;
   border: 1px dashed #435268; border-radius: 8px; color: #c8d4e2; background: #0b1119;
-  cursor: pointer; text-align: center;
+  cursor: default; text-align: center;
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
 }
 .screenshot-paste-zone.is-compact {
   min-height: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px;
   padding: 7px 9px; text-align: left;
 }
 .screenshot-paste-zone:hover, .screenshot-paste-zone:focus-visible { border-color: rgba(34,211,238,.65); outline: 0; background: rgba(34,211,238,.035); }
+.screenshot-paste-zone.is-dragover {
+  border-color: rgba(34,211,238,.85); border-style: solid;
+  background: rgba(34,211,238,.1);
+  box-shadow: inset 0 0 0 1px rgba(34,211,238,.25);
+}
 .screenshot-paste-zone strong { font-size: 12px; }
 .screenshot-paste-zone small { color: var(--faint); font-size: 9px; line-height: 1.4; }
 .screenshot-paste-copy { min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; }
@@ -1247,7 +1253,7 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .screenshot-browse-button {
   width: fit-content; justify-self: center; margin-top: 3px; padding: 4px 7px;
   border: 1px solid var(--line); border-radius: 5px; color: #cbd6e5; background: var(--overlay);
-  font-size: 9px;
+  font-size: 9px; cursor: pointer;
 }
 .screenshot-paste-zone.is-compact .screenshot-browse-button { margin-top: 0; flex: 0 0 auto; }
 .screenshot-browse-button:hover { border-color: rgba(34,211,238,.55); color: var(--accent); }
@@ -2421,6 +2427,10 @@ html[data-color-theme="light"] .screenshot-paste-zone,
 html[data-color-theme="light"] .screenshot-browse-button,
 html[data-color-theme="light"] .run-source-tab em,
 html[data-color-theme="light"] .import-example-preview-heading strong { color: var(--text); }
+html[data-color-theme="light"] .screenshot-paste-zone.is-dragover {
+  border-color: rgba(8,117,141,.55); background: rgba(8,117,141,.08);
+  box-shadow: inset 0 0 0 1px rgba(8,117,141,.18);
+}
 
 html[data-color-theme="light"] .issue-id,
 html[data-color-theme="light"] .analysis-issue-link,

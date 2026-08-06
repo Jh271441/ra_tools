@@ -625,10 +625,10 @@ function renderReview(caseData) {
           <div class="evidence-options review-tag-options" id="missingEvidenceOptions">${visibleCatalog.map((item) => missingEvidenceOptionMarkup(item, chosenEvidence.has(item.key), true)).join("")}${deletedEvidenceOptions}${customEvidenceOptions}${!visibleCatalog.length && !deletedEvidenceOptions && !customEvidenceOptions ? '<div class="review-tag-empty">暂无条目，点 ＋ 添加</div>' : ""}</div>
         </details>
         <div class="review-attachment-field">
-          <div class="screenshot-paste-zone is-compact" id="screenshotPasteZone" tabindex="0" role="group" aria-label="粘贴补充截图">
+          <div class="screenshot-paste-zone is-compact" id="screenshotPasteZone" tabindex="0" role="group" aria-label="拖拽、粘贴或选择补充截图">
             <span class="screenshot-paste-copy">
               <strong><span class="ui-lang-zh">补充截图</span><span class="ui-lang-en">Screenshots</span></strong>
-              <small><span class="ui-lang-zh">粘贴 Ctrl/⌘+V · 最多 4 张</span><span class="ui-lang-en">Paste Ctrl/⌘+V · max 4</span></small>
+              <small><span class="ui-lang-zh">拖拽到此处 / 粘贴 Ctrl/⌘+V · 最多 4 张</span><span class="ui-lang-en">Drop here / Paste Ctrl/⌘+V · max 4</span></small>
             </span>
             <button class="screenshot-browse-button" id="reviewScreenshotBrowse" type="button"><span class="ui-lang-zh">选择图片</span><span class="ui-lang-en">Browse</span></button>
           </div>
@@ -689,9 +689,15 @@ function renderReview(caseData) {
     const openScreenshotPicker = () => {
       screenshotInput.click();
     };
-    pasteZone.addEventListener("click", (event) => {
+    // Only the explicit browse button opens the OS picker — whole-zone click
+    // used to steal focus and break Ctrl/⌘+V paste.
+    screenshotBrowse?.addEventListener("click", (event) => {
       event.preventDefault();
+      event.stopPropagation();
       openScreenshotPicker();
+    });
+    pasteZone.addEventListener("click", () => {
+      pasteZone.focus({ preventScroll: true });
     });
     pasteZone.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
@@ -699,14 +705,71 @@ function renderReview(caseData) {
         openScreenshotPicker();
       }
     });
-    pasteZone.addEventListener("paste", (event) => {
-      const files = [...(event.clipboardData?.items || [])]
+    const imageFilesFromDataTransfer = (dataTransfer) => {
+      if (!dataTransfer) return [];
+      const fromFiles = [...(dataTransfer.files || [])].filter((file) =>
+        String(file.type || "").startsWith("image/")
+      );
+      if (fromFiles.length) return fromFiles;
+      return [...(dataTransfer.items || [])]
         .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
         .map((item) => item.getAsFile())
         .filter(Boolean);
-      if (files.length) {
+    };
+    const acceptImagePasteOrDrop = (event, dataTransfer) => {
+      const files = imageFilesFromDataTransfer(dataTransfer);
+      if (!files.length) return false;
+      event.preventDefault();
+      addPendingReviewImages(files);
+      return true;
+    };
+    pasteZone.addEventListener("paste", (event) => {
+      acceptImagePasteOrDrop(event, event.clipboardData);
+    });
+    // Form-level paste so images still land while typing in reason/status fields.
+    $("#annotationForm")?.addEventListener("paste", (event) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLInputElement &&
+          !["checkbox", "radio", "file", "button", "submit"].includes(target.type))
+      ) {
+        // Prefer not to intercept plain text paste into text fields.
+        const hasImage = [...(event.clipboardData?.items || [])].some(
+          (item) => item.kind === "file" && item.type.startsWith("image/")
+        );
+        if (!hasImage) return;
+      }
+      acceptImagePasteOrDrop(event, event.clipboardData);
+    });
+    let dragDepth = 0;
+    const setDragOver = (active) => {
+      pasteZone.classList.toggle("is-dragover", active);
+    };
+    pasteZone.addEventListener("dragenter", (event) => {
+      if (![...(event.dataTransfer?.types || [])].includes("Files")) return;
+      event.preventDefault();
+      dragDepth += 1;
+      setDragOver(true);
+    });
+    pasteZone.addEventListener("dragover", (event) => {
+      if (![...(event.dataTransfer?.types || [])].includes("Files")) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+      setDragOver(true);
+    });
+    pasteZone.addEventListener("dragleave", (event) => {
+      if (![...(event.dataTransfer?.types || [])].includes("Files")) return;
+      event.preventDefault();
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (dragDepth === 0) setDragOver(false);
+    });
+    pasteZone.addEventListener("drop", (event) => {
+      dragDepth = 0;
+      setDragOver(false);
+      if (!acceptImagePasteOrDrop(event, event.dataTransfer)) {
         event.preventDefault();
-        addPendingReviewImages(files);
+        showToast("请拖入 PNG / JPEG / WebP 图片。", true);
       }
     });
     screenshotInput.addEventListener("change", () => {
