@@ -142,6 +142,41 @@ class BaselineRegistryTests(unittest.TestCase):
             self.assertEqual(cases["total"], 1)
             self.assertEqual(cases["items"][0]["issue_id"], "cn_c")
 
+    def test_model_run_scope_coverage_infers_single_dataset(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            db = Database(root / "t.sqlite3")
+            db.init()
+            db.replace_baseline_scope(
+                scope="release0508_1071_20260729",
+                rows=[{"issue_id": "cn_a", "gt_label": "误触发"}],
+                source="test",
+            )
+            db.replace_baseline_scope(
+                scope="release0626_300_spotcheck",
+                rows=[
+                    {"issue_id": "cn_b", "gt_label": "正确触发"},
+                    {"issue_id": "cn_c", "gt_label": "无需协助"},
+                ],
+                source="test",
+            )
+            run, _ = db.import_model_run(
+                name="eval-0626",
+                source_name="eval.json",
+                source_sha256="sha-eval-0626",
+                metadata={"schema_version": "v1"},
+                rows=[
+                    {"issue_id": "cn_b", "model_label": "正确触发"},
+                    {"issue_id": "cn_c", "model_label": "误触发"},
+                ],
+            )
+            coverage = db.model_run_scope_coverage(run["id"])
+            by_scope = {
+                item["baseline_scope"]: item["prediction_count"] for item in coverage
+            }
+            self.assertEqual(by_scope.get("release0626_300_spotcheck"), 2)
+            self.assertNotIn("release0508_1071_20260729", by_scope)
+
     def test_bags_provider_frames_and_video(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

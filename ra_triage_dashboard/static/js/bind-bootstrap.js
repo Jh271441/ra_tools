@@ -114,6 +114,15 @@ function bindEvents() {
       state.reviewComparisonStatus = "mismatch";
       state.failureOnly = true;
     }
+    if (state.selectedRunId) {
+      const run = (state.modelRuns || []).find(
+        (item) => String(item.id) === String(state.selectedRunId)
+      );
+      // 单集评测 Run：切换对比时自动勾选对应 GT 数据集。
+      if (run) {
+        await applyInferredBaselinesFromRun(run, { reason: "run" });
+      }
+    }
     if (typeof renderReviewCatalogFilters === "function") {
       renderReviewCatalogFilters();
     }

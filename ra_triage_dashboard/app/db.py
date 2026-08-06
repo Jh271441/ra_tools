@@ -1906,6 +1906,37 @@ class Database:
             for row in rows
         ]
 
+    def model_run_scope_coverage(self, run_id: str) -> list[dict[str, Any]]:
+        """Count predictions per issue baseline_scope for one Model Run.
+
+        Issues without a baseline_scope (e.g. imported-only orphans) are returned
+        under an empty scope key so callers can see unmatched rows.
+        """
+
+        normalized = str(run_id or "").strip()
+        if not normalized:
+            return []
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT COALESCE(i.baseline_scope, '') AS baseline_scope,
+                       COUNT(*) AS prediction_count
+                FROM model_predictions mp
+                LEFT JOIN issues i ON i.issue_id = mp.issue_id
+                WHERE mp.model_run_id = ?
+                GROUP BY COALESCE(i.baseline_scope, '')
+                ORDER BY prediction_count DESC, baseline_scope ASC
+                """,
+                (normalized,),
+            ).fetchall()
+        return [
+            {
+                "baseline_scope": str(row["baseline_scope"] or ""),
+                "prediction_count": int(row["prediction_count"] or 0),
+            }
+            for row in rows
+        ]
+
     def list_reviewers(
         self,
         baseline_scope: str | Sequence[str] = "",

@@ -134,7 +134,11 @@ async function loadRuns({ preferDefault = false, preserveEmpty = false } = {}) {
   select.innerHTML = `<option value="">未选择模型 run</option>${state.modelRuns
     .map((run) => {
       const tag = run.is_default ? "默认 · " : "";
-      return `<option value="${escapeHtml(run.id)}">${tag}${escapeHtml(run.name)} · 当前集 ${run.baseline_prediction_count ?? 0} 条 · 错 ${run.failure_count ?? 0}</option>`;
+      const inferred = Array.isArray(run.inferred_baseline_ids)
+        ? run.inferred_baseline_ids.filter(Boolean)
+        : [];
+      const setHint = inferred.length ? ` · ${inferred.join("+")}` : "";
+      return `<option value="${escapeHtml(run.id)}">${tag}${escapeHtml(run.name)}${escapeHtml(setHint)} · 当前集 ${run.baseline_prediction_count ?? 0} 条 · 错 ${run.failure_count ?? 0}</option>`;
     })
     .join("")}`;
   state.selectedRunId = state.modelRuns.some((run) => run.id === candidate) ? candidate : "";

@@ -115,6 +115,48 @@ function renderBaselinePicker() {
   });
 }
 
+function inferredBaselineIdsFromRun(run) {
+  if (!run || typeof run !== "object") return [];
+  const allowed = new Set(
+    (state.baselineCatalog.length
+      ? state.baselineCatalog
+      : state.config?.baselines || []
+    ).map((item) => String(item.id))
+  );
+  return normalizeBaselineIds(run.inferred_baseline_ids || [], {
+    allowed: allowed.size ? allowed : null,
+    fallback: [],
+  });
+}
+
+/**
+ * After import / Run 选择：按预测命中的 GT scope 自动勾选顶栏数据集。
+ * 单集评测（常见）→ 仅选中那一集；混合则选中所有命中集。
+ */
+async function applyInferredBaselinesFromRun(run, { reason = "run" } = {}) {
+  const inferred = inferredBaselineIdsFromRun(run);
+  if (!inferred.length) return false;
+  const current = selectedBaselineQueryValue();
+  const next = inferred.join(",");
+  if (current === next) return false;
+  await setBaselineScopes(inferred);
+  const labels = inferred
+    .map((id) => {
+      const item = (state.baselineCatalog || []).find((row) => String(row.id) === id);
+      return item?.label || id;
+    })
+    .join("、");
+  if (reason === "import") {
+    showToast(
+      uiText(
+        `已自动切换数据集：${labels}`,
+        `Dataset auto-selected: ${labels}`
+      )
+    );
+  }
+  return true;
+}
+
 async function setBaselineScopes(rawIds, { skipHistory = false } = {}) {
   const allowed = new Set(
     (state.baselineCatalog.length

@@ -1512,6 +1512,81 @@ def media_for_issue(issue_id: str, baseline_scope: str = "") -> Any:
     return provider or media_registry.for_baseline_id(baseline_registry.default_ids()[0])
 
 
+def _infer_baseline_ids_from_scope_coverage(
+    coverage: list[dict[str, Any]],
+    *,
+    dominant_ratio: float = 0.9,
+) -> list[str]:
+    """Map prediction-per-scope counts to short baseline ids for auto topbar select.
+
+    Evaluation runs almost always target a single GT workset. Prefer the single
+    dominant matched scope; fall back to every matched scope when mixed.
+    """
+
+    matched: list[tuple[str, int]] = []
+    for item in coverage:
+        scope = str(item.get("baseline_scope") or "").strip()
+        count = int(item.get("prediction_count") or 0)
+        if not scope or count <= 0:
+            continue
+        baseline_id = baseline_registry.scope_to_id(scope)
+        if not baseline_id:
+            continue
+        matched.append((baseline_id, count))
+    if not matched:
+        return []
+    # Merge duplicate ids if registry ever aliases (shouldn't).
+    by_id: dict[str, int] = {}
+    for baseline_id, count in matched:
+        by_id[baseline_id] = by_id.get(baseline_id, 0) + count
+    ordered = sorted(by_id.items(), key=lambda pair: (-pair[1], pair[0]))
+    total = sum(count for _, count in ordered)
+    if len(ordered) == 1:
+        return [ordered[0][0]]
+    top_id, top_count = ordered[0]
+    if total > 0 and top_count / total >= dominant_ratio:
+        return [top_id]
+    return [baseline_id for baseline_id, _ in ordered]
+
+
+def enrich_model_run_baseline_hint(run: dict[str, Any] | None) -> dict[str, Any]:
+    """Attach per-scope coverage + inferred dataset ids for UI auto-select."""
+
+    if not isinstance(run, dict):
+        return {}
+    run_id = str(run.get("id") or "").strip()
+    if not run_id:
+        return run
+    coverage = database.model_run_scope_coverage(run_id)
+    by_id: list[dict[str, Any]] = []
+    unmatched = 0
+    for item in coverage:
+        scope = str(item.get("baseline_scope") or "").strip()
+        count = int(item.get("prediction_count") or 0)
+        if not scope:
+            unmatched += count
+            continue
+        baseline_id = baseline_registry.scope_to_id(scope) or ""
+        by_id.append(
+            {
+                "id": baseline_id,
+                "scope": scope,
+                "label": (
+                    baseline_registry.by_id(baseline_id).label
+                    if baseline_id and baseline_registry.by_id(baseline_id)
+                    else scope
+                ),
+                "prediction_count": count,
+            }
+        )
+    inferred = _infer_baseline_ids_from_scope_coverage(coverage)
+    payload = dict(run)
+    payload["baseline_coverage"] = by_id
+    payload["unmatched_prediction_count"] = unmatched
+    payload["inferred_baseline_ids"] = inferred
+    return payload
+
+
 def sync_trail_model_fields(
     *,
     create_run: bool = False,
@@ -3081,6 +3156,7 @@ async def model_runs(request: Request, baselines: str = "") -> dict[str, Any]:
     items = await asyncio.to_thread(
         database.list_model_runs, baseline_scopes=scopes
     )
+    items = [enrich_model_run_baseline_hint(item) for item in items]
     for item in items:
         if item.get("kind") != "upload":
             continue
@@ -3883,6 +3959,7 @@ async def import_model_results(
         created_by_source=actor_source,
         created_by_verified=actor_verified,
     )
+    run = enrich_model_run_baseline_hint(run)
     return {
         "run": run,
         "duplicate": duplicate,
@@ -3890,6 +3967,8 @@ async def import_model_results(
         "parsed_rows": len(source_rows),
         "accepted_rows": len(rows),
         "rejected_rows": len(source_rows) - len(rows),
+        "inferred_baseline_ids": list(run.get("inferred_baseline_ids") or []),
+        "baseline_coverage": list(run.get("baseline_coverage") or []),
     }
 
 
