@@ -80,9 +80,12 @@ function bindGatewayProviderPicker() {
     if (!willOpen) return;
     picker.classList.add("is-open");
     trigger.setAttribute("aria-expanded", "true");
+    const triggerWidth = trigger.getBoundingClientRect().width;
     openAnchoredPanel(panel, trigger, {
       maxHeight: 280,
-      minWidth: Math.max(trigger.getBoundingClientRect().width, 200),
+      minWidth: Math.max(triggerWidth, 200),
+      matchAnchorWidth: true,
+      maxWidth: Math.max(triggerWidth, 360),
     });
   });
   panel.addEventListener("click", (event) => {
@@ -221,9 +224,12 @@ function bindGatewayModelPicker() {
     if (!willOpen) return;
     picker.classList.add("is-open");
     trigger.setAttribute("aria-expanded", "true");
+    const triggerWidth = trigger.getBoundingClientRect().width;
     openAnchoredPanel(panel, trigger, {
       maxHeight: 360,
-      minWidth: Math.max(trigger.getBoundingClientRect().width, 240),
+      minWidth: Math.max(triggerWidth, 240),
+      matchAnchorWidth: true,
+      maxWidth: Math.max(triggerWidth, 420),
     });
   });
   panel.addEventListener("click", (event) => {

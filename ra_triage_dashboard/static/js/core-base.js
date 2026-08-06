@@ -140,6 +140,8 @@ function resetAnchoredPanel(panel) {
   panel.style.right = "";
   panel.style.bottom = "";
   panel.style.width = "";
+  panel.style.minWidth = "";
+  panel.style.maxWidth = "";
   panel.style.maxHeight = "";
   panel.style.visibility = "";
   panel.style.opacity = "";
@@ -150,6 +152,7 @@ function resetAnchoredPanel(panel) {
 /**
  * Place panel near anchor. Prefers opening downward; flips up only when below
  * cannot fit the content and above has more free space.
+ * Width is always explicit px (never % of viewport when position:fixed).
  */
 function positionAnchoredPanel(panel, anchor, options = {}) {
   if (!panel || !anchor) return { openUp: false };
@@ -158,21 +161,30 @@ function positionAnchoredPanel(panel, anchor, options = {}) {
   const maxHeightCap = Number(options.maxHeight ?? 360);
   const minWidth = Number(options.minWidth ?? 0);
   const matchAnchorWidth = options.matchAnchorWidth !== false;
+  const maxWidthCap = Number(options.maxWidth ?? 0);
 
   prepareAnchoredPanel(panel);
   const rect = anchor.getBoundingClientRect();
-  const width = Math.max(
+  const vh = window.innerHeight;
+  const vw = window.innerWidth;
+  // Pixel width only — CSS min-width:100% on fixed panels resolves to viewport.
+  let width = Math.max(
     matchAnchorWidth ? rect.width : 0,
     minWidth,
     120
   );
-  panel.style.width = `${Math.round(width)}px`;
+  const widthCeiling = maxWidthCap > 0
+    ? Math.min(maxWidthCap, vw - margin * 2)
+    : vw - margin * 2;
+  width = Math.min(width, Math.max(120, widthCeiling));
+  const widthPx = `${Math.round(width)}px`;
+  panel.style.width = widthPx;
+  panel.style.minWidth = widthPx;
+  panel.style.maxWidth = widthPx;
   panel.style.left = "0px";
   panel.style.top = "0px";
 
   const naturalH = panel.scrollHeight || panel.getBoundingClientRect().height || 200;
-  const vh = window.innerHeight;
-  const vw = window.innerWidth;
   const spaceBelow = vh - rect.bottom - gap - margin;
   const spaceAbove = rect.top - gap - margin;
   // Prefer down; flip only when below is too short and above is better.

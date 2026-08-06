@@ -387,10 +387,20 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
   right: auto !important;
   z-index: 80;
 }
+/* Fixed panels: kill percentage min/width (those resolve to the viewport). */
 .multi-filter-panel.is-fixed-dropdown,
 .gateway-provider-picker-panel.is-fixed-dropdown,
 .gateway-model-picker-panel.is-fixed-dropdown {
-  position: fixed; z-index: 80; right: auto; bottom: auto;
+  position: fixed !important;
+  z-index: 80;
+  right: auto !important;
+  bottom: auto !important;
+  top: auto; /* JS sets pixel top/left/width */
+  left: auto;
+  min-width: 0 !important;
+  width: auto; /* JS sets explicit px width */
+  max-width: none;
+  max-height: none; /* JS caps to free space */
 }
 .gateway-model-native-select {
   position: absolute !important; width: 1px !important; height: 1px !important; margin: -1px !important;
@@ -1673,7 +1683,6 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   box-shadow: 0 12px 28px rgba(0,0,0,.35);
 }
 .multi-filter-panel[hidden] { display: none; }
-.multi-filter-panel.is-fixed-dropdown { max-height: none; }
 .multi-filter-toolbar {
   display: flex; flex-wrap: nowrap; justify-content: flex-start; align-items: center; gap: 4px;
   padding: 6px 7px; border-bottom: 1px solid #1b2230; overflow: hidden;
