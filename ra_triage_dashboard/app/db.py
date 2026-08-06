@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import threading
+import time
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -12,6 +15,7 @@ from .sanitization import redact_sensitive_fields
 
 
 LABELS = ("误触发", "正确触发", "无需协助")
+COMPARISON_STATUSES = ("all", "mismatch", "match", "none")
 REVIEW_STATUSES = ("pending", "reviewed", "needs_gt_review")
 BATCH_JOB_STATUSES = ("queued", "running", "succeeded", "partial", "failed")
 BATCH_PUBLISH_STATUSES = (
@@ -21,6 +25,17 @@ BATCH_PUBLISH_STATUSES = (
     "partial",
     "failed",
 )
+ACCESS_ROLES = ("writer", "admin")
+
+
+class AnnotationConflictError(RuntimeError):
+    """Raised when a Review save is based on a stale version."""
+
+
+# ``None`` is a valid expected value (the editor saw no Review yet).  The
+# sentinel keeps direct/legacy Database callers backwards compatible while
+# the HTTP Review form always sends an explicit optimistic-lock value.
+_EXPECTED_ANNOTATION_UNSET = object()
 
 
 def utc_now() -> str:
@@ -31,7 +46,9 @@ def _json(value: Any) -> str:
     return json.dumps(value if value is not None else {}, ensure_ascii=False)
 
 
-def _json_load(value: str | None, default: Any) -> Any:
+def _json_load(value: Any, default: Any) -> Any:
+    if isinstance(value, (dict, list)):
+        return value
     if not value:
         return default
     try:
@@ -40,27 +57,861 @@ def _json_load(value: str | None, default: Any) -> Any:
         return default
 
 
+def _postgres_sql(sql: str) -> str:
+    """Translate the deliberately small SQLite query subset to psycopg."""
+
+    output: list[str] = []
+    quoted = False
+    index = 0
+    while index < len(sql):
+        character = sql[index]
+        if character == "'":
+            output.append(character)
+            if quoted and index + 1 < len(sql) and sql[index + 1] == "'":
+                output.append("'")
+                index += 2
+                continue
+            quoted = not quoted
+        elif character == "?" and not quoted:
+            output.append("%s")
+        else:
+            output.append(character)
+        index += 1
+    translated = "".join(output).replace(" COLLATE BINARY", "")
+    translated = re.sub(
+        r"\b(ann\.(?:tags_json|missing_evidence_json))\s+LIKE\s+",
+        r"\1::text ILIKE ",
+        translated,
+        flags=re.IGNORECASE,
+    )
+    translated = re.sub(r"\s+LIKE\s+", " ILIKE ", translated, flags=re.IGNORECASE)
+    return translated
+
+
+class _CompatRow:
+    """Expose psycopg mapping rows through sqlite3.Row's tiny used surface."""
+
+    def __init__(self, values: dict[str, Any]):
+        self._values = values
+        self._keys = tuple(values.keys())
+
+    def __getitem__(self, key: str | int) -> Any:
+        if isinstance(key, int):
+            key = self._keys[key]
+        value = self._values[key]
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, uuid.UUID):
+            return str(value)
+        return value
+
+    def keys(self) -> tuple[str, ...]:
+        return self._keys
+
+
+class _PostgresCursor:
+    def __init__(self, cursor: Any):
+        self._cursor = cursor
+
+    @property
+    def rowcount(self) -> int:
+        return int(self._cursor.rowcount)
+
+    @property
+    def lastrowid(self) -> None:
+        return None
+
+    def fetchone(self) -> _CompatRow | None:
+        row = self._cursor.fetchone()
+        return _CompatRow(row) if row is not None else None
+
+    def fetchall(self) -> list[_CompatRow]:
+        return [_CompatRow(row) for row in self._cursor.fetchall()]
+
+
+class _NoopCursor:
+    rowcount = 0
+    lastrowid = None
+
+    @staticmethod
+    def fetchone() -> None:
+        return None
+
+    @staticmethod
+    def fetchall() -> list[Any]:
+        return []
+
+
+class _PostgresConnection:
+    def __init__(self, connection: Any):
+        self._connection = connection
+
+    def execute(self, sql: str, params: Iterable[Any] = ()) -> _PostgresCursor | _NoopCursor:
+        if sql.lstrip().upper().startswith("CREATE TRIGGER IF NOT EXISTS"):
+            return _NoopCursor()
+        return _PostgresCursor(
+            self._connection.execute(_postgres_sql(sql), tuple(params))
+        )
+
+    def executemany(
+        self, sql: str, params: Iterable[Iterable[Any]]
+    ) -> _PostgresCursor:
+        cursor = self._connection.cursor()
+        cursor.executemany(
+            _postgres_sql(sql), [tuple(values) for values in params]
+        )
+        return _PostgresCursor(
+            cursor
+        )
+
+    @staticmethod
+    def executescript(_: str) -> None:
+        # PostgreSQL schema and revision triggers are applied by migrations.
+        return None
+
+
 class Database:
-    """SQLite MVP storage with portable, append-only review history.
+    """SQLite/PostgreSQL storage with versioned review history.
 
     ``baseline_scope`` is intentionally stored on the issue rather than
     deleting old imports.  This lets the active 0508/1071 evaluation set stay
     stable while uploaded model runs and prior reviews remain recoverable.
     """
 
-    def __init__(self, path: Path):
-        self.path = path
+    def __init__(
+        self,
+        path_or_url: Path | str,
+        *,
+        postgres_migrations_dir: Path | None = None,
+        pool_size: int = 10,
+    ):
+        if isinstance(path_or_url, Path):
+            self.database_url = f"sqlite:///{path_or_url.expanduser().resolve()}"
+        else:
+            self.database_url = str(path_or_url).strip()
+        if self.database_url.startswith("postgres://"):
+            self.database_url = "postgresql://" + self.database_url[len("postgres://") :]
+        self.backend = (
+            "postgresql"
+            if self.database_url.startswith("postgresql://")
+            else "sqlite"
+        )
+        if self.backend == "sqlite":
+            prefix = "sqlite:///"
+            if not self.database_url.startswith(prefix):
+                raise RuntimeError("Unsupported database URL")
+            self.path = Path(self.database_url[len(prefix) :]).expanduser().resolve()
+        else:
+            self.path = None
+        self.postgres_migrations_dir = postgres_migrations_dir
+        self.pool_size = max(2, min(int(pool_size), 32))
+        self._pool: Any = None
         self._write_lock = threading.RLock()
 
-    def connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.path, timeout=30, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("PRAGMA journal_mode = WAL")
-        conn.execute("PRAGMA busy_timeout = 30000")
-        return conn
+    @property
+    def storage_label(self) -> str:
+        return "postgresql" if self.backend == "postgresql" else "sqlite-mvp"
+
+    @contextmanager
+    def connect(self) -> Any:
+        if self.backend == "sqlite":
+            assert self.path is not None
+            conn = sqlite3.connect(self.path, timeout=30, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA busy_timeout = 30000")
+            try:
+                yield conn
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+            return
+        self._ensure_postgres_pool()
+        with self._pool.connection() as connection:
+            with connection.transaction():
+                yield _PostgresConnection(connection)
+
+    def _postgres_dependencies(self) -> tuple[Any, Any, Any]:
+        try:
+            import psycopg
+            from psycopg.rows import dict_row
+            from psycopg_pool import ConnectionPool
+        except ImportError as exc:
+            raise RuntimeError(
+                "PostgreSQL 运行时需要 psycopg[binary] 与 psycopg_pool。"
+            ) from exc
+        return psycopg, dict_row, ConnectionPool
+
+    def _ensure_postgres_pool(self) -> None:
+        if self._pool is not None:
+            return
+        _, dict_row, connection_pool = self._postgres_dependencies()
+        self._pool = connection_pool(
+            conninfo=self.database_url,
+            min_size=1,
+            max_size=self.pool_size,
+            timeout=30,
+            kwargs={"autocommit": False, "row_factory": dict_row},
+            open=True,
+        )
+
+    def _apply_postgres_migrations(self) -> None:
+        if self.postgres_migrations_dir is None:
+            raise RuntimeError("PostgreSQL migrations directory is required")
+        migration_files = sorted(self.postgres_migrations_dir.glob("*.sql"))
+        if not migration_files:
+            raise RuntimeError("No PostgreSQL migrations found")
+        psycopg, dict_row, _ = self._postgres_dependencies()
+        with psycopg.connect(
+            self.database_url, autocommit=True, row_factory=dict_row
+        ) as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS dashboard_schema_migrations (
+                    version text PRIMARY KEY,
+                    applied_at timestamptz NOT NULL DEFAULT now()
+                )
+                """
+            )
+            applied = {
+                row["version"]
+                for row in connection.execute(
+                    "SELECT version FROM dashboard_schema_migrations"
+                ).fetchall()
+            }
+            for migration in migration_files:
+                if migration.name in applied:
+                    continue
+                connection.execute(migration.read_text(encoding="utf-8"))
+                connection.execute(
+                    "INSERT INTO dashboard_schema_migrations (version) VALUES (%s)",
+                    (migration.name,),
+                )
+
+    def close(self) -> None:
+        if self._pool is not None:
+            self._pool.close()
+            self._pool = None
+
+    def change_revision(self) -> int:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT revision FROM dashboard_change_revision WHERE id = 1"
+            ).fetchone()
+        return int(row["revision"] if row else 0)
+
+    def bootstrap_access_users(
+        self, *, writers: Iterable[str], administrators: Iterable[str]
+    ) -> None:
+        """Seed the persistent ACL once so UI removals survive restarts."""
+
+        writer_names = {
+            str(value).strip().lower() for value in writers if str(value).strip()
+        }
+        admin_names = {
+            str(value).strip().lower()
+            for value in administrators
+            if str(value).strip()
+        }
+        names = sorted(writer_names | admin_names)
+        if not names:
+            return
+        now = utc_now()
+        with self._write_lock, self.connect() as conn:
+            existing = conn.execute(
+                "SELECT COUNT(*) AS count FROM access_users"
+            ).fetchone()
+            if existing and int(existing["count"] or 0) > 0:
+                return
+            conn.executemany(
+                """
+                INSERT INTO access_users (
+                    username, role, created_by, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        name,
+                        "admin" if name in admin_names else "writer",
+                        "bootstrap",
+                        now,
+                        now,
+                    )
+                    for name in names
+                ],
+            )
+
+    def access_role(self, username: str) -> str:
+        normalized = str(username or "").strip().lower()
+        if not normalized:
+            return ""
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT role FROM access_users WHERE username = ?",
+                (normalized,),
+            ).fetchone()
+        return str(row["role"] or "") if row else ""
+
+    def list_access_users(self) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT username, role, created_by, created_at, updated_at
+                FROM access_users
+                ORDER BY CASE role WHEN 'admin' THEN 0 ELSE 1 END,
+                         username ASC
+                """
+            ).fetchall()
+        return [{key: row[key] for key in row.keys()} for row in rows]
+
+    def set_access_user(
+        self, *, username: str, role: str, actor: str
+    ) -> dict[str, Any]:
+        normalized = str(username or "").strip().lower()
+        normalized_role = str(role or "").strip().lower()
+        if normalized_role not in ACCESS_ROLES:
+            raise ValueError("权限角色必须是 writer 或 admin。")
+        now = utc_now()
+        with self._write_lock, self.connect() as conn:
+            current = conn.execute(
+                "SELECT role FROM access_users WHERE username = ?",
+                (normalized,),
+            ).fetchone()
+            if current and current["role"] == "admin" and normalized_role != "admin":
+                count = conn.execute(
+                    "SELECT COUNT(*) AS count FROM access_users WHERE role = 'admin'"
+                ).fetchone()
+                if count and int(count["count"] or 0) <= 1:
+                    raise ValueError("不能降级唯一的管理员。")
+            if current:
+                conn.execute(
+                    "UPDATE access_users SET role = ?, updated_at = ? WHERE username = ?",
+                    (normalized_role, now, normalized),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO access_users (
+                        username, role, created_by, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (normalized, normalized_role, actor, now, now),
+                )
+        return next(
+            item for item in self.list_access_users() if item["username"] == normalized
+        )
+
+    def delete_access_user(self, username: str) -> bool:
+        normalized = str(username or "").strip().lower()
+        with self._write_lock, self.connect() as conn:
+            current = conn.execute(
+                "SELECT role FROM access_users WHERE username = ?",
+                (normalized,),
+            ).fetchone()
+            if not current:
+                return False
+            if current["role"] == "admin":
+                count = conn.execute(
+                    "SELECT COUNT(*) AS count FROM access_users WHERE role = 'admin'"
+                ).fetchone()
+                if count and int(count["count"] or 0) <= 1:
+                    raise ValueError("不能移除唯一的管理员。")
+            cursor = conn.execute(
+                "DELETE FROM access_users WHERE username = ?", (normalized,)
+            )
+            return cursor.rowcount > 0
+
+    def list_missing_evidence_catalog(
+        self, *, include_inactive: bool = True
+    ) -> list[dict[str, Any]]:
+        """Return the shared missing-evidence entries.
+
+        Entries are soft-deleted so historical annotations can continue to
+        resolve their opaque keys and display the original label.  Callers
+        that render an editable catalog can filter ``active`` themselves, or
+        request only active entries with ``include_inactive=False``.
+        """
+
+        where = "" if include_inactive else "WHERE active"
+
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT key, label, hint, created_by, created_at, active
+                FROM missing_evidence_catalog
+                {where}
+                ORDER BY created_at ASC, label ASC
+                """
+            ).fetchall()
+        return [{key: row[key] for key in row.keys()} for row in rows]
+
+    def list_review_tag_catalog(
+        self, *, include_inactive: bool = True
+    ) -> list[dict[str, Any]]:
+        """Return shared, user-created scene tag definitions."""
+
+        where = "" if include_inactive else "WHERE active"
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT key, label, hint, section, group_key, created_by, created_at, active
+                FROM review_tag_catalog
+                {where}
+                ORDER BY created_at ASC, label ASC
+                """
+            ).fetchall()
+        return [{key: row[key] for key in row.keys()} for row in rows]
+
+    def create_review_tag(
+        self,
+        *,
+        label: str,
+        hint: str,
+        section: str,
+        group_key: str,
+        created_by: str,
+    ) -> dict[str, Any]:
+        normalized_label = str(label or "").strip()
+        normalized_hint = str(hint or "").strip()
+        normalized_section = str(section or "scene").strip()
+        normalized_group = str(group_key or "environment").strip()
+        normalized_author = str(created_by or "").strip()
+        if not normalized_label:
+            raise ValueError("场景标签标题不能为空。")
+        if len(normalized_label) > 48 or re.search(r"[\x00-\x1f\x7f]", normalized_label):
+            raise ValueError("场景标签标题长度或字符不合法。")
+        if len(normalized_hint) > 160 or re.search(r"[\x00-\x1f\x7f]", normalized_hint):
+            raise ValueError("场景标签说明长度或字符不合法。")
+        if normalized_section != "scene" or normalized_group not in {"environment", "self_intent"}:
+            raise ValueError("场景标签分组不合法。")
+        if not normalized_author:
+            raise ValueError("创建人不能为空。")
+        key = f"custom:tag:{uuid.uuid4().hex}"
+        now = utc_now()
+        with self._write_lock, self.connect() as conn:
+            existing = conn.execute(
+                "SELECT key FROM review_tag_catalog WHERE label = ? AND active",
+                (normalized_label,),
+            ).fetchone()
+            if existing:
+                raise ValueError("该场景标签标题已经存在。")
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO review_tag_catalog (
+                        key, label, hint, section, group_key, created_by, created_at, active
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, TRUE)
+                    """,
+                    (
+                        key,
+                        normalized_label,
+                        normalized_hint,
+                        normalized_section,
+                        normalized_group,
+                        normalized_author,
+                        now,
+                    ),
+                )
+            except Exception as exc:
+                if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+                    raise ValueError("该场景标签标题已经存在。") from exc
+                raise
+            row = conn.execute(
+                """
+                SELECT key, label, hint, section, group_key, created_by, created_at, active
+                FROM review_tag_catalog WHERE key = ?
+                """,
+                (key,),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("场景标签目录写入后无法读取。")
+        return {name: row[name] for name in row.keys()}
+
+    def update_review_tag(
+        self,
+        *,
+        key: str,
+        label: str,
+        hint: str,
+        section: str,
+        group_key: str,
+        updated_by: str,
+    ) -> dict[str, Any]:
+        normalized_key = str(key or "").strip()
+        normalized_label = str(label or "").strip()
+        normalized_hint = str(hint or "").strip()
+        normalized_section = str(section or "scene").strip()
+        normalized_group = str(group_key or "environment").strip()
+        normalized_author = str(updated_by or "").strip()
+        if not normalized_key:
+            raise ValueError("场景标签 key 不能为空。")
+        if not normalized_label:
+            raise ValueError("场景标签标题不能为空。")
+        if len(normalized_label) > 48 or re.search(r"[\x00-\x1f\x7f]", normalized_label):
+            raise ValueError("场景标签标题长度或字符不合法。")
+        if len(normalized_hint) > 160 or re.search(r"[\x00-\x1f\x7f]", normalized_hint):
+            raise ValueError("场景标签说明长度或字符不合法。")
+        if normalized_section == "scene" and normalized_group not in {
+            "environment",
+            "self_intent",
+        }:
+            raise ValueError("场景标签分组不合法。")
+        if not normalized_author:
+            raise ValueError("编辑人不能为空。")
+        with self._write_lock, self.connect() as conn:
+            current = conn.execute(
+                "SELECT key FROM review_tag_catalog WHERE key = ?",
+                (normalized_key,),
+            ).fetchone()
+            existing = conn.execute(
+                "SELECT key FROM review_tag_catalog WHERE label = ? AND key <> ? AND active",
+                (normalized_label, normalized_key),
+            ).fetchone()
+            if existing:
+                raise ValueError("该场景标签标题已经存在。")
+            try:
+                if current:
+                    conn.execute(
+                        """
+                        UPDATE review_tag_catalog
+                        SET label = ?, hint = ?, section = ?, group_key = ?, active = TRUE
+                        WHERE key = ?
+                        """,
+                        (
+                            normalized_label,
+                            normalized_hint,
+                            normalized_section,
+                            normalized_group,
+                            normalized_key,
+                        ),
+                    )
+                else:
+                    # Upsert override for built-in catalog keys not yet in the table.
+                    conn.execute(
+                        """
+                        INSERT INTO review_tag_catalog (
+                            key, label, hint, section, group_key, created_by, created_at, active
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, TRUE)
+                        """,
+                        (
+                            normalized_key,
+                            normalized_label,
+                            normalized_hint,
+                            normalized_section,
+                            normalized_group,
+                            normalized_author,
+                            utc_now(),
+                        ),
+                    )
+            except Exception as exc:
+                if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+                    raise ValueError("该场景标签标题已经存在。") from exc
+                raise
+            row = conn.execute(
+                """
+                SELECT key, label, hint, section, group_key, created_by, created_at, active
+                FROM review_tag_catalog WHERE key = ?
+                """,
+                (normalized_key,),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("场景标签目录更新后无法读取。")
+        return {name: row[name] for name in row.keys()}
+
+    def delete_review_tag(
+        self,
+        *,
+        key: str,
+        deleted_by: str,
+        label: str = "",
+        hint: str = "",
+        section: str = "scene",
+        group_key: str = "environment",
+    ) -> dict[str, Any]:
+        """Soft-delete a shared entry; built-ins get an inactive override row."""
+
+        normalized_key = str(key or "").strip()
+        if not normalized_key:
+            raise ValueError("场景标签 key 不能为空。")
+        if not str(deleted_by or "").strip():
+            raise ValueError("删除人不能为空。")
+        with self._write_lock, self.connect() as conn:
+            current = conn.execute(
+                "SELECT key FROM review_tag_catalog WHERE key = ?",
+                (normalized_key,),
+            ).fetchone()
+            if current:
+                conn.execute(
+                    "UPDATE review_tag_catalog SET active = FALSE WHERE key = ?",
+                    (normalized_key,),
+                )
+            else:
+                normalized_label = str(label or "").strip()
+                if not normalized_label:
+                    raise ValueError("场景标签标题不能为空。")
+                conn.execute(
+                    """
+                    INSERT INTO review_tag_catalog (
+                        key, label, hint, section, group_key, created_by, created_at, active
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, FALSE)
+                    """,
+                    (
+                        normalized_key,
+                        normalized_label,
+                        str(hint or "").strip(),
+                        str(section or "scene").strip() or "scene",
+                        str(group_key or "environment").strip() or "environment",
+                        str(deleted_by).strip(),
+                        utc_now(),
+                    ),
+                )
+            row = conn.execute(
+                """
+                SELECT key, label, hint, section, group_key, created_by, created_at, active
+                FROM review_tag_catalog WHERE key = ?
+                """,
+                (normalized_key,),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("场景标签目录删除后无法读取。")
+        return {name: row[name] for name in row.keys()}
+
+    def create_missing_evidence(
+        self, *, label: str, hint: str, created_by: str
+    ) -> dict[str, Any]:
+        """Create one shared missing-evidence definition.
+
+        The key is immutable and deliberately opaque so changing the display
+        text never changes historical annotation values.
+        """
+
+        normalized_label = str(label or "").strip()
+        normalized_hint = str(hint or "").strip()
+        normalized_author = str(created_by or "").strip()
+        if not normalized_label:
+            raise ValueError("缺失信息标题不能为空。")
+        if len(normalized_label) > 48 or re.search(r"[\x00-\x1f\x7f]", normalized_label):
+            raise ValueError("缺失信息标题长度或字符不合法。")
+        if len(normalized_hint) > 160 or re.search(r"[\x00-\x1f\x7f]", normalized_hint):
+            raise ValueError("缺失信息说明长度或字符不合法。")
+        if not normalized_author:
+            raise ValueError("创建人不能为空。")
+        now = utc_now()
+        key = f"custom:{uuid.uuid4().hex}"
+        with self._write_lock, self.connect() as conn:
+            existing = conn.execute(
+                "SELECT key FROM missing_evidence_catalog WHERE label = ?",
+                (normalized_label,),
+            ).fetchone()
+            if existing:
+                raise ValueError("该缺失信息标题已经存在。")
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO missing_evidence_catalog (
+                        key, label, hint, created_by, created_at, active
+                    ) VALUES (?, ?, ?, ?, ?, TRUE)
+                    """,
+                    (key, normalized_label, normalized_hint, normalized_author, now),
+                )
+            except Exception as exc:
+                # Keep concurrent duplicate creation a user-facing conflict,
+                # while allowing real connection/schema errors to propagate.
+                if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+                    raise ValueError("该缺失信息标题已经存在。") from exc
+                raise
+            row = conn.execute(
+                """
+                SELECT key, label, hint, created_by, created_at, active
+                FROM missing_evidence_catalog
+                WHERE key = ?
+                """,
+                (key,),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("缺失信息目录写入后无法读取。")
+        return {key: row[key] for key in row.keys()}
+
+    def update_missing_evidence(
+        self, *, key: str, label: str, hint: str, updated_by: str
+    ) -> dict[str, Any]:
+        """Update a shared entry while keeping its stable key unchanged."""
+
+        normalized_key = str(key or "").strip()
+        normalized_label = str(label or "").strip()
+        normalized_hint = str(hint or "").strip()
+        normalized_author = str(updated_by or "").strip()
+        if not normalized_key:
+            raise ValueError("缺失信息 key 不能为空。")
+        if not normalized_label:
+            raise ValueError("缺失信息标题不能为空。")
+        if len(normalized_label) > 48 or re.search(r"[\x00-\x1f\x7f]", normalized_label):
+            raise ValueError("缺失信息标题长度或字符不合法。")
+        if len(normalized_hint) > 160 or re.search(r"[\x00-\x1f\x7f]", normalized_hint):
+            raise ValueError("缺失信息说明长度或字符不合法。")
+        if not normalized_author:
+            raise ValueError("编辑人不能为空。")
+        with self._write_lock, self.connect() as conn:
+            current = conn.execute(
+                "SELECT key FROM missing_evidence_catalog WHERE key = ?",
+                (normalized_key,),
+            ).fetchone()
+            existing = conn.execute(
+                "SELECT key FROM missing_evidence_catalog WHERE label = ? AND key <> ?",
+                (normalized_label, normalized_key),
+            ).fetchone()
+            if existing:
+                raise ValueError("该缺失信息标题已经存在。")
+            try:
+                if current:
+                    conn.execute(
+                        """
+                        UPDATE missing_evidence_catalog
+                        SET label = ?, hint = ?, active = TRUE
+                        WHERE key = ?
+                        """,
+                        (normalized_label, normalized_hint, normalized_key),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        INSERT INTO missing_evidence_catalog (
+                            key, label, hint, created_by, created_at, active
+                        ) VALUES (?, ?, ?, ?, ?, TRUE)
+                        """,
+                        (
+                            normalized_key,
+                            normalized_label,
+                            normalized_hint,
+                            normalized_author,
+                            utc_now(),
+                        ),
+                    )
+            except Exception as exc:
+                if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+                    raise ValueError("该缺失信息标题已经存在。") from exc
+                raise
+            row = conn.execute(
+                """
+                SELECT key, label, hint, created_by, created_at, active
+                FROM missing_evidence_catalog
+                WHERE key = ?
+                """,
+                (normalized_key,),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("缺失信息目录更新后无法读取。")
+        return {name: row[name] for name in row.keys()}
+
+    def delete_missing_evidence(
+        self,
+        *,
+        key: str,
+        deleted_by: str,
+        label: str = "",
+        hint: str = "",
+    ) -> dict[str, Any]:
+        """Soft-delete a shared entry and retain it for historical reviews."""
+
+        normalized_key = str(key or "").strip()
+        if not normalized_key:
+            raise ValueError("缺失信息 key 不能为空。")
+        if not str(deleted_by or "").strip():
+            raise ValueError("删除人不能为空。")
+        with self._write_lock, self.connect() as conn:
+            current = conn.execute(
+                "SELECT key FROM missing_evidence_catalog WHERE key = ?",
+                (normalized_key,),
+            ).fetchone()
+            if current:
+                conn.execute(
+                    "UPDATE missing_evidence_catalog SET active = FALSE WHERE key = ?",
+                    (normalized_key,),
+                )
+            else:
+                normalized_label = str(label or "").strip()
+                normalized_hint = str(hint or "").strip()
+                if not normalized_label:
+                    raise ValueError("缺失信息标题不能为空。")
+                try:
+                    conn.execute(
+                        """
+                        INSERT INTO missing_evidence_catalog (
+                            key, label, hint, created_by, created_at, active
+                        ) VALUES (?, ?, ?, ?, ?, FALSE)
+                        """,
+                        (
+                            normalized_key,
+                            normalized_label,
+                            normalized_hint,
+                            str(deleted_by).strip(),
+                            utc_now(),
+                        ),
+                    )
+                except Exception as exc:
+                    if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+                        raise ValueError("该缺失信息标题已经存在。") from exc
+                    raise
+            row = conn.execute(
+                """
+                SELECT key, label, hint, created_by, created_at, active
+                FROM missing_evidence_catalog
+                WHERE key = ?
+                """,
+                (normalized_key,),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("缺失信息目录删除后无法读取。")
+        return {name: row[name] for name in row.keys()}
+
+    def runtime_status(self, *, persistent_data: bool = False) -> dict[str, Any]:
+        started = time.perf_counter()
+        with self.connect() as conn:
+            if self.backend == "postgresql":
+                row = conn.execute(
+                    """
+                    SELECT current_setting('server_version') AS server_version,
+                           (SELECT revision FROM dashboard_change_revision WHERE id = 1)
+                               AS revision,
+                           (SELECT COUNT(*) FROM dashboard_schema_migrations)
+                               AS migration_count
+                    """
+                ).fetchone()
+                result = {
+                    "ok": True,
+                    "backend": "postgresql",
+                    "server_version": str(row["server_version"] or ""),
+                    "persistent_data": persistent_data,
+                    "revision": int(row["revision"] or 0),
+                    "migration_count": int(row["migration_count"] or 0),
+                    "pool_max_size": self.pool_size,
+                }
+            else:
+                row = conn.execute(
+                    "SELECT revision FROM dashboard_change_revision WHERE id = 1"
+                ).fetchone()
+                sqlite_version = conn.execute(
+                    "SELECT sqlite_version() AS version"
+                ).fetchone()
+                result = {
+                    "ok": True,
+                    "backend": "sqlite",
+                    "server_version": str(sqlite_version["version"] or ""),
+                    "persistent_data": False,
+                    "revision": int(row["revision"] if row else 0),
+                    "migration_count": 0,
+                    "pool_max_size": 0,
+                }
+        result["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
+        return result
 
     def init(self) -> None:
+        if self.backend == "postgresql":
+            self._apply_postgres_migrations()
         with self._write_lock, self.connect() as conn:
             conn.executescript(
                 """
@@ -84,8 +935,10 @@ class Database:
                 CREATE TABLE IF NOT EXISTS annotations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE CASCADE,
+                    model_run_id TEXT NOT NULL DEFAULT '',
                     label TEXT,
                     review_status TEXT NOT NULL DEFAULT 'pending',
+                    is_excluded INTEGER NOT NULL DEFAULT 0,
                     tags_json TEXT NOT NULL DEFAULT '[]',
                     missing_evidence_json TEXT NOT NULL DEFAULT '[]',
                     note TEXT NOT NULL DEFAULT '',
@@ -97,6 +950,8 @@ class Database:
                 );
                 CREATE INDEX IF NOT EXISTS idx_annotations_issue_id
                     ON annotations(issue_id, id DESC);
+                CREATE INDEX IF NOT EXISTS idx_annotations_issue_run_id
+                    ON annotations(issue_id, model_run_id, id DESC);
 
                 CREATE TABLE IF NOT EXISTS review_attachments (
                     id TEXT PRIMARY KEY,
@@ -176,6 +1031,7 @@ class Database:
                     completed_count INTEGER NOT NULL DEFAULT 0 CHECK(completed_count >= 0),
                     success_count INTEGER NOT NULL DEFAULT 0 CHECK(success_count >= 0),
                     failed_count INTEGER NOT NULL DEFAULT 0 CHECK(failed_count >= 0),
+                    provider_id TEXT NOT NULL DEFAULT 'kylin',
                     requested_model_id TEXT NOT NULL DEFAULT '',
                     resolved_model_id TEXT NOT NULL DEFAULT '',
                     model_source TEXT NOT NULL DEFAULT '',
@@ -228,15 +1084,115 @@ class Database:
                     ON batch_prediction_items(issue_id, job_id);
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_batch_prediction_items_ordinal
                     ON batch_prediction_items(job_id, ordinal);
+
+                CREATE TABLE IF NOT EXISTS dashboard_change_revision (
+                    id INTEGER PRIMARY KEY CHECK(id = 1),
+                    revision INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL
+                );
+                INSERT OR IGNORE INTO dashboard_change_revision (
+                    id, revision, updated_at
+                ) VALUES (1, 0, '');
+
+                CREATE TABLE IF NOT EXISTS review_tag_catalog (
+                    key TEXT PRIMARY KEY,
+                    label TEXT NOT NULL UNIQUE,
+                    hint TEXT NOT NULL DEFAULT '',
+                    section TEXT NOT NULL DEFAULT 'scene',
+                    group_key TEXT NOT NULL DEFAULT 'environment',
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    active INTEGER NOT NULL DEFAULT 1
+                );
+
+                CREATE TABLE IF NOT EXISTS missing_evidence_catalog (
+                    key TEXT PRIMARY KEY,
+                    label TEXT NOT NULL UNIQUE,
+                    hint TEXT NOT NULL DEFAULT '',
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    active INTEGER NOT NULL DEFAULT 1
+                );
+
+                CREATE TABLE IF NOT EXISTS access_users (
+                    username TEXT PRIMARY KEY,
+                    role TEXT NOT NULL CHECK(role IN ('writer', 'admin')),
+                    created_by TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS issue_work_splits (
+                    id TEXT PRIMARY KEY,
+                    created_by TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    seed INTEGER,
+                    total_count INTEGER NOT NULL DEFAULT 0,
+                    filter_json TEXT NOT NULL DEFAULT '{}',
+                    assignees_json TEXT NOT NULL DEFAULT '[]'
+                );
+
+                CREATE TABLE IF NOT EXISTS issue_work_assignments (
+                    issue_id TEXT PRIMARY KEY REFERENCES issues(issue_id) ON DELETE CASCADE,
+                    assignee TEXT NOT NULL DEFAULT '',
+                    split_id TEXT NOT NULL DEFAULT '',
+                    assigned_by TEXT NOT NULL DEFAULT '',
+                    assigned_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_issue_work_assignments_assignee
+                    ON issue_work_assignments(assignee, assigned_at DESC);
                 """
             )
+            revision_tables = (
+                "issues",
+                "annotations",
+                "review_attachments",
+                "model_runs",
+                "model_predictions",
+                "inference_jobs",
+                "batch_prediction_jobs",
+                "batch_prediction_items",
+                "review_tag_catalog",
+                "missing_evidence_catalog",
+                "access_users",
+                "issue_work_splits",
+                "issue_work_assignments",
+            )
+            for table in revision_tables:
+                for action in ("insert", "update", "delete"):
+                    conn.execute(
+                        f"""
+                        CREATE TRIGGER IF NOT EXISTS
+                            trg_{table}_{action}_change_revision
+                        AFTER {action.upper()} ON {table}
+                        BEGIN
+                            UPDATE dashboard_change_revision
+                            SET revision = revision + 1,
+                                updated_at = strftime(
+                                    '%Y-%m-%dT%H:%M:%fZ', 'now'
+                                )
+                            WHERE id = 1;
+                        END
+                        """
+                    )
             # Existing MVP databases are upgraded in place.  Each addition is
             # nullable/defaulted, so prior annotations and model runs survive.
             self._ensure_column(conn, "issues", "baseline_scope", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "annotations", "review_status", "TEXT NOT NULL DEFAULT 'pending'")
+            self._ensure_column(conn, "annotations", "model_run_id", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "annotations", "is_excluded", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "annotations", "missing_evidence_json", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_column(conn, "annotations", "author_source", "TEXT NOT NULL DEFAULT 'legacy'")
             self._ensure_column(conn, "annotations", "author_verified", "INTEGER NOT NULL DEFAULT 0")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_annotations_issue_run_id "
+                "ON annotations(issue_id, model_run_id, id DESC)"
+            )
+            self._ensure_column(conn, "missing_evidence_catalog", "active", "INTEGER NOT NULL DEFAULT 1")
+            self._ensure_column(conn, "review_tag_catalog", "hint", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "review_tag_catalog", "section", "TEXT NOT NULL DEFAULT 'scene'")
+            self._ensure_column(conn, "review_tag_catalog", "group_key", "TEXT NOT NULL DEFAULT 'environment'")
+            self._ensure_column(conn, "review_tag_catalog", "active", "INTEGER NOT NULL DEFAULT 1")
             self._ensure_column(conn, "model_runs", "kind", "TEXT NOT NULL DEFAULT 'upload'")
             self._ensure_column(conn, "model_runs", "is_default", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "model_runs", "created_by", "TEXT NOT NULL DEFAULT ''")
@@ -251,6 +1207,12 @@ class Database:
             )
             self._ensure_column(
                 conn, "inference_jobs", "requested_by_verified", "INTEGER NOT NULL DEFAULT 0"
+            )
+            self._ensure_column(
+                conn,
+                "batch_prediction_jobs",
+                "provider_id",
+                "TEXT NOT NULL DEFAULT 'kylin'",
             )
             self._ensure_column(
                 conn,
@@ -404,7 +1366,7 @@ class Database:
                 """
                 SELECT id, model_run_id
                 FROM batch_prediction_jobs
-                WHERE status IN ('queued', 'running')
+                WHERE status = 'running'
                   AND model_run_id IS NOT NULL
                   AND TRIM(model_run_id) != ''
                 """
@@ -432,7 +1394,7 @@ class Database:
                             finished_at = COALESCE(finished_at, ?)
                         WHERE job_id = ?
                           AND issue_id = ?
-                          AND status IN ('queued', 'running')
+                          AND status = 'running'
                         """,
                         (
                             _json(raw),
@@ -456,12 +1418,12 @@ class Database:
                             '服务重启前 Batch 预测未完成。'
                         ELSE error_text
                     END
-                WHERE status IN ('queued', 'running')
+                WHERE status = 'running'
                   AND EXISTS (
                       SELECT 1
                       FROM batch_prediction_jobs bpj
                       WHERE bpj.id = batch_prediction_items.job_id
-                        AND bpj.status IN ('queued', 'running')
+                        AND bpj.status = 'running'
                   )
                 """,
                 (interrupted_at,),
@@ -519,7 +1481,7 @@ class Database:
                             '服务重启前 Batch 预测未完成；请重新创建任务。'
                         ELSE error_text
                     END
-                WHERE status IN ('queued', 'running')
+                WHERE status = 'running'
                 """,
                 (interrupted_at,),
             )
@@ -540,7 +1502,9 @@ class Database:
             )
 
     @staticmethod
-    def _ensure_column(conn: sqlite3.Connection, table: str, column: str, declaration: str) -> None:
+    def _ensure_column(conn: Any, table: str, column: str, declaration: str) -> None:
+        if isinstance(conn, _PostgresConnection):
+            return
         columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
         if column not in columns:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
@@ -675,8 +1639,8 @@ class Database:
             ).fetchone()
             if existing:
                 if make_default:
-                    conn.execute("UPDATE model_runs SET is_default = 0")
-                    conn.execute("UPDATE model_runs SET is_default = 1 WHERE id = ?", (existing["id"],))
+                    conn.execute("UPDATE model_runs SET is_default = FALSE")
+                    conn.execute("UPDATE model_runs SET is_default = TRUE WHERE id = ?", (existing["id"],))
                     existing = conn.execute(
                         "SELECT * FROM model_runs WHERE id = ?", (existing["id"],)
                     ).fetchone()
@@ -684,7 +1648,7 @@ class Database:
 
             run_id = str(uuid.uuid4())
             if make_default:
-                conn.execute("UPDATE model_runs SET is_default = 0")
+                conn.execute("UPDATE model_runs SET is_default = FALSE")
             conn.execute(
                 """
                 INSERT INTO model_runs (
@@ -700,10 +1664,10 @@ class Database:
                     source_sha256,
                     str(metadata.get("schema_version") or "v1"),
                     kind,
-                    int(make_default),
+                    bool(make_default),
                     created_by.strip(),
                     created_by_source.strip() or "legacy",
-                    int(created_by_verified),
+                    bool(created_by_verified),
                     _json(metadata),
                     now,
                 ),
@@ -744,9 +1708,69 @@ class Database:
     def default_model_run_id(self) -> str:
         with self.connect() as conn:
             row = conn.execute(
-                "SELECT id FROM model_runs WHERE is_default = 1 ORDER BY created_at DESC LIMIT 1"
+                "SELECT id FROM model_runs WHERE is_default = TRUE ORDER BY created_at DESC LIMIT 1"
             ).fetchone()
         return str(row["id"]) if row else ""
+
+    def get_model_run(self, run_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM model_runs WHERE id = ?", (run_id,)
+            ).fetchone()
+        return self._run_dict(row) if row else None
+
+    def model_run_source_rows(self, run_id: str) -> list[dict[str, Any]]:
+        """Return redacted normalized/raw rows for legacy source reconstruction."""
+
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT issue_id, trip_id, model_label, model_reason,
+                       model_confidence, model_extra_json, raw_json
+                FROM model_predictions
+                WHERE model_run_id = ?
+                ORDER BY id ASC
+                """,
+                (run_id,),
+            ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            raw = _json_load(row["raw_json"], {})
+            if not isinstance(raw, dict):
+                raw = {}
+            item = dict(redact_sensitive_fields(raw))
+            item.setdefault("issue_id", row["issue_id"])
+            item.setdefault("trip_id", row["trip_id"])
+            item.setdefault("model_label", row["model_label"])
+            item.setdefault("model_reason", row["model_reason"])
+            if row["model_confidence"] is not None:
+                item.setdefault("model_confidence", row["model_confidence"])
+            extra = _json_load(row["model_extra_json"], {})
+            if isinstance(extra, dict):
+                for key, value in redact_sensitive_fields(extra).items():
+                    item.setdefault(key, value)
+            result.append(item)
+        return result
+
+    def delete_model_run(self, run_id: str) -> dict[str, Any] | None:
+        """Delete one non-default local Run and its prediction rows.
+
+        Model Runs are immutable while retained, but explicit user deletion is
+        useful for removing an obsolete upload.  SQLite foreign-key cascades
+        remove predictions and detach any Batch job's optional run pointer;
+        issues, GT and append-only human annotations are not deleted.
+        """
+
+        with self._write_lock, self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM model_runs WHERE id = ?", (run_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            if bool(row["is_default"]):
+                raise ValueError("当前团队默认 Run 不能删除，请先切换默认 Run。")
+            conn.execute("DELETE FROM model_runs WHERE id = ?", (run_id,))
+        return self._run_dict(row)
 
     def set_default_model_run(self, run_id: str) -> dict[str, Any] | None:
         with self._write_lock, self.connect() as conn:
@@ -755,8 +1779,8 @@ class Database:
             ).fetchone()
             if row is None:
                 return None
-            conn.execute("UPDATE model_runs SET is_default = 0")
-            conn.execute("UPDATE model_runs SET is_default = 1 WHERE id = ?", (run_id,))
+            conn.execute("UPDATE model_runs SET is_default = FALSE")
+            conn.execute("UPDATE model_runs SET is_default = TRUE WHERE id = ?", (run_id,))
             updated = conn.execute(
                 "SELECT * FROM model_runs WHERE id = ?", (run_id,)
             ).fetchone()
@@ -794,8 +1818,12 @@ class Database:
             for row in rows
         ]
 
-    def list_reviewers(self, baseline_scope: str = "") -> list[dict[str, Any]]:
-        params: list[Any] = []
+    def list_reviewers(
+        self, baseline_scope: str = "", model_run_id: str = ""
+    ) -> list[dict[str, Any]]:
+        params: list[Any] = (
+            [model_run_id, model_run_id] if model_run_id else []
+        )
         scope_filter = ""
         if baseline_scope:
             scope_filter = "AND i.baseline_scope = ?"
@@ -804,13 +1832,13 @@ class Database:
             rows = conn.execute(
                 f"""
                 SELECT ann.author,
-                       SUM(CASE WHEN ann.author_verified = 1 THEN 1 ELSE 0 END)
+                       SUM(CASE WHEN ann.author_verified = TRUE THEN 1 ELSE 0 END)
                            AS verified_count,
-                       SUM(CASE WHEN ann.author_verified = 1 THEN 0 ELSE 1 END)
+                       SUM(CASE WHEN ann.author_verified = TRUE THEN 0 ELSE 1 END)
                            AS unverified_count,
                        COUNT(*) AS review_count
                 FROM issues i
-                {self._latest_annotation_join()}
+                {self._latest_annotation_join(model_run_id)}
                 WHERE ann.id IS NOT NULL
                   AND TRIM(ann.author) != ''
                   {scope_filter}
@@ -832,15 +1860,188 @@ class Database:
         ]
 
     @staticmethod
-    def _latest_annotation_join() -> str:
+    def _latest_annotation_join(model_run_id: str = "") -> str:
+        normalized_run = str(model_run_id or "").strip()
+        if normalized_run:
+            run_clause = """
+                    AND (
+                        a.model_run_id = ?
+                        OR (
+                            a.model_run_id = ''
+                            AND NOT EXISTS (
+                                SELECT 1 FROM annotations scoped
+                                WHERE scoped.issue_id = i.issue_id
+                                  AND scoped.model_run_id = ?
+                            )
+                        )
+                    )
+            """
+        else:
+            run_clause = ""
         return """
             LEFT JOIN annotations ann
               ON ann.id = (
                   SELECT a.id FROM annotations a
                   WHERE a.issue_id = i.issue_id
+                  {run_clause}
                   ORDER BY a.id DESC LIMIT 1
               )
+        """.format(run_clause=run_clause)
+
+    def _case_list_filters(
+        self,
+        *,
+        baseline_scope: str = "",
+        search: str = "",
+        gt_label: str = "",
+        model_label: str = "",
+        annotation_label: str = "",
+        annotation_author: str = "",
+        model_run_id: str = "",
+        comparison_status: str = "all",
+        failure_only: bool = False,
+        missing_evidence: str = "",
+        issue_ids: list[str] | None = None,
+        work_assignee: str = "",
+    ) -> tuple[str, list[Any], list[Any], str]:
+        comparison_status = str(comparison_status or "all").strip().lower()
+        if failure_only:
+            comparison_status = "mismatch"
+        if comparison_status not in COMPARISON_STATUSES:
+            raise ValueError("unsupported comparison_status")
+        if comparison_status != "all" and not model_run_id:
+            raise ValueError("comparison_status requires model_run_id")
+        where: list[str] = []
+        params: list[Any] = []
+        if baseline_scope:
+            where.append("i.baseline_scope = ?")
+            params.append(baseline_scope)
+        def _multi_values(*raw: Any) -> tuple[str, ...]:
+            values: list[str] = []
+            for item in raw:
+                if item is None:
+                    continue
+                if isinstance(item, (list, tuple, set)):
+                    for nested in item:
+                        text = str(nested or "").strip()
+                        if text:
+                            values.append(text)
+                    continue
+                text = str(item or "").strip()
+                if not text:
+                    continue
+                if "," in text:
+                    values.extend(
+                        part.strip() for part in text.split(",") if part.strip()
+                    )
+                else:
+                    values.append(text)
+            return tuple(dict.fromkeys(values))
+
+        if search.strip():
+            term = f"%{search.strip()}%"
+            where.append("(i.issue_id LIKE ? OR i.title LIKE ? OR i.scenario LIKE ? OR i.summary LIKE ?)")
+            params.extend([term, term, term, term])
+        gt_labels = tuple(value for value in _multi_values(gt_label) if value in LABELS)
+        if gt_labels:
+            where.append(f"i.gt_label IN ({', '.join('?' for _ in gt_labels)})")
+            params.extend(gt_labels)
+        model_labels = tuple(
+            value for value in _multi_values(model_label) if value in LABELS
+        )
+        if model_labels:
+            where.append(
+                f"mp.model_label IN ({', '.join('?' for _ in model_labels)})"
+            )
+            params.extend(model_labels)
+        annotation_labels = tuple(
+            value for value in _multi_values(annotation_label) if value in LABELS
+        )
+        if annotation_labels:
+            where.append(
+                f"ann.label IN ({', '.join('?' for _ in annotation_labels)})"
+            )
+            params.extend(annotation_labels)
+        authors = _multi_values(annotation_author)
+        if authors:
+            where.append(f"ann.author IN ({', '.join('?' for _ in authors)})")
+            params.extend(authors)
+        if missing_evidence.strip():
+            # Values are serialized as a JSON array; matching the quoted token
+            # avoids treating a prefix as a different evidence item.
+            where.append("ann.missing_evidence_json LIKE ?")
+            params.append(f'%"{missing_evidence.strip()}"%')
+        cleaned_ids = [
+            str(item).strip()
+            for item in (issue_ids or [])
+            if str(item or "").strip()
+        ][:2000]
+        if cleaned_ids:
+            placeholders = ", ".join("?" for _ in cleaned_ids)
+            where.append(f"i.issue_id IN ({placeholders})")
+            params.extend(cleaned_ids)
+        assignees = _multi_values(work_assignee)
+        if assignees:
+            assignee_clauses: list[str] = []
+            if any(
+                value in {"__none__", "none", "未分配"} for value in assignees
+            ):
+                assignee_clauses.append("(wa.assignee IS NULL OR wa.assignee = '')")
+            named = [
+                value
+                for value in assignees
+                if value not in {"__none__", "none", "未分配"}
+            ]
+            if named:
+                assignee_clauses.append(
+                    f"wa.assignee IN ({', '.join('?' for _ in named)})"
+                )
+                params.extend(named)
+            where.append(f"({' OR '.join(assignee_clauses)})")
+        comparison_statuses = tuple(
+            value
+            for value in _multi_values(comparison_status)
+            if value in {"match", "mismatch", "none"}
+        )
+        if comparison_statuses and set(comparison_statuses) != {
+            "match",
+            "mismatch",
+            "none",
+        }:
+            where.append("i.gt_label IN (?, ?, ?)")
+            params.extend(LABELS)
+            status_clauses: list[str] = []
+            for status in comparison_statuses:
+                if status == "none":
+                    status_clauses.append(
+                        "(mp.model_label IS NULL OR mp.model_label NOT IN (?, ?, ?))"
+                    )
+                    params.extend(LABELS)
+                elif status == "match":
+                    status_clauses.append(
+                        "(mp.model_label IN (?, ?, ?) AND mp.model_label = i.gt_label)"
+                    )
+                    params.extend(LABELS)
+                else:
+                    status_clauses.append(
+                        "(mp.model_label IN (?, ?, ?) AND mp.model_label != i.gt_label)"
+                    )
+                    params.extend(LABELS)
+            where.append(f"({' OR '.join(status_clauses)})")
+        condition = f"WHERE {' AND '.join(where)}" if where else ""
+        common = f"""
+            FROM issues i
+            {self._latest_annotation_join(model_run_id)}
+            LEFT JOIN model_predictions mp
+              ON mp.issue_id = i.issue_id
+             AND mp.model_run_id = ?
+            LEFT JOIN issue_work_assignments wa
+              ON wa.issue_id = i.issue_id
         """
+        # The correlated annotation lookup appears before the prediction JOIN
+        # in the SQL, so its run id must be the first bound parameter.
+        model_args = ([model_run_id, model_run_id] if model_run_id else []) + [model_run_id]
+        return condition, params, model_args, common
 
     def list_cases(
         self,
@@ -848,73 +2049,56 @@ class Database:
         baseline_scope: str = "",
         search: str = "",
         gt_label: str = "",
+        model_label: str = "",
         annotation_label: str = "",
         annotation_author: str = "",
         model_run_id: str = "",
+        comparison_status: str = "all",
         failure_only: bool = False,
         missing_evidence: str = "",
+        issue_ids: list[str] | None = None,
+        work_assignee: str = "",
         page: int = 1,
         page_size: int = 100,
     ) -> dict[str, Any]:
         page = max(1, page)
         page_size = min(max(1, page_size), 2000)
-        where: list[str] = []
-        params: list[Any] = []
-        if baseline_scope:
-            where.append("i.baseline_scope = ?")
-            params.append(baseline_scope)
-        if search.strip():
-            term = f"%{search.strip()}%"
-            where.append("(i.issue_id LIKE ? OR i.title LIKE ? OR i.scenario LIKE ? OR i.summary LIKE ?)")
-            params.extend([term, term, term, term])
-        if gt_label in LABELS:
-            where.append("i.gt_label = ?")
-            params.append(gt_label)
-        if annotation_label in LABELS:
-            where.append("ann.label = ?")
-            params.append(annotation_label)
-        if annotation_author.strip():
-            where.append("ann.author = ?")
-            params.append(annotation_author.strip())
-        if missing_evidence.strip():
-            # Values are serialized as a JSON array; matching the quoted token
-            # avoids treating a prefix as a different evidence item.
-            where.append("ann.missing_evidence_json LIKE ?")
-            params.append(f'%"{missing_evidence.strip()}"%')
-        if failure_only:
-            where.append("i.gt_label IN (?, ?, ?)")
-            where.append("mp.model_label IN (?, ?, ?)")
-            where.append("mp.model_label != i.gt_label")
-            params.extend((*LABELS, *LABELS))
-        condition = f"WHERE {' AND '.join(where)}" if where else ""
-        common = f"""
-            FROM issues i
-            {self._latest_annotation_join()}
-            LEFT JOIN model_predictions mp
-              ON mp.issue_id = i.issue_id
-             AND mp.model_run_id = ?
-        """
-        model_args = [model_run_id]
+        condition, params, model_args, common = self._case_list_filters(
+            baseline_scope=baseline_scope,
+            search=search,
+            gt_label=gt_label,
+            model_label=model_label,
+            annotation_label=annotation_label,
+            annotation_author=annotation_author,
+            model_run_id=model_run_id,
+            comparison_status=comparison_status,
+            failure_only=failure_only,
+            missing_evidence=missing_evidence,
+            issue_ids=issue_ids,
+            work_assignee=work_assignee,
+        )
         with self.connect() as conn:
             total = conn.execute(
                 f"SELECT COUNT(DISTINCT i.issue_id) {common} {condition}", (*model_args, *params)
             ).fetchone()[0]
             rows = conn.execute(
                 f"""
-                SELECT i.*, ann.label AS annotation_label, ann.review_status AS annotation_review_status,
+                SELECT i.*, ann.id AS annotation_id,
+                       ann.label AS annotation_label, ann.review_status AS annotation_review_status,
+                       ann.is_excluded AS annotation_is_excluded,
                        ann.tags_json AS annotation_tags_json,
                        ann.missing_evidence_json AS annotation_missing_evidence_json,
                        ann.note AS annotation_note, ann.author AS annotation_author,
                        ann.author_source AS annotation_author_source,
                        ann.author_verified AS annotation_author_verified,
                        ann.created_at AS annotation_created_at,
-                       mp.model_label, mp.model_reason, mp.model_confidence, mp.model_run_id
+                       ann.model_run_id AS annotation_model_run_id,
+                       mp.model_label, mp.model_reason, mp.model_confidence, mp.model_run_id,
+                       COALESCE(wa.assignee, '') AS work_assignee,
+                       COALESCE(wa.split_id, '') AS work_split_id
                 {common}
                 {condition}
-                ORDER BY
-                    CASE WHEN ann.id IS NULL THEN 0 ELSE 1 END,
-                    CASE WHEN i.source = 'user_examples' THEN 0 ELSE 1 END,
-                    i.updated_at DESC, i.issue_id ASC
+                ORDER BY i.issue_id ASC
                 LIMIT ? OFFSET ?
                 """,
                 (*model_args, *params, page_size, (page - 1) * page_size),
@@ -925,6 +2109,53 @@ class Database:
             "page": page,
             "page_size": page_size,
         }
+
+    def list_case_issue_ids(
+        self,
+        *,
+        baseline_scope: str = "",
+        search: str = "",
+        gt_label: str = "",
+        model_label: str = "",
+        annotation_label: str = "",
+        annotation_author: str = "",
+        model_run_id: str = "",
+        comparison_status: str = "all",
+        failure_only: bool = False,
+        missing_evidence: str = "",
+        issue_ids: list[str] | None = None,
+        work_assignee: str = "",
+        limit: int = 5000,
+    ) -> list[str]:
+        """Return ordered issue IDs matching the same filters as list_cases."""
+
+        condition, params, model_args, common = self._case_list_filters(
+            baseline_scope=baseline_scope,
+            search=search,
+            gt_label=gt_label,
+            model_label=model_label,
+            annotation_label=annotation_label,
+            annotation_author=annotation_author,
+            model_run_id=model_run_id,
+            comparison_status=comparison_status,
+            failure_only=failure_only,
+            missing_evidence=missing_evidence,
+            issue_ids=issue_ids,
+            work_assignee=work_assignee,
+        )
+        limit = min(max(1, int(limit)), 5000)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT DISTINCT i.issue_id
+                {common}
+                {condition}
+                ORDER BY i.issue_id ASC
+                LIMIT ?
+                """,
+                (*model_args, *params, limit),
+            ).fetchall()
+        return [str(row["issue_id"] if hasattr(row, "keys") else row[0]) for row in rows]
 
     def get_case(self, issue_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
@@ -999,6 +2230,7 @@ class Database:
         self,
         *,
         issue_id: str,
+        model_run_id: str = "",
         label: str,
         review_status: str,
         tags: list[str],
@@ -1008,11 +2240,16 @@ class Database:
         author_source: str = "legacy",
         author_verified: bool = False,
         attachments: list[dict[str, Any]] | None = None,
+        is_excluded: bool = False,
+        expected_previous_annotation_id: int | None | object = _EXPECTED_ANNOTATION_UNSET,
     ) -> dict[str, Any]:
         if label and label not in LABELS:
             raise ValueError(f"不支持的标注标签: {label}")
         if review_status not in REVIEW_STATUSES:
             raise ValueError(f"不支持的 review 状态: {review_status}")
+        if not author.strip():
+            raise ValueError("复核人不能为空。")
+        model_run_id = str(model_run_id or "").strip()
         tags = sorted({str(tag).strip() for tag in tags if str(tag).strip()})
         missing_evidence = sorted(
             {str(item).strip() for item in missing_evidence if str(item).strip()}
@@ -1020,29 +2257,71 @@ class Database:
         attachments = attachments or []
         now = utc_now()
         with self._write_lock, self.connect() as conn:
+            if model_run_id:
+                model_run = conn.execute(
+                    "SELECT id FROM model_runs WHERE id = ?", (model_run_id,)
+                ).fetchone()
+                if model_run is None:
+                    raise ValueError("模型 Run 不存在。")
             previous = conn.execute(
-                "SELECT id FROM annotations WHERE issue_id = ? ORDER BY id DESC LIMIT 1", (issue_id,)
-            ).fetchone()
-            cursor = conn.execute(
                 """
-                INSERT INTO annotations (
-                    issue_id, label, review_status, tags_json, missing_evidence_json,
-                    note, author, author_source, author_verified, supersedes_id, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                SELECT id FROM annotations
+                WHERE issue_id = ? AND model_run_id = ?
+                ORDER BY id DESC LIMIT 1
                 """,
+                (issue_id, model_run_id),
+            ).fetchone()
+            if expected_previous_annotation_id is not _EXPECTED_ANNOTATION_UNSET:
+                expected_id = expected_previous_annotation_id
+                if expected_id in (None, "", 0, "0"):
+                    expected_id = None
+                else:
+                    try:
+                        expected_id = int(expected_id)
+                    except (TypeError, ValueError) as exc:
+                        raise ValueError("expected_previous_annotation_id 不合法。") from exc
+                    if expected_id <= 0:
+                        raise ValueError("expected_previous_annotation_id 不合法。")
+                current_id = int(previous["id"]) if previous else None
+                if current_id != expected_id:
+                    current_text = f"#{current_id}" if current_id is not None else "无"
+                    expected_text = f"#{expected_id}" if expected_id is not None else "无"
+                    raise AnnotationConflictError(
+                        "该 Issue 在当前 Model Run 下已被其他人更新；"
+                        f"当前版本为 {current_text}，你编辑时为 {expected_text}。"
+                        "请刷新 Review 后再保存。"
+                    )
+            annotation_sql = """
+                INSERT INTO annotations (
+                    issue_id, model_run_id, label, review_status, is_excluded,
+                    tags_json, missing_evidence_json, note, author, author_source,
+                    author_verified, supersedes_id, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            if self.backend == "postgresql":
+                annotation_sql += " RETURNING id"
+            cursor = conn.execute(
+                annotation_sql,
                 (
                     issue_id,
+                    model_run_id,
                     label or None,
                     review_status,
+                    bool(is_excluded),
                     _json(tags),
                     _json(missing_evidence),
                     note.strip(),
                     author.strip(),
                     author_source.strip() or "legacy",
-                    int(author_verified),
+                    bool(author_verified),
                     previous["id"] if previous else None,
                     now,
                 ),
+            )
+            annotation_id = (
+                int(cursor.fetchone()["id"])
+                if self.backend == "postgresql"
+                else int(cursor.lastrowid)
             )
             conn.execute("UPDATE issues SET updated_at = ? WHERE issue_id = ?", (now, issue_id))
             for attachment in attachments:
@@ -1055,7 +2334,7 @@ class Database:
                     """,
                     (
                         str(attachment["id"]),
-                        cursor.lastrowid,
+                        annotation_id,
                         str(attachment.get("original_name") or ""),
                         str(attachment["stored_name"]),
                         str(attachment["media_type"]),
@@ -1066,16 +2345,51 @@ class Database:
                         now,
                     ),
                 )
-            row = conn.execute("SELECT * FROM annotations WHERE id = ?", (cursor.lastrowid,)).fetchone()
+            row = conn.execute("SELECT * FROM annotations WHERE id = ?", (annotation_id,)).fetchone()
         result = self._annotation_dict(row)
         result["attachments"] = [
             {
                 **attachment,
-                "annotation_id": int(cursor.lastrowid),
+                "annotation_id": annotation_id,
                 "created_at": now,
             }
             for attachment in attachments
         ]
+        return result
+
+    def delete_annotation(
+        self,
+        *,
+        issue_id: str,
+        annotation_id: int,
+    ) -> dict[str, Any] | None:
+        """Delete one review version and reconnect its superseding chain."""
+        now = utc_now()
+        with self._write_lock, self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM annotations WHERE id = ? AND issue_id = ?",
+                (annotation_id, issue_id),
+            ).fetchone()
+            if row is None:
+                return None
+            attachments = conn.execute(
+                "SELECT * FROM review_attachments WHERE annotation_id = ? ORDER BY created_at ASC",
+                (annotation_id,),
+            ).fetchall()
+            conn.execute(
+                "UPDATE annotations SET supersedes_id = ? WHERE supersedes_id = ?",
+                (row["supersedes_id"], annotation_id),
+            )
+            conn.execute(
+                "DELETE FROM annotations WHERE id = ? AND issue_id = ?",
+                (annotation_id, issue_id),
+            )
+            conn.execute(
+                "UPDATE issues SET updated_at = ? WHERE issue_id = ?",
+                (now, issue_id),
+            )
+        result = self._annotation_dict(row)
+        result["attachments"] = [self._attachment_dict(item) for item in attachments]
         return result
 
     def get_review_attachment(self, attachment_id: str) -> dict[str, Any] | None:
@@ -1093,6 +2407,231 @@ class Database:
             ).fetchone()
         return int(row["total"] or 0)
 
+    def review_reason_rows(
+        self,
+        *,
+        baseline_scope: str,
+        model_run_id: str = "",
+        comparison_status: str = "all",
+        failure_only: bool = False,
+        annotation_author: str = "",
+        review_status: str = "",
+        gt_label: str = "",
+        annotation_label: str = "",
+        model_label: str = "",
+        missing_evidence: str | list[str] | tuple[str, ...] = "",
+        tag: str = "",
+        tag_filters: tuple[str, ...] = (),
+        scene_tags: tuple[str, ...] = (),
+        trigger_tags: tuple[str, ...] = (),
+        egress_tags: tuple[str, ...] = (),
+        search: str = "",
+        search_aliases: tuple[str, ...] = (),
+    ) -> list[dict[str, Any]]:
+        """Return one latest-review row per baseline issue for analysis.
+
+        When ``model_run_id`` is selected, the latest Review is resolved within
+        that immutable Run. Legacy annotations with an empty run id remain
+        available when no Run is selected. ``comparison_status`` can narrow the
+        slice to MATCH, MISMATCH, or NONE (no canonical prediction).
+        ``failure_only`` remains a compatibility alias for MISMATCH.
+        """
+
+        def _multi_values(*raw: Any) -> tuple[str, ...]:
+            values: list[str] = []
+            for item in raw:
+                if item is None:
+                    continue
+                if isinstance(item, (list, tuple, set)):
+                    for nested in item:
+                        text = str(nested or "").strip()
+                        if text:
+                            values.append(text)
+                    continue
+                text = str(item or "").strip()
+                if not text:
+                    continue
+                if "," in text:
+                    values.extend(
+                        part.strip() for part in text.split(",") if part.strip()
+                    )
+                else:
+                    values.append(text)
+            return tuple(dict.fromkeys(values))
+
+        comparison_status = str(comparison_status or "all").strip().lower()
+        if failure_only:
+            comparison_status = "mismatch"
+        if comparison_status not in {"all", "mismatch", "match", "none"}:
+            raise ValueError("unsupported comparison_status")
+        if comparison_status != "all" and not model_run_id:
+            raise ValueError("comparison_status requires model_run_id")
+
+        where = ["i.baseline_scope = ?", "ann.id IS NOT NULL"]
+        params: list[Any] = (
+            [model_run_id, model_run_id] if model_run_id else []
+        ) + [model_run_id, baseline_scope]
+        if comparison_status != "all":
+            where.append("i.gt_label IN (?, ?, ?)")
+            params.extend(LABELS)
+            if comparison_status == "none":
+                where.append(
+                    "(mp.model_label IS NULL OR mp.model_label NOT IN (?, ?, ?))"
+                )
+                params.extend(LABELS)
+            else:
+                where.append("mp.model_label IN (?, ?, ?)")
+                params.extend(LABELS)
+                operator = "=" if comparison_status == "match" else "!="
+                where.append(f"mp.model_label {operator} i.gt_label")
+        authors = _multi_values(annotation_author)
+        if authors:
+            where.append(
+                f"ann.author IN ({', '.join('?' for _ in authors)})"
+            )
+            params.extend(authors)
+        statuses = tuple(
+            value for value in _multi_values(review_status) if value in REVIEW_STATUSES
+        )
+        if statuses:
+            where.append(
+                f"ann.review_status IN ({', '.join('?' for _ in statuses)})"
+            )
+            params.extend(statuses)
+        gt_labels = tuple(value for value in _multi_values(gt_label) if value in LABELS)
+        if gt_labels:
+            where.append(f"i.gt_label IN ({', '.join('?' for _ in gt_labels)})")
+            params.extend(gt_labels)
+        annotation_labels = tuple(
+            value for value in _multi_values(annotation_label) if value in LABELS
+        )
+        if annotation_labels:
+            where.append(
+                f"ann.label IN ({', '.join('?' for _ in annotation_labels)})"
+            )
+            params.extend(annotation_labels)
+        model_labels = tuple(
+            value for value in _multi_values(model_label) if value in LABELS
+        )
+        if model_labels:
+            where.append(
+                f"mp.model_label IN ({', '.join('?' for _ in model_labels)})"
+            )
+            params.extend(model_labels)
+        evidence_keys = _multi_values(missing_evidence)
+        if evidence_keys:
+            evidence_clauses = [
+                "ann.missing_evidence_json LIKE ?" for _ in evidence_keys
+            ]
+            where.append(f"({' OR '.join(evidence_clauses)})")
+            params.extend(f'%"{key}"%' for key in evidence_keys)
+        def _or_tag_group(keys: tuple[str, ...]) -> None:
+            if not keys:
+                return
+            clauses = ["ann.tags_json LIKE ?" for _ in keys]
+            where.append(f"({' OR '.join(clauses)})")
+            params.extend(f'%"{key}"%' for key in keys)
+
+        # Section-scoped multi-selects: OR within group, AND across groups.
+        _or_tag_group(_multi_values(*scene_tags))
+        _or_tag_group(_multi_values(*trigger_tags))
+        _or_tag_group(_multi_values(*egress_tags))
+        # Legacy flat tag filters remain AND-all for older callers.
+        for requested_tag in _multi_values(tag, *tag_filters):
+            where.append("ann.tags_json LIKE ?")
+            params.append(f'%"{requested_tag}"%')
+        if search.strip():
+            terms = tuple(
+                dict.fromkeys(
+                    text.strip()
+                    for text in (search, *search_aliases)
+                    if text.strip()
+                )
+            )
+            search_clauses: list[str] = []
+            for text in terms:
+                term = f"%{text}%"
+                search_clauses.append(
+                    "(ann.note LIKE ? OR ann.author LIKE ? OR ann.label LIKE ? "
+                    "OR ann.review_status LIKE ? OR ann.tags_json LIKE ? "
+                    "OR ann.missing_evidence_json LIKE ?)"
+                )
+                params.extend([term, term, term, term, term, term])
+            where.append(f"({' OR '.join(search_clauses)})")
+
+        query = f"""
+            SELECT i.issue_id, i.title, i.scenario, i.summary, i.gt_label,
+                   ann.id AS annotation_id,
+                   ann.label AS annotation_label,
+                   ann.review_status AS annotation_review_status,
+                   ann.is_excluded AS annotation_is_excluded,
+                   ann.tags_json AS annotation_tags_json,
+                   ann.missing_evidence_json AS annotation_missing_evidence_json,
+                   ann.note AS annotation_note,
+                   ann.author AS annotation_author,
+                   ann.author_source AS annotation_author_source,
+                   ann.author_verified AS annotation_author_verified,
+                   ann.created_at AS annotation_created_at,
+                   ann.model_run_id AS annotation_model_run_id,
+                   mp.model_run_id, mp.model_label, mp.model_reason,
+                   mp.model_confidence
+            FROM issues i
+            {self._latest_annotation_join(model_run_id)}
+            LEFT JOIN model_predictions mp
+              ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
+            WHERE {' AND '.join(where)}
+            ORDER BY i.issue_id ASC
+            """
+        with self.connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            model_label = str(row["model_label"] or "")
+            current_gt = str(row["gt_label"] or "")
+            comparable = current_gt in LABELS and model_label in LABELS
+            results.append(
+                {
+                    "issue_id": str(row["issue_id"]),
+                    "title": str(row["title"] or ""),
+                    "scenario": str(row["scenario"] or ""),
+                    "summary": str(row["summary"] or ""),
+                    "gt_label": current_gt,
+                    "annotation": {
+                        "id": int(row["annotation_id"]),
+                        "model_run_id": str(row["annotation_model_run_id"] or ""),
+                        "label": str(row["annotation_label"] or ""),
+                        "review_status": str(
+                            row["annotation_review_status"] or "pending"
+                        ),
+                        "is_excluded": bool(row["annotation_is_excluded"]),
+                        "tags": _json_load(row["annotation_tags_json"], []),
+                        "missing_evidence": _json_load(
+                            row["annotation_missing_evidence_json"], []
+                        ),
+                        "note": str(row["annotation_note"] or ""),
+                        "author": str(row["annotation_author"] or ""),
+                        "author_source": str(
+                            row["annotation_author_source"] or "legacy"
+                        ),
+                        "author_verified": bool(
+                            row["annotation_author_verified"]
+                        ),
+                        "created_at": str(row["annotation_created_at"] or ""),
+                    },
+                    "prediction": {
+                        "model_run_id": str(row["model_run_id"] or ""),
+                        "label": model_label,
+                        "reason": str(row["model_reason"] or ""),
+                        "confidence": row["model_confidence"],
+                        "comparable": comparable,
+                        "mismatch": bool(
+                            comparable and model_label != current_gt
+                        ),
+                    },
+                }
+            )
+        return results
+
     def review_clusters(
         self,
         *,
@@ -1102,7 +2641,9 @@ class Database:
         annotation_author: str = "",
     ) -> list[dict[str, Any]]:
         where = ["i.baseline_scope = ?", "ann.id IS NOT NULL"]
-        params: list[Any] = [model_run_id, baseline_scope]
+        params: list[Any] = (
+            [model_run_id, model_run_id] if model_run_id else []
+        ) + [model_run_id, baseline_scope]
         if failure_only and model_run_id:
             where.extend(
                 [
@@ -1118,7 +2659,7 @@ class Database:
         query = f"""
             SELECT ann.missing_evidence_json
             FROM issues i
-            {self._latest_annotation_join()}
+            {self._latest_annotation_join(model_run_id)}
             LEFT JOIN model_predictions mp
               ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
             WHERE {' AND '.join(where)}
@@ -1162,7 +2703,7 @@ class Database:
                     issue_id,
                     requested_by.strip(),
                     requested_by_source.strip() or "legacy",
-                    int(requested_by_verified),
+                    bool(requested_by_verified),
                     model_name.strip(),
                     base_url.strip(),
                     _json(config),
@@ -1237,9 +2778,9 @@ class Database:
             requester_rows = conn.execute(
                 """
                 SELECT requested_by,
-                       SUM(CASE WHEN requested_by_verified = 1 THEN 1 ELSE 0 END)
+                       SUM(CASE WHEN requested_by_verified = TRUE THEN 1 ELSE 0 END)
                            AS verified_count,
-                       SUM(CASE WHEN requested_by_verified = 1 THEN 0 ELSE 1 END)
+                       SUM(CASE WHEN requested_by_verified = TRUE THEN 0 ELSE 1 END)
                            AS unverified_count,
                        COUNT(*) AS job_count
                 FROM inference_jobs
@@ -1272,6 +2813,7 @@ class Database:
         requested_by: str,
         requested_by_source: str = "legacy",
         requested_by_verified: bool = False,
+        provider_id: str = "kylin",
         requested_model_id: str,
         resolved_model_id: str,
         model_source: str,
@@ -1322,13 +2864,13 @@ class Database:
                 """
                 INSERT INTO batch_prediction_jobs (
                     id, name, status, requested_by, requested_by_source,
-                    requested_by_verified, total_count, requested_model_id,
+                    requested_by_verified, total_count, provider_id, requested_model_id,
                     resolved_model_id, model_source, catalog_sha256,
                     model_validation_status, model_name, prompt_version,
                     prompt_template, prompt_template_sha256, prompt_mode,
                     input_profile, input_config_json, created_at
                 ) VALUES (
-                    ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -1336,8 +2878,9 @@ class Database:
                     name.strip() or f"Batch {now[:16].replace('T', ' ')} UTC",
                     requested_by.strip(),
                     requested_by_source.strip() or "legacy",
-                    int(requested_by_verified),
+                    bool(requested_by_verified),
                     len(normalized_issue_ids),
+                    str(provider_id or "kylin").strip().lower() or "kylin",
                     requested_model_id.strip(),
                     resolved_model_id.strip(),
                     model_source.strip() or "ra_model_gateway",
@@ -1544,6 +3087,22 @@ class Database:
                 updated += 1
         return updated
 
+    def next_queued_batch_prediction_job(self) -> dict[str, Any] | None:
+        """Return the oldest durable prediction job waiting for the runner."""
+
+        queue_order = "queue_order" if self.backend == "postgresql" else "rowid"
+        with self.connect() as conn:
+            row = conn.execute(
+                f"""
+                SELECT id
+                FROM batch_prediction_jobs
+                WHERE status = 'queued'
+                ORDER BY created_at ASC, {queue_order} ASC
+                LIMIT 1
+                """
+            ).fetchone()
+        return self.get_batch_prediction_job(str(row["id"])) if row else None
+
     def get_batch_prediction_job(self, job_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute(
@@ -1616,9 +3175,9 @@ class Database:
             requester_rows = conn.execute(
                 """
                 SELECT requested_by,
-                       SUM(CASE WHEN requested_by_verified = 1 THEN 1 ELSE 0 END)
+                       SUM(CASE WHEN requested_by_verified = TRUE THEN 1 ELSE 0 END)
                            AS verified_count,
-                       SUM(CASE WHEN requested_by_verified = 1 THEN 0 ELSE 1 END)
+                       SUM(CASE WHEN requested_by_verified = TRUE THEN 0 ELSE 1 END)
                            AS unverified_count,
                        COUNT(*) AS job_count
                 FROM batch_prediction_jobs
@@ -1638,7 +3197,7 @@ class Database:
                     SELECT id, TRIM(resolved_model_id) AS model_id
                     FROM batch_prediction_jobs
                     WHERE TRIM(resolved_model_id) != ''
-                )
+                ) AS model_catalog
                 GROUP BY model_id
                 ORDER BY job_count DESC, model_id ASC
                 """
@@ -1714,31 +3273,36 @@ class Database:
                 f"""
                 SELECT COUNT(*)
                 FROM issues i
-                {self._latest_annotation_join()}
+                {self._latest_annotation_join(model_run_id)}
                 {base_where} AND ann.id IS NOT NULL
                 """,
-                (baseline_scope,),
+                ((model_run_id, model_run_id, baseline_scope)
+                 if model_run_id else (baseline_scope,)),
             ).fetchone()[0]
             predictions = failures = reviewed_failures = 0
             if model_run_id:
                 common = f"""
                     FROM issues i
-                    {self._latest_annotation_join()}
+                    {self._latest_annotation_join(model_run_id)}
                     LEFT JOIN model_predictions mp
                       ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
                     WHERE i.baseline_scope = ?
                 """
                 predictions = conn.execute(
-                    f"SELECT COUNT(mp.id) {common}", (model_run_id, baseline_scope)
+                    f"SELECT COUNT(mp.id) {common}",
+                    ((model_run_id, model_run_id, model_run_id, baseline_scope)
+                     if model_run_id else (model_run_id, baseline_scope)),
                 ).fetchone()[0]
                 failure_condition = " AND i.gt_label IN (?, ?, ?) AND mp.model_label IN (?, ?, ?) AND mp.model_label != i.gt_label"
                 failures = conn.execute(
                     f"SELECT COUNT(*) {common}{failure_condition}",
-                    (model_run_id, baseline_scope, *LABELS, *LABELS),
+                    ((model_run_id, model_run_id, model_run_id, baseline_scope, *LABELS, *LABELS)
+                     if model_run_id else (model_run_id, baseline_scope, *LABELS, *LABELS)),
                 ).fetchone()[0]
                 reviewed_failures = conn.execute(
                     f"SELECT COUNT(*) {common}{failure_condition} AND ann.id IS NOT NULL",
-                    (model_run_id, baseline_scope, *LABELS, *LABELS),
+                    ((model_run_id, model_run_id, model_run_id, baseline_scope, *LABELS, *LABELS)
+                     if model_run_id else (model_run_id, baseline_scope, *LABELS, *LABELS)),
                 ).fetchone()[0]
             running = conn.execute(
                 "SELECT COUNT(*) FROM inference_jobs WHERE status IN ('queued', 'running')"
@@ -1780,11 +3344,27 @@ class Database:
         data = cls._issue_dict(row)
         model_label = row["model_label"] or ""
         comparable = bool(data["gt_label"] in LABELS and model_label in LABELS)
+        keys = set(row.keys()) if hasattr(row, "keys") else set()
+        work_assignee = (
+            str(row["work_assignee"] or "") if "work_assignee" in keys else ""
+        )
+        work_split_id = (
+            str(row["work_split_id"] or "") if "work_split_id" in keys else ""
+        )
         data.update(
             {
+                "work_assignee": work_assignee,
+                "work_split_id": work_split_id,
                 "annotation": {
+                    "id": row["annotation_id"] if "annotation_id" in keys else None,
+                    "model_run_id": (
+                        str(row["annotation_model_run_id"] or "")
+                        if "annotation_model_run_id" in keys
+                        else ""
+                    ),
                     "label": row["annotation_label"] or "",
                     "review_status": row["annotation_review_status"] or "pending",
+                    "is_excluded": bool(row["annotation_is_excluded"]),
                     "tags": _json_load(row["annotation_tags_json"], []),
                     "missing_evidence": _json_load(row["annotation_missing_evidence_json"], []),
                     "note": row["annotation_note"] or "",
@@ -1805,13 +3385,110 @@ class Database:
         )
         return data
 
+    def list_work_assignees(self) -> list[dict[str, Any]]:
+        """Distinct people currently assigned via work-split."""
+
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT assignee, COUNT(*) AS issue_count
+                FROM issue_work_assignments
+                WHERE assignee <> ''
+                GROUP BY assignee
+                ORDER BY assignee ASC
+                """
+            ).fetchall()
+        return [
+            {
+                "username": str(row["assignee"] or ""),
+                "issue_count": int(row["issue_count"] or 0),
+            }
+            for row in rows
+            if str(row["assignee"] or "").strip()
+        ]
+
+    def apply_work_split(
+        self,
+        *,
+        assignments: list[dict[str, Any]],
+        created_by: str,
+        seed: int | None = None,
+        filter_snapshot: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Persist a work-split batch and overwrite assignments for its issues."""
+
+        actor = str(created_by or "").strip()
+        if not actor:
+            raise ValueError("均分操作人不能为空。")
+        if not assignments:
+            raise ValueError("分配结果为空。")
+        split_id = f"split-{uuid.uuid4().hex}"
+        now = utc_now()
+        rows: list[tuple[str, str, str, str, str]] = []
+        for item in assignments:
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
+            for issue_id in item.get("issue_ids") or []:
+                cleaned = str(issue_id or "").strip()
+                if not cleaned:
+                    continue
+                rows.append((cleaned, name, split_id, actor, now))
+        if not rows:
+            raise ValueError("没有可写入的 Issue 分配。")
+        with self._write_lock, self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO issue_work_splits (
+                    id, created_by, created_at, seed, total_count, filter_json, assignees_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    split_id,
+                    actor,
+                    now,
+                    seed,
+                    len(rows),
+                    json.dumps(filter_snapshot or {}, ensure_ascii=False),
+                    json.dumps(assignments, ensure_ascii=False),
+                ),
+            )
+            for issue_id, assignee, sid, assigned_by, assigned_at in rows:
+                conn.execute(
+                    """
+                    INSERT INTO issue_work_assignments (
+                        issue_id, assignee, split_id, assigned_by, assigned_at
+                    ) VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(issue_id) DO UPDATE SET
+                        assignee = excluded.assignee,
+                        split_id = excluded.split_id,
+                        assigned_by = excluded.assigned_by,
+                        assigned_at = excluded.assigned_at
+                    """,
+                    (issue_id, assignee, sid, assigned_by, assigned_at),
+                )
+        return {
+            "split_id": split_id,
+            "created_by": actor,
+            "created_at": now,
+            "seed": seed,
+            "total": len(rows),
+            "assignments": assignments,
+        }
+
     @staticmethod
     def _annotation_dict(row: sqlite3.Row) -> dict[str, Any]:
         return {
             "id": row["id"],
             "issue_id": row["issue_id"],
+            "model_run_id": (
+                str(row["model_run_id"] or "")
+                if "model_run_id" in row.keys()
+                else ""
+            ),
             "label": row["label"] or "",
             "review_status": row["review_status"] if "review_status" in row.keys() else "pending",
+            "is_excluded": bool(row["is_excluded"]) if "is_excluded" in row.keys() else False,
             "tags": _json_load(row["tags_json"], []),
             "missing_evidence": _json_load(
                 row["missing_evidence_json"] if "missing_evidence_json" in row.keys() else "[]", []
@@ -1927,6 +3604,9 @@ class Database:
             "completed_count": int(row["completed_count"] or 0),
             "success_count": int(row["success_count"] or 0),
             "failed_count": int(row["failed_count"] or 0),
+            "provider_id": row["provider_id"]
+            if "provider_id" in row.keys()
+            else "kylin",
             "requested_model_id": row["requested_model_id"]
             if "requested_model_id" in row.keys()
             else "",

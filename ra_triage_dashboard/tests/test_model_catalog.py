@@ -172,6 +172,40 @@ class ModelCatalogTest(unittest.TestCase):
                     catalog.resolve(model_id)
                 self.assertEqual(context.exception.status_code, 400)
 
+    def test_tokenservice_provider_keeps_qwen3_catalog_usable(self) -> None:
+        rows = [
+            {"id": "aliyun/Qwen3-VL-Plus"},
+            {"id": "aliyun/Qwen3-Next-80B-A3B-Instruct"},
+            {"id": "volcengine/Doubao-Seed-1.6-Vision-250815"},
+            {"id": "volcengine/Doubao-Seedance-2.0-260128-4k"},
+            {"id": "Qwen3-Embedding/Qwen3-Embedding-4B"},
+            {"id": "Other/Llama-Vision"},
+        ]
+        catalog = ModelCatalog(_settings())
+        with (
+            patch(
+                "ra_triage_dashboard.app.model_catalog.build_opener",
+                return_value=_GatewayOpener(rows),
+            ),
+            patch(
+                "ra_triage_dashboard.app.model_catalog.read_provider_api_key",
+                return_value="tokenservice-secret",
+            ),
+        ):
+            snapshot = catalog.list_models(
+                provider_id="tokenservice",
+                allow_stale=False,
+            )
+            selected = catalog.resolve(
+                "aliyun/Qwen3-VL-Plus",
+                provider_id="tokenservice",
+            )
+        self.assertEqual(snapshot["provider_id"], "tokenservice")
+        self.assertEqual(snapshot["default_model_id"], "aliyun/Qwen3-VL-Plus")
+        self.assertEqual(snapshot["experimental_count"], 3)
+        self.assertEqual(selected["provider"], "tokenservice")
+        self.assertEqual(selected["validation_status"], "experimental")
+
 
 if __name__ == "__main__":
     unittest.main()

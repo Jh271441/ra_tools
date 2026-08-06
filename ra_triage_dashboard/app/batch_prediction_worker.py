@@ -43,6 +43,9 @@ except ImportError:  # Direct script execution from run_batch_worker.sh.
 RESULT_PREFIX = "__RA_TRIAGE_BATCH_RESULT__"
 EVENT_PREFIX = "__RA_TRIAGE_BATCH_EVENT__"
 LABELS = {"误触发", "正确触发", "无需协助"}
+DEFAULT_API_BEV_MANIFEST = "bags/ares_animation"
+DEFAULT_API_BEV_MODE = "raw_frames"
+DEFAULT_API_BEV_FALLBACK_TRIGGER_OFFSET_SEC = 20.0
 ISSUE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{3,128}$")
 MODEL_ID_RE = re.compile(r"^[A-Za-z0-9._/@:+-]{1,160}$")
 MAX_BATCH_ISSUES = 50
@@ -303,7 +306,8 @@ def load_default_experiment():
         getattr(experiment, "api_key", ""),
         getattr(experiment, "base_url", ""),
     )
-    # Ares remains review-only even if a future server default enables it.
+    # Start from a closed Ares state. apply_prediction_configuration may later
+    # enable only the fixed server-owned Ares Animation policy.
     experiment.use_bev_animation = False
     experiment.bev_mode = "disabled"
     experiment.bev_animation_manifest = ""
@@ -317,12 +321,22 @@ def load_default_experiment():
     return experiment, loaded.source
 
 
-def apply_gateway_model_metadata(experiment: Any, model_id: Any) -> str:
+SUPPORTED_GATEWAY_PROVIDERS = {"kylin", "tokenservice"}
+
+
+def apply_gateway_model_metadata(
+    experiment: Any,
+    model_id: Any,
+    provider: str = "kylin",
+) -> str:
     model_id = str(model_id or "").strip()
     if not MODEL_ID_RE.fullmatch(model_id):
         raise ValueError("Batch worker model_id 格式非法。")
     experiment.model_name = model_id
-    experiment.provider = "kylin"
+    provider = str(provider or "kylin").strip().lower() or "kylin"
+    if provider not in SUPPORTED_GATEWAY_PROVIDERS:
+        raise ValueError("Batch worker Provider 不受支持。")
+    experiment.provider = provider
     experiment.model_profile = ""
     # The selected gateway model is fully materialised. Refuse any merge which
     # could bring the old default model or review-only Ares inputs back.
@@ -338,20 +352,28 @@ def apply_gateway_model_metadata(experiment: Any, model_id: Any) -> str:
 
 
 def apply_gateway_model(experiment: Any, request: dict[str, Any]) -> str:
-    source = apply_gateway_model_metadata(experiment, request.get("model_id"))
     gateway = request.pop("_model_gateway", None)
     if not isinstance(gateway, dict):
         raise ValueError("Batch worker 缺少模型网关配置。")
-    provider = str(gateway.pop("provider", "") or "").strip()
+    provider = str(gateway.get("provider", "") or "").strip().lower()
+    source = apply_gateway_model_metadata(
+        experiment,
+        request.get("model_id"),
+        provider,
+    )
     chat_url = str(gateway.pop("chat_url", "") or "").strip()
     api_key = str(gateway.pop("api_key", "") or "").strip()
     gateway.clear()
     parsed = urlsplit(chat_url)
     host = (parsed.hostname or "").lower()
+    expected_host = {
+        "kylin": "ra-model.intra.xiaojukeji.com",
+        "tokenservice": "tokenservice-gateway-ys.intra.xiaojukeji.com",
+    }.get(provider, "")
     if (
-        provider != "kylin"
+        provider not in SUPPORTED_GATEWAY_PROVIDERS
         or parsed.scheme not in {"http", "https"}
-        or host != "ra-model.intra.xiaojukeji.com"
+        or host != expected_host
         or parsed.username
         or parsed.password
         or parsed.query
@@ -360,7 +382,11 @@ def apply_gateway_model(experiment: Any, request: dict[str, Any]) -> str:
         or not api_key
     ):
         raise ValueError("Batch worker 模型网关环境配置非法。")
-    auth_value = api_key if api_key.lower().startswith("apikey:") else f"apikey:{api_key}"
+    auth_value = (
+        api_key
+        if provider == "tokenservice" or api_key.lower().startswith("apikey:")
+        else f"apikey:{api_key}"
+    )
     register_sensitive_values(api_key, auth_value, chat_url)
     experiment.provider = provider
     experiment.base_url = chat_url
@@ -414,26 +440,25 @@ def apply_prediction_configuration(
         )
     if any(
         raw_input.get(key) is not False
-        for key in (
-            "use_trajectory_summary",
-            "use_ares_capture",
-            "use_bev_animation",
-        )
+        for key in ("use_trajectory_summary", "use_ares_capture")
     ):
-        raise ValueError("Batch worker 禁止启用轨迹摘要或 Ares/BEV 输入。")
+        raise ValueError("Batch worker 禁止启用轨迹摘要或 Ares Capture 输入。")
     try:
-        input_config = normalise_input_config(
-            {
-                key: raw_input.get(key)
-                for key in (
-                    "profile_id",
-                    "frame_offsets_ms",
-                    "use_ra_event",
-                    "use_ra_options",
-                )
-                if key in raw_input
-            }
-        )
+        normalised_input_payload = {
+            key: raw_input.get(key)
+            for key in (
+                "profile_id",
+                "frame_offsets_ms",
+                "use_ra_event",
+                "use_ra_options",
+                "use_bev_animation",
+            )
+            if key in raw_input
+        }
+        # Jobs created before the Ares Animation switch existed remain closed;
+        # every new API-created job persists the explicit boolean.
+        normalised_input_payload.setdefault("use_bev_animation", False)
+        input_config = normalise_input_config(normalised_input_payload)
     except PromptCatalogError as exc:
         raise ValueError(str(exc)) from exc
     input_profile = str(request.get("input_profile") or "").strip()
@@ -453,11 +478,23 @@ def apply_prediction_configuration(
     experiment.use_ra_event = bool(input_config["use_ra_event"])
     experiment.use_ra_options = bool(input_config["use_ra_options"])
     experiment.use_trajectory_summary = False
-    experiment.use_bev_animation = False
+    experiment.use_bev_animation = bool(input_config["use_bev_animation"])
     experiment.use_ares_capture = False
-    experiment.bev_mode = "disabled"
-    experiment.bev_animation_manifest = ""
-    experiment.bev_frame_offsets_ms = []
+    experiment.bev_mode = (
+        DEFAULT_API_BEV_MODE if experiment.use_bev_animation else "disabled"
+    )
+    experiment.bev_animation_manifest = (
+        DEFAULT_API_BEV_MANIFEST if experiment.use_bev_animation else ""
+    )
+    experiment.bev_frame_offsets_ms = (
+        list(input_config["frame_offsets_ms"])
+        if experiment.use_bev_animation
+        else []
+    )
+    experiment.bev_fallback_trigger_offset_sec = (
+        DEFAULT_API_BEV_FALLBACK_TRIGGER_OFFSET_SEC
+    )
+    experiment.bev_fail_open = True
     experiment.ares_capture_manifest = ""
     experiment.ares_capture_on_miss = False
     experiment.config_merge_mode = "none"
@@ -507,7 +544,16 @@ def safe_experiment_config(
         "compress_max_dimension": int(
             getattr(experiment, "compress_max_dimension", 1280)
         ),
-        "use_bev_animation": False,
+        "use_bev_animation": bool(experiment.use_bev_animation),
+        "bev_mode": str(experiment.bev_mode or "disabled"),
+        "bev_frame_offsets_ms": int_list(experiment.bev_frame_offsets_ms) or [],
+        "bev_manifest_sha256": (
+            hashlib.sha256(
+                str(experiment.bev_animation_manifest or "").encode("utf-8")
+            ).hexdigest()
+            if experiment.use_bev_animation
+            else ""
+        ),
         "use_ares_capture": False,
         "max_tokens": int(experiment.max_tokens),
         "temperature": float(experiment.temperature),
@@ -610,7 +656,7 @@ def inspect_default(ra_root: Path) -> int:
             "config_sha256": canonical_hash(safe_config),
             "safe_experiment": safe_config,
             "ra_repo_commit": repo_commit(ra_root),
-            "ares_bev_input": False,
+            "ares_bev_input": bool(safe_config["use_bev_animation"]),
             "bag_cache_read_only": os.environ.get(
                 "BAG_CACHE_READ_ONLY", "true"
             ).lower()
@@ -654,15 +700,26 @@ def predict(request: dict[str, Any], ra_root: Path) -> int:
     from vlm import Experiment
 
     reconstructed = Experiment(**worker_experiment)
+    expected_bev = bool(
+        isinstance(request.get("input_config"), dict)
+        and request["input_config"].get("use_bev_animation")
+    )
     if (
-        reconstructed.use_bev_animation
+        bool(reconstructed.use_bev_animation) is not expected_bev
         or getattr(reconstructed, "use_ares_capture", False)
-        or reconstructed.bev_mode != "disabled"
+        or (
+            expected_bev
+            and (
+                reconstructed.bev_mode != DEFAULT_API_BEV_MODE
+                or reconstructed.bev_animation_manifest != DEFAULT_API_BEV_MANIFEST
+            )
+        )
+        or (not expected_bev and reconstructed.bev_mode != "disabled")
     ):
-        raise ValueError("Batch 模型输入策略校验失败：Ares/BEV 被重新启用。")
+        raise ValueError("Batch 模型输入策略校验失败：Ares Animation 配置不一致。")
     if (
         str(reconstructed.model_name or "") != str(request.get("model_id") or "")
-        or str(reconstructed.provider or "") != "kylin"
+        or str(reconstructed.provider or "") not in SUPPORTED_GATEWAY_PROVIDERS
         or str(reconstructed.config_merge_mode or "") != "none"
         or not str(reconstructed.base_url or "")
         or not str(reconstructed.api_key or "")
@@ -751,7 +808,7 @@ def predict(request: dict[str, Any], ra_root: Path) -> int:
             "completed_count": len(results),
             "success_count": success_count,
             "failed_count": failed_count,
-            "ares_bev_input": False,
+            "ares_bev_input": bool(safe_config["use_bev_animation"]),
             "bag_cache_read_only": os.environ.get(
                 "BAG_CACHE_READ_ONLY", "false"
             ).lower()

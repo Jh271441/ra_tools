@@ -1,0 +1,16 @@
+# Load order for classic scripts (app.js loader + tests).
+core-base.js
+routing.js
+format-api.js
+session-config.js
+system-status.js
+runs.js
+review-gallery.js
+work-split.js
+analysis.js
+detail-media.js
+review-form.js
+media-dialog.js
+batch.js
+import-refresh.js
+bind-bootstrap.js

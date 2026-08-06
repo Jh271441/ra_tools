@@ -12,19 +12,62 @@ if [[ ! -x "$PYTHON_BIN" ]]; then
 fi
 
 export DASHBOARD_DATA_DIR="${DASHBOARD_DATA_DIR:-/volume/home/workspace/ra_triage_dashboard_data}"
+DEFAULT_DATABASE_URL_FILE="$DASHBOARD_DATA_DIR/postgres_url"
+if [[ -f "$DEFAULT_DATABASE_URL_FILE" ]]; then
+  export DASHBOARD_DATABASE_URL_FILE="${DASHBOARD_DATABASE_URL_FILE:-$DEFAULT_DATABASE_URL_FILE}"
+  POSTGRES_DATA_DIR="${DASHBOARD_POSTGRES_DATA_DIR:-/volume/postgresql/14/main}"
+  if ! sudo test -f "$POSTGRES_DATA_DIR/PG_VERSION"; then
+    echo "Persistent PostgreSQL data directory is missing: $POSTGRES_DATA_DIR" >&2
+    echo "Run scripts/migrate_cloud_postgres_data.sh during a maintenance window." >&2
+    exit 1
+  fi
+  CONFIGURED_DATA_DIR="$(sudo pg_conftool 14 main show data_directory | sed -E 's/^[^=]*=[[:space:]]*//' | tr -d "'\"" | xargs)"
+  if [[ "$CONFIGURED_DATA_DIR" != "$POSTGRES_DATA_DIR" ]]; then
+    echo "Refusing to start against non-persistent PostgreSQL data: $CONFIGURED_DATA_DIR" >&2
+    exit 1
+  fi
+  export DASHBOARD_POSTGRES_PERSISTENT_DATA=true
+  if command -v pg_isready >/dev/null 2>&1 && ! pg_isready --quiet; then
+    # cloud_server has no systemd init process, so recover PostgreSQL explicitly
+    # after a host/container restart before starting the dashboard.
+    sudo pg_ctlcluster 14 main start
+  fi
+fi
 export DASHBOARD_BUILD_COMMIT="${DASHBOARD_BUILD_COMMIT:-unverified}"
 export DASHBOARD_HOST="${DASHBOARD_HOST:-0.0.0.0}"
 export DASHBOARD_PORT="${DASHBOARD_PORT:-8785}"
+# Root/direct-IP mode remains the default. For the Kylin rule that strips
+# /dashboard before proxying, start with DASHBOARD_BASE_PATH=/dashboard.
+export DASHBOARD_BASE_PATH="${DASHBOARD_BASE_PATH:-}"
+# Access policy defaults to development for backward compatibility: direct-IP
+# requests may write and any displayed LCA username remains unverified. To make
+# direct IP a read-only preview, configure all five values before starting:
+#   DASHBOARD_DEPLOYMENT_MODE=production
+#   DASHBOARD_TRUST_PROXY_IDENTITY_HEADERS=true
+#   DASHBOARD_IDENTITY_HEADER=<Kylin-injected-user-header>
+#   DASHBOARD_TRUSTED_INGRESS_TOKEN_FILE=<0600-file>
+#   DASHBOARD_SSO_WRITE_USERS=alice,bob  # optional; empty permits every verified SSO user
+export DASHBOARD_DEPLOYMENT_MODE="${DASHBOARD_DEPLOYMENT_MODE:-development}"
 export RA_AUTO_TRIAGE_ROOT="/volume/home/workspace/ra_auto_triage"
-export ARES_CAPTURE_MANIFEST="/volume/home/workspace/ra_auto_triage/bags/ares_capture_bev/manifest.jsonl"
-export CAMERA_CACHE_ROOT="/volume/home/workspace/ra_auto_triage/bags/camera"
+# Product media lives under dashboard data media_layouts (outside Git / bags workspace).
+# Layout id release0508_1071_20260729 (alias 0508): switch layout by changing these three
+# paths together, or point at another layout's env_mapping from layout.json.
+_MEDIA_LAYOUT_ROOT="${DASHBOARD_MEDIA_LAYOUT_ROOT:-/volume/home/workspace/ra_triage_dashboard_data/media_layouts}"
+_MEDIA_LAYOUT_ID="${DASHBOARD_MEDIA_LAYOUT:-release0508_1071_20260729}"
+_MEDIA_LAYOUT="${_MEDIA_LAYOUT_ROOT}/${_MEDIA_LAYOUT_ID}"
+export ARES_CAPTURE_MANIFEST="${ARES_CAPTURE_MANIFEST:-${_MEDIA_LAYOUT}/bev/7f4b2d9f-1218-4cd4-a93d-0654603173b9/manifest.jsonl}"
+export CAMERA_CACHE_ROOT="${CAMERA_CACHE_ROOT:-${_MEDIA_LAYOUT}/camera/102}"
+export ARES_CAPTURE_VIDEO_ROOT="${ARES_CAPTURE_VIDEO_ROOT:-${_MEDIA_LAYOUT}/video}"
 export DASHBOARD_BASELINE_LABEL_XLSX="/volume/home/workspace/ra_auto_triage/data/trail_label_baseline_20260729.xlsx"
 export DASHBOARD_BASELINE_DATASET="0508"
 export DASHBOARD_BASELINE_SCOPE="release0508_1071_20260729"
-export DASHBOARD_TRAIL_VIEW_ID="${DASHBOARD_TRAIL_VIEW_ID:-1000}"
+export DASHBOARD_TRAIL_VIEW_ID="${DASHBOARD_TRAIL_VIEW_ID:-2410}"
 export DASHBOARD_SYNC_TRAIL_ON_START="${DASHBOARD_SYNC_TRAIL_ON_START:-true}"
 export DASHBOARD_VOYAGER_ISSUE_BASE_URL="${DASHBOARD_VOYAGER_ISSUE_BASE_URL:-https://voyager.intra.xiaojukeji.com/static/management/#/issue}"
 export DASHBOARD_VOYAGER_ISSUE_VIEW_ID="${DASHBOARD_VOYAGER_ISSUE_VIEW_ID:-2410}"
+export DASHBOARD_TRAIL_DETAIL_METADATA_ENABLED="${DASHBOARD_TRAIL_DETAIL_METADATA_ENABLED:-true}"
+export DASHBOARD_TRAIL_DETAIL_METADATA_CACHE_SECONDS="${DASHBOARD_TRAIL_DETAIL_METADATA_CACHE_SECONDS:-300}"
+export DASHBOARD_RA_RECORDING_BASE_URL="${DASHBOARD_RA_RECORDING_BASE_URL:-https://s3-gzpu-inter.didistatic.com/voyager-fe/operation-platform/ra/dashboard/index.html#/tasks}"
 export DASHBOARD_BATCH_PREDICTION_ENABLED="${DASHBOARD_BATCH_PREDICTION_ENABLED:-true}"
 export DASHBOARD_AUTOTRIAGE_PUSH_ENABLED="${DASHBOARD_AUTOTRIAGE_PUSH_ENABLED:-false}"
 export DASHBOARD_BATCH_MAX_ISSUES="${DASHBOARD_BATCH_MAX_ISSUES:-50}"
@@ -32,10 +75,13 @@ export DASHBOARD_BATCH_JOB_TIMEOUT_SECONDS="${DASHBOARD_BATCH_JOB_TIMEOUT_SECOND
 export DASHBOARD_BATCH_BAG_CACHE_DIR="${DASHBOARD_BATCH_BAG_CACHE_DIR:-$DASHBOARD_DATA_DIR/batch_bags}"
 export DASHBOARD_RA_MODEL_CATALOG_URL="${DASHBOARD_RA_MODEL_CATALOG_URL:-http://ra-model.intra.xiaojukeji.com/v1/models}"
 export DASHBOARD_RA_MODEL_CHAT_URL="${DASHBOARD_RA_MODEL_CHAT_URL:-http://ra-model.intra.xiaojukeji.com/v1/chat/completions}"
+export DASHBOARD_RA_MODEL_TOKENSERVICE_CATALOG_URL="${DASHBOARD_RA_MODEL_TOKENSERVICE_CATALOG_URL:-https://tokenservice-gateway-ys.intra.xiaojukeji.com/v1/models}"
+export DASHBOARD_RA_MODEL_TOKENSERVICE_CHAT_URL="${DASHBOARD_RA_MODEL_TOKENSERVICE_CHAT_URL:-https://tokenservice-gateway-ys.intra.xiaojukeji.com/v1/chat/completions}"
 export DASHBOARD_RA_MODEL_DEFAULT_ID="${DASHBOARD_RA_MODEL_DEFAULT_ID:-auto}"
 export DASHBOARD_RA_MODEL_CATALOG_TTL_SECONDS="${DASHBOARD_RA_MODEL_CATALOG_TTL_SECONDS:-300}"
 export DASHBOARD_RA_MODEL_PROFILE_PATH="${DASHBOARD_RA_MODEL_PROFILE_PATH:-$APP_ROOT/config/model_profiles.json}"
 export DASHBOARD_RA_MODEL_API_KEY_FILE="${DASHBOARD_RA_MODEL_API_KEY_FILE:-/volume/home/workspace/ra_triage_dashboard_data/model_gateway_api_key}"
+export DASHBOARD_RA_MODEL_TOKENSERVICE_API_KEY_FILE="${DASHBOARD_RA_MODEL_TOKENSERVICE_API_KEY_FILE:-/volume/home/workspace/ra_triage_dashboard_data/tokenservice_api_key}"
 export DASHBOARD_AUTO_TRIAGE_RECORD_BASE_URL="${DASHBOARD_AUTO_TRIAGE_RECORD_BASE_URL:-http://auto-triage.intra.xiaojukeji.com/ra/model_triage/records}"
 export DASHBOARD_AUTOTRIAGE_API_BASE_URL="${DASHBOARD_AUTOTRIAGE_API_BASE_URL:-http://10.190.57.183:8000}"
 

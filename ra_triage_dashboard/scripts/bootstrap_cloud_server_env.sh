@@ -17,6 +17,8 @@ import multipart
 import openpyxl
 import pandas
 import PIL
+import psycopg
+import psycopg_pool
 import uvicorn
 
 print(
@@ -27,5 +29,7 @@ print(
     f"openpyxl={openpyxl.__version__}",
     f"pandas={pandas.__version__}",
     f"Pillow={PIL.__version__}",
+    f"psycopg={psycopg.__version__}",
+    f"psycopg_pool={psycopg_pool.__version__}",
 )
 PY

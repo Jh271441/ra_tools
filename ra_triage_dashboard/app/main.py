@@ -5,24 +5,40 @@ import csv
 import hashlib
 import io
 import json
+import logging
 import math
+import mimetypes
 import re
 import shutil
 import threading
+import time
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
 import openpyxl
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from .assets import AssetIndex, CameraIndex
-from .auth import normalise_username, request_identity
+from .assets import AssetIndex, CameraIndex, VideoIndex
+from .auth import (
+    has_same_origin_mutation_marker,
+    identity_header_candidates,
+    normalise_username,
+    request_identity,
+    validate_identity_settings,
+)
 from .autotriage_source import (
     AutoTriageSource,
     AutoTriageSourceError,
@@ -30,7 +46,12 @@ from .autotriage_source import (
 )
 from .baseline import load_label_baseline
 from .batch_prediction_runner import BatchPredictionRunner
-from .db import LABELS, REVIEW_STATUSES, Database
+from .db import (
+    LABELS,
+    REVIEW_STATUSES,
+    AnnotationConflictError,
+    Database,
+)
 from .model_catalog import MODEL_ID_RE, ModelCatalog, ModelCatalogError
 from .prompt_catalog import (
     INPUT_PRESETS,
@@ -42,18 +63,39 @@ from .prompt_catalog import (
     PromptCatalogError,
     normalise_input_config,
 )
+from .review_analysis import (
+    COMPARISON_STATUSES,
+    build_review_reason_analysis,
+)
+from .work_split import distribute_issue_ids
 from .sanitization import redact_sensitive_fields
 from .settings import Settings
-from .trail_sync import TRAIL_INFO_FIELD, TRAIL_RESULT_FIELD, read_trail_model_fields
+from .system_status import backup_status, overall_status, volume_status
+from .trail_sync import (
+    TRAIL_INFO_FIELD,
+    TRAIL_RESULT_FIELD,
+    read_trail_issue_metadata,
+    read_trail_model_fields,
+)
+from .web_paths import render_index_html, with_base_path
 
 
+logger = logging.getLogger("ra_triage_dashboard")
+_identity_diagnostic_observations: set[tuple[str, tuple[tuple[str, str], ...]]] = set()
 settings = Settings.from_env()
-database = Database(settings.db_path)
+validate_identity_settings(settings)
+database = Database(
+    settings.database_url,
+    postgres_migrations_dir=settings.postgres_migrations_dir,
+    pool_size=10,
+)
 asset_index = AssetIndex(
     ra_root=settings.ra_auto_triage_root,
     manifest_path=settings.ares_manifest,
+    base_path=settings.base_path,
 )
-camera_index = CameraIndex(settings.camera_root)
+camera_index = CameraIndex(settings.camera_root, base_path=settings.base_path)
+video_index = VideoIndex(settings.ares_video_root, base_path=settings.base_path)
 model_catalog = ModelCatalog(settings)
 prompt_catalog = PromptCatalog(settings.ra_auto_triage_root)
 autotriage_source = AutoTriageSource(settings.autotriage_api_base_url)
@@ -61,6 +103,13 @@ batch_prediction_runner = BatchPredictionRunner(settings, database)
 trail_sync_lock = threading.Lock()
 review_image_semaphore = asyncio.Semaphore(2)
 thumbnail_image_semaphore = asyncio.Semaphore(4)
+trail_detail_semaphore = asyncio.Semaphore(2)
+APP_STARTED_AT = datetime.now(timezone.utc)
+APP_STARTED_MONOTONIC = time.monotonic()
+INDEX_HTML = render_index_html(
+    (settings.static_dir / "index.html").read_text(encoding="utf-8"),
+    settings.base_path,
+)
 
 ISSUE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{3,128}$")
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
@@ -72,55 +121,115 @@ MAX_REVIEW_ATTACHMENT_PIXELS = 40_000_000
 MAX_REVIEW_ATTACHMENT_STORAGE_BYTES = 20 * 1024 * 1024 * 1024
 MIN_REVIEW_ATTACHMENT_DISK_FREE = 256 * 1024 * 1024
 MAX_BATCH_JSON_REQUEST_BYTES = 256 * 1024
+MAX_SOURCE_PREVIEW_ROWS = 200
+MAX_SOURCE_PREVIEW_CELL_LENGTH = 2_000
+
+
+def _public_path(path: str) -> str:
+    return with_base_path(settings.base_path, path)
+
 
 MISSING_EVIDENCE_CATALOG: tuple[dict[str, str], ...] = (
-    {"key": "routing_direction", "label": "routing 方向", "hint": "未理解自车目标转向 / 车道任务"},
-    {"key": "passable_space", "label": "可绕行空间", "hint": "未判断右侧/相邻车道是否可安全通过"},
-    {"key": "hazard_signal", "label": "异常停车信号", "hint": "双闪、故障或临停迹象缺失"},
-    {"key": "traffic_light_state", "label": "灯态与周期", "hint": "红绿灯当前状态或后续放行证据缺失"},
-    {"key": "stop_line_crosswalk", "label": "停止线 / 路口结构", "hint": "停止线、斑马线和路口语义缺失"},
-    {"key": "queue_vs_blocking", "label": "排队 vs 实质阻塞", "hint": "未区分正常车流等待与异常物理阻塞"},
-    {"key": "yielding_target", "label": "yielding 目标", "hint": "前方关键车辆 / 摩自关系识别不足"},
-    {"key": "post_trigger_recovery", "label": "触发后恢复", "hint": "未利用触发后的移动、通行或绕行结果"},
-    {"key": "ra_swag_action", "label": "RA / SWAG 操作链", "hint": "未核验 RA 协助后实际动作与效果"},
-    {"key": "temporal_evidence", "label": "时序证据", "hint": "单帧判断，缺少前后帧变化"},
-    {"key": "camera_view", "label": "Camera 证据", "hint": "需要相机视角确认交通灯、双闪或可通行性"},
-    {"key": "bev_topology", "label": "BEV 拓扑", "hint": "需要 BEV 复核车道、障碍物和绕行关系"},
-    {"key": "gt_needs_review", "label": "GT 需复核", "hint": "模型并非明显错，真值或边界定义待确认"},
+    {"key": "routing_direction", "label": "routing 方向缺失", "hint": "未识别自车目标转向 / 车道任务"},
+    {"key": "hazard_signal", "label": "双闪缺失", "hint": "未识别前方车辆双闪、临停或故障信号"},
 )
 
-REVIEW_TAG_CATALOG: tuple[dict[str, str], ...] = (
-    {"key": "left_turn", "label": "左转"},
-    {"key": "right_turn", "label": "右转"},
-    {"key": "straight", "label": "直行"},
-    {"key": "traffic_light", "label": "信号灯"},
-    {"key": "queue", "label": "排队"},
-    {"key": "temporary_stop", "label": "双闪 / 临停 / 故障车"},
-    {"key": "occlusion", "label": "遮挡"},
-    {"key": "vulnerable_road_user", "label": "摩自 / 行人"},
-    {"key": "passable_space", "label": "可绕行空间"},
-    {"key": "swag", "label": "SWAG / RA 操作"},
-    {"key": "gt_boundary", "label": "GT 边界"},
+REVIEW_TAG_CATALOG: tuple[dict[str, Any], ...] = (
+    # Issue description: keep scene context separate from interaction
+    # decisions.  The false/true-trigger buckets are retained because they are
+    # part of the existing Review vocabulary and historical annotations.
+    {"key": "construction_change", "label": "施工/变更区域", "section": "scene", "group": "environment"},
+    {"key": "gate", "label": "道闸", "section": "scene", "group": "environment"},
+    {"key": "park_entrance", "label": "园区出入口", "section": "scene", "group": "environment"},
+    {"key": "environment_u_turn", "label": "掉头", "section": "scene", "group": "environment"},
+    {"key": "environment_other", "label": "其他", "section": "scene", "group": "environment"},
+    {"key": "intent_straight", "label": "直行", "section": "scene", "group": "self_intent"},
+    {"key": "intent_left_turn", "label": "左转", "section": "scene", "group": "self_intent"},
+    {"key": "intent_right_turn", "label": "右转", "section": "scene", "group": "self_intent"},
+    {"key": "intent_u_turn", "label": "掉头", "section": "scene", "group": "self_intent"},
+    {"key": "traffic_light", "label": "等灯", "section": "interaction_decision", "group": "false_trigger"},
+    {"key": "queue", "label": "排队", "section": "interaction_decision", "group": "false_trigger"},
+    {"key": "yielding", "label": "让行", "section": "interaction_decision", "group": "false_trigger"},
+    {"key": "u_turn", "label": "掉头", "section": "interaction_decision", "group": "false_trigger"},
+    {"key": "park_in", "label": "泊入", "section": "interaction_decision", "group": "false_trigger"},
+    {"key": "park_out", "label": "泊出", "section": "interaction_decision", "group": "false_trigger"},
+    {"key": "scene_false_other", "label": "其他", "section": "interaction_decision", "group": "false_trigger"},
+    {"key": "obstacle_not_avoided", "label": "未避障", "section": "interaction_decision", "group": "true_trigger"},
+    {"key": "close_distance", "label": "距离近", "section": "interaction_decision", "group": "true_trigger"},
+    {"key": "perception_fp", "label": "感知FP", "section": "interaction_decision", "group": "true_trigger"},
+    {"key": "scene_true_other", "label": "其他", "section": "interaction_decision", "group": "true_trigger"},
+    # Issue resolution: how could the vehicle leave the scene?
+    {"key": "egress_swag", "label": "SWAG", "section": "egress", "group": "ra"},
+    {"key": "egress_detour", "label": "左右绕行", "section": "egress", "group": "ra"},
+    {"key": "egress_waypoint", "label": "Waypoint", "section": "egress", "group": "ra"},
+    {"key": "egress_reverse", "label": "倒车", "section": "egress", "group": "ra"},
+    {"key": "egress_traffic_light", "label": "红绿灯通行", "section": "egress", "group": "ra"},
+    {"key": "egress_ra_other", "label": "其他", "section": "egress", "group": "ra"},
+    {"key": "lead_vehicle_departed", "label": "前车驶离", "section": "egress", "group": "no_assist"},
+    {"key": "system_decision_change", "label": "主系统决策变化", "section": "egress", "group": "no_assist"},
+    {"key": "perception_fp_change", "label": "感知FP变化", "section": "egress", "group": "no_assist"},
+    {"key": "egress_no_assist_other", "label": "其他", "section": "egress", "group": "no_assist"},
+    # Legacy values remain readable in Review history but are no longer offered
+    # as new Issue tags.  Keeping them in the contract avoids losing old data.
+    {"key": "manual_trigger", "label": "人工触发", "section": "legacy", "group": "legacy", "visible": False},
+    {"key": "perception_fp_cleared", "label": "感知FP消失", "section": "legacy", "group": "legacy", "visible": False},
+    {"key": "occlusion", "label": "大车遮挡", "section": "legacy", "group": "legacy", "visible": False},
+    {"key": "right_turn", "label": "右转", "section": "legacy", "group": "legacy", "visible": False},
+    {"key": "left_turn", "label": "左转", "section": "legacy", "group": "legacy", "visible": False},
+    {"key": "temporary_stop", "label": "前车双闪", "section": "legacy", "group": "legacy", "visible": False},
+    {"key": "vulnerable_road_user", "label": "摩自/行人", "section": "legacy", "group": "legacy", "visible": False},
+    {"key": "gt_boundary", "label": "GT 待复核", "section": "legacy", "group": "legacy", "visible": False},
+    {"key": "scene_other", "label": "其他（旧交互决策）", "section": "legacy", "group": "legacy", "visible": False},
 )
 REVIEW_TAG_KEYS = frozenset(item["key"] for item in REVIEW_TAG_CATALOG)
+REVIEW_TAG_SCENE_GROUPS = frozenset({"environment", "self_intent"})
 REVIEW_TAG_ALIASES = {
-    "左转": "left_turn",
-    "右转": "right_turn",
-    "直行": "straight",
-    "信号灯": "traffic_light",
     "红绿灯": "traffic_light",
     "等灯": "traffic_light",
     "排队": "queue",
+    "让行": "yielding",
+    "掉头": "u_turn",
+    "施工/变更区域": "construction_change",
+    "施工区域": "construction_change",
+    "变更区域": "construction_change",
+    "道闸": "gate",
+    "园区出入口": "park_entrance",
+    "场景其他": "environment_other",
+    "直行": "intent_straight",
+    "自车直行": "intent_straight",
+    "自车左转": "intent_left_turn",
+    "自车右转": "intent_right_turn",
+    "自车掉头": "intent_u_turn",
+    "泊入": "park_in",
+    "泊出": "park_out",
+    "人工触发": "manual_trigger",
+    "感知FP消失": "perception_fp_cleared",
+    "感知FP": "perception_fp",
+    "前车驶离": "lead_vehicle_departed",
+    "主系统决策变化": "system_decision_change",
+    "未避障": "obstacle_not_avoided",
+    "距离近": "close_distance",
+    "红绿灯通行": "egress_traffic_light",
+    "左右绕行": "egress_detour",
+    "Waypoint": "egress_waypoint",
+    "倒车": "egress_reverse",
+    "感知FP变化": "perception_fp_change",
+    "双闪临停": "temporary_stop",
+    "前方大车遮挡": "occlusion",
+    "大车遮挡": "occlusion",
+    "右转": "intent_right_turn",
+    "左转": "intent_left_turn",
+    "左转待转": "intent_left_turn",
+    # Preserve common historical values while the new UI emits the compact catalog above.
+    "信号灯": "traffic_light",
     "双闪": "temporary_stop",
     "临停": "temporary_stop",
     "故障车": "temporary_stop",
     "遮挡": "occlusion",
     "摩自": "vulnerable_road_user",
     "行人": "vulnerable_road_user",
-    "可绕行": "passable_space",
-    "绕行空间": "passable_space",
-    "SWAG": "swag",
-    "RA": "swag",
+    "SWAG": "egress_swag",
+    "RA": "egress_swag",
     "GT": "gt_boundary",
     "GT待复核": "gt_boundary",
 }
@@ -198,6 +307,65 @@ def _safe_filename(name: str) -> str:
     return result.strip("._")[:120] or "upload"
 
 
+def _model_source_artifact_path(source_hash: str, filename: str) -> Path:
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".json", ".csv", ".xlsx", ".xlsm"}:
+        suffix = ".bin"
+    return settings.uploads_dir / f"model-run-{source_hash}{suffix}"
+
+
+def _store_model_source(content: bytes, filename: str, source_hash: str) -> dict[str, str]:
+    root = settings.uploads_dir.resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    path = _model_source_artifact_path(source_hash, filename).resolve()
+    if root not in path.parents:
+        raise OSError("模型结果来源文件路径越界。")
+    if not path.is_file():
+        path.write_bytes(content)
+    media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return {
+        "stored_name": path.name,
+        "filename": _safe_filename(filename),
+        "media_type": media_type,
+    }
+
+
+def _model_source_file(run: dict[str, Any]) -> tuple[Path, str] | None:
+    metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
+    artifact = metadata.get("source_artifact") if isinstance(metadata.get("source_artifact"), dict) else {}
+    stored_name = _as_text(artifact.get("stored_name"))
+    if stored_name:
+        root = settings.uploads_dir.resolve()
+        candidate = (root / stored_name).resolve()
+        if root in candidate.parents and candidate.is_file():
+            return candidate, _safe_filename(_as_text(artifact.get("filename")) or candidate.name)
+
+    # Runs created before source_artifact metadata was introduced can still be
+    # resolved by their immutable content hash when the archive was written.
+    source_hash = _as_text(run.get("source_sha256"))
+    source_name = _as_text(run.get("source_name"))
+    if source_hash and run.get("kind", "upload") == "upload":
+        root = settings.uploads_dir.resolve()
+        candidate = _model_source_artifact_path(source_hash, source_name).resolve()
+        if root in candidate.parents and candidate.is_file():
+            return candidate, _safe_filename(Path(source_name).name or candidate.name)
+
+    # Older runs may point at a source file that was already present on the
+    # server. Keep this fallback constrained to known dashboard/data roots.
+    if source_name:
+        candidate = Path(source_name).expanduser()
+        allowed_roots = (
+            settings.uploads_dir.resolve(),
+            settings.data_dir.resolve(),
+            settings.ra_auto_triage_root.resolve(),
+        )
+        if candidate.is_absolute() and candidate.is_file():
+            resolved = candidate.resolve()
+            if any(root == resolved or root in resolved.parents for root in allowed_roots):
+                return resolved, _safe_filename(resolved.name)
+    return None
+
+
 def _as_text(value: Any) -> str:
     if value is None:
         return ""
@@ -206,11 +374,143 @@ def _as_text(value: Any) -> str:
     return str(value).strip()
 
 
+def _source_preview_value(value: Any) -> str:
+    """Return a bounded, credential-redacted cell value for the preview UI."""
+
+    safe_value = redact_sensitive_fields(value)
+    if isinstance(safe_value, (dict, list, tuple)):
+        text = json.dumps(
+            safe_value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+    else:
+        text = _as_text(safe_value)
+    if len(text) <= MAX_SOURCE_PREVIEW_CELL_LENGTH:
+        return text
+    return text[: MAX_SOURCE_PREVIEW_CELL_LENGTH - 1] + "…"
+
+
+def _model_source_filename(run: dict[str, Any]) -> str:
+    metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
+    artifact = metadata.get("source_artifact") if isinstance(metadata.get("source_artifact"), dict) else {}
+    return _safe_filename(
+        _as_text(artifact.get("filename"))
+        or Path(_as_text(run.get("source_name"))).name
+        or "model-results.json"
+    )
+
+
+def _reconstructed_model_source(
+    run_id: str,
+    run: dict[str, Any],
+) -> tuple[bytes, str, str] | None:
+    """Rebuild a safe source copy for uploads made before file archiving."""
+
+    filename = _model_source_filename(run)
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".json", ".csv"}:
+        return None
+    rows = database.model_run_source_rows(run_id)
+    if not rows:
+        return None
+    if suffix == ".csv":
+        columns: list[str] = []
+        seen: set[str] = set()
+        for row in rows:
+            for key in row:
+                if key not in seen:
+                    seen.add(key)
+                    columns.append(key)
+        output = io.StringIO(newline="")
+        writer = csv.DictWriter(output, fieldnames=columns, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+        return output.getvalue().encode("utf-8-sig"), filename, "text/csv; charset=utf-8"
+    payload = {
+        "schema_version": "reconstructed-model-run-v1",
+        "source_name": _as_text(run.get("source_name")),
+        "source_sha256": _as_text(run.get("source_sha256")),
+        "results": rows,
+    }
+    return (
+        json.dumps(payload, ensure_ascii=False, indent=2, default=str).encode("utf-8"),
+        filename,
+        "application/json",
+    )
+
+
 def _voyager_issue_url(issue_id: str) -> str:
     return (
         f"{settings.voyager_issue_base_url.rstrip('/')}/"
         f"{quote(issue_id, safe='')}?view_id={settings.voyager_issue_view_id}"
     )
+
+
+def _ra_recording_url(ra_id: Any) -> str:
+    """Build the read-only RA dashboard URL from Trail's canonical ra_id."""
+
+    value = _as_text(ra_id)
+    if not value:
+        return ""
+    return (
+        f"{settings.ra_recording_base_url.rstrip('/')}/"
+        f"{quote(value, safe='')}?returnUrl="
+    )
+
+
+def _case_external_links(issue_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
+    """Expose the small, read-only RA link/event subset to the browser."""
+
+    events = metadata.get("ra_event")
+    if isinstance(events, str):
+        try:
+            events = json.loads(events)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            events = []
+    safe_events: list[dict[str, Any]] = []
+    if isinstance(events, (list, tuple)):
+        for item in events:
+            if not isinstance(item, dict):
+                continue
+            event = str(item.get("event") or "").strip()[:128]
+            if not event:
+                continue
+            raw_timestamp = item.get("timestamp")
+            try:
+                timestamp = int(raw_timestamp) if raw_timestamp is not None else None
+            except (TypeError, ValueError, OverflowError):
+                timestamp = None
+            raw_value = item.get("value")
+            if isinstance(raw_value, (str, int, float, bool)) or raw_value is None:
+                value = raw_value
+            else:
+                value = str(raw_value)[:256]
+            safe_events.append({"event": event, "value": value, "timestamp": timestamp})
+    safe_events = safe_events[:64]
+    event_count = len(safe_events)
+    return {
+        "ra_recording_url": _ra_recording_url(metadata.get("ra_id")),
+        "ra_event_url": _voyager_issue_url(issue_id) if event_count else "",
+        "ra_task_id": _as_text(metadata.get("ra_id")),
+        "ra_event_count": event_count,
+        "ra_events": safe_events,
+    }
+
+
+def _case_link_metadata_fallback(case: dict[str, Any]) -> dict[str, Any]:
+    """Use explicitly imported RA fields when Trail detail lookup is disabled."""
+
+    fallback: dict[str, Any] = {}
+    for source in (case, case.get("extra")):
+        if not isinstance(source, dict):
+            continue
+        for key in ("ra_id", "ra_event"):
+            if key not in fallback and source.get(key) not in (None, "", []):
+                fallback[key] = source[key]
+    return fallback
 
 
 def _autotriage_record_url(batch_id: str) -> str:
@@ -346,8 +646,96 @@ def _can_manage_team_default(request: Request) -> bool:
     return bool(
         identity.verified
         and identity.username
-        and identity.username in settings.team_default_managers
+        and database.access_role(identity.username) == "admin"
     )
+
+
+def _admin_identity(request: Request):
+    identity = request_identity(request, settings)
+    if not (
+        identity.verified
+        and identity.username
+        and database.access_role(identity.username) == "admin"
+    ):
+        raise _detail(403, "该操作仅限 Dashboard 管理员。")
+    return identity
+
+
+def _review_tag_catalog() -> tuple[dict[str, Any], ...]:
+    """Return built-in tags plus shared scene tags from the database.
+
+    Built-ins remain source-controlled, but a database row can override their
+    label/hint/group or soft-delete them (same pattern as missing evidence).
+    """
+
+    merged: dict[str, dict[str, Any]] = {
+        str(item["key"]): {
+            **item,
+            "builtin": True,
+            "deleted": False,
+        }
+        for item in REVIEW_TAG_CATALOG
+    }
+    builtin_keys = set(merged)
+    for row in database.list_review_tag_catalog(include_inactive=True):
+        key = str(row.get("key") or "").strip()
+        if not key:
+            continue
+        item = {
+            str(name): value
+            for name, value in row.items()
+            if str(name) != "active"
+        }
+        if "group_key" in item and "group" not in item:
+            item["group"] = item.pop("group_key")
+        item.setdefault("section", "scene")
+        item.setdefault("group", "environment")
+        item.setdefault("hint", "")
+        item["builtin"] = key in builtin_keys
+        item["deleted"] = not bool(row.get("active", 1))
+        if key in merged:
+            merged[key].update(item)
+            merged[key]["builtin"] = True
+        else:
+            merged[key] = item
+    return tuple(merged.values())
+
+
+def _missing_evidence_catalog() -> tuple[dict[str, Any], ...]:
+    """Return the merged catalog, including soft-deleted historical entries.
+
+    Built-ins remain source-controlled, but a database row can override their
+    label/hint or retire them.  Retired entries stay in the payload so old
+    annotations remain readable; the Review form hides them unless selected
+    by the current version.
+    """
+
+    merged: dict[str, dict[str, Any]] = {
+        str(item["key"]): {
+            **item,
+            "builtin": True,
+            "deleted": False,
+        }
+        for item in MISSING_EVIDENCE_CATALOG
+    }
+    builtin_keys = set(merged)
+    for row in database.list_missing_evidence_catalog(include_inactive=True):
+        key = str(row.get("key") or "").strip()
+        if not key:
+            continue
+        item = {
+            str(name): value
+            for name, value in row.items()
+            if str(name) != "active"
+        }
+        item["builtin"] = key in builtin_keys
+        item["deleted"] = not bool(row.get("active", 1))
+        if key in merged:
+            merged[key].update(item)
+            merged[key]["builtin"] = True
+        else:
+            merged[key] = item
+    return tuple(merged.values())
 
 
 def _value(row: dict[str, Any], *names: str) -> Any:
@@ -799,15 +1187,15 @@ def _public_review_attachment(attachment: dict[str, Any]) -> dict[str, Any]:
         "width": int(attachment["width"]),
         "height": int(attachment["height"]),
         "created_at": attachment.get("created_at"),
-        "url": f"/api/review-attachments/{attachment['id']}",
+        "url": _public_path(f"/api/review-attachments/{attachment['id']}"),
     }
 
 
 def _normalise_review_tags(values: list[Any]) -> list[str]:
-    if len(values) > 12:
-        raise _detail(400, "每条 review 最多选择 12 个 tags。")
+    if len(values) > 24:
+        raise _detail(400, "每条 review 最多选择 24 个 tags。")
+    catalog_keys = {str(item["key"]) for item in _review_tag_catalog()}
     normalized: set[str] = set()
-    legacy: set[str] = set()
     for value in values:
         raw = str(value).strip()
         if not raw:
@@ -815,16 +1203,48 @@ def _normalise_review_tags(values: list[Any]) -> list[str]:
         if len(raw) > 48 or re.search(r"[\x00-\x1f\x7f]", raw):
             raise _detail(400, "tag 长度或字符不合法。")
         key = REVIEW_TAG_ALIASES.get(raw, raw)
-        if key in REVIEW_TAG_KEYS:
+        if key in catalog_keys:
             normalized.add(key)
         else:
-            # Existing JSON clients historically supplied free-form tags.
-            # Preserve safe legacy values while the UI only offers the catalog.
-            legacy.add(raw)
-    return [
-        *[item["key"] for item in REVIEW_TAG_CATALOG if item["key"] in normalized],
-        *sorted(legacy),
-    ]
+            raise _detail(400, "tag 不在默认场景 Tags 目录中。")
+    return [item["key"] for item in _review_tag_catalog() if item["key"] in normalized]
+
+
+def _normalise_missing_evidence(values: list[Any]) -> list[str]:
+    if len(values) > 24:
+        raise _detail(400, "每条 review 最多选择 24 个缺失信息。")
+    catalog_keys = {str(item["key"]) for item in _missing_evidence_catalog()}
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        raw = str(value).strip()
+        if not raw or raw in seen:
+            continue
+        if len(raw) > 160 or re.search(r"[\x00-\x1f\x7f]", raw):
+            raise _detail(400, "缺失信息字段长度或字符不合法。")
+        # Legacy per-Review custom values remain readable and editable. New
+        # values are opaque keys from the shared catalog above.
+        if raw not in catalog_keys and not raw.startswith("custom:"):
+            raise _detail(400, "缺失信息不在共享目录中。")
+        seen.add(raw)
+        normalized.append(raw)
+    return normalized
+
+
+def _normalise_review_excluded(value: Any) -> bool:
+    """Parse the explicit Issue-level exclusion flag without truthiness traps."""
+
+    if value is None or value is False or value == 0:
+        return False
+    if value is True or value == 1:
+        return True
+    if isinstance(value, str):
+        normalized = value.strip().casefold()
+        if normalized in {"", "0", "false", "no", "否", "不排除"}:
+            return False
+        if normalized in {"1", "true", "yes", "是", "排除"}:
+            return True
+    raise _detail(400, "is_excluded 必须是布尔值。")
 
 
 def _create_annotation_record(
@@ -836,6 +1256,7 @@ def _create_annotation_record(
 ) -> dict[str, Any]:
     label = _as_text(body.get("label"))
     review_status = _as_text(body.get("review_status") or "pending")
+    is_excluded = _normalise_review_excluded(body.get("is_excluded", False))
     tags = body.get("tags") or []
     missing_evidence = body.get("missing_evidence") or []
     if not isinstance(tags, list):
@@ -843,20 +1264,44 @@ def _create_annotation_record(
     if not isinstance(missing_evidence, list):
         raise _detail(400, "missing_evidence 必须是数组。")
     tags = _normalise_review_tags(tags)
+    missing_evidence = _normalise_missing_evidence(missing_evidence)
+    model_run_id = _as_text(body.get("model_run_id"))
+    has_expected_previous = "expected_previous_annotation_id" in body
+    expected_previous_annotation_id: int | None = None
+    if has_expected_previous:
+        raw_expected = body.get("expected_previous_annotation_id")
+        if raw_expected in (None, "", 0, "0"):
+            expected_previous_annotation_id = None
+        else:
+            try:
+                expected_previous_annotation_id = int(raw_expected)
+            except (TypeError, ValueError) as exc:
+                raise _detail(400, "expected_previous_annotation_id 不合法。") from exc
+            if expected_previous_annotation_id <= 0:
+                raise _detail(400, "expected_previous_annotation_id 不合法。")
     author, author_source, author_verified = _action_actor(request, body.get("author"))
+    annotation_kwargs: dict[str, Any] = {
+        "issue_id": issue_id,
+        "model_run_id": model_run_id,
+        "label": label,
+        "review_status": review_status,
+        "is_excluded": is_excluded,
+        "tags": tags,
+        "missing_evidence": missing_evidence,
+        "note": _as_text(body.get("note")),
+        "author": author,
+        "author_source": author_source,
+        "author_verified": author_verified,
+        "attachments": attachments,
+    }
+    if has_expected_previous:
+        annotation_kwargs["expected_previous_annotation_id"] = expected_previous_annotation_id
     try:
         return database.create_annotation(
-            issue_id=issue_id,
-            label=label,
-            review_status=review_status,
-            tags=tags,
-            missing_evidence=missing_evidence,
-            note=_as_text(body.get("note")),
-            author=author,
-            author_source=author_source,
-            author_verified=author_verified,
-            attachments=attachments,
+            **annotation_kwargs,
         )
+    except AnnotationConflictError as exc:
+        raise _detail(409, str(exc))
     except ValueError as exc:
         raise _detail(400, str(exc))
 
@@ -1088,6 +1533,10 @@ def sync_trail_model_fields(
 async def lifespan(_: FastAPI):
     settings.ensure_directories()
     database.init()
+    database.bootstrap_access_users(
+        writers=settings.sso_write_users,
+        administrators=settings.team_default_managers,
+    )
     database.seed_examples(EXAMPLE_CASES)
     bootstrap_baseline()
     asset_index.refresh(force=True)
@@ -1101,17 +1550,65 @@ async def lifespan(_: FastAPI):
             identity_verified=False,
             trigger="startup",
         )
+    batch_prediction_runner.resume_queued_predictions()
     try:
         yield
     finally:
         await asyncio.to_thread(batch_prediction_runner.shutdown)
+        await asyncio.to_thread(database.close)
 
 
 app = FastAPI(
     title="RA Triage Workbench",
-    version="1.6.0",
+    version="1.7.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def identity_ingress_diagnostics(request: Request, call_next):
+    if settings.identity_diagnostics and request.url.path.startswith("/api/"):
+        candidates = identity_header_candidates(request)
+        client_host = request.client.host if request.client else "unknown"
+        observation = (client_host, tuple(sorted(candidates.items())))
+        if observation not in _identity_diagnostic_observations:
+            _identity_diagnostic_observations.add(observation)
+            logger.warning(
+                "SSO ingress diagnostic client=%s identity_candidates=%s",
+                client_host,
+                candidates,
+            )
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def production_write_guard(request: Request, call_next):
+    if (
+        settings.deployment_mode == "production"
+        and request.method in {"POST", "PUT", "PATCH", "DELETE"}
+        and request.url.path.startswith("/api/")
+    ):
+        if not has_same_origin_mutation_marker(request):
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "detail": "写请求缺少同源校验标记，请刷新页面后重试。"
+                },
+            )
+        identity = await asyncio.to_thread(request_identity, request, settings)
+        role = (
+            await asyncio.to_thread(database.access_role, identity.username)
+            if identity.verified and identity.username
+            else ""
+        )
+        if role not in {"writer", "admin"}:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "detail": "当前入口为只读预览；请通过获准的企业 SSO 域名访问。"
+                },
+            )
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -1169,22 +1666,52 @@ async def request_size_guard(request: Request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def request_latency_observer(request: Request, call_next):
+    started = time.monotonic()
+    response = await call_next(request)
+    duration_ms = (time.monotonic() - started) * 1000
+    response.headers["Server-Timing"] = f'app;dur={duration_ms:.1f}'
+    response.headers["X-Request-Duration-Ms"] = f"{duration_ms:.1f}"
+    if request.url.path.startswith("/api/") and duration_ms >= 500:
+        logger.warning(
+            "slow_request method=%s path=%s status=%s duration_ms=%.1f",
+            request.method,
+            request.url.path,
+            response.status_code,
+            duration_ms,
+        )
+    return response
+
+
 app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 
 
 @app.get("/", include_in_schema=False)
 @app.get("/review", include_in_schema=False)
+@app.get("/review-analysis", include_in_schema=False)
 @app.get("/runs", include_in_schema=False)
 @app.get("/inference", include_in_schema=False)
 @app.get("/batch-prediction", include_in_schema=False)
-async def index() -> FileResponse:
-    return FileResponse(settings.static_dir / "index.html")
+@app.get("/system-status", include_in_schema=False)
+@app.get("/users", include_in_schema=False)
+async def index() -> HTMLResponse:
+    return HTMLResponse(
+        content=INDEX_HTML,
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
 
 
 @app.get("/import", include_in_schema=False)
 async def legacy_import(kind: str = "issues") -> RedirectResponse:
-    import_kind = "model" if kind == "model" else "issues"
-    return RedirectResponse(url=f"/runs?import={import_kind}", status_code=307)
+    # The legacy Issue / GT upload UI is intentionally retired. Keep old
+    # bookmarks navigable, but land them in the safe model-result importer.
+    return RedirectResponse(
+        # Relative Location resolves to /runs for direct IP and
+        # /manual/runs through the browser-visible strip-proxy URL.
+        url="runs?import=model",
+        status_code=307,
+    )
 
 
 @app.get("/health")
@@ -1192,24 +1719,43 @@ async def health() -> dict[str, Any]:
     return {
         "ok": True,
         "build_commit": settings.build_commit,
+        "base_path": settings.base_path,
+        "deployment_mode": settings.deployment_mode,
         "ra_auto_triage_root_available": (settings.ra_auto_triage_root / "vlm").is_dir(),
         "ares_manifest_available": settings.ares_manifest.is_file(),
         "ares_indexed_issues": asset_index.refresh(),
         "camera_cache_root_available": settings.camera_root.is_dir(),
+        "ares_video_root_available": settings.ares_video_root.is_dir(),
         "baseline": runtime_state["baseline"],
         "trail_sync": runtime_state["trail_sync"],
         "trail_write_enabled": False,
         "batch_prediction_enabled": settings.batch_prediction_enabled,
         "autotriage_push_enabled": settings.autotriage_push_enabled,
         "model_gateway": model_catalog.status(),
-        "storage": "sqlite-mvp",
+        "change_revision": await asyncio.to_thread(database.change_revision),
+        "storage": database.storage_label,
     }
 
 
 @app.get("/api/overview")
 async def overview(model_run_id: str = "") -> dict[str, Any]:
-    selected = model_run_id or database.default_model_run_id()
-    return database.overview(baseline_scope=settings.baseline_scope, model_run_id=selected)
+    selected = model_run_id or await asyncio.to_thread(
+        database.default_model_run_id
+    )
+    return await asyncio.to_thread(
+        database.overview,
+        baseline_scope=settings.baseline_scope,
+        model_run_id=selected,
+    )
+
+
+@app.get("/api/change-revision")
+async def change_revision(response: Response) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return {
+        "revision": await asyncio.to_thread(database.change_revision),
+        "poll_after_ms": 1800,
+    }
 
 
 @app.get("/api/dashboard-config")
@@ -1219,8 +1765,11 @@ async def dashboard_config() -> dict[str, Any]:
         "build_commit": settings.build_commit,
         "default_model_run_id": database.default_model_run_id(),
         "trail_sync": runtime_state["trail_sync"],
-        "missing_evidence_catalog": MISSING_EVIDENCE_CATALOG,
-        "review_tag_catalog": REVIEW_TAG_CATALOG,
+        "missing_evidence_catalog": await asyncio.to_thread(_missing_evidence_catalog),
+        "review_tag_catalog": await asyncio.to_thread(_review_tag_catalog),
+        # Free-text keyword themes were an earlier experiment and are not
+        # exposed by the current structured Review workflow.
+        "review_reason_theme_catalog": (),
         "review_attachment_limits": {
             "max_count": MAX_REVIEW_ATTACHMENTS,
             "max_bytes_each": MAX_REVIEW_ATTACHMENT_BYTES,
@@ -1233,17 +1782,332 @@ async def dashboard_config() -> dict[str, Any]:
             "autotriage_push_enabled": settings.autotriage_push_enabled,
             "max_issues": settings.batch_max_issues,
             "input_policy": "server_model_gateway_profile",
-            "ares_bev_input": False,
+            "ares_bev_input": True,
             "trail_write_enabled": False,
             "model_gateway": model_catalog.status(),
         },
     }
 
 
+def _review_tag_payload(item: dict[str, Any], *, builtin: bool = False) -> dict[str, Any]:
+    payload = {
+        **item,
+        "builtin": bool(item.get("builtin", builtin)),
+        "deleted": not bool(item.get("active", 1))
+        if "active" in item
+        else bool(item.get("deleted", False)),
+    }
+    payload.pop("active", None)
+    payload.setdefault("section", "scene")
+    payload.setdefault("group", payload.pop("group_key", "environment"))
+    payload.setdefault("hint", "")
+    return payload
+
+
+def _validate_scene_tag_input(body: dict[str, Any]) -> tuple[str, str, str]:
+    label = _as_text(body.get("label"))
+    hint = _as_text(body.get("hint"))
+    group = _as_text(body.get("group") or "environment")
+    if not label:
+        raise _detail(400, "场景标签标题不能为空。")
+    if len(label) > 48 or re.search(r"[\x00-\x1f\x7f]", label):
+        raise _detail(400, "场景标签标题长度或字符不合法。")
+    if len(hint) > 160 or re.search(r"[\x00-\x1f\x7f]", hint):
+        raise _detail(400, "场景标签说明长度或字符不合法。")
+    if group not in REVIEW_TAG_SCENE_GROUPS:
+        raise _detail(400, "场景标签分组不合法。")
+    return label, hint, group
+
+
+@app.post("/api/review-tags")
+async def create_review_tag(request: Request) -> dict[str, Any]:
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        raise _detail(400, "场景标签目录请求必须是 JSON。")
+    if not isinstance(body, dict):
+        raise _detail(400, "场景标签目录请求必须是 JSON 对象。")
+    label, hint, group = _validate_scene_tag_input(body)
+    actor, _, _ = _action_actor(request, body.get("created_by"))
+    if not actor:
+        raise _detail(400, "无法确认场景标签目录创建人。")
+    if any(
+        str(item.get("label")) == label and not bool(item.get("deleted"))
+        for item in _review_tag_catalog()
+    ):
+        raise _detail(409, "该场景标签标题已经存在。")
+    try:
+        item = await asyncio.to_thread(
+            database.create_review_tag,
+            label=label,
+            hint=hint,
+            section="scene",
+            group_key=group,
+            created_by=actor,
+        )
+    except ValueError as exc:
+        raise _detail(409, str(exc))
+    return {
+        "item": _review_tag_payload(item),
+        "review_tag_catalog": await asyncio.to_thread(_review_tag_catalog),
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
+@app.put("/api/review-tags/{key:path}")
+async def update_review_tag(key: str, request: Request) -> dict[str, Any]:
+    normalized_key = _as_text(key).strip()
+    if not normalized_key or len(normalized_key) > 160:
+        raise _detail(400, "场景标签 key 不合法。")
+    current = next(
+        (item for item in _review_tag_catalog() if item["key"] == normalized_key),
+        None,
+    )
+    if current is None:
+        raise _detail(404, "场景标签目录项不存在。")
+    if bool(current.get("deleted")):
+        raise _detail(409, "该场景标签已经删除。")
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        raise _detail(400, "场景标签目录请求必须是 JSON。")
+    if not isinstance(body, dict):
+        raise _detail(400, "场景标签目录请求必须是 JSON 对象。")
+    section = str(current.get("section") or "scene")
+    if section == "scene":
+        label, hint, group = _validate_scene_tag_input(body)
+    else:
+        # Trigger/egress/legacy built-ins keep section/group; only label/hint edit.
+        label = _as_text(body.get("label"))
+        hint = _as_text(body.get("hint"))
+        group = str(current.get("group") or "environment")
+        if not label:
+            raise _detail(400, "场景标签标题不能为空。")
+        if len(label) > 48 or re.search(r"[\x00-\x1f\x7f]", label):
+            raise _detail(400, "场景标签标题长度或字符不合法。")
+        if len(hint) > 160 or re.search(r"[\x00-\x1f\x7f]", hint):
+            raise _detail(400, "场景标签说明长度或字符不合法。")
+    actor, _, _ = _action_actor(request, body.get("updated_by"))
+    if not actor:
+        raise _detail(400, "无法确认场景标签目录编辑人。")
+    if any(
+        item["key"] != normalized_key
+        and str(item.get("label")) == label
+        and not bool(item.get("deleted"))
+        for item in _review_tag_catalog()
+    ):
+        raise _detail(409, "该场景标签标题已经存在。")
+    try:
+        item = await asyncio.to_thread(
+            database.update_review_tag,
+            key=normalized_key,
+            label=label,
+            hint=hint,
+            section=section,
+            group_key=group,
+            updated_by=actor,
+        )
+    except ValueError as exc:
+        raise _detail(409, str(exc))
+    payload = _review_tag_payload(item, builtin=bool(current.get("builtin")))
+    payload["section"] = section
+    payload["group"] = group
+    return {
+        "item": payload,
+        "review_tag_catalog": await asyncio.to_thread(_review_tag_catalog),
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
+@app.delete("/api/review-tags/{key:path}")
+async def delete_review_tag(key: str, request: Request) -> dict[str, Any]:
+    normalized_key = _as_text(key).strip()
+    if not normalized_key or len(normalized_key) > 160:
+        raise _detail(400, "场景标签 key 不合法。")
+    current = next(
+        (item for item in _review_tag_catalog() if item["key"] == normalized_key),
+        None,
+    )
+    if current is None:
+        raise _detail(404, "场景标签目录项不存在。")
+    if bool(current.get("deleted")):
+        raise _detail(409, "该场景标签已经删除。")
+    actor, _, _ = _action_actor(request, "")
+    if not actor:
+        raise _detail(400, "无法确认场景标签目录删除人。")
+    try:
+        item = await asyncio.to_thread(
+            database.delete_review_tag,
+            key=normalized_key,
+            deleted_by=actor,
+            label=str(current.get("label") or ""),
+            hint=str(current.get("hint") or ""),
+            section=str(current.get("section") or "scene"),
+            group_key=str(current.get("group") or "environment"),
+        )
+    except ValueError as exc:
+        raise _detail(409, str(exc))
+    payload = _review_tag_payload(item, builtin=bool(current.get("builtin")))
+    payload["deleted"] = True
+    return {
+        "item": payload,
+        "review_tag_catalog": await asyncio.to_thread(_review_tag_catalog),
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
+@app.post("/api/missing-evidence")
+async def create_missing_evidence(request: Request) -> dict[str, Any]:
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        raise _detail(400, "缺失信息目录请求必须是 JSON。")
+    if not isinstance(body, dict):
+        raise _detail(400, "缺失信息目录请求必须是 JSON 对象。")
+    label = _as_text(body.get("label"))
+    hint = _as_text(body.get("hint"))
+    actor, _, _ = _action_actor(request, body.get("created_by"))
+    if not actor:
+        raise _detail(400, "无法确认缺失信息目录创建人。")
+    if any(
+        str(item["label"]) == label and not bool(item.get("deleted"))
+        for item in _missing_evidence_catalog()
+    ):
+        raise _detail(409, "该缺失信息标题已经存在于内置目录。")
+    try:
+        item = await asyncio.to_thread(
+            database.create_missing_evidence,
+            label=label,
+            hint=hint,
+            created_by=actor,
+        )
+    except ValueError as exc:
+        raise _detail(409, str(exc))
+    item = {
+        **item,
+        "builtin": False,
+        "deleted": not bool(item.get("active", 1)),
+    }
+    item.pop("active", None)
+    return {
+        "item": item,
+        "missing_evidence_catalog": await asyncio.to_thread(_missing_evidence_catalog),
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
+@app.put("/api/missing-evidence/{key:path}")
+async def update_missing_evidence(key: str, request: Request) -> dict[str, Any]:
+    normalized_key = _as_text(key).strip()
+    if not normalized_key or len(normalized_key) > 160:
+        raise _detail(400, "缺失信息 key 不合法。")
+    current = next(
+        (item for item in _missing_evidence_catalog() if item["key"] == normalized_key),
+        None,
+    )
+    if current is None:
+        raise _detail(404, "缺失信息目录项不存在。")
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        raise _detail(400, "缺失信息目录请求必须是 JSON。")
+    if not isinstance(body, dict):
+        raise _detail(400, "缺失信息目录请求必须是 JSON 对象。")
+    label = _as_text(body.get("label"))
+    hint = _as_text(body.get("hint"))
+    actor, _, _ = _action_actor(request, body.get("updated_by"))
+    if not actor:
+        raise _detail(400, "无法确认缺失信息目录编辑人。")
+    if any(
+        item["key"] != normalized_key
+        and not bool(item.get("deleted"))
+        and str(item["label"]) == label
+        for item in _missing_evidence_catalog()
+    ):
+        raise _detail(409, "该缺失信息标题已经存在。")
+    try:
+        item = await asyncio.to_thread(
+            database.update_missing_evidence,
+            key=normalized_key,
+            label=label,
+            hint=hint,
+            updated_by=actor,
+        )
+    except ValueError as exc:
+        raise _detail(409, str(exc))
+    item = {
+        **item,
+        "builtin": bool(current.get("builtin")),
+        "deleted": not bool(item.get("active", 1)),
+    }
+    item.pop("active", None)
+    return {
+        "item": item,
+        "missing_evidence_catalog": await asyncio.to_thread(_missing_evidence_catalog),
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
+@app.delete("/api/missing-evidence/{key:path}")
+async def delete_missing_evidence(key: str, request: Request) -> dict[str, Any]:
+    normalized_key = _as_text(key).strip()
+    if not normalized_key or len(normalized_key) > 160:
+        raise _detail(400, "缺失信息 key 不合法。")
+    current = next(
+        (item for item in _missing_evidence_catalog() if item["key"] == normalized_key),
+        None,
+    )
+    if current is None:
+        raise _detail(404, "缺失信息目录项不存在。")
+    if bool(current.get("deleted")):
+        raise _detail(409, "该缺失信息已经删除。")
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    actor, _, _ = _action_actor(request, body.get("deleted_by"))
+    if not actor:
+        raise _detail(400, "无法确认缺失信息目录删除人。")
+    try:
+        item = await asyncio.to_thread(
+            database.delete_missing_evidence,
+            key=normalized_key,
+            label=str(current.get("label") or ""),
+            hint=str(current.get("hint") or ""),
+            deleted_by=actor,
+        )
+    except ValueError as exc:
+        raise _detail(409, str(exc))
+    item = {
+        **item,
+        "builtin": bool(current.get("builtin")),
+        "deleted": True,
+    }
+    item.pop("active", None)
+    return {
+        "item": item,
+        "missing_evidence_catalog": await asyncio.to_thread(_missing_evidence_catalog),
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
 @app.get("/api/session")
-async def session(request: Request) -> dict[str, object]:
-    identity = request_identity(request, settings)
-    return identity.as_dict(
+async def session(request: Request, response: Response) -> dict[str, object]:
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    identity = await asyncio.to_thread(request_identity, request, settings)
+    access_role = (
+        await asyncio.to_thread(database.access_role, identity.username)
+        if identity.verified and identity.username
+        else ""
+    )
+    is_admin = access_role == "admin"
+    can_write = settings.deployment_mode != "production" or access_role in {
+        "writer",
+        "admin",
+    }
+    payload = identity.as_dict(
         trust_proxy_headers=settings.trust_proxy_identity_headers
     ) | {
         "browser_lca_fallback": not identity.authenticated,
@@ -1252,26 +2116,142 @@ async def session(request: Request) -> dict[str, object]:
             if settings.trust_proxy_identity_headers
             else ""
         ),
-        "can_manage_team_default": _can_manage_team_default(request),
+        "access_role": access_role or "viewer",
+        "is_admin": is_admin,
+        "can_manage_team_default": is_admin,
+        "deployment_mode": settings.deployment_mode,
+        "can_write": can_write,
+        "read_only": not can_write,
+        "login_managed_by": "kylin" if settings.kylin_sso_enabled else "",
+        "logout_url": with_base_path(settings.base_path, "/auth/logout")
+        if settings.kylin_sso_enabled
+        else "",
+    }
+    if settings.identity_diagnostics:
+        payload["identity_header_candidates"] = identity_header_candidates(request)
+    return payload
+
+
+@app.get("/api/access-users")
+async def list_access_users(request: Request) -> dict[str, Any]:
+    await asyncio.to_thread(_admin_identity, request)
+    return {"items": await asyncio.to_thread(database.list_access_users)}
+
+
+@app.put("/api/access-users/{username}")
+async def set_access_user(
+    username: str, request: Request
+) -> dict[str, Any]:
+    identity = await asyncio.to_thread(_admin_identity, request)
+    normalized = normalise_username(username)
+    if not normalized:
+        raise _detail(400, "用户名格式不合法。")
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        raise _detail(400, "请求 JSON 不合法。")
+    role = _as_text(body.get("role") if isinstance(body, dict) else "").lower()
+    try:
+        user = await asyncio.to_thread(
+            database.set_access_user,
+            username=normalized,
+            role=role,
+            actor=identity.username,
+        )
+    except ValueError as exc:
+        raise _detail(409, str(exc))
+    return {
+        "user": user,
+        "change_revision": await asyncio.to_thread(database.change_revision),
     }
 
 
-@app.get("/api/status")
-async def status() -> dict[str, Any]:
+@app.delete("/api/access-users/{username}")
+async def delete_access_user(username: str, request: Request) -> dict[str, Any]:
+    await asyncio.to_thread(_admin_identity, request)
+    normalized = normalise_username(username)
+    if not normalized:
+        raise _detail(400, "用户名格式不合法。")
+    try:
+        deleted = await asyncio.to_thread(database.delete_access_user, normalized)
+    except ValueError as exc:
+        raise _detail(409, str(exc))
+    if not deleted:
+        raise _detail(404, "用户权限记录不存在。")
     return {
+        "deleted": True,
+        "username": normalized,
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
+@app.get("/auth/logout")
+async def logout() -> RedirectResponse:
+    response = RedirectResponse(settings.kylin_sso_logout_url, status_code=302)
+    for cookie_name in ("_kylin_ticket", "_kylin_username"):
+        response.delete_cookie(cookie_name, path="/")
+    return response
+
+
+@app.get("/api/status")
+async def status(response: Response) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    try:
+        database_state = await asyncio.to_thread(
+            database.runtime_status,
+            persistent_data=settings.postgres_persistent_data,
+        )
+    except Exception:
+        logger.exception("database status check failed")
+        database_state = {
+            "ok": False,
+            "backend": database.backend,
+            "server_version": "",
+            "persistent_data": False,
+            "revision": 0,
+            "migration_count": 0,
+            "pool_max_size": database.pool_size,
+            "latency_ms": None,
+        }
+    backup_state, volume_state = await asyncio.gather(
+        asyncio.to_thread(backup_status, settings.data_dir),
+        asyncio.to_thread(volume_status, settings.data_dir),
+    )
+    baseline_state = runtime_state["baseline"]
+    overall = overall_status(
+        database=database_state,
+        baseline=baseline_state,
+        backups=backup_state,
+        volume=volume_state,
+    )
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "base_path": settings.base_path,
+        "overall": overall,
+        "application": {
+            "started_at": APP_STARTED_AT.isoformat(),
+            "uptime_seconds": max(0, int(time.monotonic() - APP_STARTED_MONOTONIC)),
+            "build_commit": settings.build_commit,
+            "base_path": settings.base_path,
+            "deployment_mode": settings.deployment_mode,
+        },
         "trail_write_enabled": False,
         "build_commit": settings.build_commit,
         "ra_auto_triage_root_available": (settings.ra_auto_triage_root / "vlm").is_dir(),
         "ares_manifest_available": settings.ares_manifest.is_file(),
         "ares_indexed_issues": asset_index.refresh(),
         "camera_cache_root_available": settings.camera_root.is_dir(),
-        "baseline": runtime_state["baseline"],
+        "ares_video_root_available": settings.ares_video_root.is_dir(),
+        "baseline": baseline_state,
         "trail_sync": runtime_state["trail_sync"],
         "batch_prediction_enabled": settings.batch_prediction_enabled,
         "autotriage_push_enabled": settings.autotriage_push_enabled,
         "batch_max_issues": settings.batch_max_issues,
         "model_gateway": model_catalog.status(),
-        "storage": "SQLite MVP / PostgreSQL migration prepared",
+        "storage": database.storage_label,
+        "database": database_state,
+        "backups": backup_state,
+        "volume": volume_state,
         "model_endpoint_policy": (
             "固定服务器网关；Profile 模型已验证，其他在线 Qwen3 显式实验；"
             "浏览器不能提交地址或凭证"
@@ -1279,30 +2259,119 @@ async def status() -> dict[str, Any]:
     }
 
 
+def _parse_issue_id_filter(raw: str) -> list[str]:
+    tokens = re.split(r"[\s,;|]+", _as_text(raw))
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for token in tokens:
+        issue_id = token.strip()
+        if not issue_id or issue_id in seen:
+            continue
+        if not re.fullmatch(r"[A-Za-z0-9_-]{3,128}", issue_id):
+            continue
+        seen.add(issue_id)
+        cleaned.append(issue_id)
+        if len(cleaned) >= 2000:
+            break
+    return cleaned
+
+
+def _case_filter_kwargs(
+    *,
+    search: str = "",
+    gt_label: str = "",
+    model_label: str = "",
+    annotation_label: str = "",
+    annotation_author: str = "",
+    model_run_id: str = "",
+    comparison: str = "",
+    failure_only: bool = False,
+    missing_evidence: str = "",
+    issue_ids: str = "",
+    work_assignee: str = "",
+) -> dict[str, Any]:
+    comparison_values = [
+        value
+        for value in _csv_filter_values(comparison)
+        if value in COMPARISON_STATUSES and value != "all"
+    ]
+    if failure_only and comparison_values and comparison_values != ["mismatch"]:
+        # Legacy failure_only=true only expands empty comparison to mismatch.
+        if comparison and set(comparison_values) != {"mismatch"}:
+            raise _detail(400, "failure_only=true 与 comparison 参数冲突。")
+    if failure_only and not comparison_values:
+        comparison_values = ["mismatch"]
+    if comparison_values and set(comparison_values) == {
+        "match",
+        "mismatch",
+        "none",
+    }:
+        comparison_values = []
+    comparison_status = ",".join(comparison_values) if comparison_values else "all"
+    if comparison_status != "all" and not model_run_id:
+        raise _detail(400, "筛选模型对比关系时必须选择 Model Run。")
+    model_labels = _csv_filter_values(model_label)
+    for label in model_labels:
+        if label not in LABELS:
+            raise _detail(400, "model_label 不在三分类范围内。")
+    if model_labels and not model_run_id:
+        raise _detail(400, "按模型标注筛选时必须选择 Model Run。")
+    gt_labels = _csv_filter_values(gt_label)
+    for label in gt_labels:
+        if label not in LABELS:
+            raise _detail(400, "gt_label 不在三分类范围内。")
+    return {
+        "baseline_scope": settings.baseline_scope,
+        "search": search,
+        "gt_label": ",".join(gt_labels),
+        "model_label": ",".join(model_labels),
+        "annotation_label": annotation_label,
+        "annotation_author": annotation_author,
+        "model_run_id": model_run_id,
+        "comparison_status": comparison_status,
+        "failure_only": failure_only,
+        "missing_evidence": missing_evidence,
+        "issue_ids": _parse_issue_id_filter(issue_ids),
+        "work_assignee": _as_text(work_assignee).strip(),
+    }
+
+
 @app.get("/api/cases")
 async def list_cases(
     search: str = "",
     gt_label: str = "",
+    model_label: str = "",
     annotation_label: str = "",
     annotation_author: str = "",
     model_run_id: str = "",
+    comparison: str = "",
     failure_only: bool = False,
     missing_evidence: str = "",
+    issue_ids: str = "",
+    work_assignee: str = "",
     page: int = 1,
     page_size: int = 100,
     include_thumbnail: bool = False,
 ) -> dict[str, Any]:
-    result = database.list_cases(
-        baseline_scope=settings.baseline_scope,
+    filters = _case_filter_kwargs(
         search=search,
         gt_label=gt_label,
+        model_label=model_label,
         annotation_label=annotation_label,
         annotation_author=annotation_author,
         model_run_id=model_run_id,
+        comparison=comparison,
         failure_only=failure_only,
         missing_evidence=missing_evidence,
+        issue_ids=issue_ids,
+        work_assignee=work_assignee,
+    )
+    comparison_status = filters["comparison_status"]
+    result = await asyncio.to_thread(
+        database.list_cases,
+        **filters,
         page=page,
-        page_size=page_size,
+        page_size=min(max(1, int(page_size)), 100),
     )
     items: list[dict[str, Any]] = []
     for item in result.get("items", []):
@@ -1314,7 +2383,9 @@ async def list_cases(
         if include_thumbnail:
             public["thumbnail"] = (
                 {
-                    "url": f"/api/case-thumbnails/{quote(issue_id, safe='')}",
+                    "url": _public_path(
+                        f"/api/case-thumbnails/{quote(issue_id, safe='')}"
+                    ),
                     "kind": "bev",
                     "label": "BEV · t0 附近",
                 }
@@ -1323,17 +2394,159 @@ async def list_cases(
             )
         items.append(public)
     result["items"] = items
+    result["filters"] = {
+        "model_run_id": model_run_id,
+        "comparison_status": comparison_status,
+        "failure_only": comparison_status == "mismatch",
+        "issue_ids": filters["issue_ids"],
+        "work_assignee": filters["work_assignee"],
+    }
     return result
 
 
+@app.get("/api/cases/issue-ids")
+async def list_case_issue_ids(
+    search: str = "",
+    gt_label: str = "",
+    model_label: str = "",
+    annotation_label: str = "",
+    annotation_author: str = "",
+    model_run_id: str = "",
+    comparison: str = "",
+    failure_only: bool = False,
+    missing_evidence: str = "",
+    issue_ids: str = "",
+    work_assignee: str = "",
+) -> dict[str, Any]:
+    """Return all matching issue IDs for the current Review filters (capped)."""
+
+    filters = _case_filter_kwargs(
+        search=search,
+        gt_label=gt_label,
+        model_label=model_label,
+        annotation_label=annotation_label,
+        annotation_author=annotation_author,
+        model_run_id=model_run_id,
+        comparison=comparison,
+        failure_only=failure_only,
+        missing_evidence=missing_evidence,
+        issue_ids=issue_ids,
+        work_assignee=work_assignee,
+    )
+    ids = await asyncio.to_thread(database.list_case_issue_ids, **filters, limit=5000)
+    return {
+        "issue_ids": ids,
+        "total": len(ids),
+        "truncated": len(ids) >= 5000,
+        "filters": {
+            "model_run_id": model_run_id,
+            "comparison_status": filters["comparison_status"],
+            "failure_only": filters["comparison_status"] == "mismatch",
+            "issue_ids": filters["issue_ids"],
+            "work_assignee": filters["work_assignee"],
+        },
+    }
+
+
+@app.get("/api/work-assignees")
+async def work_assignees() -> dict[str, Any]:
+    """Assignees currently attached to Issues via work-split."""
+
+    return {
+        "items": await asyncio.to_thread(database.list_work_assignees),
+    }
+
+
+@app.post("/api/cases/work-split")
+async def split_case_work(request: Request) -> dict[str, Any]:
+    """Admin-only: randomly assign filtered issues and persist ownership."""
+
+    identity = _admin_identity(request)
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        raise _detail(400, "均分任务请求必须是 JSON。")
+    if not isinstance(body, dict):
+        raise _detail(400, "均分任务请求必须是 JSON 对象。")
+    filter_body = body.get("filters") if isinstance(body.get("filters"), dict) else {}
+    filters = _case_filter_kwargs(
+        search=_as_text(filter_body.get("search")),
+        gt_label=_as_text(filter_body.get("gt_label")),
+        model_label=_as_text(filter_body.get("model_label")),
+        annotation_label=_as_text(filter_body.get("annotation_label")),
+        annotation_author=_as_text(filter_body.get("annotation_author")),
+        model_run_id=_as_text(filter_body.get("model_run_id")),
+        comparison=_as_text(filter_body.get("comparison") or filter_body.get("comparison_status")),
+        failure_only=bool(filter_body.get("failure_only")),
+        missing_evidence=_as_text(filter_body.get("missing_evidence")),
+        issue_ids=_as_text(filter_body.get("issue_ids")),
+        work_assignee=_as_text(filter_body.get("work_assignee")),
+    )
+    issue_ids = await asyncio.to_thread(database.list_case_issue_ids, **filters, limit=5000)
+    assignees = body.get("assignees")
+    if not isinstance(assignees, list):
+        raise _detail(400, "assignees 必须是数组。")
+    raw_seed = body.get("seed", None)
+    seed: int | None
+    if raw_seed in (None, ""):
+        seed = None
+    else:
+        try:
+            seed = int(raw_seed)
+        except (TypeError, ValueError):
+            raise _detail(400, "seed 必须是整数。")
+    try:
+        assignments = distribute_issue_ids(issue_ids, assignees, seed=seed)
+        saved = await asyncio.to_thread(
+            database.apply_work_split,
+            assignments=assignments,
+            created_by=identity.username,
+            seed=seed,
+            filter_snapshot={
+                "model_run_id": filters["model_run_id"],
+                "comparison_status": filters["comparison_status"],
+                "search": filters["search"],
+                "gt_label": filters["gt_label"],
+                "model_label": filters["model_label"],
+                "annotation_author": filters["annotation_author"],
+                "missing_evidence": filters["missing_evidence"],
+            },
+        )
+    except ValueError as exc:
+        raise _detail(400, str(exc))
+    return {
+        "total": len(issue_ids),
+        "truncated": len(issue_ids) >= 5000,
+        "seed": seed,
+        "split_id": saved["split_id"],
+        "created_by": saved["created_by"],
+        "created_at": saved["created_at"],
+        "assignments": assignments,
+        "work_assignees": await asyncio.to_thread(database.list_work_assignees),
+        "change_revision": await asyncio.to_thread(database.change_revision),
+        "filters": {
+            "model_run_id": filters["model_run_id"],
+            "comparison_status": filters["comparison_status"],
+            "failure_only": filters["comparison_status"] == "mismatch",
+            "work_assignee": filters["work_assignee"],
+        },
+    }
+
+
 @app.get("/api/reviewers")
-async def reviewers() -> dict[str, Any]:
-    return {"items": database.list_reviewers(settings.baseline_scope)}
+async def reviewers(model_run_id: str = "") -> dict[str, Any]:
+    return {
+        "items": await asyncio.to_thread(
+            database.list_reviewers, settings.baseline_scope, model_run_id
+        )
+    }
 
 
 @app.get("/api/case-thumbnails/{issue_id}")
 async def get_case_thumbnail(issue_id: str) -> FileResponse:
-    if not ISSUE_ID_RE.fullmatch(issue_id) or database.get_case(issue_id) is None:
+    if not ISSUE_ID_RE.fullmatch(issue_id) or await asyncio.to_thread(
+        database.get_case, issue_id
+    ) is None:
         raise _detail(404, "Issue 不存在。")
     source_info = await asyncio.to_thread(
         asset_index.get_thumbnail_source,
@@ -1366,9 +2579,54 @@ async def get_case_thumbnail(issue_id: str) -> FileResponse:
     )
 
 
+@app.get("/api/cases/{issue_id}/trail-metadata")
+async def get_case_trail_metadata(issue_id: str) -> dict[str, Any]:
+    """Load optional Trail metadata without delaying the Issue detail API.
+
+    The Issue detail response intentionally exposes only local data and any
+    metadata already imported with the case.  Trail is a best-effort external
+    dependency and is fetched by the browser after the detail has rendered.
+    """
+
+    case = await asyncio.to_thread(database.get_case, issue_id)
+    if case is None:
+        raise _detail(404, "Issue 不存在。")
+
+    trail_metadata = _case_link_metadata_fallback(case)
+    status = "disabled"
+    if settings.trail_detail_metadata_enabled:
+        status = "unavailable"
+        try:
+            async with trail_detail_semaphore:
+                fetched = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        read_trail_issue_metadata,
+                        ra_root=settings.ra_auto_triage_root,
+                        issue_id=issue_id,
+                        view_id=settings.trail_view_id,
+                        cache_seconds=settings.trail_detail_metadata_cache_seconds,
+                    ),
+                    timeout=8.0,
+                )
+            trail_metadata.update(fetched)
+            status = "ready" if fetched else "unavailable"
+        except asyncio.TimeoutError:
+            status = "timeout"
+            logger.warning("Trail detail metadata timed out issue_id=%s", issue_id)
+        except Exception:
+            status = "unavailable"
+            logger.warning("Trail detail metadata unavailable issue_id=%s", issue_id)
+
+    return {
+        "issue_id": issue_id,
+        "status": status,
+        "external_links": _case_external_links(issue_id, trail_metadata),
+    }
+
+
 @app.get("/api/cases/{issue_id}")
 async def get_case(issue_id: str) -> dict[str, Any]:
-    case = database.get_case(issue_id)
+    case = await asyncio.to_thread(database.get_case, issue_id)
     if case is None:
         raise _detail(404, "Issue 不存在。")
     for annotation in case.get("annotations", []):
@@ -1377,10 +2635,20 @@ async def get_case(issue_id: str) -> dict[str, Any]:
             for attachment in annotation.get("attachments", [])
         ]
     case["assets"] = asset_index.get_assets(issue_id)
+    captured_video = video_index.get_video(issue_id)
+    if captured_video is not None:
+        case["assets"]["video"] = captured_video
+        case["assets"]["available"] = True
     case["camera"] = camera_index.get_assets(
         issue_id, (case["assets"].get("capture") or {}).get("timestamp_ms")
     )
     case["voyager_issue_url"] = _voyager_issue_url(issue_id)
+    case["external_links"] = _case_external_links(
+        issue_id, _case_link_metadata_fallback(case)
+    )
+    case["trail_metadata_status"] = (
+        "pending" if settings.trail_detail_metadata_enabled else "disabled"
+    )
     case["batch_jobs"] = [
         _public_batch_job(job) for job in case.get("batch_jobs", [])
     ]
@@ -1389,8 +2657,10 @@ async def get_case(issue_id: str) -> dict[str, Any]:
 
 @app.get("/api/assets/{issue_id}/{asset_id}")
 async def get_asset(issue_id: str, asset_id: str) -> FileResponse:
-    path = asset_index.get_asset_path(issue_id, asset_id) or camera_index.get_asset_path(
-        issue_id, asset_id
+    path = (
+        asset_index.get_asset_path(issue_id, asset_id)
+        or camera_index.get_asset_path(issue_id, asset_id)
+        or video_index.get_asset_path(issue_id, asset_id)
     )
     if path is None:
         raise _detail(404, "Ares / Camera 资产不存在。")
@@ -1402,6 +2672,17 @@ async def get_asset(issue_id: str, asset_id: str) -> FileResponse:
         if suffix in {".jpg", ".jpeg"}
         else "image/png"
     )
+    if suffix == ".mp4":
+        return FileResponse(
+            path,
+            media_type=media_type,
+            headers={
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "private, max-age=300, must-revalidate",
+                "Content-Disposition": "inline",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
     return FileResponse(path, media_type=media_type, filename=path.name)
 
 
@@ -1440,7 +2721,10 @@ async def create_annotation(issue_id: str, request: Request) -> dict[str, Any]:
         request=request,
         body=body,
     )
-    return {"annotation": annotation}
+    return {
+        "annotation": annotation,
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
 
 
 @app.post("/api/cases/{issue_id}/annotations-with-attachments")
@@ -1474,14 +2758,232 @@ async def create_annotation_with_attachments(
         _public_review_attachment(attachment)
         for attachment in annotation.get("attachments", [])
     ]
-    return {"annotation": annotation}
+    return {
+        "annotation": annotation,
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
+@app.delete("/api/cases/{issue_id}/annotations/{annotation_id}")
+async def delete_annotation(issue_id: str, annotation_id: int) -> dict[str, Any]:
+    if annotation_id <= 0:
+        raise _detail(400, "Review 版本 ID 不合法。")
+    deleted = await asyncio.to_thread(
+        database.delete_annotation,
+        issue_id=issue_id,
+        annotation_id=annotation_id,
+    )
+    if deleted is None:
+        raise _detail(404, "Review 版本不存在或已被删除。")
+    attachment_root = settings.review_attachments_dir.resolve()
+    for attachment in deleted.get("attachments", []):
+        path = (attachment_root / str(attachment.get("stored_name") or "")).resolve()
+        if attachment_root not in path.parents:
+            logger.warning(
+                "Skipped unsafe deleted review attachment path annotation_id=%s",
+                annotation_id,
+            )
+            continue
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            logger.exception(
+                "Failed to remove deleted review attachment annotation_id=%s attachment_id=%s",
+                annotation_id,
+                attachment.get("id"),
+            )
+    deleted["attachments"] = [
+        _public_review_attachment(attachment)
+        for attachment in deleted.get("attachments", [])
+    ]
+    return {
+        "deleted": deleted,
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
 
 
 @app.get("/api/model-runs")
 async def model_runs() -> dict[str, Any]:
+    items = await asyncio.to_thread(
+        database.list_model_runs, settings.baseline_scope
+    )
+    for item in items:
+        if item.get("kind") != "upload":
+            continue
+        source_file = _model_source_file(item)
+        filename = _model_source_filename(item)
+        suffix = Path(filename).suffix.lower()
+        preview_supported = suffix in {".json", ".csv", ".xlsx", ".xlsm"}
+        reconstructed = (
+            source_file is None
+            and preview_supported
+            and bool(item.get("prediction_count"))
+        )
+        item["source_file"] = {
+            "filename": filename,
+            "available": bool(source_file) or reconstructed,
+            "reconstructed": reconstructed,
+            "preview_supported": preview_supported,
+            "preview_url": _public_path(
+                f"/api/model-runs/{quote(str(item['id']), safe='')}/source-preview"
+                if preview_supported
+                else f"/api/model-runs/{quote(str(item['id']), safe='')}/source"
+            ),
+            "download_url": _public_path(
+                f"/api/model-runs/{quote(str(item['id']), safe='')}/source?download=1"
+            ),
+        }
     return {
-        "items": database.list_model_runs(settings.baseline_scope),
+        "items": items,
         "default_model_run_id": database.default_model_run_id(),
+    }
+
+
+@app.get("/api/model-runs/{run_id}/source-preview")
+async def preview_model_run_source(
+    run_id: str,
+    page: int = 1,
+    page_size: int = 100,
+) -> dict[str, Any]:
+    run = database.get_model_run(run_id)
+    if run is None:
+        raise _detail(404, "模型 Run 不存在。")
+    source_file = _model_source_file(run)
+    reconstructed = False
+    if source_file is None:
+        filename = _model_source_filename(run)
+        suffix = Path(filename).suffix.lower()
+        reconstructed = True
+    else:
+        path, filename = source_file
+        suffix = path.suffix.lower()
+    if suffix not in {".json", ".csv", ".xlsx", ".xlsm"}:
+        raise _detail(415, "当前仅支持在页面内预览 CSV / JSON / XLSX。")
+    if reconstructed:
+        source_rows = database.model_run_source_rows(run_id)
+        metadata = {
+            "source": "dashboard_reconstructed",
+            "notice": "原始文件未归档；以下内容由该 Run 已保存的脱敏预测行重建。",
+        }
+    else:
+        try:
+            if path.stat().st_size > MAX_UPLOAD_BYTES:
+                raise _detail(413, "来源文件过大，暂不生成页面预览；请使用下载。")
+            content = await asyncio.to_thread(path.read_bytes)
+            source_rows, metadata = parse_source_bytes(filename, content)
+        except HTTPException:
+            raise
+        except (OSError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
+            raise _detail(422, f"来源文件无法生成预览：{exc}")
+
+    page = max(1, int(page))
+    page_size = min(max(1, int(page_size)), MAX_SOURCE_PREVIEW_ROWS)
+    total_rows = len(source_rows)
+    page_count = max(1, math.ceil(total_rows / page_size))
+    page = min(page, page_count)
+    page_start = (page - 1) * page_size
+    page_rows = source_rows[page_start : page_start + page_size]
+    preview_rows = [
+        {
+            str(key): _source_preview_value(value)
+            for key, value in row.items()
+        }
+        for row in page_rows
+    ]
+    columns: list[str] = []
+    seen_columns: set[str] = set()
+    for row in preview_rows:
+        for key in row:
+            if key not in seen_columns:
+                seen_columns.add(key)
+                columns.append(key)
+    metadata_preview = {
+        str(key): _source_preview_value(value)
+        for key, value in (metadata.items() if isinstance(metadata, dict) else [])
+    }
+    return {
+        "filename": filename,
+        "format": suffix[1:],
+        "columns": columns,
+        "rows": preview_rows,
+        "total_rows": total_rows,
+        "page": page,
+        "page_size": page_size,
+        "page_count": page_count,
+        "offset": page_start,
+        "has_previous": page > 1,
+        "has_next": page < page_count,
+        "truncated": total_rows > len(preview_rows),
+        "metadata": metadata_preview,
+        "reconstructed": reconstructed,
+    }
+
+
+@app.get("/api/model-runs/{run_id}/source")
+async def get_model_run_source(run_id: str, download: bool = False) -> Response:
+    run = database.get_model_run(run_id)
+    if run is None:
+        raise _detail(404, "模型 Run 不存在。")
+    source_file = _model_source_file(run)
+    if source_file is None:
+        reconstructed = _reconstructed_model_source(run_id, run)
+        if reconstructed is None:
+            raise _detail(404, "该 Run 的原始文件未归档且无法从已保存结果重建。")
+        content, filename, media_type = reconstructed
+        disposition = "attachment" if download else "inline"
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'{disposition}; filename="{filename}"',
+                "Cache-Control": "private, max-age=300, must-revalidate",
+                "X-Content-Type-Options": "nosniff",
+                "X-RA-Source-Reconstructed": "1",
+            },
+        )
+    path, filename = source_file
+    media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    disposition = "attachment" if download else "inline"
+    return FileResponse(
+        path,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'{disposition}; filename="{filename}"',
+            "Cache-Control": "private, max-age=300, must-revalidate",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@app.delete("/api/model-runs/{run_id}")
+async def delete_model_run(run_id: str) -> dict[str, Any]:
+    run = database.get_model_run(run_id)
+    if run is None:
+        raise _detail(404, "模型 Run 不存在。")
+    source_file = _model_source_file(run)
+    try:
+        deleted = database.delete_model_run(run_id)
+    except ValueError as exc:
+        raise _detail(409, str(exc))
+    if deleted is None:
+        raise _detail(404, "模型 Run 不存在。")
+
+    source_deleted = False
+    if source_file is not None:
+        path, _ = source_file
+        upload_root = settings.uploads_dir.resolve()
+        resolved = path.resolve()
+        if upload_root == resolved or upload_root in resolved.parents:
+            try:
+                resolved.unlink(missing_ok=True)
+                source_deleted = True
+            except OSError:
+                # The Run is already deleted; report the artifact separately so
+                # an operator can recover a permissions/disk cleanup issue.
+                source_deleted = False
+    return {
+        "deleted": deleted,
+        "source_deleted": source_deleted,
     }
 
 
@@ -1515,6 +3017,431 @@ async def review_clusters(
     }
 
 
+def _csv_filter_values(raw: str | list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+    values: list[str] = []
+    if raw is None:
+        return ()
+    if isinstance(raw, (list, tuple)):
+        parts = raw
+    else:
+        parts = str(raw).split(",")
+    for part in parts:
+        text = _as_text(part).strip()
+        if text:
+            values.append(text)
+    return tuple(dict.fromkeys(values))
+
+
+def _review_reason_analysis_payload(
+    *,
+    model_run_id: str = "",
+    comparison: str = "",
+    failure_only: bool = False,
+    annotation_author: str = "",
+    review_status: str = "",
+    gt_label: str = "",
+    annotation_label: str = "",
+    model_label: str = "",
+    missing_evidence: str = "",
+    theme: str = "",
+    tag: str = "",
+    scene_tag: str = "",
+    trigger_tag: str = "",
+    egress_tag: str = "",
+    search: str = "",
+    page: int = 1,
+    page_size: int = 20,
+    unbounded: bool = False,
+) -> dict[str, Any]:
+    missing_evidence_catalog = _missing_evidence_catalog()
+    evidence_catalog = {
+        str(item["key"]): {
+            "label": str(item["label"]),
+            "description": str(item["hint"]),
+        }
+        for item in missing_evidence_catalog
+    }
+    # Free-text keyword themes are not part of the current Review contract.
+    # Ignore the retired theme parameter so old bookmarked URLs remain usable;
+    # the canonical response and UI no longer expose or apply it.
+    theme = ""
+    requested_comparison = _as_text(comparison).strip().lower()
+    if requested_comparison and requested_comparison not in COMPARISON_STATUSES:
+        raise _detail(
+            400,
+            "comparison 仅支持 all、mismatch、match 或 none。",
+        )
+    if (
+        failure_only
+        and requested_comparison
+        and requested_comparison != "mismatch"
+    ):
+        raise _detail(400, "failure_only=true 与 comparison 参数冲突。")
+    comparison_status = requested_comparison or (
+        "mismatch" if failure_only else "all"
+    )
+    authors = _csv_filter_values(annotation_author)
+    statuses = _csv_filter_values(review_status)
+    gt_labels = _csv_filter_values(gt_label)
+    annotation_labels = _csv_filter_values(annotation_label)
+    model_labels = _csv_filter_values(model_label)
+    evidence_keys = _csv_filter_values(missing_evidence)
+    for status in statuses:
+        if status not in REVIEW_STATUSES:
+            raise _detail(400, "review_status 不在支持范围内。")
+    for label in gt_labels:
+        if label not in LABELS:
+            raise _detail(400, "gt_label 不在三分类范围内。")
+    for label in annotation_labels:
+        if label not in LABELS:
+            raise _detail(400, "annotation_label 不在三分类范围内。")
+    for label in model_labels:
+        if label not in LABELS:
+            raise _detail(400, "model_label 不在三分类范围内。")
+    if model_labels and not model_run_id:
+        raise _detail(400, "按模型预测筛选时必须选择 Model Run。")
+    for key in evidence_keys:
+        if key not in evidence_catalog:
+            raise _detail(400, "missing_evidence 不在稳定字段目录中。")
+    tag_catalog = _review_tag_catalog()
+    tag_by_key = {str(item["key"]): item for item in tag_catalog}
+    scene_tags = _csv_filter_values(scene_tag)
+    trigger_tags = _csv_filter_values(trigger_tag)
+    egress_tags = _csv_filter_values(egress_tag)
+    legacy_tags = _csv_filter_values(tag)
+    for requested_tag in (*legacy_tags, *scene_tags, *trigger_tags, *egress_tags):
+        item = tag_by_key.get(requested_tag)
+        if item is None:
+            raise _detail(400, "场景 Tags 不在共享目录中。")
+    for key in scene_tags:
+        if tag_by_key[key].get("section") != "scene":
+            raise _detail(400, "scene_tag 必须属于场景 Tags。")
+    for key in trigger_tags:
+        if tag_by_key[key].get("section") != "interaction_decision":
+            raise _detail(400, "trigger_tag 必须属于触发判定 Tags。")
+    for key in egress_tags:
+        if tag_by_key[key].get("section") != "egress":
+            raise _detail(400, "egress_tag 必须属于如何脱困 Tags。")
+    if comparison_status != "all" and not model_run_id:
+        raise _detail(400, "筛选模型对比关系时必须选择 Model Run。")
+
+    selected_run: dict[str, Any] | None = None
+    if model_run_id:
+        selected_run = next(
+            (
+                run
+                for run in database.list_model_runs(settings.baseline_scope)
+                if run["id"] == model_run_id
+            ),
+            None,
+        )
+        if selected_run is None:
+            raise _detail(404, "Model Run 不存在。")
+
+    normalized_search = _as_text(search)[:256]
+    folded_search = normalized_search.casefold()
+    search_aliases = tuple(
+        str(item["key"])
+        for item in (*_review_tag_catalog(), *missing_evidence_catalog)
+        if folded_search
+        and (
+            folded_search in str(item["label"]).casefold()
+            or str(item["label"]).casefold() in folded_search
+        )
+    )
+    status_labels = {
+        "待复核": "pending",
+        "已 Review": "reviewed",
+        "GT 待复核": "needs_gt_review",
+    }
+    search_aliases += tuple(
+        status
+        for label, status in status_labels.items()
+        if folded_search
+        and (
+            folded_search in label.casefold()
+            or label.casefold() in folded_search
+        )
+    )
+    rows = database.review_reason_rows(
+        baseline_scope=settings.baseline_scope,
+        model_run_id=model_run_id,
+        comparison_status=comparison_status,
+        annotation_author=",".join(authors),
+        review_status=",".join(statuses),
+        gt_label=",".join(gt_labels),
+        annotation_label=",".join(annotation_labels),
+        model_label=",".join(model_labels),
+        missing_evidence=list(evidence_keys),
+        tag_filters=legacy_tags,
+        scene_tags=scene_tags,
+        trigger_tags=trigger_tags,
+        egress_tags=egress_tags,
+        search=normalized_search,
+        search_aliases=search_aliases,
+    )
+    tag_catalog_for_analysis = {
+        str(item["key"]): {
+            "label": str(item["label"]),
+            "description": str(item.get("hint") or item.get("description") or ""),
+            "section": str(item.get("section") or ""),
+            "group": str(item.get("group") or ""),
+        }
+        for item in tag_catalog
+    }
+    result = build_review_reason_analysis(
+        rows,
+        theme="",
+        evidence_catalog=evidence_catalog,
+        tag_catalog=tag_catalog_for_analysis,
+        has_model_run=bool(model_run_id),
+        include_reason_themes=False,
+        page=page,
+        page_size=max(len(rows), 1) if unbounded else page_size,
+        page_size_limit=None if unbounded else 200,
+    )
+    for item in result["items"]:
+        issue_id = _as_text(item.get("issue_id"))
+        review_params = [f"issue={quote(issue_id, safe='')}"]
+        if model_run_id:
+            review_params.append(f"run={quote(model_run_id, safe='')}")
+        if comparison_status == "mismatch" and model_run_id:
+            review_params.append("failure=1")
+        item["voyager_issue_url"] = _voyager_issue_url(issue_id)
+        item["review_url"] = _public_path(f"/review?{'&'.join(review_params)}")
+    result["scope"] = {
+        "baseline_scope": settings.baseline_scope,
+        "model_run": (
+            {
+                "id": selected_run["id"],
+                "name": selected_run["name"],
+                "kind": selected_run["kind"],
+                "prediction_count": selected_run["baseline_prediction_count"],
+                "failure_count": selected_run["failure_count"],
+            }
+            if selected_run
+            else None
+        ),
+        "comparison_status": comparison_status,
+        "failure_only": comparison_status == "mismatch",
+        "review_binding": "latest_annotation_per_issue",
+        "review_is_run_bound": False,
+    }
+    result["filters"] = {
+        "model_run_id": model_run_id,
+        "comparison_status": comparison_status,
+        "failure_only": comparison_status == "mismatch",
+        "annotation_author": list(authors),
+        "review_status": list(statuses),
+        "gt_label": list(gt_labels),
+        "annotation_label": list(annotation_labels),
+        "model_label": list(model_labels),
+        "missing_evidence": list(evidence_keys),
+        "theme": theme,
+        "tag": list(legacy_tags),
+        "scene_tag": list(scene_tags),
+        "trigger_tag": list(trigger_tags),
+        "egress_tag": list(egress_tags),
+        "search": normalized_search,
+    }
+    return result
+
+
+@app.get("/api/review-reason-analysis")
+async def review_reason_analysis(
+    model_run_id: str = "",
+    comparison: str = "",
+    failure_only: bool = False,
+    annotation_author: str = "",
+    review_status: str = "",
+    gt_label: str = "",
+    annotation_label: str = "",
+    model_label: str = "",
+    missing_evidence: str = "",
+    theme: str = "",
+    tag: str = "",
+    scene_tag: str = "",
+    trigger_tag: str = "",
+    egress_tag: str = "",
+    search: str = "",
+    page: int = 1,
+    page_size: int = 20,
+) -> dict[str, Any]:
+    return _review_reason_analysis_payload(
+        model_run_id=model_run_id,
+        comparison=comparison,
+        failure_only=failure_only,
+        annotation_author=annotation_author,
+        review_status=review_status,
+        gt_label=gt_label,
+        annotation_label=annotation_label,
+        model_label=model_label,
+        missing_evidence=missing_evidence,
+        theme=theme,
+        tag=tag,
+        scene_tag=scene_tag,
+        trigger_tag=trigger_tag,
+        egress_tag=egress_tag,
+        search=search,
+        page=page,
+        page_size=page_size,
+    )
+
+
+REVIEW_ANALYSIS_EXPORT_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("issue_id", "Issue ID"),
+    ("scene", "场景"),
+    ("gt_label", "GT"),
+    ("model_label", "模型结论"),
+    ("comparison_status", "模型判断结果"),
+    ("model_reason", "模型说明"),
+    ("model_confidence", "模型置信度"),
+    ("review_label", "人工结论"),
+    ("review_status", "Review 状态"),
+    ("review_reason", "人工 Review 原因"),
+    ("tags", "场景 Tags"),
+    ("missing_evidence", "缺失信息"),
+    ("reviewer", "复核人"),
+    ("reviewed_at", "Review 时间"),
+    ("review_url", "Workbench 链接"),
+    ("voyager_issue_url", "Voyager Issue 链接"),
+)
+
+
+def _spreadsheet_safe(value: Any) -> Any:
+    if value is None:
+        return ""
+    if isinstance(value, str) and value.lstrip(" \t\r\n").startswith(
+        ("=", "+", "-", "@")
+    ):
+        return f"'{value}"
+    return value
+
+
+def _review_analysis_export_rows(result: dict[str, Any]) -> list[dict[str, Any]]:
+    tag_labels = {str(item["key"]): str(item["label"]) for item in _review_tag_catalog()}
+    evidence_labels = {
+        str(item["key"]): str(item["label"])
+        for item in _missing_evidence_catalog()
+    }
+    exported: list[dict[str, Any]] = []
+    for item in result.get("items", []):
+        annotation = item.get("annotation") or {}
+        prediction = item.get("prediction") or {}
+        exported.append(
+            {
+                "issue_id": _as_text(item.get("issue_id")),
+                "scene": _as_text(item.get("title") or item.get("scenario")),
+                "gt_label": _as_text(item.get("gt_label")),
+                "model_label": _as_text(prediction.get("label")),
+                "comparison_status": _as_text(item.get("comparison_status")).upper(),
+                "model_reason": _as_text(prediction.get("reason")),
+                "model_confidence": prediction.get("confidence"),
+                "review_label": _as_text(annotation.get("label")),
+                "review_status": _as_text(annotation.get("review_status")),
+                "review_reason": _as_text(annotation.get("note")),
+                "tags": "、".join(
+                    tag_labels.get(_as_text(key), _as_text(key))
+                    for key in annotation.get("tags") or []
+                ),
+                "missing_evidence": "、".join(
+                    evidence_labels.get(_as_text(key), _as_text(key))
+                    for key in annotation.get("missing_evidence") or []
+                ),
+                "reviewer": _as_text(annotation.get("author")),
+                "reviewed_at": _as_text(annotation.get("created_at")),
+                "review_url": _as_text(item.get("review_url")),
+                "voyager_issue_url": _as_text(item.get("voyager_issue_url")),
+            }
+        )
+    return exported
+
+
+def _review_analysis_export_response(
+    result: dict[str, Any], export_format: str
+) -> Response:
+    rows = _review_analysis_export_rows(result)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"review-analysis-{timestamp}.{export_format}"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    column_keys = [key for key, _ in REVIEW_ANALYSIS_EXPORT_COLUMNS]
+    column_labels = [label for _, label in REVIEW_ANALYSIS_EXPORT_COLUMNS]
+    if export_format == "csv":
+        stream = io.StringIO()
+        writer = csv.writer(stream, lineterminator="\n")
+        writer.writerow(column_labels)
+        for row in rows:
+            writer.writerow([_spreadsheet_safe(row.get(key)) for key in column_keys])
+        return Response(
+            content=("\ufeff" + stream.getvalue()).encode("utf-8"),
+            media_type="text/csv; charset=utf-8",
+            headers=headers,
+        )
+
+    workbook = openpyxl.Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Review 分析"
+    worksheet.append(column_labels)
+    for row in rows:
+        worksheet.append([_spreadsheet_safe(row.get(key)) for key in column_keys])
+    worksheet.freeze_panes = "A2"
+    worksheet.auto_filter.ref = worksheet.dimensions
+    for index, (_, label) in enumerate(REVIEW_ANALYSIS_EXPORT_COLUMNS, start=1):
+        worksheet.column_dimensions[openpyxl.utils.get_column_letter(index)].width = min(
+            42, max(12, len(label) * 2 + 4)
+        )
+    output = io.BytesIO()
+    workbook.save(output)
+    return Response(
+        content=output.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
+
+
+@app.get("/api/review-reason-analysis/export")
+async def export_review_reason_analysis(
+    format: str = "csv",
+    model_run_id: str = "",
+    comparison: str = "",
+    failure_only: bool = False,
+    annotation_author: str = "",
+    review_status: str = "",
+    gt_label: str = "",
+    annotation_label: str = "",
+    model_label: str = "",
+    missing_evidence: str = "",
+    theme: str = "",
+    tag: str = "",
+    scene_tag: str = "",
+    trigger_tag: str = "",
+    egress_tag: str = "",
+    search: str = "",
+) -> Response:
+    export_format = _as_text(format).strip().lower()
+    if export_format not in {"csv", "xlsx"}:
+        raise _detail(400, "format 仅支持 csv 或 xlsx。")
+    result = _review_reason_analysis_payload(
+        model_run_id=model_run_id,
+        comparison=comparison,
+        failure_only=failure_only,
+        annotation_author=annotation_author,
+        review_status=review_status,
+        gt_label=gt_label,
+        annotation_label=annotation_label,
+        model_label=model_label,
+        missing_evidence=missing_evidence,
+        theme=theme,
+        tag=tag,
+        scene_tag=scene_tag,
+        trigger_tag=trigger_tag,
+        egress_tag=egress_tag,
+        search=search,
+        unbounded=True,
+    )
+    return _review_analysis_export_response(result, export_format)
+
+
 @app.post("/api/trail-model-sync")
 async def trail_model_sync(request: Request) -> dict[str, Any]:
     try:
@@ -1542,6 +3469,8 @@ async def import_contract() -> dict[str, Any]:
     return {
         "formats": [".json", ".csv", ".xlsx", ".xlsm"],
         "issues": {
+            "enabled_in_ui": False,
+            "compatibility_only": True,
             "required": ["issue_id"],
             "optional": [
                 "trip_id",
@@ -1571,7 +3500,7 @@ async def import_contract() -> dict[str, Any]:
         },
         "notes": [
             "每次导入会创建不可变 model run，并按 SHA-256 去重。",
-            "Trail 真值不因模型导入而覆盖；只有 issues 导入且显式 replace_gt 才会覆盖已有 GT。",
+            "页面不提供 Issue / GT 上传；旧 issues 接口仅为兼容客户端保留。Trail 真值不因模型导入而覆盖；仅显式 issues API 调用且 replace_gt=true 才会覆盖已有 GT。",
         ],
     }
 
@@ -1633,6 +3562,17 @@ async def import_model_results(
             400,
             "未找到有效结果；需要 issue_id 和 model_label（或 ra_stuck_auto_result）。",
         )
+    try:
+        source_artifact = await asyncio.to_thread(
+            _store_model_source,
+            content,
+            filename,
+            source_hash,
+        )
+    except OSError as exc:
+        raise _detail(507, f"无法归档模型结果原文件：{exc}")
+    metadata = dict(metadata)
+    metadata["source_artifact"] = source_artifact
     experiment = metadata.get("experiment") if isinstance(metadata.get("experiment"), dict) else {}
     default_name = _as_text(experiment.get("model_name")) or Path(filename).stem
     actor, actor_source, actor_verified = _action_actor(request, created_by)
@@ -1750,15 +3690,24 @@ async def import_autotriage_results(
 
 
 @app.get("/api/prediction-batches/models")
-async def batch_prediction_models(refresh: bool = False) -> dict[str, Any]:
+async def batch_prediction_models(
+    refresh: bool = False,
+    provider_id: str = "kylin",
+) -> dict[str, Any]:
     try:
         return await asyncio.to_thread(
             model_catalog.list_models,
             refresh=refresh,
             allow_stale=True,
+            provider_id=provider_id,
         )
     except ModelCatalogError as exc:
         raise _detail(exc.status_code, exc.public_message)
+
+
+@app.get("/api/prediction-batches/providers")
+async def batch_prediction_providers() -> dict[str, Any]:
+    return model_catalog.provider_catalog()
 
 
 @app.get("/api/prediction-batches/prompts")
@@ -1788,6 +3737,7 @@ async def batch_prediction_config() -> dict[str, Any]:
             or "任务创建时固化服务器 Prompt",
         },
         "model_gateway": model_catalog.status(),
+        "providers": model_catalog.provider_catalog(),
         "prompt_policy": {
             "source": "cloud_server ra_auto_triage/vlm/prompts/versions",
             "editable": True,
@@ -1801,11 +3751,14 @@ async def batch_prediction_config() -> dict[str, Any]:
                 "frame_offsets_ms",
                 "use_ra_event",
                 "use_ra_options",
+                "use_bev_animation",
             ],
             "frame_count_max": MAX_FRAME_COUNT,
             "frame_offset_min_ms": MIN_FRAME_OFFSET_MS,
             "frame_offset_max_ms": MAX_FRAME_OFFSET_MS,
-            "ares_bev_input": False,
+            "ares_animation_input": True,
+            "ares_animation_policy": "server_default_stuck_triage_auto_opt_api",
+            "ares_capture_input": False,
             "browser_model_credentials": False,
             "bag_cache_read_only": False,
             "bag_cache_scope": "dashboard_isolated",
@@ -1857,6 +3810,7 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
         "name",
         "issue_ids",
         "requested_by",
+        "provider_id",
         "model_id",
         "prompt_id",
         "prompt_template",
@@ -1888,6 +3842,18 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
             400,
             f"单批最多 {settings.batch_max_issues} 个 Issue；当前 {len(issue_ids)} 个。",
         )
+    provider_id = _as_text(body.get("provider_id") or "kylin").lower()
+    provider_catalog = model_catalog.provider_catalog()
+    provider = next(
+        (
+            item
+            for item in provider_catalog.get("providers", [])
+            if str(item.get("id") or "") == provider_id
+        ),
+        None,
+    )
+    if not provider or not provider.get("enabled"):
+        raise _detail(400, "所选 Provider 未在 cloud_server 登记可用的服务端凭证。")
     missing = [
         issue_id
         for issue_id in issue_ids
@@ -1907,6 +3873,7 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
         model_selection = await asyncio.to_thread(
             model_catalog.resolve,
             _as_text(body.get("model_id")),
+            provider_id,
         )
     except ModelCatalogError as exc:
         raise _detail(exc.status_code, exc.public_message)
@@ -1934,12 +3901,16 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
     actor, actor_source, actor_verified = _action_actor(
         request, body.get("requested_by")
     )
+    if not name:
+        actor_slug = re.sub(r"[^A-Za-z0-9._-]+", "-", actor).strip("-")[:48] or "triage"
+        name = f"{actor_slug}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     job = database.create_batch_prediction_job(
         name=name,
         issue_ids=issue_ids,
         requested_by=actor,
         requested_by_source=actor_source,
         requested_by_verified=actor_verified,
+        provider_id=provider_id,
         requested_model_id=model_selection["requested_model_id"],
         resolved_model_id=model_selection["resolved_model_id"],
         model_source="ra_model_gateway",
@@ -1955,7 +3926,7 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
         input_config=input_config,
     )
     if not batch_prediction_runner.launch_prediction(job):
-        error = "已有 Batch 预测或 AutoTriage 推送正在执行，请稍后重试。"
+        error = "Batch worker 正在停止，任务无法入队；请稍后重试。"
         database.update_batch_prediction_items(
             job["id"],
             [
@@ -1978,6 +3949,7 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
         "safety": {
             "server_default_model": False,
             "server_model_gateway": True,
+            "provider_id": provider_id,
             "requested_model_id": model_selection["requested_model_id"],
             "resolved_model_id": model_selection["resolved_model_id"],
             "model_validation_status": validation_status,
@@ -1986,13 +3958,13 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
             "prompt_mode": prompt_selection["prompt_mode"],
             "input_profile": input_config["profile_id"],
             "browser_model_credentials": False,
-            "ares_bev_input": False,
+            "ares_bev_input": bool(input_config["use_bev_animation"]),
             "bag_cache_read_only": False,
             "bag_cache_scope": "dashboard_isolated",
             "trail_write_enabled": False,
             "autotriage_publish_automatic": False,
         },
-        "poll_url": f"/api/prediction-batches/{job['id']}",
+        "poll_url": _public_path(f"/api/prediction-batches/{job['id']}"),
     }
 
 
@@ -2007,7 +3979,8 @@ async def list_batch_predictions(
     input_profile: str = "",
     page_size: int = 100,
 ) -> dict[str, Any]:
-    result = database.list_batch_prediction_jobs(
+    result = await asyncio.to_thread(
+        database.list_batch_prediction_jobs,
         requested_by=requested_by,
         status=status,
         model_id=model_id,
@@ -2025,7 +3998,7 @@ async def list_batch_predictions(
 
 @app.get("/api/prediction-batches/{job_id}")
 async def get_batch_prediction(job_id: str) -> dict[str, Any]:
-    job = database.get_batch_prediction_job(job_id)
+    job = await asyncio.to_thread(database.get_batch_prediction_job, job_id)
     if job is None:
         raise _detail(404, "Batch 任务不存在。")
     return {"job": _public_batch_job(job, include_prompt=True)}
@@ -2111,7 +4084,7 @@ async def publish_batch_prediction(job_id: str, request: Request) -> dict[str, A
         ),
         "accepted": True,
         "destination": settings.auto_triage_record_base_url,
-        "poll_url": f"/api/prediction-batches/{job_id}",
+        "poll_url": _public_path(f"/api/prediction-batches/{job_id}"),
     }
 
 
@@ -2143,3 +4116,4 @@ async def get_inference_job(job_id: str) -> dict[str, Any]:
     if job is None:
         raise _detail(404, "任务不存在。")
     return {"job": job}
+    identity_header_candidates,

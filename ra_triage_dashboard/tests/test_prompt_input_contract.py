@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from ra_triage_dashboard.app.batch_prediction_worker import (
+    apply_gateway_model,
     apply_prediction_configuration,
 )
 from ra_triage_dashboard.app.prompt_catalog import (
@@ -68,6 +69,7 @@ class PromptInputContractTest(unittest.TestCase):
                 "frame_offsets_ms": [-3000, -1000, 0, 1000, 3000],
                 "use_ra_event": True,
                 "use_ra_options": True,
+                "use_bev_animation": False,
             }
         )
         experiment = SimpleNamespace()
@@ -116,7 +118,48 @@ class PromptInputContractTest(unittest.TestCase):
                 },
             )
 
-    def test_input_boundaries_and_ares_cannot_be_enabled(self) -> None:
+    def test_default_input_enables_server_owned_ares_animation(self) -> None:
+        prompt = PromptCatalog(self.root).resolve("", "")
+        input_config = normalise_input_config(None)
+        experiment = SimpleNamespace()
+        apply_prediction_configuration(
+            experiment,
+            {
+                "prompt_version": prompt["prompt_version"],
+                "prompt_template": prompt["prompt_template"],
+                "prompt_template_sha256": prompt["prompt_template_sha256"],
+                "prompt_mode": "catalog",
+                "input_profile": input_config["profile_id"],
+                "input_config": input_config,
+            },
+        )
+        self.assertTrue(experiment.use_bev_animation)
+        self.assertFalse(experiment.use_ares_capture)
+        self.assertEqual(experiment.bev_mode, "raw_frames")
+        self.assertEqual(experiment.bev_animation_manifest, "bags/ares_animation")
+        self.assertEqual(
+            experiment.bev_frame_offsets_ms,
+            [-19000, -15000, -10000, -5000, 0, 5000, 10000, 15000, 19000],
+        )
+
+    def test_input_boundaries_and_ares_capture_cannot_be_enabled(self) -> None:
+        default_input = normalise_input_config(None)
+        self.assertEqual(
+            default_input["frame_offsets_ms"],
+            [-19000, -15000, -10000, -5000, 0, 5000, 10000, 15000, 19000],
+        )
+        self.assertTrue(default_input["use_ra_event"])
+        self.assertFalse(default_input["use_ra_options"])
+        self.assertTrue(default_input["use_bev_animation"])
+        with self.assertRaisesRegex(PromptCatalogError, "不支持字段"):
+            normalise_input_config(
+                {
+                    "use_bev_animation": True,
+                    "bev_animation_manifest": "../../untrusted",
+                }
+            )
+        with self.assertRaisesRegex(PromptCatalogError, "布尔值"):
+            normalise_input_config({"use_bev_animation": "true"})
         with self.assertRaises(PromptCatalogError):
             normalise_input_config(
                 {
@@ -135,7 +178,7 @@ class PromptInputContractTest(unittest.TestCase):
             )
         prompt = PromptCatalog(self.root).resolve("", "")
         unsafe_input = normalise_input_config(None) | {"use_ares_capture": True}
-        with self.assertRaisesRegex(ValueError, "Ares/BEV"):
+        with self.assertRaisesRegex(ValueError, "Ares Capture"):
             apply_prediction_configuration(
                 SimpleNamespace(),
                 {
@@ -147,3 +190,19 @@ class PromptInputContractTest(unittest.TestCase):
                     "input_config": unsafe_input,
                 },
             )
+
+    def test_tokenservice_gateway_keeps_bearer_key_mode(self) -> None:
+        experiment = SimpleNamespace()
+        request = {
+            "model_id": "aliyun/Qwen3-VL-Plus",
+            "_model_gateway": {
+                "provider": "tokenservice",
+                "chat_url": "https://tokenservice-gateway-ys.intra.xiaojukeji.com/v1/chat/completions",
+                "api_key": "tokenservice-secret",
+            },
+        }
+        source = apply_gateway_model(experiment, request)
+        self.assertEqual(source, "dashboard_ra_model_gateway")
+        self.assertEqual(experiment.provider, "tokenservice")
+        self.assertEqual(experiment.api_key, "tokenservice-secret")
+        self.assertEqual(request, {"model_id": "aliyun/Qwen3-VL-Plus"})
