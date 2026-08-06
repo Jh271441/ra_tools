@@ -392,15 +392,47 @@ function applyDetailImageFrame(root, caseData, kind, index, loadedImage = null) 
   return true;
 }
 
+function detailMediaKindOptions(caseData, available) {
+  return [
+    {
+      value: "bev",
+      label: `BEV 图片 · ${caseData?.assets?.frames?.length || 0}`,
+      disabled: !available.bev,
+    },
+    {
+      value: "camera",
+      label: `Camera 图片 · ${caseData?.camera?.frames?.length || 0}`,
+      disabled: !available.camera,
+    },
+    {
+      value: "video",
+      label: `Ares Studio 视频 · ${available.video ? 1 : 0}`,
+      disabled: !available.video,
+    },
+  ];
+}
+
 function detailMediaCommandMarkup(caseData) {
   const available = ensureDetailMediaState(caseData);
   const kind = state.detailMedia.kind;
+  const options = detailMediaKindOptions(caseData, available);
+  const active = options.find((item) => item.value === kind) || options[0];
   return `<div class="detail-media-command" aria-label="详情媒体控制">
-    <select class="detail-media-select" id="detailMediaKindSelect" aria-label="媒体类型">
-      <option value="bev" ${available.bev ? "" : "disabled"} ${kind === "bev" ? "selected" : ""}>BEV 图片 · ${caseData?.assets?.frames?.length || 0}</option>
-      <option value="camera" ${available.camera ? "" : "disabled"} ${kind === "camera" ? "selected" : ""}>Camera 图片 · ${caseData?.camera?.frames?.length || 0}</option>
-      <option value="video" ${available.video ? "" : "disabled"} ${kind === "video" ? "selected" : ""}>Ares Studio 视频 · ${available.video ? 1 : 0}</option>
-    </select>
+    <div class="ui-select detail-media-picker" id="detailMediaKindPicker">
+      <button class="ui-select-trigger detail-media-picker-trigger" id="detailMediaKindTrigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="detailMediaKindPanel" aria-label="媒体类型">
+        <span class="ui-select-summary detail-media-picker-summary">${escapeHtml(active?.label || "媒体类型")}</span>
+        <span class="ui-select-caret" aria-hidden="true"></span>
+      </button>
+      <div class="ui-select-panel detail-media-picker-panel" id="detailMediaKindPanel" role="listbox" hidden></div>
+      <select class="ui-select-native gateway-model-native-select detail-media-select" id="detailMediaKindSelect" aria-hidden="true" tabindex="-1">
+        ${options
+          .map(
+            (item) =>
+              `<option value="${escapeHtml(item.value)}" ${item.disabled ? "disabled" : ""} ${item.value === kind ? "selected" : ""}>${escapeHtml(item.label)}</option>`
+          )
+          .join("")}
+      </select>
+    </div>
     <button class="button button-quiet detail-media-expand" id="detailMediaExpandButton" type="button">展开查看</button>
   </div>`;
 }
@@ -492,21 +524,32 @@ function bindDetailMedia(caseData) {
     { caseData }
   );
   const kindSelect = $("#detailMediaKindSelect");
+  const kindPicker = $("#detailMediaKindPicker");
   if (kindSelect) {
     kindSelect.value = state.detailMedia.kind;
     kindSelect.onchange = () => {
       const nextKind = kindSelect.value;
       // The media surface owns the B/C/V and arrow shortcuts.  Do not leave
-      // focus on the native type selector after a choice is made, otherwise
+      // focus on the type selector after a choice is made, otherwise
       // ArrowLeft/ArrowRight continue changing this selector instead of
       // stepping frames or jumping the video.
       kindSelect.blur();
+      $("#detailMediaKindTrigger")?.blur();
       if (nextKind === state.detailMedia.kind) {
         focusMediaSurface();
         return;
       }
       switchKind(nextKind);
     };
+  }
+  if (kindPicker && typeof populateUiSelect === "function") {
+    const available = ensureDetailMediaState(caseData);
+    populateUiSelect(
+      kindPicker,
+      detailMediaKindOptions(caseData, available),
+      state.detailMedia.kind
+    );
+    bindUiSelect(kindPicker, { maxHeight: 260, maxWidth: 280 });
   }
   const previousButton = $("#detailMediaPreviousButton");
   const nextButton = $("#detailMediaNextButton");

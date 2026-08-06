@@ -41,6 +41,11 @@ function currentReviewAnnotation(caseData) {
 
 const REVIEW_DRAFT_STORAGE_PREFIX = "ra-triage-review-draft:v1:";
 const REVIEW_DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const REVIEW_STATUS_OPTIONS = [
+  { value: "reviewed", labelZh: "已 Review", labelEn: "Reviewed" },
+  { value: "pending", labelZh: "待补充", labelEn: "Pending" },
+  { value: "needs_gt_review", labelZh: "GT 需复核", labelEn: "Needs GT review" },
+];
 const REVIEW_DRAFT_FIELDS = [
   "label",
   "review_status",
@@ -444,14 +449,13 @@ function syncReviewFormFromCase(caseData) {
   });
   const excluded = $("#reviewExcludeInput");
   if (excluded) excluded.checked = Boolean(previous.is_excluded);
-  const status = $("#reviewStatusInput");
-  if (status) {
-    status.value = previous.review_status === "needs_gt_review"
+  const statusValue =
+    previous.review_status === "needs_gt_review"
       ? "needs_gt_review"
       : previous.review_status === "pending"
         ? "pending"
         : "reviewed";
-  }
+  setReviewStatusValue(statusValue);
   const note = $("#annotationNote");
   if (note) note.value = previous.note || "";
   const author = $("#annotationAuthor");
@@ -607,7 +611,19 @@ function renderReview(caseData) {
             <span class="ui-lang-en">Review history · ${allAnnotations.length}</span>
           </button>
         </div>
-        <label class="review-status-field"><span><span class="ui-lang-zh">复核状态</span><span class="ui-lang-en">Review status</span></span><select id="reviewStatusInput"><option value="reviewed" ${reviewStatus === "reviewed" ? "selected" : ""}>已 Review</option><option value="pending" ${reviewStatus === "pending" ? "selected" : ""}>待补充</option><option value="needs_gt_review" ${reviewStatus === "needs_gt_review" ? "selected" : ""}>GT 需复核</option></select></label>
+        <label class="review-status-field">
+          <span><span class="ui-lang-zh">复核状态</span><span class="ui-lang-en">Review status</span></span>
+          <div class="ui-select review-status-picker" id="reviewStatusPicker">
+            <button class="ui-select-trigger review-status-picker-trigger" id="reviewStatusPickerTrigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="reviewStatusPickerPanel" aria-label="复核状态">
+              <span class="ui-select-summary" id="reviewStatusPickerSummary">${escapeHtml(reviewStatusDisplayLabel(reviewStatus))}</span>
+              <span class="ui-select-caret review-status-picker-caret" aria-hidden="true"></span>
+            </button>
+            <div class="ui-select-panel review-status-picker-panel" id="reviewStatusPickerPanel" role="listbox" hidden></div>
+            <select id="reviewStatusInput" class="ui-select-native gateway-model-native-select" aria-hidden="true" tabindex="-1">
+              ${REVIEW_STATUS_OPTIONS.map((item) => `<option value="${escapeHtml(item.value)}" ${item.value === reviewStatus ? "selected" : ""}>${escapeHtml(item.labelZh)}</option>`).join("")}
+            </select>
+          </div>
+        </label>
         <label class="review-reason">
           <span><span class="ui-lang-zh">模型为什么判错？</span><span class="ui-lang-en">Why was the model wrong?</span></span>
           <textarea id="annotationNote" rows="2" placeholder="简要说明模型漏掉的关键证据，例如 routing、绕行空间或时序。">${escapeHtml(previous.note || "")}</textarea>
@@ -640,6 +656,8 @@ function renderReview(caseData) {
       <button class="button button-primary full-width" type="submit"><span class="ui-lang-zh">保存新的 review 版本</span><span class="ui-lang-en">Save new review version</span></button>
     </form>`;
   bindSelectedReviewTagControls($("#reviewPane"));
+  bindReviewStatusPicker();
+  setReviewStatusValue(reviewStatus);
   $("#reviewPane").querySelectorAll('input[name="missingEvidence"]').forEach((input) => {
     input.addEventListener("change", updateEvidenceSummary);
   });
@@ -798,6 +816,65 @@ function renderReview(caseData) {
   state.reviewFormDirty = Boolean(draft);
   annotationForm.addEventListener("submit", saveAnnotation);
   bindAnnotationHistory($("#reviewPane"), caseData);
+}
+
+function reviewStatusDisplayLabel(value) {
+  const match = REVIEW_STATUS_OPTIONS.find((item) => item.value === value);
+  if (!match) return String(value || "已 Review");
+  const useEn =
+    typeof document !== "undefined" &&
+    document.documentElement?.dataset?.uiLang === "en";
+  return useEn ? match.labelEn : match.labelZh;
+}
+
+function reviewStatusUiOptions() {
+  const useEn =
+    typeof document !== "undefined" &&
+    document.documentElement?.dataset?.uiLang === "en";
+  return REVIEW_STATUS_OPTIONS.map((item) => ({
+    value: item.value,
+    label: useEn ? item.labelEn : item.labelZh,
+  }));
+}
+
+function setReviewStatusValue(value) {
+  const normalized =
+    value === "needs_gt_review"
+      ? "needs_gt_review"
+      : value === "pending"
+        ? "pending"
+        : "reviewed";
+  const picker = $("#reviewStatusPicker");
+  if (picker && typeof populateUiSelect === "function") {
+    populateUiSelect(picker, reviewStatusUiOptions(), normalized);
+  } else {
+    const select = $("#reviewStatusInput");
+    if (select) select.value = normalized;
+    const summary = $("#reviewStatusPickerSummary");
+    if (summary) summary.textContent = reviewStatusDisplayLabel(normalized);
+  }
+}
+
+function bindReviewStatusPicker() {
+  const picker = $("#reviewStatusPicker");
+  if (!picker) return;
+  // Form re-renders replace nodes; clear bind flag on new trigger each paint.
+  const trigger = picker.querySelector(".review-status-picker-trigger, .ui-select-trigger");
+  if (trigger) delete trigger.dataset.uiSelectBound;
+  populateUiSelect(
+    picker,
+    reviewStatusUiOptions(),
+    $("#reviewStatusInput")?.value || "reviewed"
+  );
+  bindUiSelect(picker, {
+    maxHeight: 240,
+    maxWidth: 280,
+    onChange: () => {
+      state.reviewFormDirty = true;
+      const form = $("#annotationForm");
+      if (form) form.dispatchEvent(new Event("change", { bubbles: true }));
+    },
+  });
 }
 
 function updateEvidenceSummary() {

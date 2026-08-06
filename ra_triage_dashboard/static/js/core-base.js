@@ -108,6 +108,221 @@ function closeAllMultiFilters(except = null) {
   });
 }
 
+/** Close custom single-selects (ui-select / review-status / media kind). */
+function closeAllUiSelects(except = null) {
+  document
+    .querySelectorAll(
+      ".ui-select.is-open, .review-status-picker.is-open, .detail-media-picker.is-open"
+    )
+    .forEach((root) => {
+      if (except && root === except) return;
+      root.classList.remove("is-open");
+      const panel =
+        root.querySelector(".ui-select-panel") ||
+        root.querySelector(".review-status-picker-panel") ||
+        root.querySelector(".detail-media-picker-panel");
+      const trigger =
+        root.querySelector(".ui-select-trigger") ||
+        root.querySelector(".review-status-picker-trigger") ||
+        root.querySelector(".detail-media-picker-trigger");
+      if (panel) {
+        panel.hidden = true;
+        resetAnchoredPanel(panel);
+      }
+      trigger?.setAttribute("aria-expanded", "false");
+    });
+}
+
+/**
+ * Fill a custom single-select shell.
+ * options: [{ value, label, disabled? }]
+ * nativeSelect: optional <select> kept for existing .value / change listeners.
+ */
+function populateUiSelect(root, options, selectedValue = "") {
+  if (!root) return;
+  const panel =
+    root.querySelector(".ui-select-panel") ||
+    root.querySelector(".review-status-picker-panel") ||
+    root.querySelector(".detail-media-picker-panel");
+  const summary =
+    root.querySelector(".ui-select-summary") ||
+    root.querySelector("#reviewStatusPickerSummary") ||
+    root.querySelector(".detail-media-picker-summary");
+  const native =
+    root.querySelector("select.ui-select-native") ||
+    root.querySelector("select.gateway-model-native-select") ||
+    root.querySelector("select");
+  const list = Array.isArray(options) ? options : [];
+  const values = new Set(list.map((item) => String(item.value)));
+  let selected = String(selectedValue ?? "");
+  if (selected && !values.has(selected)) selected = "";
+  if (!selected && list.length) {
+    const firstEnabled = list.find((item) => !item.disabled);
+    selected = firstEnabled ? String(firstEnabled.value) : String(list[0].value);
+  }
+  if (native) {
+    native.innerHTML = list
+      .map((item) => {
+        const value = String(item.value);
+        const disabled = item.disabled ? " disabled" : "";
+        const sel = value === selected ? " selected" : "";
+        return `<option value="${escapeHtml(value)}"${disabled}${sel}>${escapeHtml(item.label)}</option>`;
+      })
+      .join("");
+    native.value = selected;
+  }
+  if (panel) {
+    panel.innerHTML = list.length
+      ? list
+          .map((item) => {
+            const value = String(item.value);
+            const active = value === selected;
+            const disabled = Boolean(item.disabled);
+            return `<button class="ui-select-option${active ? " is-active" : ""}${disabled ? " is-disabled" : ""}" type="button" role="option" data-ui-select-value="${escapeHtml(value)}" aria-selected="${active ? "true" : "false"}" ${disabled ? "disabled aria-disabled=\"true\"" : ""} title="${escapeHtml(item.label)}">
+              <span class="ui-select-option-check" aria-hidden="true">${active ? "✓" : ""}</span>
+              <span class="ui-select-option-label">${escapeHtml(item.label)}</span>
+            </button>`;
+          })
+          .join("")
+      : '<div class="multi-filter-empty">暂无选项</div>';
+  }
+  if (summary) {
+    const active = list.find((item) => String(item.value) === selected);
+    summary.textContent = active?.label || list[0]?.label || "请选择";
+  }
+  root.classList.toggle("is-disabled", Boolean(native?.disabled));
+  const trigger =
+    root.querySelector(".ui-select-trigger") ||
+    root.querySelector(".review-status-picker-trigger") ||
+    root.querySelector(".detail-media-picker-trigger");
+  if (trigger) trigger.disabled = Boolean(native?.disabled);
+}
+
+function bindUiSelect(root, { onChange, maxHeight = 320, maxWidth = 420 } = {}) {
+  if (!root) return;
+  const trigger =
+    root.querySelector(".ui-select-trigger") ||
+    root.querySelector(".review-status-picker-trigger") ||
+    root.querySelector(".detail-media-picker-trigger");
+  const panel =
+    root.querySelector(".ui-select-panel") ||
+    root.querySelector(".review-status-picker-panel") ||
+    root.querySelector(".detail-media-picker-panel");
+  if (!trigger || !panel) return;
+
+  // Replace node re-renders drop listeners; only skip when same element already bound.
+  if (trigger.dataset.uiSelectBound === "1") return;
+  trigger.dataset.uiSelectBound = "1";
+
+  trigger.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (trigger.disabled || root.classList.contains("is-disabled")) return;
+    const willOpen = panel.hidden;
+    closeAllUiSelects();
+    closeAllMultiFilters();
+    if (typeof closeGatewayModelPicker === "function") closeGatewayModelPicker();
+    if (typeof closeGatewayProviderPicker === "function") closeGatewayProviderPicker();
+    if (!willOpen) return;
+    root.classList.add("is-open");
+    trigger.setAttribute("aria-expanded", "true");
+    const width = trigger.getBoundingClientRect().width;
+    openAnchoredPanel(panel, trigger, {
+      maxHeight,
+      minWidth: Math.max(width, 160),
+      matchAnchorWidth: true,
+      maxWidth: Math.max(width, maxWidth),
+    });
+  });
+
+  panel.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const option = event.target.closest("[data-ui-select-value]");
+    if (!option || option.disabled || option.getAttribute("aria-disabled") === "true") return;
+    const value = String(option.dataset.uiSelectValue || "");
+    const native =
+      root.querySelector("select.ui-select-native") ||
+      root.querySelector("select.gateway-model-native-select") ||
+      root.querySelector("select");
+    const label =
+      option.querySelector(".ui-select-option-label")?.textContent?.trim() ||
+      option.textContent.trim();
+    if (native) {
+      native.value = value;
+      // Keep option list in sync for callers that re-read options later.
+      [...native.options].forEach((opt) => {
+        opt.selected = opt.value === value;
+      });
+    }
+    panel.querySelectorAll("[data-ui-select-value]").forEach((opt) => {
+      const active = opt === option;
+      opt.classList.toggle("is-active", active);
+      opt.setAttribute("aria-selected", active ? "true" : "false");
+      const check = opt.querySelector(".ui-select-option-check");
+      if (check) check.textContent = active ? "✓" : "";
+    });
+    const summary =
+      root.querySelector(".ui-select-summary") ||
+      root.querySelector("#reviewStatusPickerSummary") ||
+      root.querySelector(".detail-media-picker-summary");
+    if (summary) summary.textContent = label;
+    closeAllUiSelects();
+    if (native) {
+      native.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    onChange?.(value, label);
+  });
+
+  if (document.documentElement.dataset.uiSelectDismissBound === "1") return;
+  document.documentElement.dataset.uiSelectDismissBound = "1";
+  document.addEventListener(
+    "click",
+    (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (
+        target?.closest(
+          ".ui-select, .review-status-picker, .detail-media-picker, .ui-select-panel, .review-status-picker-panel, .detail-media-picker-panel"
+        )
+      ) {
+        return;
+      }
+      closeAllUiSelects();
+    },
+    true
+  );
+  document.addEventListener(
+    "keydown",
+    (event) => {
+      if (event.key === "Escape") closeAllUiSelects();
+    },
+    true
+  );
+  document.addEventListener(
+    "scroll",
+    (event) => {
+      if (
+        !document.querySelector(
+          ".ui-select.is-open, .review-status-picker.is-open, .detail-media-picker.is-open"
+        )
+      ) {
+        return;
+      }
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest(
+          ".ui-select-panel, .review-status-picker-panel, .detail-media-picker-panel"
+        )
+      ) {
+        return;
+      }
+      closeAllUiSelects();
+    },
+    true
+  );
+  window.addEventListener("resize", () => closeAllUiSelects());
+}
+
 /** Park a dropdown panel off-screen before first paint (no absolute-down flash). */
 function prepareAnchoredPanel(panel) {
   if (!panel) return;

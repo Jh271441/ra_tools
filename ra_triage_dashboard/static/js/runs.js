@@ -85,6 +85,13 @@ function checkedAnalysisComparisonStatus() {
   );
 }
 
+const ANALYSIS_COMPARISON_OPTIONS = [
+  { value: "all", label: "全部" },
+  { value: "mismatch", label: "MISMATCH · 判断失败" },
+  { value: "match", label: "MATCH · 判断一致" },
+  { value: "none", label: "NONE · 未预测" },
+];
+
 function setAnalysisComparisonStatus(
   comparisonStatus,
   { hasRun = Boolean($("#analysisRunFilter")?.value) } = {}
@@ -97,21 +104,56 @@ function setAnalysisComparisonStatus(
     select.disabled = !hasRun;
     select.value = nextStatus;
   }
+  const picker = $("#analysisComparisonPicker");
+  if (picker && typeof populateUiSelect === "function") {
+    populateUiSelect(picker, ANALYSIS_COMPARISON_OPTIONS, nextStatus);
+    picker.classList.toggle("is-disabled", !hasRun);
+    const trigger = picker.querySelector(".ui-select-trigger");
+    if (trigger) trigger.disabled = !hasRun;
+  }
   return nextStatus;
+}
+
+function bindAnalysisComparisonPicker() {
+  const picker = $("#analysisComparisonPicker");
+  if (!picker || typeof bindUiSelect !== "function") return;
+  populateUiSelect(
+    picker,
+    ANALYSIS_COMPARISON_OPTIONS,
+    state.reviewAnalysis.comparisonStatus || "all"
+  );
+  bindUiSelect(picker, { maxHeight: 280, maxWidth: 280 });
 }
 
 function renderAnalysisRunFilter() {
   const select = $("#analysisRunFilter");
+  const picker = $("#analysisRunPicker");
   if (!select) return;
-  select.innerHTML = `<option value="">不叠加模型输出</option>${state.modelRuns
-    .map((run) => {
+  const options = [
+    { value: "", label: "不叠加模型输出" },
+    ...state.modelRuns.map((run) => {
       const tag = run.is_default ? "默认 · " : "";
-      return `<option value="${escapeHtml(run.id)}">${tag}${escapeHtml(run.name)} · ${run.baseline_prediction_count ?? 0} 条 · 错 ${run.failure_count ?? 0}</option>`;
-    })
-    .join("")}`;
-  select.value = state.modelRuns.some((run) => run.id === state.selectedRunId)
+      return {
+        value: run.id,
+        label: `${tag}${run.name} · ${run.baseline_prediction_count ?? 0} 条 · 错 ${run.failure_count ?? 0}`,
+      };
+    }),
+  ];
+  const selected = state.modelRuns.some((run) => run.id === state.selectedRunId)
     ? state.selectedRunId
     : "";
+  if (picker && typeof populateUiSelect === "function") {
+    populateUiSelect(picker, options, selected);
+    bindUiSelect(picker, { maxHeight: 360, maxWidth: 480 });
+  } else {
+    select.innerHTML = options
+      .map(
+        (item) =>
+          `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`
+      )
+      .join("");
+    select.value = selected;
+  }
   setAnalysisComparisonStatus(state.reviewAnalysis.comparisonStatus, {
     hasRun: Boolean(select.value),
   });
@@ -121,6 +163,7 @@ async function loadRuns({ preferDefault = false, preserveEmpty = false } = {}) {
   const data = await api(withBaselineQuery("/api/model-runs"));
   state.modelRuns = data.items || [];
   const select = $("#modelRunFilter");
+  const picker = $("#modelRunPicker");
   const previousRunId = state.selectedRunId;
   const preferredRunId =
     data.default_model_run_id ||
@@ -131,18 +174,33 @@ async function loadRuns({ preferDefault = false, preserveEmpty = false } = {}) {
     : preserveEmpty
       ? state.selectedRunId
       : state.selectedRunId || data.default_model_run_id || state.config?.default_model_run_id || "";
-  select.innerHTML = `<option value="">未选择模型 run</option>${state.modelRuns
-    .map((run) => {
+  const runOptions = [
+    { value: "", label: "未选择模型 Run" },
+    ...state.modelRuns.map((run) => {
       const tag = run.is_default ? "默认 · " : "";
       const inferred = Array.isArray(run.inferred_baseline_ids)
         ? run.inferred_baseline_ids.filter(Boolean)
         : [];
       const setHint = inferred.length ? ` · ${inferred.join("+")}` : "";
-      return `<option value="${escapeHtml(run.id)}">${tag}${escapeHtml(run.name)}${escapeHtml(setHint)} · 当前集 ${run.baseline_prediction_count ?? 0} 条 · 错 ${run.failure_count ?? 0}</option>`;
-    })
-    .join("")}`;
+      return {
+        value: run.id,
+        label: `${tag}${run.name}${setHint} · 当前集 ${run.baseline_prediction_count ?? 0} 条 · 错 ${run.failure_count ?? 0}`,
+      };
+    }),
+  ];
   state.selectedRunId = state.modelRuns.some((run) => run.id === candidate) ? candidate : "";
-  select.value = state.selectedRunId;
+  if (picker && typeof populateUiSelect === "function") {
+    populateUiSelect(picker, runOptions, state.selectedRunId);
+    bindUiSelect(picker, { maxHeight: 360, maxWidth: 520 });
+  } else if (select) {
+    select.innerHTML = runOptions
+      .map(
+        (item) =>
+          `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`
+      )
+      .join("");
+    select.value = state.selectedRunId;
+  }
   if (preferDefault && !previousRunId && state.selectedRunId) {
     // A Run is an overlay on the immutable 0508 baseline.  Selecting or
     // importing it must not shrink the baseline itself.  Keep the established

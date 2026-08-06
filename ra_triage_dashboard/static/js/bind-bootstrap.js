@@ -61,6 +61,9 @@ function bindEvents() {
   ["#analysisRunFilter", "#analysisComparisonFilter"].forEach((selector) => {
     $(selector)?.addEventListener("change", () => scheduleAnalysisFilterReload());
   });
+  if (typeof bindAnalysisComparisonPicker === "function") {
+    bindAnalysisComparisonPicker();
+  }
   $("#analysisSearchInput")?.addEventListener("input", () => {
     scheduleAnalysisFilterReload(220);
   });

@@ -208,6 +208,7 @@ function renderMultiFilter(
     closeAllMultiFilters();
     if (typeof closeGatewayModelPicker === "function") closeGatewayModelPicker();
     if (typeof closeGatewayProviderPicker === "function") closeGatewayProviderPicker();
+    if (typeof closeAllUiSelects === "function") closeAllUiSelects();
     if (willOpen && panel) {
       root.classList.add("is-open");
       trigger.setAttribute("aria-expanded", "true");
