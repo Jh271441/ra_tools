@@ -337,7 +337,11 @@ function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
             (item) => item.section === section.section && item.group === group.key
           );
           const selectedCount = items.filter((item) => chosenTags.has(item.key)).length;
-          const creatorAction = "";
+          // Shared catalog create is only supported for scene groups (环境 / 自车意图).
+          // Backend create_review_tag rejects non-scene sections.
+          const creatorAction = section.section === "scene"
+            ? `<button class="tag-catalog-add-button" type="button" data-open-review-tag-creator="${escapeHtml(group.key)}" data-tag-create-group-label="${escapeHtml(group.label)}" aria-label="新增${escapeHtml(group.label)}标签" title="新增${escapeHtml(group.label)}标签">＋</button>`
+            : "";
           return `<details class="review-tag-dropdown review-dropdown" data-tag-dropdown-group="${escapeHtml(group.key)}">
             <summary>
               <span class="tag-group-label">${escapeHtml(group.label)}</span>
@@ -347,7 +351,7 @@ function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
                 <span class="tag-group-chevron" aria-hidden="true"></span>
               </span>
             </summary>
-            <div class="review-tag-options">${items.map((item) => tagOption(item.key, item.label, chosenTags.has(item.key), group.key, item)).join("") || '<div class="review-tag-empty">暂无可选标签</div>'}</div>
+            <div class="review-tag-options">${items.map((item) => tagOption(item.key, item.label, chosenTags.has(item.key), group.key, item)).join("") || `<div class="review-tag-empty">${section.section === "scene" ? "暂无标签，点 ＋ 添加" : "暂无可选标签"}</div>`}</div>
           </details>`;
         }).join("")}
       </div>
@@ -611,12 +615,13 @@ function renderReview(caseData) {
           <summary>
             <span class="tag-group-label"><span class="ui-lang-zh">缺失信息（多选）</span><span class="ui-lang-en">Missing evidence</span></span>
             <span class="tag-group-trailing">
+              <button class="tag-catalog-add-button" type="button" data-open-missing-evidence-creator aria-label="新增缺失信息" title="新增缺失信息">＋</button>
               <span class="evidence-summary-count tag-group-summary" id="evidenceSummaryCount">已选 ${chosenEvidence.size} 项</span>
               <span class="tag-group-chevron" aria-hidden="true"></span>
             </span>
             <span class="review-axis-selected review-evidence-selected" data-selected-missing-evidence${chosenEvidence.size ? "" : " hidden"}></span>
           </summary>
-          <div class="evidence-options review-tag-options" id="missingEvidenceOptions">${visibleCatalog.map((item) => missingEvidenceOptionMarkup(item, chosenEvidence.has(item.key), true)).join("")}${deletedEvidenceOptions}${customEvidenceOptions}${!visibleCatalog.length && !deletedEvidenceOptions && !customEvidenceOptions ? '<div class="review-tag-empty">暂无可选缺失信息</div>' : ""}</div>
+          <div class="evidence-options review-tag-options" id="missingEvidenceOptions">${visibleCatalog.map((item) => missingEvidenceOptionMarkup(item, chosenEvidence.has(item.key), true)).join("")}${deletedEvidenceOptions}${customEvidenceOptions}${!visibleCatalog.length && !deletedEvidenceOptions && !customEvidenceOptions ? '<div class="review-tag-empty">暂无条目，点 ＋ 添加</div>' : ""}</div>
         </details>
         <div class="review-attachment-field">
           <div class="screenshot-paste-zone is-compact" id="screenshotPasteZone" tabindex="0" role="group" aria-label="粘贴补充截图">
