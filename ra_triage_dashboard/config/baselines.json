@@ -1,0 +1,30 @@
+[
+  {
+    "id": "0508",
+    "label": "0508",
+    "scope": "release0508_1071_20260729",
+    "loader": "trail_label_baseline",
+    "xlsx": "${RA_AUTO_TRIAGE_ROOT}/data/trail_label_baseline_20260729.xlsx",
+    "dataset": "0508",
+    "default_selected": true,
+    "media": {
+      "provider": "product_layout",
+      "layout_id": "release0508_1071_20260729"
+    }
+  },
+  {
+    "id": "0626",
+    "label": "0626 抽检",
+    "scope": "release0626_300_spotcheck",
+    "loader": "spotcheck_zh",
+    "xlsx": "${RA_AUTO_TRIAGE_ROOT}/data/release0626-300-抽检.xlsx",
+    "default_selected": false,
+    "media": {
+      "provider": "bags_ares_animation",
+      "bev_frames_root": "${RA_AUTO_TRIAGE_ROOT}/bags/ares_animation/frames_v2_0626",
+      "animation_root": "${RA_AUTO_TRIAGE_ROOT}/bags/ares_animation",
+      "animation_job_ids": [43701403, 43699853],
+      "camera_root": "${RA_AUTO_TRIAGE_ROOT}/bags/camera"
+    }
+  }
+]
