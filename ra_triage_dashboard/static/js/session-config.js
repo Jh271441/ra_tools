@@ -362,6 +362,33 @@ function renderTrailSyncState() {
 
 async function loadConfig() {
   state.config = await api("/api/dashboard-config");
+  const catalog = Array.isArray(state.config?.baselines)
+    ? state.config.baselines
+    : [];
+  state.baselineCatalog = catalog;
+  const allowed = new Set(catalog.map((item) => String(item.id)));
+  const routeIds = normalizeBaselineIds(
+    new URLSearchParams(window.location.search).get("baselines"),
+    { allowed: allowed.size ? allowed : null, fallback: [] }
+  );
+  const storedIds = normalizeBaselineIds(readStoredBaselineIds(), {
+    allowed: allowed.size ? allowed : null,
+    fallback: [],
+  });
+  const defaults = defaultBaselineIdsFromConfig(state.config);
+  if (!state.selectedBaselineIds?.length || state.selectedBaselineIds.join(",") === "0508") {
+    state.selectedBaselineIds = normalizeBaselineIds(
+      routeIds.length ? routeIds : storedIds.length ? storedIds : defaults,
+      { allowed: allowed.size ? allowed : null, fallback: defaults }
+    );
+  } else {
+    state.selectedBaselineIds = normalizeBaselineIds(state.selectedBaselineIds, {
+      allowed: allowed.size ? allowed : null,
+      fallback: defaults,
+    });
+  }
+  persistBaselineIds(state.selectedBaselineIds);
+  renderBaselinePicker();
   renderConfig();
 }
 
@@ -418,6 +445,9 @@ function renderOverview(data) {
 }
 
 async function loadOverview() {
-  const query = state.selectedRunId ? `?model_run_id=${encodeURIComponent(state.selectedRunId)}` : "";
+  const params = new URLSearchParams();
+  if (state.selectedRunId) params.set("model_run_id", state.selectedRunId);
+  appendBaselineParams(params);
+  const query = params.toString() ? `?${params.toString()}` : "";
   renderOverview(await api(`/api/overview${query}`));
 }

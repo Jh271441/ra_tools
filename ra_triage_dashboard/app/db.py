@@ -9,7 +9,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 from .sanitization import redact_sensitive_fields
 
@@ -1534,6 +1534,45 @@ class Database:
     def seed_examples(self, examples: Iterable[dict[str, Any]]) -> None:
         self.upsert_issues(examples, source="user_examples", replace_gt=False)
 
+
+    @staticmethod
+    def _normalize_baseline_scopes(
+        baseline_scopes: "Sequence[str] | str | None" = None,
+        *,
+        baseline_scope: str = "",
+    ) -> list[str]:
+        """Accept legacy single scope or multi scopes; never return empty when either is set."""
+        from typing import Sequence as _Seq
+        values: list[str] = []
+        if baseline_scopes is not None and baseline_scopes != "":
+            if isinstance(baseline_scopes, str):
+                parts = [part.strip() for part in baseline_scopes.split(",") if part.strip()]
+                values.extend(parts)
+            else:
+                for item in baseline_scopes:
+                    text = str(item or "").strip()
+                    if text:
+                        values.append(text)
+        if not values and baseline_scope:
+            values.append(str(baseline_scope).strip())
+        # Preserve order, drop empties/dupes.
+        ordered: list[str] = []
+        seen: set[str] = set()
+        for item in values:
+            if not item or item in seen:
+                continue
+            seen.add(item)
+            ordered.append(item)
+        return ordered
+
+    @staticmethod
+    def _scope_in_sql(scopes: list[str], column: str = "i.baseline_scope") -> tuple[str, list]:
+        if not scopes:
+            raise ValueError("baseline_scopes must not be empty")
+        placeholders = ", ".join("?" for _ in scopes)
+        return f"{column} IN ({placeholders})", list(scopes)
+
+
     def replace_baseline_scope(
         self,
         *,
@@ -1551,10 +1590,22 @@ class Database:
             baseline_scope=scope,
         )
 
-    def baseline_issue_ids(self, scope: str) -> list[str]:
+    def baseline_issue_ids(
+        self,
+        scope: str | Sequence[str] = "",
+        *,
+        baseline_scopes: Sequence[str] | None = None,
+    ) -> list[str]:
+        scopes = self._normalize_baseline_scopes(baseline_scopes, baseline_scope=scope if isinstance(scope, str) else "")
+        if not scopes and isinstance(scope, (list, tuple)):
+            scopes = self._normalize_baseline_scopes(scope)
+        if not scopes:
+            return []
+        clause, params = self._scope_in_sql(scopes, "baseline_scope")
         with self.connect() as conn:
             rows = conn.execute(
-                "SELECT issue_id FROM issues WHERE baseline_scope = ? ORDER BY issue_id", (scope,)
+                f"SELECT issue_id FROM issues WHERE {clause} ORDER BY issue_id",
+                params,
             ).fetchall()
         return [str(row["issue_id"]) for row in rows]
 
@@ -1808,16 +1859,31 @@ class Database:
             ).fetchone()
         return self._run_dict(updated)
 
-    def list_model_runs(self, baseline_scope: str = "") -> list[dict[str, Any]]:
+    def list_model_runs(
+        self,
+        baseline_scope: str | Sequence[str] = "",
+        *,
+        baseline_scopes: Sequence[str] | None = None,
+    ) -> list[dict[str, Any]]:
         labels = tuple(LABELS)
+        scopes = self._normalize_baseline_scopes(
+            baseline_scopes,
+            baseline_scope=baseline_scope if isinstance(baseline_scope, str) else "",
+        )
+        if not scopes and isinstance(baseline_scope, (list, tuple)):
+            scopes = self._normalize_baseline_scopes(baseline_scope)
+        if not scopes:
+            # No scope filter → treat as empty membership (counts 0 against baseline).
+            scopes = ["__no_such_scope__"]
+        in_clause, scope_params = self._scope_in_sql(scopes, "i.baseline_scope")
         with self.connect() as conn:
             rows = conn.execute(
-                """
+                f"""
                 SELECT mr.*,
                        COUNT(mp.id) AS prediction_count,
-                       SUM(CASE WHEN i.baseline_scope = ? THEN 1 ELSE 0 END) AS baseline_prediction_count,
+                       SUM(CASE WHEN {in_clause} THEN 1 ELSE 0 END) AS baseline_prediction_count,
                        SUM(CASE
-                             WHEN i.baseline_scope = ?
+                             WHEN {in_clause}
                               AND i.gt_label IN (?, ?, ?)
                               AND mp.model_label IN (?, ?, ?)
                               AND mp.model_label != i.gt_label
@@ -1828,7 +1894,7 @@ class Database:
                 GROUP BY mr.id
                 ORDER BY mr.is_default DESC, mr.created_at DESC
                 """,
-                (baseline_scope, baseline_scope, *labels, *labels),
+                (*scope_params, *scope_params, *labels, *labels),
             ).fetchall()
         return [
             self._run_dict(row)
@@ -1841,15 +1907,26 @@ class Database:
         ]
 
     def list_reviewers(
-        self, baseline_scope: str = "", model_run_id: str = ""
+        self,
+        baseline_scope: str | Sequence[str] = "",
+        model_run_id: str = "",
+        *,
+        baseline_scopes: Sequence[str] | None = None,
     ) -> list[dict[str, Any]]:
         params: list[Any] = (
             [model_run_id, model_run_id] if model_run_id else []
         )
+        scopes = self._normalize_baseline_scopes(
+            baseline_scopes,
+            baseline_scope=baseline_scope if isinstance(baseline_scope, str) else "",
+        )
+        if not scopes and isinstance(baseline_scope, (list, tuple)):
+            scopes = self._normalize_baseline_scopes(baseline_scope)
         scope_filter = ""
-        if baseline_scope:
-            scope_filter = "AND i.baseline_scope = ?"
-            params.append(baseline_scope)
+        if scopes:
+            clause, scope_params = self._scope_in_sql(scopes)
+            scope_filter = f"AND {clause}"
+            params.extend(scope_params)
         with self.connect() as conn:
             rows = conn.execute(
                 f"""
@@ -1914,6 +1991,7 @@ class Database:
         self,
         *,
         baseline_scope: str = "",
+        baseline_scopes: Sequence[str] | None = None,
         search: str = "",
         gt_label: str = "",
         model_label: str = "",
@@ -1935,9 +2013,11 @@ class Database:
             raise ValueError("comparison_status requires model_run_id")
         where: list[str] = []
         params: list[Any] = []
-        if baseline_scope:
-            where.append("i.baseline_scope = ?")
-            params.append(baseline_scope)
+        scopes = self._normalize_baseline_scopes(baseline_scopes, baseline_scope=baseline_scope)
+        if scopes:
+            clause, scope_params = self._scope_in_sql(scopes)
+            where.append(clause)
+            params.extend(scope_params)
         def _multi_values(*raw: Any) -> tuple[str, ...]:
             values: list[str] = []
             for item in raw:
@@ -2069,6 +2149,7 @@ class Database:
         self,
         *,
         baseline_scope: str = "",
+        baseline_scopes: Sequence[str] | None = None,
         search: str = "",
         gt_label: str = "",
         model_label: str = "",
@@ -2087,6 +2168,7 @@ class Database:
         page_size = min(max(1, page_size), 2000)
         condition, params, model_args, common = self._case_list_filters(
             baseline_scope=baseline_scope,
+            baseline_scopes=baseline_scopes,
             search=search,
             gt_label=gt_label,
             model_label=model_label,
@@ -2136,6 +2218,7 @@ class Database:
         self,
         *,
         baseline_scope: str = "",
+        baseline_scopes: Sequence[str] | None = None,
         search: str = "",
         gt_label: str = "",
         model_label: str = "",
@@ -2153,6 +2236,7 @@ class Database:
 
         condition, params, model_args, common = self._case_list_filters(
             baseline_scope=baseline_scope,
+            baseline_scopes=baseline_scopes,
             search=search,
             gt_label=gt_label,
             model_label=model_label,
@@ -2432,7 +2516,8 @@ class Database:
     def review_reason_rows(
         self,
         *,
-        baseline_scope: str,
+        baseline_scope: str = "",
+        baseline_scopes: Sequence[str] | None = None,
         model_run_id: str = "",
         comparison_status: str = "all",
         failure_only: bool = False,
@@ -2489,10 +2574,14 @@ class Database:
         if comparison_status != "all" and not model_run_id:
             raise ValueError("comparison_status requires model_run_id")
 
-        where = ["i.baseline_scope = ?", "ann.id IS NOT NULL"]
+        scopes = self._normalize_baseline_scopes(baseline_scopes, baseline_scope=baseline_scope)
+        if not scopes:
+            raise ValueError("baseline_scopes must not be empty")
+        scope_clause, scope_params = self._scope_in_sql(scopes)
+        where = [scope_clause, "ann.id IS NOT NULL"]
         params: list[Any] = (
             [model_run_id, model_run_id] if model_run_id else []
-        ) + [model_run_id, baseline_scope]
+        ) + [model_run_id, *scope_params]
         if comparison_status != "all":
             where.append("i.gt_label IN (?, ?, ?)")
             params.extend(LABELS)
@@ -2657,15 +2746,20 @@ class Database:
     def review_clusters(
         self,
         *,
-        baseline_scope: str,
+        baseline_scope: str = "",
+        baseline_scopes: Sequence[str] | None = None,
         model_run_id: str = "",
         failure_only: bool = True,
         annotation_author: str = "",
     ) -> list[dict[str, Any]]:
-        where = ["i.baseline_scope = ?", "ann.id IS NOT NULL"]
+        scopes = self._normalize_baseline_scopes(baseline_scopes, baseline_scope=baseline_scope)
+        if not scopes:
+            raise ValueError("baseline_scopes must not be empty")
+        scope_clause, scope_params = self._scope_in_sql(scopes)
+        where = [scope_clause, "ann.id IS NOT NULL"]
         params: list[Any] = (
             [model_run_id, model_run_id] if model_run_id else []
-        ) + [model_run_id, baseline_scope]
+        ) + [model_run_id, *scope_params]
         if failure_only and model_run_id:
             where.extend(
                 [
@@ -3287,10 +3381,25 @@ class Database:
             },
         }
 
-    def overview(self, *, baseline_scope: str, model_run_id: str = "") -> dict[str, Any]:
-        base_where = "WHERE i.baseline_scope = ?"
+    def overview(
+        self,
+        *,
+        baseline_scope: str = "",
+        baseline_scopes: Sequence[str] | None = None,
+        model_run_id: str = "",
+    ) -> dict[str, Any]:
+        scopes = self._normalize_baseline_scopes(baseline_scopes, baseline_scope=baseline_scope)
+        if scopes:
+            scope_clause, scope_params = self._scope_in_sql(scopes)
+            base_where = f"WHERE {scope_clause}"
+        else:
+            # Legacy empty filter: count all issues (tests / unrestricted callers).
+            scope_clause, scope_params = "1=1", []
+            base_where = "WHERE 1=1"
         with self.connect() as conn:
-            total = conn.execute(f"SELECT COUNT(*) FROM issues i {base_where}", (baseline_scope,)).fetchone()[0]
+            total = conn.execute(
+                f"SELECT COUNT(*) FROM issues i {base_where}", tuple(scope_params)
+            ).fetchone()[0]
             labelled = conn.execute(
                 f"""
                 SELECT COUNT(*)
@@ -3298,8 +3407,8 @@ class Database:
                 {self._latest_annotation_join(model_run_id)}
                 {base_where} AND ann.id IS NOT NULL
                 """,
-                ((model_run_id, model_run_id, baseline_scope)
-                 if model_run_id else (baseline_scope,)),
+                ((model_run_id, model_run_id, *scope_params)
+                 if model_run_id else tuple(scope_params)),
             ).fetchone()[0]
             predictions = failures = reviewed_failures = 0
             if model_run_id:
@@ -3308,23 +3417,20 @@ class Database:
                     {self._latest_annotation_join(model_run_id)}
                     LEFT JOIN model_predictions mp
                       ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
-                    WHERE i.baseline_scope = ?
+                    WHERE {scope_clause}
                 """
                 predictions = conn.execute(
                     f"SELECT COUNT(mp.id) {common}",
-                    ((model_run_id, model_run_id, model_run_id, baseline_scope)
-                     if model_run_id else (model_run_id, baseline_scope)),
+                    (model_run_id, model_run_id, model_run_id, *scope_params),
                 ).fetchone()[0]
                 failure_condition = " AND i.gt_label IN (?, ?, ?) AND mp.model_label IN (?, ?, ?) AND mp.model_label != i.gt_label"
                 failures = conn.execute(
                     f"SELECT COUNT(*) {common}{failure_condition}",
-                    ((model_run_id, model_run_id, model_run_id, baseline_scope, *LABELS, *LABELS)
-                     if model_run_id else (model_run_id, baseline_scope, *LABELS, *LABELS)),
+                    (model_run_id, model_run_id, model_run_id, *scope_params, *LABELS, *LABELS),
                 ).fetchone()[0]
                 reviewed_failures = conn.execute(
                     f"SELECT COUNT(*) {common}{failure_condition} AND ann.id IS NOT NULL",
-                    ((model_run_id, model_run_id, model_run_id, baseline_scope, *LABELS, *LABELS)
-                     if model_run_id else (model_run_id, baseline_scope, *LABELS, *LABELS)),
+                    (model_run_id, model_run_id, model_run_id, *scope_params, *LABELS, *LABELS),
                 ).fetchone()[0]
             running = conn.execute(
                 "SELECT COUNT(*) FROM inference_jobs WHERE status IN ('queued', 'running')"

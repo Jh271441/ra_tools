@@ -2,9 +2,24 @@
 
 一个独立于 `ra_auto_triage` 的 issue triage / 标注 / 模型结果对比看板。
 
-## 当前产品快照（v4.3，2026-08-06）
+## 当前产品快照（v4.4 基线；多数据集开发中）
 
 - 默认工作集是 `trail_label_baseline_20260729.xlsx` 中 `dataset=0508` 的 **1071 条**；GT 只来自该快照，不因 Trail 查询或模型导入而改变。
+
+### 多数据集 Multi-Baseline（`feat/multi-baseline-gt`，开发中）
+
+目标：同时挂载多个不可变 GT 工作集（首批 0508 + 0626 抽检），顶栏 **多选数据集**，选中集合按 **union** 驱动图库 / 指标 / 原因分析 / 均分 / Runs 覆盖统计。
+
+| 项 | 说明 |
+|----|------|
+| 配置 | `config/baselines.json`（可用 `DASHBOARD_BASELINES_FILE` 覆盖） |
+| 默认选择 | 仅 `0508`（与现网一致） |
+| Query | `?baselines=0508,0626`（短 id，不接受任意 scope 字符串） |
+| 0626 媒体 | bag 源 `frames_v2_0626` + animation jobs；Camera 可空 |
+| Batch 推理 | **不**改服务端固定 `bags/ares_animation` 策略（与 review 媒体解耦） |
+| 生产隔离 | 开发在 worktree `ra_tools-multi-gt` / 分支 `feat/multi-baseline-gt`；**不要**在未验证前 ff 到 cloud 生产 session |
+
+实现入口：`app/baseline_registry.py`、`app/media_registry.py`、DB `baseline_scopes` IN 过滤、顶栏 `#baselineFilter`。
 - 首页是服务端筛选的紧凑 Issue 缩略图队列（宽屏五列、随可用宽度降列），默认每页 20 条并可切换 10 / 20 / 50 / 100；页码和单页数量写入 URL，接口单页最多返回 100 条。BEV 缩略图按源文件版本生成 640×360 缓存并懒加载，不把 1071 张原图一次送进浏览器。点击 Issue 后才进入 URL 可恢复的详情态，加载大图、媒体、模型输出和人工 Review；详情支持返回列表及跨页上一/下一 Issue，并在具备 trip 与事件时间戳时提供同域 Ares Studio ±10 秒跳转链接。Issue 详情第二行通过紧凑下拉框切换 `BEV 图片 / Camera 图片 / Ares Studio 视频`，相邻的同尺寸按钮展开完整预览；有视频时详情默认展示视频首帧，没有视频时再展示 BEV / Camera 图片。Gallery 卡片的“媒体预览”和详情媒体共用一个近乎占满浏览器视口的三模式弹窗，首页仅在点击预览时按需读取该 Issue 的完整资产。详情页媒体快捷键采用页面级监听：焦点不在输入、选择、按钮或链接时，`B/C/V`、空格、左右方向键和 `F` 无需聚焦播放器即可生效；打开弹窗后由弹窗接管。三种媒体都默认适配可视范围，并支持 1:1 原始像素、按钮/键盘/Ctrl/⌘+滚轮缩放、放大后指针拖拽平移以及全屏；进入或退出全屏不会重置缩放比例。BEV 视频使用 Workbench 自有的紧凑控制条，支持播放/暂停、0.5× / 1× / 1.5× / 2×、回到 t0、进度拖动、可配置 0.1 / 0.5 / 1 / 5 秒左右跳转和键盘控制；默认左右跳转 1 秒，元数据帧步长作为“1 帧”选项，切换到图片时暂停但保留播放位置。
 - 首页的“模型判断结果”是下拉筛选：选择模型 Run 后可切换 `全部`、红色 `MISMATCH`、绿色 `MATCH` 和灰色 `NONE（未预测）`；卡片右上角同步显示状态。旧 `failure=1` / `failure_only=true` 仍兼容为 `MISMATCH`，新 Review URL 使用 `comparison=all|mismatch|match|none`。
 - 左侧工具栏只接受用户手动折叠并记住偏好，不再根据分辨率、DPR 或窗口宽度自动改变。判错复核、原因聚类、模型 Runs / 导入、Batch 预测、系统状态分别使用 `/review`、`/review-analysis`、`/runs`、`/batch-prediction`、`/system-status` 独立路由，管理员另有 `/users` 用户管理路由；均支持硬刷新和浏览器前进/后退。系统状态页只读展示应用运行时间与版本、数据库连接/持久卷、最近备份/计划、容量、1071 基线、媒体与模型网关，不提供重启或写入操作。`/import` 会 307 跳转到 `/runs?import=...`，`/inference` 仅作为旧链接兼容入口。

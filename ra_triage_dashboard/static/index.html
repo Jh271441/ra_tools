@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-98`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-99`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -134,6 +134,10 @@
             <div>
               <h1 id="pageTitle">Manual Triage Workbench</h1>
             </div>
+          </div>
+          <div class="topbar-baselines" aria-label="数据集">
+            <span class="topbar-baselines-label"><span class="ui-lang-zh">数据集</span><span class="ui-lang-en">Datasets</span></span>
+            <div class="multi-filter baseline-filter" id="baselineFilter" data-empty-label="数据集"></div>
           </div>
           <div class="header-metrics" aria-label="概览">
             <div><span class="ui-lang-zh">基线</span><span class="ui-lang-en">Baseline</span><strong id="statIssues">—</strong></div>
@@ -954,7 +958,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-98`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-99`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

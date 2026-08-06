@@ -5,9 +5,11 @@
  */
 async function loadReviewers() {
   const runId = String(state.selectedRunId || "").trim();
-  const data = await api(
-    runId ? `/api/reviewers?model_run_id=${encodeURIComponent(runId)}` : "/api/reviewers"
-  );
+  const params = new URLSearchParams();
+  if (runId) params.set("model_run_id", runId);
+  appendBaselineParams(params);
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const data = await api(`/api/reviewers${query}`);
   state.reviewers = data.items || [];
   const reviewerOptions = state.reviewers.map((item) => {
     const trust =
@@ -116,7 +118,7 @@ function renderAnalysisRunFilter() {
 }
 
 async function loadRuns({ preferDefault = false, preserveEmpty = false } = {}) {
-  const data = await api("/api/model-runs");
+  const data = await api(withBaselineQuery("/api/model-runs"));
   state.modelRuns = data.items || [];
   const select = $("#modelRunFilter");
   const previousRunId = state.selectedRunId;
@@ -132,7 +134,7 @@ async function loadRuns({ preferDefault = false, preserveEmpty = false } = {}) {
   select.innerHTML = `<option value="">未选择模型 run</option>${state.modelRuns
     .map((run) => {
       const tag = run.is_default ? "默认 · " : "";
-      return `<option value="${escapeHtml(run.id)}">${tag}${escapeHtml(run.name)} · ${run.baseline_prediction_count ?? 0} 条 · 错 ${run.failure_count ?? 0}</option>`;
+      return `<option value="${escapeHtml(run.id)}">${tag}${escapeHtml(run.name)} · 当前集 ${run.baseline_prediction_count ?? 0} 条 · 错 ${run.failure_count ?? 0}</option>`;
     })
     .join("")}`;
   state.selectedRunId = state.modelRuns.some((run) => run.id === candidate) ? candidate : "";

@@ -128,6 +128,19 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
 .brand-mark:focus-visible { outline: 2px solid rgba(34,211,238,.7); outline-offset: 2px; }
 .dataset-state { display: inline-flex; align-items: center; gap: 8px; color: #b8d9db; font-size: 12px; white-space: nowrap; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.topbar-baselines {
+  display: flex; align-items: center; gap: 6px; min-width: 0; flex: 0 1 auto;
+  max-width: min(320px, 34vw);
+}
+.topbar-baselines-label {
+  flex: 0 0 auto; color: var(--faint); font-size: 10px; font-weight: 700; white-space: nowrap;
+}
+.topbar-baselines .baseline-filter {
+  min-width: 140px; flex: 1 1 auto;
+}
+.topbar-baselines .multi-filter-trigger {
+  min-height: 30px; padding: 4px 8px; font-size: 11px;
+}
 .header-metrics { display: flex; align-items: stretch; margin-left: auto; border: 1px solid var(--line); border-radius: 7px; background: #0e131c; }
 .header-metrics > div { min-width: 60px; display: flex; align-items: baseline; justify-content: space-between; gap: 5px; padding: 4px 6px; border-right: 1px solid var(--line); }
 .header-metrics > div:last-child { border-right: 0; }

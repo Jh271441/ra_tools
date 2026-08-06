@@ -12,6 +12,179 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+const BASELINE_STORAGE_KEY = "ra-triage-baselines";
+
+function defaultBaselineIdsFromConfig(config = state.config) {
+  const fromConfig = config?.default_baseline_ids;
+  if (Array.isArray(fromConfig) && fromConfig.length) {
+    return fromConfig.map(String);
+  }
+  const defaults = (config?.baselines || state.baselineCatalog || [])
+    .filter((item) => item?.default_selected)
+    .map((item) => String(item.id));
+  if (defaults.length) return defaults;
+  return ["0508"];
+}
+
+function normalizeBaselineIds(raw, { allowed = null, fallback = null } = {}) {
+  const allowedSet = allowed
+    ? new Set([...allowed].map(String))
+    : null;
+  const values = [];
+  const push = (text) => {
+    const id = String(text || "").trim();
+    if (!id) return;
+    if (allowedSet && !allowedSet.has(id)) return;
+    if (!values.includes(id)) values.push(id);
+  };
+  if (Array.isArray(raw)) {
+    raw.forEach((item) => {
+      String(item || "")
+        .split(",")
+        .forEach((part) => push(part));
+    });
+  } else if (raw != null && raw !== "") {
+    String(raw)
+      .split(",")
+      .forEach((part) => push(part));
+  }
+  if (values.length) return values;
+  return (fallback || defaultBaselineIdsFromConfig()).slice();
+}
+
+function selectedBaselineQueryValue() {
+  const ids = normalizeBaselineIds(state.selectedBaselineIds);
+  return ids.join(",");
+}
+
+function appendBaselineParams(params) {
+  const value = selectedBaselineQueryValue();
+  if (value) params.set("baselines", value);
+  return params;
+}
+
+function withBaselineQuery(path) {
+  const value = selectedBaselineQueryValue();
+  if (!value) return path;
+  const sep = path.includes("?") ? "&" : "?";
+  return `${path}${sep}baselines=${encodeURIComponent(value)}`;
+}
+
+function persistBaselineIds(ids) {
+  try {
+    localStorage.setItem(BASELINE_STORAGE_KEY, ids.join(","));
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function readStoredBaselineIds() {
+  try {
+    return localStorage.getItem(BASELINE_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function renderBaselinePicker() {
+  const root = $("#baselineFilter");
+  if (!root || typeof renderMultiFilter !== "function") return;
+  const catalog = state.baselineCatalog.length
+    ? state.baselineCatalog
+    : state.config?.baselines || [];
+  const options = catalog.map((item) => {
+    const count =
+      item.count != null && item.count !== ""
+        ? ` · ${item.count}`
+        : item.status === "ready"
+          ? ""
+          : "";
+    return {
+      value: String(item.id),
+      label: `${item.label || item.id}${count}`,
+    };
+  });
+  renderMultiFilter(root, {
+    options,
+    selected: state.selectedBaselineIds,
+    onChange: () => {
+      const next = getMultiFilterValues(root);
+      void setBaselineScopes(next);
+    },
+  });
+}
+
+async function setBaselineScopes(rawIds, { skipHistory = false } = {}) {
+  const allowed = new Set(
+    (state.baselineCatalog.length
+      ? state.baselineCatalog
+      : state.config?.baselines || []
+    ).map((item) => String(item.id))
+  );
+  const fallback = defaultBaselineIdsFromConfig();
+  let next = normalizeBaselineIds(rawIds, {
+    allowed: allowed.size ? allowed : null,
+    fallback,
+  });
+  if (!next.length) {
+    next = fallback.slice();
+    showToast(uiText("至少保留一个数据集。", "Keep at least one dataset."), true);
+  }
+  const prev = selectedBaselineQueryValue();
+  const nextValue = next.join(",");
+  if (prev === nextValue && state.selectedBaselineIds.join(",") === nextValue) {
+    renderBaselinePicker();
+    return;
+  }
+  state.selectedBaselineIds = next;
+  persistBaselineIds(next);
+  // Workset-level hard reset (stronger than filter change).
+  state.selectedId = "";
+  state.selectedCase = null;
+  state.casePage = 1;
+  state.clusterKey = "";
+  state.reviewIssueIds = [];
+  state.reviewAnalysis.data = null;
+  state.caseListRequestSeq += 1;
+  state.caseRequestSeq += 1;
+  state.reviewAnalysis.requestSeq += 1;
+  if (typeof clearDetail === "function") {
+    clearDetail({ showGallery: state.activePage === "review" });
+  }
+  renderBaselinePicker();
+  if (!skipHistory && typeof pageUrl === "function") {
+    const nextUrl = pageUrl(state.activePage || "review", {
+      issue: "",
+      baselines: next,
+    });
+    window.history.replaceState(window.history.state || {}, "", nextUrl);
+  }
+  try {
+    await loadConfig();
+    await settleInitialRequests(
+      [
+        loadRuns({ preserveEmpty: true }),
+        loadReviewers(),
+        typeof loadWorkAssignees === "function"
+          ? loadWorkAssignees()
+          : Promise.resolve(),
+        loadOverview(),
+      ],
+      uiText("切换数据集后", "After dataset switch")
+    );
+    if (state.activePage === "analysis") {
+      await enterAnalysisPage({ includeOverview: false });
+    } else if (state.activePage === "review") {
+      await loadCases({ keepSelection: false, page: 1 });
+      if (typeof loadClusters === "function") await loadClusters();
+    } else if (state.activePage === "runs") {
+      await loadRuns({ preserveEmpty: true });
+    }
+  } catch (error) {
+    showToast(error.message || String(error), true);
+  }
+}
+
 function safeUrl(url) {
   try {
     const parsed = new URL(url);
