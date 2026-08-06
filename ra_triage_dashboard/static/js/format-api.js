@@ -107,6 +107,7 @@ function renderBaselinePicker() {
   renderMultiFilter(root, {
     options,
     selected: state.selectedBaselineIds,
+    onlyThis: true,
     onChange: () => {
       const next = getMultiFilterValues(root);
       void setBaselineScopes(next);
