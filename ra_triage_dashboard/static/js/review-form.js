@@ -707,26 +707,35 @@ function renderReview(caseData) {
     });
     const imageFilesFromDataTransfer = (dataTransfer) => {
       if (!dataTransfer) return [];
-      const fromFiles = [...(dataTransfer.files || [])].filter((file) =>
+      // Prefer FileList once; do not also walk items — that doubles the same paste.
+      let candidates = [...(dataTransfer.files || [])].filter((file) =>
         String(file.type || "").startsWith("image/")
       );
-      if (fromFiles.length) return fromFiles;
-      return [...(dataTransfer.items || [])]
-        .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
-        .map((item) => item.getAsFile())
-        .filter(Boolean);
+      if (!candidates.length) {
+        candidates = [...(dataTransfer.items || [])]
+          .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+          .map((item) => item.getAsFile())
+          .filter(Boolean);
+      }
+      // Clipboard may expose the same blob under multiple MIME entries.
+      const seen = new Set();
+      return candidates.filter((file) => {
+        const key = `${file.type}|${file.size}|${file.lastModified}|${file.name || ""}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
     };
     const acceptImagePasteOrDrop = (event, dataTransfer) => {
       const files = imageFilesFromDataTransfer(dataTransfer);
       if (!files.length) return false;
       event.preventDefault();
+      event.stopPropagation();
       addPendingReviewImages(files);
       return true;
     };
-    pasteZone.addEventListener("paste", (event) => {
-      acceptImagePasteOrDrop(event, event.clipboardData);
-    });
-    // Form-level paste so images still land while typing in reason/status fields.
+    // Single form-level paste handler (pasteZone is inside the form — a second
+    // zone listener would bubble and add the same image twice).
     $("#annotationForm")?.addEventListener("paste", (event) => {
       const target = event.target;
       if (
