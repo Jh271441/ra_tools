@@ -2522,15 +2522,16 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
    Ares/Camera pixels and their overlays are authored for a black stage. */
 html[data-color-theme="light"] {
   color-scheme: light;
-  --bg: #eef3f8;
+  /* Cleaner light chrome: white surfaces, solid text, less muddy gray fill. */
+  --bg: #eef2f7;
   --raised: #ffffff;
-  --overlay: #f6f8fb;
-  --overlay-2: #edf2f7;
-  --line: #cfd8e3;
-  --line-soft: #e4eaf1;
-  --text: #172033;
-  --muted: #566579;
-  --faint: #5f6e82;
+  --overlay: #ffffff;
+  --overlay-2: #f3f6fa;
+  --line: #c5d0de;
+  --line-soft: #dbe3ee;
+  --text: #0f172a;
+  --muted: #475569;
+  --faint: #64748b;
   --accent: #08758d;
   --accent-soft: rgba(8, 117, 141, .1);
   --ok: #087a58;
@@ -2866,17 +2867,17 @@ html[data-color-theme="light"] .import-example-tabs { background: #f8fafc; }
 html[data-color-theme="light"] .button-quiet,
 html[data-color-theme="light"] .button-danger,
 html[data-color-theme="light"] .button-limit-warning {
-  color: #08758d;
-  border-color: rgba(7, 139, 166, .38);
-  background: rgba(7, 139, 166, .08);
+  color: #0f172a;
+  border-color: #b8c5d4;
+  background: #ffffff;
   box-shadow: none;
 }
 html[data-color-theme="light"] .button-quiet:hover:not(:disabled),
 html[data-color-theme="light"] .button-danger:hover:not(:disabled),
 html[data-color-theme="light"] .button-limit-warning:hover:not(:disabled) {
-  color: #05566a;
+  color: #075f75;
   border-color: #078ba6;
-  background: rgba(7, 139, 166, .14);
+  background: rgba(8, 117, 141, .08);
   box-shadow: none;
 }
 html[data-color-theme="light"] .button-primary {
@@ -2894,12 +2895,49 @@ html[data-color-theme="light"] .button-primary:hover:not(:disabled) {
 
 html[data-color-theme="light"] .dataset-state,
 html[data-color-theme="light"] .cluster-chip,
+html[data-color-theme="light"] .tag,
+html[data-color-theme="light"] .run-source-badge { color: #475569; }
 html[data-color-theme="light"] .detail-action-button,
 html[data-color-theme="light"] .detail-media-command .detail-media-expand,
 html[data-color-theme="light"] .history-inline-button,
-html[data-color-theme="light"] .tag,
-html[data-color-theme="light"] .run-source-badge,
-html[data-color-theme="light"] .media-nav { color: #4e6075; }
+html[data-color-theme="light"] .media-mode,
+html[data-color-theme="light"] .media-control,
+html[data-color-theme="light"] .media-nav,
+html[data-color-theme="light"] .detail-actions .history-inline-button {
+  color: #0f172a;
+  border-color: #b8c5d4;
+  background: #ffffff;
+}
+html[data-color-theme="light"] .detail-media-command .detail-media-expand:hover,
+html[data-color-theme="light"] .history-inline-button:hover,
+html[data-color-theme="light"] .media-mode:hover:not(:disabled),
+html[data-color-theme="light"] .media-control:hover:not(:disabled),
+html[data-color-theme="light"] .media-nav:hover:not(:disabled),
+html[data-color-theme="light"] .detail-actions .history-inline-button:hover {
+  color: #075f75;
+  border-color: #078ba6;
+  background: rgba(8, 117, 141, .08);
+}
+html[data-color-theme="light"] .media-mode.active,
+html[data-color-theme="light"] .media-control.active {
+  color: #075f75;
+  border-color: rgba(8, 117, 141, .55);
+  background: rgba(8, 117, 141, .1);
+}
+html[data-color-theme="light"] .comparison-summary,
+html[data-color-theme="light"] .media-decision-summary,
+html[data-color-theme="light"] .current-run-output,
+html[data-color-theme="light"] .bev-video-controls {
+  background: #ffffff;
+  border-color: #c5d0de;
+}
+html[data-color-theme="light"] .comparison-summary > .comparison-side-label,
+html[data-color-theme="light"] .media-decision-summary > .comparison-side-label {
+  color: #334155;
+}
+html[data-color-theme="light"] .media-dialog {
+  background: #ffffff;
+}
 
 html[data-color-theme="light"] .status-succeeded,
 html[data-color-theme="light"] .status-completed,

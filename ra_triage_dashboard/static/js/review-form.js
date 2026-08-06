@@ -169,7 +169,13 @@ function renderDetail(caseData) {
     ? `<a class="detail-id detail-id-link" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" title="打开 Voyager Issue">${issueId}</a>`
     : `<span class="detail-id">${issueId}</span>`;
   ensureDetailMediaState(caseData);
-  const modelHistoryButton = `<button class="history-inline-button" type="button" data-open-history="model">评测 Run 历史 · ${(caseData.predictions || []).length} 条</button>`;
+  const predCount = (caseData.predictions || []).length;
+  const modelHistoryButton = `<button class="history-inline-button" type="button" data-open-history="model"><span class="ui-lang-zh">评测 Run 历史 · ${predCount} 条</span><span class="ui-lang-en">Run history · ${predCount}</span></button>`;
+  const compareText = !primary?.model_label
+    ? `<span class="ui-lang-zh">不可比较</span><span class="ui-lang-en">N/A</span>`
+    : primary.model_label === caseData.gt_label
+      ? `<span class="ui-lang-zh">一致</span><span class="ui-lang-en">Match</span>`
+      : `<span class="ui-lang-zh">不一致</span><span class="ui-lang-en">Mismatch</span>`;
   $("#detailPane").innerHTML = `
     <div class="detail-header">
       <div class="detail-title-row">
@@ -178,33 +184,33 @@ function renderDetail(caseData) {
         </div>
         <div class="detail-navigation">
           <div class="case-detail-pager">
-            <button class="button button-quiet" id="previousIssueButton" type="button">← 上一 Issue</button>
-            <span class="detail-queue-position" id="detailQueuePosition" title="输入序号后回车跳转">
-              <input class="detail-queue-index-input" id="detailQueueIndexInput" type="number" min="1" step="1" inputmode="numeric" aria-label="跳转到筛选队列中的第几条" disabled />
+            <button class="button button-quiet" id="previousIssueButton" type="button"><span class="ui-lang-zh">← 上一 Issue</span><span class="ui-lang-en">← Prev</span></button>
+            <span class="detail-queue-position" id="detailQueuePosition" title="${escapeHtml(uiText("输入序号后回车跳转", "Enter index and press Return to jump"))}">
+              <input class="detail-queue-index-input" id="detailQueueIndexInput" type="number" min="1" step="1" inputmode="numeric" aria-label="${escapeHtml(uiText("跳转到筛选队列中的第几条", "Jump to queue index"))}" disabled />
               <span class="detail-queue-total" id="detailQueueTotal">/ —</span>
             </span>
-            <button class="button button-quiet" id="nextIssueButton" type="button">下一 Issue →</button>
+            <button class="button button-quiet" id="nextIssueButton" type="button"><span class="ui-lang-zh">下一 Issue →</span><span class="ui-lang-en">Next →</span></button>
           </div>
         </div>
       </div>
       <div class="detail-context-row">
-        <div class="comparison-summary" aria-label="GT 与当前模型对比">
-          <span class="comparison-side-label comparison-side-gt">GT</span>${labelBadge(caseData.gt_label, "缺失")}
+        <div class="comparison-summary" aria-label="${escapeHtml(uiText("GT 与当前模型对比", "GT vs current model"))}">
+          <span class="comparison-side-label comparison-side-gt">GT</span>${labelBadge(caseData.gt_label, uiText("缺失", "Missing"))}
           <b aria-hidden="true">→</b>
-          <span class="comparison-side-label comparison-side-model">当前模型</span>${labelBadge(primary?.model_label, "未输出")}
-          <strong class="${primary?.model_label && primary.model_label !== caseData.gt_label ? "comparison-fail" : "comparison-neutral"}">${primary?.model_label ? primary.model_label === caseData.gt_label ? "一致" : "不一致" : "不可比较"}</strong>
+          <span class="comparison-side-label comparison-side-model"><span class="ui-lang-zh">当前模型</span><span class="ui-lang-en">Model</span></span>${labelBadge(primary?.model_label, uiText("未输出", "None"))}
+          <strong class="${primary?.model_label && primary.model_label !== caseData.gt_label ? "comparison-fail" : "comparison-neutral"}">${compareText}</strong>
         </div>
-        <button class="button button-quiet detail-back-button" id="backToGalleryButton" type="button">← 返回筛选结果</button>
+        <button class="button button-quiet detail-back-button" id="backToGalleryButton" type="button"><span class="ui-lang-zh">← 返回筛选结果</span><span class="ui-lang-en">← Back to gallery</span></button>
         ${caseData.summary ? `<p class="detail-summary">${escapeHtml(caseData.summary)}</p>` : ""}
         <div class="detail-context-actions">
           ${detailMediaCommandMarkup(caseData)}
           <div class="detail-actions">
-            <button class="button button-quiet" type="button" data-predict-current-case>API 推理</button>
+            <button class="button button-quiet" type="button" data-predict-current-case><span class="ui-lang-zh">API 推理</span><span class="ui-lang-en">API inference</span></button>
             ${modelHistoryButton}
           </div>
         </div>
       </div>
-      ${caseData.review_note ? `<details class="review-note-details"><summary>查看历史备注</summary><div class="review-note"><span>历史备注</span>${escapeHtml(caseData.review_note)}</div></details>` : ""}
+      ${caseData.review_note ? `<details class="review-note-details"><summary><span class="ui-lang-zh">查看历史备注</span><span class="ui-lang-en">Show legacy note</span></summary><div class="review-note"><span><span class="ui-lang-zh">历史备注</span><span class="ui-lang-en">Legacy note</span></span>${escapeHtml(caseData.review_note)}</div></details>` : ""}
     </div>
     ${currentRunOutputMarkup(caseData, primary)}
     ${heroMediaSection(caseData)}`;

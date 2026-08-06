@@ -58,10 +58,11 @@ function bindEvents() {
         : "mismatch";
     setAnalysisComparisonStatus(nextStatus, { hasRun: Boolean(runId) });
   });
-  ["#analysisRunFilter", "#analysisComparisonFilter"].forEach((selector) => {
-    $(selector)?.addEventListener("change", () => scheduleAnalysisFilterReload());
-  });
-  if (typeof bindAnalysisComparisonPicker === "function") {
+  $("#analysisRunFilter")?.addEventListener("change", () => scheduleAnalysisFilterReload());
+  // analysisComparisonFilter is a multi-filter; its onChange schedules reload.
+  if (typeof renderAnalysisComparisonFilter === "function") {
+    renderAnalysisComparisonFilter();
+  } else if (typeof bindAnalysisComparisonPicker === "function") {
     bindAnalysisComparisonPicker();
   }
   $("#analysisSearchInput")?.addEventListener("input", () => {

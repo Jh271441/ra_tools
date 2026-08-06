@@ -3439,21 +3439,24 @@ def _review_reason_analysis_payload(
     # Ignore the retired theme parameter so old bookmarked URLs remain usable;
     # the canonical response and UI no longer expose or apply it.
     theme = ""
-    requested_comparison = _as_text(comparison).strip().lower()
-    if requested_comparison and requested_comparison not in COMPARISON_STATUSES:
-        raise _detail(
-            400,
-            "comparison 仅支持 all、mismatch、match 或 none。",
-        )
-    if (
-        failure_only
-        and requested_comparison
-        and requested_comparison != "mismatch"
-    ):
-        raise _detail(400, "failure_only=true 与 comparison 参数冲突。")
-    comparison_status = requested_comparison or (
-        "mismatch" if failure_only else "all"
-    )
+    # Accept multi comparison like gallery filters: mismatch,match,none or all.
+    comparison_values = [
+        value
+        for value in _csv_filter_values(comparison)
+        if value in COMPARISON_STATUSES and value != "all"
+    ]
+    if failure_only and comparison_values and comparison_values != ["mismatch"]:
+        if comparison and set(comparison_values) != {"mismatch"}:
+            raise _detail(400, "failure_only=true 与 comparison 参数冲突。")
+    if failure_only and not comparison_values:
+        comparison_values = ["mismatch"]
+    if comparison_values and set(comparison_values) == {
+        "match",
+        "mismatch",
+        "none",
+    }:
+        comparison_values = []
+    comparison_status = ",".join(comparison_values) if comparison_values else "all"
     authors = _csv_filter_values(annotation_author)
     statuses = _csv_filter_values(review_status)
     gt_labels = _csv_filter_values(gt_label)

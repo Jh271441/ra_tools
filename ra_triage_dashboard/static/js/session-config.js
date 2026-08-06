@@ -188,11 +188,11 @@ function renderMultiFilter(
     </button>
     <div class="multi-filter-panel" hidden>
       <div class="multi-filter-toolbar">
-        <button type="button" class="multi-filter-action" data-multi-select-all>全选</button>
-        <button type="button" class="multi-filter-action" data-multi-invert>反选</button>
-        <button type="button" class="multi-filter-action" data-multi-clear>清除</button>
+        <button type="button" class="multi-filter-action" data-multi-select-all><span class="ui-lang-zh">全选</span><span class="ui-lang-en">All</span></button>
+        <button type="button" class="multi-filter-action" data-multi-invert><span class="ui-lang-zh">反选</span><span class="ui-lang-en">Invert</span></button>
+        <button type="button" class="multi-filter-action" data-multi-clear><span class="ui-lang-zh">清除</span><span class="ui-lang-en">Clear</span></button>
       </div>
-      <div class="multi-filter-options">${body || '<div class="multi-filter-empty">暂无选项</div>'}</div>
+      <div class="multi-filter-options">${body || `<div class="multi-filter-empty"><span class="ui-lang-zh">暂无选项</span><span class="ui-lang-en">No options</span></div>`}</div>
     </div>`;
   updateMultiFilterSummary(root);
   const trigger = root.querySelector(".multi-filter-trigger");

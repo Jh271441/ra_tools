@@ -396,17 +396,26 @@ function detailMediaKindOptions(caseData, available) {
   return [
     {
       value: "bev",
-      label: `BEV 图片 · ${caseData?.assets?.frames?.length || 0}`,
+      label: uiText(
+        `BEV 图片 · ${caseData?.assets?.frames?.length || 0}`,
+        `BEV images · ${caseData?.assets?.frames?.length || 0}`
+      ),
       disabled: !available.bev,
     },
     {
       value: "camera",
-      label: `Camera 图片 · ${caseData?.camera?.frames?.length || 0}`,
+      label: uiText(
+        `Camera 图片 · ${caseData?.camera?.frames?.length || 0}`,
+        `Camera images · ${caseData?.camera?.frames?.length || 0}`
+      ),
       disabled: !available.camera,
     },
     {
       value: "video",
-      label: `Ares Studio 视频 · ${available.video ? 1 : 0}`,
+      label: uiText(
+        `Ares Studio 视频 · ${available.video ? 1 : 0}`,
+        `Ares Studio video · ${available.video ? 1 : 0}`
+      ),
       disabled: !available.video,
     },
   ];
@@ -433,7 +442,7 @@ function detailMediaCommandMarkup(caseData) {
           .join("")}
       </select>
     </div>
-    <button class="button button-quiet detail-media-expand" id="detailMediaExpandButton" type="button">展开查看</button>
+    <button class="button button-quiet detail-media-expand" id="detailMediaExpandButton" type="button"><span class="ui-lang-zh">展开查看</span><span class="ui-lang-en">Expand</span></button>
   </div>`;
 }
 

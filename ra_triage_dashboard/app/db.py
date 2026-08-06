@@ -2617,12 +2617,20 @@ class Database:
                     values.append(text)
             return tuple(dict.fromkeys(values))
 
-        comparison_status = str(comparison_status or "all").strip().lower()
         if failure_only:
             comparison_status = "mismatch"
-        if comparison_status not in {"all", "mismatch", "match", "none"}:
-            raise ValueError("unsupported comparison_status")
-        if comparison_status != "all" and not model_run_id:
+        comparison_statuses = tuple(
+            value
+            for value in _multi_values(comparison_status)
+            if value in {"match", "mismatch", "none"}
+        )
+        if comparison_statuses and set(comparison_statuses) == {
+            "match",
+            "mismatch",
+            "none",
+        }:
+            comparison_statuses = ()
+        if comparison_statuses and not model_run_id:
             raise ValueError("comparison_status requires model_run_id")
 
         scopes = self._normalize_baseline_scopes(baseline_scopes, baseline_scope=baseline_scope)
@@ -2633,19 +2641,27 @@ class Database:
         params: list[Any] = (
             [model_run_id, model_run_id] if model_run_id else []
         ) + [model_run_id, *scope_params]
-        if comparison_status != "all":
+        if comparison_statuses:
             where.append("i.gt_label IN (?, ?, ?)")
             params.extend(LABELS)
-            if comparison_status == "none":
-                where.append(
-                    "(mp.model_label IS NULL OR mp.model_label NOT IN (?, ?, ?))"
-                )
-                params.extend(LABELS)
-            else:
-                where.append("mp.model_label IN (?, ?, ?)")
-                params.extend(LABELS)
-                operator = "=" if comparison_status == "match" else "!="
-                where.append(f"mp.model_label {operator} i.gt_label")
+            status_clauses: list[str] = []
+            for status in comparison_statuses:
+                if status == "none":
+                    status_clauses.append(
+                        "(mp.model_label IS NULL OR mp.model_label NOT IN (?, ?, ?))"
+                    )
+                    params.extend(LABELS)
+                elif status == "match":
+                    status_clauses.append(
+                        "(mp.model_label IN (?, ?, ?) AND mp.model_label = i.gt_label)"
+                    )
+                    params.extend(LABELS)
+                else:
+                    status_clauses.append(
+                        "(mp.model_label IN (?, ?, ?) AND mp.model_label != i.gt_label)"
+                    )
+                    params.extend(LABELS)
+            where.append(f"({' OR '.join(status_clauses)})")
         authors = _multi_values(annotation_author)
         if authors:
             where.append(

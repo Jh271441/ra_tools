@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-118`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-119`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -274,7 +274,7 @@
               </div>
               <form class="analysis-filters" id="reviewAnalysisFilterForm" data-mobile-filter-panel="analysisFilters">
                 <label class="analysis-run-filter">
-                  <span>对比模型 Run</span>
+                  <span class="ui-lang-zh">对比模型 Run</span><span class="ui-lang-en">Compare model Run</span>
                   <div class="ui-select" id="analysisRunPicker">
                     <button class="ui-select-trigger" id="analysisRunPickerTrigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="analysisRunPickerPanel">
                       <span class="ui-select-summary" id="analysisRunPickerSummary">不叠加模型输出</span>
@@ -287,32 +287,20 @@
                   </div>
                 </label>
                 <label class="analysis-comparison-filter">
-                  <span>模型判断结果</span>
-                  <div class="ui-select" id="analysisComparisonPicker">
-                    <button class="ui-select-trigger" id="analysisComparisonPickerTrigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="analysisComparisonPickerPanel" aria-label="模型判断结果">
-                      <span class="ui-select-summary" id="analysisComparisonPickerSummary">全部</span>
-                      <span class="ui-select-caret" aria-hidden="true"></span>
-                    </button>
-                    <div class="ui-select-panel" id="analysisComparisonPickerPanel" role="listbox" hidden></div>
-                    <select id="analysisComparisonFilter" class="ui-select-native gateway-model-native-select" aria-hidden="true" tabindex="-1">
-                      <option value="all">全部</option>
-                      <option value="mismatch">MISMATCH · 判断失败</option>
-                      <option value="match">MATCH · 判断一致</option>
-                      <option value="none">NONE · 未预测</option>
-                    </select>
-                  </div>
+                  <span class="ui-lang-zh">模型判断结果</span><span class="ui-lang-en">Model comparison</span>
+                  <div class="multi-filter" id="analysisComparisonFilter" data-placeholder="全部结果" data-placeholder-en="All results" aria-label="模型判断结果筛选"></div>
                 </label>
                 <label>
-                  <span>复核人</span>
-                  <div class="multi-filter" id="analysisReviewerFilter" data-placeholder="全部复核人"></div>
+                  <span class="ui-lang-zh">复核人</span><span class="ui-lang-en">Reviewer</span>
+                  <div class="multi-filter" id="analysisReviewerFilter" data-placeholder="全部复核人" data-placeholder-en="All reviewers"></div>
                 </label>
                 <label>
-                  <span>Review 状态</span>
-                  <div class="multi-filter" id="analysisStatusFilter" data-placeholder="全部状态"></div>
+                  <span class="ui-lang-zh">Review 状态</span><span class="ui-lang-en">Review status</span>
+                  <div class="multi-filter" id="analysisStatusFilter" data-placeholder="全部状态" data-placeholder-en="All statuses"></div>
                 </label>
                 <label>
                   <span>GT</span>
-                  <div class="multi-filter" id="analysisGtFilter" data-placeholder="全部 GT"></div>
+                  <div class="multi-filter" id="analysisGtFilter" data-placeholder="全部 GT" data-placeholder-en="All GT"></div>
                 </label>
                 <label>
                   <span>模型预测</span>
@@ -988,7 +976,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-118`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-119`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

@@ -69,7 +69,7 @@ function buildAnalysisQueryParams({ format = "", includePagination = true } = {}
   params.set(
     "comparison",
     options.runId
-      ? normalizedAnalysisComparisonStatus(options.comparisonStatus)
+      ? comparisonStatusParam(options.comparisonStatus || "all")
       : "all"
   );
   const fields = [
@@ -552,17 +552,21 @@ function renderReviewReasonAnalysis(data, { animatePies = true } = {}) {
   state.reviewAnalysis.page = Number(data.page || 1);
   $("#analysisReviewCount").textContent = summary.latest_reviews ?? 0;
   $("#analysisReasonCount").textContent = summary.with_reason ?? 0;
-  $("#analysisEmptyReasonCount").textContent = `${summary.empty_reason ?? 0} 条未填写`;
+  $("#analysisEmptyReasonCount").textContent = uiText(
+    `${summary.empty_reason ?? 0} 条未填写`,
+    `${summary.empty_reason ?? 0} empty`
+  );
   $("#analysisEvidenceCount").textContent = summary.with_structured_evidence ?? 0;
   const run = data.scope?.model_run;
-  const comparisonStatus = normalizedAnalysisComparisonStatus(
-    data.scope?.comparison_status,
-    "all"
+  const comparisonStatus = comparisonStatusParam(
+    data.scope?.comparison_status || "all"
   );
-  const comparisonMeta = ANALYSIS_COMPARISON_META[comparisonStatus];
+  const comparisonLabels = parseComparisonStatuses(comparisonStatus)
+    .map((status) => ANALYSIS_COMPARISON_META[status]?.label || status)
+    .join(" / ");
   $("#analysisReviewScope").textContent = run
-    ? `${run.name}${comparisonStatus === "all" ? "" : ` · ${comparisonMeta.label}`}`
-    : "全部最新 Review";
+    ? `${run.name}${comparisonStatus === "all" ? "" : ` · ${comparisonLabels}`}`
+    : uiText("全部最新 Review", "All latest reviews");
   renderAnalysisClusterPanels(data, { animatePies });
   renderAnalysisConfusion(data);
   renderAnalysisCases(data);

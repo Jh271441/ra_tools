@@ -44,11 +44,7 @@ async function loadReviewers() {
 function renderReviewCatalogFilters() {
   const onChange = () => scheduleReviewFilterReload?.(0);
   renderMultiFilter($("#comparisonFilter"), {
-    options: [
-      { value: "mismatch", label: "MISMATCH · 判断失败" },
-      { value: "match", label: "MATCH · 判断一致" },
-      { value: "none", label: "NONE · 未预测" },
-    ],
+    options: analysisComparisonMultiOptions(),
     selected: parseComparisonStatuses(
       getMultiFilterValues($("#comparisonFilter")).length
         ? getMultiFilterValues($("#comparisonFilter"))
@@ -78,51 +74,91 @@ function renderReviewCatalogFilters() {
   });
 }
 
-function checkedAnalysisComparisonStatus() {
-  return normalizedAnalysisComparisonStatus(
-    $("#analysisComparisonFilter")?.value,
-    state.reviewAnalysis.comparisonStatus || "all"
-  );
+function analysisComparisonMultiOptions() {
+  return [
+    {
+      value: "mismatch",
+      label: uiText("MISMATCH · 判断失败", "MISMATCH · model wrong"),
+    },
+    {
+      value: "match",
+      label: uiText("MATCH · 判断一致", "MATCH · model correct"),
+    },
+    {
+      value: "none",
+      label: uiText("NONE · 未预测", "NONE · no prediction"),
+    },
+  ];
 }
 
-const ANALYSIS_COMPARISON_OPTIONS = [
-  { value: "all", label: "全部" },
-  { value: "mismatch", label: "MISMATCH · 判断失败" },
-  { value: "match", label: "MATCH · 判断一致" },
-  { value: "none", label: "NONE · 未预测" },
-];
+function checkedAnalysisComparisonStatus() {
+  const runId = $("#analysisRunFilter")?.value || state.selectedRunId;
+  if (!runId) return "all";
+  const root = $("#analysisComparisonFilter");
+  if (root && !root.matches?.("select")) {
+    return comparisonStatusParam(
+      parseComparisonStatuses(
+        getMultiFilterValues(root),
+        state.reviewAnalysis.comparisonStatus || "all"
+      )
+    );
+  }
+  return comparisonStatusParam(
+    parseComparisonStatuses(
+      root?.value || state.reviewAnalysis.comparisonStatus || "all"
+    )
+  );
+}
 
 function setAnalysisComparisonStatus(
   comparisonStatus,
   { hasRun = Boolean($("#analysisRunFilter")?.value) } = {}
 ) {
-  let nextStatus = normalizedAnalysisComparisonStatus(comparisonStatus);
-  if (!hasRun && nextStatus !== "all") nextStatus = "all";
+  let nextValues = parseComparisonStatuses(comparisonStatus);
+  if (!hasRun) nextValues = [];
+  const nextStatus = comparisonStatusParam(nextValues);
   state.reviewAnalysis.comparisonStatus = nextStatus;
-  const select = $("#analysisComparisonFilter");
-  if (select) {
-    select.disabled = !hasRun;
-    select.value = nextStatus;
-  }
-  const picker = $("#analysisComparisonPicker");
-  if (picker && typeof populateUiSelect === "function") {
-    populateUiSelect(picker, ANALYSIS_COMPARISON_OPTIONS, nextStatus);
-    picker.classList.toggle("is-disabled", !hasRun);
-    const trigger = picker.querySelector(".ui-select-trigger");
-    if (trigger) trigger.disabled = !hasRun;
+  const root = $("#analysisComparisonFilter");
+  if (root) {
+    root.classList.toggle("is-disabled", !hasRun);
+    root.querySelector(".multi-filter-trigger")?.toggleAttribute("disabled", !hasRun);
+    if (root.matches?.("select")) {
+      root.disabled = !hasRun;
+      root.value = nextStatus === "all" ? "all" : nextValues[0] || "all";
+    } else {
+      setMultiFilterValues(root, nextValues);
+      if (!hasRun) setMultiFilterValues(root, []);
+    }
   }
   return nextStatus;
 }
 
+function renderAnalysisComparisonFilter() {
+  const root = $("#analysisComparisonFilter");
+  if (!root || typeof renderMultiFilter !== "function") return;
+  const hasRun = Boolean($("#analysisRunFilter")?.value || state.selectedRunId);
+  renderMultiFilter(root, {
+    options: analysisComparisonMultiOptions(),
+    selected: parseComparisonStatuses(
+      getMultiFilterValues(root).length
+        ? getMultiFilterValues(root)
+        : state.reviewAnalysis.comparisonStatus
+    ),
+    onChange: () => {
+      state.reviewAnalysis.comparisonStatus = checkedAnalysisComparisonStatus();
+      if (typeof scheduleAnalysisFilterReload === "function") {
+        scheduleAnalysisFilterReload(0);
+      }
+    },
+  });
+  root.classList.toggle("is-disabled", !hasRun);
+  root.querySelector(".multi-filter-trigger")?.toggleAttribute("disabled", !hasRun);
+  if (!hasRun) setMultiFilterValues(root, []);
+}
+
+/** @deprecated use renderAnalysisComparisonFilter */
 function bindAnalysisComparisonPicker() {
-  const picker = $("#analysisComparisonPicker");
-  if (!picker || typeof bindUiSelect !== "function") return;
-  populateUiSelect(
-    picker,
-    ANALYSIS_COMPARISON_OPTIONS,
-    state.reviewAnalysis.comparisonStatus || "all"
-  );
-  bindUiSelect(picker, { maxHeight: 280, maxWidth: 280 });
+  renderAnalysisComparisonFilter();
 }
 
 function renderAnalysisRunFilter() {
@@ -157,6 +193,7 @@ function renderAnalysisRunFilter() {
   setAnalysisComparisonStatus(state.reviewAnalysis.comparisonStatus, {
     hasRun: Boolean(select.value),
   });
+  renderAnalysisComparisonFilter();
 }
 
 async function loadRuns({ preferDefault = false, preserveEmpty = false } = {}) {

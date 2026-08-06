@@ -56,6 +56,31 @@ function applyUiLanguage(language, { persist = true } = {}) {
   renderSystemStatus();
   applySidebarState();
   renderSession();
+  // Re-render language-sensitive dynamic filters/pickers.
+  if (typeof renderReviewCatalogFilters === "function") {
+    try {
+      renderReviewCatalogFilters();
+    } catch (_) {
+      /* ignore if page not ready */
+    }
+  }
+  if (typeof renderAnalysisComparisonFilter === "function") {
+    try {
+      renderAnalysisComparisonFilter();
+    } catch (_) {
+      /* ignore */
+    }
+  }
+  if (typeof renderAnalysisRunFilter === "function" && state.modelRuns?.length) {
+    try {
+      renderAnalysisRunFilter();
+    } catch (_) {
+      /* ignore */
+    }
+  }
+  document.querySelectorAll(".multi-filter").forEach((root) => {
+    if (typeof updateMultiFilterSummary === "function") updateMultiFilterSummary(root);
+  });
 }
 
 function normalizedAnalysisComparisonStatus(value, fallback = "all") {
@@ -138,6 +163,13 @@ function routeReviewComparisonStatus(params) {
 
 function routeAnalysisComparisonStatus(params) {
   const requested = String(params.get("comparison") || "").trim().toLowerCase();
+  if (!requested) {
+    if (params.get("failure") === "1") return "mismatch";
+    // Match Review default: a Run deep-link without comparison keeps MISMATCH.
+    return params.has("run") && params.get("run") !== "none" ? "mismatch" : null;
+  }
+  const values = parseComparisonStatuses(requested);
+  if (values.length) return comparisonStatusParam(values);
   if (ANALYSIS_COMPARISON_STATUSES.includes(requested)) return requested;
   if (params.get("failure") === "1") return "mismatch";
   return params.has("run") ? "all" : null;
@@ -372,7 +404,7 @@ function pageUrl(page, options = {}) {
     url.searchParams.set(
       "comparison",
       analysis.runId
-        ? normalizedAnalysisComparisonStatus(analysis.comparisonStatus)
+        ? comparisonStatusParam(analysis.comparisonStatus || "all")
         : "all"
     );
     if (analysis.search) url.searchParams.set("q", analysis.search);

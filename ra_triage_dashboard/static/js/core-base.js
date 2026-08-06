@@ -57,7 +57,13 @@ function updateMultiFilterSummary(root) {
   const summary = root.querySelector(".multi-filter-summary");
   if (!summary) return;
   const values = getMultiFilterValues(root);
-  const placeholder = root.dataset.placeholder || "全部";
+  const placeholder =
+    typeof uiText === "function"
+      ? uiText(
+          root.dataset.placeholder || "全部",
+          root.dataset.placeholderEn || root.dataset.placeholder || "All"
+        )
+      : root.dataset.placeholder || "全部";
   if (!values.length) {
     summary.textContent = placeholder;
     summary.classList.remove("has-value");
@@ -69,10 +75,13 @@ function updateMultiFilterSummary(root) {
     );
     return input?.dataset.label || value;
   });
+  const en = typeof state !== "undefined" && state.uiLanguage === "en";
   summary.textContent =
     labels.length <= 2
-      ? labels.join("、")
-      : `${labels[0]} 等 ${labels.length} 项`;
+      ? labels.join(en ? ", " : "、")
+      : en
+        ? `${labels[0]} +${labels.length - 1}`
+        : `${labels[0]} 等 ${labels.length} 项`;
   summary.classList.add("has-value");
 }
 
