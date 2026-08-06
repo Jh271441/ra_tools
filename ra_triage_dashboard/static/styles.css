@@ -35,9 +35,11 @@ a { color: inherit; text-decoration: none; }
 a:hover { color: var(--accent); }
 .hidden { display: none !important; }
 .muted { color: var(--muted); }
+/* Dual-span / dual-block shell: CSS toggles locale without reflow thrash.
+ * Use display:unset so <span> stays inline and <p>/<h3> stay block. */
 .ui-lang-en { display: none; }
 html[data-ui-lang="en"] .ui-lang-zh { display: none; }
-html[data-ui-lang="en"] .ui-lang-en { display: inline; }
+html[data-ui-lang="en"] .ui-lang-en { display: unset; }
 
 .app-shell { min-height: 100vh; display: block; }
 /* No margin transition on first paint — CSS load would animate 0→240 and feel like LTR wipe. */

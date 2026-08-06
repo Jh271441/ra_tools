@@ -42,9 +42,9 @@ function currentReviewAnnotation(caseData) {
 const REVIEW_DRAFT_STORAGE_PREFIX = "ra-triage-review-draft:v1:";
 const REVIEW_DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const REVIEW_STATUS_OPTIONS = [
-  { value: "reviewed", labelZh: "已 Review", labelEn: "Reviewed" },
-  { value: "pending", labelZh: "待补充", labelEn: "Pending" },
-  { value: "needs_gt_review", labelZh: "GT 需复核", labelEn: "Needs GT review" },
+  { value: "reviewed", labelKey: "status.reviewed", labelZh: "已 Review", labelEn: "Reviewed" },
+  { value: "pending", labelKey: "status.pending", labelZh: "待补充", labelEn: "Pending" },
+  { value: "needs_gt_review", labelKey: "status.needs_gt", labelZh: "GT 需复核", labelEn: "Needs GT review" },
 ];
 const REVIEW_DRAFT_FIELDS = [
   "label",
@@ -304,29 +304,30 @@ function refreshReviewDerivedData() {
 }
 
 function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
+  // Axis/group chrome is translated; option labels stay catalog Chinese (domain).
   const definitions = [
     {
       section: "scene",
-      label: "场景",
+      label: t("tag.scene"),
       groups: [
-        { key: "environment", label: "环境" },
-        { key: "self_intent", label: "自车意图" },
+        { key: "environment", label: t("tag.env") },
+        { key: "self_intent", label: t("tag.ego_intent") },
       ],
     },
     {
       section: "interaction_decision",
-      label: "触发判定",
+      label: t("tag.trigger"),
       groups: [
-        { key: "false_trigger", label: "误触发" },
-        { key: "true_trigger", label: "应该触发" },
+        { key: "false_trigger", label: t("tag.false_trigger") },
+        { key: "true_trigger", label: t("tag.should_trigger") },
       ],
     },
     {
       section: "egress",
-      label: "如何驶离",
+      label: t("tag.egress"),
       groups: [
-        { key: "ra", label: "正确触发" },
-        { key: "no_assist", label: "无需协助" },
+        { key: "ra", label: t("tag.correct_trigger") },
+        { key: "no_assist", label: t("tag.no_assist") },
       ],
     },
   ];
@@ -334,7 +335,7 @@ function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
     (item) => item.visible !== false && !item.deleted
   );
   const selectedChipMarkup = (items, section) => items
-    .map((item) => `<button class="tag-group-selected-chip" type="button" data-remove-review-tag="${escapeHtml(item.key)}" data-remove-review-tag-group="${escapeHtml(item.group || "")}" data-tag-section="${escapeHtml(section)}" data-tag-group="${escapeHtml(item.group || "")}" title="取消选择 ${escapeHtml(item.label)}"><span>${escapeHtml(item.label)}</span><b aria-hidden="true">×</b></button>`)
+    .map((item) => `<button class="tag-group-selected-chip" type="button" data-remove-review-tag="${escapeHtml(item.key)}" data-remove-review-tag-group="${escapeHtml(item.group || "")}" data-tag-section="${escapeHtml(section)}" data-tag-group="${escapeHtml(item.group || "")}" title="${escapeHtml(uiText(`取消选择 ${item.label}`, `Deselect ${item.label}`))}"><span>${escapeHtml(item.label)}</span><b aria-hidden="true">×</b></button>`)
     .join("");
   const sections = definitions.map((section) => {
     const sectionItems = visible
@@ -352,18 +353,17 @@ function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
             (item) => item.section === section.section && item.group === group.key
           );
           const selectedCount = items.filter((item) => chosenTags.has(item.key)).length;
-          // All six managed axes (场景 / 触发判定 / 如何驶离) can extend the shared catalog.
-          const creatorAction = `<button class="tag-catalog-add-button" type="button" data-open-review-tag-creator="${escapeHtml(group.key)}" data-tag-create-group-label="${escapeHtml(group.label)}" aria-label="新增${escapeHtml(group.label)}标签" title="新增${escapeHtml(group.label)}标签">＋</button>`;
+          const creatorAction = `<button class="tag-catalog-add-button" type="button" data-open-review-tag-creator="${escapeHtml(group.key)}" data-tag-create-group-label="${escapeHtml(group.label)}" aria-label="${escapeHtml(uiText(`新增${group.label}标签`, `Add ${group.label} tag`))}" title="${escapeHtml(uiText(`新增${group.label}标签`, `Add ${group.label} tag`))}">＋</button>`;
           return `<details class="review-tag-dropdown review-dropdown" data-tag-dropdown-group="${escapeHtml(group.key)}">
             <summary>
               <span class="tag-group-label">${escapeHtml(group.label)}</span>
               <span class="tag-group-trailing">
                 ${creatorAction}
-                <span class="tag-group-summary" data-tag-summary="${escapeHtml(group.key)}">${selectedCount} 项</span>
+                <span class="tag-group-summary" data-tag-summary="${escapeHtml(group.key)}">${escapeHtml(t("detail.count_n", { n: selectedCount }))}</span>
                 <span class="tag-group-chevron" aria-hidden="true"></span>
               </span>
             </summary>
-            <div class="review-tag-options">${items.map((item) => tagOption(item.key, item.label, chosenTags.has(item.key), group.key, item)).join("") || '<div class="review-tag-empty">暂无标签，点 ＋ 添加</div>'}</div>
+            <div class="review-tag-options">${items.map((item) => tagOption(item.key, item.label, chosenTags.has(item.key), group.key, item)).join("") || `<div class="review-tag-empty">${escapeHtml(uiText("暂无标签，点 ＋ 添加", "No tags — click ＋ to add"))}</div>`}</div>
           </details>`;
         }).join("")}
       </div>
@@ -374,7 +374,7 @@ function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
   );
   if (legacy.length) {
     return `${sections}
-      <div class="review-tag-legacy"><span>历史标签</span><div class="review-tag-options">${legacy.map((item) => tagOption(item.key, item.label, true)).join("")}</div></div>`;
+      <div class="review-tag-legacy"><span>${escapeHtml(uiText("历史标签", "Legacy tags"))}</span><div class="review-tag-options">${legacy.map((item) => tagOption(item.key, item.label, true)).join("")}</div></div>`;
   }
   return sections;
 }
@@ -600,9 +600,9 @@ function renderReview(caseData) {
   $("#reviewPane").innerHTML = `
     <form class="review-form" id="annotationForm">
       <section class="review-section issue-tag-section">
-        <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span></h2></div><span class="evidence-summary-count" id="tagSummaryCount">已选 ${chosenTags.size} 项</span></div>
-        <div class="review-tag-groups-shell">${issueTagGroups}${customTagOptions ? `<div class="review-tag-legacy"><span>历史标签</span><div class="review-tag-options">${customTagOptions}</div></div>` : ""}</div>
-        <label class="review-exclude-toggle"><input id="reviewExcludeInput" type="checkbox" ${previous.is_excluded ? "checked" : ""} /><span><strong>应该排除</strong><small>不是模型需要解决的场景 case</small></span></label>
+        <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span></h2></div><span class="evidence-summary-count" id="tagSummaryCount">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
+        <div class="review-tag-groups-shell">${issueTagGroups}${customTagOptions ? `<div class="review-tag-legacy"><span class="ui-lang-zh">历史标签</span><span class="ui-lang-en">Legacy tags</span><div class="review-tag-options">${customTagOptions}</div></div>` : ""}</div>
+        <label class="review-exclude-toggle"><input id="reviewExcludeInput" type="checkbox" ${previous.is_excluded ? "checked" : ""} /><span><strong class="ui-lang-zh">应该排除</strong><strong class="ui-lang-en">Exclude</strong><small class="ui-lang-zh">不是模型需要解决的场景 case</small><small class="ui-lang-en">Not a case the model is expected to solve</small></span></label>
       </section>
       <section class="review-section model-error-section">
         <div class="review-section-heading">
@@ -826,20 +826,20 @@ function renderReview(caseData) {
 
 function reviewStatusDisplayLabel(value) {
   const match = REVIEW_STATUS_OPTIONS.find((item) => item.value === value);
-  if (!match) return String(value || "已 Review");
-  const useEn =
-    typeof document !== "undefined" &&
-    document.documentElement?.dataset?.uiLang === "en";
-  return useEn ? match.labelEn : match.labelZh;
+  if (!match) return String(value || t("status.reviewed"));
+  if (match.labelKey && typeof t === "function") return t(match.labelKey);
+  return i18nLocale() === "en" ? match.labelEn : match.labelZh;
 }
 
 function reviewStatusUiOptions() {
-  const useEn =
-    typeof document !== "undefined" &&
-    document.documentElement?.dataset?.uiLang === "en";
   return REVIEW_STATUS_OPTIONS.map((item) => ({
     value: item.value,
-    label: useEn ? item.labelEn : item.labelZh,
+    label:
+      item.labelKey && typeof t === "function"
+        ? t(item.labelKey)
+        : i18nLocale() === "en"
+          ? item.labelEn
+          : item.labelZh,
   }));
 }
 

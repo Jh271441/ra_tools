@@ -58,12 +58,14 @@ function updateMultiFilterSummary(root) {
   if (!summary) return;
   const values = getMultiFilterValues(root);
   const placeholder =
-    typeof uiText === "function"
-      ? uiText(
-          root.dataset.placeholder || "全部",
-          root.dataset.placeholderEn || root.dataset.placeholder || "All"
-        )
-      : root.dataset.placeholder || "全部";
+    typeof t === "function" && root.dataset.i18nPlaceholder
+      ? t(root.dataset.i18nPlaceholder)
+      : typeof uiText === "function"
+        ? uiText(
+            root.dataset.placeholder || "全部",
+            root.dataset.placeholderEn || root.dataset.placeholder || "All"
+          )
+        : root.dataset.placeholder || "全部";
   if (!values.length) {
     summary.textContent = placeholder;
     summary.classList.remove("has-value");
@@ -76,12 +78,17 @@ function updateMultiFilterSummary(root) {
     return input?.dataset.label || value;
   });
   const en = typeof state !== "undefined" && state.uiLanguage === "en";
-  summary.textContent =
-    labels.length <= 2
-      ? labels.join(en ? ", " : "、")
-      : en
-        ? `${labels[0]} +${labels.length - 1}`
-        : `${labels[0]} 等 ${labels.length} 项`;
+  if (labels.length <= 2) {
+    summary.textContent = labels.join(en ? ", " : "、");
+  } else if (typeof t === "function") {
+    summary.textContent = en
+      ? `${labels[0]} ${t("multi.plus_n", { n: labels.length - 1 })}`
+      : `${labels[0]} ${t("multi.and_n", { n: labels.length })}`;
+  } else {
+    summary.textContent = en
+      ? `${labels[0]} +${labels.length - 1}`
+      : `${labels[0]} 等 ${labels.length} 项`;
+  }
   summary.classList.add("has-value");
 }
 

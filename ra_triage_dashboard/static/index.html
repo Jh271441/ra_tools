@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-119`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-121`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -155,53 +155,53 @@
         <main class="main">
           <section class="app-page" id="reviewPage" data-page="review">
             <section class="review-gallery-view" id="reviewGalleryView">
-              <section class="review-commandbar" aria-label="Review 筛选与快捷操作">
+              <section class="review-commandbar" aria-label="Review filters">
               <div class="mobile-filter-bar">
                 <button class="button button-quiet mobile-filter-toggle" type="button"
                   data-mobile-filter-toggle="reviewFilters" aria-expanded="false" aria-controls="filterForm">
                   <span class="ui-lang-zh">筛选</span><span class="ui-lang-en">Filters</span>
-                  <span class="mobile-filter-hint" data-mobile-filter-hint="reviewFilters">展开条件</span>
+                  <span class="mobile-filter-hint" data-mobile-filter-hint="reviewFilters"><span class="ui-lang-zh">展开条件</span><span class="ui-lang-en">Show filters</span></span>
                 </button>
               </div>
               <form class="review-filters" id="filterForm" data-mobile-filter-panel="reviewFilters">
                 <label class="filter-model-run">
-                  <span>对比模型 Run</span>
+                  <span class="ui-lang-zh">对比模型 Run</span><span class="ui-lang-en">Compare model Run</span>
                   <div class="ui-select" id="modelRunPicker">
                     <button class="ui-select-trigger" id="modelRunPickerTrigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="modelRunPickerPanel">
-                      <span class="ui-select-summary" id="modelRunPickerSummary">未选择模型 Run</span>
+                      <span class="ui-select-summary" id="modelRunPickerSummary" data-i18n="filter.no_run">未选择模型 Run</span>
                       <span class="ui-select-caret" aria-hidden="true"></span>
                     </button>
                     <div class="ui-select-panel" id="modelRunPickerPanel" role="listbox" hidden></div>
                     <select id="modelRunFilter" class="ui-select-native gateway-model-native-select" aria-hidden="true" tabindex="-1">
-                      <option value="">未选择模型 Run</option>
+                      <option value="" data-i18n="filter.no_run">未选择模型 Run</option>
                     </select>
                   </div>
                 </label>
                 <label class="filter-comparison">
-                  <span>模型判断结果</span>
-                  <div class="multi-filter" id="comparisonFilter" data-placeholder="全部结果" aria-label="模型判断结果筛选"></div>
+                  <span class="ui-lang-zh">模型判断结果</span><span class="ui-lang-en">Model comparison</span>
+                  <div class="multi-filter" id="comparisonFilter" data-placeholder="全部结果" data-placeholder-en="All results" data-i18n-placeholder="filter.all_results" aria-label="Model comparison filter"></div>
                 </label>
                 <label class="filter-search">
-                  <span>检索</span>
-                  <input id="searchInput" name="search" placeholder="Issue ID、场景或关键词" autocomplete="off" />
+                  <span class="ui-lang-zh">检索</span><span class="ui-lang-en">Search</span>
+                  <input id="searchInput" name="search" placeholder="Issue ID、场景或关键词" data-placeholder-zh="Issue ID、场景或关键词" data-placeholder-en="Issue ID, scene, or keyword" autocomplete="off" />
                 </label>
                 <label>
                   <span>GT</span>
-                  <div class="multi-filter" id="gtFilter" data-placeholder="全部 GT"></div>
+                  <div class="multi-filter" id="gtFilter" data-placeholder="全部 GT" data-placeholder-en="All GT" data-i18n-placeholder="filter.all_gt"></div>
                 </label>
                 <label>
-                  <span>模型标注</span>
-                  <div class="multi-filter" id="annotationFilter" data-placeholder="全部模型标注"></div>
+                  <span class="ui-lang-zh">模型标注</span><span class="ui-lang-en">Model label</span>
+                  <div class="multi-filter" id="annotationFilter" data-placeholder="全部模型标注" data-placeholder-en="All model labels" data-i18n-placeholder="filter.all_model_labels"></div>
                 </label>
                 <label>
-                  <span>复核人</span>
-                  <div class="multi-filter" id="reviewerFilter" data-placeholder="全部复核人"></div>
+                  <span class="ui-lang-zh">复核人</span><span class="ui-lang-en">Reviewer</span>
+                  <div class="multi-filter" id="reviewerFilter" data-placeholder="全部复核人" data-placeholder-en="All reviewers" data-i18n-placeholder="filter.all_reviewers"></div>
                 </label>
                 <label>
-                  <span>任务负责人</span>
-                  <div class="multi-filter" id="workAssigneeFilter" data-placeholder="全部负责人" aria-label="均分任务负责人筛选"></div>
+                  <span class="ui-lang-zh">任务负责人</span><span class="ui-lang-en">Assignee</span>
+                  <div class="multi-filter" id="workAssigneeFilter" data-placeholder="全部负责人" data-placeholder-en="All assignees" data-i18n-placeholder="filter.all_assignees" aria-label="Work assignee filter"></div>
                 </label>
-                <button class="button button-quiet filter-submit" id="resetReviewFiltersButton" type="button">重置</button>
+                <button class="button button-quiet filter-submit" id="resetReviewFiltersButton" type="button"><span class="ui-lang-zh">重置</span><span class="ui-lang-en">Reset</span></button>
               </form>
               </section>
 
@@ -212,32 +212,32 @@
                   </div>
                   <div class="gallery-heading-actions">
                     <div class="review-quick-actions">
-                      <button class="button button-quiet" id="reviewUploadModelButton" type="button">上传模型结果</button>
-                      <button class="button button-quiet" id="splitFilteredButton" type="button" disabled>均分任务</button>
-                      <button class="button button-primary" id="predictFilteredButton" type="button" disabled>预测当前筛选</button>
+                      <button class="button button-quiet" id="reviewUploadModelButton" type="button"><span class="ui-lang-zh">上传模型结果</span><span class="ui-lang-en">Upload model results</span></button>
+                      <button class="button button-quiet" id="splitFilteredButton" type="button" disabled><span class="ui-lang-zh">均分任务</span><span class="ui-lang-en">Split work</span></button>
+                      <button class="button button-primary" id="predictFilteredButton" type="button" disabled><span class="ui-lang-zh">预测当前筛选</span><span class="ui-lang-en">Predict selection</span></button>
                     </div>
                     <div class="gallery-heading-meta">
-                      <span id="galleryResultSummary">正在加载 Issue…</span>
+                      <span id="galleryResultSummary" data-i18n="gallery.loading">正在加载 Issue…</span>
                       <span class="count-pill" id="caseCount">—</span>
                     </div>
                   </div>
                 </div>
                 <div class="issue-grid" id="issueList" aria-live="polite"></div>
-                <nav class="case-pagination gallery-pagination" aria-label="Issue 分页">
+                <nav class="case-pagination gallery-pagination" aria-label="Issue pagination">
                   <div class="case-pagination-main">
-                    <button class="button button-quiet" id="casePagePrevious" type="button">上一页</button>
+                    <button class="button button-quiet" id="casePagePrevious" type="button"><span class="ui-lang-zh">上一页</span><span class="ui-lang-en">Previous</span></button>
                     <span id="casePageSummary">— / —</span>
-                    <button class="button button-quiet" id="casePageNext" type="button">下一页</button>
+                    <button class="button button-quiet" id="casePageNext" type="button"><span class="ui-lang-zh">下一页</span><span class="ui-lang-en">Next</span></button>
                   </div>
                   <label class="case-page-size" for="casePageSize">
-                    <span>每页</span>
-                    <select id="casePageSize" aria-label="每页展示数量">
+                    <span class="ui-lang-zh">每页</span><span class="ui-lang-en">Per page</span>
+                    <select id="casePageSize" aria-label="Page size">
                       <option value="10">10</option>
                       <option value="20" selected>20</option>
                       <option value="50">50</option>
                       <option value="100">100</option>
                     </select>
-                    <span>条</span>
+                    <span class="ui-lang-zh">条</span><span class="ui-lang-en"></span>
                   </label>
                 </nav>
               </section>
@@ -248,15 +248,15 @@
                 <section class="detail-pane" id="detailPane">
                   <div class="empty-state">
                     <div class="empty-glyph" aria-hidden="true">+</div>
-                    <h2>正在准备 Issue 详情</h2>
-                    <p>点击 Gallery 卡片后，这里会显示 BEV / Camera 与模型输出。</p>
+                    <h2><span class="ui-lang-zh">正在准备 Issue 详情</span><span class="ui-lang-en">Preparing issue detail</span></h2>
+                    <p><span class="ui-lang-zh">点击 Gallery 卡片后，这里会显示 BEV / Camera 与模型输出。</span><span class="ui-lang-en">Open a gallery card to view BEV / Camera and model output.</span></p>
                   </div>
                 </section>
 
                 <aside class="review-pane" id="reviewPane">
                   <div class="review-placeholder">
-                    <h2>人工复核</h2>
-                    <p>记录最终结论，并选出模型遗漏的关键信息；这些字段会自动汇总为错误聚类。</p>
+                    <h2><span class="ui-lang-zh">人工复核</span><span class="ui-lang-en">Human review</span></h2>
+                    <p><span class="ui-lang-zh">记录最终结论，并选出模型遗漏的关键信息；这些字段会自动汇总为错误聚类。</span><span class="ui-lang-en">Record the final decision and missing evidence; these fields feed error clustering.</span></p>
                   </div>
                 </aside>
               </section>
@@ -277,137 +277,137 @@
                   <span class="ui-lang-zh">对比模型 Run</span><span class="ui-lang-en">Compare model Run</span>
                   <div class="ui-select" id="analysisRunPicker">
                     <button class="ui-select-trigger" id="analysisRunPickerTrigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="analysisRunPickerPanel">
-                      <span class="ui-select-summary" id="analysisRunPickerSummary">不叠加模型输出</span>
+                      <span class="ui-select-summary" id="analysisRunPickerSummary" data-i18n="filter.no_overlay_run">不叠加模型输出</span>
                       <span class="ui-select-caret" aria-hidden="true"></span>
                     </button>
                     <div class="ui-select-panel" id="analysisRunPickerPanel" role="listbox" hidden></div>
                     <select id="analysisRunFilter" class="ui-select-native gateway-model-native-select" aria-hidden="true" tabindex="-1">
-                      <option value="">不叠加模型输出</option>
+                      <option value="" data-i18n="filter.no_overlay_run">不叠加模型输出</option>
                     </select>
                   </div>
                 </label>
                 <label class="analysis-comparison-filter">
                   <span class="ui-lang-zh">模型判断结果</span><span class="ui-lang-en">Model comparison</span>
-                  <div class="multi-filter" id="analysisComparisonFilter" data-placeholder="全部结果" data-placeholder-en="All results" aria-label="模型判断结果筛选"></div>
+                  <div class="multi-filter" id="analysisComparisonFilter" data-placeholder="全部结果" data-placeholder-en="All results" data-i18n-placeholder="filter.all_results" aria-label="Model comparison"></div>
                 </label>
                 <label>
                   <span class="ui-lang-zh">复核人</span><span class="ui-lang-en">Reviewer</span>
-                  <div class="multi-filter" id="analysisReviewerFilter" data-placeholder="全部复核人" data-placeholder-en="All reviewers"></div>
+                  <div class="multi-filter" id="analysisReviewerFilter" data-placeholder="全部复核人" data-placeholder-en="All reviewers" data-i18n-placeholder="filter.all_reviewers"></div>
                 </label>
                 <label>
                   <span class="ui-lang-zh">Review 状态</span><span class="ui-lang-en">Review status</span>
-                  <div class="multi-filter" id="analysisStatusFilter" data-placeholder="全部状态" data-placeholder-en="All statuses"></div>
+                  <div class="multi-filter" id="analysisStatusFilter" data-placeholder="全部状态" data-placeholder-en="All statuses" data-i18n-placeholder="analysis.all_statuses"></div>
                 </label>
                 <label>
                   <span>GT</span>
-                  <div class="multi-filter" id="analysisGtFilter" data-placeholder="全部 GT" data-placeholder-en="All GT"></div>
+                  <div class="multi-filter" id="analysisGtFilter" data-placeholder="全部 GT" data-placeholder-en="All GT" data-i18n-placeholder="filter.all_gt"></div>
                 </label>
                 <label>
-                  <span>模型预测</span>
-                  <div class="multi-filter" id="analysisModelLabelFilter" data-placeholder="全部模型预测"></div>
+                  <span class="ui-lang-zh">模型预测</span><span class="ui-lang-en">Model prediction</span>
+                  <div class="multi-filter" id="analysisModelLabelFilter" data-placeholder="全部模型预测" data-placeholder-en="All model predictions" data-i18n-placeholder="analysis.all_model_pred"></div>
                 </label>
                 <label class="analysis-evidence-filter">
-                  <span>缺失信息</span>
-                  <div class="multi-filter" id="analysisEvidenceFilter" data-placeholder="全部缺失信息"></div>
+                  <span class="ui-lang-zh">缺失信息</span><span class="ui-lang-en">Missing evidence</span>
+                  <div class="multi-filter" id="analysisEvidenceFilter" data-placeholder="全部缺失信息" data-placeholder-en="All missing evidence" data-i18n-placeholder="analysis.all_missing"></div>
                 </label>
                 <label class="analysis-tag-filter">
-                  <span>场景</span>
-                  <div class="multi-filter" id="analysisSceneFilter" data-placeholder="全部场景"></div>
+                  <span class="ui-lang-zh">场景</span><span class="ui-lang-en">Scene</span>
+                  <div class="multi-filter" id="analysisSceneFilter" data-placeholder="全部场景" data-placeholder-en="All scenes" data-i18n-placeholder="analysis.all_scenes"></div>
                 </label>
                 <label class="analysis-trigger-filter">
-                  <span>触发判定</span>
-                  <div class="multi-filter" id="analysisTriggerFilter" data-placeholder="全部触发判定"></div>
+                  <span class="ui-lang-zh">触发判定</span><span class="ui-lang-en">Trigger decision</span>
+                  <div class="multi-filter" id="analysisTriggerFilter" data-placeholder="全部触发判定" data-placeholder-en="All trigger decisions" data-i18n-placeholder="analysis.all_triggers"></div>
                 </label>
                 <label class="analysis-egress-filter">
-                  <span>如何脱困</span>
-                  <div class="multi-filter" id="analysisEgressFilter" data-placeholder="全部脱困方式"></div>
+                  <span class="ui-lang-zh">如何脱困</span><span class="ui-lang-en">Egress</span>
+                  <div class="multi-filter" id="analysisEgressFilter" data-placeholder="全部脱困方式" data-placeholder-en="All egress" data-i18n-placeholder="analysis.all_egress"></div>
                 </label>
                 <div class="analysis-search-actions">
                   <label class="analysis-search-filter">
-                    <span>检索 Review 原因</span>
-                    <input id="analysisSearchInput" placeholder="人工原因、复核人、Tags 或缺失信息" autocomplete="off" />
+                    <span class="ui-lang-zh">检索 Review 原因</span><span class="ui-lang-en">Search review reasons</span>
+                    <input id="analysisSearchInput" placeholder="人工原因、复核人、Tags 或缺失信息" data-placeholder-zh="人工原因、复核人、Tags 或缺失信息" data-placeholder-en="Reason, reviewer, tags, or missing evidence" autocomplete="off" />
                   </label>
                   <div class="analysis-filter-actions">
-                    <button class="button button-quiet" id="exportReviewAnalysisCsvButton" type="button">导出 CSV</button>
-                    <button class="button button-quiet" id="exportReviewAnalysisXlsxButton" type="button">导出 XLSX</button>
-                    <button class="button button-quiet" id="resetReviewAnalysisButton" type="button">重置</button>
+                    <button class="button button-quiet" id="exportReviewAnalysisCsvButton" type="button"><span class="ui-lang-zh">导出 CSV</span><span class="ui-lang-en">Export CSV</span></button>
+                    <button class="button button-quiet" id="exportReviewAnalysisXlsxButton" type="button"><span class="ui-lang-zh">导出 XLSX</span><span class="ui-lang-en">Export XLSX</span></button>
+                    <button class="button button-quiet" id="resetReviewAnalysisButton" type="button"><span class="ui-lang-zh">重置</span><span class="ui-lang-en">Reset</span></button>
                   </div>
                 </div>
               </form>
             </section>
 
-            <section class="analysis-summary-grid" aria-label="原因聚类概览">
+            <section class="analysis-summary-grid" aria-label="Analysis overview">
               <article class="analysis-stat-card">
-                <span>最新 Review</span>
+                <span class="ui-lang-zh">最新 Review</span><span class="ui-lang-en">Latest reviews</span>
                 <strong id="analysisReviewCount">—</strong>
-                <small id="analysisReviewScope">当前筛选范围</small>
+                <small id="analysisReviewScope"><span class="ui-lang-zh">当前筛选范围</span><span class="ui-lang-en">Current filter scope</span></small>
               </article>
               <article class="analysis-stat-card">
-                <span>已填写原因</span>
+                <span class="ui-lang-zh">已填写原因</span><span class="ui-lang-en">With reason</span>
                 <strong id="analysisReasonCount">—</strong>
-                <small id="analysisEmptyReasonCount">— 条未填写</small>
+                <small id="analysisEmptyReasonCount">—</small>
               </article>
               <article class="analysis-stat-card">
-                <span>结构化缺失信息</span>
+                <span class="ui-lang-zh">结构化缺失信息</span><span class="ui-lang-en">Structured missing evidence</span>
                 <strong id="analysisEvidenceCount">—</strong>
-                <small>至少选择 1 项</small>
+                <small class="ui-lang-zh">至少选择 1 项</small><small class="ui-lang-en">Select at least 1</small>
               </article>
             </section>
 
-            <section class="analysis-cluster-grid" id="analysisClusterPanels" aria-label="结构化聚类图">
-              <div class="analysis-empty">正在统计结构化字段…</div>
+            <section class="analysis-cluster-grid" id="analysisClusterPanels" aria-label="Structured clusters">
+              <div class="analysis-empty"><span class="ui-lang-zh">正在统计结构化字段…</span><span class="ui-lang-en">Aggregating structured fields…</span></div>
             </section>
 
             <section class="page-card analysis-case-card">
               <div class="section-heading">
                 <div>
-                  <h3>Review 原因明细</h3>
+                  <h3><span class="ui-lang-zh">Review 原因明细</span><span class="ui-lang-en">Review reason details</span></h3>
                 </div>
-                <small id="analysisCaseSummary">正在加载…</small>
+                <small id="analysisCaseSummary"><span class="ui-lang-zh">正在加载…</span><span class="ui-lang-en">Loading…</span></small>
               </div>
               <div class="analysis-case-list" id="analysisCaseList" aria-live="polite"></div>
-              <nav class="case-pagination gallery-pagination" aria-label="原因明细分页">
+              <nav class="case-pagination gallery-pagination" aria-label="Reason detail pagination">
                 <div class="case-pagination-main">
-                  <button class="button button-quiet" id="analysisPagePrevious" type="button">上一页</button>
+                  <button class="button button-quiet" id="analysisPagePrevious" type="button"><span class="ui-lang-zh">上一页</span><span class="ui-lang-en">Previous</span></button>
                   <span id="analysisPageSummary">— / —</span>
-                  <button class="button button-quiet" id="analysisPageNext" type="button">下一页</button>
+                  <button class="button button-quiet" id="analysisPageNext" type="button"><span class="ui-lang-zh">下一页</span><span class="ui-lang-en">Next</span></button>
                 </div>
                 <label class="case-page-size" for="analysisPageSize">
-                  <span>每页</span>
-                  <select id="analysisPageSize" aria-label="原因明细每页展示数量">
+                  <span class="ui-lang-zh">每页</span><span class="ui-lang-en">Per page</span>
+                  <select id="analysisPageSize" aria-label="Page size">
                     <option value="10">10</option>
                     <option value="20" selected>20</option>
                     <option value="50">50</option>
                     <option value="100">100</option>
                   </select>
-                  <span>条</span>
+                  <span class="ui-lang-zh">条</span><span class="ui-lang-en"></span>
                 </label>
               </nav>
             </section>
           </section>
 
           <section class="app-page tool-page hidden" id="runsPage" data-page="runs">
-            <section class="page-card runs-source-card" id="runsSourceCard" aria-label="Run 数据来源">
+            <section class="page-card runs-source-card" id="runsSourceCard" aria-label="Run sources">
               <div class="runs-source-heading">
                 <div>
-                  <h3>导入或拉取模型结果</h3>
+                  <h3><span class="ui-lang-zh">导入或拉取模型结果</span><span class="ui-lang-en">Import or pull model results</span></h3>
                 </div>
-                <small>三种来源统一入口 · 历史 Run 独立保留</small>
+                <small><span class="ui-lang-zh">三种来源统一入口 · 历史 Run 独立保留</span><span class="ui-lang-en">One entry for three sources · history Runs kept separate</span></small>
               </div>
-              <div class="run-source-tabs" role="tablist" aria-label="Run 数据来源">
-                <button class="run-source-tab active source-upload" id="runManagerImportButton" type="button" role="tab" aria-selected="true" aria-controls="runImportPanel" data-run-source-tab="upload" title="模型结果文件">
+              <div class="run-source-tabs" role="tablist" aria-label="Run sources">
+                <button class="run-source-tab active source-upload" id="runManagerImportButton" type="button" role="tab" aria-selected="true" aria-controls="runImportPanel" data-run-source-tab="upload" title="Model result file">
                   <span class="run-source-icon" aria-hidden="true">⇧</span>
-                  <span><strong>模型结果文件</strong><small>JSON / CSV / XLSX</small></span>
+                  <span><strong class="ui-lang-zh">模型结果文件</strong><strong class="ui-lang-en">Model result file</strong><small>JSON / CSV / XLSX</small></span>
                   <em id="runSourceCountUpload">0</em>
                 </button>
-                <button class="run-source-tab source-autotriage" id="openAutoTriageImportButton" type="button" role="tab" aria-selected="false" aria-controls="autotriageImportPanel" data-run-source-tab="autotriage" title="AutoTriage 快照">
+                <button class="run-source-tab source-autotriage" id="openAutoTriageImportButton" type="button" role="tab" aria-selected="false" aria-controls="autotriageImportPanel" data-run-source-tab="autotriage" title="AutoTriage snapshot">
                   <span class="run-source-icon" aria-hidden="true">A</span>
-                  <span><strong>AutoTriage 快照</strong><small>固定接口只读拉取</small></span>
+                  <span><strong class="ui-lang-zh">AutoTriage 快照</strong><strong class="ui-lang-en">AutoTriage snapshot</strong><small class="ui-lang-zh">固定接口只读拉取</small><small class="ui-lang-en">Fixed read-only pull</small></span>
                   <em id="runSourceCountAutotriage">0</em>
                 </button>
-                <button class="run-source-tab source-trail" id="openTrailImportButton" type="button" role="tab" aria-selected="false" aria-controls="trailImportDetails" data-run-source-tab="trail" title="Trail 快照">
+                <button class="run-source-tab source-trail" id="openTrailImportButton" type="button" role="tab" aria-selected="false" aria-controls="trailImportDetails" data-run-source-tab="trail" title="Trail snapshot">
                   <span class="run-source-icon" aria-hidden="true">T</span>
-                  <span><strong>Trail 快照</strong><small>字段检查后创建本地 Run</small></span>
+                  <span><strong class="ui-lang-zh">Trail 快照</strong><strong class="ui-lang-en">Trail snapshot</strong><small class="ui-lang-zh">字段检查后创建本地 Run</small><small class="ui-lang-en">Field check then create local Run</small></span>
                   <em id="runSourceCountTrail">0</em>
                 </button>
               </div>
@@ -417,24 +417,24 @@
                     <aside class="run-import-copy">
                       <div class="run-import-copy-heading">
                         <div>
-                          <h3>模型结果契约</h3>
+                          <h3><span class="ui-lang-zh">模型结果契约</span><span class="ui-lang-en">Model result contract</span></h3>
                         </div>
-                        <button class="button button-quiet import-example-trigger" id="openImportExamplesButton" type="button">查看示例</button>
+                        <button class="button button-quiet import-example-trigger" id="openImportExamplesButton" type="button"><span class="ui-lang-zh">查看示例</span><span class="ui-lang-en">View examples</span></button>
                       </div>
-                      <p>文件至少需要 <code>issue_id</code> 与 <code>model_label</code> 或 <code>ra_stuck_auto_result</code>；可附带 reason、confidence、ra_stuck_auto_result_info 等字段。</p>
+                      <p><span class="ui-lang-zh">文件至少需要 <code>issue_id</code> 与 <code>model_label</code> 或 <code>ra_stuck_auto_result</code>；可附带 reason、confidence、ra_stuck_auto_result_info 等字段。</span><span class="ui-lang-en">File needs at least <code>issue_id</code> and <code>model_label</code> or <code>ra_stuck_auto_result</code>; optional reason, confidence, ra_stuck_auto_result_info.</span></p>
                     </aside>
                     <form class="tool-form" id="importForm">
                       <label class="file-drop">
-                        <span>选择模型结果文件</span>
+                        <span class="ui-lang-zh">选择模型结果文件</span><span class="ui-lang-en">Choose model result file</span>
                         <input id="importFile" type="file" accept=".json,.csv,.xlsx,.xlsm" required />
                       </label>
                       <div class="run-import-controls">
                         <label id="runNameField">
-                          <span>模型 Run 名（可选）</span>
-                          <input id="runNameInput" placeholder="默认取 experiment.model_name 或文件名" autocomplete="off" />
+                          <span class="ui-lang-zh">模型 Run 名（可选）</span><span class="ui-lang-en">Model Run name (optional)</span>
+                          <input id="runNameInput" data-placeholder-zh="默认取 experiment.model_name 或文件名" data-placeholder-en="Defaults to experiment.model_name or file name" placeholder="默认取 experiment.model_name 或文件名" autocomplete="off" />
                         </label>
                         <div class="page-actions">
-                          <button class="button button-primary" type="submit">开始导入</button>
+                          <button class="button button-primary" type="submit"><span class="ui-lang-zh">开始导入</span><span class="ui-lang-en">Start import</span></button>
                         </div>
                       </div>
                       <div class="dialog-result hidden" id="importResult"></div>
@@ -445,22 +445,22 @@
                 <section class="run-source-panel" id="autotriageImportPanel" role="tabpanel" data-run-source-panel="autotriage" aria-labelledby="openAutoTriageImportButton" aria-hidden="true">
                   <div class="run-import-body">
                     <aside class="run-import-copy">
-                      <h3>按 Batch 拉取</h3>
-                      <p>输入 Batch ID 或 records 链接。服务端只访问固定 AutoTriage 内网地址，并校验声明总数、完成数、结果数和唯一 Issue 数。</p>
-                      <p>平台内容相同会复用已有 Run；平台结果变化时会生成新的内容快照。</p>
+                      <h3><span class="ui-lang-zh">按 Batch 拉取</span><span class="ui-lang-en">Pull by Batch</span></h3>
+                      <p><span class="ui-lang-zh">输入 Batch ID 或 records 链接。服务端只访问固定 AutoTriage 内网地址，并校验声明总数、完成数、结果数和唯一 Issue 数。</span><span class="ui-lang-en">Enter a Batch ID or records URL. Server only hits the fixed AutoTriage host and validates declared totals.</span></p>
+                      <p><span class="ui-lang-zh">平台内容相同会复用已有 Run；平台结果变化时会生成新的内容快照。</span><span class="ui-lang-en">Identical platform content reuses an existing Run; changes create a new content snapshot.</span></p>
                     </aside>
                     <form class="tool-form" id="autotriageImportForm">
                       <label>
-                        <span>Batch ID / records 链接</span>
-                        <input id="autotriageBatchInput" placeholder="例如 761，或 …/records/761?tab=results" autocomplete="off" required />
+                        <span class="ui-lang-zh">Batch ID / records 链接</span><span class="ui-lang-en">Batch ID / records URL</span>
+                        <input id="autotriageBatchInput" data-placeholder-zh="例如 761，或 …/records/761?tab=results" data-placeholder-en="e.g. 761, or …/records/761?tab=results" placeholder="例如 761，或 …/records/761?tab=results" autocomplete="off" required />
                       </label>
                       <div class="run-import-controls">
                         <label>
-                          <span>模型 Run 名（可选）</span>
-                          <input id="autotriageRunNameInput" placeholder="默认使用平台 Batch 名" maxlength="120" autocomplete="off" />
+                          <span class="ui-lang-zh">模型 Run 名（可选）</span><span class="ui-lang-en">Model Run name (optional)</span>
+                          <input id="autotriageRunNameInput" data-placeholder-zh="默认使用平台 Batch 名" data-placeholder-en="Defaults to platform Batch name" placeholder="默认使用平台 Batch 名" maxlength="120" autocomplete="off" />
                         </label>
                         <div class="page-actions">
-                          <button class="button button-primary" id="importAutoTriageButton" type="submit">拉取并创建 Run</button>
+                          <button class="button button-primary" id="importAutoTriageButton" type="submit"><span class="ui-lang-zh">拉取并创建 Run</span><span class="ui-lang-en">Pull and create Run</span></button>
                         </div>
                       </div>
                       <div class="dialog-result hidden" id="autotriageImportResult"></div>
@@ -471,17 +471,15 @@
                 <section class="run-source-panel" id="trailImportDetails" role="tabpanel" data-run-source-panel="trail" aria-labelledby="openTrailImportButton" aria-hidden="true">
                   <div class="trail-import-body">
                     <div>
-                      <p>
-                        检查当前 <strong id="trailScopeCount">1071</strong> 条 baseline 在 Trail view
-                        <strong id="trailViewId">2410</strong> 中的模型字段；不会写 Trail、修改 GT 或改变默认 Run。
-                      </p>
-                      <p class="muted">检查仅创建或复用本地不可变 Run，不会改变团队默认 Run。</p>
+                      <p class="ui-lang-zh">检查当前 <strong id="trailScopeCount">1071</strong> 条 baseline 在 Trail view <strong id="trailViewId">2410</strong> 中的模型字段；不会写 Trail、修改 GT 或改变默认 Run。</p>
+                      <p class="ui-lang-en">Check model fields for <strong id="trailScopeCountEn">1071</strong> baseline issues in Trail view <strong id="trailViewIdEn">2410</strong>; does not write Trail, change GT, or switch the default Run.</p>
+                      <p class="muted"><span class="ui-lang-zh">检查仅创建或复用本地不可变 Run，不会改变团队默认 Run。</span><span class="ui-lang-en">Check only creates or reuses an immutable local Run; team default Run is unchanged.</span></p>
                     </div>
                     <div class="trail-state-row">
-                      <div class="trail-sync-state" id="trailSyncState">等待读取当前 Trail 字段状态…</div>
+                      <div class="trail-sync-state" id="trailSyncState" data-i18n="runs.trail_waiting">等待读取当前 Trail 字段状态…</div>
                       <div class="trail-actions">
-                        <button class="button button-quiet" id="checkTrailButton" type="button">检查字段</button>
-                        <button class="button button-primary" id="syncTrailButton" type="button" disabled>创建 Run</button>
+                        <button class="button button-quiet" id="checkTrailButton" type="button"><span class="ui-lang-zh">检查字段</span><span class="ui-lang-en">Check fields</span></button>
+                        <button class="button button-primary" id="syncTrailButton" type="button" disabled><span class="ui-lang-zh">创建 Run</span><span class="ui-lang-en">Create Run</span></button>
                       </div>
                     </div>
                   </div>
@@ -491,51 +489,51 @@
 
             <section class="page-card runs-page-card">
                 <div class="runs-toolbar">
-                  <h3>模型结果管理</h3>
+                  <h3><span class="ui-lang-zh">模型结果管理</span><span class="ui-lang-en">Model run management</span></h3>
                   <div class="run-manager-actions">
-                    <button class="button button-quiet" id="refreshRunsButton" type="button">刷新</button>
+                    <button class="button button-quiet" id="refreshRunsButton" type="button"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
                   </div>
                 </div>
                 <div class="run-filter-bar run-filter-three">
                   <label>
-                    <span>模型 / 批次</span>
-                    <input id="runSearchInput" placeholder="搜索模型名、批次或文件" autocomplete="off" />
+                    <span class="ui-lang-zh">模型 / 批次</span><span class="ui-lang-en">Model / batch</span>
+                    <input id="runSearchInput" data-placeholder-zh="搜索模型名、批次或文件" data-placeholder-en="Search model, batch, or file" placeholder="搜索模型名、批次或文件" autocomplete="off" />
                   </label>
                   <label>
-                    <span>人员</span>
+                    <span class="ui-lang-zh">人员</span><span class="ui-lang-en">People</span>
                     <select id="runPersonFilter">
-                      <option value="">全部人员</option>
+                      <option value="" data-i18n="runs.all_people">全部人员</option>
                     </select>
                   </label>
                   <label>
-                    <span>来源类型</span>
+                    <span class="ui-lang-zh">来源类型</span><span class="ui-lang-en">Source type</span>
                     <select id="runKindFilter">
-                      <option value="">全部来源</option>
-                      <option value="upload">文件模型结果</option>
-                      <option value="trail_snapshot">Trail 快照</option>
-                      <option value="manual_batch">网页 Batch 预测</option>
-                      <option value="autotriage_snapshot">AutoTriage 快照</option>
+                      <option value="" data-i18n="runs.all_sources">全部来源</option>
+                      <option value="upload" data-i18n="runs.kind_upload">文件模型结果</option>
+                      <option value="trail_snapshot" data-i18n="runs.kind_trail">Trail 快照</option>
+                      <option value="manual_batch" data-i18n="runs.kind_batch">网页 Batch 预测</option>
+                      <option value="autotriage_snapshot" data-i18n="runs.kind_autotriage">AutoTriage 快照</option>
                     </select>
                   </label>
                 </div>
-                <div class="run-manager-summary" id="runManagerSummary">正在加载 Runs…</div>
+                <div class="run-manager-summary" id="runManagerSummary" data-i18n="runs.loading">正在加载 Runs…</div>
                 <div class="run-manager-list" id="modelRunList"></div>
             </section>
           </section>
 
           <section class="app-page tool-page hidden" id="predictionPage" data-page="prediction">
             <div class="compact-page-lead">
-              <p>从服务器模型网关选择模型并批量预测；完成后再显式推送到 AutoTriage。</p>
-              <button class="button button-quiet" type="button" data-page-target="review">返回判错复核</button>
+              <p><span class="ui-lang-zh">从服务器模型网关选择模型并批量预测；完成后再显式推送到 AutoTriage。</span><span class="ui-lang-en">Pick a gateway model and run batch prediction; publish to AutoTriage explicitly when ready.</span></p>
+              <button class="button button-quiet" type="button" data-page-target="review"><span class="ui-lang-zh">返回判错复核</span><span class="ui-lang-en">Back to failure review</span></button>
             </div>
             <div class="tool-page-grid batch-page-grid">
               <aside class="page-card page-aside gateway-card">
-                <h3>服务器模型网关</h3>
+                <h3><span class="ui-lang-zh">服务器模型网关</span><span class="ui-lang-en">Server model gateway</span></h3>
                 <label class="gateway-endpoint">
                   <span>Provider</span>
                   <div class="gateway-provider-picker" id="gatewayProviderPicker">
-                    <button class="gateway-provider-picker-trigger" id="gatewayProviderPickerTrigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="gatewayProviderPickerPanel" aria-label="选择模型 Provider">
-                      <span id="gatewayProviderPickerSummary">正在读取 Provider…</span>
+                    <button class="gateway-provider-picker-trigger" id="gatewayProviderPickerTrigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="gatewayProviderPickerPanel" aria-label="Select model provider">
+                      <span id="gatewayProviderPickerSummary" data-i18n="batch.reading_provider">正在读取 Provider…</span>
                       <span class="gateway-provider-picker-caret" aria-hidden="true"></span>
                     </button>
                     <div class="gateway-provider-picker-panel" id="gatewayProviderPickerPanel" role="listbox" hidden>
@@ -543,16 +541,16 @@
                     </div>
                   </div>
                   <select id="gatewayProviderSelect" class="gateway-model-native-select" aria-hidden="true" tabindex="-1">
-                    <option value="">正在读取 Provider…</option>
+                    <option value="" data-i18n="batch.reading_provider">正在读取 Provider…</option>
                   </select>
-                  <small><span id="gatewayModelsEndpoint">正在读取模型目录…</span> · 服务端密钥</small>
+                  <small><span id="gatewayModelsEndpoint" data-i18n="batch.reading_catalog">正在读取模型目录…</span> · <span class="ui-lang-zh">服务端密钥</span><span class="ui-lang-en">server-owned key</span></small>
                 </label>
                 <label>
-                  <span>模型</span>
+                  <span class="ui-lang-zh">模型</span><span class="ui-lang-en">Model</span>
                   <div class="gateway-model-control">
                     <div class="gateway-model-picker" id="gatewayModelPicker">
                       <button class="gateway-model-picker-trigger" id="gatewayModelPickerTrigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="gatewayModelPickerPanel">
-                        <span id="gatewayModelPickerSummary">正在获取可用模型…</span>
+                        <span id="gatewayModelPickerSummary" data-i18n="batch.reading_models">正在获取可用模型…</span>
                         <span class="gateway-model-picker-caret" aria-hidden="true"></span>
                       </button>
                       <div class="gateway-model-picker-panel" id="gatewayModelPickerPanel" role="listbox" hidden>
@@ -560,95 +558,95 @@
                       </div>
                     </div>
                     <select id="predictionModelSelect" class="gateway-model-native-select" aria-hidden="true" tabindex="-1">
-                      <option value="">正在获取可用模型…</option>
+                      <option value="" data-i18n="batch.reading_models">正在获取可用模型…</option>
                     </select>
-                    <button class="button button-quiet" id="refreshGatewayModelsButton" type="button" title="刷新模型列表">刷新</button>
+                    <button class="button button-quiet" id="refreshGatewayModelsButton" type="button" title="Refresh models"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
                   </div>
                 </label>
-                <div class="gateway-model-status" id="gatewayModelStatus">正在自动获取模型列表…</div>
-                <div class="gateway-model-list" id="gatewayModelList" aria-label="可用模型列表">
-                  <div class="muted">正在读取模型目录…</div>
+                <div class="gateway-model-status" id="gatewayModelStatus"><span class="ui-lang-zh">正在自动获取模型列表…</span><span class="ui-lang-en">Fetching model list…</span></div>
+                <div class="gateway-model-list" id="gatewayModelList" aria-label="Available models">
+                  <div class="muted"><span class="ui-lang-zh">正在读取模型目录…</span><span class="ui-lang-en">Loading model catalog…</span></div>
                 </div>
                 <div class="batch-runtime-summary" id="batchModelSummary">
-                  <strong>正在读取服务器配置…</strong>
-                  <span>Prompt 与 Camera 输入参数继续使用 ra_auto_triage 默认 Experiment。</span>
+                  <strong><span class="ui-lang-zh">正在读取服务器配置…</span><span class="ui-lang-en">Loading server config…</span></strong>
+                  <span><span class="ui-lang-zh">Prompt 与 Camera 输入参数继续使用 ra_auto_triage 默认 Experiment。</span><span class="ui-lang-en">Prompt and Camera inputs keep the ra_auto_triage default Experiment.</span></span>
                 </div>
               </aside>
               <form class="page-card tool-form" id="predictionBatchForm">
                 <div class="batch-source-context hidden" id="predictionSourceSummary"></div>
                 <label class="batch-issue-field">
-                  <span class="batch-field-heading"><span>Issue IDs</span><small id="predictionBatchIssueCount">0 个 · 单批最多 50 个</small></span>
-                  <textarea class="batch-issue-input" id="predictionBatchIssues" rows="1" placeholder="支持逗号或空格分隔，例如：cn32171803, cn31954847, cn32000543" required autocomplete="off"></textarea>
+                  <span class="batch-field-heading"><span>Issue IDs</span><small id="predictionBatchIssueCount">0 · max 50</small></span>
+                  <textarea class="batch-issue-input" id="predictionBatchIssues" rows="1" data-placeholder-zh="支持逗号或空格分隔，例如：cn32171803, cn31954847, cn32000543" data-placeholder-en="Comma or space separated, e.g. cn32171803, cn31954847" placeholder="支持逗号或空格分隔，例如：cn32171803, cn31954847, cn32000543" required autocomplete="off"></textarea>
                 </label>
                 <details class="batch-config-details" open>
                   <summary>
-                    <span>Prompt 与输入配置</span>
-                    <small>每个 Batch 固化完整快照，可按模型 / Prompt / 输入筛选</small>
+                    <span class="ui-lang-zh">Prompt 与输入配置</span><span class="ui-lang-en">Prompt &amp; input config</span>
+                    <small><span class="ui-lang-zh">每个 Batch 固化完整快照，可按模型 / Prompt / 输入筛选</span><span class="ui-lang-en">Each Batch freezes a full snapshot; filter by model / Prompt / input</span></small>
                   </summary>
                   <div class="batch-config-body">
                     <div class="batch-config-grid">
                       <label>
-                        <span>Prompt 基线</span>
+                        <span class="ui-lang-zh">Prompt 基线</span><span class="ui-lang-en">Prompt baseline</span>
                         <select id="predictionPromptSelect">
-                          <option value="">正在读取服务器 Prompt…</option>
+                          <option value="">Loading server Prompt…</option>
                         </select>
                       </label>
                       <label>
-                        <span>输入 Profile</span>
+                        <span class="ui-lang-zh">输入 Profile</span><span class="ui-lang-en">Input profile</span>
                         <select id="predictionInputProfile">
-                          <option value="camera_ra_event">Camera 9 帧 + RA Events</option>
-                          <option value="camera_ra_options">Camera 9 帧 + RA Events + RA/SWAG Options</option>
-                          <option value="camera_only">Camera 9 帧</option>
+                          <option value="camera_ra_event">Camera 9 frames + RA Events</option>
+                          <option value="camera_ra_options">Camera 9 frames + RA Events + RA/SWAG Options</option>
+                          <option value="camera_only">Camera 9 frames</option>
                         </select>
                       </label>
                     </div>
                     <div class="batch-common-config">
                       <label>
-                        <span>Camera 取帧预设</span>
+                        <span class="ui-lang-zh">Camera 取帧预设</span><span class="ui-lang-en">Camera frame preset</span>
                         <select id="predictionCameraPreset">
-                          <option value="camera_9_frames">Camera 9 帧 · -19s 至 +19s（默认）</option>
-                          <option value="camera_three_moments">Camera 三时刻 · 前 / 当前 / 后</option>
-                          <option value="camera_single_frame">Camera 单帧 · 当前时刻</option>
-                          <option value="custom">自定义帧偏移</option>
+                          <option value="camera_9_frames">Camera 9 frames · -19s to +19s (default)</option>
+                          <option value="camera_three_moments">Camera 3 moments · before / now / after</option>
+                          <option value="camera_single_frame">Camera single frame · now</option>
+                          <option value="custom">Custom frame offsets</option>
                         </select>
                       </label>
                       <div class="batch-bev-field">
-                        <span>Ares 输入</span>
-                        <label class="toggle-row compact-toggle batch-bev-toggle" title="使用服务端 stuck_triage_auto_opt_api 的默认 Ares Animation 配置">
+                        <span class="ui-lang-zh">Ares 输入</span><span class="ui-lang-en">Ares input</span>
+                        <label class="toggle-row compact-toggle batch-bev-toggle" title="Uses server stuck_triage_auto_opt_api default Ares Animation config">
                           <input id="predictionUseBev" type="checkbox" checked />
-                          <span><strong>BEV / Ares Animation</strong><small>API 默认</small></span>
+                          <span><strong>BEV / Ares Animation</strong><small>API default</small></span>
                         </label>
                       </div>
                     </div>
                     <label>
-                      <span>Prompt 正文（可编辑）</span>
-                      <textarea class="batch-prompt-input" id="predictionPromptTemplate" rows="12" spellcheck="false" placeholder="选择 Prompt 后载入完整正文"></textarea>
-                      <small id="predictionPromptSummary">正文会在任务创建时计算 SHA-256 并固化。</small>
+                      <span class="ui-lang-zh">Prompt 正文（可编辑）</span><span class="ui-lang-en">Prompt body (editable)</span>
+                      <textarea class="batch-prompt-input" id="predictionPromptTemplate" rows="12" spellcheck="false" data-placeholder-zh="选择 Prompt 后载入完整正文" data-placeholder-en="Full body loads after choosing a Prompt" placeholder="选择 Prompt 后载入完整正文"></textarea>
+                      <small id="predictionPromptSummary"><span class="ui-lang-zh">正文会在任务创建时计算 SHA-256 并固化。</span><span class="ui-lang-en">Body is SHA-256 hashed and frozen at job creation.</span></small>
                     </label>
                     <label>
-                      <span>Camera 帧偏移（ms）</span>
+                      <span class="ui-lang-zh">Camera 帧偏移（ms）</span><span class="ui-lang-en">Camera frame offsets (ms)</span>
                       <input id="predictionFrameOffsets" value="-19000,-15000,-10000,-5000,0,5000,10000,15000,19000" autocomplete="off" />
-                      <small>严格递增、包含 0；最多 18 帧，范围 ±30000 ms。</small>
+                      <small><span class="ui-lang-zh">严格递增、包含 0；最多 18 帧，范围 ±30000 ms。</span><span class="ui-lang-en">Strictly increasing, include 0; max 18 frames, ± ±30000 ms.</span></small>
                     </label>
                     <div class="batch-input-toggles">
                       <label class="toggle-row compact-toggle">
                         <input id="predictionUseRaEvent" type="checkbox" checked />
-                        <span><strong>RA Events</strong><small>注入协助时序</small></span>
+                        <span><strong>RA Events</strong><small class="ui-lang-zh">注入协助时序</small><small class="ui-lang-en">Assist timing</small></span>
                       </label>
                       <label class="toggle-row compact-toggle">
                         <input id="predictionUseRaOptions" type="checkbox" />
-                        <span><strong>RA / SWAG Options</strong><small>需同时启用 RA Events</small></span>
+                        <span><strong>RA / SWAG Options</strong><small class="ui-lang-zh">需同时启用 RA Events</small><small class="ui-lang-en">Requires RA Events</small></span>
                       </label>
                     </div>
                   </div>
                 </details>
                 <div class="batch-submit-row">
                   <label>
-                    <span>批次名</span>
-                    <input id="predictionBatchName" placeholder="例如 xuhaoxuan_20260729_163454" maxlength="120" autocomplete="off" />
+                    <span class="ui-lang-zh">批次名</span><span class="ui-lang-en">Batch name</span>
+                    <input id="predictionBatchName" placeholder="e.g. xuhaoxuan_20260729_163454" maxlength="120" autocomplete="off" />
                   </label>
                   <div class="page-actions">
-                    <button class="button button-primary" id="createPredictionBatchButton" type="submit">开始 Batch 预测</button>
+                    <button class="button button-primary" id="createPredictionBatchButton" type="submit"><span class="ui-lang-zh">开始 Batch 预测</span><span class="ui-lang-en">Start batch prediction</span></button>
                   </div>
                 </div>
               </form>
@@ -656,44 +654,44 @@
             <section class="page-card job-history-card">
               <div class="section-heading">
                 <div>
-                  <h3>全员 Batch 任务</h3>
+                  <h3><span class="ui-lang-zh">全员 Batch 任务</span><span class="ui-lang-en">Team Batch jobs</span></h3>
                 </div>
-                <button class="button button-quiet" id="refreshPredictionBatchesButton" type="button">刷新任务</button>
+                <button class="button button-quiet" id="refreshPredictionBatchesButton" type="button"><span class="ui-lang-zh">刷新任务</span><span class="ui-lang-en">Refresh jobs</span></button>
               </div>
               <div class="run-filter-bar batch-history-filters">
                 <label>
-                  <span>请求人</span>
+                  <span class="ui-lang-zh">请求人</span><span class="ui-lang-en">Requester</span>
                   <select id="batchRequesterFilter">
-                    <option value="">全部请求人</option>
+                    <option value="" data-i18n="batch.all_requesters">全部请求人</option>
                   </select>
                 </label>
                 <label>
-                  <span>任务状态</span>
+                  <span class="ui-lang-zh">任务状态</span><span class="ui-lang-en">Job status</span>
                   <select id="batchStatusFilter">
-                    <option value="">全部状态</option>
-                    <option value="queued">排队中</option>
-                    <option value="running">运行中</option>
-                    <option value="succeeded">成功</option>
-                    <option value="partial">部分成功</option>
-                    <option value="failed">失败</option>
+                    <option value="" data-i18n="batch.all_statuses">全部状态</option>
+                    <option value="queued" data-i18n="batch.status_queued">排队中</option>
+                    <option value="running" data-i18n="batch.status_running">运行中</option>
+                    <option value="succeeded" data-i18n="batch.status_succeeded">成功</option>
+                    <option value="partial" data-i18n="batch.status_partial">部分成功</option>
+                    <option value="failed" data-i18n="batch.status_failed">失败</option>
                   </select>
                 </label>
                 <label>
-                  <span>模型</span>
+                  <span class="ui-lang-zh">模型</span><span class="ui-lang-en">Model</span>
                   <select id="batchModelFilter">
-                    <option value="">全部模型</option>
+                    <option value="" data-i18n="batch.all_models">全部模型</option>
                   </select>
                 </label>
                 <label>
                   <span>Prompt</span>
                   <select id="batchPromptFilter">
-                    <option value="">全部 Prompt</option>
+                    <option value="" data-i18n="batch.all_prompts">全部 Prompt</option>
                   </select>
                 </label>
                 <label>
-                  <span>输入</span>
+                  <span class="ui-lang-zh">输入</span><span class="ui-lang-en">Input</span>
                   <select id="batchInputFilter">
-                    <option value="">全部输入</option>
+                    <option value="" data-i18n="batch.all_inputs">全部输入</option>
                     <option value="camera_ra_event">Camera + RA Events</option>
                     <option value="camera_ra_options">Camera + RA/SWAG Options</option>
                     <option value="camera_only">Camera only</option>
@@ -701,7 +699,7 @@
                   </select>
                 </label>
               </div>
-              <div class="run-manager-summary" id="batchHistorySummary">正在加载 Batch 任务…</div>
+              <div class="run-manager-summary" id="batchHistorySummary" data-i18n="batch.loading_jobs">正在加载 Batch 任务…</div>
               <div class="job-history-list" id="predictionBatchList"></div>
             </section>
           </section>
@@ -714,7 +712,7 @@
               </div>
             </div>
             <section class="system-status-hero" id="systemStatusHero" aria-live="polite">
-              <div class="system-status-loading">正在读取系统状态…</div>
+              <div class="system-status-loading"><span class="ui-lang-zh">正在读取系统状态…</span><span class="ui-lang-en">Loading system status…</span></div>
             </section>
             <div class="system-status-grid" id="systemStatusGrid"></div>
           </section>
@@ -729,11 +727,11 @@
                 </div>
               </div>
               <form class="access-create" id="accessUserForm">
-                <label><span class="ui-lang-zh">用户名</span><span class="ui-lang-en">Username</span><input id="accessUserName" maxlength="64" autocomplete="off" placeholder="例如 xuhaoxuan_i" /></label>
-                <label><span class="ui-lang-zh">权限</span><span class="ui-lang-en">Role</span><select id="accessUserRole"><option value="writer">可写</option><option value="admin">管理员</option></select></label>
+                <label><span class="ui-lang-zh">用户名</span><span class="ui-lang-en">Username</span><input id="accessUserName" maxlength="64" autocomplete="off" data-placeholder-zh="例如 xuhaoxuan_i" data-placeholder-en="e.g. xuhaoxuan_i" placeholder="例如 xuhaoxuan_i" /></label>
+                <label><span class="ui-lang-zh">权限</span><span class="ui-lang-en">Role</span><select id="accessUserRole"><option value="writer" data-i18n="access.writer">可写</option><option value="admin" data-i18n="access.admin">管理员</option></select></label>
                 <button class="button button-primary" type="submit"><span class="ui-lang-zh">添加用户</span><span class="ui-lang-en">Add user</span></button>
               </form>
-              <div class="access-list" id="accessUserList"><div class="no-asset">正在加载用户权限…</div></div>
+              <div class="access-list" id="accessUserList"><div class="no-asset" data-i18n="access.loading">正在加载用户权限…</div></div>
             </section>
           </section>
         </main>
@@ -744,20 +742,20 @@
       <div class="dialog-card">
         <div class="dialog-heading">
           <div>
-            <h2 id="sourcePreviewTitle">文件预览</h2>
+            <h2 id="sourcePreviewTitle"><span class="ui-lang-zh">文件预览</span><span class="ui-lang-en">File preview</span></h2>
           </div>
-          <button class="icon-button" type="button" data-close="sourcePreviewDialog" aria-label="关闭">×</button>
+          <button class="icon-button" type="button" data-close="sourcePreviewDialog" aria-label="Close" data-i18n-aria-label="dialog.close">×</button>
         </div>
         <div class="source-preview-toolbar">
           <div class="source-preview-meta" id="sourcePreviewMeta"></div>
-          <div class="source-preview-pagination" aria-label="文件预览分页">
-            <button class="button button-quiet" id="sourcePreviewPrevious" type="button">上一页</button>
-            <span id="sourcePreviewPageLabel">第 1 / 1 页</span>
-            <button class="button button-quiet" id="sourcePreviewNext" type="button">下一页</button>
+          <div class="source-preview-pagination" aria-label="Preview pagination">
+            <button class="button button-quiet" id="sourcePreviewPrevious" type="button"><span class="ui-lang-zh">上一页</span><span class="ui-lang-en">Previous</span></button>
+            <span id="sourcePreviewPageLabel">1 / 1</span>
+            <button class="button button-quiet" id="sourcePreviewNext" type="button"><span class="ui-lang-zh">下一页</span><span class="ui-lang-en">Next</span></button>
           </div>
         </div>
         <div class="source-preview-content" id="sourcePreviewContent">
-          <div class="no-asset">选择 Run 行中的“预览”后在此查看。</div>
+          <div class="no-asset"><span class="ui-lang-zh">选择 Run 行中的“预览”后在此查看。</span><span class="ui-lang-en">Open Preview on a Run row to inspect here.</span></div>
         </div>
       </div>
     </dialog>
@@ -766,9 +764,9 @@
       <div class="dialog-card">
         <div class="dialog-heading">
           <div>
-            <h2>模型结果文件示例</h2>
+            <h2><span class="ui-lang-zh">模型结果文件示例</span><span class="ui-lang-en">Model result file examples</span></h2>
           </div>
-          <button class="icon-button" type="button" data-close="importExamplesDialog" aria-label="关闭">×</button>
+          <button class="icon-button" type="button" data-close="importExamplesDialog" aria-label="Close" data-i18n-aria-label="dialog.close">×</button>
         </div>
         <div class="import-example-tabs" role="tablist" aria-label="模型结果示例格式">
           <button class="import-example-tab active" type="button" role="tab" aria-selected="true" data-import-example-format="csv">CSV</button>
@@ -842,9 +840,9 @@
       <div class="dialog-card">
         <div class="dialog-heading">
           <div>
-            <h2 id="historyDialogTitle">历史记录</h2>
+            <h2 id="historyDialogTitle"><span class="ui-lang-zh">历史记录</span><span class="ui-lang-en">History</span></h2>
           </div>
-          <button class="icon-button" type="button" data-close="historyDialog" aria-label="关闭">×</button>
+          <button class="icon-button" type="button" data-close="historyDialog" aria-label="Close" data-i18n-aria-label="dialog.close">×</button>
         </div>
         <div class="history-dialog-meta" id="historyDialogMeta"></div>
         <div class="history-dialog-content" id="historyDialogContent">
@@ -976,7 +974,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-119`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-121`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

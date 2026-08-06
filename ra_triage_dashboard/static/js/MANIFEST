@@ -1,5 +1,7 @@
 # Load order for classic scripts (app.js loader + tests).
+# Keep in sync with MODULES in static/app.js.
 core-base.js
+i18n.js
 routing.js
 format-api.js
 session-config.js

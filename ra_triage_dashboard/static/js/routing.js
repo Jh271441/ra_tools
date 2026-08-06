@@ -16,8 +16,15 @@ function applyColorTheme(theme, { persist = true } = {}) {
   if (toggle) {
     const light = state.colorTheme === "light";
     toggle.textContent = light ? "☾" : "☀";
-    toggle.setAttribute("aria-label", light ? "切换到深色模式" : "切换到浅色模式");
-    toggle.title = light ? "切换到深色模式" : "切换到浅色模式";
+    const themeKey = light ? "topbar.theme_to_dark" : "topbar.theme_to_light";
+    const themeLabel =
+      typeof t === "function"
+        ? t(themeKey)
+        : light
+          ? "切换到深色模式"
+          : "切换到浅色模式";
+    toggle.setAttribute("aria-label", themeLabel);
+    toggle.title = themeLabel;
   }
   // Pie slice colors are painted into SVG; re-render when theme flips.
   if (state.reviewAnalysis?.data && typeof renderAnalysisClusterPanels === "function") {
@@ -29,10 +36,6 @@ function normalizedUiLanguage(value) {
   return String(value || "").toLowerCase() === "en" ? "en" : "zh";
 }
 
-function uiText(zh, en) {
-  return state.uiLanguage === "en" ? en : zh;
-}
-
 function renderPageChrome() {
   const route = PAGE_ROUTES[state.activePage] || PAGE_ROUTES.review;
   const title = state.uiLanguage === "en" ? route.titleEn : route.titleZh;
@@ -40,6 +43,10 @@ function renderPageChrome() {
   document.title = `${title} · Manual Triage`;
 }
 
+/**
+ * I18n locale switch: set BCP 47 lang, CSS dual-span toggle, catalog DOM bind,
+ * then re-render language-sensitive dynamic widgets (filters, run pickers).
+ */
 function applyUiLanguage(language, { persist = true } = {}) {
   state.uiLanguage = normalizedUiLanguage(language);
   document.documentElement.dataset.uiLang = state.uiLanguage;
@@ -49,38 +56,103 @@ function applyUiLanguage(language, { persist = true } = {}) {
   if (toggle) {
     const english = state.uiLanguage === "en";
     toggle.textContent = english ? "中文" : "EN";
-    toggle.setAttribute("aria-label", english ? "切换到中文" : "切换到 English");
-    toggle.title = english ? "切换到中文" : "Switch to English";
+    toggle.setAttribute(
+      "aria-label",
+      english ? t("topbar.lang_to_zh") : t("topbar.lang_to_en")
+    );
+    toggle.title = english ? t("topbar.lang_to_zh") : t("topbar.lang_to_en");
   }
+  if (typeof applyDomI18n === "function") applyDomI18n(document);
+  if (typeof applyI18nPlaceholders === "function") applyI18nPlaceholders(document);
   renderPageChrome();
   renderSystemStatus();
   applySidebarState();
   renderSession();
-  // Re-render language-sensitive dynamic filters/pickers.
-  if (typeof renderReviewCatalogFilters === "function") {
+  // Dynamic filters / pickers rebuild option labels from the active catalog.
+  const refreshers = [
+    "renderReviewCatalogFilters",
+    "renderAnalysisComparisonFilter",
+    "renderAnalysisRunFilter",
+    "renderAnalysisCatalogFilters",
+    "renderReviewerFilter",
+    "renderWorkAssigneeFilter",
+  ];
+  for (const name of refreshers) {
     try {
-      renderReviewCatalogFilters();
+      if (typeof window[name] === "function") window[name]();
+      else if (typeof globalThis[name] === "function") globalThis[name]();
     } catch (_) {
-      /* ignore if page not ready */
+      /* page widgets may not be mounted */
     }
   }
-  if (typeof renderAnalysisComparisonFilter === "function") {
-    try {
-      renderAnalysisComparisonFilter();
-    } catch (_) {
-      /* ignore */
-    }
-  }
-  if (typeof renderAnalysisRunFilter === "function" && state.modelRuns?.length) {
-    try {
+  // Classic scripts share global scope — call by bare name when defined.
+  try {
+    if (typeof renderReviewCatalogFilters === "function") renderReviewCatalogFilters();
+  } catch (_) {}
+  try {
+    if (typeof renderAnalysisComparisonFilter === "function") renderAnalysisComparisonFilter();
+  } catch (_) {}
+  try {
+    if (typeof renderAnalysisRunFilter === "function" && state.modelRuns?.length) {
       renderAnalysisRunFilter();
-    } catch (_) {
-      /* ignore */
     }
-  }
+  } catch (_) {}
+  try {
+    if (typeof loadRuns === "function" && state.modelRuns?.length) {
+      // Refresh model-run picker labels without network.
+      const picker = $("#modelRunPicker");
+      if (picker && typeof populateUiSelect === "function") {
+        const runOptions = [
+          { value: "", label: t("filter.no_run") },
+          ...state.modelRuns.map((run) => {
+            const tag = run.is_default ? t("runs.default_tag") : "";
+            const inferred = Array.isArray(run.inferred_baseline_ids)
+              ? run.inferred_baseline_ids.filter(Boolean)
+              : [];
+            const setHint = inferred.length ? ` · ${inferred.join("+")}` : "";
+            return {
+              value: run.id,
+              label: `${tag}${run.name}${setHint} · ${t("runs.set_count")} ${run.baseline_prediction_count ?? 0} · ${t("runs.err_count")} ${run.failure_count ?? 0}`,
+            };
+          }),
+        ];
+        populateUiSelect(picker, runOptions, state.selectedRunId || "");
+      }
+      // Keep empty-option labels in sync with locale.
+      const emptySummary = $("#modelRunPickerSummary");
+      if (emptySummary && !state.selectedRunId) emptySummary.textContent = t("filter.no_run");
+      const analysisEmpty = $("#analysisRunPickerSummary");
+      if (analysisEmpty && !state.analysis?.runId) {
+        // only if native empty selected
+        const native = $("#analysisRunFilter");
+        if (native && !native.value) analysisEmpty.textContent = t("filter.no_overlay_run");
+      }
+    }
+  } catch (_) {}
   document.querySelectorAll(".multi-filter").forEach((root) => {
     if (typeof updateMultiFilterSummary === "function") updateMultiFilterSummary(root);
   });
+  // Gallery / analysis summaries use catalog when re-rendered.
+  try {
+    if (typeof renderCasePagination === "function") renderCasePagination();
+  } catch (_) {}
+  try {
+    if (typeof renderWorkSplitSummary === "function") renderWorkSplitSummary();
+  } catch (_) {}
+  try {
+    if (typeof applyColorTheme === "function") {
+      applyColorTheme(state.colorTheme, { persist: false });
+    }
+  } catch (_) {}
+  // Re-apply open detail/review form if mounted.
+  try {
+    if (state.selectedCase && typeof selectCase === "function") {
+      // Avoid full navigation: only re-paint review chrome labels via form if present.
+      if (typeof bindReviewStatusPicker === "function" && $("#reviewStatusPicker")) {
+        bindReviewStatusPicker();
+      }
+    }
+  } catch (_) {}
 }
 
 function normalizedAnalysisComparisonStatus(value, fallback = "all") {

@@ -178,7 +178,7 @@ function bindEvents() {
       } else if (state.selectedId) {
         await selectCase(state.selectedId, { updateRoute: false });
       }
-      showToast("页面数据已刷新。");
+      showToast(t("toast.page_refreshed"));
     } catch (error) {
       showToast(error.message, true);
     }
@@ -188,7 +188,7 @@ function bindEvents() {
     button.disabled = true;
     try {
       await loadStatus();
-      showToast(uiText("系统状态已刷新。", "System status refreshed."));
+      showToast(t("toast.status_refreshed"));
     } catch (error) {
       showToast(error.message, true);
     } finally {
@@ -211,13 +211,13 @@ function bindEvents() {
     event.preventDefault();
     const input = $("#accessUserName");
     const username = String(input.value || "").trim().toLowerCase();
-    if (!username) return showToast("请输入用户名。", true);
+    if (!username) return showToast(t("toast.enter_username"), true);
     const submit = event.submitter || event.currentTarget.querySelector("button[type='submit']");
     submit.disabled = true;
     try {
       await saveAccessUser(username, $("#accessUserRole").value);
       input.value = "";
-      showToast("用户权限已保存。");
+      showToast(t("toast.access_saved"));
     } catch (error) {
       showToast(error.message, true);
     } finally {
@@ -231,7 +231,7 @@ function bindEvents() {
     if (event.target.closest("[data-save-access-user]")) {
       try {
         await saveAccessUser(username, row.querySelector("[data-access-role]").value);
-        showToast("用户权限已更新。");
+        showToast(t("toast.access_updated"));
       } catch (error) { showToast(error.message, true); }
     }
     if (event.target.closest("[data-remove-access-user]")) {
@@ -240,7 +240,7 @@ function bindEvents() {
         const result = await api(`/api/access-users/${encodeURIComponent(username)}`, { method: "DELETE" });
         acknowledgeLocalChange(result);
         await loadAccessUsers();
-        showToast("该用户已变为只读。");
+        showToast(t("toast.access_removed"));
       } catch (error) { showToast(error.message, true); }
     }
   });
@@ -269,7 +269,7 @@ function bindEvents() {
     try {
       await loadRuns();
       await loadOverview();
-      showToast("模型 run 列表已刷新。");
+      showToast(t("toast.runs_refreshed"));
     } catch (error) {
       showToast(error.message, true);
     }
@@ -290,14 +290,14 @@ function bindEvents() {
   });
   $("#refreshPredictionBatchesButton").addEventListener("click", () => {
     loadPredictionBatches()
-      .then(() => showToast("Batch 任务历史已刷新。"))
+      .then(() => showToast(t("toast.batch_refreshed")))
       .catch((error) => showToast(error.message, true));
   });
   $("#refreshGatewayModelsButton").addEventListener("click", () => {
     const button = $("#refreshGatewayModelsButton");
     button.disabled = true;
     loadGatewayModels({ refresh: true })
-      .then(() => showToast("服务器模型目录已刷新。"))
+      .then(() => showToast(t("toast.models_refreshed")))
       .catch((error) => showToast(error.message, true))
       .finally(() => {
         button.disabled = false;
@@ -356,7 +356,7 @@ function bindEvents() {
   });
   $("#importFile").addEventListener("change", () => {
     const filename = $("#importFileName");
-    if (filename) filename.textContent = $("#importFile").files[0]?.name || "未选择文件";
+    if (filename) filename.textContent = $("#importFile").files[0]?.name || t("filter.no_file");
   });
   $("#openImportExamplesButton").addEventListener("click", openImportExamples);
   document.querySelectorAll("[data-import-example-format]").forEach((tab) => {
@@ -584,7 +584,7 @@ async function bootstrap() {
     }
     if (initialRoute.page === "users" && !state.session.is_admin) {
       initialRoute.page = "review";
-      showToast("用户管理仅对管理员开放。", true);
+      showToast(t("toast.admin_only"), true);
     }
     const defaultFailureOnly = Boolean(state.config?.default_failure_only);
     state.selectedRunId =

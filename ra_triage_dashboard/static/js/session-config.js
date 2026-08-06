@@ -42,31 +42,31 @@ function renderSession() {
   const username = state.session.username;
   const identityPending = Boolean(state.session.identity_pending);
   $("#sessionUserName").textContent = username || (identityPending
-    ? uiText("身份识别中…", "Identifying user…")
-    : uiText("用户未识别", "User not identified"));
+    ? t("session.identifying")
+    : t("session.unidentified"));
   $("#userAvatar").textContent = username ? username.slice(0, 1).toUpperCase() : "?";
   $("#sessionUserSource").textContent = state.session.read_only
-    ? uiText("只读预览", "Read-only preview")
+    ? t("session.readonly")
     : state.session.verified
-    ? uiText("企业 SSO · 已验证", "Enterprise SSO · verified")
+    ? t("session.sso")
     : identityPending
-      ? uiText("页面可先使用", "Page ready")
+      ? t("session.page_ready")
       : username
-      ? uiText("本机 LCA · 未验证", "Local LCA · unverified")
-      : uiText("当前会话", "Current session");
+      ? t("session.lca")
+      : t("session.current");
   $("#sidebarUser").title = state.session.verified
-    ? `可信代理认证：${username}`
+    ? uiText(`可信代理认证：${username}`, `Trusted proxy auth: ${username}`)
     : username
-      ? `本机 LCA 用户：${username}（仅作显示与默认标注人）`
-      : "当前没有可用的用户名";
+      ? uiText(`本机 LCA 用户：${username}（仅作显示与默认标注人）`, `Local LCA user: ${username} (display / default reviewer only)`)
+      : uiText("当前没有可用的用户名", "No username available");
   const logoutLink = $("#sessionLogoutLink");
   if (logoutLink) {
     const logoutUrl = String(state.session.logout_url || "");
     logoutLink.hidden = !logoutUrl || identityPending;
     logoutLink.href = logoutUrl || "#";
     logoutLink.textContent = state.session.verified
-      ? uiText("退出", "Sign out")
-      : uiText("重新登录", "Sign in again");
+      ? t("session.sign_out")
+      : t("session.sign_in");
   }
   document.documentElement.dataset.accessMode = state.session.read_only
     ? "read-only"
@@ -192,7 +192,7 @@ function renderMultiFilter(
         <button type="button" class="multi-filter-action" data-multi-invert><span class="ui-lang-zh">反选</span><span class="ui-lang-en">Invert</span></button>
         <button type="button" class="multi-filter-action" data-multi-clear><span class="ui-lang-zh">清除</span><span class="ui-lang-en">Clear</span></button>
       </div>
-      <div class="multi-filter-options">${body || `<div class="multi-filter-empty"><span class="ui-lang-zh">暂无选项</span><span class="ui-lang-en">No options</span></div>`}</div>
+      <div class="multi-filter-options">${body || '<div class="multi-filter-empty"><span class="ui-lang-zh">暂无选项</span><span class="ui-lang-en">No options</span></div>'}</div>
     </div>`;
   updateMultiFilterSummary(root);
   const trigger = root.querySelector(".multi-filter-trigger");
@@ -258,9 +258,13 @@ function renderMultiFilter(
 function renderConfig() {
   const baseline = state.config?.baseline || {};
   $(".header-metrics")?.setAttribute("title", baseline.message || "0508 baseline GT 只读");
-  if ($("#trailScopeCount")) $("#trailScopeCount").textContent = baseline.count ?? "—";
+  const scopeText = String(baseline.count ?? "—");
+  if ($("#trailScopeCount")) $("#trailScopeCount").textContent = scopeText;
+  if ($("#trailScopeCountEn")) $("#trailScopeCountEn").textContent = scopeText;
   const trail = state.trailInspection || state.config?.trail_sync || {};
-  if ($("#trailViewId")) $("#trailViewId").textContent = trail.view_id ?? "2410";
+  const viewText = String(trail.view_id ?? "2410");
+  if ($("#trailViewId")) $("#trailViewId").textContent = viewText;
+  if ($("#trailViewIdEn")) $("#trailViewIdEn").textContent = viewText;
   renderTrailSyncState();
   renderBatchRuntimeSummary();
   updateFilteredPredictionButton();

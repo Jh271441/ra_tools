@@ -43,7 +43,7 @@ function issueCard(item) {
         <div class="issue-thumbnail-placeholder" aria-hidden="true"><span>RA</span><small>暂无 BEV 缩略图</small></div>
         ${thumbnailUrl ? `<img src="${escapeHtml(thumbnailUrl)}" alt="${escapeHtml(item.issue_id)} ${escapeHtml(thumbnailLabel)}" loading="lazy" decoding="async" data-case-thumbnail />` : ""}
         <span class="issue-thumbnail-label">${escapeHtml(thumbnailLabel)}</span>
-        <button class="issue-media-preview" type="button" data-case-media-preview="${escapeHtml(item.issue_id)}" aria-label="预览 ${escapeHtml(item.issue_id)} 的 BEV、Camera 和视频">媒体预览</button>
+        <button class="issue-media-preview" type="button" data-case-media-preview="${escapeHtml(item.issue_id)}" aria-label="${escapeHtml(uiText(`预览 ${item.issue_id} 的 BEV、Camera 和视频`, `Preview BEV, Camera, and video for ${item.issue_id}`))}"><span class="ui-lang-zh">媒体预览</span><span class="ui-lang-en">Media</span></button>
         ${comparisonMeta ? `<span class="comparison-chip comparison-${comparisonStatus} issue-thumbnail-status">${escapeHtml(comparisonMeta.label)}</span>` : ""}
       </div>
       <div class="issue-card-body">
@@ -57,8 +57,8 @@ function issueCard(item) {
         ${title ? `<div class="issue-title">${escapeHtml(title)}</div>` : ""}
         <div class="issue-card-labels">
           <span class="issue-label-pair"><small>GT</small>${labelBadge(item.gt_label, "—")}</span>
-          <span class="issue-label-pair"><small>模型</small>${displayPrediction ? labelBadge(displayPrediction, "—") : labelBadge("", "—")}</span>
-          ${item.annotation?.author ? `<span class="issue-reviewer" title="复核人：${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}">复核 · ${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO" : ""}</span>` : ""}
+          <span class="issue-label-pair"><small class="ui-lang-zh">模型</small><small class="ui-lang-en">Model</small>${displayPrediction ? labelBadge(displayPrediction, "—") : labelBadge("", "—")}</span>
+          ${item.annotation?.author ? `<span class="issue-reviewer" title="${escapeHtml(uiText(`复核人：${item.annotation.author}${item.annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}`, `Reviewer: ${item.annotation.author}${item.annotation.author_verified ? " · SSO verified" : " · unverified"}`))}"><span class="ui-lang-zh">复核</span><span class="ui-lang-en">Review</span> · ${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO" : ""}</span>` : ""}
         </div>
       </div>
     </article>`;
@@ -129,8 +129,8 @@ function renderCasePagination() {
     const start = state.caseTotal ? (state.casePage - 1) * state.casePageSize + 1 : 0;
     const end = Math.min(state.casePage * state.casePageSize, state.caseTotal);
     result.textContent = state.caseTotal
-      ? `当前 ${start}–${end} / 共 ${state.caseTotal} 条`
-      : "当前没有匹配的 Issue";
+      ? t("gallery.summary_range", { from: start, to: end, n: state.caseTotal })
+      : t("gallery.no_match");
   }
 }
 
@@ -208,19 +208,19 @@ function bindDetailQueueIndexJump(root = document) {
 async function jumpToQueueIndex(raw) {
   const total = Math.max(0, Number(state.caseTotal) || 0);
   if (total <= 0) {
-    showToast("当前没有可跳转的筛选结果。", true);
+    showToast(t("gallery.jump_empty"), true);
     renderCaseNavigation();
     return;
   }
   const text = String(raw ?? "").trim();
   if (!/^\d+$/.test(text)) {
-    showToast(`请输入 1–${total} 的序号。`, true);
+    showToast(t("gallery.jump_range", { total }), true);
     renderCaseNavigation();
     return;
   }
   const target = Number.parseInt(text, 10);
   if (!Number.isFinite(target) || target < 1 || target > total) {
-    showToast(`请输入 1–${total} 的序号。`, true);
+    showToast(t("gallery.jump_range", { total }), true);
     renderCaseNavigation();
     return;
   }
@@ -235,7 +235,7 @@ async function jumpToQueueIndex(raw) {
     }
     const item = state.cases[indexOnPage];
     if (!item?.issue_id) {
-      showToast("该序号暂时无法打开，请刷新后重试。", true);
+      showToast(t("gallery.jump_fail"), true);
       renderCaseNavigation();
       return;
     }
@@ -325,7 +325,7 @@ function renderCases(data) {
       const thumbnail = image.closest(".issue-thumbnail");
       thumbnail?.classList.add("thumbnail-missing");
       const label = thumbnail?.querySelector(".issue-thumbnail-label");
-      if (label) label.textContent = "缩略图加载失败";
+      if (label) label.textContent = t("gallery.thumb_fail");
       image.remove();
     });
   });
@@ -348,33 +348,55 @@ function updateFilteredPredictionButton() {
   const predict = $("#predictFilteredButton");
   if (predict) {
     predict.disabled = total === 0 || state.config?.batch_prediction?.enabled === false;
-    predict.textContent = total ? `预测当前筛选 · ${total}` : "预测当前筛选";
-    predict.title =
-      total > limit
-        ? `单批最多 ${limit} 个 Issue，请继续收窄筛选后再发起。`
-        : `把当前 ${total} 个筛选结果带入 Batch 页面；不会立即运行或自动推送。`;
+    predict.innerHTML = total
+      ? `<span class="ui-lang-zh">预测当前筛选 · ${total}</span><span class="ui-lang-en">Predict selection · ${total}</span>`
+      : `<span class="ui-lang-zh">预测当前筛选</span><span class="ui-lang-en">Predict selection</span>`;
+    predict.title = total > limit
+      ? uiText(
+          `单批最多 ${limit} 个 Issue，请继续收窄筛选后再发起。`,
+          `Batch limit is ${limit} issues; narrow the filter first.`
+        )
+      : uiText(
+          `把当前 ${total} 个筛选结果带入 Batch 页面；不会立即运行或自动推送。`,
+          `Carry ${total} filtered issues into Batch; does not run or publish yet.`
+        );
     predict.classList.toggle("button-limit-warning", total > limit);
   }
   updateWorkSplitAdminVisibility();
   const split = $("#splitFilteredButton");
   if (split && !split.hidden) {
     split.disabled = total === 0;
-    split.textContent = total ? `均分任务 · ${total}` : "均分任务";
+    split.innerHTML = total
+      ? `<span class="ui-lang-zh">均分任务 · ${total}</span><span class="ui-lang-en">Split work · ${total}</span>`
+      : `<span class="ui-lang-zh">均分任务</span><span class="ui-lang-en">Split work</span>`;
     split.title = total
-      ? `管理员：把当前 ${total} 个筛选 Issue 写入任务负责人；可指定数量，剩余均分。`
-      : "当前筛选没有 Issue。";
+      ? uiText(
+          `管理员：把当前 ${total} 个筛选 Issue 写入任务负责人；可指定数量，剩余均分。`,
+          `Admin: assign ${total} filtered issues to owners.`
+        )
+      : t("gallery.no_issues_filter");
   }
   const summary = $("#galleryResultSummary");
   if (summary) {
     const assignee = $("#workAssigneeFilter")?.value || "";
     if (assignee && assignee !== "__none__") {
-      summary.textContent = `任务负责人 ${assignee} · ${total} 个 Issue`;
+      summary.textContent = uiText(
+        `任务负责人 ${assignee} · ${total} 个 Issue`,
+        `Assignee ${assignee} · ${total} issues`
+      );
     } else if (assignee === "__none__") {
-      summary.textContent = total ? `未分配任务 · ${total} 个 Issue` : "没有未分配 Issue";
+      summary.textContent = total
+        ? t("gallery.unassigned_n", { n: total })
+        : t("gallery.no_unassigned");
     } else if (state.reviewIssueIds?.length) {
-      summary.textContent = `自定义 Issue 列表 · ${state.reviewIssueIds.length}`;
+      summary.textContent = uiText(
+        `自定义 Issue 列表 · ${state.reviewIssueIds.length}`,
+        `Custom issue list · ${state.reviewIssueIds.length}`
+      );
     } else {
-      summary.textContent = total ? `当前筛选 ${total} 个 Issue` : "没有匹配的 Issue";
+      summary.textContent = total
+        ? t("gallery.summary", { n: total })
+        : t("gallery.no_match");
     }
   }
 }
@@ -388,12 +410,18 @@ function openBatchDraft(issueIds, source = "") {
     ),
   ];
   if (!ids.length) {
-    showToast("当前没有可加入 Batch 的 Issue。", true);
+    showToast(t("toast.no_batch_issues"), true);
     return;
   }
   const limit = predictionBatchLimit();
   if (ids.length > limit) {
-    showToast(`当前筛选有 ${ids.length} 个 Issue；单批最多 ${limit} 个，请继续收窄筛选。`, true);
+    showToast(
+      uiText(
+        `当前筛选有 ${ids.length} 个 Issue；单批最多 ${limit} 个，请继续收窄筛选。`,
+        `${ids.length} issues selected; batch limit is ${limit}. Narrow the filter.`
+      ),
+      true
+    );
     return;
   }
   navigatePage("prediction", { issues: ids, source });
