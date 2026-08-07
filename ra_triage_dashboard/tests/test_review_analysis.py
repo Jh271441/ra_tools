@@ -279,6 +279,7 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
             )
             database.create_annotation(
                 issue_id="cn20001",
+                model_run_id=run["id"],
                 label="误触发",
                 review_status="reviewed",
                 tags=[],
@@ -288,6 +289,7 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
             )
             database.create_annotation(
                 issue_id="cn20001",
+                model_run_id=run["id"],
                 label="误触发",
                 review_status="reviewed",
                 tags=["temporary_stop"],
@@ -297,6 +299,7 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
             )
             database.create_annotation(
                 issue_id="cn20002",
+                model_run_id=run["id"],
                 label="正确触发",
                 review_status="reviewed",
                 tags=[],
@@ -306,6 +309,7 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
             )
             database.create_annotation(
                 issue_id="cn20003",
+                model_run_id=run["id"],
                 label="无需协助",
                 review_status="reviewed",
                 tags=[],
@@ -465,6 +469,97 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
                 search="旧版本",
             )
             self.assertEqual(old_note_search, [])
+
+    def test_selected_run_never_falls_back_to_unbound_or_other_run_reviews(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "triage.sqlite3")
+            database.init()
+            scope = "test-run-binding"
+            database.upsert_issues(
+                [{
+                    "issue_id": "cn30001",
+                    "gt_label": "误触发",
+                    "title": "同 issue 多 Run",
+                }],
+                source="test",
+                replace_gt=True,
+                baseline_scope=scope,
+            )
+            run_a, _ = database.import_model_run(
+                name="run-a",
+                source_name="a.json",
+                source_sha256="a" * 64,
+                metadata={},
+                rows=[{"issue_id": "cn30001", "model_label": "正确触发"}],
+            )
+            run_b, _ = database.import_model_run(
+                name="run-b",
+                source_name="b.json",
+                source_sha256="b" * 64,
+                metadata={},
+                rows=[{"issue_id": "cn30001", "model_label": "无需协助"}],
+            )
+            database.create_annotation(
+                issue_id="cn30001",
+                model_run_id=run_a["id"],
+                label="误触发",
+                review_status="reviewed",
+                tags=[],
+                missing_evidence=["run_a_missing"],
+                note="Run A review",
+                author="alice",
+            )
+            database.create_annotation(
+                issue_id="cn30001",
+                model_run_id=run_b["id"],
+                label="误触发",
+                review_status="reviewed",
+                tags=[],
+                missing_evidence=["run_b_missing"],
+                note="Run B review",
+                author="bob",
+            )
+            database.create_annotation(
+                issue_id="cn30001",
+                label="误触发",
+                review_status="reviewed",
+                tags=[],
+                missing_evidence=["legacy_missing"],
+                note="Legacy review",
+                author="legacy",
+            )
+
+            rows_a = database.review_reason_rows(
+                baseline_scope=scope,
+                model_run_id=run_a["id"],
+            )
+            self.assertEqual([row["annotation"]["author"] for row in rows_a], ["alice"])
+            self.assertEqual(rows_a[0]["annotation"]["model_run_id"], run_a["id"])
+            rows_b = database.review_reason_rows(
+                baseline_scope=scope,
+                model_run_id=run_b["id"],
+            )
+            self.assertEqual([row["annotation"]["author"] for row in rows_b], ["bob"])
+            self.assertEqual(rows_b[0]["annotation"]["model_run_id"], run_b["id"])
+
+            reviewers_a = database.list_reviewers(
+                baseline_scope=scope,
+                model_run_id=run_a["id"],
+            )
+            self.assertEqual([item["name"] for item in reviewers_a], ["alice"])
+            clusters_a = database.review_clusters(
+                baseline_scope=scope,
+                model_run_id=run_a["id"],
+                failure_only=False,
+            )
+            self.assertEqual([item["key"] for item in clusters_a], ["run_a_missing"])
+            self.assertEqual(
+                database.overview(baseline_scope=scope, model_run_id=run_a["id"])["labelled"],
+                1,
+            )
+
+            all_rows = database.review_reason_rows(baseline_scope=scope)
+            self.assertEqual(all_rows[0]["annotation"]["author"], "legacy")
 
 
 if __name__ == "__main__":

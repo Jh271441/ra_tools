@@ -489,9 +489,10 @@ class DatabaseReviewMixin:
         *,
         baseline_scopes: Sequence[str] | None = None,
     ) -> list[dict[str, Any]]:
-        params: list[Any] = (
-            [model_run_id, model_run_id] if model_run_id else []
-        )
+        # When a Run is selected, reviewer facets must use the same strict
+        # annotation scope as the analysis rows.  Do not attribute legacy
+        # (empty model_run_id) annotations to a selected Run.
+        params: list[Any] = [model_run_id] if model_run_id else []
         scopes = self._normalize_baseline_scopes(
             baseline_scopes,
             baseline_scope=baseline_scope if isinstance(baseline_scope, str) else "",
@@ -538,19 +539,10 @@ class DatabaseReviewMixin:
     def _latest_annotation_join(model_run_id: str = "") -> str:
         normalized_run = str(model_run_id or "").strip()
         if normalized_run:
-            run_clause = """
-                    AND (
-                        a.model_run_id = ?
-                        OR (
-                            a.model_run_id = ''
-                            AND NOT EXISTS (
-                                SELECT 1 FROM annotations scoped
-                                WHERE scoped.issue_id = i.issue_id
-                                  AND scoped.model_run_id = ?
-                            )
-                        )
-                    )
-            """
+            # A selected model Run is an explicit Review namespace.  Legacy
+            # unbound rows stay unbound and must never leak into another Run's
+            # latest-review, reviewer, cluster, or aggregate queries.
+            run_clause = "AND a.model_run_id = ?"
         else:
             run_clause = ""
         return """

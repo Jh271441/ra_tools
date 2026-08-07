@@ -872,9 +872,10 @@ class DatabaseCoreMixin:
             raise ValueError("baseline_scopes must not be empty")
         scope_clause, scope_params = self._scope_in_sql(scopes)
         where = [scope_clause, "ann.id IS NOT NULL"]
-        params: list[Any] = (
-            [model_run_id, model_run_id] if model_run_id else []
-        ) + [model_run_id, *scope_params]
+        params: list[Any] = ([model_run_id] if model_run_id else []) + [
+            model_run_id,
+            *scope_params,
+        ]
         if comparison_statuses:
             where.append("i.gt_label IN (?, ?, ?)")
             params.extend(LABELS)

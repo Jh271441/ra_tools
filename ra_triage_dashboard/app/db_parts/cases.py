@@ -310,8 +310,9 @@ class DatabaseCasesMixin:
               ON wa.issue_id = i.issue_id
         """
         # The correlated annotation lookup appears before the prediction JOIN
-        # in the SQL, so its run id must be the first bound parameter.
-        model_args = ([model_run_id, model_run_id] if model_run_id else []) + [model_run_id]
+        # in the SQL, so its run id must be the first bound parameter.  A
+        # selected Run has strict Review isolation; no legacy fallback.
+        model_args = ([model_run_id] if model_run_id else []) + [model_run_id]
         return condition, params, model_args, common
 
     def list_cases(
@@ -515,9 +516,10 @@ class DatabaseCasesMixin:
             raise ValueError("baseline_scopes must not be empty")
         scope_clause, scope_params = self._scope_in_sql(scopes)
         where = [scope_clause, "ann.id IS NOT NULL"]
-        params: list[Any] = (
-            [model_run_id, model_run_id] if model_run_id else []
-        ) + [model_run_id, *scope_params]
+        params: list[Any] = ([model_run_id] if model_run_id else []) + [
+            model_run_id,
+            *scope_params,
+        ]
         if failure_only and model_run_id:
             where.extend(
                 [
@@ -577,7 +579,7 @@ class DatabaseCasesMixin:
                 {self._latest_annotation_join(model_run_id)}
                 {base_where} AND ann.id IS NOT NULL
                 """,
-                ((model_run_id, model_run_id, *scope_params)
+                ((model_run_id, *scope_params)
                  if model_run_id else tuple(scope_params)),
             ).fetchone()[0]
             predictions = failures = reviewed_failures = 0
@@ -591,16 +593,16 @@ class DatabaseCasesMixin:
                 """
                 predictions = conn.execute(
                     f"SELECT COUNT(mp.id) {common}",
-                    (model_run_id, model_run_id, model_run_id, *scope_params),
+                    (model_run_id, model_run_id, *scope_params),
                 ).fetchone()[0]
                 failure_condition = " AND i.gt_label IN (?, ?, ?) AND mp.model_label IN (?, ?, ?) AND mp.model_label != i.gt_label"
                 failures = conn.execute(
                     f"SELECT COUNT(*) {common}{failure_condition}",
-                    (model_run_id, model_run_id, model_run_id, *scope_params, *LABELS, *LABELS),
+                    (model_run_id, model_run_id, *scope_params, *LABELS, *LABELS),
                 ).fetchone()[0]
                 reviewed_failures = conn.execute(
                     f"SELECT COUNT(*) {common}{failure_condition} AND ann.id IS NOT NULL",
-                    (model_run_id, model_run_id, model_run_id, *scope_params, *LABELS, *LABELS),
+                    (model_run_id, model_run_id, *scope_params, *LABELS, *LABELS),
                 ).fetchone()[0]
             running = conn.execute(
                 "SELECT COUNT(*) FROM inference_jobs WHERE status IN ('queued', 'running')"

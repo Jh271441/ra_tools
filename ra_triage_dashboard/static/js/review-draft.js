@@ -28,13 +28,12 @@ function reviewAnnotationsForCurrentRun(caseData) {
   const bound = annotations.filter(
     (annotation) => String(annotation.model_run_id || "").trim() === runId
   );
-  if (runId && bound.length) return bound;
-  // Existing pre-run-binding Reviews have no model_run_id.  Keep them
-  // visible as a compatibility fallback until this Issue is first reviewed
-  // in the selected Run; once a bound version exists, never mix the streams.
-  return runId
-    ? annotations.filter((annotation) => !String(annotation.model_run_id || "").trim())
-    : bound;
+  // A selected Run is an explicit Review namespace.  Do not fall back to a
+  // legacy unbound annotation when that Run has not been reviewed yet; doing
+  // so makes another person's/Run's Review look like it belongs here.
+  if (runId) return bound;
+  // With no selected Run, preserve the legacy/unbound editing stream.
+  return annotations.filter((annotation) => !String(annotation.model_run_id || "").trim());
 }
 
 // The edit form is scoped to the selected Run, while the Issue-level history
@@ -155,4 +154,3 @@ function reviewRunLabel(runId) {
   const run = (state.modelRuns || []).find((item) => String(item.id) === normalized);
   return run?.name || normalized;
 }
-

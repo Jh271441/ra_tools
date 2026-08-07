@@ -869,8 +869,12 @@ def _review_reason_analysis_payload(
         ),
         "comparison_status": comparison_status,
         "failure_only": comparison_status == "mismatch",
-        "review_binding": "latest_annotation_per_issue",
-        "review_is_run_bound": False,
+        "review_binding": (
+            "latest_annotation_per_issue_per_model_run"
+            if model_run_id
+            else "latest_annotation_per_issue_all_runs"
+        ),
+        "review_is_run_bound": bool(model_run_id),
     }
     result["filters"] = {
         "model_run_id": model_run_id,
