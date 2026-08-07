@@ -16,7 +16,11 @@ from ra_triage_dashboard.app.baseline_registry import (
     normalize_baseline_ids,
 )
 from ra_triage_dashboard.app.db import Database
-from ra_triage_dashboard.app.media_registry import BagsAresAnimationProvider
+from ra_triage_dashboard.app.assets import AssetIndex, CameraIndex, VideoIndex
+from ra_triage_dashboard.app.media_registry import (
+    BagsAresAnimationProvider,
+    build_media_registry,
+)
 
 
 class BaselineRegistryTests(unittest.TestCase):
@@ -218,6 +222,87 @@ class BaselineRegistryTests(unittest.TestCase):
             video_meta = provider.get_video("cn_demo")
             self.assertIsNotNone(video_meta)
             self.assertEqual(video_meta["source"], "ares_animation")
+            path = provider.get_asset_path("cn_demo", video_meta["id"])
+            self.assertEqual(path, video.resolve())
+
+    def test_materialized_product_layout_is_isolated_per_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data_dir = root / "data"
+            layout = data_dir / "media_layouts" / "release0626_capture"
+            capture = layout / "issues" / "cn_demo"
+            frame = capture / "frames" / "bev_t0.png"
+            video = capture / "videos" / "bev.mp4"
+            frame.parent.mkdir(parents=True)
+            video.parent.mkdir(parents=True)
+            frame.write_bytes(b"png")
+            video.write_bytes(b"mp4")
+            meta = {
+                "status": "captured",
+                "issue_id": "cn_demo",
+                "capture_plan": {
+                    "variants": [
+                        {
+                            "frames": [
+                                {"relative_path": "frames/bev_t0.png", "offset_ms": 0}
+                            ],
+                            "video_relative_path": "videos/bev.mp4",
+                            "video_start_offset_sec": -20,
+                        }
+                    ]
+                },
+                "source_row": {"capture_timestamp_ms": 123},
+            }
+            (capture / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+            (layout / "manifest.jsonl").write_text(
+                json.dumps(
+                    {"issue_id": "cn_demo", "meta_path": "issues/cn_demo/meta.json"}
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            cfg = root / "baselines.json"
+            cfg.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "0626",
+                            "label": "0626",
+                            "scope": "scope0626",
+                            "loader": "spotcheck_zh",
+                            "xlsx": str(root / "unused.xlsx"),
+                            "default_selected": True,
+                            "media": {
+                                "provider": "product_layout",
+                                "layout_id": "release0626_capture",
+                            },
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            registry = load_baseline_registry(cfg)
+            empty = root / "empty"
+            media = build_media_registry(
+                registry,
+                base_path="/manual",
+                product_asset_index=AssetIndex(
+                    ra_root=empty, manifest_path=empty / "manifest.jsonl"
+                ),
+                product_camera_index=CameraIndex(empty),
+                product_video_index=VideoIndex(empty),
+                data_dir=data_dir,
+            )
+
+            provider = media.for_baseline_id("0626")
+            self.assertIsNotNone(provider)
+            self.assertEqual(provider.media_ready_summary()["bev_indexed_issues"], 1)
+            assets = provider.get_assets("cn_demo")
+            self.assertTrue(assets["available"])
+            self.assertEqual(len(assets["frames"]), 1)
+            video_meta = provider.get_video("cn_demo")
+            self.assertIsNotNone(video_meta)
+            self.assertEqual(video_meta["event_time_sec"], 20)
             path = provider.get_asset_path("cn_demo", video_meta["id"])
             self.assertEqual(path, video.resolve())
 

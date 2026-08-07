@@ -423,8 +423,11 @@ def build_media_registry(
 ) -> MediaRegistry:
     """Construct providers for each registry entry.
 
-    ``product_layout`` reuses the process-global 0508 indexes built from Settings
-    env (current production path). bags providers are constructed per entry.
+    ``product_layout`` normally reuses the process-global 0508 indexes built from
+    Settings env.  A baseline can opt into an independent materialized capture by
+    setting ``layout_id`` and placing ``manifest.jsonl`` below
+    ``<data_dir>/media_layouts/<layout_id>``.  Bags providers are constructed per
+    entry.
     """
 
     by_id: dict[str, MediaProvider] = {}
@@ -450,8 +453,51 @@ def build_media_registry(
                     base_path=base_path,
                 )
         else:
-            provider = product
+            provider = _materialized_product_provider(
+                entry,
+                base_path=base_path,
+                data_dir=data_dir,
+                fallback=product,
+            )
         by_id[entry.id] = provider
         by_scope[entry.scope] = provider
     default = by_id.get(registry.default_ids()[0]) if registry.entries else product
     return MediaRegistry(by_id=by_id, by_scope=by_scope, default_provider=default or product)
+
+
+def _materialized_product_provider(
+    entry: BaselineEntry,
+    *,
+    base_path: str,
+    data_dir: Path | None,
+    fallback: ProductLayoutProvider,
+) -> ProductLayoutProvider:
+    """Build a root-confined provider for one immutable dashboard media layout.
+
+    The root-level manifest convention is intentionally distinct from the legacy
+    0508 layout, so existing deployments keep using their process-global indexes.
+    """
+
+    layout_id = str(entry.media.layout_id or "").strip()
+    if data_dir is None or not layout_id:
+        return fallback
+    layouts_root = (Path(data_dir) / "media_layouts").resolve()
+    layout_root = (layouts_root / layout_id).resolve()
+    try:
+        layout_root.relative_to(layouts_root)
+    except ValueError:
+        return fallback
+    manifest_path = layout_root / "manifest.jsonl"
+    if not manifest_path.is_file():
+        return fallback
+    camera_root = entry.media.camera_root or (layout_root / "camera" / "102")
+    return ProductLayoutProvider(
+        asset_index=AssetIndex(
+            ra_root=layout_root,
+            manifest_path=manifest_path,
+            base_path=base_path,
+        ),
+        camera_index=CameraIndex(camera_root, base_path=base_path),
+        video_index=VideoIndex(layout_root, base_path=base_path),
+        label=f"product_layout:{layout_id}",
+    )

@@ -20,10 +20,8 @@
     "xlsx": "${RA_AUTO_TRIAGE_ROOT}/data/release0626-300-抽检.xlsx",
     "default_selected": false,
     "media": {
-      "provider": "bags_ares_animation",
-      "bev_frames_root": "${RA_AUTO_TRIAGE_ROOT}/bags/ares_animation/frames_v2_0626",
-      "animation_root": "${RA_AUTO_TRIAGE_ROOT}/bags/ares_animation",
-      "animation_job_ids": [43701403, 43699853],
+      "provider": "product_layout",
+      "layout_id": "release0626_300_spotcheck_20260807",
       "camera_root": "${RA_AUTO_TRIAGE_ROOT}/bags/camera"
     }
   }

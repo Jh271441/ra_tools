@@ -85,7 +85,9 @@ Runs 的「人员」统一显示/筛选创建人；旧 Run 没有创建人时回
   - BEV 视频：`…/video`（`ARES_CAPTURE_VIDEO_ROOT`）
   - Camera 默认通道 102：`…/camera/102`（`CAMERA_CACHE_ROOT`）
   - 切换数据集：改 `DASHBOARD_MEDIA_LAYOUT`（layout id 或后续 alias）或覆盖上述三个变量；见 layout 内 `layout.json`
-  - 从 bags 刷新：`rsync -aH` 到对应 layout 子目录（同盘可硬链接，几乎不占额外空间）
+  - 0626 的 materialized capture layout：
+    `/volume/home/workspace/ra_triage_dashboard_data/media_layouts/release0626_300_spotcheck_20260807`；根目录保留聚合 `manifest.jsonl` 和 `issues/`，由 baseline `layout_id` 独立索引
+  - 从带聚合软链接的 bags 刷新：使用 `rsync -aL` 物化到新的版本化 layout，禁止 `--delete`；完成 manifest、PNG、MP4、meta 和媒体规格校验后再切换 baseline `layout_id`
 - 0508 GT 快照：`/volume/home/workspace/ra_auto_triage/data/trail_label_baseline_20260729.xlsx`（只读）
 - 模型 / Trail 逻辑：`/volume/home/workspace/ra_auto_triage`（代码与 bags 采集工作区只读；Batch 新下载只写 dashboard 独立缓存）
 

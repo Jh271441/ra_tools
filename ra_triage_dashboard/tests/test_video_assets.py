@@ -19,6 +19,8 @@ class VideoIndexTest(unittest.TestCase):
         capture_name = f"{issue_id}_{timestamp_ms}"
         if layout == "flat":
             capture = root / capture_name
+        elif layout == "issues":
+            capture = root / "issues" / issue_id
         else:
             capture = root / "shard-006-of-008" / capture_name
         video = capture / "videos" / "video_only.mp4"
@@ -96,6 +98,21 @@ class VideoIndexTest(unittest.TestCase):
                 video_path.resolve(),
             )
             self.assertIsNotNone(index.get_video("cn318424590"))
+
+    def test_resolves_materialized_merged_capture_layout(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, video_path = self._write_capture(root, layout="issues")
+            index = VideoIndex(root)
+
+            video = index.get_video("cn31842459")
+
+            self.assertIsNotNone(video)
+            self.assertEqual(video["frame_count"], 400)
+            self.assertEqual(
+                index.get_asset_path("cn31842459", "bev-video-0"),
+                video_path.resolve(),
+            )
 
     def test_rejects_path_escape_and_invalid_issue_id(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
