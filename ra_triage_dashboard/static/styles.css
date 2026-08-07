@@ -1990,6 +1990,8 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   border-radius: 7px; color: var(--faint); background: rgba(255,255,255,.01); font-size: 12px; text-align: center;
 }
 .analysis-confusion-card, .analysis-case-card { display: grid; gap: 6px; padding: 10px; }
+.analysis-confusion-heading { align-items: center; }
+.analysis-confusion-heading small { overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .analysis-confusion-wrap { min-width: 0; overflow-x: auto; }
 .analysis-confusion-table { width: 100%; min-width: 610px; border-collapse: separate; border-spacing: 4px; font-size: 11px; table-layout: fixed; }
 .analysis-confusion-table th, .analysis-confusion-table td { padding: 6px; border-radius: 5px; color: var(--muted); background: #0d121a; text-align: center; }
@@ -1999,6 +2001,10 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .analysis-confusion-table .confusion-mismatch { color: #f5a1a1; background: rgba(248,113,113,.09); }
 .analysis-confusion-table .confusion-none { color: #aab6c7; background: rgba(148,163,184,.08); }
 .analysis-confusion-table .confusion-total { color: #b7c5d7; background: var(--overlay); }
+@media (max-width: 720px) {
+  .analysis-confusion-heading { align-items: flex-start; }
+  .analysis-confusion-heading small { max-width: 100%; text-align: left; white-space: normal; }
+}
 .analysis-case-list { display: grid; gap: 5px; }
 .analysis-case-row {
   min-width: 0; display: grid; grid-template-columns: minmax(125px, .65fr) minmax(220px, 1fr) minmax(280px, 2.15fr) minmax(160px, .85fr);

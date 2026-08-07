@@ -412,7 +412,7 @@ function renderAnalysisConfusion(data) {
   }
   target.innerHTML = `<table class="analysis-confusion-table">
     <thead><tr><th>${escapeHtml(t("analysis.gt_model_matrix"))}</th>${labels
-      .map((label) => `<th>${escapeHtml(label)}</th>`)
+      .map((label) => `<th>${escapeHtml(label === "NONE" ? uiText("未输出", "NONE") : label)}</th>`)
       .join("")}<th>${escapeHtml(t("analysis.total_col"))}</th></tr></thead>
     <tbody>${(confusion.rows || [])
       .map(
