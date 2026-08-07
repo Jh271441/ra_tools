@@ -545,6 +545,17 @@ function renderAnalysisCases(data) {
   $("#analysisPageSize").value = String(pageSize);
   $("#analysisPagePrevious").disabled = page <= 1;
   $("#analysisPageNext").disabled = page >= pageCount;
+  const jumpInput = $("#analysisPageJump");
+  const jumpButton = $("#analysisPageJumpButton");
+  if (jumpInput) {
+    const focused = document.activeElement === jumpInput;
+    jumpInput.min = "1";
+    jumpInput.max = String(Math.max(1, pageCount));
+    jumpInput.disabled = pageCount <= 1;
+    jumpInput.dataset.pageCount = String(Math.max(1, pageCount));
+    if (!focused) jumpInput.value = String(page);
+  }
+  if (jumpButton) jumpButton.disabled = pageCount <= 1;
 }
 
 function renderReviewReasonAnalysis(data, { animatePies = true } = {}) {
@@ -673,6 +684,42 @@ async function changeAnalysisPage(delta) {
     Math.min(Number(data.page_count || 1), state.reviewAnalysis.page + delta)
   );
   if (target === state.reviewAnalysis.page) return;
+  state.reviewAnalysis.page = target;
+  showPage("analysis", { historyMode: "push" });
+  await loadReviewReasonAnalysis();
+  window.scrollTo({ top: $("#analysisCaseList").offsetTop - 72, behavior: "smooth" });
+}
+
+async function jumpToAnalysisPage(raw) {
+  const pageCount = Math.max(
+    1,
+    Number(state.reviewAnalysis.data?.page_count) || 1
+  );
+  const input = $("#analysisPageJump");
+  const text = String(raw ?? "").trim();
+  if (!/^\d+$/.test(text)) {
+    showToast(t("analysis.jump_range", { total: pageCount }), true);
+    if (input) {
+      input.value = String(state.reviewAnalysis.page);
+      input.focus();
+      input.select();
+    }
+    return;
+  }
+  const target = Number.parseInt(text, 10);
+  if (!Number.isFinite(target) || target < 1 || target > pageCount) {
+    showToast(t("analysis.jump_range", { total: pageCount }), true);
+    if (input) {
+      input.value = String(state.reviewAnalysis.page);
+      input.focus();
+      input.select();
+    }
+    return;
+  }
+  if (target === state.reviewAnalysis.page) {
+    if (input) input.value = String(target);
+    return;
+  }
   state.reviewAnalysis.page = target;
   showPage("analysis", { historyMode: "push" });
   await loadReviewReasonAnalysis();

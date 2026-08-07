@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-124`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-125`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -371,6 +371,12 @@
                   <button class="button button-quiet" id="analysisPagePrevious" type="button"><span class="ui-lang-zh">上一页</span><span class="ui-lang-en">Previous</span></button>
                   <span id="analysisPageSummary">— / —</span>
                   <button class="button button-quiet" id="analysisPageNext" type="button"><span class="ui-lang-zh">下一页</span><span class="ui-lang-en">Next</span></button>
+                  <span class="analysis-page-jump">
+                    <label for="analysisPageJump"><span class="ui-lang-zh">跳至</span><span class="ui-lang-en">Go to</span></label>
+                    <input id="analysisPageJump" type="number" min="1" step="1" inputmode="numeric" aria-label="Jump to page" />
+                    <span><span class="ui-lang-zh">页</span><span class="ui-lang-en">page</span></span>
+                    <button class="button button-quiet" id="analysisPageJumpButton" type="button"><span class="ui-lang-zh">跳转</span><span class="ui-lang-en">Go</span></button>
+                  </span>
                 </div>
                 <label class="case-page-size" for="analysisPageSize">
                   <span class="ui-lang-zh">每页</span><span class="ui-lang-en">Per page</span>
@@ -974,7 +980,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-124`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-125`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

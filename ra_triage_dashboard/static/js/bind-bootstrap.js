@@ -120,6 +120,26 @@ function bindEvents() {
   $("#analysisPageNext").addEventListener("click", () => {
     changeAnalysisPage(1).catch((error) => showToast(error.message, true));
   });
+  const analysisPageJump = $("#analysisPageJump");
+  const commitAnalysisPageJump = () => {
+    jumpToAnalysisPage(analysisPageJump?.value).catch((error) => showToast(error.message, true));
+  };
+  $("#analysisPageJumpButton")?.addEventListener("click", commitAnalysisPageJump);
+  analysisPageJump?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitAnalysisPageJump();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      analysisPageJump.value = String(state.reviewAnalysis.page);
+      analysisPageJump.blur();
+    }
+  });
+  analysisPageJump?.addEventListener("focus", () => {
+    window.requestAnimationFrame(() => analysisPageJump.select());
+  });
   $("#analysisPageSize")?.addEventListener("change", (event) => {
     changeAnalysisPageSize(event.target.value).catch((error) => showToast(error.message, true));
   });
