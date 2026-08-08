@@ -14,16 +14,6 @@ from fastapi.responses import (
 from ..http_support import *  # noqa: F401,F403
 from ..runtime import *  # noqa: F401,F403
 
-# Keep FastAPI symbols after star-imports (runtime/http_support may not define them).
-from fastapi import APIRouter, File, Form, Request, UploadFile  # noqa: F401
-from fastapi.responses import (  # noqa: F401
-    FileResponse,
-    HTMLResponse,
-    JSONResponse,
-    RedirectResponse,
-    Response,
-)
-
 router = APIRouter()
 
 @router.post("/api/inference/jobs")
@@ -42,7 +32,8 @@ async def list_inference_jobs(
     status: str = "",
     page_size: int = 100,
 ) -> dict[str, Any]:
-    return database.list_inference_jobs(
+    return await asyncio.to_thread(
+        database.list_inference_jobs,
         requested_by=requested_by,
         status=status,
         page_size=page_size,
@@ -52,7 +43,7 @@ async def list_inference_jobs(
 
 @router.get("/api/inference/jobs/{job_id}")
 async def get_inference_job(job_id: str) -> dict[str, Any]:
-    job = database.get_job(job_id)
+    job = await asyncio.to_thread(database.get_job, job_id)
     if job is None:
         raise _detail(404, "任务不存在。")
     return {"job": job}

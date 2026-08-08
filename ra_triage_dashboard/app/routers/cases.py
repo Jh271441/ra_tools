@@ -14,17 +14,62 @@ from fastapi.responses import (
 from ..http_support import *  # noqa: F401,F403
 from ..runtime import *  # noqa: F401,F403
 
-# Keep FastAPI symbols after star-imports (runtime/http_support may not define them).
-from fastapi import APIRouter, File, Form, Request, UploadFile  # noqa: F401
-from fastapi.responses import (  # noqa: F401
-    FileResponse,
-    HTMLResponse,
-    JSONResponse,
-    RedirectResponse,
-    Response,
-)
-
 router = APIRouter()
+
+
+def _load_case_media(provider: Any, issue_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Resolve all filesystem-backed media for one issue on a worker thread."""
+
+    assets = provider.get_assets(issue_id)
+    captured_video = provider.get_video(issue_id)
+    if captured_video is not None:
+        assets["video"] = captured_video
+        assets["available"] = True
+    camera = provider.get_camera_assets(
+        issue_id,
+        (assets.get("capture") or {}).get("timestamp_ms"),
+    )
+    return assets, camera
+
+
+def _public_case_items(
+    rows: list[dict[str, Any]], *, include_thumbnail: bool
+) -> list[dict[str, Any]]:
+    """Build case summaries and resolve optional media flags off-loop."""
+
+    items: list[dict[str, Any]] = []
+    for item in rows:
+        issue_id = _as_text(item.get("issue_id"))
+        public = {
+            **item,
+            "voyager_issue_url": _voyager_issue_url(issue_id),
+        }
+        if include_thumbnail:
+            provider = media_for_issue(
+                issue_id, str(item.get("baseline_scope") or "")
+            )
+            has_thumb = bool(provider and provider.has_issue(issue_id))
+            public["thumbnail"] = (
+                {
+                    "url": _public_path(
+                        f"/api/case-thumbnails/{quote(issue_id, safe='')}"
+                    ),
+                    "kind": "bev",
+                    "label": "BEV · t0 附近",
+                }
+                if has_thumb
+                else None
+            )
+        items.append(public)
+    return items
+
+
+def _ensure_case_thumbnail(source: Path, destination: Path) -> None:
+    """Create a missing thumbnail atomically on a worker thread."""
+
+    if not destination.is_file():
+        _render_case_thumbnail(source, destination)
+
 
 @router.get("/api/cases")
 async def list_cases(
@@ -67,31 +112,11 @@ async def list_cases(
         page=page,
         page_size=min(max(1, int(page_size)), 100),
     )
-    items: list[dict[str, Any]] = []
-    for item in result.get("items", []):
-        issue_id = _as_text(item.get("issue_id"))
-        public = {
-            **item,
-            "voyager_issue_url": _voyager_issue_url(issue_id),
-        }
-        if include_thumbnail:
-            provider = media_for_issue(
-                issue_id, str(item.get("baseline_scope") or "")
-            )
-            has_thumb = bool(provider and provider.has_issue(issue_id))
-            public["thumbnail"] = (
-                {
-                    "url": _public_path(
-                        f"/api/case-thumbnails/{quote(issue_id, safe='')}"
-                    ),
-                    "kind": "bev",
-                    "label": "BEV · t0 附近",
-                }
-                if has_thumb
-                else None
-            )
-        items.append(public)
-    result["items"] = items
+    result["items"] = await asyncio.to_thread(
+        _public_case_items,
+        result.get("items", []),
+        include_thumbnail=include_thumbnail,
+    )
     result["filters"] = {
         "model_run_id": model_run_id,
         "comparison_status": comparison_status,
@@ -166,7 +191,7 @@ async def work_assignees() -> dict[str, Any]:
 async def split_case_work(request: Request) -> dict[str, Any]:
     """Admin-only: randomly assign filtered issues and persist ownership."""
 
-    identity = _admin_identity(request)
+    identity = await asyncio.to_thread(_admin_identity, request)
     try:
         body = await request.json()
     except (TypeError, ValueError):
@@ -287,14 +312,13 @@ async def get_case_thumbnail(issue_id: str) -> FileResponse:
     source = source_info["path"]
     try:
         destination = _thumbnail_cache_path(issue_id, source)
-        if not destination.is_file():
+        if not await asyncio.to_thread(destination.is_file):
             async with thumbnail_image_semaphore:
-                if not destination.is_file():
-                    await asyncio.to_thread(
-                        _render_case_thumbnail,
-                        source,
-                        destination,
-                    )
+                await asyncio.to_thread(
+                    _ensure_case_thumbnail,
+                    source,
+                    destination,
+                )
     except (
         Image.DecompressionBombError,
         UnidentifiedImageError,
@@ -372,13 +396,10 @@ async def get_case(issue_id: str) -> dict[str, Any]:
         case["assets"] = {"available": False, "issue_id": issue_id, "frames": [], "capture": {}}
         case["camera"] = {"available": False, "issue_id": issue_id, "frames": [], "capture": {}}
     else:
-        case["assets"] = provider.get_assets(issue_id)
-        captured_video = provider.get_video(issue_id)
-        if captured_video is not None:
-            case["assets"]["video"] = captured_video
-            case["assets"]["available"] = True
-        case["camera"] = provider.get_camera_assets(
-            issue_id, (case["assets"].get("capture") or {}).get("timestamp_ms")
+        case["assets"], case["camera"] = await asyncio.to_thread(
+            _load_case_media,
+            provider,
+            issue_id,
         )
     entry = baseline_registry.by_scope(scope)
     case["baseline_id"] = entry.id if entry else ""
@@ -401,12 +422,18 @@ async def get_asset(issue_id: str, asset_id: str) -> FileResponse:
     case = await asyncio.to_thread(database.get_case, issue_id)
     scope = str((case or {}).get("baseline_scope") or "")
     provider = media_for_issue(issue_id, scope)
-    path = provider.get_asset_path(issue_id, asset_id) if provider else None
+    path = (
+        await asyncio.to_thread(provider.get_asset_path, issue_id, asset_id)
+        if provider
+        else None
+    )
     if path is None:
-        path = (
-            asset_index.get_asset_path(issue_id, asset_id)
-            or camera_index.get_asset_path(issue_id, asset_id)
-            or video_index.get_asset_path(issue_id, asset_id)
+        path = await asyncio.to_thread(
+            lambda: (
+                asset_index.get_asset_path(issue_id, asset_id)
+                or camera_index.get_asset_path(issue_id, asset_id)
+                or video_index.get_asset_path(issue_id, asset_id)
+            )
         )
     if path is None:
         raise _detail(404, "Ares / Camera 资产不存在。")
@@ -435,7 +462,7 @@ async def get_asset(issue_id: str, asset_id: str) -> FileResponse:
 
 @router.post("/api/cases/{issue_id}/annotations")
 async def create_annotation(issue_id: str, request: Request) -> dict[str, Any]:
-    if database.get_case(issue_id) is None:
+    if await asyncio.to_thread(database.get_case, issue_id) is None:
         raise _detail(404, "Issue 不存在。")
     try:
         body = await request.json()
@@ -443,7 +470,8 @@ async def create_annotation(issue_id: str, request: Request) -> dict[str, Any]:
         raise _detail(400, "标注请求必须是 JSON。")
     if not isinstance(body, dict):
         raise _detail(400, "标注请求必须是 JSON 对象。")
-    annotation = _create_annotation_record(
+    annotation = await asyncio.to_thread(
+        _create_annotation_record,
         issue_id=issue_id,
         request=request,
         body=body,
@@ -462,7 +490,7 @@ async def create_annotation_with_attachments(
     payload: str = Form(...),
     attachments: Optional[List[UploadFile]] = File(None),
 ) -> dict[str, Any]:
-    if database.get_case(issue_id) is None:
+    if await asyncio.to_thread(database.get_case, issue_id) is None:
         raise _detail(404, "Issue 不存在。")
     try:
         body = json.loads(payload)
@@ -472,7 +500,8 @@ async def create_annotation_with_attachments(
         raise _detail(400, "payload 必须是 JSON 对象。")
     records, paths = await _store_review_attachments(attachments or [])
     try:
-        annotation = _create_annotation_record(
+        annotation = await asyncio.to_thread(
+            _create_annotation_record,
             issue_id=issue_id,
             request=request,
             body=body,
@@ -480,7 +509,7 @@ async def create_annotation_with_attachments(
         )
     except Exception:
         for path in paths:
-            path.unlink(missing_ok=True)
+            await asyncio.to_thread(path.unlink, missing_ok=True)
         raise
     annotation["attachments"] = [
         _public_review_attachment(attachment)
@@ -514,7 +543,7 @@ async def delete_annotation(issue_id: str, annotation_id: int) -> dict[str, Any]
             )
             continue
         try:
-            path.unlink(missing_ok=True)
+            await asyncio.to_thread(path.unlink, missing_ok=True)
         except OSError:
             logger.exception(
                 "Failed to remove deleted review attachment annotation_id=%s attachment_id=%s",

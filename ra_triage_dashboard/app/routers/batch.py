@@ -14,16 +14,6 @@ from fastapi.responses import (
 from ..http_support import *  # noqa: F401,F403
 from ..runtime import *  # noqa: F401,F403
 
-# Keep FastAPI symbols after star-imports (runtime/http_support may not define them).
-from fastapi import APIRouter, File, Form, Request, UploadFile  # noqa: F401
-from fastapi.responses import (  # noqa: F401
-    FileResponse,
-    HTMLResponse,
-    JSONResponse,
-    RedirectResponse,
-    Response,
-)
-
 router = APIRouter()
 
 @router.get("/api/prediction-batches/models")
@@ -63,7 +53,9 @@ async def batch_prediction_prompts() -> dict[str, Any]:
 
 @router.get("/api/prediction-batches/config")
 async def batch_prediction_config() -> dict[str, Any]:
-    latest = database.list_batch_prediction_jobs(page_size=1).get("items", [])
+    latest = (
+        await asyncio.to_thread(database.list_batch_prediction_jobs, page_size=1)
+    ).get("items", [])
     latest_job = latest[0] if latest else {}
     return {
         "enabled": settings.batch_prediction_enabled,
@@ -195,11 +187,14 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
     )
     if not provider or not provider.get("enabled"):
         raise _detail(400, "所选 Provider 未在 cloud_server 登记可用的服务端凭证。")
-    missing = [
-        issue_id
-        for issue_id in issue_ids
-        if database.get_case(issue_id) is None
-    ]
+    existing_issue_ids = set(
+        await asyncio.to_thread(
+            database.list_case_issue_ids,
+            issue_ids=issue_ids,
+            limit=len(issue_ids),
+        )
+    )
+    missing = [issue_id for issue_id in issue_ids if issue_id not in existing_issue_ids]
     if missing:
         preview = "、".join(missing[:8])
         suffix = "…" if len(missing) > 8 else ""
@@ -239,13 +234,14 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
         input_config = normalise_input_config(body.get("input_config"))
     except PromptCatalogError as exc:
         raise _detail(400, str(exc))
-    actor, actor_source, actor_verified = _action_actor(
-        request, body.get("requested_by")
+    actor, actor_source, actor_verified = await asyncio.to_thread(
+        _action_actor, request, body.get("requested_by")
     )
     if not name:
         actor_slug = re.sub(r"[^A-Za-z0-9._-]+", "-", actor).strip("-")[:48] or "triage"
         name = f"{actor_slug}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    job = database.create_batch_prediction_job(
+    job = await asyncio.to_thread(
+        database.create_batch_prediction_job,
         name=name,
         issue_ids=issue_ids,
         requested_by=actor,
@@ -268,14 +264,16 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
     )
     if not batch_prediction_runner.launch_prediction(job):
         error = "Batch worker 正在停止，任务无法入队；请稍后重试。"
-        database.update_batch_prediction_items(
+        await asyncio.to_thread(
+            database.update_batch_prediction_items,
             job["id"],
             [
                 {"issue_id": issue_id, "success": False, "error": error}
                 for issue_id in issue_ids
             ],
         )
-        database.update_batch_prediction_job(
+        await asyncio.to_thread(
+            database.update_batch_prediction_job,
             job["id"],
             status="failed",
             completed_count=len(issue_ids),
@@ -285,7 +283,8 @@ async def create_batch_prediction(request: Request) -> dict[str, Any]:
         raise _detail(409, error)
     return {
         "job": _public_batch_job(
-            database.get_batch_prediction_job(job["id"]) or job
+            await asyncio.to_thread(database.get_batch_prediction_job, job["id"])
+            or job
         ),
         "safety": {
             "server_default_model": False,

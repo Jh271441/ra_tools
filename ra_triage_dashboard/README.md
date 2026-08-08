@@ -208,6 +208,23 @@ Issue 详情的外部 RA 链接可通过以下只读配置控制：
 
 ## cloud_server 启动
 
+### 并发与有界 I/O 契约
+
+Dashboard 的 HTTP 路由使用 FastAPI 异步处理，但现有数据库适配器、SSO 解析、
+Excel/CSV 解析及 Ares 文件索引均为同步实现。路由层必须通过 `asyncio.to_thread`
+执行这些同步操作，不得在事件循环中直接调用数据库、文件系统或隐藏同步 I/O 的身份/
+目录辅助函数。`tests/test_architecture_hardening.py` 对这些边界做静态回归检查；后续新增
+路由时应同步扩展该约束，而不是仅依赖人工 Code Review。
+
+模型结果上传按块读取，并在超过 64 MiB 时只额外读取一个哨兵字节后立即拒绝，避免把
+无限请求体一次性载入内存。SSO 入口诊断采用固定上限的观测缓存，避免不同来源持续写入
+导致进程内存无界增长。`/health` 只返回启动或最近一次显式刷新得到的 Ares 索引快照，
+不扫描网络存储；需要主动刷新和诊断介质状态时使用 `/api/status`。
+
+灰度发布必须先在 8786 使用独立代码目录和独立 SQLite 数据目录验证，不能连接正式
+PostgreSQL，因为应用启动及迁移流程可能产生写入。8786 通过完整测试、健康检查、页面与
+媒体抽样后，才允许保持正式数据目录和数据库配置不变切换 8785。
+
 ```bash
 cd /volume/home/workspace/ra_tools/ra_triage_dashboard
 bash scripts/bootstrap_cloud_server_env.sh

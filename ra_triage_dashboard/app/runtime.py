@@ -63,6 +63,7 @@ from .db import (
     Database,
 )
 from .model_catalog import MODEL_ID_RE, ModelCatalog, ModelCatalogError
+from .observability import BoundedObservationSet
 from .prompt_catalog import (
     INPUT_PRESETS,
     MAX_FRAME_COUNT,
@@ -91,7 +92,9 @@ from .web_paths import render_index_html, with_base_path
 
 
 logger = logging.getLogger("ra_triage_dashboard")
-_identity_diagnostic_observations: set[tuple[str, tuple[tuple[str, str], ...]]] = set()
+_identity_diagnostic_observations = BoundedObservationSet[
+    tuple[str, tuple[tuple[str, str], ...]]
+](max_entries=1024)
 settings = Settings.from_env()
 validate_identity_settings(settings)
 database = Database(

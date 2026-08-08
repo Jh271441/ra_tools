@@ -14,16 +14,6 @@ from fastapi.responses import (
 from ..http_support import *  # noqa: F401,F403
 from ..runtime import *  # noqa: F401,F403
 
-# Keep FastAPI symbols after star-imports (runtime/http_support may not define them).
-from fastapi import APIRouter, File, Form, Request, UploadFile  # noqa: F401
-from fastapi.responses import (  # noqa: F401
-    FileResponse,
-    HTMLResponse,
-    JSONResponse,
-    RedirectResponse,
-    Response,
-)
-
 router = APIRouter()
 
 @router.post("/api/review-tags")
@@ -35,12 +25,15 @@ async def create_review_tag(request: Request) -> dict[str, Any]:
     if not isinstance(body, dict):
         raise _detail(400, "场景标签目录请求必须是 JSON 对象。")
     label, hint, group, section = _validate_review_tag_input(body)
-    actor, _, _ = _action_actor(request, body.get("created_by"))
+    actor, _, _ = await asyncio.to_thread(
+        _action_actor, request, body.get("created_by")
+    )
     if not actor:
         raise _detail(400, "无法确认场景标签目录创建人。")
+    catalog = await asyncio.to_thread(_review_tag_catalog)
     if any(
         str(item.get("label")) == label and not bool(item.get("deleted"))
-        for item in _review_tag_catalog()
+        for item in catalog
     ):
         raise _detail(409, "该场景标签标题已经存在。")
     try:
@@ -67,8 +60,9 @@ async def update_review_tag(key: str, request: Request) -> dict[str, Any]:
     normalized_key = _as_text(key).strip()
     if not normalized_key or len(normalized_key) > 160:
         raise _detail(400, "场景标签 key 不合法。")
+    catalog = await asyncio.to_thread(_review_tag_catalog)
     current = next(
-        (item for item in _review_tag_catalog() if item["key"] == normalized_key),
+        (item for item in catalog if item["key"] == normalized_key),
         None,
     )
     if current is None:
@@ -109,14 +103,16 @@ async def update_review_tag(key: str, request: Request) -> dict[str, Any]:
             raise _detail(400, "场景标签标题长度或字符不合法。")
         if len(hint) > 160 or re.search(r"[\x00-\x1f\x7f]", hint):
             raise _detail(400, "场景标签说明长度或字符不合法。")
-    actor, _, _ = _action_actor(request, body.get("updated_by"))
+    actor, _, _ = await asyncio.to_thread(
+        _action_actor, request, body.get("updated_by")
+    )
     if not actor:
         raise _detail(400, "无法确认场景标签目录编辑人。")
     if any(
         item["key"] != normalized_key
         and str(item.get("label")) == label
         and not bool(item.get("deleted"))
-        for item in _review_tag_catalog()
+        for item in catalog
     ):
         raise _detail(409, "该场景标签标题已经存在。")
     try:
@@ -147,15 +143,16 @@ async def delete_review_tag(key: str, request: Request) -> dict[str, Any]:
     normalized_key = _as_text(key).strip()
     if not normalized_key or len(normalized_key) > 160:
         raise _detail(400, "场景标签 key 不合法。")
+    catalog = await asyncio.to_thread(_review_tag_catalog)
     current = next(
-        (item for item in _review_tag_catalog() if item["key"] == normalized_key),
+        (item for item in catalog if item["key"] == normalized_key),
         None,
     )
     if current is None:
         raise _detail(404, "场景标签目录项不存在。")
     if bool(current.get("deleted")):
         raise _detail(409, "该场景标签已经删除。")
-    actor, _, _ = _action_actor(request, "")
+    actor, _, _ = await asyncio.to_thread(_action_actor, request, "")
     if not actor:
         raise _detail(400, "无法确认场景标签目录删除人。")
     try:
@@ -190,12 +187,15 @@ async def create_missing_evidence(request: Request) -> dict[str, Any]:
         raise _detail(400, "缺失信息目录请求必须是 JSON 对象。")
     label = _as_text(body.get("label"))
     hint = _as_text(body.get("hint"))
-    actor, _, _ = _action_actor(request, body.get("created_by"))
+    actor, _, _ = await asyncio.to_thread(
+        _action_actor, request, body.get("created_by")
+    )
     if not actor:
         raise _detail(400, "无法确认缺失信息目录创建人。")
+    catalog = await asyncio.to_thread(_missing_evidence_catalog)
     if any(
         str(item["label"]) == label and not bool(item.get("deleted"))
-        for item in _missing_evidence_catalog()
+        for item in catalog
     ):
         raise _detail(409, "该缺失信息标题已经存在于内置目录。")
     try:
@@ -226,8 +226,9 @@ async def update_missing_evidence(key: str, request: Request) -> dict[str, Any]:
     normalized_key = _as_text(key).strip()
     if not normalized_key or len(normalized_key) > 160:
         raise _detail(400, "缺失信息 key 不合法。")
+    catalog = await asyncio.to_thread(_missing_evidence_catalog)
     current = next(
-        (item for item in _missing_evidence_catalog() if item["key"] == normalized_key),
+        (item for item in catalog if item["key"] == normalized_key),
         None,
     )
     if current is None:
@@ -240,14 +241,16 @@ async def update_missing_evidence(key: str, request: Request) -> dict[str, Any]:
         raise _detail(400, "缺失信息目录请求必须是 JSON 对象。")
     label = _as_text(body.get("label"))
     hint = _as_text(body.get("hint"))
-    actor, _, _ = _action_actor(request, body.get("updated_by"))
+    actor, _, _ = await asyncio.to_thread(
+        _action_actor, request, body.get("updated_by")
+    )
     if not actor:
         raise _detail(400, "无法确认缺失信息目录编辑人。")
     if any(
         item["key"] != normalized_key
         and not bool(item.get("deleted"))
         and str(item["label"]) == label
-        for item in _missing_evidence_catalog()
+        for item in catalog
     ):
         raise _detail(409, "该缺失信息标题已经存在。")
     try:
@@ -279,8 +282,9 @@ async def delete_missing_evidence(key: str, request: Request) -> dict[str, Any]:
     normalized_key = _as_text(key).strip()
     if not normalized_key or len(normalized_key) > 160:
         raise _detail(400, "缺失信息 key 不合法。")
+    catalog = await asyncio.to_thread(_missing_evidence_catalog)
     current = next(
-        (item for item in _missing_evidence_catalog() if item["key"] == normalized_key),
+        (item for item in catalog if item["key"] == normalized_key),
         None,
     )
     if current is None:
@@ -293,7 +297,9 @@ async def delete_missing_evidence(key: str, request: Request) -> dict[str, Any]:
         body = {}
     if not isinstance(body, dict):
         body = {}
-    actor, _, _ = _action_actor(request, body.get("deleted_by"))
+    actor, _, _ = await asyncio.to_thread(
+        _action_actor, request, body.get("deleted_by")
+    )
     if not actor:
         raise _detail(400, "无法确认缺失信息目录删除人。")
     try:
@@ -322,12 +328,14 @@ async def delete_missing_evidence(key: str, request: Request) -> dict[str, Any]:
 
 @router.get("/api/review-attachments/{attachment_id}")
 async def get_review_attachment(attachment_id: str) -> FileResponse:
-    attachment = database.get_review_attachment(attachment_id)
+    attachment = await asyncio.to_thread(
+        database.get_review_attachment, attachment_id
+    )
     if attachment is None:
         raise _detail(404, "Review 截图不存在。")
     root = settings.review_attachments_dir.resolve()
     path = (root / attachment["stored_name"]).resolve()
-    if root not in path.parents or not path.is_file():
+    if root not in path.parents or not await asyncio.to_thread(path.is_file):
         raise _detail(404, "Review 截图文件不存在。")
     return FileResponse(
         path,

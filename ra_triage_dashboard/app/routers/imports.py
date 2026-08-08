@@ -13,16 +13,7 @@ from fastapi.responses import (
 
 from ..http_support import *  # noqa: F401,F403
 from ..runtime import *  # noqa: F401,F403
-
-# Keep FastAPI symbols after star-imports (runtime/http_support may not define them).
-from fastapi import APIRouter, File, Form, Request, UploadFile  # noqa: F401
-from fastapi.responses import (  # noqa: F401
-    FileResponse,
-    HTMLResponse,
-    JSONResponse,
-    RedirectResponse,
-    Response,
-)
+from ..upload_limits import UploadLimitExceeded, read_upload_limited
 
 router = APIRouter()
 
@@ -35,8 +26,8 @@ async def trail_model_sync(request: Request) -> dict[str, Any]:
     mode = _as_text(body.get("mode") or "preview")
     if mode not in {"preview", "create"}:
         raise _detail(400, "mode 仅支持 preview 或 create。")
-    actor, actor_source, actor_verified = _action_actor(
-        request, body.get("requested_by")
+    actor, actor_source, actor_verified = await asyncio.to_thread(
+        _action_actor, request, body.get("requested_by")
     )
     return await asyncio.to_thread(
         sync_trail_model_fields,
@@ -92,12 +83,15 @@ async def import_contract() -> dict[str, Any]:
 
 async def _read_upload(upload: UploadFile) -> tuple[bytes, str, str]:
     filename = _safe_filename(upload.filename or "upload")
-    content = await upload.read()
+    try:
+        content, source_hash = await read_upload_limited(
+            upload,
+            max_bytes=MAX_UPLOAD_BYTES,
+        )
+    except UploadLimitExceeded:
+        raise _detail(413, "上传文件超过 64 MB 限制。")
     if not content:
         raise _detail(400, "上传文件为空。")
-    if len(content) > MAX_UPLOAD_BYTES:
-        raise _detail(413, "上传文件超过 64 MB 限制。")
-    source_hash = hashlib.sha256(content).hexdigest()
     return content, filename, source_hash
 
 
@@ -110,13 +104,16 @@ async def import_issues(
 ) -> dict[str, Any]:
     content, filename, _ = await _read_upload(file)
     try:
-        source_rows, metadata = parse_source_bytes(filename, content)
+        source_rows, metadata = await asyncio.to_thread(
+            parse_source_bytes, filename, content
+        )
     except (UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
         raise _detail(400, f"解析文件失败: {exc}")
     rows = [normalized for row in source_rows if (normalized := normalize_issue_row(row, source))]
     if not rows:
         raise _detail(400, "未找到有效 issue_id；请检查表头或导入契约。")
-    outcome = database.upsert_issues(
+    outcome = await asyncio.to_thread(
+        database.upsert_issues,
         rows,
         source=source,
         replace_gt=replace_gt.lower() in {"1", "true", "yes", "on"},
@@ -137,7 +134,9 @@ async def import_model_results(
 ) -> dict[str, Any]:
     content, filename, source_hash = await _read_upload(file)
     try:
-        source_rows, metadata = parse_source_bytes(filename, content)
+        source_rows, metadata = await asyncio.to_thread(
+            parse_source_bytes, filename, content
+        )
     except (UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
         raise _detail(400, f"解析文件失败: {exc}")
     rows = [normalized for row in source_rows if (normalized := normalize_model_row(row))]
@@ -159,8 +158,11 @@ async def import_model_results(
     metadata["source_artifact"] = source_artifact
     experiment = metadata.get("experiment") if isinstance(metadata.get("experiment"), dict) else {}
     default_name = _as_text(experiment.get("model_name")) or Path(filename).stem
-    actor, actor_source, actor_verified = _action_actor(request, created_by)
-    run, duplicate = database.import_model_run(
+    actor, actor_source, actor_verified = await asyncio.to_thread(
+        _action_actor, request, created_by
+    )
+    run, duplicate = await asyncio.to_thread(
+        database.import_model_run,
         name=_as_text(run_name) or default_name,
         source_name=filename,
         source_sha256=source_hash,
@@ -233,7 +235,8 @@ async def import_autotriage_results(
     if len(run_name) > 120:
         raise _detail(400, "Run 名称不能超过 120 个字符。")
     batch = snapshot["batch"]
-    actor, actor_source, actor_verified = _action_actor(
+    actor, actor_source, actor_verified = await asyncio.to_thread(
+        _action_actor,
         request,
         body.get("created_by"),
     )
@@ -250,7 +253,8 @@ async def import_autotriage_results(
         "prompt_sha256": _as_text(batch.get("prompt_sha256")),
         "default_changed": False,
     }
-    run, duplicate = database.import_model_run(
+    run, duplicate = await asyncio.to_thread(
+        database.import_model_run,
         name=run_name
         or _as_text(batch.get("batch_name"))
         or f"AutoTriage Batch {snapshot['batch_id']}",

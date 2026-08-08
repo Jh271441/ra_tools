@@ -14,17 +14,21 @@ from fastapi.responses import (
 from ..http_support import *  # noqa: F401,F403
 from ..runtime import *  # noqa: F401,F403
 
-# Keep FastAPI symbols after star-imports (runtime/http_support may not define them).
-from fastapi import APIRouter, File, Form, Request, UploadFile  # noqa: F401
-from fastapi.responses import (  # noqa: F401
-    FileResponse,
-    HTMLResponse,
-    JSONResponse,
-    RedirectResponse,
-    Response,
-)
-
 router = APIRouter()
+
+
+def _filesystem_availability() -> dict[str, bool]:
+    """Probe optional filesystem-backed integrations outside the event loop."""
+
+    return {
+        "ra_auto_triage_root_available": (
+            settings.ra_auto_triage_root / "vlm"
+        ).is_dir(),
+        "ares_manifest_available": settings.ares_manifest.is_file(),
+        "camera_cache_root_available": settings.camera_root.is_dir(),
+        "ares_video_root_available": settings.ares_video_root.is_dir(),
+    }
+
 
 @router.get("/", include_in_schema=False)
 @router.get("/review", include_in_schema=False)
@@ -57,16 +61,14 @@ async def legacy_import(kind: str = "issues") -> RedirectResponse:
 
 @router.get("/health")
 async def health() -> dict[str, Any]:
+    filesystem = await asyncio.to_thread(_filesystem_availability)
     return {
         "ok": True,
         "build_commit": settings.build_commit,
         "base_path": settings.base_path,
         "deployment_mode": settings.deployment_mode,
-        "ra_auto_triage_root_available": (settings.ra_auto_triage_root / "vlm").is_dir(),
-        "ares_manifest_available": settings.ares_manifest.is_file(),
-        "ares_indexed_issues": asset_index.refresh(),
-        "camera_cache_root_available": settings.camera_root.is_dir(),
-        "ares_video_root_available": settings.ares_video_root.is_dir(),
+        **filesystem,
+        "ares_indexed_issues": asset_index.indexed_count(),
         "baseline": runtime_state["baseline"],
         "baselines": runtime_state.get("baselines") or [],
         "baseline_conflicts": runtime_state.get("baseline_conflicts") or [],
@@ -112,7 +114,7 @@ async def change_revision(response: Response) -> dict[str, Any]:
 
 @router.get("/api/baselines")
 async def list_baselines() -> dict[str, Any]:
-    media = media_registry.media_ready_by_id()
+    media = await asyncio.to_thread(media_registry.media_ready_by_id)
     items = []
     for summary in runtime_state.get("baselines") or []:
         baseline_id = str(summary.get("id") or "")
@@ -134,13 +136,14 @@ async def list_baselines() -> dict[str, Any]:
 
 @router.get("/api/dashboard-config")
 async def dashboard_config() -> dict[str, Any]:
+    default_model_run_id = await asyncio.to_thread(database.default_model_run_id)
     return {
         "baseline": runtime_state["baseline"],
         "baselines": runtime_state.get("baselines") or baseline_registry.public_summaries(),
         "default_baseline_ids": baseline_registry.default_ids(),
         "baseline_conflicts": runtime_state.get("baseline_conflicts") or [],
         "build_commit": settings.build_commit,
-        "default_model_run_id": database.default_model_run_id(),
+        "default_model_run_id": default_model_run_id,
         "trail_sync": runtime_state["trail_sync"],
         "missing_evidence_catalog": await asyncio.to_thread(_missing_evidence_catalog),
         "review_tag_catalog": await asyncio.to_thread(_review_tag_catalog),
@@ -153,7 +156,7 @@ async def dashboard_config() -> dict[str, Any]:
             "max_bytes_total": MAX_REVIEW_ATTACHMENTS_TOTAL_BYTES,
             "media_types": ["image/png", "image/jpeg", "image/webp"],
         },
-        "default_failure_only": bool(database.default_model_run_id()),
+        "default_failure_only": bool(default_model_run_id),
         "batch_prediction": {
             "enabled": settings.batch_prediction_enabled,
             "autotriage_push_enabled": settings.autotriage_push_enabled,
@@ -166,41 +169,8 @@ async def dashboard_config() -> dict[str, Any]:
     }
 
 
-def _review_tag_payload(item: dict[str, Any], *, builtin: bool = False) -> dict[str, Any]:
-    payload = {
-        **item,
-        "builtin": bool(item.get("builtin", builtin)),
-        "deleted": not bool(item.get("active", 1))
-        if "active" in item
-        else bool(item.get("deleted", False)),
-    }
-    payload.pop("active", None)
-    payload.setdefault("section", "scene")
-    payload.setdefault("group", payload.pop("group_key", "environment"))
-    payload.setdefault("hint", "")
-    return payload
 
 
-def _validate_review_tag_input(
-    body: dict[str, Any],
-    *,
-    default_group: str = "environment",
-) -> tuple[str, str, str, str]:
-    """Return (label, hint, group, section) for managed Issue-tag catalog rows."""
-
-    label = _as_text(body.get("label"))
-    hint = _as_text(body.get("hint"))
-    group = _as_text(body.get("group") or default_group)
-    if not label:
-        raise _detail(400, "场景标签标题不能为空。")
-    if len(label) > 48 or re.search(r"[\x00-\x1f\x7f]", label):
-        raise _detail(400, "场景标签标题长度或字符不合法。")
-    if len(hint) > 160 or re.search(r"[\x00-\x1f\x7f]", hint):
-        raise _detail(400, "场景标签说明长度或字符不合法。")
-    section = REVIEW_TAG_MANAGED_GROUPS.get(group)
-    if section is None:
-        raise _detail(400, "场景标签分组不合法。")
-    return label, hint, group, section
 
 
 
@@ -329,9 +299,11 @@ async def status(response: Response) -> dict[str, Any]:
             "pool_max_size": database.pool_size,
             "latency_ms": None,
         }
-    backup_state, volume_state = await asyncio.gather(
+    backup_state, volume_state, indexed_issues, filesystem = await asyncio.gather(
         asyncio.to_thread(backup_status, settings.data_dir),
         asyncio.to_thread(volume_status, settings.data_dir),
+        asyncio.to_thread(asset_index.refresh),
+        asyncio.to_thread(_filesystem_availability),
     )
     baseline_state = runtime_state["baseline"]
     overall = overall_status(
@@ -353,11 +325,8 @@ async def status(response: Response) -> dict[str, Any]:
         },
         "trail_write_enabled": False,
         "build_commit": settings.build_commit,
-        "ra_auto_triage_root_available": (settings.ra_auto_triage_root / "vlm").is_dir(),
-        "ares_manifest_available": settings.ares_manifest.is_file(),
-        "ares_indexed_issues": asset_index.refresh(),
-        "camera_cache_root_available": settings.camera_root.is_dir(),
-        "ares_video_root_available": settings.ares_video_root.is_dir(),
+        **filesystem,
+        "ares_indexed_issues": indexed_issues,
         "baseline": baseline_state,
         "baselines": runtime_state.get("baselines") or [],
         "baseline_conflicts": runtime_state.get("baseline_conflicts") or [],
@@ -377,85 +346,8 @@ async def status(response: Response) -> dict[str, Any]:
     }
 
 
-def _parse_issue_id_filter(raw: str) -> list[str]:
-    tokens = re.split(r"[\s,;|]+", _as_text(raw))
-    cleaned: list[str] = []
-    seen: set[str] = set()
-    for token in tokens:
-        issue_id = token.strip()
-        if not issue_id or issue_id in seen:
-            continue
-        if not re.fullmatch(r"[A-Za-z0-9_-]{3,128}", issue_id):
-            continue
-        seen.add(issue_id)
-        cleaned.append(issue_id)
-        if len(cleaned) >= 2000:
-            break
-    return cleaned
 
 
-def _case_filter_kwargs(
-    *,
-    search: str = "",
-    gt_label: str = "",
-    model_label: str = "",
-    annotation_label: str = "",
-    annotation_author: str = "",
-    model_run_id: str = "",
-    comparison: str = "",
-    failure_only: bool = False,
-    missing_evidence: str = "",
-    issue_ids: str = "",
-    work_assignee: str = "",
-    baselines: str = "",
-    request: Request | None = None,
-) -> dict[str, Any]:
-    comparison_values = [
-        value
-        for value in _csv_filter_values(comparison)
-        if value in COMPARISON_STATUSES and value != "all"
-    ]
-    if failure_only and comparison_values and comparison_values != ["mismatch"]:
-        # Legacy failure_only=true only expands empty comparison to mismatch.
-        if comparison and set(comparison_values) != {"mismatch"}:
-            raise _detail(400, "failure_only=true 与 comparison 参数冲突。")
-    if failure_only and not comparison_values:
-        comparison_values = ["mismatch"]
-    if comparison_values and set(comparison_values) == {
-        "match",
-        "mismatch",
-        "none",
-    }:
-        comparison_values = []
-    comparison_status = ",".join(comparison_values) if comparison_values else "all"
-    if comparison_status != "all" and not model_run_id:
-        raise _detail(400, "筛选模型对比关系时必须选择 Model Run。")
-    model_labels = _csv_filter_values(model_label)
-    for label in model_labels:
-        if label not in LABELS:
-            raise _detail(400, "model_label 不在三分类范围内。")
-    if model_labels and not model_run_id:
-        raise _detail(400, "按模型标注筛选时必须选择 Model Run。")
-    gt_labels = _csv_filter_values(gt_label)
-    for label in gt_labels:
-        if label not in LABELS:
-            raise _detail(400, "gt_label 不在三分类范围内。")
-    scopes = resolve_request_baseline_scopes(baselines, request=request)
-    return {
-        "baseline_scope": scopes[0] if len(scopes) == 1 else "",
-        "baseline_scopes": scopes,
-        "search": search,
-        "gt_label": ",".join(gt_labels),
-        "model_label": ",".join(model_labels),
-        "annotation_label": annotation_label,
-        "annotation_author": annotation_author,
-        "model_run_id": model_run_id,
-        "comparison_status": comparison_status,
-        "failure_only": failure_only,
-        "missing_evidence": missing_evidence,
-        "issue_ids": _parse_issue_id_filter(issue_ids),
-        "work_assignee": _as_text(work_assignee).strip(),
-    }
 
 
 
@@ -468,7 +360,7 @@ async def publish_batch_prediction(job_id: str, request: Request) -> dict[str, A
         raise _detail(403, "缺少 AutoTriage 推送请求标记。")
     if not settings.autotriage_push_enabled:
         raise _detail(503, "当前部署未启用 AutoTriage 推送。")
-    publisher = request_identity(request, settings)
+    publisher = await asyncio.to_thread(request_identity, request, settings)
     if not publisher.verified or not publisher.username:
         raise _detail(
             403,
@@ -484,7 +376,7 @@ async def publish_batch_prediction(job_id: str, request: Request) -> dict[str, A
         "publish-autotriage",
     }:
         raise _detail(400, "必须显式确认创建生产 AutoTriage Batch。")
-    job = database.get_batch_prediction_job(job_id)
+    job = await asyncio.to_thread(database.get_batch_prediction_job, job_id)
     if job is None:
         raise _detail(404, "Batch 任务不存在。")
     if job.get("autotriage_batch_id"):
@@ -518,7 +410,8 @@ async def publish_batch_prediction(job_id: str, request: Request) -> dict[str, A
     ):
         raise _detail(409, "Batch 尚无可推送的成功预测。")
     job = (
-        database.update_batch_prediction_job(
+        await asyncio.to_thread(
+            database.update_batch_prediction_job,
             job_id,
             summary={
                 **dict(job.get("summary") or {}),
@@ -535,7 +428,8 @@ async def publish_batch_prediction(job_id: str, request: Request) -> dict[str, A
         raise _detail(409, "已有 Batch 预测或 AutoTriage 推送正在执行，请稍后重试。")
     return {
         "job": _public_batch_job(
-            database.get_batch_prediction_job(job_id) or job
+            await asyncio.to_thread(database.get_batch_prediction_job, job_id)
+            or job
         ),
         "accepted": True,
         "destination": settings.auto_triage_record_base_url,

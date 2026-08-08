@@ -58,8 +58,7 @@ async def identity_ingress_diagnostics(request: Request, call_next):
         candidates = identity_header_candidates(request)
         client_host = request.client.host if request.client else "unknown"
         observation = (client_host, tuple(sorted(candidates.items())))
-        if observation not in _identity_diagnostic_observations:
-            _identity_diagnostic_observations.add(observation)
+        if _identity_diagnostic_observations.add_if_new(observation):
             logger.warning(
                 "SSO ingress diagnostic client=%s identity_candidates=%s",
                 client_host,
@@ -117,6 +116,11 @@ async def request_size_guard(request: Request, call_next):
                 status_code=400,
                 content={"detail": "Content-Length 非法。"},
             )
+        if request_bytes < 0:
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "Content-Length 非法。"},
+            )
         if request_bytes > MAX_BATCH_JSON_REQUEST_BYTES:
             return JSONResponse(
                 status_code=413,
@@ -141,6 +145,11 @@ async def request_size_guard(request: Request, call_next):
         try:
             request_bytes = int(content_length)
         except ValueError:
+            return JSONResponse(
+                status_code=400,
+                content={"detail": "Content-Length 非法。"},
+            )
+        if request_bytes < 0:
             return JSONResponse(
                 status_code=400,
                 content={"detail": "Content-Length 非法。"},

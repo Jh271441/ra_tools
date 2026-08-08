@@ -63,6 +63,17 @@ class AssetIndex:
             self._assets = {}
         return len(parsed)
 
+    def indexed_count(self) -> int:
+        """Return the in-memory index size without touching the filesystem.
+
+        Startup performs one forced refresh.  Lightweight health probes should
+        report that last known-good snapshot rather than turning every probe
+        into a manifest stat/parse operation on network storage.
+        """
+
+        with self._lock:
+            return len(self._meta_paths)
+
     def has_issue(self, issue_id: str) -> bool:
         """Return whether an indexed Ares manifest entry exists for an issue."""
 

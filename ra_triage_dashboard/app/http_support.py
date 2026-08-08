@@ -1305,6 +1305,19 @@ async def _store_review_attachments(
             )
         )
 
+    return await asyncio.to_thread(
+        _persist_review_attachments,
+        prepared,
+        total_bytes,
+    )
+
+
+def _persist_review_attachments(
+    prepared: list[tuple[dict[str, Any], bytes]],
+    total_bytes: int,
+) -> tuple[list[dict[str, Any]], list[Path]]:
+    """Persist normalized Review images outside the asyncio event loop."""
+
     root = settings.review_attachments_dir.resolve()
     root.mkdir(parents=True, exist_ok=True)
     if (

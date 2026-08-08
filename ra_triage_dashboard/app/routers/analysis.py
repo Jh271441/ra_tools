@@ -14,16 +14,6 @@ from fastapi.responses import (
 from ..http_support import *  # noqa: F401,F403
 from ..runtime import *  # noqa: F401,F403
 
-# Keep FastAPI symbols after star-imports (runtime/http_support may not define them).
-from fastapi import APIRouter, File, Form, Request, UploadFile  # noqa: F401
-from fastapi.responses import (  # noqa: F401
-    FileResponse,
-    HTMLResponse,
-    JSONResponse,
-    RedirectResponse,
-    Response,
-)
-
 router = APIRouter()
 
 @router.get("/api/review-reason-analysis")
@@ -49,7 +39,8 @@ async def review_reason_analysis(
     baselines: str = "",
 ) -> dict[str, Any]:
     scopes = resolve_request_baseline_scopes(baselines, request=request)
-    payload = _review_reason_analysis_payload(
+    payload = await asyncio.to_thread(
+        _review_reason_analysis_payload,
         model_run_id=model_run_id,
         comparison=comparison,
         failure_only=failure_only,
@@ -212,7 +203,8 @@ async def export_review_reason_analysis(
     if export_format not in {"csv", "xlsx"}:
         raise _detail(400, "format 仅支持 csv 或 xlsx。")
     scopes = resolve_request_baseline_scopes(baselines, request=request)
-    result = _review_reason_analysis_payload(
+    result = await asyncio.to_thread(
+        _review_reason_analysis_payload,
         model_run_id=model_run_id,
         comparison=comparison,
         failure_only=failure_only,
@@ -233,4 +225,6 @@ async def export_review_reason_analysis(
         baseline_scopes=scopes,
     )
     result["baselines"] = resolve_request_baseline_ids(baselines, request=request)
-    return _review_analysis_export_response(result, export_format)
+    return await asyncio.to_thread(
+        _review_analysis_export_response, result, export_format
+    )
