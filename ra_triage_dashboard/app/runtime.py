@@ -1,93 +1,28 @@
 from __future__ import annotations
 
 import asyncio
-import csv
-import hashlib
-import io
-import json
 import logging
-import math
-import mimetypes
-import re
-import shutil
 import threading
 import time
-import uuid
-from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
-
-import openpyxl
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import (
-    FileResponse,
-    HTMLResponse,
-    JSONResponse,
-    RedirectResponse,
-    Response,
-)
-
-from fastapi.staticfiles import StaticFiles
-from PIL import Image, ImageOps, UnidentifiedImageError
 
 from .assets import AssetIndex, CameraIndex, VideoIndex
-from .auth import (
-    has_same_origin_mutation_marker,
-    identity_header_candidates,
-    normalise_username,
-    request_identity,
-    validate_identity_settings,
-)
-from .autotriage_source import (
-    AutoTriageSource,
-    AutoTriageSourceError,
-    normalise_batch_id,
-)
-from .baseline import load_baseline_entry, load_label_baseline
+from .auth import validate_identity_settings
+from .autotriage_source import AutoTriageSource
 from .baseline_registry import (
     BaselineRegistry,
-    detect_issue_scope_overlaps,
-    ids_to_scopes,
     legacy_registry_from_settings,
     load_baseline_registry,
-    normalize_baseline_ids,
 )
-from .media_registry import MediaRegistry, build_media_registry
 from .batch_prediction_runner import BatchPredictionRunner
-from .db import (
-    LABELS,
-    REVIEW_STATUSES,
-    AnnotationConflictError,
-    Database,
-)
-from .model_catalog import MODEL_ID_RE, ModelCatalog, ModelCatalogError
+from .db import Database
+from .media_registry import build_media_registry
+from .model_catalog import ModelCatalog
 from .observability import BoundedObservationSet
-from .prompt_catalog import (
-    INPUT_PRESETS,
-    MAX_FRAME_COUNT,
-    MAX_FRAME_OFFSET_MS,
-    MAX_PROMPT_BYTES,
-    MIN_FRAME_OFFSET_MS,
-    PromptCatalog,
-    PromptCatalogError,
-    normalise_input_config,
-)
-from .review_analysis import (
-    COMPARISON_STATUSES,
-    build_review_reason_analysis,
-)
-from .work_split import distribute_issue_ids
-from .sanitization import redact_sensitive_fields
+from .prompt_catalog import PromptCatalog
 from .settings import Settings
-from .system_status import backup_status, overall_status, volume_status
-from .trail_sync import (
-    TRAIL_INFO_FIELD,
-    TRAIL_RESULT_FIELD,
-    read_trail_issue_metadata,
-    read_trail_model_fields,
-)
 from .web_paths import render_index_html, with_base_path
 
 
@@ -151,20 +86,6 @@ INDEX_HTML = render_index_html(
     (settings.static_dir / "index.html").read_text(encoding="utf-8"),
     settings.base_path,
 )
-
-ISSUE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{3,128}$")
-MAX_UPLOAD_BYTES = 64 * 1024 * 1024
-MAX_REVIEW_ATTACHMENTS = 4
-MAX_REVIEW_ATTACHMENT_BYTES = 8 * 1024 * 1024
-MAX_REVIEW_ATTACHMENTS_TOTAL_BYTES = 24 * 1024 * 1024
-MAX_REVIEW_MULTIPART_REQUEST_BYTES = 26 * 1024 * 1024
-MAX_REVIEW_ATTACHMENT_PIXELS = 40_000_000
-MAX_REVIEW_ATTACHMENT_STORAGE_BYTES = 20 * 1024 * 1024 * 1024
-MIN_REVIEW_ATTACHMENT_DISK_FREE = 256 * 1024 * 1024
-MAX_BATCH_JSON_REQUEST_BYTES = 256 * 1024
-MAX_SOURCE_PREVIEW_ROWS = 200
-MAX_SOURCE_PREVIEW_CELL_LENGTH = 2_000
-
 
 def _public_path(path: str) -> str:
     return with_base_path(settings.base_path, path)
@@ -351,10 +272,3 @@ EXAMPLE_CASES: tuple[dict[str, str], ...] = (
         "trail_url": "https://voyager.intra.xiaojukeji.com/static/management/#/issue/cn31983487?view_id=2410",
     },
 )
-
-
-# The route modules are intentionally thin and currently consume the runtime
-# context as a compatibility surface.  Include single-underscore helpers in
-# that surface as well; a normal ``import *`` omits them and would turn valid
-# routes into deferred NameErrors only when a request arrives.
-__all__ = tuple(name for name in globals() if not name.startswith("__"))

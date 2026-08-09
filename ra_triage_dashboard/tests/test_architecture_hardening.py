@@ -44,6 +44,45 @@ def _is_to_thread_call(node: ast.AST) -> bool:
 
 
 class ArchitectureHardeningTest(unittest.IsolatedAsyncioTestCase):
+    def test_application_modules_use_explicit_import_boundaries(self) -> None:
+        paths = [
+            APP_ROOT / "main.py",
+            APP_ROOT / "runtime.py",
+            APP_ROOT / "http_support.py",
+            *(APP_ROOT / "routers").glob("*.py"),
+        ]
+        wildcard_imports: list[str] = []
+        dynamic_exports: list[str] = []
+        for path in paths:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and any(
+                    alias.name == "*" for alias in node.names
+                ):
+                    wildcard_imports.append(f"{path.name}:{node.lineno}")
+                if (
+                    isinstance(node, ast.Assign)
+                    and any(
+                        isinstance(target, ast.Name) and target.id == "__all__"
+                        for target in node.targets
+                    )
+                ):
+                    dynamic_exports.append(f"{path.name}:{node.lineno}")
+        self.assertEqual(wildcard_imports, [], "\n".join(wildcard_imports))
+        self.assertEqual(dynamic_exports, [], "\n".join(dynamic_exports))
+
+    def test_import_parser_does_not_initialise_runtime_singletons(self) -> None:
+        tree = ast.parse(
+            (APP_ROOT / "import_parsing.py").read_text(encoding="utf-8")
+        )
+        forbidden = {
+            node.module
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+            and node.module in {"runtime", "http_support"}
+        }
+        self.assertEqual(forbidden, set())
+
     async def test_upload_reader_is_bounded_and_hashes_accepted_content(self) -> None:
         content = b"0123456789"
         upload = _Upload(content)

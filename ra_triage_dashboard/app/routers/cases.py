@@ -1,18 +1,48 @@
 from __future__ import annotations
 
-from typing import Any, List, Optional, Union
+import asyncio
+import json
+from pathlib import Path
+from typing import Any, List, Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
-from fastapi.responses import (
-    FileResponse,
-    HTMLResponse,
-    JSONResponse,
-    RedirectResponse,
-    Response,
-)
+from fastapi.responses import FileResponse
+from PIL import Image, UnidentifiedImageError
 
-from ..http_support import *  # noqa: F401,F403
-from ..runtime import *  # noqa: F401,F403
+from ..contracts import ISSUE_ID_RE
+from ..http_support import (
+    _admin_identity,
+    _as_text,
+    _case_external_links,
+    _case_filter_kwargs,
+    _case_link_metadata_fallback,
+    _create_annotation_record,
+    _detail,
+    _public_batch_job,
+    _public_path,
+    _public_review_attachment,
+    _render_case_thumbnail,
+    _store_review_attachments,
+    _thumbnail_cache_path,
+    _voyager_issue_url,
+    media_for_issue,
+    resolve_request_baseline_ids,
+    resolve_request_baseline_scopes,
+)
+from ..runtime import (
+    asset_index,
+    baseline_registry,
+    camera_index,
+    database,
+    logger,
+    settings,
+    thumbnail_image_semaphore,
+    trail_detail_semaphore,
+    video_index,
+)
+from ..trail_sync import read_trail_issue_metadata
+from ..work_split import distribute_issue_ids
 
 router = APIRouter()
 

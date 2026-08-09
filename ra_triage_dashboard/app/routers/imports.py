@@ -1,18 +1,26 @@
 from __future__ import annotations
 
-from typing import Any, List, Optional, Union
+import asyncio
+import json
+from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
-from fastapi.responses import (
-    FileResponse,
-    HTMLResponse,
-    JSONResponse,
-    RedirectResponse,
-    Response,
+from ..autotriage_source import AutoTriageSourceError, normalise_batch_id
+from ..contracts import MAX_UPLOAD_BYTES
+from ..http_support import (
+    _action_actor,
+    _as_text,
+    _autotriage_record_url,
+    _detail,
+    _fetch_autotriage_snapshot,
+    _safe_filename,
+    _store_model_source,
+    enrich_model_run_baseline_hint,
+    sync_trail_model_fields,
 )
-
-from ..http_support import *  # noqa: F401,F403
-from ..runtime import *  # noqa: F401,F403
+from ..import_parsing import normalize_issue_row, normalize_model_row, parse_source_bytes
+from ..runtime import database
 from ..upload_limits import UploadLimitExceeded, read_upload_limited
 
 router = APIRouter()
