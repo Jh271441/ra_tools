@@ -1933,6 +1933,19 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 }
 .analysis-stat-card > small { color: var(--faint); font-size: 11px; line-height: 1.4; }
 .analysis-stat-warn > strong { color: var(--warn); }
+.analysis-decision-grid {
+  min-width: 0; display: grid;
+  grid-template-columns: minmax(610px, 2fr) minmax(280px, .78fr);
+  grid-template-areas: "confusion status"; gap: 8px;
+}
+.analysis-decision-grid > .analysis-confusion-card { grid-area: confusion; }
+.analysis-decision-grid > .analysis-review-status-card {
+  grid-area: status; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
+  align-items: stretch; gap: 8px;
+}
+.analysis-decision-grid .analysis-review-status-chart { align-self: center; }
+.analysis-decision-grid .analysis-review-status-legend { grid-template-columns: minmax(0, 1fr); gap: 5px; }
+.analysis-decision-grid .analysis-review-status-legend-copy { justify-content: space-between; }
 .analysis-review-status-card {
   min-width: 0; display: grid; grid-template-columns: minmax(190px, .55fr) minmax(0, 2.45fr);
   align-items: center; gap: 16px; padding: 10px 12px;
@@ -2207,6 +2220,17 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .analysis-run-filter, .analysis-search-filter, .analysis-comparison-filter { grid-column: 1 / -1; }
   .analysis-evidence-filter, .analysis-tag-filter, .analysis-trigger-filter, .analysis-egress-filter, .analysis-search-actions { grid-column: 1 / -1; grid-row: auto; }
   .analysis-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .analysis-decision-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "status" "confusion";
+  }
+  .analysis-decision-grid > .analysis-review-status-card {
+    grid-template-columns: minmax(190px, .55fr) minmax(0, 2.45fr); grid-template-rows: auto;
+    align-items: center; gap: 16px;
+  }
+  .analysis-decision-grid .analysis-review-status-chart { align-self: auto; }
+  .analysis-decision-grid .analysis-review-status-legend { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .analysis-decision-grid .analysis-review-status-legend-copy { justify-content: flex-start; }
   .analysis-case-row { grid-template-columns: minmax(120px, .7fr) minmax(0, 1.7fr); }
   .analysis-case-labels, .analysis-case-meta { grid-column: auto; display: grid; }
   .analysis-case-reason { grid-column: 1 / -1; }
@@ -2214,6 +2238,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 }
 
 @container (max-width: 420px) {
+  .analysis-decision-grid > .analysis-review-status-card { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .review-tag-groups { grid-template-columns: minmax(0, 1fr); }
 }
 

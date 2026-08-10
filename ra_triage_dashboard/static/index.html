@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-134`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-135`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -359,28 +359,30 @@
               </article>
             </section>
 
-            <section class="page-card analysis-review-status-card" aria-labelledby="analysisReviewStatusTitle">
-              <div class="section-heading analysis-review-status-heading">
-                <div>
-                  <h3 id="analysisReviewStatusTitle"><span class="ui-lang-zh">Issue GT Review 状态</span><span class="ui-lang-en">Issue GT Review status</span></h3>
+            <section class="analysis-decision-grid" aria-label="GT review and model comparison">
+              <section class="page-card analysis-review-status-card" aria-labelledby="analysisReviewStatusTitle">
+                <div class="section-heading analysis-review-status-heading">
+                  <div>
+                    <h3 id="analysisReviewStatusTitle"><span class="ui-lang-zh">Issue GT Review 状态</span><span class="ui-lang-en">Issue GT Review status</span></h3>
+                  </div>
+                  <small id="analysisReviewStatusSummary"><span class="ui-lang-zh">正在统计当前筛选范围…</span><span class="ui-lang-en">Aggregating the current filter scope…</span></small>
                 </div>
-                <small id="analysisReviewStatusSummary"><span class="ui-lang-zh">正在统计当前筛选范围…</span><span class="ui-lang-en">Aggregating the current filter scope…</span></small>
-              </div>
-              <div class="analysis-review-status-chart" id="analysisReviewStatusChart" aria-live="polite">
-                <div class="analysis-empty"><span class="ui-lang-zh">正在统计状态比例…</span><span class="ui-lang-en">Building status proportions…</span></div>
-              </div>
-            </section>
+                <div class="analysis-review-status-chart" id="analysisReviewStatusChart" aria-live="polite">
+                  <div class="analysis-empty"><span class="ui-lang-zh">正在统计状态比例…</span><span class="ui-lang-en">Building status proportions…</span></div>
+                </div>
+              </section>
 
-            <section class="page-card analysis-confusion-card" aria-labelledby="analysisConfusionTitle">
-              <div class="section-heading analysis-confusion-heading">
-                <div>
-                  <h3 id="analysisConfusionTitle"><span class="ui-lang-zh">GT × 模型预测混淆矩阵</span><span class="ui-lang-en">GT × Model prediction confusion matrix</span></h3>
+              <section class="page-card analysis-confusion-card" aria-labelledby="analysisConfusionTitle">
+                <div class="section-heading analysis-confusion-heading">
+                  <div>
+                    <h3 id="analysisConfusionTitle"><span class="ui-lang-zh">GT × 模型预测混淆矩阵</span><span class="ui-lang-en">GT × Model prediction confusion matrix</span></h3>
+                  </div>
+                  <small id="analysisConfusionSummary"><span class="ui-lang-zh">正在统计当前筛选范围…</span><span class="ui-lang-en">Aggregating the current filter scope…</span></small>
                 </div>
-                <small id="analysisConfusionSummary"><span class="ui-lang-zh">正在统计当前筛选范围…</span><span class="ui-lang-en">Aggregating the current filter scope…</span></small>
-              </div>
-              <div class="analysis-confusion-wrap" id="analysisConfusionMatrix" aria-live="polite">
-                <div class="analysis-empty"><span class="ui-lang-zh">正在统计混淆矩阵…</span><span class="ui-lang-en">Building confusion matrix…</span></div>
-              </div>
+                <div class="analysis-confusion-wrap" id="analysisConfusionMatrix" aria-live="polite">
+                  <div class="analysis-empty"><span class="ui-lang-zh">正在统计混淆矩阵…</span><span class="ui-lang-en">Building confusion matrix…</span></div>
+                </div>
+              </section>
             </section>
 
             <section class="analysis-cluster-grid" id="analysisClusterPanels" aria-label="Structured clusters">
@@ -1009,7 +1011,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-134`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-135`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
