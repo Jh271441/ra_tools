@@ -36,7 +36,20 @@ function inferExpectedOutputFromSelectedTags(root = $("#reviewPane") || document
   };
 }
 
-function updateDerivedReviewStatusPreview(expectedOutput, conflict = false) {
+function expectedOutputSelectionState() {
+  const select = $("#expectedOutputInput");
+  const inference = inferExpectedOutputFromSelectedTags();
+  const selectedValue = String(select?.value || "");
+  const conflictKind = inference.conflict
+    ? "tags"
+    : inference.value && selectedValue !== inference.value
+      ? "selection"
+      : "";
+  return { ...inference, selectedValue, conflictKind };
+}
+
+function updateDerivedReviewStatusPreview(expectedOutput, conflictKind = "") {
+  const conflict = Boolean(conflictKind);
   const statusInput = $("#reviewStatusInput");
   const status = conflict
     ? "pending"
@@ -53,9 +66,12 @@ function updateDerivedReviewStatusPreview(expectedOutput, conflict = false) {
   if (submit && !state.savingAnnotation) submit.disabled = conflict;
   if (!preview) return;
   preview.dataset.status = status;
+  preview.dataset.conflict = conflictKind;
   preview.classList.toggle("is-conflict", conflict);
   preview.textContent = conflict
-    ? uiText("Tags 指向多个输出，请先消除冲突", "Tags imply conflicting outputs")
+    ? conflictKind === "selection"
+      ? uiText("自动状态：选择冲突", "Automatic status: Selection conflict")
+      : uiText("自动状态：Tags 冲突", "Automatic status: Tag conflict")
     : status === "pending"
       ? uiText("自动状态：待补充", "Automatic status: Pending")
       : status === "needs_gt_review"
@@ -66,47 +82,47 @@ function updateDerivedReviewStatusPreview(expectedOutput, conflict = false) {
 function syncExpectedOutputFromTags() {
   const select = $("#expectedOutputInput");
   if (!select) return;
+  const inference = inferExpectedOutputFromSelectedTags();
   EXPECTED_OUTPUT_OPTIONS.forEach((item) => {
     const option = [...select.options].find((candidate) => candidate.value === item.value);
-    if (option) option.textContent = i18nLocale() === "en" ? item.labelEn : item.labelZh;
+    if (!option) return;
+    const label = i18nLocale() === "en" ? item.labelEn : item.labelZh;
+    const isInferred = Boolean(item.value && item.value === inference.value);
+    option.dataset.inferred = isInferred ? "true" : "false";
+    option.textContent = isInferred
+      ? `${label}${uiText("（自动推断）", " (Inferred)")}`
+      : label;
   });
-  const inference = inferExpectedOutputFromSelectedTags();
-  const hint = $("#expectedOutputHint");
-  if (inference.conflict) {
-    if (select.dataset.inferred !== "true") {
-      select.dataset.manualValue = select.value;
-    }
-    select.dataset.inferred = "true";
-    select.value = "";
-    select.disabled = true;
-    if (hint) hint.textContent = uiText(
-      "Tags 冲突：请只保留一种期望输出，当前不可保存。",
-      "Tag conflict: keep one expected output before saving."
-    );
-  } else if (inference.value) {
-    if (select.dataset.inferred !== "true") {
-      select.dataset.manualValue = select.value;
-    }
-    select.dataset.inferred = "true";
+  const selectionSource = select.dataset.selectionSource || "empty";
+  if (selectionSource === "auto") {
+    select.value = inference.value || "";
+    if (!inference.value) select.dataset.selectionSource = "empty";
+  } else if (selectionSource === "empty" && inference.value) {
     select.value = inference.value;
-    select.disabled = true;
-    if (hint) hint.textContent = uiText(
-      `Tags 推断：${inference.value}`,
-      `Inferred from tags: ${inference.value}`
-    );
-  } else {
-    if (select.dataset.inferred === "true") {
-      select.value = select.dataset.manualValue || "";
+    select.dataset.selectionSource = "auto";
+  }
+  select.disabled = false;
+  const hint = $("#expectedOutputHint");
+  const validation = expectedOutputSelectionState();
+  select.classList.toggle("is-conflict", Boolean(validation.conflictKind));
+  select.setAttribute("aria-invalid", validation.conflictKind ? "true" : "false");
+  if (hint) {
+    hint.classList.toggle("is-conflict", Boolean(validation.conflictKind));
+    hint.hidden = !validation.conflictKind;
+    if (validation.conflictKind === "tags") {
+      hint.textContent = uiText(
+        "所选 Tags 同时指向多个输出；请只保留一种输出方向后再保存。",
+        "Selected Tags imply multiple outputs; keep one output direction before saving."
+      );
+    } else if (validation.conflictKind === "selection") {
+      hint.textContent = uiText(
+        `当前选择与 Tags 自动推断的“${validation.value}”冲突；请改回自动推断项或调整 Tags。`,
+        `This choice conflicts with the inferred “${validation.value}”; choose the inferred option or adjust Tags.`
+      );
     }
-    select.dataset.inferred = "false";
-    select.disabled = false;
-    if (hint) hint.textContent = uiText(
-      "Tags 无唯一结论；可手选，留空即待补充。",
-      "No unique Tag result; choose manually or leave pending."
-    );
   }
   state.selectedAnnotationLabel = select.value;
-  updateDerivedReviewStatusPreview(select.value, inference.conflict);
+  updateDerivedReviewStatusPreview(select.value, validation.conflictKind);
 }
 
 function renderDetail(caseData) {
@@ -261,8 +277,7 @@ function syncReviewFormFromCase(caseData) {
   const expectedOutputInput = $("#expectedOutputInput");
   if (expectedOutputInput) {
     expectedOutputInput.value = expectedOutput;
-    expectedOutputInput.dataset.manualValue = expectedOutput;
-    expectedOutputInput.dataset.inferred = "false";
+    expectedOutputInput.dataset.selectionSource = expectedOutput ? "stored" : "empty";
   }
   const note = $("#annotationNote");
   if (note) note.value = previous.note || "";
@@ -364,11 +379,9 @@ function renderReview(caseData) {
           </button>
         </div>
         <div class="review-expected-output-field">
-          <div class="review-expected-output-control">
+          <div class="review-expected-output-heading">
             <label for="expectedOutputInput"><span class="ui-lang-zh">期望输出</span><span class="ui-lang-en">Expected output</span></label>
-            <select id="expectedOutputInput" data-manual-value="${escapeHtml(expectedOutput)}">
-              ${EXPECTED_OUTPUT_OPTIONS.map((item) => `<option value="${escapeHtml(item.value)}" ${item.value === expectedOutput ? "selected" : ""}>${escapeHtml(i18nLocale() === "en" ? item.labelEn : item.labelZh)}</option>`).join("")}
-            </select>
+            <span class="derived-review-status" id="derivedReviewStatus" data-status="${escapeHtml(reviewStatus)}"></span>
             <details class="expected-output-rule">
               <summary><span class="ui-lang-zh">推算规则</span><span class="ui-lang-en">Rules</span></summary>
               <div class="expected-output-rule-popover">
@@ -385,14 +398,14 @@ function renderReview(caseData) {
                   <li>No-assist Tags → No assist</li>
                   <li>No unique result → Pending; equals GT → Matches GT; differs → Needs GT review</li>
                 </ul>
-                <small><span class="ui-lang-zh">多类 Tags 冲突时清空结果、标为待补充并禁止保存。</span><span class="ui-lang-en">Conflicting output Tags clear the result, mark it Pending, and block saving.</span></small>
+                <small><span class="ui-lang-zh">唯一推断项会在下拉框标记“自动推断”；选择其他项或选择互相冲突的 Tags 时会提示冲突并禁止保存。</span><span class="ui-lang-en">The inferred option is marked in the dropdown; choosing another option or conflicting Tags shows a conflict and blocks saving.</span></small>
               </div>
             </details>
           </div>
-          <div class="review-expected-output-meta">
-            <small id="expectedOutputHint"><span class="ui-lang-zh">Tags 无唯一结论；可手选，留空即待补充。</span><span class="ui-lang-en">No unique Tag result; choose manually or leave pending.</span></small>
-            <span class="derived-review-status" id="derivedReviewStatus" data-status="${escapeHtml(reviewStatus)}"></span>
-          </div>
+          <select id="expectedOutputInput" data-selection-source="${expectedOutput ? "stored" : "empty"}" aria-describedby="expectedOutputHint" aria-invalid="false">
+            ${EXPECTED_OUTPUT_OPTIONS.map((item) => `<option value="${escapeHtml(item.value)}" ${item.value === expectedOutput ? "selected" : ""}>${escapeHtml(i18nLocale() === "en" ? item.labelEn : item.labelZh)}</option>`).join("")}
+          </select>
+          <small class="review-expected-output-hint" id="expectedOutputHint" hidden></small>
           <input id="reviewStatusInput" type="hidden" value="${escapeHtml(reviewStatus)}" />
         </div>
         <label class="review-reason">
@@ -429,11 +442,9 @@ function renderReview(caseData) {
   bindSelectedReviewTagControls($("#reviewPane"));
   const expectedOutputInput = $("#expectedOutputInput");
   if (expectedOutputInput) {
-    expectedOutputInput.dataset.manualValue = expectedOutput;
     expectedOutputInput.addEventListener("change", () => {
-      expectedOutputInput.dataset.manualValue = expectedOutputInput.value;
-      state.selectedAnnotationLabel = expectedOutputInput.value;
-      updateDerivedReviewStatusPreview(expectedOutputInput.value, false);
+      expectedOutputInput.dataset.selectionSource = "manual";
+      syncExpectedOutputFromTags();
     });
   }
   $("#reviewPane").querySelectorAll('input[name="missingEvidence"]').forEach((input) => {
@@ -769,8 +780,16 @@ async function navigateAdjacentCase(delta) {
 async function saveAnnotation(event) {
   event.preventDefault();
   if (!state.selectedId || state.savingAnnotation) return;
-  if (inferExpectedOutputFromSelectedTags().conflict) {
+  const expectedOutputState = expectedOutputSelectionState();
+  if (expectedOutputState.conflictKind === "tags") {
     showToast("Tags 指向多个期望输出，请先消除冲突。", true);
+    return;
+  }
+  if (expectedOutputState.conflictKind === "selection") {
+    showToast(
+      `当前期望输出与 Tags 自动推断的“${expectedOutputState.value}”冲突，请改回自动推断项或调整 Tags。`,
+      true
+    );
     return;
   }
   state.savingAnnotation = true;
@@ -845,7 +864,7 @@ async function saveAnnotation(event) {
   } finally {
     state.savingAnnotation = false;
     if (submitButton?.isConnected) {
-      submitButton.disabled = false;
+      submitButton.disabled = Boolean(expectedOutputSelectionState().conflictKind);
       submitButton.removeAttribute("aria-busy");
     }
   }

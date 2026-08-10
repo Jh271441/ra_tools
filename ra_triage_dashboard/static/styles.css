@@ -978,16 +978,21 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .review-status-field { display: grid; gap: 3px; }
 .review-status-field > span { color: var(--muted); font-size: 12px; }
 .review-expected-output-field { display: grid; gap: 4px; }
-.review-expected-output-control {
-  min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 7px;
+.review-expected-output-heading {
+  min-width: 0; display: flex; align-items: center; gap: 7px;
 }
-.review-expected-output-control > label { color: #d7edf0; font-size: 12px; font-weight: 700; white-space: nowrap; }
-.review-expected-output-control > select { min-width: 0; }
-.review-expected-output-meta { min-width: 0; display: flex; align-items: center; gap: 5px 8px; }
-.review-expected-output-meta > small { min-width: 0; flex: 1 1 auto; color: var(--faint); font-size: 10px; line-height: 1.35; }
-.review-expected-output-field select:disabled {
-  color: #dce9f5; -webkit-text-fill-color: #dce9f5; border-color: rgba(34,211,238,.34);
-  background-color: rgba(34,211,238,.07); opacity: 1;
+.review-expected-output-heading > label { color: #d7edf0; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.review-expected-output-heading > .expected-output-rule { margin-left: auto; }
+.review-expected-output-field > select { width: 100%; min-width: 0; }
+.review-expected-output-field > select.is-conflict {
+  border-color: rgba(255,181,71,.58); box-shadow: 0 0 0 1px rgba(255,181,71,.12);
+}
+.review-expected-output-hint {
+  min-width: 0; color: var(--faint); font-size: 10px; line-height: 1.35;
+}
+.review-expected-output-hint[hidden] { display: none; }
+.review-expected-output-hint.is-conflict {
+  color: #ffd08a;
 }
 .expected-output-rule { position: relative; }
 .expected-output-rule > summary {
@@ -2784,7 +2789,7 @@ html[data-color-theme="light"] .review-history-toggle > summary,
 html[data-color-theme="light"] .review-tag-axis-title,
 html[data-color-theme="light"] .review-tag-dropdown > summary,
 html[data-color-theme="light"] .review-reason > span,
-html[data-color-theme="light"] .review-expected-output-control > label,
+html[data-color-theme="light"] .review-expected-output-heading > label,
 html[data-color-theme="light"] .evidence-dropdown > summary,
 html[data-color-theme="light"] .evidence-option strong,
 html[data-color-theme="light"] .review-attachment-field > span,
@@ -2792,12 +2797,11 @@ html[data-color-theme="light"] .screenshot-paste-zone,
 html[data-color-theme="light"] .screenshot-browse-button,
 html[data-color-theme="light"] .run-source-tab em,
 html[data-color-theme="light"] .import-example-preview-heading strong { color: var(--text); }
-html[data-color-theme="light"] .review-expected-output-field select:disabled {
-  color: #075f75;
-  -webkit-text-fill-color: #075f75;
-  border-color: rgba(8,117,141,.4);
-  background-color: rgba(8,117,141,.08);
+html[data-color-theme="light"] .review-expected-output-field > select.is-conflict {
+  border-color: rgba(180,83,9,.48);
+  box-shadow: 0 0 0 1px rgba(180,83,9,.1);
 }
+html[data-color-theme="light"] .review-expected-output-hint.is-conflict { color: #9a4b08; }
 html[data-color-theme="light"] .expected-output-rule-popover { background: #fff; box-shadow: 0 14px 34px rgba(15,23,42,.16); }
 html[data-color-theme="light"] .screenshot-paste-zone.is-dragover {
   border-color: rgba(8,117,141,.55); background: rgba(8,117,141,.08);
