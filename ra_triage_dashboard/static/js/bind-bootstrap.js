@@ -3,6 +3,20 @@
  * Loaded as a classic script (shared global scope). Do not convert to
  * ES modules without auditing cross-file function/state dependencies.
  */
+let reviewSearchTimer = null;
+
+function scheduleReviewFilterReload(delay = 0) {
+  if (reviewSearchTimer) window.clearTimeout(reviewSearchTimer);
+  reviewSearchTimer = window.setTimeout(() => {
+    reviewSearchTimer = null;
+    state.reviewIssueIds = [];
+    state.casePage = 1;
+    reloadReviewGallery({ includeOverview: false, historyMode: "replace" }).catch(
+      (error) => showToast(error.message, true)
+    );
+  }, Math.max(0, Number(delay) || 0));
+}
+
 function bindEvents() {
   bindWorkSplitControls();
   document.querySelectorAll("[data-page-target]").forEach((element) => {
@@ -26,18 +40,6 @@ function bindEvents() {
   $("#resetReviewFiltersButton")?.addEventListener("click", () => {
     resetReviewFilters().catch((error) => showToast(error.message, true));
   });
-  let reviewSearchTimer = null;
-  const scheduleReviewFilterReload = (delay = 0) => {
-    if (reviewSearchTimer) window.clearTimeout(reviewSearchTimer);
-    reviewSearchTimer = window.setTimeout(() => {
-      reviewSearchTimer = null;
-      state.reviewIssueIds = [];
-      state.casePage = 1;
-      reloadReviewGallery({ includeOverview: false, historyMode: "replace" }).catch(
-        (error) => showToast(error.message, true)
-      );
-    }, Math.max(0, Number(delay) || 0));
-  };
   $("#searchInput")?.addEventListener("input", () => scheduleReviewFilterReload(280));
   $("#reviewAnalysisFilterForm").addEventListener("submit", async (event) => {
     event.preventDefault();
