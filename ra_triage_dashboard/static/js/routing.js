@@ -26,7 +26,10 @@ function applyColorTheme(theme, { persist = true } = {}) {
     toggle.setAttribute("aria-label", themeLabel);
     toggle.title = themeLabel;
   }
-  // Pie slice colors are painted into SVG; re-render when theme flips.
+  // Re-render theme/language-sensitive analysis visuals without a data reload.
+  if (state.reviewAnalysis?.data && typeof renderAnalysisReviewStatus === "function") {
+    renderAnalysisReviewStatus(state.reviewAnalysis.data);
+  }
   if (state.reviewAnalysis?.data && typeof renderAnalysisClusterPanels === "function") {
     renderAnalysisClusterPanels(state.reviewAnalysis.data, { animatePies: false });
   }

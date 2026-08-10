@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-133`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-134`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -357,6 +357,18 @@
                 <strong id="analysisEvidenceCount">—</strong>
                 <small class="ui-lang-zh">至少选择 1 项</small><small class="ui-lang-en">Select at least 1</small>
               </article>
+            </section>
+
+            <section class="page-card analysis-review-status-card" aria-labelledby="analysisReviewStatusTitle">
+              <div class="section-heading analysis-review-status-heading">
+                <div>
+                  <h3 id="analysisReviewStatusTitle"><span class="ui-lang-zh">Issue GT Review 状态</span><span class="ui-lang-en">Issue GT Review status</span></h3>
+                </div>
+                <small id="analysisReviewStatusSummary"><span class="ui-lang-zh">正在统计当前筛选范围…</span><span class="ui-lang-en">Aggregating the current filter scope…</span></small>
+              </div>
+              <div class="analysis-review-status-chart" id="analysisReviewStatusChart" aria-live="polite">
+                <div class="analysis-empty"><span class="ui-lang-zh">正在统计状态比例…</span><span class="ui-lang-en">Building status proportions…</span></div>
+              </div>
             </section>
 
             <section class="page-card analysis-confusion-card" aria-labelledby="analysisConfusionTitle">
@@ -997,7 +1009,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-133`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-134`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

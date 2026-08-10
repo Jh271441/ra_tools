@@ -1933,10 +1933,52 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 }
 .analysis-stat-card > small { color: var(--faint); font-size: 11px; line-height: 1.4; }
 .analysis-stat-warn > strong { color: var(--warn); }
+.analysis-review-status-card {
+  min-width: 0; display: grid; grid-template-columns: minmax(190px, .55fr) minmax(0, 2.45fr);
+  align-items: center; gap: 16px; padding: 10px 12px;
+}
+.analysis-review-status-heading { min-width: 0; display: grid; align-content: center; gap: 3px; }
+.analysis-review-status-heading small {
+  overflow: hidden; color: var(--faint); font-size: 11px; text-overflow: ellipsis; white-space: nowrap;
+}
+.analysis-review-status-chart, .analysis-review-status-visual { min-width: 0; }
+.analysis-review-status-visual { display: grid; gap: 7px; }
+.analysis-review-status-bar {
+  position: relative; min-width: 0; height: 12px; display: flex; overflow: hidden;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--overlay);
+}
+.analysis-review-status-segment { height: 100%; flex: 0 0 auto; background: var(--status-color); }
+.analysis-review-status-segment + .analysis-review-status-segment { box-shadow: -1px 0 rgba(11,17,25,.8); }
+.analysis-review-status-empty {
+  width: 100%; display: grid; place-items: center; color: var(--faint); font-size: 9px; line-height: 10px;
+}
+.analysis-review-status-legend { min-width: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.analysis-review-status-legend-item {
+  min-width: 0; display: grid; grid-template-columns: 8px minmax(0, 1fr); align-items: center; gap: 7px;
+}
+.analysis-review-status-swatch { width: 8px; height: 8px; border-radius: 999px; background: var(--status-color); }
+.analysis-review-status-legend-copy { min-width: 0; display: flex; align-items: baseline; gap: 6px; overflow: hidden; }
+.analysis-review-status-legend-copy strong {
+  min-width: 0; overflow: hidden; color: #cfdae8; font-size: 12px; font-weight: 650;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.analysis-review-status-legend-copy small {
+  flex: 0 0 auto; color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.analysis-review-status-segment.status-pending,
+.analysis-review-status-legend-item.status-pending { --status-color: #94a3b8; }
+.analysis-review-status-segment.status-reviewed,
+.analysis-review-status-legend-item.status-reviewed { --status-color: #34d399; }
+.analysis-review-status-segment.status-needs_gt_review,
+.analysis-review-status-legend-item.status-needs_gt_review { --status-color: #fb7185; }
 .analysis-cluster-grid {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
 }
-.analysis-cluster-card { min-width: 0; display: grid; align-content: start; gap: 8px; padding: 12px; }
+.analysis-cluster-card {
+  min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); align-content: stretch;
+  gap: 8px; padding: 12px;
+}
+.analysis-cluster-card > .analysis-pie-groups { align-self: center; }
 .analysis-pie-groups { display: grid; gap: 12px; min-width: 0; }
 .analysis-pie-groups.dual { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .analysis-pie-groups.single { grid-template-columns: minmax(0, 1fr); }
@@ -2041,6 +2083,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .analysis-cluster-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 720px) {
+  .analysis-review-status-card { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .analysis-pie-groups.dual { grid-template-columns: minmax(0, 1fr); }
 }
 .analysis-empty {
@@ -3114,6 +3157,16 @@ html[data-color-theme="light"] .analysis-cluster-card {
   border-color: #cfd8e3; background: #ffffff;
   box-shadow: 0 1px 2px rgba(38, 52, 69, .04);
 }
+html[data-color-theme="light"] .analysis-review-status-legend-copy strong { color: #172033; }
+html[data-color-theme="light"] .analysis-review-status-segment + .analysis-review-status-segment {
+  box-shadow: -1px 0 rgba(255,255,255,.9);
+}
+html[data-color-theme="light"] .analysis-review-status-segment.status-pending,
+html[data-color-theme="light"] .analysis-review-status-legend-item.status-pending { --status-color: #64748b; }
+html[data-color-theme="light"] .analysis-review-status-segment.status-reviewed,
+html[data-color-theme="light"] .analysis-review-status-legend-item.status-reviewed { --status-color: #059669; }
+html[data-color-theme="light"] .analysis-review-status-segment.status-needs_gt_review,
+html[data-color-theme="light"] .analysis-review-status-legend-item.status-needs_gt_review { --status-color: #dc4655; }
 html[data-color-theme="light"] .analysis-cluster-card .section-heading small { color: #7a8a9c; }
 html[data-color-theme="light"] .analysis-pie-svg { filter: none; }
 html[data-color-theme="light"] .analysis-pie-empty-ring { stroke: #d8e1eb; }

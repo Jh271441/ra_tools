@@ -380,6 +380,79 @@ function renderAnalysisClusterPanels(data, { animatePies = true } = {}) {
   clearAnalysisPieEnterAnimations(target);
 }
 
+function renderAnalysisReviewStatus(data) {
+  const target = $("#analysisReviewStatusChart");
+  const summaryTarget = $("#analysisReviewStatusSummary");
+  if (!target) return;
+  const counts = data.summary?.review_status_counts || {};
+  const statuses = [
+    {
+      key: "pending",
+      label: reviewStatusLabel("pending"),
+      count: Number(counts.pending || 0),
+      description: uiText(
+        "未填写期望输出，或 Tags 没有唯一推断",
+        "Expected output is missing or Tags have no unique inference"
+      ),
+    },
+    {
+      key: "reviewed",
+      label: reviewStatusLabel("reviewed"),
+      count: Number(counts.reviewed || 0),
+      description: uiText(
+        "期望输出与当前 GT 一致",
+        "Expected output matches the current GT"
+      ),
+    },
+    {
+      key: "needs_gt_review",
+      label: reviewStatusLabel("needs_gt_review"),
+      count: Number(counts.needs_gt_review || 0),
+      description: uiText(
+        "期望输出与当前 GT 不一致",
+        "Expected output differs from the current GT"
+      ),
+    },
+  ];
+  const total = statuses.reduce((sum, item) => sum + item.count, 0);
+  if (summaryTarget) {
+    summaryTarget.textContent = uiText(
+      `${total} 条 · 当前筛选范围`,
+      `${total} reviews · current filter scope`
+    );
+  }
+  const segments = total
+    ? statuses
+        .filter((item) => item.count > 0)
+        .map((item) => {
+          const percent = analysisPiePercent(item, total);
+          return `<span class="analysis-review-status-segment status-${escapeHtml(item.key)}"
+            style="width:${percent}%"
+            title="${escapeHtml(`${item.label}: ${item.count}, ${percent}%`)}"></span>`;
+        })
+        .join("")
+    : `<span class="analysis-review-status-empty">${escapeHtml(uiText("暂无 Review", "No reviews"))}</span>`;
+  const legend = statuses
+    .map((item) => {
+      const percent = analysisPiePercent(item, total);
+      return `<div class="analysis-review-status-legend-item status-${escapeHtml(item.key)}" title="${escapeHtml(item.description)}">
+        <span class="analysis-review-status-swatch"></span>
+        <span class="analysis-review-status-legend-copy">
+          <strong>${escapeHtml(item.label)}</strong>
+          <small>${item.count} · ${percent}%</small>
+        </span>
+      </div>`;
+    })
+    .join("");
+  const ariaSummary = statuses
+    .map((item) => `${item.label} ${item.count}, ${analysisPiePercent(item, total)}%`)
+    .join("; ");
+  target.innerHTML = `<div class="analysis-review-status-visual" role="img" aria-label="${escapeHtml(ariaSummary)}">
+    <div class="analysis-review-status-bar" aria-hidden="true">${segments}</div>
+    <div class="analysis-review-status-legend">${legend}</div>
+  </div>`;
+}
+
 function clearAnalysisPieEnterAnimations(root) {
   root?.querySelectorAll(".analysis-pie-svg.is-enter").forEach((svg) => {
     const clear = () => svg.classList.remove("is-enter");
@@ -580,6 +653,7 @@ function renderReviewReasonAnalysis(data, { animatePies = true } = {}) {
   $("#analysisReviewScope").textContent = run
     ? `${run.name}${comparisonStatus === "all" ? "" : ` · ${comparisonLabels}`}`
     : uiText("全部最新 Review", "All latest reviews");
+  renderAnalysisReviewStatus(data);
   renderAnalysisClusterPanels(data, { animatePies });
   renderAnalysisConfusion(data);
   renderAnalysisCases(data);
