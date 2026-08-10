@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-127`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-128`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -295,7 +295,7 @@
                   <div class="multi-filter" id="analysisReviewerFilter" data-placeholder="全部复核人" data-placeholder-en="All reviewers" data-i18n-placeholder="filter.all_reviewers"></div>
                 </label>
                 <label>
-                  <span class="ui-lang-zh">Review 状态</span><span class="ui-lang-en">Review status</span>
+                  <span class="ui-lang-zh">自动状态</span><span class="ui-lang-en">Automatic status</span>
                   <div class="multi-filter" id="analysisStatusFilter" data-placeholder="全部状态" data-placeholder-en="All statuses" data-i18n-placeholder="analysis.all_statuses"></div>
                 </label>
                 <label>
@@ -330,7 +330,7 @@
                   <div class="analysis-filter-actions">
                     <button class="button button-quiet" id="exportReviewAnalysisCsvButton" type="button"><span class="ui-lang-zh">导出 CSV</span><span class="ui-lang-en">Export CSV</span></button>
                     <button class="button button-quiet" id="exportReviewAnalysisXlsxButton" type="button"><span class="ui-lang-zh">导出 XLSX</span><span class="ui-lang-en">Export XLSX</span></button>
-                    <button class="button button-quiet trail-export-button" id="exportTrailExpectedOutputButton" type="button"><span class="ui-lang-zh">导出 Trail 更新表</span><span class="ui-lang-en">Export Trail update</span></button>
+                    <button class="button button-quiet trail-export-button" id="exportTrailExpectedOutputButton" type="button"><span class="ui-lang-zh">导出 GT 更新表</span><span class="ui-lang-en">Export GT update</span></button>
                     <button class="button button-quiet" id="resetReviewAnalysisButton" type="button"><span class="ui-lang-zh">重置</span><span class="ui-lang-en">Reset</span></button>
                   </div>
                 </div>
@@ -993,7 +993,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-127`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-128`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

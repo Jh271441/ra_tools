@@ -47,6 +47,10 @@ function updateDerivedReviewStatusPreview(expectedOutput, conflict = false) {
         : "needs_gt_review";
   if (statusInput) statusInput.value = status;
   const preview = $("#derivedReviewStatus");
+  const form = $("#annotationForm");
+  if (form) form.dataset.expectedOutputConflict = conflict ? "1" : "0";
+  const submit = form?.querySelector('button[type="submit"]');
+  if (submit && !state.savingAnnotation) submit.disabled = conflict;
   if (!preview) return;
   preview.dataset.status = status;
   preview.classList.toggle("is-conflict", conflict);
@@ -76,8 +80,8 @@ function syncExpectedOutputFromTags() {
     select.value = "";
     select.disabled = true;
     if (hint) hint.textContent = uiText(
-      "误触发 / 正确触发 / 无需协助 Tags 发生冲突，保存前需保留一类。",
-      "False/correct/no-assist tags conflict; keep one category before saving."
+      "Tags 冲突：请只保留一种期望输出，当前不可保存。",
+      "Tag conflict: keep one expected output before saving."
     );
   } else if (inference.value) {
     if (select.dataset.inferred !== "true") {
@@ -87,8 +91,8 @@ function syncExpectedOutputFromTags() {
     select.value = inference.value;
     select.disabled = true;
     if (hint) hint.textContent = uiText(
-      `已由 Issue Tags 自动推断为「${inference.value}」`,
-      `Inferred from Issue tags: ${inference.value}`
+      `Tags 推断：${inference.value}`,
+      `Inferred from tags: ${inference.value}`
     );
   } else {
     if (select.dataset.inferred === "true") {
@@ -97,8 +101,8 @@ function syncExpectedOutputFromTags() {
     select.dataset.inferred = "false";
     select.disabled = false;
     if (hint) hint.textContent = uiText(
-      "没有可唯一推断的 Tags 时可手动选择；留空即待补充。",
-      "Choose manually when tags cannot infer one output; blank stays pending."
+      "Tags 无唯一结论；可手选，留空即待补充。",
+      "No unique Tag result; choose manually or leave pending."
     );
   }
   state.selectedAnnotationLabel = select.value;
@@ -359,15 +363,38 @@ function renderReview(caseData) {
             <span class="ui-lang-en">Review history · ${allAnnotations.length}</span>
           </button>
         </div>
-        <label class="review-expected-output-field">
-          <span><span class="ui-lang-zh">期望输出</span><span class="ui-lang-en">Expected output</span></span>
-          <select id="expectedOutputInput" data-manual-value="${escapeHtml(expectedOutput)}">
-            ${EXPECTED_OUTPUT_OPTIONS.map((item) => `<option value="${escapeHtml(item.value)}" ${item.value === expectedOutput ? "selected" : ""}>${escapeHtml(i18nLocale() === "en" ? item.labelEn : item.labelZh)}</option>`).join("")}
-          </select>
-          <small id="expectedOutputHint"><span class="ui-lang-zh">没有可唯一推断的 Tags 时可手动选择；留空即待补充。</span><span class="ui-lang-en">Choose manually when tags cannot infer one output; blank stays pending.</span></small>
-          <span class="derived-review-status" id="derivedReviewStatus" data-status="${escapeHtml(reviewStatus)}"></span>
+        <div class="review-expected-output-field">
+          <div class="review-expected-output-control">
+            <label for="expectedOutputInput"><span class="ui-lang-zh">期望输出</span><span class="ui-lang-en">Expected output</span></label>
+            <select id="expectedOutputInput" data-manual-value="${escapeHtml(expectedOutput)}">
+              ${EXPECTED_OUTPUT_OPTIONS.map((item) => `<option value="${escapeHtml(item.value)}" ${item.value === expectedOutput ? "selected" : ""}>${escapeHtml(i18nLocale() === "en" ? item.labelEn : item.labelZh)}</option>`).join("")}
+            </select>
+            <details class="expected-output-rule">
+              <summary><span class="ui-lang-zh">推算规则</span><span class="ui-lang-en">Rules</span></summary>
+              <div class="expected-output-rule-popover">
+                <strong><span class="ui-lang-zh">先推期望输出，再比较 GT</span><span class="ui-lang-en">Infer output, then compare GT</span></strong>
+                <ul class="ui-lang-zh">
+                  <li>误触发 Tags → 误触发</li>
+                  <li>正确触发 / RA Tags → 正确触发</li>
+                  <li>无需协助 Tags → 无需协助</li>
+                  <li>无唯一结论 → 待补充；等于 GT → 与 GT 一致；不同 → GT 需复核</li>
+                </ul>
+                <ul class="ui-lang-en">
+                  <li>False-trigger Tags → False trigger</li>
+                  <li>Correct-trigger / RA Tags → Correct trigger</li>
+                  <li>No-assist Tags → No assist</li>
+                  <li>No unique result → Pending; equals GT → Matches GT; differs → Needs GT review</li>
+                </ul>
+                <small><span class="ui-lang-zh">多类 Tags 冲突时清空结果、标为待补充并禁止保存。</span><span class="ui-lang-en">Conflicting output Tags clear the result, mark it Pending, and block saving.</span></small>
+              </div>
+            </details>
+          </div>
+          <div class="review-expected-output-meta">
+            <small id="expectedOutputHint"><span class="ui-lang-zh">Tags 无唯一结论；可手选，留空即待补充。</span><span class="ui-lang-en">No unique Tag result; choose manually or leave pending.</span></small>
+            <span class="derived-review-status" id="derivedReviewStatus" data-status="${escapeHtml(reviewStatus)}"></span>
+          </div>
           <input id="reviewStatusInput" type="hidden" value="${escapeHtml(reviewStatus)}" />
-        </label>
+        </div>
         <label class="review-reason">
           <span><span class="ui-lang-zh">模型为什么判错？</span><span class="ui-lang-en">Why was the model wrong?</span></span>
           <textarea id="annotationNote" rows="2" placeholder="简要说明模型漏掉的关键证据，例如 routing、绕行空间或时序。">${escapeHtml(previous.note || "")}</textarea>
@@ -742,6 +769,10 @@ async function navigateAdjacentCase(delta) {
 async function saveAnnotation(event) {
   event.preventDefault();
   if (!state.selectedId || state.savingAnnotation) return;
+  if (inferExpectedOutputFromSelectedTags().conflict) {
+    showToast("Tags 指向多个期望输出，请先消除冲突。", true);
+    return;
+  }
   state.savingAnnotation = true;
   const submitButton = event.submitter || $("#annotationForm button[type='submit']");
   if (submitButton) {

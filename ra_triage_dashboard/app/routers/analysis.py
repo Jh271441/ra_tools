@@ -82,7 +82,7 @@ REVIEW_ANALYSIS_EXPORT_COLUMNS: tuple[tuple[str, str], ...] = (
     ("model_reason", "模型说明"),
     ("model_confidence", "模型置信度"),
     ("expected_output", "期望输出"),
-    ("review_status", "Review 状态"),
+    ("review_status", "自动状态"),
     ("review_reason", "人工 Review 原因"),
     ("tags", "场景 Tags"),
     ("missing_evidence", "缺失信息"),
@@ -177,7 +177,7 @@ def _review_analysis_export_response(
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         workbook = openpyxl.Workbook()
         worksheet = workbook.active
-        worksheet.title = "Trail GT 更新"
+        worksheet.title = "GT 更新"
         worksheet.append(["issue_id", "期望输出"])
         for row in rows:
             worksheet.append(
@@ -197,7 +197,7 @@ def _review_analysis_export_response(
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={
                 "Content-Disposition": (
-                    f'attachment; filename="trail-gt-update-{timestamp}.xlsx"'
+                    f'attachment; filename="gt-update-{timestamp}.xlsx"'
                 )
             },
         )

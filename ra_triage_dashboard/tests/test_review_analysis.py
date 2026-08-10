@@ -12,6 +12,93 @@ from ra_triage_dashboard.app.review_analysis import (
 
 
 class ReviewReasonAnalysisTest(unittest.TestCase):
+    def test_historical_tags_drive_effective_output_and_automatic_status(self) -> None:
+        tag_catalog = {
+            "queue": {"label": "排队", "group": "false_trigger"},
+            "waypoint": {"label": "RA", "group": "ra"},
+            "obstacle": {"label": "未避障", "group": "true_trigger"},
+        }
+        rows = [
+            {
+                "issue_id": "cn1",
+                "gt_label": "误触发",
+                "annotation": {
+                    "label": "",
+                    "review_status": "pending",
+                    "tags": ["queue"],
+                },
+            },
+            {
+                "issue_id": "cn2",
+                "gt_label": "误触发",
+                "annotation": {
+                    "label": "",
+                    "review_status": "reviewed",
+                    "tags": ["waypoint"],
+                },
+            },
+            {
+                "issue_id": "cn3",
+                "gt_label": "正确触发",
+                "annotation": {
+                    "label": "",
+                    "review_status": "reviewed",
+                    "tags": ["obstacle"],
+                },
+            },
+            {
+                "issue_id": "cn4",
+                "gt_label": "正确触发",
+                "annotation": {
+                    "label": "",
+                    "review_status": "needs_gt_review",
+                    "tags": ["queue", "waypoint"],
+                },
+            },
+        ]
+        result = build_review_reason_analysis(
+            rows,
+            tag_catalog=tag_catalog,
+            include_reason_themes=False,
+        )
+        annotations = {
+            item["issue_id"]: item["annotation"] for item in result["items"]
+        }
+        self.assertEqual(annotations["cn1"]["expected_output"], "误触发")
+        self.assertEqual(annotations["cn1"]["review_status"], "reviewed")
+        self.assertEqual(annotations["cn1"]["expected_output_source"], "tags")
+        self.assertEqual(annotations["cn2"]["expected_output"], "正确触发")
+        self.assertEqual(
+            annotations["cn2"]["review_status"], "needs_gt_review"
+        )
+        self.assertEqual(annotations["cn3"]["review_status"], "pending")
+        self.assertEqual(annotations["cn3"]["expected_output_source"], "missing")
+        self.assertEqual(annotations["cn4"]["review_status"], "pending")
+        self.assertEqual(annotations["cn4"]["expected_output_source"], "conflict")
+        self.assertEqual(
+            result["summary"]["review_status_counts"],
+            {"pending": 2, "reviewed": 1, "needs_gt_review": 1},
+        )
+
+        needs_gt = build_review_reason_analysis(
+            rows,
+            tag_catalog=tag_catalog,
+            include_reason_themes=False,
+            review_statuses=("needs_gt_review",),
+        )
+        self.assertEqual([item["issue_id"] for item in needs_gt["items"]], ["cn2"])
+
+        false_trigger = build_review_reason_analysis(
+            rows,
+            tag_catalog=tag_catalog,
+            include_reason_themes=False,
+            annotation_labels=("误触发",),
+        )
+        self.assertEqual(
+            [item["issue_id"] for item in false_trigger["items"]],
+            ["cn1"],
+        )
+
     def test_reason_classification_is_explainable_and_multi_label(self) -> None:
         matches = classify_review_reason(
             "模型没有结合 routing 右转方向，也漏掉右侧可绕行空间。"

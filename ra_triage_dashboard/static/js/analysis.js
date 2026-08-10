@@ -45,8 +45,8 @@ function safeSameOriginReviewUrl(url) {
 function reviewStatusLabel(status) {
   return (
     {
-      pending: t("status.pending_review"),
-      reviewed: t("status.reviewed"),
+      pending: t("status.pending"),
+      reviewed: t("status.matches_gt"),
       needs_gt_review: t("status.needs_gt"),
     }[status] || status || t("status.recorded")
   );

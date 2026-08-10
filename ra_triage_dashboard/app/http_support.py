@@ -762,11 +762,14 @@ def _review_reason_analysis_payload(
         )
     )
     status_labels = {
-        "待复核": "pending",
-        "已 Review": "reviewed",
-        "GT 待复核": "needs_gt_review",
+        "待补充": "pending",
+        "与 GT 一致": "reviewed",
+        "GT 需复核": "needs_gt_review",
+        "Pending": "pending",
+        "Matches GT": "reviewed",
+        "Needs GT review": "needs_gt_review",
     }
-    search_aliases += tuple(
+    search_statuses = tuple(
         status
         for label, status in status_labels.items()
         if folded_search
@@ -775,24 +778,43 @@ def _review_reason_analysis_payload(
             or label.casefold() in folded_search
         )
     )
+    effective_statuses = tuple(statuses)
+    status_filter_impossible = False
+    if search_statuses:
+        search_status_set = set(search_statuses)
+        if effective_statuses:
+            effective_statuses = tuple(
+                status
+                for status in effective_statuses
+                if status in search_status_set
+            )
+            status_filter_impossible = not effective_statuses
+        else:
+            effective_statuses = tuple(dict.fromkeys(search_statuses))
     scopes = baseline_scopes or resolve_request_baseline_scopes(baselines)
-    rows = database.review_reason_rows(
-        baseline_scopes=scopes,
-        model_run_id=model_run_id,
-        comparison_status=comparison_status,
-        annotation_author=",".join(authors),
-        review_status=",".join(statuses),
-        gt_label=",".join(gt_labels),
-        annotation_label=",".join(annotation_labels),
-        model_label=",".join(model_labels),
-        missing_evidence=list(evidence_keys),
-        tag_filters=legacy_tags,
-        scene_tags=scene_tags,
-        trigger_tags=trigger_tags,
-        egress_tags=egress_tags,
-        search=normalized_search,
-        search_aliases=search_aliases,
-    )
+    rows = []
+    if not status_filter_impossible:
+        rows = database.review_reason_rows(
+            baseline_scopes=scopes,
+            model_run_id=model_run_id,
+            comparison_status=comparison_status,
+            annotation_author=",".join(authors),
+            # Historical persisted status/label fields predate expected output.
+            # Apply both filters after read-time Tag inference below.
+            review_status="",
+            gt_label=",".join(gt_labels),
+            annotation_label="",
+            model_label=",".join(model_labels),
+            missing_evidence=list(evidence_keys),
+            tag_filters=legacy_tags,
+            scene_tags=scene_tags,
+            trigger_tags=trigger_tags,
+            egress_tags=egress_tags,
+            # Exact automatic-status searches are evaluated from the same
+            # derived value as the dedicated filter instead of stale storage.
+            search="" if search_statuses else normalized_search,
+            search_aliases=() if search_statuses else search_aliases,
+        )
     tag_catalog_for_analysis = {
         str(item["key"]): {
             "label": str(item["label"]),
@@ -809,6 +831,8 @@ def _review_reason_analysis_payload(
         tag_catalog=tag_catalog_for_analysis,
         has_model_run=bool(model_run_id),
         include_reason_themes=False,
+        review_statuses=effective_statuses,
+        annotation_labels=annotation_labels,
         page=page,
         page_size=max(len(rows), 1) if unbounded else page_size,
         page_size_limit=None if unbounded else 200,

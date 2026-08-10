@@ -73,3 +73,39 @@ def derive_review_status(expected_output: Any, gt_label: Any) -> str:
     if expected != gt:
         return "needs_gt_review"
     return "reviewed"
+
+
+def effective_expected_output(
+    annotation: Mapping[str, Any],
+    tag_catalog: Iterable[Mapping[str, Any]],
+) -> tuple[str, str]:
+    """Resolve the read-time output for both new and historical Reviews.
+
+    New Reviews persist a canonical ``expected_output`` (mirrored to the
+    legacy ``label`` field). Historical Reviews may have neither field but do
+    have structured Tags, so analysis and GT export infer the same value the
+    detail form shows. Conflicting Tags deliberately fail closed instead of
+    guessing a GT update.
+
+    Returns ``(expected_output, source)`` where source is one of ``explicit``,
+    ``tags``, ``missing``, ``conflict`` or ``invalid``.
+    """
+
+    explicit = str(
+        annotation.get("expected_output") or annotation.get("label") or ""
+    ).strip()
+    if explicit:
+        if explicit in TRIAGE_LABELS:
+            return explicit, "explicit"
+        return "", "invalid"
+
+    try:
+        inferred = infer_expected_output_from_tags(
+            annotation.get("tags") or (),
+            tag_catalog,
+        )
+    except ValueError:
+        return "", "conflict"
+    if inferred:
+        return inferred, "tags"
+    return "", "missing"

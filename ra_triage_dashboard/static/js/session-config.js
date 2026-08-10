@@ -278,8 +278,8 @@ function renderAnalysisCatalogFilters() {
   const onChange = () => scheduleAnalysisFilterReload();
   renderMultiFilter($("#analysisStatusFilter"), {
     options: [
-      { value: "pending", label: t("status.pending_review") },
-      { value: "reviewed", label: t("status.reviewed_short") },
+      { value: "pending", label: t("status.pending") },
+      { value: "reviewed", label: t("status.matches_gt") },
       { value: "needs_gt_review", label: t("status.needs_gt") },
     ],
     selected: getMultiFilterValues($("#analysisStatusFilter")),

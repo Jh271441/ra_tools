@@ -14,6 +14,7 @@ from ra_triage_dashboard.app.db import Database
 from ra_triage_dashboard.app.http_support import _create_annotation_record
 from ra_triage_dashboard.app.review_workflow import (
     derive_review_status,
+    effective_expected_output,
     infer_expected_output_from_tags,
     resolve_expected_output,
 )
@@ -86,6 +87,29 @@ class ReviewWorkflowTest(unittest.TestCase):
         self.assertEqual(
             derive_review_status("正确触发", "误触发"),
             "needs_gt_review",
+        )
+
+    def test_historical_review_output_is_inferred_fail_closed(self) -> None:
+        self.assertEqual(
+            effective_expected_output(
+                {"expected_output": "", "label": "", "tags": ["queue"]},
+                TAG_CATALOG,
+            ),
+            ("误触发", "tags"),
+        )
+        self.assertEqual(
+            effective_expected_output(
+                {"tags": ["queue", "waypoint"]},
+                TAG_CATALOG,
+            ),
+            ("", "conflict"),
+        )
+        self.assertEqual(
+            effective_expected_output(
+                {"expected_output": "正确触发", "tags": ["queue"]},
+                TAG_CATALOG,
+            ),
+            ("正确触发", "explicit"),
         )
 
     def test_server_persists_inferred_output_and_ignores_client_status(self) -> None:
@@ -191,7 +215,7 @@ class ReviewWorkflowTest(unittest.TestCase):
         workbook = openpyxl.load_workbook(io.BytesIO(response.body), read_only=True)
         try:
             worksheet = workbook.active
-            self.assertEqual(worksheet.title, "Trail GT 更新")
+            self.assertEqual(worksheet.title, "GT 更新")
             self.assertEqual(
                 list(worksheet.iter_rows(values_only=True)),
                 [
@@ -202,6 +226,10 @@ class ReviewWorkflowTest(unittest.TestCase):
             )
         finally:
             workbook.close()
+        self.assertIn(
+            'filename="gt-update-',
+            response.headers["content-disposition"],
+        )
 
 
 if __name__ == "__main__":

@@ -5,6 +5,8 @@ import re
 import unicodedata
 from typing import Any, Iterable
 
+from .review_workflow import derive_review_status, effective_expected_output
+
 
 TRIAGE_LABELS = ("误触发", "正确触发", "无需协助")
 COMPARISON_STATUSES = ("all", "mismatch", "match", "none")
@@ -341,12 +343,21 @@ def build_review_reason_analysis(
     tag_catalog: dict[str, dict[str, Any]] | None = None,
     has_model_run: bool = False,
     include_reason_themes: bool = True,
+    review_statuses: Iterable[str] = (),
+    annotation_labels: Iterable[str] = (),
     page: int = 1,
     page_size: int = 50,
     page_size_limit: int | None = 200,
 ) -> dict[str, Any]:
     """Aggregate latest-review rows and return one deterministic analysis page."""
 
+    resolved_tag_catalog = {
+        str(key): dict(value) for key, value in (tag_catalog or {}).items()
+    }
+    tag_catalog_items = [
+        {**definition, "key": key}
+        for key, definition in resolved_tag_catalog.items()
+    ]
     materialized: list[dict[str, Any]] = []
     for source in rows:
         item = dict(source)
@@ -357,6 +368,19 @@ def build_review_reason_analysis(
             annotation.get("missing_evidence")
         )
         annotation["note"] = str(annotation.get("note") or "").strip()
+        expected_output, expected_output_source = effective_expected_output(
+            annotation,
+            tag_catalog_items,
+        )
+        annotation["expected_output"] = expected_output
+        # ``label`` remains the response-level compatibility alias for callers
+        # created before the expected-output field was introduced.
+        annotation["label"] = expected_output
+        annotation["expected_output_source"] = expected_output_source
+        annotation["review_status"] = derive_review_status(
+            expected_output,
+            item.get("gt_label"),
+        )
         item["annotation"] = annotation
         item["prediction"] = prediction
         gt_label = str(item.get("gt_label") or "")
@@ -388,6 +412,26 @@ def build_review_reason_analysis(
             )
         ]
 
+    selected_statuses = {
+        str(value).strip() for value in review_statuses if str(value).strip()
+    }
+    if selected_statuses:
+        materialized = [
+            item
+            for item in materialized
+            if item["annotation"]["review_status"] in selected_statuses
+        ]
+    selected_annotation_labels = {
+        str(value).strip() for value in annotation_labels if str(value).strip()
+    }
+    if selected_annotation_labels:
+        materialized = [
+            item
+            for item in materialized
+            if item["annotation"]["expected_output"]
+            in selected_annotation_labels
+        ]
+
     total = len(materialized)
     evidence_counts: dict[str, int] = {}
     tag_counts: dict[str, int] = {}
@@ -401,21 +445,26 @@ def build_review_reason_analysis(
     mismatches = 0
     missing_predictions = 0
     manual_gt_disagreements = 0
+    review_status_counts = {
+        "pending": 0,
+        "reviewed": 0,
+        "needs_gt_review": 0,
+    }
     confusion_counts: dict[str, dict[str, int]] = {
         gt_label: {model_label: 0 for model_label in TRIAGE_LABELS}
         for gt_label in TRIAGE_LABELS
     }
     none_counts: dict[str, int] = {gt_label: 0 for gt_label in TRIAGE_LABELS}
-    resolved_tag_catalog = {
-        str(key): dict(value) for key, value in (tag_catalog or {}).items()
-    }
-
     for item in materialized:
         annotation = item["annotation"]
         prediction = item["prediction"]
         note = annotation["note"]
         evidences = annotation["missing_evidence"]
         tags = annotation["tags"]
+        review_status = str(annotation.get("review_status") or "pending")
+        review_status_counts[review_status] = review_status_counts.get(
+            review_status, 0
+        ) + 1
         themes = item["reason_themes"]
         if note:
             with_reason += 1
@@ -443,7 +492,7 @@ def build_review_reason_analysis(
 
         gt_label = str(item.get("gt_label") or "")
         model_label = str(prediction.get("label") or "")
-        annotation_label = str(annotation.get("label") or "")
+        annotation_label = str(annotation.get("expected_output") or "")
         if gt_label in TRIAGE_LABELS and annotation_label in TRIAGE_LABELS:
             manual_gt_disagreements += int(annotation_label != gt_label)
         if (
@@ -534,6 +583,7 @@ def build_review_reason_analysis(
             "model_mismatches": mismatches,
             "missing_predictions": missing_predictions,
             "manual_gt_disagreements": manual_gt_disagreements,
+            "review_status_counts": review_status_counts,
         },
         "evidence_clusters": evidence_clusters,
         "cluster_panels": cluster_panels,
