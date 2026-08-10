@@ -70,13 +70,13 @@ function updateDerivedReviewStatusPreview(expectedOutput, conflictKind = "") {
   preview.classList.toggle("is-conflict", conflict);
   preview.textContent = conflict
     ? conflictKind === "selection"
-      ? uiText("自动状态：选择冲突", "Automatic status: Selection conflict")
-      : uiText("自动状态：Tags 冲突", "Automatic status: Tag conflict")
+      ? uiText("状态：选择冲突", "Status: Selection conflict")
+      : uiText("状态：Tags 冲突", "Status: Tag conflict")
     : status === "pending"
-      ? uiText("自动状态：待补充", "Automatic status: Pending")
+      ? uiText("状态：待补充", "Status: Pending")
       : status === "needs_gt_review"
-        ? uiText("自动状态：GT 需复核", "Automatic status: Needs GT review")
-        : uiText("自动状态：与 GT 一致", "Automatic status: Matches GT");
+        ? uiText("状态：GT 需复核", "Status: Needs GT review")
+        : uiText("状态：与 GT 一致", "Status: Matches GT");
 }
 
 function syncExpectedOutputFromTags() {
@@ -109,16 +109,21 @@ function syncExpectedOutputFromTags() {
   if (hint) {
     hint.classList.toggle("is-conflict", Boolean(validation.conflictKind));
     hint.hidden = !validation.conflictKind;
+    hint.removeAttribute("title");
     if (validation.conflictKind === "tags") {
-      hint.textContent = uiText(
-        "所选 Tags 同时指向多个输出；请只保留一种输出方向后再保存。",
-        "Selected Tags imply multiple outputs; keep one output direction before saving."
+      const message = uiText(
+        "Tags 指向多个输出；请只保留一种输出方向。",
+        "Tags imply multiple outputs; keep one output direction."
       );
+      hint.textContent = message;
+      hint.title = message;
     } else if (validation.conflictKind === "selection") {
-      hint.textContent = uiText(
-        `当前选择与 Tags 自动推断的“${validation.value}”冲突；请改回自动推断项或调整 Tags。`,
-        `This choice conflicts with the inferred “${validation.value}”; choose the inferred option or adjust Tags.`
+      const message = uiText(
+        `与 Tags 推断“${validation.value}”冲突；改回自动推断项或调整 Tags。`,
+        `Conflicts with inferred “${validation.value}”; use it or adjust Tags.`
       );
+      hint.textContent = message;
+      hint.title = message;
     }
   }
   state.selectedAnnotationLabel = select.value;

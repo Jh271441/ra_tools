@@ -983,12 +983,13 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 }
 .review-expected-output-heading > label { color: #d7edf0; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .review-expected-output-heading > .expected-output-rule { margin-left: auto; }
-.review-expected-output-field > select { width: 100%; min-width: 0; }
+.review-expected-output-field > select { width: 100%; min-width: 0; font-size: 12px; }
 .review-expected-output-field > select.is-conflict {
   border-color: rgba(255,181,71,.58); box-shadow: 0 0 0 1px rgba(255,181,71,.12);
 }
 .review-expected-output-hint {
-  min-width: 0; color: var(--faint); font-size: 10px; line-height: 1.35;
+  min-width: 0; overflow: hidden; color: var(--faint); font-size: 10px; line-height: 1.35;
+  text-overflow: ellipsis; white-space: nowrap;
 }
 .review-expected-output-hint[hidden] { display: none; }
 .review-expected-output-hint.is-conflict {
