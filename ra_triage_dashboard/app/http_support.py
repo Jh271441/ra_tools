@@ -43,6 +43,7 @@ from .contracts import (
 from .db import AnnotationConflictError, LABELS, REVIEW_STATUSES
 from .import_parsing import normalize_model_row, parse_source_bytes
 from .review_analysis import COMPARISON_STATUSES, build_review_reason_analysis
+from .review_workflow import derive_review_status, resolve_expected_output
 from .sanitization import redact_sensitive_fields
 from .trail_sync import (
     TRAIL_INFO_FIELD,
@@ -1174,8 +1175,6 @@ def _create_annotation_record(
     body: dict[str, Any],
     attachments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    label = _as_text(body.get("label"))
-    review_status = _as_text(body.get("review_status") or "pending")
     is_excluded = _normalise_review_excluded(body.get("is_excluded", False))
     tags = body.get("tags") or []
     missing_evidence = body.get("missing_evidence") or []
@@ -1185,6 +1184,25 @@ def _create_annotation_record(
         raise _detail(400, "missing_evidence 必须是数组。")
     tags = _normalise_review_tags(tags)
     missing_evidence = _normalise_missing_evidence(missing_evidence)
+    expected_output = _as_text(body.get("expected_output"))
+    legacy_label = _as_text(body.get("label"))
+    if expected_output and legacy_label and expected_output != legacy_label:
+        raise _detail(400, "expected_output 与兼容字段 label 不一致。")
+    try:
+        expected_output = resolve_expected_output(
+            expected_output or legacy_label,
+            tags,
+            _review_tag_catalog(),
+        )
+    except ValueError as exc:
+        raise _detail(400, str(exc))
+    case = database.get_case(issue_id)
+    if case is None:
+        raise _detail(404, "Issue 不存在。")
+    review_status = derive_review_status(
+        expected_output,
+        case.get("gt_label"),
+    )
     model_run_id = _as_text(body.get("model_run_id"))
     has_expected_previous = "expected_previous_annotation_id" in body
     expected_previous_annotation_id: int | None = None
@@ -1203,7 +1221,10 @@ def _create_annotation_record(
     annotation_kwargs: dict[str, Any] = {
         "issue_id": issue_id,
         "model_run_id": model_run_id,
-        "label": label,
+        # ``annotations.label`` is the existing compatible storage column for
+        # the newly named expected output.  Keep it populated so older readers,
+        # filters and history remain valid without a schema rewrite.
+        "label": expected_output,
         "review_status": review_status,
         "is_excluded": is_excluded,
         "tags": tags,

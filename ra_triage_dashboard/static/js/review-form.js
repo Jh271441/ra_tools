@@ -1,14 +1,109 @@
 /* ra_triage_dashboard/static/js/review-form.js
- * Review detail shell, status picker, screenshots, selectCase/save
+ * Review detail shell, expected output, screenshots, selectCase/save
  * Loaded as a classic script (shared global scope). Do not convert to
  * ES modules without auditing cross-file function/state dependencies.
  */
 
-const REVIEW_STATUS_OPTIONS = [
-  { value: "reviewed", labelKey: "status.reviewed", labelZh: "已 Review", labelEn: "Reviewed" },
-  { value: "pending", labelKey: "status.pending", labelZh: "待补充", labelEn: "Pending" },
-  { value: "needs_gt_review", labelKey: "status.needs_gt", labelZh: "GT 需复核", labelEn: "Needs GT review" },
+const EXPECTED_OUTPUT_OPTIONS = [
+  { value: "", labelZh: "待补充", labelEn: "Pending" },
+  { value: "误触发", labelZh: "误触发", labelEn: "False trigger" },
+  { value: "正确触发", labelZh: "正确触发", labelEn: "Correct trigger" },
+  { value: "无需协助", labelZh: "无需协助", labelEn: "No assistance needed" },
 ];
+
+const EXPECTED_OUTPUT_BY_TAG_GROUP = {
+  false_trigger: "误触发",
+  ra: "正确触发",
+  no_assist: "无需协助",
+};
+
+function annotationExpectedOutput(annotation) {
+  if (annotation && Object.prototype.hasOwnProperty.call(annotation, "expected_output")) {
+    return String(annotation.expected_output || "").trim();
+  }
+  return String(annotation?.label || "").trim();
+}
+
+function inferExpectedOutputFromSelectedTags(root = $("#reviewPane") || document) {
+  const inferred = new Set(
+    [...root.querySelectorAll('input[name="reviewTags"]:checked')]
+      .map((input) => EXPECTED_OUTPUT_BY_TAG_GROUP[input.dataset.tagGroup || ""])
+      .filter(Boolean)
+  );
+  return {
+    value: inferred.size === 1 ? [...inferred][0] : "",
+    conflict: inferred.size > 1,
+  };
+}
+
+function updateDerivedReviewStatusPreview(expectedOutput, conflict = false) {
+  const statusInput = $("#reviewStatusInput");
+  const status = conflict
+    ? "pending"
+    : !expectedOutput
+      ? "pending"
+      : expectedOutput === String(state.selectedCase?.gt_label || "")
+        ? "reviewed"
+        : "needs_gt_review";
+  if (statusInput) statusInput.value = status;
+  const preview = $("#derivedReviewStatus");
+  if (!preview) return;
+  preview.dataset.status = status;
+  preview.classList.toggle("is-conflict", conflict);
+  preview.textContent = conflict
+    ? uiText("Tags 指向多个输出，请先消除冲突", "Tags imply conflicting outputs")
+    : status === "pending"
+      ? uiText("自动状态：待补充", "Automatic status: Pending")
+      : status === "needs_gt_review"
+        ? uiText("自动状态：GT 需复核", "Automatic status: Needs GT review")
+        : uiText("自动状态：与 GT 一致", "Automatic status: Matches GT");
+}
+
+function syncExpectedOutputFromTags() {
+  const select = $("#expectedOutputInput");
+  if (!select) return;
+  EXPECTED_OUTPUT_OPTIONS.forEach((item) => {
+    const option = [...select.options].find((candidate) => candidate.value === item.value);
+    if (option) option.textContent = i18nLocale() === "en" ? item.labelEn : item.labelZh;
+  });
+  const inference = inferExpectedOutputFromSelectedTags();
+  const hint = $("#expectedOutputHint");
+  if (inference.conflict) {
+    if (select.dataset.inferred !== "true") {
+      select.dataset.manualValue = select.value;
+    }
+    select.dataset.inferred = "true";
+    select.value = "";
+    select.disabled = true;
+    if (hint) hint.textContent = uiText(
+      "误触发 / 正确触发 / 无需协助 Tags 发生冲突，保存前需保留一类。",
+      "False/correct/no-assist tags conflict; keep one category before saving."
+    );
+  } else if (inference.value) {
+    if (select.dataset.inferred !== "true") {
+      select.dataset.manualValue = select.value;
+    }
+    select.dataset.inferred = "true";
+    select.value = inference.value;
+    select.disabled = true;
+    if (hint) hint.textContent = uiText(
+      `已由 Issue Tags 自动推断为「${inference.value}」`,
+      `Inferred from Issue tags: ${inference.value}`
+    );
+  } else {
+    if (select.dataset.inferred === "true") {
+      select.value = select.dataset.manualValue || "";
+    }
+    select.dataset.inferred = "false";
+    select.disabled = false;
+    if (hint) hint.textContent = uiText(
+      "没有可唯一推断的 Tags 时可手动选择；留空即待补充。",
+      "Choose manually when tags cannot infer one output; blank stays pending."
+    );
+  }
+  state.selectedAnnotationLabel = select.value;
+  updateDerivedReviewStatusPreview(select.value, inference.conflict);
+}
 
 function renderDetail(caseData) {
   const primary = (caseData.predictions || []).find((item) => item.model_run_id === state.selectedRunId) || caseData.predictions?.[0];
@@ -158,20 +253,20 @@ function syncReviewFormFromCase(caseData) {
   });
   const excluded = $("#reviewExcludeInput");
   if (excluded) excluded.checked = Boolean(previous.is_excluded);
-  const statusValue =
-    previous.review_status === "needs_gt_review"
-      ? "needs_gt_review"
-      : previous.review_status === "pending"
-        ? "pending"
-        : "reviewed";
-  setReviewStatusValue(statusValue);
+  const expectedOutput = annotationExpectedOutput(previous);
+  const expectedOutputInput = $("#expectedOutputInput");
+  if (expectedOutputInput) {
+    expectedOutputInput.value = expectedOutput;
+    expectedOutputInput.dataset.manualValue = expectedOutput;
+    expectedOutputInput.dataset.inferred = "false";
+  }
   const note = $("#annotationNote");
   if (note) note.value = previous.note || "";
   const author = $("#annotationAuthor");
   if (author && !(state.session.verified && state.session.username)) {
     author.value = state.session.username || previous.author || "";
   }
-  state.selectedAnnotationLabel = previous.label || "";
+  state.selectedAnnotationLabel = expectedOutput;
   state.reviewEditRunId = currentReviewRunId(caseData);
   // A legacy unbound Review can be displayed as a read-only fallback when a
   // selected Run has no bound version yet. It is not the optimistic-lock
@@ -205,7 +300,8 @@ function renderReview(caseData) {
   );
   state.reviewFormDirty = false;
   state.deferredDetailRefresh = false;
-  state.selectedAnnotationLabel = previous.label || "";
+  const expectedOutput = annotationExpectedOutput(previous);
+  state.selectedAnnotationLabel = expectedOutput;
   const catalog = state.config?.missing_evidence_catalog || [];
   const tagCatalog = state.config?.review_tag_catalog || [];
   const hasPreviousReview = Boolean(runAnnotations.length || draft);
@@ -223,11 +319,11 @@ function renderReview(caseData) {
   const customTagKeys = [...chosenTags].filter((tag) => !tagCatalogKeys.has(tag));
   const author = state.session.username || previous.author || "";
   const authorLocked = Boolean(state.session.verified && state.session.username);
-  const reviewStatus = previous.review_status === "needs_gt_review"
-    ? "needs_gt_review"
-    : previous.review_status === "pending"
-      ? "pending"
-      : "reviewed";
+  const reviewStatus = !expectedOutput
+    ? "pending"
+    : expectedOutput === String(caseData.gt_label || "")
+      ? "reviewed"
+      : "needs_gt_review";
   const customEvidenceOptions = customEvidenceKeys
     .map((key) => missingEvidenceOptionMarkup({ key, label: evidenceLabel(key), hint: "本条 Review 新建的缺失信息", builtin: false }, true, false))
     .join("");
@@ -263,18 +359,14 @@ function renderReview(caseData) {
             <span class="ui-lang-en">Review history · ${allAnnotations.length}</span>
           </button>
         </div>
-        <label class="review-status-field">
-          <span><span class="ui-lang-zh">复核状态</span><span class="ui-lang-en">Review status</span></span>
-          <div class="ui-select review-status-picker" id="reviewStatusPicker">
-            <button class="ui-select-trigger review-status-picker-trigger" id="reviewStatusPickerTrigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="reviewStatusPickerPanel" aria-label="复核状态">
-              <span class="ui-select-summary" id="reviewStatusPickerSummary">${escapeHtml(reviewStatusDisplayLabel(reviewStatus))}</span>
-              <span class="ui-select-caret review-status-picker-caret" aria-hidden="true"></span>
-            </button>
-            <div class="ui-select-panel review-status-picker-panel" id="reviewStatusPickerPanel" role="listbox" hidden></div>
-            <select id="reviewStatusInput" class="ui-select-native gateway-model-native-select" aria-hidden="true" tabindex="-1">
-              ${REVIEW_STATUS_OPTIONS.map((item) => `<option value="${escapeHtml(item.value)}" ${item.value === reviewStatus ? "selected" : ""}>${escapeHtml(item.labelZh)}</option>`).join("")}
-            </select>
-          </div>
+        <label class="review-expected-output-field">
+          <span><span class="ui-lang-zh">期望输出</span><span class="ui-lang-en">Expected output</span></span>
+          <select id="expectedOutputInput" data-manual-value="${escapeHtml(expectedOutput)}">
+            ${EXPECTED_OUTPUT_OPTIONS.map((item) => `<option value="${escapeHtml(item.value)}" ${item.value === expectedOutput ? "selected" : ""}>${escapeHtml(i18nLocale() === "en" ? item.labelEn : item.labelZh)}</option>`).join("")}
+          </select>
+          <small id="expectedOutputHint"><span class="ui-lang-zh">没有可唯一推断的 Tags 时可手动选择；留空即待补充。</span><span class="ui-lang-en">Choose manually when tags cannot infer one output; blank stays pending.</span></small>
+          <span class="derived-review-status" id="derivedReviewStatus" data-status="${escapeHtml(reviewStatus)}"></span>
+          <input id="reviewStatusInput" type="hidden" value="${escapeHtml(reviewStatus)}" />
         </label>
         <label class="review-reason">
           <span><span class="ui-lang-zh">模型为什么判错？</span><span class="ui-lang-en">Why was the model wrong?</span></span>
@@ -308,8 +400,15 @@ function renderReview(caseData) {
       <button class="button button-primary full-width" type="submit"><span class="ui-lang-zh">保存新的 review 版本</span><span class="ui-lang-en">Save new review version</span></button>
     </form>`;
   bindSelectedReviewTagControls($("#reviewPane"));
-  bindReviewStatusPicker();
-  setReviewStatusValue(reviewStatus);
+  const expectedOutputInput = $("#expectedOutputInput");
+  if (expectedOutputInput) {
+    expectedOutputInput.dataset.manualValue = expectedOutput;
+    expectedOutputInput.addEventListener("change", () => {
+      expectedOutputInput.dataset.manualValue = expectedOutputInput.value;
+      state.selectedAnnotationLabel = expectedOutputInput.value;
+      updateDerivedReviewStatusPreview(expectedOutputInput.value, false);
+    });
+  }
   $("#reviewPane").querySelectorAll('input[name="missingEvidence"]').forEach((input) => {
     input.addEventListener("change", updateEvidenceSummary);
   });
@@ -320,6 +419,7 @@ function renderReview(caseData) {
   $("#reviewPane").querySelectorAll('input[name="reviewTags"]').forEach((input) => {
     input.addEventListener("change", updateTagSummary);
   });
+  updateTagSummary();
   $("#reviewPane").querySelectorAll(".review-dropdown").forEach((dropdown) => {
     if (dropdown.dataset.reviewDropdownToggleBound === "1") return;
     dropdown.dataset.reviewDropdownToggleBound = "1";
@@ -468,65 +568,6 @@ function renderReview(caseData) {
   state.reviewFormDirty = Boolean(draft);
   annotationForm.addEventListener("submit", saveAnnotation);
   bindAnnotationHistory($("#reviewPane"), caseData);
-}
-
-function reviewStatusDisplayLabel(value) {
-  const match = REVIEW_STATUS_OPTIONS.find((item) => item.value === value);
-  if (!match) return String(value || t("status.reviewed"));
-  if (match.labelKey && typeof t === "function") return t(match.labelKey);
-  return i18nLocale() === "en" ? match.labelEn : match.labelZh;
-}
-
-function reviewStatusUiOptions() {
-  return REVIEW_STATUS_OPTIONS.map((item) => ({
-    value: item.value,
-    label:
-      item.labelKey && typeof t === "function"
-        ? t(item.labelKey)
-        : i18nLocale() === "en"
-          ? item.labelEn
-          : item.labelZh,
-  }));
-}
-
-function setReviewStatusValue(value) {
-  const normalized =
-    value === "needs_gt_review"
-      ? "needs_gt_review"
-      : value === "pending"
-        ? "pending"
-        : "reviewed";
-  const picker = $("#reviewStatusPicker");
-  if (picker && typeof populateUiSelect === "function") {
-    populateUiSelect(picker, reviewStatusUiOptions(), normalized);
-  } else {
-    const select = $("#reviewStatusInput");
-    if (select) select.value = normalized;
-    const summary = $("#reviewStatusPickerSummary");
-    if (summary) summary.textContent = reviewStatusDisplayLabel(normalized);
-  }
-}
-
-function bindReviewStatusPicker() {
-  const picker = $("#reviewStatusPicker");
-  if (!picker) return;
-  // Form re-renders replace nodes; clear bind flag on new trigger each paint.
-  const trigger = picker.querySelector(".review-status-picker-trigger, .ui-select-trigger");
-  if (trigger) delete trigger.dataset.uiSelectBound;
-  populateUiSelect(
-    picker,
-    reviewStatusUiOptions(),
-    $("#reviewStatusInput")?.value || "reviewed"
-  );
-  bindUiSelect(picker, {
-    maxHeight: 240,
-    maxWidth: 280,
-    onChange: () => {
-      state.reviewFormDirty = true;
-      const form = $("#annotationForm");
-      if (form) form.dispatchEvent(new Event("change", { bubbles: true }));
-    },
-  });
 }
 
 function releasePreviewUrlLater(previewUrl) {
@@ -710,8 +751,7 @@ async function saveAnnotation(event) {
   const payload = {
     model_run_id: state.reviewEditRunId || currentReviewRunId(state.selectedCase),
     expected_previous_annotation_id: state.reviewEditBaseAnnotationId || null,
-    label: state.selectedAnnotationLabel,
-    review_status: $("#reviewStatusInput").value,
+    expected_output: $("#expectedOutputInput")?.value || "",
     is_excluded: Boolean($("#reviewExcludeInput")?.checked),
     tags: [...document.querySelectorAll('input[name="reviewTags"]:checked')].map(
       (input) => input.value

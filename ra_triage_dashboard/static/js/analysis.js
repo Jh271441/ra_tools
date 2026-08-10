@@ -453,6 +453,7 @@ function renderAnalysisCases(data) {
       .map((item) => {
         const annotation = item.annotation || {};
         const prediction = item.prediction || {};
+        const expectedOutput = annotationExpectedOutput(annotation);
         const reviewUrl = safeSameOriginReviewUrl(item.review_url);
         const voyagerUrl = safeUrl(item.voyager_issue_url);
         const issueId = escapeHtml(item.issue_id);
@@ -496,6 +497,7 @@ function renderAnalysisCases(data) {
           <div class="analysis-case-labels">
             ${comparisonBadge}
             <span title="0508 baseline GT">GT ${labelBadge(item.gt_label)}</span>
+            <span title="人工 Review 期望输出"><span class="ui-lang-zh">期望</span><span class="ui-lang-en">Expected</span> ${labelBadge(expectedOutput, uiText("待补充", "Pending"))}</span>
             <button class="analysis-model-history-button" type="button"
               data-analysis-model-history="${issueId}"
               title="查看此 Issue 的全部评测 Run 输出历史"

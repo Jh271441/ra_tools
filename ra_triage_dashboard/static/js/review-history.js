@@ -9,9 +9,12 @@ function annotationHistory(annotations) {
   }
   return `<div class="annotation-history">${annotations
     .map(
-      (annotation) => `<article class="history-row">
+      (annotation) => {
+        const expectedOutput = annotationExpectedOutput(annotation);
+        return `<article class="history-row">
         <div class="history-head">
-          ${labelBadge(annotation.label, annotation.review_status === "needs_gt_review" ? "GT 待复核" : "已记录")}
+          <span class="history-expected-output" title="期望输出">期望 ${labelBadge(expectedOutput, "待补充")}</span>
+          <span class="history-derived-status">${escapeHtml(reviewStatusLabel(annotation.review_status))}</span>
           ${annotation.is_excluded ? '<span class="tag exclusion-tag">已排除</span>' : ""}
           <span class="history-reviewer" title="${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}` : "复核人：历史记录未填写")}">${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO" : " · 未验证"}` : "复核人：未记录")}</span>
           <span class="history-run" title="Review 绑定的 Model Run">Run · ${escapeHtml(reviewRunLabel(annotation.model_run_id))}</span>
@@ -21,7 +24,8 @@ function annotationHistory(annotations) {
         ${annotation.tags?.length ? `<div class="tags">${annotation.tags.map((tag) => `<span class="tag">${escapeHtml(tagLabel(tag))}</span>`).join("")}</div>` : ""}
         ${annotation.attachments?.length ? `<div class="history-attachments">${annotation.attachments.map((attachment, index) => `<a href="${escapeHtml(attachment.url)}" target="_blank" rel="noreferrer" title="打开补充截图 ${index + 1}"><img src="${escapeHtml(attachment.url)}" alt="补充截图 ${index + 1}" loading="lazy" /></a>`).join("")}</div>` : ""}
         ${annotation.note ? `<p>${escapeHtml(annotation.note)}</p>` : ""}
-      </article>`
+      </article>`;
+      }
     )
     .join("")}</div>`;
 }
@@ -129,4 +133,3 @@ async function deleteAnnotationVersion(caseData, annotationId, button) {
     state.savingAnnotation = false;
   }
 }
-

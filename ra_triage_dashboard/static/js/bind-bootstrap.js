@@ -114,6 +114,7 @@ function bindEvents() {
   });
   $("#exportReviewAnalysisCsvButton").addEventListener("click", () => downloadReviewAnalysis("csv"));
   $("#exportReviewAnalysisXlsxButton").addEventListener("click", () => downloadReviewAnalysis("xlsx"));
+  $("#exportTrailExpectedOutputButton").addEventListener("click", () => downloadReviewAnalysis("trail_xlsx"));
   $("#analysisPagePrevious").addEventListener("click", () => {
     changeAnalysisPage(-1).catch((error) => showToast(error.message, true));
   });

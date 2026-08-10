@@ -353,6 +353,9 @@ function updateTagSummary() {
       .join("");
     container.hidden = selected.length === 0;
   });
+  if (typeof syncExpectedOutputFromTags === "function") {
+    syncExpectedOutputFromTags();
+  }
 }
 
 function bindSelectedReviewTagControls(root) {
@@ -945,4 +948,3 @@ function bindReviewTagCatalogControls(root = document) {
     });
   });
 }
-

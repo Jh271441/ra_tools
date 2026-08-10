@@ -164,11 +164,8 @@ function applyUiLanguage(language, { persist = true } = {}) {
   } catch (_) {}
   // Re-apply open detail/review form if mounted.
   try {
-    if (state.selectedCase && typeof selectCase === "function") {
-      // Avoid full navigation: only re-paint review chrome labels via form if present.
-      if (typeof bindReviewStatusPicker === "function" && $("#reviewStatusPicker")) {
-        bindReviewStatusPicker();
-      }
+    if (state.selectedCase && typeof syncExpectedOutputFromTags === "function") {
+      syncExpectedOutputFromTags();
     }
   } catch (_) {}
 }

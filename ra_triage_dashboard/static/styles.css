@@ -977,6 +977,29 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .review-form { display: grid; gap: 8px; }
 .review-status-field { display: grid; gap: 3px; }
 .review-status-field > span { color: var(--muted); font-size: 12px; }
+.review-expected-output-field { display: grid; gap: 4px; }
+.review-expected-output-field > span:first-child { color: #d7edf0; font-size: 12px; font-weight: 700; }
+.review-expected-output-field > small { color: var(--faint); font-size: 10px; line-height: 1.35; }
+.review-expected-output-field select:disabled {
+  color: #dce9f5; -webkit-text-fill-color: #dce9f5; border-color: rgba(34,211,238,.34);
+  background-color: rgba(34,211,238,.07); opacity: 1;
+}
+.derived-review-status {
+  width: fit-content; padding: 2px 7px; border: 1px solid rgba(34,211,238,.24); border-radius: 999px;
+  color: #8fd9e8; background: rgba(34,211,238,.07); font-size: 10px; font-weight: 650;
+}
+.derived-review-status[data-status="needs_gt_review"] {
+  color: #ffb1b8; border-color: rgba(255,98,112,.34); background: rgba(255,98,112,.09);
+}
+.derived-review-status[data-status="reviewed"] {
+  color: #80d9b2; border-color: rgba(62,207,142,.32); background: rgba(62,207,142,.08);
+}
+.derived-review-status.is-conflict {
+  color: #ffd08a; border-color: rgba(255,181,71,.42); background: rgba(255,181,71,.1);
+}
+.history-expected-output { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+.history-derived-status { color: var(--faint); font-size: 10px; }
+.trail-export-button { border-color: rgba(34,211,238,.3); color: #9fe8f3; }
 /* Shared custom single-select chrome (Run / comparison / review-status / media). */
 .ui-select,
 .review-status-picker,
@@ -2739,6 +2762,7 @@ html[data-color-theme="light"] .review-history-toggle > summary,
 html[data-color-theme="light"] .review-tag-axis-title,
 html[data-color-theme="light"] .review-tag-dropdown > summary,
 html[data-color-theme="light"] .review-reason > span,
+html[data-color-theme="light"] .review-expected-output-field > span:first-child,
 html[data-color-theme="light"] .evidence-dropdown > summary,
 html[data-color-theme="light"] .evidence-option strong,
 html[data-color-theme="light"] .review-attachment-field > span,
@@ -2746,6 +2770,12 @@ html[data-color-theme="light"] .screenshot-paste-zone,
 html[data-color-theme="light"] .screenshot-browse-button,
 html[data-color-theme="light"] .run-source-tab em,
 html[data-color-theme="light"] .import-example-preview-heading strong { color: var(--text); }
+html[data-color-theme="light"] .review-expected-output-field select:disabled {
+  color: #075f75;
+  -webkit-text-fill-color: #075f75;
+  border-color: rgba(8,117,141,.4);
+  background-color: rgba(8,117,141,.08);
+}
 html[data-color-theme="light"] .screenshot-paste-zone.is-dragover {
   border-color: rgba(8,117,141,.55); background: rgba(8,117,141,.08);
   box-shadow: inset 0 0 0 1px rgba(8,117,141,.18);

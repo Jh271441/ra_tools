@@ -738,6 +738,7 @@ class DatabaseReviewMixin:
 
     @staticmethod
     def _annotation_dict(row: sqlite3.Row) -> dict[str, Any]:
+        label = row["label"] or ""
         return {
             "id": row["id"],
             "issue_id": row["issue_id"],
@@ -746,7 +747,10 @@ class DatabaseReviewMixin:
                 if "model_run_id" in row.keys()
                 else ""
             ),
-            "label": row["label"] or "",
+            # ``label`` is retained as the storage/backward-compatible API
+            # field; Manual Review presents the same value as 期望输出.
+            "label": label,
+            "expected_output": label,
             "review_status": row["review_status"] if "review_status" in row.keys() else "pending",
             "is_excluded": bool(row["is_excluded"]) if "is_excluded" in row.keys() else False,
             "tags": _json_load(row["tags_json"], []),

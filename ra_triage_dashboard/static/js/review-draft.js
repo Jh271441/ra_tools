@@ -5,7 +5,7 @@
  */
 const REVIEW_DRAFT_FIELDS = [
   "label",
-  "review_status",
+  "expected_output",
   "is_excluded",
   "tags",
   "missing_evidence",
@@ -117,8 +117,7 @@ function persistReviewDraft(caseData) {
     issue_id: caseData.issue_id,
     model_run_id: runId,
     saved_at: Date.now(),
-    label: state.selectedAnnotationLabel || "",
-    review_status: $("#reviewStatusInput")?.value || "reviewed",
+    expected_output: $("#expectedOutputInput")?.value || "",
     is_excluded: Boolean($("#reviewExcludeInput")?.checked),
     tags: [...form.querySelectorAll('input[name="reviewTags"]:checked')].map((input) => input.value),
     missing_evidence: [...form.querySelectorAll('input[name="missingEvidence"]:checked')].map((input) => input.value),

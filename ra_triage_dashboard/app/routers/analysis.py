@@ -10,6 +10,7 @@ import openpyxl
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
 
+from ..db import LABELS
 from ..http_support import (
     _as_text,
     _detail,
@@ -80,7 +81,7 @@ REVIEW_ANALYSIS_EXPORT_COLUMNS: tuple[tuple[str, str], ...] = (
     ("comparison_status", "模型判断结果"),
     ("model_reason", "模型说明"),
     ("model_confidence", "模型置信度"),
-    ("review_label", "人工结论"),
+    ("expected_output", "期望输出"),
     ("review_status", "Review 状态"),
     ("review_reason", "人工 Review 原因"),
     ("tags", "场景 Tags"),
@@ -112,6 +113,9 @@ def _review_analysis_export_rows(result: dict[str, Any]) -> list[dict[str, Any]]
     for item in result.get("items", []):
         annotation = item.get("annotation") or {}
         prediction = item.get("prediction") or {}
+        expected_output = _as_text(
+            annotation.get("expected_output") or annotation.get("label")
+        )
         exported.append(
             {
                 "issue_id": _as_text(item.get("issue_id")),
@@ -121,7 +125,7 @@ def _review_analysis_export_rows(result: dict[str, Any]) -> list[dict[str, Any]]
                 "comparison_status": _as_text(item.get("comparison_status")).upper(),
                 "model_reason": _as_text(prediction.get("reason")),
                 "model_confidence": prediction.get("confidence"),
-                "review_label": _as_text(annotation.get("label")),
+                "expected_output": expected_output,
                 "review_status": _as_text(annotation.get("review_status")),
                 "review_reason": _as_text(annotation.get("note")),
                 "tags": "、".join(
@@ -141,9 +145,63 @@ def _review_analysis_export_rows(result: dict[str, Any]) -> list[dict[str, Any]]
     return exported
 
 
+def _trail_expected_output_rows(result: dict[str, Any]) -> list[dict[str, str]]:
+    """Return only GT-changing rows accepted by 张扬's expected-output mode."""
+
+    rows: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in result.get("items", []):
+        annotation = item.get("annotation") or {}
+        issue_id = _as_text(item.get("issue_id"))
+        expected_output = _as_text(
+            annotation.get("expected_output") or annotation.get("label")
+        )
+        gt_label = _as_text(item.get("gt_label"))
+        if (
+            not issue_id
+            or issue_id in seen
+            or expected_output not in LABELS
+            or expected_output == gt_label
+        ):
+            continue
+        seen.add(issue_id)
+        rows.append({"issue_id": issue_id, "期望输出": expected_output})
+    return rows
+
+
 def _review_analysis_export_response(
     result: dict[str, Any], export_format: str
 ) -> Response:
+    if export_format == "trail_xlsx":
+        rows = _trail_expected_output_rows(result)
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        workbook = openpyxl.Workbook()
+        worksheet = workbook.active
+        worksheet.title = "Trail GT 更新"
+        worksheet.append(["issue_id", "期望输出"])
+        for row in rows:
+            worksheet.append(
+                [
+                    _spreadsheet_safe(row["issue_id"]),
+                    _spreadsheet_safe(row["期望输出"]),
+                ]
+            )
+        worksheet.freeze_panes = "A2"
+        worksheet.auto_filter.ref = worksheet.dimensions
+        worksheet.column_dimensions["A"].width = 24
+        worksheet.column_dimensions["B"].width = 16
+        output = io.BytesIO()
+        workbook.save(output)
+        return Response(
+            content=output.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="trail-gt-update-{timestamp}.xlsx"'
+                )
+            },
+        )
+
     rows = _review_analysis_export_rows(result)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     filename = f"review-analysis-{timestamp}.{export_format}"
@@ -206,8 +264,8 @@ async def export_review_reason_analysis(
     baselines: str = "",
 ) -> Response:
     export_format = _as_text(format).strip().lower()
-    if export_format not in {"csv", "xlsx"}:
-        raise _detail(400, "format 仅支持 csv 或 xlsx。")
+    if export_format not in {"csv", "xlsx", "trail_xlsx"}:
+        raise _detail(400, "format 仅支持 csv、xlsx 或 trail_xlsx。")
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     result = await asyncio.to_thread(
         _review_reason_analysis_payload,
