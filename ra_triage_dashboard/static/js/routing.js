@@ -265,6 +265,9 @@ function routeAnalysisComparisonStatus(params) {
 function normalizedReviewRouteFilters(params) {
   const gtLabel = params.get("gt") || "";
   const modelLabel = params.get("model_label") || params.get("annotation") || "";
+  const reviewStatus = parseFilterList(params.get("status")).filter((value) =>
+    ["pending", "reviewed", "needs_gt_review"].includes(value)
+  );
   const rawPage = Number.parseInt(params.get("page") || "1", 10);
   const rawPageSize = Number.parseInt(
     params.get("page_size") || String(DEFAULT_CASE_PAGE_SIZE),
@@ -279,6 +282,7 @@ function normalizedReviewRouteFilters(params) {
       LABELS.includes(value)
     ),
     annotationAuthor: parseFilterList(params.get("reviewer")),
+    reviewStatus,
     workAssignee: parseFilterList(
       params.get("work_assignee") || params.get("assignee") || ""
     ),
@@ -370,6 +374,7 @@ function currentReviewRouteOptions(overrides = {}) {
     gtLabel: getMultiFilterValues($("#gtFilter")),
     modelLabel: getMultiFilterValues($("#annotationFilter")),
     annotationAuthor: getMultiFilterValues($("#reviewerFilter")),
+    reviewStatus: getMultiFilterValues($("#reviewStatusFilter")),
     workAssignee: getMultiFilterValues($("#workAssigneeFilter")),
     clusterKey: state.clusterKey,
     casePage: state.casePage,
@@ -385,6 +390,7 @@ function applyReviewRouteControls(route) {
   setMultiFilterValues($("#annotationFilter"), route.modelLabel);
   setMultiFilterValues($("#workAssigneeFilter"), route.workAssignee);
   setMultiFilterValues($("#reviewerFilter"), route.annotationAuthor);
+  setMultiFilterValues($("#reviewStatusFilter"), route.reviewStatus);
   state.clusterKey = route.clusterKey || "";
   state.casePage = Math.max(1, Number(route.casePage) || 1);
   state.casePageSize = CASE_PAGE_SIZES.includes(Number(route.casePageSize))
@@ -474,10 +480,12 @@ function pageUrl(page, options = {}) {
     const gt = joinFilterList(review.gtLabel);
     const modelLabel = joinFilterList(review.modelLabel);
     const reviewer = joinFilterList(review.annotationAuthor);
+    const status = joinFilterList(review.reviewStatus);
     const assignee = joinFilterList(review.workAssignee);
     if (gt) url.searchParams.set("gt", gt);
     if (modelLabel) url.searchParams.set("model_label", modelLabel);
     if (reviewer) url.searchParams.set("reviewer", reviewer);
+    if (status) url.searchParams.set("status", status);
     if (assignee) url.searchParams.set("work_assignee", assignee);
     if (review.clusterKey) url.searchParams.set("evidence", review.clusterKey);
     if (Number(review.casePage) > 1) url.searchParams.set("page", String(review.casePage));

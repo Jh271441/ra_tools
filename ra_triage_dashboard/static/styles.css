@@ -469,7 +469,7 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
   min-width: 0; display: grid;
   grid-template-columns:
     minmax(150px, 1.35fr) minmax(118px, .72fr) minmax(120px, 1fr)
-    repeat(4, minmax(84px, .58fr)) auto;
+    repeat(5, minmax(84px, .58fr)) auto;
   align-items: end; gap: 5px;
 }
 .review-filters label { min-width: 0; display: grid; gap: 3px; color: var(--faint); font-size: 11px; }
@@ -981,10 +981,9 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .review-expected-output-heading {
   min-width: 0; display: flex; align-items: center; gap: 7px;
 }
-.review-expected-output-heading > label { color: #d7edf0; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.review-expected-output-heading > #expectedOutputLabel { color: #d7edf0; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .review-expected-output-heading > .expected-output-rule { margin-left: auto; }
-.review-expected-output-field > select { width: 100%; min-width: 0; font-size: 12px; }
-.review-expected-output-field > select.is-conflict {
+.expected-output-picker.is-conflict .ui-select-trigger {
   border-color: rgba(255,181,71,.58); box-shadow: 0 0 0 1px rgba(255,181,71,.12);
 }
 .review-expected-output-hint {
@@ -2118,7 +2117,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .review-filters {
     grid-template-columns:
       minmax(140px, 1.3fr) minmax(110px, .7fr) minmax(120px, 1fr)
-      repeat(4, minmax(80px, .55fr)) auto;
+      repeat(5, minmax(80px, .55fr)) auto;
   }
   .review-quick-actions { justify-content: flex-end; }
   .tool-page-grid { grid-template-columns: 230px minmax(0, 1fr); }
@@ -2790,7 +2789,7 @@ html[data-color-theme="light"] .review-history-toggle > summary,
 html[data-color-theme="light"] .review-tag-axis-title,
 html[data-color-theme="light"] .review-tag-dropdown > summary,
 html[data-color-theme="light"] .review-reason > span,
-html[data-color-theme="light"] .review-expected-output-heading > label,
+html[data-color-theme="light"] .review-expected-output-heading > #expectedOutputLabel,
 html[data-color-theme="light"] .evidence-dropdown > summary,
 html[data-color-theme="light"] .evidence-option strong,
 html[data-color-theme="light"] .review-attachment-field > span,
@@ -2798,7 +2797,7 @@ html[data-color-theme="light"] .screenshot-paste-zone,
 html[data-color-theme="light"] .screenshot-browse-button,
 html[data-color-theme="light"] .run-source-tab em,
 html[data-color-theme="light"] .import-example-preview-heading strong { color: var(--text); }
-html[data-color-theme="light"] .review-expected-output-field > select.is-conflict {
+html[data-color-theme="light"] .expected-output-picker.is-conflict .ui-select-trigger {
   border-color: rgba(180,83,9,.48);
   box-shadow: 0 0 0 1px rgba(180,83,9,.1);
 }

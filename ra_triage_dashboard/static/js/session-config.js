@@ -213,12 +213,17 @@ function renderMultiFilter(
       root.classList.add("is-open");
       trigger.setAttribute("aria-expanded", "true");
       const triggerWidth = trigger.getBoundingClientRect().width;
+      const preferredWidth = onlyThis
+        ? Math.max(triggerWidth, 360)
+        : Math.max(triggerWidth, 160);
       openAnchoredPanel(panel, trigger, {
         maxHeight: 280,
-        // Match trigger width; keep a small floor for narrow filters.
-        minWidth: Math.max(triggerWidth, 160),
+        // Baseline rows include a per-item action, so give their labels room.
+        minWidth: preferredWidth,
         matchAnchorWidth: true,
-        maxWidth: Math.max(triggerWidth, 280),
+        maxWidth: onlyThis
+          ? preferredWidth
+          : Math.max(triggerWidth, 280),
       });
     }
   });

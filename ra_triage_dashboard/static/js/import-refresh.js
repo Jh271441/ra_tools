@@ -302,6 +302,7 @@ async function resetReviewFilters() {
   setMultiFilterValues($("#gtFilter"), []);
   setMultiFilterValues($("#annotationFilter"), []);
   setMultiFilterValues($("#reviewerFilter"), []);
+  setMultiFilterValues($("#reviewStatusFilter"), []);
   setMultiFilterValues($("#workAssigneeFilter"), []);
   if ($("#modelRunFilter")) $("#modelRunFilter").value = "";
   state.selectedRunId = "";

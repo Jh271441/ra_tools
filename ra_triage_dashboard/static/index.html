@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-130`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-131`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -197,6 +197,10 @@
                   <span class="ui-lang-zh">复核人</span><span class="ui-lang-en">Reviewer</span>
                   <div class="multi-filter" id="reviewerFilter" data-placeholder="全部复核人" data-placeholder-en="All reviewers" data-i18n-placeholder="filter.all_reviewers"></div>
                 </label>
+                <label class="filter-review-status">
+                  <span class="ui-lang-zh">Issue GT Review状态</span><span class="ui-lang-en">Issue GT review status</span>
+                  <div class="multi-filter" id="reviewStatusFilter" data-placeholder="全部状态" data-placeholder-en="All statuses" data-i18n-placeholder="analysis.all_statuses"></div>
+                </label>
                 <label>
                   <span class="ui-lang-zh">任务负责人</span><span class="ui-lang-en">Assignee</span>
                   <div class="multi-filter" id="workAssigneeFilter" data-placeholder="全部负责人" data-placeholder-en="All assignees" data-i18n-placeholder="filter.all_assignees" aria-label="Work assignee filter"></div>
@@ -295,7 +299,7 @@
                   <div class="multi-filter" id="analysisReviewerFilter" data-placeholder="全部复核人" data-placeholder-en="All reviewers" data-i18n-placeholder="filter.all_reviewers"></div>
                 </label>
                 <label>
-                  <span class="ui-lang-zh">自动状态</span><span class="ui-lang-en">Automatic status</span>
+                  <span class="ui-lang-zh">Issue GT Review状态</span><span class="ui-lang-en">Issue GT review status</span>
                   <div class="multi-filter" id="analysisStatusFilter" data-placeholder="全部状态" data-placeholder-en="All statuses" data-i18n-placeholder="analysis.all_statuses"></div>
                 </label>
                 <label>
@@ -993,7 +997,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-130`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-131`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

@@ -82,7 +82,7 @@ REVIEW_ANALYSIS_EXPORT_COLUMNS: tuple[tuple[str, str], ...] = (
     ("model_reason", "模型说明"),
     ("model_confidence", "模型置信度"),
     ("expected_output", "期望输出"),
-    ("review_status", "自动状态"),
+    ("review_status", "Issue GT Review状态"),
     ("review_reason", "人工 Review 原因"),
     ("tags", "场景 Tags"),
     ("missing_evidence", "缺失信息"),

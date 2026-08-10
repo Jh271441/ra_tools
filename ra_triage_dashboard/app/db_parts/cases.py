@@ -335,7 +335,10 @@ class DatabaseCasesMixin:
         page_size: int = 100,
     ) -> dict[str, Any]:
         page = max(1, page)
-        page_size = min(max(1, page_size), 2000)
+        # Public routes cap pages at 100. Internal derived-status filtering may
+        # materialize the complete bounded workset so Tag-only legacy Reviews
+        # are filtered before pagination and task handoff.
+        page_size = min(max(1, page_size), 5000)
         condition, params, model_args, common = self._case_list_filters(
             baseline_scope=baseline_scope,
             baseline_scopes=baseline_scopes,

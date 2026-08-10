@@ -22,6 +22,10 @@ from ra_triage_dashboard.app.routers.analysis import (
     _review_analysis_export_response,
     _trail_expected_output_rows,
 )
+from ra_triage_dashboard.app.routers.cases import (
+    _case_result_with_status_filter,
+    _with_effective_case_review_status,
+)
 
 
 TAG_CATALOG = [
@@ -111,6 +115,87 @@ class ReviewWorkflowTest(unittest.TestCase):
             ),
             ("正确触发", "explicit"),
         )
+
+    def test_gallery_status_uses_the_same_effective_output_as_analysis(self) -> None:
+        tag_catalog = tuple(TAG_CATALOG)
+        inferred = _with_effective_case_review_status(
+            {
+                "issue_id": "cn1",
+                "gt_label": "误触发",
+                "annotation": {
+                    "label": "",
+                    "review_status": "pending",
+                    "tags": ["waypoint"],
+                },
+            },
+            tag_catalog,
+        )
+        self.assertEqual(inferred["annotation"]["label"], "正确触发")
+        self.assertEqual(
+            inferred["annotation"]["review_status"],
+            "needs_gt_review",
+        )
+        self.assertEqual(inferred["annotation"]["expected_output_source"], "tags")
+
+        conflict = _with_effective_case_review_status(
+            {
+                "issue_id": "cn2",
+                "gt_label": "误触发",
+                "annotation": {
+                    "label": "",
+                    "review_status": "reviewed",
+                    "tags": ["queue", "waypoint"],
+                },
+            },
+            tag_catalog,
+        )
+        self.assertEqual(conflict["annotation"]["label"], "")
+        self.assertEqual(conflict["annotation"]["review_status"], "pending")
+        self.assertEqual(conflict["annotation"]["expected_output_source"], "conflict")
+
+    def test_gallery_status_filter_runs_before_pagination(self) -> None:
+        raw = {
+            "items": [
+                {
+                    "issue_id": "cn1",
+                    "gt_label": "误触发",
+                    "annotation": {"tags": ["queue"]},
+                },
+                {
+                    "issue_id": "cn2",
+                    "gt_label": "误触发",
+                    "annotation": {"tags": ["waypoint"]},
+                },
+                {
+                    "issue_id": "cn3",
+                    "gt_label": "无需协助",
+                    "annotation": None,
+                },
+                {
+                    "issue_id": "cn4",
+                    "gt_label": "误触发",
+                    "annotation": {"tags": ["queue", "waypoint"]},
+                },
+            ]
+        }
+        with patch(
+            "ra_triage_dashboard.app.routers.cases.database.list_cases",
+            return_value=raw,
+        ), patch(
+            "ra_triage_dashboard.app.routers.cases._review_tag_catalog",
+            return_value=tuple(TAG_CATALOG),
+        ):
+            result = _case_result_with_status_filter(
+                filters={},
+                review_statuses=("pending",),
+                page=2,
+                page_size=1,
+            )
+
+        self.assertEqual(result["total"], 2)
+        self.assertEqual(result["page"], 2)
+        self.assertEqual(result["page_size"], 1)
+        self.assertEqual([item["issue_id"] for item in result["items"]], ["cn4"])
 
     def test_server_persists_inferred_output_and_ignores_client_status(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

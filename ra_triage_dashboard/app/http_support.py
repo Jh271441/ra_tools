@@ -43,7 +43,10 @@ from .contracts import (
 from .db import AnnotationConflictError, LABELS, REVIEW_STATUSES
 from .import_parsing import normalize_model_row, parse_source_bytes
 from .review_analysis import COMPARISON_STATUSES, build_review_reason_analysis
-from .review_workflow import derive_review_status, resolve_expected_output
+from .review_workflow import (
+    derive_review_status,
+    resolve_expected_output,
+)
 from .sanitization import redact_sensitive_fields
 from .trail_sync import (
     TRAIL_INFO_FIELD,
@@ -546,6 +549,7 @@ def _case_filter_kwargs(
     model_label: str = "",
     annotation_label: str = "",
     annotation_author: str = "",
+    review_status: str = "",
     model_run_id: str = "",
     comparison: str = "",
     failure_only: bool = False,
@@ -584,6 +588,10 @@ def _case_filter_kwargs(
     for label in gt_labels:
         if label not in LABELS:
             raise _detail(400, "gt_label 不在三分类范围内。")
+    review_statuses = _csv_filter_values(review_status)
+    for status in review_statuses:
+        if status not in REVIEW_STATUSES:
+            raise _detail(400, "review_status 不在支持范围内。")
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     return {
         "baseline_scope": scopes[0] if len(scopes) == 1 else "",
@@ -593,6 +601,9 @@ def _case_filter_kwargs(
         "model_label": ",".join(model_labels),
         "annotation_label": annotation_label,
         "annotation_author": annotation_author,
+        # Case status is derived from effective expected output versus GT in
+        # the router so historical Tag-only Reviews stay aligned with analysis.
+        "review_statuses": tuple(review_statuses),
         "model_run_id": model_run_id,
         "comparison_status": comparison_status,
         "failure_only": failure_only,

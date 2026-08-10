@@ -72,6 +72,15 @@ function renderReviewCatalogFilters() {
     selected: getMultiFilterValues($("#annotationFilter")),
     onChange,
   });
+  renderMultiFilter($("#reviewStatusFilter"), {
+    options: [
+      { value: "pending", label: t("status.pending") },
+      { value: "reviewed", label: t("status.matches_gt") },
+      { value: "needs_gt_review", label: t("status.needs_gt") },
+    ],
+    selected: getMultiFilterValues($("#reviewStatusFilter")),
+    onChange,
+  });
 }
 
 function analysisComparisonMultiOptions() {

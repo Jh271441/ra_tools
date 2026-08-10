@@ -451,8 +451,14 @@ function positionAnchoredPanel(panel, anchor, options = {}) {
   let left = rect.left;
   left = Math.max(margin, Math.min(left, vw - width - margin));
 
-  panel.style.top = `${Math.round(top)}px`;
-  panel.style.left = `${Math.round(left)}px`;
+  // backdrop-filter makes the sticky topbar a containing block for fixed
+  // descendants. Convert viewport coordinates back into that local space so
+  // the dataset panel stays under its trigger instead of shifting by the
+  // sidebar/app-frame offset.
+  const fixedRoot = panel.closest(".topbar");
+  const fixedOrigin = fixedRoot?.getBoundingClientRect();
+  panel.style.top = `${Math.round(top - (fixedOrigin?.top || 0))}px`;
+  panel.style.left = `${Math.round(left - (fixedOrigin?.left || 0))}px`;
   panel.classList.remove("is-measuring");
   panel.classList.add("is-fixed-dropdown", "is-positioned");
   panel.classList.add(openUp ? "is-drop-up" : "is-drop-down");

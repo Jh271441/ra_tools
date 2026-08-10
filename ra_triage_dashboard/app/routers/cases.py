@@ -23,6 +23,7 @@ from ..http_support import (
     _public_path,
     _public_review_attachment,
     _render_case_thumbnail,
+    _review_tag_catalog,
     _store_review_attachments,
     _thumbnail_cache_path,
     _voyager_issue_url,
@@ -30,6 +31,7 @@ from ..http_support import (
     resolve_request_baseline_ids,
     resolve_request_baseline_scopes,
 )
+from ..review_workflow import derive_review_status, effective_expected_output
 from ..runtime import (
     asset_index,
     baseline_registry,
@@ -45,6 +47,84 @@ from ..trail_sync import read_trail_issue_metadata
 from ..work_split import distribute_issue_ids
 
 router = APIRouter()
+
+
+def _with_effective_case_review_status(
+    item: dict[str, Any], tag_catalog: tuple[dict[str, Any], ...]
+) -> dict[str, Any]:
+    """Expose the same derived status used by analysis and GT export."""
+
+    public = dict(item)
+    annotation = dict(item.get("annotation") or {})
+    expected_output, source = effective_expected_output(annotation, tag_catalog)
+    annotation["expected_output"] = expected_output
+    annotation["expected_output_source"] = source
+    annotation["label"] = expected_output
+    annotation["review_status"] = derive_review_status(
+        expected_output,
+        item.get("gt_label"),
+    )
+    public["annotation"] = annotation
+    return public
+
+
+def _case_result_with_status_filter(
+    *,
+    filters: dict[str, Any],
+    review_statuses: tuple[str, ...],
+    page: int,
+    page_size: int,
+) -> dict[str, Any]:
+    """Filter after read-time Tag inference, then paginate the exact slice."""
+
+    tag_catalog = _review_tag_catalog()
+    if review_statuses:
+        raw = database.list_cases(**filters, page=1, page_size=5000)
+        allowed = set(review_statuses)
+        items = [
+            normalized
+            for item in raw.get("items", [])
+            if (
+                normalized := _with_effective_case_review_status(
+                    item, tag_catalog
+                )
+            )["annotation"]["review_status"]
+            in allowed
+        ]
+        start = (page - 1) * page_size
+        return {
+            "items": items[start : start + page_size],
+            "total": len(items),
+            "page": page,
+            "page_size": page_size,
+        }
+
+    result = database.list_cases(
+        **filters,
+        page=page,
+        page_size=page_size,
+    )
+    result["items"] = [
+        _with_effective_case_review_status(item, tag_catalog)
+        for item in result.get("items", [])
+    ]
+    return result
+
+
+def _case_issue_ids_with_status_filter(
+    *,
+    filters: dict[str, Any],
+    review_statuses: tuple[str, ...],
+) -> list[str]:
+    if not review_statuses:
+        return database.list_case_issue_ids(**filters, limit=5000)
+    result = _case_result_with_status_filter(
+        filters=filters,
+        review_statuses=review_statuses,
+        page=1,
+        page_size=5000,
+    )
+    return [str(item.get("issue_id") or "") for item in result["items"]]
 
 
 def _load_case_media(provider: Any, issue_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -109,6 +189,7 @@ async def list_cases(
     model_label: str = "",
     annotation_label: str = "",
     annotation_author: str = "",
+    review_status: str = "",
     model_run_id: str = "",
     comparison: str = "",
     failure_only: bool = False,
@@ -126,6 +207,7 @@ async def list_cases(
         model_label=model_label,
         annotation_label=annotation_label,
         annotation_author=annotation_author,
+        review_status=review_status,
         model_run_id=model_run_id,
         comparison=comparison,
         failure_only=failure_only,
@@ -135,12 +217,16 @@ async def list_cases(
         baselines=baselines,
         request=request,
     )
+    review_statuses = tuple(filters.pop("review_statuses", ()))
     comparison_status = filters["comparison_status"]
+    safe_page = max(1, int(page))
+    safe_page_size = min(max(1, int(page_size)), 100)
     result = await asyncio.to_thread(
-        database.list_cases,
-        **filters,
-        page=page,
-        page_size=min(max(1, int(page_size)), 100),
+        _case_result_with_status_filter,
+        filters=filters,
+        review_statuses=review_statuses,
+        page=safe_page,
+        page_size=safe_page_size,
     )
     result["items"] = await asyncio.to_thread(
         _public_case_items,
@@ -153,6 +239,7 @@ async def list_cases(
         "failure_only": comparison_status == "mismatch",
         "issue_ids": filters["issue_ids"],
         "work_assignee": filters["work_assignee"],
+        "review_status": list(review_statuses),
         "baselines": resolve_request_baseline_ids(baselines, request=request),
         "baseline_scopes": filters.get("baseline_scopes") or [],
     }
@@ -168,6 +255,7 @@ async def list_case_issue_ids(
     model_label: str = "",
     annotation_label: str = "",
     annotation_author: str = "",
+    review_status: str = "",
     model_run_id: str = "",
     comparison: str = "",
     failure_only: bool = False,
@@ -184,6 +272,7 @@ async def list_case_issue_ids(
         model_label=model_label,
         annotation_label=annotation_label,
         annotation_author=annotation_author,
+        review_status=review_status,
         model_run_id=model_run_id,
         comparison=comparison,
         failure_only=failure_only,
@@ -193,7 +282,12 @@ async def list_case_issue_ids(
         baselines=baselines,
         request=request,
     )
-    ids = await asyncio.to_thread(database.list_case_issue_ids, **filters, limit=5000)
+    review_statuses = tuple(filters.pop("review_statuses", ()))
+    ids = await asyncio.to_thread(
+        _case_issue_ids_with_status_filter,
+        filters=filters,
+        review_statuses=review_statuses,
+    )
     return {
         "issue_ids": ids,
         "total": len(ids),
@@ -204,6 +298,7 @@ async def list_case_issue_ids(
             "failure_only": filters["comparison_status"] == "mismatch",
             "issue_ids": filters["issue_ids"],
             "work_assignee": filters["work_assignee"],
+            "review_status": list(review_statuses),
         },
     }
 
@@ -235,6 +330,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
         model_label=_as_text(filter_body.get("model_label")),
         annotation_label=_as_text(filter_body.get("annotation_label")),
         annotation_author=_as_text(filter_body.get("annotation_author")),
+        review_status=_as_text(filter_body.get("review_status")),
         model_run_id=_as_text(filter_body.get("model_run_id")),
         comparison=_as_text(filter_body.get("comparison") or filter_body.get("comparison_status")),
         failure_only=bool(filter_body.get("failure_only")),
@@ -244,7 +340,12 @@ async def split_case_work(request: Request) -> dict[str, Any]:
         baselines=_as_text(filter_body.get("baselines") or filter_body.get("baseline_scopes")),
         request=request,
     )
-    issue_ids = await asyncio.to_thread(database.list_case_issue_ids, **filters, limit=5000)
+    review_statuses = tuple(filters.pop("review_statuses", ()))
+    issue_ids = await asyncio.to_thread(
+        _case_issue_ids_with_status_filter,
+        filters=filters,
+        review_statuses=review_statuses,
+    )
     assignees = body.get("assignees")
     if not isinstance(assignees, list):
         raise _detail(400, "assignees 必须是数组。")
@@ -271,6 +372,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                 "gt_label": filters["gt_label"],
                 "model_label": filters["model_label"],
                 "annotation_author": filters["annotation_author"],
+                "review_status": list(review_statuses),
                 "missing_evidence": filters["missing_evidence"],
                 "baselines": filters.get("baseline_scopes") and resolve_request_baseline_ids(
                     ",".join(
@@ -298,6 +400,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
             "comparison_status": filters["comparison_status"],
             "failure_only": filters["comparison_status"] == "mismatch",
             "work_assignee": filters["work_assignee"],
+            "review_status": list(review_statuses),
         },
     }
 

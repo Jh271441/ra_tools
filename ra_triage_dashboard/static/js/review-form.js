@@ -83,16 +83,6 @@ function syncExpectedOutputFromTags() {
   const select = $("#expectedOutputInput");
   if (!select) return;
   const inference = inferExpectedOutputFromSelectedTags();
-  EXPECTED_OUTPUT_OPTIONS.forEach((item) => {
-    const option = [...select.options].find((candidate) => candidate.value === item.value);
-    if (!option) return;
-    const label = i18nLocale() === "en" ? item.labelEn : item.labelZh;
-    const isInferred = Boolean(item.value && item.value === inference.value);
-    option.dataset.inferred = isInferred ? "true" : "false";
-    option.textContent = isInferred
-      ? `${label}${uiText("（自动推断）", " (Inferred)")}`
-      : label;
-  });
   const selectionSource = select.dataset.selectionSource || "empty";
   if (selectionSource === "auto") {
     select.value = inference.value || "";
@@ -102,10 +92,28 @@ function syncExpectedOutputFromTags() {
     select.dataset.selectionSource = "auto";
   }
   select.disabled = false;
+  const picker = $("#expectedOutputPicker");
+  const pickerOptions = EXPECTED_OUTPUT_OPTIONS.map((item) => {
+    const label = i18nLocale() === "en" ? item.labelEn : item.labelZh;
+    const isInferred = Boolean(item.value && item.value === inference.value);
+    return {
+      value: item.value,
+      label: isInferred
+        ? `${label}${uiText("（自动推断）", " (Inferred)")}`
+        : label,
+      inferred: isInferred,
+    };
+  });
+  populateUiSelect(picker, pickerOptions, select.value);
+  [...select.options].forEach((option) => {
+    option.dataset.inferred =
+      option.value && option.value === inference.value ? "true" : "false";
+  });
   const hint = $("#expectedOutputHint");
   const validation = expectedOutputSelectionState();
-  select.classList.toggle("is-conflict", Boolean(validation.conflictKind));
-  select.setAttribute("aria-invalid", validation.conflictKind ? "true" : "false");
+  picker?.classList.toggle("is-conflict", Boolean(validation.conflictKind));
+  const trigger = picker?.querySelector(".ui-select-trigger");
+  trigger?.setAttribute("aria-invalid", validation.conflictKind ? "true" : "false");
   if (hint) {
     hint.classList.toggle("is-conflict", Boolean(validation.conflictKind));
     hint.hidden = !validation.conflictKind;
@@ -385,7 +393,7 @@ function renderReview(caseData) {
         </div>
         <div class="review-expected-output-field">
           <div class="review-expected-output-heading">
-            <label for="expectedOutputInput"><span class="ui-lang-zh">期望输出</span><span class="ui-lang-en">Expected output</span></label>
+            <span id="expectedOutputLabel"><span class="ui-lang-zh">期望输出</span><span class="ui-lang-en">Expected output</span></span>
             <span class="derived-review-status" id="derivedReviewStatus" data-status="${escapeHtml(reviewStatus)}"></span>
             <details class="expected-output-rule">
               <summary><span class="ui-lang-zh">推算规则</span><span class="ui-lang-en">Rules</span></summary>
@@ -407,9 +415,16 @@ function renderReview(caseData) {
               </div>
             </details>
           </div>
-          <select id="expectedOutputInput" data-selection-source="${expectedOutput ? "stored" : "empty"}" aria-describedby="expectedOutputHint" aria-invalid="false">
-            ${EXPECTED_OUTPUT_OPTIONS.map((item) => `<option value="${escapeHtml(item.value)}" ${item.value === expectedOutput ? "selected" : ""}>${escapeHtml(i18nLocale() === "en" ? item.labelEn : item.labelZh)}</option>`).join("")}
-          </select>
+          <div class="ui-select expected-output-picker" id="expectedOutputPicker">
+            <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="expectedOutputPickerPanel" aria-labelledby="expectedOutputLabel expectedOutputPickerSummary" aria-describedby="expectedOutputHint" aria-invalid="false">
+              <span class="ui-select-summary" id="expectedOutputPickerSummary">${escapeHtml(i18nLocale() === "en" ? "Pending" : "待补充")}</span>
+              <span class="ui-select-caret" aria-hidden="true"></span>
+            </button>
+            <div class="ui-select-panel" id="expectedOutputPickerPanel" role="listbox" hidden></div>
+            <select class="ui-select-native gateway-model-native-select" id="expectedOutputInput" data-selection-source="${expectedOutput ? "stored" : "empty"}" aria-hidden="true" tabindex="-1">
+              ${EXPECTED_OUTPUT_OPTIONS.map((item) => `<option value="${escapeHtml(item.value)}" ${item.value === expectedOutput ? "selected" : ""}>${escapeHtml(i18nLocale() === "en" ? item.labelEn : item.labelZh)}</option>`).join("")}
+            </select>
+          </div>
           <small class="review-expected-output-hint" id="expectedOutputHint" hidden></small>
           <input id="reviewStatusInput" type="hidden" value="${escapeHtml(reviewStatus)}" />
         </div>
@@ -452,6 +467,7 @@ function renderReview(caseData) {
       syncExpectedOutputFromTags();
     });
   }
+  bindUiSelect($("#expectedOutputPicker"), { maxHeight: 260, maxWidth: 420 });
   $("#reviewPane").querySelectorAll('input[name="missingEvidence"]').forEach((input) => {
     input.addEventListener("change", updateEvidenceSummary);
   });

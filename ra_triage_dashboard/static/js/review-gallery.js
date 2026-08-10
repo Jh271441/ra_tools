@@ -480,6 +480,9 @@ async function loadCases({
   const annotationAuthor = joinFilterList(
     getMultiFilterValues($("#reviewerFilter"))
   );
+  const reviewStatus = joinFilterList(
+    getMultiFilterValues($("#reviewStatusFilter"))
+  );
   const workAssignee = joinFilterList(
     getMultiFilterValues($("#workAssigneeFilter"))
   );
@@ -490,6 +493,7 @@ async function loadCases({
   if (gtLabel) params.set("gt_label", gtLabel);
   if (modelLabel) params.set("model_label", modelLabel);
   if (annotationAuthor) params.set("annotation_author", annotationAuthor);
+  if (reviewStatus) params.set("review_status", reviewStatus);
   if (workAssignee) params.set("work_assignee", workAssignee);
   if (state.selectedRunId) params.set("model_run_id", state.selectedRunId);
   if (state.selectedRunId && state.reviewComparisonStatus !== "all") {
