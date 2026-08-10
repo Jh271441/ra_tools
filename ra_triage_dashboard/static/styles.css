@@ -1026,7 +1026,6 @@ html[data-ui-lang="en"] .expected-output-rule-popover ul.ui-lang-en { display: g
 }
 .history-expected-output { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
 .history-derived-status { color: var(--faint); font-size: 10px; }
-.trail-export-button { border-color: rgba(34,211,238,.3); color: #9fe8f3; }
 /* Shared custom single-select chrome (Run / comparison / review-status / media). */
 .ui-select,
 .review-status-picker,
@@ -1109,6 +1108,7 @@ html[data-ui-lang="en"] .expected-output-rule-popover ul.ui-lang-en { display: g
   color: #f7fcff; font-weight: 650; background: rgba(36,211,239,.13);
 }
 .ui-select-option.is-active:hover { background: rgba(36,211,239,.19); }
+.ui-select-option.is-inferred { grid-template-columns: 16px minmax(0, 1fr) auto; }
 .ui-select-option.is-disabled,
 .ui-select-option:disabled { cursor: not-allowed; opacity: .5; }
 .ui-select-option-check {
@@ -1116,6 +1116,14 @@ html[data-ui-lang="en"] .expected-output-rule-popover ul.ui-lang-en { display: g
 }
 .ui-select-option-label {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.expected-output-picker .ui-select-summary {
+  display: flex; align-items: center; gap: 6px;
+}
+.ui-select-summary-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-select-inference-marker {
+  flex: 0 0 auto; padding: 1px 5px; border: 1px solid rgba(34,211,238,.26); border-radius: 999px;
+  color: #79d8e9; background: rgba(34,211,238,.07); font-size: 9px; font-weight: 650; line-height: 1.4;
 }
 .ui-select-native { /* keep hidden native select for .value / change contract */ }
 .review-section { display: grid; gap: 7px; padding: 0; border: 0; border-radius: 0; background: transparent; }
@@ -3064,6 +3072,9 @@ html[data-color-theme="light"] .analysis-filters select {
 }
 html[data-color-theme="light"] .multi-filter-trigger {
   color: #172033; border-color: #b8c5d4; background: #f8fafc;
+}
+html[data-color-theme="light"] .ui-select-inference-marker {
+  color: #06758a; border-color: rgba(8,117,141,.28); background: rgba(8,117,141,.08);
 }
 html[data-color-theme="light"] .multi-filter.is-open .multi-filter-trigger,
 html[data-color-theme="light"] .multi-filter-trigger:hover {

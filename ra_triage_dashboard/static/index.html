@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-132`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-133`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -334,7 +334,7 @@
                   <div class="analysis-filter-actions">
                     <button class="button button-quiet" id="exportReviewAnalysisCsvButton" type="button"><span class="ui-lang-zh">导出 CSV</span><span class="ui-lang-en">Export CSV</span></button>
                     <button class="button button-quiet" id="exportReviewAnalysisXlsxButton" type="button"><span class="ui-lang-zh">导出 XLSX</span><span class="ui-lang-en">Export XLSX</span></button>
-                    <button class="button button-quiet trail-export-button" id="exportTrailExpectedOutputButton" type="button"><span class="ui-lang-zh">导出 GT 更新表</span><span class="ui-lang-en">Export GT update</span></button>
+                    <button class="button button-quiet" id="exportTrailExpectedOutputButton" type="button"><span class="ui-lang-zh">导出 GT 更新表</span><span class="ui-lang-en">Export GT update</span></button>
                     <button class="button button-quiet" id="resetReviewAnalysisButton" type="button"><span class="ui-lang-zh">重置</span><span class="ui-lang-en">Reset</span></button>
                   </div>
                 </div>
@@ -997,7 +997,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-132`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-133`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

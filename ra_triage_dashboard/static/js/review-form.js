@@ -98,13 +98,32 @@ function syncExpectedOutputFromTags() {
     const isInferred = Boolean(item.value && item.value === inference.value);
     return {
       value: item.value,
-      label: isInferred
-        ? `${label}${uiText("（自动推断）", " (Inferred)")}`
-        : label,
+      label,
       inferred: isInferred,
     };
   });
   populateUiSelect(picker, pickerOptions, select.value);
+  if (inference.value) {
+    const inferredMarker = uiText("自动推断", "Inferred");
+    const inferredOption = picker?.querySelector(
+      `[data-ui-select-value="${inference.value}"]`
+    );
+    if (inferredOption) {
+      inferredOption.classList.add("is-inferred");
+      inferredOption.insertAdjacentHTML(
+        "beforeend",
+        `<span class="ui-select-inference-marker">${escapeHtml(inferredMarker)}</span>`
+      );
+    }
+    if (select.value === inference.value) {
+      const summary = $("#expectedOutputPickerSummary");
+      const selectedLabel =
+        pickerOptions.find((item) => item.value === select.value)?.label || "";
+      if (summary) {
+        summary.innerHTML = `<span class="ui-select-summary-value">${escapeHtml(selectedLabel)}</span><span class="ui-select-inference-marker">${escapeHtml(inferredMarker)}</span>`;
+      }
+    }
+  }
   [...select.options].forEach((option) => {
     option.dataset.inferred =
       option.value && option.value === inference.value ? "true" : "false";
