@@ -467,18 +467,35 @@ function clearAnalysisLinkedHover(root) {
 
 function bindAnalysisLinkedHover(root, itemSelector, activate) {
   if (!root) return;
-  const activateFromEvent = (event) => {
-    const item = event.target?.closest?.(itemSelector);
-    if (!item || !root.contains(item)) return;
+  let pointerItem = null;
+  let focusItem = null;
+  const paint = () => {
+    const item = pointerItem || focusItem;
     clearAnalysisLinkedHover(root);
+    if (!item || !root.contains(item)) return;
     root.classList.add("has-hover");
     activate(item);
   };
-  root.addEventListener("pointerover", activateFromEvent);
-  root.addEventListener("focusin", activateFromEvent);
-  root.addEventListener("pointerleave", () => clearAnalysisLinkedHover(root));
+  const itemFromEvent = (event) => {
+    const item = event.target?.closest?.(itemSelector);
+    return item && root.contains(item) ? item : null;
+  };
+  root.addEventListener("pointerover", (event) => {
+    pointerItem = itemFromEvent(event);
+    paint();
+  });
+  root.addEventListener("pointerleave", () => {
+    pointerItem = null;
+    paint();
+  });
+  root.addEventListener("focusin", (event) => {
+    focusItem = itemFromEvent(event);
+    paint();
+  });
   root.addEventListener("focusout", (event) => {
-    if (!root.contains(event.relatedTarget)) clearAnalysisLinkedHover(root);
+    if (root.contains(event.relatedTarget)) return;
+    focusItem = null;
+    paint();
   });
 }
 
