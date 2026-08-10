@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-137`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-138`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -144,6 +144,15 @@
             <div class="metric-fail"><span class="ui-lang-zh">判断失败</span><span class="ui-lang-en">Mismatches</span><strong id="statFailures">—</strong></div>
             <div><span class="ui-lang-zh">人工复核</span><span class="ui-lang-en">Reviewed</span><strong id="statReviewed">—</strong></div>
             <div><span class="ui-lang-zh">模型输出</span><span class="ui-lang-en">Predictions</span><strong id="statPredictions">—</strong></div>
+          </div>
+          <div class="gt-sync-control" id="gtSyncControl" data-status="not_started">
+            <span class="gt-sync-meta" id="gtSyncMeta">
+              <span class="ui-lang-zh">GT 更新</span><span class="ui-lang-en">GT updated</span>
+              <strong id="gtSyncSourceTime">—</strong>
+            </span>
+            <button class="button button-quiet gt-sync-button" id="gtSyncButton" type="button">
+              <span class="ui-lang-zh">刷新 GT</span><span class="ui-lang-en">Refresh GT</span>
+            </button>
           </div>
           <div class="top-actions">
             <button class="button button-quiet theme-toggle" id="themeToggleButton" type="button" aria-label="切换到浅色模式" title="切换到浅色模式">☀</button>
@@ -1011,7 +1020,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-137`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-138`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

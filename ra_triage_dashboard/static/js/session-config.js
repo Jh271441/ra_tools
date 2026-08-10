@@ -90,6 +90,7 @@ function renderSession() {
         : uiText("当前没有可信 SSO；Run 创建人将记为未记录。", "No trusted SSO; the Run creator will be recorded as unknown.");
   }
   if (state.activePage === "prediction") ensurePredictionBatchName();
+  if (typeof renderGtSyncStatus === "function") renderGtSyncStatus();
 }
 
 async function loadSession() {
@@ -271,6 +272,7 @@ function renderConfig() {
   if ($("#trailViewId")) $("#trailViewId").textContent = viewText;
   if ($("#trailViewIdEn")) $("#trailViewIdEn").textContent = viewText;
   renderTrailSyncState();
+  renderGtSyncStatus(state.config?.gt_sync || state.gtSync);
   renderBatchRuntimeSummary();
   updateFilteredPredictionButton();
   if (typeof renderReviewCatalogFilters === "function") {
@@ -412,6 +414,7 @@ function renderTrailSyncState() {
 
 async function loadConfig() {
   state.config = await api("/api/dashboard-config");
+  state.gtSync = state.config?.gt_sync || state.gtSync;
   const catalog = Array.isArray(state.config?.baselines)
     ? state.config.baselines
     : [];

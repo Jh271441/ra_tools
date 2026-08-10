@@ -371,6 +371,41 @@ class DatabaseCoreMixin:
                     id, revision, updated_at
                 ) VALUES (1, 0, '');
 
+                CREATE TABLE IF NOT EXISTS gt_sync_state (
+                    baseline_scope TEXT PRIMARY KEY,
+                    status TEXT NOT NULL DEFAULT 'not_started',
+                    source_name TEXT NOT NULL DEFAULT 'Trail',
+                    source_view_id INTEGER NOT NULL DEFAULT 1000,
+                    source_field TEXT NOT NULL DEFAULT 'ra_merge_result',
+                    source_sha256 TEXT NOT NULL DEFAULT '',
+                    source_row_count INTEGER NOT NULL DEFAULT 0,
+                    source_updated_at TEXT,
+                    source_updated_by TEXT NOT NULL DEFAULT '',
+                    last_checked_at TEXT,
+                    last_applied_at TEXT,
+                    last_check_change_count INTEGER NOT NULL DEFAULT 0,
+                    last_applied_change_count INTEGER NOT NULL DEFAULT 0,
+                    last_trigger TEXT NOT NULL DEFAULT '',
+                    requested_by TEXT NOT NULL DEFAULT '',
+                    requested_by_source TEXT NOT NULL DEFAULT '',
+                    requested_by_verified INTEGER NOT NULL DEFAULT 0,
+                    message TEXT NOT NULL DEFAULT '',
+                    error_text TEXT NOT NULL DEFAULT ''
+                );
+
+                CREATE TABLE IF NOT EXISTS gt_sync_labels (
+                    baseline_scope TEXT NOT NULL REFERENCES gt_sync_state(baseline_scope)
+                        ON DELETE CASCADE,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE CASCADE,
+                    gt_label TEXT NOT NULL CHECK(gt_label IN ('误触发', '正确触发', '无需协助')),
+                    source_updated_at TEXT,
+                    source_updated_by TEXT NOT NULL DEFAULT '',
+                    synced_at TEXT NOT NULL,
+                    PRIMARY KEY (baseline_scope, issue_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_gt_sync_labels_issue
+                    ON gt_sync_labels(issue_id, baseline_scope);
+
                 CREATE TABLE IF NOT EXISTS review_tag_catalog (
                     key TEXT PRIMARY KEY,
                     label TEXT NOT NULL UNIQUE,

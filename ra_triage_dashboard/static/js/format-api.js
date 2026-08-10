@@ -584,6 +584,11 @@ async function pollChangeRevision() {
   try {
     const data = await api("/api/change-revision");
     if (pollEpoch !== state.changePollEpoch) return;
+    if (data.gt_sync) {
+      state.gtSync = data.gt_sync;
+      if (state.config) state.config.gt_sync = data.gt_sync;
+      renderGtSyncStatus(data.gt_sync);
+    }
     const revision = Number(data.revision || 0);
     delay = Math.max(1000, Number(data.poll_after_ms || 1800));
     if (state.changeRevision === null) {

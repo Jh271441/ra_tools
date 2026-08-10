@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -11,7 +12,12 @@ from fastapi.staticfiles import StaticFiles
 
 from .auth import has_same_origin_mutation_marker, identity_header_candidates, request_identity
 from .contracts import MAX_BATCH_JSON_REQUEST_BYTES, MAX_REVIEW_MULTIPART_REQUEST_BYTES
-from .http_support import bootstrap_baseline, bootstrap_model_result, sync_trail_model_fields
+from .http_support import (
+    bootstrap_baseline,
+    bootstrap_model_result,
+    sync_authoritative_gt,
+    sync_trail_model_fields,
+)
 from .runtime import (
     EXAMPLE_CASES,
     _identity_diagnostic_observations,
@@ -24,8 +30,32 @@ from .routers import analysis, batch, cases, core, imports, inference, reviews, 
 
 logger = logging.getLogger("ra_triage_dashboard")
 
+
+async def _authoritative_gt_sync_loop() -> None:
+    if settings.gt_sync_startup_delay_seconds:
+        await asyncio.sleep(settings.gt_sync_startup_delay_seconds)
+    while True:
+        sync_task = asyncio.create_task(
+            asyncio.to_thread(
+                sync_authoritative_gt,
+                requested_by="system",
+                identity_source="service_periodic",
+                identity_verified=False,
+                trigger="periodic",
+            )
+        )
+        try:
+            await asyncio.shield(sync_task)
+        except asyncio.CancelledError:
+            # A worker thread cannot be cancelled safely. Wait for its current
+            # transaction before lifespan closes the database pool.
+            await sync_task
+            raise
+        await asyncio.sleep(settings.gt_sync_interval_seconds)
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    gt_sync_task: asyncio.Task[None] | None = None
     settings.ensure_directories()
     database.init()
     database.bootstrap_access_users(
@@ -45,17 +75,26 @@ async def lifespan(_: FastAPI):
             identity_verified=False,
             trigger="startup",
         )
+    if settings.gt_sync_enabled:
+        gt_sync_task = asyncio.create_task(
+            _authoritative_gt_sync_loop(),
+            name="authoritative-gt-sync",
+        )
     batch_prediction_runner.resume_queued_predictions()
     try:
         yield
     finally:
+        if gt_sync_task is not None:
+            gt_sync_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await gt_sync_task
         await asyncio.to_thread(batch_prediction_runner.shutdown)
         await asyncio.to_thread(database.close)
 
 
 app = FastAPI(
     title="RA Triage Workbench",
-    version="1.7.0",
+    version="1.8.0",
     lifespan=lifespan,
 )
 

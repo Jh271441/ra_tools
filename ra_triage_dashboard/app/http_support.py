@@ -42,6 +42,7 @@ from .contracts import (
 )
 from .db import AnnotationConflictError, LABELS, REVIEW_STATUSES
 from .import_parsing import normalize_model_row, parse_source_bytes
+from .gt_sync import TRAIL_GT_FIELD, read_trail_gt_labels
 from .review_analysis import COMPARISON_STATUSES, build_review_reason_analysis
 from .review_workflow import (
     derive_review_status,
@@ -62,6 +63,7 @@ from .runtime import (
     autotriage_source,
     baseline_registry,
     database,
+    gt_sync_lock,
     media_registry,
     review_image_semaphore,
     runtime_state,
@@ -1519,6 +1521,128 @@ def enrich_model_run_baseline_hint(
     payload["unmatched_prediction_count"] = unmatched
     payload["inferred_baseline_ids"] = inferred
     return payload
+
+
+def gt_sync_status() -> dict[str, Any]:
+    entry = baseline_registry.by_id(settings.gt_sync_baseline_id)
+    if entry is None:
+        return {
+            "status": "unavailable",
+            "enabled": settings.gt_sync_enabled,
+            "baseline_id": settings.gt_sync_baseline_id,
+            "baseline_scope": "",
+            "source_view_id": settings.gt_sync_view_id,
+            "source_field": TRAIL_GT_FIELD,
+            "message": f"GT 同步 baseline {settings.gt_sync_baseline_id} 不存在。",
+        }
+    persisted = database.gt_sync_status(entry.scope)
+    running = runtime_state.get("gt_sync") or {}
+    if gt_sync_lock.locked() and running.get("status") == "running":
+        persisted = {**persisted, **running}
+    return {
+        **persisted,
+        "enabled": settings.gt_sync_enabled,
+        "baseline_id": entry.id,
+        "baseline_label": entry.label,
+        "baseline_scope": entry.scope,
+        "interval_seconds": settings.gt_sync_interval_seconds,
+        "source_view_id": settings.gt_sync_view_id,
+        "source_field": TRAIL_GT_FIELD,
+    }
+
+
+def sync_authoritative_gt(
+    *,
+    requested_by: str = "",
+    identity_source: str = "service",
+    identity_verified: bool = False,
+    trigger: str = "manual",
+) -> dict[str, Any]:
+    """Read a complete fixed Trail snapshot and atomically update local GT."""
+
+    entry = baseline_registry.by_id(settings.gt_sync_baseline_id)
+    if entry is None:
+        return gt_sync_status()
+    if not gt_sync_lock.acquire(blocking=False):
+        return {
+            **gt_sync_status(),
+            "status": "running",
+            "message": "已有权威 GT 同步任务在运行。",
+        }
+    runtime_state["gt_sync"] = {
+        "status": "running",
+        "message": (
+            f"正在从 Trail view {settings.gt_sync_view_id} 完整校验 "
+            f"{entry.label} GT。"
+        ),
+        "baseline_id": entry.id,
+        "baseline_scope": entry.scope,
+        "source_view_id": settings.gt_sync_view_id,
+        "source_field": TRAIL_GT_FIELD,
+    }
+    try:
+        issue_ids = database.baseline_issue_ids(scope=entry.scope)
+        result = read_trail_gt_labels(
+            ra_root=settings.ra_auto_triage_root,
+            issue_ids=issue_ids,
+            view_id=settings.gt_sync_view_id,
+            chunk_size=settings.gt_sync_chunk_size,
+        )
+        if (
+            not result.complete
+            or result.returned_issues != result.queried_issues
+            or TRAIL_GT_FIELD not in result.fields_visible
+        ):
+            state = database.record_gt_sync_failure(
+                scope=entry.scope,
+                error_text=result.message,
+                source_name="Trail",
+                source_view_id=settings.gt_sync_view_id,
+                source_field=TRAIL_GT_FIELD,
+                trigger=trigger,
+                requested_by=requested_by,
+                requested_by_source=identity_source,
+                requested_by_verified=identity_verified,
+            )
+        else:
+            state = database.apply_gt_sync_snapshot(
+                scope=entry.scope,
+                rows=result.rows,
+                source_name="Trail",
+                source_view_id=settings.gt_sync_view_id,
+                source_field=TRAIL_GT_FIELD,
+                trigger=trigger,
+                requested_by=requested_by,
+                requested_by_source=identity_source,
+                requested_by_verified=identity_verified,
+            )
+        runtime_state["gt_sync"] = state
+        return gt_sync_status()
+    except Exception as exc:
+        logger.exception("authoritative GT sync failed")
+        try:
+            state = database.record_gt_sync_failure(
+                scope=entry.scope,
+                error_text=str(exc),
+                source_name="Trail",
+                source_view_id=settings.gt_sync_view_id,
+                source_field=TRAIL_GT_FIELD,
+                trigger=trigger,
+                requested_by=requested_by,
+                requested_by_source=identity_source,
+                requested_by_verified=identity_verified,
+            )
+        except Exception:
+            logger.exception("failed to persist authoritative GT sync failure")
+            state = {
+                "status": "failed",
+                "message": f"权威 GT 同步失败: {exc}",
+                "error_text": str(exc),
+            }
+        runtime_state["gt_sync"] = state
+        return gt_sync_status()
+    finally:
+        gt_sync_lock.release()
 
 
 def sync_trail_model_fields(

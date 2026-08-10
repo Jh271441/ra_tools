@@ -46,7 +46,7 @@ class DatabaseCasesMixin:
         rows: Iterable[dict[str, Any]],
         source: str,
     ) -> dict[str, int]:
-        materialized = list(rows)
+        materialized = self.merge_gt_sync_overlay(scope, rows)
         with self._write_lock, self.connect() as conn:
             conn.execute("UPDATE issues SET baseline_scope = '' WHERE baseline_scope = ?", (scope,))
         return self.upsert_issues(

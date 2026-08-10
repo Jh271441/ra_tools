@@ -206,6 +206,9 @@ function bindEvents() {
       showToast(error.message, true);
     }
   });
+  $("#gtSyncButton")?.addEventListener("click", () => {
+    refreshAuthoritativeGt().catch((error) => showToast(error.message, true));
+  });
   $("#refreshSystemStatusButton").addEventListener("click", async () => {
     const button = $("#refreshSystemStatusButton");
     button.disabled = true;

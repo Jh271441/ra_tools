@@ -566,6 +566,7 @@ const PAGE_ROUTES = {
 
 const state = {
   config: null,
+  gtSync: null,
   cases: [],
   caseTotal: 0,
   casePage: 1,

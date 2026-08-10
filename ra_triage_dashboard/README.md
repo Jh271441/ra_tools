@@ -2,13 +2,13 @@
 
 一个独立于 `ra_auto_triage` 的 issue triage / 标注 / 模型结果对比看板。
 
-## 当前产品快照（v4.4 基线；多数据集开发中）
+## 当前产品快照
 
-- 默认工作集是 `trail_label_baseline_20260729.xlsx` 中 `dataset=0508` 的 **1071 条**；GT 只来自该快照，不因 Trail 查询或模型导入而改变。
+- 默认工作集成员固定为 `trail_label_baseline_20260729.xlsx` 中 `dataset=0508` 的 **1071 条**。该文件是可回滚的种子快照；运行时通过固定只读 Trail view 1000 的 `ra_merge_result` 完整校验并覆盖有效 GT。模型导入、Trail 模型字段快照和 AutoTriage 结果仍不能修改 GT。
 
 ### 多数据集 Multi-Baseline（`feat/multi-baseline-gt`，开发中）
 
-目标：同时挂载多个不可变 GT 工作集（首批 0508 + 0626 抽检），顶栏 **多选数据集**，选中集合按 **union** 驱动图库 / 指标 / 原因分析 / 均分 / Runs 覆盖统计。
+目标：同时挂载多个稳定成员集合的 GT 工作集（首批 0508 + 0626 抽检），顶栏 **多选数据集**，选中集合按 **union** 驱动图库 / 指标 / 原因分析 / 均分 / Runs 覆盖统计。当前只有 0508 启用权威 Trail GT overlay；0626 仍使用注册的只读工作簿。
 
 | 项 | 说明 |
 |----|------|
@@ -25,6 +25,7 @@
 - 左侧工具栏只接受用户手动折叠并记住偏好，不再根据分辨率、DPR 或窗口宽度自动改变。判错复核、原因聚类、模型 Runs / 导入、Batch 预测、系统状态分别使用 `/review`、`/review-analysis`、`/runs`、`/batch-prediction`、`/system-status` 独立路由，管理员另有 `/users` 用户管理路由；均支持硬刷新和浏览器前进/后退。系统状态页只读展示应用运行时间与版本、数据库连接/持久卷、最近备份/计划、容量、1071 基线、媒体与模型网关，不提供重启或写入操作。`/import` 会 307 跳转到 `/runs?import=...`，`/inference` 仅作为旧链接兼容入口。
 - 顶栏支持深色 / 浅色主题切换，默认仍为深色；用户选择保存在浏览器 `localStorage`，并在主样式加载前应用，避免刷新时先闪出错误主题。浅色模式覆盖页面框架、表单、卡片、下拉框和弹窗；Ares、BEV 与 Camera 媒体画布继续使用深色舞台，以保持原始画面和轨迹叠加层的对比度。
 - Trail 操作分成「检查字段」和「创建 Run」两步，收在 Runs 页的默认折叠区；两步都不写回 Trail，快照只创建或复用本地不可变 Run，且不会修改团队默认 Run。启动时若启用 Trail 检查，也只执行第一步。
+- 0508 权威 GT 同步与模型字段快照是两条独立链路。服务端默认每 15 分钟完整读取 Trail view 1000 的 `ra_merge_result`，顶栏也提供「刷新 GT」；只有 issue 集合 1071/1071 完全一致且每条都能归一化为三分类时才原子应用。最近来源更新时间、Manual 检查时间、应用时间和变更数会持久化展示；失败或部分返回保留上次成功快照。应用 GT 后，Issue GT Review 状态、筛选、比例与混淆矩阵按最新 GT 读时重算，不修改 Review 历史。
 - 页面只允许导入批量模型输出（JSON、CSV、XLSX），Issue / GT 上传入口已移除，避免误污染 0508 baseline；后端旧 `/api/import/issues` 仅保留兼容客户端，不由页面调用。Runs 页上方用三个自然高度 Tab 统一组织模型文件、AutoTriage 快照和 Trail 快照，页面标题始终固定为 `MODEL RUN REGISTRY / 模型结果 Runs`，不会随来源 Tab 改名；每条 Run 都显示来源徽标及原始 records 链接、文件名或 Trail view。新上传的模型结果原文件按 SHA-256 归档到 dashboard data 的 `uploads/`，Run 行可直接在页面内预览 CSV/JSON/XLSX 或下载；历史 Run 若没有归档文件，会优先用已保存的脱敏预测行重建可复核副本，并明确标注“Run 重建”。Run 行提供带二次确认的删除按钮：只删除该 Run 的模型输出和来源归档，不删除 0508 GT、Issue 或人工 review；团队默认 Run 需先切换后才能删除。也可按 AutoTriage Batch ID / records 链接经固定只读内网接口拉取结果，或检查 Trail 字段后创建只读快照。所有模型结果都按规范化内容 SHA-256 创建或复用不可变 Model Run，不覆盖 GT、不切换团队默认 Run；AutoTriage 拉取会显式比较声明数、完成数、结果数和唯一 Issue 数，并标记部分覆盖。
 - 人工标注为追加式历史，最新一条为当前标注，不覆盖旧 review。每条 Review 版本明确绑定创建时选择的 `model_run_id`；切换 Model Run 后，详情编辑表单、历史筛选、列表、原因聚类和统计只读取该 Run 的最新版本，不会把不同 Run 的人工结论混在一起。迁移前的旧记录使用空 Run 标识：选中任意 Run 时不会作为兼容 fallback 混入，只有不选择 Run 的全局历史视图才会读取它们。保存时前端提交编辑开始时看到的版本 ID；若同一 Issue、同一 Run 已被其他人先保存，服务端返回 `409`，后提交者需要刷新后再保存，避免静默覆盖。详情右侧分为两个区域：`Issue 标签` 将场景拆成「环境 / 自车意图」，将触发判定拆成「误触发 / 应该触发」，并把脱困方式拆成「正确触发 / 无需协助」；同时提供 `is_excluded`（应该排除、非模型需要解决的场景）布尔开关。`模型结果 Review` 使用“期望输出”替代人工选择复核状态：误触发 Tags 自动推出 `误触发`，RA/正确触发 Tags 推出 `正确触发`，无需协助 Tags 推出 `无需协助`；真卡但只填“应该触发”时仍需补充驶离结论。唯一推断项会在仍可操作的下拉框内标记“自动推断”；选择其他项会立即显示选择冲突并禁止保存，改回推断项或调整 Tags 后恢复。期望输出留空对应状态「待补充」(`pending`)，与 baseline GT 相同对应「与 GT 一致」(`reviewed`)，不同对应「GT 需复核」(`needs_gt_review`)；详情内的“推算规则”入口解释这两步。多类输出 Tags 冲突时同样显示冲突并禁止保存，服务端也会拒绝；历史 Review 若尚未保存期望输出，分析和 GT 更新表会只读复用同一 Tag 推断，无法唯一推断或冲突时 fail closed 为「待补充」，不会回写历史记录。每个新版本必须记录复核人及其可信状态，右侧 Review 历史把期望输出、状态、复核人、Run 和时间紧凑展示；详情左右外框在桌面端随较高一侧等高。每个版本可粘贴或选择最多 4 张补充截图。
 - 页面每约 1.8 秒只读检查一次共享数据 revision；只有 Issue、Review、Run、预测或 Batch 状态确实变化时才刷新当前页面。多人同时 Review 时，正在编辑的表单和待上传截图不会被后台刷新覆盖，而会在保存后合并最新数据。API 响应包含 `Server-Timing` 与 `X-Request-Duration-Ms`，超过 500 ms 的 API 请求写入服务慢请求日志。
@@ -88,7 +89,7 @@ Runs 的「人员」统一显示/筛选创建人；旧 Run 没有创建人时回
   - 0626 的 materialized capture layout：
     `/volume/home/workspace/ra_triage_dashboard_data/media_layouts/release0626_300_spotcheck_20260807`；根目录保留聚合 `manifest.jsonl` 和 `issues/`，由 baseline `layout_id` 独立索引
   - 从带聚合软链接的 bags 刷新：使用 `rsync -aL` 物化到新的版本化 layout，禁止 `--delete`；完成 manifest、PNG、MP4、meta 和媒体规格校验后再切换 baseline `layout_id`
-- 0508 GT 快照：`/volume/home/workspace/ra_auto_triage/data/trail_label_baseline_20260729.xlsx`（只读）
+- 0508 GT 种子/回滚快照：`/volume/home/workspace/ra_auto_triage/data/trail_label_baseline_20260729.xlsx`（只读）；当前权威 overlay 持久化在 Dashboard 数据库
 - 模型 / Trail 逻辑：`/volume/home/workspace/ra_auto_triage`（代码与 bags 采集工作区只读；Batch 新下载只写 dashboard 独立缓存）
 
 模型 endpoint 是服务端固定配置，API key 只存在于上述受限文件和预测 worker 的一次性 stdin，不进入浏览器 HTTP 请求、dashboard 数据库、argv、子进程环境或公共 API。Batch Run 只保存脱敏后的模型、Prompt、输入策略、目录 SHA-256 和配置 SHA-256；上传 JSON / CSV / XLSX 时，metadata、原始行和扩展字段中的 credential / endpoint key 也会在入库前递归脱敏，公共读取再执行一次同样的防护。模型结果原文件只通过同源 Run source endpoint 提供 inline 预览或 attachment 下载，不直接暴露服务器路径；遗留 Run 不会凭空补造归档文件。
@@ -199,6 +200,15 @@ Trail 只消费 `ra_stuck_auto_result` 和 `ra_stuck_auto_result_info`。可通�
 2. 检查通过后点击「创建只读 Trail 快照」，创建或复用本地不可变 Run。
 
 只有全部 baseline issue 分片完整返回时才允许创建快照；任一分片失败、返回不完整、结果字段不可见或没有三分类标准标签，都不会创建 Run。查询完整不代表预测必须全量：模型字段可只有部分 issue 有有效预测，页面会明确显示实际覆盖数；`nan`、`<NA>` 或未知字符串不会被误计为可用标签。Trail 检查和快照均不写回 Trail、不修改 GT 或人工复核，也不改变团队默认 Run。如果 view 没有展示字段，页面会明确提示并保留 CSV/JSON/XLSX 上传入口。
+
+权威 GT 同步固定读取 `DASHBOARD_GT_SYNC_BASELINE_ID=0508`、`DASHBOARD_GT_SYNC_VIEW_ID=1000` 的 `ra_merge_result`，不接受浏览器提交 host、view 或 scope。相关配置：
+
+- `DASHBOARD_GT_SYNC_ENABLED=true`：启用启动后的后台轮询。
+- `DASHBOARD_GT_SYNC_INTERVAL_SECONDS=900`：轮询周期，最小 60 秒。
+- `DASHBOARD_GT_SYNC_STARTUP_DELAY_SECONDS=3`：服务启动后首次同步延迟。
+- `DASHBOARD_GT_SYNC_CHUNK_SIZE=160`：Trail 分片大小。
+
+`GET /api/gt-sync-status` 返回持久化同步状态；`POST /api/gt-sync` 执行一次人工触发的完整检查与安全应用。`gt_sync_state` 保存来源/检查/应用时间和统计，`gt_sync_labels` 保存完整权威 overlay；baseline 启动加载会先合并该 overlay，旧 Excel 不会把已同步 GT 回滚。同步只更新 Dashboard 自己的 `issues.gt_label`，绝不写 Trail。
 
 Issue 详情的外部 RA 链接可通过以下只读配置控制：
 
@@ -353,6 +363,7 @@ ssh -L 8785:127.0.0.1:8785 cloud_server
 14. `015_review_tag_management.sql`：为共享场景标签增加说明、分组和可软删除字段。
 15. `016_issue_work_assignments.sql`：增加 Issue 均分后的持久化分配记录。
 16. `017_review_run_binding.sql`：为 Review annotation 增加 `model_run_id` 及 Issue/Run 复合索引；旧记录保持空 Run 标识，保存接口通过版本 ID 做乐观并发校验。
+17. `018_gt_sync.sql`：增加权威 GT 完整快照 overlay 与同步状态；不为状态检查增加共享 revision，只有实际 GT 变化才触发重型页面刷新。
 
 `003_identity_attribution.sql` 对旧行使用 `legacy` / `verified=false`，不会把历史自由填写姓名升级成可信 SSO。所有人工标注、模型结果、任务记录与附件元数据都保留历史行；附件二进制仍留在同一受限 `review_attachments/` 目录，PostgreSQL 保存其元数据。
 

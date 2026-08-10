@@ -24,6 +24,8 @@ _LABEL_ALIASES = {
     "false_trigger": "误触发",
     "fp": "误触发",
     "正确触发": "正确触发",
+    "成功": "正确触发",
+    "失败": "正确触发",
     "true": "正确触发",
     "true_trigger": "正确触发",
     "tp": "正确触发",
@@ -44,12 +46,11 @@ def normalize_gt_label(raw: Any) -> str:
 
 
 def load_label_baseline(path: Path, dataset: str) -> BaselineLoad:
-    """Load the immutable Trail-label snapshot without consulting live Trail.
+    """Load the stable workset and rollback GT seed without live Trail I/O.
 
-    The workbook is deliberately the GT authority for this dashboard.  It is
-    filtered by its ``dataset`` column so the 0508 working set remains the
-    1071-case snapshot even when the workbook also contains 0206 and other
-    releases.
+    The persisted authoritative GT overlay is merged by the database bootstrap
+    layer.  Membership still comes from this dataset-filtered workbook, so the
+    0508 workset remains the same 1071 cases across refreshes and restarts.
     """
 
     if not path.is_file():

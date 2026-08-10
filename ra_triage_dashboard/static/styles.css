@@ -161,6 +161,21 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
 .header-metrics span { color: var(--faint); font-size: 8px; white-space: nowrap; }
 .header-metrics strong { color: #dce6f2; font-size: 12px; line-height: 1; font-variant-numeric: tabular-nums; }
 .header-metrics .metric-fail strong { color: var(--fail); }
+.gt-sync-control {
+  min-width: 0; display: flex; align-items: center; gap: 5px;
+}
+.gt-sync-meta {
+  min-width: 0; display: inline-flex; align-items: baseline; gap: 4px; padding: 5px 7px;
+  border: 1px solid var(--line); border-radius: 7px; color: var(--faint); background: #0e131c;
+  font-size: 8px; white-space: nowrap;
+}
+.gt-sync-meta strong { color: #cbd7e5; font-size: 10px; font-variant-numeric: tabular-nums; }
+.gt-sync-meta.is-ready { border-color: rgba(52,211,153,.3); }
+.gt-sync-meta.is-ready strong { color: var(--ok); }
+.gt-sync-meta.is-failed { border-color: rgba(248,113,113,.35); }
+.gt-sync-meta.is-failed strong { color: var(--fail); }
+.gt-sync-button { min-height: 30px; padding: 5px 8px; }
+.gt-sync-button.is-running { cursor: wait; }
 .top-actions { display: flex; gap: 7px; }
 
 .top-actions .button { padding: 5px 8px; }
@@ -2298,6 +2313,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
     display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
     overflow: hidden; box-sizing: border-box;
   }
+  .gt-sync-control { margin-left: auto; }
   .header-metrics > div {
     min-width: 0; max-width: 100%;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -2362,6 +2378,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
     grid-template-areas:
       "brand actions"
       "baselines baselines"
+      "gt-sync gt-sync"
       "metrics metrics";
     gap: 6px 8px;
     align-items: center;
@@ -2372,6 +2389,8 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .top-actions { grid-area: actions; gap: 5px; flex-shrink: 0; }
+  .gt-sync-control { grid-area: gt-sync; width: 100%; margin-left: 0; justify-content: flex-end; }
+  .gt-sync-meta { flex: 1 1 auto; justify-content: space-between; }
   .top-actions .button { min-height: 36px; padding-inline: 8px; }
   .topbar-baselines {
     grid-area: baselines;
@@ -2839,6 +2858,7 @@ html[data-color-theme="light"] .user-avatar {
 html[data-color-theme="light"] .user-avatar { color: #063843; background: #67e8f9; }
 html[data-color-theme="light"] .sidebar-collapse,
 html[data-color-theme="light"] .header-metrics,
+html[data-color-theme="light"] .gt-sync-meta,
 html[data-color-theme="light"] input,
 html[data-color-theme="light"] select,
 html[data-color-theme="light"] textarea,

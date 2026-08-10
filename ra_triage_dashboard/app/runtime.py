@@ -77,6 +77,7 @@ prompt_catalog = PromptCatalog(settings.ra_auto_triage_root)
 autotriage_source = AutoTriageSource(settings.autotriage_api_base_url)
 batch_prediction_runner = BatchPredictionRunner(settings, database)
 trail_sync_lock = threading.Lock()
+gt_sync_lock = threading.Lock()
 review_image_semaphore = asyncio.Semaphore(2)
 thumbnail_image_semaphore = asyncio.Semaphore(4)
 trail_detail_semaphore = asyncio.Semaphore(2)
@@ -218,6 +219,12 @@ runtime_state: dict[str, Any] = {
         "run_id": "",
         "can_create": False,
         "default_changed": False,
+    },
+    "gt_sync": {
+        "status": "not_started",
+        "message": "尚未从 Trail 同步权威 GT。",
+        "source_view_id": settings.gt_sync_view_id,
+        "source_field": "ra_merge_result",
     },
 }
 

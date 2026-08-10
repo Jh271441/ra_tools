@@ -115,6 +115,12 @@ class Settings:
     trail_view_id: int
     trail_sync_on_start: bool
     trail_sync_chunk_size: int
+    gt_sync_enabled: bool
+    gt_sync_interval_seconds: int
+    gt_sync_startup_delay_seconds: int
+    gt_sync_baseline_id: str
+    gt_sync_view_id: int
+    gt_sync_chunk_size: int
     trail_detail_metadata_enabled: bool
     trail_detail_metadata_cache_seconds: int
     voyager_issue_base_url: str
@@ -322,6 +328,21 @@ class Settings:
             trail_view_id=_integer("DASHBOARD_TRAIL_VIEW_ID", 2410),
             trail_sync_on_start=_bool("DASHBOARD_SYNC_TRAIL_ON_START", True),
             trail_sync_chunk_size=_integer("DASHBOARD_TRAIL_SYNC_CHUNK_SIZE", 160, 1),
+            gt_sync_enabled=_bool("DASHBOARD_GT_SYNC_ENABLED", True),
+            gt_sync_interval_seconds=_integer(
+                "DASHBOARD_GT_SYNC_INTERVAL_SECONDS", 900, 60
+            ),
+            gt_sync_startup_delay_seconds=_integer(
+                "DASHBOARD_GT_SYNC_STARTUP_DELAY_SECONDS", 3, 0
+            ),
+            gt_sync_baseline_id=(
+                os.getenv("DASHBOARD_GT_SYNC_BASELINE_ID", "0508").strip()
+                or "0508"
+            ),
+            gt_sync_view_id=_integer("DASHBOARD_GT_SYNC_VIEW_ID", 1000),
+            gt_sync_chunk_size=_integer(
+                "DASHBOARD_GT_SYNC_CHUNK_SIZE", 160, 1
+            ),
             trail_detail_metadata_enabled=_bool(
                 "DASHBOARD_TRAIL_DETAIL_METADATA_ENABLED", True
             ),

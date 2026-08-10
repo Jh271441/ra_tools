@@ -16,6 +16,7 @@ from ..contracts import (
     MAX_REVIEW_ATTACHMENTS_TOTAL_BYTES,
 )
 from ..http_support import (
+    _action_actor,
     _admin_identity,
     _as_text,
     _detail,
@@ -23,8 +24,10 @@ from ..http_support import (
     _public_batch_job,
     _public_path,
     _review_tag_catalog,
+    gt_sync_status,
     resolve_request_baseline_ids,
     resolve_request_baseline_scopes,
+    sync_authoritative_gt,
 )
 from ..model_catalog import MODEL_ID_RE
 from ..runtime import (
@@ -103,6 +106,7 @@ async def health() -> dict[str, Any]:
         "baselines": runtime_state.get("baselines") or [],
         "baseline_conflicts": runtime_state.get("baseline_conflicts") or [],
         "trail_sync": runtime_state["trail_sync"],
+        "gt_sync": await asyncio.to_thread(gt_sync_status),
         "trail_write_enabled": False,
         "batch_prediction_enabled": settings.batch_prediction_enabled,
         "autotriage_push_enabled": settings.autotriage_push_enabled,
@@ -138,6 +142,38 @@ async def change_revision(response: Response) -> dict[str, Any]:
     return {
         "revision": await asyncio.to_thread(database.change_revision),
         "poll_after_ms": 1800,
+        "gt_sync": await asyncio.to_thread(gt_sync_status),
+    }
+
+
+@router.get("/api/gt-sync-status")
+async def authoritative_gt_sync_status(response: Response) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return await asyncio.to_thread(gt_sync_status)
+
+
+@router.post("/api/gt-sync")
+async def refresh_authoritative_gt(request: Request) -> dict[str, Any]:
+    if request.headers.get("x-ra-triage-request") != "browser-v1":
+        raise _detail(403, "缺少 GT 刷新请求标记。")
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        body = {}
+    submitted = body.get("requested_by", "") if isinstance(body, dict) else ""
+    actor, actor_source, actor_verified = await asyncio.to_thread(
+        _action_actor, request, submitted
+    )
+    state = await asyncio.to_thread(
+        sync_authoritative_gt,
+        requested_by=actor,
+        identity_source=actor_source,
+        identity_verified=actor_verified,
+        trigger="manual",
+    )
+    return {
+        **state,
+        "change_revision": await asyncio.to_thread(database.change_revision),
     }
 
 
@@ -175,6 +211,7 @@ async def dashboard_config() -> dict[str, Any]:
         "build_commit": settings.build_commit,
         "default_model_run_id": default_model_run_id,
         "trail_sync": runtime_state["trail_sync"],
+        "gt_sync": await asyncio.to_thread(gt_sync_status),
         "missing_evidence_catalog": await asyncio.to_thread(_missing_evidence_catalog),
         "review_tag_catalog": await asyncio.to_thread(_review_tag_catalog),
         # Free-text keyword themes were an earlier experiment and are not
@@ -361,6 +398,7 @@ async def status(response: Response) -> dict[str, Any]:
         "baselines": runtime_state.get("baselines") or [],
         "baseline_conflicts": runtime_state.get("baseline_conflicts") or [],
         "trail_sync": runtime_state["trail_sync"],
+        "gt_sync": await asyncio.to_thread(gt_sync_status),
         "batch_prediction_enabled": settings.batch_prediction_enabled,
         "autotriage_push_enabled": settings.autotriage_push_enabled,
         "batch_max_issues": settings.batch_max_issues,
