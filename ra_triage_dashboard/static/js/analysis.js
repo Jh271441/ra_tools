@@ -437,7 +437,9 @@ function renderAnalysisReviewStatus(data) {
     .map((item) => {
       const percent = analysisPiePercent(item, total);
       return `<div class="analysis-review-status-legend-item status-${escapeHtml(item.key)}"
-        data-review-status-key="${escapeHtml(item.key)}" title="${escapeHtml(item.description)}">
+        data-review-status-key="${escapeHtml(item.key)}" role="listitem" tabindex="0"
+        aria-label="${escapeHtml(`${item.label}: ${item.count}, ${percent}%. ${item.description}`)}"
+        title="${escapeHtml(item.description)}">
         <span class="analysis-review-status-swatch"></span>
         <span class="analysis-review-status-legend-copy">
           <strong>${escapeHtml(item.label)}</strong>
@@ -449,31 +451,45 @@ function renderAnalysisReviewStatus(data) {
   const ariaSummary = statuses
     .map((item) => `${item.label} ${item.count}, ${analysisPiePercent(item, total)}%`)
     .join("; ");
-  target.innerHTML = `<div class="analysis-review-status-visual" role="img" aria-label="${escapeHtml(ariaSummary)}">
-    <div class="analysis-review-status-bar" aria-hidden="true">${segments}</div>
-    <div class="analysis-review-status-legend">${legend}</div>
+  target.innerHTML = `<div class="analysis-review-status-visual">
+    <div class="analysis-review-status-bar" role="img" aria-label="${escapeHtml(ariaSummary)}">${segments}</div>
+    <div class="analysis-review-status-legend" role="list">${legend}</div>
   </div>`;
   bindAnalysisReviewStatusHover(target);
 }
 
+function clearAnalysisLinkedHover(root) {
+  root?.classList.remove("has-hover");
+  root
+    ?.querySelectorAll(".is-hover, .is-related")
+    .forEach((node) => node.classList.remove("is-hover", "is-related"));
+}
+
+function bindAnalysisLinkedHover(root, itemSelector, activate) {
+  if (!root) return;
+  const activateFromEvent = (event) => {
+    const item = event.target?.closest?.(itemSelector);
+    if (!item || !root.contains(item)) return;
+    clearAnalysisLinkedHover(root);
+    root.classList.add("has-hover");
+    activate(item);
+  };
+  root.addEventListener("pointerover", activateFromEvent);
+  root.addEventListener("focusin", activateFromEvent);
+  root.addEventListener("pointerleave", () => clearAnalysisLinkedHover(root));
+  root.addEventListener("focusout", (event) => {
+    if (!root.contains(event.relatedTarget)) clearAnalysisLinkedHover(root);
+  });
+}
+
 function bindAnalysisReviewStatusHover(root) {
   const visual = root?.querySelector(".analysis-review-status-visual");
-  if (!visual) return;
-  const clear = () => {
-    visual.classList.remove("has-hover");
-    visual.querySelectorAll(".is-hover").forEach((node) => node.classList.remove("is-hover"));
-  };
-  visual.querySelectorAll("[data-review-status-key]").forEach((node) => {
-    node.addEventListener("pointerenter", () => {
-      clear();
-      visual.classList.add("has-hover");
-      const key = node.dataset.reviewStatusKey;
-      visual
-        .querySelectorAll(`[data-review-status-key="${CSS.escape(key)}"]`)
-        .forEach((peer) => peer.classList.add("is-hover"));
-    });
+  bindAnalysisLinkedHover(visual, "[data-review-status-key]", (node) => {
+    const key = node.dataset.reviewStatusKey;
+    visual
+      .querySelectorAll(`[data-review-status-key="${CSS.escape(key)}"]`)
+      .forEach((peer) => peer.classList.add("is-hover"));
   });
-  visual.addEventListener("pointerleave", clear);
 }
 
 function clearAnalysisPieEnterAnimations(root) {
@@ -506,10 +522,14 @@ function renderAnalysisConfusion(data) {
       `<div class="analysis-empty">${escapeHtml(t("analysis.confusion_empty_slice"))}</div>`;
     return;
   }
+  const columnHeaders = labels
+    .map((label, columnIndex) => {
+      const displayLabel = label === "NONE" ? uiText("未输出", "NONE") : label;
+      return `<th scope="col" data-confusion-col="${columnIndex}">${escapeHtml(displayLabel)}</th>`;
+    })
+    .join("");
   target.innerHTML = `<table class="analysis-confusion-table">
-    <thead><tr><th>${escapeHtml(t("analysis.gt_model_matrix"))}</th>${labels
-      .map((label, columnIndex) => `<th scope="col" data-confusion-col="${columnIndex}">${escapeHtml(label === "NONE" ? uiText("未输出", "NONE") : label)}</th>`)
-      .join("")}<th scope="col" data-confusion-total-col>${escapeHtml(t("analysis.total_col"))}</th></tr></thead>
+    <thead><tr><th>${escapeHtml(t("analysis.gt_model_matrix"))}</th>${columnHeaders}<th scope="col" data-confusion-total-col>${escapeHtml(t("analysis.total_col"))}</th></tr></thead>
     <tbody>${(confusion.rows || [])
       .map(
         (row, rowIndex) => `<tr>
@@ -528,12 +548,12 @@ function renderAnalysisConfusion(data) {
                 const displayModelLabel = cell.model_label === "NONE"
                   ? uiText("未输出", "NONE")
                   : cell.model_label;
-                return `<td class="${cellClass}" data-confusion-row="${rowIndex}" data-confusion-col="${columnIndex}"
+                return `<td class="${cellClass}" data-confusion-row="${rowIndex}" data-confusion-col="${columnIndex}" tabindex="0"
                   title="${escapeHtml(`GT ${row.gt_label} · ${uiText("模型", "Model")} ${displayModelLabel}: ${cell.count}`)}">${cell.count}</td>`;
               }
             )
             .join("")}
-          <td class="confusion-total" data-confusion-row="${rowIndex}" data-confusion-total
+          <td class="confusion-total" data-confusion-row="${rowIndex}" data-confusion-total tabindex="0"
             title="${escapeHtml(`${row.gt_label}: ${row.total}`)}">${row.total}</td>
         </tr>`
       )
@@ -543,35 +563,23 @@ function renderAnalysisConfusion(data) {
 }
 
 function bindAnalysisConfusionHover(table) {
-  if (!table) return;
-  const clear = () => {
-    table.classList.remove("has-hover");
-    table
-      .querySelectorAll(".is-hover, .is-related")
-      .forEach((node) => node.classList.remove("is-hover", "is-related"));
-  };
-  table.querySelectorAll("tbody td").forEach((cell) => {
-    cell.addEventListener("pointerenter", () => {
-      clear();
-      table.classList.add("has-hover");
-      const rowIndex = cell.dataset.confusionRow;
-      const columnIndex = cell.dataset.confusionCol;
-      if (rowIndex !== undefined) {
-        table
-          .querySelectorAll(`[data-confusion-row="${CSS.escape(rowIndex)}"]`)
-          .forEach((node) => node.classList.add("is-related"));
-      }
-      if (columnIndex !== undefined) {
-        table
-          .querySelectorAll(`[data-confusion-col="${CSS.escape(columnIndex)}"]`)
-          .forEach((node) => node.classList.add("is-related"));
-      } else {
-        table.querySelector("[data-confusion-total-col]")?.classList.add("is-related");
-      }
-      cell.classList.add("is-hover");
-    });
+  bindAnalysisLinkedHover(table, "tbody td", (cell) => {
+    const rowIndex = cell.dataset.confusionRow;
+    const columnIndex = cell.dataset.confusionCol;
+    if (rowIndex !== undefined) {
+      table
+        .querySelectorAll(`[data-confusion-row="${CSS.escape(rowIndex)}"]`)
+        .forEach((node) => node.classList.add("is-related"));
+    }
+    if (columnIndex !== undefined) {
+      table
+        .querySelectorAll(`[data-confusion-col="${CSS.escape(columnIndex)}"]`)
+        .forEach((node) => node.classList.add("is-related"));
+    } else {
+      table.querySelector("[data-confusion-total-col]")?.classList.add("is-related");
+    }
+    cell.classList.add("is-hover");
   });
-  table.addEventListener("pointerleave", clear);
 }
 
 function renderAnalysisCases(data) {

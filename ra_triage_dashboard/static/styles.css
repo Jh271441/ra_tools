@@ -1983,6 +1983,10 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .analysis-review-status-legend-item.is-hover {
   background: rgba(34,211,238,.12); box-shadow: inset 0 0 0 1px rgba(34,211,238,.18);
 }
+.analysis-review-status-legend-item:focus-visible,
+.analysis-confusion-table td:focus-visible {
+  outline: 1px solid var(--accent); outline-offset: 1px;
+}
 .analysis-review-status-swatch { width: 8px; height: 8px; border-radius: 999px; background: var(--status-color); }
 .analysis-review-status-legend-copy { min-width: 0; display: flex; align-items: baseline; gap: 6px; overflow: hidden; }
 .analysis-review-status-legend-copy strong {
@@ -2027,6 +2031,10 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 }
 @media (prefers-reduced-motion: reduce) {
   .analysis-pie-svg.is-enter { animation: none; }
+  .analysis-review-status-segment,
+  .analysis-review-status-legend-item,
+  .analysis-confusion-table th,
+  .analysis-confusion-table td { transition: none; }
 }
 .analysis-pie-empty-ring { stroke: #243041; }
 .analysis-pie-slice {
