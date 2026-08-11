@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import types
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
+from ra_triage_dashboard.app import http_support as gt_http
+from ra_triage_dashboard.app.baseline_registry import BaselineEntry, BaselineRegistry
 from ra_triage_dashboard.app.db import Database
-from ra_triage_dashboard.app.gt_sync import _source_timestamp, read_trail_gt_labels
+from ra_triage_dashboard.app.gt_sync import (
+    TrailGtSyncResult,
+    _source_timestamp,
+    read_trail_gt_labels,
+)
+from ra_triage_dashboard.app.settings import Settings
 
 
 class _FakeFrame:
@@ -161,6 +170,20 @@ class AuthoritativeGtSyncTest(unittest.TestCase):
             "2026-08-10T11:11:07+00:00",
         )
 
+    def test_settings_default_to_all_baselines_every_thirty_minutes(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            settings = Settings.from_env()
+        self.assertEqual(settings.gt_sync_baseline_ids, ("*",))
+        self.assertEqual(settings.gt_sync_interval_seconds, 1800)
+
+        with patch.dict(
+            "os.environ",
+            {"DASHBOARD_GT_SYNC_BASELINE_ID": "0508"},
+            clear=True,
+        ):
+            legacy = Settings.from_env()
+        self.assertEqual(legacy.gt_sync_baseline_ids, ("0508",))
+
     def test_trail_reader_normalizes_labels_and_requires_full_coverage(self) -> None:
         responses = {
             "cn1": {
@@ -208,6 +231,182 @@ class AuthoritativeGtSyncTest(unittest.TestCase):
         )
         self.assertFalse(partial.complete)
         self.assertEqual(partial.returned_issues, 2)
+
+    def test_multi_baseline_sync_isolated_and_aggregated(self) -> None:
+        second_scope = "release0626_test"
+        self.db.replace_baseline_scope(
+            scope=second_scope,
+            rows=[
+                {"issue_id": "cn4", "gt_label": "误触发"},
+                {"issue_id": "cn5", "gt_label": "无需协助"},
+            ],
+            source="test_baseline_0626",
+        )
+        registry = BaselineRegistry(
+            entries=(
+                BaselineEntry(
+                    id="0508",
+                    label="0508",
+                    scope=self.scope,
+                    loader="trail_label_baseline",
+                    xlsx=Path(self.temp.name) / "0508.xlsx",
+                ),
+                BaselineEntry(
+                    id="0626",
+                    label="0626 抽检",
+                    scope=second_scope,
+                    loader="spotcheck_zh",
+                    xlsx=Path(self.temp.name) / "0626.xlsx",
+                ),
+            )
+        )
+        fake_settings = SimpleNamespace(
+            gt_sync_baseline_ids=("*",),
+            gt_sync_enabled=True,
+            gt_sync_interval_seconds=1800,
+            gt_sync_view_id=1000,
+            gt_sync_chunk_size=160,
+            ra_auto_triage_root=Path(self.temp.name),
+        )
+
+        def fake_read(*, issue_ids, view_id, **_):
+            labels = {
+                "cn1": "正确触发",
+                "cn2": "正确触发",
+                "cn3": "无需协助",
+                "cn4": "无需协助",
+                "cn5": "无需协助",
+            }
+            rows = [
+                {
+                    "issue_id": issue_id,
+                    "gt_label": labels[issue_id],
+                    "source_updated_at": "2026-08-11T01:00:00+00:00",
+                    "source_updated_by": "tester",
+                }
+                for issue_id in issue_ids
+            ]
+            return TrailGtSyncResult(
+                rows=rows,
+                queried_issues=len(rows),
+                returned_issues=len(rows),
+                fields_visible=("ra_merge_result",),
+                view_id=view_id,
+                complete=True,
+                message="complete",
+            )
+
+        with patch.multiple(
+            gt_http,
+            settings=fake_settings,
+            baseline_registry=registry,
+            database=self.db,
+            runtime_state={"gt_sync": {}},
+            gt_sync_lock=threading.Lock(),
+            read_trail_gt_labels=fake_read,
+        ):
+            result = gt_http.sync_authoritative_gt(
+                baseline_ids=["0508", "0626"],
+                trigger="test",
+            )
+            only_0626 = gt_http.gt_sync_status(["0626"])
+
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["baseline_ids"], ["0508", "0626"])
+        self.assertEqual(len(result["baselines"]), 2)
+        self.assertEqual(result["source_row_count"], 5)
+        self.assertEqual(result["last_check_change_count"], 2)
+        self.assertEqual(only_0626["baseline_id"], "0626")
+        self.assertEqual(only_0626["source_row_count"], 2)
+        with self.db.connect() as conn:
+            labels = {
+                str(row["issue_id"]): str(row["gt_label"])
+                for row in conn.execute(
+                    "SELECT issue_id, gt_label FROM issues WHERE baseline_scope IN (?, ?)",
+                    (self.scope, second_scope),
+                ).fetchall()
+            }
+        self.assertEqual(labels["cn1"], "正确触发")
+        self.assertEqual(labels["cn4"], "无需协助")
+
+    def test_multi_baseline_failure_does_not_block_next_scope(self) -> None:
+        second_scope = "release0626_test"
+        self.db.replace_baseline_scope(
+            scope=second_scope,
+            rows=[{"issue_id": "cn4", "gt_label": "误触发"}],
+            source="test_baseline_0626",
+        )
+        registry = BaselineRegistry(
+            entries=(
+                BaselineEntry(
+                    "0508",
+                    "0508",
+                    self.scope,
+                    "trail_label_baseline",
+                    Path("0508.xlsx"),
+                ),
+                BaselineEntry(
+                    "0626",
+                    "0626",
+                    second_scope,
+                    "spotcheck_zh",
+                    Path("0626.xlsx"),
+                ),
+            )
+        )
+        fake_settings = SimpleNamespace(
+            gt_sync_baseline_ids=("*",),
+            gt_sync_enabled=True,
+            gt_sync_interval_seconds=1800,
+            gt_sync_view_id=1000,
+            gt_sync_chunk_size=160,
+            ra_auto_triage_root=Path(self.temp.name),
+        )
+
+        def fake_read(*, issue_ids, view_id, **_):
+            ids = list(issue_ids)
+            if "cn1" in ids:
+                return TrailGtSyncResult(
+                    [], len(ids), 0, (), view_id, False, "partial"
+                )
+            return TrailGtSyncResult(
+                [
+                    {
+                        "issue_id": "cn4",
+                        "gt_label": "无需协助",
+                        "source_updated_at": "",
+                        "source_updated_by": "",
+                    }
+                ],
+                1,
+                1,
+                ("ra_merge_result",),
+                view_id,
+                True,
+                "complete",
+            )
+
+        with patch.multiple(
+            gt_http,
+            settings=fake_settings,
+            baseline_registry=registry,
+            database=self.db,
+            runtime_state={"gt_sync": {}},
+            gt_sync_lock=threading.Lock(),
+            read_trail_gt_labels=fake_read,
+        ):
+            result = gt_http.sync_authoritative_gt(trigger="test")
+
+        self.assertEqual(result["status"], "failed")
+        by_id = {item["baseline_id"]: item for item in result["baselines"]}
+        self.assertEqual(by_id["0508"]["status"], "failed")
+        self.assertEqual(by_id["0626"]["status"], "ready")
+        with self.db.connect() as conn:
+            row = conn.execute(
+                "SELECT gt_label FROM issues WHERE baseline_scope = ? AND issue_id = ?",
+                (second_scope, "cn4"),
+            ).fetchone()
+        self.assertEqual(row["gt_label"], "无需协助")
 
 
 if __name__ == "__main__":

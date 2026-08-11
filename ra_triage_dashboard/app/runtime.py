@@ -220,12 +220,9 @@ runtime_state: dict[str, Any] = {
         "can_create": False,
         "default_changed": False,
     },
-    "gt_sync": {
-        "status": "not_started",
-        "message": "尚未从 Trail 同步权威 GT。",
-        "source_view_id": settings.gt_sync_view_id,
-        "source_field": "ra_merge_result",
-    },
+    # Process-local in-flight state keyed by baseline scope. Persisted sync
+    # state remains authoritative and survives restarts in gt_sync_state.
+    "gt_sync": {},
 }
 
 

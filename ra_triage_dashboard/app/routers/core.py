@@ -25,6 +25,7 @@ from ..http_support import (
     _public_path,
     _review_tag_catalog,
     gt_sync_status,
+    resolve_gt_sync_baseline_ids,
     resolve_request_baseline_ids,
     resolve_request_baseline_scopes,
     sync_authoritative_gt,
@@ -147,9 +148,19 @@ async def change_revision(response: Response) -> dict[str, Any]:
 
 
 @router.get("/api/gt-sync-status")
-async def authoritative_gt_sync_status(response: Response) -> dict[str, Any]:
+async def authoritative_gt_sync_status(
+    response: Response,
+    baselines: str = "",
+) -> dict[str, Any]:
     response.headers["Cache-Control"] = "no-store, max-age=0"
-    return await asyncio.to_thread(gt_sync_status)
+    try:
+        baseline_ids = resolve_gt_sync_baseline_ids(
+            baselines or None,
+            strict=bool(baselines),
+        )
+    except ValueError as exc:
+        raise _detail(400, str(exc))
+    return await asyncio.to_thread(gt_sync_status, baseline_ids)
 
 
 @router.post("/api/gt-sync")
@@ -161,11 +172,20 @@ async def refresh_authoritative_gt(request: Request) -> dict[str, Any]:
     except (TypeError, ValueError):
         body = {}
     submitted = body.get("requested_by", "") if isinstance(body, dict) else ""
+    submitted_baselines = body.get("baselines") if isinstance(body, dict) else None
+    try:
+        baseline_ids = resolve_gt_sync_baseline_ids(
+            submitted_baselines,
+            strict=submitted_baselines not in (None, "", []),
+        )
+    except ValueError as exc:
+        raise _detail(400, str(exc))
     actor, actor_source, actor_verified = await asyncio.to_thread(
         _action_actor, request, submitted
     )
     state = await asyncio.to_thread(
         sync_authoritative_gt,
+        baseline_ids=baseline_ids,
         requested_by=actor,
         identity_source=actor_source,
         identity_verified=actor_verified,

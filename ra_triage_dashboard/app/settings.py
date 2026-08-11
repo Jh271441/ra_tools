@@ -118,7 +118,7 @@ class Settings:
     gt_sync_enabled: bool
     gt_sync_interval_seconds: int
     gt_sync_startup_delay_seconds: int
-    gt_sync_baseline_id: str
+    gt_sync_baseline_ids: tuple[str, ...]
     gt_sync_view_id: int
     gt_sync_chunk_size: int
     trail_detail_metadata_enabled: bool
@@ -292,6 +292,20 @@ class Settings:
             raise RuntimeError(
                 "production 模式必须启用 Kylin ticket 校验，或启用可信代理身份并配置 ingress token 文件。"
             )
+        gt_sync_baseline_ids_value = os.getenv(
+            "DASHBOARD_GT_SYNC_BASELINE_IDS", ""
+        ).strip()
+        if not gt_sync_baseline_ids_value:
+            gt_sync_baseline_ids_value = os.getenv(
+                "DASHBOARD_GT_SYNC_BASELINE_ID", ""
+            ).strip()
+        gt_sync_baseline_ids = tuple(
+            dict.fromkeys(
+                part.strip()
+                for part in (gt_sync_baseline_ids_value or "*").split(",")
+                if part.strip()
+            )
+        ) or ("*",)
         return cls(
             app_root=app_root,
             build_commit=(
@@ -330,15 +344,12 @@ class Settings:
             trail_sync_chunk_size=_integer("DASHBOARD_TRAIL_SYNC_CHUNK_SIZE", 160, 1),
             gt_sync_enabled=_bool("DASHBOARD_GT_SYNC_ENABLED", True),
             gt_sync_interval_seconds=_integer(
-                "DASHBOARD_GT_SYNC_INTERVAL_SECONDS", 900, 60
+                "DASHBOARD_GT_SYNC_INTERVAL_SECONDS", 1800, 60
             ),
             gt_sync_startup_delay_seconds=_integer(
                 "DASHBOARD_GT_SYNC_STARTUP_DELAY_SECONDS", 3, 0
             ),
-            gt_sync_baseline_id=(
-                os.getenv("DASHBOARD_GT_SYNC_BASELINE_ID", "0508").strip()
-                or "0508"
-            ),
+            gt_sync_baseline_ids=gt_sync_baseline_ids,
             gt_sync_view_id=_integer("DASHBOARD_GT_SYNC_VIEW_ID", 1000),
             gt_sync_chunk_size=_integer(
                 "DASHBOARD_GT_SYNC_CHUNK_SIZE", 160, 1
