@@ -1652,6 +1652,38 @@ def gt_sync_status(baseline_ids: Any = None) -> dict[str, Any]:
     return payload
 
 
+def _mark_authoritative_gt_sync_running(requested: list[str]) -> None:
+    running_by_scope = runtime_state.setdefault("gt_sync", {})
+    for baseline_id in requested:
+        entry = baseline_registry.by_id(baseline_id)
+        if entry is None:
+            continue
+        running_by_scope[entry.scope] = {
+            "status": "running",
+            "message": (
+                f"正在从 Trail view {settings.gt_sync_view_id} 完整校验 "
+                f"{entry.label} GT。"
+            ),
+            "baseline_id": entry.id,
+            "baseline_label": entry.label,
+            "baseline_scope": entry.scope,
+            "source_view_id": settings.gt_sync_view_id,
+            "source_field": TRAIL_GT_FIELD,
+        }
+
+
+def reserve_authoritative_gt_sync(
+    baseline_ids: Any = None,
+) -> tuple[list[str], bool]:
+    """Reserve the global worker before returning an asynchronous HTTP accept."""
+
+    requested = resolve_gt_sync_baseline_ids(baseline_ids)
+    if not gt_sync_lock.acquire(blocking=False):
+        return requested, False
+    _mark_authoritative_gt_sync_running(requested)
+    return requested, True
+
+
 def sync_authoritative_gt(
     *,
     baseline_ids: Any = None,
@@ -1659,11 +1691,12 @@ def sync_authoritative_gt(
     identity_source: str = "service",
     identity_verified: bool = False,
     trigger: str = "manual",
+    _lock_acquired: bool = False,
 ) -> dict[str, Any]:
     """Read complete fixed Trail snapshots and atomically update local GT."""
 
     requested = resolve_gt_sync_baseline_ids(baseline_ids)
-    if not gt_sync_lock.acquire(blocking=False):
+    if not _lock_acquired and not gt_sync_lock.acquire(blocking=False):
         return {
             **gt_sync_status(requested),
             "status": "running",
@@ -1671,22 +1704,11 @@ def sync_authoritative_gt(
         }
     try:
         running_by_scope = runtime_state.setdefault("gt_sync", {})
+        _mark_authoritative_gt_sync_running(requested)
         for baseline_id in requested:
             entry = baseline_registry.by_id(baseline_id)
             if entry is None:
                 continue
-            running_by_scope[entry.scope] = {
-                "status": "running",
-                "message": (
-                    f"正在从 Trail view {settings.gt_sync_view_id} 完整校验 "
-                    f"{entry.label} GT。"
-                ),
-                "baseline_id": entry.id,
-                "baseline_label": entry.label,
-                "baseline_scope": entry.scope,
-                "source_view_id": settings.gt_sync_view_id,
-                "source_field": TRAIL_GT_FIELD,
-            }
             try:
                 issue_ids = database.baseline_issue_ids(scope=entry.scope)
                 result = read_trail_gt_labels(

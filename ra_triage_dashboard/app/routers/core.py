@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from ..auth import identity_header_candidates, normalise_username, request_identity
@@ -25,6 +25,7 @@ from ..http_support import (
     _public_path,
     _review_tag_catalog,
     gt_sync_status,
+    reserve_authoritative_gt_sync,
     resolve_gt_sync_baseline_ids,
     resolve_request_baseline_ids,
     resolve_request_baseline_scopes,
@@ -163,8 +164,11 @@ async def authoritative_gt_sync_status(
     return await asyncio.to_thread(gt_sync_status, baseline_ids)
 
 
-@router.post("/api/gt-sync")
-async def refresh_authoritative_gt(request: Request) -> dict[str, Any]:
+@router.post("/api/gt-sync", status_code=202)
+async def refresh_authoritative_gt(
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> dict[str, Any]:
     if request.headers.get("x-ra-triage-request") != "browser-v1":
         raise _detail(403, "缺少 GT 刷新请求标记。")
     try:
@@ -183,16 +187,28 @@ async def refresh_authoritative_gt(request: Request) -> dict[str, Any]:
     actor, actor_source, actor_verified = await asyncio.to_thread(
         _action_actor, request, submitted
     )
-    state = await asyncio.to_thread(
-        sync_authoritative_gt,
-        baseline_ids=baseline_ids,
-        requested_by=actor,
-        identity_source=actor_source,
-        identity_verified=actor_verified,
-        trigger="manual",
-    )
+    requested, accepted = reserve_authoritative_gt_sync(baseline_ids)
+    if accepted:
+        background_tasks.add_task(
+            sync_authoritative_gt,
+            baseline_ids=requested,
+            requested_by=actor,
+            identity_source=actor_source,
+            identity_verified=actor_verified,
+            trigger="manual",
+            _lock_acquired=True,
+        )
+        state = await asyncio.to_thread(gt_sync_status, requested)
+        state["message"] = "GT 后台同步已开始，完成后状态会自动更新。"
+    else:
+        state = {
+            **(await asyncio.to_thread(gt_sync_status, requested)),
+            "status": "running",
+            "message": "已有权威 GT 同步任务在运行。",
+        }
     return {
         **state,
+        "accepted": accepted,
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
 

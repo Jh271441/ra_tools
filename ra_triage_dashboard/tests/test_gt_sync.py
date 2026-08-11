@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import tempfile
 import threading
 import types
@@ -7,6 +8,8 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+
+from fastapi import BackgroundTasks
 
 from ra_triage_dashboard.app import http_support as gt_http
 from ra_triage_dashboard.app.baseline_registry import BaselineEntry, BaselineRegistry
@@ -17,6 +20,7 @@ from ra_triage_dashboard.app.gt_sync import (
     read_trail_gt_labels,
 )
 from ra_triage_dashboard.app.settings import Settings
+from ra_triage_dashboard.app.routers import core as core_router
 
 
 class _FakeFrame:
@@ -296,21 +300,32 @@ class AuthoritativeGtSyncTest(unittest.TestCase):
                 message="complete",
             )
 
+        shared_lock = threading.Lock()
+        shared_runtime = {"gt_sync": {}}
         with patch.multiple(
             gt_http,
             settings=fake_settings,
             baseline_registry=registry,
             database=self.db,
-            runtime_state={"gt_sync": {}},
-            gt_sync_lock=threading.Lock(),
+            runtime_state=shared_runtime,
+            gt_sync_lock=shared_lock,
             read_trail_gt_labels=fake_read,
         ):
+            requested, accepted = gt_http.reserve_authoritative_gt_sync(
+                ["0508", "0626"]
+            )
+            self.assertTrue(accepted)
+            self.assertEqual(requested, ["0508", "0626"])
+            self.assertTrue(shared_lock.locked())
+            self.assertEqual(gt_http.gt_sync_status()["status"], "running")
             result = gt_http.sync_authoritative_gt(
                 baseline_ids=["0508", "0626"],
                 trigger="test",
+                _lock_acquired=True,
             )
             only_0626 = gt_http.gt_sync_status(["0626"])
 
+        self.assertFalse(shared_lock.locked())
         self.assertEqual(result["status"], "ready")
         self.assertEqual(result["baseline_ids"], ["0508", "0626"])
         self.assertEqual(len(result["baselines"]), 2)
@@ -407,6 +422,43 @@ class AuthoritativeGtSyncTest(unittest.TestCase):
                 (second_scope, "cn4"),
             ).fetchone()
         self.assertEqual(row["gt_label"], "无需协助")
+
+    def test_manual_route_accepts_background_sync_without_waiting(self) -> None:
+        class _Request:
+            headers = {"x-ra-triage-request": "browser-v1"}
+
+            @staticmethod
+            async def json() -> dict[str, object]:
+                return {"requested_by": "tester", "baselines": ["0508"]}
+
+        background_tasks = BackgroundTasks()
+        fake_database = SimpleNamespace(change_revision=lambda: 17)
+        with patch.multiple(
+            core_router,
+            _action_actor=lambda *_: ("tester", "test", True),
+            resolve_gt_sync_baseline_ids=lambda value, strict=False: ["0508"],
+            reserve_authoritative_gt_sync=lambda value: (["0508"], True),
+            gt_sync_status=lambda value: {
+                "status": "running",
+                "baseline_ids": list(value),
+            },
+            sync_authoritative_gt=lambda **_: {"status": "ready"},
+            database=fake_database,
+        ):
+            payload = asyncio.run(
+                core_router.refresh_authoritative_gt(_Request(), background_tasks)
+            )
+
+        route = next(
+            item
+            for item in core_router.router.routes
+            if getattr(item, "path", "") == "/api/gt-sync"
+        )
+        self.assertEqual(route.status_code, 202)
+        self.assertTrue(payload["accepted"])
+        self.assertEqual(payload["status"], "running")
+        self.assertEqual(payload["change_revision"], 17)
+        self.assertEqual(len(background_tasks.tasks), 1)
 
 
 if __name__ == "__main__":

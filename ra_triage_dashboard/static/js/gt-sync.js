@@ -98,8 +98,8 @@ function renderGtSyncStatus(status = null) {
   control.title = details.join("\n");
   button.disabled = running || current.enabled === false || Boolean(state.session?.read_only);
   button.classList.toggle("is-running", running);
-  button.querySelector(".ui-lang-zh").textContent = running ? "同步中…" : "刷新 GT";
-  button.querySelector(".ui-lang-en").textContent = running ? "Syncing…" : "Refresh GT";
+  button.querySelector(".ui-lang-zh").textContent = running ? "同步中…" : "同步";
+  button.querySelector(".ui-lang-en").textContent = running ? "Syncing…" : "Sync";
 }
 
 async function refreshAuthoritativeGt() {
@@ -117,6 +117,19 @@ async function refreshAuthoritativeGt() {
       }),
     });
     acknowledgeLocalChange(result);
+    state.gtSync = result;
+    renderGtSyncStatus(result);
+    if (result.status === "running") {
+      showToast(
+        result.accepted === false
+          ? result.message || uiText("已有 GT 同步任务在运行。", "A GT sync is already running.")
+          : uiText(
+              "GT 后台同步已开始，完成后状态会自动更新。",
+              "GT sync started in the background; status will update automatically."
+            )
+      );
+      return;
+    }
     let latest = result;
     try {
       latest = await api("/api/gt-sync-status");

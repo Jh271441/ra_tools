@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-139`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-140`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -150,8 +150,8 @@
               <span class="ui-lang-zh">GT 更新</span><span class="ui-lang-en">GT updated</span>
               <strong id="gtSyncSourceTime">—</strong>
             </span>
-            <button class="button button-quiet gt-sync-button" id="gtSyncButton" type="button">
-              <span class="ui-lang-zh">刷新 GT</span><span class="ui-lang-en">Refresh GT</span>
+            <button class="button button-quiet gt-sync-button" id="gtSyncButton" type="button" aria-label="从 Trail 同步所选数据集 GT" title="从 Trail 同步所选数据集 GT">
+              <span class="ui-lang-zh">同步</span><span class="ui-lang-en">Sync</span>
             </button>
           </div>
           <div class="top-actions">
@@ -1020,7 +1020,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-139`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-140`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

@@ -174,13 +174,13 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
 .gt-sync-meta.is-ready strong { color: var(--ok); }
 .gt-sync-meta.is-failed { border-color: rgba(248,113,113,.35); }
 .gt-sync-meta.is-failed strong { color: var(--fail); }
-.gt-sync-button { min-height: 30px; padding: 5px 8px; }
+.gt-sync-control .gt-sync-button,
+.top-actions .button { height: 30px; min-height: 30px; padding: 5px 8px; font-size: 11px; }
 .gt-sync-button.is-running { cursor: wait; }
 .top-actions { display: flex; gap: 7px; }
 
-.top-actions .button { padding: 5px 8px; }
 .language-toggle { min-width: 42px; }
-.theme-toggle { min-width: 34px; font-size: 16px; line-height: 1; }
+.top-actions .theme-toggle { min-width: 34px; font-size: 16px; line-height: 1; }
 .main { width: 100%; max-width: none; margin: 0 auto; padding: 7px 12px 24px; }
 .app-page { min-width: 0; }
 .tool-page { width: min(1320px, 100%); display: grid; gap: 12px; margin: 0 auto; }
@@ -2391,7 +2391,8 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .top-actions { grid-area: actions; gap: 5px; flex-shrink: 0; }
   .gt-sync-control { grid-area: gt-sync; width: 100%; margin-left: 0; justify-content: flex-end; }
   .gt-sync-meta { flex: 1 1 auto; justify-content: space-between; }
-  .top-actions .button { min-height: 36px; padding-inline: 8px; }
+  .gt-sync-control .gt-sync-button,
+  .top-actions .button { height: 36px; min-height: 36px; padding-inline: 8px; }
   .topbar-baselines {
     grid-area: baselines;
     width: 100%; max-width: none; min-width: 0;
