@@ -24,6 +24,117 @@ function gtSyncStatusText(value) {
   return labels[name] || name;
 }
 
+function latestGtSyncTimestamp(items, field) {
+  let latest = "";
+  let latestMs = Number.NEGATIVE_INFINITY;
+  for (const item of items || []) {
+    const raw = String(item?.[field] || "").trim();
+    if (!raw) continue;
+    const parsed = new Date(raw).getTime();
+    if (Number.isNaN(parsed)) {
+      if (!latest) latest = raw;
+      continue;
+    }
+    if (parsed > latestMs) {
+      latest = raw;
+      latestMs = parsed;
+    }
+  }
+  return latest;
+}
+
+function gtSyncTriggerText(item) {
+  const trigger = String(item?.last_trigger || "").trim();
+  const actor = String(item?.requested_by || "").trim();
+  const triggerText = trigger === "manual"
+    ? uiText("手动", "Manual")
+    : trigger === "periodic"
+      ? uiText("后台定时", "Scheduled")
+      : trigger === "startup"
+        ? uiText("启动校验", "Startup")
+        : trigger || uiText("未知", "Unknown");
+  return actor && actor !== "system" ? `${triggerText} · ${actor}` : triggerText;
+}
+
+function appendGtSyncTooltipRow(root, label, value) {
+  const row = document.createElement("div");
+  row.className = "gt-sync-tooltip-row";
+  const key = document.createElement("span");
+  key.textContent = label;
+  const content = document.createElement("strong");
+  content.textContent = value;
+  row.append(key, content);
+  root.append(row);
+}
+
+function renderGtSyncTooltip(tooltip, items, current) {
+  tooltip.replaceChildren();
+  const heading = document.createElement("div");
+  heading.className = "gt-sync-tooltip-heading";
+  const title = document.createElement("strong");
+  title.textContent = uiText("最近 GT 校验", "Latest GT check");
+  const intervalMinutes = Math.max(1, Math.round(Number(current.interval_seconds || 1800) / 60));
+  const source = document.createElement("span");
+  source.textContent = uiText(
+    `Trail view ${current.source_view_id || 1000} · 每 ${intervalMinutes} 分钟`,
+    `Trail view ${current.source_view_id || 1000} · every ${intervalMinutes} min`
+  );
+  heading.append(title, source);
+  tooltip.append(heading);
+
+  if (!items.length) {
+    const empty = document.createElement("div");
+    empty.className = "gt-sync-tooltip-empty";
+    empty.textContent = uiText("尚无同步记录", "No sync record yet");
+    tooltip.append(empty);
+    return;
+  }
+
+  for (const item of items) {
+    const section = document.createElement("section");
+    section.className = "gt-sync-tooltip-dataset";
+    const datasetHeading = document.createElement("div");
+    datasetHeading.className = "gt-sync-tooltip-dataset-heading";
+    const label = document.createElement("strong");
+    label.textContent = item.baseline_label || item.baseline_id || "—";
+    const status = document.createElement("span");
+    status.textContent = gtSyncStatusText(item.status);
+    datasetHeading.append(label, status);
+    section.append(datasetHeading);
+
+    const checkedTime = gtSyncTime(item.last_checked_at);
+    const checkedRows = Number(item.source_row_count || 0);
+    const changedRows = Number(item.last_check_change_count || 0);
+    const sourceTime = gtSyncTime(item.source_updated_at);
+    const sourceActor = String(item.source_updated_by || "").trim();
+    const appliedTime = gtSyncTime(item.last_applied_at);
+    appendGtSyncTooltipRow(
+      section,
+      uiText("本次校验", "Checked"),
+      checkedTime || uiText("尚未校验", "Not checked")
+    );
+    appendGtSyncTooltipRow(
+      section,
+      uiText("本次结果", "Result"),
+      uiText(`校验 ${checkedRows} 条 · 更新 ${changedRows} 条`, `${checkedRows} checked · ${changedRows} changed`)
+    );
+    appendGtSyncTooltipRow(section, uiText("触发方式", "Triggered by"), gtSyncTriggerText(item));
+    appendGtSyncTooltipRow(
+      section,
+      uiText("Trail GT 更新", "Trail GT updated"),
+      `${sourceTime || uiText("未知", "Unknown")}${sourceActor ? ` · ${sourceActor}` : ""}`
+    );
+    appendGtSyncTooltipRow(
+      section,
+      uiText("最近写入", "Last applied"),
+      appliedTime
+        ? uiText(`${appliedTime} · ${Number(item.last_applied_change_count || 0)} 条`, `${appliedTime} · ${Number(item.last_applied_change_count || 0)} changed`)
+        : uiText("尚未写入", "Not applied")
+    );
+    tooltip.append(section);
+  }
+}
+
 function renderGtSyncStatus(status = null) {
   const current = status || state.gtSync || state.config?.gt_sync || {};
   state.gtSync = current;
@@ -31,7 +142,8 @@ function renderGtSyncStatus(status = null) {
   const meta = $("#gtSyncMeta");
   const time = $("#gtSyncSourceTime");
   const button = $("#gtSyncButton");
-  if (!control || !meta || !time || !button) return;
+  const tooltip = $("#gtSyncTooltip");
+  if (!control || !meta || !time || !button || !tooltip) return;
 
   const allItems = Array.isArray(current.baselines) && current.baselines.length
     ? current.baselines
@@ -50,52 +162,31 @@ function renderGtSyncStatus(status = null) {
         ? "ready"
         : "not_started";
   const single = visibleItems.length === 1 ? visibleItems[0] : null;
-  const sourceTime = gtSyncTime(single?.source_updated_at, { compact: true });
+  const checkedAt = latestGtSyncTimestamp(visibleItems, "last_checked_at");
+  const checkedTime = gtSyncTime(checkedAt, { compact: true });
   const ready = stateName === "ready";
   const failed = ["failed", "unavailable"].includes(stateName);
   const running = stateName === "running";
   control.dataset.status = stateName;
-  if (single) {
-    time.textContent = sourceTime || (ready
+  if (running) {
+    time.textContent = uiText("同步中…", "Syncing…");
+  } else if (single) {
+    time.textContent = checkedTime || (ready
       ? uiText("已同步", "Synced")
       : uiText("待首次同步", "Not synced"));
   } else if (visibleItems.length) {
     const readyCount = names.filter((name) => name === "ready").length;
-    time.textContent = `${readyCount}/${visibleItems.length}`;
+    time.textContent = checkedTime || `${readyCount}/${visibleItems.length}`;
   } else {
     time.textContent = uiText("未配置", "Unavailable");
   }
   meta.classList.toggle("is-ready", ready);
   meta.classList.toggle("is-failed", failed);
-
-  const intervalMinutes = Math.max(1, Math.round(Number(current.interval_seconds || 1800) / 60));
-  const details = [
-    uiText(
-      `权威源：Trail view ${current.source_view_id || 1000} / ${current.source_field || "ra_merge_result"}`,
-      `Authority: Trail view ${current.source_view_id || 1000} / ${current.source_field || "ra_merge_result"}`
-    ),
-    uiText(`后台周期：每 ${intervalMinutes} 分钟`, `Background interval: every ${intervalMinutes} min`),
-    ...visibleItems.flatMap((item) => {
-      const label = item.baseline_label || item.baseline_id || "—";
-      const sourceTimeFull = gtSyncTime(item.source_updated_at);
-      const checkedTime = gtSyncTime(item.last_checked_at);
-      const appliedTime = gtSyncTime(item.last_applied_at);
-      return [
-        uiText(
-          `${label}：${gtSyncStatusText(item.status)}`,
-          `${label}: ${gtSyncStatusText(item.status)}`
-        ),
-        uiText(`  权威 GT 更新时间：${sourceTimeFull || "未知"}`, `  Authority GT updated: ${sourceTimeFull || "unknown"}`),
-        uiText(`  Manual 最近检查：${checkedTime || "尚未检查"}`, `  Manual last checked: ${checkedTime || "not checked"}`),
-        uiText(
-          `  最近应用：${appliedTime || "尚未应用"}${item.last_applied_at ? `（${item.last_applied_change_count || 0} 条）` : ""}`,
-          `  Last applied: ${appliedTime || "not applied"}${item.last_applied_at ? ` (${item.last_applied_change_count || 0})` : ""}`
-        ),
-        item.message || "",
-      ];
-    }),
-  ].filter(Boolean);
-  control.title = details.join("\n");
+  meta.setAttribute(
+    "aria-label",
+    uiText(`GT 最近校验：${time.textContent}`, `Latest GT check: ${time.textContent}`)
+  );
+  renderGtSyncTooltip(tooltip, visibleItems, current);
   button.disabled = running || current.enabled === false || Boolean(state.session?.read_only);
   button.classList.toggle("is-running", running);
   button.querySelector(".ui-lang-zh").textContent = running ? "同步中…" : "同步";

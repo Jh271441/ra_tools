@@ -209,7 +209,7 @@ Trail 只消费 `ra_stuck_auto_result` 和 `ra_stuck_auto_result_info`。可通�
 - `DASHBOARD_GT_SYNC_STARTUP_DELAY_SECONDS=3`：服务启动后首次同步延迟。
 - `DASHBOARD_GT_SYNC_CHUNK_SIZE=160`：Trail 分片大小。
 
-`GET /api/gt-sync-status` 返回各数据集持久化同步状态，可用 `baselines=0508,0626` 选择子集；`POST /api/gt-sync` 的 `baselines` 只能选择服务端允许的数据集，先原子占用全局同步槽并返回 `202 accepted/running`，随后在响应后台执行完整检查与安全应用。重复点击不会并发访问 Trail，而会返回已有任务正在运行。`gt_sync_state` 保存来源/检查/应用时间和统计，`gt_sync_labels` 按 baseline scope 保存完整权威 overlay；baseline 启动加载会先合并各自 overlay，旧 Excel 不会把已同步 GT 回滚。同步只更新 Dashboard 自己的 `issues.gt_label`，绝不写 Trail。
+`GET /api/gt-sync-status` 返回各数据集持久化同步状态，可用 `baselines=0508,0626` 选择子集；`POST /api/gt-sync` 的 `baselines` 只能选择服务端允许的数据集，先原子占用全局同步槽并返回 `202 accepted/running`，随后在响应后台执行完整检查与安全应用。重复点击不会并发访问 Trail，而会返回已有任务正在运行。顶部 GT 徽标展示最近一次完整校验时间，因此手动校验即使更新 0 条也会更新时间；hover/focus 徽标可查看本次数据集、校验/变更数量、触发人、Trail GT 源更新时间和最近实际写入时间。`gt_sync_state` 保存来源/检查/应用时间和统计，`gt_sync_labels` 按 baseline scope 保存完整权威 overlay；baseline 启动加载会先合并各自 overlay，旧 Excel 不会把已同步 GT 回滚。同步只更新 Dashboard 自己的 `issues.gt_label`，绝不写 Trail。
 
 Issue 详情的外部 RA 链接可通过以下只读配置控制：
 

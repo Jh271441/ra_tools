@@ -94,7 +94,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="RA Triage Workbench",
-    version="1.9.1",
+    version="1.9.2",
     lifespan=lifespan,
 )
 

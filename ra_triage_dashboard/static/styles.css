@@ -162,13 +162,14 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
 .header-metrics strong { color: #dce6f2; font-size: 12px; line-height: 1; font-variant-numeric: tabular-nums; }
 .header-metrics .metric-fail strong { color: var(--fail); }
 .gt-sync-control {
-  min-width: 0; display: flex; align-items: center; gap: 5px;
+  min-width: 0; display: flex; align-items: center; gap: 5px; position: relative;
 }
 .gt-sync-meta {
   min-width: 0; display: inline-flex; align-items: baseline; gap: 4px; padding: 5px 7px;
   border: 1px solid var(--line); border-radius: 7px; color: var(--faint); background: #0e131c;
-  font-size: 8px; white-space: nowrap;
+  font-size: 8px; white-space: nowrap; cursor: help;
 }
+.gt-sync-meta:focus-visible { outline: 2px solid rgba(34,211,238,.7); outline-offset: 2px; }
 .gt-sync-meta strong { color: #cbd7e5; font-size: 10px; font-variant-numeric: tabular-nums; }
 .gt-sync-meta.is-ready { border-color: rgba(52,211,153,.3); }
 .gt-sync-meta.is-ready strong { color: var(--ok); }
@@ -177,6 +178,30 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
 .gt-sync-control .gt-sync-button,
 .top-actions .button { height: 30px; min-height: 30px; padding: 5px 8px; font-size: 11px; }
 .gt-sync-button.is-running { cursor: wait; }
+.gt-sync-tooltip {
+  width: min(390px, calc(100vw - 24px)); max-height: min(70vh, 520px); overflow: auto;
+  display: grid; gap: 8px; position: absolute; top: calc(100% + 8px); right: 0; z-index: 80;
+  padding: 10px; border: 1px solid rgba(71,194,214,.36); border-radius: 9px;
+  color: #dce6f2; background: #101722; box-shadow: 0 14px 34px rgba(0,0,0,.42);
+  opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(-3px);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms;
+}
+.gt-sync-meta:hover ~ .gt-sync-tooltip,
+.gt-sync-meta:focus ~ .gt-sync-tooltip {
+  opacity: 1; visibility: visible; transform: translateY(0);
+}
+.gt-sync-tooltip-heading,
+.gt-sync-tooltip-dataset-heading,
+.gt-sync-tooltip-row { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.gt-sync-tooltip-heading { padding-bottom: 7px; border-bottom: 1px solid var(--line); }
+.gt-sync-tooltip-heading > strong { font-size: 12px; color: #f4f8fc; }
+.gt-sync-tooltip-heading > span { color: var(--faint); font-size: 9px; }
+.gt-sync-tooltip-dataset { display: grid; gap: 5px; padding: 7px; border: 1px solid var(--line); border-radius: 7px; background: #0c121b; }
+.gt-sync-tooltip-dataset-heading > strong { color: var(--accent); font-size: 11px; }
+.gt-sync-tooltip-dataset-heading > span { color: var(--ok); font-size: 9px; }
+.gt-sync-tooltip-row > span { flex: 0 0 auto; color: var(--faint); font-size: 9px; }
+.gt-sync-tooltip-row > strong { min-width: 0; color: #cbd7e5; font-size: 10px; font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+.gt-sync-tooltip-empty { color: var(--muted); font-size: 10px; }
 .top-actions { display: flex; gap: 7px; }
 
 .language-toggle { min-width: 42px; }
