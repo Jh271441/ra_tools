@@ -105,12 +105,9 @@ function checkedAnalysisComparisonStatus() {
   if (!runId) return "all";
   const root = $("#analysisComparisonFilter");
   if (root && !root.matches?.("select")) {
-    return comparisonStatusParam(
-      parseComparisonStatuses(
-        getMultiFilterValues(root),
-        state.reviewAnalysis.comparisonStatus || "all"
-      )
-    );
+    // Zero checked values is the user's explicit "全部结果" choice.  A state
+    // fallback here made 清除 immediately restore the previous MISMATCH value.
+    return comparisonStatusParam(getMultiFilterValues(root));
   }
   return comparisonStatusParam(
     parseComparisonStatuses(

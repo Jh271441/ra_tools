@@ -228,11 +228,16 @@ function setReviewComparisonStatus(
 function selectedReviewComparisonStatus() {
   const runId = $("#modelRunFilter")?.value || state.selectedRunId;
   if (!runId) return "all";
-  const values = parseComparisonStatuses(
-    getMultiFilterValues($("#comparisonFilter")),
-    state.reviewComparisonStatus || (state.failureOnly ? "mismatch" : "all")
-  );
-  return comparisonStatusParam(values);
+  const root = $("#comparisonFilter");
+  if (!root) {
+    return comparisonStatusParam(
+      state.reviewComparisonStatus || (state.failureOnly ? "mismatch" : "all")
+    );
+  }
+  // An existing filter with no checked values is an explicit "全部结果"
+  // selection (for example after clicking 清除).  Do not revive the previous
+  // MISMATCH state as a fallback.
+  return comparisonStatusParam(getMultiFilterValues(root));
 }
 
 function routeReviewComparisonStatus(params) {
@@ -476,7 +481,10 @@ function pageUrl(page, options = {}) {
     );
     if (issueId) url.searchParams.set("issue", issueId);
     if (runId) url.searchParams.set("run", runId);
-    if (runId && comparisonStatus !== "all") {
+    // Once the user has a Run overlay, persist even the explicit "all"
+    // selection.  Omitting it is reserved for first-entry URLs, where the
+    // product default remains MISMATCH.
+    if (runId) {
       url.searchParams.set("comparison", comparisonStatus);
     }
     if (review.search) url.searchParams.set("q", review.search);
