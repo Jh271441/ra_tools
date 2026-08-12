@@ -122,9 +122,12 @@ server {
         return 301 /tb/;
     }
 
+    # Upstream TensorBoard is started with --path_prefix /tb, so preserve the
+    # full URI (no trailing slash on proxy_pass). Pair with tunnel:
+    #   ssh -N -T -g -L 0.0.0.0:16006:127.0.0.1:16006 luban_new
     location /tb/ {
         proxy_set_header X-Forwarded-Prefix /tb;
-        proxy_pass http://127.0.0.1:16006/;
+        proxy_pass http://127.0.0.1:16006;
     }
 
     # Model release tools (frontend built with Vite base=/release/).
