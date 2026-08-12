@@ -370,7 +370,9 @@ class FrontendContractTest(unittest.TestCase):
         # select owns real options, its temporary empty value must not erase a
         # run supplied by the deep link.
         self.assertIn('const runFilter = $("#modelRunFilter");', APP_JS)
-        self.assertIn('if (runFilter?.options?.length > 0)', APP_JS)
+        self.assertIn('const runOptionsReady = Boolean(', APP_JS)
+        self.assertIn('[...runFilter.options].some((option) => option.value)', APP_JS)
+        self.assertIn('if (runOptionsReady)', APP_JS)
         self.assertIn('state.selectedRunId = runFilter.value;', APP_JS)
         self.assertIn("class=\"multi-filter\"", INDEX_HTML)
         self.assertIn(".analysis-pie-groups.dual", STYLES_CSS)

@@ -492,7 +492,10 @@ async function loadCases({
   // options until loadRuns() finishes.  Do not let that temporary empty DOM
   // value erase the route Run; once options exist, the select is authoritative
   // and a deliberate "不叠加模型输出" choice still clears it normally.
-  if (runFilter?.options?.length > 0) {
+  const runOptionsReady = Boolean(
+    runFilter && [...runFilter.options].some((option) => option.value)
+  );
+  if (runOptionsReady) {
     state.selectedRunId = runFilter.value;
   }
   state.reviewComparisonStatus = selectedReviewComparisonStatus();
