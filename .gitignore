@@ -31,3 +31,10 @@ playwright_screenshots/
 
 # Onnx model files
 *.onnx*
+
+# Local scratch: one-off probes, agent temp dirs, tree copies (keep outside Git)
+.codex_tmp*/
+.tmp_*
+prepare_release*_probe*.py
+ra_triage_dashboard.backup-*/
+scripts/inspect_*.py
