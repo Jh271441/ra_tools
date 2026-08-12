@@ -65,6 +65,45 @@ def _filesystem_availability() -> dict[str, bool]:
     }
 
 
+def _dashboard_config_payload() -> dict[str, Any]:
+    """Build DB/catalog-backed config in one worker-thread hop."""
+
+    default_model_run_id = database.default_model_run_id()
+    return {
+        "baseline": runtime_state["baseline"],
+        "baselines": runtime_state.get("baselines")
+        or baseline_registry.public_summaries(),
+        "default_baseline_ids": baseline_registry.default_ids(),
+        "baseline_conflicts": runtime_state.get("baseline_conflicts") or [],
+        "build_commit": settings.build_commit,
+        "default_model_run_id": default_model_run_id,
+        "trail_sync": runtime_state["trail_sync"],
+        # Local DB only — never queries Trail on page open.
+        "gt_sync": gt_sync_status(),
+        "missing_evidence_catalog": _missing_evidence_catalog(),
+        "review_tag_catalog": _review_tag_catalog(),
+        # Free-text keyword themes were an earlier experiment and are not
+        # exposed by the current structured Review workflow.
+        "review_reason_theme_catalog": (),
+        "review_attachment_limits": {
+            "max_count": MAX_REVIEW_ATTACHMENTS,
+            "max_bytes_each": MAX_REVIEW_ATTACHMENT_BYTES,
+            "max_bytes_total": MAX_REVIEW_ATTACHMENTS_TOTAL_BYTES,
+            "media_types": ["image/png", "image/jpeg", "image/webp"],
+        },
+        "default_failure_only": bool(default_model_run_id),
+        "batch_prediction": {
+            "enabled": settings.batch_prediction_enabled,
+            "autotriage_push_enabled": settings.autotriage_push_enabled,
+            "max_issues": settings.batch_max_issues,
+            "input_policy": "server_model_gateway_profile",
+            "ares_bev_input": True,
+            "trail_write_enabled": False,
+            "model_gateway": model_catalog.status(),
+        },
+    }
+
+
 @router.get("/", include_in_schema=False)
 @router.get("/review", include_in_schema=False)
 @router.get("/review-analysis", include_in_schema=False)
@@ -251,44 +290,8 @@ async def list_baselines() -> dict[str, Any]:
 
 @router.get("/api/dashboard-config")
 async def dashboard_config() -> dict[str, Any]:
-    def _build() -> dict[str, Any]:
-        default_model_run_id = database.default_model_run_id()
-        return {
-            "baseline": runtime_state["baseline"],
-            "baselines": runtime_state.get("baselines")
-            or baseline_registry.public_summaries(),
-            "default_baseline_ids": baseline_registry.default_ids(),
-            "baseline_conflicts": runtime_state.get("baseline_conflicts") or [],
-            "build_commit": settings.build_commit,
-            "default_model_run_id": default_model_run_id,
-            "trail_sync": runtime_state["trail_sync"],
-            # Local DB only — never queries Trail on page open.
-            "gt_sync": gt_sync_status(),
-            "missing_evidence_catalog": _missing_evidence_catalog(),
-            "review_tag_catalog": _review_tag_catalog(),
-            # Free-text keyword themes were an earlier experiment and are not
-            # exposed by the current structured Review workflow.
-            "review_reason_theme_catalog": (),
-            "review_attachment_limits": {
-                "max_count": MAX_REVIEW_ATTACHMENTS,
-                "max_bytes_each": MAX_REVIEW_ATTACHMENT_BYTES,
-                "max_bytes_total": MAX_REVIEW_ATTACHMENTS_TOTAL_BYTES,
-                "media_types": ["image/png", "image/jpeg", "image/webp"],
-            },
-            "default_failure_only": bool(default_model_run_id),
-            "batch_prediction": {
-                "enabled": settings.batch_prediction_enabled,
-                "autotriage_push_enabled": settings.autotriage_push_enabled,
-                "max_issues": settings.batch_max_issues,
-                "input_policy": "server_model_gateway_profile",
-                "ares_bev_input": True,
-                "trail_write_enabled": False,
-                "model_gateway": model_catalog.status(),
-            },
-        }
-
-    # One worker hop instead of three sequential to_thread calls on first paint.
-    return await asyncio.to_thread(_build)
+    # One worker hop instead of several sequential first-paint thread switches.
+    return await asyncio.to_thread(_dashboard_config_payload)
 
 
 

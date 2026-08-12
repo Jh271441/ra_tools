@@ -40,7 +40,6 @@ from ..runtime import (
     database,
     logger,
     settings,
-    thumbnail_image_semaphore,
     trail_detail_semaphore,
     video_index,
 )
@@ -52,6 +51,71 @@ router = APIRouter()
 # issue_id -> (source_path, mtime_ns, size, dest_jpeg)
 _thumbnail_dest_cache: dict[str, tuple[str, int, int, Path]] = {}
 _thumbnail_encode_gate = threading.Semaphore(8)
+
+
+def _resolve_thumbnail_file(issue_id: str) -> Path | None:
+    """Resolve/build a gallery JPEG entirely outside the event loop.
+
+    Homepage requests arrive in bursts. Reusing the process-local path cache
+    avoids a mandatory case-row lookup, while the caller offloads this whole
+    DB/filesystem/Pillow worker with one ``asyncio.to_thread`` hop.
+    """
+
+    cached = _thumbnail_dest_cache.get(issue_id)
+    if cached is not None:
+        source_s, mtime_ns, size, dest = cached
+        source = Path(source_s)
+        try:
+            stat = source.stat()
+        except OSError:
+            _thumbnail_dest_cache.pop(issue_id, None)
+        else:
+            if (
+                stat.st_mtime_ns == mtime_ns
+                and stat.st_size == size
+                and dest.is_file()
+            ):
+                return dest
+
+    info = None
+    provider = media_for_issue(issue_id, "")
+    if provider is not None:
+        info = provider.get_thumbnail_source(issue_id)
+    if not info:
+        info = asset_index.get_thumbnail_source(issue_id)
+    if not info or not isinstance(info.get("path"), Path):
+        # Fall back to case baseline only when default media misses (e.g. 0626).
+        case = database.get_case(issue_id)
+        if case is None:
+            return None
+        provider = media_for_issue(
+            issue_id, str(case.get("baseline_scope") or "")
+        )
+        if provider is not None:
+            info = provider.get_thumbnail_source(issue_id)
+    if not info or not isinstance(info.get("path"), Path):
+        return None
+    source = info["path"]
+    try:
+        stat = source.stat()
+    except OSError:
+        return None
+    destination = _thumbnail_cache_path(issue_id, source)
+    if not destination.is_file():
+        with _thumbnail_encode_gate:
+            if not destination.is_file():
+                _ensure_case_thumbnail(source, destination)
+    _thumbnail_dest_cache[issue_id] = (
+        str(source),
+        stat.st_mtime_ns,
+        stat.st_size,
+        destination,
+    )
+    # Bound memory if the process stays up for a long gallery session.
+    if len(_thumbnail_dest_cache) > 4000:
+        for key in list(_thumbnail_dest_cache.keys())[:1000]:
+            _thumbnail_dest_cache.pop(key, None)
+    return destination
 
 
 def _with_effective_case_review_status(
@@ -433,71 +497,8 @@ async def get_case_thumbnail(issue_id: str) -> FileResponse:
     if not ISSUE_ID_RE.fullmatch(issue_id):
         raise _detail(404, "Issue 不存在。")
 
-    def _resolve_thumbnail_file() -> Path | None:
-        """Resolve/build gallery JPEG without a mandatory case-row DB hit.
-
-        Homepage requests N thumbs at once; skipping ``get_case`` + reusing a
-        process-local path cache keeps scroll/first paint off the DB pool.
-        """
-
-        cached = _thumbnail_dest_cache.get(issue_id)
-        if cached is not None:
-            source_s, mtime_ns, size, dest = cached
-            source = Path(source_s)
-            try:
-                stat = source.stat()
-            except OSError:
-                _thumbnail_dest_cache.pop(issue_id, None)
-            else:
-                if (
-                    stat.st_mtime_ns == mtime_ns
-                    and stat.st_size == size
-                    and dest.is_file()
-                ):
-                    return dest
-
-        info = None
-        provider = media_for_issue(issue_id, "")
-        if provider is not None:
-            info = provider.get_thumbnail_source(issue_id)
-        if not info:
-            info = asset_index.get_thumbnail_source(issue_id)
-        if not info or not isinstance(info.get("path"), Path):
-            # Fall back to case baseline only when default media misses (e.g. 0626).
-            case = database.get_case(issue_id)
-            if case is None:
-                return None
-            provider = media_for_issue(
-                issue_id, str(case.get("baseline_scope") or "")
-            )
-            if provider is not None:
-                info = provider.get_thumbnail_source(issue_id)
-        if not info or not isinstance(info.get("path"), Path):
-            return None
-        source = info["path"]
-        try:
-            stat = source.stat()
-        except OSError:
-            return None
-        destination = _thumbnail_cache_path(issue_id, source)
-        if not destination.is_file():
-            with _thumbnail_encode_gate:
-                if not destination.is_file():
-                    _ensure_case_thumbnail(source, destination)
-        _thumbnail_dest_cache[issue_id] = (
-            str(source),
-            stat.st_mtime_ns,
-            stat.st_size,
-            destination,
-        )
-        # Bound memory if the process stays up for a long gallery session.
-        if len(_thumbnail_dest_cache) > 4000:
-            for key in list(_thumbnail_dest_cache.keys())[:1000]:
-                _thumbnail_dest_cache.pop(key, None)
-        return destination
-
     try:
-        destination = await asyncio.to_thread(_resolve_thumbnail_file)
+        destination = await asyncio.to_thread(_resolve_thumbnail_file, issue_id)
     except (
         Image.DecompressionBombError,
         UnidentifiedImageError,
