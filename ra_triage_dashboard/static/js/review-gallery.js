@@ -486,7 +486,15 @@ async function loadCases({
   const workAssignee = joinFilterList(
     getMultiFilterValues($("#workAssigneeFilter"))
   );
-  state.selectedRunId = $("#modelRunFilter").value;
+  const runFilter = $("#modelRunFilter");
+  // During first paint the Run request and gallery request overlap.  A deep
+  // link already owns ``state.selectedRunId``, but the native select has no
+  // options until loadRuns() finishes.  Do not let that temporary empty DOM
+  // value erase the route Run; once options exist, the select is authoritative
+  // and a deliberate "不叠加模型输出" choice still clears it normally.
+  if (runFilter?.options?.length > 0) {
+    state.selectedRunId = runFilter.value;
+  }
   state.reviewComparisonStatus = selectedReviewComparisonStatus();
   state.failureOnly = state.reviewComparisonStatus === "mismatch";
   if (search) params.set("search", search);
