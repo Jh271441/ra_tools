@@ -75,53 +75,77 @@ class AssetIndex:
             return len(self._meta_paths)
 
     def has_issue(self, issue_id: str) -> bool:
-        """Return whether an indexed Ares manifest entry exists for an issue."""
+        """Return whether an indexed Ares manifest entry exists for an issue.
+
+        Uses the in-memory index only (no per-issue ``is_file``). Gallery list
+        traffic calls this once per row; rare missing files fail at thumbnail
+        fetch instead of slowing every list response.
+        """
 
         self.refresh()
         with self._lock:
-            meta_path = self._meta_paths.get(issue_id)
-        return bool(meta_path and meta_path.is_file())
+            return issue_id in self._meta_paths
 
     def get_thumbnail_source(self, issue_id: str) -> dict[str, Any] | None:
         """Resolve the t0/nearest BEV frame used to build a lightweight thumbnail.
 
         The returned path is consumed only by the dashboard backend.  Browser
         responses continue to expose opaque asset/thumbnail URLs.
+
+        This path intentionally avoids building the full multi-frame asset list
+        used by Issue detail; homepage gallery traffic is thumbnail-heavy.
         """
 
-        assets = self.get_assets(issue_id)
-        frames = assets.get("frames") if isinstance(assets, dict) else None
-        if not isinstance(frames, list) or not frames:
+        self.refresh()
+        with self._lock:
+            meta_path = self._meta_paths.get(issue_id)
+        if not meta_path or not meta_path.is_file():
+            return None
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
             return None
 
-        def distance(frame: dict[str, Any]) -> tuple[float, int]:
-            raw = frame.get("offset_ms")
-            if raw is None and frame.get("offset_sec") is not None:
+        candidates: list[tuple[float, int, str, Path, Any, Any]] = []
+        variants = ((meta.get("capture_plan") or {}).get("variants") or [])
+        for variant_index, variant in enumerate(variants):
+            for frame_index, frame in enumerate(variant.get("frames") or []):
+                if not isinstance(frame, dict):
+                    continue
+                relative_path = str(frame.get("relative_path") or "")
+                path = self._resolve_asset(meta_path.parent, relative_path)
+                if not path or not path.is_file():
+                    continue
+                raw = frame.get("offset_ms")
+                if raw is None and frame.get("offset_sec") is not None:
+                    try:
+                        raw = float(frame["offset_sec"]) * 1000
+                    except (TypeError, ValueError):
+                        raw = None
                 try:
-                    raw = float(frame["offset_sec"]) * 1000
+                    distance = abs(float(raw))
                 except (TypeError, ValueError):
-                    raw = None
-            try:
-                return abs(float(raw)), frames.index(frame)
-            except (TypeError, ValueError):
-                return float("inf"), frames.index(frame)
-
-        selected = min(
-            (frame for frame in frames if isinstance(frame, dict)),
-            key=distance,
-            default=None,
+                    distance = float("inf")
+                candidates.append(
+                    (
+                        distance,
+                        frame_index,
+                        f"frame-{variant_index}-{frame_index}",
+                        path,
+                        frame.get("offset_ms"),
+                        frame.get("offset_sec"),
+                    )
+                )
+        if not candidates:
+            return None
+        _distance, _idx, asset_id, path, offset_ms, offset_sec = min(
+            candidates, key=lambda item: (item[0], item[1])
         )
-        if selected is None:
-            return None
-        asset_id = str(selected.get("id") or "")
-        path = self.get_asset_path(issue_id, asset_id)
-        if path is None:
-            return None
         return {
             "path": path,
             "asset_id": asset_id,
-            "offset_ms": selected.get("offset_ms"),
-            "offset_sec": selected.get("offset_sec"),
+            "offset_ms": offset_ms,
+            "offset_sec": offset_sec,
         }
 
     def get_assets(self, issue_id: str) -> dict[str, Any]:

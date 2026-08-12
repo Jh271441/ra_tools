@@ -139,13 +139,26 @@ async def overview(
 
 
 @router.get("/api/change-revision")
-async def change_revision(response: Response) -> dict[str, Any]:
+async def change_revision(
+    response: Response,
+    include_gt_sync: bool = False,
+) -> dict[str, Any]:
+    """Cheap collaboration poll.
+
+    Keep this endpoint filesystem/DB-light: the browser hits it every few
+    seconds. Full GT sync status is optional and loaded less often by the UI.
+    """
+
     response.headers["Cache-Control"] = "no-store, max-age=0"
-    return {
+    payload: dict[str, Any] = {
         "revision": await asyncio.to_thread(database.change_revision),
-        "poll_after_ms": 1800,
-        "gt_sync": await asyncio.to_thread(gt_sync_status),
+        # Default 5s keeps multi-user freshness without saturating the event
+        # loop / Postgres pool while the gallery is also loading thumbs.
+        "poll_after_ms": 5000,
     }
+    if include_gt_sync:
+        payload["gt_sync"] = await asyncio.to_thread(gt_sync_status)
+    return payload
 
 
 @router.get("/api/gt-sync-status")
@@ -238,38 +251,44 @@ async def list_baselines() -> dict[str, Any]:
 
 @router.get("/api/dashboard-config")
 async def dashboard_config() -> dict[str, Any]:
-    default_model_run_id = await asyncio.to_thread(database.default_model_run_id)
-    return {
-        "baseline": runtime_state["baseline"],
-        "baselines": runtime_state.get("baselines") or baseline_registry.public_summaries(),
-        "default_baseline_ids": baseline_registry.default_ids(),
-        "baseline_conflicts": runtime_state.get("baseline_conflicts") or [],
-        "build_commit": settings.build_commit,
-        "default_model_run_id": default_model_run_id,
-        "trail_sync": runtime_state["trail_sync"],
-        "gt_sync": await asyncio.to_thread(gt_sync_status),
-        "missing_evidence_catalog": await asyncio.to_thread(_missing_evidence_catalog),
-        "review_tag_catalog": await asyncio.to_thread(_review_tag_catalog),
-        # Free-text keyword themes were an earlier experiment and are not
-        # exposed by the current structured Review workflow.
-        "review_reason_theme_catalog": (),
-        "review_attachment_limits": {
-            "max_count": MAX_REVIEW_ATTACHMENTS,
-            "max_bytes_each": MAX_REVIEW_ATTACHMENT_BYTES,
-            "max_bytes_total": MAX_REVIEW_ATTACHMENTS_TOTAL_BYTES,
-            "media_types": ["image/png", "image/jpeg", "image/webp"],
-        },
-        "default_failure_only": bool(default_model_run_id),
-        "batch_prediction": {
-            "enabled": settings.batch_prediction_enabled,
-            "autotriage_push_enabled": settings.autotriage_push_enabled,
-            "max_issues": settings.batch_max_issues,
-            "input_policy": "server_model_gateway_profile",
-            "ares_bev_input": True,
-            "trail_write_enabled": False,
-            "model_gateway": model_catalog.status(),
-        },
-    }
+    def _build() -> dict[str, Any]:
+        default_model_run_id = database.default_model_run_id()
+        return {
+            "baseline": runtime_state["baseline"],
+            "baselines": runtime_state.get("baselines")
+            or baseline_registry.public_summaries(),
+            "default_baseline_ids": baseline_registry.default_ids(),
+            "baseline_conflicts": runtime_state.get("baseline_conflicts") or [],
+            "build_commit": settings.build_commit,
+            "default_model_run_id": default_model_run_id,
+            "trail_sync": runtime_state["trail_sync"],
+            # Local DB only — never queries Trail on page open.
+            "gt_sync": gt_sync_status(),
+            "missing_evidence_catalog": _missing_evidence_catalog(),
+            "review_tag_catalog": _review_tag_catalog(),
+            # Free-text keyword themes were an earlier experiment and are not
+            # exposed by the current structured Review workflow.
+            "review_reason_theme_catalog": (),
+            "review_attachment_limits": {
+                "max_count": MAX_REVIEW_ATTACHMENTS,
+                "max_bytes_each": MAX_REVIEW_ATTACHMENT_BYTES,
+                "max_bytes_total": MAX_REVIEW_ATTACHMENTS_TOTAL_BYTES,
+                "media_types": ["image/png", "image/jpeg", "image/webp"],
+            },
+            "default_failure_only": bool(default_model_run_id),
+            "batch_prediction": {
+                "enabled": settings.batch_prediction_enabled,
+                "autotriage_push_enabled": settings.autotriage_push_enabled,
+                "max_issues": settings.batch_max_issues,
+                "input_policy": "server_model_gateway_profile",
+                "ares_bev_input": True,
+                "trail_write_enabled": False,
+                "model_gateway": model_catalog.status(),
+            },
+        }
+
+    # One worker hop instead of three sequential to_thread calls on first paint.
+    return await asyncio.to_thread(_build)
 
 
 

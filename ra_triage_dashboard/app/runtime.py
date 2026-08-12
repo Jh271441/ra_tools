@@ -38,7 +38,7 @@ database = Database(
     pool_size=10,
 )
 asset_index = AssetIndex(
-    ra_root=settings.ra_auto_triage_root,
+    ra_root=settings.ares_ra_root,
     manifest_path=settings.ares_manifest,
     base_path=settings.base_path,
 )
@@ -79,7 +79,9 @@ batch_prediction_runner = BatchPredictionRunner(settings, database)
 trail_sync_lock = threading.Lock()
 gt_sync_lock = threading.Lock()
 review_image_semaphore = asyncio.Semaphore(2)
-thumbnail_image_semaphore = asyncio.Semaphore(4)
+# Gallery pages request many thumbs; allow more parallel JPEG encodes once the
+# source path is resolved. Cache hits never take this semaphore.
+thumbnail_image_semaphore = asyncio.Semaphore(8)
 trail_detail_semaphore = asyncio.Semaphore(2)
 APP_STARTED_AT = datetime.now(timezone.utc)
 APP_STARTED_MONOTONIC = time.monotonic()

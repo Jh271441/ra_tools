@@ -9,7 +9,7 @@
  * filenames are domain names without numeric prefixes.
  */
 (() => {
-  const CACHE_VERSION = "manual-triage-141";
+  const CACHE_VERSION = "manual-triage-144";
   const MODULES = [
     "core-base.js",
     "i18n-messages.js",
@@ -37,6 +37,15 @@
   ];
 
   const base = window.__RA_TRIAGE_BASE__ || "";
+  // Preload all modules first so HTTP/1.1 can pipeline downloads before ordered
+  // execution begins (async=false scripts still run in MODULES order).
+  for (const name of MODULES) {
+    const preload = document.createElement("link");
+    preload.rel = "preload";
+    preload.as = "script";
+    preload.href = `${base}/static/js/${name}?v=${CACHE_VERSION}`;
+    document.head.appendChild(preload);
+  }
   // Insert with async=false so execution order matches MODULES even when
   // scripts are appended dynamically (HTML5 ordered script loading).
   for (const name of MODULES) {

@@ -570,27 +570,37 @@ async function refreshChangedData() {
   }
 }
 
-function scheduleChangePoll(delay = 1800) {
+function scheduleChangePoll(delay = 5000) {
   clearTimeout(state.changePollTimer);
   state.changePollTimer = window.setTimeout(pollChangeRevision, delay);
 }
 
 async function pollChangeRevision() {
   if (state.changePollInFlight) return scheduleChangePoll();
-  if (document.hidden) return scheduleChangePoll(3000);
+  // Tab in background: poll much less often to free the main thread / network.
+  if (document.hidden) return scheduleChangePoll(15000);
   state.changePollInFlight = true;
   const pollEpoch = state.changePollEpoch;
-  let delay = 1800;
+  let delay = 5000;
   try {
-    const data = await api("/api/change-revision");
+    // GT sync status is heavier than a revision counter; refresh it every ~20s
+    // instead of every collaboration poll.
+    const now = Date.now();
+    const wantGtSync =
+      !state._lastGtSyncPollAt || now - state._lastGtSyncPollAt > 20000;
+    const path = wantGtSync
+      ? "/api/change-revision?include_gt_sync=1"
+      : "/api/change-revision";
+    const data = await api(path);
     if (pollEpoch !== state.changePollEpoch) return;
     if (data.gt_sync) {
+      state._lastGtSyncPollAt = now;
       state.gtSync = data.gt_sync;
       if (state.config) state.config.gt_sync = data.gt_sync;
       renderGtSyncStatus(data.gt_sync);
     }
     const revision = Number(data.revision || 0);
-    delay = Math.max(1000, Number(data.poll_after_ms || 1800));
+    delay = Math.max(4000, Number(data.poll_after_ms || 5000));
     if (state.changeRevision === null) {
       state.changeRevision = revision;
     } else if (revision !== state.changeRevision) {
@@ -598,7 +608,7 @@ async function pollChangeRevision() {
       state.changeRevision = revision;
     }
   } catch (error) {
-    delay = 5000;
+    delay = 10000;
     console.warn("协作同步暂时不可用", error);
   } finally {
     state.changePollInFlight = false;
@@ -607,9 +617,10 @@ async function pollChangeRevision() {
 }
 
 function startChangePolling() {
-  scheduleChangePoll(0);
+  // Do not compete with first-paint gallery/thumbnail traffic.
+  scheduleChangePoll(4000);
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) scheduleChangePoll(0);
+    if (!document.hidden) scheduleChangePoll(1500);
   });
 }
 

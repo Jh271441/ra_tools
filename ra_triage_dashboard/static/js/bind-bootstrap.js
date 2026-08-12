@@ -635,7 +635,9 @@ async function bootstrap() {
         : "all";
       state.failureOnly = state.reviewComparisonStatus === "mismatch";
     }
-    await settleInitialRequests(
+    // Overlap shared metadata with the first gallery paint. Run list can still
+    // refine the default Run afterwards; review filters re-apply when it settles.
+    const sharedDataPromise = settleInitialRequests(
       [
         loadRuns({
           preferDefault: !initialRoute.runId,
@@ -651,6 +653,7 @@ async function bootstrap() {
     });
     if (initialRoute.page === "review") applyReviewRouteControls(initialRoute);
     if (initialRoute.page === "analysis") applyAnalysisRouteControls(initialRoute);
+    // Review home: paint cases first; cluster chips are secondary chrome.
     const initialPageRequests = [loadOverview()];
     let initialDetailRequest = null;
     if (initialRoute.page === "review") {
@@ -658,8 +661,7 @@ async function bootstrap() {
         loadCases({
           keepSelection: Boolean(initialRoute.issue),
           page: initialRoute.casePage,
-        }),
-        loadClusters()
+        })
       );
       if (initialRoute.issue) {
         initialDetailRequest = selectCase(initialRoute.issue, { updateRoute: false });
@@ -678,6 +680,17 @@ async function bootstrap() {
       initialPageRequests,
       initialRoute.page === "review" ? "首页" : "页面"
     );
+    // Wait only for the first review-critical payloads; shared Run metadata can
+    // finish in the background without holding the case gallery blank.
+    if (initialRoute.page === "review") {
+      await Promise.all([sharedDataPromise, initialPageResults]);
+    } else {
+      await sharedDataPromise;
+      await initialPageResults;
+    }
+    setReviewComparisonStatus(state.reviewComparisonStatus, {
+      hasRun: Boolean(state.selectedRunId),
+    });
     if (initialDetailRequest) {
       await settleInitialRequests([initialDetailRequest], "问题详情");
     }
@@ -690,7 +703,12 @@ async function bootstrap() {
       restoreRoute: true,
       loadPageData: false,
     });
-    void initialPageResults;
+    if (initialRoute.page === "review") {
+      // Defer cluster strip so it does not compete with gallery thumbs.
+      window.setTimeout(() => {
+        void loadClusters().catch(() => {});
+      }, 250);
+    }
   } catch (error) {
     showToast(`启动失败：${error.message}`, true);
   }

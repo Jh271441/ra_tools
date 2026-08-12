@@ -491,6 +491,13 @@ def _materialized_product_provider(
     if not manifest_path.is_file():
         return fallback
     camera_root = entry.media.camera_root or (layout_root / "camera" / "102")
+    # 0508 product layouts keep MP4s under video/; 0626 merged layouts may keep
+    # issues/ at the layout root. Prefer an explicit video/ subtree when present.
+    video_root = (
+        layout_root / "video"
+        if (layout_root / "video").is_dir()
+        else layout_root
+    )
     return ProductLayoutProvider(
         asset_index=AssetIndex(
             ra_root=layout_root,
@@ -498,6 +505,6 @@ def _materialized_product_provider(
             base_path=base_path,
         ),
         camera_index=CameraIndex(camera_root, base_path=base_path),
-        video_index=VideoIndex(layout_root, base_path=base_path),
+        video_index=VideoIndex(video_root, base_path=base_path),
         label=f"product_layout:{layout_id}",
     )

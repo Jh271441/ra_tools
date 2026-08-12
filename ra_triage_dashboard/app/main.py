@@ -9,6 +9,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
+from starlette.types import Scope
 
 from .auth import has_same_origin_mutation_marker, identity_header_candidates, request_identity
 from .contracts import MAX_BATCH_JSON_REQUEST_BYTES, MAX_REVIEW_MULTIPART_REQUEST_BYTES
@@ -31,42 +33,10 @@ from .routers import analysis, batch, cases, core, imports, inference, reviews, 
 logger = logging.getLogger("ra_triage_dashboard")
 
 
-async def _authoritative_gt_sync_loop() -> None:
-    if settings.gt_sync_startup_delay_seconds:
-        await asyncio.sleep(settings.gt_sync_startup_delay_seconds)
-    while True:
-        sync_task = asyncio.create_task(
-            asyncio.to_thread(
-                sync_authoritative_gt,
-                requested_by="system",
-                identity_source="service_periodic",
-                identity_verified=False,
-                trigger="periodic",
-            )
-        )
-        try:
-            await asyncio.shield(sync_task)
-        except asyncio.CancelledError:
-            # A worker thread cannot be cancelled safely. Wait for its current
-            # transaction before lifespan closes the database pool.
-            await sync_task
-            raise
-        await asyncio.sleep(settings.gt_sync_interval_seconds)
+async def _trail_sync_startup() -> None:
+    """Best-effort Trail model-field probe; never blocks process startup."""
 
-@asynccontextmanager
-async def lifespan(_: FastAPI):
-    gt_sync_task: asyncio.Task[None] | None = None
-    settings.ensure_directories()
-    database.init()
-    database.bootstrap_access_users(
-        writers=settings.sso_write_users,
-        administrators=settings.team_default_managers,
-    )
-    database.seed_examples(EXAMPLE_CASES)
-    bootstrap_baseline()
-    asset_index.refresh(force=True)
-    bootstrap_model_result()
-    if settings.trail_sync_on_start:
+    try:
         await asyncio.to_thread(
             sync_trail_model_fields,
             create_run=False,
@@ -74,6 +44,98 @@ async def lifespan(_: FastAPI):
             identity_source="service_startup",
             identity_verified=False,
             trigger="startup",
+        )
+    except Exception:
+        logger.exception("background Trail model-field sync failed")
+
+
+def _gt_sync_needs_remote_refresh() -> bool:
+    """Whether the periodic worker should hit Trail now.
+
+    Hot paths (page open, status) must only read local DB / baseline xlsx.
+    Remote Trail is optional freshness, not a gate for serving GT.
+    """
+
+    from .http_support import gt_sync_status
+
+    status = gt_sync_status()
+    if str(status.get("status") or "") != "ready":
+        return True
+    # Already fully applied locally; only re-check Trail on the long interval.
+    # The loop already sleeps between runs, so a ready snapshot is left alone
+    # for this tick when all baselines report ready with non-zero rows.
+    baselines = status.get("baselines") or []
+    if not baselines:
+        return True
+    for item in baselines:
+        if str(item.get("status") or "") != "ready":
+            return True
+        if int(item.get("source_row_count") or 0) <= 0:
+            return True
+        if not str(item.get("last_applied_at") or "").strip():
+            return True
+    return False
+
+
+async def _authoritative_gt_sync_loop() -> None:
+    """Refresh Trail GT into local tables in the background only.
+
+    Page-open GT labels are served from the database (baseline seed + last
+    successful Trail snapshot). This worker may talk to Trail, but never
+    blocks HTTP lifespan / first paint.
+    """
+
+    if settings.gt_sync_startup_delay_seconds:
+        await asyncio.sleep(settings.gt_sync_startup_delay_seconds)
+    while True:
+        try:
+            needs_remote = await asyncio.to_thread(_gt_sync_needs_remote_refresh)
+        except Exception:
+            logger.exception("failed to evaluate local GT freshness")
+            needs_remote = True
+        if needs_remote:
+            sync_task = asyncio.create_task(
+                asyncio.to_thread(
+                    sync_authoritative_gt,
+                    requested_by="system",
+                    identity_source="service_periodic",
+                    identity_verified=False,
+                    trigger="periodic",
+                )
+            )
+            try:
+                await asyncio.shield(sync_task)
+            except asyncio.CancelledError:
+                # A worker thread cannot be cancelled safely. Wait for its current
+                # transaction before lifespan closes the database pool.
+                await sync_task
+                raise
+        else:
+            logger.info(
+                "skip periodic Trail GT refresh; local gt_sync_state is ready"
+            )
+        await asyncio.sleep(settings.gt_sync_interval_seconds)
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    gt_sync_task: asyncio.Task[None] | None = None
+    trail_sync_task: asyncio.Task[None] | None = None
+    settings.ensure_directories()
+    database.init()
+    database.bootstrap_access_users(
+        writers=settings.sso_write_users,
+        administrators=settings.team_default_managers,
+    )
+    database.seed_examples(EXAMPLE_CASES)
+    # Local-only seed from baseline workbooks / registry. No Trail I/O.
+    bootstrap_baseline()
+    asset_index.refresh(force=True)
+    bootstrap_model_result()
+    # Never await remote Trail during startup — it freezes first paint.
+    if settings.trail_sync_on_start:
+        trail_sync_task = asyncio.create_task(
+            _trail_sync_startup(),
+            name="trail-sync-startup",
         )
     if settings.gt_sync_enabled:
         gt_sync_task = asyncio.create_task(
@@ -84,10 +146,11 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
-        if gt_sync_task is not None:
-            gt_sync_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await gt_sync_task
+        for task in (gt_sync_task, trail_sync_task):
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
         await asyncio.to_thread(batch_prediction_runner.shutdown)
         await asyncio.to_thread(database.close)
 
@@ -227,8 +290,55 @@ async def request_latency_observer(request: Request, call_next):
     return response
 
 
+@app.middleware("http")
+async def strip_public_base_path(request: Request, call_next):
+    """Accept both gateway-stripped and full public-prefix paths.
 
-app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
+    Kylin publishes ``/manual/*`` and normally strips the prefix before
+    forwarding to this process. Direct-IP browsers still request the public
+    URLs emitted in JSON (``/manual/api/...``). Rewrite those onto the root
+    routes so BEV thumbnails and assets do not 404 when the gateway is bypassed.
+    """
+
+    base = (settings.base_path or "").rstrip("/")
+    if base:
+        path = request.scope.get("path") or ""
+        if path == base or path.startswith(f"{base}/"):
+            rewritten = path[len(base) :] or "/"
+            request.scope["path"] = rewritten
+            raw = request.scope.get("raw_path")
+            if isinstance(raw, (bytes, bytearray)):
+                request.scope["raw_path"] = rewritten.encode("utf-8")
+            # Keep path-based middleware checks (write-guard, size-guard) aligned.
+            if hasattr(request, "_url"):
+                request._url = None  # type: ignore[attr-defined]
+    return await call_next(request)
+
+
+class _CachedStaticFiles(StaticFiles):
+    """Versioned static assets (``?v=manual-triage-N``) can be cached aggressively."""
+
+    def file_response(
+        self,
+        full_path,  # type: ignore[no-untyped-def]
+        stat_result,
+        scope: Scope,
+        status_code: int = 200,
+    ) -> Response:
+        response = super().file_response(
+            full_path, stat_result, scope, status_code=status_code
+        )
+        path = str(scope.get("path") or "")
+        if path.endswith((".js", ".css", ".woff2", ".woff", ".png", ".svg")):
+            response.headers["Cache-Control"] = "public, max-age=604800, immutable"
+        return response
+
+
+app.mount(
+    "/static",
+    _CachedStaticFiles(directory=settings.static_dir),
+    name="static",
+)
 
 app.include_router(core.router)
 app.include_router(cases.router)

@@ -103,6 +103,7 @@ class Settings:
     database_url: str
     postgres_persistent_data: bool
     ra_auto_triage_root: Path
+    ares_ra_root: Path
     ares_manifest: Path
     camera_root: Path
     ares_video_root: Path
@@ -169,18 +170,39 @@ class Settings:
             "RA_AUTO_TRIAGE_ROOT",
             Path("/volume/home/workspace/ra_auto_triage"),
         )
+        # Product BEV index resolves meta_path under ares_ra_root (not always RA
+        # root). Cloud layouts use ARES_CAPTURE_RA_ROOT=<media_layouts/.../layout>
+        # with layout-relative meta_path so bags renames no longer break previews.
+        default_media_layout = (
+            data_dir
+            / "media_layouts"
+            / "release0508_1071_20260729"
+        )
+        ares_ra_root = _path(
+            "ARES_CAPTURE_RA_ROOT",
+            default_media_layout if default_media_layout.is_dir() else ra_root,
+        )
         manifest = _path(
             "ARES_CAPTURE_MANIFEST",
-            ra_root
-            / "bags/ares_capture_bev_ra_stuck_swag_planning_2k_from_cloud_server_2_20260804"
+            ares_ra_root / "manifest.jsonl"
+            if (ares_ra_root / "manifest.jsonl").is_file()
+            else ra_root
+            / "bags/ares_capture_0508_1071_bev_ra_stuck_swag_planning_2k"
             / "7f4b2d9f-1218-4cd4-a93d-0654603173b9"
             / "manifest.jsonl",
         )
-        camera_root = _path("CAMERA_CACHE_ROOT", ra_root / "bags/camera")
+        camera_root = _path(
+            "CAMERA_CACHE_ROOT",
+            ares_ra_root / "camera" / "102"
+            if (ares_ra_root / "camera" / "102").is_dir()
+            else ra_root / "bags/camera",
+        )
         ares_video_root = _path(
             "ARES_CAPTURE_VIDEO_ROOT",
-            ra_root
-            / "bags/ares_capture_video_0508_1071_ra_stuck_swag_planning_2k_aggregate_20260804",
+            ares_ra_root / "video"
+            if (ares_ra_root / "video").is_dir()
+            else ra_root
+            / "bags/ares_capture_0508_1071_video_ra_stuck_swag_planning_2k",
         )
         baseline_xlsx = _path(
             "DASHBOARD_BASELINE_LABEL_XLSX",
@@ -320,6 +342,7 @@ class Settings:
                 "DASHBOARD_POSTGRES_PERSISTENT_DATA", False
             ),
             ra_auto_triage_root=ra_root,
+            ares_ra_root=ares_ra_root,
             ares_manifest=manifest,
             camera_root=camera_root,
             ares_video_root=ares_video_root,
@@ -346,8 +369,9 @@ class Settings:
             gt_sync_interval_seconds=_integer(
                 "DASHBOARD_GT_SYNC_INTERVAL_SECONDS", 1800, 60
             ),
+            # Give the UI time to paint from local DB/xlsx before any Trail work.
             gt_sync_startup_delay_seconds=_integer(
-                "DASHBOARD_GT_SYNC_STARTUP_DELAY_SECONDS", 3, 0
+                "DASHBOARD_GT_SYNC_STARTUP_DELAY_SECONDS", 60, 0
             ),
             gt_sync_baseline_ids=gt_sync_baseline_ids,
             gt_sync_view_id=_integer("DASHBOARD_GT_SYNC_VIEW_ID", 1000),
