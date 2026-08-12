@@ -44,7 +44,9 @@ class FrontendBootstrapTest(unittest.TestCase):
         self.assertIn("const initialPageResults = settleInitialRequests(", APP_JS)
         self.assertIn("await settleInitialRequests([initialDetailRequest], \"问题详情\")", APP_JS)
         self.assertIn("Promise.allSettled", APP_JS)
-        self.assertIn("void initialPageResults", APP_JS)
+        self.assertIn("const initialPageResults = settleInitialRequests", APP_JS)
+        self.assertIn("await Promise.all([sharedDataPromise, initialPageResults])", APP_JS)
+        self.assertIn("void loadClusters().catch(() => {})", APP_JS)
         self.assertIn('issue: initialRoute.issue', APP_JS)
 
     def test_read_only_gets_timeout_and_transient_gateway_retries(self) -> None:
