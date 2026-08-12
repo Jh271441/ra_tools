@@ -32,16 +32,23 @@ const EGO_WIDTH_M = 1.87;
 const HALF_LENGTH_M = EGO_LENGTH_M / 2;
 const HALF_WIDTH_M = EGO_WIDTH_M / 2;
 
-// Visual styling — thicker stroke only; bbox size stays at car size.
+// Visual semantics:
+// - filled hot-pink rectangle: current ego footprint at /pose;
+// - centered white arrow inside the footprint: ego heading only, not a future
+//   path or a distance prediction.
 const BOX_COLOR = { r: 1.0, g: 0.2, b: 0.75, a: 1.0 }; // hot pink
-const ARROW_COLOR = { r: 1.0, g: 0.2, b: 0.75, a: 1.0 }; // same pink
-const ORIGIN_COLOR = { r: 1.0, g: 0.9, b: 0.1, a: 1.0 };
-const BOX_LINE_WIDTH = 0.45;
-const ARROW_LINE_WIDTH = 0.5;
-// Shaft from geometric centre; longer tip for clear heading.
-const ARROW_LENGTH_M = HALF_LENGTH_M + 3.5; // ~5.8 m tip from centre
-const ARROW_HEAD_LENGTH_M = 1.2;
-const ARROW_HEAD_HALF_WIDTH_M = 0.55;
+const BOX_FILL_COLOR = { r: 1.0, g: 0.2, b: 0.75, a: 0.58 };
+const HEADING_COLOR = { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
+const BOX_LINE_WIDTH = 0.35;
+const HEADING_LINE_WIDTH = 0.18;
+const BOX_FILL_HEIGHT_M = 0.04;
+
+// Keep the complete arrow inside the footprint and centered on the vehicle's
+// longitudinal axis. The tip stops before the front bumper.
+const HEADING_SHAFT_START_LOCAL_X = -EGO_LENGTH_M * 0.18;
+const HEADING_TIP_LOCAL_X = HALF_LENGTH_M - EGO_LENGTH_M * 0.12;
+const HEADING_HEAD_LENGTH_M = EGO_LENGTH_M * 0.18;
+const HEADING_HEAD_HALF_WIDTH_M = HALF_WIDTH_M * 0.35;
 
 // pose.z is ground altitude. Lift markers above the roof so the mesh does not
 // occlude the outline.
@@ -95,14 +102,16 @@ const publisher = (
   const boxPoints = localCorners.map(([lx, ly]) =>
     toWorld(lx, ly, poseX, poseY, cosYaw, sinYaw, markerZ),
   );
+  const boxFillPoints = new Float32Array(4 * 3);
+  for (let index = 0; index < 4; index++) {
+    const point = boxPoints[index]!;
+    boxFillPoints[index * 3] = point.x;
+    boxFillPoints[index * 3 + 1] = point.y;
+    boxFillPoints[index * 3 + 2] = 0.0;
+  }
 
-  // Heading arrow: centre -> forward.
-  const arrowTipLocalX = ARROW_LENGTH_M;
-  const headBaseLocalX = arrowTipLocalX - ARROW_HEAD_LENGTH_M;
-
-  const center = toWorld(0, 0, poseX, poseY, cosYaw, sinYaw, markerZ);
-  const arrowTip = toWorld(
-    arrowTipLocalX,
+  const headingShaftStart = toWorld(
+    HEADING_SHAFT_START_LOCAL_X,
     0,
     poseX,
     poseY,
@@ -110,18 +119,29 @@ const publisher = (
     sinYaw,
     markerZ,
   );
-  const headLeft = toWorld(
-    headBaseLocalX,
-    ARROW_HEAD_HALF_WIDTH_M,
+  const headingHeadBaseLocalX =
+    HEADING_TIP_LOCAL_X - HEADING_HEAD_LENGTH_M;
+  const headingHeadLeft = toWorld(
+    headingHeadBaseLocalX,
+    HEADING_HEAD_HALF_WIDTH_M,
     poseX,
     poseY,
     cosYaw,
     sinYaw,
     markerZ,
   );
-  const headRight = toWorld(
-    headBaseLocalX,
-    -ARROW_HEAD_HALF_WIDTH_M,
+  const headingTip = toWorld(
+    HEADING_TIP_LOCAL_X,
+    0,
+    poseX,
+    poseY,
+    cosYaw,
+    sinYaw,
+    markerZ,
+  );
+  const headingHeadRight = toWorld(
+    headingHeadBaseLocalX,
+    -HEADING_HEAD_HALF_WIDTH_M,
     poseX,
     poseY,
     cosYaw,
@@ -132,7 +152,27 @@ const publisher = (
   const markers: Messages.ares__VisualizationMarker[] = [
     createDeleteCurrentTopicMarkers(receiveTime),
 
-    // 1) Ego bounding-box outline
+    // 1) Semi-transparent ego footprint fill. It intentionally sits just
+    // below the outline so the border and heading remain crisp.
+    {
+      header: { frame_id: "world", stamp: receiveTime, seq: 0 },
+      id: "ego_bbox_fill",
+      type: Messages.ares__VisualizationMarkerTypes.SHAPE_EXTRUDE,
+      action: 0,
+      pose: {
+        position: { x: 0, y: 0, z: markerZ - BOX_FILL_HEIGHT_M },
+        orientation: { x: 0, y: 0, z: 0, w: 1 },
+      },
+      scale: { x: 1, y: 1, z: 1 },
+      flattenedPoints: boxFillPoints,
+      color: BOX_FILL_COLOR,
+      fill: true,
+      edge: false,
+      renderOrder: RENDER_ORDER,
+      shapeMetadata: { height: BOX_FILL_HEIGHT_M },
+    },
+
+    // 2) Ego bounding-box outline
     {
       header: { frame_id: "world", stamp: receiveTime, seq: 0 },
       id: "ego_bbox",
@@ -140,55 +180,40 @@ const publisher = (
       action: 0,
       points: boxPoints,
       color: BOX_COLOR,
-      renderOrder: RENDER_ORDER,
+      renderOrder: RENDER_ORDER + 1,
       lineMetadata: {
         lineWidth: BOX_LINE_WIDTH,
         closed: false, // already closed by duplicating first point
       },
     },
 
-    // 2) Heading shaft
+    // 3) Centered heading shaft
     {
       header: { frame_id: "world", stamp: receiveTime, seq: 0 },
       id: "ego_heading_shaft",
       type: Messages.ares__VisualizationMarkerTypes.LINE_STRIP,
       action: 0,
-      points: [center, arrowTip],
-      color: ARROW_COLOR,
-      renderOrder: RENDER_ORDER + 1,
+      points: [headingShaftStart, headingTip],
+      color: HEADING_COLOR,
+      renderOrder: RENDER_ORDER + 2,
       lineMetadata: {
-        lineWidth: ARROW_LINE_WIDTH,
+        lineWidth: HEADING_LINE_WIDTH,
         closed: false,
       },
     },
 
-    // 3) Heading arrow head (V)
+    // 4) V-shaped arrow head
     {
       header: { frame_id: "world", stamp: receiveTime, seq: 0 },
       id: "ego_heading_head",
       type: Messages.ares__VisualizationMarkerTypes.LINE_STRIP,
       action: 0,
-      points: [headLeft, arrowTip, headRight],
-      color: ARROW_COLOR,
-      renderOrder: RENDER_ORDER + 1,
-      lineMetadata: {
-        lineWidth: ARROW_LINE_WIDTH,
-        closed: false,
-      },
-    },
-
-    // 4) Pose origin (geometric centre of mesh)
-    {
-      header: { frame_id: "world", stamp: receiveTime, seq: 0 },
-      id: "ego_pose_origin",
-      type: Messages.ares__VisualizationMarkerTypes.POINTS,
-      action: 0,
-      points: [center],
-      color: ORIGIN_COLOR,
+      points: [headingHeadLeft, headingTip, headingHeadRight],
+      color: HEADING_COLOR,
       renderOrder: RENDER_ORDER + 2,
-      pointMetadata: {
-        radius: 0.25,
-        sizeAttenuation: true,
+      lineMetadata: {
+        lineWidth: HEADING_LINE_WIDTH,
+        closed: false,
       },
     },
   ];
