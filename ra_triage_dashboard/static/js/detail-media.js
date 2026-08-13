@@ -784,9 +784,9 @@ function scheduleTrailDetailMetadata(issueId, requestSeq) {
     }
     void loadTrailDetailMetadata(issueId, requestSeq);
   };
-  if (typeof window.requestIdleCallback === "function") {
-    window.requestIdleCallback(start, { timeout: 1500 });
-  } else {
-    window.setTimeout(start, 180);
-  }
+  // The endpoint is already isolated from first-paint and performs its Trail
+  // lookup on a worker thread. Start it immediately after the local detail is
+  // painted: requestIdleCallback could defer the RA Event/Ares links long
+  // enough that users reasonably interpreted them as missing.
+  window.setTimeout(start, 0);
 }

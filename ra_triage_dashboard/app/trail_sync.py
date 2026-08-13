@@ -89,6 +89,36 @@ def _safe_detail_value(field: str, value: Any) -> Any:
     return str(value).strip()[:256]
 
 
+def ares_playback_metadata(
+    metadata: dict[str, Any], events: Iterable[dict[str, Any]] = ()
+) -> dict[str, Any]:
+    """Return the minimal identifiers needed for read-only Ares playback.
+
+    Older Trail rows may omit ``ra_start_timestamp`` while still exposing the
+    canonical ``start`` event.  Keep this compatibility logic independent of
+    FastAPI so it is reusable and covered by the lightweight Trail tests.
+    """
+
+    trip_id = str(metadata.get("trip_id") or "").strip()[:256]
+    raw_timestamp = metadata.get("ra_start_timestamp")
+    if raw_timestamp in (None, ""):
+        raw_timestamp = next(
+            (
+                item.get("timestamp")
+                for item in events
+                if isinstance(item, dict)
+                and item.get("event") == "start"
+                and item.get("timestamp") is not None
+            ),
+            None,
+        )
+    try:
+        timestamp_ms = int(raw_timestamp) if raw_timestamp is not None else None
+    except (TypeError, ValueError, OverflowError):
+        timestamp_ms = None
+    return {"ares_trip_id": trip_id, "ares_timestamp_ms": timestamp_ms}
+
+
 def read_trail_issue_metadata(
     *,
     ra_root: Path,

@@ -6,7 +6,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from ra_triage_dashboard.app.trail_sync import read_trail_issue_metadata
+from ra_triage_dashboard.app.trail_sync import (
+    ares_playback_metadata,
+    read_trail_issue_metadata,
+)
 
 
 class _Frame:
@@ -73,6 +76,19 @@ class TrailDetailMetadataTest(unittest.TestCase):
         self.assertEqual(metadata["car_id"], "10350")
         self.assertEqual(metadata["ra_event"][0]["event"], "start")
         self.assertNotIn("unrelated_secret_field", metadata)
+
+        playback = ares_playback_metadata(metadata, metadata["ra_event"])
+        self.assertEqual(playback["ares_trip_id"], "10350_20260511_204156")
+        self.assertEqual(playback["ares_timestamp_ms"], 1778504337849)
+
+    def test_start_event_is_ares_timestamp_fallback(self) -> None:
+        playback = ares_playback_metadata(
+            {
+                "trip_id": "10350_20260511_204156",
+            },
+            [{"event": "start", "value": "StuckModel-50", "timestamp": 1778504337830}],
+        )
+        self.assertEqual(playback["ares_timestamp_ms"], 1778504337830)
 
 
 if __name__ == "__main__":

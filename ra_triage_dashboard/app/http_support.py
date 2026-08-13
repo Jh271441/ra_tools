@@ -52,6 +52,7 @@ from .sanitization import redact_sensitive_fields
 from .trail_sync import (
     TRAIL_INFO_FIELD,
     TRAIL_RESULT_FIELD,
+    ares_playback_metadata,
     read_trail_model_fields,
 )
 from .runtime import (
@@ -266,12 +267,17 @@ def _case_external_links(issue_id: str, metadata: dict[str, Any]) -> dict[str, A
             safe_events.append({"event": event, "value": value, "timestamp": timestamp})
     safe_events = safe_events[:64]
     event_count = len(safe_events)
+    ares_metadata = ares_playback_metadata(metadata, safe_events)
     return {
         "ra_recording_url": _ra_recording_url(metadata.get("ra_id")),
         "ra_event_url": _voyager_issue_url(issue_id) if event_count else "",
         "ra_task_id": _as_text(metadata.get("ra_id")),
         "ra_event_count": event_count,
         "ra_events": safe_events,
+        # These two allowlisted values are sufficient to construct the Ares
+        # read-only playback link after the asynchronous Trail lookup.  Keep
+        # them inside external_links instead of mutating the persisted Issue.
+        **ares_metadata,
     }
 
 

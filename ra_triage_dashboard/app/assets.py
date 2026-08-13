@@ -218,6 +218,10 @@ class AssetIndex:
         with self._lock:
             self._assets[issue_id] = assets
         source_row = meta.get("source_row") or {}
+        timestamp_ms = source_row.get("capture_timestamp_ms")
+        if timestamp_ms in (None, ""):
+            timestamp_ms = meta.get("request_timestamp_ms")
+        trip_id = source_row.get("trip_id") or meta.get("trip_id") or ""
         return {
             "available": bool(frames or video),
             "issue_id": issue_id,
@@ -226,8 +230,8 @@ class AssetIndex:
             "capture": {
                 "status": meta.get("status", ""),
                 "layout": (meta.get("ares_layout") or {}).get("name", ""),
-                "timestamp_ms": source_row.get("capture_timestamp_ms"),
-                "trip_id": source_row.get("trip_id", ""),
+                "timestamp_ms": timestamp_ms,
+                "trip_id": trip_id,
                 "rendered_files": meta.get("rendered_files") or [],
             },
         }

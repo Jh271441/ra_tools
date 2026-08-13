@@ -264,10 +264,18 @@ function safeUrl(url) {
 }
 
 function aresStudioUrl(caseData, issueUrl) {
-  const tripId = String(caseData?.assets?.capture?.trip_id || caseData?.trip_id || "").trim();
+  const externalLinks = caseData?.external_links || {};
+  const tripId = String(
+    caseData?.assets?.capture?.trip_id ||
+    caseData?.trip_id ||
+    externalLinks.ares_trip_id ||
+    ""
+  ).trim();
   const issueId = String(caseData?.issue_id || "").trim();
   const timestampMs = Number(
-    caseData?.assets?.capture?.timestamp_ms || caseData?.camera?.capture?.timestamp_ms
+    caseData?.assets?.capture?.timestamp_ms ||
+    caseData?.camera?.capture?.timestamp_ms ||
+    externalLinks.ares_timestamp_ms
   );
   if (!issueUrl || !issueId || !tripId || !Number.isFinite(timestampMs) || timestampMs <= 0) return "";
   try {

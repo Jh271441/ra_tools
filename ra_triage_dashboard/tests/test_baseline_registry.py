@@ -282,6 +282,8 @@ class BaselineRegistryTests(unittest.TestCase):
             meta = {
                 "status": "captured",
                 "issue_id": "cn_demo",
+                "trip_id": "102_20260206_120000",
+                "request_timestamp_ms": 456,
                 "capture_plan": {
                     "variants": [
                         {
@@ -293,7 +295,7 @@ class BaselineRegistryTests(unittest.TestCase):
                         }
                     ]
                 },
-                "source_row": {"capture_timestamp_ms": 123},
+                "source_row": {},
             }
             (capture / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
             (layout / "manifest.jsonl").write_text(
@@ -342,6 +344,8 @@ class BaselineRegistryTests(unittest.TestCase):
             assets = provider.get_assets("cn_demo")
             self.assertTrue(assets["available"])
             self.assertEqual(len(assets["frames"]), 1)
+            self.assertEqual(assets["capture"]["timestamp_ms"], 456)
+            self.assertEqual(assets["capture"]["trip_id"], "102_20260206_120000")
             video_meta = provider.get_video("cn_demo")
             self.assertIsNotNone(video_meta)
             self.assertEqual(video_meta["event_time_sec"], 20)
