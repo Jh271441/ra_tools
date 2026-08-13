@@ -633,6 +633,24 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
 .case-pagination > span, .case-pagination-main > span { min-width: 58px; color: var(--muted); font-size: 11px; text-align: center; font-variant-numeric: tabular-nums; }
 .gallery-pagination { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
 .case-pagination-main { grid-column: 2; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.case-page-jump-summary {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+}
+.case-page-jump-summary input {
+  width: 34px; height: 28px; margin: 0; padding: 3px 4px;
+  border: 1px solid transparent; border-radius: 6px; color: var(--muted);
+  background: transparent; font: inherit; font-variant-numeric: tabular-nums;
+  text-align: center; -moz-appearance: textfield;
+}
+.case-page-jump-summary input::-webkit-outer-spin-button,
+.case-page-jump-summary input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.case-page-jump-summary input:hover:not(:disabled) {
+  border-color: var(--line); color: var(--text); background: var(--overlay);
+}
+.case-page-jump-summary input:focus {
+  border-color: rgba(36,211,239,.65); color: var(--text); background: var(--overlay); outline: none;
+}
+.case-page-jump-summary input:disabled { opacity: .55; cursor: not-allowed; }
 .analysis-page-jump {
   display: inline-flex; align-items: center; gap: 5px; margin-left: 5px;
   color: var(--faint); font-size: 10px; white-space: nowrap;

@@ -190,6 +190,26 @@ function bindEvents() {
   $("#casePageNext").addEventListener("click", () => {
     changeCasePage(1).catch((error) => showToast(error.message, true));
   });
+  const casePageJump = $("#casePageJump");
+  const commitCasePageJump = () => {
+    jumpToCasePage(casePageJump?.value).catch((error) => showToast(error.message, true));
+  };
+  casePageJump?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitCasePageJump();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      renderCasePagination();
+      casePageJump.blur();
+    }
+  });
+  casePageJump?.addEventListener("change", commitCasePageJump);
+  casePageJump?.addEventListener("focus", () => {
+    window.requestAnimationFrame(() => casePageJump.select());
+  });
   $("#casePageSize").addEventListener("change", (event) => {
     changeCasePageSize(event.target.value).catch((error) => showToast(error.message, true));
   });
