@@ -17,6 +17,7 @@ function currentReviewFilterPayload() {
     failure_only: false,
     missing_evidence: state.clusterKey || "",
     issue_ids: (state.reviewIssueIds || []).join(","),
+    baselines: selectedBaselineQueryValue(),
     // When creating a new split, ignore current assignee filter so the pool
     // is the full filtered set unless the admin intentionally kept it.
     work_assignee: "",

@@ -159,6 +159,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("/api/cases/work-split", APP_JS)
         self.assertIn("/api/work-assignees", APP_JS)
         self.assertIn("params.set(\"work_assignee\"", APP_JS)
+        self.assertIn("baselines: selectedBaselineQueryValue()", APP_JS)
         self.assertIn(".review-tag-option-row", STYLES_CSS)
         self.assertIn('class="ui-lang-zh">模型标注</span>', INDEX_HTML)
         self.assertIn('class="ui-lang-en">Model label</span>', INDEX_HTML)
