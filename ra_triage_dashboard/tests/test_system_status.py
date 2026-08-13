@@ -70,6 +70,22 @@ class SystemStatusTest(unittest.TestCase):
         self.assertIn("backup_missing", degraded["problems"])
         self.assertIn("backup_schedule_unregistered", degraded["problems"])
 
+    def test_overall_status_checks_every_registered_baseline(self) -> None:
+        result = overall_status(
+            database={"ok": True, "backend": "sqlite", "persistent_data": False},
+            baseline={"status": "ready", "count": 1071},
+            baselines=[
+                {"id": "0508", "status": "ready", "count": 1071},
+                {"id": "0206", "status": "ready", "count": 1326},
+                {"id": "0626", "status": "failed", "count": 0},
+            ],
+            backups={},
+            volume={"available": True, "free_bytes": 10 * 1024**3},
+        )
+
+        self.assertEqual(result["status"], "degraded")
+        self.assertIn("baseline_unavailable", result["problems"])
+
     def test_volume_status_reports_existing_filesystem(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             result = volume_status(Path(directory))

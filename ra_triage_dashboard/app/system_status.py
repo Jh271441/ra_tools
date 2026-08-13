@@ -107,6 +107,7 @@ def overall_status(
     *,
     database: dict[str, Any],
     baseline: dict[str, Any],
+    baselines: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
     backups: dict[str, Any],
     volume: dict[str, Any],
 ) -> dict[str, Any]:
@@ -117,7 +118,11 @@ def overall_status(
         "persistent_data"
     ):
         problems.append("database_not_persistent")
-    if baseline.get("status") != "ready" or int(baseline.get("count") or 0) <= 0:
+    registered_baselines = list(baselines) if baselines is not None else [baseline]
+    if not registered_baselines or any(
+        item.get("status") != "ready" or int(item.get("count") or 0) <= 0
+        for item in registered_baselines
+    ):
         problems.append("baseline_unavailable")
     if database.get("backend") == "postgresql":
         if not backups.get("available"):

@@ -55,6 +55,11 @@ function renderSystemStatus() {
   const backups = data.backups || {};
   const volume = data.volume || {};
   const baseline = data.baseline || {};
+  const baselines = Array.isArray(data.baselines) && data.baselines.length
+    ? data.baselines
+    : baseline && Object.keys(baseline).length
+      ? [baseline]
+      : [];
   const trail = data.trail_sync || {};
   const gateway = data.model_gateway || {};
   const application = data.application || {};
@@ -89,12 +94,28 @@ function renderSystemStatus() {
     backups.available && backups.latest_checksum_present && backups.schedule_registered
   );
   const databaseReady = Boolean(database.ok && (database.backend !== "postgresql" || database.persistent_data));
-  const baselineReady = baseline.status === "ready" && Number(baseline.count || 0) > 0;
+  const baselineReady = baselines.length > 0 && baselines.every(
+    (item) => item.status === "ready" && Number(item.count || 0) > 0
+  );
   const assetsReady = Boolean(
     data.ra_auto_triage_root_available && data.ares_manifest_available && data.camera_cache_root_available
   );
   const gatewayReady = Boolean(gateway.configured);
   const usedPercent = Math.max(0, Math.min(100, Number(volume.used_percent) || 0));
+  const baselineRows = baselines.map((item) => {
+    const count = Number(item.count || 0);
+    const indexed = Number(item.media_ready?.bev_indexed_issues || 0);
+    const media = indexed > 0
+      ? ` · BEV ${indexed} / ${count || "—"}`
+      : "";
+    return [
+      item.label || item.id || t("system.baseline"),
+      `${count} · ${item.status || "—"}${media}`,
+    ];
+  });
+  const conflictCount = Array.isArray(data.baseline_conflicts)
+    ? data.baseline_conflicts.length
+    : 0;
   grid.innerHTML = [
     systemStatusCard({
       title: t("system.app"),
@@ -134,9 +155,8 @@ function renderSystemStatus() {
       chip: baselineReady && assetsReady ? t("status.ready") : t("status.partial"),
       tone: baselineReady && assetsReady ? "ok" : "warn",
       rows: [
-        [t("system.baseline_0508"), `${baseline.count ?? 0} · ${baseline.status || "—"}`],
-        [t("system.baseline_scope"), baseline.scope || "—"],
-        ["Ares BEV", data.ares_manifest_available ? `${data.ares_indexed_issues || 0} Issues` : t("status.unavailable")],
+        ...baselineRows,
+        [t("system.baseline_conflicts"), String(conflictCount)],
         [t("system.camera_cache"), data.camera_cache_root_available ? t("status.available") : t("status.unavailable")],
         [t("system.bev_video"), data.ares_video_root_available ? t("status.available") : t("status.unavailable")],
       ],

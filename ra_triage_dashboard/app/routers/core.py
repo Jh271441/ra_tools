@@ -434,6 +434,7 @@ async def status(response: Response) -> dict[str, Any]:
     overall = overall_status(
         database=database_state,
         baseline=baseline_state,
+        baselines=runtime_state.get("baselines") or [],
         backups=backup_state,
         volume=volume_state,
     )

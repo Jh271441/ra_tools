@@ -202,7 +202,11 @@ function renderAnalysisRunFilter() {
   renderAnalysisComparisonFilter();
 }
 
-async function loadRuns({ preferDefault = false, preserveEmpty = false } = {}) {
+async function loadRuns({
+  preferDefault = false,
+  preserveEmpty = false,
+  clearIncompatible = false,
+} = {}) {
   const data = await api(withBaselineQuery("/api/model-runs"));
   state.modelRuns = data.items || [];
   const select = $("#modelRunFilter");
@@ -211,8 +215,8 @@ async function loadRuns({ preferDefault = false, preserveEmpty = false } = {}) {
   const preferredRunId =
     data.default_model_run_id ||
     state.config?.default_model_run_id ||
-    (preferDefault ? state.modelRuns[0]?.id || "" : "");
-  const candidate = preferDefault
+    "";
+  let candidate = preferDefault
     ? preferredRunId
     : preserveEmpty
       ? state.selectedRunId
@@ -231,6 +235,18 @@ async function loadRuns({ preferDefault = false, preserveEmpty = false } = {}) {
       };
     }),
   ];
+  const candidateRun = state.modelRuns.find((run) => run.id === candidate);
+  // A missing team default means "no overlay". Never silently promote the
+  // newest Run, and never carry an implicit/inherited Run into a dataset where
+  // it has zero predictions. Explicit deep links still remain selectable so
+  // users can intentionally inspect the NONE partition.
+  if (
+    candidateRun &&
+    (preferDefault || clearIncompatible) &&
+    Number(candidateRun.baseline_prediction_count || 0) <= 0
+  ) {
+    candidate = "";
+  }
   state.selectedRunId = state.modelRuns.some((run) => run.id === candidate) ? candidate : "";
   if (picker && typeof populateUiSelect === "function") {
     populateUiSelect(picker, runOptions, state.selectedRunId);
@@ -245,11 +261,12 @@ async function loadRuns({ preferDefault = false, preserveEmpty = false } = {}) {
     select.value = state.selectedRunId;
   }
   if (preferDefault && !previousRunId && state.selectedRunId) {
-    // A Run is an overlay on the immutable 0508 baseline.  Selecting or
-    // importing it must not shrink the baseline itself.  Keep the established
+    // A Run is an overlay on the immutable selected GT workset. Selecting or
+    // importing it must not shrink the workset itself. Keep the established
     // Review default focused on model failures; NONE remains available from
     // the comparison filter and is still retained in the baseline queue.
     state.reviewComparisonStatus = "mismatch";
+    state.reviewAnalysis.comparisonStatus = "mismatch";
     state.failureOnly = true;
   }
   if (!state.selectedRunId) state.reviewComparisonStatus = "all";
@@ -507,7 +524,8 @@ function renderRunManager() {
 }
 
 async function useModelRun(runId) {
-  if (!state.modelRuns.some((run) => run.id === runId)) return;
+  const run = state.modelRuns.find((item) => item.id === runId);
+  if (!run) return;
   state.selectedRunId = runId;
   // Keep the established failure-focused Review default.  Missing
   // predictions are represented as NONE by the comparison overlay rather than
@@ -519,6 +537,7 @@ async function useModelRun(runId) {
   state.galleryScrollY = 0;
   $("#modelRunFilter").value = runId;
   setReviewComparisonStatus("mismatch", { hasRun: true });
+  await applyInferredBaselinesFromRun(run, { reason: "run" });
   renderActiveRun();
   renderRunManager();
   await Promise.all([loadCases({ keepSelection: false, page: 1 }), loadClusters(), loadOverview()]);
@@ -533,7 +552,7 @@ async function deleteModelRun(runId) {
     return;
   }
   const confirmed = window.confirm(
-    `确认删除模型 Run「${run.name}」？\n\n该操作会删除该 Run 的模型输出和来源归档，不会删除 0508 GT、Issue 或人工 review，且不可恢复。`
+    `确认删除模型 Run「${run.name}」？\n\n该操作会删除该 Run 的模型输出和来源归档，不会删除任何 GT 数据集、Issue 或人工 review，且不可恢复。`
   );
   if (!confirmed) return;
   const button = document.querySelector(`[data-delete-run="${CSS.escape(runId)}"]`);

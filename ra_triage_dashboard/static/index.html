@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-152`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-153`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -522,8 +522,8 @@
                 <section class="run-source-panel" id="trailImportDetails" role="tabpanel" data-run-source-panel="trail" aria-labelledby="openTrailImportButton" aria-hidden="true">
                   <div class="trail-import-body">
                     <div>
-                      <p class="ui-lang-zh">检查当前 <strong id="trailScopeCount">1071</strong> 条 baseline 在 Trail view <strong id="trailViewId">2410</strong> 中的模型字段；不会写 Trail、修改 GT 或改变默认 Run。</p>
-                      <p class="ui-lang-en">Check model fields for <strong id="trailScopeCountEn">1071</strong> baseline issues in Trail view <strong id="trailViewIdEn">2410</strong>; does not write Trail, change GT, or switch the default Run.</p>
+                      <p class="ui-lang-zh">检查默认数据集 <strong id="trailScopeLabel">0508</strong> 的 <strong id="trailScopeCount">1071</strong> 条 Issue 在 Trail view <strong id="trailViewId">2410</strong> 中的模型字段；不会写 Trail、修改 GT 或改变默认 Run。</p>
+                      <p class="ui-lang-en">Check model fields for <strong id="trailScopeCountEn">1071</strong> Issues in the default <strong id="trailScopeLabelEn">0508</strong> dataset from Trail view <strong id="trailViewIdEn">2410</strong>; does not write Trail, change GT, or switch the default Run.</p>
                       <p class="muted"><span class="ui-lang-zh">检查仅创建或复用本地不可变 Run，不会改变团队默认 Run。</span><span class="ui-lang-en">Check only creates or reuses an immutable local Run; team default Run is unchanged.</span></p>
                     </div>
                     <div class="trail-state-row">
@@ -847,7 +847,7 @@
             <pre class="import-example-code" id="importExampleContent" tabindex="0"></pre>
           </section>
         </div>
-        <p class="import-example-footer">导入后会创建新的不可变 Model Run；不会覆盖 0508 baseline，也不会修改人工 Review。</p>
+        <p class="import-example-footer"><span class="ui-lang-zh">导入后会创建新的不可变 Model Run；不会覆盖任何 GT 数据集，也不会修改人工 Review。</span><span class="ui-lang-en">Import creates an immutable Model Run; it never overwrites any GT dataset or human Review.</span></p>
       </div>
     </dialog>
 
@@ -1025,7 +1025,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-152`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-153`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

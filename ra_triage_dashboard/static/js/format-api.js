@@ -83,6 +83,15 @@ function currentWorksetIssueCount() {
   return Number(state.config?.baseline?.count || 0) || 0;
 }
 
+function baselineLabelForScope(scope) {
+  const normalized = String(scope || "").trim();
+  const catalog = state.baselineCatalog.length
+    ? state.baselineCatalog
+    : state.config?.baselines || [];
+  const item = catalog.find((entry) => String(entry?.scope || "") === normalized);
+  return item?.label || item?.id || uiText("当前数据集", "Selected dataset");
+}
+
 function appendBaselineParams(params) {
   const value = selectedBaselineQueryValue();
   if (value) params.set("baselines", value);
@@ -159,13 +168,16 @@ function inferredBaselineIdsFromRun(run) {
  * After import / Run 选择：按预测命中的 GT scope 自动勾选顶栏数据集。
  * 单集评测（常见）→ 仅选中那一集；混合则选中所有命中集。
  */
-async function applyInferredBaselinesFromRun(run, { reason = "run" } = {}) {
+async function applyInferredBaselinesFromRun(
+  run,
+  { reason = "run", reloadActivePage = true } = {}
+) {
   const inferred = inferredBaselineIdsFromRun(run);
   if (!inferred.length) return false;
   const current = selectedBaselineQueryValue();
   const next = inferred.join(",");
   if (current === next) return false;
-  await setBaselineScopes(inferred);
+  await setBaselineScopes(inferred, { reloadActivePage });
   const labels = inferred
     .map((id) => {
       const item = (state.baselineCatalog || []).find((row) => String(row.id) === id);
@@ -183,7 +195,10 @@ async function applyInferredBaselinesFromRun(run, { reason = "run" } = {}) {
   return true;
 }
 
-async function setBaselineScopes(rawIds, { skipHistory = false } = {}) {
+async function setBaselineScopes(
+  rawIds,
+  { skipHistory = false, reloadActivePage = true } = {}
+) {
   const allowed = new Set(
     (state.baselineCatalog.length
       ? state.baselineCatalog
@@ -230,9 +245,11 @@ async function setBaselineScopes(rawIds, { skipHistory = false } = {}) {
   }
   try {
     await loadConfig();
+    // Resolve the compatible Run first: the remaining facets and overview all
+    // depend on the final overlay selection.
+    await loadRuns({ preserveEmpty: true, clearIncompatible: true });
     await settleInitialRequests(
       [
-        loadRuns({ preserveEmpty: true }),
         loadReviewers(),
         typeof loadWorkAssignees === "function"
           ? loadWorkAssignees()
@@ -241,6 +258,7 @@ async function setBaselineScopes(rawIds, { skipHistory = false } = {}) {
       ],
       uiText("切换数据集后", "After dataset switch")
     );
+    if (!reloadActivePage) return;
     if (state.activePage === "analysis") {
       await enterAnalysisPage({ includeOverview: false });
     } else if (state.activePage === "review") {

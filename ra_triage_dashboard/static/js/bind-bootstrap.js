@@ -50,7 +50,7 @@ function bindEvents() {
       showToast(error.message, true);
     }
   });
-  $("#analysisRunFilter").addEventListener("change", () => {
+  $("#analysisRunFilter").addEventListener("change", async () => {
     const runId = $("#analysisRunFilter").value;
     const previouslyHadRun = Boolean(state.selectedRunId);
     const nextStatus = !runId
@@ -59,8 +59,16 @@ function bindEvents() {
         ? checkedAnalysisComparisonStatus()
         : "mismatch";
     setAnalysisComparisonStatus(nextStatus, { hasRun: Boolean(runId) });
+    state.selectedRunId = state.modelRuns.some((run) => run.id === runId) ? runId : "";
+    const run = state.modelRuns.find((item) => item.id === state.selectedRunId);
+    if (run) {
+      await applyInferredBaselinesFromRun(run, {
+        reason: "run",
+        reloadActivePage: false,
+      });
+    }
+    scheduleAnalysisFilterReload();
   });
-  $("#analysisRunFilter")?.addEventListener("change", () => scheduleAnalysisFilterReload());
   // analysisComparisonFilter is a multi-filter; its onChange schedules reload.
   if (typeof renderAnalysisComparisonFilter === "function") {
     renderAnalysisComparisonFilter();
@@ -634,10 +642,10 @@ async function bootstrap() {
       showToast(t("toast.admin_only"), true);
     }
     const defaultFailureOnly = Boolean(state.config?.default_failure_only);
+    // An implicit team default is selected only after the Run API confirms it
+    // has coverage in the active dataset. Explicit route selections are kept.
     state.selectedRunId =
-      initialRoute.runId === "none"
-        ? ""
-        : initialRoute.runId || state.config?.default_model_run_id || "";
+      initialRoute.runId === "none" ? "" : initialRoute.runId || "";
     if (initialRoute.page === "analysis") {
       state.reviewAnalysis.comparisonStatus = state.selectedRunId
         ? normalizedAnalysisComparisonStatus(
@@ -656,14 +664,20 @@ async function bootstrap() {
         : "all";
       state.failureOnly = state.reviewComparisonStatus === "mismatch";
     }
-    // Overlap shared metadata with the first gallery paint. Run list can still
-    // refine the default Run afterwards; review filters re-apply when it settles.
-    const sharedDataPromise = settleInitialRequests(
+    // Resolve the Run before loading queue-dependent facets. Otherwise a
+    // dataset can briefly (or permanently, after a race) render counts for an
+    // unrelated newest Run.
+    await settleInitialRequests(
       [
         loadRuns({
           preferDefault: !initialRoute.runId,
           preserveEmpty: initialRoute.runId === "none",
         }),
+      ],
+      "模型 Run"
+    );
+    const sharedDataPromise = settleInitialRequests(
+      [
         loadReviewers(),
         loadWorkAssignees(),
       ],

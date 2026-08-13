@@ -655,7 +655,7 @@ function renderAnalysisCases(data) {
           </div>
           <div class="analysis-case-labels">
             ${comparisonBadge}
-            <span title="0508 baseline GT">GT ${labelBadge(item.gt_label)}</span>
+            <span title="${escapeHtml(`${baselineLabelForScope(item.baseline_scope)} GT`)}">GT ${labelBadge(item.gt_label)}</span>
             <span title="人工 Review 期望输出"><span class="ui-lang-zh">期望</span><span class="ui-lang-en">Expected</span> ${labelBadge(expectedOutput, uiText("待补充", "Pending"))}</span>
             <button class="analysis-model-history-button" type="button"
               data-analysis-model-history="${issueId}"

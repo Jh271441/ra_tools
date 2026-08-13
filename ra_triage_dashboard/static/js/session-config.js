@@ -263,10 +263,25 @@ function renderMultiFilter(
 
 function renderConfig() {
   const baseline = state.config?.baseline || {};
-  $(".header-metrics")?.setAttribute("title", baseline.message || "0508 baseline GT 只读");
-  const scopeText = String(baseline.count ?? "—");
+  const catalog = Array.isArray(state.config?.baselines)
+    ? state.config.baselines
+    : [];
+  const selected = new Set(normalizeBaselineIds(state.selectedBaselineIds));
+  const selectedItems = catalog.filter((item) => selected.has(String(item.id)));
+  const selectedTitle = selectedItems.length
+    ? selectedItems
+        .map((item) => `${item.label || item.id} · ${item.count ?? "—"}`)
+        .join(" + ")
+    : baseline.message || uiText("当前 GT 数据集", "Selected GT dataset");
+  $(".header-metrics")?.setAttribute("title", selectedTitle);
+  const defaultIds = defaultBaselineIdsFromConfig(state.config);
+  const trailBaseline = catalog.find((item) => defaultIds.includes(String(item.id))) || baseline;
+  const scopeText = String(trailBaseline.count ?? "—");
+  const scopeLabel = String(trailBaseline.label || trailBaseline.id || "0508");
   if ($("#trailScopeCount")) $("#trailScopeCount").textContent = scopeText;
   if ($("#trailScopeCountEn")) $("#trailScopeCountEn").textContent = scopeText;
+  if ($("#trailScopeLabel")) $("#trailScopeLabel").textContent = scopeLabel;
+  if ($("#trailScopeLabelEn")) $("#trailScopeLabelEn").textContent = scopeLabel;
   const trail = state.trailInspection || state.config?.trail_sync || {};
   const viewText = String(trail.view_id ?? "2410");
   if ($("#trailViewId")) $("#trailViewId").textContent = viewText;
