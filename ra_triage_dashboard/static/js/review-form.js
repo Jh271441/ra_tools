@@ -771,6 +771,7 @@ async function selectCase(
     setReviewView(issueId);
     window.scrollTo({ top: 0, behavior: "auto" });
   }
+  const trailMetadataPromise = startTrailDetailMetadata(issueId, requestSeq);
   try {
     const data = await api(`/api/cases/${encodeURIComponent(issueId)}`);
     if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId) return;
@@ -781,7 +782,9 @@ async function selectCase(
     state.selectedCase = data;
     renderDetail(data);
     renderReview(data);
-    scheduleTrailDetailMetadata(issueId, requestSeq);
+    void trailMetadataPromise.then((result) => {
+      applyTrailDetailMetadata(result, issueId, requestSeq);
+    });
   } catch (error) {
     if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId) return;
     if (loadingTimer !== null) {

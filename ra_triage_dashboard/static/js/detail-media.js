@@ -749,44 +749,23 @@ function renderDetailExternalLinks(caseData) {
   bindDetailExternalLinks(caseData);
 }
 
-async function loadTrailDetailMetadata(issueId, requestSeq) {
-  try {
-    const result = await api(
-      "/api/cases/" + encodeURIComponent(issueId) + "/trail-metadata"
-    );
-    if (
-      requestSeq !== state.caseRequestSeq ||
-      state.selectedId !== issueId ||
-      !state.selectedCase
-    ) {
-      return;
-    }
-    state.selectedCase.external_links = result.external_links || {};
-    state.selectedCase.trail_metadata_status = result.status || "unavailable";
-    renderDetailExternalLinks(state.selectedCase);
-  } catch {
-    if (
-      requestSeq !== state.caseRequestSeq ||
-      state.selectedId !== issueId ||
-      !state.selectedCase
-    ) {
-      return;
-    }
-    state.selectedCase.trail_metadata_status = "unavailable";
-    renderDetailExternalLinks(state.selectedCase);
-  }
+function startTrailDetailMetadata(issueId, requestSeq) {
+  // Start this optional remote lookup independently from local media/DB
+  // loading.  The caller applies it only after the matching detail DOM exists.
+  return api(
+    "/api/cases/" + encodeURIComponent(issueId) + "/trail-metadata"
+  ).catch(() => null);
 }
 
-function scheduleTrailDetailMetadata(issueId, requestSeq) {
-  const start = () => {
-    if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId) {
-      return;
-    }
-    void loadTrailDetailMetadata(issueId, requestSeq);
-  };
-  // The endpoint is already isolated from first-paint and performs its Trail
-  // lookup on a worker thread. Start it immediately after the local detail is
-  // painted: requestIdleCallback could defer the RA Event/Ares links long
-  // enough that users reasonably interpreted them as missing.
-  window.setTimeout(start, 0);
+function applyTrailDetailMetadata(result, issueId, requestSeq) {
+  if (
+    requestSeq !== state.caseRequestSeq ||
+    state.selectedId !== issueId ||
+    !state.selectedCase
+  ) {
+    return;
+  }
+  state.selectedCase.external_links = result?.external_links || {};
+  state.selectedCase.trail_metadata_status = result?.status || "unavailable";
+  renderDetailExternalLinks(state.selectedCase);
 }
