@@ -4,20 +4,21 @@
 
 ## 当前产品快照
 
-- 默认工作集成员固定为 `trail_label_baseline_20260729.xlsx` 中 `dataset=0508` 的 **1071 条**。该文件是可回滚的种子快照；运行时通过固定只读 Trail view 1000 的 `ra_merge_result` 完整校验并覆盖有效 GT。模型导入、Trail 模型字段快照和 AutoTriage 结果仍不能修改 GT。
+- 默认工作集成员固定为 `trail_label_baseline_20260729.xlsx` 中 `dataset=0508` 的 **1071 条**。同一只读快照还注册了 `dataset=0206` 的 **1326 条**，另有 0626 抽检 **300 条**；三者可在顶栏独立或组合选择，默认仍仅选择 0508。运行时通过固定只读 Trail view 1000 的 `ra_merge_result` 完整校验并覆盖有效 GT。模型导入、Trail 模型字段快照和 AutoTriage 结果仍不能修改 GT。
 
-### 多数据集 Multi-Baseline（`feat/multi-baseline-gt`，开发中）
+### 多数据集 Multi-Baseline
 
-目标：同时挂载多个稳定成员集合的 GT 工作集（首批 0508 + 0626 抽检），顶栏 **多选数据集**，选中集合按 **union** 驱动图库 / 指标 / 原因分析 / 均分 / Runs 覆盖统计。当前只有 0508 启用权威 Trail GT overlay；0626 仍使用注册的只读工作簿。
+同时挂载多个稳定成员集合的 GT 工作集（0508、0206、0626 抽检），顶栏 **多选数据集**，选中集合按 **union** 驱动图库 / 指标 / 原因分析 / 均分 / Runs 覆盖统计。Trail GT overlay 会逐数据集完整校验并独立原子应用；失败时保留该数据集上次成功快照。
 
 | 项 | 说明 |
 |----|------|
 | 配置 | `config/baselines.json`（可用 `DASHBOARD_BASELINES_FILE` 覆盖） |
 | 默认选择 | 仅 `0508`（与现网一致） |
-| Query | `?baselines=0508,0626`（短 id，不接受任意 scope 字符串） |
+| Query | `?baselines=0508,0206,0626`（短 id，不接受任意 scope 字符串） |
+| 0206 媒体 | planning_2k Ares Capture 产物增量物化到 `release0206_1326_planning_2k_20260813`；媒体缺失不阻塞 GT 看板 |
 | 0626 媒体 | bag 源 `frames_v2_0626` + animation jobs；Camera 可空 |
 | Batch 推理 | **不**改服务端固定 `bags/ares_animation` 策略（与 review 媒体解耦） |
-| 生产隔离 | 开发在 worktree `ra_tools-multi-gt` / 分支 `feat/multi-baseline-gt`；**不要**在未验证前 ff 到 cloud 生产 session |
+| 生产隔离 | 新版本先在独立 worktree、临时 SQLite 与 8786 端口验证，再快进生产代码并重启 8785 |
 
 实现入口：`app/baseline_registry.py`、`app/media_registry.py`、DB `baseline_scopes` IN 过滤、顶栏 `#baselineFilter`。
 - 首页是服务端筛选的紧凑 Issue 缩略图队列（宽屏五列、随可用宽度降列），默认每页 20 条并可切换 10 / 20 / 50 / 100；页码和单页数量写入 URL，接口单页最多返回 100 条。BEV 缩略图按源文件版本生成 640×360 缓存并懒加载，不把 1071 张原图一次送进浏览器。点击 Issue 后才进入 URL 可恢复的详情态，加载大图、媒体、模型输出和人工 Review；详情支持返回列表及跨页上一/下一 Issue，并在具备 trip 与事件时间戳时提供同域 Ares Studio ±10 秒跳转链接。Issue 详情第二行通过紧凑下拉框切换 `BEV 图片 / Camera 图片 / Ares Studio 视频`，相邻的同尺寸按钮展开完整预览；有视频时详情默认展示视频首帧，没有视频时再展示 BEV / Camera 图片。Gallery 卡片的“媒体预览”和详情媒体共用一个近乎占满浏览器视口的三模式弹窗，首页仅在点击预览时按需读取该 Issue 的完整资产。详情页媒体快捷键采用页面级监听：焦点不在输入、选择、按钮或链接时，`B/C/V`、空格、左右方向键和 `F` 无需聚焦播放器即可生效；打开弹窗后由弹窗接管。三种媒体都默认适配可视范围，并支持 1:1 原始像素、按钮/键盘/Ctrl/⌘+滚轮缩放、放大后指针拖拽平移以及全屏；进入或退出全屏不会重置缩放比例。BEV 视频使用 Workbench 自有的紧凑控制条，支持播放/暂停、0.5× / 1× / 1.5× / 2×、回到 t0、进度拖动、可配置 0.1 / 0.5 / 1 / 5 秒左右跳转和键盘控制；默认左右跳转 1 秒，元数据帧步长作为“1 帧”选项，切换到图片时暂停但保留播放位置。
@@ -88,6 +89,8 @@ Runs 的「人员」统一显示/筛选创建人；旧 Run 没有创建人时回
   - 切换数据集：改 `DASHBOARD_MEDIA_LAYOUT`（layout id 或后续 alias）或覆盖上述三个变量；见 layout 内 `layout.json`
   - 0626 的 materialized capture layout：
     `/volume/home/workspace/ra_triage_dashboard_data/media_layouts/release0626_300_spotcheck_20260807`；根目录保留聚合 `manifest.jsonl` 和 `issues/`，由 baseline `layout_id` 独立索引
+  - 0206 的 planning_2k capture layout：
+    `/volume/home/workspace/ra_triage_dashboard_data/media_layouts/release0206_1326_planning_2k_20260813`；允许先注册 GT、再按完整 manifest 增量物化媒体
   - 从带聚合软链接的 bags 刷新：使用 `rsync -aL` 物化到新的版本化 layout，禁止 `--delete`；完成 manifest、PNG、MP4、meta 和媒体规格校验后再切换 baseline `layout_id`
 - 0508 GT 种子/回滚快照：`/volume/home/workspace/ra_auto_triage/data/trail_label_baseline_20260729.xlsx`（只读）；当前权威 overlay 持久化在 Dashboard 数据库
 - 模型 / Trail 逻辑：`/volume/home/workspace/ra_auto_triage`（代码与 bags 采集工作区只读；Batch 新下载只写 dashboard 独立缓存）

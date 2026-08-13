@@ -42,6 +42,19 @@ class BaselineRegistryTests(unittest.TestCase):
                             "media": {"provider": "product_layout", "layout_id": "x"},
                         },
                         {
+                            "id": "0206",
+                            "label": "0206",
+                            "scope": "release0206_1326_20260729",
+                            "loader": "trail_label_baseline",
+                            "xlsx": "${RA_ROOT}/data/a.xlsx",
+                            "dataset": "0206",
+                            "default_selected": False,
+                            "media": {
+                                "provider": "product_layout",
+                                "layout_id": "release0206_capture",
+                            },
+                        },
+                        {
                             "id": "0626",
                             "label": "0626 抽检",
                             "scope": "release0626_300_spotcheck",
@@ -62,17 +75,46 @@ class BaselineRegistryTests(unittest.TestCase):
             registry = load_baseline_registry(
                 cfg, env={"RA_ROOT": str(root), "RA_AUTO_TRIAGE_ROOT": str(root)}
             )
-            self.assertEqual([entry.id for entry in registry.entries], ["0508", "0626"])
+            self.assertEqual(
+                [entry.id for entry in registry.entries], ["0508", "0206", "0626"]
+            )
             self.assertEqual(registry.default_ids(), ["0508"])
+            self.assertEqual(
+                registry.id_to_scope("0206"), "release0206_1326_20260729"
+            )
             self.assertEqual(registry.id_to_scope("0626"), "release0626_300_spotcheck")
             self.assertEqual(
                 expand_path_template("${RA_ROOT}/data/a.xlsx", env={"RA_ROOT": "/tmp"}),
                 "/tmp/data/a.xlsx",
             )
             self.assertEqual(
-                ids_to_scopes(["0508", "0626", "0508"], registry),
-                ["release0508_1071_20260729", "release0626_300_spotcheck"],
+                ids_to_scopes(["0508", "0206", "0626", "0508"], registry),
+                [
+                    "release0508_1071_20260729",
+                    "release0206_1326_20260729",
+                    "release0626_300_spotcheck",
+                ],
             )
+
+    def test_repository_registry_includes_0206_without_changing_default(self) -> None:
+        config_path = Path(__file__).resolve().parents[1] / "config" / "baselines.json"
+        registry = load_baseline_registry(
+            config_path,
+            env={"RA_AUTO_TRIAGE_ROOT": "/tmp/ra_auto_triage"},
+        )
+        self.assertEqual(
+            [entry.id for entry in registry.entries], ["0508", "0206", "0626"]
+        )
+        self.assertEqual(registry.default_ids(), ["0508"])
+        entry = registry.by_id("0206")
+        self.assertIsNotNone(entry)
+        assert entry is not None
+        self.assertEqual(entry.scope, "release0206_1326_20260729")
+        self.assertEqual(entry.dataset, "0206")
+        self.assertEqual(
+            entry.media.layout_id,
+            "release0206_1326_planning_2k_20260813",
+        )
 
     def test_normalize_baseline_ids_defaults_and_filters(self) -> None:
         allowed = {"0508", "0626"}

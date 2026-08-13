@@ -13,6 +13,19 @@
     }
   },
   {
+    "id": "0206",
+    "label": "0206",
+    "scope": "release0206_1326_20260729",
+    "loader": "trail_label_baseline",
+    "xlsx": "${RA_AUTO_TRIAGE_ROOT}/data/trail_label_baseline_20260729.xlsx",
+    "dataset": "0206",
+    "default_selected": false,
+    "media": {
+      "provider": "product_layout",
+      "layout_id": "release0206_1326_planning_2k_20260813"
+    }
+  },
+  {
     "id": "0626",
     "label": "0626 抽检",
     "scope": "release0626_300_spotcheck",
