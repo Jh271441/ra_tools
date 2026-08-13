@@ -583,6 +583,7 @@ function bindEvents() {
         loadCases({ keepSelection: true, page: route.casePage }),
         loadClusters(),
         loadOverview(),
+        loadWorkAssignees(),
       ]);
       if (route.issue) {
         if (route.issue !== state.selectedId || !state.selectedCase) {

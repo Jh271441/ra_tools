@@ -273,6 +273,7 @@ async function refreshAll({ resetSelection = false } = {}) {
     loadCases({ keepSelection: !resetSelection }),
     loadClusters(),
     loadReviewers(),
+    loadWorkAssignees(),
   ]);
 }
 
@@ -287,6 +288,7 @@ async function reloadReviewGallery({
   const requests = [
     loadCases({ keepSelection: false, page: 1 }),
     loadClusters(),
+    loadWorkAssignees(),
   ];
   if (includeOverview) requests.push(loadOverview());
   await Promise.all(requests);

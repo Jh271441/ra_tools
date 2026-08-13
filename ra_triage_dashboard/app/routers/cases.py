@@ -372,11 +372,59 @@ async def list_case_issue_ids(
     }
 
 @router.get("/api/work-assignees")
-async def work_assignees() -> dict[str, Any]:
-    """Assignees currently attached to Issues via work-split."""
+async def work_assignees(
+    request: Request,
+    search: str = "",
+    gt_label: str = "",
+    model_label: str = "",
+    annotation_label: str = "",
+    annotation_author: str = "",
+    review_status: str = "",
+    model_run_id: str = "",
+    comparison: str = "",
+    failure_only: bool = False,
+    missing_evidence: str = "",
+    issue_ids: str = "",
+    baselines: str = "",
+) -> dict[str, Any]:
+    """Assignee facet scoped to the current Review queue."""
 
+    filters = _case_filter_kwargs(
+        search=search,
+        gt_label=gt_label,
+        model_label=model_label,
+        annotation_label=annotation_label,
+        annotation_author=annotation_author,
+        review_status=review_status,
+        model_run_id=model_run_id,
+        comparison=comparison,
+        failure_only=failure_only,
+        missing_evidence=missing_evidence,
+        issue_ids=issue_ids,
+        work_assignee="",
+        baselines=baselines,
+        request=request,
+    )
+    review_statuses = tuple(filters.pop("review_statuses", ()))
+    filtered_issue_ids = await asyncio.to_thread(
+        _case_issue_ids_with_status_filter,
+        filters=filters,
+        review_statuses=review_statuses,
+    )
     return {
-        "items": await asyncio.to_thread(database.list_work_assignees),
+        "items": await asyncio.to_thread(
+            database.list_work_assignees,
+            issue_ids=filtered_issue_ids,
+        ),
+        "total": len(filtered_issue_ids),
+        "filters": {
+            "model_run_id": filters["model_run_id"],
+            "comparison_status": filters["comparison_status"],
+            "review_status": list(review_statuses),
+            "baselines": resolve_request_baseline_ids(
+                baselines, request=request
+            ),
+        },
     }
 
 
@@ -462,7 +510,10 @@ async def split_case_work(request: Request) -> dict[str, Any]:
         "created_by": saved["created_by"],
         "created_at": saved["created_at"],
         "assignments": assignments,
-        "work_assignees": await asyncio.to_thread(database.list_work_assignees),
+        "work_assignees": await asyncio.to_thread(
+            database.list_work_assignees,
+            issue_ids=issue_ids,
+        ),
         "change_revision": await asyncio.to_thread(database.change_revision),
         "filters": {
             "model_run_id": filters["model_run_id"],

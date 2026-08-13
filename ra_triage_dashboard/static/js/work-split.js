@@ -86,8 +86,16 @@ function renderWorkAssigneeFilter() {
 }
 
 async function loadWorkAssignees() {
+  const requestSeq = ++state.workAssigneeRequestSeq;
   try {
-    const result = await api("/api/work-assignees");
+    const params = new URLSearchParams();
+    Object.entries(currentReviewFilterPayload()).forEach(([key, value]) => {
+      if (key === "work_assignee" || key === "failure_only" || !value) return;
+      params.set(key, String(value));
+    });
+    const query = params.toString();
+    const result = await api(`/api/work-assignees${query ? `?${query}` : ""}`);
+    if (requestSeq !== state.workAssigneeRequestSeq) return;
     state.workAssignees = result.items || [];
     renderWorkAssigneeFilter();
   } catch (_error) {
@@ -222,6 +230,7 @@ async function generateWorkSplit() {
       body: JSON.stringify(body),
     });
     acknowledgeLocalChange(result);
+    state.workAssigneeRequestSeq += 1;
     if (Array.isArray(result.work_assignees)) {
       state.workAssignees = result.work_assignees;
       renderWorkAssigneeFilter();

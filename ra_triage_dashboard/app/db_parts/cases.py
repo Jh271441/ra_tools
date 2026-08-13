@@ -688,26 +688,64 @@ class DatabaseCasesMixin:
         )
         return data
 
-    def list_work_assignees(self) -> list[dict[str, Any]]:
-        """Distinct people currently assigned via work-split."""
+    def list_work_assignees(
+        self, *, issue_ids: Sequence[str] | None = None
+    ) -> list[dict[str, Any]]:
+        """Distinct assignees, optionally scoped to an exact Review queue."""
 
+        cleaned_ids = (
+            list(
+                dict.fromkeys(
+                    str(issue_id or "").strip()
+                    for issue_id in issue_ids
+                    if str(issue_id or "").strip()
+                )
+            )
+            if issue_ids is not None
+            else None
+        )
+        if cleaned_ids == []:
+            return []
+
+        counts: dict[str, int] = {}
         with self.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT assignee, COUNT(*) AS issue_count
-                FROM issue_work_assignments
-                WHERE assignee <> ''
-                GROUP BY assignee
-                ORDER BY assignee ASC
-                """
-            ).fetchall()
+            if cleaned_ids is None:
+                batches: list[list[str] | None] = [None]
+            else:
+                # Stay below conservative SQLite variable limits while using
+                # the same query path through the PostgreSQL compatibility adapter.
+                batches = [
+                    cleaned_ids[offset : offset + 500]
+                    for offset in range(0, len(cleaned_ids), 500)
+                ]
+            for batch in batches:
+                issue_clause = ""
+                params: list[Any] = []
+                if batch is not None:
+                    issue_clause = (
+                        f"AND issue_id IN ({', '.join('?' for _ in batch)})"
+                    )
+                    params.extend(batch)
+                rows = conn.execute(
+                    f"""
+                    SELECT assignee, COUNT(*) AS issue_count
+                    FROM issue_work_assignments
+                    WHERE assignee <> ''
+                    {issue_clause}
+                    GROUP BY assignee
+                    ORDER BY assignee ASC
+                    """,
+                    params,
+                ).fetchall()
+                for row in rows:
+                    username = str(row["assignee"] or "").strip()
+                    if username:
+                        counts[username] = counts.get(username, 0) + int(
+                            row["issue_count"] or 0
+                        )
         return [
-            {
-                "username": str(row["assignee"] or ""),
-                "issue_count": int(row["issue_count"] or 0),
-            }
-            for row in rows
-            if str(row["assignee"] or "").strip()
+            {"username": username, "issue_count": counts[username]}
+            for username in sorted(counts)
         ]
 
     def apply_work_split(

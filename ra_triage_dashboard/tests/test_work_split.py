@@ -55,7 +55,7 @@ class WorkSplitTest(unittest.TestCase):
             db.init()
             now = "2026-08-04T00:00:00+00:00"
             with db._write_lock, db.connect() as conn:
-                for index in range(4):
+                for index in range(5):
                     conn.execute(
                         """
                         INSERT INTO issues (
@@ -78,6 +78,18 @@ class WorkSplitTest(unittest.TestCase):
                 seed=3,
                 filter_snapshot={"gt_label": "误触发"},
             )
+            db.apply_work_split(
+                assignments=[
+                    {
+                        "name": "carol",
+                        "count": 1,
+                        "requested_count": 1,
+                        "mode": "fixed",
+                        "issue_ids": ["cn4"],
+                    }
+                ],
+                created_by="admin.user",
+            )
             self.assertTrue(saved["split_id"].startswith("split-"))
             alice = db.list_cases(
                 baseline_scope="scope", work_assignee="alice", page_size=20
@@ -93,7 +105,15 @@ class WorkSplitTest(unittest.TestCase):
             self.assertEqual(none["total"], 0)
             self.assertEqual(alice["items"][0]["work_assignee"], "alice")
             names = {item["username"] for item in db.list_work_assignees()}
-            self.assertEqual(names, {"alice", "bob"})
+            self.assertEqual(names, {"alice", "bob", "carol"})
+            scoped = db.list_work_assignees(
+                issue_ids=[f"cn{i}" for i in range(4)]
+            )
+            self.assertEqual(
+                {item["username"] for item in scoped}, {"alice", "bob"}
+            )
+            self.assertEqual(sum(item["issue_count"] for item in scoped), 4)
+            self.assertEqual(db.list_work_assignees(issue_ids=[]), [])
 
 
 if __name__ == "__main__":
