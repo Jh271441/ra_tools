@@ -748,8 +748,16 @@ function renderReviewReasonAnalysis(data, { animatePies = true } = {}) {
 function paintAnalysisFromCache() {
   const data = state.reviewAnalysis?.data;
   if (!data) return false;
+  // A cached response may belong to a different history entry (for example,
+  // page 2 while popstate just restored page 1). Rendering that response must
+  // not overwrite the pagination parsed from the current URL before the
+  // revalidation request is built.
+  const requestedPage = state.reviewAnalysis.page;
+  const requestedPageSize = state.reviewAnalysis.pageSize;
   // Quiet repaint when revisiting the tab — pie spin is for real data loads only.
   renderReviewReasonAnalysis(data, { animatePies: false });
+  state.reviewAnalysis.page = requestedPage;
+  state.reviewAnalysis.pageSize = requestedPageSize;
   return true;
 }
 
