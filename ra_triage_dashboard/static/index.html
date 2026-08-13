@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-154`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-155`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -240,12 +240,14 @@
                 <nav class="case-pagination gallery-pagination" aria-label="Issue pagination">
                   <div class="case-pagination-main">
                     <button class="button button-quiet" id="casePagePrevious" type="button"><span class="ui-lang-zh">上一页</span><span class="ui-lang-en">Previous</span></button>
-                    <span class="case-page-jump-summary" id="casePageSummary">
-                      <input id="casePageJump" type="number" min="1" step="1" inputmode="numeric" aria-label="跳转到指定页" />
-                      <span aria-hidden="true">/</span>
-                      <span id="casePageTotal">—</span>
-                    </span>
+                    <span id="casePageSummary">— / —</span>
                     <button class="button button-quiet" id="casePageNext" type="button"><span class="ui-lang-zh">下一页</span><span class="ui-lang-en">Next</span></button>
+                    <span class="page-jump-control">
+                      <label for="casePageJump"><span class="ui-lang-zh">跳至</span><span class="ui-lang-en">Go to</span></label>
+                      <input id="casePageJump" type="number" min="1" step="1" inputmode="numeric" aria-label="Jump to page" />
+                      <span><span class="ui-lang-zh">页</span><span class="ui-lang-en">page</span></span>
+                      <button class="button button-quiet" id="casePageJumpButton" type="button"><span class="ui-lang-zh">跳转</span><span class="ui-lang-en">Go</span></button>
+                    </span>
                   </div>
                   <label class="case-page-size" for="casePageSize">
                     <span class="ui-lang-zh">每页</span><span class="ui-lang-en">Per page</span>
@@ -416,7 +418,7 @@
                   <button class="button button-quiet" id="analysisPagePrevious" type="button"><span class="ui-lang-zh">上一页</span><span class="ui-lang-en">Previous</span></button>
                   <span id="analysisPageSummary">— / —</span>
                   <button class="button button-quiet" id="analysisPageNext" type="button"><span class="ui-lang-zh">下一页</span><span class="ui-lang-en">Next</span></button>
-                  <span class="analysis-page-jump">
+                  <span class="page-jump-control">
                     <label for="analysisPageJump"><span class="ui-lang-zh">跳至</span><span class="ui-lang-en">Go to</span></label>
                     <input id="analysisPageJump" type="number" min="1" step="1" inputmode="numeric" aria-label="Jump to page" />
                     <span><span class="ui-lang-zh">页</span><span class="ui-lang-en">page</span></span>
@@ -1025,7 +1027,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-154`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-155`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

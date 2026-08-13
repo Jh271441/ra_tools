@@ -202,6 +202,7 @@ function bindEvents() {
   const commitCasePageJump = () => {
     jumpToCasePage(casePageJump?.value).catch((error) => showToast(error.message, true));
   };
+  $("#casePageJumpButton")?.addEventListener("click", commitCasePageJump);
   casePageJump?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
@@ -214,7 +215,6 @@ function bindEvents() {
       casePageJump.blur();
     }
   });
-  casePageJump?.addEventListener("change", commitCasePageJump);
   casePageJump?.addEventListener("focus", () => {
     window.requestAnimationFrame(() => casePageJump.select());
   });

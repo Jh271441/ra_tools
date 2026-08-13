@@ -118,25 +118,23 @@ function renderCasePagination() {
   const totalPages = totalCasePages();
   const previous = $("#casePagePrevious");
   const next = $("#casePageNext");
+  const summary = $("#casePageSummary");
   const jumpInput = $("#casePageJump");
-  const total = $("#casePageTotal");
+  const jumpButton = $("#casePageJumpButton");
   const pageSize = $("#casePageSize");
   const result = $("#galleryResultSummary");
   if (previous) previous.disabled = state.casePage <= 1 || !state.caseTotal;
   if (next) next.disabled = state.casePage >= totalPages || !state.caseTotal;
+  if (summary) summary.textContent = `${state.casePage} / ${totalPages}`;
   if (jumpInput) {
     const focused = document.activeElement === jumpInput;
     jumpInput.min = "1";
     jumpInput.max = String(totalPages);
-    jumpInput.disabled = !state.caseTotal;
+    jumpInput.disabled = totalPages <= 1;
     jumpInput.dataset.pageCount = String(totalPages);
-    jumpInput.title = uiText(
-      `输入 1–${totalPages} 后回车跳转`,
-      `Enter a page from 1 to ${totalPages}`
-    );
-    if (!focused) jumpInput.value = state.caseTotal ? String(state.casePage) : "0";
+    if (!focused) jumpInput.value = String(state.casePage);
   }
-  if (total) total.textContent = state.caseTotal ? String(totalPages) : "0";
+  if (jumpButton) jumpButton.disabled = totalPages <= 1;
   if (pageSize) pageSize.value = String(state.casePageSize);
   if (result) {
     const start = state.caseTotal ? (state.casePage - 1) * state.casePageSize + 1 : 0;
@@ -279,22 +277,20 @@ async function jumpToCasePage(raw) {
   if (!Number.isFinite(target) || target < 1 || target > totalPages) {
     showToast(uiText(`请输入 1–${totalPages} 的页码`, `Enter a page from 1 to ${totalPages}`), true);
     if (input) {
-      input.value = state.caseTotal ? String(state.casePage) : "0";
+      input.value = String(state.casePage);
       input.focus();
       input.select();
     }
     return;
   }
   if (target === state.casePage) {
-    renderCasePagination();
-    input?.blur();
+    if (input) input.value = String(target);
     return;
   }
   state.galleryScrollY = 0;
   clearPendingReviewImages();
   await loadCases({ keepSelection: false, page: target });
   showPage("review", { historyMode: "push", issue: "" });
-  input?.blur();
 }
 
 async function changeCasePageSize(value) {
