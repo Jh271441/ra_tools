@@ -40,6 +40,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("never carry an implicit/inherited Run", APP_JS)
         self.assertIn("baselineLabelForScope(item.baseline_scope)", APP_JS)
         self.assertIn("...baselineRows", APP_JS)
+        self.assertIn("baselineMediaReady", APP_JS)
         self.assertIn("function currentWorksetIssueCount", APP_JS)
         self.assertIn("currentWorksetIssueCount()", APP_JS)
         self.assertIn("inferred_baseline_ids", APP_JS)

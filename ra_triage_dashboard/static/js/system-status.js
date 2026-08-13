@@ -97,6 +97,9 @@ function renderSystemStatus() {
   const baselineReady = baselines.length > 0 && baselines.every(
     (item) => item.status === "ready" && Number(item.count || 0) > 0
   );
+  const baselineMediaReady = baselines.length > 0 && baselines.every(
+    (item) => Number(item.media_ready?.bev_indexed_issues || 0) >= Number(item.count || 0)
+  );
   const assetsReady = Boolean(
     data.ra_auto_triage_root_available && data.ares_manifest_available && data.camera_cache_root_available
   );
@@ -105,9 +108,9 @@ function renderSystemStatus() {
   const baselineRows = baselines.map((item) => {
     const count = Number(item.count || 0);
     const indexed = Number(item.media_ready?.bev_indexed_issues || 0);
-    const media = indexed > 0
+    const media = item.media_ready
       ? ` · BEV ${indexed} / ${count || "—"}`
-      : "";
+      : " · BEV —";
     return [
       item.label || item.id || t("system.baseline"),
       `${count} · ${item.status || "—"}${media}`,
@@ -152,8 +155,8 @@ function renderSystemStatus() {
     }),
     systemStatusCard({
       title: t("system.dataset_media"),
-      chip: baselineReady && assetsReady ? t("status.ready") : t("status.partial"),
-      tone: baselineReady && assetsReady ? "ok" : "warn",
+      chip: baselineReady && baselineMediaReady && assetsReady ? t("status.ready") : t("status.partial"),
+      tone: baselineReady && baselineMediaReady && assetsReady ? "ok" : "warn",
       rows: [
         ...baselineRows,
         [t("system.baseline_conflicts"), String(conflictCount)],

@@ -424,17 +424,25 @@ async def status(response: Response) -> dict[str, Any]:
             "pool_max_size": database.pool_size,
             "latency_ms": None,
         }
-    backup_state, volume_state, indexed_issues, filesystem = await asyncio.gather(
+    backup_state, volume_state, indexed_issues, filesystem, media_ready = await asyncio.gather(
         asyncio.to_thread(backup_status, settings.data_dir),
         asyncio.to_thread(volume_status, settings.data_dir),
         asyncio.to_thread(asset_index.refresh),
         asyncio.to_thread(_filesystem_availability),
+        asyncio.to_thread(media_registry.media_ready_by_id),
     )
     baseline_state = runtime_state["baseline"]
+    baseline_states = [
+        {
+            **item,
+            "media_ready": media_ready.get(str(item.get("id") or ""), {}),
+        }
+        for item in (runtime_state.get("baselines") or [])
+    ]
     overall = overall_status(
         database=database_state,
         baseline=baseline_state,
-        baselines=runtime_state.get("baselines") or [],
+        baselines=baseline_states,
         backups=backup_state,
         volume=volume_state,
     )
@@ -454,7 +462,7 @@ async def status(response: Response) -> dict[str, Any]:
         **filesystem,
         "ares_indexed_issues": indexed_issues,
         "baseline": baseline_state,
-        "baselines": runtime_state.get("baselines") or [],
+        "baselines": baseline_states,
         "baseline_conflicts": runtime_state.get("baseline_conflicts") or [],
         "trail_sync": runtime_state["trail_sync"],
         "gt_sync": await asyncio.to_thread(gt_sync_status),
