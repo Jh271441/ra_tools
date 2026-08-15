@@ -542,6 +542,11 @@ const PAGE_ROUTES = {
     titleZh: "原因聚类",
     titleEn: "Review Reason Clusters",
   },
+  "trail-update": {
+    path: "/trail-attribute-update",
+    titleZh: "Trail 属性更新",
+    titleEn: "Trail Attribute Update",
+  },
   runs: {
     path: "/runs",
     titleZh: "模型结果",
@@ -618,6 +623,11 @@ const state = {
     filterTimer: null,
     data: null,
     comparisonStatus: "mismatch",
+  },
+  trailUpdate: {
+    runId: "",
+    requestSeq: 0,
+    data: null,
   },
   selectedAnnotationLabel: "",
   pollingBatchId: "",

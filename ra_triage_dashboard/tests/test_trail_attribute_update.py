@@ -1,0 +1,80 @@
+from __future__ import annotations
+
+import unittest
+
+from ra_triage_dashboard.app.routers.trail_update import (
+    TRAIL_TARGET_FIELD,
+    TRAIL_TARGET_PATH,
+    build_trail_attribute_update_payload,
+)
+
+
+class TrailAttributeUpdateTest(unittest.TestCase):
+    def test_payload_is_run_bound_sorted_and_write_disabled(self) -> None:
+        rows = [
+            {
+                "issue_id": "cn00000002",
+                "title": "second",
+                "gt_label": "误触发",
+                "annotation": {
+                    "id": 22,
+                    "model_run_id": "run-1",
+                    "review_status": "已 Review",
+                    "author": "jasperchen",
+                    "created_at": "2026-08-15T10:02:00Z",
+                    "note": "exclude",
+                    "tags": ["排队"],
+                    "missing_evidence": [],
+                    "is_excluded": True,
+                },
+                "prediction": {
+                    "model_run_id": "run-1",
+                    "label": "误触发",
+                    "reason": "queue",
+                    "confidence": 0.9,
+                },
+            },
+            {
+                "issue_id": "cn00000001",
+                "gt_label": "无需协助",
+                "annotation": {"id": 11, "is_excluded": False},
+                "prediction": {},
+            },
+        ]
+        payload = build_trail_attribute_update_payload(
+            rows,
+            run={"id": "run-1", "name": "run name", "source_name": "source"},
+            baseline_ids=["0508"],
+            baseline_scopes=["release0508_1071"],
+        )
+
+        self.assertFalse(payload["trail_write_enabled"])
+        self.assertEqual(payload["write_status"], "draft_only")
+        self.assertEqual(payload["target_field"], TRAIL_TARGET_FIELD)
+        self.assertEqual(payload["target_path"], TRAIL_TARGET_PATH)
+        self.assertEqual(payload["count"], 1)
+        item = payload["items"][0]
+        self.assertEqual(item["issue_id"], "cn00000002")
+        self.assertEqual(item["target"]["merge_strategy"], "deep_merge")
+        self.assertTrue(item["target"]["patch"]["ra_triage_dashboard"]["should_exclude"])
+        self.assertEqual(item["target"]["patch"]["ra_triage_dashboard"]["model_run_id"], "run-1")
+        self.assertEqual(payload["draft"]["payload_sha256"], payload["payload_sha256"])
+
+    def test_payload_digest_changes_when_review_evidence_changes(self) -> None:
+        row = {
+            "issue_id": "cn00000001",
+            "annotation": {"id": 1, "is_excluded": True, "note": "a"},
+            "prediction": {},
+        }
+        first = build_trail_attribute_update_payload(
+            [row], run={"id": "run-1"}, baseline_ids=["0508"], baseline_scopes=["scope"]
+        )
+        changed = dict(row, annotation=dict(row["annotation"], note="b"))
+        second = build_trail_attribute_update_payload(
+            [changed], run={"id": "run-1"}, baseline_ids=["0508"], baseline_scopes=["scope"]
+        )
+        self.assertNotEqual(first["payload_sha256"], second["payload_sha256"])
+
+
+if __name__ == "__main__":
+    unittest.main()

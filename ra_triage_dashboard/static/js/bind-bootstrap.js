@@ -75,6 +75,9 @@ function bindEvents() {
   } else if (typeof bindAnalysisComparisonPicker === "function") {
     bindAnalysisComparisonPicker();
   }
+  if (typeof bindTrailAttributeUpdateEvents === "function") {
+    bindTrailAttributeUpdateEvents();
+  }
   $("#analysisSearchInput")?.addEventListener("input", () => {
     scheduleAnalysisFilterReload(220);
   });
@@ -549,11 +552,31 @@ function bindEvents() {
       }
       return;
     }
+    if (route.page === "trail-update") {
+      const nextRunId =
+        route.runId && state.modelRuns.some((run) => run.id === route.runId)
+          ? route.runId
+          : "";
+      state.trailUpdate.runId = nextRunId;
+      renderTrailAttributeRunPicker();
+      showPage("trail-update", {
+        runId: nextRunId,
+        restoreRoute: true,
+        loadPageData: false,
+      });
+      try {
+        await loadTrailAttributePreview();
+      } catch (error) {
+        showToast(error.message, true);
+      }
+      return;
+    }
     if (route.page !== "review") {
       showPage(route.page, {
         issues: route.issues,
         source: route.source,
         importKind: route.importKind,
+        runId: route.runId,
         restoreRoute: true,
       });
       return;
@@ -627,6 +650,7 @@ async function bootstrap() {
     issue: initialRoute.issue,
     issues: initialRoute.issues,
     source: initialRoute.source,
+    runId: initialRoute.runId,
     importKind: initialRoute.importKind,
     restoreRoute: true,
     loadPageData: false,
@@ -646,6 +670,10 @@ async function bootstrap() {
     // has coverage in the active dataset. Explicit route selections are kept.
     state.selectedRunId =
       initialRoute.runId === "none" ? "" : initialRoute.runId || "";
+    state.trailUpdate.runId =
+      initialRoute.page === "trail-update" && initialRoute.runId !== "none"
+        ? initialRoute.runId || ""
+        : "";
     if (initialRoute.page === "analysis") {
       state.reviewAnalysis.comparisonStatus = state.selectedRunId
         ? normalizedAnalysisComparisonStatus(
@@ -707,6 +735,8 @@ async function bootstrap() {
       initialPageRequests.push(loadAccessUsers());
     } else if (initialRoute.page === "prediction") {
       initialPageRequests.push(loadPredictionConfig(), loadPredictionBatches());
+    } else if (initialRoute.page === "trail-update") {
+      initialPageRequests.push(loadTrailAttributePreview());
     }
     if (initialRoute.page === "analysis") {
       initialPageRequests.push(loadReviewReasonAnalysis());
@@ -734,6 +764,7 @@ async function bootstrap() {
       issue: initialRoute.issue,
       issues: initialRoute.issues,
       source: initialRoute.source,
+      runId: initialRoute.runId,
       importKind: initialRoute.importKind,
       restoreRoute: true,
       loadPageData: false,

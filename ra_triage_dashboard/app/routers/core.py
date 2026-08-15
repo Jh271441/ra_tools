@@ -112,6 +112,7 @@ def _dashboard_config_payload() -> dict[str, Any]:
 @router.get("/batch-prediction", include_in_schema=False)
 @router.get("/system-status", include_in_schema=False)
 @router.get("/users", include_in_schema=False)
+@router.get("/trail-attribute-update", include_in_schema=False)
 async def index() -> HTMLResponse:
     return HTMLResponse(
         content=INDEX_HTML,

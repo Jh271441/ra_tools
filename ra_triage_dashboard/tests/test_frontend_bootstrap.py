@@ -23,7 +23,7 @@ class FrontendBootstrapTest(unittest.TestCase):
 
     def test_initial_route_owns_its_heavy_requests(self) -> None:
         self.assertIn("loadPageData = true", APP_JS)
-        self.assertEqual(APP_JS.count("loadPageData: false"), 2)
+        self.assertEqual(APP_JS.count("loadPageData: false"), 3)
         self.assertIn("const initialPageRequests = [loadOverview()]", APP_JS)
         self.assertIn('initialRoute.page === "review"', APP_JS)
         self.assertIn('initialRoute.page === "status"', APP_JS)

@@ -28,7 +28,17 @@ from .runtime import (
     database,
     settings,
 )
-from .routers import analysis, batch, cases, core, imports, inference, reviews, runs
+from .routers import (
+    analysis,
+    batch,
+    cases,
+    core,
+    imports,
+    inference,
+    reviews,
+    runs,
+    trail_update,
+)
 
 logger = logging.getLogger("ra_triage_dashboard")
 
@@ -348,3 +358,4 @@ app.include_router(analysis.router)
 app.include_router(imports.router)
 app.include_router(batch.router)
 app.include_router(inference.router)
+app.include_router(trail_update.router)

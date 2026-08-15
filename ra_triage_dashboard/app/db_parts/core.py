@@ -854,6 +854,7 @@ class DatabaseCoreMixin:
         egress_tags: tuple[str, ...] = (),
         search: str = "",
         search_aliases: tuple[str, ...] = (),
+        is_excluded: bool | None = None,
     ) -> list[dict[str, Any]]:
         """Return one latest-review row per baseline issue for analysis.
 
@@ -911,6 +912,9 @@ class DatabaseCoreMixin:
             model_run_id,
             *scope_params,
         ]
+        if is_excluded is not None:
+            where.append("ann.is_excluded = ?")
+            params.append(1 if is_excluded else 0)
         if comparison_statuses:
             where.append("i.gt_label IN (?, ?, ?)")
             params.extend(LABELS)

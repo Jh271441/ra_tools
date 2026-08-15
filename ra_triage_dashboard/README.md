@@ -205,6 +205,10 @@ Trail 只消费 `ra_stuck_auto_result` 和 `ra_stuck_auto_result_info`。可通�
 
 只有默认数据集的全部 Issue 分片完整返回时才允许创建快照；任一分片失败、返回不完整、结果字段不可见或没有三分类标准标签，都不会创建 Run。查询完整不代表预测必须全量：模型字段可只有部分 Issue 有有效预测，页面会明确显示实际覆盖数；`nan`、`<NA>` 或未知字符串不会被误计为可用标签。Trail 检查和快照均不写回 Trail、不修改 GT 或人工复核，也不改变团队默认 Run。如果 view 没有展示字段，页面会明确提示并保留 CSV/JSON/XLSX 上传入口。
 
+「Trail 属性更新」目前是独立的、只读的草稿工作流：在一个已选 Model Run 和数据集范围内，聚合最新 Review 中勾选“应该排除”的 Issue，生成稳定排序、带 SHA-256 摘要的 JSON。草稿目标是 `ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude`，采用显式 `deep_merge`，并在每个条目中保留 `model_run_id`、Review ID、复核人和复核时间。页面和接口都不会写入 Trail；下载或复制的草稿只能交给后续经过权限、审计、幂等和冲突校验的独立写入流程。
+
+接口：`GET /api/trail-attribute-update/preview?model_run_id=<run-id>&baselines=0508`。该接口只返回所选 Run 的 Review，不会把其他 Run 的标注混入；无 Run、未知 Run 或空范围会返回明确错误/空草稿。
+
 权威 GT 同步固定读取 `DASHBOARD_GT_SYNC_VIEW_ID=1000` 的 `ra_merge_result`，默认覆盖 baseline registry 中的全部数据集，不接受浏览器提交 host、view 或 scope；浏览器只能从服务端已配置的数据集里选择手动刷新范围。相关配置：
 
 - `DASHBOARD_GT_SYNC_ENABLED=true`：启用启动后的后台轮询。

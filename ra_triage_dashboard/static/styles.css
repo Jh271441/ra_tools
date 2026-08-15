@@ -1858,6 +1858,49 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .toast { position: fixed; right: 20px; bottom: 20px; z-index: 30; max-width: 460px; padding: 10px 12px; border: 1px solid rgba(34,211,238,.35); border-radius: 7px; color: #c8f2f5; background: #102329; font-size: 12px; }
 .toast.error { border-color: rgba(248,113,113,.45); color: #fecaca; background: #2c171c; }
 
+.trail-update-page { width: min(1480px, 100%); gap: 8px; }
+.trail-update-header-card,
+.trail-update-controls-card,
+.trail-update-table-card { display: grid; gap: 8px; }
+.trail-update-header-card p { margin: 0; max-width: 980px; line-height: 1.55; }
+.trail-update-safety-badge {
+  display: inline-flex; align-items: center; min-height: 26px; padding: 4px 8px;
+  border: 1px solid rgba(251,191,36,.35); border-radius: 6px; color: #f6d58a;
+  background: rgba(251,191,36,.08); font-size: 11px; font-weight: 650; white-space: nowrap;
+}
+.trail-update-control-grid {
+  min-width: 0; display: grid; grid-template-columns: minmax(260px, 1.1fr) minmax(150px, .5fr) minmax(0, 1.7fr);
+  align-items: end; gap: 8px;
+}
+.trail-update-control-grid label,
+.trail-update-baseline-control { min-width: 0; display: grid; gap: 4px; color: var(--muted); font-size: 11px; }
+.trail-update-control-grid select { min-width: 0; height: 36px; }
+.trail-update-baseline-control {
+  min-height: 36px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--overlay);
+}
+.trail-update-baseline-control strong { overflow: hidden; color: var(--text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.trail-update-actions { min-width: 0; display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+.trail-update-actions .button { min-width: 0; height: 36px; padding-inline: 10px; font-size: 11px; }
+.trail-update-status { min-height: 18px; color: var(--faint); font-size: 11px; }
+.trail-update-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.trail-update-target-value { overflow: hidden; font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px !important; text-overflow: ellipsis; white-space: nowrap; }
+.trail-update-digest { font: 600 13px "SFMono-Regular", Consolas, monospace; }
+.trail-update-table-wrap { min-width: 0; overflow-x: auto; }
+.trail-update-table { width: 100%; min-width: 920px; border-collapse: separate; border-spacing: 4px; table-layout: fixed; font-size: 11px; }
+.trail-update-table th,
+.trail-update-table td { padding: 7px 8px; border: 1px solid var(--line-soft); border-radius: 6px; color: var(--muted); background: var(--overlay); text-align: left; vertical-align: top; }
+.trail-update-table th { color: var(--text); background: var(--raised); font-size: 10px; font-weight: 700; }
+.trail-update-table td:nth-child(1) { width: 15%; }
+.trail-update-table td:nth-child(2), .trail-update-table td:nth-child(3) { width: 10%; }
+.trail-update-table td:nth-child(4) { width: 27%; }
+.trail-update-table td:nth-child(5) { width: 17%; }
+.trail-update-table td:nth-child(6) { width: 21%; }
+.trail-update-table td small { display: block; margin-top: 3px; color: var(--faint); font-size: 10px; line-height: 1.35; }
+.trail-update-issue { display: block; color: #b9edf0; font: 600 12px "SFMono-Regular", Consolas, monospace; }
+.trail-update-reason { display: -webkit-box; overflow: hidden; color: var(--text); line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.trail-update-table code { color: var(--accent); font-size: 10px; word-break: break-word; }
+.trail-update-empty { min-height: 42px; color: var(--faint) !important; text-align: center !important; vertical-align: middle !important; }
+
 .analysis-page { width: min(1480px, 100%); gap: 6px; }
 .analysis-filter-card { display: grid; gap: 7px; padding: 8px 10px; }
 .analysis-filters {
@@ -2555,6 +2598,10 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .media-nav { width: 32px; height: 32px; }
   .toast { right: 8px; bottom: 8px; max-width: calc(100vw - 16px); }
   .analysis-filters, .analysis-summary-grid, .analysis-cluster-grid { grid-template-columns: minmax(0, 1fr); }
+  .trail-update-control-grid, .trail-update-summary-grid { grid-template-columns: minmax(0, 1fr); }
+  .trail-update-actions { justify-content: flex-start; }
+  .trail-update-actions .button { flex: 1 1 150px; }
+  .trail-update-table { min-width: 820px; }
   .analysis-search-actions { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) auto; }
   .analysis-run-filter, .analysis-evidence-filter, .analysis-tag-filter, .analysis-trigger-filter, .analysis-egress-filter, .analysis-search-actions { grid-column: auto; grid-row: auto; }
   .analysis-search-actions { grid-column: 1 / -1; }

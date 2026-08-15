@@ -79,6 +79,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
     "renderAnalysisCatalogFilters",
     "renderReviewerFilter",
     "renderWorkAssigneeFilter",
+    "renderTrailAttributeRunPicker",
   ];
   for (const name of refreshers) {
     try {
@@ -535,6 +536,10 @@ function pageUrl(page, options = {}) {
       url.searchParams.set("page_size", String(analysis.pageSize));
     }
   }
+  if (page === "trail-update") {
+    const runId = options.runId ?? state.trailUpdate?.runId ?? state.selectedRunId;
+    if (runId) url.searchParams.set("run", runId);
+  }
   if (page === "prediction") {
     const issueIds = options.issues ?? (options.issue ? [options.issue] : []);
     [...new Set(issueIds)].forEach((issueId) => {
@@ -585,6 +590,7 @@ function showPage(
     issue = "",
     issues = [],
     source = "",
+    runId = "",
     importKind = "",
     runSourceTab = "",
     restoreRoute = false,
@@ -630,6 +636,13 @@ function showPage(
     }
   }
   if (target === "analysis") renderAnalysisRunFilter();
+  if (target === "trail-update") {
+    if (runId) state.trailUpdate.runId = runId;
+    if (typeof renderTrailAttributeRunPicker === "function") renderTrailAttributeRunPicker();
+    if (loadPageData && typeof loadTrailAttributePreview === "function") {
+      loadTrailAttributePreview().catch((error) => showToast(error.message, true));
+    }
+  }
   if (target === "status" && loadPageData) {
     loadStatus().catch((error) => showToast(error.message, true));
   }
@@ -642,6 +655,8 @@ function showPage(
       ? currentReviewRouteOptions({ issue })
       : target === "analysis"
         ? currentAnalysisRouteOptions()
+        : target === "trail-update"
+          ? { runId: state.trailUpdate?.runId || "" }
         : { issue, issues, source, importKind };
   const historyState = {
     page: target,
