@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-158`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-160`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -447,56 +447,51 @@
 
           <section class="app-page tool-page trail-update-page hidden" id="trailAttributeUpdatePage" data-page="trail-update">
             <section class="page-card trail-update-header-card">
-              <div>
-                <h2><span class="ui-lang-zh">Trail 属性更新</span><span class="ui-lang-en">Trail attribute update</span></h2>
-                <span class="trail-update-safety-badge"><span class="ui-lang-zh">只生成草稿，不写 Trail</span><span class="ui-lang-en">Draft only · Trail is not written</span></span>
+              <div class="trail-update-title-row">
+                <div>
+                  <span class="eyebrow">TRAIL ATTRIBUTE UPDATE</span>
+                  <h2><span class="ui-lang-zh">Trail 属性更新</span><span class="ui-lang-en">Trail attribute update</span></h2>
+                  <p><span class="ui-lang-zh">汇总当前 Run 中已标记“应该排除”的 Review，并将模型 label 与 JSON 结果写回 Trail。</span><span class="ui-lang-en">Review excluded cases for one Run, then write the model label and JSON result back to Trail.</span></p>
+                </div>
+                <span class="trail-update-safety-badge" id="trailUpdateSafetyBadge"><span class="ui-lang-zh">字段能力检查中</span><span class="ui-lang-en">Checking field capability</span></span>
               </div>
             </section>
 
-            <section class="trail-update-workspace">
-              <section class="page-card trail-update-onboarding" id="trailUpdateOnboarding">
-                <div class="trail-update-guide" id="trailUpdateGuide">
-                  <span class="eyebrow">HOW TO USE</span>
-                  <h3><span class="ui-lang-zh">三步生成待处理草稿</span><span class="ui-lang-en">Generate a draft in three steps</span></h3>
-                  <p><span class="ui-lang-zh">系统只汇总当前 Model Run 中最新 Review 标为“应该排除”的案例。</span><span class="ui-lang-en">Only the latest Reviews marked “should exclude” for the selected Model Run are included.</span></p>
-                  <ol class="trail-update-steps">
-                    <li><span class="trail-update-step-index">1</span><div><strong><span class="ui-lang-zh">选择模型 Run</span><span class="ui-lang-en">Choose a model Run</span></strong><small><span class="ui-lang-zh">数据集范围自动采用顶栏当前选择。</span><span class="ui-lang-en">The selected dataset scope is taken from the top bar.</span></small></div></li>
-                    <li><span class="trail-update-step-index">2</span><div><strong><span class="ui-lang-zh">生成草稿预览</span><span class="ui-lang-en">Generate the draft preview</span></strong><small><span class="ui-lang-zh">确认包含的案例、Review 和目标 Patch。</span><span class="ui-lang-en">Confirm the included cases, Reviews, and target patches.</span></small></div></li>
-                    <li><span class="trail-update-step-index">3</span><div><strong><span class="ui-lang-zh">下载或复制 JSON</span><span class="ui-lang-en">Download or copy the JSON</span></strong><small><span class="ui-lang-zh">需要回写时，交给经过权限和审核的 Trail 更新流程。</span><span class="ui-lang-en">Use an authorized, reviewed Trail-update workflow for any writeback.</span></small></div></li>
-                  </ol>
+            <section class="page-card trail-update-controls-card" id="trailUpdateOnboarding">
+              <div class="trail-update-control-grid">
+                <label>
+                  <span class="ui-lang-zh">模型 Run</span><span class="ui-lang-en">Model Run</span>
+                  <select id="trailUpdateRunSelect" aria-label="Trail update model run"><option value="">请选择模型 Run</option></select>
+                </label>
+                <div class="trail-update-baseline-control">
+                  <span class="ui-lang-zh">数据集范围</span><span class="ui-lang-en">Dataset scope</span>
+                  <strong id="trailUpdateBaselineSummary">—</strong>
                 </div>
+                <div class="page-actions trail-update-actions">
+                  <button class="button button-primary" id="trailUpdateLoadButton" type="button"><span class="ui-lang-zh">生成预览</span><span class="ui-lang-en">Build preview</span></button>
+                  <button class="button button-primary" id="trailUpdateCommitButton" type="button" disabled><span class="ui-lang-zh">提交到 Trail</span><span class="ui-lang-en">Commit to Trail</span></button>
+                </div>
+              </div>
+              <div class="trail-update-status" id="trailUpdateStatus" role="status" aria-live="polite" hidden></div>
+              <section class="trail-update-capability" id="trailUpdateCapability" aria-live="polite">
+                <div class="trail-update-capability-icon" aria-hidden="true">!</div>
+                <div><strong id="trailUpdateCapabilityTitle"><span class="ui-lang-zh">尚未生成预览</span><span class="ui-lang-en">Preview not generated</span></strong><p id="trailUpdateCapabilityMessage"><span class="ui-lang-zh">选择 Run 后生成预览，页面会检查 2410 view 是否同时暴露两个目标字段。</span><span class="ui-lang-en">Build a preview to check whether view 2410 exposes both target fields.</span></p><small id="trailUpdateVisibleFields"></small></div>
+              </section>
+            </section>
 
-                <section class="trail-update-controls-card">
-                  <div class="trail-update-control-grid">
-                    <label>
-                      <span class="ui-lang-zh">模型 Run</span><span class="ui-lang-en">Model Run</span>
-                      <select id="trailUpdateRunSelect" aria-label="Trail update model run"><option value="">请选择模型 Run</option></select>
-                    </label>
-                    <div class="trail-update-baseline-control">
-                      <span class="ui-lang-zh">数据集范围</span><span class="ui-lang-en">Dataset scope</span>
-                      <strong id="trailUpdateBaselineSummary">—</strong>
-                    </div>
-                    <div class="page-actions trail-update-actions">
-                      <button class="button button-primary" id="trailUpdateLoadButton" type="button"><span class="ui-lang-zh">生成草稿预览</span><span class="ui-lang-en">Generate draft preview</span></button>
-                    </div>
-                  </div>
-                  <div class="trail-update-status" id="trailUpdateStatus" role="status" aria-live="polite" hidden></div>
-                </section>
+            <section class="trail-update-results" id="trailUpdateResults" aria-label="Trail update results" hidden>
+              <section class="trail-update-summary-grid" aria-label="Trail update summary">
+                <article class="analysis-stat-card"><span class="ui-lang-zh">应该排除案例</span><span class="ui-lang-en">Excluded cases</span><strong id="trailUpdateCount">—</strong><small id="trailUpdateRunSummary">—</small></article>
+                <article class="analysis-stat-card"><span class="ui-lang-zh">模型 label 字段</span><span class="ui-lang-en">Model label field</span><strong id="trailUpdateResultField" class="trail-update-target-value">ra_stuck_auto_result</strong><small><span class="ui-lang-zh">三分类 label</span><span class="ui-lang-en">Three-class label</span></small></article>
+                <article class="analysis-stat-card"><span class="ui-lang-zh">模型 JSON 字段</span><span class="ui-lang-en">Model JSON field</span><strong id="trailUpdateInfoField" class="trail-update-target-value">ra_stuck_auto_result_info</strong><small>deep merge · ra_triage_dashboard</small></article>
+                <article class="analysis-stat-card"><span class="ui-lang-zh">Payload SHA-256</span><span class="ui-lang-en">Payload SHA-256</span><strong id="trailUpdateDigest" class="trail-update-digest">—</strong><small><span class="ui-lang-zh">提交前防止预览过期</span><span class="ui-lang-en">Stale preview protection</span></small></article>
               </section>
 
-              <section class="trail-update-results" id="trailUpdateResults" aria-label="Trail update results" hidden>
-                <section class="trail-update-summary-grid" aria-label="Trail update summary">
-                  <article class="analysis-stat-card"><span class="ui-lang-zh">应该排除案例</span><span class="ui-lang-en">Excluded cases</span><strong id="trailUpdateCount">—</strong><small id="trailUpdateRunSummary">—</small></article>
-                  <article class="analysis-stat-card"><span class="ui-lang-zh">目标属性</span><span class="ui-lang-en">Target property</span><strong class="trail-update-target-value">ra_stuck_auto_result_info</strong><small>ra_triage_dashboard.should_exclude</small></article>
-                  <article class="analysis-stat-card"><span class="ui-lang-zh">Payload SHA-256</span><span class="ui-lang-en">Payload SHA-256</span><strong id="trailUpdateDigest" class="trail-update-digest">—</strong><small><span class="ui-lang-zh">用于审计与幂等校验</span><span class="ui-lang-en">For audit and idempotency</span></small></article>
-                </section>
-
-                <section class="page-card trail-update-table-card">
-                  <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">草稿案例</span><span class="ui-lang-en">Draft cases</span></h3></div><div class="trail-update-result-actions"><small id="trailUpdateTableSummary">—</small><button class="button button-quiet" id="trailUpdateDownloadButton" type="button" disabled><span class="ui-lang-zh">下载 JSON 草稿</span><span class="ui-lang-en">Download JSON draft</span></button><button class="button button-quiet" id="trailUpdateCopyButton" type="button" disabled><span class="ui-lang-zh">复制 JSON 草稿</span><span class="ui-lang-en">Copy JSON draft</span></button></div></div>
-                  <div class="trail-update-table-wrap">
-                    <table class="trail-update-table"><thead><tr><th>Issue</th><th>GT</th><th>模型输出</th><th>模型原因</th><th>Review</th><th>目标 Patch</th></tr></thead><tbody id="trailUpdateTableBody"><tr><td colspan="6" class="trail-update-empty"><span class="ui-lang-zh">生成草稿后显示案例。</span><span class="ui-lang-en">Cases appear after generating a draft.</span></td></tr></tbody></table>
-                  </div>
-                </section>
+              <section class="page-card trail-update-table-card">
+                <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">排除候选预览</span><span class="ui-lang-en">Excluded candidates</span></h3><p><span class="ui-lang-zh">只展示当前 Run 的最新 Review；不会混入其他 Run。</span><span class="ui-lang-en">Only the latest Review for the selected Run is shown.</span></p></div><div class="trail-update-result-actions"><small id="trailUpdateTableSummary">—</small><button class="button button-quiet" id="trailUpdateDownloadButton" type="button" disabled><span class="ui-lang-zh">下载 JSON</span><span class="ui-lang-en">Download JSON</span></button><button class="button button-quiet" id="trailUpdateCopyButton" type="button" disabled><span class="ui-lang-zh">复制 JSON</span><span class="ui-lang-en">Copy JSON</span></button></div></div>
+                <div class="trail-update-table-wrap">
+                  <table class="trail-update-table"><thead><tr><th>Issue</th><th>GT</th><th>模型 label</th><th>模型 reason</th><th>Review</th><th>Trail 更新</th></tr></thead><tbody id="trailUpdateTableBody"><tr><td colspan="6" class="trail-update-empty"><span class="ui-lang-zh">生成预览后显示案例。</span><span class="ui-lang-en">Cases appear after building a preview.</span></td></tr></tbody></table>
+                </div>
               </section>
             </section>
           </section>
@@ -1089,7 +1084,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-158`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-160`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

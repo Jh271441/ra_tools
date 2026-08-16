@@ -12,6 +12,7 @@ from .web_paths import normalize_base_path
 
 HEADER_NAME_RE = re.compile(r"^[A-Za-z0-9-]{1,128}$")
 IDENTITY_NAME_RE = re.compile(r"^[A-Za-z0-9._@-]{1,128}$")
+FIELD_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,127}$")
 
 
 def _path(name: str, default: Path) -> Path:
@@ -116,6 +117,13 @@ class Settings:
     trail_view_id: int
     trail_sync_on_start: bool
     trail_sync_chunk_size: int
+    # Trail Attribute Update is deliberately fail-closed.  The dashboard can
+    # prepare and validate a write payload while production keeps the writer
+    # disabled until the configured Trail view exposes both model fields.
+    trail_attribute_write_enabled: bool
+    trail_attribute_write_chunk_size: int
+    trail_attribute_result_field: str
+    trail_attribute_info_field: str
     gt_sync_enabled: bool
     gt_sync_interval_seconds: int
     gt_sync_startup_delay_seconds: int
@@ -242,6 +250,24 @@ class Settings:
         )
         if any(not IDENTITY_NAME_RE.fullmatch(username) for username in sso_write_users):
             raise RuntimeError("DASHBOARD_SSO_WRITE_USERS 包含非法用户名。")
+        trail_attribute_result_field = (
+            os.getenv(
+                "DASHBOARD_TRAIL_ATTRIBUTE_RESULT_FIELD",
+                "ra_stuck_auto_result",
+            ).strip()
+            or "ra_stuck_auto_result"
+        )
+        trail_attribute_info_field = (
+            os.getenv(
+                "DASHBOARD_TRAIL_ATTRIBUTE_INFO_FIELD",
+                "ra_stuck_auto_result_info",
+            ).strip()
+            or "ra_stuck_auto_result_info"
+        )
+        if not FIELD_NAME_RE.fullmatch(trail_attribute_result_field):
+            raise RuntimeError("DASHBOARD_TRAIL_ATTRIBUTE_RESULT_FIELD 不是合法字段名。")
+        if not FIELD_NAME_RE.fullmatch(trail_attribute_info_field):
+            raise RuntimeError("DASHBOARD_TRAIL_ATTRIBUTE_INFO_FIELD 不是合法字段名。")
         trust_proxy_headers = _bool(
             "DASHBOARD_TRUST_PROXY_IDENTITY_HEADERS", False
         )
@@ -365,6 +391,15 @@ class Settings:
             trail_view_id=_integer("DASHBOARD_TRAIL_VIEW_ID", 2410),
             trail_sync_on_start=_bool("DASHBOARD_SYNC_TRAIL_ON_START", True),
             trail_sync_chunk_size=_integer("DASHBOARD_TRAIL_SYNC_CHUNK_SIZE", 160, 1),
+            trail_attribute_write_enabled=_bool(
+                "DASHBOARD_TRAIL_ATTRIBUTE_WRITE_ENABLED", False
+            ),
+            trail_attribute_write_chunk_size=min(
+                50,
+                _integer("DASHBOARD_TRAIL_ATTRIBUTE_WRITE_CHUNK_SIZE", 10, 1),
+            ),
+            trail_attribute_result_field=trail_attribute_result_field,
+            trail_attribute_info_field=trail_attribute_info_field,
             gt_sync_enabled=_bool("DASHBOARD_GT_SYNC_ENABLED", True),
             gt_sync_interval_seconds=_integer(
                 "DASHBOARD_GT_SYNC_INTERVAL_SECONDS", 1800, 60

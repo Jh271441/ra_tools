@@ -78,6 +78,14 @@ def _dashboard_config_payload() -> dict[str, Any]:
         "build_commit": settings.build_commit,
         "default_model_run_id": default_model_run_id,
         "trail_sync": runtime_state["trail_sync"],
+        "trail_attribute_update": {
+            "enabled": settings.trail_attribute_write_enabled,
+            "view_id": settings.trail_view_id,
+            "target_fields": [
+                settings.trail_attribute_result_field,
+                settings.trail_attribute_info_field,
+            ],
+        },
         # Local DB only — never queries Trail on page open.
         "gt_sync": gt_sync_status(),
         "missing_evidence_catalog": _missing_evidence_catalog(),
@@ -150,6 +158,11 @@ async def health() -> dict[str, Any]:
         "trail_sync": runtime_state["trail_sync"],
         "gt_sync": await asyncio.to_thread(gt_sync_status),
         "trail_write_enabled": False,
+        "trail_attribute_write_enabled": settings.trail_attribute_write_enabled,
+        "trail_attribute_target_fields": [
+            settings.trail_attribute_result_field,
+            settings.trail_attribute_info_field,
+        ],
         "batch_prediction_enabled": settings.batch_prediction_enabled,
         "autotriage_push_enabled": settings.autotriage_push_enabled,
         "model_gateway": model_catalog.status(),
@@ -459,6 +472,11 @@ async def status(response: Response) -> dict[str, Any]:
             "deployment_mode": settings.deployment_mode,
         },
         "trail_write_enabled": False,
+        "trail_attribute_write_enabled": settings.trail_attribute_write_enabled,
+        "trail_attribute_target_fields": [
+            settings.trail_attribute_result_field,
+            settings.trail_attribute_info_field,
+        ],
         "build_commit": settings.build_commit,
         **filesystem,
         "ares_indexed_issues": indexed_issues,

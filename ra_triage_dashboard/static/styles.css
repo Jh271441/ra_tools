@@ -1859,35 +1859,22 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .toast.error { border-color: rgba(248,113,113,.45); color: #fecaca; background: #2c171c; }
 
 .trail-update-page { width: min(1480px, 100%); gap: 8px; }
-.trail-update-header-card {
-  min-height: 58px; display: grid; place-items: center; padding: 10px 16px; text-align: center;
-}
-.trail-update-header-card > div { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; }
-.trail-update-header-card h2 { font-size: 17px; }
+.trail-update-header-card { display: grid; gap: 8px; padding: 12px 16px; }
+.trail-update-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.trail-update-title-row h2 { margin: 0 0 2px; color: var(--text); font-size: 19px; }
+.trail-update-title-row p { margin: 0; color: var(--muted); font-size: 11px; }
 .trail-update-safety-badge {
-  display: inline-flex; align-items: center; min-height: 26px; padding: 4px 8px;
-  border: 1px solid rgba(251,191,36,.35); border-radius: 6px; color: #f6d58a;
+  display: inline-flex; align-items: center; min-height: 25px; padding: 4px 9px;
+  border: 1px solid rgba(251,191,36,.4); border-radius: 6px; color: #f6d58a;
   background: rgba(251,191,36,.08); font-size: 11px; font-weight: 650; white-space: nowrap;
 }
+.trail-update-safety-badge[data-status="ready"] { border-color: rgba(52,211,153,.4); color: #9ae6c4; background: rgba(52,211,153,.08); }
+.trail-update-safety-badge[data-status="disabled"] { border-color: rgba(148,163,184,.35); color: var(--muted); background: rgba(148,163,184,.08); }
 .trail-update-workspace, .trail-update-results, .trail-update-controls-card, .trail-update-table-card { display: grid; gap: 8px; }
-.trail-update-onboarding {
-  min-height: 540px; min-height: clamp(360px, 56vh, 540px); min-height: clamp(360px, 56dvh, 540px);
-  display: grid; align-content: center; justify-items: center; gap: 20px; padding: 28px;
-}
-.trail-update-guide { width: min(560px, 100%); display: grid; justify-items: center; gap: 8px; text-align: center; }
-.trail-update-guide h3 { color: var(--text); font-size: 18px; }
-.trail-update-guide > p { max-width: 510px; color: var(--muted); font-size: 12px; line-height: 1.55; }
-.trail-update-steps { width: min(520px, 100%); display: grid; gap: 7px; margin: 5px 0 0; padding: 0; list-style: none; text-align: left; }
-.trail-update-steps li { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid var(--line-soft); border-radius: 7px; background: var(--overlay); }
-.trail-update-step-index { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid rgba(34,211,238,.4); border-radius: 50%; color: var(--accent); background: var(--accent-soft); font-size: 11px; font-weight: 750; }
-.trail-update-steps li > div { min-width: 0; display: grid; gap: 2px; }
-.trail-update-steps strong { color: var(--text); font-size: 12px; }
-.trail-update-steps small { color: var(--faint); font-size: 10px; line-height: 1.4; }
-.trail-update-controls-card { width: min(720px, 100%); }
-.trail-update-page.has-preview .trail-update-onboarding { min-height: 0; padding: 12px; }
-.trail-update-page.has-preview .trail-update-controls-card { width: 100%; }
+.trail-update-onboarding { display: grid; gap: 8px; padding: 0; }
+.trail-update-controls-card { width: 100%; }
 .trail-update-control-grid {
-  min-width: 0; display: grid; grid-template-columns: minmax(260px, 1.1fr) minmax(150px, .5fr) minmax(0, 1.7fr);
+  min-width: 0; display: grid; grid-template-columns: minmax(270px, 1.15fr) minmax(155px, .55fr) minmax(290px, 1fr);
   align-items: end; gap: 8px;
 }
 .trail-update-control-grid label,
@@ -1898,11 +1885,19 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 }
 .trail-update-baseline-control strong { overflow: hidden; color: var(--text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .trail-update-actions { min-width: 0; display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
-.trail-update-page:not(.has-preview) .trail-update-actions { justify-content: center; }
 .trail-update-actions .button { min-width: 0; height: 36px; padding-inline: 10px; font-size: 11px; }
-.trail-update-status { min-height: 18px; color: var(--faint); font-size: 11px; text-align: center; }
+.trail-update-status { min-height: 18px; color: var(--faint); font-size: 11px; }
 .trail-update-status[hidden] { display: none; }
-.trail-update-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.trail-update-capability { display: grid; grid-template-columns: 26px minmax(0, 1fr); align-items: start; gap: 8px; padding: 9px 10px; border: 1px solid rgba(251,191,36,.28); border-radius: 7px; background: rgba(251,191,36,.06); }
+.trail-update-capability[data-status="ready"] { border-color: rgba(52,211,153,.35); background: rgba(52,211,153,.06); }
+.trail-update-capability[data-status="disabled"] { border-color: var(--line); background: var(--overlay); }
+.trail-update-capability-icon { width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid currentColor; border-radius: 50%; color: #f6d58a; font-size: 12px; font-weight: 800; }
+.trail-update-capability[data-status="ready"] .trail-update-capability-icon { color: #9ae6c4; }
+.trail-update-capability[data-status="disabled"] .trail-update-capability-icon { color: var(--muted); }
+.trail-update-capability h3 { margin: 0; color: var(--text); font-size: 12px; }
+.trail-update-capability p { margin: 2px 0 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
+.trail-update-capability small { display: block; margin-top: 3px; color: var(--faint); font: 10px "SFMono-Regular", Consolas, monospace; word-break: break-word; }
+.trail-update-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .trail-update-target-value { overflow: hidden; font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px !important; text-overflow: ellipsis; white-space: nowrap; }
 .trail-update-digest { font: 600 13px "SFMono-Regular", Consolas, monospace; }
 .trail-update-results-heading { align-items: center; margin-bottom: 0; }
@@ -1924,6 +1919,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-reason { display: -webkit-box; overflow: hidden; color: var(--text); line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .trail-update-table code { color: var(--accent); font-size: 10px; word-break: break-word; }
 .trail-update-empty { min-height: 42px; color: var(--faint) !important; text-align: center !important; vertical-align: middle !important; }
+.trail-update-table tr.is-invalid td { border-color: rgba(248,113,113,.35); }
 
 .analysis-page { width: min(1480px, 100%); gap: 6px; }
 .analysis-filter-card { display: grid; gap: 7px; padding: 8px 10px; }
@@ -2622,10 +2618,14 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .media-nav { width: 32px; height: 32px; }
   .toast { right: 8px; bottom: 8px; max-width: calc(100vw - 16px); }
   .analysis-filters, .analysis-summary-grid, .analysis-cluster-grid { grid-template-columns: minmax(0, 1fr); }
-  .trail-update-onboarding { min-height: 340px; min-height: clamp(340px, 58vh, 460px); min-height: clamp(340px, 58dvh, 460px); padding: 18px 12px; }
+  .trail-update-title-row { align-items: flex-start; flex-direction: column; }
+  .trail-update-safety-badge { white-space: normal; }
+  .trail-update-onboarding { padding: 0; }
   .trail-update-control-grid, .trail-update-summary-grid { grid-template-columns: minmax(0, 1fr); }
   .trail-update-actions { justify-content: flex-start; }
   .trail-update-actions .button { flex: 1 1 150px; }
+  .trail-update-capability { grid-template-columns: 22px minmax(0, 1fr); padding: 8px; }
+  .trail-update-capability-icon { width: 21px; height: 21px; font-size: 10px; }
   .trail-update-results-heading { align-items: flex-start; }
   .trail-update-result-actions { width: 100%; justify-content: flex-start; }
   .trail-update-result-actions .button { flex: 1 1 150px; }

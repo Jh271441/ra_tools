@@ -3,7 +3,8 @@ from __future__ import annotations
 import unittest
 
 from ra_triage_dashboard.app.routers.trail_update import (
-    TRAIL_TARGET_FIELD,
+    TRAIL_INFO_FIELD,
+    TRAIL_RESULT_FIELD,
     TRAIL_TARGET_PATH,
     build_trail_attribute_update_payload,
 )
@@ -49,8 +50,10 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         )
 
         self.assertFalse(payload["trail_write_enabled"])
-        self.assertEqual(payload["write_status"], "draft_only")
-        self.assertEqual(payload["target_field"], TRAIL_TARGET_FIELD)
+        self.assertEqual(payload["write_status"], "disabled")
+        self.assertEqual(payload["target_fields"], [TRAIL_RESULT_FIELD, TRAIL_INFO_FIELD])
+        self.assertFalse(payload["write_ready"])
+        self.assertEqual(payload["target_field"], TRAIL_INFO_FIELD)
         self.assertEqual(payload["target_path"], TRAIL_TARGET_PATH)
         self.assertEqual(payload["count"], 1)
         item = payload["items"][0]
@@ -58,6 +61,8 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         self.assertEqual(item["target"]["merge_strategy"], "deep_merge")
         self.assertTrue(item["target"]["patch"]["ra_triage_dashboard"]["should_exclude"])
         self.assertEqual(item["target"]["patch"]["ra_triage_dashboard"]["model_run_id"], "run-1")
+        self.assertEqual(item["field_updates"][TRAIL_RESULT_FIELD], "误触发")
+        self.assertEqual(item["field_updates"][TRAIL_INFO_FIELD], item["target"]["patch"])
         self.assertEqual(payload["draft"]["payload_sha256"], payload["payload_sha256"])
 
     def test_payload_digest_changes_when_review_evidence_changes(self) -> None:

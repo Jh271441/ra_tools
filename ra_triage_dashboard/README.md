@@ -205,15 +205,23 @@ Trail 只消费 `ra_stuck_auto_result` 和 `ra_stuck_auto_result_info`。可通�
 
 只有默认数据集的全部 Issue 分片完整返回时才允许创建快照；任一分片失败、返回不完整、结果字段不可见或没有三分类标准标签，都不会创建 Run。查询完整不代表预测必须全量：模型字段可只有部分 Issue 有有效预测，页面会明确显示实际覆盖数；`nan`、`<NA>` 或未知字符串不会被误计为可用标签。Trail 检查和快照均不写回 Trail、不修改 GT 或人工复核，也不改变团队默认 Run。如果 view 没有展示字段，页面会明确提示并保留 CSV/JSON/XLSX 上传入口。
 
-「Trail 属性更新」目前是独立的、只读的草稿工作流：在一个已选 Model Run 和数据集范围内，聚合最新 Review 中勾选“应该排除”的 Issue，生成稳定排序、带 SHA-256 摘要的 JSON。草稿目标是 `ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude`，采用显式 `deep_merge`，并在每个条目中保留 `model_run_id`、Review ID、复核人和复核时间。页面和接口都不会写入 Trail；下载或复制的草稿只能交给后续经过权限、审计、幂等和冲突校验的独立写入流程。
+「Trail 属性更新」是按 Model Run 隔离的“预览 → 明确提交”工作流：它只聚合当前 Run 最新 Review 中勾选“应该排除”的 Issue，并按 Issue ID 稳定排序。目标字段固定为 `ra_stuck_auto_result`（三分类模型 label）和 `ra_stuck_auto_result_info`（JSON 结果详情）；详情字段采用 `deep_merge`，保留已有内容，并追加 `model_result` 与 `ra_triage_dashboard` 审计命名空间（Run、Review、复核人、时间和排除标记）。每次预览生成 SHA-256 摘要，提交时服务端会重新读取目标字段并校验摘要，避免旧页面覆盖新数据。
+
+默认 `DASHBOARD_TRAIL_ATTRIBUTE_WRITE_ENABLED=false`，因此即使页面有提交按钮，字段未暴露或写入开关未开启时也只能预览/下载，绝不会回退写入旧的 `ra_result`/`ra_info`。只有目标 view 同时返回两个精确字段、所有 label 符合三分类、请求来自已验证 SSO 写入用户，并且提交摘要未过期时，按钮才会解锁；写入通过 `ra_auto_triage/utils/trail_api.py` 的受控 `multi_update` 客户端，按小块执行且不记录 token 或完整 payload。
 
 使用方式：
 
 1. 在左侧打开「Trail 属性更新」，选择一个 Model Run；数据集范围自动使用顶栏当前选择。
-2. 点击「生成草稿预览」，确认其中的案例、Review 和目标 Patch。
-3. 下载或复制 JSON 草稿；若需要回写，交由具备权限且经过审核的 Trail 更新流程处理。
+2. 点击「生成预览」，确认案例、Review、字段能力和目标 Patch。
+3. 字段检查通过且具备写入权限时，点击「提交到 Trail」；否则下载/复制 JSON 交给后续受控流程。
 
-接口：`GET /api/trail-attribute-update/preview?model_run_id=<run-id>&baselines=0508`。该接口只返回所选 Run 的 Review，不会把其他 Run 的标注混入；无 Run、未知 Run 或空范围会返回明确错误/空草稿。
+接口：`GET /api/trail-attribute-update/preview?model_run_id=<run-id>&baselines=0508` 和 `POST /api/trail-attribute-update/commit`（body 必须包含 `confirm=true`、`model_run_id`、`payload_sha256`）。预览接口只返回所选 Run 的 Review，不会把其他 Run 的标注混入；无 Run、未知 Run 或空范围会返回明确错误/空草稿。提交接口会重新生成预览并拒绝过期摘要。
+
+相关配置：
+
+- `DASHBOARD_TRAIL_ATTRIBUTE_WRITE_ENABLED=false`：Trail 属性写入总开关，生产默认关闭。
+- `DASHBOARD_TRAIL_ATTRIBUTE_WRITE_CHUNK_SIZE=10`：单次 `multi_update` 的最大条数，服务端上限 50。
+- `DASHBOARD_TRAIL_ATTRIBUTE_RESULT_FIELD=ra_stuck_auto_result`、`DASHBOARD_TRAIL_ATTRIBUTE_INFO_FIELD=ra_stuck_auto_result_info`：字段名只允许安全标识符；除非 Trail schema 已明确迁移，不要改成旧字段。
 
 权威 GT 同步固定读取 `DASHBOARD_GT_SYNC_VIEW_ID=1000` 的 `ra_merge_result`，默认覆盖 baseline registry 中的全部数据集，不接受浏览器提交 host、view 或 scope；浏览器只能从服务端已配置的数据集里选择手动刷新范围。相关配置：
 
