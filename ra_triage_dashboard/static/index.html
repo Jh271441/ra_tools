@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-160`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-161`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -199,7 +199,12 @@
                 </label>
                 <label class="filter-search">
                   <span class="ui-lang-zh">检索</span><span class="ui-lang-en">Search</span>
-                  <input id="searchInput" name="search" placeholder="Issue ID、场景或关键词" data-placeholder-zh="Issue ID、场景或关键词" data-placeholder-en="Issue ID, scene, or keyword" autocomplete="off" />
+                  <div class="issue-query-control">
+                    <input id="searchInput" name="search" placeholder="Issue ID、场景或关键词" data-placeholder-zh="Issue ID、场景或关键词" data-placeholder-en="Issue ID, scene, or keyword" autocomplete="off" />
+                    <button class="button button-quiet issue-query-button" id="openIssueQueryButton" type="button">
+                      <span class="ui-lang-zh">多 Issue</span><span class="ui-lang-en">Multi-Issue</span>
+                    </button>
+                  </div>
                 </label>
                 <label>
                   <span>GT</span>
@@ -848,6 +853,28 @@
       </div>
     </div>
 
+    <dialog class="dialog issue-query-dialog" id="issueQueryDialog">
+      <div class="dialog-card">
+        <div class="dialog-heading">
+          <div>
+            <h2><span class="ui-lang-zh">多 Issue 查询</span><span class="ui-lang-en">Multi-Issue query</span></h2>
+            <p class="dialog-copy"><span class="ui-lang-zh">一次粘贴多个 Issue，支持逗号、空格、换行或 Voyager Issue 链接。</span><span class="ui-lang-en">Paste multiple Issues separated by commas, spaces, newlines, or Voyager links.</span></p>
+          </div>
+          <button class="icon-button" type="button" data-close="issueQueryDialog" aria-label="Close" data-i18n-aria-label="dialog.close">×</button>
+        </div>
+        <label class="issue-query-field">
+          <span class="ui-lang-zh">Issue 列表</span><span class="ui-lang-en">Issue list</span>
+          <textarea id="issueQueryInput" rows="7" spellcheck="false" placeholder="cn32171803, cn31954847&#10;cn32000543" data-placeholder-zh="cn32171803, cn31954847&#10;cn32000543" data-placeholder-en="cn32171803, cn31954847&#10;cn32000543"></textarea>
+        </label>
+        <div class="issue-query-feedback" id="issueQueryFeedback" aria-live="polite"></div>
+        <div class="dialog-actions">
+          <button class="button button-quiet" id="clearIssueQueryButton" type="button"><span class="ui-lang-zh">清空</span><span class="ui-lang-en">Clear</span></button>
+          <button class="button button-quiet" type="button" data-close="issueQueryDialog"><span class="ui-lang-zh">取消</span><span class="ui-lang-en">Cancel</span></button>
+          <button class="button button-primary" id="applyIssueQueryButton" type="button"><span class="ui-lang-zh">查询</span><span class="ui-lang-en">Query</span></button>
+        </div>
+      </div>
+    </dialog>
+
     <dialog class="dialog dialog-wide source-preview-dialog" id="sourcePreviewDialog">
       <div class="dialog-card">
         <div class="dialog-heading">
@@ -1084,7 +1111,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-160`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-161`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

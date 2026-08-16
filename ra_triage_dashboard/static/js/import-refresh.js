@@ -301,6 +301,8 @@ async function resetReviewFilters() {
   state.clusterKey = "";
   state.casePage = 1;
   if ($("#searchInput")) $("#searchInput").value = "";
+  if (typeof updateIssueQueryButton === "function") updateIssueQueryButton();
+  if ($("#issueQueryInput")) $("#issueQueryInput").value = "";
   setMultiFilterValues($("#gtFilter"), []);
   setMultiFilterValues($("#annotationFilter"), []);
   setMultiFilterValues($("#reviewerFilter"), []);

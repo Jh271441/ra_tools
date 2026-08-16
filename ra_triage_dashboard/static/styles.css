@@ -514,6 +514,10 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
 }
 .review-filters label { min-width: 0; display: grid; gap: 3px; color: var(--faint); font-size: 11px; }
 .review-filters input, .review-filters select { min-width: 0; height: 32px; padding: 5px 29px 5px 7px; font-size: 12px; }
+.issue-query-control { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: 5px; }
+.issue-query-control input { width: 100%; }
+.issue-query-button { min-width: 68px; height: 32px; padding: 5px 8px; white-space: nowrap; }
+.issue-query-button.has-issues { border-color: rgba(34,211,238,.55); color: var(--accent); background: var(--accent-soft); }
 .filter-comparison .multi-filter-summary.has-value { font-weight: 650; letter-spacing: .01em; }
 .filter-submit { height: 32px; padding: 5px 8px; white-space: nowrap; }
 .review-quick-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
@@ -1658,6 +1662,13 @@ html[data-ui-lang="en"] .expected-output-rule-popover ul.ui-lang-en { display: g
 code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 7px; }
 .dialog-result, .job-result { padding: 9px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: #0d121b; white-space: pre-wrap; word-break: break-word; font-size: 11px; line-height: 1.5; }
+.issue-query-dialog { width: min(680px, calc(100vw - 30px)); }
+.issue-query-dialog .dialog-card { gap: 14px; }
+.issue-query-field { display: grid; gap: 6px; color: var(--muted); font-size: 12px; }
+.issue-query-field textarea { min-height: 150px; resize: vertical; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.issue-query-feedback { min-height: 18px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.issue-query-feedback.is-ready { color: #8fd9bd; }
+.issue-query-feedback.is-error { color: #f4a8a8; }
 .history-dialog { width: min(900px, calc(100vw - 30px)); height: min(86vh, 820px); max-width: calc(100vw - 30px); max-height: calc(100dvh - 24px); }
 .history-dialog .dialog-card { height: 100%; min-height: 0; max-height: 100%; grid-template-rows: auto auto minmax(0, 1fr); gap: 14px; padding: 20px; }
 .history-dialog .dialog-heading h2 { font-size: 20px; }

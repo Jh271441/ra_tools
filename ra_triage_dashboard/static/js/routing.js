@@ -340,6 +340,12 @@ function parsePageRoute() {
   const issueIds = params
     .getAll("issue")
     .filter((issueId) => /^[A-Za-z0-9_-]{3,128}$/.test(issueId));
+  const reviewIssueIds = typeof parseIssueIdsInput === "function"
+    ? parseIssueIdsInput(params.get("issue_ids") || "").ids
+    : String(params.get("issue_ids") || "")
+        .split(/[\s,，、;；]+/)
+        .map((value) => value.trim())
+        .filter((value, index, values) => /^[A-Za-z0-9_-]{3,128}$/.test(value) && values.indexOf(value) === index);
   const legacyImport = pathname === "/import";
   const reviewFilters = normalizedReviewRouteFilters(params);
   return {
@@ -354,6 +360,7 @@ function parsePageRoute() {
       issueIds[0] ||
       (/^[A-Za-z0-9_-]{3,128}$/.test(legacyHash) ? legacyHash : ""),
     issues: issueIds,
+    reviewIssueIds,
     source: params.get("source") || "",
     runId: params.get("run") || "",
     comparisonStatus: routeReviewComparisonStatus(params),
@@ -380,6 +387,7 @@ function currentReviewRouteOptions(overrides = {}) {
     comparisonStatus: state.reviewComparisonStatus,
     failureOnly: state.failureOnly,
     search: $("#searchInput")?.value.trim() || "",
+    issueIds: [...(state.reviewIssueIds || [])],
     gtLabel: getMultiFilterValues($("#gtFilter")),
     modelLabel: getMultiFilterValues($("#annotationFilter")),
     annotationAuthor: getMultiFilterValues($("#reviewerFilter")),
@@ -395,6 +403,11 @@ function currentReviewRouteOptions(overrides = {}) {
 function applyReviewRouteControls(route) {
   if (!route) return;
   if ($("#searchInput")) $("#searchInput").value = route.search || "";
+  state.reviewIssueIds = Array.isArray(route.reviewIssueIds)
+    ? [...new Set(route.reviewIssueIds.filter((value) => /^[A-Za-z0-9_-]{3,128}$/.test(String(value))))]
+    : [];
+  if ($("#issueQueryInput")) $("#issueQueryInput").value = state.reviewIssueIds.join("\n");
+  if (typeof updateIssueQueryButton === "function") updateIssueQueryButton();
   setMultiFilterValues($("#gtFilter"), route.gtLabel);
   setMultiFilterValues($("#annotationFilter"), route.modelLabel);
   setMultiFilterValues($("#workAssigneeFilter"), route.workAssignee);
@@ -489,6 +502,8 @@ function pageUrl(page, options = {}) {
       url.searchParams.set("comparison", comparisonStatus);
     }
     if (review.search) url.searchParams.set("q", review.search);
+    const issueIds = (review.issueIds || []).filter((value) => /^[A-Za-z0-9_-]{3,128}$/.test(String(value)));
+    if (issueIds.length) url.searchParams.set("issue_ids", issueIds.join(","));
     const gt = joinFilterList(review.gtLabel);
     const modelLabel = joinFilterList(review.modelLabel);
     const reviewer = joinFilterList(review.annotationAuthor);

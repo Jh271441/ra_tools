@@ -10,6 +10,7 @@ function scheduleReviewFilterReload(delay = 0) {
   reviewSearchTimer = window.setTimeout(() => {
     reviewSearchTimer = null;
     state.reviewIssueIds = [];
+    if (typeof updateIssueQueryButton === "function") updateIssueQueryButton();
     state.casePage = 1;
     reloadReviewGallery({ includeOverview: false, historyMode: "replace" }).catch(
       (error) => showToast(error.message, true)
@@ -19,6 +20,7 @@ function scheduleReviewFilterReload(delay = 0) {
 
 function bindEvents() {
   bindWorkSplitControls();
+  if (typeof bindIssueQueryControls === "function") bindIssueQueryControls();
   document.querySelectorAll("[data-page-target]").forEach((element) => {
     element.addEventListener("click", (event) => {
       if (

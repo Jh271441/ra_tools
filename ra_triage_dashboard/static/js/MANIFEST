@@ -4,6 +4,7 @@ core-base.js
 i18n-messages.js
 i18n.js
 routing.js
+issue-query.js
 format-api.js
 gt-sync.js
 session-config.js
