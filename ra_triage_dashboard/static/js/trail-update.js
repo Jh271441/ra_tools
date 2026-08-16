@@ -31,19 +31,35 @@ function renderTrailAttributeRunPicker() {
   if (summary) summary.textContent = baseline.join(" + ") || uiText("当前数据集", "Selected dataset");
 }
 
+function setTrailAttributeStatus(message = "") {
+  const status = $("#trailUpdateStatus");
+  if (!status) return;
+  status.hidden = !message;
+  status.textContent = message;
+}
+
+function setTrailAttributeUpdatePreviewVisible(visible) {
+  const page = $("#trailAttributeUpdatePage");
+  const guide = $("#trailUpdateGuide");
+  const results = $("#trailUpdateResults");
+  page?.classList.toggle("has-preview", visible);
+  if (guide) guide.hidden = visible;
+  if (results) results.hidden = !visible;
+}
+
 function clearTrailAttributePreview(message = "") {
   state.trailUpdate.data = null;
+  setTrailAttributeUpdatePreviewVisible(false);
   $("#trailUpdateCount").textContent = "—";
   $("#trailUpdateRunSummary").textContent = "—";
   $("#trailUpdateDigest").textContent = "—";
   $("#trailUpdateTableSummary").textContent = "—";
   $("#trailUpdateDownloadButton")?.toggleAttribute("disabled", true);
   $("#trailUpdateCopyButton")?.toggleAttribute("disabled", true);
-  const status = $("#trailUpdateStatus");
-  if (status) status.textContent = message || uiText("请选择 Run 后生成预览。", "Choose a Run to generate a preview.");
+  setTrailAttributeStatus(message);
   const body = $("#trailUpdateTableBody");
   if (body) {
-    body.innerHTML = `<tr><td colspan="6" class="trail-update-empty">${uiText("加载后显示应该排除案例。", "Excluded cases appear after loading.")}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="6" class="trail-update-empty">${uiText("生成草稿后显示案例。", "Cases appear after generating a draft.")}</td></tr>`;
   }
 }
 
@@ -58,6 +74,7 @@ function renderTrailAttributePreview(data) {
   const items = Array.isArray(data?.items) ? data.items : [];
   const run = data?.selected_run || {};
   const digest = String(data?.payload_sha256 || "");
+  setTrailAttributeUpdatePreviewVisible(true);
   $("#trailUpdateCount").textContent = String(items.length);
   $("#trailUpdateRunSummary").textContent = run.name || run.id || "—";
   $("#trailUpdateDigest").textContent = digest ? `${digest.slice(0, 12)}…` : "—";
@@ -66,13 +83,12 @@ function renderTrailAttributePreview(data) {
     `${items.length} 条；按 Issue ID 稳定排序`,
     `${items.length} items; stable Issue ID ordering`
   );
-  const status = $("#trailUpdateStatus");
-  if (status) {
-    status.textContent = uiText(
+  setTrailAttributeStatus(
+    uiText(
       `已生成草稿：${items.length} 条。当前仅预览，不写入 Trail。`,
       `Draft ready: ${items.length} item(s). Preview only; Trail is not written.`
-    );
-  }
+    )
+  );
   const body = $("#trailUpdateTableBody");
   if (!body) return;
   if (!items.length) {
@@ -99,13 +115,12 @@ async function loadTrailAttributePreview() {
   const select = $("#trailUpdateRunSelect");
   const runId = String(select?.value || state.trailUpdate?.runId || "").trim();
   if (!runId) {
-    clearTrailAttributePreview();
+    clearTrailAttributePreview(uiText("请先选择一个模型 Run。", "Choose a model Run first."));
     return null;
   }
   state.trailUpdate.runId = runId;
   const requestSeq = ++state.trailUpdate.requestSeq;
-  const status = $("#trailUpdateStatus");
-  if (status) status.textContent = uiText("正在聚合最新 Review…", "Aggregating latest Reviews…");
+  setTrailAttributeStatus(uiText("正在生成草稿预览…", "Generating draft preview…"));
   $("#trailUpdateLoadButton")?.toggleAttribute("disabled", true);
   try {
     const data = await api(trailUpdateEndpoint(runId));
@@ -118,6 +133,13 @@ async function loadTrailAttributePreview() {
       history.replaceState({ page: "trail-update" }, "", pageUrl("trail-update", { runId }));
     }
     return data;
+  } catch (error) {
+    if (requestSeq === state.trailUpdate.requestSeq) {
+      setTrailAttributeStatus(
+        uiText("草稿预览生成失败，请检查所选 Run 后重试。", "Could not generate the draft preview. Check the selected Run and try again.")
+      );
+    }
+    throw error;
   } finally {
     if (requestSeq === state.trailUpdate.requestSeq) {
       $("#trailUpdateLoadButton")?.toggleAttribute("disabled", false);

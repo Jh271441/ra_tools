@@ -639,7 +639,7 @@ function showPage(
   if (target === "trail-update") {
     if (runId) state.trailUpdate.runId = runId;
     if (typeof renderTrailAttributeRunPicker === "function") renderTrailAttributeRunPicker();
-    if (loadPageData && typeof loadTrailAttributePreview === "function") {
+    if (loadPageData && runId && typeof loadTrailAttributePreview === "function") {
       loadTrailAttributePreview().catch((error) => showToast(error.message, true));
     }
   }

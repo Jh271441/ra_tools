@@ -32,7 +32,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-157", APP_ENTRY_JS)
+        self.assertIn("manual-triage-158", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -73,7 +73,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-157", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-158", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
         self.assertNotIn("async function bootstrap", APP_ENTRY_JS)
@@ -140,7 +140,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('styles.css?v=manual-triage-157', INDEX_HTML)
+        self.assertIn('styles.css?v=manual-triage-158', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: nowrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -772,7 +772,19 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-157", APP_ENTRY_JS)
+        self.assertIn("manual-triage-158", APP_ENTRY_JS)
+
+    def test_trail_update_starts_with_a_centered_usage_guide(self) -> None:
+        self.assertIn('id="trailUpdateGuide"', INDEX_HTML)
+        self.assertIn('id="trailUpdateResults"', INDEX_HTML)
+        self.assertIn('id="trailUpdateResults" aria-label="Trail update results" hidden', INDEX_HTML)
+        self.assertIn("三步生成待处理草稿", INDEX_HTML)
+        self.assertIn("只生成草稿，不写 Trail", INDEX_HTML)
+        self.assertIn("setTrailAttributeUpdatePreviewVisible", APP_JS)
+        self.assertIn("place-items: center", STYLES_CSS)
+        self.assertIn(".trail-update-onboarding", STYLES_CSS)
+        self.assertIn(".trail-update-page.has-preview", STYLES_CSS)
+        self.assertIn("loadPageData && runId && typeof loadTrailAttributePreview", APP_JS)
 
 
 if __name__ == "__main__":
