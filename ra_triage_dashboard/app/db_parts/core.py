@@ -914,7 +914,10 @@ class DatabaseCoreMixin:
         ]
         if is_excluded is not None:
             where.append("ann.is_excluded = ?")
-            params.append(1 if is_excluded else 0)
+            # SQLite stores this legacy flag as INTEGER, while PostgreSQL uses
+            # the native BOOLEAN type.  Bind a Python bool so psycopg emits a
+            # boolean literal and SQLite continues to coerce it to 0/1.
+            params.append(bool(is_excluded))
         if comparison_statuses:
             where.append("i.gt_label IN (?, ?, ?)")
             params.extend(LABELS)
