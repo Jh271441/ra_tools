@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-168`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-169`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -464,32 +464,36 @@
 
             <section class="trail-update-tab-panel" id="trailUpdateReviewPanel" role="tabpanel" aria-labelledby="trailUpdateReviewTab" data-trail-update-panel="review">
               <section class="page-card trail-update-controls-card" id="trailUpdateOnboarding">
+                <div class="trail-update-control-heading">
+                  <div>
+                    <h3><span class="ui-lang-zh">排除案例汇总</span><span class="ui-lang-en">Excluded case summary</span></h3>
+                    <p><span class="ui-lang-zh">按当前数据集和 Model Run 自动汇总；未选择 Run 时合并全部 Run 的最新 Review。</span><span class="ui-lang-en">Automatically aggregated for the selected dataset and Model Run; no Run merges the latest Review from all Runs.</span></p>
+                  </div>
+                  <span class="trail-update-readonly-badge" title="Payload SHA-256 is kept internally to reject stale previews before commit."><span class="ui-lang-zh">预览校验已启用</span><span class="ui-lang-en">Preview integrity enabled</span></span>
+                </div>
                 <div class="trail-update-control-grid">
-                  <label>
+                  <label class="trail-update-run-field">
                     <span class="ui-lang-zh">模型 Run</span><span class="ui-lang-en">Model Run</span>
                     <select id="trailUpdateRunSelect" aria-label="Trail update model run"><option value="">当前环境没有模型 Run</option></select>
+                    <small class="trail-update-scope-summary"><span class="ui-lang-zh">数据集</span><span class="ui-lang-en">Dataset</span><strong id="trailUpdateBaselineSummary">—</strong></small>
                     <small class="trail-update-run-hint" id="trailUpdateRunHint" role="status" hidden></small>
                   </label>
-                  <div class="trail-update-baseline-control">
-                    <span class="ui-lang-zh">数据集范围</span><span class="ui-lang-en">Dataset scope</span>
-                    <strong id="trailUpdateBaselineSummary">—</strong>
-                  </div>
                   <div class="page-actions trail-update-actions">
-                    <button class="button button-primary" id="trailUpdateCommitButton" type="button" disabled><span class="ui-lang-zh">提交到 Trail</span><span class="ui-lang-en">Commit to Trail</span></button>
+                    <small id="trailUpdateWriteHint" class="trail-update-write-note" role="status"><span id="trailUpdateWriteHintZh" class="ui-lang-zh">当前环境仅允许预览；提交需要开启 Trail 属性写入。</span><span id="trailUpdateWriteHintEn" class="ui-lang-en">Preview only here; Trail attribute writing must be enabled to commit.</span></small>
+                    <button class="button button-primary" id="trailUpdateCommitButton" type="button" title="当前环境仅允许预览；提交需要开启 Trail 属性写入。" disabled><span class="ui-lang-zh">提交到 Trail</span><span class="ui-lang-en">Commit to Trail</span></button>
                   </div>
                 </div>
               </section>
 
               <section class="trail-update-results" id="trailUpdateResults" aria-label="Trail update results" hidden>
-              <section class="trail-update-summary-grid" aria-label="Trail update summary">
+              <section class="trail-update-summary-grid trail-update-review-summary-grid" aria-label="Trail update summary">
                 <article class="analysis-stat-card"><span class="ui-lang-zh">应该排除案例</span><span class="ui-lang-en">Excluded cases</span><strong id="trailUpdateCount">—</strong><small id="trailUpdateRunSummary">—</small></article>
                 <article class="analysis-stat-card"><span class="ui-lang-zh">模型 label 字段</span><span class="ui-lang-en">Model label field</span><strong id="trailUpdateResultField" class="trail-update-target-value">ra_stuck_auto_result</strong><small><span class="ui-lang-zh">三分类 label</span><span class="ui-lang-en">Three-class label</span></small></article>
                 <article class="analysis-stat-card"><span class="ui-lang-zh">模型 JSON 字段</span><span class="ui-lang-en">Model JSON field</span><strong id="trailUpdateInfoField" class="trail-update-target-value">ra_stuck_auto_result_info</strong><small>deep merge · ra_triage_dashboard</small></article>
-                <article class="analysis-stat-card"><span class="ui-lang-zh">Payload SHA-256</span><span class="ui-lang-en">Payload SHA-256</span><strong id="trailUpdateDigest" class="trail-update-digest">—</strong><small><span class="ui-lang-zh">提交前防止预览过期</span><span class="ui-lang-en">Stale preview protection</span></small></article>
               </section>
 
               <section class="page-card trail-update-table-card">
-                <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">排除候选汇总</span><span class="ui-lang-en">Excluded cases</span></h3><p><span class="ui-lang-zh">按当前数据集和 Model Run 筛选；未选择 Run 时合并全部 Run 的最新 Review。</span><span class="ui-lang-en">Filtered by dataset and Model Run; with no Run selected, the latest Review across all Runs is merged.</span></p></div><div class="trail-update-result-actions"><small id="trailUpdateTableSummary">—</small><button class="button button-quiet" id="trailUpdateDownloadButton" type="button" disabled><span class="ui-lang-zh">下载 JSON</span><span class="ui-lang-en">Download JSON</span></button><button class="button button-quiet" id="trailUpdateCopyButton" type="button" disabled><span class="ui-lang-zh">复制 JSON</span><span class="ui-lang-en">Copy JSON</span></button></div></div>
+                <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">排除候选明细</span><span class="ui-lang-en">Excluded case details</span></h3><p><span class="ui-lang-zh">预览中的 Payload 指纹只用于提交前校验内容没有过期，不是 Trail 字段。</span><span class="ui-lang-en">The payload fingerprint only guards against stale commits; it is not a Trail field.</span></p></div><div class="trail-update-result-actions"><small id="trailUpdateTableSummary">—</small><button class="button button-quiet" id="trailUpdateDownloadButton" type="button" disabled><span class="ui-lang-zh">下载 JSON</span><span class="ui-lang-en">Download JSON</span></button><button class="button button-quiet" id="trailUpdateCopyButton" type="button" disabled><span class="ui-lang-zh">复制 JSON</span><span class="ui-lang-en">Copy JSON</span></button></div></div>
                 <div class="trail-update-table-wrap">
                   <table class="trail-update-table"><thead><tr><th>Issue</th><th>GT</th><th>模型 label</th><th>模型 reason</th><th>Review</th><th>Comment</th><th>Trail 更新</th></tr></thead><tbody id="trailUpdateTableBody"><tr><td colspan="7" class="trail-update-empty"><span class="ui-lang-zh">正在加载排除案例。</span><span class="ui-lang-en">Loading excluded cases.</span></td></tr></tbody></table>
                 </div>
@@ -528,7 +532,7 @@
                   <article class="analysis-stat-card"><span class="ui-lang-zh">可写 Issue</span><span class="ui-lang-en">Writable Issues</span><strong id="trailUpdateIssueCount">—</strong><small id="trailUpdateIssueSummary">—</small></article>
                   <article class="analysis-stat-card"><span class="ui-lang-zh">未找到</span><span class="ui-lang-en">Missing</span><strong id="trailUpdateIssueMissingCount">—</strong><small>Trail view 2410</small></article>
                   <article class="analysis-stat-card"><span class="ui-lang-zh">目标字段</span><span class="ui-lang-en">Target field</span><strong id="trailUpdateIssueField" class="trail-update-target-value">ra_stuck_auto_result_info</strong><small>deep merge · should_exclude</small></article>
-                  <article class="analysis-stat-card"><span class="ui-lang-zh">Payload SHA-256</span><span class="ui-lang-en">Payload SHA-256</span><strong id="trailUpdateIssueDigest" class="trail-update-digest">—</strong><small><span class="ui-lang-zh">提交前防止预览过期</span><span class="ui-lang-en">Stale preview protection</span></small></article>
+                  <article class="analysis-stat-card"><span class="ui-lang-zh">预览指纹</span><span class="ui-lang-en">Preview fingerprint</span><strong id="trailUpdateIssueDigest" class="trail-update-digest">—</strong><small title="由当前 Issue、字段和 Comment 生成，提交时用于拒绝过期预览。"><span class="ui-lang-zh">提交校验，不是 Trail 字段</span><span class="ui-lang-en">Commit guard; not a Trail field</span></small></article>
                 </section>
                 <section class="page-card trail-update-table-card">
                   <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">Issue 屏蔽预览</span><span class="ui-lang-en">Issue shielding preview</span></h3><p><span class="ui-lang-zh">确认 Issue 存在、目标字段和 Comment 后才允许提交。</span><span class="ui-lang-en">Commit only after Issue existence, target field, and Comment are confirmed.</span></p></div><div class="trail-update-result-actions"><small id="trailUpdateIssueTableSummary">—</small><button class="button button-quiet" id="trailUpdateIssueDownloadButton" type="button" disabled><span class="ui-lang-zh">下载 JSON</span><span class="ui-lang-en">Download JSON</span></button><button class="button button-quiet" id="trailUpdateIssueCopyButton" type="button" disabled><span class="ui-lang-zh">复制 JSON</span><span class="ui-lang-en">Copy JSON</span></button></div></div>
@@ -1150,7 +1154,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-168`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-169`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

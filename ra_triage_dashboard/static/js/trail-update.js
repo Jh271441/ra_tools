@@ -120,13 +120,17 @@ function setTrailAttributeCapability(data = null) {
   // The deployment flag is an independent safety gate from Trail field
   // visibility.  Surface it first so a field-ready preview in a read-only
   // environment cannot look like it is commit-ready.
-  const status = data?.write_status === "disabled"
+  const status = data?.write_status === "disabled" || !data
     ? "disabled"
     : String(capability.status || "not_checked");
   const panel = $("#trailUpdateCapability");
   const title = $("#trailUpdateCapabilityTitle");
   const message = $("#trailUpdateCapabilityMessage");
   const fields = $("#trailUpdateVisibleFields");
+  const writeHint = $("#trailUpdateWriteHint");
+  const writeHintZh = $("#trailUpdateWriteHintZh");
+  const writeHintEn = $("#trailUpdateWriteHintEn");
+  const commitButton = $("#trailUpdateCommitButton");
   const resultField = directMode
     ? data?.model_result_field || "ra_stuck_auto_result"
     : data?.target_fields?.[0] || "ra_stuck_auto_result";
@@ -155,6 +159,33 @@ function setTrailAttributeCapability(data = null) {
         : `Target: ${resultField} + ${infoField}; visible in view: ${visible.join(", ") || "none"}`
     );
   }
+  const writeHintTextZh = status === "disabled"
+    ? "当前环境仅允许预览；提交需要开启 Trail 属性写入。"
+    : status === "ready"
+      ? "字段检查通过，可提交前再次确认。"
+      : "提交需先通过 Trail 字段检查。";
+  const writeHintTextEn = status === "disabled"
+    ? "Preview only here; Trail attribute writing must be enabled to commit."
+    : status === "ready"
+      ? "Field check passed; confirm before committing."
+      : "Trail field validation is required before commit.";
+  if (writeHintZh) writeHintZh.textContent = writeHintTextZh;
+  if (writeHintEn) writeHintEn.textContent = writeHintTextEn;
+  writeHint?.classList.toggle("is-ready", status === "ready");
+  if (commitButton) {
+    commitButton.title = uiText(
+      status === "disabled"
+        ? "当前环境未开启 Trail 属性写入；可以预览、下载和复制草稿。"
+        : status === "ready"
+          ? "已通过字段检查；点击后会再次确认并写入 Trail。"
+          : "当前预览尚未通过 Trail 字段检查。",
+      status === "disabled"
+        ? "Trail attribute writing is disabled here; preview, download, and copy remain available."
+        : status === "ready"
+          ? "Field check passed; click to confirm and write to Trail."
+          : "The current preview has not passed Trail field validation."
+    );
+  }
 }
 
 function clearTrailAttributePreview(message = "") {
@@ -163,7 +194,8 @@ function clearTrailAttributePreview(message = "") {
   setTrailAttributeCapability(null);
   $("#trailUpdateCount").textContent = "—";
   $("#trailUpdateRunSummary").textContent = "—";
-  $("#trailUpdateDigest").textContent = "—";
+  const digestElement = $("#trailUpdateDigest");
+  if (digestElement) digestElement.textContent = "—";
   $("#trailUpdateTableSummary").textContent = "—";
   $("#trailUpdateDownloadButton")?.toggleAttribute("disabled", true);
   $("#trailUpdateCopyButton")?.toggleAttribute("disabled", true);
@@ -213,8 +245,11 @@ function renderTrailAttributePreview(data) {
   $("#trailUpdateRunSummary").textContent = run.name || run.id || uiText("全部 Model Runs", "All model Runs");
   $("#trailUpdateResultField").textContent = data?.target_fields?.[0] || "ra_stuck_auto_result";
   $("#trailUpdateInfoField").textContent = data?.target_fields?.[1] || "ra_stuck_auto_result_info";
-  $("#trailUpdateDigest").textContent = digest ? `${digest.slice(0, 12)}…` : "—";
-  $("#trailUpdateDigest")?.setAttribute("title", digest || "");
+  const digestElement = $("#trailUpdateDigest");
+  if (digestElement) {
+    digestElement.textContent = digest ? `${digest.slice(0, 12)}…` : "—";
+    digestElement.setAttribute("title", digest || "");
+  }
   $("#trailUpdateTableSummary").textContent = uiText(
     `${items.length} 条；按 Issue ID 稳定排序`,
     `${items.length} items; stable Issue ID ordering`

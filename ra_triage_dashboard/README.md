@@ -217,7 +217,7 @@ Trail 只消费 `ra_stuck_auto_result` 和 `ra_stuck_auto_result_info`。可通�
 - **Review 排除汇总**默认不选择 Model Run，按数据集聚合全部 Run 中每个 Issue 的最新 Review；选择具体 Run 后则只展示该 Run。列表按 Issue ID 稳定排序，目标字段固定为 `ra_stuck_auto_result`（三分类模型 label）和 `ra_stuck_auto_result_info`（JSON 结果详情）。详情字段采用 `deep_merge`，保留已有内容，并追加 `model_result` 与 `ra_triage_dashboard` 审计命名空间（Run、Review、复核人、时间和排除标记）。Review Note 会在提交时通过 Trail Comment 接口逐 Issue 追加。
 - **Issue ID 屏蔽**接受人工输入的 Issue ID，只 deep-merge `ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude=true`，保留已有模型 label；这是 Dashboard 自己的排除标记，不等同于张扬工具的原生黑名单字段，是否被其它工具消费需另行确认。可选 Comment 同样通过 Trail 的独立评论接口逐 Issue 添加。未知或格式错误的 ID 不会被静默当成成功。
 
-Review Tab 进入页面或切换数据集/Run 后自动加载汇总，不再要求点击“生成预览”；当前写入开关关闭时，列表不会为每次筛选额外等待远程 Trail view 能力查询。未来启用写入后，提交前仍会在服务端锁内重新读取完整字段能力和目标字段，随后生成/校验 SHA-256 摘要并逐 Issue 回读。Issue ID Tab 仍要求显式生成屏蔽预览。Comment 会携带同一操作摘要，提交前先读 `more_comment` 做幂等检查，重复提交会跳过已有同摘要 Comment；若该字段未暴露则在任何字段写入前 fail closed。
+Review Tab 进入页面或切换数据集/Run 后自动加载汇总，不再要求点击“生成预览”；当前写入开关关闭时，列表不会为每次筛选额外等待远程 Trail view 能力查询。页面只把数据集作为 Run 下方的轻量范围信息，不重复渲染顶栏数据集选择器。预览中的 Payload SHA-256 是由当前筛选、字段和 Issue 草稿计算出的内部指纹，用于服务端拒绝过期或被修改的提交，不是 Trail 字段；Review 页面默认不展示这串内部摘要，Issue ID 预览仍可查看短指纹用于排障。未来启用写入后，提交前仍会在服务端锁内重新读取完整字段能力和目标字段，随后生成/校验摘要并逐 Issue 回读。Issue ID Tab 仍要求显式生成屏蔽预览。Comment 会携带同一操作摘要，提交前先读 `more_comment` 做幂等检查，重复提交会跳过已有同摘要 Comment；若该字段未暴露则在任何字段写入前 fail closed。
 
 默认 `DASHBOARD_TRAIL_ATTRIBUTE_WRITE_ENABLED=false`，因此即使页面有提交按钮，字段未暴露或写入开关未开启时也只能预览/下载，绝不会回退写入旧的 `ra_result`/`ra_info`。只有目标 view 同时返回两个精确字段、所有 label 符合三分类、请求来自已验证 SSO 写入用户，并且提交摘要未过期时，按钮才会解锁；写入通过 `ra_auto_triage/utils/trail_api.py` 的受控 `multi_update` 客户端，按小块执行且不记录 token 或完整 payload。
 
