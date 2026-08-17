@@ -127,9 +127,6 @@ function setTrailAttributeCapability(data = null) {
   const title = $("#trailUpdateCapabilityTitle");
   const message = $("#trailUpdateCapabilityMessage");
   const fields = $("#trailUpdateVisibleFields");
-  const writeHint = $("#trailUpdateWriteHint");
-  const writeHintZh = $("#trailUpdateWriteHintZh");
-  const writeHintEn = $("#trailUpdateWriteHintEn");
   const commitButton = $("#trailUpdateCommitButton");
   const resultField = directMode
     ? data?.model_result_field || "ra_stuck_auto_result"
@@ -159,19 +156,6 @@ function setTrailAttributeCapability(data = null) {
         : `Target: ${resultField} + ${infoField}; visible in view: ${visible.join(", ") || "none"}`
     );
   }
-  const writeHintTextZh = status === "disabled"
-    ? "当前环境仅允许预览；提交需要开启 Trail 属性写入。"
-    : status === "ready"
-      ? "字段检查通过，可提交前再次确认。"
-      : "提交需先通过 Trail 字段检查。";
-  const writeHintTextEn = status === "disabled"
-    ? "Preview only here; Trail attribute writing must be enabled to commit."
-    : status === "ready"
-      ? "Field check passed; confirm before committing."
-      : "Trail field validation is required before commit.";
-  if (writeHintZh) writeHintZh.textContent = writeHintTextZh;
-  if (writeHintEn) writeHintEn.textContent = writeHintTextEn;
-  writeHint?.classList.toggle("is-ready", status === "ready");
   if (commitButton) {
     commitButton.title = uiText(
       status === "disabled"

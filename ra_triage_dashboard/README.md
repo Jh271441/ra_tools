@@ -46,6 +46,7 @@
 - 8786 灰度实例使用隔离 SQLite 与 `DASHBOARD_TRAIL_ATTRIBUTE_WRITE_ENABLED=false`，因此网页 Trail Attribute Update 仍然 fail-closed，不会因为字段配置缺失而产生批量写入。
 - 在写入开关关闭的前提下，使用 `ra_auto_triage.utils.trail_api.TrailInterface.update_issue_with_changes` 对单个受控 Issue `cn32171803` 做了实际 API smoke write/readback；写入字段为 `ra_stuck_auto_result=误触发` 与包含 `model_run_id=6d4f4a17-4a7e-420e-a38b-39a632b6a248`、`review_id=1`、`should_exclude=true` 的 `ra_stuck_auto_result_info`，随后通过本地 `ra_api.issue_api.TrailInterface.query_by_issue_id_list` 读回完全一致。
 - 这次验证证明 Trail API 的字段写入与读回链路可用，但不代表 Dashboard 可以安全开启批量回刷：View 2410 的字段可见性检查仍返回空字段，因此必须先在 Trail 侧把两个目标字段加入该 View，并在 8786 重新预览、逐条核对后才允许打开 writer。8785 生产实例及其数据库未被本次 smoke 修改。
+- 在 UI 收紧版本 `a5d2b6a` 上再次对该受控 Issue 做了幂等 smoke：先读回原 JSON，再 deep-merge 仅一个 `operation_id=a5d2b6a-smoke-20260817`，不改 label、不追加 Comment；真实接口返回 `msg=success`，随后回读确认 label 未变、`should_exclude=true`、operation_id 匹配且原有顶层 JSON keys 保留。两个 Dashboard Trail writer 开关仍关闭，未执行批量写入。
 
 ## 对象生命周期与人员归属
 
