@@ -146,10 +146,10 @@ def build_trail_attribute_update_payload(
 ) -> dict[str, Any]:
     """Build a deterministic, Run-bound candidate payload.
 
-    ``rows`` is already the latest Review projection for one immutable Run;
-    filtering is repeated here so callers cannot accidentally include a
-    non-excluded annotation.  Invalid labels remain visible in preview but
-    make the item and the whole payload non-write-ready.
+    ``rows`` is already the latest Review projection for one immutable Run or
+    the all-Run aggregate; filtering is repeated here so callers cannot
+    accidentally include a non-excluded annotation. Invalid labels remain
+    visible in preview but make the item and the whole payload non-write-ready.
     """
 
     run_id = _as_text(run.get("id"))
@@ -164,13 +164,18 @@ def build_trail_attribute_update_payload(
         review_id = annotation.get("id")
         raw_label = _as_text(prediction.get("label"))
         label = normalise_model_label(raw_label)
+        source_run_id = (
+            _as_text(prediction.get("model_run_id"))
+            or _as_text(annotation.get("model_run_id"))
+            or run_id
+        )
         if not label:
             invalid_labels.append(issue_id)
         patch = {
             "ra_triage_dashboard": {
                 "schema_version": 2,
                 "should_exclude": True,
-                "model_run_id": run_id,
+                "model_run_id": source_run_id,
                 "review_id": review_id,
                 "reviewer": _as_text(annotation.get("author")),
                 "reviewed_at": _as_text(annotation.get("created_at")),
@@ -186,14 +191,14 @@ def build_trail_attribute_update_payload(
                 "scenario": _as_text(row.get("scenario")),
                 "gt_label": _as_text(row.get("gt_label")),
                 "model": {
-                    "run_id": _as_text(prediction.get("model_run_id") or run_id),
+                    "run_id": source_run_id,
                     "label": label or raw_label,
                     "reason": _as_text(prediction.get("reason")),
                     "confidence": prediction.get("confidence"),
                 },
                 "review": {
                     "id": review_id,
-                    "model_run_id": _as_text(annotation.get("model_run_id") or run_id),
+                    "model_run_id": source_run_id,
                     "status": _as_text(annotation.get("review_status")),
                     "reviewer": _as_text(annotation.get("author")),
                     "reviewed_at": _as_text(annotation.get("created_at")),
@@ -227,6 +232,13 @@ def build_trail_attribute_update_payload(
         "target_path": TRAIL_TARGET_PATH,
         "merge_strategy": "deep_merge",
         "model_run_id": run_id,
+        "model_run_ids": sorted(
+            {
+                _as_text(item.get("model", {}).get("run_id"))
+                for item in items
+                if _as_text(item.get("model", {}).get("run_id"))
+            }
+        ),
         "model_run_name": _as_text(run.get("name")),
         "baseline_ids": list(baseline_ids),
         "baseline_scopes": list(baseline_scopes),
@@ -257,9 +269,10 @@ def build_trail_attribute_update_payload(
         "trail_capability": capability,
         "selected_run": {
             "id": run_id,
-            "name": _as_text(run.get("name")),
+            "name": _as_text(run.get("name")) or ("全部 Model Runs" if not run_id else ""),
             "source_name": _as_text(run.get("source_name")),
             "created_at": _as_text(run.get("created_at")),
+            "all_runs": not bool(run_id),
         },
         "baselines": list(baseline_ids),
         "baseline_scopes": list(baseline_scopes),
@@ -428,12 +441,13 @@ async def _build_preview(
     selected_run_id: str,
     baselines: str = "",
 ) -> dict[str, Any]:
-    if not selected_run_id:
-        raise _detail(400, "请选择一个模型 Run 后再生成 Trail 属性更新预览。")
     baseline_ids = resolve_request_baseline_ids(baselines, request=request)
     baseline_scopes = resolve_request_baseline_scopes(baselines, request=request)
-    run = await asyncio.to_thread(database.get_model_run, selected_run_id)
-    if run is None:
+    if selected_run_id:
+        run = await asyncio.to_thread(database.get_model_run, selected_run_id)
+    else:
+        run = {"id": "", "name": "全部 Model Runs", "source_name": ""}
+    if selected_run_id and run is None:
         raise _detail(404, "模型 Run 不存在，无法生成 Trail 属性更新预览。")
     rows = await asyncio.to_thread(
         database.review_reason_rows,
@@ -581,7 +595,7 @@ async def trail_attribute_update_preview(
     model_run_id: str = "",
     baselines: str = "",
 ) -> dict[str, Any]:
-    """Return should-exclude rows for exactly one Run plus field capability."""
+    """Return should-exclude rows for one Run or the all-Run aggregate."""
 
     return await _build_preview(
         request,
@@ -632,8 +646,8 @@ async def trail_attribute_update_commit(request: Request) -> dict[str, Any]:
         raise _detail(400, "提交 Trail 更新前必须明确 confirm=true。")
     run_id = _as_text(body.get("model_run_id"))
     submitted_digest = _as_text(body.get("payload_sha256"))
-    if not run_id or not submitted_digest:
-        raise _detail(400, "提交内容缺少 model_run_id 或 payload_sha256。")
+    if not submitted_digest:
+        raise _detail(400, "提交内容缺少 payload_sha256。")
     raw_baselines = body.get("baselines", "")
     if isinstance(raw_baselines, list):
         baseline_query = ",".join(_as_text(item) for item in raw_baselines if _as_text(item))

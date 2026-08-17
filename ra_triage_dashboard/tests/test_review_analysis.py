@@ -648,6 +648,53 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
             all_rows = database.review_reason_rows(baseline_scope=scope)
             self.assertEqual(all_rows[0]["annotation"]["author"], "legacy")
 
+    def test_unselected_run_keeps_prediction_namespace_for_exclusion_aggregate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "triage.sqlite3")
+            database.init()
+            scope = "trail-all-runs"
+            database.upsert_issues(
+                [{"issue_id": "cn40001", "gt_label": "误触发"}],
+                source="test",
+                replace_gt=True,
+                baseline_scope=scope,
+            )
+            run, _ = database.import_model_run(
+                name="aggregate run",
+                source_name="aggregate.json",
+                source_sha256="4" * 64,
+                metadata={},
+                rows=[
+                    {
+                        "issue_id": "cn40001",
+                        "model_label": "正确触发",
+                        "model_reason": "排队",
+                        "model_confidence": 0.91,
+                    }
+                ],
+            )
+            database.create_annotation(
+                issue_id="cn40001",
+                model_run_id=run["id"],
+                label="误触发",
+                review_status="reviewed",
+                tags=[],
+                missing_evidence=[],
+                note="应该排除",
+                author="alice",
+                is_excluded=True,
+            )
+
+            rows = database.review_reason_rows(
+                baseline_scope=scope,
+                is_excluded=True,
+            )
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["annotation"]["model_run_id"], run["id"])
+            self.assertEqual(rows[0]["prediction"]["model_run_id"], run["id"])
+            self.assertEqual(rows[0]["prediction"]["label"], "正确触发")
+            self.assertEqual(rows[0]["prediction"]["reason"], "排队")
+
 
 if __name__ == "__main__":
     unittest.main()

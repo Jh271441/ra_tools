@@ -266,6 +266,8 @@ async function setBaselineScopes(
       if (typeof loadClusters === "function") await loadClusters();
     } else if (state.activePage === "runs") {
       await loadRuns({ preserveEmpty: true });
+    } else if (state.activePage === "trail-update") {
+      await loadTrailAttributePreview();
     }
   } catch (error) {
     showToast(error.message || String(error), true);
@@ -592,6 +594,13 @@ async function refreshChangedData() {
   }
   if (state.activePage === "runs") {
     await Promise.all([loadRuns({ preserveEmpty: true }), loadOverview()]);
+    return;
+  }
+  if (state.activePage === "trail-update") {
+    await Promise.all([
+      loadRuns({ preserveEmpty: true }),
+      loadTrailAttributePreview(),
+    ]);
     return;
   }
   if (state.activePage === "prediction") {

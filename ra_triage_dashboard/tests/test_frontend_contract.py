@@ -32,7 +32,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-166", APP_ENTRY_JS)
+        self.assertIn("manual-triage-167", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -73,7 +73,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-166", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-167", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
         self.assertNotIn("async function bootstrap", APP_ENTRY_JS)
@@ -140,7 +140,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('styles.css?v=manual-triage-166', INDEX_HTML)
+        self.assertIn('styles.css?v=manual-triage-167', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: nowrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -772,7 +772,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-166", APP_ENTRY_JS)
+        self.assertIn("manual-triage-167", APP_ENTRY_JS)
 
     def test_multi_issue_query_contract(self) -> None:
         self.assertIn('id="openIssueQueryButton"', INDEX_HTML)
@@ -785,20 +785,23 @@ class FrontendContractTest(unittest.TestCase):
 
     def test_trail_update_exposes_safe_preview_and_commit_contract(self) -> None:
         self.assertIn('id="trailUpdateCommitButton"', INDEX_HTML)
-        self.assertIn('id="trailUpdateCapability"', INDEX_HTML)
+        self.assertNotIn('id="trailUpdateCapability"', INDEX_HTML)
+        self.assertNotIn('id="trailUpdateLoadButton"', INDEX_HTML)
         self.assertIn('id="trailUpdateResults"', INDEX_HTML)
         self.assertIn('id="trailUpdateResults" aria-label="Trail update results" hidden', INDEX_HTML)
         self.assertIn("ra_stuck_auto_result", INDEX_HTML)
         self.assertIn("ra_stuck_auto_result_info", INDEX_HTML)
         self.assertIn("setTrailAttributeUpdatePreviewVisible", APP_JS)
         self.assertIn(".trail-update-onboarding", STYLES_CSS)
-        self.assertIn(".trail-update-capability", STYLES_CSS)
         self.assertIn("commitTrailAttributeUpdate", APP_JS)
         self.assertIn('id="trailUpdateReviewTab"', INDEX_HTML)
         self.assertIn('id="trailUpdateRunHint"', INDEX_HTML)
         self.assertIn("No model Run in this environment", APP_JS)
         self.assertIn("does not share Runs with production 8785", APP_JS)
         self.assertIn("Do not inherit the Review gallery's", APP_JS)
+        self.assertIn("No model Run selected (all Runs)", APP_JS)
+        self.assertIn("latest Review across all Runs is merged", INDEX_HTML)
+        self.assertIn("if (loadPageData && typeof loadTrailAttributePreview", APP_JS)
         self.assertIn("renderTrailAttributeRunPicker();", APP_JS)
         self.assertIn('id="trailUpdateIssueTab"', INDEX_HTML)
         self.assertIn('id="trailUpdateIssueIdsInput"', INDEX_HTML)
@@ -809,7 +812,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("真实接口 · 预览优先", INDEX_HTML)
         self.assertIn("Comment", INDEX_HTML)
         self.assertNotIn("三步生成待处理草稿", INDEX_HTML)
-        self.assertIn("loadPageData && runId && typeof loadTrailAttributePreview", APP_JS)
+        self.assertIn("loadPageData && typeof loadTrailAttributePreview", APP_JS)
 
 
 if __name__ == "__main__":

@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-166`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-167`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -456,7 +456,7 @@
                 <div>
                   <span class="eyebrow">TRAIL ATTRIBUTE UPDATE</span>
                   <h2><span class="ui-lang-zh">Trail 属性更新</span><span class="ui-lang-en">Trail attribute update</span></h2>
-                  <p><span class="ui-lang-zh">Review 汇总和 Issue ID 屏蔽分开预览；确认后才通过真实 Trail 接口写入字段与 Comment。</span><span class="ui-lang-en">Review aggregation and Issue-ID shielding are separate previews; fields and Comments reach Trail only after explicit confirmation.</span></p>
+                  <p><span class="ui-lang-zh">Review 汇总和 Issue ID 屏蔽分别展示；确认后才通过真实 Trail 接口写入字段与 Comment。</span><span class="ui-lang-en">Review aggregation and Issue-ID shielding are separate views; fields and Comments reach Trail only after explicit confirmation.</span></p>
                 </div>
                 <span class="trail-update-safety-badge" id="trailUpdateSafetyBadge"><span class="ui-lang-zh">尚未预览</span><span class="ui-lang-en">No preview yet</span></span>
               </div>
@@ -465,7 +465,7 @@
             <div class="trail-update-tabs" role="tablist" aria-label="Trail update modes">
               <button class="trail-update-tab active" id="trailUpdateReviewTab" type="button" role="tab" aria-selected="true" aria-controls="trailUpdateReviewPanel" data-trail-update-tab="review">
                 <span class="ui-lang-zh">Review 排除汇总</span><span class="ui-lang-en">Review exclusions</span>
-                <small><span class="ui-lang-zh">按当前 Run 汇总</span><span class="ui-lang-en">From the selected Run</span></small>
+                <small><span class="ui-lang-zh">按数据集和 Run 汇总</span><span class="ui-lang-en">By dataset and Run</span></small>
               </button>
               <button class="trail-update-tab" id="trailUpdateIssueTab" type="button" role="tab" aria-selected="false" aria-controls="trailUpdateIssuePanel" data-trail-update-tab="issue">
                 <span class="ui-lang-zh">Issue ID 屏蔽</span><span class="ui-lang-en">Shield by Issue ID</span>
@@ -475,26 +475,20 @@
 
             <section class="trail-update-tab-panel" id="trailUpdateReviewPanel" role="tabpanel" aria-labelledby="trailUpdateReviewTab" data-trail-update-panel="review">
               <section class="page-card trail-update-controls-card" id="trailUpdateOnboarding">
-              <div class="trail-update-control-grid">
-                <label>
-                  <span class="ui-lang-zh">模型 Run</span><span class="ui-lang-en">Model Run</span>
-                  <select id="trailUpdateRunSelect" aria-label="Trail update model run"><option value="">当前环境没有模型 Run</option></select>
-                  <small class="trail-update-run-hint" id="trailUpdateRunHint" role="status" hidden></small>
-                </label>
-                <div class="trail-update-baseline-control">
-                  <span class="ui-lang-zh">数据集范围</span><span class="ui-lang-en">Dataset scope</span>
-                  <strong id="trailUpdateBaselineSummary">—</strong>
+                <div class="trail-update-control-grid">
+                  <label>
+                    <span class="ui-lang-zh">模型 Run</span><span class="ui-lang-en">Model Run</span>
+                    <select id="trailUpdateRunSelect" aria-label="Trail update model run"><option value="">当前环境没有模型 Run</option></select>
+                    <small class="trail-update-run-hint" id="trailUpdateRunHint" role="status" hidden></small>
+                  </label>
+                  <div class="trail-update-baseline-control">
+                    <span class="ui-lang-zh">数据集范围</span><span class="ui-lang-en">Dataset scope</span>
+                    <strong id="trailUpdateBaselineSummary">—</strong>
+                  </div>
+                  <div class="page-actions trail-update-actions">
+                    <button class="button button-primary" id="trailUpdateCommitButton" type="button" disabled><span class="ui-lang-zh">提交到 Trail</span><span class="ui-lang-en">Commit to Trail</span></button>
+                  </div>
                 </div>
-                <div class="page-actions trail-update-actions">
-                  <button class="button button-primary" id="trailUpdateLoadButton" type="button"><span class="ui-lang-zh">生成预览</span><span class="ui-lang-en">Build preview</span></button>
-                  <button class="button button-primary" id="trailUpdateCommitButton" type="button" disabled><span class="ui-lang-zh">提交到 Trail</span><span class="ui-lang-en">Commit to Trail</span></button>
-                </div>
-              </div>
-              <div class="trail-update-status" id="trailUpdateStatus" role="status" aria-live="polite" hidden></div>
-              <section class="trail-update-capability" id="trailUpdateCapability" aria-live="polite">
-                <div class="trail-update-capability-icon" aria-hidden="true">!</div>
-                <div><strong id="trailUpdateCapabilityTitle"><span class="ui-lang-zh">尚未生成预览</span><span class="ui-lang-en">Preview not generated</span></strong><p id="trailUpdateCapabilityMessage"><span class="ui-lang-zh">选择 Run 后生成预览，页面会检查 2410 view 是否同时暴露两个目标字段。</span><span class="ui-lang-en">Build a preview to check whether view 2410 exposes both target fields.</span></p><small id="trailUpdateVisibleFields"></small></div>
-              </section>
               </section>
 
               <section class="trail-update-results" id="trailUpdateResults" aria-label="Trail update results" hidden>
@@ -506,9 +500,9 @@
               </section>
 
               <section class="page-card trail-update-table-card">
-                <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">排除候选预览</span><span class="ui-lang-en">Excluded candidates</span></h3><p><span class="ui-lang-zh">只展示当前 Run 的最新 Review；不会混入其他 Run。</span><span class="ui-lang-en">Only the latest Review for the selected Run is shown.</span></p></div><div class="trail-update-result-actions"><small id="trailUpdateTableSummary">—</small><button class="button button-quiet" id="trailUpdateDownloadButton" type="button" disabled><span class="ui-lang-zh">下载 JSON</span><span class="ui-lang-en">Download JSON</span></button><button class="button button-quiet" id="trailUpdateCopyButton" type="button" disabled><span class="ui-lang-zh">复制 JSON</span><span class="ui-lang-en">Copy JSON</span></button></div></div>
+                <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">排除候选汇总</span><span class="ui-lang-en">Excluded cases</span></h3><p><span class="ui-lang-zh">按当前数据集和 Model Run 筛选；未选择 Run 时合并全部 Run 的最新 Review。</span><span class="ui-lang-en">Filtered by dataset and Model Run; with no Run selected, the latest Review across all Runs is merged.</span></p></div><div class="trail-update-result-actions"><small id="trailUpdateTableSummary">—</small><button class="button button-quiet" id="trailUpdateDownloadButton" type="button" disabled><span class="ui-lang-zh">下载 JSON</span><span class="ui-lang-en">Download JSON</span></button><button class="button button-quiet" id="trailUpdateCopyButton" type="button" disabled><span class="ui-lang-zh">复制 JSON</span><span class="ui-lang-en">Copy JSON</span></button></div></div>
                 <div class="trail-update-table-wrap">
-                  <table class="trail-update-table"><thead><tr><th>Issue</th><th>GT</th><th>模型 label</th><th>模型 reason</th><th>Review</th><th>Comment</th><th>Trail 更新</th></tr></thead><tbody id="trailUpdateTableBody"><tr><td colspan="7" class="trail-update-empty"><span class="ui-lang-zh">生成预览后显示案例。</span><span class="ui-lang-en">Cases appear after building a preview.</span></td></tr></tbody></table>
+                  <table class="trail-update-table"><thead><tr><th>Issue</th><th>GT</th><th>模型 label</th><th>模型 reason</th><th>Review</th><th>Comment</th><th>Trail 更新</th></tr></thead><tbody id="trailUpdateTableBody"><tr><td colspan="7" class="trail-update-empty"><span class="ui-lang-zh">正在加载排除案例。</span><span class="ui-lang-en">Loading excluded cases.</span></td></tr></tbody></table>
                 </div>
               </section>
               </section>
@@ -1167,7 +1161,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-166`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-167`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

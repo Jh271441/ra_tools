@@ -908,10 +908,17 @@ class DatabaseCoreMixin:
             raise ValueError("baseline_scopes must not be empty")
         scope_clause, scope_params = self._scope_in_sql(scopes)
         where = [scope_clause, "ann.id IS NOT NULL"]
-        params: list[Any] = ([model_run_id] if model_run_id else []) + [
-            model_run_id,
-            *scope_params,
-        ]
+        # A selected Run joins its prediction namespace explicitly.  With no
+        # Run selected, the Trail update page is an all-Run aggregate: use the
+        # latest annotation's own Run so its model label/reason are retained.
+        if model_run_id:
+            prediction_join = "mp.model_run_id = ?"
+            # The correlated latest-annotation join appears before the
+            # prediction join in SQL, so bind the selected Run twice.
+            params: list[Any] = [model_run_id, model_run_id, *scope_params]
+        else:
+            prediction_join = "mp.model_run_id = NULLIF(ann.model_run_id, '')"
+            params = list(scope_params)
         if is_excluded is not None:
             where.append("ann.is_excluded = ?")
             # SQLite stores this legacy flag as INTEGER, while PostgreSQL uses
@@ -1033,7 +1040,7 @@ class DatabaseCoreMixin:
             FROM issues i
             {self._latest_annotation_join(model_run_id)}
             LEFT JOIN model_predictions mp
-              ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
+              ON mp.issue_id = i.issue_id AND {prediction_join}
             WHERE {' AND '.join(where)}
             ORDER BY i.issue_id ASC
             """

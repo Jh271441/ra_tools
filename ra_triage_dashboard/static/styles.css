@@ -1906,17 +1906,6 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-baseline-control strong { overflow: hidden; color: var(--text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .trail-update-actions { min-width: 0; display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
 .trail-update-actions .button { min-width: 0; height: 36px; padding-inline: 10px; font-size: 11px; }
-.trail-update-status { min-height: 18px; color: var(--faint); font-size: 11px; }
-.trail-update-status[hidden] { display: none; }
-.trail-update-capability { display: grid; grid-template-columns: 26px minmax(0, 1fr); align-items: start; gap: 8px; padding: 9px 10px; border: 1px solid rgba(251,191,36,.28); border-radius: 7px; background: rgba(251,191,36,.06); }
-.trail-update-capability[data-status="ready"] { border-color: rgba(52,211,153,.35); background: rgba(52,211,153,.06); }
-.trail-update-capability[data-status="disabled"] { border-color: var(--line); background: var(--overlay); }
-.trail-update-capability-icon { width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid currentColor; border-radius: 50%; color: #f6d58a; font-size: 12px; font-weight: 800; }
-.trail-update-capability[data-status="ready"] .trail-update-capability-icon { color: #9ae6c4; }
-.trail-update-capability[data-status="disabled"] .trail-update-capability-icon { color: var(--muted); }
-.trail-update-capability h3 { margin: 0; color: var(--text); font-size: 12px; }
-.trail-update-capability p { margin: 2px 0 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
-.trail-update-capability small { display: block; margin-top: 3px; color: var(--faint); font: 10px "SFMono-Regular", Consolas, monospace; word-break: break-word; }
 .trail-update-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .trail-update-target-value { overflow: hidden; font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px !important; text-overflow: ellipsis; white-space: nowrap; }
 .trail-update-digest { font: 600 13px "SFMono-Regular", Consolas, monospace; }
@@ -2668,8 +2657,6 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .trail-update-control-grid, .trail-update-summary-grid { grid-template-columns: minmax(0, 1fr); }
   .trail-update-actions { justify-content: flex-start; }
   .trail-update-actions .button { flex: 1 1 150px; }
-  .trail-update-capability { grid-template-columns: 22px minmax(0, 1fr); padding: 8px; }
-  .trail-update-capability-icon { width: 21px; height: 21px; font-size: 10px; }
   .trail-update-results-heading { align-items: flex-start; }
   .trail-update-result-actions { width: 100%; justify-content: flex-start; }
   .trail-update-result-actions .button { flex: 1 1 150px; }

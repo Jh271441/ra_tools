@@ -69,7 +69,7 @@ function renderTrailAttributeRunPicker() {
     {
       value: "",
       label: hasRuns
-        ? uiText("请选择模型 Run", "Choose a model Run")
+        ? uiText("未选择模型 Run（合并全部）", "No model Run selected (all Runs)")
         : uiText("当前环境没有模型 Run", "No model Run in this environment"),
     },
     ...(state.modelRuns || []).map((run) => ({ value: run.id, label: trailUpdateRunLabel(run) })),
@@ -79,8 +79,6 @@ function renderTrailAttributeRunPicker() {
     .join("");
   select.value = (state.modelRuns || []).some((run) => run.id === selected) ? selected : "";
   select.disabled = !hasRuns;
-  const loadButton = $("#trailUpdateLoadButton");
-  if (loadButton) loadButton.disabled = !hasRuns;
   const hint = $("#trailUpdateRunHint");
   if (hint) {
     hint.hidden = hasRuns;
@@ -181,7 +179,7 @@ function clearTrailAttributePreview(message = "") {
   setTrailAttributeStatus(message);
   const body = $("#trailUpdateTableBody");
   if (body) {
-    body.innerHTML = `<tr><td colspan="7" class="trail-update-empty">${uiText("生成预览后显示案例。", "Cases appear after building a preview.")}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="7" class="trail-update-empty">${uiText("正在加载排除案例。", "Loading excluded cases.")}</td></tr>`;
   }
 }
 
@@ -205,7 +203,8 @@ function clearTrailIssuePreview(message = "") {
 }
 
 function trailUpdateEndpoint(runId) {
-  const params = new URLSearchParams({ model_run_id: runId });
+  const params = new URLSearchParams();
+  if (runId) params.set("model_run_id", runId);
   const baselines = selectedBaselineQueryValue();
   if (baselines) params.set("baselines", baselines);
   return `/api/trail-attribute-update/preview?${params.toString()}`;
@@ -219,7 +218,7 @@ function renderTrailAttributePreview(data) {
   setTrailAttributeUpdatePreviewVisible(true);
   setTrailAttributeCapability(data);
   $("#trailUpdateCount").textContent = String(items.length);
-  $("#trailUpdateRunSummary").textContent = run.name || run.id || "—";
+  $("#trailUpdateRunSummary").textContent = run.name || run.id || uiText("全部 Model Runs", "All model Runs");
   $("#trailUpdateResultField").textContent = data?.target_fields?.[0] || "ra_stuck_auto_result";
   $("#trailUpdateInfoField").textContent = data?.target_fields?.[1] || "ra_stuck_auto_result_info";
   $("#trailUpdateDigest").textContent = digest ? `${digest.slice(0, 12)}…` : "—";
@@ -228,14 +227,10 @@ function renderTrailAttributePreview(data) {
     `${items.length} 条；按 Issue ID 稳定排序`,
     `${items.length} items; stable Issue ID ordering`
   );
-  const statusText = data?.write_status === "ready"
-    ? uiText(`已生成预览：${items.length} 条，可提交。`, `Preview ready: ${items.length} item(s); commit is available.`)
-    : uiText(`已生成预览：${items.length} 条；${capability.message || "暂不可写入 Trail"}`, `Preview ready: ${items.length} item(s); ${capability.message || "Trail is not writable yet."}`);
-  setTrailAttributeStatus(statusText);
   const body = $("#trailUpdateTableBody");
   if (!body) return;
   if (!items.length) {
-    body.innerHTML = `<tr><td colspan="7" class="trail-update-empty">${uiText("当前 Run 没有已标记“应该排除”的 Review。", "No reviewed “should exclude” cases in this Run.")}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="7" class="trail-update-empty">${uiText("当前筛选范围没有已标记“应该排除”的 Review。", "No reviewed “should exclude” cases in the current filter.")}</td></tr>`;
     return;
   }
   body.innerHTML = items.map((item) => {
@@ -260,14 +255,8 @@ function renderTrailAttributePreview(data) {
 async function loadTrailAttributePreview() {
   const select = $("#trailUpdateRunSelect");
   const runId = String(select?.value || state.trailUpdate?.runId || "").trim();
-  if (!runId) {
-    clearTrailAttributePreview(uiText("请先选择一个模型 Run。", "Choose a model Run first."));
-    return null;
-  }
   state.trailUpdate.runId = runId;
   const requestSeq = ++state.trailUpdate.requestSeq;
-  setTrailAttributeStatus(uiText("正在检查 Trail 字段并生成预览…", "Checking Trail fields and building preview…"));
-  $("#trailUpdateLoadButton")?.toggleAttribute("disabled", true);
   try {
     const data = await api(trailUpdateEndpoint(runId));
     if (requestSeq !== state.trailUpdate.requestSeq) return data;
@@ -282,11 +271,9 @@ async function loadTrailAttributePreview() {
     return data;
   } catch (error) {
     if (requestSeq === state.trailUpdate.requestSeq) {
-      setTrailAttributeStatus(uiText("预览生成失败，请检查所选 Run 后重试。", "Could not build the preview. Check the selected Run and try again."));
+      setTrailAttributeStatus(uiText("排除案例加载失败，请稍后重试。", "Could not load excluded cases. Try again later."));
     }
     throw error;
-  } finally {
-    if (requestSeq === state.trailUpdate.requestSeq) $("#trailUpdateLoadButton")?.toggleAttribute("disabled", false);
   }
 }
 
@@ -537,8 +524,6 @@ function bindTrailAttributeUpdateEvents() {
     if (typeof pageUrl === "function") {
       history.replaceState({ page: "trail-update" }, "", pageUrl("trail-update", { runId: state.trailUpdate.runId }));
     }
-  });
-  $("#trailUpdateLoadButton")?.addEventListener("click", () => {
     loadTrailAttributePreview().catch((error) => showToast(error.message, true));
   });
   $("#trailUpdateCommitButton")?.addEventListener("click", () => {
