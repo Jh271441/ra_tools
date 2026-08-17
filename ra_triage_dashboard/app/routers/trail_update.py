@@ -35,6 +35,7 @@ from ..trail_writer import (
     build_manual_exclusion_changes,
     build_trail_changes,
     decorate_trail_comments,
+    deep_merge_dict,
     normalise_model_label,
     trail_operation_comment,
     verify_trail_readback,
@@ -359,10 +360,23 @@ def build_trail_issue_exclusion_payload(
                 "source": "manual_issue_ids",
             }
         }
+        merged_info = deep_merge_dict(current_info, patch)
         item: dict[str, Any] = {
             "issue_id": issue_id,
             "current_label": _as_text(current.get(TRAIL_RESULT_FIELD)),
             "current_should_exclude": bool(dashboard_info.get("should_exclude")),
+            # Keep the exact before/after object in the preview contract so
+            # the operator can see what the production write will preserve
+            # and what it will add.  The direct workflow never includes the
+            # model label in its field update.
+            "field_update": {
+                "field": info_field,
+                "operation": "deep_merge",
+                "before": current_info,
+                "after": merged_info,
+                "patch": patch,
+                "model_label_unchanged": True,
+            },
             "target": {
                 "field": info_field,
                 "path": TRAIL_TARGET_PATH,
@@ -377,6 +391,7 @@ def build_trail_issue_exclusion_payload(
     draft: dict[str, Any] = {
         "schema_version": TRAIL_ISSUE_DRAFT_SCHEMA,
         "mode": "direct_issue_ids",
+        "write_mode": "info_only",
         "trail_write_enabled": bool(trail_write_enabled),
         "target_fields": [info_field],
         "target_field": info_field,
@@ -415,6 +430,7 @@ def build_trail_issue_exclusion_payload(
     return {
         "schema_version": TRAIL_ISSUE_DRAFT_SCHEMA,
         "mode": "direct_issue_ids",
+        "write_mode": "info_only",
         "trail_write_enabled": bool(trail_write_enabled),
         "write_status": write_status,
         "write_ready": write_status == "ready",

@@ -354,6 +354,23 @@ async function copyTrailIssueDraft() {
   showToast(uiText("已复制 Issue 屏蔽 JSON。", "Issue shielding JSON copied."));
 }
 
+function trailInfoPreviewJson(value) {
+  if (!value || typeof value !== "object") return "{}";
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch (_error) {
+    return "{}";
+  }
+}
+
+function trailInfoPreviewText(item) {
+  const update = item?.field_update || {};
+  const after = update.after && typeof update.after === "object"
+    ? update.after
+    : (update.patch || item?.target?.patch || {});
+  return trailInfoPreviewJson(after);
+}
+
 function renderTrailIssuePreview(data) {
   const items = Array.isArray(data?.items) ? data.items : [];
   const missing = Array.isArray(data?.missing_issue_ids) ? data.missing_issue_ids : [];
@@ -395,11 +412,12 @@ function renderTrailIssuePreview(data) {
     const currentState = item.current_should_exclude
       ? uiText("已屏蔽", "Shielded")
       : uiText("未屏蔽", "Not shielded");
+    const expectedInfo = trailInfoPreviewText(item);
     return `<tr>
       <td><strong class="trail-update-issue">${escapeHtml(item.issue_id || "—")}</strong></td>
       <td>${labelBadge(item.current_label, "未输出")}</td>
       <td><span class="trail-update-state-badge ${item.current_should_exclude ? "is-on" : ""}">${escapeHtml(currentState)}</span></td>
-      <td><strong>${escapeHtml(data?.target_field || "ra_stuck_auto_result_info")}</strong><small>deep_merge</small><code>${escapeHtml(patchPath)} = true</code></td>
+      <td class="trail-update-info-cell"><strong>${escapeHtml(data?.target_field || "ra_stuck_auto_result_info")}</strong><small>deep_merge · ${uiText("写入后 info（不改 label）", "info after write (label unchanged)")}</small><code>${escapeHtml(patchPath)} = true</code><pre class="trail-update-json-preview">${escapeHtml(expectedInfo)}</pre></td>
       <td><div class="trail-update-comment">${escapeHtml(item.comment || "未填写")}</div><small>${item.comment ? uiText("将追加到 Trail Comment", "Added to Trail Comment") : uiText("不会写入 Comment", "No Comment")}</small></td>
     </tr>`;
   }).join("");
@@ -442,9 +460,16 @@ async function commitTrailIssueExclusion() {
   const data = state.trailUpdate?.directData;
   if (!data || data.write_status !== "ready") return;
   const ids = Array.isArray(data.requested_issue_ids) ? data.requested_issue_ids : [];
+  const targetField = data.target_field || "ra_stuck_auto_result_info";
+  const previewLines = (Array.isArray(data.items) ? data.items : []).slice(0, 12).map((item) => {
+    const compact = trailInfoPreviewJson(item?.field_update?.after || item?.target?.patch || {}).replace(/\s+/g, " ");
+    const clipped = compact.length > 360 ? `${compact.slice(0, 357)}…` : compact;
+    return `${item?.issue_id || "—"} · ${targetField} = ${clipped}`;
+  });
+  const remaining = Math.max(0, ids.length - previewLines.length);
   if (!window.confirm(uiText(
-    `确认通过真实 Trail 接口屏蔽 ${ids.length} 个 Issue？已有模型 label 会保留。`,
-    `Commit shielding for ${ids.length} Issue(s) through the real Trail API? Existing model labels will be preserved.`
+    `确认通过真实 Trail 接口更新 ${ids.length} 个 Issue？\n仅写 ${targetField}，不改模型 label。\n\n${previewLines.join("\n")}${remaining ? `\n…其余 ${remaining} 条请查看上方预览。` : ""}`,
+    `Commit ${ids.length} Issue(s) through the real Trail API?\nOnly ${targetField} will be written; model labels are unchanged.\n\n${previewLines.join("\n")}${remaining ? `\n…${remaining} more item(s) are shown in the preview above.` : ""}`
   ))) return;
   const button = $("#trailUpdateIssueCommitButton");
   button?.toggleAttribute("disabled", true);
