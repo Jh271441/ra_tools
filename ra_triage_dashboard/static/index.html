@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-171`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-172`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -451,76 +451,83 @@
           </section>
 
           <section class="app-page tool-page trail-update-page hidden" id="trailAttributeUpdatePage" data-page="trail-update">
-            <div class="trail-update-section-heading" aria-live="polite">
-              <h2 id="trailUpdateSectionTitle"><span class="ui-lang-zh">排除案例汇总</span><span class="ui-lang-en">Excluded case summary</span></h2>
-            </div>
-            <div class="trail-update-tabs" role="tablist" aria-label="Trail update modes">
-              <button class="trail-update-tab active" id="trailUpdateReviewTab" type="button" role="tab" aria-selected="true" aria-controls="trailUpdateReviewPanel" data-trail-update-tab="review">
-                <span class="ui-lang-zh">Review 排除汇总</span><span class="ui-lang-en">Review exclusions</span>
-                <small><span class="ui-lang-zh">按数据集和 Run 汇总</span><span class="ui-lang-en">By dataset and Run</span></small>
-              </button>
-              <button class="trail-update-tab" id="trailUpdateIssueTab" type="button" role="tab" aria-selected="false" aria-controls="trailUpdateIssuePanel" data-trail-update-tab="issue">
-                <span class="ui-lang-zh">Issue ID 屏蔽</span><span class="ui-lang-en">Shield by Issue ID</span>
-                <small><span class="ui-lang-zh">保留模型 label，仅写排除标记</span><span class="ui-lang-en">Keep model label; write only the exclusion marker</span></small>
-              </button>
-            </div>
+            <section class="page-card trail-update-header-card">
+              <div class="trail-update-section-heading" aria-live="polite">
+                <h2 id="trailUpdateSectionTitle"><span class="ui-lang-zh">排除案例汇总</span><span class="ui-lang-en">Excluded case summary</span></h2>
+              </div>
+              <div class="trail-update-tabs" role="tablist" aria-label="Trail update modes">
+                <button class="trail-update-tab active" id="trailUpdateReviewTab" type="button" role="tab" aria-selected="true" aria-controls="trailUpdateReviewPanel" data-trail-update-tab="review">
+                  <span class="ui-lang-zh">Review 排除汇总</span><span class="ui-lang-en">Review exclusions</span>
+                  <small><span class="ui-lang-zh">按数据集和 Run 汇总</span><span class="ui-lang-en">By dataset and Run</span></small>
+                </button>
+                <button class="trail-update-tab" id="trailUpdateIssueTab" type="button" role="tab" aria-selected="false" aria-controls="trailUpdateIssuePanel" data-trail-update-tab="issue">
+                  <span class="ui-lang-zh">Issue ID 屏蔽</span><span class="ui-lang-en">Shield by Issue ID</span>
+                  <small><span class="ui-lang-zh">保留模型 label，仅写排除标记</span><span class="ui-lang-en">Keep model label; write only the exclusion marker</span></small>
+                </button>
+              </div>
 
-            <section class="trail-update-tab-panel" id="trailUpdateReviewPanel" role="tabpanel" aria-labelledby="trailUpdateReviewTab" data-trail-update-panel="review">
-              <section class="page-card trail-update-controls-card" id="trailUpdateOnboarding">
-                <div class="trail-update-control-grid">
-                  <label class="trail-update-run-field">
-                    <span class="ui-lang-zh">模型 Run</span><span class="ui-lang-en">Model Run</span>
-                    <select id="trailUpdateRunSelect" aria-label="Trail update model run"><option value="">当前环境没有模型 Run</option></select>
-                    <small class="trail-update-run-hint" id="trailUpdateRunHint" role="status" hidden></small>
-                  </label>
-                  <div class="page-actions trail-update-actions">
-                    <button class="button button-primary" id="trailUpdateCommitButton" type="button" title="当前环境仅允许预览；提交需要开启 Trail 属性写入。" disabled><span class="ui-lang-zh">提交到 Trail</span><span class="ui-lang-en">Commit to Trail</span></button>
+              <section class="trail-update-header-panel" id="trailUpdateReviewControlsPanel" data-trail-update-panel="review" aria-hidden="false">
+                <section class="trail-update-controls-card" id="trailUpdateOnboarding">
+                  <div class="trail-update-control-grid">
+                    <label class="trail-update-run-field">
+                      <span class="ui-lang-zh">模型 Run</span><span class="ui-lang-en">Model Run</span>
+                      <select id="trailUpdateRunSelect" aria-label="Trail update model run"><option value="">当前环境没有模型 Run</option></select>
+                      <small class="trail-update-run-hint" id="trailUpdateRunHint" role="status" hidden></small>
+                    </label>
+                    <div class="page-actions trail-update-actions">
+                      <button class="button button-primary" id="trailUpdateCommitButton" type="button" title="当前环境仅允许预览；提交需要开启 Trail 属性写入。" disabled><span class="ui-lang-zh">提交到 Trail</span><span class="ui-lang-en">Commit to Trail</span></button>
+                    </div>
                   </div>
-                </div>
+                </section>
               </section>
 
-              <section class="trail-update-results" id="trailUpdateResults" aria-label="Trail update results" hidden>
-              <section class="trail-update-summary-grid trail-update-review-summary-grid" aria-label="Trail update summary">
-                <article class="analysis-stat-card"><span class="ui-lang-zh">应该排除案例</span><span class="ui-lang-en">Excluded cases</span><strong id="trailUpdateCount">—</strong><small id="trailUpdateRunSummary">—</small></article>
-                <article class="analysis-stat-card"><span class="ui-lang-zh">模型 label 字段</span><span class="ui-lang-en">Model label field</span><strong id="trailUpdateResultField" class="trail-update-target-value">ra_stuck_auto_result</strong><small><span class="ui-lang-zh">三分类 label</span><span class="ui-lang-en">Three-class label</span></small></article>
-                <article class="analysis-stat-card"><span class="ui-lang-zh">模型 JSON 字段</span><span class="ui-lang-en">Model JSON field</span><strong id="trailUpdateInfoField" class="trail-update-target-value">ra_stuck_auto_result_info</strong><small>deep merge · ra_triage_dashboard</small></article>
-              </section>
-
-              <section class="page-card trail-update-table-card">
-                <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">排除候选明细</span><span class="ui-lang-en">Excluded case details</span></h3></div><div class="trail-update-result-actions"><small id="trailUpdateTableSummary">—</small><button class="button button-quiet" id="trailUpdateDownloadButton" type="button" disabled><span class="ui-lang-zh">下载 JSON</span><span class="ui-lang-en">Download JSON</span></button><button class="button button-quiet" id="trailUpdateCopyButton" type="button" disabled><span class="ui-lang-zh">复制 JSON</span><span class="ui-lang-en">Copy JSON</span></button></div></div>
-                <div class="trail-update-table-wrap">
-                  <table class="trail-update-table"><thead><tr><th>Issue</th><th>GT</th><th>模型 label</th><th>模型 reason</th><th>Review</th><th>Comment</th><th>Trail 更新</th></tr></thead><tbody id="trailUpdateTableBody"><tr><td colspan="7" class="trail-update-empty"><span class="ui-lang-zh">正在加载排除案例。</span><span class="ui-lang-en">Loading excluded cases.</span></td></tr></tbody></table>
-                </div>
-              </section>
+              <section class="trail-update-header-panel hidden" id="trailUpdateIssueControlsPanel" data-trail-update-panel="issue" aria-hidden="true">
+                <section class="trail-update-controls-card">
+                  <div class="trail-update-direct-lead">
+                    <div>
+                      <h3><span class="ui-lang-zh">按 Issue ID 直接屏蔽</span><span class="ui-lang-en">Shield issues directly by ID</span></h3>
+                      <p><span class="ui-lang-zh">只 deep-merge <code>ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude=true</code>，保留当前模型 label；这是看板排除标记，不等同于张扬工具的原生黑名单字段。Comment 会通过 Trail 的评论接口单独写入。</span><span class="ui-lang-en">Only deep-merge <code>ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude=true</code>; the current model label is preserved. This is a Dashboard exclusion marker, not Zhang Yang tool's native blacklist field. Comments use Trail's separate comment API.</span></p>
+                    </div>
+                    <span class="trail-update-direct-contract"><span class="ui-lang-zh">真实接口 · 预览优先</span><span class="ui-lang-en">Real API · preview first</span></span>
+                  </div>
+                  <div class="trail-update-direct-grid">
+                    <label>
+                      <span class="ui-lang-zh">Issue ID（逗号/换行分隔）</span><span class="ui-lang-en">Issue IDs (comma/newline separated)</span>
+                      <textarea id="trailUpdateIssueIdsInput" rows="5" placeholder="cn32171803&#10;cn31994663"></textarea>
+                    </label>
+                    <label>
+                      <span class="ui-lang-zh">Comment（可选，逐个 Issue 添加）</span><span class="ui-lang-en">Comment (optional; added to each Issue)</span>
+                      <textarea id="trailUpdateIssueCommentInput" rows="5" placeholder="人工确认：该 Issue 不纳入当前模型问题范围。"></textarea>
+                    </label>
+                  </div>
+                  <div id="trailUpdateIssueIdsFeedback" class="trail-update-direct-feedback" role="status" aria-live="polite"></div>
+                  <div class="page-actions trail-update-actions">
+                    <button class="button button-primary" id="trailUpdateIssuePreviewButton" type="button"><span class="ui-lang-zh">生成屏蔽预览</span><span class="ui-lang-en">Build shield preview</span></button>
+                    <button class="button button-primary" id="trailUpdateIssueCommitButton" type="button" disabled><span class="ui-lang-zh">提交屏蔽到 Trail</span><span class="ui-lang-en">Commit shield to Trail</span></button>
+                  </div>
+                  <div class="trail-update-status" id="trailUpdateIssueStatus" role="status" aria-live="polite" hidden></div>
+                </section>
               </section>
             </section>
 
-            <section class="trail-update-tab-panel hidden" id="trailUpdateIssuePanel" role="tabpanel" aria-labelledby="trailUpdateIssueTab" data-trail-update-panel="issue" aria-hidden="true">
-              <section class="page-card trail-update-controls-card">
-                <div class="trail-update-direct-lead">
-                  <div>
-                    <h3><span class="ui-lang-zh">按 Issue ID 直接屏蔽</span><span class="ui-lang-en">Shield issues directly by ID</span></h3>
-                    <p><span class="ui-lang-zh">只 deep-merge <code>ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude=true</code>，保留当前模型 label；这是看板排除标记，不等同于张扬工具的原生黑名单字段。Comment 会通过 Trail 的评论接口单独写入。</span><span class="ui-lang-en">Only deep-merge <code>ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude=true</code>; the current model label is preserved. This is a Dashboard exclusion marker, not Zhang Yang tool's native blacklist field. Comments use Trail's separate comment API.</span></p>
+            <section class="trail-update-tab-panel trail-update-results-panel" id="trailUpdateReviewPanel" role="tabpanel" aria-labelledby="trailUpdateReviewTab" data-trail-update-panel="review" aria-hidden="false">
+              <section class="trail-update-results" id="trailUpdateResults" aria-label="Trail update results" hidden>
+                <section class="trail-update-summary-grid trail-update-review-summary-grid" aria-label="Trail update summary">
+                  <article class="analysis-stat-card"><span class="ui-lang-zh">应该排除案例</span><span class="ui-lang-en">Excluded cases</span><strong id="trailUpdateCount">—</strong><small id="trailUpdateRunSummary">—</small></article>
+                  <article class="analysis-stat-card"><span class="ui-lang-zh">模型 label 字段</span><span class="ui-lang-en">Model label field</span><strong id="trailUpdateResultField" class="trail-update-target-value">ra_stuck_auto_result</strong><small><span class="ui-lang-zh">三分类 label</span><span class="ui-lang-en">Three-class label</span></small></article>
+                  <article class="analysis-stat-card"><span class="ui-lang-zh">模型 JSON 字段</span><span class="ui-lang-en">Model JSON field</span><strong id="trailUpdateInfoField" class="trail-update-target-value">ra_stuck_auto_result_info</strong><small>deep merge · ra_triage_dashboard</small></article>
+                </section>
+
+                <section class="page-card trail-update-table-card">
+                  <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">排除候选明细</span><span class="ui-lang-en">Excluded case details</span></h3></div><div class="trail-update-result-actions"><small id="trailUpdateTableSummary">—</small><button class="button button-quiet" id="trailUpdateDownloadButton" type="button" disabled><span class="ui-lang-zh">下载 JSON</span><span class="ui-lang-en">Download JSON</span></button><button class="button button-quiet" id="trailUpdateCopyButton" type="button" disabled><span class="ui-lang-zh">复制 JSON</span><span class="ui-lang-en">Copy JSON</span></button></div></div>
+                  <div class="trail-update-table-wrap">
+                    <table class="trail-update-table"><thead><tr><th>Issue</th><th>GT</th><th>模型 label</th><th>模型 reason</th><th>Review</th><th>Comment</th><th>Trail 更新</th></tr></thead><tbody id="trailUpdateTableBody"><tr><td colspan="7" class="trail-update-empty"><span class="ui-lang-zh">正在加载排除案例。</span><span class="ui-lang-en">Loading excluded cases.</span></td></tr></tbody></table>
                   </div>
-                  <span class="trail-update-direct-contract"><span class="ui-lang-zh">真实接口 · 预览优先</span><span class="ui-lang-en">Real API · preview first</span></span>
-                </div>
-                <div class="trail-update-direct-grid">
-                  <label>
-                    <span class="ui-lang-zh">Issue ID（逗号/换行分隔）</span><span class="ui-lang-en">Issue IDs (comma/newline separated)</span>
-                    <textarea id="trailUpdateIssueIdsInput" rows="5" placeholder="cn32171803&#10;cn31994663"></textarea>
-                  </label>
-                  <label>
-                    <span class="ui-lang-zh">Comment（可选，逐个 Issue 添加）</span><span class="ui-lang-en">Comment (optional; added to each Issue)</span>
-                    <textarea id="trailUpdateIssueCommentInput" rows="5" placeholder="人工确认：该 Issue 不纳入当前模型问题范围。"></textarea>
-                  </label>
-                </div>
-                <div id="trailUpdateIssueIdsFeedback" class="trail-update-direct-feedback" role="status" aria-live="polite"></div>
-                <div class="page-actions trail-update-actions">
-                  <button class="button button-primary" id="trailUpdateIssuePreviewButton" type="button"><span class="ui-lang-zh">生成屏蔽预览</span><span class="ui-lang-en">Build shield preview</span></button>
-                  <button class="button button-primary" id="trailUpdateIssueCommitButton" type="button" disabled><span class="ui-lang-zh">提交屏蔽到 Trail</span><span class="ui-lang-en">Commit shield to Trail</span></button>
-                </div>
-                <div class="trail-update-status" id="trailUpdateIssueStatus" role="status" aria-live="polite" hidden></div>
+                </section>
               </section>
+            </section>
+
+            <section class="trail-update-tab-panel trail-update-results-panel hidden" id="trailUpdateIssuePanel" role="tabpanel" aria-labelledby="trailUpdateIssueTab" data-trail-update-panel="issue" aria-hidden="true">
               <section class="trail-update-direct-results" id="trailUpdateIssueResults" aria-label="Issue shielding preview" hidden>
                 <section class="trail-update-summary-grid" aria-label="Issue shielding summary">
                   <article class="analysis-stat-card"><span class="ui-lang-zh">可写 Issue</span><span class="ui-lang-en">Writable Issues</span><strong id="trailUpdateIssueCount">—</strong><small id="trailUpdateIssueSummary">—</small></article>
@@ -1148,7 +1155,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-171`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-172`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

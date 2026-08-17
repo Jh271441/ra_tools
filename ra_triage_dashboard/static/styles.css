@@ -1870,6 +1870,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .toast.error { border-color: rgba(248,113,113,.45); color: #fecaca; background: #2c171c; }
 
 .trail-update-page { width: min(1480px, 100%); gap: 8px; }
+.trail-update-header-card { display: grid; gap: 10px; padding: 13px 14px 14px; }
 .trail-update-section-heading {
   min-height: 48px; display: flex; align-items: center; padding: 2px 4px 7px;
   border-bottom: 1px solid rgba(34,211,238,.25); box-shadow: inset 0 -8px 18px rgba(34,211,238,.055);
@@ -1882,9 +1883,11 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-tab small { grid-column: 1 / -1; color: var(--faint); font-size: 10px; font-weight: 500; line-height: 1.35; }
 .trail-update-tab-panel { display: grid; gap: 8px; }
 .trail-update-tab-panel.hidden { display: none !important; }
+.trail-update-header-panel { min-width: 0; display: grid; gap: 8px; }
+.trail-update-header-panel[aria-hidden="true"] { display: none; }
 .trail-update-workspace, .trail-update-results, .trail-update-controls-card, .trail-update-table-card { display: grid; gap: 8px; }
 .trail-update-onboarding { display: grid; gap: 8px; padding: 0; }
-.trail-update-controls-card { width: 100%; }
+.trail-update-controls-card { width: 100%; padding-top: 10px; border-top: 1px solid var(--line-soft); }
 .trail-update-control-grid {
   min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto;
   align-items: end; gap: 8px;
@@ -2644,9 +2647,10 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .analysis-filters, .analysis-summary-grid, .analysis-cluster-grid { grid-template-columns: minmax(0, 1fr); }
   .trail-update-tabs { grid-template-columns: minmax(0, 1fr); }
   .trail-update-tab { padding: 8px 9px; }
+  .trail-update-header-card { padding: 10px; }
   .trail-update-section-heading { min-height: 42px; padding-inline: 2px; }
   .trail-update-section-heading h2 { font-size: 18px; }
-  .trail-update-onboarding { padding: 0; }
+  .trail-update-onboarding { padding-top: 8px; }
   .trail-update-control-grid, .trail-update-summary-grid { grid-template-columns: minmax(0, 1fr); }
   .trail-update-actions { justify-content: flex-start; }
   .trail-update-actions .button { flex: 1 1 150px; }
