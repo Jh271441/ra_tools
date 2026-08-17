@@ -1907,9 +1907,13 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-result-actions > small { margin-right: 2px; }
 .trail-update-result-actions .button { min-height: 30px; padding: 5px 8px; font-size: 11px; }
 .trail-update-table-wrap { min-width: 0; overflow-x: auto; }
-.trail-update-table { width: 100%; min-width: 920px; border-collapse: separate; border-spacing: 4px; table-layout: fixed; font-size: 11px; }
+.trail-update-table { width: 100%; min-width: 920px; border-collapse: separate; border-spacing: 0 5px; table-layout: fixed; font-size: 11px; }
 .trail-update-table th,
-.trail-update-table td { padding: 7px 8px; border: 1px solid var(--line-soft); border-radius: 6px; color: var(--muted); background: var(--overlay); text-align: center; vertical-align: middle; }
+.trail-update-table td { padding: 7px 8px; border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); color: var(--muted); background: var(--overlay); text-align: center; vertical-align: middle; }
+.trail-update-table th:first-child,
+.trail-update-table td:first-child { border-left: 1px solid var(--line-soft); border-radius: 6px 0 0 6px; }
+.trail-update-table th:last-child,
+.trail-update-table td:last-child { border-right: 1px solid var(--line-soft); border-radius: 0 6px 6px 0; }
 .trail-update-table th { color: var(--text); background: var(--raised); font-size: 10px; font-weight: 700; text-align: center; vertical-align: middle; }
 .trail-update-table tbody tr:hover td { border-color: rgba(34,211,238,.28); background: rgba(34,211,238,.055); }
 .trail-update-table td:nth-child(1) { width: 15%; }
@@ -1926,6 +1930,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-table code { color: var(--accent); font-size: 10px; word-break: break-word; }
 .trail-update-empty { min-height: 42px; color: var(--faint) !important; text-align: center !important; vertical-align: middle !important; }
 .trail-update-table tr.is-invalid td { border-color: rgba(248,113,113,.35); }
+.trail-update-run-picker .ui-select-trigger { height: 36px; }
 .trail-update-direct-lead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .trail-update-direct-lead h3 { margin: 0 0 3px; color: var(--text); font-size: 14px; }
 .trail-update-direct-lead p { max-width: 980px; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }

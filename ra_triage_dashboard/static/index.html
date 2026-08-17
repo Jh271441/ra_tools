@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-175`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-176`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -471,7 +471,14 @@
                   <div class="trail-update-control-grid">
                     <label class="trail-update-run-field">
                       <span class="ui-lang-zh">模型 Run</span><span class="ui-lang-en">Model Run</span>
-                      <select id="trailUpdateRunSelect" aria-label="Trail update model run"><option value="">当前环境没有模型 Run</option></select>
+                      <div class="ui-select trail-update-run-picker" id="trailUpdateRunPicker">
+                        <button class="ui-select-trigger" id="trailUpdateRunPickerTrigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="trailUpdateRunPickerPanel" aria-label="Trail update model run">
+                          <span class="ui-select-summary" id="trailUpdateRunPickerSummary">当前环境没有模型 Run</span>
+                          <span class="ui-select-caret" aria-hidden="true"></span>
+                        </button>
+                        <div class="ui-select-panel" id="trailUpdateRunPickerPanel" role="listbox" hidden></div>
+                        <select id="trailUpdateRunSelect" class="ui-select-native gateway-model-native-select" aria-hidden="true" tabindex="-1"><option value="">当前环境没有模型 Run</option></select>
+                      </div>
                       <small class="trail-update-run-hint" id="trailUpdateRunHint" role="status" hidden></small>
                     </label>
                     <div class="page-actions trail-update-actions">
@@ -1155,7 +1162,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-175`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-176`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

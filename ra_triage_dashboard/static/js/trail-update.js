@@ -67,6 +67,7 @@ function trailUpdateRunLabel(run) {
 }
 function renderTrailAttributeRunPicker() {
   const select = $("#trailUpdateRunSelect");
+  const picker = $("#trailUpdateRunPicker");
   if (!select) return;
   // Trail drafts must be explicit.  Do not inherit the Review gallery's
   // global/default Run when the user merely opens this page.
@@ -81,11 +82,17 @@ function renderTrailAttributeRunPicker() {
     },
     ...(state.modelRuns || []).map((run) => ({ value: run.id, label: trailUpdateRunLabel(run) })),
   ];
-  select.innerHTML = options
-    .map((item) => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`)
-    .join("");
-  select.value = (state.modelRuns || []).some((run) => run.id === selected) ? selected : "";
   select.disabled = !hasRuns;
+  const selectedValue = (state.modelRuns || []).some((run) => run.id === selected) ? selected : "";
+  if (picker && typeof populateUiSelect === "function") {
+    populateUiSelect(picker, options, selectedValue);
+    bindUiSelect(picker, { maxHeight: 360, maxWidth: 720 });
+  } else {
+    select.innerHTML = options
+      .map((item) => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`)
+      .join("");
+    select.value = selectedValue;
+  }
   const hint = $("#trailUpdateRunHint");
   if (hint) {
     hint.hidden = hasRuns;
