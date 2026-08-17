@@ -123,7 +123,6 @@ function setTrailAttributeCapability(data = null) {
   const status = data?.write_status === "disabled"
     ? "disabled"
     : String(capability.status || "not_checked");
-  const badge = $("#trailUpdateSafetyBadge");
   const panel = $("#trailUpdateCapability");
   const title = $("#trailUpdateCapabilityTitle");
   const message = $("#trailUpdateCapabilityMessage");
@@ -135,13 +134,6 @@ function setTrailAttributeCapability(data = null) {
     ? data?.target_field || data?.target_fields?.[0] || "ra_stuck_auto_result_info"
     : data?.target_fields?.[1] || "ra_stuck_auto_result_info";
   if (panel) panel.dataset.status = status;
-  if (badge) {
-    badge.dataset.status = status;
-    badge.textContent = uiText(
-      !hasPreview ? "尚未预览" : status === "ready" ? "字段已就绪" : status === "missing_fields" ? "目标字段未暴露" : status === "disabled" ? "写入开关关闭" : "需要检查",
-      !hasPreview ? "No preview yet" : status === "ready" ? "Fields ready" : status === "missing_fields" ? "Target fields missing" : status === "disabled" ? "Writer disabled" : "Check required"
-    );
-  }
   if (title) title.textContent = uiText(
     !hasPreview ? "尚未生成预览" : status === "ready" ? "可以提交到 Trail" : status === "missing_fields" ? "当前 view 不能安全写入" : status === "disabled" ? "当前环境只允许预览" : "Trail 字段能力尚未确认",
     !hasPreview ? "Preview not generated" : status === "ready" ? "Ready to commit to Trail" : status === "missing_fields" ? "The current view is not safe to write" : status === "disabled" ? "Preview only in this environment" : "Trail field capability is not confirmed"

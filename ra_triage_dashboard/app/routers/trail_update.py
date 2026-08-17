@@ -458,7 +458,11 @@ async def _build_preview(
     )
     result_field, info_field = _field_names()
     issue_ids = [_as_text(row.get("issue_id")) for row in rows if _as_text(row.get("issue_id"))]
-    if issue_ids:
+    # The Review tab is a read-only aggregate in the current deployment.  Do
+    # not make every filter change wait for a remote Trail query when the
+    # writer is disabled; commit still performs a fresh, complete capability
+    # check immediately before any future write.
+    if issue_ids and settings.trail_attribute_write_enabled:
         sync_result = await asyncio.to_thread(
             read_trail_model_fields,
             ra_root=settings.ra_auto_triage_root,

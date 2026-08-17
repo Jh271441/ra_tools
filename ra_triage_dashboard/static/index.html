@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-167`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-168`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -451,17 +451,6 @@
           </section>
 
           <section class="app-page tool-page trail-update-page hidden" id="trailAttributeUpdatePage" data-page="trail-update">
-            <section class="page-card trail-update-header-card">
-              <div class="trail-update-title-row">
-                <div>
-                  <span class="eyebrow">TRAIL ATTRIBUTE UPDATE</span>
-                  <h2><span class="ui-lang-zh">Trail 属性更新</span><span class="ui-lang-en">Trail attribute update</span></h2>
-                  <p><span class="ui-lang-zh">Review 汇总和 Issue ID 屏蔽分别展示；确认后才通过真实 Trail 接口写入字段与 Comment。</span><span class="ui-lang-en">Review aggregation and Issue-ID shielding are separate views; fields and Comments reach Trail only after explicit confirmation.</span></p>
-                </div>
-                <span class="trail-update-safety-badge" id="trailUpdateSafetyBadge"><span class="ui-lang-zh">尚未预览</span><span class="ui-lang-en">No preview yet</span></span>
-              </div>
-            </section>
-
             <div class="trail-update-tabs" role="tablist" aria-label="Trail update modes">
               <button class="trail-update-tab active" id="trailUpdateReviewTab" type="button" role="tab" aria-selected="true" aria-controls="trailUpdateReviewPanel" data-trail-update-tab="review">
                 <span class="ui-lang-zh">Review 排除汇总</span><span class="ui-lang-en">Review exclusions</span>
@@ -1161,7 +1150,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-167`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-168`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

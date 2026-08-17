@@ -1870,17 +1870,6 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .toast.error { border-color: rgba(248,113,113,.45); color: #fecaca; background: #2c171c; }
 
 .trail-update-page { width: min(1480px, 100%); gap: 8px; }
-.trail-update-header-card { display: grid; gap: 8px; padding: 12px 16px; }
-.trail-update-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.trail-update-title-row h2 { margin: 0 0 2px; color: var(--text); font-size: 19px; }
-.trail-update-title-row p { margin: 0; color: var(--muted); font-size: 11px; }
-.trail-update-safety-badge {
-  display: inline-flex; align-items: center; min-height: 25px; padding: 4px 9px;
-  border: 1px solid rgba(251,191,36,.4); border-radius: 6px; color: #f6d58a;
-  background: rgba(251,191,36,.08); font-size: 11px; font-weight: 650; white-space: nowrap;
-}
-.trail-update-safety-badge[data-status="ready"] { border-color: rgba(52,211,153,.4); color: #9ae6c4; background: rgba(52,211,153,.08); }
-.trail-update-safety-badge[data-status="disabled"] { border-color: rgba(148,163,184,.35); color: var(--muted); background: rgba(148,163,184,.08); }
 .trail-update-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .trail-update-tab { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 3px 8px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: var(--overlay); text-align: left; font-size: 12px; font-weight: 700; }
 .trail-update-tab:hover, .trail-update-tab:focus-visible { border-color: rgba(34,211,238,.55); color: var(--text); }
@@ -2649,8 +2638,6 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .media-nav { width: 32px; height: 32px; }
   .toast { right: 8px; bottom: 8px; max-width: calc(100vw - 16px); }
   .analysis-filters, .analysis-summary-grid, .analysis-cluster-grid { grid-template-columns: minmax(0, 1fr); }
-  .trail-update-title-row { align-items: flex-start; flex-direction: column; }
-  .trail-update-safety-badge { white-space: normal; }
   .trail-update-tabs { grid-template-columns: minmax(0, 1fr); }
   .trail-update-tab { padding: 8px 9px; }
   .trail-update-onboarding { padding: 0; }

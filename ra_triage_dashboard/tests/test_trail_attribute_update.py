@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
+from unittest.mock import patch
 
+from starlette.requests import Request
+
+from ra_triage_dashboard.app.routers import trail_update
 from ra_triage_dashboard.app.routers.trail_update import (
     TRAIL_INFO_FIELD,
     TRAIL_RESULT_FIELD,
@@ -12,6 +17,47 @@ from ra_triage_dashboard.app.routers.trail_update import (
 
 
 class TrailAttributeUpdateTest(unittest.TestCase):
+    def test_read_only_preview_skips_remote_trail_capability_probe(self) -> None:
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/trail-attribute-update/preview",
+                "query_string": b"baselines=0508",
+                "headers": [],
+                "scheme": "http",
+                "server": ("testserver", 80),
+                "client": ("127.0.0.1", 1),
+            }
+        )
+        row = {
+            "issue_id": "cn00000001",
+            "gt_label": "误触发",
+            "annotation": {
+                "id": 1,
+                "model_run_id": "run-1",
+                "is_excluded": True,
+                "author": "alice",
+            },
+            "prediction": {
+                "model_run_id": "run-1",
+                "label": "误触发",
+            },
+        }
+        with patch.object(trail_update.database, "review_reason_rows", return_value=[row]), patch.object(
+            trail_update, "read_trail_model_fields", side_effect=AssertionError("remote probe")
+        ) as probe:
+            payload = asyncio.run(
+                trail_update._build_preview(
+                    request,
+                    selected_run_id="",
+                    baselines="0508",
+                )
+            )
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["trail_capability"]["status"], "not_checked")
+        probe.assert_not_called()
+
     def test_payload_is_run_bound_sorted_and_write_disabled(self) -> None:
         rows = [
             {
