@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-165`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-166`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -458,7 +458,7 @@
                   <h2><span class="ui-lang-zh">Trail 属性更新</span><span class="ui-lang-en">Trail attribute update</span></h2>
                   <p><span class="ui-lang-zh">Review 汇总和 Issue ID 屏蔽分开预览；确认后才通过真实 Trail 接口写入字段与 Comment。</span><span class="ui-lang-en">Review aggregation and Issue-ID shielding are separate previews; fields and Comments reach Trail only after explicit confirmation.</span></p>
                 </div>
-                <span class="trail-update-safety-badge" id="trailUpdateSafetyBadge"><span class="ui-lang-zh">字段能力检查中</span><span class="ui-lang-en">Checking field capability</span></span>
+                <span class="trail-update-safety-badge" id="trailUpdateSafetyBadge"><span class="ui-lang-zh">尚未预览</span><span class="ui-lang-en">No preview yet</span></span>
               </div>
             </section>
 
@@ -478,7 +478,8 @@
               <div class="trail-update-control-grid">
                 <label>
                   <span class="ui-lang-zh">模型 Run</span><span class="ui-lang-en">Model Run</span>
-                  <select id="trailUpdateRunSelect" aria-label="Trail update model run"><option value="">请选择模型 Run</option></select>
+                  <select id="trailUpdateRunSelect" aria-label="Trail update model run"><option value="">当前环境没有模型 Run</option></select>
+                  <small class="trail-update-run-hint" id="trailUpdateRunHint" role="status" hidden></small>
                 </label>
                 <div class="trail-update-baseline-control">
                   <span class="ui-lang-zh">数据集范围</span><span class="ui-lang-en">Dataset scope</span>
@@ -1166,7 +1167,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-165`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-166`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

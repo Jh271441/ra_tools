@@ -61,15 +61,41 @@ function trailUpdateRunLabel(run) {
 function renderTrailAttributeRunPicker() {
   const select = $("#trailUpdateRunSelect");
   if (!select) return;
-  const selected = state.trailUpdate?.runId || state.selectedRunId || "";
+  // Trail drafts must be explicit.  Do not inherit the Review gallery's
+  // global/default Run when the user merely opens this page.
+  const selected = state.trailUpdate?.runId || "";
+  const hasRuns = Array.isArray(state.modelRuns) && state.modelRuns.length > 0;
   const options = [
-    { value: "", label: uiText("请选择模型 Run", "Choose a model Run") },
+    {
+      value: "",
+      label: hasRuns
+        ? uiText("请选择模型 Run", "Choose a model Run")
+        : uiText("当前环境没有模型 Run", "No model Run in this environment"),
+    },
     ...(state.modelRuns || []).map((run) => ({ value: run.id, label: trailUpdateRunLabel(run) })),
   ];
   select.innerHTML = options
     .map((item) => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`)
     .join("");
   select.value = (state.modelRuns || []).some((run) => run.id === selected) ? selected : "";
+  select.disabled = !hasRuns;
+  const loadButton = $("#trailUpdateLoadButton");
+  if (loadButton) loadButton.disabled = !hasRuns;
+  const hint = $("#trailUpdateRunHint");
+  if (hint) {
+    hint.hidden = hasRuns;
+    if (!hasRuns) {
+      const isGray = window.location.port === "8786";
+      hint.innerHTML = uiText(
+        isGray
+          ? "当前 8786 灰度只有基线数据，尚无 Model Run。它使用独立空库，不会自动共享 8785 生产 Run；请先到“模型结果”导入结果。"
+          : "当前环境只有基线数据，尚无 Model Run；请先到“模型结果”导入结果。",
+        isGray
+          ? "Gray 8786 has baselines but no Model Run. It uses an isolated empty database and does not share Runs with production 8785; import a result from Model Runs first."
+          : "This environment has baselines but no Model Run; import a result from Model Runs first."
+      );
+    }
+  }
   const baseline = normalizeBaselineIds(state.selectedBaselineIds);
   const summary = $("#trailUpdateBaselineSummary");
   if (summary) summary.textContent = baseline.join(" + ") || uiText("当前数据集", "Selected dataset");
@@ -92,6 +118,7 @@ function setTrailAttributeUpdatePreviewVisible(visible) {
 function setTrailAttributeCapability(data = null) {
   const capability = data?.trail_capability || {};
   const directMode = data?.mode === "direct_issue_ids";
+  const hasPreview = Boolean(data);
   // The deployment flag is an independent safety gate from Trail field
   // visibility.  Surface it first so a field-ready preview in a read-only
   // environment cannot look like it is commit-ready.
@@ -113,16 +140,16 @@ function setTrailAttributeCapability(data = null) {
   if (badge) {
     badge.dataset.status = status;
     badge.textContent = uiText(
-      status === "ready" ? "字段已就绪" : status === "missing_fields" ? "目标字段未暴露" : status === "disabled" ? "写入开关关闭" : "需要检查",
-      status === "ready" ? "Fields ready" : status === "missing_fields" ? "Target fields missing" : status === "disabled" ? "Writer disabled" : "Check required"
+      !hasPreview ? "尚未预览" : status === "ready" ? "字段已就绪" : status === "missing_fields" ? "目标字段未暴露" : status === "disabled" ? "写入开关关闭" : "需要检查",
+      !hasPreview ? "No preview yet" : status === "ready" ? "Fields ready" : status === "missing_fields" ? "Target fields missing" : status === "disabled" ? "Writer disabled" : "Check required"
     );
   }
   if (title) title.textContent = uiText(
-    status === "ready" ? "可以提交到 Trail" : status === "missing_fields" ? "当前 view 不能安全写入" : status === "disabled" ? "当前环境只允许预览" : "Trail 字段能力尚未确认",
-    status === "ready" ? "Ready to commit to Trail" : status === "missing_fields" ? "The current view is not safe to write" : status === "disabled" ? "Preview only in this environment" : "Trail field capability is not confirmed"
+    !hasPreview ? "尚未生成预览" : status === "ready" ? "可以提交到 Trail" : status === "missing_fields" ? "当前 view 不能安全写入" : status === "disabled" ? "当前环境只允许预览" : "Trail 字段能力尚未确认",
+    !hasPreview ? "Preview not generated" : status === "ready" ? "Ready to commit to Trail" : status === "missing_fields" ? "The current view is not safe to write" : status === "disabled" ? "Preview only in this environment" : "Trail field capability is not confirmed"
   );
   if (message) {
-    const capabilityMessage = capability.message || uiText("生成预览后会显示检查结果。", "Build a preview to see the capability check.");
+    const capabilityMessage = capability.message || uiText("选择 Run 后生成预览，页面会检查 2410 view 是否同时暴露两个目标字段。", "Choose a Run and build a preview to check whether view 2410 exposes both target fields.");
     message.textContent = status === "disabled"
       ? uiText(`当前环境只允许预览；${capabilityMessage}`, `This environment is preview-only; ${capabilityMessage}`)
       : capabilityMessage;
@@ -540,5 +567,6 @@ function bindTrailAttributeUpdateEvents() {
   });
   setTrailUpdateTab(state.trailUpdate?.tab || "review");
   parseTrailIssueIds();
+  setTrailAttributeCapability(null);
   renderTrailAttributeRunPicker();
 }

@@ -278,6 +278,12 @@ async function loadRuns({
   renderRunSourceSummary();
   renderActiveRun();
   renderRunManager();
+  // The Trail page has its own explicit Run picker.  It is bound before the
+  // async Run registry request completes, so refresh it after every registry
+  // load (including imports and baseline changes).
+  if (typeof renderTrailAttributeRunPicker === "function") {
+    renderTrailAttributeRunPicker();
+  }
 }
 
 const RUN_SOURCE_META = Object.freeze({

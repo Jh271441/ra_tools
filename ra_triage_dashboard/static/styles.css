@@ -1898,6 +1898,8 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-control-grid label,
 .trail-update-baseline-control { min-width: 0; display: grid; gap: 4px; color: var(--muted); font-size: 11px; }
 .trail-update-control-grid select { min-width: 0; height: 36px; }
+.trail-update-run-hint { margin-top: 1px; color: #f6d58a; font-size: 10px; font-weight: 500; line-height: 1.4; }
+.trail-update-control-grid select:disabled { cursor: not-allowed; opacity: .72; }
 .trail-update-baseline-control {
   min-height: 36px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--overlay);
 }
