@@ -91,6 +91,7 @@ function setTrailAttributeUpdatePreviewVisible(visible) {
 
 function setTrailAttributeCapability(data = null) {
   const capability = data?.trail_capability || {};
+  const directMode = data?.mode === "direct_issue_ids";
   // The deployment flag is an independent safety gate from Trail field
   // visibility.  Surface it first so a field-ready preview in a read-only
   // environment cannot look like it is commit-ready.
@@ -102,8 +103,12 @@ function setTrailAttributeCapability(data = null) {
   const title = $("#trailUpdateCapabilityTitle");
   const message = $("#trailUpdateCapabilityMessage");
   const fields = $("#trailUpdateVisibleFields");
-  const resultField = data?.target_fields?.[0] || "ra_stuck_auto_result";
-  const infoField = data?.target_fields?.[1] || "ra_stuck_auto_result_info";
+  const resultField = directMode
+    ? data?.model_result_field || "ra_stuck_auto_result"
+    : data?.target_fields?.[0] || "ra_stuck_auto_result";
+  const infoField = directMode
+    ? data?.target_field || data?.target_fields?.[0] || "ra_stuck_auto_result_info"
+    : data?.target_fields?.[1] || "ra_stuck_auto_result_info";
   if (panel) panel.dataset.status = status;
   if (badge) {
     badge.dataset.status = status;
@@ -125,8 +130,12 @@ function setTrailAttributeCapability(data = null) {
   if (fields) {
     const visible = Array.isArray(capability.fields_visible) ? capability.fields_visible : [];
     fields.textContent = uiText(
-      `目标：${resultField} + ${infoField}；当前 view 可见：${visible.join(", ") || "无"}`,
-      `Target: ${resultField} + ${infoField}; visible in view: ${visible.join(", ") || "none"}`
+      directMode
+        ? `目标：仅更新 ${infoField} 的 Dashboard 排除标记；当前 view 可见：${visible.join(", ") || "无"}`
+        : `目标：${resultField} + ${infoField}；当前 view 可见：${visible.join(", ") || "无"}`,
+      directMode
+        ? `Target: Dashboard exclusion marker in ${infoField}; visible in view: ${visible.join(", ") || "none"}`
+        : `Target: ${resultField} + ${infoField}; visible in view: ${visible.join(", ") || "none"}`
     );
   }
 }
@@ -311,6 +320,7 @@ function renderTrailIssuePreview(data) {
   const missing = Array.isArray(data?.missing_issue_ids) ? data.missing_issue_ids : [];
   const invalid = Array.isArray(data?.invalid_issue_ids) ? data.invalid_issue_ids : [];
   const capability = data?.trail_capability || {};
+  setTrailAttributeCapability(data);
   const results = $("#trailUpdateIssueResults");
   if (results) results.hidden = false;
   $("#trailUpdateIssueCount").textContent = String(items.length);
