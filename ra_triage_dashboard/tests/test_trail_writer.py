@@ -3,8 +3,12 @@ from __future__ import annotations
 import unittest
 
 from ra_triage_dashboard.app.trail_writer import (
+    attach_trail_operation_id,
+    build_manual_exclusion_changes,
     build_trail_changes,
+    decorate_trail_comments,
     deep_merge_dict,
+    verify_trail_readback,
     write_trail_model_results,
 )
 
@@ -57,6 +61,97 @@ class TrailWriterTest(unittest.TestCase):
         self.assertEqual(len(stats["chunks"]), 2)
         self.assertEqual(original[0]["issue_id"], "cn00000000")
         self.assertTrue(all(replace for _, replace in seen))
+
+    def test_manual_exclusion_preserves_model_label_and_merges_info(self) -> None:
+        changes = build_manual_exclusion_changes(
+            ["cn00000001"],
+            current_rows=[
+                {
+                    "issue_id": "cn00000001",
+                    "ra_stuck_auto_result": "正确触发",
+                    "ra_stuck_auto_result_info": {"existing": {"keep": 1}},
+                }
+            ],
+            comment="manual shield",
+        )
+        self.assertEqual(changes[0]["ra_stuck_auto_result_info"]["existing"], {"keep": 1})
+        self.assertTrue(
+            changes[0]["ra_stuck_auto_result_info"]["ra_triage_dashboard"]["should_exclude"]
+        )
+        self.assertNotIn("ra_stuck_auto_result", changes[0])
+        self.assertEqual(changes[0]["comment"], "manual shield")
+
+    def test_writer_separately_reports_comment_result(self) -> None:
+        calls = []
+
+        class FakeClient:
+            def update_issue_with_changes(self, changes, replace=False):
+                calls.append(("fields", changes, replace))
+                assert all("comment" not in item for item in changes)
+                return {"msg": "success"}
+
+            def add_issue_comment(self, issue_id, comment):
+                calls.append(("comment", issue_id, comment))
+                return {"msg": "success"}
+
+        stats = write_trail_model_results(
+            [{"issue_id": "cn00000001", "ra_stuck_auto_result_info": {}, "comment": "note"}],
+            ra_root="/tmp",
+            client_factory=FakeClient,
+            write_comments_separately=True,
+        )
+        self.assertEqual(stats["success_count"], 1)
+        self.assertEqual(stats["comment_total"], 1)
+        self.assertEqual(stats["comment_success_count"], 1)
+        self.assertEqual(stats["comment_failed_count"], 0)
+        self.assertEqual([call[0] for call in calls], ["fields", "comment"])
+
+    def test_operation_marker_is_idempotent_and_readback_is_verified(self) -> None:
+        changes = attach_trail_operation_id(
+            [{"issue_id": "cn00000001", "ra_stuck_auto_result_info": {}}],
+            operation_id="digest-1",
+        )
+        decorated = decorate_trail_comments(
+            [dict(changes[0], comment="人工确认")], operation_id="digest-1"
+        )
+        self.assertIn("digest-1", decorated[0]["comment"])
+        self.assertEqual(decorated[0]["comment"], decorate_trail_comments(decorated, operation_id="digest-1")[0]["comment"])
+        verification = verify_trail_readback(
+            changes,
+            [
+                {
+                    "issue_id": "cn00000001",
+                    "ra_stuck_auto_result_info": {
+                        "ra_triage_dashboard": {"operation_id": "digest-1"}
+                    },
+                }
+            ],
+        )
+        self.assertTrue(verification["ok"])
+        self.assertEqual(verification["verified_count"], 1)
+
+    def test_writer_skips_existing_comment_marker(self) -> None:
+        calls = []
+
+        class FakeClient:
+            def update_issue_with_changes(self, changes, replace=False):
+                calls.append("fields")
+                return {"msg": "success"}
+
+            def add_issue_comment(self, issue_id, comment):
+                calls.append("comment")
+                return {"msg": "success"}
+
+        stats = write_trail_model_results(
+            [{"issue_id": "cn00000001", "ra_stuck_auto_result_info": {}, "comment": "note"}],
+            ra_root="/tmp",
+            client_factory=FakeClient,
+            write_comments_separately=True,
+            comment_skip_issue_ids=["cn00000001"],
+        )
+        self.assertEqual(calls, ["fields"])
+        self.assertEqual(stats["comment_skipped_count"], 1)
+        self.assertEqual(stats["comment_success_count"], 0)
 
 
 if __name__ == "__main__":

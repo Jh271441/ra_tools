@@ -15,6 +15,12 @@
    - Duplicate IDs are removed; invalid tokens are shown before applying.
    - Applied IDs are persisted as `issue_ids` in the review URL and sent to `/api/cases`; applying an empty list returns to the normal baseline queue.
 
+3. **Trail 属性更新双 Tab（当前改动）**
+   - Review Tab keeps the Run-bound exclusion preview; Issue ID Tab accepts a bounded list and only deep-merges `ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude=true`, preserving the existing model label.
+   - Field writes use `TrailInterface.update_issue_with_changes` (`/paladin/issue/pool/multi_update/`); Comments use `add_issue_comment` (`/paladin/trail_common/comment/add_comment/`) and are reported separately.
+   - Every commit carries the preview digest as a Dashboard operation marker, reads `more_comment` before adding a Comment, skips an existing marker on retry, and reads back every field-successful Issue before returning success.
+   - New endpoints: `POST /api/trail-attribute-update/issue-preview` (read-only) and `POST /api/trail-attribute-update/issue-commit` (writer-gated). Both remain fail-closed while the Trail writer flag is disabled.
+
 ## Verification
 
 - `python3 -m compileall -q ra_triage_dashboard/app` passes locally.

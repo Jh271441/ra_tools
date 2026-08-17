@@ -7,6 +7,7 @@ from ra_triage_dashboard.app.routers.trail_update import (
     TRAIL_RESULT_FIELD,
     TRAIL_TARGET_PATH,
     build_trail_attribute_update_payload,
+    build_trail_issue_exclusion_payload,
 )
 
 
@@ -64,6 +65,7 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         self.assertEqual(item["field_updates"][TRAIL_RESULT_FIELD], "误触发")
         self.assertEqual(item["field_updates"][TRAIL_INFO_FIELD], item["target"]["patch"])
         self.assertEqual(payload["draft"]["payload_sha256"], payload["payload_sha256"])
+        self.assertEqual(payload["operation_id"], payload["payload_sha256"])
 
     def test_payload_digest_changes_when_review_evidence_changes(self) -> None:
         row = {
@@ -79,6 +81,38 @@ class TrailAttributeUpdateTest(unittest.TestCase):
             [changed], run={"id": "run-1"}, baseline_ids=["0508"], baseline_scopes=["scope"]
         )
         self.assertNotEqual(first["payload_sha256"], second["payload_sha256"])
+
+    def test_direct_issue_preview_only_targets_info_field_and_reports_missing(self) -> None:
+        payload = build_trail_issue_exclusion_payload(
+            ["cn00000001", "cn00000002"],
+            current_rows=[
+                {
+                    "issue_id": "cn00000001",
+                    "ra_stuck_auto_result": "正确触发",
+                    "ra_stuck_auto_result_info": {
+                        "keep": True,
+                        "ra_triage_dashboard": {"should_exclude": False},
+                    },
+                }
+            ],
+            comment="人工屏蔽",
+            trail_capability={
+                "view_id": 2410,
+                "fields_visible": [TRAIL_INFO_FIELD],
+                "ready": True,
+                "status": "ready",
+                "message": "ready",
+            },
+            trail_write_enabled=True,
+        )
+        self.assertEqual(payload["write_status"], "missing_issues")
+        self.assertEqual(payload["missing_issue_ids"], ["cn00000002"])
+        self.assertEqual(payload["target_fields"], [TRAIL_INFO_FIELD])
+        self.assertEqual(payload["items"][0]["current_label"], "正确触发")
+        self.assertTrue(payload["items"][0]["target"]["patch"]["ra_triage_dashboard"]["should_exclude"])
+        self.assertEqual(payload["items"][0]["comment"], "人工屏蔽")
+        self.assertEqual(payload["draft"]["payload_sha256"], payload["payload_sha256"])
+        self.assertEqual(payload["operation_id"], payload["payload_sha256"])
 
 
 if __name__ == "__main__":

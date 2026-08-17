@@ -464,10 +464,17 @@ function normalizeApiPayloadUrls(value) {
 async function api(path, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
   const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+  // Some POST endpoints are semantically read-only previews (for example a
+  // Trail draft whose body contains a Comment).  They may be called from a
+  // read-only session, but the server still owns the final write gate.
+  const allowReadOnlyMutation = options.allowReadOnlyMutation === true;
+  const requestOptions = { ...options };
+  delete requestOptions.allowReadOnlyMutation;
   const retryableGet = method === "GET";
   if (
     state.session?.read_only &&
-    isMutation
+    isMutation &&
+    !allowReadOnlyMutation
   ) {
     throw new Error(
       uiText(
@@ -486,7 +493,7 @@ async function api(path, options = {}) {
     let payload = {};
     try {
       response = await fetch(withBase(path), {
-        ...options,
+        ...requestOptions,
         ...(controller ? { signal: controller.signal } : {}),
         headers: {
           ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),

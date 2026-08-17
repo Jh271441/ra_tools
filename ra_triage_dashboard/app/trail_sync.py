@@ -12,6 +12,7 @@ from typing import Any, Iterable
 
 TRAIL_RESULT_FIELD = "ra_stuck_auto_result"
 TRAIL_INFO_FIELD = "ra_stuck_auto_result_info"
+TRAIL_COMMENT_FIELD = "more_comment"
 
 # These are display-only fields.  They are deliberately kept separate from
 # the model-result contract above: Trail sync still reads only the two model
@@ -36,6 +37,23 @@ class TrailSyncResult:
     returned_issues: int
     fields_visible: tuple[str, ...]
     view_id: int
+    complete: bool
+    message: str
+
+
+@dataclass(frozen=True)
+class TrailCommentMarkerResult:
+    """Minimal result of a read-only Comment marker lookup.
+
+    The dashboard never returns Trail Comment bodies to the browser.  It only
+    needs to know whether the deterministic operation marker already exists so
+    retrying the same write cannot append a duplicate Comment.
+    """
+
+    matched_issue_ids: frozenset[str]
+    queried_issues: int
+    returned_issues: int
+    fields_visible: tuple[str, ...]
     complete: bool
     message: str
 
@@ -300,4 +318,137 @@ def read_trail_model_fields(
         view_id=view_id,
         complete=True,
         message=message,
+    )
+
+
+def _comment_texts(value: Any) -> list[str]:
+    """Flatten the common Trail ``more_comment`` encodings for marker checks."""
+
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        try:
+            parsed = json.loads(text)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return [text]
+        # JSON-encoded comments are common in dataframe exports.  If the
+        # value is a JSON scalar, keeping its textual form is sufficient.
+        if parsed == value:
+            return [text]
+        return _comment_texts(parsed)
+    if isinstance(value, dict):
+        output: list[str] = []
+        # Trail has used several names for the visible body over time.  Only
+        # inspect those fields; do not stringify the whole row or leak IDs.
+        for key in ("content", "comment", "text", "body", "message"):
+            if key in value:
+                output.extend(_comment_texts(value.get(key)))
+        if output:
+            return output
+        return []
+    if isinstance(value, (list, tuple, set)):
+        output: list[str] = []
+        for item in value:
+            output.extend(_comment_texts(item))
+        return output
+    return [str(value).strip()] if str(value).strip() else []
+
+
+def read_trail_comment_markers(
+    *,
+    ra_root: Path,
+    issue_ids: Iterable[str],
+    view_id: int,
+    chunk_size: int,
+    marker: str,
+) -> TrailCommentMarkerResult:
+    """Read only enough Trail Comment data to make retries idempotent.
+
+    This is deliberately separate from :func:`read_trail_model_fields` so
+    normal previews do not fetch Comment bodies.  A commit carrying a Comment
+    must call this helper first; if ``more_comment`` is not exposed by the
+    configured view, the caller fails closed before changing any field.
+    """
+
+    ids = sorted({str(issue_id).strip() for issue_id in issue_ids if str(issue_id).strip()})
+    if not ids:
+        return TrailCommentMarkerResult(
+            matched_issue_ids=frozenset(),
+            queried_issues=0,
+            returned_issues=0,
+            fields_visible=(),
+            complete=True,
+            message="没有需要检查 Comment 的 Issue。",
+        )
+    root = str(ra_root.resolve())
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    try:
+        importlib.invalidate_caches()
+        from utils.get_ra_issue_utils import get_self_issue  # type: ignore[import-not-found]
+    except Exception as exc:
+        return TrailCommentMarkerResult(
+            matched_issue_ids=frozenset(),
+            queried_issues=len(ids),
+            returned_issues=0,
+            fields_visible=(),
+            complete=False,
+            message=f"无法加载 Trail 只读客户端检查 Comment: {exc}",
+        )
+
+    matched: set[str] = set()
+    visible: set[str] = set()
+    returned = 0
+    for chunk in _chunks(ids, max(1, chunk_size)):
+        condition = [{"attr_id": "issue_id", "val": chunk, "operator": "like"}]
+        try:
+            frame = get_self_issue(condition, view_id=view_id, size=max(len(chunk), 200))
+        except Exception as exc:
+            return TrailCommentMarkerResult(
+                matched_issue_ids=frozenset(matched),
+                queried_issues=len(ids),
+                returned_issues=returned,
+                fields_visible=tuple(sorted(visible)),
+                complete=False,
+                message=f"Trail Comment 查询失败（view {view_id}）: {exc}",
+            )
+        if frame is None or len(frame) == 0:
+            continue
+        lower_columns = {str(column).lower(): str(column) for column in frame.columns}
+        issue_column = lower_columns.get("issue_id")
+        comment_column = lower_columns.get(TRAIL_COMMENT_FIELD)
+        if comment_column:
+            visible.add(TRAIL_COMMENT_FIELD)
+        if not issue_column:
+            continue
+        for raw in frame.to_dict(orient="records"):
+            issue_id = str(raw.get(issue_column) or "").strip()
+            if issue_id not in ids:
+                continue
+            returned += 1
+            if comment_column and any(marker in text for text in _comment_texts(raw.get(comment_column))):
+                matched.add(issue_id)
+
+    if TRAIL_COMMENT_FIELD not in visible:
+        return TrailCommentMarkerResult(
+            matched_issue_ids=frozenset(matched),
+            queried_issues=len(ids),
+            returned_issues=returned,
+            fields_visible=tuple(sorted(visible)),
+            complete=False,
+            message=(
+                f"Trail view {view_id} 未返回 {TRAIL_COMMENT_FIELD}；"
+                "为避免重复 Comment，本次提交已停止。"
+            ),
+        )
+    return TrailCommentMarkerResult(
+        matched_issue_ids=frozenset(matched),
+        queried_issues=len(ids),
+        returned_issues=returned,
+        fields_visible=tuple(sorted(visible)),
+        complete=True,
+        message=f"Trail view {view_id} 已完成 Comment 幂等检查。",
     )

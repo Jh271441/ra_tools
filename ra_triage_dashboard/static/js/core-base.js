@@ -626,8 +626,11 @@ const state = {
   },
   trailUpdate: {
     runId: "",
+    tab: "review",
     requestSeq: 0,
     data: null,
+    directRequestSeq: 0,
+    directData: null,
   },
   selectedAnnotationLabel: "",
   pollingBatchId: "",

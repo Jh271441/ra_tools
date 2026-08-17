@@ -18,6 +18,7 @@ from typing import Any, Callable, Iterable
 
 
 LABELS = ("误触发", "正确触发", "无需协助")
+TRAIL_OPERATION_MARKER_PREFIX = "[RA-Triage-Dashboard operation:"
 _LABEL_ALIASES = {
     "mismatch": "误触发",
     "match": "正确触发",
@@ -61,6 +62,120 @@ def deep_merge_dict(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, An
     return result
 
 
+def attach_trail_operation_id(
+    changes: Iterable[dict[str, Any]],
+    *,
+    operation_id: str,
+    info_field: str = "ra_stuck_auto_result_info",
+) -> list[dict[str, Any]]:
+    """Bind every field update to the immutable preview digest.
+
+    The operation ID lives in the Dashboard namespace, so a retry of the same
+    digest writes the same value and can be verified by a post-write readback.
+    Caller-owned changes are never mutated.
+    """
+
+    normalized = str(operation_id or "").strip()[:128]
+    if not normalized:
+        raise ValueError("Trail 操作缺少 operation_id。")
+    output: list[dict[str, Any]] = []
+    for change in changes:
+        item = deepcopy(change)
+        info = _json_object(item.get(info_field))
+        info = deep_merge_dict(
+            info,
+            {"ra_triage_dashboard": {"operation_id": normalized}},
+        )
+        item[info_field] = info
+        output.append(item)
+    return output
+
+
+def trail_operation_comment(comment: str, operation_id: str) -> str:
+    """Append a deterministic, human-readable marker to a Trail Comment."""
+
+    body = str(comment or "").strip()
+    normalized = str(operation_id or "").strip()[:128]
+    if not normalized:
+        return body[:4000]
+    marker = f"{TRAIL_OPERATION_MARKER_PREFIX}{normalized}]"
+    if marker in body:
+        return body[:4000]
+    if not body:
+        return marker[:4000]
+    room = max(0, 4000 - len(marker) - 2)
+    return f"{body[:room]}\n\n{marker}"[:4000]
+
+
+def decorate_trail_comments(
+    changes: Iterable[dict[str, Any]],
+    *,
+    operation_id: str,
+) -> list[dict[str, Any]]:
+    """Copy changes and add an idempotency marker only to requested Comments."""
+
+    output: list[dict[str, Any]] = []
+    for change in changes:
+        item = deepcopy(change)
+        if str(item.get("comment") or "").strip():
+            item["comment"] = trail_operation_comment(item["comment"], operation_id)
+        output.append(item)
+    return output
+
+
+def verify_trail_readback(
+    changes: Iterable[dict[str, Any]],
+    rows: Iterable[dict[str, Any]],
+    *,
+    result_field: str = "ra_stuck_auto_result",
+    info_field: str = "ra_stuck_auto_result_info",
+) -> dict[str, Any]:
+    """Check every successfully changed Issue after Trail writes.
+
+    We compare the model label when present, the operation marker, and the
+    exclusion bit.  Unrelated JSON keys are intentionally not compared: Trail
+    may normalize or order them while the Dashboard deep-merge contract only
+    owns its namespace.
+    """
+
+    expected = {str(item.get("issue_id") or "").strip(): item for item in changes}
+    actual = {str(item.get("issue_id") or "").strip(): item for item in rows}
+    mismatched: list[str] = []
+    missing: list[str] = []
+    for issue_id, change in expected.items():
+        if not issue_id:
+            continue
+        row = actual.get(issue_id)
+        if row is None:
+            missing.append(issue_id)
+            continue
+        expected_label = change.get(result_field)
+        if expected_label is not None and str(row.get(result_field) or "").strip() != str(expected_label).strip():
+            mismatched.append(issue_id)
+            continue
+        info = _json_object(row.get(info_field))
+        dashboard = info.get("ra_triage_dashboard")
+        if not isinstance(dashboard, dict):
+            mismatched.append(issue_id)
+            continue
+        expected_info = _json_object(change.get(info_field))
+        expected_dashboard = expected_info.get("ra_triage_dashboard")
+        if not isinstance(expected_dashboard, dict):
+            mismatched.append(issue_id)
+            continue
+        for key in ("operation_id", "should_exclude"):
+            if key in expected_dashboard and dashboard.get(key) != expected_dashboard.get(key):
+                mismatched.append(issue_id)
+                break
+    return {
+        "checked_count": len(expected),
+        "verified_count": len(expected) - len(set(missing) | set(mismatched)),
+        "missing_issue_ids": sorted(set(missing)),
+        "mismatched_issue_ids": sorted(set(mismatched)),
+        "ok": not missing and not mismatched,
+    }
+
+
 def build_trail_changes(
     items: Iterable[dict[str, Any]],
     *,
@@ -102,13 +217,67 @@ def build_trail_changes(
             "reason": str(model.get("reason") or "").strip(),
             "confidence": model.get("confidence"),
         }
+        review = item.get("review") if isinstance(item.get("review"), dict) else {}
+        comment_text = str(item.get("comment") or review.get("note") or "").strip()[:4000]
         changes.append(
             {
                 "issue_id": issue_id,
                 result_field: label,
                 info_field: merged_info,
+                # ``TrailInterface`` treats ``comment`` as a separate
+                # comment API call.  Keep it alongside the field changes so
+                # the dashboard can display and audit exactly what will be
+                # written without putting it into ``issue_info``.
+                **({"comment": comment_text} if comment_text else {}),
             }
         )
+    return changes
+
+
+def build_manual_exclusion_changes(
+    issue_ids: Iterable[str],
+    *,
+    current_rows: Iterable[dict[str, Any]] = (),
+    info_field: str = "ra_stuck_auto_result_info",
+    comment: str = "",
+) -> list[dict[str, Any]]:
+    """Build an Issue-ID-only exclusion patch.
+
+    Direct shielding deliberately updates only the dashboard namespace inside
+    ``ra_stuck_auto_result_info``.  It does not invent or overwrite the model
+    label in ``ra_stuck_auto_result``.  The caller must read the same Trail
+    rows immediately before building this patch so unrelated JSON keys are
+    retained by the deep merge.
+    """
+
+    current_by_issue = {
+        str(row.get("issue_id") or "").strip(): row
+        for row in current_rows
+        if str(row.get("issue_id") or "").strip()
+    }
+    normalized_comment = str(comment or "").strip()[:4000]
+    changes: list[dict[str, Any]] = []
+    for raw_issue_id in issue_ids:
+        issue_id = str(raw_issue_id or "").strip()
+        if not issue_id:
+            continue
+        current = current_by_issue.get(issue_id) or {}
+        current_info = _json_object(current.get(info_field))
+        patch = {
+            "ra_triage_dashboard": {
+                "schema_version": 2,
+                "should_exclude": True,
+                "source": "manual_issue_ids",
+            }
+        }
+        merged_info = deep_merge_dict(current_info, patch)
+        change: dict[str, Any] = {
+            "issue_id": issue_id,
+            info_field: merged_info,
+        }
+        if normalized_comment:
+            change["comment"] = normalized_comment
+        changes.append(change)
     return changes
 
 
@@ -132,8 +301,17 @@ def write_trail_model_results(
     ra_root: Path,
     chunk_size: int = 10,
     client_factory: Callable[[], Any] | None = None,
+    write_comments_separately: bool = False,
+    comment_skip_issue_ids: Iterable[str] = (),
 ) -> dict[str, Any]:
-    """Write model label + JSON result fields in bounded, checked chunks."""
+    """Write Trail fields in bounded, checked chunks.
+
+    The legacy client can dispatch ``comment`` itself, but does not expose the
+    comment response separately.  New dashboard workflows set
+    ``write_comments_separately=True`` so field and Comment results are
+    auditable independently and a failed Comment never masquerades as a
+    successful field write.
+    """
 
     if not changes:
         return {
@@ -142,6 +320,12 @@ def write_trail_model_results(
             "failed_count": 0,
             "failed_issue_ids": [],
             "chunks": [],
+            "comment_total": 0,
+            "comment_success_count": 0,
+            "comment_failed_count": 0,
+            "comment_failed_issue_ids": [],
+            "comment_skipped_count": 0,
+            "comment_skipped_issue_ids": [],
         }
     factory = client_factory or _trail_interface_factory(ra_root)
     client = factory()
@@ -152,15 +336,28 @@ def write_trail_model_results(
         "failed_count": 0,
         "failed_issue_ids": [],
         "chunks": [],
+        "comment_total": sum(1 for item in changes if str(item.get("comment") or "").strip()),
+        "comment_success_count": 0,
+        "comment_failed_count": 0,
+        "comment_failed_issue_ids": [],
+        "comment_skipped_count": 0,
+        "comment_skipped_issue_ids": [],
     }
+    skip_comments = {str(issue_id).strip() for issue_id in comment_skip_issue_ids if str(issue_id).strip()}
     for start in range(0, len(changes), safe_size):
         chunk = changes[start : start + safe_size]
         issue_ids = [str(item["issue_id"]) for item in chunk]
         try:
+            field_changes = []
+            for item in chunk:
+                field_change = deepcopy(item)
+                field_change.pop("comment", None)
+                field_changes.append(field_change)
             # TrailInterface currently pops issue_id/comment from its input;
             # pass a deep copy so the request remains available for audit/UI.
             response = client.update_issue_with_changes(
-                deepcopy(chunk), replace=True
+                field_changes if write_comments_separately else deepcopy(chunk),
+                replace=True,
             )
             success = isinstance(response, dict) and response.get("msg") == "success"
             response_status = "success" if success else "failed"
@@ -172,8 +369,30 @@ def write_trail_model_results(
         )
         if success:
             stats["success_count"] += len(chunk)
+            if write_comments_separately:
+                for item in chunk:
+                    text = str(item.get("comment") or "").strip()[:4000]
+                    if not text:
+                        continue
+                    issue_id = str(item.get("issue_id") or "").strip()
+                    if issue_id in skip_comments:
+                        stats["comment_skipped_count"] += 1
+                        stats["comment_skipped_issue_ids"].append(issue_id)
+                        continue
+                    try:
+                        comment_response = client.add_issue_comment(issue_id, text)
+                        comment_success = (
+                            isinstance(comment_response, dict)
+                            and comment_response.get("msg") == "success"
+                        )
+                    except Exception:  # pragma: no cover - integration client
+                        comment_success = False
+                    if comment_success:
+                        stats["comment_success_count"] += 1
+                    else:
+                        stats["comment_failed_count"] += 1
+                        stats["comment_failed_issue_ids"].append(issue_id)
         else:
             stats["failed_count"] += len(chunk)
             stats["failed_issue_ids"].extend(issue_ids)
     return stats
-
