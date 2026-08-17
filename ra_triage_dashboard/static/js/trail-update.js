@@ -3,6 +3,13 @@
 function setTrailUpdateTab(tab = "review") {
   const nextTab = tab === "issue" ? "issue" : "review";
   state.trailUpdate.tab = nextTab;
+  const pageTitle = $("#trailUpdateSectionTitle");
+  if (pageTitle) {
+    const zh = pageTitle.querySelector(".ui-lang-zh");
+    const en = pageTitle.querySelector(".ui-lang-en");
+    if (zh) zh.textContent = nextTab === "issue" ? "Issue ID 屏蔽" : "排除案例汇总";
+    if (en) en.textContent = nextTab === "issue" ? "Shield by Issue ID" : "Excluded case summary";
+  }
   document.querySelectorAll("[data-trail-update-tab]").forEach((button) => {
     const active = button.dataset.trailUpdateTab === nextTab;
     button.classList.toggle("active", active);

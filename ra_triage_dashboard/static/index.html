@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-170`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-171`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -451,6 +451,9 @@
           </section>
 
           <section class="app-page tool-page trail-update-page hidden" id="trailAttributeUpdatePage" data-page="trail-update">
+            <div class="trail-update-section-heading" aria-live="polite">
+              <h2 id="trailUpdateSectionTitle"><span class="ui-lang-zh">排除案例汇总</span><span class="ui-lang-en">Excluded case summary</span></h2>
+            </div>
             <div class="trail-update-tabs" role="tablist" aria-label="Trail update modes">
               <button class="trail-update-tab active" id="trailUpdateReviewTab" type="button" role="tab" aria-selected="true" aria-controls="trailUpdateReviewPanel" data-trail-update-tab="review">
                 <span class="ui-lang-zh">Review 排除汇总</span><span class="ui-lang-en">Review exclusions</span>
@@ -464,12 +467,6 @@
 
             <section class="trail-update-tab-panel" id="trailUpdateReviewPanel" role="tabpanel" aria-labelledby="trailUpdateReviewTab" data-trail-update-panel="review">
               <section class="page-card trail-update-controls-card" id="trailUpdateOnboarding">
-                <div class="trail-update-control-heading">
-                  <div>
-                    <h3><span class="ui-lang-zh">排除案例汇总</span><span class="ui-lang-en">Excluded case summary</span></h3>
-                  </div>
-                  <span class="trail-update-readonly-badge" title="Payload SHA-256 is kept internally to reject stale previews before commit."><span class="ui-lang-zh">预览校验已启用</span><span class="ui-lang-en">Preview integrity enabled</span></span>
-                </div>
                 <div class="trail-update-control-grid">
                   <label class="trail-update-run-field">
                     <span class="ui-lang-zh">模型 Run</span><span class="ui-lang-en">Model Run</span>
@@ -1151,7 +1148,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-170`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-171`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
