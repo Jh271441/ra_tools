@@ -2668,7 +2668,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .trail-update-actions .button { flex: 1 1 150px; }
   .trail-update-results-heading { align-items: flex-start; }
   .trail-update-result-actions { width: 100%; justify-content: flex-start; }
-  .trail-update-result-actions .button { flex: 1 1 150px; }
+  .trail-update-result-actions .button { flex: 1 1 0; min-width: 0; }
   .trail-update-table { min-width: 1000px; }
   .trail-update-direct-lead { flex-direction: column; }
   .trail-update-direct-contract { white-space: normal; }
