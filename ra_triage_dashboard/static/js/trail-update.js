@@ -243,10 +243,9 @@ function renderTrailUpdateTargetField(data = {}, fieldId = "trailUpdateInfoField
   }
   const detail = $(`#${detailId}`);
   if (detail) {
-    detail.textContent = uiText(
-      `deep_merge · info-only · label 不变（${spec.path || "目标路径未返回"}）`,
-      `deep_merge · info only · label unchanged (${spec.path || "target path unavailable"})`
-    );
+    const pathZh = spec.path || "目标路径未返回";
+    const pathEn = spec.path || "target path unavailable";
+    detail.innerHTML = `<span class="ui-lang-zh">deep_merge · info-only · label 不变（${escapeHtml(pathZh)}）</span><span class="ui-lang-en">deep_merge · info only · label unchanged (${escapeHtml(pathEn)})</span>`;
   }
   return spec;
 }
