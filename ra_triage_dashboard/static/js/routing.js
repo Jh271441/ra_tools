@@ -652,6 +652,12 @@ function showPage(
   }
   if (target === "analysis") renderAnalysisRunFilter();
   if (target === "trail-update") {
+    // Mark the page as loading before any shared Run/config request yields.
+    // This keeps disabled Trail actions in their stable loading appearance
+    // even during the initial navigation gap before the preview request
+    // starts.
+    const trailPage = $("#trailAttributeUpdatePage");
+    trailPage?.classList.add("is-loading");
     if (runId) state.trailUpdate.runId = runId;
     if (typeof renderTrailAttributeRunPicker === "function") renderTrailAttributeRunPicker();
     if (loadPageData && typeof loadTrailAttributePreview === "function") {
