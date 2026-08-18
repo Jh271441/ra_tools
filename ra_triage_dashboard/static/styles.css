@@ -2013,6 +2013,11 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   min-width: 0; grid-column: auto; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);
   align-items: center; gap: 8px; padding: 8px 10px;
 }
+.analysis-review-status-card.trail-update-status-card {
+  grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; align-items: stretch; gap: 6px;
+}
+.analysis-review-status-card.trail-update-status-card > .analysis-review-status-chart,
+.analysis-review-status-card.trail-update-status-card > .trail-update-status-summary { align-self: stretch; }
 .trail-update-status-heading { min-width: 0; }
 .trail-update-status-heading small { overflow: hidden; color: var(--faint); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .trail-update-status-chart, .trail-update-status-summary { min-width: 0; }
