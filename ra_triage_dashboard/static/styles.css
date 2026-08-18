@@ -1938,8 +1938,11 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-page.is-loading .button:disabled { opacity: 1; filter: none; }
 .trail-update-page.is-loading .trail-update-actions .button:disabled { cursor: wait; }
 .trail-update-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-.trail-update-review-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.trail-update-target-value { overflow: hidden; font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px !important; text-overflow: ellipsis; white-space: nowrap; }
+.trail-update-review-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.trail-update-target-value {
+  min-width: 0; overflow: hidden; font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px !important;
+  line-height: 1.25; text-overflow: ellipsis; white-space: nowrap;
+}
 .trail-update-digest { font: 600 13px "SFMono-Regular", Consolas, monospace; }
 .trail-update-results-heading { align-items: center; margin-bottom: 0; }
 .trail-update-result-actions { min-width: 190px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; }
@@ -1994,8 +1997,8 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-state-badge.is-querying { border-color: rgba(56,189,248,.45); color: #9bdcf3; background: rgba(56,189,248,.08); }
 .trail-update-state-badge.is-failed, .trail-update-state-badge.is-not-found { border-color: rgba(248,113,113,.42); color: #fca5a5; background: rgba(248,113,113,.08); }
 .trail-update-status-card {
-  min-width: 0; grid-column: 1 / -1; grid-template-columns: minmax(190px, .55fr) minmax(0, 2.45fr);
-  align-items: center; gap: 16px; padding: 10px 12px;
+  min-width: 0; grid-column: auto; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);
+  align-items: center; gap: 8px; padding: 8px 10px;
 }
 .trail-update-status-heading { min-width: 0; }
 .trail-update-status-heading small { overflow: hidden; color: var(--faint); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
@@ -2013,7 +2016,11 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .analysis-review-status-segment.trail-status-not-found,
 .analysis-review-status-legend-item.trail-status-failed,
 .analysis-review-status-legend-item.trail-status-not-found { --status-color: #fb7185; }
-.trail-update-source-cell, .trail-update-comment[title], .trail-update-reason[title] { cursor: help; }
+.trail-update-target-value[title],
+.trail-update-source-cell,
+.trail-update-comment[title],
+.trail-update-reason[title],
+.trail-update-state-badge[title] { cursor: default; }
 .trail-update-direct-table { min-width: 720px; }
 .trail-update-direct-table td:nth-child(1) { width: 15%; }
 .trail-update-direct-table td:nth-child(2) { width: 14%; }

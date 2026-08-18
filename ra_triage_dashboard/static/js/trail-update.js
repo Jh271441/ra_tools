@@ -220,6 +220,37 @@ function setTrailAttributeCapability(data = null) {
   }
 }
 
+function trailUpdateTargetSpec(data = {}) {
+  const field = String(
+    data?.target_field
+      || (data?.write_mode === "info_only" ? data?.target_fields?.[0] : data?.target_fields?.[1])
+      || "ra_stuck_auto_result_info"
+  ).trim() || "ra_stuck_auto_result_info";
+  const path = String(data?.target_path || "ra_triage_dashboard.should_exclude").trim().replace(/^\.+|\.+$/g, "");
+  return {
+    field,
+    path,
+    fullPath: path ? `${field}.${path}` : field,
+  };
+}
+
+function renderTrailUpdateTargetField(data = {}, fieldId = "trailUpdateInfoField", detailId = "trailUpdateInfoFieldDetail") {
+  const spec = trailUpdateTargetSpec(data);
+  const field = $(`#${fieldId}`);
+  if (field) {
+    field.textContent = spec.fullPath;
+    field.setAttribute("title", spec.fullPath);
+  }
+  const detail = $(`#${detailId}`);
+  if (detail) {
+    detail.textContent = uiText(
+      `deep_merge · info-only · label 不变（${spec.path || "目标路径未返回"}）`,
+      `deep_merge · info only · label unchanged (${spec.path || "target path unavailable"})`
+    );
+  }
+  return spec;
+}
+
 function clearTrailAttributePreview(message = "") {
   state.trailUpdate.data = null;
   state.trailUpdate.previewKey = "";
@@ -376,7 +407,7 @@ function renderTrailAttributePreview(data) {
   setTrailAttributeCapability(data);
   $("#trailUpdateCount").textContent = String(items.length);
   $("#trailUpdateRunSummary").textContent = run.name || run.id || uiText("全部 Model Runs", "All model Runs");
-  $("#trailUpdateInfoField").textContent = data?.target_field || (data?.write_mode === "info_only" ? data?.target_fields?.[0] : data?.target_fields?.[1]) || "ra_stuck_auto_result_info";
+  renderTrailUpdateTargetField(data);
   trailUpdateStatusSummary(data, items);
   const digestElement = $("#trailUpdateDigest");
   if (digestElement) {
@@ -627,6 +658,7 @@ function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
       || (data?.write_mode === "info_only" ? data?.target_fields?.[0] : data?.target_fields?.[1])
       || "ra_stuck_auto_result_info"
   );
+  const targetSpec = trailUpdateTargetSpec(data);
   const resultField = String(data?.model_result_field || "ra_stuck_auto_result");
   const infoOnly = data?.write_mode === "info_only" || directMode;
   const count = Number(data?.count || items.length);
@@ -647,8 +679,8 @@ function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
   const bannerTitle = $("#trailUpdateConfirmBannerTitle");
   const bannerText = $("#trailUpdateConfirmBannerText");
   if (bannerTitle) bannerTitle.textContent = infoOnly
-    ? uiText(`仅写 ${infoField}`, `Info only · ${infoField}`)
-    : uiText(`写入 ${resultField} + ${infoField}`, `Write ${resultField} + ${infoField}`);
+    ? uiText(`仅写 ${targetSpec.fullPath}`, `Info only · ${targetSpec.fullPath}`)
+    : uiText(`写入 ${resultField} + ${targetSpec.fullPath}`, `Write ${resultField} + ${targetSpec.fullPath}`);
   if (bannerText) bannerText.textContent = infoOnly
     ? uiText("模型 label 保持不变；info 使用 deep_merge。", "Model label stays unchanged; info is deep-merged.")
     : uiText("模型 label 和 info 将按预览写入。", "Model label and info will be written as previewed.");
@@ -658,7 +690,7 @@ function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
     const cards = [
       [uiText("提交模式", "Mode"), directMode ? uiText("Issue ID 屏蔽", "Issue shielding") : uiText("Review 排除汇总", "Review summary")],
       [uiText("Issue 数量", "Issues"), String(count)],
-      [directMode ? uiText("目标字段", "Target field") : uiText("Run / 数据集", "Run / dataset"), directMode ? infoField : `${runLabel} · ${baselineLabel}`],
+      [directMode ? uiText("目标字段", "Target field") : uiText("Run / 数据集", "Run / dataset"), directMode ? targetSpec.fullPath : `${runLabel} · ${baselineLabel}`],
     ];
     summary.innerHTML = cards.map(([label, value]) => `<div><small>${escapeHtml(label)}</small><strong title="${escapeHtml(value)}">${escapeHtml(value)}</strong></div>`).join("");
   }
@@ -687,8 +719,8 @@ function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
 
   const note = $("#trailUpdateConfirmNote");
   if (note) note.textContent = uiText(
-    `${infoOnly ? `仅更新 ${infoField}，不改模型 label。` : `将更新 ${resultField} 和 ${infoField}。`} 提交前会再次校验预览指纹${digest ? `（${digest.slice(0, 12)}…）` : ""}。`,
-    `${infoOnly ? `Only ${infoField} will be updated; model labels stay unchanged. ` : `Both ${resultField} and ${infoField} will be updated. `}The preview fingerprint will be checked again before commit${digest ? ` (${digest.slice(0, 12)}…)` : ""}.`
+    `${infoOnly ? `仅更新 ${targetSpec.fullPath}，不改模型 label。` : `将更新 ${resultField} 和 ${targetSpec.fullPath}。`} 提交前会再次校验预览指纹${digest ? `（${digest.slice(0, 12)}…）` : ""}。`,
+    `${infoOnly ? `Only ${targetSpec.fullPath} will be updated; model labels stay unchanged. ` : `Both ${resultField} and ${targetSpec.fullPath} will be updated. `}The preview fingerprint will be checked again before commit${digest ? ` (${digest.slice(0, 12)}…)` : ""}.`
   );
   dialog.dataset.confirmMode = directMode ? "direct_issue_ids" : "review";
   return new Promise((resolve) => {
@@ -711,7 +743,7 @@ function renderTrailIssuePreview(data) {
     `${data?.requested_issue_ids?.length || 0} 条请求；${items.length} 条可写`,
     `${data?.requested_issue_ids?.length || 0} requested; ${items.length} writable`
   );
-  $("#trailUpdateIssueField").textContent = data?.target_field || "ra_stuck_auto_result_info";
+  const targetSpec = renderTrailUpdateTargetField(data, "trailUpdateIssueField", "trailUpdateIssueFieldDetail");
   const digest = String(data?.payload_sha256 || "");
   $("#trailUpdateIssueDigest").textContent = digest ? `${digest.slice(0, 12)}…` : "—";
   $("#trailUpdateIssueDigest")?.setAttribute("title", digest || "");
@@ -743,7 +775,7 @@ function renderTrailIssuePreview(data) {
       <td><strong class="trail-update-issue">${escapeHtml(item.issue_id || "—")}</strong></td>
       <td>${labelBadge(item.current_label, "未输出")}</td>
       <td><span class="trail-update-state-badge ${item.current_should_exclude ? "is-on" : ""}">${escapeHtml(currentState)}</span></td>
-      <td class="trail-update-info-cell"><strong>${escapeHtml(data?.target_field || "ra_stuck_auto_result_info")}</strong><small>deep_merge · ${uiText("写入后 info（不改 label）", "info after write (label unchanged)")}</small><code>${escapeHtml(patchPath)} = true</code><pre class="trail-update-json-preview">${escapeHtml(expectedInfo)}</pre></td>
+      <td class="trail-update-info-cell"><strong>${escapeHtml(targetSpec.fullPath)}</strong><small>deep_merge · ${uiText("写入后 info（不改 label）", "info after write (label unchanged)")}</small><code>${escapeHtml(patchPath)} = true</code><pre class="trail-update-json-preview">${escapeHtml(expectedInfo)}</pre></td>
       <td><div class="trail-update-comment">${escapeHtml(item.comment || "未填写")}</div><small>${item.comment ? uiText("将追加到 Trail Comment", "Added to Trail Comment") : uiText("不会写入 Comment", "No Comment")}</small></td>
     </tr>`;
   }).join("");
