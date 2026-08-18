@@ -381,6 +381,119 @@ function trailInfoPreviewText(item) {
   return trailInfoPreviewJson(after);
 }
 
+let trailUpdateConfirmResolver = null;
+
+function trailUpdateConfirmClose(confirmed = false) {
+  const dialog = $("#trailUpdateConfirmDialog");
+  const resolve = trailUpdateConfirmResolver;
+  trailUpdateConfirmResolver = null;
+  if (dialog?.open) dialog.close();
+  if (resolve) resolve(Boolean(confirmed));
+}
+
+function trailUpdateConfirmPatch(item, infoField) {
+  const updates = item?.field_updates;
+  if (updates && typeof updates === "object" && updates[infoField] && typeof updates[infoField] === "object") {
+    return updates[infoField];
+  }
+  const update = item?.field_update || {};
+  if (update.patch && typeof update.patch === "object") return update.patch;
+  if (item?.target?.patch && typeof item.target.patch === "object") return item.target.patch;
+  return {};
+}
+
+function trailUpdateConfirmCompact(value) {
+  try {
+    const text = JSON.stringify(value ?? {}, (_key, entry) => entry === undefined ? null : entry);
+    return text && text !== "{}" ? text : "{}";
+  } catch (_error) {
+    return "{}";
+  }
+}
+
+function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
+  const dialog = $("#trailUpdateConfirmDialog");
+  if (!dialog || typeof dialog.showModal !== "function") {
+    showToast(uiText("确认弹窗不可用，已取消写入。", "The confirmation dialog is unavailable; write cancelled."), true);
+    return Promise.resolve(false);
+  }
+  if (trailUpdateConfirmResolver) trailUpdateConfirmClose(false);
+  const directMode = mode === "direct_issue_ids" || data?.mode === "direct_issue_ids";
+  const items = Array.isArray(data?.items) ? data.items : [];
+  const infoField = String(
+    data?.target_field
+      || (data?.write_mode === "info_only" ? data?.target_fields?.[0] : data?.target_fields?.[1])
+      || "ra_stuck_auto_result_info"
+  );
+  const resultField = String(data?.model_result_field || "ra_stuck_auto_result");
+  const infoOnly = data?.write_mode === "info_only" || directMode;
+  const count = Number(data?.count || items.length);
+  const run = data?.selected_run || {};
+  const runLabel = directMode
+    ? uiText("Issue ID 屏蔽", "Shield by Issue ID")
+    : String(run.name || run.id || uiText("全部 Model Runs", "All model Runs"));
+  const baselineLabel = Array.isArray(data?.baselines) && data.baselines.length
+    ? data.baselines.join(" + ")
+    : uiText("当前数据集", "Selected dataset");
+  const digest = String(data?.payload_sha256 || "");
+
+  const subtitle = $("#trailUpdateConfirmSubtitle");
+  if (subtitle) subtitle.textContent = uiText(
+    directMode ? "请核对要屏蔽的 Issue 和 info 标记。" : "请核对本次即将写入的 Issue、字段和预览指纹。",
+    directMode ? "Review the Issues and info marker before shielding." : "Review the Issues, fields, and preview fingerprint before committing."
+  );
+  const bannerTitle = $("#trailUpdateConfirmBannerTitle");
+  const bannerText = $("#trailUpdateConfirmBannerText");
+  if (bannerTitle) bannerTitle.textContent = infoOnly
+    ? uiText(`仅写 ${infoField}`, `Info only · ${infoField}`)
+    : uiText(`写入 ${resultField} + ${infoField}`, `Write ${resultField} + ${infoField}`);
+  if (bannerText) bannerText.textContent = infoOnly
+    ? uiText("模型 label 保持不变；info 使用 deep_merge。", "Model label stays unchanged; info is deep-merged.")
+    : uiText("模型 label 和 info 将按预览写入。", "Model label and info will be written as previewed.");
+
+  const summary = $("#trailUpdateConfirmSummary");
+  if (summary) {
+    const cards = [
+      [uiText("提交模式", "Mode"), directMode ? uiText("Issue ID 屏蔽", "Issue shielding") : uiText("Review 排除汇总", "Review summary")],
+      [uiText("Issue 数量", "Issues"), String(count)],
+      [directMode ? uiText("目标字段", "Target field") : uiText("Run / 数据集", "Run / dataset"), directMode ? infoField : `${runLabel} · ${baselineLabel}`],
+    ];
+    summary.innerHTML = cards.map(([label, value]) => `<div><small>${escapeHtml(label)}</small><strong title="${escapeHtml(value)}">${escapeHtml(value)}</strong></div>`).join("");
+  }
+
+  const list = $("#trailUpdateConfirmList");
+  const listCount = $("#trailUpdateConfirmListCount");
+  const shownItems = items.slice(0, 12);
+  if (listCount) listCount.textContent = uiText(
+    count > shownItems.length ? `共 ${count} 条，展示前 ${shownItems.length} 条` : `共 ${count} 条`,
+    count > shownItems.length ? `${count} total · first ${shownItems.length} shown` : `${count} item(s)`
+  );
+  if (list) {
+    list.innerHTML = shownItems.length
+      ? shownItems.map((item) => {
+        const issueId = String(item?.issue_id || "—");
+        const currentLabel = directMode
+          ? (item?.current_should_exclude ? uiText("已屏蔽", "Already shielded") : uiText("未屏蔽", "Not shielded"))
+          : String(item?.model?.label || item?.review?.status || uiText("排除候选", "Excluded candidate"));
+        const patch = trailUpdateConfirmCompact(trailUpdateConfirmPatch(item, infoField));
+        const clippedPatch = patch.length > 420 ? `${patch.slice(0, 417)}…` : patch;
+        return `<div class="trail-update-confirm-item"><div><strong>${escapeHtml(issueId)}</strong><small>${escapeHtml(currentLabel)}</small></div><div><code title="${escapeHtml(patch)}">${escapeHtml(`${infoField} = ${clippedPatch}`)}</code><small>${escapeHtml(uiText("deep_merge · label 不变", "deep_merge · label unchanged"))}</small></div></div>`;
+      }).join("")
+      : `<div class="trail-update-confirm-empty">${escapeHtml(uiText("没有可提交的 Issue。", "No Issues are ready to commit."))}</div>`;
+  }
+
+  const note = $("#trailUpdateConfirmNote");
+  if (note) note.textContent = uiText(
+    `${infoOnly ? `仅更新 ${infoField}，不改模型 label。` : `将更新 ${resultField} 和 ${infoField}。`} 提交前会再次校验预览指纹${digest ? `（${digest.slice(0, 12)}…）` : ""}。`,
+    `${infoOnly ? `Only ${infoField} will be updated; model labels stay unchanged. ` : `Both ${resultField} and ${infoField} will be updated. `}The preview fingerprint will be checked again before commit${digest ? ` (${digest.slice(0, 12)}…)` : ""}.`
+  );
+  dialog.dataset.confirmMode = directMode ? "direct_issue_ids" : "review";
+  return new Promise((resolve) => {
+    trailUpdateConfirmResolver = resolve;
+    dialog.showModal();
+  });
+}
+
 function renderTrailIssuePreview(data) {
   const items = Array.isArray(data?.items) ? data.items : [];
   const missing = Array.isArray(data?.missing_issue_ids) ? data.missing_issue_ids : [];
@@ -470,17 +583,7 @@ async function commitTrailIssueExclusion() {
   const data = state.trailUpdate?.directData;
   if (!data || data.write_status !== "ready") return;
   const ids = Array.isArray(data.requested_issue_ids) ? data.requested_issue_ids : [];
-  const targetField = data.target_field || "ra_stuck_auto_result_info";
-  const previewLines = (Array.isArray(data.items) ? data.items : []).slice(0, 12).map((item) => {
-    const compact = trailInfoPreviewJson(item?.field_update?.after || item?.target?.patch || {}).replace(/\s+/g, " ");
-    const clipped = compact.length > 360 ? `${compact.slice(0, 357)}…` : compact;
-    return `${item?.issue_id || "—"} · ${targetField} = ${clipped}`;
-  });
-  const remaining = Math.max(0, ids.length - previewLines.length);
-  if (!window.confirm(uiText(
-    `确认通过真实 Trail 接口更新 ${ids.length} 个 Issue？\n仅写 ${targetField}，不改模型 label。\n\n${previewLines.join("\n")}${remaining ? `\n…其余 ${remaining} 条请查看上方预览。` : ""}`,
-    `Commit ${ids.length} Issue(s) through the real Trail API?\nOnly ${targetField} will be written; model labels are unchanged.\n\n${previewLines.join("\n")}${remaining ? `\n…${remaining} more item(s) are shown in the preview above.` : ""}`
-  ))) return;
+  if (!await openTrailUpdateConfirm({ mode: "direct_issue_ids", data })) return;
   const button = $("#trailUpdateIssueCommitButton");
   button?.toggleAttribute("disabled", true);
   setTrailIssueStatus(uiText("正在写入 Trail 字段和 Comment…", "Writing Trail fields and Comments…"));
@@ -521,12 +624,7 @@ async function commitTrailIssueExclusion() {
 async function commitTrailAttributeUpdate() {
   const data = state.trailUpdate?.data;
   if (!data || data.write_status !== "ready") return;
-  const count = Number(data.count || 0);
-  const message = uiText(
-    `确认将 ${count} 个排除候选写入 Trail？目标字段为 ${data.target_fields.join(" + ")}。`,
-    `Commit ${count} excluded candidate(s) to Trail? Target fields: ${data.target_fields.join(" + ")}.`
-  );
-  if (!window.confirm(message)) return;
+  if (!await openTrailUpdateConfirm({ mode: "review", data })) return;
   const button = $("#trailUpdateCommitButton");
   button?.toggleAttribute("disabled", true);
   setTrailAttributeStatus(uiText("正在提交 Trail 属性…", "Committing Trail attributes…"));
@@ -565,6 +663,16 @@ async function commitTrailAttributeUpdate() {
 }
 
 function bindTrailAttributeUpdateEvents() {
+  $("#trailUpdateConfirmClose")?.addEventListener("click", () => trailUpdateConfirmClose(false));
+  $("#trailUpdateConfirmCancel")?.addEventListener("click", () => trailUpdateConfirmClose(false));
+  $("#trailUpdateConfirmSubmit")?.addEventListener("click", () => trailUpdateConfirmClose(true));
+  $("#trailUpdateConfirmDialog")?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    trailUpdateConfirmClose(false);
+  });
+  $("#trailUpdateConfirmDialog")?.addEventListener("close", () => {
+    if (trailUpdateConfirmResolver) trailUpdateConfirmClose(false);
+  });
   document.querySelectorAll("[data-trail-update-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       setTrailUpdateTab(button.dataset.trailUpdateTab || "review");

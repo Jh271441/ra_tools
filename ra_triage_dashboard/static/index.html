@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-181`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-182`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -1156,13 +1156,40 @@
       </div>
     </dialog>
 
+    <dialog class="dialog dialog-wide trail-update-confirm-dialog" id="trailUpdateConfirmDialog" aria-labelledby="trailUpdateConfirmTitle">
+      <div class="dialog-card">
+        <div class="dialog-heading">
+          <div>
+            <span class="eyebrow">TRAIL WRITE REVIEW</span>
+            <h2 id="trailUpdateConfirmTitle"><span class="ui-lang-zh">确认提交到 Trail</span><span class="ui-lang-en">Confirm Trail update</span></h2>
+            <p class="dialog-copy" id="trailUpdateConfirmSubtitle"><span class="ui-lang-zh">请核对本次即将写入的 Issue 和字段。</span><span class="ui-lang-en">Review the Issues and fields before committing.</span></p>
+          </div>
+          <button class="icon-button" id="trailUpdateConfirmClose" type="button" aria-label="关闭" data-i18n-aria-label="dialog.close">×</button>
+        </div>
+        <div class="trail-update-confirm-banner" id="trailUpdateConfirmBanner">
+          <span class="trail-update-confirm-banner-icon">!</span>
+          <div><strong id="trailUpdateConfirmBannerTitle">仅写 info</strong><small id="trailUpdateConfirmBannerText">模型 label 保持不变。</small></div>
+        </div>
+        <div class="trail-update-confirm-summary" id="trailUpdateConfirmSummary"></div>
+        <div class="trail-update-confirm-list-wrap">
+          <div class="trail-update-confirm-list-heading"><strong><span class="ui-lang-zh">预计改动</span><span class="ui-lang-en">Expected changes</span></strong><small id="trailUpdateConfirmListCount">—</small></div>
+          <div class="trail-update-confirm-list" id="trailUpdateConfirmList"></div>
+        </div>
+        <p class="trail-update-confirm-note" id="trailUpdateConfirmNote"><span class="ui-lang-zh">确认后将通过真实 Trail 接口提交；提交前会再次校验预览指纹。</span><span class="ui-lang-en">After confirmation, the real Trail API will be called and the preview fingerprint will be checked again.</span></p>
+        <div class="dialog-actions trail-update-confirm-actions">
+          <button class="button button-quiet" id="trailUpdateConfirmCancel" type="button"><span class="ui-lang-zh">返回检查</span><span class="ui-lang-en">Back to review</span></button>
+          <button class="button button-primary" id="trailUpdateConfirmSubmit" type="button"><span class="ui-lang-zh">确认写入</span><span class="ui-lang-en">Confirm write</span></button>
+        </div>
+      </div>
+    </dialog>
+
     <div class="toast hidden" id="toast"></div>
     <script>
       document.querySelectorAll("[data-app-path]").forEach((link) => {
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-181`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-182`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

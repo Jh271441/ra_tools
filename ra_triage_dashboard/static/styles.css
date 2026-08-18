@@ -1662,6 +1662,31 @@ html[data-ui-lang="en"] .expected-output-rule-popover ul.ui-lang-en { display: g
 code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 7px; }
 .dialog-result, .job-result { padding: 9px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: #0d121b; white-space: pre-wrap; word-break: break-word; font-size: 11px; line-height: 1.5; }
+.trail-update-confirm-dialog { width: min(700px, calc(100vw - 30px)); max-height: min(82vh, 760px); overflow: hidden; }
+.trail-update-confirm-dialog .dialog-card { min-height: 0; max-height: 100%; box-sizing: border-box; gap: 14px; }
+.trail-update-confirm-dialog .dialog-heading h2 { margin-top: 4px; }
+.trail-update-confirm-banner { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid rgba(251,191,36,.38); border-radius: 8px; color: #f8d78a; background: rgba(120,75,10,.14); }
+.trail-update-confirm-banner-icon { display: grid; width: 23px; height: 23px; flex: 0 0 auto; place-items: center; border: 1px solid currentColor; border-radius: 50%; font-weight: 800; }
+.trail-update-confirm-banner div { display: grid; gap: 2px; min-width: 0; }
+.trail-update-confirm-banner strong { font-size: 12px; }
+.trail-update-confirm-banner small { color: #d6c28d; font-size: 10px; line-height: 1.45; }
+.trail-update-confirm-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.trail-update-confirm-summary > div { min-width: 0; display: grid; gap: 3px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 7px; background: rgba(8,14,24,.54); }
+.trail-update-confirm-summary small { overflow: hidden; color: var(--faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.trail-update-confirm-summary strong { overflow: hidden; color: #dce8f2; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.trail-update-confirm-list-wrap { min-height: 0; display: grid; gap: 7px; }
+.trail-update-confirm-list-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; }
+.trail-update-confirm-list-heading small { color: var(--faint); font-size: 10px; }
+.trail-update-confirm-list { display: grid; max-height: min(34vh, 300px); overflow: auto; gap: 5px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: #0b1018; }
+.trail-update-confirm-item { display: grid; grid-template-columns: minmax(120px, .45fr) minmax(0, 1fr); gap: 8px; align-items: start; padding: 8px 9px; border-bottom: 1px solid var(--line-soft); }
+.trail-update-confirm-item:last-child { border-bottom: 0; }
+.trail-update-confirm-item strong { color: #b9edf2; font: 600 11px/1.35 "SFMono-Regular", Consolas, monospace; }
+.trail-update-confirm-item small { display: block; margin-top: 2px; color: var(--faint); font-size: 9px; line-height: 1.35; }
+.trail-update-confirm-item code { display: block; overflow: hidden; color: #c8d9e6; font: 10px/1.45 "SFMono-Regular", Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.trail-update-confirm-empty { display: grid; min-height: 72px; place-items: center; padding: 12px; color: var(--faint); font-size: 11px; }
+.trail-update-confirm-note { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.trail-update-confirm-actions { padding-top: 1px; }
+.trail-update-confirm-actions .button { min-width: 102px; }
 .issue-query-dialog { width: min(680px, calc(100vw - 30px)); }
 .issue-query-dialog .dialog-card { gap: 14px; }
 .issue-query-field { display: grid; gap: 6px; color: var(--muted); font-size: 12px; }
@@ -2646,6 +2671,15 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .import-examples-dialog .dialog-card { padding: 10px; }
   .import-example-layout { grid-template-columns: minmax(0, 1fr); overflow: auto; }
   .import-example-contract { min-height: auto; }
+  .trail-update-confirm-dialog {
+    width: calc(100vw - 12px); max-width: calc(100vw - 12px);
+    max-height: calc(100dvh - 12px);
+  }
+  .trail-update-confirm-dialog .dialog-card { padding: 14px; }
+  .trail-update-confirm-summary { grid-template-columns: minmax(0, 1fr); }
+  .trail-update-confirm-item { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .trail-update-confirm-actions { flex-wrap: wrap; }
+  .trail-update-confirm-actions .button { flex: 1 1 140px; }
   .media-dialog-card { padding: 8px; }
   .media-toolbar { align-items: stretch; flex-direction: column; gap: 6px; }
   .media-view-controls { justify-content: flex-end; flex-wrap: wrap; }
@@ -3298,6 +3332,17 @@ html[data-color-theme="light"] .media-decision-summary > .comparison-side-label 
 html[data-color-theme="light"] .media-dialog {
   background: #ffffff;
 }
+html[data-color-theme="light"] .trail-update-confirm-banner {
+  border-color: rgba(180,83,9,.34);
+  color: #8b4a08;
+  background: rgba(251,191,36,.12);
+}
+html[data-color-theme="light"] .trail-update-confirm-banner small { color: #8b5c1c; }
+html[data-color-theme="light"] .trail-update-confirm-summary > div,
+html[data-color-theme="light"] .trail-update-confirm-list { background: #f8fafc; }
+html[data-color-theme="light"] .trail-update-confirm-summary strong { color: #24364d; }
+html[data-color-theme="light"] .trail-update-confirm-item strong { color: #075f75; }
+html[data-color-theme="light"] .trail-update-confirm-item code { color: #34465b; }
 
 html[data-color-theme="light"] .status-succeeded,
 html[data-color-theme="light"] .status-completed,
