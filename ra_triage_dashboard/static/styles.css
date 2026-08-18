@@ -1943,11 +1943,19 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   min-width: 0; overflow: hidden; font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px !important;
   line-height: 1.25; text-overflow: ellipsis; white-space: nowrap;
 }
-.trail-update-field-stat-card { grid-template-columns: minmax(0, 1fr); }
-.trail-update-field-stat-card > strong {
-  grid-column: 1; grid-row: auto; align-self: start; max-width: 100%; font-size: 12px !important;
+.analysis-stat-card.trail-update-field-stat-card {
+  grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto; align-content: start;
 }
-.trail-update-field-stat-card > small { grid-column: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.analysis-stat-card.trail-update-field-stat-card > span { grid-column: 1; grid-row: auto; }
+.analysis-stat-card.trail-update-field-stat-card > strong {
+  grid-column: 1; grid-row: auto; align-self: start; min-width: 0; max-width: 100%;
+  font-size: 13px !important; line-height: 1.3; overflow: hidden; overflow-wrap: anywhere;
+  display: -webkit-box; text-overflow: ellipsis; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.analysis-stat-card.trail-update-field-stat-card > small {
+  grid-column: 1; grid-row: auto; min-width: 0; overflow: hidden; overflow-wrap: anywhere;
+  display: -webkit-box; text-overflow: ellipsis; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
 .trail-update-digest { font: 600 13px "SFMono-Regular", Consolas, monospace; }
 .trail-update-results-heading { align-items: center; margin-bottom: 0; }
 .trail-update-result-actions { min-width: 190px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; }
