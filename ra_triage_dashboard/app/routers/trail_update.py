@@ -525,6 +525,7 @@ async def _build_preview(
     *,
     selected_run_id: str,
     baselines: str = "",
+    probe_trail: bool = True,
 ) -> dict[str, Any]:
     baseline_ids = resolve_request_baseline_ids(baselines, request=request)
     baseline_scopes = resolve_request_baseline_scopes(baselines, request=request)
@@ -551,7 +552,7 @@ async def _build_preview(
     # not make every filter change wait for a remote Trail query when the
     # writer is disabled; commit still performs a fresh, complete capability
     # check immediately before any future write.
-    if issue_ids and review_write_enabled:
+    if issue_ids and review_write_enabled and probe_trail:
         # Capability probing is a remote read and is the slowest part of the
         # page preview.  Cache only this short-lived, Issue-set-specific
         # summary; the actual commit path always bypasses the cache and does a
@@ -586,7 +587,7 @@ async def _build_preview(
         capability = _capability_not_checked(result_field, info_field)
         capability["target_fields"] = [info_field]
         capability["required_fields"] = [info_field]
-    return await asyncio.to_thread(
+    payload = await asyncio.to_thread(
         build_trail_attribute_update_payload,
         rows,
         run=run,
@@ -598,6 +599,12 @@ async def _build_preview(
         trail_write_enabled=review_write_enabled,
         write_mode="info_only",
     )
+    # The first page request deliberately skips the remote Trail capability
+    # read so the local Review aggregate can paint immediately.  The browser
+    # follows it with the checked request in the background and replaces the
+    # payload before enabling a possible commit.
+    payload["capability_pending"] = bool(issue_ids and review_write_enabled and not probe_trail)
+    return payload
 
 
 async def _build_direct_preview(
@@ -712,6 +719,7 @@ async def trail_attribute_update_preview(
     request: Request,
     model_run_id: str = "",
     baselines: str = "",
+    probe_trail: bool = True,
 ) -> dict[str, Any]:
     """Return should-exclude rows for one Run or the all-Run aggregate."""
 
@@ -719,6 +727,7 @@ async def trail_attribute_update_preview(
         request,
         selected_run_id=_as_text(model_run_id),
         baselines=baselines,
+        probe_trail=probe_trail,
     )
 
 

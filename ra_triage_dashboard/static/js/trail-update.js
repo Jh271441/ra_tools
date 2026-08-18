@@ -236,11 +236,12 @@ function clearTrailIssuePreview(message = "") {
   }
 }
 
-function trailUpdateEndpoint(runId) {
+function trailUpdateEndpoint(runId, probeTrail = true) {
   const params = new URLSearchParams();
   if (runId) params.set("model_run_id", runId);
   const baselines = selectedBaselineQueryValue();
   if (baselines) params.set("baselines", baselines);
+  if (!probeTrail) params.set("probe_trail", "false");
   return `/api/trail-attribute-update/preview?${params.toString()}`;
 }
 
@@ -305,12 +306,11 @@ async function loadTrailAttributePreview(force = false) {
     return cachedData;
   }
   const requestSeq = ++state.trailUpdate.requestSeq;
-  try {
-    const data = await api(trailUpdateEndpoint(runId));
-    if (requestSeq !== state.trailUpdate.requestSeq) return data;
+  const applyPreview = (data, { loaded = false } = {}) => {
+    if (requestSeq !== state.trailUpdate.requestSeq) return false;
     state.trailUpdate.data = data;
     state.trailUpdate.previewKey = previewKey;
-    state.trailUpdate.previewLoadedAt = Date.now();
+    state.trailUpdate.previewLoadedAt = loaded ? Date.now() : 0;
     renderTrailAttributePreview(data);
     $("#trailUpdateDownloadButton")?.toggleAttribute("disabled", !data?.draft);
     $("#trailUpdateCopyButton")?.toggleAttribute("disabled", !data?.draft);
@@ -318,7 +318,37 @@ async function loadTrailAttributePreview(force = false) {
     if (typeof pageUrl === "function") {
       history.replaceState({ page: "trail-update" }, "", pageUrl("trail-update", { runId }));
     }
-    return data;
+    return true;
+  };
+  try {
+    // Render the local Review projection first.  The remote Trail capability
+    // probe is intentionally a second, background request because it is the
+    // slowest part of entering this page.
+    const data = await api(trailUpdateEndpoint(runId, false));
+    if (requestSeq !== state.trailUpdate.requestSeq) return data;
+    applyPreview(data);
+    if (!data?.capability_pending) {
+      applyPreview(data, { loaded: true });
+      return data;
+    }
+    setTrailAttributeStatus(uiText(
+      "排除案例已加载，正在后台检查 Trail 字段…",
+      "Excluded cases loaded; checking Trail fields in the background…"
+    ));
+    try {
+      const checked = await api(trailUpdateEndpoint(runId, true));
+      if (requestSeq !== state.trailUpdate.requestSeq) return checked;
+      applyPreview(checked, { loaded: true });
+      return checked;
+    } catch (error) {
+      if (requestSeq === state.trailUpdate.requestSeq) {
+        setTrailAttributeStatus(uiText(
+          "排除案例已加载，但 Trail 字段检查失败；可稍后刷新重试。",
+          "Excluded cases loaded, but the Trail field check failed; refresh to retry."
+        ));
+      }
+      return data;
+    }
   } catch (error) {
     if (requestSeq === state.trailUpdate.requestSeq) {
       setTrailAttributeStatus(uiText("排除案例加载失败，请稍后重试。", "Could not load excluded cases. Try again later."));

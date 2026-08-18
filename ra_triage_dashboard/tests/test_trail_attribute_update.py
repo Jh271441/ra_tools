@@ -104,6 +104,47 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         self.assertEqual(payload["write_status"], "ready")
         self.assertTrue(payload["write_ready"])
 
+    def test_review_preview_can_skip_remote_probe_for_fast_first_paint(self) -> None:
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/trail-attribute-update/preview",
+                "query_string": b"baselines=0508&probe_trail=false",
+                "headers": [],
+                "scheme": "http",
+                "server": ("testserver", 80),
+                "client": ("127.0.0.1", 1),
+            }
+        )
+        row = {
+            "issue_id": "cn00000001",
+            "annotation": {"id": 1, "is_excluded": True},
+            "prediction": {"model_run_id": "run-1", "label": "误触发"},
+        }
+        test_settings = replace(
+            trail_update.settings,
+            trail_attribute_write_enabled=True,
+            trail_attribute_review_write_enabled=True,
+        )
+        with patch.object(trail_update, "settings", test_settings), patch.object(
+            trail_update.database, "review_reason_rows", return_value=[row]
+        ), patch.object(
+            trail_update, "read_trail_model_fields", side_effect=AssertionError("remote probe")
+        ) as probe:
+            payload = asyncio.run(
+                trail_update._build_preview(
+                    request,
+                    selected_run_id="",
+                    baselines="0508",
+                    probe_trail=False,
+                )
+            )
+        self.assertTrue(payload["capability_pending"])
+        self.assertEqual(payload["trail_capability"]["status"], "not_checked")
+        self.assertFalse(payload["write_ready"])
+        probe.assert_not_called()
+
     def test_payload_is_run_bound_sorted_and_write_disabled(self) -> None:
         rows = [
             {
