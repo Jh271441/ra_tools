@@ -1903,9 +1903,10 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-target-value { overflow: hidden; font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px !important; text-overflow: ellipsis; white-space: nowrap; }
 .trail-update-digest { font: 600 13px "SFMono-Regular", Consolas, monospace; }
 .trail-update-results-heading { align-items: center; margin-bottom: 0; }
-.trail-update-result-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
-.trail-update-result-actions > small { flex: 0 0 100%; margin-right: 0; text-align: right; }
-.trail-update-result-actions .button { min-height: 30px; flex: 1 1 0; padding: 5px 8px; font-size: 11px; white-space: nowrap; }
+.trail-update-result-actions { min-width: 190px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; }
+.trail-update-result-actions > small { display: block; margin: 0; text-align: right; }
+.trail-update-result-buttons { min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.trail-update-result-actions .button { min-width: 0; min-height: 30px; padding: 5px 8px; font-size: 11px; white-space: nowrap; }
 .trail-update-table-wrap { min-width: 0; overflow-x: auto; }
 .trail-update-table { width: 100%; min-width: 920px; border-collapse: separate; border-spacing: 0 5px; table-layout: fixed; font-size: 11px; }
 .trail-update-table th,
@@ -2667,8 +2668,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .trail-update-actions { justify-content: flex-start; }
   .trail-update-actions .button { flex: 1 1 150px; }
   .trail-update-results-heading { align-items: flex-start; }
-  .trail-update-result-actions { width: 100%; justify-content: flex-start; }
-  .trail-update-result-actions .button { flex: 1 1 0; min-width: 0; }
+  .trail-update-result-actions { width: 100%; min-width: 0; }
   .trail-update-table { min-width: 1000px; }
   .trail-update-direct-lead { flex-direction: column; }
   .trail-update-direct-contract { white-space: normal; }

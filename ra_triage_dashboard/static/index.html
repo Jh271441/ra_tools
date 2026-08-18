@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-179`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-180`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -526,7 +526,7 @@
                 </section>
 
                 <section class="page-card trail-update-table-card">
-                  <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">排除候选明细</span><span class="ui-lang-en">Excluded case details</span></h3></div><div class="trail-update-result-actions"><small id="trailUpdateTableSummary">—</small><button class="button button-quiet" id="trailUpdateDownloadButton" type="button" disabled><span class="ui-lang-zh">下载 JSON</span><span class="ui-lang-en">Download JSON</span></button><button class="button button-quiet" id="trailUpdateCopyButton" type="button" disabled><span class="ui-lang-zh">复制 JSON</span><span class="ui-lang-en">Copy JSON</span></button></div></div>
+                  <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">排除候选明细</span><span class="ui-lang-en">Excluded case details</span></h3></div><div class="trail-update-result-actions"><small id="trailUpdateTableSummary">—</small><div class="trail-update-result-buttons"><button class="button button-quiet" id="trailUpdateDownloadButton" type="button" disabled><span class="ui-lang-zh">下载 JSON</span><span class="ui-lang-en">Download JSON</span></button><button class="button button-quiet" id="trailUpdateCopyButton" type="button" disabled><span class="ui-lang-zh">复制 JSON</span><span class="ui-lang-en">Copy JSON</span></button></div></div></div>
                   <div class="trail-update-table-wrap">
                     <table class="trail-update-table"><thead><tr><th>Issue</th><th>GT</th><th>模型 label</th><th>模型 reason</th><th>Review</th><th>Comment</th><th>Trail 更新</th></tr></thead><tbody id="trailUpdateTableBody"><tr><td colspan="7" class="trail-update-empty"><span class="ui-lang-zh">正在加载排除案例。</span><span class="ui-lang-en">Loading excluded cases.</span></td></tr></tbody></table>
                   </div>
@@ -543,7 +543,7 @@
                   <article class="analysis-stat-card"><span class="ui-lang-zh">预览指纹</span><span class="ui-lang-en">Preview fingerprint</span><strong id="trailUpdateIssueDigest" class="trail-update-digest">—</strong><small title="由当前 Issue、字段和 Comment 生成，提交时用于拒绝过期预览。"><span class="ui-lang-zh">提交校验，不是 Trail 字段</span><span class="ui-lang-en">Commit guard; not a Trail field</span></small></article>
                 </section>
                 <section class="page-card trail-update-table-card">
-                  <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">预计改动（仅写 info）</span><span class="ui-lang-en">Expected changes (info only)</span></h3><p><span class="ui-lang-zh">逐条展示写入后的 <code>ra_stuck_auto_result_info</code>；只做 deep_merge，不改模型 label，其它 info 字段保留。</span><span class="ui-lang-en">Each row shows the resulting <code>ra_stuck_auto_result_info</code>; deep-merge only, with model labels unchanged and other info keys preserved.</span></p></div><div class="trail-update-result-actions"><small id="trailUpdateIssueTableSummary">—</small><button class="button button-quiet" id="trailUpdateIssueDownloadButton" type="button" disabled><span class="ui-lang-zh">下载 JSON</span><span class="ui-lang-en">Download JSON</span></button><button class="button button-quiet" id="trailUpdateIssueCopyButton" type="button" disabled><span class="ui-lang-zh">复制 JSON</span><span class="ui-lang-en">Copy JSON</span></button></div></div>
+                  <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">预计改动（仅写 info）</span><span class="ui-lang-en">Expected changes (info only)</span></h3><p><span class="ui-lang-zh">逐条展示写入后的 <code>ra_stuck_auto_result_info</code>；只做 deep_merge，不改模型 label，其它 info 字段保留。</span><span class="ui-lang-en">Each row shows the resulting <code>ra_stuck_auto_result_info</code>; deep-merge only, with model labels unchanged and other info keys preserved.</span></p></div><div class="trail-update-result-actions"><small id="trailUpdateIssueTableSummary">—</small><div class="trail-update-result-buttons"><button class="button button-quiet" id="trailUpdateIssueDownloadButton" type="button" disabled><span class="ui-lang-zh">下载 JSON</span><span class="ui-lang-en">Download JSON</span></button><button class="button button-quiet" id="trailUpdateIssueCopyButton" type="button" disabled><span class="ui-lang-zh">复制 JSON</span><span class="ui-lang-en">Copy JSON</span></button></div></div></div>
                   <div class="trail-update-table-wrap">
                     <table class="trail-update-table trail-update-direct-table"><thead><tr><th>Issue</th><th>当前模型 label（不改）</th><th>当前屏蔽状态</th><th>预计写入 info</th><th>Comment</th></tr></thead><tbody id="trailUpdateIssueTableBody"><tr><td colspan="5" class="trail-update-empty"><span class="ui-lang-zh">生成预览后显示 Issue。</span><span class="ui-lang-en">Issues appear after building a preview.</span></td></tr></tbody></table>
                   </div>
@@ -1162,7 +1162,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-179`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-180`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
