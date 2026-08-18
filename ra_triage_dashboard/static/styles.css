@@ -1938,7 +1938,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-page.is-loading .button:disabled { opacity: 1; filter: none; }
 .trail-update-page.is-loading .trail-update-actions .button:disabled { cursor: wait; }
 .trail-update-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-.trail-update-review-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.trail-update-review-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .trail-update-target-value { overflow: hidden; font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px !important; text-overflow: ellipsis; white-space: nowrap; }
 .trail-update-digest { font: 600 13px "SFMono-Regular", Consolas, monospace; }
 .trail-update-results-heading { align-items: center; margin-bottom: 0; }
