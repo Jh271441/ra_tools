@@ -80,6 +80,9 @@ def _dashboard_config_payload() -> dict[str, Any]:
         "trail_sync": runtime_state["trail_sync"],
         "trail_attribute_update": {
             "enabled": settings.trail_attribute_write_enabled,
+            "review_write_enabled": getattr(
+                settings, "trail_attribute_review_write_enabled", False
+            ),
             "view_id": settings.trail_view_id,
             "target_fields": [
                 settings.trail_attribute_result_field,
@@ -159,6 +162,9 @@ async def health() -> dict[str, Any]:
         "gt_sync": await asyncio.to_thread(gt_sync_status),
         "trail_write_enabled": False,
         "trail_attribute_write_enabled": settings.trail_attribute_write_enabled,
+        "trail_attribute_review_write_enabled": getattr(
+            settings, "trail_attribute_review_write_enabled", False
+        ),
         "trail_attribute_target_fields": [
             settings.trail_attribute_result_field,
             settings.trail_attribute_info_field,
@@ -473,6 +479,9 @@ async def status(response: Response) -> dict[str, Any]:
         },
         "trail_write_enabled": False,
         "trail_attribute_write_enabled": settings.trail_attribute_write_enabled,
+        "trail_attribute_review_write_enabled": getattr(
+            settings, "trail_attribute_review_write_enabled", False
+        ),
         "trail_attribute_target_fields": [
             settings.trail_attribute_result_field,
             settings.trail_attribute_info_field,

@@ -1904,8 +1904,8 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-digest { font: 600 13px "SFMono-Regular", Consolas, monospace; }
 .trail-update-results-heading { align-items: center; margin-bottom: 0; }
 .trail-update-result-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
-.trail-update-result-actions > small { margin-right: 2px; }
-.trail-update-result-actions .button { min-height: 30px; padding: 5px 8px; font-size: 11px; }
+.trail-update-result-actions > small { flex: 0 0 100%; margin-right: 0; text-align: right; }
+.trail-update-result-actions .button { min-height: 30px; flex: 1 1 0; padding: 5px 8px; font-size: 11px; white-space: nowrap; }
 .trail-update-table-wrap { min-width: 0; overflow-x: auto; }
 .trail-update-table { width: 100%; min-width: 920px; border-collapse: separate; border-spacing: 0 5px; table-layout: fixed; font-size: 11px; }
 .trail-update-table th,

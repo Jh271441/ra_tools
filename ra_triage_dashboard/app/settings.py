@@ -121,6 +121,10 @@ class Settings:
     # prepare and validate a write payload while production keeps the writer
     # disabled until the configured Trail view exposes both model fields.
     trail_attribute_write_enabled: bool
+    # The Review aggregate historically writes both model label and info. Keep
+    # that route independently disabled when the deployment only authorizes
+    # direct Issue-ID info updates.
+    trail_attribute_review_write_enabled: bool
     trail_attribute_write_chunk_size: int
     trail_attribute_result_field: str
     trail_attribute_info_field: str
@@ -393,6 +397,9 @@ class Settings:
             trail_sync_chunk_size=_integer("DASHBOARD_TRAIL_SYNC_CHUNK_SIZE", 160, 1),
             trail_attribute_write_enabled=_bool(
                 "DASHBOARD_TRAIL_ATTRIBUTE_WRITE_ENABLED", False
+            ),
+            trail_attribute_review_write_enabled=_bool(
+                "DASHBOARD_TRAIL_ATTRIBUTE_REVIEW_WRITE_ENABLED", False
             ),
             trail_attribute_write_chunk_size=min(
                 50,

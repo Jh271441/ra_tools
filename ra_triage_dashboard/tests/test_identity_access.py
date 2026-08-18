@@ -77,6 +77,20 @@ class IdentityAccessTest(unittest.TestCase):
         self.assertFalse(settings.trust_proxy_identity_headers)
         self.assertTrue(settings.kylin_sso_enabled)
         self.assertEqual(settings.kylin_sso_app_id, "2103794")
+        self.assertFalse(settings.trail_attribute_review_write_enabled)
+
+    def test_review_trail_writer_is_separate_from_info_only_writer(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "DASHBOARD_TRAIL_ATTRIBUTE_WRITE_ENABLED": "true",
+                "DASHBOARD_TRAIL_ATTRIBUTE_REVIEW_WRITE_ENABLED": "false",
+            },
+            clear=True,
+        ):
+            settings = Settings.from_env()
+        self.assertTrue(settings.trail_attribute_write_enabled)
+        self.assertFalse(settings.trail_attribute_review_write_enabled)
 
     def test_kylin_logout_is_bound_to_manual_return_path(self) -> None:
         with patch.dict(

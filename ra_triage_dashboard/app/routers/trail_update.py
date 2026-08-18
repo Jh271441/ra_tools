@@ -473,12 +473,16 @@ async def _build_preview(
         is_excluded=True,
     )
     result_field, info_field = _field_names()
+    review_write_enabled = bool(
+        settings.trail_attribute_write_enabled
+        and getattr(settings, "trail_attribute_review_write_enabled", False)
+    )
     issue_ids = [_as_text(row.get("issue_id")) for row in rows if _as_text(row.get("issue_id"))]
     # The Review tab is a read-only aggregate in the current deployment.  Do
     # not make every filter change wait for a remote Trail query when the
     # writer is disabled; commit still performs a fresh, complete capability
     # check immediately before any future write.
-    if issue_ids and settings.trail_attribute_write_enabled:
+    if issue_ids and review_write_enabled:
         sync_result = await asyncio.to_thread(
             read_trail_model_fields,
             ra_root=settings.ra_auto_triage_root,
@@ -498,7 +502,7 @@ async def _build_preview(
         result_field=result_field,
         info_field=info_field,
         trail_capability=capability,
-        trail_write_enabled=settings.trail_attribute_write_enabled,
+        trail_write_enabled=review_write_enabled,
     )
 
 
@@ -653,6 +657,8 @@ async def trail_attribute_update_commit(request: Request) -> dict[str, Any]:
 
     if not settings.trail_attribute_write_enabled:
         raise _detail(409, "Trail 属性写入开关尚未开启；当前仅允许预览和下载草稿。")
+    if not getattr(settings, "trail_attribute_review_write_enabled", False):
+        raise _detail(409, "Review 汇总写入已关闭；当前仅允许 Issue ID info-only 写入。")
     if not has_same_origin_mutation_marker(request):
         raise _detail(403, "缺少同源写请求标记。")
     identity = await asyncio.to_thread(request_identity, request, settings)
