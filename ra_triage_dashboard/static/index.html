@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-195`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-196`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -521,7 +521,7 @@
               <section class="trail-update-results" id="trailUpdateResults" aria-label="Trail update results" hidden>
                 <section class="trail-update-summary-grid trail-update-review-summary-grid" aria-label="Trail update summary">
                   <article class="analysis-stat-card"><span class="ui-lang-zh">应该排除案例</span><span class="ui-lang-en">Excluded cases</span><strong id="trailUpdateCount">—</strong><small id="trailUpdateRunSummary">—</small></article>
-                  <article class="analysis-stat-card"><span class="ui-lang-zh">更新目标字段</span><span class="ui-lang-en">Update target</span><strong id="trailUpdateInfoField" class="trail-update-target-value" title="ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude">ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude</strong><small id="trailUpdateInfoFieldDetail"><span class="ui-lang-zh">deep_merge · info-only · label 不变</span><span class="ui-lang-en">deep_merge · info only · label unchanged</span></small></article>
+                  <article class="analysis-stat-card trail-update-field-stat-card"><span class="ui-lang-zh">更新目标字段</span><span class="ui-lang-en">Update target</span><strong id="trailUpdateInfoField" class="trail-update-target-value" title="ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude">ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude</strong><small id="trailUpdateInfoFieldDetail"><span class="ui-lang-zh">deep_merge · info-only · label 不变</span><span class="ui-lang-en">deep_merge · info only · label unchanged</span></small></article>
                   <article class="page-card analysis-review-status-card trail-update-status-card" aria-labelledby="trailUpdateStatusTitle">
                     <div class="section-heading analysis-review-status-heading trail-update-status-heading">
                       <div><h3 id="trailUpdateStatusTitle"><span class="ui-lang-zh">Trail 更新状态</span><span class="ui-lang-en">Trail update status</span></h3></div>
@@ -547,7 +547,7 @@
                 <section class="trail-update-summary-grid" aria-label="Issue shielding summary">
                   <article class="analysis-stat-card"><span class="ui-lang-zh">可写 Issue</span><span class="ui-lang-en">Writable Issues</span><strong id="trailUpdateIssueCount">—</strong><small id="trailUpdateIssueSummary">—</small></article>
                   <article class="analysis-stat-card"><span class="ui-lang-zh">未找到</span><span class="ui-lang-en">Missing</span><strong id="trailUpdateIssueMissingCount">—</strong><small>Trail view 2410</small></article>
-                  <article class="analysis-stat-card"><span class="ui-lang-zh">目标字段</span><span class="ui-lang-en">Target field</span><strong id="trailUpdateIssueField" class="trail-update-target-value" title="ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude">ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude</strong><small id="trailUpdateIssueFieldDetail"><span class="ui-lang-zh">deep_merge · info-only · label 不变</span><span class="ui-lang-en">deep_merge · info only · label unchanged</span></small></article>
+                  <article class="analysis-stat-card trail-update-field-stat-card"><span class="ui-lang-zh">目标字段</span><span class="ui-lang-en">Target field</span><strong id="trailUpdateIssueField" class="trail-update-target-value" title="ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude">ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude</strong><small id="trailUpdateIssueFieldDetail"><span class="ui-lang-zh">deep_merge · info-only · label 不变</span><span class="ui-lang-en">deep_merge · info only · label unchanged</span></small></article>
                   <article class="analysis-stat-card"><span class="ui-lang-zh">预览指纹</span><span class="ui-lang-en">Preview fingerprint</span><strong id="trailUpdateIssueDigest" class="trail-update-digest">—</strong><small title="由当前 Issue、字段和 Comment 生成，提交时用于拒绝过期预览。"><span class="ui-lang-zh">提交校验，不是 Trail 字段</span><span class="ui-lang-en">Commit guard; not a Trail field</span></small></article>
                 </section>
                 <section class="page-card trail-update-table-card">
@@ -1197,7 +1197,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-195`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-196`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
