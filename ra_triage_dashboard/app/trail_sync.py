@@ -107,6 +107,32 @@ def _safe_detail_value(field: str, value: Any) -> Any:
     return str(value).strip()[:256]
 
 
+def _dashboard_should_exclude(value: Any) -> bool | None:
+    """Read only the namespaced Dashboard exclusion marker from Trail info.
+
+    The info column may arrive as a Python mapping, a JSON string, or a
+    dataframe scalar.  Accept an explicit boolean only; never coerce arbitrary
+    truthy values into a checkbox state.
+    """
+
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            value = json.loads(text)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+    if not isinstance(value, dict):
+        return value if isinstance(value, bool) else None
+    namespace = value.get("ra_triage_dashboard")
+    if isinstance(namespace, dict) and isinstance(namespace.get("should_exclude"), bool):
+        return bool(namespace["should_exclude"])
+    if isinstance(value.get("should_exclude"), bool):
+        return bool(value["should_exclude"])
+    return None
+
+
 def ares_playback_metadata(
     metadata: dict[str, Any], events: Iterable[dict[str, Any]] = ()
 ) -> dict[str, Any]:
@@ -202,6 +228,14 @@ def read_trail_issue_metadata(
         safe_value = _safe_detail_value(field, row.get(column))
         if safe_value not in (None, "", []):
             metadata[field] = safe_value
+    info_column = lower_columns.get(TRAIL_INFO_FIELD.lower())
+    if info_column:
+        dashboard_should_exclude = _dashboard_should_exclude(row.get(info_column))
+        if dashboard_should_exclude is not None:
+            # This is a boolean projection, not the raw info blob.  Returning
+            # only the namespaced marker keeps the detail API small and avoids
+            # leaking unrelated Trail fields into the browser.
+            metadata["dashboard_should_exclude"] = dashboard_should_exclude
     if len(metadata) == 1:
         return {}
     if ttl > 0:

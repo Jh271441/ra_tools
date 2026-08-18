@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-182`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-183`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -1172,7 +1172,7 @@
         </div>
         <div class="trail-update-confirm-summary" id="trailUpdateConfirmSummary"></div>
         <div class="trail-update-confirm-list-wrap">
-          <div class="trail-update-confirm-list-heading"><strong><span class="ui-lang-zh">预计改动</span><span class="ui-lang-en">Expected changes</span></strong><small id="trailUpdateConfirmListCount">—</small></div>
+          <div class="trail-update-confirm-list-heading"><strong><span class="ui-lang-zh">预计改动</span><span class="ui-lang-en">Expected changes</span></strong><div><small id="trailUpdateConfirmListCount">—</small><button class="button button-quiet trail-update-confirm-expand" id="trailUpdateConfirmExpand" type="button" hidden><span class="ui-lang-zh">展开全部</span><span class="ui-lang-en">Expand all</span></button></div></div>
           <div class="trail-update-confirm-list" id="trailUpdateConfirmList"></div>
         </div>
         <p class="trail-update-confirm-note" id="trailUpdateConfirmNote"><span class="ui-lang-zh">确认后将通过真实 Trail 接口提交；提交前会再次校验预览指纹。</span><span class="ui-lang-en">After confirmation, the real Trail API will be called and the preview fingerprint will be checked again.</span></p>
@@ -1189,7 +1189,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-182`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-183`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

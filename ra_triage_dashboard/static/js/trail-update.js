@@ -198,6 +198,8 @@ function setTrailAttributeCapability(data = null) {
 
 function clearTrailAttributePreview(message = "") {
   state.trailUpdate.data = null;
+  state.trailUpdate.previewKey = "";
+  state.trailUpdate.previewLoadedAt = 0;
   setTrailAttributeUpdatePreviewVisible(false);
   setTrailAttributeCapability(null);
   $("#trailUpdateCount").textContent = "—";
@@ -287,15 +289,28 @@ function renderTrailAttributePreview(data) {
   }).join("");
 }
 
-async function loadTrailAttributePreview() {
+async function loadTrailAttributePreview(force = false) {
   const select = $("#trailUpdateRunSelect");
   const runId = String(select?.value || state.trailUpdate?.runId || "").trim();
   state.trailUpdate.runId = runId;
+  const previewKey = `${runId}|${selectedBaselineQueryValue()}`;
+  const cachedData = state.trailUpdate?.data;
+  if (
+    !force &&
+    cachedData &&
+    state.trailUpdate.previewKey === previewKey &&
+    Date.now() - Number(state.trailUpdate.previewLoadedAt || 0) < 60000
+  ) {
+    renderTrailAttributePreview(cachedData);
+    return cachedData;
+  }
   const requestSeq = ++state.trailUpdate.requestSeq;
   try {
     const data = await api(trailUpdateEndpoint(runId));
     if (requestSeq !== state.trailUpdate.requestSeq) return data;
     state.trailUpdate.data = data;
+    state.trailUpdate.previewKey = previewKey;
+    state.trailUpdate.previewLoadedAt = Date.now();
     renderTrailAttributePreview(data);
     $("#trailUpdateDownloadButton")?.toggleAttribute("disabled", !data?.draft);
     $("#trailUpdateCopyButton")?.toggleAttribute("disabled", !data?.draft);
@@ -411,6 +426,21 @@ function trailUpdateConfirmCompact(value) {
   }
 }
 
+function trailUpdateConfirmSetExpanded(expanded = false) {
+  const dialog = $("#trailUpdateConfirmDialog");
+  const details = [...(dialog?.querySelectorAll(".trail-update-confirm-item") || [])];
+  details.forEach((item) => {
+    item.open = Boolean(expanded);
+  });
+  const button = $("#trailUpdateConfirmExpand");
+  if (!button) return;
+  button.hidden = details.length === 0;
+  button.dataset.expanded = expanded ? "true" : "false";
+  button.innerHTML = expanded
+    ? '<span class="ui-lang-zh">收起全部</span><span class="ui-lang-en">Collapse all</span>'
+    : '<span class="ui-lang-zh">展开全部</span><span class="ui-lang-en">Expand all</span>';
+}
+
 function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
   const dialog = $("#trailUpdateConfirmDialog");
   if (!dialog || typeof dialog.showModal !== "function") {
@@ -477,9 +507,10 @@ function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
           : String(item?.model?.label || item?.review?.status || uiText("排除候选", "Excluded candidate"));
         const patch = trailUpdateConfirmCompact(trailUpdateConfirmPatch(item, infoField));
         const clippedPatch = patch.length > 420 ? `${patch.slice(0, 417)}…` : patch;
-        return `<div class="trail-update-confirm-item"><div><strong>${escapeHtml(issueId)}</strong><small>${escapeHtml(currentLabel)}</small></div><div><code title="${escapeHtml(patch)}">${escapeHtml(`${infoField} = ${clippedPatch}`)}</code><small>${escapeHtml(uiText("deep_merge · label 不变", "deep_merge · label unchanged"))}</small></div></div>`;
+        return `<details class="trail-update-confirm-item"><summary><div><strong>${escapeHtml(issueId)}</strong><small>${escapeHtml(currentLabel)}</small></div><div><code title="${escapeHtml(patch)}">${escapeHtml(`${infoField} = ${clippedPatch}`)}</code><small>${escapeHtml(uiText("点击展开完整 patch · deep_merge · label 不变", "Click to expand full patch · deep_merge · label unchanged"))}</small></div></summary><div class="trail-update-confirm-item-details"><small>${escapeHtml(uiText("完整字段 patch", "Full field patch"))}</small><pre>${escapeHtml(`${infoField} = ${patch}`)}</pre></div></details>`;
       }).join("")
       : `<div class="trail-update-confirm-empty">${escapeHtml(uiText("没有可提交的 Issue。", "No Issues are ready to commit."))}</div>`;
+    trailUpdateConfirmSetExpanded(false);
   }
 
   const note = $("#trailUpdateConfirmNote");
@@ -666,6 +697,10 @@ function bindTrailAttributeUpdateEvents() {
   $("#trailUpdateConfirmClose")?.addEventListener("click", () => trailUpdateConfirmClose(false));
   $("#trailUpdateConfirmCancel")?.addEventListener("click", () => trailUpdateConfirmClose(false));
   $("#trailUpdateConfirmSubmit")?.addEventListener("click", () => trailUpdateConfirmClose(true));
+  $("#trailUpdateConfirmExpand")?.addEventListener("click", () => {
+    const button = $("#trailUpdateConfirmExpand");
+    trailUpdateConfirmSetExpanded(button?.dataset.expanded !== "true");
+  });
   $("#trailUpdateConfirmDialog")?.addEventListener("cancel", (event) => {
     event.preventDefault();
     trailUpdateConfirmClose(false);

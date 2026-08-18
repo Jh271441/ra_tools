@@ -16,6 +16,7 @@ import hashlib
 import json
 import re
 import threading
+import time
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -52,6 +53,9 @@ TRAIL_TARGET_PATH = "ra_triage_dashboard.should_exclude"
 TRAIL_DRAFT_SCHEMA = "trail-attribute-update-v2"
 TRAIL_ISSUE_DRAFT_SCHEMA = "trail-issue-exclusion-v1"
 _commit_lock = threading.Lock()
+_preview_capability_cache: dict[tuple[int, str, tuple[str, ...]], tuple[float, dict[str, Any]]] = {}
+_preview_capability_cache_lock = threading.Lock()
+_PREVIEW_CAPABILITY_CACHE_SECONDS = 90
 
 
 def _canonical_json(value: Any) -> str:
@@ -548,14 +552,36 @@ async def _build_preview(
     # writer is disabled; commit still performs a fresh, complete capability
     # check immediately before any future write.
     if issue_ids and review_write_enabled:
-        sync_result = await asyncio.to_thread(
-            read_trail_model_fields,
-            ra_root=settings.ra_auto_triage_root,
-            issue_ids=issue_ids,
-            view_id=settings.trail_view_id,
-            chunk_size=settings.trail_sync_chunk_size,
-        )
-        capability = _capability_for_info_write(sync_result, info_field)
+        # Capability probing is a remote read and is the slowest part of the
+        # page preview.  Cache only this short-lived, Issue-set-specific
+        # summary; the actual commit path always bypasses the cache and does a
+        # fresh read immediately before writing.
+        cache_key = (int(settings.trail_view_id), info_field, tuple(issue_ids))
+        cached_capability = None
+        if request.method.upper() == "GET":
+            now = time.monotonic()
+            with _preview_capability_cache_lock:
+                cached = _preview_capability_cache.get(cache_key)
+                if cached and now - cached[0] < _PREVIEW_CAPABILITY_CACHE_SECONDS:
+                    cached_capability = dict(cached[1])
+        if cached_capability is not None:
+            capability = cached_capability
+            capability["cached"] = True
+        else:
+            sync_result = await asyncio.to_thread(
+                read_trail_model_fields,
+                ra_root=settings.ra_auto_triage_root,
+                issue_ids=issue_ids,
+                view_id=settings.trail_view_id,
+                chunk_size=settings.trail_sync_chunk_size,
+            )
+            capability = _capability_for_info_write(sync_result, info_field)
+            if request.method.upper() == "GET":
+                with _preview_capability_cache_lock:
+                    _preview_capability_cache[cache_key] = (
+                        time.monotonic(),
+                        dict(capability),
+                    )
     else:
         capability = _capability_not_checked(result_field, info_field)
         capability["target_fields"] = [info_field]

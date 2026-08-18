@@ -607,10 +607,23 @@ async def get_case_trail_metadata(issue_id: str) -> dict[str, Any]:
             status = "unavailable"
             logger.warning("Trail detail metadata unavailable issue_id=%s", issue_id)
 
+    dashboard_should_exclude = trail_metadata.get("dashboard_should_exclude")
+    if not isinstance(dashboard_should_exclude, bool):
+        dashboard_should_exclude = None
+
     return {
         "issue_id": issue_id,
         "status": status,
         "external_links": _case_external_links(issue_id, trail_metadata),
+        # This is a read-only projection of the namespaced Trail info marker.
+        # It deliberately does not create a local Review annotation or alter
+        # Review aggregate counts until the reviewer saves the checkbox.
+        "dashboard_should_exclude": dashboard_should_exclude,
+        "dashboard_exclusion_status": (
+            "synced" if isinstance(dashboard_should_exclude, bool)
+            else "unavailable" if status != "ready"
+            else "not_marked"
+        ),
     }
 
 

@@ -21,6 +21,7 @@ class _Frame:
         "trip_id",
         "ra_start_timestamp",
         "ra_end_timestamp",
+        "ra_stuck_auto_result_info",
         "unrelated_secret_field",
     ]
 
@@ -41,6 +42,10 @@ class _Frame:
                 "trip_id": "10350_20260511_204156",
                 "ra_start_timestamp": 1778504337849,
                 "ra_end_timestamp": 1778504346456,
+                "ra_stuck_auto_result_info": {
+                    "ra_triage_dashboard": {"should_exclude": True},
+                    "unrelated": "must-not-leak",
+                },
                 "unrelated_secret_field": "must-not-leak",
             }
         ]
@@ -75,6 +80,7 @@ class TrailDetailMetadataTest(unittest.TestCase):
         self.assertEqual(metadata["ra_id"], "10350_1119_1778504337830_100")
         self.assertEqual(metadata["car_id"], "10350")
         self.assertEqual(metadata["ra_event"][0]["event"], "start")
+        self.assertTrue(metadata["dashboard_should_exclude"])
         self.assertNotIn("unrelated_secret_field", metadata)
 
         playback = ares_playback_metadata(metadata, metadata["ra_event"])

@@ -629,6 +629,8 @@ const state = {
     tab: "review",
     requestSeq: 0,
     data: null,
+    previewKey: "",
+    previewLoadedAt: 0,
     directRequestSeq: 0,
     directData: null,
   },
