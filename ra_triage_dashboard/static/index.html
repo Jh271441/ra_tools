@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-189`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-190`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -450,7 +450,7 @@
             </section>
           </section>
 
-          <section class="app-page tool-page trail-update-page hidden" id="trailAttributeUpdatePage" data-page="trail-update">
+          <section class="app-page tool-page trail-update-page hidden is-loading" id="trailAttributeUpdatePage" data-page="trail-update">
             <section class="page-card trail-update-header-card">
               <div class="trail-update-section-heading" aria-live="polite">
                 <h2 id="trailUpdateSectionTitle"><span class="ui-lang-zh">排除案例汇总</span><span class="ui-lang-en">Excluded case summary</span></h2>
@@ -1189,7 +1189,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-189`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-190`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
