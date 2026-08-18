@@ -303,35 +303,65 @@ function trailUpdateStatusSummary(data, items) {
   const priority = ["querying", "query_failed", "pending", "not_found", "not_checked", "synced"];
   const primaryKey = priority.find((key) => counts[key]) || "not_checked";
   const primary = trailUpdateStatusMeta(primaryKey);
-  const primaryCount = Number(counts[primaryKey] || 0);
+  const total = Object.values(counts).reduce((sum, count) => sum + Number(count || 0), 0);
   const detail = entries
     .sort(([a], [b]) => priority.indexOf(a) - priority.indexOf(b))
     .map(([key, count]) => `${count} ${trailUpdateStatusMeta(key).label}`)
     .join(" · ");
   const statusElement = $("#trailUpdateStatusSummary");
   if (statusElement) {
-    statusElement.textContent = primaryCount > 0 ? `${primaryCount} ${primary.label}` : "—";
-    statusElement.className = `trail-update-status-summary ${primary.className}`;
+    const visualEntries = entries.length
+      ? entries
+      : [["not_checked", 0]];
+    const segments = visualEntries.map(([key, count]) => {
+      const meta = trailUpdateStatusMeta(key);
+      const percent = total ? Math.round((Number(count) / total) * 1000) / 10 : 100;
+      return `<span class="analysis-review-status-segment trail-status-${escapeHtml(meta.key)}" data-trail-update-status-key="${escapeHtml(meta.key)}" style="width:${percent}%" title="${escapeHtml(`${meta.label} · ${count} · ${percent}%`)}"></span>`;
+    }).join("");
+    const legend = visualEntries.map(([key, count]) => {
+      const meta = trailUpdateStatusMeta(key);
+      const percent = total ? Math.round((Number(count) / total) * 1000) / 10 : 0;
+      return `<div class="analysis-review-status-legend-item trail-status-${escapeHtml(meta.key)}" data-trail-update-status-key="${escapeHtml(meta.key)}" role="listitem" tabindex="0" aria-label="${escapeHtml(`${meta.label}: ${count}, ${percent}%. ${meta.detail}`)}" title="${escapeHtml(meta.detail)}"><span class="analysis-review-status-swatch"></span><span class="analysis-review-status-legend-copy"><strong>${escapeHtml(meta.label)}</strong><small>${count} · ${percent}%</small></span></div>`;
+    }).join("");
+    statusElement.innerHTML = `<div class="analysis-review-status-visual trail-update-status-visual"><div class="analysis-review-status-bar" role="img" aria-label="${escapeHtml(detail || primary.label)}">${segments}</div><div class="analysis-review-status-legend" role="list">${legend}</div></div>`;
+    statusElement.className = "analysis-review-status-chart trail-update-status-summary";
     statusElement.title = detail;
+    statusElement.setAttribute("aria-label", detail || primary.label);
+    const visual = statusElement.querySelector(".trail-update-status-visual");
+    if (visual && !visual.dataset.hoverBound) {
+      visual.dataset.hoverBound = "true";
+      if (typeof bindAnalysisLinkedHover === "function") {
+        bindAnalysisLinkedHover(visual, "[data-trail-update-status-key]", (node) => {
+          const key = node.dataset.trailUpdateStatusKey;
+          visual.querySelectorAll(`[data-trail-update-status-key="${CSS.escape(key)}"]`).forEach((peer) => peer.classList.add("is-hover"));
+        });
+      }
+    }
   }
   const detailElement = $("#trailUpdateStatusDetail");
   if (detailElement) {
-    detailElement.textContent = detail || uiText("一次批量查询所有 Issue", "One batched query for all Issues");
+    detailElement.textContent = total
+      ? uiText(`${total} 条 · 一次批量查询所有 Issue`, `${total} items · one batched query for all Issues`)
+      : uiText("一次批量查询所有 Issue", "One batched query for all Issues");
   }
   return counts;
 }
 
-function trailUpdateSourceRun(model = {}, data = {}) {
+function trailUpdateSourceRun(model = {}, data = {}, item = {}) {
   const runId = String(model?.run_id || "").trim();
   const selectedRun = data?.selected_run || {};
   const knownRun = (state.modelRuns || []).find((run) => String(run?.id || "") === runId) || {};
   const selected = String(selectedRun.id || "") === runId ? selectedRun : {};
+  const baselineId = String(item?.baseline_id || "").trim()
+    || (Array.isArray(data?.baseline_ids) && data.baseline_ids.length === 1 ? String(data.baseline_ids[0]) : "");
   const name = knownRun.name || selected.name || runId || uiText("未绑定 Run", "Unbound Run");
   const source = knownRun.source_name || selected.source_name || "";
   const version = knownRun.source_sha256
     ? `v${String(knownRun.source_sha256).slice(0, 10)}`
     : (knownRun.schema_version || selected.schema_version || "");
-  return { name, source, version, runId };
+  const label = baselineId || uiText("未标记", "Unassigned");
+  const title = [label, name, source, version, item?.baseline_scope].filter(Boolean).join(" · ");
+  return { label, name, source, version, runId, title };
 }
 
 function renderTrailAttributePreview(data) {
@@ -366,16 +396,16 @@ function renderTrailAttributePreview(data) {
     const model = item.model || {};
     const comment = String(item.comment || review.note || "").trim();
     const ready = item.write_ready !== false;
-    const sourceRun = trailUpdateSourceRun(model, data);
+    const sourceRun = trailUpdateSourceRun(model, data, item);
     const status = trailUpdateStatusMeta(item.trail_update_status || "not_checked");
     return `<tr class="${ready ? "" : "is-invalid"}">
       <td><strong class="trail-update-issue">${escapeHtml(item.issue_id || "—")}</strong><small>${escapeHtml(item.title || item.scenario || "")}</small></td>
       <td>${labelBadge(item.gt_label, "—")}</td>
       <td>${labelBadge(model.label, "未输出")}<small>${ready ? "" : uiText("label 不在三分类契约内", "label is outside the contract")}</small></td>
-      <td><div class="trail-update-reason">${escapeHtml(model.reason || "模型未返回 reason")}</div><small>${escapeHtml(formatModelConfidence(model.confidence))} confidence</small></td>
+      <td><div class="trail-update-reason" title="${escapeHtml(model.reason || "模型未返回 reason")}">${escapeHtml(model.reason || "模型未返回 reason")}</div><small>${escapeHtml(formatModelConfidence(model.confidence))} confidence</small></td>
       <td><div>${escapeHtml(review.reviewer || "未记录")}</div><small>${escapeHtml(review.status || "pending")} · ${escapeHtml(formatTime(review.reviewed_at))}</small></td>
-      <td><div class="trail-update-comment">${escapeHtml(comment || "未填写")}</div><small>${comment ? uiText("提交时将追加到 Trail Comment", "Added to Trail Comment on commit") : uiText("不会写入 Comment", "No Comment will be written")}</small></td>
-      <td class="trail-update-source-cell"><strong title="${escapeHtml(sourceRun.name)}">${escapeHtml(sourceRun.name)}</strong><small title="${escapeHtml(sourceRun.source)}">${escapeHtml(sourceRun.source || sourceRun.runId || uiText("未记录版本", "Version unavailable"))}</small>${sourceRun.version ? `<code title="${escapeHtml(sourceRun.version)}">${escapeHtml(sourceRun.version)}</code>` : ""}</td>
+      <td><div class="trail-update-comment" title="${escapeHtml(comment || uiText("未填写 Comment", "No Comment"))}">${escapeHtml(comment || "未填写")}</div><small>${comment ? uiText("提交时将追加到 Trail Comment", "Added to Trail Comment on commit") : uiText("不会写入 Comment", "No Comment will be written")}</small></td>
+      <td class="trail-update-source-cell" title="${escapeHtml(sourceRun.title)}"><strong>${escapeHtml(sourceRun.label)}</strong></td>
       <td><span class="trail-update-state-badge ${status.className}" title="${escapeHtml(status.detail)}">${escapeHtml(status.label)}</span><small>${escapeHtml(status.detail)}</small></td>
     </tr>`;
   }).join("");

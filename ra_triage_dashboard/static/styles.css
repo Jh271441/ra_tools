@@ -1993,11 +1993,27 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-state-badge.is-pending { border-color: rgba(251,191,36,.45); color: #f6d58a; background: rgba(251,191,36,.08); }
 .trail-update-state-badge.is-querying { border-color: rgba(56,189,248,.45); color: #9bdcf3; background: rgba(56,189,248,.08); }
 .trail-update-state-badge.is-failed, .trail-update-state-badge.is-not-found { border-color: rgba(248,113,113,.42); color: #fca5a5; background: rgba(248,113,113,.08); }
-.trail-update-status-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.trail-update-status-summary.is-synced { color: #9ae6c4; }
-.trail-update-status-summary.is-pending { color: #f6d58a; }
-.trail-update-status-summary.is-querying { color: #9bdcf3; }
-.trail-update-status-summary.is-failed, .trail-update-status-summary.is-not-found { color: #fca5a5; }
+.trail-update-status-card {
+  min-width: 0; grid-column: 1 / -1; grid-template-columns: minmax(190px, .55fr) minmax(0, 2.45fr);
+  align-items: center; gap: 16px; padding: 10px 12px;
+}
+.trail-update-status-heading { min-width: 0; }
+.trail-update-status-heading small { overflow: hidden; color: var(--faint); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.trail-update-status-chart, .trail-update-status-summary { min-width: 0; }
+.trail-update-status-visual { min-width: 0; }
+.analysis-review-status-segment.trail-status-not-checked,
+.analysis-review-status-legend-item.trail-status-not-checked { --status-color: #94a3b8; }
+.analysis-review-status-segment.trail-status-synced,
+.analysis-review-status-legend-item.trail-status-synced { --status-color: #34d399; }
+.analysis-review-status-segment.trail-status-pending,
+.analysis-review-status-legend-item.trail-status-pending { --status-color: #fbbf24; }
+.analysis-review-status-segment.trail-status-querying,
+.analysis-review-status-legend-item.trail-status-querying { --status-color: #38bdf8; }
+.analysis-review-status-segment.trail-status-failed,
+.analysis-review-status-segment.trail-status-not-found,
+.analysis-review-status-legend-item.trail-status-failed,
+.analysis-review-status-legend-item.trail-status-not-found { --status-color: #fb7185; }
+.trail-update-source-cell, .trail-update-comment[title], .trail-update-reason[title] { cursor: help; }
 .trail-update-direct-table { min-width: 720px; }
 .trail-update-direct-table td:nth-child(1) { width: 15%; }
 .trail-update-direct-table td:nth-child(2) { width: 14%; }
@@ -2726,6 +2742,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .trail-update-section-heading h2 { font-size: 16px; }
   .trail-update-onboarding { padding-top: 8px; }
   .trail-update-control-grid, .trail-update-summary-grid { grid-template-columns: minmax(0, 1fr); }
+  .trail-update-status-card { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .trail-update-actions { justify-content: flex-start; }
   .trail-update-actions .button { flex: 1 1 150px; }
   .trail-update-results-heading { align-items: flex-start; }

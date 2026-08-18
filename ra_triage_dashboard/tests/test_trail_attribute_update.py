@@ -149,6 +149,7 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         rows = [
             {
                 "issue_id": "cn00000002",
+                "baseline_scope": "release0508_1071",
                 "title": "second",
                 "gt_label": "误触发",
                 "annotation": {
@@ -192,6 +193,8 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         self.assertEqual(payload["count"], 1)
         item = payload["items"][0]
         self.assertEqual(item["issue_id"], "cn00000002")
+        self.assertEqual(item["baseline_id"], "0508")
+        self.assertEqual(item["baseline_scope"], "release0508_1071")
         self.assertEqual(item["target"]["merge_strategy"], "deep_merge")
         self.assertEqual(
             item["target"]["patch"],

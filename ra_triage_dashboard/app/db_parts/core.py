@@ -1023,6 +1023,7 @@ class DatabaseCoreMixin:
 
         query = f"""
             SELECT i.issue_id, i.title, i.scenario, i.summary, i.gt_label,
+                   i.baseline_scope,
                    ann.id AS annotation_id,
                    ann.label AS annotation_label,
                    ann.review_status AS annotation_review_status,
@@ -1054,6 +1055,7 @@ class DatabaseCoreMixin:
             results.append(
                 {
                     "issue_id": str(row["issue_id"]),
+                    "baseline_scope": str(row["baseline_scope"] or ""),
                     "title": str(row["title"] or ""),
                     "scenario": str(row["scenario"] or ""),
                     "summary": str(row["summary"] or ""),

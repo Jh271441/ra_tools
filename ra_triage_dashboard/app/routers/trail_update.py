@@ -253,6 +253,11 @@ def build_trail_attribute_update_payload(
 
     run_id = _as_text(run.get("id"))
     info_only = write_mode == "info_only"
+    baseline_by_scope = {
+        _as_text(scope): _as_text(baseline_ids[index])
+        for index, scope in enumerate(baseline_scopes)
+        if index < len(baseline_ids) and _as_text(scope) and _as_text(baseline_ids[index])
+    }
     items: list[dict[str, Any]] = []
     invalid_labels: list[str] = []
     for row in rows:
@@ -278,6 +283,8 @@ def build_trail_attribute_update_payload(
         items.append(
             {
                 "issue_id": issue_id,
+                "baseline_id": baseline_by_scope.get(_as_text(row.get("baseline_scope")), ""),
+                "baseline_scope": _as_text(row.get("baseline_scope")),
                 "title": _as_text(row.get("title")),
                 "scenario": _as_text(row.get("scenario")),
                 "gt_label": _as_text(row.get("gt_label")),
