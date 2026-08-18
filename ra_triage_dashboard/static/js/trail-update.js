@@ -3,13 +3,6 @@
 function setTrailUpdateTab(tab = "review") {
   const nextTab = tab === "issue" ? "issue" : "review";
   state.trailUpdate.tab = nextTab;
-  const pageTitle = $("#trailUpdateSectionTitle");
-  if (pageTitle) {
-    const zh = pageTitle.querySelector(".ui-lang-zh");
-    const en = pageTitle.querySelector(".ui-lang-en");
-    if (zh) zh.textContent = "问题排除";
-    if (en) en.textContent = "Issue exclusion";
-  }
   document.querySelectorAll("[data-trail-update-tab]").forEach((button) => {
     const active = button.dataset.trailUpdateTab === nextTab;
     button.classList.toggle("active", active);
@@ -799,7 +792,14 @@ function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
     ? uiText(`仅写 ${targetSpec.fullPath}`, `Info only · ${targetSpec.fullPath}`)
     : uiText(`写入 ${resultField} + ${targetSpec.fullPath}`, `Write ${resultField} + ${targetSpec.fullPath}`);
   if (bannerText) bannerText.textContent = infoOnly
-    ? uiText("模型 label 保持不变；info 使用 deep_merge。", "Model label stays unchanged; info is deep-merged.")
+    ? uiText(
+      directMode
+        ? "模型 label 保持不变；info 使用 deep_merge；Trail 回读成功后同步判错复核“应该排除”。"
+        : "模型 label 保持不变；info 使用 deep_merge。",
+      directMode
+        ? "Model label stays unchanged; info is deep-merged; after Trail readback, Review ‘Exclude’ is synchronized."
+        : "Model label stays unchanged; info is deep-merged."
+    )
     : uiText("模型 label 和 info 将按预览写入。", "Model label and info will be written as previewed.");
 
   const summary = $("#trailUpdateConfirmSummary");
@@ -836,8 +836,8 @@ function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
 
   const note = $("#trailUpdateConfirmNote");
   if (note) note.textContent = uiText(
-    `${infoOnly ? `仅更新 ${targetSpec.fullPath}，不改模型 label。` : `将更新 ${resultField} 和 ${targetSpec.fullPath}。`} 提交前会再次校验预览指纹${digest ? `（${digest.slice(0, 12)}…）` : ""}。`,
-    `${infoOnly ? `Only ${targetSpec.fullPath} will be updated; model labels stay unchanged. ` : `Both ${resultField} and ${targetSpec.fullPath} will be updated. `}The preview fingerprint will be checked again before commit${digest ? ` (${digest.slice(0, 12)}…)` : ""}.`
+    `${infoOnly ? `仅更新 ${targetSpec.fullPath}，不改模型 label。${directMode ? ` Trail 回读成功后同步判错复核“应该排除”。` : ""}` : `将更新 ${resultField} 和 ${targetSpec.fullPath}。`}提交前会再次校验预览指纹${digest ? `（${digest.slice(0, 12)}…）` : ""}。`,
+    `${infoOnly ? `Only ${targetSpec.fullPath} will be updated; model labels stay unchanged.${directMode ? " Review ‘Exclude’ will be synchronized after Trail readback. " : " "}` : `Both ${resultField} and ${targetSpec.fullPath} will be updated. `}The preview fingerprint will be checked again before commit${digest ? ` (${digest.slice(0, 12)}…)` : ""}.`
   );
   dialog.dataset.confirmMode = directMode ? "direct_issue_ids" : "review";
   return new Promise((resolve) => {
@@ -947,23 +947,28 @@ async function commitTrailIssueExclusion() {
     });
     const stats = result?.stats || {};
     const readback = result?.readback || {};
+    const localReview = result?.local_review || {};
     const readbackText = uiText(
       `回读 ${readback.verified_count || 0}/${readback.checked_count || 0}`,
       `read back ${readback.verified_count || 0}/${readback.checked_count || 0}`
     );
+    const localReviewText = uiText(
+      `看板“应该排除” ${Number(localReview.marked_count || 0) + Number(localReview.already_excluded_count || 0)}/${localReview.requested_count || 0}`,
+      `Review “Exclude” ${Number(localReview.marked_count || 0) + Number(localReview.already_excluded_count || 0)}/${localReview.requested_count || 0}`
+    );
     const progressMessage = uiText(
-      `字段 ${stats.success_count || 0}/${stats.total || ids.length}，Comment ${stats.comment_success_count || 0}/${stats.comment_total || 0}；${readbackText}。`,
-      `Fields ${stats.success_count || 0}/${stats.total || ids.length}; Comments ${stats.comment_success_count || 0}/${stats.comment_total || 0}; ${readbackText}.`
+      `字段 ${stats.success_count || 0}/${stats.total || ids.length}，Comment ${stats.comment_success_count || 0}/${stats.comment_total || 0}；${readbackText}；${localReviewText}。`,
+      `Fields ${stats.success_count || 0}/${stats.total || ids.length}; Comments ${stats.comment_success_count || 0}/${stats.comment_total || 0}; ${readbackText}; ${localReviewText}.`
     );
     finishTrailUpdateProgress({ ok: Boolean(result?.ok), message: progressMessage });
     setTrailIssueStatus(uiText(
-      `屏蔽完成：字段成功 ${stats.success_count || 0}，字段失败 ${stats.failed_count || 0}；Comment 成功 ${stats.comment_success_count || 0}，失败 ${stats.comment_failed_count || 0}，跳过 ${stats.comment_skipped_count || 0}；${readbackText}。`,
-      `Shield finished: fields ${stats.success_count || 0} succeeded / ${stats.failed_count || 0} failed; Comments ${stats.comment_success_count || 0} succeeded / ${stats.comment_failed_count || 0} failed / ${stats.comment_skipped_count || 0} skipped; ${readbackText}.`
+      `屏蔽完成：字段成功 ${stats.success_count || 0}，字段失败 ${stats.failed_count || 0}；Comment 成功 ${stats.comment_success_count || 0}，失败 ${stats.comment_failed_count || 0}，跳过 ${stats.comment_skipped_count || 0}；${readbackText}；${localReviewText}。`,
+      `Shield finished: fields ${stats.success_count || 0} succeeded / ${stats.failed_count || 0} failed; Comments ${stats.comment_success_count || 0} succeeded / ${stats.comment_failed_count || 0} failed / ${stats.comment_skipped_count || 0} skipped; ${readbackText}; ${localReviewText}.`
     ));
     showToast(
       result?.ok
-        ? uiText("Issue 屏蔽已提交并完成回读。", "Issue shielding was submitted and read back.")
-        : uiText("Issue 屏蔽部分失败，请查看回读和失败明细。", "Issue shielding is incomplete; inspect readback and failures."),
+        ? uiText("Issue 屏蔽已提交，Trail 与判错复核排除标记均已更新。", "Issue shielding and Review exclusion marks were updated.")
+        : uiText("Issue 屏蔽部分失败，请查看 Trail 回读和判错复核标记。", "Issue shielding is incomplete; inspect Trail readback and Review marks."),
       !result?.ok
     );
   } catch (error) {

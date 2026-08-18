@@ -30,6 +30,7 @@ from ..http_support import (
     resolve_request_baseline_scopes,
 )
 from ..runtime import database, settings
+from ..review_workflow import derive_review_status
 from ..trail_sync import (
     _dashboard_should_exclude,
     read_trail_comment_markers,
@@ -62,6 +63,88 @@ _preview_capability_cache: dict[
 ] = {}
 _preview_capability_cache_lock = threading.Lock()
 _PREVIEW_CAPABILITY_CACHE_SECONDS = 90
+
+
+def _mark_local_review_exclusions(
+    issue_ids: list[str],
+    *,
+    actor: Any,
+    fallback_note: str = "",
+) -> dict[str, Any]:
+    """Persist the direct shielding result into the Review exclusion flag.
+
+    The Trail Issue-ID workflow is an issue-level action, but the Review page
+    stores ``应该排除`` in its append-only annotation history.  Once Trail has
+    been written and read back successfully, create a new annotation in the
+    same Run as the latest Review for each Issue.  Existing expected output,
+    Tags, missing evidence and note are copied unchanged; only
+    ``is_excluded`` is forced to ``True``.  Repeating the same operation is
+    idempotent when the latest annotation is already excluded.
+    """
+
+    normalized_ids = list(dict.fromkeys(
+        str(issue_id or "").strip()
+        for issue_id in issue_ids
+        if str(issue_id or "").strip()
+    ))
+    result: dict[str, Any] = {
+        "requested_count": len(normalized_ids),
+        "marked_count": 0,
+        "already_excluded_count": 0,
+        "failed_count": 0,
+        "failed_issue_ids": [],
+        "failure_messages": {},
+    }
+    actor_name = _as_text(getattr(actor, "username", ""))
+    actor_source = _as_text(getattr(actor, "source", "")) or "trail_attribute_update"
+    actor_verified = bool(getattr(actor, "verified", False))
+    normalized_fallback_note = _as_text(fallback_note).strip()[:4000]
+    for issue_id in normalized_ids:
+        try:
+            case = database.get_case(issue_id)
+            if case is None:
+                raise ValueError("Issue 不存在于当前看板。")
+            annotations = [
+                item for item in (case.get("annotations") or [])
+                if isinstance(item, dict)
+            ]
+            current = annotations[0] if annotations else {}
+            if bool(current.get("is_excluded")):
+                result["already_excluded_count"] += 1
+                continue
+            expected_output = normalise_model_label(
+                current.get("expected_output") or current.get("label")
+            )
+            review_status = derive_review_status(
+                expected_output,
+                case.get("gt_label"),
+            )
+            previous_id = current.get("id")
+            if previous_id not in (None, "", 0, "0"):
+                previous_id = int(previous_id)
+            else:
+                previous_id = None
+            database.create_annotation(
+                issue_id=issue_id,
+                model_run_id=_as_text(current.get("model_run_id")),
+                label=expected_output,
+                review_status=review_status,
+                is_excluded=True,
+                tags=list(current.get("tags") or []),
+                missing_evidence=list(current.get("missing_evidence") or []),
+                note=_as_text(current.get("note")) or normalized_fallback_note,
+                author=actor_name,
+                author_source=actor_source,
+                author_verified=actor_verified,
+                expected_previous_annotation_id=previous_id,
+            )
+            result["marked_count"] += 1
+        except Exception as exc:
+            result["failed_count"] += 1
+            result["failed_issue_ids"].append(issue_id)
+            result["failure_messages"][issue_id] = str(exc)[:240]
+    result["ok"] = result["failed_count"] == 0
+    return result
 
 
 def _canonical_json(value: Any) -> str:
@@ -998,11 +1081,51 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
             result_field="",
             info_field=info_field,
         )
+        field_failed = {
+            str(item).strip()
+            for item in stats.get("failed_issue_ids", [])
+            if str(item).strip()
+        }
+        readback_failed = {
+            str(item).strip()
+            for item in (
+                list(readback.get("missing_issue_ids", []))
+                + list(readback.get("mismatched_issue_ids", []))
+            )
+            if str(item).strip()
+        }
+        verified_issue_ids = [
+            str(item.get("issue_id") or "").strip()
+            for item in changes
+            if str(item.get("issue_id") or "").strip()
+            and str(item.get("issue_id") or "").strip() not in field_failed
+            and str(item.get("issue_id") or "").strip() not in readback_failed
+        ]
+        local_review = (
+            await asyncio.to_thread(
+                _mark_local_review_exclusions,
+                verified_issue_ids,
+                actor=identity,
+                fallback_note=comment,
+            )
+            if readback.get("complete")
+            else {
+                "requested_count": 0,
+                "marked_count": 0,
+                "already_excluded_count": 0,
+                "failed_count": 0,
+                "failed_issue_ids": [],
+                "failure_messages": {},
+                "ok": False,
+                "status": "readback_incomplete",
+            }
+        )
     return {
         "ok": (
             not stats.get("failed_count")
             and not stats.get("comment_failed_count")
             and bool(readback.get("ok"))
+            and bool(local_review.get("ok"))
         ),
         "mode": "direct_issue_ids",
         "payload_sha256": submitted_digest,
@@ -1015,4 +1138,5 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
         "target_path": TRAIL_TARGET_PATH,
         "stats": stats,
         "readback": readback,
+        "local_review": local_review,
     }

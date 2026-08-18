@@ -1933,10 +1933,6 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 
 .trail-update-page { width: min(1480px, 100%); gap: 8px; }
 .trail-update-header-card { display: grid; gap: 10px; padding: 13px 14px 14px; }
-.trail-update-section-heading {
-  display: flex; align-items: baseline; padding: 0 4px;
-}
-.trail-update-section-heading h2 { color: var(--text); font-size: 16px; }
 .trail-update-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .trail-update-tab { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 3px 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: var(--overlay); text-align: left; font-size: 11px; font-weight: 650; }
 .trail-update-tab:hover, .trail-update-tab:focus-visible { border-color: rgba(34,211,238,.55); color: var(--text); }
@@ -2832,8 +2828,6 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .trail-update-tabs { grid-template-columns: minmax(0, 1fr); }
   .trail-update-tab { padding: 8px 9px; }
   .trail-update-header-card { padding: 10px; }
-  .trail-update-section-heading { padding-inline: 2px; }
-  .trail-update-section-heading h2 { font-size: 16px; }
   .trail-update-onboarding { padding-top: 8px; }
   .trail-update-control-grid, .trail-update-summary-grid { grid-template-columns: minmax(0, 1fr); }
   .trail-update-status-card { grid-template-columns: minmax(0, 1fr); gap: 8px; }

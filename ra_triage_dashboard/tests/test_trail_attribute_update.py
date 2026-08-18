@@ -362,6 +362,72 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         self.assertEqual(payload["draft"]["payload_sha256"], payload["payload_sha256"])
         self.assertEqual(payload["operation_id"], payload["payload_sha256"])
 
+    def test_direct_issue_commit_marks_latest_review_as_excluded(self) -> None:
+        actor = SimpleNamespace(
+            username="jasperchen",
+            source="kylin_ticket",
+            verified=True,
+        )
+        cases = {
+            "cn00000001": {
+                "issue_id": "cn00000001",
+                "gt_label": "误触发",
+                "annotations": [
+                    {
+                        "id": 9,
+                        "model_run_id": "run-1",
+                        "label": "无需协助",
+                        "expected_output": "无需协助",
+                        "review_status": "needs_gt_review",
+                        "is_excluded": False,
+                        "tags": ["排队"],
+                        "missing_evidence": [],
+                        "note": "原有 Review",
+                    }
+                ],
+            },
+            "cn00000002": {
+                "issue_id": "cn00000002",
+                "gt_label": "无需协助",
+                "annotations": [
+                    {
+                        "id": 10,
+                        "model_run_id": "",
+                        "label": "无需协助",
+                        "expected_output": "无需协助",
+                        "is_excluded": True,
+                    }
+                ],
+            },
+        }
+        with patch.object(
+            trail_update.database,
+            "get_case",
+            side_effect=lambda issue_id: cases.get(issue_id),
+        ), patch.object(trail_update.database, "create_annotation") as create:
+            result = trail_update._mark_local_review_exclusions(
+                ["cn00000001", "cn00000002"],
+                actor=actor,
+                fallback_note="人工屏蔽",
+            )
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["marked_count"], 1)
+        self.assertEqual(result["already_excluded_count"], 1)
+        create.assert_called_once_with(
+            issue_id="cn00000001",
+            model_run_id="run-1",
+            label="无需协助",
+            review_status="needs_gt_review",
+            is_excluded=True,
+            tags=["排队"],
+            missing_evidence=[],
+            note="原有 Review",
+            author="jasperchen",
+            author_source="kylin_ticket",
+            author_verified=True,
+            expected_previous_annotation_id=9,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
