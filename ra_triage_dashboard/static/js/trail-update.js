@@ -7,8 +7,8 @@ function setTrailUpdateTab(tab = "review") {
   if (pageTitle) {
     const zh = pageTitle.querySelector(".ui-lang-zh");
     const en = pageTitle.querySelector(".ui-lang-en");
-    if (zh) zh.textContent = nextTab === "issue" ? "Issue ID 屏蔽" : "排除案例汇总";
-    if (en) en.textContent = nextTab === "issue" ? "Shield by Issue ID" : "Excluded case summary";
+    if (zh) zh.textContent = "问题排除";
+    if (en) en.textContent = "Issue exclusion";
   }
   document.querySelectorAll("[data-trail-update-tab]").forEach((button) => {
     const active = button.dataset.trailUpdateTab === nextTab;
@@ -126,11 +126,9 @@ function setTrailAttributeLoading(loading = false) {
   const page = $("#trailAttributeUpdatePage");
   page?.classList.toggle("is-loading", active);
   [
-    "#trailUpdateDownloadButton",
-    "#trailUpdateCopyButton",
-    "#trailUpdateCommitButton",
-  ].forEach((selector) => {
-    const button = $(selector);
+    ...document.querySelectorAll("[data-trail-json-preview]"),
+    $("#trailUpdateCommitButton"),
+  ].filter(Boolean).forEach((button) => {
     if (!button) return;
     button.toggleAttribute("aria-busy", active);
     if (active) button.disabled = true;
@@ -139,8 +137,9 @@ function setTrailAttributeLoading(loading = false) {
 
 function syncTrailAttributeActions(data = state.trailUpdate?.data) {
   const loading = Boolean(state.trailUpdate?.loading);
-  $("#trailUpdateDownloadButton")?.toggleAttribute("disabled", loading || !data?.draft);
-  $("#trailUpdateCopyButton")?.toggleAttribute("disabled", loading || !data?.draft);
+  document.querySelectorAll('[data-trail-json-preview="review"]').forEach((button) => {
+    button.toggleAttribute("disabled", loading || !data?.draft);
+  });
   $("#trailUpdateCommitButton")?.toggleAttribute("disabled", loading || data?.write_status !== "ready");
 }
 
@@ -234,24 +233,19 @@ function trailUpdateTargetSpec(data = {}) {
   };
 }
 
-function renderTrailUpdateTargetField(data = {}, fieldId = "trailUpdateInfoField", detailId = "trailUpdateInfoFieldDetail") {
+function renderTrailUpdateTargetField(data = {}, fieldId = "trailUpdateInfoField") {
   const spec = trailUpdateTargetSpec(data);
   const field = $(`#${fieldId}`);
   if (field) {
     field.textContent = spec.fullPath;
     field.setAttribute("title", spec.fullPath);
   }
-  const detail = $(`#${detailId}`);
-  if (detail) {
-    const pathZh = spec.path || "目标路径未返回";
-    const pathEn = spec.path || "target path unavailable";
-    detail.innerHTML = `<span class="ui-lang-zh">deep_merge · info-only · label 不变（${escapeHtml(pathZh)}）</span><span class="ui-lang-en">deep_merge · info only · label unchanged (${escapeHtml(pathEn)})</span>`;
-  }
   return spec;
 }
 
 function clearTrailAttributePreview(message = "") {
   state.trailUpdate.data = null;
+  state.trailUpdate.jsonPreview = null;
   state.trailUpdate.previewKey = "";
   state.trailUpdate.previewLoadedAt = 0;
   setTrailAttributeUpdatePreviewVisible(false);
@@ -262,7 +256,6 @@ function clearTrailAttributePreview(message = "") {
   $("#trailUpdateStatusDetail").textContent = uiText("一次批量查询所有 Issue", "One batched query for all Issues");
   const digestElement = $("#trailUpdateDigest");
   if (digestElement) digestElement.textContent = "—";
-  $("#trailUpdateTableSummary").textContent = "—";
   setTrailAttributeLoading(false);
   syncTrailAttributeActions(null);
   setTrailAttributeStatus(message);
@@ -274,15 +267,16 @@ function clearTrailAttributePreview(message = "") {
 
 function clearTrailIssuePreview(message = "") {
   state.trailUpdate.directData = null;
+  state.trailUpdate.jsonPreview = null;
   const results = $("#trailUpdateIssueResults");
   if (results) results.hidden = true;
   $("#trailUpdateIssueCount").textContent = "—";
   $("#trailUpdateIssueMissingCount").textContent = "—";
   $("#trailUpdateIssueSummary").textContent = "—";
   $("#trailUpdateIssueDigest").textContent = "—";
-  $("#trailUpdateIssueTableSummary").textContent = "—";
-  $("#trailUpdateIssueDownloadButton")?.toggleAttribute("disabled", true);
-  $("#trailUpdateIssueCopyButton")?.toggleAttribute("disabled", true);
+  document.querySelectorAll('[data-trail-json-preview="issue"]').forEach((button) => {
+    button.toggleAttribute("disabled", true);
+  });
   $("#trailUpdateIssueCommitButton")?.toggleAttribute("disabled", true);
   setTrailIssueStatus(message);
   const body = $("#trailUpdateIssueTableBody");
@@ -413,10 +407,6 @@ function renderTrailAttributePreview(data) {
     digestElement.textContent = digest ? `${digest.slice(0, 12)}…` : "—";
     digestElement.setAttribute("title", digest || "");
   }
-  $("#trailUpdateTableSummary").textContent = uiText(
-    `${items.length} 条；按 Issue ID 稳定排序`,
-    `${items.length} items; stable Issue ID ordering`
-  );
   const body = $("#trailUpdateTableBody");
   if (!body) return;
   if (!items.length) {
@@ -534,51 +524,70 @@ function trailUpdateDraftText() {
   return draft ? JSON.stringify(draft, null, 2) : "";
 }
 
-function downloadTrailAttributeDraft() {
-  const text = trailUpdateDraftText();
-  if (!text) return;
-  const run = state.trailUpdate?.data?.selected_run || {};
-  const safeName = String(run.name || run.id || "run").replace(/[^A-Za-z0-9._-]+/g, "_");
-  const blob = new Blob([text], { type: "application/json;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `trail_attribute_update_${safeName}.json`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-async function copyTrailAttributeDraft() {
-  const text = trailUpdateDraftText();
-  if (!text) return;
-  if (!navigator.clipboard?.writeText) throw new Error(uiText("当前浏览器不支持复制。", "Clipboard is unavailable in this browser."));
-  await navigator.clipboard.writeText(text);
-  showToast(uiText("已复制 Trail 属性更新 JSON。", "Trail attribute update JSON copied."));
-}
-
 function trailIssueDraftText() {
   const draft = state.trailUpdate?.directData?.draft;
   return draft ? JSON.stringify(draft, null, 2) : "";
 }
 
-function downloadTrailIssueDraft() {
-  const text = trailIssueDraftText();
-  if (!text) return;
-  const blob = new Blob([text], { type: "application/json;charset=utf-8" });
+function trailUpdateJsonContext(mode = state.trailUpdate?.tab || "review") {
+  const direct = mode === "issue";
+  const text = direct ? trailIssueDraftText() : trailUpdateDraftText();
+  if (!text) return null;
+  const run = state.trailUpdate?.data?.selected_run || {};
+  const safeName = String(run.name || run.id || "run").replace(/[^A-Za-z0-9._-]+/g, "_");
+  return {
+    text,
+    filename: direct ? "trail_issue_exclusion_update.json" : `trail_attribute_update_${safeName}.json`,
+    title: direct ? uiText("Issue 屏蔽 JSON 预览", "Issue shielding JSON preview") : uiText("问题排除 JSON 预览", "Issue exclusion JSON preview"),
+    subtitle: direct
+      ? uiText("当前 Issue ID 屏蔽 Tab 的草稿；可复制或下载。", "Draft from the Issue shielding tab; copy or download it.")
+      : uiText("当前 Review 排除汇总 Tab 的草稿；可复制或下载。", "Draft from the Review exclusion tab; copy or download it."),
+  };
+}
+
+function openTrailUpdateJsonPreview() {
+  const context = trailUpdateJsonContext();
+  if (!context) {
+    showToast(uiText("当前没有可预览的 JSON 草稿。", "There is no JSON draft to preview."), true);
+    return;
+  }
+  const dialog = $("#trailUpdateJsonDialog");
+  const preview = $("#trailUpdateJsonPreview");
+  if (!dialog || !preview || typeof dialog.showModal !== "function") {
+    showToast(uiText("JSON 预览弹窗不可用。", "The JSON preview dialog is unavailable."), true);
+    return;
+  }
+  state.trailUpdate.jsonPreview = context;
+  const title = $("#trailUpdateJsonTitle");
+  const subtitle = $("#trailUpdateJsonSubtitle");
+  if (title) title.textContent = context.title;
+  if (subtitle) subtitle.textContent = context.subtitle;
+  preview.textContent = context.text;
+  if (!dialog.open) dialog.showModal();
+}
+
+function trailUpdateJsonForAction() {
+  return state.trailUpdate?.jsonPreview || trailUpdateJsonContext();
+}
+
+function downloadTrailUpdateJson() {
+  const context = trailUpdateJsonForAction();
+  if (!context) return;
+  const blob = new Blob([context.text], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "trail_issue_exclusion_update.json";
+  link.download = context.filename;
   link.click();
   URL.revokeObjectURL(url);
 }
 
-async function copyTrailIssueDraft() {
-  const text = trailIssueDraftText();
-  if (!text) return;
+async function copyTrailUpdateJson() {
+  const context = trailUpdateJsonForAction();
+  if (!context) return;
   if (!navigator.clipboard?.writeText) throw new Error(uiText("当前浏览器不支持复制。", "Clipboard is unavailable in this browser."));
-  await navigator.clipboard.writeText(text);
-  showToast(uiText("已复制 Issue 屏蔽 JSON。", "Issue shielding JSON copied."));
+  await navigator.clipboard.writeText(context.text);
+  showToast(uiText("已复制 JSON。", "JSON copied."));
 }
 
 function trailInfoPreviewJson(value) {
@@ -742,14 +751,10 @@ function renderTrailIssuePreview(data) {
     `${data?.requested_issue_ids?.length || 0} 条请求；${items.length} 条可写`,
     `${data?.requested_issue_ids?.length || 0} requested; ${items.length} writable`
   );
-  const targetSpec = renderTrailUpdateTargetField(data, "trailUpdateIssueField", "trailUpdateIssueFieldDetail");
+  const targetSpec = renderTrailUpdateTargetField(data, "trailUpdateIssueField");
   const digest = String(data?.payload_sha256 || "");
   $("#trailUpdateIssueDigest").textContent = digest ? `${digest.slice(0, 12)}…` : "—";
   $("#trailUpdateIssueDigest")?.setAttribute("title", digest || "");
-  $("#trailUpdateIssueTableSummary").textContent = uiText(
-    `${items.length} 条；按 Issue ID 稳定排序`,
-    `${items.length} items; stable Issue ID ordering`
-  );
   const statusText = data?.write_status === "ready"
     ? uiText(`已生成屏蔽预览：${items.length} 条，可提交。`, `Shield preview ready: ${items.length} item(s); commit is available.`)
     : uiText(
@@ -799,8 +804,9 @@ async function loadTrailIssuePreview() {
     if (requestSeq !== state.trailUpdate.directRequestSeq) return data;
     state.trailUpdate.directData = data;
     renderTrailIssuePreview(data);
-    $("#trailUpdateIssueDownloadButton")?.toggleAttribute("disabled", !data?.draft);
-    $("#trailUpdateIssueCopyButton")?.toggleAttribute("disabled", !data?.draft);
+    document.querySelectorAll('[data-trail-json-preview="issue"]').forEach((button) => {
+      button.toggleAttribute("disabled", !data?.draft);
+    });
     $("#trailUpdateIssueCommitButton")?.toggleAttribute("disabled", data?.write_status !== "ready");
     return data;
   } catch (error) {
@@ -935,9 +941,18 @@ function bindTrailAttributeUpdateEvents() {
   $("#trailUpdateCommitButton")?.addEventListener("click", () => {
     commitTrailAttributeUpdate().catch((error) => showToast(error.message, true));
   });
-  $("#trailUpdateDownloadButton")?.addEventListener("click", downloadTrailAttributeDraft);
-  $("#trailUpdateCopyButton")?.addEventListener("click", () => {
-    copyTrailAttributeDraft().catch((error) => showToast(error.message, true));
+  document.querySelectorAll("[data-trail-json-preview]").forEach((button) => {
+    button.addEventListener("click", openTrailUpdateJsonPreview);
+  });
+  $("#trailUpdateJsonClose")?.addEventListener("click", () => $("#trailUpdateJsonDialog")?.close());
+  $("#trailUpdateJsonCancel")?.addEventListener("click", () => $("#trailUpdateJsonDialog")?.close());
+  $("#trailUpdateJsonDownload")?.addEventListener("click", downloadTrailUpdateJson);
+  $("#trailUpdateJsonCopy")?.addEventListener("click", () => {
+    copyTrailUpdateJson().catch((error) => showToast(error.message, true));
+  });
+  $("#trailUpdateJsonDialog")?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    $("#trailUpdateJsonDialog")?.close();
   });
   $("#trailUpdateIssueIdsInput")?.addEventListener("input", () => {
     parseTrailIssueIds();
@@ -951,10 +966,6 @@ function bindTrailAttributeUpdateEvents() {
   });
   $("#trailUpdateIssueCommitButton")?.addEventListener("click", () => {
     commitTrailIssueExclusion().catch((error) => showToast(error.message, true));
-  });
-  $("#trailUpdateIssueDownloadButton")?.addEventListener("click", downloadTrailIssueDraft);
-  $("#trailUpdateIssueCopyButton")?.addEventListener("click", () => {
-    copyTrailIssueDraft().catch((error) => showToast(error.message, true));
   });
   setTrailUpdateTab(state.trailUpdate?.tab || "review");
   parseTrailIssueIds();

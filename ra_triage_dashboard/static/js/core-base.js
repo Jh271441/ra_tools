@@ -544,8 +544,8 @@ const PAGE_ROUTES = {
   },
   "trail-update": {
     path: "/trail-attribute-update",
-    titleZh: "Trail 属性更新",
-    titleEn: "Trail Attribute Update",
+    titleZh: "问题排除",
+    titleEn: "Issue Exclusion",
   },
   runs: {
     path: "/runs",
