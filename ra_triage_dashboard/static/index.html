@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-201`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-202`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -524,10 +524,10 @@
                   <article class="page-card analysis-review-status-card trail-update-status-card" aria-labelledby="trailUpdateStatusTitle">
                     <div class="section-heading analysis-review-status-heading trail-update-status-heading">
                       <div><h3 id="trailUpdateStatusTitle"><span class="ui-lang-zh">Trail 更新状态</span><span class="ui-lang-en">Trail update status</span></h3></div>
-                      <small id="trailUpdateStatusDetail"><span class="ui-lang-zh">一次批量查询所有 Issue</span><span class="ui-lang-en">One batched query for all Issues</span></small>
                     </div>
-                    <div class="analysis-review-status-chart trail-update-status-chart" id="trailUpdateStatusSummary" aria-live="polite" role="img" aria-label="查询中">
-                      <div class="analysis-review-status-visual"><div class="analysis-review-status-bar" role="img" aria-label="查询中"><span class="analysis-review-status-segment trail-status-querying" style="width:100%"></span></div><div class="analysis-review-status-legend" role="list"><div class="analysis-review-status-legend-item trail-status-querying" role="listitem"><span class="analysis-review-status-swatch"></span><span class="analysis-review-status-legend-copy"><strong>查询中</strong><small>—</small></span></div></div></div>
+                    <div class="analysis-review-status-chart analysis-review-status-visual trail-update-status-chart trail-update-status-visual trail-update-status-summary" id="trailUpdateStatusSummary" aria-live="polite" role="img" aria-label="查询中">
+                      <div class="analysis-review-status-bar" role="img" aria-label="查询中"><span class="analysis-review-status-segment trail-status-querying" style="width:100%"></span></div>
+                      <div class="analysis-review-status-legend" role="list"><div class="analysis-review-status-legend-item trail-status-querying" role="listitem"><span class="analysis-review-status-swatch"></span><span class="analysis-review-status-legend-copy"><strong>查询中</strong><small>—</small></span></div></div>
                     </div>
                   </article>
                 </section>
@@ -1214,7 +1214,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-201`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-202`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

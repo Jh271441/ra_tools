@@ -1939,12 +1939,12 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-page.is-loading .trail-update-actions .button:disabled { cursor: wait; }
 .trail-update-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .trail-update-review-summary-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 2fr);
   align-items: start;
 }
 .trail-update-review-summary-grid > .analysis-stat-card { min-height: 0; align-self: start; }
 .trail-update-issue-summary-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 2fr);
   align-items: start;
 }
 .trail-update-issue-summary-grid > .analysis-stat-card { min-height: 0; align-self: start; }
@@ -2014,32 +2014,36 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   align-items: center; gap: 8px; padding: 8px 10px;
 }
 .analysis-review-status-card.trail-update-status-card {
-  grid-template-columns: minmax(145px, .62fr) minmax(0, 1.38fr);
-  grid-template-rows: auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
   align-items: center;
   gap: 10px;
 }
-.analysis-review-status-card.trail-update-status-card > .analysis-review-status-chart,
-.analysis-review-status-card.trail-update-status-card > .trail-update-status-summary { align-self: center; }
+.analysis-review-status-card.trail-update-status-card > .trail-update-status-heading { grid-column: 1; grid-row: 1; min-width: 0; }
+.analysis-review-status-card.trail-update-status-card > .trail-update-status-summary { display: contents; }
 .trail-update-status-heading { min-width: 0; }
-.trail-update-status-heading small { overflow: hidden; color: var(--faint); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .trail-update-status-chart, .trail-update-status-summary { min-width: 0; }
 .trail-update-status-visual {
   min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(110px, 1fr) minmax(0, 1fr);
-  align-items: center;
-  gap: 8px 10px;
+  display: contents;
 }
-.trail-update-status-visual .analysis-review-status-bar { min-width: 0; }
-.trail-update-status-visual .analysis-review-status-legend {
+.analysis-review-status-card.trail-update-status-card > .trail-update-status-summary > .analysis-review-status-bar {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+  width: 100%;
+}
+.analysis-review-status-card.trail-update-status-card > .trail-update-status-summary > .analysis-review-status-legend {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
+  align-items: center;
   gap: 4px 8px;
 }
-.trail-update-status-visual .analysis-review-status-legend-item { padding: 2px 3px; }
+.analysis-review-status-card.trail-update-status-card .analysis-review-status-legend-item { padding: 2px 3px; }
 .analysis-review-status-segment.trail-status-not-checked,
 .analysis-review-status-legend-item.trail-status-not-checked { --status-color: #94a3b8; }
 .analysis-review-status-segment.trail-status-synced,

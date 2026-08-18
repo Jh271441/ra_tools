@@ -253,7 +253,6 @@ function clearTrailAttributePreview(message = "") {
   $("#trailUpdateCount").textContent = "—";
   $("#trailUpdateRunSummary").textContent = "—";
   $("#trailUpdateStatusSummary").textContent = "—";
-  $("#trailUpdateStatusDetail").textContent = uiText("一次批量查询所有 Issue", "One batched query for all Issues");
   const digestElement = $("#trailUpdateDigest");
   if (digestElement) digestElement.textContent = "—";
   setTrailAttributeLoading(false);
@@ -346,11 +345,11 @@ function trailUpdateStatusSummary(data, items) {
       const percent = total ? Math.round((Number(count) / total) * 1000) / 10 : 0;
       return `<div class="analysis-review-status-legend-item trail-status-${escapeHtml(meta.key)}" data-trail-update-status-key="${escapeHtml(meta.key)}" role="listitem" tabindex="0" aria-label="${escapeHtml(`${meta.label}: ${count}, ${percent}%. ${meta.detail}`)}" title="${escapeHtml(meta.detail)}"><span class="analysis-review-status-swatch"></span><span class="analysis-review-status-legend-copy"><strong>${escapeHtml(meta.label)}</strong><small>${count} · ${percent}%</small></span></div>`;
     }).join("");
-    statusElement.innerHTML = `<div class="analysis-review-status-visual trail-update-status-visual"><div class="analysis-review-status-bar" role="img" aria-label="${escapeHtml(detail || primary.label)}">${segments}</div><div class="analysis-review-status-legend" role="list">${legend}</div></div>`;
-    statusElement.className = "analysis-review-status-chart trail-update-status-summary";
+    statusElement.innerHTML = `<div class="analysis-review-status-bar" role="img" aria-label="${escapeHtml(detail || primary.label)}">${segments}</div><div class="analysis-review-status-legend" role="list">${legend}</div>`;
+    statusElement.className = "analysis-review-status-chart analysis-review-status-visual trail-update-status-chart trail-update-status-visual trail-update-status-summary";
     statusElement.title = detail;
     statusElement.setAttribute("aria-label", detail || primary.label);
-    const visual = statusElement.querySelector(".trail-update-status-visual");
+    const visual = statusElement;
     if (visual && !visual.dataset.hoverBound) {
       visual.dataset.hoverBound = "true";
       if (typeof bindAnalysisLinkedHover === "function") {
@@ -360,12 +359,6 @@ function trailUpdateStatusSummary(data, items) {
         });
       }
     }
-  }
-  const detailElement = $("#trailUpdateStatusDetail");
-  if (detailElement) {
-    detailElement.textContent = total
-      ? uiText(`${total} 条 · 一次批量查询所有 Issue`, `${total} items · one batched query for all Issues`)
-      : uiText("一次批量查询所有 Issue", "One batched query for all Issues");
   }
   return counts;
 }
