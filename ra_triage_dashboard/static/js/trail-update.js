@@ -273,7 +273,6 @@ function clearTrailIssuePreview(message = "") {
   $("#trailUpdateIssueCount").textContent = "—";
   $("#trailUpdateIssueMissingCount").textContent = "—";
   $("#trailUpdateIssueSummary").textContent = "—";
-  $("#trailUpdateIssueDigest").textContent = "—";
   document.querySelectorAll('[data-trail-json-preview="issue"]').forEach((button) => {
     button.toggleAttribute("disabled", true);
   });
@@ -752,9 +751,6 @@ function renderTrailIssuePreview(data) {
     `${data?.requested_issue_ids?.length || 0} requested; ${items.length} writable`
   );
   const targetSpec = renderTrailUpdateTargetField(data, "trailUpdateIssueField");
-  const digest = String(data?.payload_sha256 || "");
-  $("#trailUpdateIssueDigest").textContent = digest ? `${digest.slice(0, 12)}…` : "—";
-  $("#trailUpdateIssueDigest")?.setAttribute("title", digest || "");
   const statusText = data?.write_status === "ready"
     ? uiText(`已生成屏蔽预览：${items.length} 条，可提交。`, `Shield preview ready: ${items.length} item(s); commit is available.`)
     : uiText(

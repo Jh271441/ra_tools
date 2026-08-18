@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-200`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-201`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -543,11 +543,10 @@
 
             <section class="trail-update-tab-panel trail-update-results-panel hidden" id="trailUpdateIssuePanel" role="tabpanel" aria-labelledby="trailUpdateIssueTab" data-trail-update-panel="issue" aria-hidden="true">
               <section class="trail-update-direct-results" id="trailUpdateIssueResults" aria-label="Issue shielding preview" hidden>
-                <section class="trail-update-summary-grid" aria-label="Issue shielding summary">
+                <section class="trail-update-summary-grid trail-update-issue-summary-grid" aria-label="Issue shielding summary">
                   <article class="analysis-stat-card"><span class="ui-lang-zh">可写 Issue</span><span class="ui-lang-en">Writable Issues</span><strong id="trailUpdateIssueCount">—</strong><small id="trailUpdateIssueSummary">—</small></article>
                   <article class="analysis-stat-card"><span class="ui-lang-zh">未找到</span><span class="ui-lang-en">Missing</span><strong id="trailUpdateIssueMissingCount">—</strong><small>Trail view 2410</small></article>
                   <article class="analysis-stat-card trail-update-field-stat-card"><span class="ui-lang-zh">目标字段</span><span class="ui-lang-en">Target field</span><strong id="trailUpdateIssueField" class="trail-update-target-value" title="ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude">ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude</strong></article>
-                  <article class="analysis-stat-card"><span class="ui-lang-zh">预览指纹</span><span class="ui-lang-en">Preview fingerprint</span><strong id="trailUpdateIssueDigest" class="trail-update-digest">—</strong><small title="由当前 Issue、字段和 Comment 生成，提交时用于拒绝过期预览。"><span class="ui-lang-zh">提交校验，不是 Trail 字段</span><span class="ui-lang-en">Commit guard; not a Trail field</span></small></article>
                 </section>
                 <section class="page-card trail-update-table-card">
                   <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">预计改动（仅写 info）</span><span class="ui-lang-en">Expected changes (info only)</span></h3></div><div class="trail-update-result-actions"><button class="button button-quiet" data-trail-json-preview="issue" type="button" disabled><span class="ui-lang-zh">预览 JSON</span><span class="ui-lang-en">Preview JSON</span></button></div></div>
@@ -1215,7 +1214,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-200`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-201`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
