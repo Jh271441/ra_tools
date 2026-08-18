@@ -437,6 +437,17 @@ async function loadTrailAttributePreview(force = false) {
     } catch (error) {
       if (requestSeq === state.trailUpdate.requestSeq) {
         setTrailAttributeLoading(false);
+        const failedItems = Array.isArray(data?.items)
+          ? data.items.map((item) => ({ ...item, trail_update_status: "query_failed" }))
+          : [];
+        // Keep the fast local payload available for download/retry, but make
+        // the per-row state truthful instead of leaving every row stuck at
+        // “查询中” after the background request fails.
+        renderTrailAttributePreview({
+          ...data,
+          items: failedItems,
+          trail_update_status_summary: failedItems.length ? { query_failed: failedItems.length } : {},
+        });
         syncTrailAttributeActions(data);
         setTrailAttributeStatus(uiText(
           "排除案例已加载，但 Trail 字段检查失败；可稍后刷新重试。",

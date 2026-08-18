@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-188`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-189`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -1189,7 +1189,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-188`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-189`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
