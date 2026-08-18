@@ -1940,14 +1940,14 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .trail-update-review-summary-grid {
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 2fr);
-  align-items: start;
+  align-items: stretch;
 }
-.trail-update-review-summary-grid > .analysis-stat-card { min-height: 0; align-self: start; }
+.trail-update-review-summary-grid > .analysis-stat-card { min-height: 0; align-self: stretch; }
 .trail-update-issue-summary-grid {
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 2fr);
-  align-items: start;
+  align-items: stretch;
 }
-.trail-update-issue-summary-grid > .analysis-stat-card { min-height: 0; align-self: start; }
+.trail-update-issue-summary-grid > .analysis-stat-card { min-height: 0; align-self: stretch; }
 .trail-update-target-value {
   min-width: 0; overflow: hidden; font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px !important;
   line-height: 1.25; text-overflow: ellipsis; white-space: nowrap;
@@ -2065,16 +2065,18 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-direct-table td:nth-child(1) { width: 15%; }
 .trail-update-direct-table td:nth-child(2) { width: 14%; }
 .trail-update-direct-table td:nth-child(3) { width: 13%; }
-.trail-update-direct-table td:nth-child(4) { width: 40%; text-align: left; }
-.trail-update-direct-table td:nth-child(5) { width: 18%; text-align: left; }
-.trail-update-info-cell > strong { color: var(--text); }
-.trail-update-info-cell > code { display: block; margin-top: 3px; }
+.trail-update-direct-table td:nth-child(4) { width: 40%; text-align: center; }
+.trail-update-direct-table td:nth-child(5) { width: 18%; text-align: center; }
+.trail-update-info-cell > strong { display: block; color: var(--text); text-align: center; }
+.trail-update-info-cell > small { display: block; text-align: center; }
+.trail-update-info-cell > code { display: block; margin-top: 3px; text-align: center; }
 .trail-update-json-preview {
-  max-height: 120px; margin: 5px 0 0; padding: 5px 6px; overflow: auto;
+  max-height: 120px; margin: 5px auto 0; padding: 5px 6px; overflow: auto;
   border: 1px solid var(--line-soft); border-radius: 5px; color: var(--text);
   background: #0b1119; font: 9px/1.35 "SFMono-Regular", Consolas, monospace;
   text-align: left; white-space: pre-wrap; word-break: break-word;
 }
+.trail-update-direct-table .trail-update-comment { text-align: center; }
 .trail-update-json-dialog {
   width: min(900px, calc(100vw - 30px)); height: min(80vh, 760px);
   max-width: calc(100vw - 30px); max-height: calc(100dvh - 24px); overflow: hidden;
