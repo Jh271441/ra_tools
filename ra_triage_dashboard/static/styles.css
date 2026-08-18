@@ -1935,6 +1935,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-actions { min-width: 0; display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
 .trail-update-actions .button { min-width: 116px; height: 36px; padding-inline: 10px; font-size: 11px; }
 .trail-update-actions .button:disabled { opacity: .72; }
+.trail-update-page.is-loading .button:disabled { opacity: 1; filter: none; }
 .trail-update-page.is-loading .trail-update-actions .button:disabled { cursor: wait; }
 .trail-update-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .trail-update-review-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
