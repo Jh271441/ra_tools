@@ -182,6 +182,7 @@ def build_trail_changes(
     current_rows: Iterable[dict[str, Any]] = (),
     result_field: str = "ra_stuck_auto_result",
     info_field: str = "ra_stuck_auto_result_info",
+    write_result_field: bool = True,
 ) -> list[dict[str, Any]]:
     """Build immutable Trail ``multi_update`` changes from a preview.
 
@@ -219,18 +220,18 @@ def build_trail_changes(
         }
         review = item.get("review") if isinstance(item.get("review"), dict) else {}
         comment_text = str(item.get("comment") or review.get("note") or "").strip()[:4000]
-        changes.append(
-            {
-                "issue_id": issue_id,
-                result_field: label,
-                info_field: merged_info,
-                # ``TrailInterface`` treats ``comment`` as a separate
-                # comment API call.  Keep it alongside the field changes so
-                # the dashboard can display and audit exactly what will be
-                # written without putting it into ``issue_info``.
-                **({"comment": comment_text} if comment_text else {}),
-            }
-        )
+        change = {
+            "issue_id": issue_id,
+            info_field: merged_info,
+            # ``TrailInterface`` treats ``comment`` as a separate comment API
+            # call. Keep it alongside the field changes so the dashboard can
+            # display and audit exactly what will be written without putting
+            # it into ``issue_info``.
+            **({"comment": comment_text} if comment_text else {}),
+        }
+        if write_result_field:
+            change[result_field] = label
+        changes.append(change)
     return changes
 
 

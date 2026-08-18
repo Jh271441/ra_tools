@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from dataclasses import replace
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from starlette.requests import Request
@@ -57,6 +59,50 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         self.assertEqual(payload["count"], 1)
         self.assertEqual(payload["trail_capability"]["status"], "not_checked")
         probe.assert_not_called()
+
+    def test_info_only_preview_enables_review_write_when_snapshot_is_complete(self) -> None:
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/trail-attribute-update/preview",
+                "query_string": b"baselines=0508",
+                "headers": [],
+                "scheme": "http",
+                "server": ("testserver", 80),
+                "client": ("127.0.0.1", 1),
+            }
+        )
+        row = {
+            "issue_id": "cn00000001",
+            "annotation": {"id": 1, "is_excluded": True},
+            "prediction": {"model_run_id": "run-1", "label": "误触发"},
+        }
+        sync = SimpleNamespace(
+            fields_visible=(),
+            complete=True,
+            queried_issues=1,
+            returned_issues=1,
+            view_id=2410,
+            message="Trail 未返回旧 Issue 的空字段",
+        )
+        test_settings = replace(
+            trail_update.settings,
+            trail_attribute_write_enabled=True,
+            trail_attribute_review_write_enabled=True,
+        )
+        with patch.object(trail_update, "settings", test_settings), patch.object(
+            trail_update.database, "review_reason_rows", return_value=[row]
+        ), patch.object(
+            trail_update, "read_trail_model_fields", return_value=sync
+        ):
+            payload = asyncio.run(
+                trail_update._build_preview(request, selected_run_id="", baselines="0508")
+            )
+        self.assertEqual(payload["write_mode"], "info_only")
+        self.assertEqual(payload["target_fields"], [TRAIL_INFO_FIELD])
+        self.assertEqual(payload["write_status"], "ready")
+        self.assertTrue(payload["write_ready"])
 
     def test_payload_is_run_bound_sorted_and_write_disabled(self) -> None:
         rows = [
@@ -127,6 +173,40 @@ class TrailAttributeUpdateTest(unittest.TestCase):
             [changed], run={"id": "run-1"}, baseline_ids=["0508"], baseline_scopes=["scope"]
         )
         self.assertNotEqual(first["payload_sha256"], second["payload_sha256"])
+
+    def test_info_only_review_preview_does_not_require_model_label_field(self) -> None:
+        row = {
+            "issue_id": "cn00000001",
+            "gt_label": "误触发",
+            "annotation": {"id": 1, "is_excluded": True, "note": "保留 info"},
+            "prediction": {"model_run_id": "run-1", "label": "误触发", "reason": "queue"},
+        }
+        capability = trail_update._capability_for_info_write(
+            SimpleNamespace(
+                fields_visible=(),
+                complete=True,
+                queried_issues=1,
+                returned_issues=1,
+                view_id=2410,
+                message="Trail 未返回空字段",
+            ),
+            TRAIL_INFO_FIELD,
+        )
+        self.assertTrue(capability["ready"])
+        self.assertEqual(capability["status"], "ready")
+        payload = build_trail_attribute_update_payload(
+            [row],
+            run={"id": "run-1"},
+            baseline_ids=["0508"],
+            baseline_scopes=["scope"],
+            trail_capability=capability,
+            trail_write_enabled=True,
+            write_mode="info_only",
+        )
+        self.assertEqual(payload["write_mode"], "info_only")
+        self.assertEqual(payload["target_fields"], [TRAIL_INFO_FIELD])
+        self.assertTrue(payload["write_ready"])
+        self.assertEqual(payload["items"][0]["field_updates"], {TRAIL_INFO_FIELD: payload["items"][0]["target"]["patch"]})
 
     def test_direct_issue_preview_only_targets_info_field_and_reports_missing(self) -> None:
         payload = build_trail_issue_exclusion_payload(

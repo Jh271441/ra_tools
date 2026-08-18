@@ -39,6 +39,28 @@ class TrailWriterTest(unittest.TestCase):
         self.assertTrue(info["ra_triage_dashboard"]["should_exclude"])
         self.assertEqual(info["model_result"]["label"], "误触发")
 
+    def test_build_changes_info_only_preserves_top_level_model_label(self) -> None:
+        changes = build_trail_changes(
+            [
+                {
+                    "issue_id": "cn00000001",
+                    "model": {"label": "误触发", "reason": "queue", "confidence": 0.8},
+                    "target": {"patch": {"ra_triage_dashboard": {"should_exclude": True}}},
+                }
+            ],
+            current_rows=[
+                {
+                    "issue_id": "cn00000001",
+                    "ra_stuck_auto_result": "正确触发",
+                    "ra_stuck_auto_result_info": {"keep": 1},
+                }
+            ],
+            write_result_field=False,
+        )
+        self.assertNotIn("ra_stuck_auto_result", changes[0])
+        self.assertEqual(changes[0]["ra_stuck_auto_result_info"]["keep"], 1)
+        self.assertEqual(changes[0]["ra_stuck_auto_result_info"]["model_result"]["label"], "误触发")
+
     def test_writer_chunks_and_protects_caller_objects_from_mutating_client(self) -> None:
         original = [{"issue_id": f"cn{i:08d}", "ra_stuck_auto_result": "误触发"} for i in range(3)]
         seen = []

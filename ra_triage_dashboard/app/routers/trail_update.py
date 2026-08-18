@@ -134,6 +134,54 @@ def _capability_for_required_field(
     }
 
 
+def _capability_for_info_write(sync_result: Any, info_field: str) -> dict[str, Any]:
+    """Validate an info-only write without requiring a model-label column.
+
+    Trail's view response omits empty custom columns for older Issues even
+    when the update API accepts those fields.  For the Review aggregate we
+    therefore require a complete, one-to-one Issue snapshot, but do not make
+    the model label a prerequisite: the commit path only writes the info
+    field and the response explicitly records that the label is untouched.
+    """
+
+    visible = sorted(str(item) for item in (sync_result.fields_visible or ()))
+    complete = bool(sync_result.complete)
+    coverage_complete = int(sync_result.returned_issues) == int(sync_result.queried_issues)
+    if not complete:
+        status = "unavailable"
+        ready = False
+        message = _as_text(sync_result.message)
+    elif not coverage_complete:
+        status = "missing_issues"
+        ready = False
+        message = (
+            f"{_as_text(sync_result.message)} Trail 仅返回 "
+            f"{sync_result.returned_issues}/{sync_result.queried_issues} 条 Issue；"
+            "为避免写入错误对象，本次不可提交。"
+        )
+    else:
+        status = "ready"
+        ready = True
+        if info_field in visible:
+            message = _as_text(sync_result.message)
+        else:
+            message = (
+                f"Trail view {sync_result.view_id} 未为当前旧 Issue 返回 {info_field}；"
+                "本次仅通过 info-only 接口新增/合并该字段，不改模型 label，提交后会回读确认。"
+            )
+    return {
+        "view_id": int(sync_result.view_id),
+        "target_fields": [info_field],
+        "required_fields": [info_field],
+        "fields_visible": visible,
+        "queried_issues": int(sync_result.queried_issues),
+        "returned_issues": int(sync_result.returned_issues),
+        "ready": ready,
+        "status": status,
+        "message": message,
+    }
+
+
 def build_trail_attribute_update_payload(
     rows: list[dict[str, Any]],
     *,
@@ -144,6 +192,7 @@ def build_trail_attribute_update_payload(
     info_field: str = TRAIL_INFO_FIELD,
     trail_capability: dict[str, Any] | None = None,
     trail_write_enabled: bool = False,
+    write_mode: str = "model_and_info",
 ) -> dict[str, Any]:
     """Build a deterministic, Run-bound candidate payload.
 
@@ -154,6 +203,7 @@ def build_trail_attribute_update_payload(
     """
 
     run_id = _as_text(run.get("id"))
+    info_only = write_mode == "info_only"
     items: list[dict[str, Any]] = []
     invalid_labels: list[str] = []
     for row in rows:
@@ -217,10 +267,14 @@ def build_trail_attribute_update_payload(
                     "merge_strategy": "deep_merge",
                     "patch": patch,
                 },
-                "field_updates": {
-                    result_field: label or raw_label,
-                    info_field: patch,
-                },
+                "field_updates": (
+                    {info_field: patch}
+                    if info_only
+                    else {
+                        result_field: label or raw_label,
+                        info_field: patch,
+                    }
+                ),
             }
         )
     items.sort(key=lambda item: item["issue_id"])
@@ -228,7 +282,8 @@ def build_trail_attribute_update_payload(
         "schema_version": TRAIL_DRAFT_SCHEMA,
         "mode": "preview",
         "trail_write_enabled": bool(trail_write_enabled),
-        "target_fields": [result_field, info_field],
+        "write_mode": "info_only" if info_only else "model_and_info",
+        "target_fields": [info_field] if info_only else [result_field, info_field],
         "target_field": info_field,
         "target_path": TRAIL_TARGET_PATH,
         "merge_strategy": "deep_merge",
@@ -248,7 +303,15 @@ def build_trail_attribute_update_payload(
     digest = hashlib.sha256(_canonical_json(draft).encode("utf-8")).hexdigest()
     draft["payload_sha256"] = digest
     draft["operation_id"] = digest
-    capability = trail_capability or _capability_not_checked(result_field, info_field)
+    capability = trail_capability or (
+        {
+            **_capability_not_checked(result_field, info_field),
+            "target_fields": [info_field],
+            "required_fields": [info_field],
+        }
+        if info_only
+        else _capability_not_checked(result_field, info_field)
+    )
     if not trail_write_enabled:
         write_status = "disabled"
     elif not capability.get("ready"):
@@ -263,7 +326,9 @@ def build_trail_attribute_update_payload(
         "trail_write_enabled": bool(trail_write_enabled),
         "write_status": write_status,
         "write_ready": write_status == "ready",
-        "target_fields": [result_field, info_field],
+        "write_mode": "info_only" if info_only else "model_and_info",
+        "model_result_field": result_field,
+        "target_fields": [info_field] if info_only else [result_field, info_field],
         "target_field": info_field,
         "target_path": TRAIL_TARGET_PATH,
         "merge_strategy": "deep_merge",
@@ -490,9 +555,11 @@ async def _build_preview(
             view_id=settings.trail_view_id,
             chunk_size=settings.trail_sync_chunk_size,
         )
-        capability = _capability_payload(sync_result, result_field, info_field)
+        capability = _capability_for_info_write(sync_result, info_field)
     else:
         capability = _capability_not_checked(result_field, info_field)
+        capability["target_fields"] = [info_field]
+        capability["required_fields"] = [info_field]
     return await asyncio.to_thread(
         build_trail_attribute_update_payload,
         rows,
@@ -503,6 +570,7 @@ async def _build_preview(
         info_field=info_field,
         trail_capability=capability,
         trail_write_enabled=review_write_enabled,
+        write_mode="info_only",
     )
 
 
@@ -522,7 +590,7 @@ async def _build_direct_preview(
         view_id=settings.trail_view_id,
         chunk_size=settings.trail_sync_chunk_size,
     )
-    capability = _capability_for_required_field(sync_result, info_field)
+    capability = _capability_for_info_write(sync_result, info_field)
     payload = await asyncio.to_thread(
         build_trail_issue_exclusion_payload,
         issue_ids,
@@ -701,14 +769,18 @@ async def trail_attribute_update_commit(request: Request) -> dict[str, Any]:
             view_id=settings.trail_view_id,
             chunk_size=settings.trail_sync_chunk_size,
         )
-        if not {result_field, info_field}.issubset(set(sync_result.fields_visible)):
-            raise _detail(409, _as_text(sync_result.message) or "Trail 目标字段不可见。")
+        if (
+            not sync_result.complete
+            or int(sync_result.returned_issues) != int(sync_result.queried_issues)
+        ):
+            raise _detail(409, _as_text(sync_result.message) or "Trail Issue 回读不完整。")
         changes = await asyncio.to_thread(
             build_trail_changes,
             preview.get("items", []),
             current_rows=sync_result.rows,
             result_field=result_field,
             info_field=info_field,
+            write_result_field=False,
         )
         changes = attach_trail_operation_id(
             changes,
@@ -736,7 +808,7 @@ async def trail_attribute_update_commit(request: Request) -> dict[str, Any]:
         readback = await _readback_changes(
             changes,
             stats,
-            result_field=result_field,
+            result_field="",
             info_field=info_field,
         )
     return {
@@ -753,7 +825,9 @@ async def trail_attribute_update_commit(request: Request) -> dict[str, Any]:
             "source": identity.source,
             "verified": identity.verified,
         },
-        "target_fields": [result_field, info_field],
+        "write_mode": "info_only",
+        "model_result_field": result_field,
+        "target_fields": [info_field],
         "stats": stats,
         "readback": readback,
     }

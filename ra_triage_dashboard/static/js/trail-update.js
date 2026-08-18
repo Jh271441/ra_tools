@@ -142,10 +142,9 @@ function setTrailAttributeCapability(data = null) {
   const message = $("#trailUpdateCapabilityMessage");
   const fields = $("#trailUpdateVisibleFields");
   const commitButton = $("#trailUpdateCommitButton");
-  const resultField = directMode
-    ? data?.model_result_field || "ra_stuck_auto_result"
-    : data?.target_fields?.[0] || "ra_stuck_auto_result";
-  const infoField = directMode
+  const infoOnly = data?.write_mode === "info_only";
+  const resultField = data?.model_result_field || data?.target_fields?.[0] || "ra_stuck_auto_result";
+  const infoField = directMode || infoOnly
     ? data?.target_field || data?.target_fields?.[0] || "ra_stuck_auto_result_info"
     : data?.target_fields?.[1] || "ra_stuck_auto_result_info";
   if (panel) panel.dataset.status = status;
@@ -154,7 +153,14 @@ function setTrailAttributeCapability(data = null) {
     !hasPreview ? "Preview not generated" : status === "ready" ? "Ready to commit to Trail" : status === "missing_fields" ? "The current view is not safe to write" : status === "disabled" ? "Preview only in this environment" : "Trail field capability is not confirmed"
   );
   if (message) {
-    const capabilityMessage = capability.message || uiText("选择 Run 后生成预览，页面会检查 2410 view 是否同时暴露两个目标字段。", "Choose a Run and build a preview to check whether view 2410 exposes both target fields.");
+    const capabilityMessage = capability.message || uiText(
+      infoOnly || directMode
+        ? "生成预览后检查 2410 view 的 info 字段；提交只会 deep_merge info，不改模型 label。"
+        : "选择 Run 后生成预览，页面会检查 2410 view 是否同时暴露两个目标字段。",
+      infoOnly || directMode
+        ? "Build a preview to check the info field in view 2410; commit deep-merges info only and leaves the model label unchanged."
+        : "Choose a Run and build a preview to check whether view 2410 exposes both target fields."
+    );
     message.textContent = status === "disabled"
       ? uiText(`当前环境只允许预览；${capabilityMessage}`, `This environment is preview-only; ${capabilityMessage}`)
       : capabilityMessage;
@@ -164,9 +170,13 @@ function setTrailAttributeCapability(data = null) {
     fields.textContent = uiText(
       directMode
         ? `目标：仅更新 ${infoField} 的 Dashboard 排除标记；当前 view 可见：${visible.join(", ") || "无"}`
+        : infoOnly
+          ? `目标：仅 deep_merge ${infoField}，不改 ${resultField}；当前 view 可见：${visible.join(", ") || "无"}`
         : `目标：${resultField} + ${infoField}；当前 view 可见：${visible.join(", ") || "无"}`,
       directMode
         ? `Target: Dashboard exclusion marker in ${infoField}; visible in view: ${visible.join(", ") || "none"}`
+        : infoOnly
+          ? `Target: deep-merge ${infoField} only; ${resultField} remains unchanged; visible in view: ${visible.join(", ") || "none"}`
         : `Target: ${resultField} + ${infoField}; visible in view: ${visible.join(", ") || "none"}`
     );
   }
@@ -241,8 +251,8 @@ function renderTrailAttributePreview(data) {
   setTrailAttributeCapability(data);
   $("#trailUpdateCount").textContent = String(items.length);
   $("#trailUpdateRunSummary").textContent = run.name || run.id || uiText("全部 Model Runs", "All model Runs");
-  $("#trailUpdateResultField").textContent = data?.target_fields?.[0] || "ra_stuck_auto_result";
-  $("#trailUpdateInfoField").textContent = data?.target_fields?.[1] || "ra_stuck_auto_result_info";
+  $("#trailUpdateResultField").textContent = data?.model_result_field || data?.target_fields?.[0] || "ra_stuck_auto_result";
+  $("#trailUpdateInfoField").textContent = data?.target_field || (data?.write_mode === "info_only" ? data?.target_fields?.[0] : data?.target_fields?.[1]) || "ra_stuck_auto_result_info";
   const digestElement = $("#trailUpdateDigest");
   if (digestElement) {
     digestElement.textContent = digest ? `${digest.slice(0, 12)}…` : "—";
@@ -272,7 +282,7 @@ function renderTrailAttributePreview(data) {
       <td><div class="trail-update-reason">${escapeHtml(model.reason || "模型未返回 reason")}</div><small>${escapeHtml(formatModelConfidence(model.confidence))} confidence</small></td>
       <td><div>${escapeHtml(review.reviewer || "未记录")}</div><small>${escapeHtml(review.status || "pending")} · ${escapeHtml(formatTime(review.reviewed_at))}</small></td>
       <td><div class="trail-update-comment">${escapeHtml(comment || "未填写")}</div><small>${comment ? uiText("提交时将追加到 Trail Comment", "Added to Trail Comment on commit") : uiText("不会写入 Comment", "No Comment will be written")}</small></td>
-      <td><strong>${escapeHtml(data?.target_fields?.[0] || "ra_stuck_auto_result")}</strong><small>+ ${escapeHtml(data?.target_fields?.[1] || "ra_stuck_auto_result_info")}</small><code>${escapeHtml(patchPath)}</code></td>
+      <td><strong>${escapeHtml(data?.target_field || (data?.write_mode === "info_only" ? data?.target_fields?.[0] : data?.target_fields?.[1]) || "ra_stuck_auto_result_info")}</strong><small>${data?.write_mode === "info_only" ? uiText("仅 deep_merge，不改 label", "deep-merge only; label unchanged") : `+ ${escapeHtml(data?.target_fields?.[1] || "ra_stuck_auto_result_info")}`}</small><code>${escapeHtml(patchPath)}</code></td>
     </tr>`;
   }).join("");
 }
