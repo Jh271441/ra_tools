@@ -23,6 +23,7 @@ from fastapi import APIRouter, Request
 
 from ..auth import has_same_origin_mutation_marker, identity_can_write, request_identity
 from ..contracts import ISSUE_ID_RE
+from ..db import REVIEW_STATUSES
 from ..http_support import (
     _as_text,
     _detail,
@@ -115,9 +116,11 @@ def _mark_local_review_exclusions(
             expected_output = normalise_model_label(
                 current.get("expected_output") or current.get("label")
             )
-            review_status = derive_review_status(
-                expected_output,
-                case.get("gt_label"),
+            current_review_status = _as_text(current.get("review_status"))
+            review_status = (
+                current_review_status
+                if current_review_status in REVIEW_STATUSES
+                else derive_review_status(expected_output, case.get("gt_label"))
             )
             previous_id = current.get("id")
             if previous_id not in (None, "", 0, "0"):
