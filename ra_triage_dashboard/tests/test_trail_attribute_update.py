@@ -193,8 +193,10 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         item = payload["items"][0]
         self.assertEqual(item["issue_id"], "cn00000002")
         self.assertEqual(item["target"]["merge_strategy"], "deep_merge")
-        self.assertTrue(item["target"]["patch"]["ra_triage_dashboard"]["should_exclude"])
-        self.assertEqual(item["target"]["patch"]["ra_triage_dashboard"]["model_run_id"], "run-1")
+        self.assertEqual(
+            item["target"]["patch"],
+            {"ra_triage_dashboard": {"should_exclude": True}},
+        )
         self.assertEqual(item["field_updates"][TRAIL_RESULT_FIELD], "误触发")
         self.assertEqual(item["field_updates"][TRAIL_INFO_FIELD], item["target"]["patch"])
         self.assertEqual(payload["draft"]["payload_sha256"], payload["payload_sha256"])
@@ -248,6 +250,25 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         self.assertEqual(payload["target_fields"], [TRAIL_INFO_FIELD])
         self.assertTrue(payload["write_ready"])
         self.assertEqual(payload["items"][0]["field_updates"], {TRAIL_INFO_FIELD: payload["items"][0]["target"]["patch"]})
+
+    def test_info_only_review_preview_allows_missing_model_label(self) -> None:
+        payload = build_trail_attribute_update_payload(
+            [
+                {
+                    "issue_id": "cn00000003",
+                    "annotation": {"id": 3, "is_excluded": True},
+                    "prediction": {"model_run_id": "run-1"},
+                }
+            ],
+            run={"id": "run-1"},
+            baseline_ids=["0508"],
+            baseline_scopes=["scope"],
+            trail_capability={"ready": True, "status": "ready", "fields_visible": [TRAIL_INFO_FIELD]},
+            trail_write_enabled=True,
+            write_mode="info_only",
+        )
+        self.assertTrue(payload["write_ready"])
+        self.assertEqual(payload["invalid_label_issue_ids"], [])
 
     def test_direct_issue_preview_only_targets_info_field_and_reports_missing(self) -> None:
         payload = build_trail_issue_exclusion_payload(

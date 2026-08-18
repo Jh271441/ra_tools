@@ -39,7 +39,7 @@ class TrailWriterTest(unittest.TestCase):
         self.assertTrue(info["ra_triage_dashboard"]["should_exclude"])
         self.assertEqual(info["model_result"]["label"], "误触发")
 
-    def test_build_changes_info_only_preserves_top_level_model_label(self) -> None:
+    def test_build_changes_info_only_preserves_top_level_model_label_and_marker_only(self) -> None:
         changes = build_trail_changes(
             [
                 {
@@ -59,7 +59,30 @@ class TrailWriterTest(unittest.TestCase):
         )
         self.assertNotIn("ra_stuck_auto_result", changes[0])
         self.assertEqual(changes[0]["ra_stuck_auto_result_info"]["keep"], 1)
-        self.assertEqual(changes[0]["ra_stuck_auto_result_info"]["model_result"]["label"], "误触发")
+        self.assertEqual(
+            changes[0]["ra_stuck_auto_result_info"]["ra_triage_dashboard"],
+            {"should_exclude": True},
+        )
+        self.assertNotIn("model_result", changes[0]["ra_stuck_auto_result_info"])
+
+    def test_build_changes_info_only_does_not_require_model_label(self) -> None:
+        changes = build_trail_changes(
+            [
+                {
+                    "issue_id": "cn00000001",
+                    "model": {},
+                    "target": {"patch": {"ra_triage_dashboard": {"should_exclude": True}}},
+                }
+            ],
+            current_rows=[],
+            result_field="ra_stuck_auto_result",
+            info_field="ra_stuck_auto_result_info",
+            write_result_field=False,
+        )
+        self.assertEqual(
+            changes,
+            [{"issue_id": "cn00000001", "ra_stuck_auto_result_info": {"ra_triage_dashboard": {"should_exclude": True}}}],
+        )
 
     def test_writer_chunks_and_protects_caller_objects_from_mutating_client(self) -> None:
         original = [{"issue_id": f"cn{i:08d}", "ra_stuck_auto_result": "误触发"} for i in range(3)]

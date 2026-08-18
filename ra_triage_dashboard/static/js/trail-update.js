@@ -120,6 +120,30 @@ function setTrailAttributeStatus(message = "") {
   status.textContent = message;
 }
 
+function setTrailAttributeLoading(loading = false) {
+  const active = Boolean(loading);
+  state.trailUpdate.loading = active;
+  const page = $("#trailAttributeUpdatePage");
+  page?.classList.toggle("is-loading", active);
+  [
+    "#trailUpdateDownloadButton",
+    "#trailUpdateCopyButton",
+    "#trailUpdateCommitButton",
+  ].forEach((selector) => {
+    const button = $(selector);
+    if (!button) return;
+    button.toggleAttribute("aria-busy", active);
+    if (active) button.disabled = true;
+  });
+}
+
+function syncTrailAttributeActions(data = state.trailUpdate?.data) {
+  const loading = Boolean(state.trailUpdate?.loading);
+  $("#trailUpdateDownloadButton")?.toggleAttribute("disabled", loading || !data?.draft);
+  $("#trailUpdateCopyButton")?.toggleAttribute("disabled", loading || !data?.draft);
+  $("#trailUpdateCommitButton")?.toggleAttribute("disabled", loading || data?.write_status !== "ready");
+}
+
 function setTrailAttributeUpdatePreviewVisible(visible) {
   const page = $("#trailAttributeUpdatePage");
   const results = $("#trailUpdateResults");
@@ -207,9 +231,8 @@ function clearTrailAttributePreview(message = "") {
   const digestElement = $("#trailUpdateDigest");
   if (digestElement) digestElement.textContent = "—";
   $("#trailUpdateTableSummary").textContent = "—";
-  $("#trailUpdateDownloadButton")?.toggleAttribute("disabled", true);
-  $("#trailUpdateCopyButton")?.toggleAttribute("disabled", true);
-  $("#trailUpdateCommitButton")?.toggleAttribute("disabled", true);
+  setTrailAttributeLoading(false);
+  syncTrailAttributeActions(null);
   setTrailAttributeStatus(message);
   const body = $("#trailUpdateTableBody");
   if (body) {
@@ -302,19 +325,20 @@ async function loadTrailAttributePreview(force = false) {
     state.trailUpdate.previewKey === previewKey &&
     Date.now() - Number(state.trailUpdate.previewLoadedAt || 0) < 60000
   ) {
+    setTrailAttributeLoading(false);
     renderTrailAttributePreview(cachedData);
+    syncTrailAttributeActions(cachedData);
     return cachedData;
   }
   const requestSeq = ++state.trailUpdate.requestSeq;
+  setTrailAttributeLoading(true);
   const applyPreview = (data, { loaded = false } = {}) => {
     if (requestSeq !== state.trailUpdate.requestSeq) return false;
     state.trailUpdate.data = data;
     state.trailUpdate.previewKey = previewKey;
     state.trailUpdate.previewLoadedAt = loaded ? Date.now() : 0;
     renderTrailAttributePreview(data);
-    $("#trailUpdateDownloadButton")?.toggleAttribute("disabled", !data?.draft);
-    $("#trailUpdateCopyButton")?.toggleAttribute("disabled", !data?.draft);
-    $("#trailUpdateCommitButton")?.toggleAttribute("disabled", data?.write_status !== "ready");
+    syncTrailAttributeActions(data);
     if (typeof pageUrl === "function") {
       history.replaceState({ page: "trail-update" }, "", pageUrl("trail-update", { runId }));
     }
@@ -328,6 +352,7 @@ async function loadTrailAttributePreview(force = false) {
     if (requestSeq !== state.trailUpdate.requestSeq) return data;
     applyPreview(data);
     if (!data?.capability_pending) {
+      setTrailAttributeLoading(false);
       applyPreview(data, { loaded: true });
       return data;
     }
@@ -338,10 +363,13 @@ async function loadTrailAttributePreview(force = false) {
     try {
       const checked = await api(trailUpdateEndpoint(runId, true));
       if (requestSeq !== state.trailUpdate.requestSeq) return checked;
+      setTrailAttributeLoading(false);
       applyPreview(checked, { loaded: true });
       return checked;
     } catch (error) {
       if (requestSeq === state.trailUpdate.requestSeq) {
+        setTrailAttributeLoading(false);
+        syncTrailAttributeActions(data);
         setTrailAttributeStatus(uiText(
           "排除案例已加载，但 Trail 字段检查失败；可稍后刷新重试。",
           "Excluded cases loaded, but the Trail field check failed; refresh to retry."
@@ -351,6 +379,8 @@ async function loadTrailAttributePreview(force = false) {
     }
   } catch (error) {
     if (requestSeq === state.trailUpdate.requestSeq) {
+      setTrailAttributeLoading(false);
+      syncTrailAttributeActions(null);
       setTrailAttributeStatus(uiText("排除案例加载失败，请稍后重试。", "Could not load excluded cases. Try again later."));
     }
     throw error;

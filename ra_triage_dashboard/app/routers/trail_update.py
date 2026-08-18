@@ -32,7 +32,6 @@ from ..http_support import (
 from ..runtime import database, settings
 from ..trail_sync import read_trail_comment_markers, read_trail_model_fields
 from ..trail_writer import (
-    attach_trail_operation_id,
     build_manual_exclusion_changes,
     build_trail_changes,
     decorate_trail_comments,
@@ -224,21 +223,12 @@ def build_trail_attribute_update_payload(
             or _as_text(annotation.get("model_run_id"))
             or run_id
         )
-        if not label:
+        if not label and not info_only:
             invalid_labels.append(issue_id)
-        patch = {
-            "ra_triage_dashboard": {
-                "schema_version": 2,
-                "should_exclude": True,
-                "model_run_id": source_run_id,
-                "review_id": review_id,
-                "reviewer": _as_text(annotation.get("author")),
-                "reviewed_at": _as_text(annotation.get("created_at")),
-                "model_label": label or raw_label,
-                "model_reason": _as_text(prediction.get("reason")),
-                "model_confidence": prediction.get("confidence"),
-            }
-        }
+        # Trail only needs this one Dashboard-owned marker.  Review/run
+        # provenance remains in the deterministic draft and Comment; keeping
+        # it out of the info field avoids mixing in model metadata.
+        patch = {"ra_triage_dashboard": {"should_exclude": True}}
         items.append(
             {
                 "issue_id": issue_id,
@@ -817,11 +807,6 @@ async def trail_attribute_update_commit(request: Request) -> dict[str, Any]:
             info_field=info_field,
             write_result_field=False,
         )
-        changes = attach_trail_operation_id(
-            changes,
-            operation_id=submitted_digest,
-            info_field=info_field,
-        )
         changes = decorate_trail_comments(changes, operation_id=submitted_digest)
         comment_issue_ids = [
             str(item.get("issue_id") or "").strip()
@@ -917,11 +902,6 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
             current_rows=sync_result.rows,
             info_field=info_field,
             comment=comment,
-        )
-        changes = attach_trail_operation_id(
-            changes,
-            operation_id=submitted_digest,
-            info_field=info_field,
         )
         changes = decorate_trail_comments(changes, operation_id=submitted_digest)
         comment_issue_ids = [

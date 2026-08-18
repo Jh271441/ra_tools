@@ -631,6 +631,7 @@ const state = {
     data: null,
     previewKey: "",
     previewLoadedAt: 0,
+    loading: false,
     directRequestSeq: 0,
     directData: null,
   },

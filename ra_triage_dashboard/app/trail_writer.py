@@ -188,8 +188,9 @@ def build_trail_changes(
 
     The current info field is read from the same Trail view before commit and
     deep-merged with the Dashboard namespace.  Missing/invalid labels fail
-    the whole operation before the first network request, preventing a
-    partially valid batch from being written.
+    the whole operation before the first network request only when the model
+    result field is also being written; info-only updates do not depend on a
+    label value.
     """
 
     current_by_issue = {
@@ -204,20 +205,22 @@ def build_trail_changes(
         label = normalise_model_label(model.get("label"))
         if not issue_id:
             raise ValueError("Trail 更新项缺少 issue_id。")
-        if not label:
+        if write_result_field and not label:
             raise ValueError(f"{issue_id} 的模型 label 不是三分类值，已停止提交。")
         target = item.get("target") if isinstance(item.get("target"), dict) else {}
         patch = target.get("patch") if isinstance(target.get("patch"), dict) else {}
         current = current_by_issue.get(issue_id) or {}
         current_info = _json_object(current.get(info_field))
         merged_info = deep_merge_dict(current_info, patch)
-        # The JSON field is also useful outside the Dashboard namespace: keep
-        # the model output in a stable, explicit object for Trail consumers.
-        merged_info["model_result"] = {
-            "label": label,
-            "reason": str(model.get("reason") or "").strip(),
-            "confidence": model.get("confidence"),
-        }
+        # The info-only workflow writes only the Dashboard-owned exclusion
+        # marker. Keep the legacy model_result object only for callers that
+        # explicitly write the model result field as well.
+        if write_result_field:
+            merged_info["model_result"] = {
+                "label": label,
+                "reason": str(model.get("reason") or "").strip(),
+                "confidence": model.get("confidence"),
+            }
         review = item.get("review") if isinstance(item.get("review"), dict) else {}
         comment_text = str(item.get("comment") or review.get("note") or "").strip()[:4000]
         change = {
@@ -264,13 +267,7 @@ def build_manual_exclusion_changes(
             continue
         current = current_by_issue.get(issue_id) or {}
         current_info = _json_object(current.get(info_field))
-        patch = {
-            "ra_triage_dashboard": {
-                "schema_version": 2,
-                "should_exclude": True,
-                "source": "manual_issue_ids",
-            }
-        }
+        patch = {"ra_triage_dashboard": {"should_exclude": True}}
         merged_info = deep_merge_dict(current_info, patch)
         change: dict[str, Any] = {
             "issue_id": issue_id,

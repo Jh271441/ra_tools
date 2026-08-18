@@ -1933,7 +1933,9 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-run-hint { margin-top: 1px; color: #f6d58a; font-size: 10px; font-weight: 500; line-height: 1.4; }
 .trail-update-control-grid select:disabled { cursor: not-allowed; opacity: .72; }
 .trail-update-actions { min-width: 0; display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
-.trail-update-actions .button { min-width: 0; height: 36px; padding-inline: 10px; font-size: 11px; }
+.trail-update-actions .button { min-width: 116px; height: 36px; padding-inline: 10px; font-size: 11px; }
+.trail-update-actions .button:disabled { opacity: .72; }
+.trail-update-page.is-loading .trail-update-actions .button:disabled { cursor: wait; }
 .trail-update-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .trail-update-review-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .trail-update-target-value { overflow: hidden; font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px !important; text-overflow: ellipsis; white-space: nowrap; }
