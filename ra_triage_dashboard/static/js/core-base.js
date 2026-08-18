@@ -634,6 +634,7 @@ const state = {
     loading: false,
     directRequestSeq: 0,
     directData: null,
+    progress: null,
   },
   selectedAnnotationLabel: "",
   pollingBatchId: "",

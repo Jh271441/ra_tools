@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-203`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-204`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -1189,6 +1189,32 @@
       </div>
     </dialog>
 
+    <dialog class="dialog trail-update-progress-dialog" id="trailUpdateProgressDialog" aria-labelledby="trailUpdateProgressTitle">
+      <div class="dialog-card">
+        <div class="dialog-heading">
+          <div>
+            <span class="eyebrow">TRAIL WRITE PROGRESS</span>
+            <h2 id="trailUpdateProgressTitle"><span class="ui-lang-zh">正在提交到 Trail</span><span class="ui-lang-en">Submitting to Trail</span></h2>
+            <p class="dialog-copy"><span class="ui-lang-zh">服务端会分批写入并统一回读；提交期间请不要重复点击。</span><span class="ui-lang-en">The server writes in batches and reads back once; do not submit again while it is running.</span></p>
+          </div>
+          <strong class="trail-update-progress-count" id="trailUpdateProgressCount"></strong>
+        </div>
+        <div class="trail-update-progress-summary">
+          <span class="trail-update-progress-spinner" aria-hidden="true"></span>
+          <div><strong id="trailUpdateProgressMessage" role="status" aria-live="polite"><span class="ui-lang-zh">准备提交…</span><span class="ui-lang-en">Preparing commit…</span></strong><small id="trailUpdateProgressElapsed">0s</small></div>
+        </div>
+        <div class="trail-update-progress-track" role="progressbar" aria-label="Trail write progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="10"><span id="trailUpdateProgressBar"></span></div>
+        <ol class="trail-update-progress-steps" aria-label="Trail write stages">
+          <li data-trail-progress-stage="prepare" class="is-active"><span class="trail-update-progress-step-dot">1</span><div><strong><span class="ui-lang-zh">校验预览</span><span class="ui-lang-en">Validate preview</span></strong><small><span class="ui-lang-zh">确认本次写入内容未变化</span><span class="ui-lang-en">Confirm the draft is unchanged</span></small></div></li>
+          <li data-trail-progress-stage="request" class="is-pending"><span class="trail-update-progress-step-dot">2</span><div><strong><span class="ui-lang-zh">连接 Trail 接口</span><span class="ui-lang-en">Connect to Trail</span></strong><small><span class="ui-lang-zh">发起一次受控提交</span><span class="ui-lang-en">Start the guarded commit</span></small></div></li>
+          <li data-trail-progress-stage="write" class="is-pending"><span class="trail-update-progress-step-dot">3</span><div><strong><span class="ui-lang-zh">分批写入字段与 Comment</span><span class="ui-lang-en">Write fields and Comments in batches</span></strong><small><span class="ui-lang-zh">完成后返回分批统计</span><span class="ui-lang-en">Return batch statistics when done</span></small></div></li>
+          <li data-trail-progress-stage="readback" class="is-pending"><span class="trail-update-progress-step-dot">4</span><div><strong><span class="ui-lang-zh">批量回读并校验</span><span class="ui-lang-en">Read back and verify</span></strong><small><span class="ui-lang-zh">确认每个成功项已写入</span><span class="ui-lang-en">Verify every successful item</span></small></div></li>
+          <li data-trail-progress-stage="done" class="is-pending"><span class="trail-update-progress-step-dot">5</span><div><strong><span class="ui-lang-zh">完成</span><span class="ui-lang-en">Complete</span></strong><small><span class="ui-lang-zh">展示字段、Comment 和回读结果</span><span class="ui-lang-en">Show field, Comment, and readback results</span></small></div></li>
+        </ol>
+        <div class="dialog-actions trail-update-progress-actions"><button class="button button-quiet" id="trailUpdateProgressClose" type="button" hidden><span class="ui-lang-zh">关闭</span><span class="ui-lang-en">Close</span></button></div>
+      </div>
+    </dialog>
+
     <dialog class="dialog dialog-wide trail-update-json-dialog" id="trailUpdateJsonDialog" aria-labelledby="trailUpdateJsonTitle">
       <div class="dialog-card">
         <div class="dialog-heading">
@@ -1214,7 +1240,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-203`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-204`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

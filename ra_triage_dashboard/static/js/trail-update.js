@@ -582,21 +582,138 @@ async function copyTrailUpdateJson() {
   showToast(uiText("已复制 JSON。", "JSON copied."));
 }
 
-function trailInfoPreviewJson(value) {
-  if (!value || typeof value !== "object") return "{}";
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch (_error) {
-    return "{}";
+let trailUpdateProgressTimer = null;
+let trailUpdateProgressCloseTimer = null;
+
+const TRAIL_UPDATE_PROGRESS_STAGES = [
+  { key: "prepare", zh: "校验预览", en: "Validate preview" },
+  { key: "request", zh: "连接 Trail 接口", en: "Connect to Trail" },
+  { key: "write", zh: "分批写入字段与 Comment", en: "Write fields and Comments in batches" },
+  { key: "readback", zh: "批量回读并校验", en: "Read back and verify" },
+  { key: "done", zh: "完成", en: "Complete" },
+];
+
+function trailUpdateProgressStageIndex(key) {
+  const index = TRAIL_UPDATE_PROGRESS_STAGES.findIndex((item) => item.key === key);
+  return index >= 0 ? index : 0;
+}
+
+function trailUpdateProgressSetStage(key, detail = "") {
+  const index = trailUpdateProgressStageIndex(key);
+  const progress = state.trailUpdate?.progress;
+  if (progress) {
+    progress.stage = key;
+    progress.stageIndex = index;
+    progress.detail = detail;
+  }
+  const dialog = $("#trailUpdateProgressDialog");
+  if (!dialog) return;
+  dialog.dataset.stage = key;
+  const bar = $("#trailUpdateProgressBar");
+  if (bar) {
+    const percent = key === "done" ? 100 : Math.max(10, Math.round((index / (TRAIL_UPDATE_PROGRESS_STAGES.length - 1)) * 86));
+    bar.style.width = `${percent}%`;
+    bar.parentElement?.setAttribute("aria-valuenow", String(percent));
+  }
+  dialog.querySelectorAll("[data-trail-progress-stage]").forEach((node, nodeIndex) => {
+    const active = nodeIndex === index;
+    const complete = nodeIndex < index || key === "done";
+    node.classList.toggle("is-active", active && key !== "done");
+    node.classList.toggle("is-complete", complete);
+    node.classList.toggle("is-pending", !active && !complete);
+    node.setAttribute("aria-current", active ? "step" : "false");
+  });
+  const title = $("#trailUpdateProgressTitle");
+  const message = $("#trailUpdateProgressMessage");
+  if (title) title.textContent = key === "done"
+    ? uiText("Trail 更新完成", "Trail update complete")
+    : uiText("正在提交到 Trail", "Submitting to Trail");
+  if (message) {
+    message.textContent = detail || (key === "request"
+      ? uiText("服务端正在分批写入；完成后会统一回读，请不要重复提交。", "The server is writing in batches; it will read back once complete. Do not submit again.")
+      : uiText(TRAIL_UPDATE_PROGRESS_STAGES[index]?.zh || "正在处理…", TRAIL_UPDATE_PROGRESS_STAGES[index]?.en || "Working…"));
   }
 }
 
-function trailInfoPreviewText(item) {
-  const update = item?.field_update || {};
-  const after = update.after && typeof update.after === "object"
-    ? update.after
-    : (update.patch || item?.target?.patch || {});
-  return trailInfoPreviewJson(after);
+function trailUpdateProgressElapsed() {
+  const elapsed = $("#trailUpdateProgressElapsed");
+  const startedAt = Number(state.trailUpdate?.progress?.startedAt || 0);
+  if (!elapsed || !startedAt) return;
+  const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+  elapsed.textContent = uiText(`已用时 ${seconds}s`, `${seconds}s elapsed`);
+}
+
+function openTrailUpdateProgress({ mode = "review", total = 0 } = {}) {
+  const dialog = $("#trailUpdateProgressDialog");
+  if (!dialog || typeof dialog.showModal !== "function") return;
+  window.clearInterval(trailUpdateProgressTimer);
+  window.clearTimeout(trailUpdateProgressCloseTimer);
+  state.trailUpdate.progress = {
+    active: true,
+    mode,
+    total: Number(total || 0),
+    startedAt: Date.now(),
+    stage: "prepare",
+    stageIndex: 0,
+  };
+  dialog.dataset.mode = mode;
+  dialog.dataset.running = "true";
+  const count = $("#trailUpdateProgressCount");
+  if (count) count.textContent = total ? uiText(`${total} 个 Issue`, `${total} Issues`) : "";
+  const close = $("#trailUpdateProgressClose");
+  if (close) close.hidden = true;
+  const bar = $("#trailUpdateProgressBar");
+  if (bar) bar.style.width = "10%";
+  const track = bar?.parentElement;
+  track?.classList.add("is-running");
+  trailUpdateProgressSetStage("prepare", uiText("已确认预览指纹，准备提交。", "Preview fingerprint confirmed; preparing commit."));
+  trailUpdateProgressTimer = window.setInterval(trailUpdateProgressElapsed, 500);
+  trailUpdateProgressElapsed();
+  if (!dialog.open) dialog.showModal();
+}
+
+function finishTrailUpdateProgress({ ok = false, message = "" } = {}) {
+  const dialog = $("#trailUpdateProgressDialog");
+  const progress = state.trailUpdate?.progress;
+  if (progress) {
+    progress.active = false;
+    progress.finishedAt = Date.now();
+    progress.ok = Boolean(ok);
+  }
+  window.clearInterval(trailUpdateProgressTimer);
+  trailUpdateProgressTimer = null;
+  const bar = $("#trailUpdateProgressBar");
+  bar?.parentElement?.classList.remove("is-running");
+  if (bar) {
+    bar.style.width = ok ? "100%" : "34%";
+    bar.parentElement?.setAttribute("aria-valuenow", ok ? "100" : "34");
+  }
+  if (dialog) {
+    dialog.dataset.running = "false";
+    dialog.dataset.result = ok ? "success" : "error";
+    trailUpdateProgressSetStage(ok ? "done" : "request", message || (ok
+      ? uiText("字段和回读结果已返回。", "Field and readback results are ready.")
+      : uiText("提交失败，请关闭弹窗查看错误信息。", "The commit failed; close this dialog to inspect the error.")));
+    const title = $("#trailUpdateProgressTitle");
+    if (title && !ok) title.textContent = uiText("Trail 更新失败", "Trail update failed");
+    const close = $("#trailUpdateProgressClose");
+    if (close) close.hidden = false;
+    if (ok) {
+      trailUpdateProgressCloseTimer = window.setTimeout(() => {
+        if (dialog.open) dialog.close();
+      }, 900);
+    }
+  }
+}
+
+function closeTrailUpdateProgress() {
+  window.clearInterval(trailUpdateProgressTimer);
+  window.clearTimeout(trailUpdateProgressCloseTimer);
+  trailUpdateProgressTimer = null;
+  trailUpdateProgressCloseTimer = null;
+  const dialog = $("#trailUpdateProgressDialog");
+  if (dialog?.open) dialog.close();
+  if (state.trailUpdate?.progress) state.trailUpdate.progress.active = false;
 }
 
 let trailUpdateConfirmResolver = null;
@@ -763,12 +880,12 @@ function renderTrailIssuePreview(data) {
     const currentState = item.current_should_exclude
       ? uiText("已屏蔽", "Shielded")
       : uiText("未屏蔽", "Not shielded");
-    const expectedInfo = trailInfoPreviewText(item);
+    const shortPath = patchPath.split(".").filter(Boolean).pop() || patchPath;
     return `<tr>
       <td><strong class="trail-update-issue">${escapeHtml(item.issue_id || "—")}</strong></td>
       <td>${labelBadge(item.current_label, "未输出")}</td>
       <td><span class="trail-update-state-badge ${item.current_should_exclude ? "is-on" : ""}">${escapeHtml(currentState)}</span></td>
-      <td class="trail-update-info-cell"><strong>${escapeHtml(targetSpec.fullPath)}</strong><small>deep_merge · ${uiText("写入后 info（不改 label）", "info after write (label unchanged)")}</small><code>${escapeHtml(patchPath)} = true</code><pre class="trail-update-json-preview">${escapeHtml(expectedInfo)}</pre></td>
+      <td class="trail-update-info-cell"><strong title="${escapeHtml(targetSpec.fullPath)}">${escapeHtml(shortPath)}</strong><small>${uiText("info-only · label 不变", "info-only · label unchanged")}</small><code>${escapeHtml(shortPath)} = true</code></td>
       <td><div class="trail-update-comment">${escapeHtml(item.comment || "未填写")}</div><small>${item.comment ? uiText("将追加到 Trail Comment", "Added to Trail Comment") : uiText("不会写入 Comment", "No Comment")}</small></td>
     </tr>`;
   }).join("");
@@ -816,6 +933,8 @@ async function commitTrailIssueExclusion() {
   const button = $("#trailUpdateIssueCommitButton");
   button?.toggleAttribute("disabled", true);
   setTrailIssueStatus(uiText("正在写入 Trail 字段和 Comment…", "Writing Trail fields and Comments…"));
+  openTrailUpdateProgress({ mode: "issue", total: ids.length });
+  trailUpdateProgressSetStage("request");
   try {
     const result = await api("/api/trail-attribute-update/issue-commit", {
       method: "POST",
@@ -832,6 +951,11 @@ async function commitTrailIssueExclusion() {
       `回读 ${readback.verified_count || 0}/${readback.checked_count || 0}`,
       `read back ${readback.verified_count || 0}/${readback.checked_count || 0}`
     );
+    const progressMessage = uiText(
+      `字段 ${stats.success_count || 0}/${stats.total || ids.length}，Comment ${stats.comment_success_count || 0}/${stats.comment_total || 0}；${readbackText}。`,
+      `Fields ${stats.success_count || 0}/${stats.total || ids.length}; Comments ${stats.comment_success_count || 0}/${stats.comment_total || 0}; ${readbackText}.`
+    );
+    finishTrailUpdateProgress({ ok: Boolean(result?.ok), message: progressMessage });
     setTrailIssueStatus(uiText(
       `屏蔽完成：字段成功 ${stats.success_count || 0}，字段失败 ${stats.failed_count || 0}；Comment 成功 ${stats.comment_success_count || 0}，失败 ${stats.comment_failed_count || 0}，跳过 ${stats.comment_skipped_count || 0}；${readbackText}。`,
       `Shield finished: fields ${stats.success_count || 0} succeeded / ${stats.failed_count || 0} failed; Comments ${stats.comment_success_count || 0} succeeded / ${stats.comment_failed_count || 0} failed / ${stats.comment_skipped_count || 0} skipped; ${readbackText}.`
@@ -843,6 +967,7 @@ async function commitTrailIssueExclusion() {
       !result?.ok
     );
   } catch (error) {
+    finishTrailUpdateProgress({ ok: false, message: error?.message || uiText("屏蔽失败，请稍后重试。", "Shielding failed; try again later.") });
     setTrailIssueStatus(error?.message || uiText("Issue 屏蔽失败。", "Issue shielding failed."));
     showToast(error?.message || uiText("Issue 屏蔽失败。", "Issue shielding failed."), true);
   } finally {
@@ -857,6 +982,8 @@ async function commitTrailAttributeUpdate() {
   const button = $("#trailUpdateCommitButton");
   button?.toggleAttribute("disabled", true);
   setTrailAttributeStatus(uiText("正在提交 Trail 属性…", "Committing Trail attributes…"));
+  openTrailUpdateProgress({ mode: "review", total: Number(data?.count || data?.items?.length || 0) });
+  trailUpdateProgressSetStage("request");
   try {
     const result = await api("/api/trail-attribute-update/commit", {
       method: "POST",
@@ -873,6 +1000,11 @@ async function commitTrailAttributeUpdate() {
       `回读 ${readback.verified_count || 0}/${readback.checked_count || 0}`,
       `read back ${readback.verified_count || 0}/${readback.checked_count || 0}`
     );
+    const progressMessage = uiText(
+      `字段 ${stats.success_count || 0}/${stats.total || data?.items?.length || 0}，Comment ${stats.comment_success_count || 0}/${stats.comment_total || 0}；${readbackText}。`,
+      `Fields ${stats.success_count || 0}/${stats.total || data?.items?.length || 0}; Comments ${stats.comment_success_count || 0}/${stats.comment_total || 0}; ${readbackText}.`
+    );
+    finishTrailUpdateProgress({ ok: Boolean(result?.ok), message: progressMessage });
     setTrailAttributeStatus(uiText(
       `Trail 更新完成：字段成功 ${stats.success_count || 0}，字段失败 ${stats.failed_count || 0}；Comment 成功 ${stats.comment_success_count || 0}，失败 ${stats.comment_failed_count || 0}，跳过 ${stats.comment_skipped_count || 0}；${readbackText}。`,
       `Trail update finished: fields ${stats.success_count || 0} succeeded / ${stats.failed_count || 0} failed; Comments ${stats.comment_success_count || 0} succeeded / ${stats.comment_failed_count || 0} failed / ${stats.comment_skipped_count || 0} skipped; ${readbackText}.`
@@ -884,6 +1016,7 @@ async function commitTrailAttributeUpdate() {
       !result?.ok
     );
   } catch (error) {
+    finishTrailUpdateProgress({ ok: false, message: error?.message || uiText("提交失败，请稍后重试。", "Commit failed; try again later.") });
     setTrailAttributeStatus(error?.message || uiText("Trail 更新失败。", "Trail update failed."));
     showToast(error?.message || uiText("Trail 更新失败。", "Trail update failed."), true);
   } finally {
@@ -892,6 +1025,22 @@ async function commitTrailAttributeUpdate() {
 }
 
 function bindTrailAttributeUpdateEvents() {
+  $("#trailUpdateProgressClose")?.addEventListener("click", closeTrailUpdateProgress);
+  $("#trailUpdateProgressDialog")?.addEventListener("cancel", (event) => {
+    const dialog = $("#trailUpdateProgressDialog");
+    if (dialog?.dataset.running === "true") {
+      event.preventDefault();
+      return;
+    }
+    closeTrailUpdateProgress();
+  });
+  $("#trailUpdateProgressDialog")?.addEventListener("close", () => {
+    window.clearInterval(trailUpdateProgressTimer);
+    window.clearTimeout(trailUpdateProgressCloseTimer);
+    trailUpdateProgressTimer = null;
+    trailUpdateProgressCloseTimer = null;
+    if (state.trailUpdate?.progress) state.trailUpdate.progress.active = false;
+  });
   $("#trailUpdateConfirmClose")?.addEventListener("click", () => trailUpdateConfirmClose(false));
   $("#trailUpdateConfirmCancel")?.addEventListener("click", () => trailUpdateConfirmClose(false));
   $("#trailUpdateConfirmSubmit")?.addEventListener("click", () => trailUpdateConfirmClose(true));

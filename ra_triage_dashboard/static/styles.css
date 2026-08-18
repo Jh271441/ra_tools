@@ -1698,6 +1698,32 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-confirm-note { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .trail-update-confirm-actions { padding-top: 1px; }
 .trail-update-confirm-actions .button { min-width: 102px; }
+.trail-update-progress-dialog { width: min(560px, calc(100vw - 30px)); max-width: calc(100vw - 30px); }
+.trail-update-progress-dialog .dialog-card { gap: 14px; }
+.trail-update-progress-count { align-self: start; color: var(--accent); font: 600 12px "SFMono-Regular", Consolas, monospace; white-space: nowrap; }
+.trail-update-progress-summary { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(8,14,24,.54); }
+.trail-update-progress-summary > div { min-width: 0; display: grid; gap: 2px; }
+.trail-update-progress-summary strong { overflow: hidden; color: var(--text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.trail-update-progress-summary small { color: var(--faint); font-size: 10px; }
+.trail-update-progress-spinner { width: 20px; height: 20px; border: 2px solid rgba(34,211,238,.2); border-top-color: var(--accent); border-radius: 50%; animation: trail-update-progress-spin 850ms linear infinite; }
+.trail-update-progress-dialog[data-running="false"] .trail-update-progress-spinner { animation: none; border-color: rgba(52,211,153,.65); }
+.trail-update-progress-dialog[data-result="error"] .trail-update-progress-spinner { border-color: rgba(248,113,113,.65); }
+.trail-update-progress-track { position: relative; height: 8px; overflow: hidden; border: 1px solid var(--line); border-radius: 999px; background: #0b1018; }
+.trail-update-progress-track > span { display: block; width: 10%; height: 100%; border-radius: inherit; background: var(--accent); transition: width 240ms ease; }
+.trail-update-progress-track.is-running::after { position: absolute; inset: 0 auto 0 -35%; width: 35%; border-radius: inherit; background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent); content: ""; animation: trail-update-progress-sweep 1.15s ease-in-out infinite; }
+.trail-update-progress-steps { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+.trail-update-progress-steps li { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 8px; min-height: 38px; padding: 6px 8px; border: 1px solid transparent; border-radius: 6px; color: var(--faint); }
+.trail-update-progress-steps li.is-active { border-color: rgba(34,211,238,.25); color: var(--text); background: rgba(34,211,238,.06); }
+.trail-update-progress-steps li.is-complete { color: #9ae6c4; }
+.trail-update-progress-steps li > div { min-width: 0; display: grid; gap: 2px; }
+.trail-update-progress-steps strong { font-size: 11px; font-weight: 650; }
+.trail-update-progress-steps small { color: var(--faint); font-size: 9px; line-height: 1.35; }
+.trail-update-progress-step-dot { display: grid; width: 20px; height: 20px; place-items: center; border: 1px solid var(--line); border-radius: 50%; color: var(--faint); font: 600 10px "SFMono-Regular", Consolas, monospace; }
+.trail-update-progress-steps li.is-active .trail-update-progress-step-dot { border-color: var(--accent); color: var(--accent); }
+.trail-update-progress-steps li.is-complete .trail-update-progress-step-dot { border-color: rgba(52,211,153,.7); color: #9ae6c4; background: rgba(52,211,153,.12); }
+.trail-update-progress-actions { justify-content: flex-end; padding-top: 0; }
+@keyframes trail-update-progress-spin { to { transform: rotate(360deg); } }
+@keyframes trail-update-progress-sweep { to { left: 100%; } }
 .issue-query-dialog { width: min(680px, calc(100vw - 30px)); }
 .issue-query-dialog .dialog-card { gap: 14px; }
 .issue-query-field { display: grid; gap: 6px; color: var(--muted); font-size: 12px; }
@@ -2067,15 +2093,12 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-direct-table td:nth-child(3) { width: 13%; }
 .trail-update-direct-table td:nth-child(4) { width: 40%; text-align: center; }
 .trail-update-direct-table td:nth-child(5) { width: 18%; text-align: center; }
-.trail-update-info-cell > strong { display: block; color: var(--text); text-align: center; }
+.trail-update-info-cell > strong {
+  display: block; max-width: 100%; overflow: hidden; color: var(--text); text-align: center;
+  text-overflow: ellipsis; white-space: nowrap;
+}
 .trail-update-info-cell > small { display: block; text-align: center; }
 .trail-update-info-cell > code { display: block; margin-top: 3px; text-align: center; }
-.trail-update-json-preview {
-  max-height: 120px; margin: 5px auto 0; padding: 5px 6px; overflow: auto;
-  border: 1px solid var(--line-soft); border-radius: 5px; color: var(--text);
-  background: #0b1119; font: 9px/1.35 "SFMono-Regular", Consolas, monospace;
-  text-align: left; white-space: pre-wrap; word-break: break-word;
-}
 .trail-update-direct-table .trail-update-comment { text-align: center; }
 .trail-update-json-dialog {
   width: min(900px, calc(100vw - 30px)); height: min(80vh, 760px);
@@ -2780,6 +2803,9 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .trail-update-confirm-dialog {
     width: calc(100vw - 12px); max-width: calc(100vw - 12px);
     max-height: calc(100dvh - 12px);
+  }
+  .trail-update-progress-dialog {
+    width: calc(100vw - 12px); max-width: calc(100vw - 12px);
   }
   .trail-update-json-dialog {
     width: calc(100vw - 12px); height: calc(100dvh - 12px);
