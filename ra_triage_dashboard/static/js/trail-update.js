@@ -352,8 +352,11 @@ function trailUpdateSourceRun(model = {}, data = {}, item = {}) {
   const selectedRun = data?.selected_run || {};
   const knownRun = (state.modelRuns || []).find((run) => String(run?.id || "") === runId) || {};
   const selected = String(selectedRun.id || "") === runId ? selectedRun : {};
+  const selectedBaselineIds = Array.isArray(data?.baseline_ids)
+    ? data.baseline_ids
+    : (Array.isArray(data?.baselines) ? data.baselines : []);
   const baselineId = String(item?.baseline_id || "").trim()
-    || (Array.isArray(data?.baseline_ids) && data.baseline_ids.length === 1 ? String(data.baseline_ids[0]) : "");
+    || (selectedBaselineIds.length === 1 ? String(selectedBaselineIds[0]) : "");
   const name = knownRun.name || selected.name || runId || uiText("未绑定 Run", "Unbound Run");
   const source = knownRun.source_name || selected.source_name || "";
   const version = knownRun.source_sha256

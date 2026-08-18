@@ -32,7 +32,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-191", APP_ENTRY_JS)
+        self.assertIn("manual-triage-192", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -73,7 +73,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-191", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-192", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
         self.assertNotIn("async function bootstrap", APP_ENTRY_JS)
@@ -140,7 +140,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('styles.css?v=manual-triage-191', INDEX_HTML)
+        self.assertIn('styles.css?v=manual-triage-192', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -775,7 +775,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-191", APP_ENTRY_JS)
+        self.assertIn("manual-triage-192", APP_ENTRY_JS)
 
     def test_multi_issue_query_contract(self) -> None:
         self.assertIn('id="openIssueQueryButton"', INDEX_HTML)
@@ -848,6 +848,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("trail-status-${escapeHtml(meta.key)}", APP_JS)
         self.assertIn("data-trail-update-status-key", APP_JS)
         self.assertIn("baseline_id", APP_JS)
+        self.assertIn("data.baselines", APP_JS)
         self.assertIn("title=\"${escapeHtml(sourceRun.title)}\"", APP_JS)
         self.assertIn("trail-update-status-card", INDEX_HTML)
         self.assertIn("trail-update-status-heading", STYLES_CSS)
