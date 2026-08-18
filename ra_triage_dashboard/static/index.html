@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-187`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-188`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -521,14 +521,14 @@
               <section class="trail-update-results" id="trailUpdateResults" aria-label="Trail update results" hidden>
                 <section class="trail-update-summary-grid trail-update-review-summary-grid" aria-label="Trail update summary">
                   <article class="analysis-stat-card"><span class="ui-lang-zh">应该排除案例</span><span class="ui-lang-en">Excluded cases</span><strong id="trailUpdateCount">—</strong><small id="trailUpdateRunSummary">—</small></article>
-                  <article class="analysis-stat-card"><span class="ui-lang-zh">模型 label 字段</span><span class="ui-lang-en">Model label field</span><strong id="trailUpdateResultField" class="trail-update-target-value">ra_stuck_auto_result</strong><small><span class="ui-lang-zh">三分类 label</span><span class="ui-lang-en">Three-class label</span></small></article>
-                  <article class="analysis-stat-card"><span class="ui-lang-zh">模型 JSON 字段</span><span class="ui-lang-en">Model JSON field</span><strong id="trailUpdateInfoField" class="trail-update-target-value">ra_stuck_auto_result_info</strong><small>deep merge · ra_triage_dashboard</small></article>
+                  <article class="analysis-stat-card"><span class="ui-lang-zh">更新目标字段</span><span class="ui-lang-en">Update target</span><strong id="trailUpdateInfoField" class="trail-update-target-value">ra_stuck_auto_result_info</strong><small><span class="ui-lang-zh">deep_merge · should_exclude</span><span class="ui-lang-en">deep_merge · should_exclude</span></small></article>
+                  <article class="analysis-stat-card"><span class="ui-lang-zh">Trail 更新状态</span><span class="ui-lang-en">Trail update status</span><strong id="trailUpdateStatusSummary" class="trail-update-status-summary">查询中</strong><small id="trailUpdateStatusDetail"><span class="ui-lang-zh">一次批量查询所有 Issue</span><span class="ui-lang-en">One batched query for all Issues</span></small></article>
                 </section>
 
                 <section class="page-card trail-update-table-card">
                   <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">排除候选明细</span><span class="ui-lang-en">Excluded case details</span></h3></div><div class="trail-update-result-actions"><small id="trailUpdateTableSummary">—</small><div class="trail-update-result-buttons"><button class="button button-quiet" id="trailUpdateDownloadButton" type="button" disabled><span class="ui-lang-zh">下载 JSON</span><span class="ui-lang-en">Download JSON</span></button><button class="button button-quiet" id="trailUpdateCopyButton" type="button" disabled><span class="ui-lang-zh">复制 JSON</span><span class="ui-lang-en">Copy JSON</span></button></div></div></div>
                   <div class="trail-update-table-wrap">
-                    <table class="trail-update-table"><thead><tr><th>Issue</th><th>GT</th><th>模型 label</th><th>模型 reason</th><th>Review</th><th>Comment</th><th>Trail 更新</th></tr></thead><tbody id="trailUpdateTableBody"><tr><td colspan="7" class="trail-update-empty"><span class="ui-lang-zh">正在加载排除案例。</span><span class="ui-lang-en">Loading excluded cases.</span></td></tr></tbody></table>
+                    <table class="trail-update-table"><thead><tr><th>Issue</th><th>GT</th><th>模型 label</th><th>模型 reason</th><th>Review</th><th>Comment</th><th>来源 Run / 版本</th><th>Trail 更新状态</th></tr></thead><tbody id="trailUpdateTableBody"><tr><td colspan="8" class="trail-update-empty"><span class="ui-lang-zh">正在加载排除案例。</span><span class="ui-lang-en">Loading excluded cases.</span></tr></tbody></table>
                   </div>
                 </section>
               </section>
@@ -1189,7 +1189,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-187`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-188`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

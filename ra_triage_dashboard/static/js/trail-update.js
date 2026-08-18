@@ -228,6 +228,8 @@ function clearTrailAttributePreview(message = "") {
   setTrailAttributeCapability(null);
   $("#trailUpdateCount").textContent = "—";
   $("#trailUpdateRunSummary").textContent = "—";
+  $("#trailUpdateStatusSummary").textContent = "—";
+  $("#trailUpdateStatusDetail").textContent = uiText("一次批量查询所有 Issue", "One batched query for all Issues");
   const digestElement = $("#trailUpdateDigest");
   if (digestElement) digestElement.textContent = "—";
   $("#trailUpdateTableSummary").textContent = "—";
@@ -236,7 +238,7 @@ function clearTrailAttributePreview(message = "") {
   setTrailAttributeStatus(message);
   const body = $("#trailUpdateTableBody");
   if (body) {
-    body.innerHTML = `<tr><td colspan="7" class="trail-update-empty">${uiText("正在加载排除案例。", "Loading excluded cases.")}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8" class="trail-update-empty">${uiText("正在加载排除案例。", "Loading excluded cases.")}</td></tr>`;
   }
 }
 
@@ -268,6 +270,70 @@ function trailUpdateEndpoint(runId, probeTrail = true) {
   return `/api/trail-attribute-update/preview?${params.toString()}`;
 }
 
+function trailUpdateStatusMeta(status = "not_checked") {
+  const key = String(status || "not_checked");
+  const labels = {
+    querying: ["查询中", "Checking", "is-querying", "Trail 查询尚未完成"],
+    synced: ["已同步", "Synced", "is-synced", "已读到 should_exclude=true"],
+    pending: ["待同步", "Pending", "is-pending", "尚未读到 should_exclude=true"],
+    not_found: ["未找到", "Not found", "is-not-found", "Trail 未返回该 Issue"],
+    query_failed: ["查询失败", "Query failed", "is-failed", "请刷新后重试"],
+    not_checked: ["未检查", "Not checked", "is-not-checked", "当前环境未执行 Trail 查询"],
+  };
+  const [zh, en, className, detail] = labels[key] || labels.not_checked;
+  return { key, label: uiText(zh, en), className, detail: uiText(detail, detail) };
+}
+
+function trailUpdateStatusSummary(data, items) {
+  const counts = {};
+  const provided = data?.trail_update_status_summary;
+  if (provided && typeof provided === "object") {
+    Object.entries(provided).forEach(([key, value]) => {
+      const count = Number(value || 0);
+      if (count > 0) counts[key] = count;
+    });
+  }
+  if (!Object.keys(counts).length) {
+    (items || []).forEach((item) => {
+      const key = String(item?.trail_update_status || "not_checked");
+      counts[key] = Number(counts[key] || 0) + 1;
+    });
+  }
+  const entries = Object.entries(counts).filter(([, count]) => count > 0);
+  const priority = ["querying", "query_failed", "pending", "not_found", "not_checked", "synced"];
+  const primaryKey = priority.find((key) => counts[key]) || "not_checked";
+  const primary = trailUpdateStatusMeta(primaryKey);
+  const primaryCount = Number(counts[primaryKey] || 0);
+  const detail = entries
+    .sort(([a], [b]) => priority.indexOf(a) - priority.indexOf(b))
+    .map(([key, count]) => `${count} ${trailUpdateStatusMeta(key).label}`)
+    .join(" · ");
+  const statusElement = $("#trailUpdateStatusSummary");
+  if (statusElement) {
+    statusElement.textContent = primaryCount > 0 ? `${primaryCount} ${primary.label}` : "—";
+    statusElement.className = `trail-update-status-summary ${primary.className}`;
+    statusElement.title = detail;
+  }
+  const detailElement = $("#trailUpdateStatusDetail");
+  if (detailElement) {
+    detailElement.textContent = detail || uiText("一次批量查询所有 Issue", "One batched query for all Issues");
+  }
+  return counts;
+}
+
+function trailUpdateSourceRun(model = {}, data = {}) {
+  const runId = String(model?.run_id || "").trim();
+  const selectedRun = data?.selected_run || {};
+  const knownRun = (state.modelRuns || []).find((run) => String(run?.id || "") === runId) || {};
+  const selected = String(selectedRun.id || "") === runId ? selectedRun : {};
+  const name = knownRun.name || selected.name || runId || uiText("未绑定 Run", "Unbound Run");
+  const source = knownRun.source_name || selected.source_name || "";
+  const version = knownRun.source_sha256
+    ? `v${String(knownRun.source_sha256).slice(0, 10)}`
+    : (knownRun.schema_version || selected.schema_version || "");
+  return { name, source, version, runId };
+}
+
 function renderTrailAttributePreview(data) {
   const items = Array.isArray(data?.items) ? data.items : [];
   const run = data?.selected_run || {};
@@ -277,8 +343,8 @@ function renderTrailAttributePreview(data) {
   setTrailAttributeCapability(data);
   $("#trailUpdateCount").textContent = String(items.length);
   $("#trailUpdateRunSummary").textContent = run.name || run.id || uiText("全部 Model Runs", "All model Runs");
-  $("#trailUpdateResultField").textContent = data?.model_result_field || data?.target_fields?.[0] || "ra_stuck_auto_result";
   $("#trailUpdateInfoField").textContent = data?.target_field || (data?.write_mode === "info_only" ? data?.target_fields?.[0] : data?.target_fields?.[1]) || "ra_stuck_auto_result_info";
+  trailUpdateStatusSummary(data, items);
   const digestElement = $("#trailUpdateDigest");
   if (digestElement) {
     digestElement.textContent = digest ? `${digest.slice(0, 12)}…` : "—";
@@ -291,16 +357,17 @@ function renderTrailAttributePreview(data) {
   const body = $("#trailUpdateTableBody");
   if (!body) return;
   if (!items.length) {
-    body.innerHTML = `<tr><td colspan="7" class="trail-update-empty">${uiText("当前筛选范围没有已标记“应该排除”的 Review。", "No reviewed “should exclude” cases in the current filter.")}</td></tr>`;
+    trailUpdateStatusSummary(data, []);
+    body.innerHTML = `<tr><td colspan="8" class="trail-update-empty">${uiText("当前筛选范围没有已标记“应该排除”的 Review。", "No reviewed “should exclude” cases in the current filter.")}</td></tr>`;
     return;
   }
   body.innerHTML = items.map((item) => {
     const review = item.review || {};
     const model = item.model || {};
     const comment = String(item.comment || review.note || "").trim();
-    const target = item.target || {};
-    const patchPath = target.path || "ra_triage_dashboard.should_exclude";
     const ready = item.write_ready !== false;
+    const sourceRun = trailUpdateSourceRun(model, data);
+    const status = trailUpdateStatusMeta(item.trail_update_status || "not_checked");
     return `<tr class="${ready ? "" : "is-invalid"}">
       <td><strong class="trail-update-issue">${escapeHtml(item.issue_id || "—")}</strong><small>${escapeHtml(item.title || item.scenario || "")}</small></td>
       <td>${labelBadge(item.gt_label, "—")}</td>
@@ -308,7 +375,8 @@ function renderTrailAttributePreview(data) {
       <td><div class="trail-update-reason">${escapeHtml(model.reason || "模型未返回 reason")}</div><small>${escapeHtml(formatModelConfidence(model.confidence))} confidence</small></td>
       <td><div>${escapeHtml(review.reviewer || "未记录")}</div><small>${escapeHtml(review.status || "pending")} · ${escapeHtml(formatTime(review.reviewed_at))}</small></td>
       <td><div class="trail-update-comment">${escapeHtml(comment || "未填写")}</div><small>${comment ? uiText("提交时将追加到 Trail Comment", "Added to Trail Comment on commit") : uiText("不会写入 Comment", "No Comment will be written")}</small></td>
-      <td><strong>${escapeHtml(data?.target_field || (data?.write_mode === "info_only" ? data?.target_fields?.[0] : data?.target_fields?.[1]) || "ra_stuck_auto_result_info")}</strong><small>${data?.write_mode === "info_only" ? uiText("仅 deep_merge，不改 label", "deep-merge only; label unchanged") : `+ ${escapeHtml(data?.target_fields?.[1] || "ra_stuck_auto_result_info")}`}</small><code>${escapeHtml(patchPath)}</code></td>
+      <td class="trail-update-source-cell"><strong title="${escapeHtml(sourceRun.name)}">${escapeHtml(sourceRun.name)}</strong><small title="${escapeHtml(sourceRun.source)}">${escapeHtml(sourceRun.source || sourceRun.runId || uiText("未记录版本", "Version unavailable"))}</small>${sourceRun.version ? `<code title="${escapeHtml(sourceRun.version)}">${escapeHtml(sourceRun.version)}</code>` : ""}</td>
+      <td><span class="trail-update-state-badge ${status.className}" title="${escapeHtml(status.detail)}">${escapeHtml(status.label)}</span><small>${escapeHtml(status.detail)}</small></td>
     </tr>`;
   }).join("");
 }

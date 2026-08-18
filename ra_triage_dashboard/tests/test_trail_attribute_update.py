@@ -270,6 +270,52 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         self.assertTrue(payload["write_ready"])
         self.assertEqual(payload["invalid_label_issue_ids"], [])
 
+    def test_trail_update_statuses_are_projected_from_one_batched_snapshot(self) -> None:
+        sync = SimpleNamespace(
+            rows=[
+                {
+                    "issue_id": "cn00000001",
+                    TRAIL_INFO_FIELD: {"ra_triage_dashboard": {"should_exclude": True}},
+                },
+                {
+                    "issue_id": "cn00000002",
+                    TRAIL_INFO_FIELD: {"ra_triage_dashboard": {"should_exclude": False}},
+                },
+            ],
+            complete=True,
+        )
+        self.assertEqual(
+            trail_update._trail_update_statuses(
+                sync,
+                ["cn00000001", "cn00000002", "cn00000003"],
+                info_field=TRAIL_INFO_FIELD,
+            ),
+            {
+                "cn00000001": "synced",
+                "cn00000002": "pending",
+                "cn00000003": "not_found",
+            },
+        )
+
+    def test_first_paint_marks_status_querying_without_remote_read(self) -> None:
+        payload = build_trail_attribute_update_payload(
+            [
+                {
+                    "issue_id": "cn00000004",
+                    "annotation": {"id": 4, "is_excluded": True},
+                    "prediction": {"model_run_id": "run-1", "label": "误触发"},
+                }
+            ],
+            run={"id": "run-1"},
+            baseline_ids=["0508"],
+            baseline_scopes=["scope"],
+            trail_capability={"ready": False, "status": "not_checked"},
+            trail_write_enabled=True,
+            write_mode="info_only",
+        )
+        self.assertEqual(payload["items"][0]["trail_update_status"], "querying")
+        self.assertEqual(payload["trail_update_status_summary"], {"querying": 1})
+
     def test_direct_issue_preview_only_targets_info_field_and_reports_missing(self) -> None:
         payload = build_trail_issue_exclusion_payload(
             ["cn00000001", "cn00000002"],
@@ -299,6 +345,10 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         self.assertEqual(payload["write_mode"], "info_only")
         self.assertEqual(payload["items"][0]["current_label"], "正确触发")
         self.assertTrue(payload["items"][0]["target"]["patch"]["ra_triage_dashboard"]["should_exclude"])
+        self.assertEqual(
+            payload["items"][0]["target"]["patch"],
+            {"ra_triage_dashboard": {"should_exclude": True}},
+        )
         field_update = payload["items"][0]["field_update"]
         self.assertEqual(field_update["field"], TRAIL_INFO_FIELD)
         self.assertEqual(field_update["before"]["keep"], True)

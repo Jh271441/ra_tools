@@ -1,9 +1,9 @@
 """Trail 属性更新：预览、字段能力检查与受控提交。
 
-Review 的“应该排除”只会生成当前 Model Run 的候选项。真正写 Trail 之前
-必须同时满足：目标 view 暴露 ``ra_stuck_auto_result`` 与
-``ra_stuck_auto_result_info``、所有模型 label 都是三分类、请求来自已验证的
-SSO 写入用户、以及客户端提交的 SHA-256 与服务端重新计算结果一致。
+Review 的“应该排除”只会生成当前 Model Run 的候选项。当前生产写入只更新
+``ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude``，保留模型
+label 不变。真正写 Trail 之前必须满足目标 view 可完整定位 Issue、请求来自
+已验证的 SSO 写入用户、以及客户端提交的 SHA-256 与服务端重新计算结果一致。
 
 默认 writer 仍关闭。这样在现有 2410 view 只有 ``ra_result``/``ra_info`` 时，
 页面会明确告知字段缺失，并且绝不会把新契约误写到旧字段。
@@ -30,7 +30,11 @@ from ..http_support import (
     resolve_request_baseline_scopes,
 )
 from ..runtime import database, settings
-from ..trail_sync import read_trail_comment_markers, read_trail_model_fields
+from ..trail_sync import (
+    _dashboard_should_exclude,
+    read_trail_comment_markers,
+    read_trail_model_fields,
+)
 from ..trail_writer import (
     build_manual_exclusion_changes,
     build_trail_changes,
@@ -52,7 +56,10 @@ TRAIL_TARGET_PATH = "ra_triage_dashboard.should_exclude"
 TRAIL_DRAFT_SCHEMA = "trail-attribute-update-v2"
 TRAIL_ISSUE_DRAFT_SCHEMA = "trail-issue-exclusion-v1"
 _commit_lock = threading.Lock()
-_preview_capability_cache: dict[tuple[int, str, tuple[str, ...]], tuple[float, dict[str, Any]]] = {}
+_preview_capability_cache: dict[
+    tuple[int, str, tuple[str, ...]],
+    tuple[float, dict[str, Any], dict[str, str]],
+] = {}
 _preview_capability_cache_lock = threading.Lock()
 _PREVIEW_CAPABILITY_CACHE_SECONDS = 90
 
@@ -185,6 +192,44 @@ def _capability_for_info_write(sync_result: Any, info_field: str) -> dict[str, A
     }
 
 
+def _trail_update_statuses(
+    sync_result: Any,
+    issue_ids: list[str],
+    *,
+    info_field: str,
+) -> dict[str, str]:
+    """Project one batched Trail read into per-Issue update states.
+
+    The status is intentionally derived from the same single batched read used
+    for capability validation.  It never performs a follow-up request per
+    Issue: a missing marker means the candidate is waiting to be synchronized,
+    an explicit ``true`` marker means it is already synchronized, and a missing
+    returned row is surfaced as ``not_found`` rather than being treated as a
+    successful write.
+    """
+
+    normalized_ids = [str(issue_id or "").strip() for issue_id in issue_ids if str(issue_id or "").strip()]
+    rows_by_issue = {
+        _as_text(row.get("issue_id")): row
+        for row in (getattr(sync_result, "rows", None) or [])
+        if _as_text(row.get("issue_id"))
+    }
+    if not bool(getattr(sync_result, "complete", False)):
+        return {issue_id: "query_failed" for issue_id in normalized_ids}
+    statuses: dict[str, str] = {}
+    for issue_id in normalized_ids:
+        row = rows_by_issue.get(issue_id)
+        if row is None:
+            statuses[issue_id] = "not_found"
+            continue
+        statuses[issue_id] = (
+            "synced"
+            if _dashboard_should_exclude(row.get(info_field)) is True
+            else "pending"
+        )
+    return statuses
+
+
 def build_trail_attribute_update_payload(
     rows: list[dict[str, Any]],
     *,
@@ -194,6 +239,7 @@ def build_trail_attribute_update_payload(
     result_field: str = TRAIL_RESULT_FIELD,
     info_field: str = TRAIL_INFO_FIELD,
     trail_capability: dict[str, Any] | None = None,
+    trail_statuses: dict[str, str] | None = None,
     trail_write_enabled: bool = False,
     write_mode: str = "model_and_info",
 ) -> dict[str, Any]:
@@ -253,7 +299,12 @@ def build_trail_attribute_update_payload(
                     "is_excluded": True,
                 },
                 "comment": _as_text(annotation.get("note"))[:4000],
-                "write_ready": bool(label),
+                # The current workflow is info-only, so a missing model label
+                # does not make the marker write invalid.  Keep the strict
+                # label gate for the legacy model+info mode.
+                "write_ready": bool(label) or info_only,
+                "trail_update_status": _as_text((trail_statuses or {}).get(issue_id))
+                or ("querying" if trail_statuses is None else "not_checked"),
                 "target": {
                     "field": info_field,
                     "result_field": result_field,
@@ -272,6 +323,10 @@ def build_trail_attribute_update_payload(
             }
         )
     items.sort(key=lambda item: item["issue_id"])
+    status_summary: dict[str, int] = {}
+    for item in items:
+        status = _as_text(item.get("trail_update_status")) or "not_checked"
+        status_summary[status] = status_summary.get(status, 0) + 1
     draft: dict[str, Any] = {
         "schema_version": TRAIL_DRAFT_SCHEMA,
         "mode": "preview",
@@ -340,6 +395,7 @@ def build_trail_attribute_update_payload(
         "invalid_label_issue_ids": invalid_labels,
         "payload_sha256": digest,
         "operation_id": digest,
+        "trail_update_status_summary": status_summary,
         "items": items,
         "draft": draft,
     }
@@ -412,13 +468,7 @@ def build_trail_issue_exclusion_payload(
         dashboard_info = current_info.get("ra_triage_dashboard")
         if not isinstance(dashboard_info, dict):
             dashboard_info = {}
-        patch = {
-            "ra_triage_dashboard": {
-                "schema_version": 2,
-                "should_exclude": True,
-                "source": "manual_issue_ids",
-            }
-        }
+        patch = {"ra_triage_dashboard": {"should_exclude": True}}
         merged_info = deep_merge_dict(current_info, patch)
         item: dict[str, Any] = {
             "issue_id": issue_id,
@@ -542,6 +592,7 @@ async def _build_preview(
     # not make every filter change wait for a remote Trail query when the
     # writer is disabled; commit still performs a fresh, complete capability
     # check immediately before any future write.
+    trail_statuses: dict[str, str] | None = None
     if issue_ids and review_write_enabled and probe_trail:
         # Capability probing is a remote read and is the slowest part of the
         # page preview.  Cache only this short-lived, Issue-set-specific
@@ -555,6 +606,7 @@ async def _build_preview(
                 cached = _preview_capability_cache.get(cache_key)
                 if cached and now - cached[0] < _PREVIEW_CAPABILITY_CACHE_SECONDS:
                     cached_capability = dict(cached[1])
+                    trail_statuses = dict(cached[2])
         if cached_capability is not None:
             capability = cached_capability
             capability["cached"] = True
@@ -567,16 +619,27 @@ async def _build_preview(
                 chunk_size=settings.trail_sync_chunk_size,
             )
             capability = _capability_for_info_write(sync_result, info_field)
+            trail_statuses = _trail_update_statuses(
+                sync_result,
+                issue_ids,
+                info_field=info_field,
+            )
             if request.method.upper() == "GET":
                 with _preview_capability_cache_lock:
                     _preview_capability_cache[cache_key] = (
                         time.monotonic(),
                         dict(capability),
+                        dict(trail_statuses),
                     )
     else:
         capability = _capability_not_checked(result_field, info_field)
         capability["target_fields"] = [info_field]
         capability["required_fields"] = [info_field]
+        # A production first-paint request is intentionally still waiting for
+        # the background probe; a read-only environment with no probe is
+        # genuinely unchecked rather than "querying" forever.
+        if not (issue_ids and review_write_enabled and not probe_trail):
+            trail_statuses = {}
     payload = await asyncio.to_thread(
         build_trail_attribute_update_payload,
         rows,
@@ -586,6 +649,7 @@ async def _build_preview(
         result_field=result_field,
         info_field=info_field,
         trail_capability=capability,
+        trail_statuses=trail_statuses,
         trail_write_enabled=review_write_enabled,
         write_mode="info_only",
     )
