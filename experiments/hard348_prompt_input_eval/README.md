@@ -9,6 +9,9 @@ The runner is deliberately fail-closed:
 
 - the model receives facts, non-authoritative label-free reports, and the
   selected Camera/BEV images only;
+- the input guard rejects prior model summaries or scored artifacts (for
+  example `stats`, `model_yaml`, `parsed`, or `raw_response`) instead of
+  treating them as raw evidence;
 - expected labels are used only by the outer scorer, never by the model
   request;
 - Contract logic, threshold-to-label mapping, case-specific rules, and GT or
@@ -16,6 +19,11 @@ The runner is deliberately fail-closed:
 - raw evidence artifacts, image caches, model responses, credentials, and
   metrics are runtime inputs/outputs and are not committed here;
 - existing output files are never overwritten.
+
+The image resolver accepts either `root/<issue_id>/0.jpg` plus `bev_0.jpg`
+(the Fresh12 cache layout) or `root/<issue_id>_*/after_compress/` (the source
+cache layout). It still requires exactly one matching directory and every
+selected frame file.
 
 ## Frozen evaluation configuration
 
@@ -75,6 +83,7 @@ python3 experiments/hard348_prompt_input_eval/compact_business_batch.py \
   --artifact <raw-evidence.json> \
   --trigger-artifact <label-free-trigger.json> \
   --recovery-artifact <label-free-recovery.json> \
+  --score-receipt <external-gt-receipt.json> \
   --image-cache-root <frozen-image-root> \
   --out-dir <new-run-dir>/cases \
   --summary <new-run-dir>/summary.json \
@@ -94,7 +103,10 @@ python3 experiments/hard348_prompt_input_eval/compact_business_batch.py \
 The batch scorer is an external diagnostic only. It does not alter model
 labels or apply a deterministic ABC rule. Keep all run directories outside
 Git and do not use evaluation results to change the frozen prompt/input
-within the same comparison.
+within the same comparison. `--score-receipt` is read only after the child
+probe returns and is never passed to the model; use it when the raw evidence
+artifact is deliberately label-free. Its rows must contain `issue_id` and
+`expected_label_for_scoring_only` (or `gt`) and are used only for scoring.
 
 ## Candidate: role-first observation firewall
 
@@ -106,11 +118,36 @@ override the trigger decision. Evaluate it on the declared source subset
 first, then repeat the exact configuration on an independently frozen Fresh
 set. Do not change its wording or input after inspecting Fresh results.
 
-Use these two options with the batch command above:
+`causal_role_first_v2` is a separate source-only candidate. It adds only a
+generic direct-cause check: background traffic is not automatically the cause
+of Ego's stop, and a visible signal counts only when it applies to the current
+intended maneuver. It must be evaluated and gated independently; do not mix
+v1/v2 results or select between them using Fresh or Holdout.
+
+`causal_role_first_v3` is a third source-only candidate paired with
+`observation_v2`. It adds only the label-free `strongest_counter_evidence`
+time/identity observation and a generic T/R conflict reconciliation; release
+time alone is explicitly not a C rule.
+
+Use these options with the batch command above:
 
 ```text
 --report-mode observation_v1
 --prompt-variant causal_role_first_v1
+```
+
+For the v2 candidate, change only the prompt variant:
+
+```text
+--report-mode observation_v1
+--prompt-variant causal_role_first_v2
+```
+
+For the v3 candidate, use:
+
+```text
+--report-mode observation_v2
+--prompt-variant causal_role_first_v3
 ```
 
 `PROMPT_SPEC.md` records the business-state causal definitions used by the

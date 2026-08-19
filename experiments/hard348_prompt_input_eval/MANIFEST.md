@@ -11,10 +11,13 @@
 | `validate_package.py` | Static and prompt-safety checks; it never calls a model. |
 | `README.md` | Scope, constraints, and reproducible commands. |
 
-The only currently proposed new candidate is the pair
-`causal_role_first_v1` + `observation_v1`. It is a prompt/input hypothesis
-awaiting source-only and independent Fresh validation; it is not a selected
-model configuration.
+The currently proposed candidates are the pairs
+`causal_role_first_v1` + `observation_v1` and
+`causal_role_first_v2` + `observation_v1`, plus
+`causal_role_first_v3` + `observation_v2`. They are prompt/input hypotheses
+awaiting independent source-only and Fresh validation; neither is a selected
+model configuration. v2 only adds generic direct-cause isolation between
+background traffic and the current maneuver; it is not a case-specific rule.
 
 ## Deliberately excluded
 

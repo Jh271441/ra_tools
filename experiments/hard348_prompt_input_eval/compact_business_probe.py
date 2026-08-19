@@ -36,6 +36,33 @@ _FORBIDDEN_MODEL_KEYS = {
     "issue_id",
 }
 
+_DERIVED_ARTIFACT_KEYS = {
+    "model_yaml",
+    "prompt_sha256",
+    "stats",
+    "training_used",
+    "holdout_used",
+    "elapsed_sec",
+    "business_state_index",
+    "business_state_index_provenance",
+}
+_DERIVED_ROW_KEYS = {
+    "parsed",
+    "raw_response",
+    "model_output",
+    "predicted_code",
+    "prediction",
+    "final_pred",
+    "prompt_tokens",
+    "completion_tokens",
+    "total_tokens",
+    "duration_sec",
+    "input_audit",
+    "fusion",
+    "final_code",
+    "previous_best_code",
+}
+
 
 def _assert_model_safe(value: Any, *, path: str = "root") -> None:
     """Fail closed if a derived label/identity field reaches the prompt."""
@@ -48,6 +75,31 @@ def _assert_model_safe(value: Any, *, path: str = "root") -> None:
     elif isinstance(value, list):
         for index, child in enumerate(value):
             _assert_model_safe(child, path=f"{path}[{index}]")
+
+
+def _assert_raw_evidence_artifact(payload: Any) -> list[dict[str, Any]]:
+    """Reject model summaries accidentally supplied as the raw evidence input."""
+    if not isinstance(payload, dict):
+        raise ValueError("artifact must be a JSON object with a results list")
+    derived = sorted(_DERIVED_ARTIFACT_KEYS.intersection(payload))
+    if derived:
+        raise ValueError(
+            "artifact contains derived/model-run fields; provide the original evidence artifact: "
+            + ", ".join(derived)
+        )
+    rows = payload.get("results")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("artifact must be a non-empty evidence artifact with results")
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict) or not isinstance(row.get("evidence"), dict):
+            raise ValueError(f"artifact row {index} has no evidence object")
+        row_derived = sorted(_DERIVED_ROW_KEYS.intersection(row))
+        if row_derived:
+            raise ValueError(
+                f"artifact row {index} contains derived/model-run fields: "
+                + ", ".join(row_derived)
+            )
+    return rows
 
 
 def _compact_time_windows(rows: Any) -> list[dict[str, Any]]:
@@ -110,7 +162,7 @@ def _compact_reports(
     """Keep only auditable fields; remove duplicated raw model text."""
     n = neutral if isinstance(neutral, dict) else {}
     r = recovery if isinstance(recovery, dict) else {}
-    if report_mode == "observation_v1":
+    if report_mode in {"observation_v1", "observation_v2"}:
         trigger_fields = (
             "intended_maneuver",
             "ego_trigger_observation",
@@ -136,6 +188,8 @@ def _compact_reports(
             "temporal_audit",
             "evidence_conflict",
         )
+        if report_mode == "observation_v2":
+            recovery_fields += ("strongest_counter_evidence",)
         return {
             "trigger_observations_non_authoritative": {
                 key: n.get(key)
@@ -466,6 +520,26 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
+def _find_image_directory(image_root: Path, issue_id: str) -> Path:
+    """Accept the two frozen cache layouts used by source and Fresh artifacts."""
+    candidates: list[Path] = []
+    exact = image_root / issue_id
+    if (exact / "after_compress").is_dir():
+        candidates.append(exact / "after_compress")
+    if exact.is_dir() and (exact / "0.jpg").is_file():
+        candidates.append(exact)
+    candidates.extend(image_root.glob(f"{issue_id}_*/after_compress"))
+    candidates.extend(
+        path
+        for path in image_root.glob(f"{issue_id}_*")
+        if path.is_dir() and (path / "0.jpg").is_file()
+    )
+    unique = list(dict.fromkeys(path.resolve() for path in candidates))
+    if len(unique) != 1:
+        raise RuntimeError(f"expected one image directory, got {unique}")
+    return unique[0]
+
+
 def _prompt(
     facts: dict[str, Any],
     reports: dict[str, Any],
@@ -480,6 +554,8 @@ def _prompt(
     compare_enabled = prompt_variant in {
         "causal_compare_v1",
         "causal_role_first_v1",
+        "causal_role_first_v2",
+        "causal_role_first_v3",
         "causal_effect_gate_v1",
     }
     if output_mode == "short":
@@ -522,6 +598,21 @@ def _prompt(
 2. 只有 T 账本已经证明异常 blocker，R 账本才区分自然释放与有效协助。RA pickup/mode、candidate action、生成 trajectory、单独 path change、对象后来移动都不能单独决定 R。要比较同一约束的 release、动作前是否已有可执行路径、动作后的独立路径/走廊增量以及 Ego 持续运动的顺序。
 3. 若 T 账本有正向 normal-duty/gap-duty 机制，后续 Ego 恢复或 RA workflow 不把它升级为 A/C；若 T 账本没有正向异常角色，也不能仅因静止/占道字段或“没有看到正常机制”补成 A/C。若两个观察者报告冲突，保留冲突并回到图片和 raw timeline，不做报告投票。
 """ if prompt_variant == "causal_role_first_v1" else ""
+    causal_role_first_v2 = """
+【直接因果角色与背景交通隔离】
+在角色账本中再加一层“谁直接解释 Ego 的停止”核验，避免把场景背景当成触发原因：
+1. normal-duty/gap-duty 必须同时满足：它实际约束当前 intended maneuver，且与 Ego 在触发前后的减速/停止空间和时间相符。邻道车辆、横穿后已清空的参与者、施工/锥桶/停靠物的可见性，或一个不适用于当前 maneuver 的红绿灯，不能单独成为 normal 机制；同样，“有多个车”也不自动等于同走廊 stop-go。
+2. 异常 blocker 必须直接占据 required corridor，并能解释 Ego 为什么不能沿 intended maneuver 通过。一个异常物体出现在画面中，或靠近走廊但 Ego 实际是在跟随同向交通等待，不能单独把 T 账本改成异常。正常背景与异常主体可以同时存在，必须按直接时空因果区分，而不是按“正常/异常字段”投票。
+3. 适用信号、停止线、路权、让行或施工引导只有在确认它约束 Ego 当前 intended maneuver 时，才是 normal 的正向证据；可见但不适用或作用对象不明的控制元素保持未知。
+4. R 账本仍只接受同一 blocker 的释放或有效协助链；其他车辆移动、RA workflow 事件或 Ego 后续运动不能替代同一约束的因果核验。
+""" if prompt_variant == "causal_role_first_v2" else ""
+    causal_role_first_v3 = """
+【T/R 账本冲突时的直接因果复核】
+恢复账本中的 `strongest_counter_evidence` 只表示可审计的身份/时间反证，不是标签或结论：
+1. 如果它显示同一候选约束在 Ego 运动或有效动作前释放，先回到图像和 required corridor 判断该候选是否确实是异常 blocker；不能因为触发观察者写了 normal，也不能因为 recovery 写了 release，就跳过直接因果核验。
+2. 若图像/BEV显示正常同流、信号、路权或安全间隙直接解释 Ego 停止，保持 B；若一个独立实体确实截断 required corridor 且它先释放、随后 Ego 自主恢复，才支持 C。释放时间本身不能把 B 机械改成 C。
+3. 若同一约束持续到有效动作并在动作后产生新的可执行路径/持续运动，才支持 A；`candidate_only`、RA workflow 或单独路径变化仍不足。
+""" if prompt_variant == "causal_role_first_v3" else ""
     corridor_mechanism_v1 = """
 【同流队列与单一占道主体的区分】
 在触发时单独重建 normal mechanism 与 abnormal blocker，不要把同一辆车在多个时间点出现自动升级为“连续同向队列”：
@@ -582,6 +673,10 @@ A/C 恢复因果时间表（只使用正向观察，不允许臆造 release）�
 {causal_compare_v1}
 
 {causal_role_first_v1}
+
+{causal_role_first_v2}
+
+{causal_role_first_v3}
 
 {corridor_mechanism_v1}
 
@@ -657,6 +752,7 @@ def main() -> None:
             "compact",
             "narrative_v1",
             "observation_v1",
+            "observation_v2",
             "audit_v2",
             "audit_v3_business_state",
         ),
@@ -670,6 +766,8 @@ def main() -> None:
             "audit_v2",
             "causal_compare_v1",
             "causal_role_first_v1",
+            "causal_role_first_v2",
+            "causal_role_first_v3",
             "causal_effect_gate_v1",
             "causal_effect_gate_v2",
             "causal_effect_gate_v3",
@@ -707,12 +805,8 @@ def main() -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
 
     payload = json.loads(args.artifact.read_text(encoding="utf-8"))
-    rows = payload.get("results") or []
-    if not isinstance(rows, list) or not rows:
-        raise ValueError("artifact must be a non-empty evidence artifact with results")
+    rows = _assert_raw_evidence_artifact(payload)
     row = next(item for item in rows if str(item.get("issue_id")) == args.issue_id)
-    if not isinstance(row.get("evidence"), dict):
-        raise ValueError("artifact row has no evidence object; refusing summary/metrics input")
     evidence = row.get("evidence") or {}
     neutral = row.get("trigger_expert") or {}
     recovery = row.get("recovery_expert") or {}
@@ -754,10 +848,7 @@ def main() -> None:
     _assert_model_safe(facts, path="facts")
     _assert_model_safe(reports, path="reports")
 
-    directory_candidates = list(args.image_cache_root.glob(f"{args.issue_id}_*/after_compress"))
-    if len(directory_candidates) != 1:
-        raise RuntimeError(f"expected one image directory, got {directory_candidates}")
-    directory = directory_candidates[0]
+    directory = _find_image_directory(args.image_cache_root, args.issue_id)
     paths = []
     image_count = 9 if args.visual_mode == "paired18" else (6 if args.visual_mode == "paired12" else 5)
     for index in range(image_count):

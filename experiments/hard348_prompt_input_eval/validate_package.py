@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -52,17 +53,65 @@ def main() -> None:
     probe = _load_probe()
     facts = {"safe_observation": {"speed": 0.0}}
     reports = {"non_authoritative_business_report_ledger": "none"}
-    prompt = probe._prompt(
-        facts,
-        reports,
-        output_mode="short",
-        prompt_variant="causal_role_first_v1",
-        visual_mode="paired10",
-    )
     probe._assert_model_safe(facts)
     probe._assert_model_safe(reports)
-    if "package-safety-sentinel" in prompt:
-        raise SystemExit("sentinel leaked into prompt")
+    try:
+        probe._assert_raw_evidence_artifact(
+            {
+                "results": [
+                    {
+                        "issue_id": "sentinel",
+                        "evidence": {"safe_observation": {"speed": 0.0}},
+                    }
+                ]
+            }
+        )
+    except ValueError as exc:
+        raise SystemExit(f"valid raw-artifact sentinel was rejected: {exc}") from exc
+    try:
+        probe._assert_raw_evidence_artifact(
+            {
+                "stats": {},
+                "results": [
+                    {
+                        "issue_id": "sentinel",
+                        "evidence": {"safe_observation": {"speed": 0.0}},
+                    }
+                ],
+            }
+        )
+    except ValueError:
+        pass
+    else:
+        raise SystemExit("derived artifact guard did not fail closed")
+    for prompt_variant, report_mode in (
+        ("causal_role_first_v1", "observation_v1"),
+        ("causal_role_first_v2", "observation_v1"),
+        ("causal_role_first_v3", "observation_v2"),
+    ):
+        prompt = probe._prompt(
+            facts,
+            reports,
+            output_mode="short",
+            prompt_variant=prompt_variant,
+            visual_mode="paired10",
+        )
+        if "package-safety-sentinel" in prompt:
+            raise SystemExit("sentinel leaked into prompt")
+    with tempfile.TemporaryDirectory(prefix="hard348_image_layout_") as temp_dir:
+        root = Path(temp_dir)
+        direct = root / "cn_direct"
+        direct.mkdir()
+        (direct / "0.jpg").write_bytes(b"camera")
+        (direct / "bev_0.jpg").write_bytes(b"bev")
+        if probe._find_image_directory(root, "cn_direct") != direct.resolve():
+            raise SystemExit("direct image layout resolver failed")
+        wrapped = root / "cn_wrapped_frozen" / "after_compress"
+        wrapped.mkdir(parents=True)
+        (wrapped / "0.jpg").write_bytes(b"camera")
+        (wrapped / "bev_0.jpg").write_bytes(b"bev")
+        if probe._find_image_directory(root, "cn_wrapped") != wrapped.resolve():
+            raise SystemExit("after_compress image layout resolver failed")
     try:
         probe._assert_model_safe({"label": "A"})
     except ValueError:
