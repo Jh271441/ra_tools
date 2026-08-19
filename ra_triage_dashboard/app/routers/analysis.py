@@ -41,6 +41,7 @@ async def review_reason_analysis(
     trigger_tag: str = "",
     egress_tag: str = "",
     search: str = "",
+    exclusion: str = "all",
     page: int = 1,
     page_size: int = 20,
     baselines: str = "",
@@ -63,6 +64,7 @@ async def review_reason_analysis(
         trigger_tag=trigger_tag,
         egress_tag=egress_tag,
         search=search,
+        exclusion=exclusion,
         page=page,
         page_size=page_size,
         baselines=baselines,
@@ -261,6 +263,7 @@ async def export_review_reason_analysis(
     trigger_tag: str = "",
     egress_tag: str = "",
     search: str = "",
+    exclusion: str = "all",
     baselines: str = "",
 ) -> Response:
     export_format = _as_text(format).strip().lower()
@@ -284,6 +287,7 @@ async def export_review_reason_analysis(
         trigger_tag=trigger_tag,
         egress_tag=egress_tag,
         search=search,
+        exclusion=exclusion,
         unbounded=True,
         baselines=baselines,
         baseline_scopes=scopes,

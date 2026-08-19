@@ -21,6 +21,7 @@ from ..http_support import (
     _reconstructed_model_source,
     _source_preview_value,
     enrich_model_run_baseline_hint,
+    resolve_review_exclusion_filter,
     resolve_request_baseline_scopes,
 )
 from ..import_parsing import parse_source_bytes
@@ -255,9 +256,11 @@ async def review_clusters(
     model_run_id: str = "",
     failure_only: bool = True,
     annotation_author: str = "",
+    exclusion: str = "all",
     baselines: str = "",
 ) -> dict[str, Any]:
     scopes = resolve_request_baseline_scopes(baselines, request=request)
+    exclusion, is_excluded = resolve_review_exclusion_filter(exclusion)
     return {
         "items": await asyncio.to_thread(
             database.review_clusters,
@@ -265,7 +268,7 @@ async def review_clusters(
             model_run_id=model_run_id,
             failure_only=failure_only,
             annotation_author=annotation_author,
-            # Problem-exclusion cases are intentionally absent from 原因聚类.
-            is_excluded=False,
-        )
+            is_excluded=is_excluded,
+        ),
+        "exclusion": exclusion,
     }

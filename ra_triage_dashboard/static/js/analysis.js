@@ -3,12 +3,35 @@
  * Loaded as a classic script (shared global scope). Do not convert to
  * ES modules without auditing cross-file function/state dependencies.
  */
+function selectedAnalysisExclusionFilter() {
+  const values = parseFilterList(getMultiFilterValues($("#analysisExclusionFilter")));
+  if (values.length === 1 && ["included", "excluded"].includes(values[0])) {
+    return values[0];
+  }
+  return "all";
+}
+
+function analysisExclusionLabel(value) {
+  return {
+    all: uiText("全部（含问题排除）", "All (including shielded)"),
+    included: uiText("不含问题排除", "Exclude shielded cases"),
+    excluded: uiText("仅问题排除", "Only shielded cases"),
+  }[value] || uiText("全部（含问题排除）", "All (including shielded)");
+}
+
 async function loadClusters() {
   const params = new URLSearchParams();
   if (state.selectedRunId) params.set("model_run_id", state.selectedRunId);
   params.set("failure_only", String(Boolean(state.failureOnly && state.selectedRunId)));
   const annotationAuthor = $("#reviewerFilter")?.value;
   if (annotationAuthor) params.set("annotation_author", annotationAuthor);
+  // The exclusion slice belongs to 原因聚类/分析.  Review's quick cluster
+  // chips should keep the neutral all-inclusive scope even if a previous
+  // analysis page selection is still present in the shared DOM.
+  const exclusion = state.activePage === "analysis"
+    ? selectedAnalysisExclusionFilter()
+    : "all";
+  if (exclusion !== "all") params.set("exclusion", exclusion);
   const list = $("#clusterList");
   if (!list) return;
   const data = await api(`/api/review-clusters?${params.toString()}`);
@@ -57,6 +80,7 @@ function analysisRequestOptions() {
   return currentAnalysisRouteOptions({
     runId,
     comparisonStatus: runId ? checkedAnalysisComparisonStatus() : "all",
+    exclusion: selectedAnalysisExclusionFilter(),
   });
 }
 
@@ -83,6 +107,9 @@ function buildAnalysisQueryParams({ format = "", includePagination = true } = {}
     ["egress_tag", joinFilterList(options.egressTag)],
     ["search", options.search || ""],
   ];
+  if (options.exclusion && options.exclusion !== "all") {
+    params.set("exclusion", options.exclusion);
+  }
   for (const [key, value] of fields) {
     if (value) params.set(key, value);
   }
@@ -736,9 +763,11 @@ function renderReviewReasonAnalysis(data, { animatePies = true } = {}) {
   const comparisonLabels = parseComparisonStatuses(comparisonStatus)
     .map((status) => ANALYSIS_COMPARISON_META[status]?.label || status)
     .join(" / ");
+  const exclusion = data.scope?.exclusion || "all";
+  const exclusionSuffix = exclusion === "all" ? "" : ` · ${analysisExclusionLabel(exclusion)}`;
   $("#analysisReviewScope").textContent = run
-    ? `${run.name}${comparisonStatus === "all" ? "" : ` · ${comparisonLabels}`}`
-    : uiText("全部最新 Review", "All latest reviews");
+    ? `${run.name}${comparisonStatus === "all" ? "" : ` · ${comparisonLabels}`}${exclusionSuffix}`
+    : `${uiText("全部最新 Review", "All latest reviews")}${exclusionSuffix}`;
   renderAnalysisReviewStatus(data);
   renderAnalysisClusterPanels(data, { animatePies });
   renderAnalysisConfusion(data);

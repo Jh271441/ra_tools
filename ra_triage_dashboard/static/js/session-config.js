@@ -317,6 +317,20 @@ function renderAnalysisCatalogFilters() {
     selected: getMultiFilterValues($("#analysisModelLabelFilter")),
     onChange,
   });
+  renderMultiFilter($("#analysisExclusionFilter"), {
+    options: [
+      {
+        value: "included",
+        label: uiText("不含问题排除", "Exclude shielded cases"),
+      },
+      {
+        value: "excluded",
+        label: uiText("仅问题排除", "Only shielded cases"),
+      },
+    ],
+    selected: getMultiFilterValues($("#analysisExclusionFilter")),
+    onChange,
+  });
   renderMultiFilter($("#analysisEvidenceFilter"), {
     options: (state.config?.missing_evidence_catalog || [])
       .filter((item) => !item.deleted)

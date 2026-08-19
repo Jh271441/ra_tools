@@ -315,6 +315,10 @@ function normalizedAnalysisRouteFilters(params) {
   const modelLabels = parseFilterList(
     params.get("model_label") || params.get("annotation") || ""
   ).filter((value) => LABELS.includes(value));
+  const exclusionValue = String(params.get("exclusion") || "all").trim().toLowerCase();
+  const exclusion = ["included", "excluded"].includes(exclusionValue)
+    ? exclusionValue
+    : "all";
   return {
     search: params.get("q") || "",
     gtLabel: gtLabels,
@@ -325,6 +329,7 @@ function normalizedAnalysisRouteFilters(params) {
     sceneTag: parseFilterList(params.get("scene_tag")),
     triggerTag: parseFilterList(params.get("trigger_tag")),
     egressTag: parseFilterList(params.get("egress_tag")),
+    exclusion,
     legacyTag: params.get("tag") || "",
     comparisonStatus: routeAnalysisComparisonStatus(params),
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
@@ -440,6 +445,10 @@ function currentAnalysisRouteOptions(overrides = {}) {
     sceneTag: getMultiFilterValues($("#analysisSceneFilter")),
     triggerTag: getMultiFilterValues($("#analysisTriggerFilter")),
     egressTag: getMultiFilterValues($("#analysisEgressFilter")),
+    exclusion:
+      typeof selectedAnalysisExclusionFilter === "function"
+        ? selectedAnalysisExclusionFilter()
+        : "all",
     page: state.reviewAnalysis.page,
     pageSize: state.reviewAnalysis.pageSize,
     ...overrides,
@@ -468,6 +477,10 @@ function applyAnalysisRouteControls(route) {
   setMultiFilterValues($("#analysisSceneFilter"), sceneTag);
   setMultiFilterValues($("#analysisTriggerFilter"), triggerTag);
   setMultiFilterValues($("#analysisEgressFilter"), egressTag);
+  setMultiFilterValues(
+    $("#analysisExclusionFilter"),
+    filters.exclusion && filters.exclusion !== "all" ? [filters.exclusion] : []
+  );
   const requestedComparison =
     filters.comparisonStatus ||
     (state.failureOnly && state.selectedRunId
@@ -546,6 +559,9 @@ function pageUrl(page, options = {}) {
     if (sceneTag) url.searchParams.set("scene_tag", sceneTag);
     if (triggerTag) url.searchParams.set("trigger_tag", triggerTag);
     if (egressTag) url.searchParams.set("egress_tag", egressTag);
+    if (analysis.exclusion && analysis.exclusion !== "all") {
+      url.searchParams.set("exclusion", analysis.exclusion);
+    }
     if (Number(analysis.page) > 1) url.searchParams.set("page", String(analysis.page));
     if (Number(analysis.pageSize) !== DEFAULT_CASE_PAGE_SIZE) {
       url.searchParams.set("page_size", String(analysis.pageSize));

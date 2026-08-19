@@ -544,6 +544,40 @@ def _csv_filter_values(
     return tuple(dict.fromkeys(values))
 
 
+def resolve_review_exclusion_filter(value: str = "") -> tuple[str, bool | None]:
+    """Normalize the analysis Issue-exclusion slice.
+
+    ``all`` is deliberately the default: exclusion is a review dimension, not
+    a data deletion rule.  The two explicit slices remain useful for auditing
+    model-problem cases separately from Issues that were manually shielded.
+    A few boolean aliases are accepted for bookmarked/API clients from the
+    previous hard-filter release.
+    """
+
+    normalized = _as_text(value).strip().casefold() or "all"
+    aliases = {
+        "all": "all",
+        "any": "all",
+        "included": "included",
+        "include": "included",
+        "not_excluded": "included",
+        "false": "included",
+        "0": "included",
+        "excluded": "excluded",
+        "exclude": "excluded",
+        "only_excluded": "excluded",
+        "true": "excluded",
+        "1": "excluded",
+    }
+    canonical = aliases.get(normalized)
+    if canonical is None:
+        raise _detail(
+            400,
+            "exclusion 仅支持 all、included 或 excluded。",
+        )
+    return canonical, {"all": None, "included": False, "excluded": True}[canonical]
+
+
 def _parse_issue_id_filter(raw: str) -> list[str]:
     tokens = re.split(r"[\s,;|]+", _as_text(raw))
     cleaned: list[str] = []
@@ -686,12 +720,14 @@ def _review_reason_analysis_payload(
     trigger_tag: str = "",
     egress_tag: str = "",
     search: str = "",
+    exclusion: str = "all",
     page: int = 1,
     page_size: int = 20,
     unbounded: bool = False,
     baselines: str = "",
     baseline_scopes: list[str] | None = None,
 ) -> dict[str, Any]:
+    exclusion, is_excluded = resolve_review_exclusion_filter(exclusion)
     missing_evidence_catalog = _missing_evidence_catalog()
     evidence_catalog = {
         str(item["key"]): {
@@ -828,10 +864,10 @@ def _review_reason_analysis_payload(
             baseline_scopes=scopes,
             model_run_id=model_run_id,
             comparison_status=comparison_status,
-            # Cases explicitly marked as "应该排除" are outside the model
-            # problem population.  Keep this filter at the DB boundary so the
-            # cards, charts, detail rows, and all analysis exports agree.
-            is_excluded=False,
+            # Keep the exclusion slice at the DB boundary so cards, charts,
+            # detail rows, and all analysis exports agree.  ``None`` means
+            # the default all-inclusive view.
+            is_excluded=is_excluded,
             annotation_author=",".join(authors),
             # Historical persisted status/label fields predate expected output.
             # Apply both filters after read-time Tag inference below.
@@ -865,6 +901,7 @@ def _review_reason_analysis_payload(
         tag_catalog=tag_catalog_for_analysis,
         has_model_run=bool(model_run_id),
         include_reason_themes=False,
+        is_excluded=is_excluded,
         review_statuses=effective_statuses,
         annotation_labels=annotation_labels,
         page=page,
@@ -894,6 +931,7 @@ def _review_reason_analysis_payload(
             else None
         ),
         "comparison_status": comparison_status,
+        "exclusion": exclusion,
         "failure_only": comparison_status == "mismatch",
         "review_binding": (
             "latest_annotation_per_issue_per_model_run"
@@ -905,6 +943,7 @@ def _review_reason_analysis_payload(
     result["filters"] = {
         "model_run_id": model_run_id,
         "comparison_status": comparison_status,
+        "exclusion": exclusion,
         "failure_only": comparison_status == "mismatch",
         "annotation_author": list(authors),
         "review_status": list(statuses),

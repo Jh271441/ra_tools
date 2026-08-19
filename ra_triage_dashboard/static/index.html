@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-207`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-208`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -336,6 +336,10 @@
                 <label>
                   <span class="ui-lang-zh">模型预测</span><span class="ui-lang-en">Model prediction</span>
                   <div class="multi-filter" id="analysisModelLabelFilter" data-placeholder="全部模型预测" data-placeholder-en="All model predictions" data-i18n-placeholder="analysis.all_model_pred"></div>
+                </label>
+                <label class="analysis-exclusion-filter">
+                  <span class="ui-lang-zh">问题排除</span><span class="ui-lang-en">Issue exclusion</span>
+                  <div class="multi-filter" id="analysisExclusionFilter" data-placeholder="全部（含问题排除）" data-placeholder-en="All (including shielded)" aria-label="Issue exclusion filter"></div>
                 </label>
                 <label class="analysis-evidence-filter">
                   <span class="ui-lang-zh">缺失信息</span><span class="ui-lang-en">Missing evidence</span>
@@ -1237,7 +1241,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-207`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-208`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

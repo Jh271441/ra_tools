@@ -4,7 +4,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from fastapi import HTTPException
+
 from ra_triage_dashboard.app.db import Database
+from ra_triage_dashboard.app.http_support import resolve_review_exclusion_filter
 from ra_triage_dashboard.app.review_analysis import (
     build_review_reason_analysis,
     classify_review_reason,
@@ -12,7 +15,17 @@ from ra_triage_dashboard.app.review_analysis import (
 
 
 class ReviewReasonAnalysisTest(unittest.TestCase):
-    def test_excluded_rows_are_not_materialized_in_reason_analysis(self) -> None:
+    def test_exclusion_filter_normalizes_explicit_slices(self) -> None:
+        self.assertEqual(resolve_review_exclusion_filter(""), ("all", None))
+        self.assertEqual(resolve_review_exclusion_filter("included"), ("included", False))
+        self.assertEqual(resolve_review_exclusion_filter("false"), ("included", False))
+        self.assertEqual(resolve_review_exclusion_filter("excluded"), ("excluded", True))
+        self.assertEqual(resolve_review_exclusion_filter("TRUE"), ("excluded", True))
+        with self.assertRaises(HTTPException) as context:
+            resolve_review_exclusion_filter("unexpected")
+        self.assertEqual(context.exception.status_code, 400)
+
+    def test_exclusion_slice_is_applied_by_the_analysis_aggregator(self) -> None:
         rows = [
             {
                 "issue_id": "cn-excluded",
@@ -36,9 +49,28 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
             },
         ]
         result = build_review_reason_analysis(rows, include_reason_themes=False)
-        self.assertEqual(result["total"], 1)
-        self.assertEqual([item["issue_id"] for item in result["items"]], ["cn-included"])
-        self.assertEqual(result["summary"]["with_structured_evidence"], 1)
+        self.assertEqual(result["total"], 2)
+        self.assertEqual(
+            [item["issue_id"] for item in result["items"]],
+            ["cn-excluded", "cn-included"],
+        )
+        self.assertEqual(result["summary"]["with_structured_evidence"], 2)
+
+        included = build_review_reason_analysis(
+            rows,
+            include_reason_themes=False,
+            is_excluded=False,
+        )
+        self.assertEqual(included["total"], 1)
+        self.assertEqual([item["issue_id"] for item in included["items"]], ["cn-included"])
+
+        excluded = build_review_reason_analysis(
+            rows,
+            include_reason_themes=False,
+            is_excluded=True,
+        )
+        self.assertEqual(excluded["total"], 1)
+        self.assertEqual([item["issue_id"] for item in excluded["items"]], ["cn-excluded"])
 
     def test_historical_tags_drive_effective_output_and_automatic_status(self) -> None:
         tag_catalog = {

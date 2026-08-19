@@ -114,6 +114,7 @@ function bindEvents() {
       "#analysisStatusFilter",
       "#analysisGtFilter",
       "#analysisModelLabelFilter",
+      "#analysisExclusionFilter",
       "#analysisEvidenceFilter",
       "#analysisSceneFilter",
       "#analysisTriggerFilter",
