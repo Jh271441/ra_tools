@@ -27,6 +27,8 @@ not source files for this package:
 - `artifacts/`, image caches, raw model responses, and summary JSON;
 - GT/label receipts, holdout data, and issue-specific result tables;
 - API keys, account state, and local gateway configuration;
+- report prose that contains label/GT markers or issue identifiers is rejected
+  by the runtime safety guard;
 - the dozens of historical F2/fusion wrappers and `/tmp`-dependent shims;
 - training/LoRA code, checkpoints, and the previous hierarchical two-stage
   training experiment;

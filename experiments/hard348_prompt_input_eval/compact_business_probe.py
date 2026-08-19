@@ -30,11 +30,28 @@ _FORBIDDEN_MODEL_KEYS = {
     "ground_truth",
     "expected_label",
     "expected_label_for_scoring_only",
+    "gold_for_qc_only",
+    "gt_for_scoring_only",
+    "gold_label",
+    "ground_truth_label",
     "label",
     "prediction",
+    "predicted_code",
     "final_pred",
     "issue_id",
 }
+
+_FORBIDDEN_MODEL_TEXT = (
+    re.compile(
+        r"\b(?:gt|ground[ _-]*truth|gold(?:[ _-]*(?:label|class))?|"
+        r"expected[ _-]*(?:label|class)|target[ _-]*(?:label|class)|"
+        r"pred(?:icted)?[ _-]*(?:label|class)|final[ _-]*(?:label|class)|"
+        r"prediction|label)\s*(?:is|=|:|：|->|为)?\s*[ABC]\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\bcn\d{6,}\b", re.IGNORECASE),
+    re.compile(r"\b(?:issue|case|scenario)[ _-]*(?:id)?\s*[:=：]", re.IGNORECASE),
+)
 
 _DERIVED_ARTIFACT_KEYS = {
     "model_yaml",
@@ -75,6 +92,10 @@ def _assert_model_safe(value: Any, *, path: str = "root") -> None:
     elif isinstance(value, list):
         for index, child in enumerate(value):
             _assert_model_safe(child, path=f"{path}[{index}]")
+    elif isinstance(value, str):
+        for pattern in _FORBIDDEN_MODEL_TEXT:
+            if pattern.search(value):
+                raise ValueError(f"forbidden model-visible text at {path}")
 
 
 def _assert_raw_evidence_artifact(payload: Any) -> list[dict[str, Any]]:

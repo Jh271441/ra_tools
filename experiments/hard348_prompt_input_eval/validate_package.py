@@ -118,6 +118,13 @@ def main() -> None:
         pass
     else:
         raise SystemExit("label safety guard did not fail closed")
+    for unsafe_text in ("GT=B", "ground truth: C", "case cn12345678"):
+        try:
+            probe._assert_model_safe({"note": unsafe_text})
+        except ValueError:
+            pass
+        else:
+            raise SystemExit(f"free-text safety guard did not fail closed: {unsafe_text}")
 
     print(f"validated {len(RUNTIME_FILES)} runtime files and prompt safety")
 

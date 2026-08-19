@@ -12,6 +12,9 @@ The runner is deliberately fail-closed:
 - the input guard rejects prior model summaries or scored artifacts (for
   example `stats`, `model_yaml`, `parsed`, or `raw_response`) instead of
   treating them as raw evidence;
+- the model-visible text guard rejects report prose containing label/GT
+  markers or issue identifiers, even when they are hidden inside a free-text
+  observation field;
 - expected labels are used only by the outer scorer, never by the model
   request;
 - Contract logic, threshold-to-label mapping, case-specific rules, and GT or
