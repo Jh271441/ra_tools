@@ -2031,10 +2031,10 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-entry-add { flex: 0 0 auto; min-height: 30px; padding: 5px 9px; font-size: 11px; white-space: nowrap; }
 .trail-update-entry-add > span:first-child { color: var(--accent); font-size: 15px; line-height: 1; }
 .trail-update-entry-list { min-width: 0; display: grid; gap: 6px; }
-.trail-update-entry-row { min-width: 0; display: grid; grid-template-columns: minmax(180px, .65fr) minmax(0, 1.35fr) auto; align-items: end; gap: 7px; padding: 7px; border: 1px solid var(--line-soft); border-radius: 7px; background: rgba(11,16,24,.56); }
-.trail-update-entry-row label { min-width: 0; display: grid; gap: 3px; color: var(--muted); font-size: 10px; }
-.trail-update-entry-row input, .trail-update-entry-row textarea { min-width: 0; width: 100%; box-sizing: border-box; }
-.trail-update-entry-row textarea { height: 42px; min-height: 42px; resize: vertical; }
+.trail-update-entry-row { min-width: 0; display: grid; grid-template-columns: minmax(180px, .65fr) minmax(0, 1.35fr) auto; align-items: start; gap: 7px; padding: 6px 7px; border: 1px solid var(--line-soft); border-radius: 7px; background: rgba(11,16,24,.56); }
+.trail-update-entry-row label { min-width: 0; display: grid; align-content: start; gap: 3px; color: var(--muted); font-size: 10px; }
+.trail-update-entry-row input, .trail-update-entry-row textarea { min-width: 0; width: 100%; box-sizing: border-box; height: 38px; min-height: 38px; padding: 6px 8px; line-height: 1.35; }
+.trail-update-entry-row textarea { resize: vertical; overflow-y: auto; }
 .trail-update-entry-remove { width: 30px; min-width: 30px; height: 30px; padding: 0; color: var(--muted); font-size: 18px; line-height: 1; }
 .trail-update-entry-remove:not(:disabled):hover { color: #fca5a5; border-color: rgba(248,113,113,.5); }
 .trail-update-direct-feedback { min-height: 17px; color: var(--faint); font-size: 11px; }
@@ -3122,7 +3122,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .trail-update-entry-row label:nth-child(1) { grid-column: 1; }
   .trail-update-entry-row label:nth-child(2) { grid-column: 1 / -1; }
   .trail-update-entry-remove { grid-column: 2; grid-row: 1; margin-top: 17px; }
-  .trail-update-entry-row textarea { height: auto; min-height: 68px; }
+  .trail-update-entry-row input, .trail-update-entry-row textarea { height: auto; min-height: 68px; }
 
   .trail-update-table-wrap { overflow: visible; }
   .trail-update-table,

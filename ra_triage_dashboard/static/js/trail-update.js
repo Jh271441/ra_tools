@@ -32,8 +32,8 @@ function trailIssueIdsFeedback(parsed) {
     );
   }
   return uiText(
-    ids.length ? `已识别 ${ids.length} 个 Issue（每行一个，可分别填写说明）` : "请输入 Issue ID",
-    ids.length ? `${ids.length} Issues recognized (one per row; notes can differ)` : "Enter at least one Issue ID"
+    ids.length ? `已识别 ${ids.length} 个 Issue（每行可填多个，可分别填写说明）` : "请输入 Issue ID",
+    ids.length ? `${ids.length} Issues recognized (multiple per row; notes can differ)` : "Enter at least one Issue ID"
   );
 }
 
@@ -46,8 +46,8 @@ function renderTrailIssueEntryRow(entry = {}) {
   const comment = escapeHtml(String(entry.comment || ""));
   return `<div class="trail-update-entry-row" data-trail-issue-entry-row>
     <label>
-      <span class="ui-lang-zh">Issue ID</span><span class="ui-lang-en">Issue ID</span>
-      <input data-trail-issue-entry-id type="text" inputmode="text" autocomplete="off" placeholder="cn32171803" value="${issueId}" />
+      <span class="ui-lang-zh">Issue ID（可多个）</span><span class="ui-lang-en">Issue IDs (multiple)</span>
+      <textarea data-trail-issue-entry-id rows="2" inputmode="text" autocomplete="off" placeholder="cn32171803, cn31994663" spellcheck="false">${issueId}</textarea>
     </label>
     <label>
       <span class="ui-lang-zh">排除说明（可选，写入 info）</span><span class="ui-lang-en">Exclusion note (optional; saved in info)</span>
@@ -89,18 +89,24 @@ function collectTrailIssueEntries() {
     const parsed = typeof parseIssueIdsInput === "function"
       ? parseIssueIdsInput(raw)
       : { ids: [], invalid: [raw || `row ${index + 1}`] };
-    if (parsed.invalid.length || parsed.ids.length !== 1) {
-      invalid.push(parsed.invalid[0] || `${raw || `第 ${index + 1} 行`}（每行只能填一个 Issue ID）`);
+    if (parsed.invalid.length) {
+      invalid.push(...parsed.invalid.map((item) => `${item}（第 ${index + 1} 行）`));
+    }
+    if (!parsed.ids.length) {
+      invalid.push(`${raw || `第 ${index + 1} 行`}（未识别到 Issue ID）`);
       return;
     }
-    const issueId = String(parsed.ids[0] || "").trim();
-    if (seen.has(issueId)) {
-      invalid.push(`${issueId}（重复）`);
-      return;
-    }
-    seen.add(issueId);
-    ids.push(issueId);
-    entries.push({ issue_id: issueId, comment });
+    parsed.ids.forEach((value) => {
+      const issueId = String(value || "").trim();
+      if (!issueId) return;
+      if (seen.has(issueId)) {
+        invalid.push(`${issueId}（重复）`);
+        return;
+      }
+      seen.add(issueId);
+      ids.push(issueId);
+      entries.push({ issue_id: issueId, comment });
+    });
   });
   entries.sort((left, right) => left.issue_id.localeCompare(right.issue_id));
   ids.splice(0, ids.length, ...entries.map((entry) => entry.issue_id));
@@ -1050,7 +1056,7 @@ function renderTrailIssuePreview(data) {
 async function loadTrailIssuePreview() {
   const parsed = parseTrailIssueIds();
   if (parsed.invalid.length || !parsed.ids.length) {
-    clearTrailIssuePreview(uiText("请先填写合法的 Issue ID（每行一个）。", "Enter valid Issue IDs first (one per row)."));
+    clearTrailIssuePreview(uiText("请先填写合法的 Issue ID（每行可填多个）。", "Enter valid Issue IDs first (multiple per row are supported)."));
     return null;
   }
   const requestSeq = ++state.trailUpdate.directRequestSeq;

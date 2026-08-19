@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-214`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-215`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -501,15 +501,15 @@
                     <div class="trail-update-entry-heading">
                       <div>
                         <span class="ui-lang-zh">Issue 与排除说明</span><span class="ui-lang-en">Issue and exclusion note</span>
-                        <small><span class="ui-lang-zh">每行一个 Issue；不同 Issue 可填写不同说明</span><span class="ui-lang-en">One Issue per row; notes can differ by Issue</span></small>
+                        <small><span class="ui-lang-zh">每行可填写多个 Issue（回车、空格或逗号分隔）；不同 Issue 可填写不同说明</span><span class="ui-lang-en">Each row accepts multiple Issues (separate with Enter, spaces, or commas); notes can differ by Issue</span></small>
                       </div>
                       <button class="button button-quiet trail-update-entry-add" id="trailUpdateIssueAddButton" type="button"><span aria-hidden="true">＋</span><span class="ui-lang-zh">添加一行</span><span class="ui-lang-en">Add row</span></button>
                     </div>
                     <div class="trail-update-entry-list" id="trailUpdateIssueEntries" aria-live="polite">
                       <div class="trail-update-entry-row" data-trail-issue-entry-row>
                         <label>
-                          <span class="ui-lang-zh">Issue ID</span><span class="ui-lang-en">Issue ID</span>
-                          <input data-trail-issue-entry-id type="text" inputmode="text" autocomplete="off" placeholder="cn32171803" />
+                          <span class="ui-lang-zh">Issue ID（可多个）</span><span class="ui-lang-en">Issue IDs (multiple)</span>
+                          <textarea data-trail-issue-entry-id rows="2" inputmode="text" autocomplete="off" placeholder="cn32171803, cn31994663" spellcheck="false"></textarea>
                         </label>
                         <label>
                           <span class="ui-lang-zh">排除说明（可选，写入 info）</span><span class="ui-lang-en">Exclusion note (optional; saved in info)</span>
@@ -1267,7 +1267,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-214`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-215`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
