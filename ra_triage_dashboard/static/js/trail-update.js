@@ -599,6 +599,39 @@ function renderTrailAttributePreview(data) {
   }).join("");
 }
 
+async function refreshTrailAttributeStatus({ runId, previewKey, requestSeq, force = false } = {}) {
+  try {
+    // This is deliberately a second-stage request.  The Review aggregate has
+    // already rendered from local data, so a slow Trail view must never hold
+    // candidate rows hostage.
+    const data = await api(trailUpdateEndpoint(runId, true, force), { cache: "no-store" });
+    if (
+      requestSeq !== state.trailUpdate.requestSeq ||
+      previewKey !== trailUpdatePreviewKey(runId)
+    ) return data;
+    state.trailUpdate.data = data;
+    state.trailUpdate.previewKey = previewKey;
+    state.trailUpdate.previewLoadedAt = Date.now();
+    renderTrailAttributePreview(data);
+    syncTrailAttributeActions(data);
+    setTrailAttributeStatus("");
+    return data;
+  } catch (error) {
+    if (
+      requestSeq === state.trailUpdate.requestSeq &&
+      previewKey === trailUpdatePreviewKey(runId)
+    ) {
+      // Keep the already-rendered local candidate list usable for inspection;
+      // only the remote status projection and commit readiness remain pending.
+      setTrailAttributeStatus(uiText(
+        "Trail 状态查询失败；案例已加载，可点击顶部刷新重试。",
+        "Trail status check failed; cases are loaded. Use the top refresh to retry."
+      ));
+    }
+    throw error;
+  }
+}
+
 async function loadTrailAttributePreview(force = false, options = {}) {
   const background = Boolean(options?.background);
   const select = $("#trailUpdateRunSelect");
@@ -606,7 +639,7 @@ async function loadTrailAttributePreview(force = false, options = {}) {
   state.trailUpdate.runId = runId;
   const previewKey = trailUpdatePreviewKey(runId);
   const cachedData = state.trailUpdate?.data;
-  if (!force && state.trailUpdate?.loading && state.trailUpdate.previewKey === previewKey) {
+  if (!background && !force && state.trailUpdate?.loading && state.trailUpdate.previewKey === previewKey) {
     if (cachedData) {
       setTrailAttributeLoading(false);
       renderTrailAttributePreview(cachedData);
@@ -615,6 +648,7 @@ async function loadTrailAttributePreview(force = false, options = {}) {
     return cachedData;
   }
   if (
+    !background &&
     !force &&
     cachedData &&
     state.trailUpdate.previewKey === previewKey &&
@@ -626,6 +660,9 @@ async function loadTrailAttributePreview(force = false, options = {}) {
     return cachedData;
   }
   const requestSeq = ++state.trailUpdate.requestSeq;
+  if (background) {
+    return refreshTrailAttributeStatus({ runId, previewKey, requestSeq, force });
+  }
   if (!background) setTrailAttributeLoading(true);
   const applyPreview = (data, { loaded = false } = {}) => {
     if (requestSeq !== state.trailUpdate.requestSeq) return false;
@@ -641,22 +678,13 @@ async function loadTrailAttributePreview(force = false, options = {}) {
     return true;
   };
   try {
-    // Keep the initial route responsive without splitting the preview into a
-    // local request plus a second Trail request.  The single checked request
-    // builds the aggregate and performs one batched Trail read; callers start
-    // it after the shell paints, and normal route changes reuse its snapshot.
-    if (!background) {
-      setTrailAttributeStatus(uiText(
-        "正在批量查询 Trail 状态…",
-        "Checking Trail statuses in one batch…"
-      ));
-    }
-    // Do not let an intermediary/browser reuse a stale pre-enable response.
-    // Normal route re-entry stays fast through the in-memory preview cache.
-    const data = await api(trailUpdateEndpoint(runId, true, force), { cache: "no-store" });
+    // First paint reads only the local Review aggregate.  It immediately
+    // presents every candidate as “查询中”, then a single batched Trail read
+    // fills in per-Issue state asynchronously below.
+    const data = await api(trailUpdateEndpoint(runId, false, force), { cache: "no-store" });
     if (requestSeq !== state.trailUpdate.requestSeq) return data;
-    if (!background) setTrailAttributeLoading(false);
     applyPreview(data, { loaded: true });
+    void refreshTrailAttributeStatus({ runId, previewKey, requestSeq, force }).catch(() => {});
     return data;
   } catch (error) {
     if (requestSeq === state.trailUpdate.requestSeq) {
