@@ -10,13 +10,14 @@
 | `PROMPT_SPEC.md` | Human-readable business-state prompt specification. |
 | `validate_package.py` | Static and prompt-safety checks; it never calls a model. |
 | `README.md` | Scope, constraints, and reproducible commands. |
+| `EVALUATION_STATUS.md` | Frozen evaluation gates and current candidate status. |
 
-The currently proposed candidates are the pairs
-`causal_role_first_v1` + `observation_v1` and
-`causal_role_first_v2` + `observation_v1`, plus
-`causal_role_first_v3` + `observation_v2`. They are prompt/input hypotheses
-awaiting independent source-only and Fresh validation; neither is a selected
-model configuration. v2 only adds generic direct-cause isolation between
+The runner supports the frozen prompt/input variants
+`causal_compare_v1`, `causal_role_first_v1` + `observation_v1`,
+`causal_role_first_v2` + `observation_v1`, `causal_role_first_v3` +
+`observation_v2`, and `causal_effect_gate_v3` + `observation_v2`. They are
+prompt/input hypotheses for controlled evaluation; none is an accepted
+Hard-348 configuration. v2 only adds generic direct-cause isolation between
 background traffic and the current maneuver; it is not a case-specific rule.
 
 ## Deliberately excluded

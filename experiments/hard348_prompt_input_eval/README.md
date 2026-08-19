@@ -158,6 +158,12 @@ current indexed prompt. `project_role_observer_facts.py` is an optional
 label-free projection helper; it removes observer conclusions and retains
 only auditable role, corridor, cross-frame, conflict, and visibility facts.
 
+The current gate and run status are recorded in
+[`EVALUATION_STATUS.md`](EVALUATION_STATUS.md). No candidate is accepted for
+Hard-348 or 0508 full1071 until it reproduces on the exact independent
+Fresh12 set; do not merge this experiment package into `master` as production
+triage behavior.
+
 Run the local package checks before committing:
 
 ```bash
