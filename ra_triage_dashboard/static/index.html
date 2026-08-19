@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-208`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-209`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -497,15 +497,27 @@
                     </div>
                     <span class="trail-update-direct-contract"><span class="ui-lang-zh">真实接口 · 预览优先</span><span class="ui-lang-en">Real API · preview first</span></span>
                   </div>
-                  <div class="trail-update-direct-grid">
-                    <label>
-                      <span class="ui-lang-zh">Issue ID（逗号/换行分隔）</span><span class="ui-lang-en">Issue IDs (comma/newline separated)</span>
-                      <textarea id="trailUpdateIssueIdsInput" rows="5" placeholder="cn32171803&#10;cn31994663"></textarea>
-                    </label>
-                    <label>
-                      <span class="ui-lang-zh">排除说明（可选，写入 info）</span><span class="ui-lang-en">Exclusion note (optional; saved in info)</span>
-                      <textarea id="trailUpdateIssueCommentInput" rows="5" placeholder="可选；留空时自动写入 info.ra_triage_dashboard.should_exclude_comment。"></textarea>
-                    </label>
+                  <div class="trail-update-direct-grid trail-update-entry-editor">
+                    <div class="trail-update-entry-heading">
+                      <div>
+                        <span class="ui-lang-zh">Issue 与排除说明</span><span class="ui-lang-en">Issue and exclusion note</span>
+                        <small><span class="ui-lang-zh">每行一个 Issue；不同 Issue 可填写不同说明</span><span class="ui-lang-en">One Issue per row; notes can differ by Issue</span></small>
+                      </div>
+                      <button class="button button-quiet trail-update-entry-add" id="trailUpdateIssueAddButton" type="button"><span aria-hidden="true">＋</span><span class="ui-lang-zh">添加一行</span><span class="ui-lang-en">Add row</span></button>
+                    </div>
+                    <div class="trail-update-entry-list" id="trailUpdateIssueEntries" aria-live="polite">
+                      <div class="trail-update-entry-row" data-trail-issue-entry-row>
+                        <label>
+                          <span class="ui-lang-zh">Issue ID</span><span class="ui-lang-en">Issue ID</span>
+                          <input data-trail-issue-entry-id type="text" inputmode="text" autocomplete="off" placeholder="cn32171803" />
+                        </label>
+                        <label>
+                          <span class="ui-lang-zh">排除说明（可选，写入 info）</span><span class="ui-lang-en">Exclusion note (optional; saved in info)</span>
+                          <textarea data-trail-issue-entry-comment rows="2" placeholder="留空时使用默认说明；会写入 info.ra_triage_dashboard.should_exclude_comment。"></textarea>
+                        </label>
+                        <button class="button button-quiet trail-update-entry-remove" data-trail-issue-entry-remove type="button" aria-label="删除此行" title="删除此行" disabled>×</button>
+                      </div>
+                    </div>
                   </div>
                   <div id="trailUpdateIssueIdsFeedback" class="trail-update-direct-feedback" role="status" aria-live="polite"></div>
                   <div class="page-actions trail-update-actions">
@@ -1241,7 +1253,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-208`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-209`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

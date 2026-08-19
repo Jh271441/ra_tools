@@ -27,27 +27,95 @@ function trailIssueIdsFeedback(parsed) {
   const invalid = parsed?.invalid || [];
   if (invalid.length) {
     return uiText(
-      `已识别 ${ids.length} 个 Issue；无法识别：${invalid.slice(0, 4).join("、")}${invalid.length > 4 ? "…" : ""}`,
-      `${ids.length} Issues recognized; invalid: ${invalid.slice(0, 4).join(", ")}${invalid.length > 4 ? "…" : ""}`
+      `已识别 ${ids.length} 个 Issue；请修正：${invalid.slice(0, 4).join("、")}${invalid.length > 4 ? "…" : ""}`,
+      `${ids.length} Issues recognized; fix: ${invalid.slice(0, 4).join(", ")}${invalid.length > 4 ? "…" : ""}`
     );
   }
   return uiText(
-    ids.length ? `已识别 ${ids.length} 个 Issue（重复项已去重）` : "请输入 Issue ID",
-    ids.length ? `${ids.length} Issues recognized (duplicates removed)` : "Enter at least one Issue ID"
+    ids.length ? `已识别 ${ids.length} 个 Issue（每行一个，可分别填写说明）` : "请输入 Issue ID",
+    ids.length ? `${ids.length} Issues recognized (one per row; notes can differ)` : "Enter at least one Issue ID"
   );
 }
 
+function trailIssueEntryRows() {
+  return Array.from(document.querySelectorAll("[data-trail-issue-entry-row]"));
+}
+
+function renderTrailIssueEntryRow(entry = {}) {
+  const issueId = escapeHtml(String(entry.issue_id || ""));
+  const comment = escapeHtml(String(entry.comment || ""));
+  return `<div class="trail-update-entry-row" data-trail-issue-entry-row>
+    <label>
+      <span class="ui-lang-zh">Issue ID</span><span class="ui-lang-en">Issue ID</span>
+      <input data-trail-issue-entry-id type="text" inputmode="text" autocomplete="off" placeholder="cn32171803" value="${issueId}" />
+    </label>
+    <label>
+      <span class="ui-lang-zh">排除说明（可选，写入 info）</span><span class="ui-lang-en">Exclusion note (optional; saved in info)</span>
+      <textarea data-trail-issue-entry-comment rows="2" placeholder="留空时使用默认说明；会写入 info.ra_triage_dashboard.should_exclude_comment。">${comment}</textarea>
+    </label>
+    <button class="button button-quiet trail-update-entry-remove" data-trail-issue-entry-remove type="button" aria-label="删除此行" title="删除此行">×</button>
+  </div>`;
+}
+
+function syncTrailIssueEntryRemoveButtons() {
+  const rows = trailIssueEntryRows();
+  rows.forEach((row) => {
+    const button = row.querySelector("[data-trail-issue-entry-remove]");
+    if (button) button.toggleAttribute("disabled", rows.length <= 1);
+  });
+}
+
+function addTrailIssueEntryRow(entry = {}) {
+  const list = $("#trailUpdateIssueEntries");
+  if (!list) return null;
+  list.insertAdjacentHTML("beforeend", renderTrailIssueEntryRow(entry));
+  syncTrailIssueEntryRemoveButtons();
+  const row = list.lastElementChild;
+  row?.querySelector("[data-trail-issue-entry-id]")?.focus();
+  return row;
+}
+
+function collectTrailIssueEntries() {
+  const entries = [];
+  const ids = [];
+  const invalid = [];
+  const seen = new Set();
+  trailIssueEntryRows().forEach((row, index) => {
+    const idInput = row.querySelector("[data-trail-issue-entry-id]");
+    const commentInput = row.querySelector("[data-trail-issue-entry-comment]");
+    const raw = String(idInput?.value || "").trim();
+    const comment = String(commentInput?.value || "").trim().slice(0, 4000);
+    if (!raw && !comment) return;
+    const parsed = typeof parseIssueIdsInput === "function"
+      ? parseIssueIdsInput(raw)
+      : { ids: [], invalid: [raw || `row ${index + 1}`] };
+    if (parsed.invalid.length || parsed.ids.length !== 1) {
+      invalid.push(parsed.invalid[0] || `${raw || `第 ${index + 1} 行`}（每行只能填一个 Issue ID）`);
+      return;
+    }
+    const issueId = String(parsed.ids[0] || "").trim();
+    if (seen.has(issueId)) {
+      invalid.push(`${issueId}（重复）`);
+      return;
+    }
+    seen.add(issueId);
+    ids.push(issueId);
+    entries.push({ issue_id: issueId, comment });
+  });
+  entries.sort((left, right) => left.issue_id.localeCompare(right.issue_id));
+  ids.splice(0, ids.length, ...entries.map((entry) => entry.issue_id));
+  return { ids, invalid, entries };
+}
+
 function parseTrailIssueIds() {
-  const input = $("#trailUpdateIssueIdsInput");
   const feedback = $("#trailUpdateIssueIdsFeedback");
-  const parsed = typeof parseIssueIdsInput === "function"
-    ? parseIssueIdsInput(input?.value || "")
-    : { ids: [], invalid: ["Issue parser unavailable"] };
+  const parsed = collectTrailIssueEntries();
   if (feedback) {
     feedback.textContent = trailIssueIdsFeedback(parsed);
     feedback.classList.toggle("is-error", parsed.invalid.length > 0);
     feedback.classList.toggle("is-ready", !parsed.invalid.length && parsed.ids.length > 0);
   }
+  syncTrailIssueEntryRemoveButtons();
   return parsed;
 }
 
@@ -935,10 +1003,9 @@ function renderTrailIssuePreview(data) {
 async function loadTrailIssuePreview() {
   const parsed = parseTrailIssueIds();
   if (parsed.invalid.length || !parsed.ids.length) {
-    clearTrailIssuePreview(uiText("请输入合法的 Issue ID。", "Enter valid Issue IDs first."));
+    clearTrailIssuePreview(uiText("请先填写合法的 Issue ID（每行一个）。", "Enter valid Issue IDs first (one per row)."));
     return null;
   }
-  const comment = String($("#trailUpdateIssueCommentInput")?.value || "").trim().slice(0, 4000);
   const requestSeq = ++state.trailUpdate.directRequestSeq;
   setTrailIssueStatus(uiText("正在检查 Issue 和 Trail 字段…", "Checking Issues and Trail fields…"));
   $("#trailUpdateIssuePreviewButton")?.toggleAttribute("disabled", true);
@@ -946,7 +1013,7 @@ async function loadTrailIssuePreview() {
     const data = await api("/api/trail-attribute-update/issue-preview", {
       method: "POST",
       allowReadOnlyMutation: true,
-      body: JSON.stringify({ issue_ids: parsed.ids, comment }),
+      body: JSON.stringify({ entries: parsed.entries }),
     });
     if (requestSeq !== state.trailUpdate.directRequestSeq) return data;
     state.trailUpdate.directData = data;
@@ -970,6 +1037,9 @@ async function commitTrailIssueExclusion() {
   const data = state.trailUpdate?.directData;
   if (!data || data.write_status !== "ready") return;
   const ids = Array.isArray(data.requested_issue_ids) ? data.requested_issue_ids : [];
+  const entries = Array.isArray(data.requested_entries)
+    ? data.requested_entries
+    : ids.map((issueId) => ({ issue_id: issueId, comment: data.comment || "" }));
   if (!await openTrailUpdateConfirm({ mode: "direct_issue_ids", data })) return;
   const button = $("#trailUpdateIssueCommitButton");
   button?.toggleAttribute("disabled", true);
@@ -981,8 +1051,7 @@ async function commitTrailIssueExclusion() {
       method: "POST",
       body: JSON.stringify({
         confirm: true,
-        issue_ids: ids,
-        comment: data.comment || "",
+        entries,
         payload_sha256: data.payload_sha256,
       }),
     });
@@ -1141,12 +1210,22 @@ function bindTrailAttributeUpdateEvents() {
     event.preventDefault();
     $("#trailUpdateJsonDialog")?.close();
   });
-  $("#trailUpdateIssueIdsInput")?.addEventListener("input", () => {
+  $("#trailUpdateIssueAddButton")?.addEventListener("click", () => {
+    addTrailIssueEntryRow();
     parseTrailIssueIds();
     clearTrailIssuePreview();
   });
-  $("#trailUpdateIssueCommentInput")?.addEventListener("input", () => {
-    if (state.trailUpdate.directData) clearTrailIssuePreview();
+  $("#trailUpdateIssueEntries")?.addEventListener("input", () => {
+    parseTrailIssueIds();
+    clearTrailIssuePreview();
+  });
+  $("#trailUpdateIssueEntries")?.addEventListener("click", (event) => {
+    const remove = event.target.closest("[data-trail-issue-entry-remove]");
+    if (!remove || remove.disabled) return;
+    remove.closest("[data-trail-issue-entry-row]")?.remove();
+    syncTrailIssueEntryRemoveButtons();
+    parseTrailIssueIds();
+    clearTrailIssuePreview();
   });
   $("#trailUpdateIssuePreviewButton")?.addEventListener("click", () => {
     loadTrailIssuePreview().catch((error) => showToast(error.message, true));

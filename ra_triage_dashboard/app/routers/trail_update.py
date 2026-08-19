@@ -52,7 +52,7 @@ TRAIL_TARGET_FIELD = TRAIL_INFO_FIELD
 TRAIL_TARGET_PATH = "ra_triage_dashboard.should_exclude"
 TRAIL_COMMENT_PATH = "ra_triage_dashboard.should_exclude_comment"
 TRAIL_DRAFT_SCHEMA = "trail-attribute-update-v2"
-TRAIL_ISSUE_DRAFT_SCHEMA = "trail-issue-exclusion-v1"
+TRAIL_ISSUE_DRAFT_SCHEMA = "trail-issue-exclusion-v2"
 # A direct Issue-ID action must leave an auditable reason even when the
 # operator does not type a custom note.  The model label remains untouched;
 # both the marker and its explanation are written under the namespaced info
@@ -74,6 +74,7 @@ def _mark_local_review_exclusions(
     *,
     actor: Any,
     fallback_note: str = "",
+    fallback_notes: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Persist the direct shielding result into the Review exclusion flag.
 
@@ -103,6 +104,11 @@ def _mark_local_review_exclusions(
     actor_source = _as_text(getattr(actor, "source", "")) or "trail_attribute_update"
     actor_verified = bool(getattr(actor, "verified", False))
     normalized_fallback_note = _as_text(fallback_note).strip()[:4000]
+    normalized_fallback_notes = {
+        _as_text(issue_id).strip(): _as_text(note).strip()[:4000]
+        for issue_id, note in (fallback_notes or {}).items()
+        if _as_text(issue_id).strip()
+    }
     for issue_id in normalized_ids:
         try:
             case = database.get_case(issue_id)
@@ -138,7 +144,9 @@ def _mark_local_review_exclusions(
                 is_excluded=True,
                 tags=list(current.get("tags") or []),
                 missing_evidence=list(current.get("missing_evidence") or []),
-                note=_as_text(current.get("note")) or normalized_fallback_note,
+                note=_as_text(current.get("note"))
+                or normalized_fallback_notes.get(issue_id)
+                or normalized_fallback_note,
                 author=actor_name,
                 author_source=actor_source,
                 author_verified=actor_verified,
@@ -530,12 +538,62 @@ def _normalise_issue_ids(raw: Any) -> tuple[list[str], list[str]]:
     return sorted(ids), invalid
 
 
+def _normalise_issue_entries(
+    raw: Any,
+    *,
+    fallback_comment: str = "",
+) -> tuple[list[dict[str, str]], list[str]]:
+    """Normalize one Issue-ID/comment pair per editable row.
+
+    The original API accepted ``issue_ids`` plus one shared ``comment``.  Keep
+    that shape working for old clients, while allowing the UI to send
+    ``entries=[{"issue_id": ..., "comment": ...}, ...]`` so every Issue can
+    carry a different explanation in the namespaced Trail info JSON.
+    """
+
+    default_comment = _as_text(fallback_comment).strip()[:4000]
+    if isinstance(raw, (list, tuple)):
+        values: list[Any] = list(raw)
+    elif isinstance(raw, dict):
+        values = [raw]
+    else:
+        # A legacy string may contain comma/newline-separated IDs.  It has no
+        # per-row note, so the optional shared comment applies to each one.
+        values = re.split(r"[\s,，、;；|]+", _as_text(raw))
+
+    entries: list[dict[str, str]] = []
+    invalid: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if isinstance(value, Mapping):
+            raw_issue_id = value.get("issue_id", value.get("id", ""))
+            comment = _as_text(value.get("comment", value.get("note", default_comment))).strip()[:4000]
+        else:
+            raw_issue_id = value
+            comment = default_comment
+        issue_id = _as_text(raw_issue_id).strip()
+        if not issue_id:
+            continue
+        if not ISSUE_ID_RE.fullmatch(issue_id):
+            invalid.append(issue_id[:128])
+            continue
+        if issue_id in seen:
+            invalid.append(f"{issue_id}（重复）")
+            continue
+        seen.add(issue_id)
+        entries.append({"issue_id": issue_id, "comment": comment})
+    entries.sort(key=lambda item: item["issue_id"])
+    return entries, invalid
+
+
 def build_trail_issue_exclusion_payload(
     issue_ids: list[str],
     *,
     current_rows: list[dict[str, Any]],
     invalid_issue_ids: list[str] | None = None,
     comment: str = "",
+    comment_by_issue: Mapping[str, str] | None = None,
+    requested_entries: list[dict[str, str]] | None = None,
     baseline_by_issue: Mapping[str, Mapping[str, Any]] | None = None,
     info_field: str = TRAIL_INFO_FIELD,
     trail_capability: dict[str, Any] | None = None,
@@ -555,8 +613,41 @@ def build_trail_issue_exclusion_payload(
         if _as_text(row.get("issue_id"))
     }
     supplied_comment = _as_text(comment).strip()[:4000]
-    comment_defaulted = not bool(supplied_comment)
-    normalized_comment = supplied_comment or TRAIL_ISSUE_EXCLUSION_COMMENT
+    supplied_comments = {
+        _as_text(issue_id).strip(): _as_text(note).strip()[:4000]
+        for issue_id, note in (comment_by_issue or {}).items()
+        if _as_text(issue_id).strip()
+    }
+    if not supplied_comments and supplied_comment:
+        supplied_comments = {issue_id: supplied_comment for issue_id in issue_ids}
+    normalized_comment = supplied_comment or (
+        next(iter(supplied_comments.values())) if len(set(supplied_comments.values())) == 1 else ""
+    )
+    if not normalized_comment and all(not note for note in supplied_comments.values()):
+        # Preserve the legacy top-level summary for old clients/tests; each
+        # item still carries its own effective default in the patch.
+        normalized_comment = TRAIL_ISSUE_EXCLUSION_COMMENT
+    normalized_entries = [
+        {
+            "issue_id": _as_text(item.get("issue_id")).strip(),
+            "comment": _as_text(item.get("comment")).strip()[:4000],
+        }
+        for item in (requested_entries or [])
+        if _as_text(item.get("issue_id")).strip()
+    ]
+    # Keep the structured request self-contained when this helper is called
+    # directly (rather than through the HTTP route, which supplies both
+    # ``requested_entries`` and ``comment_by_issue``).  The row value is the
+    # most specific source of truth; the legacy shared comment remains the
+    # fallback for old callers.
+    for entry in normalized_entries:
+        supplied_comments.setdefault(entry["issue_id"], entry["comment"])
+    if not normalized_entries:
+        normalized_entries = [
+            {"issue_id": issue_id, "comment": supplied_comments.get(issue_id, supplied_comment)}
+            for issue_id in issue_ids
+        ]
+    normalized_entries.sort(key=lambda item: item["issue_id"])
     release_by_issue = baseline_by_issue or {}
     missing = sorted(issue_id for issue_id in issue_ids if issue_id not in current_by_issue)
     items: list[dict[str, Any]] = []
@@ -575,10 +666,13 @@ def build_trail_issue_exclusion_payload(
         dashboard_info = current_info.get("ra_triage_dashboard")
         if not isinstance(dashboard_info, dict):
             dashboard_info = {}
+        supplied_item_comment = supplied_comments.get(issue_id, supplied_comment)
+        comment_defaulted = not bool(supplied_item_comment)
+        normalized_item_comment = supplied_item_comment or TRAIL_ISSUE_EXCLUSION_COMMENT
         patch = {
             "ra_triage_dashboard": {
                 "should_exclude": True,
-                "should_exclude_comment": normalized_comment,
+                "should_exclude_comment": normalized_item_comment,
             }
         }
         merged_info = deep_merge_dict(current_info, patch)
@@ -607,7 +701,7 @@ def build_trail_issue_exclusion_payload(
                 "merge_strategy": "deep_merge",
                 "patch": patch,
             },
-            "comment": normalized_comment,
+            "comment": normalized_item_comment,
             "comment_defaulted": comment_defaulted,
             "write_ready": True,
         }
@@ -624,10 +718,14 @@ def build_trail_issue_exclusion_payload(
         "comment_target_path": TRAIL_COMMENT_PATH,
         "merge_strategy": "deep_merge",
         "requested_issue_ids": list(issue_ids),
+        "requested_entries": normalized_entries,
         "invalid_issue_ids": list(invalid_issue_ids or []),
         "missing_issue_ids": missing,
         "comment": normalized_comment,
-        "comment_defaulted": comment_defaulted,
+        "comment_by_issue": {
+            issue_id: supplied_comments.get(issue_id, supplied_comment)
+            for issue_id in issue_ids
+        },
         "items": items,
     }
     digest = hashlib.sha256(_canonical_json(draft).encode("utf-8")).hexdigest()
@@ -668,9 +766,14 @@ def build_trail_issue_exclusion_payload(
         "merge_strategy": "deep_merge",
         "count": len(items),
         "requested_issue_ids": list(issue_ids),
+        "requested_entries": normalized_entries,
         "invalid_issue_ids": list(invalid_issue_ids or []),
         "missing_issue_ids": missing,
         "comment": normalized_comment,
+        "comment_by_issue": {
+            issue_id: supplied_comments.get(issue_id, supplied_comment)
+            for issue_id in issue_ids
+        },
         "payload_sha256": digest,
         "operation_id": digest,
         "items": items,
@@ -785,6 +888,8 @@ async def _build_direct_preview(
     issue_ids: list[str],
     invalid_issue_ids: list[str] | None = None,
     comment: str = "",
+    comment_by_issue: Mapping[str, str] | None = None,
+    requested_entries: list[dict[str, str]] | None = None,
 ) -> tuple[dict[str, Any], Any]:
     """Read target fields and build the direct Issue-ID draft."""
 
@@ -814,6 +919,8 @@ async def _build_direct_preview(
         current_rows=sync_result.rows,
         invalid_issue_ids=invalid_issue_ids,
         comment=comment,
+        comment_by_issue=comment_by_issue,
+        requested_entries=requested_entries,
         baseline_by_issue=baseline_by_issue,
         info_field=info_field,
         trail_capability=capability,
@@ -898,15 +1005,24 @@ async def trail_issue_exclusion_preview(request: Request) -> dict[str, Any]:
         raise _detail(400, "预览内容不是合法 JSON。") from exc
     if not isinstance(body, dict):
         raise _detail(400, "预览内容必须是 JSON 对象。")
-    normalized_ids, invalid = _normalise_issue_ids(body.get("issue_ids", []))
+    fallback_comment = _as_text(body.get("comment"))
+    raw_entries = body.get("entries") if "entries" in body else body.get("issue_ids", [])
+    normalized_entries, invalid = _normalise_issue_entries(
+        raw_entries,
+        fallback_comment=fallback_comment,
+    )
+    normalized_ids = [item["issue_id"] for item in normalized_entries]
     if not normalized_ids and not invalid:
         raise _detail(400, "请输入至少一个 Issue ID。")
-    if len(normalized_ids) + len(invalid) > 200:
+    if len(normalized_entries) + len(invalid) > 200:
         raise _detail(400, "单次按 Issue ID 屏蔽最多支持 200 条。")
+    comment_by_issue = {item["issue_id"]: item["comment"] for item in normalized_entries}
     payload, _sync_result = await _build_direct_preview(
         issue_ids=normalized_ids,
         invalid_issue_ids=invalid,
-        comment=_as_text(body.get("comment")),
+        comment=fallback_comment,
+        comment_by_issue=comment_by_issue,
+        requested_entries=normalized_entries,
     )
     return payload
 
@@ -1028,21 +1144,29 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
         raise _detail(400, "提交内容不是合法 JSON。") from exc
     if not isinstance(body, dict) or body.get("confirm") is not True:
         raise _detail(400, "提交 Trail 更新前必须明确 confirm=true。")
-    issue_ids, invalid = _normalise_issue_ids(body.get("issue_ids", []))
+    fallback_comment = _as_text(body.get("comment"))
+    raw_entries = body.get("entries") if "entries" in body else body.get("issue_ids", [])
+    requested_entries, invalid = _normalise_issue_entries(
+        raw_entries,
+        fallback_comment=fallback_comment,
+    )
+    issue_ids = [item["issue_id"] for item in requested_entries]
     if invalid:
         raise _detail(400, "提交内容包含无法识别的 Issue ID。")
     if not issue_ids:
         raise _detail(400, "提交内容缺少 Issue ID。")
     if len(issue_ids) > 200:
         raise _detail(400, "单次按 Issue ID 屏蔽最多支持 200 条。")
-    comment = _as_text(body.get("comment")).strip()[:4000]
+    comment_by_issue = {item["issue_id"]: item["comment"] for item in requested_entries}
     submitted_digest = _as_text(body.get("payload_sha256"))
     if not submitted_digest:
         raise _detail(400, "提交内容缺少 payload_sha256。")
     with _commit_lock:
         preview, sync_result = await _build_direct_preview(
             issue_ids=issue_ids,
-            comment=comment,
+            comment=fallback_comment,
+            comment_by_issue=comment_by_issue,
+            requested_entries=requested_entries,
         )
         if submitted_digest != _as_text(preview.get("payload_sha256")):
             raise _detail(409, "预览已过期或内容发生变化，请重新生成后再提交。")
@@ -1053,17 +1177,21 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
             if missing:
                 detail = f"{detail} 未找到 Issue: {', '.join(str(item) for item in missing[:8])}"
             raise _detail(409, f"Issue ID 屏蔽未就绪：{detail}")
-        # The preview contract normalizes an empty Comment to an auditable
-        # default.  Reuse that exact value for the info JSON field and local
-        # Review annotation; no separate Trail Comment is written.
-        effective_comment = _as_text(preview.get("comment")).strip()[:4000]
+        # The preview contract normalizes an empty row note to an auditable
+        # default.  Reuse each item's exact value for the info JSON field and
+        # local Review annotation; no separate Trail Comment is written.
+        effective_comments = {
+            _as_text(item.get("issue_id")).strip(): _as_text(item.get("comment")).strip()[:4000]
+            for item in (preview.get("items") or [])
+            if _as_text(item.get("issue_id")).strip()
+        }
         _, info_field = _field_names()
         changes = await asyncio.to_thread(
             build_manual_exclusion_changes,
             issue_ids,
             current_rows=sync_result.rows,
             info_field=info_field,
-            comment=effective_comment,
+            comment_by_issue=effective_comments,
         )
         changes = attach_trail_operation_id(changes, operation_id=submitted_digest)
         stats = await asyncio.to_thread(
@@ -1103,7 +1231,7 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
                 _mark_local_review_exclusions,
                 verified_issue_ids,
                 actor=identity,
-                fallback_note=effective_comment,
+                fallback_notes=effective_comments,
             )
             if readback.get("complete")
             else {

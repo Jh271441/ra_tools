@@ -16,7 +16,7 @@
    - Applied IDs are persisted as `issue_ids` in the review URL and sent to `/api/cases`; applying an empty list returns to the normal baseline queue.
 
 3. **Trail 属性更新双 Tab（当前改动）**
-   - Review Tab defaults to an all-Run latest-Review aggregate; selecting a Run narrows the result. Issue ID Tab accepts a bounded list and only deep-merges `ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude=true`, preserving the existing model label.
+   - Review Tab defaults to an all-Run latest-Review aggregate; selecting a Run narrows the result. Issue ID Tab accepts one Issue ID/comment pair per row (different rows may carry different notes) and only deep-merges `ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude=true`, preserving the existing model label.
    - Review results load automatically from the dataset/Run scope. With the writer disabled, list refreshes skip the remote Trail capability probe; commit remains fail-closed and performs a fresh probe before any future write.
    - The duplicated large header/capability card was removed; the Review tab keeps the compact summary/table and the Issue ID tab keeps its explicit preview step.
    - Field writes use `TrailInterface.update_issue_with_changes` (`/paladin/issue/pool/multi_update/`); exclusion explanations are deep-merged into `ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude_comment` in the same update.

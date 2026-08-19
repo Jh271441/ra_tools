@@ -14,12 +14,31 @@ from ra_triage_dashboard.app.routers.trail_update import (
     TRAIL_ISSUE_EXCLUSION_COMMENT,
     TRAIL_RESULT_FIELD,
     TRAIL_TARGET_PATH,
+    _normalise_issue_entries,
     build_trail_attribute_update_payload,
     build_trail_issue_exclusion_payload,
 )
 
 
 class TrailAttributeUpdateTest(unittest.TestCase):
+    def test_issue_entries_keep_row_comments_and_reject_duplicates(self) -> None:
+        entries, invalid = _normalise_issue_entries(
+            [
+                {"issue_id": "cn00000002", "comment": "泊入二次寻点"},
+                {"issue_id": "cn00000001", "comment": "红绿灯场景"},
+                {"issue_id": "cn00000001", "comment": "重复"},
+                {"issue_id": "not an issue", "comment": "非法"},
+            ]
+        )
+        self.assertEqual(
+            entries,
+            [
+                {"issue_id": "cn00000001", "comment": "红绿灯场景"},
+                {"issue_id": "cn00000002", "comment": "泊入二次寻点"},
+            ],
+        )
+        self.assertEqual(invalid, ["cn00000001（重复）", "not an issue"])
+
     def test_read_only_preview_skips_remote_trail_capability_probe(self) -> None:
         request = Request(
             {
@@ -393,6 +412,41 @@ class TrailAttributeUpdateTest(unittest.TestCase):
             TRAIL_ISSUE_EXCLUSION_COMMENT,
         )
         self.assertTrue(payload["items"][0]["comment_defaulted"])
+
+    def test_direct_issue_preview_keeps_row_specific_comments(self) -> None:
+        payload = build_trail_issue_exclusion_payload(
+            ["cn00000001", "cn00000002"],
+            current_rows=[
+                {"issue_id": "cn00000001", TRAIL_INFO_FIELD: {}},
+                {"issue_id": "cn00000002", TRAIL_INFO_FIELD: {}},
+            ],
+            comment_by_issue={
+                "cn00000001": "红绿灯场景",
+                "cn00000002": "泊入二次寻点",
+            },
+            requested_entries=[
+                {"issue_id": "cn00000001", "comment": "红绿灯场景"},
+                {"issue_id": "cn00000002", "comment": "泊入二次寻点"},
+            ],
+            trail_capability={"ready": True, "status": "ready"},
+            trail_write_enabled=True,
+        )
+        by_issue = {item["issue_id"]: item for item in payload["items"]}
+        self.assertEqual(
+            by_issue["cn00000001"]["target"]["patch"]["ra_triage_dashboard"]["should_exclude_comment"],
+            "红绿灯场景",
+        )
+        self.assertEqual(
+            by_issue["cn00000002"]["target"]["patch"]["ra_triage_dashboard"]["should_exclude_comment"],
+            "泊入二次寻点",
+        )
+        self.assertEqual(
+            payload["requested_entries"],
+            [
+                {"issue_id": "cn00000001", "comment": "红绿灯场景"},
+                {"issue_id": "cn00000002", "comment": "泊入二次寻点"},
+            ],
+        )
 
     def test_direct_issue_commit_marks_latest_review_as_excluded(self) -> None:
         actor = SimpleNamespace(

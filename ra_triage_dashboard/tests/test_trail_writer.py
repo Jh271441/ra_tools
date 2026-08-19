@@ -162,6 +162,28 @@ class TrailWriterTest(unittest.TestCase):
         self.assertNotIn("ra_stuck_auto_result", changes[0])
         self.assertNotIn("comment", changes[0])
 
+    def test_manual_exclusion_supports_a_distinct_info_note_per_issue(self) -> None:
+        changes = build_manual_exclusion_changes(
+            ["cn00000001", "cn00000002"],
+            current_rows=[
+                {"issue_id": "cn00000001", "ra_stuck_auto_result_info": {"keep": 1}},
+                {"issue_id": "cn00000002", "ra_stuck_auto_result_info": {"keep": 2}},
+            ],
+            comment_by_issue={
+                "cn00000001": "红绿灯场景，不纳入模型数据集",
+                "cn00000002": "泊入二次寻点，应该排除",
+            },
+        )
+        by_issue = {item["issue_id"]: item for item in changes}
+        self.assertEqual(
+            by_issue["cn00000001"]["ra_stuck_auto_result_info"]["ra_triage_dashboard"]["should_exclude_comment"],
+            "红绿灯场景，不纳入模型数据集",
+        )
+        self.assertEqual(
+            by_issue["cn00000002"]["ra_stuck_auto_result_info"]["ra_triage_dashboard"]["should_exclude_comment"],
+            "泊入二次寻点，应该排除",
+        )
+
     def test_writer_separately_reports_comment_result(self) -> None:
         calls = []
 

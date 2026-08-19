@@ -14,7 +14,7 @@ import json
 import sys
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Mapping
 
 
 LABELS = ("误触发", "正确触发", "无需协助")
@@ -250,6 +250,7 @@ def build_manual_exclusion_changes(
     current_rows: Iterable[dict[str, Any]] = (),
     info_field: str = "ra_stuck_auto_result_info",
     comment: str = "",
+    comment_by_issue: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Build an Issue-ID-only exclusion patch.
 
@@ -266,6 +267,11 @@ def build_manual_exclusion_changes(
         if str(row.get("issue_id") or "").strip()
     }
     normalized_comment = str(comment or "").strip()[:4000]
+    normalized_comments = {
+        str(issue_id or "").strip(): str(note or "").strip()[:4000]
+        for issue_id, note in (comment_by_issue or {}).items()
+        if str(issue_id or "").strip()
+    }
     changes: list[dict[str, Any]] = []
     for raw_issue_id in issue_ids:
         issue_id = str(raw_issue_id or "").strip()
@@ -279,10 +285,11 @@ def build_manual_exclusion_changes(
             "issue_id": issue_id,
             info_field: merged_info,
         }
-        if normalized_comment:
+        issue_comment = normalized_comments.get(issue_id, normalized_comment)
+        if issue_comment:
             merged_info = deep_merge_dict(
                 merged_info,
-                {"ra_triage_dashboard": {"should_exclude_comment": normalized_comment}},
+                {"ra_triage_dashboard": {"should_exclude_comment": issue_comment}},
             )
             change[info_field] = merged_info
         changes.append(change)
