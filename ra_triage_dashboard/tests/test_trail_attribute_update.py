@@ -199,7 +199,7 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         self.assertEqual(item["target"]["merge_strategy"], "deep_merge")
         self.assertEqual(
             item["target"]["patch"],
-            {"ra_triage_dashboard": {"should_exclude": True}},
+            {"ra_triage_dashboard": {"should_exclude": True, "should_exclude_comment": "exclude"}},
         )
         self.assertEqual(item["field_updates"][TRAIL_RESULT_FIELD], "误触发")
         self.assertEqual(item["field_updates"][TRAIL_INFO_FIELD], item["target"]["patch"])
@@ -357,13 +357,17 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         self.assertTrue(payload["items"][0]["target"]["patch"]["ra_triage_dashboard"]["should_exclude"])
         self.assertEqual(
             payload["items"][0]["target"]["patch"],
-            {"ra_triage_dashboard": {"should_exclude": True}},
+            {"ra_triage_dashboard": {"should_exclude": True, "should_exclude_comment": "人工屏蔽"}},
         )
         field_update = payload["items"][0]["field_update"]
         self.assertEqual(field_update["field"], TRAIL_INFO_FIELD)
         self.assertEqual(field_update["before"]["keep"], True)
         self.assertEqual(field_update["after"]["keep"], True)
         self.assertTrue(field_update["after"]["ra_triage_dashboard"]["should_exclude"])
+        self.assertEqual(
+            field_update["after"]["ra_triage_dashboard"]["should_exclude_comment"],
+            "人工屏蔽",
+        )
         self.assertTrue(field_update["model_label_unchanged"])
         self.assertEqual(payload["items"][0]["comment"], "人工屏蔽")
         self.assertEqual(payload["items"][0]["baseline_id"], "0206")
@@ -382,6 +386,10 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         self.assertEqual(payload["write_status"], "ready")
         self.assertEqual(payload["comment"], TRAIL_ISSUE_EXCLUSION_COMMENT)
         self.assertEqual(payload["items"][0]["comment"], TRAIL_ISSUE_EXCLUSION_COMMENT)
+        self.assertEqual(
+            payload["items"][0]["target"]["patch"]["ra_triage_dashboard"]["should_exclude_comment"],
+            TRAIL_ISSUE_EXCLUSION_COMMENT,
+        )
         self.assertTrue(payload["items"][0]["comment_defaulted"])
 
     def test_direct_issue_commit_marks_latest_review_as_excluded(self) -> None:

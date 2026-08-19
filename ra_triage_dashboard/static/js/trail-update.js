@@ -219,10 +219,13 @@ function trailUpdateTargetSpec(data = {}) {
       || "ra_stuck_auto_result_info"
   ).trim() || "ra_stuck_auto_result_info";
   const path = String(data?.target_path || "ra_triage_dashboard.should_exclude").trim().replace(/^\.+|\.+$/g, "");
+  const commentPath = String(data?.comment_target_path || "ra_triage_dashboard.should_exclude_comment").trim().replace(/^\.+|\.+$/g, "");
   return {
     field,
     path,
+    commentPath,
     fullPath: path ? `${field}.${path}` : field,
+    commentFullPath: commentPath ? `${field}.${commentPath}` : field,
   };
 }
 
@@ -231,7 +234,7 @@ function renderTrailUpdateTargetField(data = {}, fieldId = "trailUpdateInfoField
   const field = $(`#${fieldId}`);
   if (field) {
     field.textContent = spec.fullPath;
-    field.setAttribute("title", spec.fullPath);
+    field.setAttribute("title", `${spec.fullPath}\n排除说明：${spec.commentFullPath}`);
   }
   return spec;
 }
@@ -412,7 +415,7 @@ function renderTrailAttributePreview(data) {
       <td>${labelBadge(model.label, "未输出")}<small>${ready ? "" : uiText("label 不在三分类契约内", "label is outside the contract")}</small></td>
       <td><div class="trail-update-reason" title="${escapeHtml(model.reason || "模型未返回 reason")}">${escapeHtml(model.reason || "模型未返回 reason")}</div><small>${escapeHtml(formatModelConfidence(model.confidence))} confidence</small></td>
       <td><div>${escapeHtml(review.reviewer || "未记录")}</div><small>${escapeHtml(review.status || "pending")} · ${escapeHtml(formatTime(review.reviewed_at))}</small></td>
-      <td><div class="trail-update-comment" title="${escapeHtml(comment || uiText("未填写 Comment", "No Comment"))}">${escapeHtml(comment || "未填写")}</div><small>${comment ? uiText("提交时将追加到 Trail Comment", "Added to Trail Comment on commit") : uiText("不会写入 Comment", "No Comment will be written")}</small></td>
+      <td><div class="trail-update-comment" title="${escapeHtml(comment || uiText("未填写 Comment", "No Comment"))}">${escapeHtml(comment || "未填写")}</div><small>${comment ? uiText("提交时写入 info.ra_triage_dashboard.should_exclude_comment", "Saved in info.ra_triage_dashboard.should_exclude_comment on commit") : uiText("不会写入排除说明", "No exclusion note will be written")}</small></td>
       <td class="trail-update-source-cell" title="${escapeHtml(sourceRun.title)}"><strong>${escapeHtml(sourceRun.label)}</strong></td>
       <td><span class="trail-update-state-badge ${status.className}" title="${escapeHtml(status.detail)}">${escapeHtml(status.label)}</span><small>${escapeHtml(status.detail)}</small></td>
     </tr>`;
@@ -602,7 +605,7 @@ let trailUpdateProgressCloseTimer = null;
 const TRAIL_UPDATE_PROGRESS_STAGES = [
   { key: "prepare", zh: "校验预览", en: "Validate preview" },
   { key: "request", zh: "连接 Trail 接口", en: "Connect to Trail" },
-  { key: "write", zh: "分批写入字段与 Comment", en: "Write fields and Comments in batches" },
+  { key: "write", zh: "分批写入字段与排除说明", en: "Write fields and exclusion notes in batches" },
   { key: "readback", zh: "批量回读并校验", en: "Read back and verify" },
   { key: "done", zh: "完成", en: "Complete" },
 ];
@@ -910,14 +913,20 @@ function renderTrailIssuePreview(data) {
     );
     const comment = String(item.comment || "").trim();
     const commentHint = item.comment_defaulted
-      ? uiText("自动说明 · 将追加到 Trail Comment", "Auto note · added to Trail Comment")
-      : uiText("将追加到 Trail Comment", "Added to Trail Comment");
+      ? uiText("自动说明 · 写入 info.ra_triage_dashboard.should_exclude_comment", "Auto note · saved in info.ra_triage_dashboard.should_exclude_comment")
+      : uiText("写入 info.ra_triage_dashboard.should_exclude_comment", "Saved in info.ra_triage_dashboard.should_exclude_comment");
+    const dashboardPatch = target.patch?.ra_triage_dashboard || {};
+    const commentPatch = String(dashboardPatch.should_exclude_comment || "").trim();
+    const infoPreview = [
+      `${shortPath} = true`,
+      commentPatch ? `should_exclude_comment = ${commentPatch}` : "",
+    ].filter(Boolean).join("; ");
     return `<tr>
       <td><strong class="trail-update-issue">${escapeHtml(item.issue_id || "—")}</strong></td>
       <td class="trail-update-release-cell" title="${escapeHtml(item.baseline_scope || release)}"><strong>${escapeHtml(release)}</strong></td>
       <td>${labelBadge(item.current_label, "未输出")}</td>
       <td><span class="trail-update-state-badge ${item.current_should_exclude ? "is-on" : ""}">${escapeHtml(currentState)}</span></td>
-      <td class="trail-update-info-cell"><strong title="${escapeHtml(targetSpec.fullPath)}">${escapeHtml(shortPath)}</strong><small>${uiText("info-only · label 不变", "info-only · label unchanged")}</small><code>${escapeHtml(shortPath)} = true</code></td>
+      <td class="trail-update-info-cell"><strong title="${escapeHtml(targetSpec.fullPath)}">${escapeHtml(shortPath)}</strong><small>${uiText("info-only · label 不变", "info-only · label unchanged")}</small><code title="${escapeHtml(infoPreview)}">${escapeHtml(infoPreview)}</code></td>
       <td><div class="trail-update-comment" title="${escapeHtml(comment)}">${escapeHtml(comment || "—")}</div><small>${commentHint}</small></td>
     </tr>`;
   }).join("");
@@ -964,7 +973,7 @@ async function commitTrailIssueExclusion() {
   if (!await openTrailUpdateConfirm({ mode: "direct_issue_ids", data })) return;
   const button = $("#trailUpdateIssueCommitButton");
   button?.toggleAttribute("disabled", true);
-  setTrailIssueStatus(uiText("正在写入 Trail 字段和 Comment…", "Writing Trail fields and Comments…"));
+  setTrailIssueStatus(uiText("正在写入 Trail 字段和 info 排除说明…", "Writing Trail fields and info notes…"));
   openTrailUpdateProgress({ mode: "issue", total: ids.length });
   trailUpdateProgressSetStage("request");
   try {
@@ -989,13 +998,13 @@ async function commitTrailIssueExclusion() {
       `Review “Exclude” ${Number(localReview.marked_count || 0) + Number(localReview.already_excluded_count || 0)}/${localReview.requested_count || 0}`
     );
     const progressMessage = uiText(
-      `字段 ${stats.success_count || 0}/${stats.total || ids.length}，Comment ${stats.comment_success_count || 0}/${stats.comment_total || 0}；${readbackText}；${localReviewText}。`,
-      `Fields ${stats.success_count || 0}/${stats.total || ids.length}; Comments ${stats.comment_success_count || 0}/${stats.comment_total || 0}; ${readbackText}; ${localReviewText}.`
+      `字段与 info 排除说明 ${stats.success_count || 0}/${stats.total || ids.length}；${readbackText}；${localReviewText}。`,
+      `Trail fields and info notes ${stats.success_count || 0}/${stats.total || ids.length}; ${readbackText}; ${localReviewText}.`
     );
     finishTrailUpdateProgress({ ok: Boolean(result?.ok), message: progressMessage });
     setTrailIssueStatus(uiText(
-      `屏蔽完成：字段成功 ${stats.success_count || 0}，字段失败 ${stats.failed_count || 0}；Comment 成功 ${stats.comment_success_count || 0}，失败 ${stats.comment_failed_count || 0}，跳过 ${stats.comment_skipped_count || 0}；${readbackText}；${localReviewText}。`,
-      `Shield finished: fields ${stats.success_count || 0} succeeded / ${stats.failed_count || 0} failed; Comments ${stats.comment_success_count || 0} succeeded / ${stats.comment_failed_count || 0} failed / ${stats.comment_skipped_count || 0} skipped; ${readbackText}; ${localReviewText}.`
+      `屏蔽完成：字段与 info 排除说明成功 ${stats.success_count || 0}，失败 ${stats.failed_count || 0}；${readbackText}；${localReviewText}。`,
+      `Shield finished: fields and info notes ${stats.success_count || 0} succeeded / ${stats.failed_count || 0} failed; ${readbackText}; ${localReviewText}.`
     ));
     showToast(
       result?.ok
@@ -1021,7 +1030,7 @@ async function commitTrailAttributeUpdate() {
   if (!await openTrailUpdateConfirm({ mode: "review", data })) return;
   const button = $("#trailUpdateCommitButton");
   button?.toggleAttribute("disabled", true);
-  setTrailAttributeStatus(uiText("正在提交 Trail 属性…", "Committing Trail attributes…"));
+  setTrailAttributeStatus(uiText("正在提交 Trail 属性…", "Committing Trail info…"));
   openTrailUpdateProgress({ mode: "review", total: Number(data?.count || data?.items?.length || 0) });
   trailUpdateProgressSetStage("request");
   try {
@@ -1041,13 +1050,13 @@ async function commitTrailAttributeUpdate() {
       `read back ${readback.verified_count || 0}/${readback.checked_count || 0}`
     );
     const progressMessage = uiText(
-      `字段 ${stats.success_count || 0}/${stats.total || data?.items?.length || 0}，Comment ${stats.comment_success_count || 0}/${stats.comment_total || 0}；${readbackText}。`,
-      `Fields ${stats.success_count || 0}/${stats.total || data?.items?.length || 0}; Comments ${stats.comment_success_count || 0}/${stats.comment_total || 0}; ${readbackText}.`
+      `字段与 info 排除说明 ${stats.success_count || 0}/${stats.total || data?.items?.length || 0}；${readbackText}。`,
+      `Trail fields and info notes ${stats.success_count || 0}/${stats.total || data?.items?.length || 0}; ${readbackText}.`
     );
     finishTrailUpdateProgress({ ok: Boolean(result?.ok), message: progressMessage });
     setTrailAttributeStatus(uiText(
-      `Trail 更新完成：字段成功 ${stats.success_count || 0}，字段失败 ${stats.failed_count || 0}；Comment 成功 ${stats.comment_success_count || 0}，失败 ${stats.comment_failed_count || 0}，跳过 ${stats.comment_skipped_count || 0}；${readbackText}。`,
-      `Trail update finished: fields ${stats.success_count || 0} succeeded / ${stats.failed_count || 0} failed; Comments ${stats.comment_success_count || 0} succeeded / ${stats.comment_failed_count || 0} failed / ${stats.comment_skipped_count || 0} skipped; ${readbackText}.`
+      `Trail 更新完成：字段与 info 排除说明成功 ${stats.success_count || 0}，失败 ${stats.failed_count || 0}；${readbackText}。`,
+      `Trail update finished: fields and info notes ${stats.success_count || 0} succeeded / ${stats.failed_count || 0} failed; ${readbackText}.`
     ));
     showToast(
       result?.ok

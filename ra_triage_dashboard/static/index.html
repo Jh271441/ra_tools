@@ -503,8 +503,8 @@
                       <textarea id="trailUpdateIssueIdsInput" rows="5" placeholder="cn32171803&#10;cn31994663"></textarea>
                     </label>
                     <label>
-                      <span class="ui-lang-zh">Comment（可选，逐个 Issue 添加）</span><span class="ui-lang-en">Comment (optional; added to each Issue)</span>
-                      <textarea id="trailUpdateIssueCommentInput" rows="5" placeholder="可选；留空时自动写入“问题排除：Issue ID 直接屏蔽（仅写入 should_exclude=true，模型 label 不变）”。"></textarea>
+                      <span class="ui-lang-zh">排除说明（可选，写入 info）</span><span class="ui-lang-en">Exclusion note (optional; saved in info)</span>
+                      <textarea id="trailUpdateIssueCommentInput" rows="5" placeholder="可选；留空时自动写入 info.ra_triage_dashboard.should_exclude_comment。"></textarea>
                     </label>
                   </div>
                   <div id="trailUpdateIssueIdsFeedback" class="trail-update-direct-feedback" role="status" aria-live="polite"></div>
@@ -536,7 +536,7 @@
                 <section class="page-card trail-update-table-card">
                   <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">排除候选明细</span><span class="ui-lang-en">Excluded case details</span></h3></div><div class="trail-update-result-actions"><button class="button button-quiet" data-trail-json-preview="review" type="button" disabled><span class="ui-lang-zh">预览 JSON</span><span class="ui-lang-en">Preview JSON</span></button></div></div>
                   <div class="trail-update-table-wrap">
-                    <table class="trail-update-table"><thead><tr><th>Issue</th><th>GT</th><th>模型 label</th><th>模型 reason</th><th>Review</th><th>Comment</th><th title="悬停查看完整 Model Run 与 baseline scope">数据集版本</th><th>Trail 更新状态</th></tr></thead><tbody id="trailUpdateTableBody"><tr><td colspan="8" class="trail-update-empty"><span class="ui-lang-zh">正在加载排除案例。</span><span class="ui-lang-en">Loading excluded cases.</span></tr></tbody></table>
+                    <table class="trail-update-table"><thead><tr><th>Issue</th><th>GT</th><th>模型 label</th><th>模型 reason</th><th>Review</th><th>排除说明</th><th title="悬停查看完整 Model Run 与 baseline scope">数据集版本</th><th>Trail 更新状态</th></tr></thead><tbody id="trailUpdateTableBody"><tr><td colspan="8" class="trail-update-empty"><span class="ui-lang-zh">正在加载排除案例。</span><span class="ui-lang-en">Loading excluded cases.</span></tr></tbody></table>
                   </div>
                 </section>
               </section>
@@ -552,7 +552,7 @@
                 <section class="page-card trail-update-table-card">
                   <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">预计改动（仅写 info）</span><span class="ui-lang-en">Expected changes (info only)</span></h3></div><div class="trail-update-result-actions"><button class="button button-quiet" data-trail-json-preview="issue" type="button" disabled><span class="ui-lang-zh">预览 JSON</span><span class="ui-lang-en">Preview JSON</span></button></div></div>
                   <div class="trail-update-table-wrap">
-                    <table class="trail-update-table trail-update-direct-table"><thead><tr><th>Issue</th><th>数据集版本</th><th>当前模型 label（不改）</th><th>当前屏蔽状态</th><th>预计写入 info</th><th>Comment</th></tr></thead><tbody id="trailUpdateIssueTableBody"><tr><td colspan="6" class="trail-update-empty"><span class="ui-lang-zh">生成预览后显示 Issue。</span><span class="ui-lang-en">Issues appear after building a preview.</span></tr></tbody></table>
+                    <table class="trail-update-table trail-update-direct-table"><thead><tr><th>Issue</th><th>数据集版本</th><th>当前模型 label（不改）</th><th>当前屏蔽状态</th><th>预计写入 info</th><th>排除说明</th></tr></thead><tbody id="trailUpdateIssueTableBody"><tr><td colspan="6" class="trail-update-empty"><span class="ui-lang-zh">生成预览后显示 Issue。</span><span class="ui-lang-en">Issues appear after building a preview.</span></tr></tbody></table>
                   </div>
                 </section>
               </section>
@@ -1208,9 +1208,9 @@
         <ol class="trail-update-progress-steps" aria-label="Trail write stages">
           <li data-trail-progress-stage="prepare" class="is-active"><span class="trail-update-progress-step-dot">1</span><div><strong><span class="ui-lang-zh">校验预览</span><span class="ui-lang-en">Validate preview</span></strong><small><span class="ui-lang-zh">确认本次写入内容未变化</span><span class="ui-lang-en">Confirm the draft is unchanged</span></small></div></li>
           <li data-trail-progress-stage="request" class="is-pending"><span class="trail-update-progress-step-dot">2</span><div><strong><span class="ui-lang-zh">连接 Trail 接口</span><span class="ui-lang-en">Connect to Trail</span></strong><small><span class="ui-lang-zh">发起一次受控提交</span><span class="ui-lang-en">Start the guarded commit</span></small></div></li>
-          <li data-trail-progress-stage="write" class="is-pending"><span class="trail-update-progress-step-dot">3</span><div><strong><span class="ui-lang-zh">分批写入字段与 Comment</span><span class="ui-lang-en">Write fields and Comments in batches</span></strong><small><span class="ui-lang-zh">完成后返回分批统计</span><span class="ui-lang-en">Return batch statistics when done</span></small></div></li>
+          <li data-trail-progress-stage="write" class="is-pending"><span class="trail-update-progress-step-dot">3</span><div><strong><span class="ui-lang-zh">分批写入字段与排除说明</span><span class="ui-lang-en">Write fields and exclusion notes in batches</span></strong><small><span class="ui-lang-zh">说明与屏蔽标记一起写入 info</span><span class="ui-lang-en">Save the note with the exclusion marker in info</span></small></div></li>
           <li data-trail-progress-stage="readback" class="is-pending"><span class="trail-update-progress-step-dot">4</span><div><strong><span class="ui-lang-zh">批量回读并校验</span><span class="ui-lang-en">Read back and verify</span></strong><small><span class="ui-lang-zh">确认每个成功项已写入</span><span class="ui-lang-en">Verify every successful item</span></small></div></li>
-          <li data-trail-progress-stage="done" class="is-pending"><span class="trail-update-progress-step-dot">5</span><div><strong><span class="ui-lang-zh">完成</span><span class="ui-lang-en">Complete</span></strong><small><span class="ui-lang-zh">展示字段、Comment 和回读结果</span><span class="ui-lang-en">Show field, Comment, and readback results</span></small></div></li>
+          <li data-trail-progress-stage="done" class="is-pending"><span class="trail-update-progress-step-dot">5</span><div><strong><span class="ui-lang-zh">完成</span><span class="ui-lang-en">Complete</span></strong><small><span class="ui-lang-zh">展示字段、排除说明和回读结果</span><span class="ui-lang-en">Show fields, exclusion notes, and readback results</span></small></div></li>
         </ol>
         <div class="dialog-actions trail-update-progress-actions"><button class="button button-quiet" id="trailUpdateProgressClose" type="button" hidden><span class="ui-lang-zh">关闭</span><span class="ui-lang-en">Close</span></button></div>
       </div>

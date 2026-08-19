@@ -32,18 +32,13 @@ from ..http_support import (
 )
 from ..runtime import baseline_registry, database, settings
 from ..review_workflow import derive_review_status
-from ..trail_sync import (
-    _dashboard_should_exclude,
-    read_trail_comment_markers,
-    read_trail_model_fields,
-)
+from ..trail_sync import _dashboard_should_exclude, read_trail_model_fields
 from ..trail_writer import (
+    attach_trail_operation_id,
     build_manual_exclusion_changes,
     build_trail_changes,
-    decorate_trail_comments,
     deep_merge_dict,
     normalise_model_label,
-    trail_operation_comment,
     verify_trail_readback,
     write_trail_model_results,
 )
@@ -55,11 +50,13 @@ TRAIL_INFO_FIELD = "ra_stuck_auto_result_info"
 # Backward-compatible aliases used by older imports/tests.
 TRAIL_TARGET_FIELD = TRAIL_INFO_FIELD
 TRAIL_TARGET_PATH = "ra_triage_dashboard.should_exclude"
+TRAIL_COMMENT_PATH = "ra_triage_dashboard.should_exclude_comment"
 TRAIL_DRAFT_SCHEMA = "trail-attribute-update-v2"
 TRAIL_ISSUE_DRAFT_SCHEMA = "trail-issue-exclusion-v1"
-# A direct Issue-ID action must leave an auditable reason in Trail Comment even
-# when the operator does not type a custom note.  The model label remains
-# untouched; only the namespaced Dashboard exclusion marker is written.
+# A direct Issue-ID action must leave an auditable reason even when the
+# operator does not type a custom note.  The model label remains untouched;
+# both the marker and its explanation are written under the namespaced info
+# field, not through Trail's separate Comment API.
 TRAIL_ISSUE_EXCLUSION_COMMENT = (
     "问题排除：Issue ID 直接屏蔽（仅写入 should_exclude=true，模型 label 不变）。"
 )
@@ -368,10 +365,14 @@ def build_trail_attribute_update_payload(
         )
         if not label and not info_only:
             invalid_labels.append(issue_id)
-        # Trail only needs this one Dashboard-owned marker.  Review/run
-        # provenance remains in the deterministic draft and Comment; keeping
-        # it out of the info field avoids mixing in model metadata.
-        patch = {"ra_triage_dashboard": {"should_exclude": True}}
+        # Trail only needs Dashboard-owned fields.  Keep the operator's
+        # explanation beside the exclusion marker in the same info JSON so
+        # the update is atomic and does not create a separate Trail Comment.
+        comment_text = _as_text(annotation.get("note"))[:4000]
+        dashboard_patch: dict[str, Any] = {"should_exclude": True}
+        if comment_text:
+            dashboard_patch["should_exclude_comment"] = comment_text
+        patch = {"ra_triage_dashboard": dashboard_patch}
         items.append(
             {
                 "issue_id": issue_id,
@@ -397,7 +398,7 @@ def build_trail_attribute_update_payload(
                     "missing_evidence": list(annotation.get("missing_evidence") or []),
                     "is_excluded": True,
                 },
-                "comment": _as_text(annotation.get("note"))[:4000],
+                "comment": comment_text,
                 # The current workflow is info-only, so a missing model label
                 # does not make the marker write invalid.  Keep the strict
                 # label gate for the legacy model+info mode.
@@ -408,6 +409,7 @@ def build_trail_attribute_update_payload(
                     "field": info_field,
                     "result_field": result_field,
                     "path": TRAIL_TARGET_PATH,
+                    "comment_path": TRAIL_COMMENT_PATH,
                     "merge_strategy": "deep_merge",
                     "patch": patch,
                 },
@@ -434,6 +436,7 @@ def build_trail_attribute_update_payload(
         "target_fields": [info_field] if info_only else [result_field, info_field],
         "target_field": info_field,
         "target_path": TRAIL_TARGET_PATH,
+        "comment_target_path": TRAIL_COMMENT_PATH,
         "merge_strategy": "deep_merge",
         "model_run_id": run_id,
         "model_run_ids": sorted(
@@ -571,7 +574,12 @@ def build_trail_issue_exclusion_payload(
         dashboard_info = current_info.get("ra_triage_dashboard")
         if not isinstance(dashboard_info, dict):
             dashboard_info = {}
-        patch = {"ra_triage_dashboard": {"should_exclude": True}}
+        patch = {
+            "ra_triage_dashboard": {
+                "should_exclude": True,
+                "should_exclude_comment": normalized_comment,
+            }
+        }
         merged_info = deep_merge_dict(current_info, patch)
         item: dict[str, Any] = {
             "issue_id": issue_id,
@@ -594,6 +602,7 @@ def build_trail_issue_exclusion_payload(
             "target": {
                 "field": info_field,
                 "path": TRAIL_TARGET_PATH,
+                "comment_path": TRAIL_COMMENT_PATH,
                 "merge_strategy": "deep_merge",
                 "patch": patch,
             },
@@ -611,6 +620,7 @@ def build_trail_issue_exclusion_payload(
         "target_fields": [info_field],
         "target_field": info_field,
         "target_path": TRAIL_TARGET_PATH,
+        "comment_target_path": TRAIL_COMMENT_PATH,
         "merge_strategy": "deep_merge",
         "requested_issue_ids": list(issue_ids),
         "invalid_issue_ids": list(invalid_issue_ids or []),
@@ -813,34 +823,6 @@ async def _build_direct_preview(
     return payload, sync_result
 
 
-async def _comment_marker_preflight(
-    *,
-    issue_ids: list[str],
-    operation_id: str,
-) -> set[str]:
-    """Return Issues whose exact operation Comment already exists.
-
-    Comment writes are separate from ``multi_update`` and the legacy client
-    does not expose an idempotency key.  Read the configured view first and
-    fail closed when ``more_comment`` is unavailable, before changing fields.
-    """
-
-    if not issue_ids:
-        return set()
-    marker = trail_operation_comment("", operation_id)
-    result = await asyncio.to_thread(
-        read_trail_comment_markers,
-        ra_root=settings.ra_auto_triage_root,
-        issue_ids=issue_ids,
-        view_id=settings.trail_view_id,
-        chunk_size=settings.trail_sync_chunk_size,
-        marker=marker,
-    )
-    if not result.complete:
-        raise _detail(409, _as_text(result.message) or "Trail Comment 幂等检查失败。")
-    return set(result.matched_issue_ids)
-
-
 async def _readback_changes(
     changes: list[dict[str, Any]],
     stats: dict[str, Any],
@@ -990,23 +972,14 @@ async def trail_attribute_update_commit(request: Request) -> dict[str, Any]:
             info_field=info_field,
             write_result_field=False,
         )
-        changes = decorate_trail_comments(changes, operation_id=submitted_digest)
-        comment_issue_ids = [
-            str(item.get("issue_id") or "").strip()
-            for item in changes
-            if str(item.get("comment") or "").strip()
-        ]
-        comment_skip_issue_ids = await _comment_marker_preflight(
-            issue_ids=comment_issue_ids,
-            operation_id=submitted_digest,
-        )
+        # Keep retries idempotent inside the same JSON info namespace.  No
+        # separate Trail Comment request is made.
+        changes = attach_trail_operation_id(changes, operation_id=submitted_digest)
         stats = await asyncio.to_thread(
             write_trail_model_results,
             changes,
             ra_root=settings.ra_auto_triage_root,
             chunk_size=settings.trail_attribute_write_chunk_size,
-            write_comments_separately=True,
-            comment_skip_issue_ids=comment_skip_issue_ids,
         )
         readback = await _readback_changes(
             changes,
@@ -1038,7 +1011,7 @@ async def trail_attribute_update_commit(request: Request) -> dict[str, Any]:
 
 @router.post("/api/trail-attribute-update/issue-commit")
 async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
-    """Commit direct Issue-ID shielding through Trail multi_update + comments."""
+    """Commit direct Issue-ID shielding through the info JSON field."""
 
     if not settings.trail_attribute_write_enabled:
         raise _detail(409, "Trail 属性写入开关尚未开启；当前仅允许预览和下载草稿。")
@@ -1079,9 +1052,8 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
                 detail = f"{detail} 未找到 Issue: {', '.join(str(item) for item in missing[:8])}"
             raise _detail(409, f"Issue ID 屏蔽未就绪：{detail}")
         # The preview contract normalizes an empty Comment to an auditable
-        # default.  Reuse that exact value for the real Trail Comment write
-        # and the local Review annotation; otherwise a blank form value would
-        # make the preview claim a Comment that the commit silently omits.
+        # default.  Reuse that exact value for the info JSON field and local
+        # Review annotation; no separate Trail Comment is written.
         effective_comment = _as_text(preview.get("comment")).strip()[:4000]
         _, info_field = _field_names()
         changes = await asyncio.to_thread(
@@ -1091,23 +1063,12 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
             info_field=info_field,
             comment=effective_comment,
         )
-        changes = decorate_trail_comments(changes, operation_id=submitted_digest)
-        comment_issue_ids = [
-            str(item.get("issue_id") or "").strip()
-            for item in changes
-            if str(item.get("comment") or "").strip()
-        ]
-        comment_skip_issue_ids = await _comment_marker_preflight(
-            issue_ids=comment_issue_ids,
-            operation_id=submitted_digest,
-        )
+        changes = attach_trail_operation_id(changes, operation_id=submitted_digest)
         stats = await asyncio.to_thread(
             write_trail_model_results,
             changes,
             ra_root=settings.ra_auto_triage_root,
             chunk_size=settings.trail_attribute_write_chunk_size,
-            write_comments_separately=True,
-            comment_skip_issue_ids=comment_skip_issue_ids,
         )
         readback = await _readback_changes(
             changes,

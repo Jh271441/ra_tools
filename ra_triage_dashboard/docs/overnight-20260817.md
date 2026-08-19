@@ -19,8 +19,8 @@
    - Review Tab defaults to an all-Run latest-Review aggregate; selecting a Run narrows the result. Issue ID Tab accepts a bounded list and only deep-merges `ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude=true`, preserving the existing model label.
    - Review results load automatically from the dataset/Run scope. With the writer disabled, list refreshes skip the remote Trail capability probe; commit remains fail-closed and performs a fresh probe before any future write.
    - The duplicated large header/capability card was removed; the Review tab keeps the compact summary/table and the Issue ID tab keeps its explicit preview step.
-   - Field writes use `TrailInterface.update_issue_with_changes` (`/paladin/issue/pool/multi_update/`); Comments use `add_issue_comment` (`/paladin/trail_common/comment/add_comment/`) and are reported separately.
-   - Every commit carries the preview digest as a Dashboard operation marker, reads `more_comment` before adding a Comment, skips an existing marker on retry, and reads back every field-successful Issue before returning success.
+   - Field writes use `TrailInterface.update_issue_with_changes` (`/paladin/issue/pool/multi_update/`); exclusion explanations are deep-merged into `ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude_comment` in the same update.
+   - Every commit carries the preview digest as a Dashboard operation marker, skips a matching marker on retry, and reads back every field-successful Issue before returning success. No separate Trail Comment API is called.
    - New endpoints: `POST /api/trail-attribute-update/issue-preview` (read-only) and `POST /api/trail-attribute-update/issue-commit` (writer-gated). Both remain fail-closed while the Trail writer flag is disabled.
 
 ## Verification

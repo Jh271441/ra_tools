@@ -163,7 +163,7 @@ def verify_trail_readback(
         if not isinstance(expected_dashboard, dict):
             mismatched.append(issue_id)
             continue
-        for key in ("operation_id", "should_exclude"):
+        for key in ("operation_id", "should_exclude", "should_exclude_comment"):
             if key in expected_dashboard and dashboard.get(key) != expected_dashboard.get(key):
                 mismatched.append(issue_id)
                 break
@@ -213,8 +213,9 @@ def build_trail_changes(
         current_info = _json_object(current.get(info_field))
         merged_info = deep_merge_dict(current_info, patch)
         # The info-only workflow writes only the Dashboard-owned exclusion
-        # marker. Keep the legacy model_result object only for callers that
-        # explicitly write the model result field as well.
+        # marker and optional exclusion explanation. Keep the legacy
+        # model_result object only for callers that explicitly write the model
+        # result field as well.
         if write_result_field:
             merged_info["model_result"] = {
                 "label": label,
@@ -223,14 +224,19 @@ def build_trail_changes(
             }
         review = item.get("review") if isinstance(item.get("review"), dict) else {}
         comment_text = str(item.get("comment") or review.get("note") or "").strip()[:4000]
+        # ``comment`` is an operator-facing name used by the preview contract.
+        # It must not be sent as a top-level Trail Comment.  Trail comments
+        # are stored in the Dashboard namespace of the JSON info field so the
+        # exclusion marker and its reason remain one atomic, deep-merged
+        # update.
+        if comment_text:
+            merged_info = deep_merge_dict(
+                merged_info,
+                {"ra_triage_dashboard": {"should_exclude_comment": comment_text}},
+            )
         change = {
             "issue_id": issue_id,
             info_field: merged_info,
-            # ``TrailInterface`` treats ``comment`` as a separate comment API
-            # call. Keep it alongside the field changes so the dashboard can
-            # display and audit exactly what will be written without putting
-            # it into ``issue_info``.
-            **({"comment": comment_text} if comment_text else {}),
         }
         if write_result_field:
             change[result_field] = label
@@ -274,7 +280,11 @@ def build_manual_exclusion_changes(
             info_field: merged_info,
         }
         if normalized_comment:
-            change["comment"] = normalized_comment
+            merged_info = deep_merge_dict(
+                merged_info,
+                {"ra_triage_dashboard": {"should_exclude_comment": normalized_comment}},
+            )
+            change[info_field] = merged_info
         changes.append(change)
     return changes
 

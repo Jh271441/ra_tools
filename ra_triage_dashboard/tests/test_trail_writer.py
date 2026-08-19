@@ -84,6 +84,38 @@ class TrailWriterTest(unittest.TestCase):
             [{"issue_id": "cn00000001", "ra_stuck_auto_result_info": {"ra_triage_dashboard": {"should_exclude": True}}}],
         )
 
+    def test_info_note_is_part_of_field_update_and_never_a_trail_comment(self) -> None:
+        changes = build_trail_changes(
+            [
+                {
+                    "issue_id": "cn00000001",
+                    "model": {},
+                    "comment": "人工确认：不纳入模型问题范围",
+                    "target": {"patch": {"ra_triage_dashboard": {"should_exclude": True}}},
+                }
+            ],
+            write_result_field=False,
+        )
+        calls = []
+
+        class FakeClient:
+            def update_issue_with_changes(self, update, replace=False):
+                calls.append(update)
+                self.update = update
+                return {"msg": "success"}
+
+            def add_issue_comment(self, *_args, **_kwargs):  # pragma: no cover - must never run
+                raise AssertionError("info-only exclusion must not call Trail Comment API")
+
+        stats = write_trail_model_results(changes, ra_root="/tmp", client_factory=FakeClient)
+        self.assertEqual(stats["success_count"], 1)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(
+            calls[0][0]["ra_stuck_auto_result_info"]["ra_triage_dashboard"]["should_exclude_comment"],
+            "人工确认：不纳入模型问题范围",
+        )
+        self.assertNotIn("comment", calls[0][0])
+
     def test_writer_chunks_and_protects_caller_objects_from_mutating_client(self) -> None:
         original = [{"issue_id": f"cn{i:08d}", "ra_stuck_auto_result": "误触发"} for i in range(3)]
         seen = []
@@ -123,8 +155,12 @@ class TrailWriterTest(unittest.TestCase):
         self.assertTrue(
             changes[0]["ra_stuck_auto_result_info"]["ra_triage_dashboard"]["should_exclude"]
         )
+        self.assertEqual(
+            changes[0]["ra_stuck_auto_result_info"]["ra_triage_dashboard"]["should_exclude_comment"],
+            "manual shield",
+        )
         self.assertNotIn("ra_stuck_auto_result", changes[0])
-        self.assertEqual(changes[0]["comment"], "manual shield")
+        self.assertNotIn("comment", changes[0])
 
     def test_writer_separately_reports_comment_result(self) -> None:
         calls = []
