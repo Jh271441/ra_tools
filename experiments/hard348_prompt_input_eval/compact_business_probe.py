@@ -110,6 +110,44 @@ def _compact_reports(
     """Keep only auditable fields; remove duplicated raw model text."""
     n = neutral if isinstance(neutral, dict) else {}
     r = recovery if isinstance(recovery, dict) else {}
+    if report_mode == "observation_v1":
+        trigger_fields = (
+            "intended_maneuver",
+            "ego_trigger_observation",
+            "evidence_anchors",
+            "normal_mechanism_evidence",
+            "abnormal_constraint_evidence",
+            "required_corridor",
+            "critical_unknowns",
+        )
+        recovery_fields = (
+            "trigger_constraint_candidates",
+            "constraint_identity_continuity",
+            "constraint_persistence",
+            "same_constraint_release_time_ms",
+            "candidate_action",
+            "action_execution_status",
+            "preexisting_executable_path",
+            "distinct_post_action_response",
+            "executable_path_after_action",
+            "executable_path_time_ms",
+            "ego_recovery",
+            "ego_sustained_motion_time_ms",
+            "temporal_audit",
+            "evidence_conflict",
+        )
+        return {
+            "trigger_observations_non_authoritative": {
+                key: n.get(key)
+                for key in trigger_fields
+                if n.get(key) not in (None, "", [], {})
+            },
+            "recovery_observations_non_authoritative": {
+                key: r.get(key)
+                for key in recovery_fields
+                if r.get(key) not in (None, "", [], {})
+            },
+        }
     if report_mode in {"audit_v2", "audit_v3_business_state"}:
         # Do not expose the observer's already-compressed state conclusion to
         # the final adjudicator.  Keep only hypotheses, anchors, and the
@@ -441,6 +479,7 @@ def _prompt(
         prompt_variant = "causal_compare_v1"
     compare_enabled = prompt_variant in {
         "causal_compare_v1",
+        "causal_role_first_v1",
         "causal_effect_gate_v1",
     }
     if output_mode == "short":
@@ -476,6 +515,13 @@ def _prompt(
 - E：触发时存在异常 blocker 截断 required corridor，但 blocker 在任何有效协助改变可执行性之前自然释放，Ego 随后自主持续恢复。
 - P：触发时存在异常 blocker，且它在有效协助改变可执行性时仍持续；或有可信的动作→可执行路径→Ego恢复链。只有 P 才支持 A。
 先确认 T 阶段到底是 N 还是异常 blocker；只有异常 blocker 成立时才在 E/P 之间比较。C 的 E 故事必须有同一约束“先释放”的正向证据；release time 缺失、identity 不连续或只有 Ego 后续移动，不能完成 E。单个停止前车、RA 事件、路径变化、对象后来移动都不能单独决定故事。报告中的 N/E/P 或 state 字段只是待证假设；用同一实体、同一走廊和机械时间顺序逐项寻找反证。""" if compare_enabled else ""
+    causal_role_first_v1 = """
+【角色先行与恢复隔离】
+把判断分成两个相互独立的账本，禁止后一个账本倒灌前一个账本：
+1. T 账本只回答“触发时 Ego 的 intended maneuver 是否被正常交通职责解释”。先给每个关键参与者分配 ordinary-duty/gap-duty 或 abnormal-blocker 角色，并检查它是否正向占据 required corridor。动态让行、横穿/汇入造成的安全间隙、连续同向交通、适用控制锚点是 normal 机制的正向观察；planner selected、hard-block 名称、单辆静止车、无可见信号或后续恢复不是角色证明。
+2. 只有 T 账本已经证明异常 blocker，R 账本才区分自然释放与有效协助。RA pickup/mode、candidate action、生成 trajectory、单独 path change、对象后来移动都不能单独决定 R。要比较同一约束的 release、动作前是否已有可执行路径、动作后的独立路径/走廊增量以及 Ego 持续运动的顺序。
+3. 若 T 账本有正向 normal-duty/gap-duty 机制，后续 Ego 恢复或 RA workflow 不把它升级为 A/C；若 T 账本没有正向异常角色，也不能仅因静止/占道字段或“没有看到正常机制”补成 A/C。若两个观察者报告冲突，保留冲突并回到图片和 raw timeline，不做报告投票。
+""" if prompt_variant == "causal_role_first_v1" else ""
     corridor_mechanism_v1 = """
 【同流队列与单一占道主体的区分】
 在触发时单独重建 normal mechanism 与 abnormal blocker，不要把同一辆车在多个时间点出现自动升级为“连续同向队列”：
@@ -534,6 +580,8 @@ A/C 恢复因果时间表（只使用正向观察，不允许臆造 release）�
 {audit_v2}
 
 {causal_compare_v1}
+
+{causal_role_first_v1}
 
 {corridor_mechanism_v1}
 
@@ -608,6 +656,7 @@ def main() -> None:
         choices=(
             "compact",
             "narrative_v1",
+            "observation_v1",
             "audit_v2",
             "audit_v3_business_state",
         ),
@@ -620,6 +669,7 @@ def main() -> None:
             "base",
             "audit_v2",
             "causal_compare_v1",
+            "causal_role_first_v1",
             "causal_effect_gate_v1",
             "causal_effect_gate_v2",
             "causal_effect_gate_v3",

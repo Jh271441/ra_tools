@@ -11,6 +11,11 @@
 | `validate_package.py` | Static and prompt-safety checks; it never calls a model. |
 | `README.md` | Scope, constraints, and reproducible commands. |
 
+The only currently proposed new candidate is the pair
+`causal_role_first_v1` + `observation_v1`. It is a prompt/input hypothesis
+awaiting source-only and independent Fresh validation; it is not a selected
+model configuration.
+
 ## Deliberately excluded
 
 The following remain runtime inputs/outputs or historical scratch material,

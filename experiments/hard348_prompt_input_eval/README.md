@@ -96,6 +96,23 @@ labels or apply a deterministic ABC rule. Keep all run directories outside
 Git and do not use evaluation results to change the frozen prompt/input
 within the same comparison.
 
+## Candidate: role-first observation firewall
+
+`causal_role_first_v1` with `observation_v1` is a single source-only
+hypothesis, not a frozen result. It separates the trigger-time traffic-role
+ledger from the post-trigger recovery ledger and removes observer state,
+confidence, and prose conclusions that can cause recovery evidence to
+override the trigger decision. Evaluate it on the declared source subset
+first, then repeat the exact configuration on an independently frozen Fresh
+set. Do not change its wording or input after inspecting Fresh results.
+
+Use these two options with the batch command above:
+
+```text
+--report-mode observation_v1
+--prompt-variant causal_role_first_v1
+```
+
 `PROMPT_SPEC.md` records the business-state causal definitions used by the
 current indexed prompt. `project_role_observer_facts.py` is an optional
 label-free projection helper; it removes observer conclusions and retains

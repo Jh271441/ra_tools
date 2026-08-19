@@ -56,7 +56,7 @@ def main() -> None:
         facts,
         reports,
         output_mode="short",
-        prompt_variant="causal_compare_v1",
+        prompt_variant="causal_role_first_v1",
         visual_mode="paired10",
     )
     probe._assert_model_safe(facts)

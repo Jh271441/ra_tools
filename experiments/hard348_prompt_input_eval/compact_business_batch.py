@@ -108,6 +108,10 @@ def main() -> None:
         if not source_rows:
             raise ValueError("requested issue subset is empty")
     args.out_dir.mkdir(parents=True, exist_ok=True)
+    model_slug = "".join(
+        character if character.isalnum() or character in "._-" else "_"
+        for character in args.model
+    )
     results: list[dict[str, Any]] = []
     for index, source_row in enumerate(source_rows, start=1):
         issue_id = str(source_row["issue_id"])
@@ -204,7 +208,7 @@ def main() -> None:
         "retries": args.retries,
         "prompt_input_variant": (
             f"{args.facts_mode}_facts_{args.output_mode}_output_{args.visual_mode}_"
-            f"{args.report_mode}_{args.prompt_variant}_{args.text_layout}_qwen38"
+            f"{args.report_mode}_{args.prompt_variant}_{args.text_layout}_{model_slug}"
         ),
         "results": results,
         "metrics": _metrics(results),
