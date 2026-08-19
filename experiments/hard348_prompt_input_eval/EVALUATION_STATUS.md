@@ -49,6 +49,31 @@ label-free Camera/BEV cache. It did not reproduce the historical 16/18 result,
 so it is recorded as a control receipt rather than an accepted candidate. No
 Fresh12, Holdout36, or 0508/full1071 run is authorized from this result.
 
+## Subsequent frozen source18 diagnostics (2026-08-20)
+
+The following input-only diagnostics reused the complete source18 artifact,
+score receipt, image cache, Qwen3.8-27B thinking-off, `causal_compare_v1`,
+narrative facts, compact reports, `paired10` unless noted, and short JSON. They
+were not used to select a new prompt or to change any label:
+
+| Input change | Result | Decision |
+| --- | ---: | --- |
+| Full post-trigger visual sequence (`paired18`) | 14/18 (A 66.7%, B 85.7%, C 80.0%) | no net gain; reject |
+| Camera-only (`camera5`) | 11/18 (A 50.0%, B 85.7%, C 40.0%) | reject |
+| Dense full raw time ledger | 14/18 (A 83.3%, B 85.7%, C 60.0%) | FIX/HARM balance; reject |
+| Dense pre-trigger ledger only | 13/18 (A 50.0%, B 85.7%, C 80.0%) | reject |
+| Same-model two-pass causal worksheet, with fail-closed worksheet parser | 11/16 completed; 2 cases failed parsing | reject |
+
+The dense ledger fixed some trigger-role errors but caused compensating
+normal-wait versus no-assistance errors. The two-pass worksheet also showed
+that an intermediate causal state can anchor the final model to a wrong
+normal-mechanism hypothesis; it is not accepted for Fresh12. Manual review of
+representative source cases found unresolved evidence/GT tension (for example,
+a visible signal/queue case scored as A, and a single-lead/temporary-stop case
+scored as C) as well as a clean background-construction-versus-current-corridor
+distinction. These observations are diagnostic only and do not authorize GT
+changes or case-specific prompt rules.
+
 ## Evaluation gates
 
 1. Freeze one prompt, evidence projection, image selection, and model.
