@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-209`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-210`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -567,6 +567,18 @@
                     <table class="trail-update-table trail-update-direct-table"><thead><tr><th>Issue</th><th>数据集版本</th><th>当前模型 label（不改）</th><th>当前屏蔽状态</th><th>预计写入 info</th><th>排除说明</th></tr></thead><tbody id="trailUpdateIssueTableBody"><tr><td colspan="6" class="trail-update-empty"><span class="ui-lang-zh">生成预览后显示 Issue。</span><span class="ui-lang-en">Issues appear after building a preview.</span></tr></tbody></table>
                   </div>
                 </section>
+              </section>
+              <section class="page-card trail-update-history-card" id="trailUpdateIssueHistory" aria-label="Issue ID shielding history">
+                <div class="section-heading trail-update-history-heading">
+                  <div>
+                    <h3><span class="ui-lang-zh">Issue ID 屏蔽上传历史</span><span class="ui-lang-en">Issue shielding upload history</span></h3>
+                    <small><span class="ui-lang-zh">按批次记录提交人、状态和每个 Issue 的说明</span><span class="ui-lang-en">Batches, actors, statuses, and per-Issue notes</span></small>
+                  </div>
+                  <button class="button button-quiet" id="trailUpdateIssueHistoryRefresh" type="button"><span class="ui-lang-zh">刷新历史</span><span class="ui-lang-en">Refresh history</span></button>
+                </div>
+                <div class="trail-update-history-list" id="trailUpdateIssueHistoryList" aria-live="polite">
+                  <div class="trail-update-history-empty"><span class="ui-lang-zh">正在加载屏蔽历史。</span><span class="ui-lang-en">Loading shielding history.</span></div>
+                </div>
               </section>
             </section>
           </section>
@@ -1253,7 +1265,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-209`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-210`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

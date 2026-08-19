@@ -145,6 +145,161 @@ class DatabaseCoreMixin:
             ).fetchone()
         return int(row["revision"] if row else 0)
 
+    def upsert_trail_issue_exclusion_history(
+        self,
+        *,
+        operation_id: str,
+        actor: str = "",
+        actor_source: str = "",
+        actor_verified: bool = False,
+        status: str = "pending",
+        requested_count: int = 0,
+        synced_count: int = 0,
+        failed_count: int = 0,
+        entries: Sequence[dict[str, Any]] = (),
+        message: str = "",
+    ) -> dict[str, Any]:
+        """Persist one Issue-ID shielding batch and per-Issue outcomes.
+
+        The preview digest is used as the operation id, so retries of the
+        same immutable payload update one audit row instead of duplicating
+        history.  Entry JSON keeps the operator note beside its final state
+        for the expandable history view.
+        """
+
+        normalized_operation_id = str(operation_id or "").strip()
+        if not normalized_operation_id:
+            raise ValueError("Trail Issue 屏蔽历史缺少 operation_id。")
+        normalized_status = str(status or "pending").strip() or "pending"
+        normalized_entries: list[dict[str, Any]] = []
+        for entry in entries or ():
+            if not isinstance(entry, dict):
+                continue
+            normalized_entries.append(
+                {
+                    "issue_id": str(entry.get("issue_id") or "").strip(),
+                    "comment": str(entry.get("comment") or "").strip()[:4000],
+                    "status": str(entry.get("status") or "pending").strip() or "pending",
+                    "detail": str(entry.get("detail") or "").strip()[:1000],
+                }
+            )
+        now = utc_now()
+        values = (
+            normalized_operation_id,
+            now,
+            now,
+            str(actor or "").strip(),
+            str(actor_source or "").strip(),
+            1 if actor_verified else 0,
+            normalized_status,
+            max(0, int(requested_count)),
+            max(0, int(synced_count)),
+            max(0, int(failed_count)),
+            _json(normalized_entries),
+            str(message or "").strip()[:4000],
+        )
+        with self._write_lock, self.connect() as conn:
+            current = conn.execute(
+                "SELECT created_at FROM trail_issue_exclusion_history WHERE operation_id = ?",
+                (normalized_operation_id,),
+            ).fetchone()
+            if current is None:
+                conn.execute(
+                    """
+                    INSERT INTO trail_issue_exclusion_history (
+                        operation_id, created_at, updated_at, actor, actor_source,
+                        actor_verified, status, requested_count, synced_count,
+                        failed_count, entries_json, message
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    values,
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE trail_issue_exclusion_history
+                    SET updated_at = ?, actor = ?, actor_source = ?, actor_verified = ?,
+                        status = ?, requested_count = ?, synced_count = ?,
+                        failed_count = ?, entries_json = ?, message = ?
+                    WHERE operation_id = ?
+                    """,
+                    (
+                        now,
+                        values[3],
+                        values[4],
+                        values[5],
+                        values[6],
+                        values[7],
+                        values[8],
+                        values[9],
+                        values[10],
+                        values[11],
+                        normalized_operation_id,
+                    ),
+                )
+            row = conn.execute(
+                """
+                SELECT operation_id, created_at, updated_at, actor, actor_source,
+                       actor_verified, status, requested_count, synced_count,
+                       failed_count, entries_json, message
+                FROM trail_issue_exclusion_history
+                WHERE operation_id = ?
+                """,
+                (normalized_operation_id,),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("Trail Issue 屏蔽历史写入后无法读取。")
+        return self._trail_issue_exclusion_history_row(row)
+
+    def list_trail_issue_exclusion_history(
+        self, *, limit: int = 20, offset: int = 0
+    ) -> dict[str, Any]:
+        """Return recent shielding batches with per-Issue outcomes."""
+
+        normalized_limit = max(1, min(int(limit), 100))
+        normalized_offset = max(0, int(offset))
+        with self.connect() as conn:
+            total_row = conn.execute(
+                "SELECT COUNT(*) AS total FROM trail_issue_exclusion_history"
+            ).fetchone()
+            rows = conn.execute(
+                """
+                SELECT operation_id, created_at, updated_at, actor, actor_source,
+                       actor_verified, status, requested_count, synced_count,
+                       failed_count, entries_json, message
+                FROM trail_issue_exclusion_history
+                ORDER BY created_at DESC, operation_id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (normalized_limit, normalized_offset),
+            ).fetchall()
+        return {
+            "items": [self._trail_issue_exclusion_history_row(row) for row in rows],
+            "total": int(total_row["total"] if total_row else 0),
+            "limit": normalized_limit,
+            "offset": normalized_offset,
+        }
+
+    @staticmethod
+    def _trail_issue_exclusion_history_row(row: Any) -> dict[str, Any]:
+        entries = _json_load(row["entries_json"], [])
+        if not isinstance(entries, list):
+            entries = []
+        return {
+            "operation_id": str(row["operation_id"] or ""),
+            "created_at": str(row["created_at"] or ""),
+            "updated_at": str(row["updated_at"] or ""),
+            "actor": str(row["actor"] or ""),
+            "actor_source": str(row["actor_source"] or ""),
+            "actor_verified": bool(row["actor_verified"]),
+            "status": str(row["status"] or "pending"),
+            "requested_count": int(row["requested_count"] or 0),
+            "synced_count": int(row["synced_count"] or 0),
+            "failed_count": int(row["failed_count"] or 0),
+            "entries": entries,
+            "message": str(row["message"] or ""),
+        }
+
     def runtime_status(self, *, persistent_data: bool = False) -> dict[str, Any]:
         started = time.perf_counter()
         with self.connect() as conn:
@@ -453,6 +608,23 @@ class DatabaseCoreMixin:
                 );
                 CREATE INDEX IF NOT EXISTS idx_issue_work_assignments_assignee
                     ON issue_work_assignments(assignee, assigned_at DESC);
+
+                CREATE TABLE IF NOT EXISTS trail_issue_exclusion_history (
+                    operation_id TEXT PRIMARY KEY,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    actor TEXT NOT NULL DEFAULT '',
+                    actor_source TEXT NOT NULL DEFAULT '',
+                    actor_verified INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    requested_count INTEGER NOT NULL DEFAULT 0,
+                    synced_count INTEGER NOT NULL DEFAULT 0,
+                    failed_count INTEGER NOT NULL DEFAULT 0,
+                    entries_json TEXT NOT NULL DEFAULT '[]',
+                    message TEXT NOT NULL DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_trail_issue_exclusion_history_created
+                    ON trail_issue_exclusion_history(created_at DESC);
                 """
             )
             revision_tables = (
@@ -469,6 +641,7 @@ class DatabaseCoreMixin:
                 "access_users",
                 "issue_work_splits",
                 "issue_work_assignments",
+                "trail_issue_exclusion_history",
             )
             for table in revision_tables:
                 for action in ("insert", "update", "delete"):

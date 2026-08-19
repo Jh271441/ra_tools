@@ -119,6 +119,69 @@ function parseTrailIssueIds() {
   return parsed;
 }
 
+function trailIssueHistoryStatusMeta(status = "pending") {
+  const key = String(status || "pending");
+  const values = {
+    pending: ["待提交", "Pending", "is-pending"],
+    completed: ["已同步", "Synced", "is-success"],
+    partial: ["部分成功", "Partial", "is-warning"],
+    failed: ["失败", "Failed", "is-error"],
+  };
+  const value = values[key] || values.pending;
+  return { label: uiText(value[0], value[1]), className: value[2] };
+}
+
+function renderTrailIssueHistory(data = {}) {
+  const list = $("#trailUpdateIssueHistoryList");
+  if (!list) return;
+  const items = Array.isArray(data?.items) ? data.items : [];
+  if (!items.length) {
+    list.innerHTML = `<div class="trail-update-history-empty">${escapeHtml(uiText("暂无 Issue ID 屏蔽上传记录。", "No Issue shielding uploads yet."))}</div>`;
+    return;
+  }
+  list.innerHTML = items.map((item) => {
+    const meta = trailIssueHistoryStatusMeta(item.status);
+    const entries = Array.isArray(item.entries) ? item.entries : [];
+    const total = Number(item.requested_count || entries.length || 0);
+    const synced = Number(item.synced_count || 0);
+    const failed = Number(item.failed_count || 0);
+    const actor = String(item.actor || uiText("未记录", "Unknown"));
+    const operation = String(item.operation_id || "");
+    const detailRows = entries.length
+      ? entries.map((entry) => {
+        const entryMeta = trailIssueHistoryStatusMeta(entry.status);
+        return `<tr><td><strong>${escapeHtml(entry.issue_id || "—")}</strong></td><td><div class="trail-update-history-comment">${escapeHtml(entry.comment || "—")}</div></td><td><span class="trail-update-history-entry-status ${entryMeta.className}">${escapeHtml(entryMeta.label)}</span><small>${escapeHtml(entry.detail || "")}</small></td></tr>`;
+      }).join("")
+      : `<tr><td colspan="3" class="trail-update-history-empty">${escapeHtml(uiText("没有逐条明细。", "No per-Issue details."))}</td></tr>`;
+    return `<details class="trail-update-history-item">
+      <summary>
+        <div class="trail-update-history-summary-main"><span class="trail-update-history-status ${meta.className}">${escapeHtml(meta.label)}</span><strong>${escapeHtml(`${total} ${uiText("个 Issue", "Issues")}`)}</strong><small>${escapeHtml(formatTime(item.created_at))} · ${escapeHtml(actor)}</small></div>
+        <div class="trail-update-history-summary-count"><strong>${escapeHtml(`${synced}/${total}`)}</strong><small>${escapeHtml(failed ? `${failed} ${uiText("失败", "failed")}` : uiText("全部回读成功", "readback complete"))}</small></div>
+      </summary>
+      <div class="trail-update-history-details"><div class="trail-update-history-operation"><span>${escapeHtml(item.message || uiText("Issue 屏蔽提交记录。", "Issue shielding submission."))}</span><code title="${escapeHtml(operation)}">${escapeHtml(operation ? `${operation.slice(0, 12)}…` : "—")}</code></div><div class="trail-update-history-table-wrap"><table><thead><tr><th>Issue</th><th>${escapeHtml(uiText("排除说明", "Exclusion note"))}</th><th>${escapeHtml(uiText("结果", "Result"))}</th></tr></thead><tbody>${detailRows}</tbody></table></div></div>
+    </details>`;
+  }).join("");
+}
+
+async function loadTrailIssueHistory() {
+  const list = $("#trailUpdateIssueHistoryList");
+  if (!list) return null;
+  const requestSeq = ++state.trailUpdate.issueHistoryRequestSeq;
+  list.innerHTML = `<div class="trail-update-history-empty">${escapeHtml(uiText("正在加载屏蔽历史…", "Loading shielding history…"))}</div>`;
+  try {
+    const data = await api("/api/trail-attribute-update/issue-history?limit=20");
+    if (requestSeq !== state.trailUpdate.issueHistoryRequestSeq) return data;
+    state.trailUpdate.issueHistory = data;
+    renderTrailIssueHistory(data);
+    return data;
+  } catch (error) {
+    if (requestSeq === state.trailUpdate.issueHistoryRequestSeq) {
+      list.innerHTML = `<div class="trail-update-history-empty is-error">${escapeHtml(error?.message || uiText("屏蔽历史加载失败。", "Shielding history failed to load."))}</div>`;
+    }
+    return null;
+  }
+}
+
 function trailUpdateRunLabel(run) {
   if (!run) return "";
   const count = Number(run.baseline_prediction_count || 0);
@@ -1084,6 +1147,7 @@ async function commitTrailIssueExclusion() {
     if (readback.complete && Number(localReview.requested_count || 0) > 0) {
       void refreshTrailReviewAfterIssueCommit();
     }
+    void loadTrailIssueHistory();
   } catch (error) {
     finishTrailUpdateProgress({ ok: false, message: error?.message || uiText("屏蔽失败，请稍后重试。", "Shielding failed; try again later.") });
     setTrailIssueStatus(error?.message || uiText("Issue 屏蔽失败。", "Issue shielding failed."));
@@ -1175,7 +1239,9 @@ function bindTrailAttributeUpdateEvents() {
   });
   document.querySelectorAll("[data-trail-update-tab]").forEach((button) => {
     button.addEventListener("click", () => {
-      setTrailUpdateTab(button.dataset.trailUpdateTab || "review");
+      const nextTab = button.dataset.trailUpdateTab || "review";
+      setTrailUpdateTab(nextTab);
+      if (nextTab === "issue") void loadTrailIssueHistory();
       if (typeof pageUrl === "function") {
         history.replaceState(
           { page: "trail-update" },
@@ -1234,6 +1300,10 @@ function bindTrailAttributeUpdateEvents() {
     commitTrailIssueExclusion().catch((error) => showToast(error.message, true));
   });
   setTrailUpdateTab(state.trailUpdate?.tab || "review");
+  void loadTrailIssueHistory();
+  $("#trailUpdateIssueHistoryRefresh")?.addEventListener("click", () => {
+    void loadTrailIssueHistory();
+  });
   parseTrailIssueIds();
   setTrailAttributeCapability(null);
   renderTrailAttributeRunPicker();

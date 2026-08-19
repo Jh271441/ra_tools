@@ -2037,6 +2037,38 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-direct-feedback.is-ready { color: #9ae6c4; }
 .trail-update-direct-feedback.is-error { color: #fca5a5; }
 .trail-update-direct-results { display: grid; gap: 8px; }
+.trail-update-history-card { display: grid; gap: 8px; }
+.trail-update-history-heading { align-items: center; margin-bottom: 0; }
+.trail-update-history-heading h3 { margin: 0; }
+.trail-update-history-heading small { display: block; margin-top: 3px; color: var(--faint); font-size: 10px; }
+.trail-update-history-list { display: grid; gap: 5px; }
+.trail-update-history-empty { display: grid; min-height: 48px; place-items: center; padding: 10px; color: var(--faint); font-size: 11px; text-align: center; }
+.trail-update-history-empty.is-error { color: #fca5a5; }
+.trail-update-history-item { overflow: hidden; border: 1px solid var(--line-soft); border-radius: 7px; background: rgba(11,16,24,.56); }
+.trail-update-history-item > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 45px; padding: 7px 10px; cursor: pointer; list-style: none; }
+.trail-update-history-item > summary::-webkit-details-marker { display: none; }
+.trail-update-history-item > summary:hover { background: rgba(34,211,238,.055); }
+.trail-update-history-summary-main, .trail-update-history-summary-count { min-width: 0; display: flex; align-items: center; gap: 7px; }
+.trail-update-history-summary-main small, .trail-update-history-summary-count small { overflow: hidden; color: var(--faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.trail-update-history-summary-main strong, .trail-update-history-summary-count strong { color: var(--text); font-size: 11px; }
+.trail-update-history-summary-count { flex: 0 0 auto; justify-content: flex-end; }
+.trail-update-history-status, .trail-update-history-entry-status { display: inline-flex; flex: 0 0 auto; align-items: center; padding: 3px 6px; border: 1px solid rgba(148,163,184,.3); border-radius: 5px; color: var(--muted); background: rgba(148,163,184,.08); font-size: 10px; white-space: nowrap; }
+.trail-update-history-status.is-success, .trail-update-history-entry-status.is-success { border-color: rgba(52,211,153,.4); color: #9ae6c4; background: rgba(52,211,153,.08); }
+.trail-update-history-status.is-warning, .trail-update-history-entry-status.is-warning { border-color: rgba(251,191,36,.45); color: #f6d58a; background: rgba(251,191,36,.08); }
+.trail-update-history-status.is-error, .trail-update-history-entry-status.is-error { border-color: rgba(248,113,113,.42); color: #fca5a5; background: rgba(248,113,113,.08); }
+.trail-update-history-details { display: grid; gap: 6px; padding: 0 10px 9px; border-top: 1px solid var(--line-soft); }
+.trail-update-history-operation { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding-top: 7px; color: var(--muted); font-size: 10px; }
+.trail-update-history-operation span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trail-update-history-operation code { flex: 0 0 auto; color: var(--faint); font-size: 9px; }
+.trail-update-history-table-wrap { min-width: 0; overflow-x: auto; }
+.trail-update-history-table-wrap table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
+.trail-update-history-table-wrap th, .trail-update-history-table-wrap td { padding: 6px 7px; border-bottom: 1px solid var(--line-soft); color: var(--muted); text-align: left; vertical-align: middle; }
+.trail-update-history-table-wrap th { color: var(--text); font-weight: 650; }
+.trail-update-history-table-wrap th:first-child, .trail-update-history-table-wrap td:first-child { width: 20%; }
+.trail-update-history-table-wrap th:last-child, .trail-update-history-table-wrap td:last-child { width: 25%; }
+.trail-update-history-table-wrap td strong { color: #b9edf0; font: 600 10px "SFMono-Regular", Consolas, monospace; }
+.trail-update-history-table-wrap td small { display: block; margin-top: 3px; color: var(--faint); font-size: 9px; }
+.trail-update-history-comment { overflow-wrap: anywhere; color: var(--text); line-height: 1.35; }
 .trail-update-state-badge { display: inline-flex; padding: 3px 6px; border: 1px solid rgba(148,163,184,.3); border-radius: 5px; color: var(--muted); background: rgba(148,163,184,.08); font-size: 10px; }
 .trail-update-state-badge.is-on { border-color: rgba(52,211,153,.4); color: #9ae6c4; background: rgba(52,211,153,.08); }
 .trail-update-state-badge.is-synced { border-color: rgba(52,211,153,.4); color: #9ae6c4; background: rgba(52,211,153,.08); }
@@ -2858,6 +2890,9 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .trail-update-direct-grid { grid-template-columns: minmax(0, 1fr); }
   .trail-update-entry-row { grid-template-columns: minmax(0, 1fr) auto; }
   .trail-update-entry-row label:nth-child(2) { grid-column: 1 / -1; }
+  .trail-update-history-item > summary { align-items: flex-start; flex-direction: column; }
+  .trail-update-history-summary-count { justify-content: flex-start; }
+  .trail-update-history-operation { align-items: flex-start; flex-direction: column; }
   .analysis-search-actions { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) auto; }
   .analysis-run-filter, .analysis-evidence-filter, .analysis-tag-filter, .analysis-trigger-filter, .analysis-egress-filter, .analysis-exclusion-filter, .analysis-search-actions { grid-column: auto; grid-row: auto; }
   .analysis-search-actions { grid-column: 1 / -1; }

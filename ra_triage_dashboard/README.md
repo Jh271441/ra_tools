@@ -217,6 +217,7 @@ Trail 只消费 `ra_stuck_auto_result` 和 `ra_stuck_auto_result_info`。可通�
 
 - **Review 排除汇总**默认不选择 Model Run，按数据集聚合全部 Run 中每个 Issue 的最新 Review；选择具体 Run 后则只展示该 Run。列表按 Issue ID 稳定排序，目标字段固定为 `ra_stuck_auto_result`（三分类模型 label）和 `ra_stuck_auto_result_info`（JSON 结果详情）。详情字段采用 `deep_merge`，保留已有内容，并追加 `model_result` 与 `ra_triage_dashboard` 审计命名空间（Run、Review、复核人、时间和排除标记）。Review Note 会与 `should_exclude` 一起写入 `ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude_comment`，不调用 Trail Comment 接口。
 - **Issue ID 屏蔽**按行接受人工输入的 Issue ID 与排除说明；一次预览/提交可以给不同 Issue 填写不同说明。每行只 deep-merge `ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude=true` 与该行的 `should_exclude_comment`，保留已有模型 label；这是 Dashboard 自己的排除标记，不等同于张扬工具的原生黑名单字段，是否被其它工具消费需另行确认。排除说明与标记在同一个 info JSON 更新中写入，不调用独立评论接口。未知、重复或格式错误的 ID 不会被静默当成成功。
+- Issue ID 屏蔽 Tab 还会显示批次级“上传历史”：记录提交人、提交时间、预览 operation_id、已同步/失败数量，并可展开查看每个 Issue 的说明与 Trail 回读结果。提交前先落一条 `pending` 审计记录，写入异常也会保留为 `failed`，相同预览摘要重试会更新同一条记录而不会重复堆积。
 
 Review Tab 进入页面或切换数据集/Run 后自动加载汇总，不再要求点击“生成预览”；当前写入开关关闭时，列表不会为每次筛选额外等待远程 Trail view 能力查询。页面只把数据集作为 Run 下方的轻量范围信息，不重复渲染顶栏数据集选择器。预览中的 Payload SHA-256 是由当前筛选、字段和 Issue 草稿计算出的内部指纹，用于服务端拒绝过期或被修改的提交，不是 Trail 字段；Review 页面默认不展示这串内部摘要，Issue ID 预览仍可查看短指纹用于排障。未来启用写入后，提交前仍会在服务端锁内重新读取完整字段能力和目标字段，随后生成/校验摘要并逐 Issue 回读。Issue ID Tab 仍要求显式生成屏蔽预览。操作摘要 `operation_id` 与排除说明均保存在同一 `ra_triage_dashboard` info 命名空间中，重试会按 JSON 字段幂等校验。
 
@@ -228,7 +229,7 @@ Review Tab 进入页面或切换数据集/Run 后自动加载汇总，不再要�
 2. Review 汇总会自动展示；Issue ID Tab 仍需点击「生成屏蔽预览」，确认案例、Review、排除说明、字段能力和目标 Patch。
 3. 字段检查通过且具备写入权限时，点击对应的「提交到 Trail」；否则下载/复制 JSON 交给后续受控流程。
 
-接口：Review 使用 `GET /api/trail-attribute-update/preview?baselines=0508`（可选 `model_run_id=<run-id>`）与 `POST /api/trail-attribute-update/commit`；Issue ID 使用 `POST /api/trail-attribute-update/issue-preview` 与 `POST /api/trail-attribute-update/issue-commit`。两个提交 body 都必须包含 `confirm=true` 与 `payload_sha256`；Issue ID 新客户端提交 `entries=[{"issue_id":"cn…","comment":"…"}]`，旧客户端仍可使用 `issue_ids` 和共享 `comment`。预览接口不调用写入 API；提交接口会重新生成预览并拒绝过期摘要。真实字段接口由 `ra_auto_triage/utils/trail_api.py::TrailInterface.update_issue_with_changes` 调用 `/paladin/issue/pool/multi_update/`；每行排除说明作为对应 Issue 的 `ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude_comment` deep-merge 子字段写入，不调用 Comment API。
+接口：Review 使用 `GET /api/trail-attribute-update/preview?baselines=0508`（可选 `model_run_id=<run-id>`）与 `POST /api/trail-attribute-update/commit`；Issue ID 使用 `POST /api/trail-attribute-update/issue-preview`、`POST /api/trail-attribute-update/issue-commit`，历史使用 `GET /api/trail-attribute-update/issue-history?limit=20&offset=0`。两个提交 body 都必须包含 `confirm=true` 与 `payload_sha256`；Issue ID 新客户端提交 `entries=[{"issue_id":"cn…","comment":"…"}]`，旧客户端仍可使用 `issue_ids` 和共享 `comment`。预览接口不调用写入 API；提交接口会重新生成预览并拒绝过期摘要。真实字段接口由 `ra_auto_triage/utils/trail_api.py::TrailInterface.update_issue_with_changes` 调用 `/paladin/issue/pool/multi_update/`；每行排除说明作为对应 Issue 的 `ra_stuck_auto_result_info.ra_triage_dashboard.should_exclude_comment` deep-merge 子字段写入，不调用 Comment API。
 
 相关配置：
 

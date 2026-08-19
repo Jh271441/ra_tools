@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import re
 import threading
 import time
@@ -44,6 +45,7 @@ from ..trail_writer import (
 )
 
 router = APIRouter()
+logger = logging.getLogger("ra_triage_dashboard.trail_update")
 
 TRAIL_RESULT_FIELD = "ra_stuck_auto_result"
 TRAIL_INFO_FIELD = "ra_stuck_auto_result_info"
@@ -978,6 +980,75 @@ async def _readback_changes(
     return verification
 
 
+async def _save_issue_exclusion_history(
+    *,
+    operation_id: str,
+    identity: Any,
+    status: str,
+    requested_entries: list[dict[str, Any]],
+    synced_issue_ids: set[str] | None = None,
+    failed_issue_ids: set[str] | None = None,
+    failure_messages: Mapping[str, str] | None = None,
+    message: str = "",
+) -> None:
+    """Best-effort audit persistence for the direct Issue-ID workflow."""
+
+    failures = failure_messages or {}
+    synced = {
+        str(item).strip()
+        for item in (synced_issue_ids or set())
+        if str(item).strip()
+    }
+    failed = {
+        str(item).strip()
+        for item in (failed_issue_ids or set())
+        if str(item).strip()
+    }
+    entries: list[dict[str, Any]] = []
+    for item in requested_entries:
+        issue_id = _as_text(item.get("issue_id")).strip()
+        if not issue_id:
+            continue
+        if issue_id in synced:
+            item_status = "synced"
+            detail = "Trail 回读确认成功。"
+        elif issue_id in failed:
+            item_status = "failed"
+            detail = _as_text(failures.get(issue_id)) or "Trail 写入或回读失败。"
+        else:
+            item_status = "pending" if status == "pending" else "unknown"
+            detail = "等待提交结果。" if status == "pending" else "未返回明确结果。"
+        entries.append(
+            {
+                "issue_id": issue_id,
+                "comment": _as_text(item.get("comment")).strip()[:4000],
+                "status": item_status,
+                "detail": detail[:1000],
+            }
+        )
+    actor = {
+        "username": _as_text(getattr(identity, "username", "")),
+        "source": _as_text(getattr(identity, "source", "")),
+        "verified": bool(getattr(identity, "verified", False)),
+    }
+    try:
+        await asyncio.to_thread(
+            database.upsert_trail_issue_exclusion_history,
+            operation_id=operation_id,
+            actor=actor["username"],
+            actor_source=actor["source"],
+            actor_verified=actor["verified"],
+            status=status,
+            requested_count=len(entries),
+            synced_count=len(synced),
+            failed_count=len(failed),
+            entries=entries,
+            message=message,
+        )
+    except Exception:  # pragma: no cover - audit must not block a Trail write
+        logger.exception("Unable to persist Issue-ID shielding history")
+
+
 @router.get("/api/trail-attribute-update/preview")
 async def trail_attribute_update_preview(
     request: Request,
@@ -992,6 +1063,20 @@ async def trail_attribute_update_preview(
         selected_run_id=_as_text(model_run_id),
         baselines=baselines,
         probe_trail=probe_trail,
+    )
+
+
+@router.get("/api/trail-attribute-update/issue-history")
+async def trail_issue_exclusion_history(
+    limit: int = 20,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """List recent Issue-ID shielding submissions without contacting Trail."""
+
+    return await asyncio.to_thread(
+        database.list_trail_issue_exclusion_history,
+        limit=max(1, min(int(limit), 100)),
+        offset=max(0, int(offset)),
     )
 
 
@@ -1185,65 +1270,117 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
             for item in (preview.get("items") or [])
             if _as_text(item.get("issue_id")).strip()
         }
-        _, info_field = _field_names()
-        changes = await asyncio.to_thread(
-            build_manual_exclusion_changes,
-            issue_ids,
-            current_rows=sync_result.rows,
-            info_field=info_field,
-            comment_by_issue=effective_comments,
-        )
-        changes = attach_trail_operation_id(changes, operation_id=submitted_digest)
-        stats = await asyncio.to_thread(
-            write_trail_model_results,
-            changes,
-            ra_root=settings.ra_auto_triage_root,
-            chunk_size=settings.trail_attribute_write_chunk_size,
-        )
-        readback = await _readback_changes(
-            changes,
-            stats,
-            result_field="",
-            info_field=info_field,
-        )
-        field_failed = {
-            str(item).strip()
-            for item in stats.get("failed_issue_ids", [])
-            if str(item).strip()
-        }
-        readback_failed = {
-            str(item).strip()
-            for item in (
-                list(readback.get("missing_issue_ids", []))
-                + list(readback.get("mismatched_issue_ids", []))
-            )
-            if str(item).strip()
-        }
-        verified_issue_ids = [
-            str(item.get("issue_id") or "").strip()
-            for item in changes
-            if str(item.get("issue_id") or "").strip()
-            and str(item.get("issue_id") or "").strip() not in field_failed
-            and str(item.get("issue_id") or "").strip() not in readback_failed
+        history_entries = [
+            {"issue_id": issue_id, "comment": effective_comments.get(issue_id, "")}
+            for issue_id in issue_ids
         ]
-        local_review = (
-            await asyncio.to_thread(
-                _mark_local_review_exclusions,
-                verified_issue_ids,
-                actor=identity,
-                fallback_notes=effective_comments,
+        await _save_issue_exclusion_history(
+            operation_id=submitted_digest,
+            identity=identity,
+            status="pending",
+            requested_entries=history_entries,
+            message="已生成待提交记录，等待 Trail 写入和回读。",
+        )
+        _, info_field = _field_names()
+        try:
+            changes = await asyncio.to_thread(
+                build_manual_exclusion_changes,
+                issue_ids,
+                current_rows=sync_result.rows,
+                info_field=info_field,
+                comment_by_issue=effective_comments,
             )
-            if readback.get("complete")
-            else {
-                "requested_count": 0,
-                "marked_count": 0,
-                "already_excluded_count": 0,
-                "failed_count": 0,
-                "failed_issue_ids": [],
-                "failure_messages": {},
-                "ok": False,
-                "status": "readback_incomplete",
+            changes = attach_trail_operation_id(changes, operation_id=submitted_digest)
+            stats = await asyncio.to_thread(
+                write_trail_model_results,
+                changes,
+                ra_root=settings.ra_auto_triage_root,
+                chunk_size=settings.trail_attribute_write_chunk_size,
+            )
+            readback = await _readback_changes(
+                changes,
+                stats,
+                result_field="",
+                info_field=info_field,
+            )
+            field_failed = {
+                str(item).strip()
+                for item in stats.get("failed_issue_ids", [])
+                if str(item).strip()
             }
+            readback_failed = {
+                str(item).strip()
+                for item in (
+                    list(readback.get("missing_issue_ids", []))
+                    + list(readback.get("mismatched_issue_ids", []))
+                )
+                if str(item).strip()
+            }
+            verified_issue_ids = [
+                str(item.get("issue_id") or "").strip()
+                for item in changes
+                if str(item.get("issue_id") or "").strip()
+                and str(item.get("issue_id") or "").strip() not in field_failed
+                and str(item.get("issue_id") or "").strip() not in readback_failed
+            ]
+            local_review = (
+                await asyncio.to_thread(
+                    _mark_local_review_exclusions,
+                    verified_issue_ids,
+                    actor=identity,
+                    fallback_notes=effective_comments,
+                )
+                if readback.get("complete")
+                else {
+                    "requested_count": 0,
+                    "marked_count": 0,
+                    "already_excluded_count": 0,
+                    "failed_count": 0,
+                    "failed_issue_ids": [],
+                    "failure_messages": {},
+                    "ok": False,
+                    "status": "readback_incomplete",
+                }
+            )
+        except Exception as exc:
+            await _save_issue_exclusion_history(
+                operation_id=submitted_digest,
+                identity=identity,
+                status="failed",
+                requested_entries=history_entries,
+                failed_issue_ids=set(issue_ids),
+                message=f"提交异常：{str(exc)[:1000]}",
+            )
+            raise
+        failed_issue_ids = field_failed | readback_failed
+        history_status = (
+            "completed"
+            if not failed_issue_ids
+            else "partial" if verified_issue_ids else "failed"
+        )
+        history_message = (
+            f"Trail 回读 {len(verified_issue_ids)}/{len(changes)} 条成功。"
+            if readback.get("complete")
+            else "Trail 回读不完整，未同步本地 Review 排除状态。"
+        )
+        await _save_issue_exclusion_history(
+            operation_id=submitted_digest,
+            identity=identity,
+            status=history_status,
+            requested_entries=history_entries,
+            synced_issue_ids=set(verified_issue_ids),
+            failed_issue_ids=failed_issue_ids,
+            failure_messages={
+                **{
+                    issue_id: "Trail 字段写入失败。"
+                    for issue_id in field_failed
+                },
+                **{
+                    issue_id: "Trail 回读校验失败。"
+                    for issue_id in readback_failed
+                },
+            },
+            message=history_message,
         )
     return {
         "ok": (

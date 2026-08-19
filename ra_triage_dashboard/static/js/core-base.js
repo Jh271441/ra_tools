@@ -634,6 +634,8 @@ const state = {
     loading: false,
     directRequestSeq: 0,
     directData: null,
+    issueHistory: null,
+    issueHistoryRequestSeq: 0,
     progress: null,
   },
   selectedAnnotationLabel: "",
