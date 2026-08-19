@@ -12,6 +12,34 @@ from ra_triage_dashboard.app.review_analysis import (
 
 
 class ReviewReasonAnalysisTest(unittest.TestCase):
+    def test_excluded_rows_are_not_materialized_in_reason_analysis(self) -> None:
+        rows = [
+            {
+                "issue_id": "cn-excluded",
+                "gt_label": "误触发",
+                "annotation": {
+                    "is_excluded": True,
+                    "label": "误触发",
+                    "note": "不是模型问题",
+                    "missing_evidence": ["not_model_issue"],
+                },
+            },
+            {
+                "issue_id": "cn-included",
+                "gt_label": "误触发",
+                "annotation": {
+                    "is_excluded": False,
+                    "label": "误触发",
+                    "note": "真正需要分析",
+                    "missing_evidence": ["routing_direction"],
+                },
+            },
+        ]
+        result = build_review_reason_analysis(rows, include_reason_themes=False)
+        self.assertEqual(result["total"], 1)
+        self.assertEqual([item["issue_id"] for item in result["items"]], ["cn-included"])
+        self.assertEqual(result["summary"]["with_structured_evidence"], 1)
+
     def test_historical_tags_drive_effective_output_and_automatic_status(self) -> None:
         tag_catalog = {
             "queue": {"label": "排队", "group": "false_trigger"},
@@ -679,7 +707,7 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
                 label="误触发",
                 review_status="reviewed",
                 tags=[],
-                missing_evidence=[],
+                missing_evidence=["not_model_issue"],
                 note="应该排除",
                 author="alice",
                 is_excluded=True,
@@ -694,6 +722,27 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
             self.assertEqual(rows[0]["prediction"]["model_run_id"], run["id"])
             self.assertEqual(rows[0]["prediction"]["label"], "正确触发")
             self.assertEqual(rows[0]["prediction"]["reason"], "排队")
+            self.assertEqual(
+                database.review_reason_rows(
+                    baseline_scope=scope,
+                    is_excluded=False,
+                ),
+                [],
+            )
+            self.assertEqual(
+                database.review_clusters(
+                    baseline_scope=scope,
+                    is_excluded=False,
+                ),
+                [],
+            )
+            self.assertEqual(
+                database.review_clusters(
+                    baseline_scope=scope,
+                    is_excluded=True,
+                ),
+                [{"key": "not_model_issue", "count": 1}],
+            )
 
 
 if __name__ == "__main__":

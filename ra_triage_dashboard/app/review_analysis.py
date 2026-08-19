@@ -362,6 +362,12 @@ def build_review_reason_analysis(
     for source in rows:
         item = dict(source)
         annotation = dict(item.get("annotation") or {})
+        # Keep this guard even though the database query normally applies
+        # ``is_excluded=False``.  It protects other callers of this pure
+        # aggregator from accidentally putting explicitly shielded cases back
+        # into reason/evidence/tag clusters.
+        if bool(annotation.get("is_excluded")):
+            continue
         prediction = dict(item.get("prediction") or {})
         annotation["tags"] = _safe_list(annotation.get("tags"))
         annotation["missing_evidence"] = _safe_list(

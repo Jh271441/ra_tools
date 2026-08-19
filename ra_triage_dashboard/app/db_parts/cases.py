@@ -544,6 +544,7 @@ class DatabaseCasesMixin:
         model_run_id: str = "",
         failure_only: bool = True,
         annotation_author: str = "",
+        is_excluded: bool | None = None,
     ) -> list[dict[str, Any]]:
         scopes = self._normalize_baseline_scopes(baseline_scopes, baseline_scope=baseline_scope)
         if not scopes:
@@ -566,6 +567,11 @@ class DatabaseCasesMixin:
         if annotation_author.strip():
             where.append("ann.author = ?")
             params.append(annotation_author.strip())
+        if is_excluded is not None:
+            where.append("ann.is_excluded = ?")
+            # SQLite stores the legacy flag as INTEGER; PostgreSQL accepts the
+            # native bool.  Binding Python bool keeps both backends portable.
+            params.append(bool(is_excluded))
         query = f"""
             SELECT ann.missing_evidence_json
             FROM issues i

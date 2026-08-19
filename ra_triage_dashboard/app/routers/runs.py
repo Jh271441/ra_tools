@@ -265,5 +265,7 @@ async def review_clusters(
             model_run_id=model_run_id,
             failure_only=failure_only,
             annotation_author=annotation_author,
+            # Problem-exclusion cases are intentionally absent from 原因聚类.
+            is_excluded=False,
         )
     }

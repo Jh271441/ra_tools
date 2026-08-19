@@ -770,19 +770,11 @@ function applyTrailDetailMetadata(result, issueId, requestSeq) {
   const trailShouldExclude = result?.dashboard_should_exclude === true;
   state.selectedCase.trail_should_exclude = trailShouldExclude;
   const excludeInput = $("#reviewExcludeInput");
-  const excludeHint = $("#reviewExcludeTrailHint");
-  if (excludeHint) {
-    excludeHint.hidden = !trailShouldExclude;
-  }
   if (excludeInput && trailShouldExclude && !state.reviewFormDirty) {
     // Trail's namespaced info marker is read-only here.  Checking the local
     // box makes the state visible immediately; it becomes a local Review
     // annotation only after the reviewer explicitly saves the form.
     excludeInput.checked = true;
-    excludeInput.title = uiText(
-      "Trail info 已标记应该排除；保存 Review 后写入看板标注。",
-      "Trail info marks this Issue for exclusion; save Review to persist the dashboard annotation."
-    );
   }
   renderDetailExternalLinks(state.selectedCase);
 }

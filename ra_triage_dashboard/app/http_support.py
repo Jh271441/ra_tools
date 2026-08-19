@@ -828,6 +828,10 @@ def _review_reason_analysis_payload(
             baseline_scopes=scopes,
             model_run_id=model_run_id,
             comparison_status=comparison_status,
+            # Cases explicitly marked as "应该排除" are outside the model
+            # problem population.  Keep this filter at the DB boundary so the
+            # cards, charts, detail rows, and all analysis exports agree.
+            is_excluded=False,
             annotation_author=",".join(authors),
             # Historical persisted status/label fields predate expected output.
             # Apply both filters after read-time Tag inference below.

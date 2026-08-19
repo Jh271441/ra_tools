@@ -1423,7 +1423,6 @@ html[data-ui-lang="en"] .expected-output-rule-popover ul.ui-lang-en { display: g
   min-width: 0; flex: 1 1 auto; overflow: hidden; color: var(--faint); font-size: 9px;
   line-height: 1.35; text-overflow: ellipsis; white-space: nowrap;
 }
-.review-exclude-toggle .review-exclude-trail-hint { flex-basis: 100%; color: #86dce4; }
 .label-buttons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 5px; }
 .label-choice { padding: 8px 4px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: #0e131c; font-size: 11px; }
 .label-choice:hover, .label-choice.active { border-color: rgba(34,211,238,.55); color: var(--accent); background: var(--accent-soft); }
