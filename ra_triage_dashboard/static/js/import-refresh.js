@@ -275,6 +275,9 @@ async function refreshAll({ resetSelection = false } = {}) {
     loadReviewers(),
     loadWorkAssignees(),
   ]);
+  if (state.activePage === "trail-update" && typeof loadTrailAttributePreview === "function") {
+    await loadTrailAttributePreview(true);
+  }
 }
 
 async function reloadReviewGallery({

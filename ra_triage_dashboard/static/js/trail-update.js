@@ -410,12 +410,22 @@ function clearTrailIssuePreview(message = "") {
   }
 }
 
-function trailUpdateEndpoint(runId, probeTrail = true) {
+function trailUpdatePreviewKey(runId = state.trailUpdate?.runId || "") {
+  return `${String(runId || "").trim()}|${selectedBaselineQueryValue()}`;
+}
+
+function trailAttributePreviewNeedsLoad(runId = state.trailUpdate?.runId || "") {
+  const key = trailUpdatePreviewKey(runId);
+  return !state.trailUpdate?.data || state.trailUpdate.previewKey !== key;
+}
+
+function trailUpdateEndpoint(runId, probeTrail = true, refresh = false) {
   const params = new URLSearchParams();
   if (runId) params.set("model_run_id", runId);
   const baselines = selectedBaselineQueryValue();
   if (baselines) params.set("baselines", baselines);
   if (!probeTrail) params.set("probe_trail", "false");
+  if (refresh) params.set("refresh", "true");
   return `/api/trail-attribute-update/preview?${params.toString()}`;
 }
 
@@ -546,7 +556,7 @@ function renderTrailAttributePreview(data) {
       <td data-label="模型 label">${labelBadge(model.label, "未输出")}<small>${ready ? "" : uiText("label 不在三分类契约内", "label is outside the contract")}</small></td>
       <td data-label="模型 reason"><div class="trail-update-reason" title="${escapeHtml(model.reason || "模型未返回 reason")}">${escapeHtml(model.reason || "模型未返回 reason")}</div><small>${escapeHtml(formatModelConfidence(model.confidence))} confidence</small></td>
       <td data-label="Review"><div>${escapeHtml(review.reviewer || "未记录")}</div><small>${escapeHtml(review.status || "pending")} · ${escapeHtml(formatTime(review.reviewed_at))}</small></td>
-      <td data-label="Comment"><div class="trail-update-comment" title="${escapeHtml(comment || uiText("未填写 Comment", "No Comment"))}">${escapeHtml(comment || "未填写")}</div><small>${comment ? uiText("提交时写入 info.ra_triage_dashboard.should_exclude_comment", "Saved in info.ra_triage_dashboard.should_exclude_comment on commit") : uiText("不会写入排除说明", "No exclusion note will be written")}</small></td>
+      <td data-label="Comment"><div class="trail-update-comment" title="${escapeHtml(comment || uiText("未填写 Comment", "No Comment"))}">${escapeHtml(comment || "未填写")}</div><small class="trail-update-comment-target" title="${escapeHtml(comment ? uiText("提交时写入 info.ra_triage_dashboard.should_exclude_comment", "Saved in info.ra_triage_dashboard.should_exclude_comment on commit") : uiText("不会写入排除说明", "No exclusion note will be written"))}">${comment ? uiText("提交时写入 info.ra_triage_dashboard.should_exclude_comment", "Saved in info.ra_triage_dashboard.should_exclude_comment on commit") : uiText("不会写入排除说明", "No exclusion note will be written")}</small></td>
       <td data-label="数据集版本" class="trail-update-source-cell" title="${escapeHtml(sourceRun.title)}"><strong>${escapeHtml(sourceRun.label)}</strong></td>
       <td data-label="Trail 更新状态"><span class="trail-update-state-badge ${status.className}" title="${escapeHtml(status.detail)}">${escapeHtml(status.label)}</span><small>${escapeHtml(status.detail)}</small></td>
     </tr>`;
@@ -558,13 +568,20 @@ async function loadTrailAttributePreview(force = false, options = {}) {
   const select = $("#trailUpdateRunSelect");
   const runId = String(select?.value || state.trailUpdate?.runId || "").trim();
   state.trailUpdate.runId = runId;
-  const previewKey = `${runId}|${selectedBaselineQueryValue()}`;
+  const previewKey = trailUpdatePreviewKey(runId);
   const cachedData = state.trailUpdate?.data;
+  if (!force && state.trailUpdate?.loading && state.trailUpdate.previewKey === previewKey) {
+    if (cachedData) {
+      renderTrailAttributePreview(cachedData);
+      syncTrailAttributeActions(cachedData);
+    }
+    return cachedData;
+  }
   if (
     !force &&
     cachedData &&
     state.trailUpdate.previewKey === previewKey &&
-    Date.now() - Number(state.trailUpdate.previewLoadedAt || 0) < 60000
+    Number(state.trailUpdate.previewLoadedAt || 0) > 0
   ) {
     setTrailAttributeLoading(false);
     renderTrailAttributePreview(cachedData);
@@ -604,7 +621,7 @@ async function loadTrailAttributePreview(force = false, options = {}) {
       ));
     }
     try {
-      const checked = await api(trailUpdateEndpoint(runId, true));
+      const checked = await api(trailUpdateEndpoint(runId, true, force));
       if (requestSeq !== state.trailUpdate.requestSeq) return checked;
       if (!background) setTrailAttributeLoading(false);
       applyPreview(checked, { loaded: true });

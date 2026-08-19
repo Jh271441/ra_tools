@@ -676,7 +676,11 @@ function showPage(
     trailPage?.classList.add("is-loading");
     if (runId) state.trailUpdate.runId = runId;
     if (typeof renderTrailAttributeRunPicker === "function") renderTrailAttributeRunPicker();
-    if (loadPageData && typeof loadTrailAttributePreview === "function") {
+    if (
+      loadPageData &&
+      typeof loadTrailAttributePreview === "function" &&
+      (typeof trailAttributePreviewNeedsLoad !== "function" || trailAttributePreviewNeedsLoad(state.trailUpdate?.runId || ""))
+    ) {
       loadTrailAttributePreview().catch((error) => showToast(error.message, true));
     }
   }

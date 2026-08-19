@@ -567,10 +567,12 @@ function bindEvents() {
         restoreRoute: true,
         loadPageData: false,
       });
-      try {
-        await loadTrailAttributePreview();
-      } catch (error) {
-        showToast(error.message, true);
+      if (typeof trailAttributePreviewNeedsLoad !== "function" || trailAttributePreviewNeedsLoad(nextRunId)) {
+        try {
+          await loadTrailAttributePreview();
+        } catch (error) {
+          showToast(error.message, true);
+        }
       }
       return;
     }

@@ -39,7 +39,7 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         )
         self.assertEqual(invalid, ["cn00000001（重复）", "not an issue"])
 
-    def test_read_only_preview_skips_remote_trail_capability_probe(self) -> None:
+    def test_read_only_preview_probes_remote_trail_statuses(self) -> None:
         request = Request(
             {
                 "type": "http",
@@ -66,8 +66,23 @@ class TrailAttributeUpdateTest(unittest.TestCase):
                 "label": "误触发",
             },
         }
+        sync = SimpleNamespace(
+            rows=[
+                {
+                    "issue_id": "cn00000001",
+                    TRAIL_INFO_FIELD: {"ra_triage_dashboard": {"should_exclude": True}},
+                }
+            ],
+            fields_visible=(TRAIL_INFO_FIELD,),
+            complete=True,
+            queried_issues=1,
+            returned_issues=1,
+            view_id=2410,
+            message="Trail status read",
+        )
+        trail_update._preview_capability_cache.clear()
         with patch.object(trail_update.database, "review_reason_rows", return_value=[row]), patch.object(
-            trail_update, "read_trail_model_fields", side_effect=AssertionError("remote probe")
+            trail_update, "read_trail_model_fields", return_value=sync
         ) as probe:
             payload = asyncio.run(
                 trail_update._build_preview(
@@ -77,8 +92,53 @@ class TrailAttributeUpdateTest(unittest.TestCase):
                 )
             )
         self.assertEqual(payload["count"], 1)
-        self.assertEqual(payload["trail_capability"]["status"], "not_checked")
-        probe.assert_not_called()
+        self.assertEqual(payload["trail_capability"]["status"], "ready")
+        self.assertEqual(payload["items"][0]["trail_update_status"], "synced")
+        probe.assert_called_once()
+
+    def test_manual_refresh_bypasses_trail_status_cache(self) -> None:
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/trail-attribute-update/preview",
+                "query_string": b"baselines=0508",
+                "headers": [],
+                "scheme": "http",
+                "server": ("testserver", 80),
+                "client": ("127.0.0.1", 1),
+            }
+        )
+        row = {
+            "issue_id": "cn00000009",
+            "annotation": {"id": 9, "is_excluded": True},
+            "prediction": {"model_run_id": "run-9", "label": "误触发"},
+        }
+        synced = SimpleNamespace(
+            rows=[{"issue_id": "cn00000009", TRAIL_INFO_FIELD: {"ra_triage_dashboard": {"should_exclude": True}}}],
+            fields_visible=(TRAIL_INFO_FIELD,), complete=True, queried_issues=1, returned_issues=1,
+            view_id=2410, message="Trail status read",
+        )
+        pending = SimpleNamespace(
+            rows=[{"issue_id": "cn00000009", TRAIL_INFO_FIELD: {"ra_triage_dashboard": {"should_exclude": False}}}],
+            fields_visible=(TRAIL_INFO_FIELD,), complete=True, queried_issues=1, returned_issues=1,
+            view_id=2410, message="Trail status read",
+        )
+        trail_update._preview_capability_cache.clear()
+        with patch.object(trail_update.database, "review_reason_rows", return_value=[row]), patch.object(
+            trail_update, "read_trail_model_fields", side_effect=[synced, pending]
+        ) as probe:
+            first = asyncio.run(trail_update._build_preview(request, selected_run_id="", baselines="0508"))
+            cached = asyncio.run(trail_update._build_preview(request, selected_run_id="", baselines="0508"))
+            refreshed = asyncio.run(
+                trail_update._build_preview(
+                    request, selected_run_id="", baselines="0508", refresh_trail=True
+                )
+            )
+        self.assertEqual(first["items"][0]["trail_update_status"], "synced")
+        self.assertEqual(cached["items"][0]["trail_update_status"], "synced")
+        self.assertEqual(refreshed["items"][0]["trail_update_status"], "pending")
+        self.assertEqual(probe.call_count, 2)
 
     def test_info_only_preview_enables_review_write_when_snapshot_is_complete(self) -> None:
         request = Request(

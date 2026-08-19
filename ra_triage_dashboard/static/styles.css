@@ -2006,10 +2006,12 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-table td:nth-child(4), .trail-update-table td:nth-child(6), .trail-update-table td:nth-child(7) { text-align: left; }
 .trail-update-table td small { display: block; margin-top: 3px; color: var(--faint); font-size: 10px; line-height: 1.35; }
 .trail-update-issue { display: block; color: #b9edf0; font: 600 12px "SFMono-Regular", Consolas, monospace; text-align: center; }
-.trail-update-source-cell > strong { display: block; overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
+.trail-update-source-cell > strong { display: block; overflow: hidden; color: var(--text); text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.trail-update-table td.trail-update-source-cell { text-align: center; }
 .trail-update-source-cell > small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.trail-update-reason { display: -webkit-box; overflow: hidden; color: var(--text); line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
-.trail-update-comment { display: -webkit-box; overflow: hidden; color: var(--text); line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.trail-update-reason { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; color: var(--text); line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.trail-update-comment { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; color: var(--text); line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.trail-update-comment-target { display: block; max-width: 100%; overflow: hidden; color: var(--faint); line-height: 1.35; overflow-wrap: anywhere; text-overflow: ellipsis; white-space: nowrap; }
 .trail-update-table code { color: var(--accent); font-size: 10px; word-break: break-word; }
 .trail-update-empty { min-height: 42px; color: var(--faint) !important; text-align: center !important; vertical-align: middle !important; }
 .trail-update-table tr.is-invalid td { border-color: rgba(248,113,113,.35); }
@@ -3155,9 +3157,11 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .trail-update-issue { text-align: left; overflow-wrap: anywhere; }
   .trail-update-source-cell > strong,
   .trail-update-info-cell > strong { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; text-align: left; }
+  .trail-update-source-cell > strong { text-align: center; }
   .trail-update-info-cell > small,
   .trail-update-info-cell > code,
   .trail-update-direct-table .trail-update-comment { text-align: left; }
+  .trail-update-comment-target { white-space: normal; text-overflow: clip; }
   .trail-update-info-cell > code { white-space: pre-wrap; overflow-wrap: anywhere; }
   .trail-update-reason, .trail-update-comment { min-width: 0; overflow-wrap: anywhere; }
 

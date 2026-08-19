@@ -790,6 +790,7 @@ async def _build_preview(
     selected_run_id: str,
     baselines: str = "",
     probe_trail: bool = True,
+    refresh_trail: bool = False,
 ) -> dict[str, Any]:
     baseline_ids = resolve_request_baseline_ids(baselines, request=request)
     baseline_scopes = resolve_request_baseline_scopes(baselines, request=request)
@@ -812,19 +813,18 @@ async def _build_preview(
         and getattr(settings, "trail_attribute_review_write_enabled", False)
     )
     issue_ids = [_as_text(row.get("issue_id")) for row in rows if _as_text(row.get("issue_id"))]
-    # The Review tab is a read-only aggregate in the current deployment.  Do
-    # not make every filter change wait for a remote Trail query when the
-    # writer is disabled; commit still performs a fresh, complete capability
-    # check immediately before any future write.
+    # Trail status is a read-only projection and is useful even when the
+    # controlled writer is disabled. Keep the first local paint cheap, then
+    # perform one batched read when the caller explicitly asks for it.
     trail_statuses: dict[str, str] | None = None
-    if issue_ids and review_write_enabled and probe_trail:
+    if issue_ids and probe_trail:
         # Capability probing is a remote read and is the slowest part of the
         # page preview.  Cache only this short-lived, Issue-set-specific
         # summary; the actual commit path always bypasses the cache and does a
         # fresh read immediately before writing.
         cache_key = (int(settings.trail_view_id), info_field, tuple(issue_ids))
         cached_capability = None
-        if request.method.upper() == "GET":
+        if request.method.upper() == "GET" and not refresh_trail:
             now = time.monotonic()
             with _preview_capability_cache_lock:
                 cached = _preview_capability_cache.get(cache_key)
@@ -848,7 +848,7 @@ async def _build_preview(
                 issue_ids,
                 info_field=info_field,
             )
-            if request.method.upper() == "GET":
+            if request.method.upper() == "GET" and not refresh_trail:
                 with _preview_capability_cache_lock:
                     _preview_capability_cache[cache_key] = (
                         time.monotonic(),
@@ -859,10 +859,10 @@ async def _build_preview(
         capability = _capability_not_checked(result_field, info_field)
         capability["target_fields"] = [info_field]
         capability["required_fields"] = [info_field]
-        # A production first-paint request is intentionally still waiting for
-        # the background probe; a read-only environment with no probe is
-        # genuinely unchecked rather than "querying" forever.
-        if not (issue_ids and review_write_enabled and not probe_trail):
+        # The first-paint request is intentionally still waiting for the
+        # background probe. Keep rows in “查询中” until that single batched
+        # read returns, regardless of whether writing is enabled.
+        if not (issue_ids and not probe_trail):
             trail_statuses = {}
     payload = await asyncio.to_thread(
         build_trail_attribute_update_payload,
@@ -881,7 +881,7 @@ async def _build_preview(
     # read so the local Review aggregate can paint immediately.  The browser
     # follows it with the checked request in the background and replaces the
     # payload before enabling a possible commit.
-    payload["capability_pending"] = bool(issue_ids and review_write_enabled and not probe_trail)
+    payload["capability_pending"] = bool(issue_ids and not probe_trail)
     return payload
 
 
@@ -1055,6 +1055,7 @@ async def trail_attribute_update_preview(
     model_run_id: str = "",
     baselines: str = "",
     probe_trail: bool = True,
+    refresh: bool = False,
 ) -> dict[str, Any]:
     """Return should-exclude rows for one Run or the all-Run aggregate."""
 
@@ -1063,6 +1064,7 @@ async def trail_attribute_update_preview(
         selected_run_id=_as_text(model_run_id),
         baselines=baselines,
         probe_trail=probe_trail,
+        refresh_trail=refresh,
     )
 
 

@@ -597,10 +597,9 @@ async function refreshChangedData() {
     return;
   }
   if (state.activePage === "trail-update") {
-    await Promise.all([
-      loadRuns({ preserveEmpty: true }),
-      loadTrailAttributePreview(true),
-    ]);
+    // Shared change-revision polling must not refresh Trail status behind the
+    // operator's back. The top-bar Refresh button is the explicit refresh
+    // boundary for this page.
     return;
   }
   if (state.activePage === "prediction") {
