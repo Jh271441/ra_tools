@@ -740,8 +740,6 @@ async function bootstrap() {
       initialPageRequests.push(loadAccessUsers());
     } else if (initialRoute.page === "prediction") {
       initialPageRequests.push(loadPredictionConfig(), loadPredictionBatches());
-    } else if (initialRoute.page === "trail-update") {
-      initialPageRequests.push(loadTrailAttributePreview());
     }
     if (initialRoute.page === "analysis") {
       initialPageRequests.push(loadReviewReasonAnalysis());
@@ -774,6 +772,12 @@ async function bootstrap() {
       restoreRoute: true,
       loadPageData: false,
     });
+    if (initialRoute.page === "trail-update") {
+      // Do not hold the initial shell on the remote Trail read. The local
+      // exclusion aggregate paints after navigation; loadTrailAttributePreview
+      // then performs its single batched status check asynchronously.
+      void loadTrailAttributePreview().catch((error) => showToast(error.message, true));
+    }
     if (initialRoute.page === "review") {
       // Defer cluster strip so it does not compete with gallery thumbs.
       window.setTimeout(() => {

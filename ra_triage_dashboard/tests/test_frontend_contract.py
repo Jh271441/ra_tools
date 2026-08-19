@@ -903,6 +903,9 @@ class FrontendContractTest(unittest.TestCase):
         self.assertNotIn("trailUpdateIssueDigest", APP_JS)
         self.assertIn("loadPageData &&", APP_JS)
         self.assertIn("trailAttributePreviewNeedsLoad", APP_JS)
+        bootstrap_body = APP_JS[APP_JS.index("async function bootstrap"):]
+        self.assertNotIn("initialPageRequests.push(loadTrailAttributePreview())", bootstrap_body)
+        self.assertIn("void loadTrailAttributePreview().catch", bootstrap_body)
         self.assertIn("renderTrailAttributeRunPicker();", APP_JS)
         self.assertIn('id="trailUpdateIssueTab"', INDEX_HTML)
         self.assertIn('id="trailUpdateIssueEntries"', INDEX_HTML)
