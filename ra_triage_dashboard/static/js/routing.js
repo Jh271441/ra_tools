@@ -668,20 +668,34 @@ function showPage(
   }
   if (target === "analysis") renderAnalysisRunFilter();
   if (target === "trail-update") {
-    // Mark the page as loading before any shared Run/config request yields.
-    // This keeps disabled Trail actions in their stable loading appearance
-    // even during the initial navigation gap before the preview request
-    // starts.
     const trailPage = $("#trailAttributeUpdatePage");
-    trailPage?.classList.add("is-loading");
     if (runId) state.trailUpdate.runId = runId;
     if (typeof renderTrailAttributeRunPicker === "function") renderTrailAttributeRunPicker();
-    if (
-      loadPageData &&
-      typeof loadTrailAttributePreview === "function" &&
-      (typeof trailAttributePreviewNeedsLoad !== "function" || trailAttributePreviewNeedsLoad(state.trailUpdate?.runId || ""))
-    ) {
+    const needsPreview =
+      typeof trailAttributePreviewNeedsLoad !== "function" ||
+      trailAttributePreviewNeedsLoad(state.trailUpdate?.runId || "");
+    if (loadPageData && typeof loadTrailAttributePreview === "function" && needsPreview) {
+      // Mark the page as loading only while an actual preview request will be
+      // made.  Previously every route re-entry set this flag even when the
+      // fresh preview was cached, permanently preserving disabled controls.
+      trailPage?.classList.add("is-loading");
       loadTrailAttributePreview().catch((error) => showToast(error.message, true));
+    } else if (loadPageData) {
+      // Rehydrate cached state synchronously: navigation must not require a
+      // second remote Trail check merely to make an already-ready commit
+      // button usable again.
+      trailPage?.classList.remove("is-loading");
+      const cachedPreview = state.trailUpdate?.data || null;
+      if (cachedPreview && typeof renderTrailAttributePreview === "function") {
+        renderTrailAttributePreview(cachedPreview);
+      }
+      if (typeof syncTrailAttributeActions === "function") {
+        syncTrailAttributeActions(cachedPreview);
+      }
+    } else {
+      // Bootstrap paints the shell before it schedules the one batched Trail
+      // query; retain the loading presentation for that short initial gap.
+      trailPage?.classList.add("is-loading");
     }
   }
   if (target === "status" && loadPageData) {

@@ -65,9 +65,12 @@ export DASHBOARD_BASELINE_DATASET="0508"
 export DASHBOARD_BASELINE_SCOPE="release0508_1071_20260729"
 export DASHBOARD_TRAIL_VIEW_ID="${DASHBOARD_TRAIL_VIEW_ID:-2410}"
 # Trail Attribute Update is fail-closed by default.  Enable only after the
-# configured view visibly contains both model fields and a gray deployment
-# has passed preview/commit verification.
+# configured view exposes the info target and a gray deployment has passed
+# preview/commit verification.
 export DASHBOARD_TRAIL_ATTRIBUTE_WRITE_ENABLED="${DASHBOARD_TRAIL_ATTRIBUTE_WRITE_ENABLED:-false}"
+# Review 汇总是独立的写入权限；显式导出它，避免重启时 shell 未继承该变量而
+# 静默回退为 preview-only。生产是否打开仍由部署命令明确传 true 决定。
+export DASHBOARD_TRAIL_ATTRIBUTE_REVIEW_WRITE_ENABLED="${DASHBOARD_TRAIL_ATTRIBUTE_REVIEW_WRITE_ENABLED:-false}"
 export DASHBOARD_TRAIL_ATTRIBUTE_WRITE_CHUNK_SIZE="${DASHBOARD_TRAIL_ATTRIBUTE_WRITE_CHUNK_SIZE:-10}"
 export DASHBOARD_TRAIL_ATTRIBUTE_RESULT_FIELD="${DASHBOARD_TRAIL_ATTRIBUTE_RESULT_FIELD:-ra_stuck_auto_result}"
 export DASHBOARD_TRAIL_ATTRIBUTE_INFO_FIELD="${DASHBOARD_TRAIL_ATTRIBUTE_INFO_FIELD:-ra_stuck_auto_result_info}"

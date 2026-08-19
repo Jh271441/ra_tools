@@ -13,6 +13,11 @@ function setTrailUpdateTab(tab = "review") {
     panel.classList.toggle("hidden", !active);
     panel.setAttribute("aria-hidden", active ? "false" : "true");
   });
+  // A tab may be revisited after a route render while its preview is already
+  // cached.  Re-apply the action state here instead of leaving the initial
+  // disabled HTML attribute in place until another network request happens.
+  if (nextTab === "issue") syncTrailIssueActions();
+  else syncTrailAttributeActions();
 }
 
 function setTrailIssueStatus(message = "") {
@@ -265,12 +270,27 @@ function setTrailAttributeLoading(loading = false) {
   });
 }
 
+function trailUpdateWriteReady(data = null) {
+  // `write_ready` is retained as a compatibility fallback for a preview that
+  // was produced while a rolling server update was in progress.  The server
+  // still owns the final write gate and validates the preview fingerprint.
+  return Boolean(data && (data.write_status === "ready" || data.write_ready === true));
+}
+
 function syncTrailAttributeActions(data = state.trailUpdate?.data) {
   const loading = Boolean(state.trailUpdate?.loading);
   document.querySelectorAll('[data-trail-json-preview="review"]').forEach((button) => {
     button.toggleAttribute("disabled", loading || !data?.draft);
   });
-  $("#trailUpdateCommitButton")?.toggleAttribute("disabled", loading || data?.write_status !== "ready");
+  $("#trailUpdateCommitButton")?.toggleAttribute("disabled", loading || !trailUpdateWriteReady(data));
+}
+
+function syncTrailIssueActions(data = state.trailUpdate?.directData) {
+  const ready = trailUpdateWriteReady(data);
+  document.querySelectorAll('[data-trail-json-preview="issue"]').forEach((button) => {
+    button.toggleAttribute("disabled", !data?.draft);
+  });
+  $("#trailUpdateIssueCommitButton")?.toggleAttribute("disabled", !ready);
 }
 
 function setTrailAttributeUpdatePreviewVisible(visible) {
@@ -422,7 +442,17 @@ function trailUpdatePreviewKey(runId = state.trailUpdate?.runId || "") {
 
 function trailAttributePreviewNeedsLoad(runId = state.trailUpdate?.runId || "") {
   const key = trailUpdatePreviewKey(runId);
-  return !state.trailUpdate?.data || state.trailUpdate.previewKey !== key;
+  const cached = state.trailUpdate?.data;
+  if (!cached || state.trailUpdate.previewKey !== key) return true;
+  // If runtime configuration was just switched from preview-only to writable,
+  // do one fresh checked request instead of rehydrating the old disabled
+  // payload forever.  Once it returns ready (or a real field error), normal
+  // route changes continue to reuse the snapshot without extra Trail reads.
+  const writerEnabled = Boolean(
+    state.config?.trail_attribute_update?.enabled &&
+    state.config?.trail_attribute_update?.review_write_enabled
+  );
+  return writerEnabled && cached.write_status === "disabled";
 }
 
 function trailUpdateEndpoint(runId, probeTrail = true, refresh = false) {
@@ -578,6 +608,7 @@ async function loadTrailAttributePreview(force = false, options = {}) {
   const cachedData = state.trailUpdate?.data;
   if (!force && state.trailUpdate?.loading && state.trailUpdate.previewKey === previewKey) {
     if (cachedData) {
+      setTrailAttributeLoading(false);
       renderTrailAttributePreview(cachedData);
       syncTrailAttributeActions(cachedData);
     }
@@ -598,6 +629,7 @@ async function loadTrailAttributePreview(force = false, options = {}) {
   if (!background) setTrailAttributeLoading(true);
   const applyPreview = (data, { loaded = false } = {}) => {
     if (requestSeq !== state.trailUpdate.requestSeq) return false;
+    if (!background) setTrailAttributeLoading(false);
     state.trailUpdate.data = data;
     state.trailUpdate.previewKey = previewKey;
     state.trailUpdate.previewLoadedAt = loaded ? Date.now() : 0;
@@ -619,7 +651,9 @@ async function loadTrailAttributePreview(force = false, options = {}) {
         "Checking Trail statuses in one batch…"
       ));
     }
-    const data = await api(trailUpdateEndpoint(runId, true, force));
+    // Do not let an intermediary/browser reuse a stale pre-enable response.
+    // Normal route re-entry stays fast through the in-memory preview cache.
+    const data = await api(trailUpdateEndpoint(runId, true, force), { cache: "no-store" });
     if (requestSeq !== state.trailUpdate.requestSeq) return data;
     if (!background) setTrailAttributeLoading(false);
     applyPreview(data, { loaded: true });
@@ -1234,10 +1268,7 @@ async function loadTrailIssuePreview() {
     if (requestSeq !== state.trailUpdate.directRequestSeq) return data;
     state.trailUpdate.directData = data;
     renderTrailIssuePreview(data);
-    document.querySelectorAll('[data-trail-json-preview="issue"]').forEach((button) => {
-      button.toggleAttribute("disabled", !data?.draft);
-    });
-    $("#trailUpdateIssueCommitButton")?.toggleAttribute("disabled", data?.write_status !== "ready");
+    syncTrailIssueActions(data);
     return data;
   } catch (error) {
     if (requestSeq === state.trailUpdate.directRequestSeq) {
@@ -1251,7 +1282,7 @@ async function loadTrailIssuePreview() {
 
 async function commitTrailIssueExclusion() {
   const data = state.trailUpdate?.directData;
-  if (!data || data.write_status !== "ready") return;
+  if (!trailUpdateWriteReady(data)) return;
   const ids = Array.isArray(data.requested_issue_ids) ? data.requested_issue_ids : [];
   const entries = Array.isArray(data.requested_entries)
     ? data.requested_entries
@@ -1306,13 +1337,13 @@ async function commitTrailIssueExclusion() {
     setTrailIssueStatus(error?.message || uiText("Issue 屏蔽失败。", "Issue shielding failed."));
     showToast(error?.message || uiText("Issue 屏蔽失败。", "Issue shielding failed."), true);
   } finally {
-    button?.toggleAttribute("disabled", data.write_status !== "ready");
+    syncTrailIssueActions(data);
   }
 }
 
 async function commitTrailAttributeUpdate() {
   const data = state.trailUpdate?.data;
-  if (!data || data.write_status !== "ready") return;
+  if (!trailUpdateWriteReady(data)) return;
   if (!await openTrailUpdateConfirm({ mode: "review", data })) return;
   const button = $("#trailUpdateCommitButton");
   button?.toggleAttribute("disabled", true);
@@ -1355,7 +1386,7 @@ async function commitTrailAttributeUpdate() {
     setTrailAttributeStatus(error?.message || uiText("Trail 更新失败。", "Trail update failed."));
     showToast(error?.message || uiText("Trail 更新失败。", "Trail update failed."), true);
   } finally {
-    button?.toggleAttribute("disabled", data.write_status !== "ready");
+    syncTrailAttributeActions(data);
   }
 }
 
