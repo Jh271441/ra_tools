@@ -26,11 +26,18 @@ model input:
 | `causal_compare_v1` historical baseline | 16/18 | 8/12 | not stable |
 | `causal_effect_gate_v3` + recovery-only, compact facts | 8/9 | 6/12 | rejected |
 | same candidate with narrative facts (latest source check) | 6/9 | not run | rejected |
+| staged trigger/recovery + generic role gate (temporary wrapper) | 12/16 | 6/12 | rejected |
 
 The latest source check predicted no A cases correctly, so it is not a
 candidate for further expansion. Intermediate accuracy below the project
 target is diagnostic only; it does not justify adding case-specific rules or
 leaking labels into the prompt.
+
+The staged role-gate reproduction also failed independently: it retained all
+four A cases but recalled only one of four B cases and one of four C cases.
+The source16 result was directional only because its image cache was a mixed
+provenance diagnostic cache; it is not a formal source18 result. This
+candidate is therefore closed without a Holdout36 or 0508/full1071 run.
 
 ## Evaluation gates
 
