@@ -97,6 +97,19 @@ export DASHBOARD_RA_MODEL_TOKENSERVICE_API_KEY_FILE="${DASHBOARD_RA_MODEL_TOKENS
 export DASHBOARD_AUTO_TRIAGE_RECORD_BASE_URL="${DASHBOARD_AUTO_TRIAGE_RECORD_BASE_URL:-http://auto-triage.intra.xiaojukeji.com/ra/model_triage/records}"
 export DASHBOARD_AUTOTRIAGE_API_BASE_URL="${DASHBOARD_AUTOTRIAGE_API_BASE_URL:-http://10.190.57.183:8000}"
 
+# Internal Voyager/Trail endpoints must bypass the host's local Clash proxy.
+# The cloud shell profile exports HTTP(S)_PROXY=127.0.0.1:7890, but that proxy
+# returns 502 for voyager.intra.xiaojukeji.com and makes a successful Trail
+# read look like an empty response to the dashboard.  Keep the proxy for other
+# destinations while allowing the internal services to connect directly.
+_DASHBOARD_INTERNAL_NO_PROXY="voyager.intra.xiaojukeji.com,auto-triage.intra.xiaojukeji.com,ra-model.intra.xiaojukeji.com,tokenservice-gateway-ys.intra.xiaojukeji.com,10.190.57.183"
+if [[ -n "${NO_PROXY:-}" ]]; then
+  export NO_PROXY="${NO_PROXY},${_DASHBOARD_INTERNAL_NO_PROXY}"
+else
+  export NO_PROXY="${_DASHBOARD_INTERNAL_NO_PROXY}"
+fi
+export no_proxy="$NO_PROXY"
+
 # Intentionally no default DASHBOARD_BOOTSTRAP_MODEL_JSON: the default model
 # comparison is the read-only Trail field snapshot, not the historical 348 run.
 
