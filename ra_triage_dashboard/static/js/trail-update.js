@@ -150,7 +150,7 @@ function renderTrailIssueHistory(data = {}) {
     const detailRows = entries.length
       ? entries.map((entry) => {
         const entryMeta = trailIssueHistoryStatusMeta(entry.status);
-        return `<tr><td><strong>${escapeHtml(entry.issue_id || "—")}</strong></td><td><div class="trail-update-history-comment">${escapeHtml(entry.comment || "—")}</div></td><td><span class="trail-update-history-entry-status ${entryMeta.className}">${escapeHtml(entryMeta.label)}</span><small>${escapeHtml(entry.detail || "")}</small></td></tr>`;
+        return `<tr><td data-label="Issue"><strong>${escapeHtml(entry.issue_id || "—")}</strong></td><td data-label="排除说明"><div class="trail-update-history-comment">${escapeHtml(entry.comment || "—")}</div></td><td data-label="结果"><span class="trail-update-history-entry-status ${entryMeta.className}">${escapeHtml(entryMeta.label)}</span><small>${escapeHtml(entry.detail || "")}</small></td></tr>`;
       }).join("")
       : `<tr><td colspan="3" class="trail-update-history-empty">${escapeHtml(uiText("没有逐条明细。", "No per-Issue details."))}</td></tr>`;
     return `<details class="trail-update-history-item">
@@ -541,14 +541,14 @@ function renderTrailAttributePreview(data) {
     const sourceRun = trailUpdateSourceRun(model, data, item);
     const status = trailUpdateStatusMeta(item.trail_update_status || "not_checked");
     return `<tr class="${ready ? "" : "is-invalid"}">
-      <td><strong class="trail-update-issue">${escapeHtml(item.issue_id || "—")}</strong><small>${escapeHtml(item.title || item.scenario || "")}</small></td>
-      <td>${labelBadge(item.gt_label, "—")}</td>
-      <td>${labelBadge(model.label, "未输出")}<small>${ready ? "" : uiText("label 不在三分类契约内", "label is outside the contract")}</small></td>
-      <td><div class="trail-update-reason" title="${escapeHtml(model.reason || "模型未返回 reason")}">${escapeHtml(model.reason || "模型未返回 reason")}</div><small>${escapeHtml(formatModelConfidence(model.confidence))} confidence</small></td>
-      <td><div>${escapeHtml(review.reviewer || "未记录")}</div><small>${escapeHtml(review.status || "pending")} · ${escapeHtml(formatTime(review.reviewed_at))}</small></td>
-      <td><div class="trail-update-comment" title="${escapeHtml(comment || uiText("未填写 Comment", "No Comment"))}">${escapeHtml(comment || "未填写")}</div><small>${comment ? uiText("提交时写入 info.ra_triage_dashboard.should_exclude_comment", "Saved in info.ra_triage_dashboard.should_exclude_comment on commit") : uiText("不会写入排除说明", "No exclusion note will be written")}</small></td>
-      <td class="trail-update-source-cell" title="${escapeHtml(sourceRun.title)}"><strong>${escapeHtml(sourceRun.label)}</strong></td>
-      <td><span class="trail-update-state-badge ${status.className}" title="${escapeHtml(status.detail)}">${escapeHtml(status.label)}</span><small>${escapeHtml(status.detail)}</small></td>
+      <td data-label="Issue"><strong class="trail-update-issue">${escapeHtml(item.issue_id || "—")}</strong><small>${escapeHtml(item.title || item.scenario || "")}</small></td>
+      <td data-label="GT">${labelBadge(item.gt_label, "—")}</td>
+      <td data-label="模型 label">${labelBadge(model.label, "未输出")}<small>${ready ? "" : uiText("label 不在三分类契约内", "label is outside the contract")}</small></td>
+      <td data-label="模型 reason"><div class="trail-update-reason" title="${escapeHtml(model.reason || "模型未返回 reason")}">${escapeHtml(model.reason || "模型未返回 reason")}</div><small>${escapeHtml(formatModelConfidence(model.confidence))} confidence</small></td>
+      <td data-label="Review"><div>${escapeHtml(review.reviewer || "未记录")}</div><small>${escapeHtml(review.status || "pending")} · ${escapeHtml(formatTime(review.reviewed_at))}</small></td>
+      <td data-label="Comment"><div class="trail-update-comment" title="${escapeHtml(comment || uiText("未填写 Comment", "No Comment"))}">${escapeHtml(comment || "未填写")}</div><small>${comment ? uiText("提交时写入 info.ra_triage_dashboard.should_exclude_comment", "Saved in info.ra_triage_dashboard.should_exclude_comment on commit") : uiText("不会写入排除说明", "No exclusion note will be written")}</small></td>
+      <td data-label="数据集版本" class="trail-update-source-cell" title="${escapeHtml(sourceRun.title)}"><strong>${escapeHtml(sourceRun.label)}</strong></td>
+      <td data-label="Trail 更新状态"><span class="trail-update-state-badge ${status.className}" title="${escapeHtml(status.detail)}">${escapeHtml(status.label)}</span><small>${escapeHtml(status.detail)}</small></td>
     </tr>`;
   }).join("");
 }
@@ -1053,12 +1053,12 @@ function renderTrailIssuePreview(data) {
       commentPatch ? `should_exclude_comment = ${commentPatch}` : "",
     ].filter(Boolean).join("; ");
     return `<tr>
-      <td><strong class="trail-update-issue">${escapeHtml(item.issue_id || "—")}</strong></td>
-      <td class="trail-update-release-cell" title="${escapeHtml(item.baseline_scope || release)}"><strong>${escapeHtml(release)}</strong></td>
-      <td>${labelBadge(item.current_label, "未输出")}</td>
-      <td><span class="trail-update-state-badge ${item.current_should_exclude ? "is-on" : ""}">${escapeHtml(currentState)}</span></td>
-      <td class="trail-update-info-cell"><strong title="${escapeHtml(targetSpec.fullPath)}">${escapeHtml(shortPath)}</strong><small>${uiText("info-only · label 不变", "info-only · label unchanged")}</small><code title="${escapeHtml(infoPreview)}">${escapeHtml(infoPreview)}</code></td>
-      <td><div class="trail-update-comment" title="${escapeHtml(comment)}">${escapeHtml(comment || "—")}</div><small>${commentHint}</small></td>
+      <td data-label="Issue"><strong class="trail-update-issue">${escapeHtml(item.issue_id || "—")}</strong></td>
+      <td data-label="数据集版本" class="trail-update-release-cell" title="${escapeHtml(item.baseline_scope || release)}"><strong>${escapeHtml(release)}</strong></td>
+      <td data-label="当前模型 label">${labelBadge(item.current_label, "未输出")}</td>
+      <td data-label="当前屏蔽状态"><span class="trail-update-state-badge ${item.current_should_exclude ? "is-on" : ""}">${escapeHtml(currentState)}</span></td>
+      <td data-label="预计写入 info" class="trail-update-info-cell"><strong title="${escapeHtml(targetSpec.fullPath)}">${escapeHtml(shortPath)}</strong><small>${uiText("info-only · label 不变", "info-only · label unchanged")}</small><code title="${escapeHtml(infoPreview)}">${escapeHtml(infoPreview)}</code></td>
+      <td data-label="Comment"><div class="trail-update-comment" title="${escapeHtml(comment)}">${escapeHtml(comment || "—")}</div><small>${commentHint}</small></td>
     </tr>`;
   }).join("");
 }

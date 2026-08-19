@@ -3086,6 +3086,128 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .review-filters, .analysis-filters { display: grid; }
 }
 
+/* Trail issue exclusion is information-dense on desktop.  On a phone, keep
+   the same fields but turn each table row into a labelled card instead of
+   forcing the whole page into a horizontal scroll area. */
+@media (max-width: 639px) {
+  .trail-update-page,
+  .trail-update-header-card,
+  .trail-update-tab-panel,
+  .trail-update-workspace,
+  .trail-update-results,
+  .trail-update-table-card,
+  .trail-update-direct-results { min-width: 0; }
+  .trail-update-page { overflow-x: hidden; }
+  .trail-update-tab { min-height: 52px; }
+  .trail-update-control-grid select { width: 100%; }
+  .trail-update-actions { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .trail-update-actions .button { width: 100%; min-width: 0; min-height: 40px; height: auto; }
+  .trail-update-result-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .trail-update-result-actions .button { width: 100%; min-height: 38px; }
+  .trail-update-direct-lead { align-items: stretch; }
+  .trail-update-direct-lead h3 { font-size: 13px; }
+  .trail-update-direct-contract { width: 100%; box-sizing: border-box; line-height: 1.4; }
+  .trail-update-entry-heading { align-items: stretch; flex-direction: column; }
+  .trail-update-entry-add { width: 100%; }
+  .trail-update-entry-row { grid-template-columns: minmax(0, 1fr) 34px; align-items: start; }
+  .trail-update-entry-row label:nth-child(1) { grid-column: 1; }
+  .trail-update-entry-row label:nth-child(2) { grid-column: 1 / -1; }
+  .trail-update-entry-remove { grid-column: 2; grid-row: 1; margin-top: 17px; }
+  .trail-update-entry-row textarea { min-height: 68px; }
+
+  .trail-update-table-wrap { overflow: visible; }
+  .trail-update-table,
+  .trail-update-direct-table {
+    display: block; width: 100%; min-width: 0; table-layout: auto; border-spacing: 0;
+  }
+  .trail-update-table thead { display: none; }
+  .trail-update-table tbody { display: grid; gap: 8px; }
+  .trail-update-table tbody tr {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;
+    margin: 0; padding: 7px; border: 1px solid var(--line-soft); border-radius: 8px;
+    background: var(--overlay);
+  }
+  .trail-update-table tbody tr:has(.trail-update-empty) { display: block; padding: 0; }
+  .trail-update-table tbody tr.is-invalid { border-color: rgba(248,113,113,.42); }
+  .trail-update-table td {
+    display: grid; grid-template-columns: minmax(4.6rem, 31%) minmax(0, 1fr); align-items: start;
+    gap: 5px; width: auto !important; min-width: 0; padding: 6px 7px;
+    border: 0 !important; border-radius: 5px !important; background: rgba(11,16,24,.38);
+    color: var(--muted); text-align: left !important; vertical-align: top;
+  }
+  .trail-update-table td::before {
+    content: attr(data-label); min-width: 0; color: var(--faint); font-size: 9px; font-weight: 650;
+    line-height: 1.35; overflow-wrap: anywhere;
+  }
+  .trail-update-table td > * { grid-column: 2; min-width: 0; }
+  .trail-update-table td[data-label="Issue"],
+  .trail-update-table td[data-label="模型 reason"],
+  .trail-update-table td[data-label="Review"],
+  .trail-update-table td[data-label="Comment"],
+  .trail-update-table td[data-label="数据集版本"],
+  .trail-update-table td[data-label="Trail 更新状态"],
+  .trail-update-direct-table td[data-label="Issue"],
+  .trail-update-direct-table td[data-label="预计写入 info"],
+  .trail-update-direct-table td[data-label="Comment"] { grid-column: 1 / -1; }
+  .trail-update-table td.trail-update-empty { display: block; min-height: 46px; padding: 13px 8px; }
+  .trail-update-table td.trail-update-empty::before { display: none; }
+  .trail-update-table td small { min-width: 0; margin-top: 2px; overflow-wrap: anywhere; }
+  .trail-update-issue { text-align: left; overflow-wrap: anywhere; }
+  .trail-update-source-cell > strong,
+  .trail-update-info-cell > strong { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; text-align: left; }
+  .trail-update-info-cell > small,
+  .trail-update-info-cell > code,
+  .trail-update-direct-table .trail-update-comment { text-align: left; }
+  .trail-update-info-cell > code { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .trail-update-reason, .trail-update-comment { min-width: 0; overflow-wrap: anywhere; }
+
+  .trail-update-history-table-wrap { overflow: visible; }
+  .trail-update-history-table-wrap table,
+  .trail-update-history-table-wrap tbody,
+  .trail-update-history-table-wrap tr,
+  .trail-update-history-table-wrap td { display: block; width: auto; }
+  .trail-update-history-table-wrap thead { display: none; }
+  .trail-update-history-table-wrap tbody { display: grid; gap: 5px; }
+  .trail-update-history-table-wrap tr { padding: 5px 0; border-bottom: 1px solid var(--line-soft); }
+  .trail-update-history-table-wrap td {
+    display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); gap: 5px;
+    width: auto !important; padding: 5px 0; border: 0; text-align: left;
+  }
+  .trail-update-history-table-wrap td::before { content: attr(data-label); color: var(--faint); font-size: 9px; font-weight: 650; }
+  .trail-update-history-table-wrap td > * { grid-column: 2; min-width: 0; }
+  .trail-update-history-table-wrap td[colspan] { display: block; }
+  .trail-update-history-table-wrap td[colspan]::before { display: none; }
+  .trail-update-history-operation span { white-space: normal; overflow-wrap: anywhere; }
+  .trail-update-history-operation code { max-width: 100%; overflow-wrap: anywhere; }
+
+  .analysis-review-status-card.trail-update-status-card {
+    grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto; gap: 7px;
+  }
+  .analysis-review-status-card.trail-update-status-card > .trail-update-status-heading { grid-column: 1; grid-row: 1; }
+  .analysis-review-status-card.trail-update-status-card > .trail-update-status-summary > .analysis-review-status-legend {
+    grid-column: 1; grid-row: 2; justify-content: flex-start; gap: 4px 7px;
+  }
+  .analysis-review-status-card.trail-update-status-card > .trail-update-status-summary > .analysis-review-status-bar {
+    grid-column: 1; grid-row: 3; min-height: 8px;
+  }
+  .trail-update-target-value { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; }
+  .analysis-stat-card.trail-update-field-stat-card > strong { -webkit-line-clamp: 3; }
+
+  .trail-update-confirm-dialog,
+  .trail-update-progress-dialog,
+  .trail-update-json-dialog { max-width: calc(100vw - 12px); }
+  .trail-update-confirm-dialog .dialog-card,
+  .trail-update-progress-dialog .dialog-card,
+  .trail-update-json-dialog .dialog-card { min-width: 0; padding: 12px; }
+  .trail-update-confirm-list { max-height: 43dvh; }
+  .trail-update-confirm-actions,
+  .trail-update-progress-actions,
+  .trail-update-json-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .trail-update-confirm-actions .button,
+  .trail-update-progress-actions .button,
+  .trail-update-json-actions .button { width: 100%; min-width: 0; min-height: 40px; }
+}
+
 @media (max-height: 760px) and (min-width: 900px) {
   .hero-media-button, .hero-media-placeholder { height: auto; min-height: 0; aspect-ratio: 16 / 9; }
 }
