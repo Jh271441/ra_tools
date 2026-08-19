@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-213`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-214`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -497,7 +497,7 @@
                     </div>
                     <span class="trail-update-direct-contract"><span class="ui-lang-zh">真实接口 · 预览优先</span><span class="ui-lang-en">Real API · preview first</span></span>
                   </div>
-                  <div class="trail-update-direct-grid trail-update-entry-editor">
+                  <div class="trail-update-entry-editor">
                     <div class="trail-update-entry-heading">
                       <div>
                         <span class="ui-lang-zh">Issue 与排除说明</span><span class="ui-lang-en">Issue and exclusion note</span>
@@ -519,10 +519,12 @@
                       </div>
                     </div>
                   </div>
-                  <div id="trailUpdateIssueIdsFeedback" class="trail-update-direct-feedback" role="status" aria-live="polite"></div>
-                  <div class="page-actions trail-update-actions">
-                    <button class="button button-primary" id="trailUpdateIssuePreviewButton" type="button"><span class="ui-lang-zh">生成屏蔽预览</span><span class="ui-lang-en">Build shield preview</span></button>
-                    <button class="button button-primary" id="trailUpdateIssueCommitButton" type="button" disabled><span class="ui-lang-zh">提交屏蔽到 Trail</span><span class="ui-lang-en">Commit shield to Trail</span></button>
+                  <div class="trail-update-direct-footer">
+                    <div id="trailUpdateIssueIdsFeedback" class="trail-update-direct-feedback" role="status" aria-live="polite"></div>
+                    <div class="page-actions trail-update-actions">
+                      <button class="button button-primary" id="trailUpdateIssuePreviewButton" type="button"><span class="ui-lang-zh">生成屏蔽预览</span><span class="ui-lang-en">Build shield preview</span></button>
+                      <button class="button button-primary" id="trailUpdateIssueCommitButton" type="button" disabled><span class="ui-lang-zh">提交屏蔽到 Trail</span><span class="ui-lang-en">Commit shield to Trail</span></button>
+                    </div>
                   </div>
                   <div class="trail-update-status" id="trailUpdateIssueStatus" role="status" aria-live="polite" hidden></div>
                 </section>
@@ -1265,7 +1267,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-213`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-214`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
