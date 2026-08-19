@@ -25,6 +25,7 @@ model input:
 | --- | ---: | ---: | --- |
 | `causal_compare_v1` historical baseline | 16/18 | 8/12 | not stable |
 | `causal_compare_v1` frozen complete-source18 control (`paired10`, narrative facts, compact reports, short JSON) | 14/18 (A 66.7%, B 85.7%, C 80.0%) | not run | source gate not passed |
+| `causal_effect_gate_v3` complete source18 (`paired10`, narrative facts, compact reports, short JSON) | 14/18 (A 66.7%, B 71.4%, C 100.0%) | not run | rejected; B→C shift |
 | `causal_effect_gate_v3` + recovery-only, compact facts (historical source9 diagnostic) | 8/9 | 6/12 | rejected |
 | same candidate, complete source18 (`paired10`, observation v2) | 11/18 (A 66.7%, B 28.6%, C 100.0%) | not run | rejected |
 | same candidate with narrative facts (source9 diagnostic) | 6/9 | not run | rejected |
@@ -36,6 +37,11 @@ The smaller narrative-facts result also recalled no A case, but is retained
 only as a diagnostic receipt. Intermediate accuracy below the project target
 is diagnostic only; it does not justify adding case-specific rules or leaking
 labels into the prompt.
+
+The complete-source18 `causal_effect_gate_v3` reproduction also scored 14/18,
+but changed two B cases to C and recalled only five of seven B cases. Its
+perfect C recall is a class-distribution shift, not a stable gain; it is closed
+without a Fresh12, Holdout36, or 0508/full1071 run.
 
 The staged role-gate reproduction also failed independently: it retained all
 four A cases but recalled only one of four B cases and one of four C cases.
