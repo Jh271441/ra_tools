@@ -603,54 +603,21 @@ async function loadTrailAttributePreview(force = false, options = {}) {
     return true;
   };
   try {
-    // Render the local Review projection first.  The remote Trail capability
-    // probe is intentionally a second, background request because it is the
-    // slowest part of entering this page.
-    const data = await api(trailUpdateEndpoint(runId, false));
-    if (requestSeq !== state.trailUpdate.requestSeq) return data;
-    applyPreview(data);
-    if (!data?.capability_pending) {
-      if (!background) setTrailAttributeLoading(false);
-      applyPreview(data, { loaded: true });
-      return data;
-    }
+    // Keep the initial route responsive without splitting the preview into a
+    // local request plus a second Trail request.  The single checked request
+    // builds the aggregate and performs one batched Trail read; callers start
+    // it after the shell paints, and normal route changes reuse its snapshot.
     if (!background) {
       setTrailAttributeStatus(uiText(
-        "排除案例已加载，正在后台检查 Trail 字段…",
-        "Excluded cases loaded; checking Trail fields in the background…"
+        "正在批量查询 Trail 状态…",
+        "Checking Trail statuses in one batch…"
       ));
     }
-    try {
-      const checked = await api(trailUpdateEndpoint(runId, true, force));
-      if (requestSeq !== state.trailUpdate.requestSeq) return checked;
-      if (!background) setTrailAttributeLoading(false);
-      applyPreview(checked, { loaded: true });
-      return checked;
-    } catch (error) {
-      if (requestSeq === state.trailUpdate.requestSeq) {
-        if (!background) setTrailAttributeLoading(false);
-        const failedItems = Array.isArray(data?.items)
-          ? data.items.map((item) => ({ ...item, trail_update_status: "query_failed" }))
-          : [];
-        // Keep the fast local payload available for download/retry, but make
-        // the per-row state truthful instead of leaving every row stuck at
-        // “查询中” after the background request fails.
-        renderTrailAttributePreview({
-          ...data,
-          items: failedItems,
-          trail_update_status_summary: failedItems.length ? { query_failed: failedItems.length } : {},
-        });
-        syncTrailAttributeActions(data);
-        if (!background) {
-          setTrailAttributeStatus(uiText(
-            "排除案例已加载，但 Trail 字段检查失败；可稍后刷新重试。",
-            "Excluded cases loaded, but the Trail field check failed; refresh to retry."
-          ));
-        }
-      }
-      if (background) throw error;
-      return data;
-    }
+    const data = await api(trailUpdateEndpoint(runId, true, force));
+    if (requestSeq !== state.trailUpdate.requestSeq) return data;
+    if (!background) setTrailAttributeLoading(false);
+    applyPreview(data, { loaded: true });
+    return data;
   } catch (error) {
     if (requestSeq === state.trailUpdate.requestSeq) {
       if (!background) setTrailAttributeLoading(false);
