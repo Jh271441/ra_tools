@@ -11,6 +11,7 @@ from starlette.requests import Request
 from ra_triage_dashboard.app.routers import trail_update
 from ra_triage_dashboard.app.routers.trail_update import (
     TRAIL_INFO_FIELD,
+    TRAIL_ISSUE_EXCLUSION_COMMENT,
     TRAIL_RESULT_FIELD,
     TRAIL_TARGET_PATH,
     build_trail_attribute_update_payload,
@@ -333,6 +334,12 @@ class TrailAttributeUpdateTest(unittest.TestCase):
                 }
             ],
             comment="人工屏蔽",
+            baseline_by_issue={
+                "cn00000001": {
+                    "baseline_id": "0206",
+                    "baseline_scope": "release0206_1326",
+                }
+            },
             trail_capability={
                 "view_id": 2410,
                 "fields_visible": [TRAIL_INFO_FIELD],
@@ -359,8 +366,23 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         self.assertTrue(field_update["after"]["ra_triage_dashboard"]["should_exclude"])
         self.assertTrue(field_update["model_label_unchanged"])
         self.assertEqual(payload["items"][0]["comment"], "人工屏蔽")
+        self.assertEqual(payload["items"][0]["baseline_id"], "0206")
+        self.assertEqual(payload["items"][0]["baseline_scope"], "release0206_1326")
+        self.assertFalse(payload["items"][0]["comment_defaulted"])
         self.assertEqual(payload["draft"]["payload_sha256"], payload["payload_sha256"])
         self.assertEqual(payload["operation_id"], payload["payload_sha256"])
+
+    def test_direct_issue_preview_adds_auditable_default_comment(self) -> None:
+        payload = build_trail_issue_exclusion_payload(
+            ["cn00000001"],
+            current_rows=[{"issue_id": "cn00000001"}],
+            trail_capability={"ready": True, "status": "ready"},
+            trail_write_enabled=True,
+        )
+        self.assertEqual(payload["write_status"], "ready")
+        self.assertEqual(payload["comment"], TRAIL_ISSUE_EXCLUSION_COMMENT)
+        self.assertEqual(payload["items"][0]["comment"], TRAIL_ISSUE_EXCLUSION_COMMENT)
+        self.assertTrue(payload["items"][0]["comment_defaulted"])
 
     def test_direct_issue_commit_marks_latest_review_as_excluded(self) -> None:
         actor = SimpleNamespace(

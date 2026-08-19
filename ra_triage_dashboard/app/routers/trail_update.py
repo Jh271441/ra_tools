@@ -17,7 +17,7 @@ import json
 import re
 import threading
 import time
-from typing import Any
+from typing import Any, Mapping
 
 from fastapi import APIRouter, Request
 
@@ -30,7 +30,7 @@ from ..http_support import (
     resolve_request_baseline_ids,
     resolve_request_baseline_scopes,
 )
-from ..runtime import database, settings
+from ..runtime import baseline_registry, database, settings
 from ..review_workflow import derive_review_status
 from ..trail_sync import (
     _dashboard_should_exclude,
@@ -57,6 +57,12 @@ TRAIL_TARGET_FIELD = TRAIL_INFO_FIELD
 TRAIL_TARGET_PATH = "ra_triage_dashboard.should_exclude"
 TRAIL_DRAFT_SCHEMA = "trail-attribute-update-v2"
 TRAIL_ISSUE_DRAFT_SCHEMA = "trail-issue-exclusion-v1"
+# A direct Issue-ID action must leave an auditable reason in Trail Comment even
+# when the operator does not type a custom note.  The model label remains
+# untouched; only the namespaced Dashboard exclusion marker is written.
+TRAIL_ISSUE_EXCLUSION_COMMENT = (
+    "问题排除：Issue ID 直接屏蔽（仅写入 should_exclude=true，模型 label 不变）。"
+)
 _commit_lock = threading.Lock()
 _preview_capability_cache: dict[
     tuple[int, str, tuple[str, ...]],
@@ -526,6 +532,7 @@ def build_trail_issue_exclusion_payload(
     current_rows: list[dict[str, Any]],
     invalid_issue_ids: list[str] | None = None,
     comment: str = "",
+    baseline_by_issue: Mapping[str, Mapping[str, Any]] | None = None,
     info_field: str = TRAIL_INFO_FIELD,
     trail_capability: dict[str, Any] | None = None,
     trail_write_enabled: bool = False,
@@ -543,7 +550,10 @@ def build_trail_issue_exclusion_payload(
         for row in current_rows
         if _as_text(row.get("issue_id"))
     }
-    normalized_comment = _as_text(comment).strip()[:4000]
+    supplied_comment = _as_text(comment).strip()[:4000]
+    comment_defaulted = not bool(supplied_comment)
+    normalized_comment = supplied_comment or TRAIL_ISSUE_EXCLUSION_COMMENT
+    release_by_issue = baseline_by_issue or {}
     missing = sorted(issue_id for issue_id in issue_ids if issue_id not in current_by_issue)
     items: list[dict[str, Any]] = []
     for issue_id in issue_ids:
@@ -565,6 +575,8 @@ def build_trail_issue_exclusion_payload(
         merged_info = deep_merge_dict(current_info, patch)
         item: dict[str, Any] = {
             "issue_id": issue_id,
+            "baseline_id": _as_text((release_by_issue.get(issue_id) or {}).get("baseline_id")),
+            "baseline_scope": _as_text((release_by_issue.get(issue_id) or {}).get("baseline_scope")),
             "current_label": _as_text(current.get(TRAIL_RESULT_FIELD)),
             "current_should_exclude": bool(dashboard_info.get("should_exclude")),
             # Keep the exact before/after object in the preview contract so
@@ -586,6 +598,7 @@ def build_trail_issue_exclusion_payload(
                 "patch": patch,
             },
             "comment": normalized_comment,
+            "comment_defaulted": comment_defaulted,
             "write_ready": True,
         }
         items.append(item)
@@ -603,6 +616,7 @@ def build_trail_issue_exclusion_payload(
         "invalid_issue_ids": list(invalid_issue_ids or []),
         "missing_issue_ids": missing,
         "comment": normalized_comment,
+        "comment_defaulted": comment_defaulted,
         "items": items,
     }
     digest = hashlib.sha256(_canonical_json(draft).encode("utf-8")).hexdigest()
@@ -771,12 +785,24 @@ async def _build_direct_preview(
         chunk_size=settings.trail_sync_chunk_size,
     )
     capability = _capability_for_info_write(sync_result, info_field)
+    baseline_scopes = await asyncio.to_thread(
+        database.issue_baseline_scopes,
+        issue_ids,
+    )
+    baseline_by_issue = {
+        issue_id: {
+            "baseline_scope": scope,
+            "baseline_id": baseline_registry.scope_to_id(scope) or "",
+        }
+        for issue_id, scope in baseline_scopes.items()
+    }
     payload = await asyncio.to_thread(
         build_trail_issue_exclusion_payload,
         issue_ids,
         current_rows=sync_result.rows,
         invalid_issue_ids=invalid_issue_ids,
         comment=comment,
+        baseline_by_issue=baseline_by_issue,
         info_field=info_field,
         trail_capability=capability,
         trail_write_enabled=settings.trail_attribute_write_enabled,
@@ -1052,13 +1078,18 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
             if missing:
                 detail = f"{detail} 未找到 Issue: {', '.join(str(item) for item in missing[:8])}"
             raise _detail(409, f"Issue ID 屏蔽未就绪：{detail}")
+        # The preview contract normalizes an empty Comment to an auditable
+        # default.  Reuse that exact value for the real Trail Comment write
+        # and the local Review annotation; otherwise a blank form value would
+        # make the preview claim a Comment that the commit silently omits.
+        effective_comment = _as_text(preview.get("comment")).strip()[:4000]
         _, info_field = _field_names()
         changes = await asyncio.to_thread(
             build_manual_exclusion_changes,
             issue_ids,
             current_rows=sync_result.rows,
             info_field=info_field,
-            comment=comment,
+            comment=effective_comment,
         )
         changes = decorate_trail_comments(changes, operation_id=submitted_digest)
         comment_issue_ids = [
@@ -1109,7 +1140,7 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
                 _mark_local_review_exclusions,
                 verified_issue_ids,
                 actor=identity,
-                fallback_note=comment,
+                fallback_note=effective_comment,
             )
             if readback.get("complete")
             else {

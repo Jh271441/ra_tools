@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-205`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-206`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -500,7 +500,7 @@
                     </label>
                     <label>
                       <span class="ui-lang-zh">Comment（可选，逐个 Issue 添加）</span><span class="ui-lang-en">Comment (optional; added to each Issue)</span>
-                      <textarea id="trailUpdateIssueCommentInput" rows="5" placeholder="人工确认：该 Issue 不纳入当前模型问题范围。"></textarea>
+                      <textarea id="trailUpdateIssueCommentInput" rows="5" placeholder="可选；留空时自动写入“问题排除：Issue ID 直接屏蔽（仅写入 should_exclude=true，模型 label 不变）”。"></textarea>
                     </label>
                   </div>
                   <div id="trailUpdateIssueIdsFeedback" class="trail-update-direct-feedback" role="status" aria-live="polite"></div>
@@ -548,7 +548,7 @@
                 <section class="page-card trail-update-table-card">
                   <div class="section-heading trail-update-results-heading"><div><h3><span class="ui-lang-zh">预计改动（仅写 info）</span><span class="ui-lang-en">Expected changes (info only)</span></h3></div><div class="trail-update-result-actions"><button class="button button-quiet" data-trail-json-preview="issue" type="button" disabled><span class="ui-lang-zh">预览 JSON</span><span class="ui-lang-en">Preview JSON</span></button></div></div>
                   <div class="trail-update-table-wrap">
-                    <table class="trail-update-table trail-update-direct-table"><thead><tr><th>Issue</th><th>当前模型 label（不改）</th><th>当前屏蔽状态</th><th>预计写入 info</th><th>Comment</th></tr></thead><tbody id="trailUpdateIssueTableBody"><tr><td colspan="5" class="trail-update-empty"><span class="ui-lang-zh">生成预览后显示 Issue。</span><span class="ui-lang-en">Issues appear after building a preview.</span></td></tr></tbody></table>
+                    <table class="trail-update-table trail-update-direct-table"><thead><tr><th>Issue</th><th>数据集版本</th><th>当前模型 label（不改）</th><th>当前屏蔽状态</th><th>预计写入 info</th><th>Comment</th></tr></thead><tbody id="trailUpdateIssueTableBody"><tr><td colspan="6" class="trail-update-empty"><span class="ui-lang-zh">生成预览后显示 Issue。</span><span class="ui-lang-en">Issues appear after building a preview.</span></tr></tbody></table>
                   </div>
                 </section>
               </section>
@@ -1237,7 +1237,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-205`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-206`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

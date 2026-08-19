@@ -2083,12 +2083,16 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-comment[title],
 .trail-update-reason[title],
 .trail-update-state-badge[title] { cursor: default; }
-.trail-update-direct-table { min-width: 720px; }
+.trail-update-direct-table { min-width: 860px; }
+.trail-update-direct-table th,
+.trail-update-direct-table td { text-align: center; vertical-align: middle; }
 .trail-update-direct-table td:nth-child(1) { width: 15%; }
-.trail-update-direct-table td:nth-child(2) { width: 14%; }
+.trail-update-direct-table td:nth-child(2) { width: 12%; }
 .trail-update-direct-table td:nth-child(3) { width: 13%; }
-.trail-update-direct-table td:nth-child(4) { width: 40%; text-align: center; }
-.trail-update-direct-table td:nth-child(5) { width: 18%; text-align: center; }
+.trail-update-direct-table td:nth-child(4) { width: 11%; }
+.trail-update-direct-table td:nth-child(5) { width: 31%; }
+.trail-update-direct-table td:nth-child(6) { width: 18%; }
+.trail-update-direct-table .trail-update-release-cell strong { color: var(--text); font-size: 11px; }
 .trail-update-info-cell > strong {
   display: block; max-width: 100%; overflow: hidden; color: var(--text); text-align: center;
   text-overflow: ellipsis; white-space: nowrap;

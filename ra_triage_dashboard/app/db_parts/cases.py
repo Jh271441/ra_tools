@@ -75,6 +75,37 @@ class DatabaseCasesMixin:
             ).fetchall()
         return [str(row["issue_id"]) for row in rows]
 
+    def issue_baseline_scopes(self, issue_ids: Sequence[str]) -> dict[str, str]:
+        """Return the release scope for each requested Issue in one query batch.
+
+        Trail's direct Issue-ID workflow starts from a remote Issue list, so it
+        cannot infer whether an Issue belongs to 0206, 0508, or 0626 from the
+        Trail payload.  Keep the lookup local and bounded; this is provenance
+        display only and never changes the active baseline scope.
+        """
+
+        cleaned = list(dict.fromkeys(
+            str(issue_id or "").strip()
+            for issue_id in issue_ids
+            if str(issue_id or "").strip()
+        ))
+        if not cleaned:
+            return {}
+        result: dict[str, str] = {}
+        with self.connect() as conn:
+            for offset in range(0, len(cleaned), 500):
+                batch = cleaned[offset : offset + 500]
+                placeholders = ", ".join("?" for _ in batch)
+                rows = conn.execute(
+                    f"SELECT issue_id, baseline_scope FROM issues WHERE issue_id IN ({placeholders})",
+                    batch,
+                ).fetchall()
+                for row in rows:
+                    issue_id = str(row["issue_id"] or "").strip()
+                    if issue_id:
+                        result[issue_id] = str(row["baseline_scope"] or "").strip()
+        return result
+
     def upsert_issues(
         self,
         rows: Iterable[dict[str, Any]],

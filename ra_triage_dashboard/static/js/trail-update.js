@@ -272,7 +272,7 @@ function clearTrailIssuePreview(message = "") {
   setTrailIssueStatus(message);
   const body = $("#trailUpdateIssueTableBody");
   if (body) {
-    body.innerHTML = `<tr><td colspan="5" class="trail-update-empty">${uiText("生成预览后显示 Issue。", "Issues appear after building a preview.")}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="6" class="trail-update-empty">${uiText("生成预览后显示 Issue。", "Issues appear after building a preview.")}</td></tr>`;
   }
 }
 
@@ -419,7 +419,8 @@ function renderTrailAttributePreview(data) {
   }).join("");
 }
 
-async function loadTrailAttributePreview(force = false) {
+async function loadTrailAttributePreview(force = false, options = {}) {
+  const background = Boolean(options?.background);
   const select = $("#trailUpdateRunSelect");
   const runId = String(select?.value || state.trailUpdate?.runId || "").trim();
   state.trailUpdate.runId = runId;
@@ -437,7 +438,7 @@ async function loadTrailAttributePreview(force = false) {
     return cachedData;
   }
   const requestSeq = ++state.trailUpdate.requestSeq;
-  setTrailAttributeLoading(true);
+  if (!background) setTrailAttributeLoading(true);
   const applyPreview = (data, { loaded = false } = {}) => {
     if (requestSeq !== state.trailUpdate.requestSeq) return false;
     state.trailUpdate.data = data;
@@ -458,23 +459,25 @@ async function loadTrailAttributePreview(force = false) {
     if (requestSeq !== state.trailUpdate.requestSeq) return data;
     applyPreview(data);
     if (!data?.capability_pending) {
-      setTrailAttributeLoading(false);
+      if (!background) setTrailAttributeLoading(false);
       applyPreview(data, { loaded: true });
       return data;
     }
-    setTrailAttributeStatus(uiText(
-      "排除案例已加载，正在后台检查 Trail 字段…",
-      "Excluded cases loaded; checking Trail fields in the background…"
-    ));
+    if (!background) {
+      setTrailAttributeStatus(uiText(
+        "排除案例已加载，正在后台检查 Trail 字段…",
+        "Excluded cases loaded; checking Trail fields in the background…"
+      ));
+    }
     try {
       const checked = await api(trailUpdateEndpoint(runId, true));
       if (requestSeq !== state.trailUpdate.requestSeq) return checked;
-      setTrailAttributeLoading(false);
+      if (!background) setTrailAttributeLoading(false);
       applyPreview(checked, { loaded: true });
       return checked;
     } catch (error) {
       if (requestSeq === state.trailUpdate.requestSeq) {
-        setTrailAttributeLoading(false);
+        if (!background) setTrailAttributeLoading(false);
         const failedItems = Array.isArray(data?.items)
           ? data.items.map((item) => ({ ...item, trail_update_status: "query_failed" }))
           : [];
@@ -487,20 +490,38 @@ async function loadTrailAttributePreview(force = false) {
           trail_update_status_summary: failedItems.length ? { query_failed: failedItems.length } : {},
         });
         syncTrailAttributeActions(data);
-        setTrailAttributeStatus(uiText(
-          "排除案例已加载，但 Trail 字段检查失败；可稍后刷新重试。",
-          "Excluded cases loaded, but the Trail field check failed; refresh to retry."
-        ));
+        if (!background) {
+          setTrailAttributeStatus(uiText(
+            "排除案例已加载，但 Trail 字段检查失败；可稍后刷新重试。",
+            "Excluded cases loaded, but the Trail field check failed; refresh to retry."
+          ));
+        }
       }
+      if (background) throw error;
       return data;
     }
   } catch (error) {
     if (requestSeq === state.trailUpdate.requestSeq) {
-      setTrailAttributeLoading(false);
+      if (!background) setTrailAttributeLoading(false);
       syncTrailAttributeActions(null);
-      setTrailAttributeStatus(uiText("排除案例加载失败，请稍后重试。", "Could not load excluded cases. Try again later."));
+      if (!background) setTrailAttributeStatus(uiText("排除案例加载失败，请稍后重试。", "Could not load excluded cases. Try again later."));
     }
     throw error;
+  }
+}
+
+async function refreshTrailReviewAfterIssueCommit() {
+  // The direct Issue-ID commit already persisted the Review exclusion marker
+  // server-side.  Refresh the Review aggregate in the background without
+  // switching tabs or putting the active Issue form into a loading state.
+  try {
+    await loadTrailAttributePreview(true, { background: true });
+    showToast(uiText("Review 排除汇总已自动刷新。", "Review exclusion summary refreshed automatically."));
+  } catch (error) {
+    showToast(uiText(
+      "Trail 已提交，但 Review 汇总刷新失败；切换到 Review 页重试即可。",
+      "Trail was committed, but the Review summary refresh failed; switch to Review and retry."
+    ), true);
   }
 }
 
@@ -871,7 +892,7 @@ function renderTrailIssuePreview(data) {
   const body = $("#trailUpdateIssueTableBody");
   if (!body) return;
   if (!items.length) {
-    body.innerHTML = `<tr><td colspan="5" class="trail-update-empty">${uiText("没有可写的 Issue，请检查 ID 和 Trail view。", "No writable Issues; check IDs and the Trail view.")}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="6" class="trail-update-empty">${uiText("没有可写的 Issue，请检查 ID 和 Trail view。", "No writable Issues; check IDs and the Trail view.")}</td></tr>`;
     return;
   }
   body.innerHTML = items.map((item) => {
@@ -881,12 +902,23 @@ function renderTrailIssuePreview(data) {
       ? uiText("已屏蔽", "Shielded")
       : uiText("未屏蔽", "Not shielded");
     const shortPath = patchPath.split(".").filter(Boolean).pop() || patchPath;
+    const release = String(
+      item.baseline_id
+        || (typeof baselineLabelForScope === "function" ? baselineLabelForScope(item.baseline_scope) : "")
+        || item.baseline_scope
+        || "—"
+    );
+    const comment = String(item.comment || "").trim();
+    const commentHint = item.comment_defaulted
+      ? uiText("自动说明 · 将追加到 Trail Comment", "Auto note · added to Trail Comment")
+      : uiText("将追加到 Trail Comment", "Added to Trail Comment");
     return `<tr>
       <td><strong class="trail-update-issue">${escapeHtml(item.issue_id || "—")}</strong></td>
+      <td class="trail-update-release-cell" title="${escapeHtml(item.baseline_scope || release)}"><strong>${escapeHtml(release)}</strong></td>
       <td>${labelBadge(item.current_label, "未输出")}</td>
       <td><span class="trail-update-state-badge ${item.current_should_exclude ? "is-on" : ""}">${escapeHtml(currentState)}</span></td>
       <td class="trail-update-info-cell"><strong title="${escapeHtml(targetSpec.fullPath)}">${escapeHtml(shortPath)}</strong><small>${uiText("info-only · label 不变", "info-only · label unchanged")}</small><code>${escapeHtml(shortPath)} = true</code></td>
-      <td><div class="trail-update-comment">${escapeHtml(item.comment || "未填写")}</div><small>${item.comment ? uiText("将追加到 Trail Comment", "Added to Trail Comment") : uiText("不会写入 Comment", "No Comment")}</small></td>
+      <td><div class="trail-update-comment" title="${escapeHtml(comment)}">${escapeHtml(comment || "—")}</div><small>${commentHint}</small></td>
     </tr>`;
   }).join("");
 }
@@ -971,6 +1003,9 @@ async function commitTrailIssueExclusion() {
         : uiText("Issue 屏蔽部分失败，请查看 Trail 回读和判错复核标记。", "Issue shielding is incomplete; inspect Trail readback and Review marks."),
       !result?.ok
     );
+    if (readback.complete && Number(localReview.requested_count || 0) > 0) {
+      void refreshTrailReviewAfterIssueCommit();
+    }
   } catch (error) {
     finishTrailUpdateProgress({ ok: false, message: error?.message || uiText("屏蔽失败，请稍后重试。", "Shielding failed; try again later.") });
     setTrailIssueStatus(error?.message || uiText("Issue 屏蔽失败。", "Issue shielding failed."));
