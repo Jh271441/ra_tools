@@ -659,6 +659,169 @@ function trailIssueDraftText() {
   return draft ? JSON.stringify(draft, null, 2) : "";
 }
 
+function trailIssueImportPayload(value) {
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch (error) {
+      throw new Error(uiText("JSON 格式不合法，请粘贴对象或数组。", "Invalid JSON; paste an object or array."));
+    }
+  }
+  if (Array.isArray(value)) return { entries: value };
+  if (!value || typeof value !== "object") {
+    throw new Error(uiText("JSON 必须是对象或数组。", "JSON must be an object or array."));
+  }
+  // The JSON preview dialog exports the nested draft.  Accept a few
+  // equivalent wrappers so a copied response or downloaded file can be
+  // imported without manual editing.
+  if (value.draft && typeof value.draft === "object") return value.draft;
+  if (value.payload && typeof value.payload === "object") return value.payload;
+  if (value.data && typeof value.data === "object") return value.data;
+  return value;
+}
+
+function trailIssueImportEntries(value) {
+  const payload = trailIssueImportPayload(value);
+  const commentByIssue = payload.comment_by_issue && typeof payload.comment_by_issue === "object"
+    ? payload.comment_by_issue
+    : {};
+  const itemComments = new Map(
+    (Array.isArray(payload.items) ? payload.items : [])
+      .map((item) => [String(item?.issue_id || item?.id || "").trim(), String(item?.comment || "").trim()])
+      .filter(([issueId]) => issueId)
+  );
+  let rawEntries = payload.requested_entries ?? payload.entries;
+  if (!rawEntries && Array.isArray(payload.items)) rawEntries = payload.items;
+  if (!rawEntries && payload.requested_issue_ids != null) rawEntries = payload.requested_issue_ids;
+  if (!rawEntries && payload.issue_ids != null) rawEntries = payload.issue_ids;
+  if (rawEntries == null) {
+    throw new Error(uiText("未找到 requested_entries 或 Issue ID 列表。", "No requested_entries or Issue ID list found."));
+  }
+  if (!Array.isArray(rawEntries)) rawEntries = [rawEntries];
+
+  const groups = new Map();
+  const invalid = [];
+  const seen = new Set();
+  const fallbackComment = String(payload.comment || "").trim();
+  rawEntries.forEach((entry) => {
+    const objectEntry = entry && typeof entry === "object" ? entry : {};
+    const rawIds = typeof entry === "string"
+      ? entry
+      : objectEntry.issue_id ?? objectEntry.id ?? objectEntry.issue_ids ?? objectEntry.ids ?? "";
+    const firstId = typeof rawIds === "string" ? rawIds.trim().split(/[\\s,，、;；|]+/)[0] : "";
+    const comment = String(
+      objectEntry.comment
+        ?? objectEntry.note
+        ?? objectEntry.exclusion_note
+        ?? objectEntry.should_exclude_comment
+        ?? commentByIssue[firstId]
+        ?? itemComments.get(firstId)
+        ?? fallbackComment
+        ?? ""
+    ).trim().slice(0, 4000);
+    const parsed = typeof parseIssueIdsInput === "function"
+      ? parseIssueIdsInput(rawIds)
+      : { ids: [], invalid: [String(rawIds || "")] };
+    invalid.push(...(parsed.invalid || []));
+    (parsed.ids || []).forEach((issueId) => {
+      const normalized = String(issueId || "").trim();
+      if (!normalized) return;
+      if (seen.has(normalized)) {
+        invalid.push(`${normalized}（重复）`);
+        return;
+      }
+      seen.add(normalized);
+      const effectiveComment = String(
+        commentByIssue[normalized]
+          ?? itemComments.get(normalized)
+          ?? comment
+          ?? ""
+      ).trim().slice(0, 4000);
+      const groupKey = effectiveComment;
+      if (!groups.has(groupKey)) groups.set(groupKey, []);
+      groups.get(groupKey).push(normalized);
+    });
+  });
+  const entries = Array.from(groups.entries()).map(([comment, ids]) => ({
+    issue_id: ids.join(", "),
+    comment,
+  }));
+  if (!entries.length) {
+    throw new Error(uiText("JSON 中没有可识别的 Issue ID。", "No recognizable Issue IDs found in JSON."));
+  }
+  if (invalid.length) {
+    throw new Error(uiText(
+      `JSON 中有无法导入的 Issue：${invalid.slice(0, 5).join("、")}${invalid.length > 5 ? "…" : ""}`,
+      `JSON contains invalid Issues: ${invalid.slice(0, 5).join(", ")}${invalid.length > 5 ? "…" : ""}`
+    ));
+  }
+  return entries;
+}
+
+function setTrailIssueImportStatus(message = "", error = false) {
+  const status = $("#trailUpdateIssueJsonImportStatus");
+  if (!status) return;
+  status.textContent = message;
+  status.classList.toggle("is-error", Boolean(error));
+  status.classList.toggle("is-ready", Boolean(message) && !error);
+}
+
+function openTrailIssueJsonImport() {
+  const dialog = $("#trailUpdateIssueJsonImportDialog");
+  if (!dialog || typeof dialog.showModal !== "function") {
+    showToast(uiText("JSON 导入弹窗不可用。", "The JSON import dialog is unavailable."), true);
+    return;
+  }
+  setTrailIssueImportStatus("");
+  if (!dialog.open) dialog.showModal();
+  $("#trailUpdateIssueJsonImportText")?.focus();
+}
+
+function applyTrailIssueJsonImport(value) {
+  const entries = trailIssueImportEntries(value);
+  const list = $("#trailUpdateIssueEntries");
+  if (!list) throw new Error(uiText("Issue 输入区不可用。", "Issue editor is unavailable."));
+  list.innerHTML = entries.map((entry) => renderTrailIssueEntryRow(entry)).join("");
+  syncTrailIssueEntryRemoveButtons();
+  parseTrailIssueIds();
+  clearTrailIssuePreview();
+  setTrailIssueStatus(uiText(`已导入 ${entries.reduce((sum, entry) => sum + entry.issue_id.split(",").length, 0)} 个 Issue，请生成预览。`, "JSON imported; build a new preview."));
+  return entries;
+}
+
+async function importTrailIssueJsonFile(file) {
+  if (!file) return;
+  const text = typeof file.text === "function"
+    ? await file.text()
+    : await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error(uiText("JSON 文件读取失败。", "Could not read the JSON file.")));
+      reader.readAsText(file);
+    });
+  const textArea = $("#trailUpdateIssueJsonImportText");
+  if (textArea) textArea.value = text;
+  $("#trailUpdateIssueJsonImportFileName").textContent = file.name || uiText("已读取 JSON 文件。", "JSON file loaded.");
+  setTrailIssueImportStatus(uiText("文件已读取，点击“导入并替换”继续。", "File loaded; click Import and replace to continue."));
+}
+
+function applyTrailIssueJsonImportFromDialog() {
+  const raw = String($("#trailUpdateIssueJsonImportText")?.value || "").trim();
+  if (!raw) {
+    setTrailIssueImportStatus(uiText("请先粘贴 JSON 或选择文件。", "Paste JSON or choose a file first."), true);
+    return false;
+  }
+  try {
+    const entries = applyTrailIssueJsonImport(raw);
+    $("#trailUpdateIssueJsonImportDialog")?.close();
+    showToast(uiText(`已导入 ${entries.reduce((sum, entry) => sum + entry.issue_id.split(",").length, 0)} 个 Issue。`, "Issue JSON imported."));
+    return true;
+  } catch (error) {
+    setTrailIssueImportStatus(error?.message || uiText("JSON 导入失败。", "JSON import failed."), true);
+    return false;
+  }
+}
+
 function trailUpdateJsonContext(mode = state.trailUpdate?.tab || "review") {
   const direct = mode === "issue";
   const text = direct ? trailIssueDraftText() : trailUpdateDraftText();
@@ -1271,6 +1434,20 @@ function bindTrailAttributeUpdateEvents() {
     parseTrailIssueIds();
     clearTrailIssuePreview();
   });
+  $("#trailUpdateIssueJsonImportButton")?.addEventListener("click", openTrailIssueJsonImport);
+  $("#trailUpdateIssueJsonImportClose")?.addEventListener("click", () => $("#trailUpdateIssueJsonImportDialog")?.close());
+  $("#trailUpdateIssueJsonImportCancel")?.addEventListener("click", () => $("#trailUpdateIssueJsonImportDialog")?.close());
+  $("#trailUpdateIssueJsonImportDialog")?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    $("#trailUpdateIssueJsonImportDialog")?.close();
+  });
+  $("#trailUpdateIssueJsonImportChooseFile")?.addEventListener("click", () => $("#trailUpdateIssueJsonImportFile")?.click());
+  $("#trailUpdateIssueJsonImportFile")?.addEventListener("change", (event) => {
+    importTrailIssueJsonFile(event.target?.files?.[0]).catch((error) => {
+      setTrailIssueImportStatus(error?.message || uiText("JSON 文件读取失败。", "Could not read the JSON file."), true);
+    });
+  });
+  $("#trailUpdateIssueJsonImportApply")?.addEventListener("click", applyTrailIssueJsonImportFromDialog);
   $("#trailUpdateIssueEntries")?.addEventListener("input", () => {
     parseTrailIssueIds();
     clearTrailIssuePreview();

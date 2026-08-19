@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-217`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-218`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -492,14 +492,13 @@
               <section class="trail-update-header-panel hidden" id="trailUpdateIssueControlsPanel" data-trail-update-panel="issue" aria-hidden="true">
                 <section class="trail-update-controls-card">
                   <div class="trail-update-direct-lead">
-                    <div>
-                      <h3><span class="ui-lang-zh">按 Issue ID 直接屏蔽</span><span class="ui-lang-en">Shield issues directly by ID</span></h3>
+                    <h3><span class="ui-lang-zh">按 Issue ID 直接屏蔽</span><span class="ui-lang-en">Shield issues directly by ID</span></h3>
+                    <div class="trail-update-direct-actions">
+                      <button class="button button-quiet" id="trailUpdateIssueJsonImportButton" type="button"><span class="ui-lang-zh">导入 JSON</span><span class="ui-lang-en">Import JSON</span></button>
+                      <button class="button button-quiet trail-update-entry-add" id="trailUpdateIssueAddButton" type="button"><span aria-hidden="true">＋</span><span class="ui-lang-zh">添加一行</span><span class="ui-lang-en">Add row</span></button>
                     </div>
                   </div>
                   <div class="trail-update-entry-editor">
-                    <div class="trail-update-entry-heading">
-                      <button class="button button-quiet trail-update-entry-add" id="trailUpdateIssueAddButton" type="button"><span aria-hidden="true">＋</span><span class="ui-lang-zh">添加一行</span><span class="ui-lang-en">Add row</span></button>
-                    </div>
                     <div class="trail-update-entry-list" id="trailUpdateIssueEntries" aria-live="polite">
                       <div class="trail-update-entry-row" data-trail-issue-entry-row>
                         <label>
@@ -1256,13 +1255,37 @@
       </div>
     </dialog>
 
+    <dialog class="dialog dialog-wide trail-update-json-import-dialog" id="trailUpdateIssueJsonImportDialog" aria-labelledby="trailUpdateIssueJsonImportTitle">
+      <div class="dialog-card">
+        <div class="dialog-heading">
+          <div>
+            <span class="eyebrow">IMPORT JSON</span>
+            <h2 id="trailUpdateIssueJsonImportTitle"><span class="ui-lang-zh">导入 Issue 屏蔽 JSON</span><span class="ui-lang-en">Import Issue shielding JSON</span></h2>
+            <p class="dialog-copy"><span class="ui-lang-zh">可粘贴上一步复制的预览 JSON，或选择 JSON 文件；导入后会替换当前输入行。</span><span class="ui-lang-en">Paste the copied preview JSON or choose a JSON file; importing replaces the current rows.</span></p>
+          </div>
+          <button class="icon-button" id="trailUpdateIssueJsonImportClose" type="button" aria-label="关闭" data-i18n-aria-label="dialog.close">×</button>
+        </div>
+        <div class="trail-update-json-import-file-row">
+          <input id="trailUpdateIssueJsonImportFile" type="file" accept=".json,application/json" hidden>
+          <button class="button button-quiet" id="trailUpdateIssueJsonImportChooseFile" type="button"><span class="ui-lang-zh">选择 JSON 文件</span><span class="ui-lang-en">Choose JSON file</span></button>
+          <small id="trailUpdateIssueJsonImportFileName"><span class="ui-lang-zh">也可以直接在下方粘贴 JSON。</span><span class="ui-lang-en">You can also paste JSON below.</span></small>
+        </div>
+        <textarea class="trail-update-json-import-text" id="trailUpdateIssueJsonImportText" rows="14" spellcheck="false" placeholder="粘贴 trail_issue_exclusion_update.json 内容…"></textarea>
+        <div class="trail-update-json-import-status" id="trailUpdateIssueJsonImportStatus" role="status" aria-live="polite"></div>
+        <div class="dialog-actions trail-update-json-actions">
+          <button class="button button-quiet" id="trailUpdateIssueJsonImportCancel" type="button"><span class="ui-lang-zh">取消</span><span class="ui-lang-en">Cancel</span></button>
+          <button class="button button-primary" id="trailUpdateIssueJsonImportApply" type="button"><span class="ui-lang-zh">导入并替换</span><span class="ui-lang-en">Import and replace</span></button>
+        </div>
+      </div>
+    </dialog>
+
     <div class="toast hidden" id="toast"></div>
     <script>
       document.querySelectorAll("[data-app-path]").forEach((link) => {
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-217`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-218`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

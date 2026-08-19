@@ -2016,15 +2016,14 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-empty { min-height: 42px; color: var(--faint) !important; text-align: center !important; vertical-align: middle !important; }
 .trail-update-table tr.is-invalid td { border-color: rgba(248,113,113,.35); }
 .trail-update-run-picker .ui-select-trigger { height: 36px; }
-.trail-update-direct-lead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.trail-update-direct-lead h3 { margin: 0 0 3px; color: var(--text); font-size: 14px; }
+.trail-update-direct-lead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.trail-update-direct-lead h3 { margin: 0; color: var(--text); font-size: 14px; }
+.trail-update-direct-actions { min-width: 0; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+.trail-update-direct-actions .button { min-height: 30px; padding: 5px 9px; font-size: 11px; white-space: nowrap; }
 .trail-update-direct-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .trail-update-direct-grid label { min-width: 0; display: grid; gap: 4px; color: var(--muted); font-size: 11px; }
 .trail-update-direct-grid > label textarea { min-height: 92px; resize: vertical; }
-.trail-update-entry-editor { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
-.trail-update-entry-editor > .trail-update-entry-heading,
-.trail-update-entry-editor > .trail-update-entry-list { grid-column: 1; }
-.trail-update-entry-heading { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 8px; color: var(--muted); font-size: 11px; }
+.trail-update-entry-editor { min-width: 0; }
 .trail-update-entry-add { flex: 0 0 auto; min-height: 30px; padding: 5px 9px; font-size: 11px; white-space: nowrap; }
 .trail-update-entry-add > span:first-child { color: var(--accent); font-size: 15px; line-height: 1; }
 .trail-update-entry-list { min-width: 0; display: grid; gap: 6px; }
@@ -2161,6 +2160,14 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   border: 1px solid var(--line); border-radius: 8px; color: #c8d9e6; background: #0b1018;
   font: 11px/1.55 "SFMono-Regular", Consolas, monospace; tab-size: 2; white-space: pre;
 }
+.trail-update-json-import-dialog { width: min(760px, calc(100vw - 30px)); }
+.trail-update-json-import-dialog .dialog-card { gap: 12px; }
+.trail-update-json-import-file-row { min-width: 0; display: flex; align-items: center; gap: 8px; }
+.trail-update-json-import-file-row small { min-width: 0; overflow: hidden; color: var(--faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.trail-update-json-import-text { width: 100%; min-height: 260px; box-sizing: border-box; resize: vertical; color: var(--text); background: rgba(8,13,21,.84); font: 11px/1.45 "SFMono-Regular", Consolas, monospace; }
+.trail-update-json-import-status { min-height: 17px; color: var(--faint); font-size: 11px; }
+.trail-update-json-import-status.is-error { color: #fca5a5; }
+.trail-update-json-import-status.is-ready { color: #9ae6c4; }
 .trail-update-json-actions { flex-wrap: wrap; }
 
 .analysis-page { width: min(1480px, 100%); gap: 6px; }
@@ -2861,6 +2868,8 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
     max-width: calc(100vw - 12px); max-height: calc(100dvh - 12px);
   }
   .trail-update-json-dialog .dialog-card { padding: 14px; }
+  .trail-update-json-import-dialog { width: calc(100vw - 12px); max-width: calc(100vw - 12px); }
+  .trail-update-json-import-dialog .dialog-card { padding: 14px; }
   .trail-update-confirm-dialog .dialog-card { padding: 14px; }
   .trail-update-confirm-summary { grid-template-columns: minmax(0, 1fr); }
   .trail-update-confirm-item > summary { grid-template-columns: minmax(0, 1fr); gap: 4px; }
@@ -3111,8 +3120,8 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .trail-update-result-actions .button { width: 100%; min-height: 38px; }
   .trail-update-direct-lead { align-items: stretch; }
   .trail-update-direct-lead h3 { font-size: 13px; }
-  .trail-update-entry-heading { align-items: flex-end; }
-  .trail-update-entry-add { width: 100%; }
+  .trail-update-direct-actions { justify-content: flex-start; }
+  .trail-update-direct-actions .button { flex: 1 1 auto; }
   .trail-update-entry-row { grid-template-columns: minmax(0, 1fr) 34px; align-items: start; }
   .trail-update-entry-row label:nth-child(1) { grid-column: 1; }
   .trail-update-entry-row label:nth-child(2) { grid-column: 1 / -1; }
@@ -3201,10 +3210,12 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 
   .trail-update-confirm-dialog,
   .trail-update-progress-dialog,
-  .trail-update-json-dialog { max-width: calc(100vw - 12px); }
+  .trail-update-json-dialog,
+  .trail-update-json-import-dialog { max-width: calc(100vw - 12px); }
   .trail-update-confirm-dialog .dialog-card,
   .trail-update-progress-dialog .dialog-card,
-  .trail-update-json-dialog .dialog-card { min-width: 0; padding: 12px; }
+  .trail-update-json-dialog .dialog-card,
+  .trail-update-json-import-dialog .dialog-card { min-width: 0; padding: 12px; }
   .trail-update-confirm-list { max-height: 43dvh; }
   .trail-update-confirm-actions,
   .trail-update-progress-actions,
