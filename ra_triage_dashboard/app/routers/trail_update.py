@@ -482,6 +482,7 @@ def build_trail_attribute_update_payload(
         "target_fields": [info_field] if info_only else [result_field, info_field],
         "target_field": info_field,
         "target_path": TRAIL_TARGET_PATH,
+        "comment_target_path": TRAIL_COMMENT_PATH,
         "merge_strategy": "deep_merge",
         "trail_capability": capability,
         "selected_run": {
@@ -663,6 +664,7 @@ def build_trail_issue_exclusion_payload(
         "target_fields": [info_field],
         "target_field": info_field,
         "target_path": TRAIL_TARGET_PATH,
+        "comment_target_path": TRAIL_COMMENT_PATH,
         "merge_strategy": "deep_merge",
         "count": len(items),
         "requested_issue_ids": list(issue_ids),

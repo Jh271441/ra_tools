@@ -191,6 +191,7 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         self.assertFalse(payload["write_ready"])
         self.assertEqual(payload["target_field"], TRAIL_INFO_FIELD)
         self.assertEqual(payload["target_path"], TRAIL_TARGET_PATH)
+        self.assertEqual(payload["comment_target_path"], "ra_triage_dashboard.should_exclude_comment")
         self.assertEqual(payload["count"], 1)
         item = payload["items"][0]
         self.assertEqual(item["issue_id"], "cn00000002")
@@ -252,6 +253,7 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         )
         self.assertEqual(payload["write_mode"], "info_only")
         self.assertEqual(payload["target_fields"], [TRAIL_INFO_FIELD])
+        self.assertEqual(payload["comment_target_path"], "ra_triage_dashboard.should_exclude_comment")
         self.assertTrue(payload["write_ready"])
         self.assertEqual(payload["items"][0]["field_updates"], {TRAIL_INFO_FIELD: payload["items"][0]["target"]["patch"]})
 
