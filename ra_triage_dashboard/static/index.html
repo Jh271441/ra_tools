@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-216`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-217`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -495,14 +495,9 @@
                     <div>
                       <h3><span class="ui-lang-zh">按 Issue ID 直接屏蔽</span><span class="ui-lang-en">Shield issues directly by ID</span></h3>
                     </div>
-                    <span class="trail-update-direct-contract"><span class="ui-lang-zh">真实接口 · 预览优先</span><span class="ui-lang-en">Real API · preview first</span></span>
                   </div>
                   <div class="trail-update-entry-editor">
                     <div class="trail-update-entry-heading">
-                      <div>
-                        <span class="ui-lang-zh">Issue 与排除说明</span><span class="ui-lang-en">Issue and exclusion note</span>
-                        <small><span class="ui-lang-zh">每行可填写多个 Issue（回车、空格或逗号分隔）；不同 Issue 可填写不同说明</span><span class="ui-lang-en">Each row accepts multiple Issues (separate with Enter, spaces, or commas); notes can differ by Issue</span></small>
-                      </div>
                       <button class="button button-quiet trail-update-entry-add" id="trailUpdateIssueAddButton" type="button"><span aria-hidden="true">＋</span><span class="ui-lang-zh">添加一行</span><span class="ui-lang-en">Add row</span></button>
                     </div>
                     <div class="trail-update-entry-list" id="trailUpdateIssueEntries" aria-live="polite">
@@ -1267,7 +1262,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-216`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-217`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

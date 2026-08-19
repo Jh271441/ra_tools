@@ -2018,20 +2018,17 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-run-picker .ui-select-trigger { height: 36px; }
 .trail-update-direct-lead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .trail-update-direct-lead h3 { margin: 0 0 3px; color: var(--text); font-size: 14px; }
-.trail-update-direct-contract { flex: 0 0 auto; padding: 5px 8px; border: 1px solid rgba(251,191,36,.4); border-radius: 6px; color: #f6d58a; background: rgba(251,191,36,.08); font-size: 10px; white-space: nowrap; }
 .trail-update-direct-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .trail-update-direct-grid label { min-width: 0; display: grid; gap: 4px; color: var(--muted); font-size: 11px; }
 .trail-update-direct-grid > label textarea { min-height: 92px; resize: vertical; }
 .trail-update-entry-editor { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
 .trail-update-entry-editor > .trail-update-entry-heading,
 .trail-update-entry-editor > .trail-update-entry-list { grid-column: 1; }
-.trail-update-entry-heading { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 11px; }
-.trail-update-entry-heading > div { min-width: 0; display: grid; gap: 2px; }
-.trail-update-entry-heading small { color: var(--faint); font-size: 10px; line-height: 1.35; }
+.trail-update-entry-heading { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 8px; color: var(--muted); font-size: 11px; }
 .trail-update-entry-add { flex: 0 0 auto; min-height: 30px; padding: 5px 9px; font-size: 11px; white-space: nowrap; }
 .trail-update-entry-add > span:first-child { color: var(--accent); font-size: 15px; line-height: 1; }
 .trail-update-entry-list { min-width: 0; display: grid; gap: 6px; }
-.trail-update-entry-row { min-width: 0; display: grid; grid-template-columns: minmax(180px, .65fr) minmax(0, 1.35fr) auto; align-items: start; gap: 7px; padding: 6px 7px; border: 1px solid var(--line-soft); border-radius: 7px; background: rgba(11,16,24,.56); }
+.trail-update-entry-row { min-width: 0; display: grid; grid-template-columns: minmax(180px, .65fr) minmax(0, 1.35fr) auto; align-items: start; gap: 7px; padding: 6px 0; border: 0; border-radius: 0; background: transparent; }
 .trail-update-entry-row label { min-width: 0; display: grid; align-content: start; gap: 3px; color: var(--muted); font-size: 10px; }
 .trail-update-entry-row input, .trail-update-entry-row textarea { min-width: 0; width: 100%; box-sizing: border-box; height: 38px; min-height: 38px; padding: 6px 8px; line-height: 1.35; }
 .trail-update-entry-row textarea { resize: vertical; overflow-y: auto; }
@@ -2893,7 +2890,6 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .trail-update-result-actions { width: 100%; min-width: 0; }
   .trail-update-table { min-width: 1180px; }
   .trail-update-direct-lead { flex-direction: column; }
-  .trail-update-direct-contract { white-space: normal; }
   .trail-update-direct-grid { grid-template-columns: minmax(0, 1fr); }
   .trail-update-direct-footer { align-items: stretch; flex-direction: column; gap: 7px; }
   .trail-update-direct-footer > .trail-update-actions { width: 100%; }
@@ -3115,8 +3111,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .trail-update-result-actions .button { width: 100%; min-height: 38px; }
   .trail-update-direct-lead { align-items: stretch; }
   .trail-update-direct-lead h3 { font-size: 13px; }
-  .trail-update-direct-contract { width: 100%; box-sizing: border-box; line-height: 1.4; }
-  .trail-update-entry-heading { align-items: stretch; flex-direction: column; }
+  .trail-update-entry-heading { align-items: flex-end; }
   .trail-update-entry-add { width: 100%; }
   .trail-update-entry-row { grid-template-columns: minmax(0, 1fr) 34px; align-items: start; }
   .trail-update-entry-row label:nth-child(1) { grid-column: 1; }
