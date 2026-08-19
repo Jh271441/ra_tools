@@ -24,6 +24,7 @@ model input:
 | Configuration | Source result | Fresh12 result | Decision |
 | --- | ---: | ---: | --- |
 | `causal_compare_v1` historical baseline | 16/18 | 8/12 | not stable |
+| `causal_compare_v1` frozen complete-source18 control (`paired10`, narrative facts, compact reports, short JSON) | 14/18 (A 66.7%, B 85.7%, C 80.0%) | not run | source gate not passed |
 | `causal_effect_gate_v3` + recovery-only, compact facts | 8/9 | 6/12 | rejected |
 | same candidate with narrative facts (latest source check) | 6/9 | not run | rejected |
 | staged trigger/recovery + generic role gate (temporary wrapper) | 12/16 | 6/12 | rejected |
@@ -38,6 +39,12 @@ four A cases but recalled only one of four B cases and one of four C cases.
 The source16 result was directional only because its image cache was a mixed
 provenance diagnostic cache; it is not a formal source18 result. This
 candidate is therefore closed without a Holdout36 or 0508/full1071 run.
+
+The complete-source18 control above had 18/18 successful model responses after
+the two previously missing source cases were supplied from the matching
+label-free Camera/BEV cache. It did not reproduce the historical 16/18 result,
+so it is recorded as a control receipt rather than an accepted candidate. No
+Fresh12, Holdout36, or 0508/full1071 run is authorized from this result.
 
 ## Evaluation gates
 
