@@ -137,6 +137,7 @@ function trailIssueHistoryStatusMeta(status = "pending") {
     completed: ["已同步", "Synced", "is-success"],
     partial: ["部分成功", "Partial", "is-warning"],
     failed: ["失败", "Failed", "is-error"],
+    trail_synced_not_in_dashboard: ["Trail 已同步（看板外）", "Trail synced (outside dashboard)", "is-warning"],
   };
   const value = values[key] || values.pending;
   return { label: uiText(value[0], value[1]), className: value[2] };
@@ -1035,7 +1036,7 @@ function openTrailUpdateProgress({ mode = "review", total = 0 } = {}) {
   if (!dialog.open) dialog.showModal();
 }
 
-function finishTrailUpdateProgress({ ok = false, message = "" } = {}) {
+function finishTrailUpdateProgress({ ok = false, warning = false, message = "" } = {}) {
   const dialog = $("#trailUpdateProgressDialog");
   const progress = state.trailUpdate?.progress;
   if (progress) {
@@ -1053,15 +1054,21 @@ function finishTrailUpdateProgress({ ok = false, message = "" } = {}) {
   }
   if (dialog) {
     dialog.dataset.running = "false";
-    dialog.dataset.result = ok ? "success" : "error";
+    dialog.dataset.result = ok ? (warning ? "warning" : "success") : "error";
     trailUpdateProgressSetStage(ok ? "done" : "request", message || (ok
       ? uiText("字段和回读结果已返回。", "Field and readback results are ready.")
       : uiText("提交失败，请关闭弹窗查看错误信息。", "The commit failed; close this dialog to inspect the error.")));
     const title = $("#trailUpdateProgressTitle");
-    if (title && !ok) title.textContent = uiText("Trail 更新失败", "Trail update failed");
+    if (title) {
+      title.textContent = !ok
+        ? uiText("Trail 更新失败", "Trail update failed")
+        : warning
+          ? uiText("Trail 更新完成（看板同步提示）", "Trail update complete (dashboard sync notice)")
+          : uiText("Trail 更新完成", "Trail update complete");
+    }
     const close = $("#trailUpdateProgressClose");
     if (close) close.hidden = false;
-    if (ok) {
+    if (ok && !warning) {
       trailUpdateProgressCloseTimer = window.setTimeout(() => {
         if (dialog.open) dialog.close();
       }, 900);
@@ -1333,28 +1340,50 @@ async function commitTrailIssueExclusion() {
     const stats = result?.stats || {};
     const readback = result?.readback || {};
     const localReview = result?.local_review || {};
+    const trailOk = typeof result?.trail_ok === "boolean" ? result.trail_ok : Boolean(result?.ok);
+    const outsideDashboard = Array.isArray(localReview.not_in_dashboard_issue_ids)
+      ? localReview.not_in_dashboard_issue_ids
+      : [];
+    const localFailures = Array.isArray(localReview.failed_issue_ids)
+      ? localReview.failed_issue_ids
+      : [];
     const readbackText = uiText(
       `回读 ${readback.verified_count || 0}/${readback.checked_count || 0}`,
       `read back ${readback.verified_count || 0}/${readback.checked_count || 0}`
     );
-    const localReviewText = uiText(
-      `看板“应该排除” ${Number(localReview.marked_count || 0) + Number(localReview.already_excluded_count || 0)}/${localReview.requested_count || 0}`,
-      `Review “Exclude” ${Number(localReview.marked_count || 0) + Number(localReview.already_excluded_count || 0)}/${localReview.requested_count || 0}`
-    );
+    const localMarked = Number(localReview.marked_count || 0) + Number(localReview.already_excluded_count || 0);
+    const localTargetCount = Math.max(0, Number(localReview.requested_count || 0) - outsideDashboard.length);
+    const localReviewText = outsideDashboard.length
+      ? uiText(
+        `看板“应该排除” ${localMarked}/${localTargetCount}；${outsideDashboard.length} 条不在当前看板`,
+        `Review “Exclude” ${localMarked}/${localTargetCount}; ${outsideDashboard.length} outside this dashboard`
+      )
+      : uiText(
+        `看板“应该排除” ${localMarked}/${localReview.requested_count || 0}`,
+        `Review “Exclude” ${localMarked}/${localReview.requested_count || 0}`
+      );
+    const localReviewWithFailures = localFailures.length
+      ? `${localReviewText}${uiText(`；本地标记失败 ${localFailures.length} 条`, `; ${localFailures.length} local mark failures`)}`
+      : localReviewText;
     const progressMessage = uiText(
-      `字段与 info 排除说明 ${stats.success_count || 0}/${stats.total || ids.length}；${readbackText}；${localReviewText}。`,
-      `Trail fields and info notes ${stats.success_count || 0}/${stats.total || ids.length}; ${readbackText}; ${localReviewText}.`
+      `字段与 info 排除说明 ${stats.success_count || 0}/${stats.total || ids.length}；${readbackText}；${localReviewWithFailures}。`,
+      `Trail fields and info notes ${stats.success_count || 0}/${stats.total || ids.length}; ${readbackText}; ${localReviewWithFailures}.`
     );
-    finishTrailUpdateProgress({ ok: Boolean(result?.ok), message: progressMessage });
+    const localSyncWarning = outsideDashboard.length > 0 || localFailures.length > 0;
+    finishTrailUpdateProgress({ ok: trailOk, warning: trailOk && localSyncWarning, message: progressMessage });
     setTrailIssueStatus(uiText(
-      `屏蔽完成：字段与 info 排除说明成功 ${stats.success_count || 0}，失败 ${stats.failed_count || 0}；${readbackText}；${localReviewText}。`,
-      `Shield finished: fields and info notes ${stats.success_count || 0} succeeded / ${stats.failed_count || 0} failed; ${readbackText}; ${localReviewText}.`
+      `屏蔽完成：字段与 info 排除说明成功 ${stats.success_count || 0}，失败 ${stats.failed_count || 0}；${readbackText}；${localReviewWithFailures}。`,
+      `Shield finished: fields and info notes ${stats.success_count || 0} succeeded / ${stats.failed_count || 0} failed; ${readbackText}; ${localReviewWithFailures}.`
     ));
     showToast(
-      result?.ok
-        ? uiText("Issue 屏蔽已提交，Trail 与判错复核排除标记均已更新。", "Issue shielding and Review exclusion marks were updated.")
-        : uiText("Issue 屏蔽部分失败，请查看 Trail 回读和判错复核标记。", "Issue shielding is incomplete; inspect Trail readback and Review marks."),
-      !result?.ok
+      !trailOk
+        ? uiText("Issue 屏蔽未完整写入，请查看 Trail 回读明细。", "Issue shielding is incomplete; inspect Trail readback.")
+        : localSyncWarning
+          ? outsideDashboard.length
+            ? uiText(`Trail 已完成；${outsideDashboard.length} 条不在当前看板，未创建本地 Review 排除标记。`, `Trail completed; ${outsideDashboard.length} Issues are outside this dashboard and have no local Review mark.`)
+            : uiText(`Trail 已完成；本地 Review 排除标记失败 ${localFailures.length} 条。`, `Trail completed; ${localFailures.length} local Review exclusion marks failed.`)
+          : uiText("Issue 屏蔽已提交，Trail 与判错复核排除标记均已更新。", "Issue shielding and Review exclusion marks were updated."),
+      !trailOk
     );
     if (readback.complete && Number(localReview.requested_count || 0) > 0) {
       void refreshTrailReviewAfterIssueCommit();

@@ -98,6 +98,12 @@ def _mark_local_review_exclusions(
         "requested_count": len(normalized_ids),
         "marked_count": 0,
         "already_excluded_count": 0,
+        # An Issue can exist in Trail but not belong to any baseline currently
+        # loaded by this dashboard.  That is not a Trail write failure: retain
+        # it separately so callers can describe the partial local sync without
+        # incorrectly reporting the whole operation as failed.
+        "not_in_dashboard_count": 0,
+        "not_in_dashboard_issue_ids": [],
         "failed_count": 0,
         "failed_issue_ids": [],
         "failure_messages": {},
@@ -115,7 +121,9 @@ def _mark_local_review_exclusions(
         try:
             case = database.get_case(issue_id)
             if case is None:
-                raise ValueError("Issue 不存在于当前看板。")
+                result["not_in_dashboard_count"] += 1
+                result["not_in_dashboard_issue_ids"].append(issue_id)
+                continue
             annotations = [
                 item for item in (case.get("annotations") or [])
                 if isinstance(item, dict)
@@ -988,6 +996,7 @@ async def _save_issue_exclusion_history(
     requested_entries: list[dict[str, Any]],
     synced_issue_ids: set[str] | None = None,
     failed_issue_ids: set[str] | None = None,
+    external_only_issue_ids: set[str] | None = None,
     failure_messages: Mapping[str, str] | None = None,
     message: str = "",
 ) -> None:
@@ -1004,17 +1013,25 @@ async def _save_issue_exclusion_history(
         for item in (failed_issue_ids or set())
         if str(item).strip()
     }
+    external_only = {
+        str(item).strip()
+        for item in (external_only_issue_ids or set())
+        if str(item).strip()
+    }
     entries: list[dict[str, Any]] = []
     for item in requested_entries:
         issue_id = _as_text(item.get("issue_id")).strip()
         if not issue_id:
             continue
-        if issue_id in synced:
+        if issue_id in failed:
+            item_status = "failed"
+            detail = _as_text(failures.get(issue_id)) or "Trail 写入、回读或本地看板同步失败。"
+        elif issue_id in external_only:
+            item_status = "trail_synced_not_in_dashboard"
+            detail = "Trail 回读确认成功；该 Issue 不在当前看板数据集，未创建本地 Review 排除标记。"
+        elif issue_id in synced:
             item_status = "synced"
             detail = "Trail 回读确认成功。"
-        elif issue_id in failed:
-            item_status = "failed"
-            detail = _as_text(failures.get(issue_id)) or "Trail 写入或回读失败。"
         else:
             item_status = "pending" if status == "pending" else "unknown"
             detail = "等待提交结果。" if status == "pending" else "未返回明确结果。"
@@ -1337,6 +1354,8 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
                     "requested_count": 0,
                     "marked_count": 0,
                     "already_excluded_count": 0,
+                    "not_in_dashboard_count": 0,
+                    "not_in_dashboard_issue_ids": [],
                     "failed_count": 0,
                     "failed_issue_ids": [],
                     "failure_messages": {},
@@ -1355,9 +1374,24 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
             )
             raise
         failed_issue_ids = field_failed | readback_failed
+        local_failed_issue_ids = {
+            str(item).strip()
+            for item in local_review.get("failed_issue_ids", [])
+            if str(item).strip()
+        }
+        not_in_dashboard_issue_ids = {
+            str(item).strip()
+            for item in local_review.get("not_in_dashboard_issue_ids", [])
+            if str(item).strip()
+        }
+        trail_ok = (
+            not stats.get("failed_count")
+            and not stats.get("comment_failed_count")
+            and bool(readback.get("ok"))
+        )
         history_status = (
             "completed"
-            if not failed_issue_ids
+            if not failed_issue_ids and not local_failed_issue_ids
             else "partial" if verified_issue_ids else "failed"
         )
         history_message = (
@@ -1365,13 +1399,23 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
             if readback.get("complete")
             else "Trail 回读不完整，未同步本地 Review 排除状态。"
         )
+        if not_in_dashboard_issue_ids:
+            history_message += (
+                f" 其中 {len(not_in_dashboard_issue_ids)} 条不在当前看板数据集，"
+                "未创建本地 Review 排除标记。"
+            )
+        if local_failed_issue_ids:
+            history_message += (
+                f" 本地 Review 排除标记失败 {len(local_failed_issue_ids)} 条。"
+            )
         await _save_issue_exclusion_history(
             operation_id=submitted_digest,
             identity=identity,
             status=history_status,
             requested_entries=history_entries,
             synced_issue_ids=set(verified_issue_ids),
-            failed_issue_ids=failed_issue_ids,
+            failed_issue_ids=failed_issue_ids | local_failed_issue_ids,
+            external_only_issue_ids=not_in_dashboard_issue_ids,
             failure_messages={
                 **{
                     issue_id: "Trail 字段写入失败。"
@@ -1381,15 +1425,24 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
                     issue_id: "Trail 回读校验失败。"
                     for issue_id in readback_failed
                 },
+                **{
+                    issue_id: _as_text(
+                        (local_review.get("failure_messages") or {}).get(issue_id)
+                    ) or "本地 Review 排除标记失败。"
+                    for issue_id in local_failed_issue_ids
+                },
             },
             message=history_message,
         )
     return {
-        "ok": (
-            not stats.get("failed_count")
-            and not stats.get("comment_failed_count")
-            and bool(readback.get("ok"))
-            and bool(local_review.get("ok"))
+        # ``ok`` is the Trail write contract.  A Trail-only Issue is already
+        # correctly updated and should not make the operator retry it simply
+        # because the dashboard has no local case to annotate.
+        "ok": trail_ok,
+        "trail_ok": trail_ok,
+        "local_review_ok": bool(local_review.get("ok")),
+        "local_dashboard_sync_partial": bool(
+            not_in_dashboard_issue_ids or local_failed_issue_ids
         ),
         "mode": "direct_issue_ids",
         "payload_sha256": submitted_digest,

@@ -1707,6 +1707,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-progress-spinner { width: 20px; height: 20px; border: 2px solid rgba(34,211,238,.2); border-top-color: var(--accent); border-radius: 50%; animation: trail-update-progress-spin 850ms linear infinite; }
 .trail-update-progress-dialog[data-running="false"] .trail-update-progress-spinner { animation: none; border-color: rgba(52,211,153,.65); }
 .trail-update-progress-dialog[data-result="error"] .trail-update-progress-spinner { border-color: rgba(248,113,113,.65); }
+.trail-update-progress-dialog[data-result="warning"] .trail-update-progress-spinner { border-color: rgba(251,191,36,.8); }
 .trail-update-progress-track { position: relative; height: 8px; overflow: hidden; border: 1px solid var(--line); border-radius: 999px; background: #0b1018; }
 .trail-update-progress-track > span { display: block; width: 10%; height: 100%; border-radius: inherit; background: var(--accent); transition: width 240ms ease; }
 .trail-update-progress-track.is-running::after { position: absolute; inset: 0 auto 0 -35%; width: 35%; border-radius: inherit; background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent); content: ""; animation: trail-update-progress-sweep 1.15s ease-in-out infinite; }

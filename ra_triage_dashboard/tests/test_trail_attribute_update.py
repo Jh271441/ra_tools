@@ -574,6 +574,35 @@ class TrailAttributeUpdateTest(unittest.TestCase):
             expected_previous_annotation_id=9,
         )
 
+    def test_direct_issue_commit_keeps_trail_only_cases_out_of_local_failure(self) -> None:
+        actor = SimpleNamespace(
+            username="jasperchen",
+            source="kylin_ticket",
+            verified=True,
+        )
+        cases = {
+            "cn00000001": {
+                "issue_id": "cn00000001",
+                "gt_label": "误触发",
+                "annotations": [],
+            },
+        }
+        with patch.object(
+            trail_update.database,
+            "get_case",
+            side_effect=lambda issue_id: cases.get(issue_id),
+        ), patch.object(trail_update.database, "create_annotation") as create:
+            result = trail_update._mark_local_review_exclusions(
+                ["cn00000001", "cn00000002"],
+                actor=actor,
+            )
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["marked_count"], 1)
+        self.assertEqual(result["failed_count"], 0)
+        self.assertEqual(result["not_in_dashboard_count"], 1)
+        self.assertEqual(result["not_in_dashboard_issue_ids"], ["cn00000002"])
+        create.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

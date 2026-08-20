@@ -190,7 +190,13 @@ class DatabaseCoreMixin:
             now,
             str(actor or "").strip(),
             str(actor_source or "").strip(),
-            1 if actor_verified else 0,
+            # PostgreSQL's ``actor_verified`` column is a native boolean,
+            # while SQLite accepts Python bool values as its legacy integer
+            # representation.  Do not bind 0/1 here: psycopg correctly
+            # rejects a smallint for a boolean column and would otherwise
+            # make the best-effort audit write disappear after a successful
+            # Trail submission.
+            bool(actor_verified),
             normalized_status,
             max(0, int(requested_count)),
             max(0, int(synced_count)),
