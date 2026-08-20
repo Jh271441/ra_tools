@@ -847,134 +847,160 @@ function trailIssueDraftText() {
   return draft ? JSON.stringify(draft, null, 2) : "";
 }
 
-function trailIssueImportPayload(value) {
-  if (typeof value === "string") {
-    try {
-      value = JSON.parse(value);
-    } catch (error) {
-      throw new Error(uiText("JSON 格式不合法，请粘贴对象或数组。", "Invalid JSON; paste an object or array."));
-    }
-  }
-  if (Array.isArray(value)) return { entries: value };
-  if (!value || typeof value !== "object") {
-    throw new Error(uiText("JSON 必须是对象或数组。", "JSON must be an object or array."));
-  }
-  // The JSON preview dialog exports the nested draft.  Accept a few
-  // equivalent wrappers so a copied response or downloaded file can be
-  // imported without manual editing.
-  if (value.draft && typeof value.draft === "object") return value.draft;
-  if (value.payload && typeof value.payload === "object") return value.payload;
-  if (value.data && typeof value.data === "object") return value.data;
-  return value;
+const trailIssueImportState = {
+  json: { preview: null, requestSeq: 0 },
+  excel: { preview: null, requestSeq: 0 },
+};
+
+function trailIssueImportPrefix(mode) {
+  return mode === "excel" ? "trailUpdateIssueExcelImport" : "trailUpdateIssueJsonImport";
 }
 
-function trailIssueImportEntries(value) {
-  const payload = trailIssueImportPayload(value);
-  const commentByIssue = payload.comment_by_issue && typeof payload.comment_by_issue === "object"
-    ? payload.comment_by_issue
-    : {};
-  const itemComments = new Map(
-    (Array.isArray(payload.items) ? payload.items : [])
-      .map((item) => [String(item?.issue_id || item?.id || "").trim(), String(item?.comment || "").trim()])
-      .filter(([issueId]) => issueId)
-  );
-  let rawEntries = payload.requested_entries ?? payload.entries;
-  if (!rawEntries && Array.isArray(payload.items)) rawEntries = payload.items;
-  if (!rawEntries && payload.requested_issue_ids != null) rawEntries = payload.requested_issue_ids;
-  if (!rawEntries && payload.issue_ids != null) rawEntries = payload.issue_ids;
-  if (rawEntries == null) {
-    throw new Error(uiText("未找到 requested_entries 或 Issue ID 列表。", "No requested_entries or Issue ID list found."));
-  }
-  if (!Array.isArray(rawEntries)) rawEntries = [rawEntries];
-
-  const groups = new Map();
-  const invalid = [];
-  const seen = new Set();
-  const fallbackComment = String(payload.comment || "").trim();
-  rawEntries.forEach((entry) => {
-    const objectEntry = entry && typeof entry === "object" ? entry : {};
-    const rawIds = typeof entry === "string"
-      ? entry
-      : objectEntry.issue_id ?? objectEntry.id ?? objectEntry.issue_ids ?? objectEntry.ids ?? "";
-    const firstId = typeof rawIds === "string" ? rawIds.trim().split(/[\\s,，、;；|]+/)[0] : "";
-    const comment = String(
-      objectEntry.comment
-        ?? objectEntry.note
-        ?? objectEntry.exclusion_note
-        ?? objectEntry.should_exclude_comment
-        ?? commentByIssue[firstId]
-        ?? itemComments.get(firstId)
-        ?? fallbackComment
-        ?? ""
-    ).trim().slice(0, 4000);
-    const parsed = typeof parseIssueIdsInput === "function"
-      ? parseIssueIdsInput(rawIds)
-      : { ids: [], invalid: [String(rawIds || "")] };
-    invalid.push(...(parsed.invalid || []));
-    (parsed.ids || []).forEach((issueId) => {
-      const normalized = String(issueId || "").trim();
-      if (!normalized) return;
-      if (seen.has(normalized)) {
-        invalid.push(`${normalized}（重复）`);
-        return;
-      }
-      seen.add(normalized);
-      const effectiveComment = String(
-        commentByIssue[normalized]
-          ?? itemComments.get(normalized)
-          ?? comment
-          ?? ""
-      ).trim().slice(0, 4000);
-      const groupKey = effectiveComment;
-      if (!groups.has(groupKey)) groups.set(groupKey, []);
-      groups.get(groupKey).push(normalized);
-    });
-  });
-  const entries = Array.from(groups.entries()).map(([comment, ids]) => ({
-    issue_id: ids.join(", "),
-    comment,
-  }));
-  if (!entries.length) {
-    throw new Error(uiText("JSON 中没有可识别的 Issue ID。", "No recognizable Issue IDs found in JSON."));
-  }
-  if (invalid.length) {
-    throw new Error(uiText(
-      `JSON 中有无法导入的 Issue：${invalid.slice(0, 5).join("、")}${invalid.length > 5 ? "…" : ""}`,
-      `JSON contains invalid Issues: ${invalid.slice(0, 5).join(", ")}${invalid.length > 5 ? "…" : ""}`
-    ));
-  }
-  return entries;
+function trailIssueImportElement(mode, suffix) {
+  return $(`#${trailIssueImportPrefix(mode)}${suffix}`);
 }
 
-function setTrailIssueImportStatus(message = "", error = false) {
-  const status = $("#trailUpdateIssueJsonImportStatus");
+function trailIssueImportModeLabel(mode) {
+  return mode === "excel"
+    ? uiText("Excel", "Excel")
+    : uiText("JSON", "JSON");
+}
+
+function setTrailIssueImportStatus(mode, message = "", error = false) {
+  const status = trailIssueImportElement(mode, "Status");
   if (!status) return;
   status.textContent = message;
   status.classList.toggle("is-error", Boolean(error));
   status.classList.toggle("is-ready", Boolean(message) && !error);
 }
 
-function openTrailIssueJsonImport() {
-  const dialog = $("#trailUpdateIssueJsonImportDialog");
-  if (!dialog || typeof dialog.showModal !== "function") {
-    showToast(uiText("JSON 导入弹窗不可用。", "The JSON import dialog is unavailable."), true);
-    return;
+function trailIssueImportStatusMeta(status) {
+  const value = String(status || "invalid");
+  if (value === "ready") {
+    return { label: uiText("将导入", "Ready"), className: "is-ready" };
   }
-  setTrailIssueImportStatus("");
-  if (!dialog.open) dialog.showModal();
-  $("#trailUpdateIssueJsonImportText")?.focus();
+  if (value === "skipped") {
+    return { label: uiText("跳过", "Skipped"), className: "is-skipped" };
+  }
+  return { label: uiText("需修正", "Fix"), className: "is-invalid" };
 }
 
-function applyTrailIssueJsonImport(value) {
-  const entries = trailIssueImportEntries(value);
+function clearTrailIssueImportPreview(mode) {
+  trailIssueImportState[mode].requestSeq += 1;
+  trailIssueImportState[mode].preview = null;
+  const preview = trailIssueImportElement(mode, "Preview");
+  const summary = trailIssueImportElement(mode, "PreviewSummary");
+  const rows = trailIssueImportElement(mode, "PreviewRows");
+  const apply = trailIssueImportElement(mode, "Apply");
+  if (preview) preview.hidden = true;
+  if (summary) summary.textContent = "";
+  if (rows) rows.innerHTML = "";
+  if (apply) apply.disabled = true;
+}
+
+function renderTrailIssueImportPreview(mode, data) {
+  const preview = trailIssueImportElement(mode, "Preview");
+  const summaryNode = trailIssueImportElement(mode, "PreviewSummary");
+  const rowsNode = trailIssueImportElement(mode, "PreviewRows");
+  const apply = trailIssueImportElement(mode, "Apply");
+  if (!preview || !summaryNode || !rowsNode || !apply) return;
+  if (!data || typeof data !== "object") {
+    clearTrailIssueImportPreview(mode);
+    return;
+  }
+  const summary = data.summary && typeof data.summary === "object" ? data.summary : {};
+  const items = Array.isArray(data.items) ? data.items : [];
+  const globalErrors = Array.isArray(data.global_errors) ? data.global_errors.filter(Boolean) : [];
+  const warnings = Array.isArray(data.warnings) ? data.warnings.filter(Boolean) : [];
+  const sourceRows = Number(summary.source_row_count || 0);
+  const ready = Number(summary.ready_count || 0);
+  const skipped = Number(summary.skipped_count || 0);
+  const invalid = Number(summary.invalid_count || 0);
+  const message = String(summary.message || "");
+  const countText = uiText(
+    `源数据 ${sourceRows} 行 · 将导入 ${ready} · 跳过 ${skipped} · 需修正 ${invalid}`,
+    `${sourceRows} source row(s) · ${ready} ready · ${skipped} skipped · ${invalid} to fix`
+  );
+  summaryNode.innerHTML = [
+    `<strong>${escapeHtml(message || uiText("导入预览已生成。", "Import preview generated."))}</strong>`,
+    `<small>${escapeHtml(countText)}</small>`,
+    ...globalErrors.map((item) => `<small class="is-error">${escapeHtml(String(item))}</small>`),
+    ...warnings.map((item) => `<small class="is-warning">${escapeHtml(String(item))}</small>`),
+  ].join("");
+  rowsNode.innerHTML = items.length
+    ? items.map((item) => {
+      const meta = trailIssueImportStatusMeta(item?.status);
+      const source = historicalExclusionSource(item?.source);
+      const sourceMarkup = source
+        ? historicalExclusionSourceMarkup(source, "trail-update-import-preview-source")
+        : `<div class="trail-update-import-preview-source" title="${escapeHtml(String(item?.source_label || ""))}">${escapeHtml(String(item?.source_label || "—"))}</div>`;
+      const comment = String(item?.comment || "—");
+      const shouldExclude = item?.should_exclude === true
+        ? uiText("是", "Yes")
+        : item?.should_exclude === false
+          ? uiText("否", "No")
+          : "—";
+      return `<tr class="${meta.className}">
+        <td>${escapeHtml(String(item?.row_number || "—"))}</td>
+        <td><code>${escapeHtml(String(item?.issue_id || "—"))}</code></td>
+        <td>${escapeHtml(shouldExclude)}</td>
+        <td><div class="trail-update-import-preview-comment" title="${escapeHtml(comment)}">${escapeHtml(comment)}</div></td>
+        <td>${sourceMarkup}</td>
+        <td><span class="trail-update-import-preview-state ${meta.className}">${escapeHtml(meta.label)}</span><small class="trail-update-import-preview-message">${escapeHtml(String(item?.message || ""))}</small></td>
+      </tr>`;
+    }).join("")
+    : `<tr><td class="trail-update-empty" colspan="6">${escapeHtml(uiText("没有可展示的导入行。", "No import rows to display."))}</td></tr>`;
+  preview.hidden = false;
+  apply.disabled = data.can_apply !== true;
+}
+
+function openTrailIssueImport(mode) {
+  const dialog = trailIssueImportElement(mode, "Dialog");
+  if (!dialog || typeof dialog.showModal !== "function") {
+    showToast(uiText(`${trailIssueImportModeLabel(mode)} 导入弹窗不可用。`, `${trailIssueImportModeLabel(mode)} import dialog is unavailable.`), true);
+    return;
+  }
+  clearTrailIssueImportPreview(mode);
+  setTrailIssueImportStatus(mode, "");
+  if (!dialog.open) dialog.showModal();
+  if (mode === "json") trailIssueImportElement(mode, "Text")?.focus();
+  else trailIssueImportElement(mode, "ChooseFile")?.focus();
+}
+
+function closeTrailIssueImport(mode) {
+  trailIssueImportElement(mode, "Dialog")?.close();
+}
+
+function applyTrailIssueImportPreview(mode) {
+  const preview = trailIssueImportState[mode]?.preview;
+  if (!preview?.can_apply) {
+    setTrailIssueImportStatus(mode, uiText("请先生成无错误的导入预览。", "Build an error-free import preview first."), true);
+    return false;
+  }
+  const entries = Array.isArray(preview.entries) ? preview.entries : [];
+  if (!entries.length) {
+    setTrailIssueImportStatus(mode, uiText("预览中没有可替换的屏蔽行。", "The preview has no shielding rows to replace."), true);
+    return false;
+  }
   const list = $("#trailUpdateIssueEntries");
-  if (!list) throw new Error(uiText("Issue 输入区不可用。", "Issue editor is unavailable."));
+  if (!list) {
+    setTrailIssueImportStatus(mode, uiText("Issue 输入区不可用。", "Issue editor is unavailable."), true);
+    return false;
+  }
   list.innerHTML = entries.map((entry) => renderTrailIssueEntryRow(entry)).join("");
   syncTrailIssueEntryRemoveButtons();
   parseTrailIssueIds();
   clearTrailIssuePreview();
-  setTrailIssueStatus(uiText(`已导入 ${entries.reduce((sum, entry) => sum + entry.issue_id.split(",").length, 0)} 个 Issue，请生成预览。`, "JSON imported; build a new preview."));
-  return entries;
+  closeTrailIssueImport(mode);
+  setTrailIssueStatus(uiText(
+    `已从 ${trailIssueImportModeLabel(mode)} 预览替换 ${entries.length} 个 Issue；尚未写入 Trail，请生成最终预览后确认。`,
+    `${entries.length} Issues from the ${trailIssueImportModeLabel(mode)} preview replaced the draft; no Trail write has occurred. Build the final preview to continue.`
+  ));
+  showToast(uiText(
+    `已替换 ${entries.length} 条屏蔽草稿；尚未写入 Trail。`,
+    `${entries.length} shielding draft row(s) replaced; Trail has not been written.`
+  ));
+  return true;
 }
 
 async function importTrailIssueJsonFile(file) {
@@ -987,27 +1013,142 @@ async function importTrailIssueJsonFile(file) {
       reader.onerror = () => reject(new Error(uiText("JSON 文件读取失败。", "Could not read the JSON file.")));
       reader.readAsText(file);
     });
-  const textArea = $("#trailUpdateIssueJsonImportText");
+  const textArea = trailIssueImportElement("json", "Text");
   if (textArea) textArea.value = text;
-  $("#trailUpdateIssueJsonImportFileName").textContent = file.name || uiText("已读取 JSON 文件。", "JSON file loaded.");
-  setTrailIssueImportStatus(uiText("文件已读取，点击“导入并替换”继续。", "File loaded; click Import and replace to continue."));
+  const fileName = trailIssueImportElement("json", "FileName");
+  if (fileName) fileName.textContent = file.name || uiText("已读取 JSON 文件。", "JSON file loaded.");
+  clearTrailIssueImportPreview("json");
+  setTrailIssueImportStatus("json", uiText("文件已读取，点击“生成导入预览”继续。", "File loaded; build the import preview to continue."));
 }
 
-function applyTrailIssueJsonImportFromDialog() {
-  const raw = String($("#trailUpdateIssueJsonImportText")?.value || "").trim();
+async function previewTrailIssueJsonImport() {
+  const raw = String(trailIssueImportElement("json", "Text")?.value || "").trim();
   if (!raw) {
-    setTrailIssueImportStatus(uiText("请先粘贴 JSON 或选择文件。", "Paste JSON or choose a file first."), true);
-    return false;
+    setTrailIssueImportStatus("json", uiText("请先粘贴 JSON 或选择文件。", "Paste JSON or choose a file first."), true);
+    return null;
   }
+  let body;
   try {
-    const entries = applyTrailIssueJsonImport(raw);
-    $("#trailUpdateIssueJsonImportDialog")?.close();
-    showToast(uiText(`已导入 ${entries.reduce((sum, entry) => sum + entry.issue_id.split(",").length, 0)} 个 Issue。`, "Issue JSON imported."));
-    return true;
-  } catch (error) {
-    setTrailIssueImportStatus(error?.message || uiText("JSON 导入失败。", "JSON import failed."), true);
-    return false;
+    body = JSON.parse(raw);
+  } catch (_error) {
+    setTrailIssueImportStatus("json", uiText("JSON 格式不合法，请粘贴对象或数组。", "Invalid JSON; paste an object or array."), true);
+    return null;
   }
+  if (!Array.isArray(body) && (!body || typeof body !== "object")) {
+    setTrailIssueImportStatus("json", uiText("JSON 必须是对象或数组。", "JSON must be an object or array."), true);
+    return null;
+  }
+  const button = trailIssueImportElement("json", "PreviewButton");
+  const requestSeq = ++trailIssueImportState.json.requestSeq;
+  button?.toggleAttribute("disabled", true);
+  button?.setAttribute("aria-busy", "true");
+  setTrailIssueImportStatus("json", uiText("正在解析 JSON 导入预览…", "Parsing JSON import preview…"));
+  try {
+    const data = await api("/api/trail-attribute-update/issue-import/json-preview", {
+      method: "POST",
+      body: JSON.stringify(body),
+      allowReadOnlyMutation: true,
+    });
+    if (requestSeq !== trailIssueImportState.json.requestSeq) return data;
+    trailIssueImportState.json.preview = data;
+    renderTrailIssueImportPreview("json", data);
+    const hasErrors = Boolean((data?.global_errors || []).length || Number(data?.summary?.invalid_count || 0));
+    setTrailIssueImportStatus("json", String(data?.summary?.message || ""), hasErrors);
+    return data;
+  } catch (error) {
+    if (requestSeq === trailIssueImportState.json.requestSeq) {
+      setTrailIssueImportStatus("json", error?.message || uiText("JSON 导入预览失败。", "Could not preview the JSON import."), true);
+    }
+    return null;
+  } finally {
+    if (requestSeq === trailIssueImportState.json.requestSeq) {
+      button?.toggleAttribute("disabled", false);
+      button?.removeAttribute("aria-busy");
+    }
+  }
+}
+
+async function previewTrailIssueExcelImport() {
+  const file = trailIssueImportElement("excel", "File")?.files?.[0];
+  if (!file) {
+    setTrailIssueImportStatus("excel", uiText("请先选择 .xlsx 或 .xlsm 文件。", "Choose a .xlsx or .xlsm file first."), true);
+    return null;
+  }
+  const button = trailIssueImportElement("excel", "PreviewButton");
+  const requestSeq = ++trailIssueImportState.excel.requestSeq;
+  button?.toggleAttribute("disabled", true);
+  button?.setAttribute("aria-busy", "true");
+  setTrailIssueImportStatus("excel", uiText("正在解析 Excel 导入预览…", "Parsing Excel import preview…"));
+  try {
+    const form = new FormData();
+    form.append("file", file, file.name || "issue-exclusions.xlsx");
+    const data = await api("/api/trail-attribute-update/issue-import/excel-preview", {
+      method: "POST",
+      body: form,
+      allowReadOnlyMutation: true,
+    });
+    if (requestSeq !== trailIssueImportState.excel.requestSeq) return data;
+    trailIssueImportState.excel.preview = data;
+    renderTrailIssueImportPreview("excel", data);
+    const hasErrors = Boolean((data?.global_errors || []).length || Number(data?.summary?.invalid_count || 0));
+    setTrailIssueImportStatus("excel", String(data?.summary?.message || ""), hasErrors);
+    return data;
+  } catch (error) {
+    if (requestSeq === trailIssueImportState.excel.requestSeq) {
+      setTrailIssueImportStatus("excel", error?.message || uiText("Excel 导入预览失败。", "Could not preview the Excel import."), true);
+    }
+    return null;
+  } finally {
+    if (requestSeq === trailIssueImportState.excel.requestSeq) {
+      button?.toggleAttribute("disabled", false);
+      button?.removeAttribute("aria-busy");
+    }
+  }
+}
+
+function bindTrailIssueImportEvents(mode) {
+  const dialog = trailIssueImportElement(mode, "Dialog");
+  trailIssueImportElement(mode, "Close")?.addEventListener("click", () => closeTrailIssueImport(mode));
+  trailIssueImportElement(mode, "Cancel")?.addEventListener("click", () => closeTrailIssueImport(mode));
+  dialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeTrailIssueImport(mode);
+  });
+  trailIssueImportElement(mode, "PreviewButton")?.addEventListener("click", () => {
+    void (mode === "excel" ? previewTrailIssueExcelImport() : previewTrailIssueJsonImport());
+  });
+  trailIssueImportElement(mode, "Apply")?.addEventListener("click", () => {
+    applyTrailIssueImportPreview(mode);
+  });
+  trailIssueImportElement(mode, "ChooseFile")?.addEventListener("click", () => {
+    trailIssueImportElement(mode, "File")?.click();
+  });
+  if (mode === "json") {
+    trailIssueImportElement(mode, "Text")?.addEventListener("input", () => {
+      clearTrailIssueImportPreview(mode);
+      setTrailIssueImportStatus(mode, "");
+    });
+    trailIssueImportElement(mode, "File")?.addEventListener("change", (event) => {
+      void importTrailIssueJsonFile(event.target?.files?.[0]).catch((error) => {
+        setTrailIssueImportStatus(mode, error?.message || uiText("JSON 文件读取失败。", "Could not read the JSON file."), true);
+      });
+    });
+    return;
+  }
+  trailIssueImportElement(mode, "File")?.addEventListener("change", (event) => {
+    const file = event.target?.files?.[0];
+    const fileName = trailIssueImportElement(mode, "FileName");
+    if (fileName) {
+      fileName.textContent = file?.name || uiText("尚未选择 Excel 文件。", "No Excel file selected.");
+    }
+    clearTrailIssueImportPreview(mode);
+    setTrailIssueImportStatus(
+      mode,
+      file
+        ? uiText("已选择文件，点击“生成导入预览”继续。", "File selected; build the import preview to continue.")
+        : ""
+    );
+  });
 }
 
 function trailUpdateJsonContext(mode = state.trailUpdate?.tab || "review") {
@@ -1651,20 +1792,10 @@ function bindTrailAttributeUpdateEvents() {
   $("#trailUpdateIssueHistoricalExclusionsButton")?.addEventListener("click", () => {
     void loadTrailHistoricalExclusions();
   });
-  $("#trailUpdateIssueJsonImportButton")?.addEventListener("click", openTrailIssueJsonImport);
-  $("#trailUpdateIssueJsonImportClose")?.addEventListener("click", () => $("#trailUpdateIssueJsonImportDialog")?.close());
-  $("#trailUpdateIssueJsonImportCancel")?.addEventListener("click", () => $("#trailUpdateIssueJsonImportDialog")?.close());
-  $("#trailUpdateIssueJsonImportDialog")?.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    $("#trailUpdateIssueJsonImportDialog")?.close();
-  });
-  $("#trailUpdateIssueJsonImportChooseFile")?.addEventListener("click", () => $("#trailUpdateIssueJsonImportFile")?.click());
-  $("#trailUpdateIssueJsonImportFile")?.addEventListener("change", (event) => {
-    importTrailIssueJsonFile(event.target?.files?.[0]).catch((error) => {
-      setTrailIssueImportStatus(error?.message || uiText("JSON 文件读取失败。", "Could not read the JSON file."), true);
-    });
-  });
-  $("#trailUpdateIssueJsonImportApply")?.addEventListener("click", applyTrailIssueJsonImportFromDialog);
+  $("#trailUpdateIssueJsonImportButton")?.addEventListener("click", () => openTrailIssueImport("json"));
+  $("#trailUpdateIssueExcelImportButton")?.addEventListener("click", () => openTrailIssueImport("excel"));
+  bindTrailIssueImportEvents("json");
+  bindTrailIssueImportEvents("excel");
   $("#trailUpdateIssueEntries")?.addEventListener("input", (event) => {
     const target = event.target;
     const row = target?.closest?.("[data-trail-issue-entry-row]");

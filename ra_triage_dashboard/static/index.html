@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-223`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-224`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -496,6 +496,7 @@
                     <div class="trail-update-direct-actions">
                       <button class="button button-quiet" id="trailUpdateIssueHistoricalExclusionsButton" type="button" title="载入当前数据集对应 Excel 中“是否排除=是”的历史候选；不会自动写入 Trail。"><span class="ui-lang-zh">载入历史抽检排除</span><span class="ui-lang-en">Load historical exclusions</span></button>
                       <button class="button button-quiet" id="trailUpdateIssueJsonImportButton" type="button"><span class="ui-lang-zh">导入 JSON</span><span class="ui-lang-en">Import JSON</span></button>
+                      <button class="button button-quiet" id="trailUpdateIssueExcelImportButton" type="button"><span class="ui-lang-zh">导入 Excel</span><span class="ui-lang-en">Import Excel</span></button>
                       <button class="button button-quiet trail-update-entry-add" id="trailUpdateIssueAddButton" type="button"><span aria-hidden="true">＋</span><span class="ui-lang-zh">添加一行</span><span class="ui-lang-en">Add row</span></button>
                     </div>
                   </div>
@@ -1262,7 +1263,7 @@
           <div>
             <span class="eyebrow">IMPORT JSON</span>
             <h2 id="trailUpdateIssueJsonImportTitle"><span class="ui-lang-zh">导入 Issue 屏蔽 JSON</span><span class="ui-lang-en">Import Issue shielding JSON</span></h2>
-            <p class="dialog-copy"><span class="ui-lang-zh">可粘贴上一步复制的预览 JSON，或选择 JSON 文件；导入后会替换当前输入行。</span><span class="ui-lang-en">Paste the copied preview JSON or choose a JSON file; importing replaces the current rows.</span></p>
+            <p class="dialog-copy"><span class="ui-lang-zh">可粘贴上一步复制的预览 JSON，或选择 JSON 文件。先在服务器解析并预览；确认替换草稿前不会写入 Trail。</span><span class="ui-lang-en">Paste a copied preview JSON or choose a JSON file. It is parsed and previewed on the server; Trail is never written before you replace the draft.</span></p>
           </div>
           <button class="icon-button" id="trailUpdateIssueJsonImportClose" type="button" aria-label="关闭" data-i18n-aria-label="dialog.close">×</button>
         </div>
@@ -1273,9 +1274,42 @@
         </div>
         <textarea class="trail-update-json-import-text" id="trailUpdateIssueJsonImportText" rows="14" spellcheck="false" placeholder="粘贴 trail_issue_exclusion_update.json 内容…"></textarea>
         <div class="trail-update-json-import-status" id="trailUpdateIssueJsonImportStatus" role="status" aria-live="polite"></div>
+        <section class="trail-update-import-preview" id="trailUpdateIssueJsonImportPreview" hidden aria-live="polite">
+          <div class="trail-update-import-preview-summary" id="trailUpdateIssueJsonImportPreviewSummary"></div>
+          <div class="trail-update-import-preview-table-wrap"><table class="trail-update-import-preview-table"><thead><tr><th><span class="ui-lang-zh">行</span><span class="ui-lang-en">Row</span></th><th>Issue ID</th><th><span class="ui-lang-zh">是否排除</span><span class="ui-lang-en">Exclude?</span></th><th><span class="ui-lang-zh">写入 Comment</span><span class="ui-lang-en">Comment to save</span></th><th><span class="ui-lang-zh">来源</span><span class="ui-lang-en">Source</span></th><th><span class="ui-lang-zh">预览结果</span><span class="ui-lang-en">Preview result</span></th></tr></thead><tbody id="trailUpdateIssueJsonImportPreviewRows"></tbody></table></div>
+        </section>
         <div class="dialog-actions trail-update-json-actions">
           <button class="button button-quiet" id="trailUpdateIssueJsonImportCancel" type="button"><span class="ui-lang-zh">取消</span><span class="ui-lang-en">Cancel</span></button>
-          <button class="button button-primary" id="trailUpdateIssueJsonImportApply" type="button"><span class="ui-lang-zh">导入并替换</span><span class="ui-lang-en">Import and replace</span></button>
+          <button class="button button-quiet" id="trailUpdateIssueJsonImportPreviewButton" type="button"><span class="ui-lang-zh">生成导入预览</span><span class="ui-lang-en">Build import preview</span></button>
+          <button class="button button-primary" id="trailUpdateIssueJsonImportApply" type="button" disabled><span class="ui-lang-zh">将有效行替换到草稿</span><span class="ui-lang-en">Replace draft with valid rows</span></button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="dialog dialog-wide trail-update-json-import-dialog" id="trailUpdateIssueExcelImportDialog" aria-labelledby="trailUpdateIssueExcelImportTitle">
+      <div class="dialog-card">
+        <div class="dialog-heading">
+          <div>
+            <span class="eyebrow">IMPORT EXCEL</span>
+            <h2 id="trailUpdateIssueExcelImportTitle"><span class="ui-lang-zh">导入 Issue 屏蔽 Excel</span><span class="ui-lang-en">Import Issue shielding Excel</span></h2>
+            <p class="dialog-copy"><span class="ui-lang-zh">上传 .xlsx 或 .xlsm。必填列：Issue ID、是否排除；可选列：comment。仅“是否排除=是”的行会进入草稿，上传来源会写入 comment；此处只预览，不会写入 Trail。</span><span class="ui-lang-en">Upload .xlsx or .xlsm. Required: Issue ID and Exclude?; optional: comment. Only rows marked true enter the draft, and upload provenance is saved in the comment. This is preview-only and never writes Trail.</span></p>
+          </div>
+          <button class="icon-button" id="trailUpdateIssueExcelImportClose" type="button" aria-label="关闭" data-i18n-aria-label="dialog.close">×</button>
+        </div>
+        <div class="trail-update-json-import-file-row">
+          <input id="trailUpdateIssueExcelImportFile" type="file" accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12" hidden>
+          <button class="button button-quiet" id="trailUpdateIssueExcelImportChooseFile" type="button"><span class="ui-lang-zh">选择 Excel 文件</span><span class="ui-lang-en">Choose Excel file</span></button>
+          <small id="trailUpdateIssueExcelImportFileName"><span class="ui-lang-zh">支持列名：issue_id / Issue ID / 问题ID；是否排除；comment / 排除说明 / 备注。</span><span class="ui-lang-en">Supported headers: issue_id / Issue ID; 是否排除; comment / exclusion note / note.</span></small>
+        </div>
+        <div class="trail-update-json-import-status" id="trailUpdateIssueExcelImportStatus" role="status" aria-live="polite"></div>
+        <section class="trail-update-import-preview" id="trailUpdateIssueExcelImportPreview" hidden aria-live="polite">
+          <div class="trail-update-import-preview-summary" id="trailUpdateIssueExcelImportPreviewSummary"></div>
+          <div class="trail-update-import-preview-table-wrap"><table class="trail-update-import-preview-table"><thead><tr><th><span class="ui-lang-zh">行</span><span class="ui-lang-en">Row</span></th><th>Issue ID</th><th><span class="ui-lang-zh">是否排除</span><span class="ui-lang-en">Exclude?</span></th><th><span class="ui-lang-zh">写入 Comment</span><span class="ui-lang-en">Comment to save</span></th><th><span class="ui-lang-zh">来源</span><span class="ui-lang-en">Source</span></th><th><span class="ui-lang-zh">预览结果</span><span class="ui-lang-en">Preview result</span></th></tr></thead><tbody id="trailUpdateIssueExcelImportPreviewRows"></tbody></table></div>
+        </section>
+        <div class="dialog-actions trail-update-json-actions">
+          <button class="button button-quiet" id="trailUpdateIssueExcelImportCancel" type="button"><span class="ui-lang-zh">取消</span><span class="ui-lang-en">Cancel</span></button>
+          <button class="button button-quiet" id="trailUpdateIssueExcelImportPreviewButton" type="button"><span class="ui-lang-zh">生成导入预览</span><span class="ui-lang-en">Build import preview</span></button>
+          <button class="button button-primary" id="trailUpdateIssueExcelImportApply" type="button" disabled><span class="ui-lang-zh">将有效行替换到草稿</span><span class="ui-lang-en">Replace draft with valid rows</span></button>
         </div>
       </div>
     </dialog>
@@ -1286,7 +1320,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-223`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-224`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

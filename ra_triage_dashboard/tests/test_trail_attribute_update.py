@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import unittest
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import openpyxl
+from starlette.datastructures import UploadFile
 from starlette.requests import Request
 
 from ra_triage_dashboard.app.routers import trail_update
@@ -14,13 +17,145 @@ from ra_triage_dashboard.app.routers.trail_update import (
     TRAIL_ISSUE_EXCLUSION_COMMENT,
     TRAIL_RESULT_FIELD,
     TRAIL_TARGET_PATH,
+    _issue_import_json_rows,
     _normalise_issue_entries,
     build_trail_attribute_update_payload,
+    build_trail_issue_import_preview,
     build_trail_issue_exclusion_payload,
 )
 
 
 class TrailAttributeUpdateTest(unittest.TestCase):
+    def test_excel_import_endpoint_is_read_only_preview(self) -> None:
+        workbook = openpyxl.Workbook()
+        sheet = workbook.active
+        sheet.title = "抽检"
+        sheet.append(["Issue ID", "是否排除", "comment"])
+        sheet.append(["cn00000001", "是", "人工确认"])
+        sheet.append(["cn00000002", "否", "保留"])
+        output = io.BytesIO()
+        workbook.save(output)
+        workbook.close()
+        upload = UploadFile(
+            filename="release0206抽检.xlsx",
+            file=io.BytesIO(output.getvalue()),
+        )
+        payload = asyncio.run(
+            trail_update.trail_issue_excel_import_preview(upload)
+        )
+        self.assertEqual(payload["mode"], "excel")
+        self.assertTrue(payload["can_apply"])
+        self.assertEqual(payload["summary"]["ready_count"], 1)
+        self.assertEqual(payload["summary"]["skipped_count"], 1)
+        self.assertEqual([entry["issue_id"] for entry in payload["entries"]], ["cn00000001"])
+        self.assertIn("Excel 上传来源：release0206抽检.xlsx", payload["entries"][0]["comment"])
+
+    def test_json_issue_import_preview_keeps_historical_source_and_legacy_drafts(self) -> None:
+        source = {
+            "kind": "historical_spotcheck_xlsx",
+            "source_id": "spotcheck-0206",
+            "label": "0206 抽检",
+            "baseline_id": "0206",
+            "filename": "release0206版本 RA问题review.xlsx",
+            "sha256": "a" * 64,
+            "row_number": 269,
+            "issue_id": "cn00000001",
+            "column": "是否排除",
+            "value": "是",
+        }
+        rows, context = _issue_import_json_rows(
+            {
+                "draft": {
+                    "requested_entries": [
+                        {
+                            "issue_id": "cn00000001",
+                            "comment": "历史抽检说明",
+                            "source": source,
+                        },
+                        {"issue_id": "cn00000002", "should_exclude": False},
+                    ]
+                }
+            }
+        )
+        preview = build_trail_issue_import_preview(
+            rows,
+            import_format="json",
+            fallback_comment=context["fallback_comment"],
+            comment_by_issue=context["comment_by_issue"],
+        )
+        self.assertTrue(preview["can_apply"])
+        self.assertEqual(preview["summary"]["ready_count"], 1)
+        self.assertEqual(preview["summary"]["skipped_count"], 1)
+        self.assertEqual(preview["entries"][0]["issue_id"], "cn00000001")
+        self.assertEqual(preview["entries"][0]["source"], source)
+        self.assertIn("未提供「是否排除」", preview["warnings"][0])
+
+    def test_excel_issue_import_preview_filters_false_rows_and_marks_invalid_rows(self) -> None:
+        preview = build_trail_issue_import_preview(
+            [
+                {
+                    "Issue ID": "cn00000001",
+                    "是否排除": "是",
+                    "comment": "人工确认无需处理",
+                },
+                {
+                    "Issue ID": "cn00000002",
+                    "是否排除": "否",
+                    "comment": "保留",
+                },
+                {
+                    "Issue ID": "cn00000003",
+                    "是否排除": "不确定",
+                },
+                {
+                    "Issue ID": "cn00000004",
+                    "是否排除": "",
+                },
+            ],
+            import_format="excel",
+            filename="/Users/didi/utils/release0206抽检.xlsx",
+            source_sha256="b" * 64,
+            metadata={"sheet": "抽检"},
+            require_exclusion_column=True,
+            row_number_offset=2,
+        )
+        self.assertFalse(preview["can_apply"])
+        self.assertEqual(preview["summary"]["ready_count"], 1)
+        self.assertEqual(preview["summary"]["skipped_count"], 2)
+        self.assertEqual(preview["summary"]["invalid_count"], 1)
+        self.assertEqual(preview["items"][1]["status"], "skipped")
+        self.assertEqual(preview["items"][3]["status"], "skipped")
+        self.assertIn("未填写是否排除", preview["items"][3]["message"])
+        self.assertIn("Excel 上传来源：release0206抽检.xlsx", preview["entries"][0]["comment"])
+        self.assertIn("人工确认无需处理", preview["entries"][0]["comment"])
+
+    def test_excel_issue_import_preview_requires_explicit_exclusion_column_and_no_duplicates(self) -> None:
+        missing_column = build_trail_issue_import_preview(
+            [{"issue_id": "cn00000001", "comment": "x"}],
+            import_format="excel",
+            filename="input.xlsx",
+            require_exclusion_column=True,
+            row_number_offset=2,
+        )
+        self.assertFalse(missing_column["can_apply"])
+        self.assertIn("缺少必填列「是否排除」", missing_column["global_errors"][0])
+
+        duplicate = build_trail_issue_import_preview(
+            [
+                {"issue_id": "cn00000001", "是否排除": True},
+                {"issue_id": "cn00000001", "是否排除": "1"},
+            ],
+            import_format="excel",
+            filename="input.xlsx",
+            source_sha256="c" * 64,
+            require_exclusion_column=True,
+            row_number_offset=2,
+        )
+        self.assertFalse(duplicate["can_apply"])
+        self.assertEqual(duplicate["summary"]["ready_count"], 1)
+        self.assertEqual(duplicate["summary"]["invalid_count"], 1)
+        self.assertIn("重复", duplicate["items"][1]["message"])
+
     def test_issue_entries_keep_row_comments_and_reject_duplicates(self) -> None:
         entries, invalid = _normalise_issue_entries(
             [

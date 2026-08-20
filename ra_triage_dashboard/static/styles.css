@@ -2163,7 +2163,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   border: 1px solid var(--line); border-radius: 8px; color: #c8d9e6; background: #0b1018;
   font: 11px/1.55 "SFMono-Regular", Consolas, monospace; tab-size: 2; white-space: pre;
 }
-.trail-update-json-import-dialog { width: min(760px, calc(100vw - 30px)); }
+.trail-update-json-import-dialog { width: min(920px, calc(100vw - 30px)); max-height: calc(100dvh - 24px); overflow: auto; }
 .trail-update-json-import-dialog .dialog-card { gap: 12px; }
 .trail-update-json-import-file-row { min-width: 0; display: flex; align-items: center; gap: 8px; }
 .trail-update-json-import-file-row small { min-width: 0; overflow: hidden; color: var(--faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
@@ -2171,6 +2171,31 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-json-import-status { min-height: 17px; color: var(--faint); font-size: 11px; }
 .trail-update-json-import-status.is-error { color: #fca5a5; }
 .trail-update-json-import-status.is-ready { color: #9ae6c4; }
+.trail-update-import-preview { min-width: 0; display: grid; gap: 8px; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: rgba(7,13,21,.46); }
+.trail-update-import-preview-summary { display: grid; gap: 4px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.trail-update-import-preview-summary > strong { color: var(--text); }
+.trail-update-import-preview-summary > small { color: var(--faint); }
+.trail-update-import-preview-summary .is-error { color: #fca5a5; }
+.trail-update-import-preview-summary .is-warning { color: #fcd88a; }
+.trail-update-import-preview-table-wrap { min-width: 0; max-height: min(42dvh, 420px); overflow: auto; border: 1px solid var(--line-soft); border-radius: 7px; }
+.trail-update-import-preview-table { width: 100%; min-width: 850px; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 10px; }
+.trail-update-import-preview-table th, .trail-update-import-preview-table td { padding: 7px 8px; border-bottom: 1px solid var(--line-soft); color: var(--muted); background: rgba(9,15,24,.46); text-align: left; vertical-align: top; }
+.trail-update-import-preview-table th { position: sticky; top: 0; z-index: 1; color: var(--text); background: var(--raised); font-size: 10px; font-weight: 700; }
+.trail-update-import-preview-table th:nth-child(1), .trail-update-import-preview-table td:nth-child(1) { width: 42px; text-align: center; }
+.trail-update-import-preview-table th:nth-child(2), .trail-update-import-preview-table td:nth-child(2) { width: 108px; }
+.trail-update-import-preview-table th:nth-child(3), .trail-update-import-preview-table td:nth-child(3) { width: 72px; text-align: center; }
+.trail-update-import-preview-table th:nth-child(4), .trail-update-import-preview-table td:nth-child(4) { width: 29%; }
+.trail-update-import-preview-table th:nth-child(5), .trail-update-import-preview-table td:nth-child(5) { width: 21%; }
+.trail-update-import-preview-table th:nth-child(6), .trail-update-import-preview-table td:nth-child(6) { width: 25%; }
+.trail-update-import-preview-table tbody tr:last-child td { border-bottom: 0; }
+.trail-update-import-preview-table tr.is-invalid td { background: rgba(127,29,29,.14); }
+.trail-update-import-preview-table tr.is-skipped td { background: rgba(120,88,27,.1); }
+.trail-update-import-preview-comment { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; color: var(--text); line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.trail-update-import-preview-source, .trail-update-import-preview-message { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; color: var(--faint); line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.trail-update-import-preview-state { display: inline-flex; align-items: center; justify-content: center; min-width: 46px; padding: 2px 5px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 9px; white-space: nowrap; }
+.trail-update-import-preview-state.is-ready { border-color: rgba(74,222,128,.38); color: #9ae6c4; background: rgba(34,197,94,.09); }
+.trail-update-import-preview-state.is-skipped { border-color: rgba(250,204,21,.36); color: #fcd88a; background: rgba(250,204,21,.08); }
+.trail-update-import-preview-state.is-invalid { border-color: rgba(248,113,113,.38); color: #fca5a5; background: rgba(248,113,113,.08); }
 .trail-update-json-actions { flex-wrap: wrap; }
 
 .analysis-page { width: min(1480px, 100%); gap: 6px; }
