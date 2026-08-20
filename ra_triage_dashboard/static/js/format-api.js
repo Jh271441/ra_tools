@@ -557,6 +557,9 @@ function acknowledgeLocalChange(payload) {
 }
 
 async function refreshChangedData() {
+  const reviewerSelections = typeof reviewerFilterSelections === "function"
+    ? reviewerFilterSelections()
+    : undefined;
   if (state.activePage === "review") {
     await Promise.all([
       loadConfig(),
@@ -564,7 +567,7 @@ async function refreshChangedData() {
       loadOverview(),
       loadCases({ keepSelection: true, page: state.casePage }),
       loadClusters(),
-      loadReviewers(),
+      loadReviewers(reviewerSelections),
     ]);
     if (state.selectedId) {
       if (
@@ -587,7 +590,7 @@ async function refreshChangedData() {
       loadConfig(),
       loadRuns({ preserveEmpty: !state.selectedRunId }),
       loadOverview(),
-      loadReviewers(),
+      loadReviewers(reviewerSelections),
       loadReviewReasonAnalysis(),
     ]);
     return;

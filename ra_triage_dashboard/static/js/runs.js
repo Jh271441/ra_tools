@@ -3,7 +3,40 @@
  * Loaded as a classic script (shared global scope). Do not convert to
  * ES modules without auditing cross-file function/state dependencies.
  */
-async function loadReviewers() {
+function reviewerFilterSelections() {
+  const params = new URLSearchParams(window.location.search);
+  const routeSelection = parseFilterList(params.get("reviewer"));
+  const selected = (root, page) => {
+    const values = getMultiFilterValues(root);
+    // A refresh can rebuild the reviewer facet for a newly selected Run before
+    // its option list arrives.  The route is the durable source of truth for
+    // the active page in that short gap; do not turn a valid reviewer filter
+    // into “all reviewers” merely because the facet is temporarily empty.
+    if (values.length || state.activePage !== page) return values;
+    return routeSelection;
+  };
+  return {
+    review: selected($("#reviewerFilter"), "review"),
+    analysis: selected($("#analysisReviewerFilter"), "analysis"),
+  };
+}
+
+function reviewerOptionsWithSelected(options, selected) {
+  const known = new Set(options.map((item) => String(item.value || "")));
+  const retained = parseFilterList(selected)
+    .filter((name) => !known.has(name))
+    .map((name) => ({
+      value: name,
+      // Keep a route-restored reviewer visible and removable even when the
+      // current Run/dataset facet has no matching latest Review yet.
+      label: `${name} · ${uiText("当前筛选", "Current filter")}`,
+    }));
+  return [...options, ...retained];
+}
+
+async function loadReviewers(selections = reviewerFilterSelections()) {
+  const reviewSelection = parseFilterList(selections.review);
+  const analysisSelection = parseFilterList(selections.analysis);
   const runId = String(state.selectedRunId || "").trim();
   const params = new URLSearchParams();
   if (runId) params.set("model_run_id", runId);
@@ -26,16 +59,16 @@ async function loadReviewers() {
   const reviewSelect = $("#reviewerFilter");
   if (reviewSelect) {
     renderMultiFilter(reviewSelect, {
-      options: reviewerOptions,
-      selected: getMultiFilterValues(reviewSelect),
+      options: reviewerOptionsWithSelected(reviewerOptions, reviewSelection),
+      selected: reviewSelection,
       onChange: () => scheduleReviewFilterReload?.(0),
     });
   }
   const analysisReviewer = $("#analysisReviewerFilter");
   if (analysisReviewer) {
     renderMultiFilter(analysisReviewer, {
-      options: reviewerOptions,
-      selected: getMultiFilterValues(analysisReviewer),
+      options: reviewerOptionsWithSelected(reviewerOptions, analysisSelection),
+      selected: analysisSelection,
       onChange: () => scheduleAnalysisFilterReload(),
     });
   }

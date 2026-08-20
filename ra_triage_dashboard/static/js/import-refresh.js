@@ -265,14 +265,22 @@ async function syncTrail(mode = "preview") {
 }
 
 async function refreshAll({ resetSelection = false } = {}) {
+  // Capture reviewer selections before any refresh work rebuilds a facet.
+  // Their URL-backed values must survive both the Review and Analysis pages.
+  const reviewerSelections = typeof reviewerFilterSelections === "function"
+    ? reviewerFilterSelections()
+    : undefined;
   await loadConfig();
-  await loadRuns();
+  // “No overlay Run” is an intentional filter state.  Re-selecting the team
+  // default here changes reviewer facets and used to make an active reviewer
+  // filter appear to disappear after a top-bar refresh.
+  await loadRuns({ preserveEmpty: !state.selectedRunId });
   await Promise.all([
     loadStatus(),
     loadOverview(),
     loadCases({ keepSelection: !resetSelection }),
     loadClusters(),
-    loadReviewers(),
+    loadReviewers(reviewerSelections),
     loadWorkAssignees(),
   ]);
   if (state.activePage === "trail-update" && typeof loadTrailAttributePreview === "function") {
