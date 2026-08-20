@@ -99,6 +99,7 @@ promoted:
 | narrow trigger-state lock on the effect gate | 10/18 (A 16.7%, B 85.7%, C 60.0%) | rejected; normal-mechanism overgeneralization |
 | `effect_gate_v3` with `observation_v1` report projection | 10/18 (A 16.7%, B 100.0%, C 40.0%) | rejected |
 | `causal_compare_v1` without Trigger/Recovery reports | 8/18 (A 16.7%, B 85.7%, C 20.0%) | rejected; reports carry useful role/timing evidence |
+| concise direct-cause-participant competition prompt | 12/18 (A 50.0%, B 85.7%, C 60.0%) | rejected; blocker role over-expanded |
 
 The failures are consistent with a business-state conflict, not a missing
 label parser: prompting the model more strongly toward normal traffic removes
