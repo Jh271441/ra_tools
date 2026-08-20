@@ -142,6 +142,20 @@ function addTrailIssueEntryRow(entry = {}, { focus = true } = {}) {
   return row;
 }
 
+function clearTrailIssueEntries() {
+  const list = $("#trailUpdateIssueEntries");
+  if (!list) return;
+  list.innerHTML = renderTrailIssueEntryRow();
+  syncTrailIssueEntryRemoveButtons();
+  parseTrailIssueIds();
+  clearTrailIssuePreview();
+  setTrailIssueStatus(uiText(
+    "已清空所有屏蔽草稿行；尚未写入 Trail。",
+    "All shielding draft rows were cleared; Trail has not been written."
+  ));
+  list.querySelector("[data-trail-issue-entry-id]")?.focus();
+}
+
 function collectTrailIssueEntries() {
   const entries = [];
   const ids = [];
@@ -261,61 +275,6 @@ async function loadTrailIssueHistory() {
       list.innerHTML = `<div class="trail-update-history-empty is-error">${escapeHtml(error?.message || uiText("屏蔽历史加载失败。", "Shielding history failed to load."))}</div>`;
     }
     return null;
-  }
-}
-
-async function loadTrailHistoricalExclusions() {
-  const button = $("#trailUpdateIssueHistoricalExclusionsButton");
-  const params = new URLSearchParams();
-  const baselines = typeof selectedBaselineQueryValue === "function"
-    ? selectedBaselineQueryValue()
-    : "";
-  if (baselines) params.set("baselines", baselines);
-  button?.toggleAttribute("disabled", true);
-  button?.setAttribute("aria-busy", "true");
-  setTrailIssueStatus(uiText("正在读取历史抽检排除来源…", "Loading historical exclusion sources…"));
-  try {
-    const data = await api(`/api/trail-attribute-update/historical-exclusions?${params.toString()}`);
-    const existing = new Set(collectTrailIssueEntries().ids);
-    const candidates = Array.isArray(data?.items) ? data.items : [];
-    const entries = candidates
-      .filter((item) => {
-        const issueId = String(item?.issue_id || "").trim();
-        const source = historicalExclusionSource(item?.source);
-        return issueId && source && String(source.issue_id || "") === issueId && !existing.has(issueId);
-      })
-      .map((item) => ({
-        issue_id: String(item.issue_id || "").trim(),
-        comment: String(item.comment || "").trim(),
-        source: historicalExclusionSource(item.source),
-      }));
-    entries.forEach((entry) => addTrailIssueEntryRow(entry, { focus: false }));
-    parseTrailIssueIds();
-    clearTrailIssuePreview();
-    const sourceCount = Number(data?.count || candidates.length || 0);
-    const status = entries.length
-      ? uiText(
-        `已追加 ${entries.length} 条历史抽检排除（来源共 ${sourceCount} 条）；尚未写入 Trail，请生成预览后确认。`,
-        `${entries.length} historical exclusions appended (${sourceCount} source candidate(s)); no Trail write has occurred. Build a preview to continue.`
-      )
-      : uiText(
-        sourceCount
-          ? "历史抽检排除已全部在当前输入中；尚未写入 Trail。"
-          : "当前数据集没有可载入的历史抽检排除。",
-        sourceCount
-          ? "All historical exclusions are already in the current editor; no Trail write has occurred."
-          : "No historical exclusions are available for the selected dataset."
-      );
-    setTrailIssueStatus(status);
-    return data;
-  } catch (error) {
-    const message = error?.message || uiText("历史抽检排除读取失败。", "Could not load historical exclusions.");
-    setTrailIssueStatus(message);
-    showToast(message, true);
-    return null;
-  } finally {
-    button?.toggleAttribute("disabled", false);
-    button?.removeAttribute("aria-busy");
   }
 }
 
@@ -1789,9 +1748,7 @@ function bindTrailAttributeUpdateEvents() {
     parseTrailIssueIds();
     clearTrailIssuePreview();
   });
-  $("#trailUpdateIssueHistoricalExclusionsButton")?.addEventListener("click", () => {
-    void loadTrailHistoricalExclusions();
-  });
+  $("#trailUpdateIssueClearAllButton")?.addEventListener("click", clearTrailIssueEntries);
   $("#trailUpdateIssueJsonImportButton")?.addEventListener("click", () => openTrailIssueImport("json"));
   $("#trailUpdateIssueExcelImportButton")?.addEventListener("click", () => openTrailIssueImport("excel"));
   bindTrailIssueImportEvents("json");
