@@ -26,6 +26,10 @@ html { overflow-y: scroll; scrollbar-gutter: stable; }
 body { margin: 0; color: var(--text); background: var(--bg); font-size: 14px; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
+/* A native button is one hit target. Labels, icons and nested presentation
+ * markup must not become a separate hover/click surface, otherwise the cursor
+ * and click behavior can differ between its text and visible button body. */
+button > * { pointer-events: none; }
 button:disabled { cursor: not-allowed; opacity: .48; }
 h1, h2, h3, p { margin: 0; }
 h1 { font-size: 18px; letter-spacing: -.02em; }
@@ -1029,8 +1033,6 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
   cursor: pointer;
   touch-action: manipulation;
 }
-.review-save-button > .ui-lang-zh,
-.review-save-button > .ui-lang-en { pointer-events: none; }
 .review-status-field { display: grid; gap: 3px; }
 .review-status-field > span { color: var(--muted); font-size: 12px; }
 .review-expected-output-field { display: grid; gap: 4px; }
@@ -1290,7 +1292,12 @@ html[data-ui-lang="en"] .expected-output-rule-popover ul.ui-lang-en { display: g
 }
 .review-tag-dropdown > summary:hover .tag-group-chevron { color: var(--accent); }
 .review-tag-dropdown[open] .tag-group-chevron { transform: rotate(180deg); color: var(--accent); }
-.review-tag-dropdown > summary .tag-catalog-add-button {
+/* Keep creator controls outside <summary>: nested buttons inside a details
+ * summary have inconsistent activation behavior across browsers. Reserve a
+ * stable top-right slot so they still align with the count and chevron. */
+.review-tag-dropdown > summary { padding-right: 38px; }
+.review-tag-dropdown > .tag-catalog-add-button {
+  position: absolute; top: 8px; right: 10px; z-index: 2;
   width: 20px; height: 20px; font-size: 13px; border-radius: 4px;
 }
 .review-tag-options { display: flex; flex-wrap: wrap; gap: 4px; }

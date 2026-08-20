@@ -58,11 +58,11 @@ function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
             <summary>
               <span class="tag-group-label">${escapeHtml(group.label)}</span>
               <span class="tag-group-trailing">
-                ${creatorAction}
                 <span class="tag-group-summary" data-tag-summary="${escapeHtml(group.key)}">${escapeHtml(t("detail.count_n", { n: selectedCount }))}</span>
                 <span class="tag-group-chevron" aria-hidden="true"></span>
               </span>
             </summary>
+            ${creatorAction}
             <div class="review-tag-options">${items.map((item) => tagOption(item.key, item.label, chosenTags.has(item.key), group.key, item)).join("") || `<div class="review-tag-empty">${escapeHtml(uiText("暂无标签，点 ＋ 添加", "No tags — click ＋ to add"))}</div>`}</div>
           </details>`;
         }).join("")}
