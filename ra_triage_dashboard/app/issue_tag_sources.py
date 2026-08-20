@@ -35,6 +35,12 @@ _LABEL_ALIASES = {
 _EXCLUDED_VALUES = frozenset({"1", "true", "yes", "y", "是", "排除"})
 _TAG_SPLIT_RE = re.compile(r"\s*(?:&&|/|／|、|,|，)\s*")
 
+# Historical worksheets are read-only sources.  This explicit, versioned
+# marker is carried into the Issue-ID shielding draft so a browser cannot turn
+# an arbitrary free-text comment into a purported historical exclusion.
+HISTORICAL_EXCLUSION_SOURCE_KIND = "historical_spotcheck_xlsx"
+HISTORICAL_EXCLUSION_COLUMN = "是否排除"
+
 # The source workbooks use these four columns.  Keys intentionally point only
 # to the source-controlled Dashboard catalog; source-only wording stays in the
 # provenance payload rather than becoming arbitrary user-created Tags.
@@ -117,6 +123,7 @@ class IssueTagSuggestion:
     issue_id: str
     expected_output: str
     is_excluded: bool
+    exclusion_value: str
     tags: tuple[str, ...]
     raw_tags: tuple[dict[str, str], ...]
     unmapped_tags: tuple[dict[str, str], ...]
@@ -141,6 +148,45 @@ class IssueTagSuggestion:
                 "tags": list(self.tags),
             },
             "unmapped_tags": [dict(item) for item in self.unmapped_tags],
+        }
+
+    def historical_exclusion_source(self) -> dict[str, Any]:
+        """Return the immutable provenance contract for an exclusion row."""
+
+        return {
+            "kind": HISTORICAL_EXCLUSION_SOURCE_KIND,
+            "source_id": self.source_id,
+            "label": self.source_label,
+            "baseline_id": self.baseline_id,
+            "filename": self.source_filename,
+            "sha256": self.source_sha256,
+            "row_number": self.row_number,
+            "issue_id": self.issue_id,
+            "column": HISTORICAL_EXCLUSION_COLUMN,
+            "value": self.exclusion_value,
+        }
+
+    def historical_exclusion_comment(self) -> str:
+        """Make the Trail explanation independently auditable by a reviewer."""
+
+        return (
+            f"历史抽检排除来源：{self.source_label}（{self.source_filename}，"
+            f"第 {self.row_number} 行，SHA-256: {self.source_sha256}；"
+            f"Excel「{HISTORICAL_EXCLUSION_COLUMN}」=「{self.exclusion_value}」）。"
+        )
+
+    def historical_exclusion_public(self) -> dict[str, Any]:
+        """Public candidate for the explicit Issue-ID shielding workflow."""
+
+        return {
+            "issue_id": self.issue_id,
+            "baseline_id": self.baseline_id,
+            "comment": self.historical_exclusion_comment(),
+            "source": self.historical_exclusion_source(),
+            "annotation": {
+                "expected_output": self.expected_output,
+                "tags": list(self.tags),
+            },
         }
 
 
@@ -257,7 +303,8 @@ def _source_row_to_suggestion(
     if source_label and inferred_output and source_label != inferred_output:
         return None
     expected_output = source_label or inferred_output
-    if not tags and not expected_output and not _is_excluded(_row_value(row, "是否排除")):
+    exclusion_value = _row_value(row, HISTORICAL_EXCLUSION_COLUMN)
+    if not tags and not expected_output and not _is_excluded(exclusion_value):
         return None
     return IssueTagSuggestion(
         source_id=spec.source_id,
@@ -268,7 +315,8 @@ def _source_row_to_suggestion(
         row_number=row_number,
         issue_id=issue_id,
         expected_output=expected_output,
-        is_excluded=_is_excluded(_row_value(row, "是否排除")),
+        is_excluded=_is_excluded(exclusion_value),
+        exclusion_value=exclusion_value,
         tags=tuple(tags),
         raw_tags=tuple(raw_tags),
         unmapped_tags=tuple(unmapped_tags),
@@ -394,6 +442,71 @@ class IssueTagSourceIndex:
                 (str(baseline_id or "").strip(), str(issue_id or "").strip())
             )
         return suggestion.public() if suggestion is not None else None
+
+    def exclusion_candidates(
+        self, *, baseline_ids: Iterable[str] | None = None
+    ) -> list[dict[str, Any]]:
+        """List read-only historical exclusion candidates for selected baselines.
+
+        The caller gets the exact workbook fingerprint and cell coordinates,
+        but this method never changes a Review or reaches Trail.  A later
+        preview/commit must resolve the source again through
+        :meth:`resolve_exclusion_candidate`.
+        """
+
+        selected = {
+            str(item or "").strip()
+            for item in (baseline_ids or ())
+            if str(item or "").strip()
+        }
+        with self._lock:
+            suggestions = tuple(self._suggestions.values())
+        candidates = [
+            suggestion
+            for suggestion in suggestions
+            if suggestion.is_excluded
+            and (not selected or suggestion.baseline_id in selected)
+        ]
+        candidates.sort(
+            key=lambda item: (
+                item.baseline_id,
+                item.source_filename,
+                item.row_number,
+                item.issue_id,
+            )
+        )
+        return [item.historical_exclusion_public() for item in candidates]
+
+    def resolve_exclusion_candidate(
+        self,
+        *,
+        issue_id: str,
+        source: Mapping[str, Any],
+    ) -> dict[str, Any] | None:
+        """Verify browser-supplied provenance against the loaded workbook.
+
+        Comments and source coordinates are deliberately server-derived.  If a
+        workbook is reloaded with another digest, a stale browser draft fails
+        rather than silently writing a misleading historical provenance.
+        """
+
+        normalized_issue_id = str(issue_id or "").strip()
+        if not normalized_issue_id or not isinstance(source, Mapping):
+            return None
+        baseline_id = str(source.get("baseline_id") or "").strip()
+        if not baseline_id:
+            return None
+        with self._lock:
+            suggestion = self._suggestions.get((baseline_id, normalized_issue_id))
+        if suggestion is None or not suggestion.is_excluded:
+            return None
+        candidate = suggestion.historical_exclusion_public()
+        expected_source = candidate["source"]
+        for key, expected in expected_source.items():
+            actual = source.get(key)
+            if str(actual if actual is not None else "").strip() != str(expected).strip():
+                return None
+        return candidate
 
     def statuses(self) -> tuple[dict[str, Any], ...]:
         with self._lock:

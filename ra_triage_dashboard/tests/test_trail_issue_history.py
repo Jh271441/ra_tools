@@ -104,6 +104,38 @@ class TrailIssueHistoryTest(unittest.TestCase):
             self.assertEqual(result["items"][0]["status"], "completed")
             self.assertEqual(result["items"][0]["entries"][1]["comment"], "泊入")
 
+    def test_history_keeps_bounded_historical_excel_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "triage.sqlite3")
+            database.init()
+            database.upsert_trail_issue_exclusion_history(
+                operation_id="c" * 64,
+                entries=[
+                    {
+                        "issue_id": "cn00000001",
+                        "comment": "历史抽检排除来源：0206 抽检。",
+                        "source": {
+                            "kind": "historical_spotcheck_xlsx",
+                            "source_id": "spotcheck-0206",
+                            "label": "0206 抽检",
+                            "baseline_id": "0206",
+                            "filename": "release0206版本 RA问题review.xlsx",
+                            "sha256": "a" * 64,
+                            "row_number": 269,
+                            "issue_id": "cn00000001",
+                            "column": "是否排除",
+                            "value": "是",
+                            "untrusted_extra": "must not persist",
+                        },
+                    }
+                ],
+            )
+            result = database.list_trail_issue_exclusion_history(limit=10)
+        source = result["items"][0]["entries"][0]["source"]
+        self.assertEqual(source["source_id"], "spotcheck-0206")
+        self.assertEqual(source["row_number"], 269)
+        self.assertNotIn("untrusted_extra", source)
+
     def test_history_endpoint_uses_bounded_pagination(self) -> None:
         expected = {"items": [], "total": 0, "limit": 100, "offset": 4}
         with patch.object(

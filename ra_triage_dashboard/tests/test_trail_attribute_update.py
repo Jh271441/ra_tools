@@ -39,6 +39,76 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         )
         self.assertEqual(invalid, ["cn00000001（重复）", "not an issue"])
 
+    def test_historical_exclusion_source_is_server_resolved_and_signed_into_preview(self) -> None:
+        source = {
+            "kind": "historical_spotcheck_xlsx",
+            "source_id": "spotcheck-0206",
+            "label": "0206 抽检",
+            "baseline_id": "0206",
+            "filename": "release0206版本 RA问题review.xlsx",
+            "sha256": "a" * 64,
+            "row_number": 269,
+            "issue_id": "cn00000001",
+            "column": "是否排除",
+            "value": "是",
+        }
+        candidate = {
+            "issue_id": "cn00000001",
+            "comment": "历史抽检排除来源：0206 抽检（第 269 行）。",
+            "source": source,
+        }
+        index = SimpleNamespace(
+            resolve_exclusion_candidate=lambda **kwargs: candidate
+            if kwargs == {"issue_id": "cn00000001", "source": source}
+            else None
+        )
+        entries, invalid = _normalise_issue_entries(
+            [{"issue_id": "cn00000001", "comment": "浏览器说明", "source": source}]
+        )
+        self.assertFalse(invalid)
+        with patch.object(trail_update, "issue_tag_sources", index):
+            resolved, source_invalid = trail_update._resolve_historical_exclusion_entries(entries)
+        self.assertFalse(source_invalid)
+        self.assertEqual(resolved[0]["comment"], candidate["comment"])
+        self.assertEqual(resolved[0]["source"], source)
+        payload = build_trail_issue_exclusion_payload(
+            ["cn00000001"],
+            current_rows=[{"issue_id": "cn00000001", TRAIL_INFO_FIELD: {}}],
+            comment_by_issue={"cn00000001": resolved[0]["comment"]},
+            requested_entries=resolved,
+            trail_capability={"ready": True, "status": "ready"},
+            trail_write_enabled=True,
+        )
+        self.assertEqual(payload["requested_entries"][0]["source"], source)
+        self.assertEqual(payload["items"][0]["source"], source)
+        self.assertEqual(payload["draft"]["requested_entries"][0]["source"], source)
+        self.assertIn("历史抽检", payload["items"][0]["comment"])
+
+    def test_historical_exclusion_endpoint_is_read_only_and_baseline_scoped(self) -> None:
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/trail-attribute-update/historical-exclusions",
+                "query_string": b"baselines=0206",
+                "headers": [],
+                "scheme": "http",
+                "server": ("testserver", 80),
+                "client": ("127.0.0.1", 1),
+            }
+        )
+        expected = [{"issue_id": "cn00000001", "source": {"source_id": "spotcheck-0206"}}]
+        source_index = SimpleNamespace(exclusion_candidates=lambda **kwargs: expected)
+        with patch.object(
+            trail_update, "resolve_request_baseline_ids", return_value=["0206"]
+        ), patch.object(trail_update, "issue_tag_sources", source_index):
+            payload = asyncio.run(
+                trail_update.trail_historical_exclusions(request, baselines="0206")
+            )
+        self.assertEqual(payload["mode"], "historical_spotcheck_xlsx")
+        self.assertEqual(payload["baselines"], ["0206"])
+        self.assertEqual(payload["items"], expected)
+
     def test_read_only_preview_probes_remote_trail_statuses(self) -> None:
         request = Request(
             {
@@ -573,6 +643,37 @@ class TrailAttributeUpdateTest(unittest.TestCase):
             author_verified=True,
             expected_previous_annotation_id=9,
         )
+
+    def test_historical_source_is_appended_to_existing_local_review_note(self) -> None:
+        actor = SimpleNamespace(username="jasperchen", source="sso", verified=True)
+        case = {
+            "issue_id": "cn00000001",
+            "gt_label": "误触发",
+            "annotations": [
+                {
+                    "id": 9,
+                    "model_run_id": "run-1",
+                    "label": "误触发",
+                    "expected_output": "误触发",
+                    "review_status": "pending",
+                    "is_excluded": False,
+                    "tags": [],
+                    "missing_evidence": [],
+                    "note": "原有 Review",
+                }
+            ],
+        }
+        source_note = "历史抽检排除来源：0206 抽检（第 269 行，SHA-256: abc）。"
+        with patch.object(trail_update.database, "get_case", return_value=case), patch.object(
+            trail_update.database, "create_annotation"
+        ) as create:
+            result = trail_update._mark_local_review_exclusions(
+                ["cn00000001"],
+                actor=actor,
+                source_notes={"cn00000001": source_note},
+            )
+        self.assertTrue(result["ok"])
+        self.assertEqual(create.call_args.kwargs["note"], f"原有 Review\n\n{source_note}")
 
     def test_direct_issue_commit_keeps_trail_only_cases_out_of_local_failure(self) -> None:
         actor = SimpleNamespace(

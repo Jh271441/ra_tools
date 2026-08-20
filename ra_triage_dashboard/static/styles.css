@@ -2034,6 +2034,8 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-entry-row textarea { resize: vertical; overflow-y: auto; }
 .trail-update-entry-remove { align-self: start; margin-top: 17px; width: 30px; min-width: 30px; height: 30px; padding: 0; color: var(--muted); font-size: 18px; line-height: 1; }
 .trail-update-entry-remove:not(:disabled):hover { color: #fca5a5; border-color: rgba(248,113,113,.5); }
+.trail-update-entry-source { grid-column: 1 / -1; min-width: 0; margin-top: -2px; }
+.trail-update-historical-source { display: block; margin-top: 4px; overflow-wrap: anywhere; color: #9bdcf3; font-size: 9px; line-height: 1.35; }
 .trail-update-direct-feedback { min-height: 17px; color: var(--faint); font-size: 11px; }
 .trail-update-direct-feedback.is-ready { color: #9ae6c4; }
 .trail-update-direct-feedback.is-error { color: #fca5a5; }

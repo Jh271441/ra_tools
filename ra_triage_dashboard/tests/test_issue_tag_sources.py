@@ -177,6 +177,46 @@ class IssueTagSourceTests(unittest.TestCase):
             )
             self.assertIsNone(index.lookup(baseline_id="0626", issue_id="cn0206a"))
 
+    def test_index_exposes_and_verifies_historical_exclusion_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "source.xlsx"
+            self._write_source(path)
+            index = IssueTagSourceIndex()
+            index.reload(
+                [
+                    IssueTagSourceSpec(
+                        source_id="spotcheck-0206",
+                        label="0206 抽检",
+                        baseline_id="0206",
+                        path=path,
+                    )
+                ]
+            )
+
+            candidates = index.exclusion_candidates(baseline_ids=["0206"])
+
+            self.assertEqual(len(candidates), 1)
+            candidate = candidates[0]
+            self.assertEqual(candidate["issue_id"], "cn0206a")
+            self.assertEqual(candidate["source"]["kind"], "historical_spotcheck_xlsx")
+            self.assertEqual(candidate["source"]["column"], "是否排除")
+            self.assertEqual(candidate["source"]["value"], "是")
+            self.assertEqual(candidate["source"]["row_number"], 2)
+            self.assertIn("SHA-256", candidate["comment"])
+            self.assertEqual(
+                index.resolve_exclusion_candidate(
+                    issue_id="cn0206a", source=candidate["source"]
+                ),
+                candidate,
+            )
+            tampered = dict(candidate["source"])
+            tampered["row_number"] = 999
+            self.assertIsNone(
+                index.resolve_exclusion_candidate(
+                    issue_id="cn0206a", source=tampered
+                )
+            )
+
     def test_case_detail_exposes_a_scope_matched_read_only_suggestion(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "source.xlsx"

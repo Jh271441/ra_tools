@@ -175,14 +175,43 @@ class DatabaseCoreMixin:
         for entry in entries or ():
             if not isinstance(entry, dict):
                 continue
-            normalized_entries.append(
-                {
-                    "issue_id": str(entry.get("issue_id") or "").strip(),
-                    "comment": str(entry.get("comment") or "").strip()[:4000],
-                    "status": str(entry.get("status") or "pending").strip() or "pending",
-                    "detail": str(entry.get("detail") or "").strip()[:1000],
+            normalized_entry: dict[str, Any] = {
+                "issue_id": str(entry.get("issue_id") or "").strip(),
+                "comment": str(entry.get("comment") or "").strip()[:4000],
+                "status": str(entry.get("status") or "pending").strip() or "pending",
+                "detail": str(entry.get("detail") or "").strip()[:1000],
+            }
+            # The API only supplies this object after it has been matched to a
+            # loaded workbook.  Keep a bounded copy in the durable history so
+            # a later reviewer can see the original Excel source rather than
+            # inferring it from a free-text comment.
+            source = entry.get("source")
+            if isinstance(source, dict):
+                text_fields = (
+                    "kind",
+                    "source_id",
+                    "label",
+                    "baseline_id",
+                    "filename",
+                    "sha256",
+                    "issue_id",
+                    "column",
+                    "value",
+                )
+                normalized_source = {
+                    key: str(source.get(key) or "").strip()[:512]
+                    for key in text_fields
+                    if str(source.get(key) or "").strip()
                 }
-            )
+                try:
+                    row_number = int(source.get("row_number"))
+                except (TypeError, ValueError):
+                    row_number = 0
+                if row_number > 0:
+                    normalized_source["row_number"] = row_number
+                if normalized_source:
+                    normalized_entry["source"] = normalized_source
+            normalized_entries.append(normalized_entry)
         now = utc_now()
         values = (
             normalized_operation_id,

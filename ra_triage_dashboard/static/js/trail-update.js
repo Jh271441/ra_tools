@@ -46,10 +46,71 @@ function trailIssueEntryRows() {
   return Array.from(document.querySelectorAll("[data-trail-issue-entry-row]"));
 }
 
+function historicalExclusionSource(source) {
+  if (!source || typeof source !== "object") return null;
+  return String(source.kind || "") === "historical_spotcheck_xlsx" ? source : null;
+}
+
+function historicalExclusionSourceText(source) {
+  const record = historicalExclusionSource(source);
+  if (!record) return "";
+  const label = String(record.label || record.source_id || uiText("历史抽检", "Historical spot check"));
+  const row = Number(record.row_number || 0);
+  return uiText(
+    `历史抽检 · ${label}${row ? ` · Excel 第 ${row} 行` : ""}`,
+    `Historical spot check · ${label}${row ? ` · Excel row ${row}` : ""}`
+  );
+}
+
+function historicalExclusionSourceTitle(source) {
+  const record = historicalExclusionSource(source);
+  if (!record) return "";
+  const filename = String(record.filename || "—");
+  const column = String(record.column || "是否排除");
+  const value = String(record.value || "—");
+  const sha = String(record.sha256 || "—");
+  return `${filename}\nExcel「${column}」=「${value}」\nSHA-256: ${sha}`;
+}
+
+function historicalExclusionSourceMarkup(source, className = "") {
+  const text = historicalExclusionSourceText(source);
+  if (!text) return "";
+  const title = historicalExclusionSourceTitle(source);
+  return `<small class="trail-update-historical-source ${escapeHtml(className)}" title="${escapeHtml(title)}">${escapeHtml(text)}</small>`;
+}
+
+function trailIssueEntrySource(row) {
+  const raw = String(row?.dataset?.trailIssueEntrySource || "").trim();
+  if (!raw) return null;
+  try {
+    return historicalExclusionSource(JSON.parse(raw));
+  } catch (_error) {
+    return null;
+  }
+}
+
+function clearTrailIssueEntrySource(row) {
+  if (!row) return;
+  delete row.dataset.trailIssueEntrySource;
+  row.querySelectorAll("[data-trail-issue-entry-source-label]").forEach((node) => node.remove());
+}
+
 function renderTrailIssueEntryRow(entry = {}) {
   const issueId = escapeHtml(String(entry.issue_id || ""));
   const comment = escapeHtml(String(entry.comment || ""));
-  return `<div class="trail-update-entry-row" data-trail-issue-entry-row>
+  const source = historicalExclusionSource(entry.source);
+  let sourceAttribute = "";
+  if (source) {
+    try {
+      sourceAttribute = ` data-trail-issue-entry-source="${escapeHtml(JSON.stringify(source))}"`;
+    } catch (_error) {
+      sourceAttribute = "";
+    }
+  }
+  const sourceMarkup = source
+    ? `<div class="trail-update-entry-source" data-trail-issue-entry-source-label>${historicalExclusionSourceMarkup(source)}</div>`
+    : "";
+  return `<div class="trail-update-entry-row" data-trail-issue-entry-row${sourceAttribute}>
     <label>
       <span class="ui-lang-zh">Issue ID（可多个）</span><span class="ui-lang-en">Issue IDs (multiple)</span>
       <textarea data-trail-issue-entry-id rows="2" inputmode="text" autocomplete="off" placeholder="cn32171803, cn31994663" spellcheck="false">${issueId}</textarea>
@@ -59,6 +120,7 @@ function renderTrailIssueEntryRow(entry = {}) {
       <textarea data-trail-issue-entry-comment rows="2" placeholder="留空时使用默认说明；会写入 info.ra_triage_dashboard.should_exclude_comment。">${comment}</textarea>
     </label>
     <button class="button button-quiet trail-update-entry-remove" data-trail-issue-entry-remove type="button" aria-label="删除此行" title="删除此行">×</button>
+    ${sourceMarkup}
   </div>`;
 }
 
@@ -70,13 +132,13 @@ function syncTrailIssueEntryRemoveButtons() {
   });
 }
 
-function addTrailIssueEntryRow(entry = {}) {
+function addTrailIssueEntryRow(entry = {}, { focus = true } = {}) {
   const list = $("#trailUpdateIssueEntries");
   if (!list) return null;
   list.insertAdjacentHTML("beforeend", renderTrailIssueEntryRow(entry));
   syncTrailIssueEntryRemoveButtons();
   const row = list.lastElementChild;
-  row?.querySelector("[data-trail-issue-entry-id]")?.focus();
+  if (focus) row?.querySelector("[data-trail-issue-entry-id]")?.focus();
   return row;
 }
 
@@ -90,6 +152,7 @@ function collectTrailIssueEntries() {
     const commentInput = row.querySelector("[data-trail-issue-entry-comment]");
     const raw = String(idInput?.value || "").trim();
     const comment = String(commentInput?.value || "").trim().slice(0, 4000);
+    const source = trailIssueEntrySource(row);
     if (!raw && !comment) return;
     const parsed = typeof parseIssueIdsInput === "function"
       ? parseIssueIdsInput(raw)
@@ -110,7 +173,14 @@ function collectTrailIssueEntries() {
       }
       seen.add(issueId);
       ids.push(issueId);
-      entries.push({ issue_id: issueId, comment });
+      const sourceMatchesRow = source
+        && parsed.ids.length === 1
+        && String(source.issue_id || "") === issueId;
+      entries.push({
+        issue_id: issueId,
+        comment,
+        ...(sourceMatchesRow ? { source } : {}),
+      });
     });
   });
   entries.sort((left, right) => left.issue_id.localeCompare(right.issue_id));
@@ -162,7 +232,7 @@ function renderTrailIssueHistory(data = {}) {
     const detailRows = entries.length
       ? entries.map((entry) => {
         const entryMeta = trailIssueHistoryStatusMeta(entry.status);
-        return `<tr><td data-label="Issue"><strong>${escapeHtml(entry.issue_id || "—")}</strong></td><td data-label="排除说明"><div class="trail-update-history-comment">${escapeHtml(entry.comment || "—")}</div></td><td data-label="结果"><span class="trail-update-history-entry-status ${entryMeta.className}">${escapeHtml(entryMeta.label)}</span><small>${escapeHtml(entry.detail || "")}</small></td></tr>`;
+        return `<tr><td data-label="Issue"><strong>${escapeHtml(entry.issue_id || "—")}</strong></td><td data-label="排除说明"><div class="trail-update-history-comment">${escapeHtml(entry.comment || "—")}</div>${historicalExclusionSourceMarkup(entry.source)}</td><td data-label="结果"><span class="trail-update-history-entry-status ${entryMeta.className}">${escapeHtml(entryMeta.label)}</span><small>${escapeHtml(entry.detail || "")}</small></td></tr>`;
       }).join("")
       : `<tr><td colspan="3" class="trail-update-history-empty">${escapeHtml(uiText("没有逐条明细。", "No per-Issue details."))}</td></tr>`;
     return `<details class="trail-update-history-item">
@@ -191,6 +261,61 @@ async function loadTrailIssueHistory() {
       list.innerHTML = `<div class="trail-update-history-empty is-error">${escapeHtml(error?.message || uiText("屏蔽历史加载失败。", "Shielding history failed to load."))}</div>`;
     }
     return null;
+  }
+}
+
+async function loadTrailHistoricalExclusions() {
+  const button = $("#trailUpdateIssueHistoricalExclusionsButton");
+  const params = new URLSearchParams();
+  const baselines = typeof selectedBaselineQueryValue === "function"
+    ? selectedBaselineQueryValue()
+    : "";
+  if (baselines) params.set("baselines", baselines);
+  button?.toggleAttribute("disabled", true);
+  button?.setAttribute("aria-busy", "true");
+  setTrailIssueStatus(uiText("正在读取历史抽检排除来源…", "Loading historical exclusion sources…"));
+  try {
+    const data = await api(`/api/trail-attribute-update/historical-exclusions?${params.toString()}`);
+    const existing = new Set(collectTrailIssueEntries().ids);
+    const candidates = Array.isArray(data?.items) ? data.items : [];
+    const entries = candidates
+      .filter((item) => {
+        const issueId = String(item?.issue_id || "").trim();
+        const source = historicalExclusionSource(item?.source);
+        return issueId && source && String(source.issue_id || "") === issueId && !existing.has(issueId);
+      })
+      .map((item) => ({
+        issue_id: String(item.issue_id || "").trim(),
+        comment: String(item.comment || "").trim(),
+        source: historicalExclusionSource(item.source),
+      }));
+    entries.forEach((entry) => addTrailIssueEntryRow(entry, { focus: false }));
+    parseTrailIssueIds();
+    clearTrailIssuePreview();
+    const sourceCount = Number(data?.count || candidates.length || 0);
+    const status = entries.length
+      ? uiText(
+        `已追加 ${entries.length} 条历史抽检排除（来源共 ${sourceCount} 条）；尚未写入 Trail，请生成预览后确认。`,
+        `${entries.length} historical exclusions appended (${sourceCount} source candidate(s)); no Trail write has occurred. Build a preview to continue.`
+      )
+      : uiText(
+        sourceCount
+          ? "历史抽检排除已全部在当前输入中；尚未写入 Trail。"
+          : "当前数据集没有可载入的历史抽检排除。",
+        sourceCount
+          ? "All historical exclusions are already in the current editor; no Trail write has occurred."
+          : "No historical exclusions are available for the selected dataset."
+      );
+    setTrailIssueStatus(status);
+    return data;
+  } catch (error) {
+    const message = error?.message || uiText("历史抽检排除读取失败。", "Could not load historical exclusions.");
+    setTrailIssueStatus(message);
+    showToast(message, true);
+    return null;
+  } finally {
+    button?.toggleAttribute("disabled", false);
+    button?.removeAttribute("aria-busy");
   }
 }
 
@@ -1205,7 +1330,8 @@ function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
           : String(item?.model?.label || item?.review?.status || uiText("排除候选", "Excluded candidate"));
         const patch = trailUpdateConfirmCompact(trailUpdateConfirmPatch(item, infoField));
         const clippedPatch = patch.length > 420 ? `${patch.slice(0, 417)}…` : patch;
-        return `<details class="trail-update-confirm-item"><summary><div><strong>${escapeHtml(issueId)}</strong><small>${escapeHtml(currentLabel)}</small></div><div><code title="${escapeHtml(patch)}">${escapeHtml(`${infoField} = ${clippedPatch}`)}</code><small>${escapeHtml(uiText("点击展开完整 patch · deep_merge · label 不变", "Click to expand full patch · deep_merge · label unchanged"))}</small></div></summary><div class="trail-update-confirm-item-details"><small>${escapeHtml(uiText("完整字段 patch", "Full field patch"))}</small><pre>${escapeHtml(`${infoField} = ${patch}`)}</pre></div></details>`;
+        const sourceMarkup = directMode ? historicalExclusionSourceMarkup(item?.source) : "";
+        return `<details class="trail-update-confirm-item"><summary><div><strong>${escapeHtml(issueId)}</strong><small>${escapeHtml(currentLabel)}</small></div><div><code title="${escapeHtml(patch)}">${escapeHtml(`${infoField} = ${clippedPatch}`)}</code><small>${escapeHtml(uiText("点击展开完整 patch · deep_merge · label 不变", "Click to expand full patch · deep_merge · label unchanged"))}</small></div></summary><div class="trail-update-confirm-item-details"><small>${escapeHtml(uiText("完整字段 patch", "Full field patch"))}</small><pre>${escapeHtml(`${infoField} = ${patch}`)}</pre>${sourceMarkup}</div></details>`;
       }).join("")
       : `<div class="trail-update-confirm-empty">${escapeHtml(uiText("没有可提交的 Issue。", "No Issues are ready to commit."))}</div>`;
     trailUpdateConfirmSetExpanded(false);
@@ -1280,7 +1406,7 @@ function renderTrailIssuePreview(data) {
       <td data-label="当前模型 label">${labelBadge(item.current_label, "未输出")}</td>
       <td data-label="当前屏蔽状态"><span class="trail-update-state-badge ${item.current_should_exclude ? "is-on" : ""}">${escapeHtml(currentState)}</span></td>
       <td data-label="预计写入 info" class="trail-update-info-cell"><strong title="${escapeHtml(targetSpec.fullPath)}">${escapeHtml(shortPath)}</strong><small>${uiText("info-only · label 不变", "info-only · label unchanged")}</small><code title="${escapeHtml(infoPreview)}">${escapeHtml(infoPreview)}</code></td>
-      <td data-label="Comment"><div class="trail-update-comment" title="${escapeHtml(comment)}">${escapeHtml(comment || "—")}</div><small>${commentHint}</small></td>
+      <td data-label="Comment"><div class="trail-update-comment" title="${escapeHtml(comment)}">${escapeHtml(comment || "—")}</div>${historicalExclusionSourceMarkup(item.source)}<small>${commentHint}</small></td>
     </tr>`;
   }).join("");
 }
@@ -1522,6 +1648,9 @@ function bindTrailAttributeUpdateEvents() {
     parseTrailIssueIds();
     clearTrailIssuePreview();
   });
+  $("#trailUpdateIssueHistoricalExclusionsButton")?.addEventListener("click", () => {
+    void loadTrailHistoricalExclusions();
+  });
   $("#trailUpdateIssueJsonImportButton")?.addEventListener("click", openTrailIssueJsonImport);
   $("#trailUpdateIssueJsonImportClose")?.addEventListener("click", () => $("#trailUpdateIssueJsonImportDialog")?.close());
   $("#trailUpdateIssueJsonImportCancel")?.addEventListener("click", () => $("#trailUpdateIssueJsonImportDialog")?.close());
@@ -1536,7 +1665,15 @@ function bindTrailAttributeUpdateEvents() {
     });
   });
   $("#trailUpdateIssueJsonImportApply")?.addEventListener("click", applyTrailIssueJsonImportFromDialog);
-  $("#trailUpdateIssueEntries")?.addEventListener("input", () => {
+  $("#trailUpdateIssueEntries")?.addEventListener("input", (event) => {
+    const target = event.target;
+    const row = target?.closest?.("[data-trail-issue-entry-row]");
+    if (row && target?.matches?.("[data-trail-issue-entry-id], [data-trail-issue-entry-comment]")) {
+      // Editing a source-loaded row deliberately turns it into a manual row;
+      // server-side validation then cannot attribute user-edited text to the
+      // historical workbook.
+      clearTrailIssueEntrySource(row);
+    }
     parseTrailIssueIds();
     clearTrailIssuePreview();
   });

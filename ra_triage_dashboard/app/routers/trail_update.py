@@ -31,7 +31,8 @@ from ..http_support import (
     resolve_request_baseline_ids,
     resolve_request_baseline_scopes,
 )
-from ..runtime import baseline_registry, database, settings
+from ..issue_tag_sources import HISTORICAL_EXCLUSION_SOURCE_KIND
+from ..runtime import baseline_registry, database, issue_tag_sources, settings
 from ..review_workflow import derive_review_status
 from ..trail_sync import _dashboard_should_exclude, read_trail_model_fields
 from ..trail_writer import (
@@ -62,6 +63,18 @@ TRAIL_ISSUE_DRAFT_SCHEMA = "trail-issue-exclusion-v2"
 TRAIL_ISSUE_EXCLUSION_COMMENT = (
     "问题排除：Issue ID 直接屏蔽（仅写入 should_exclude=true，模型 label 不变）。"
 )
+_HISTORICAL_EXCLUSION_SOURCE_FIELDS = (
+    "kind",
+    "source_id",
+    "label",
+    "baseline_id",
+    "filename",
+    "sha256",
+    "row_number",
+    "issue_id",
+    "column",
+    "value",
+)
 _commit_lock = threading.Lock()
 _preview_capability_cache: dict[
     tuple[int, str, tuple[str, ...]],
@@ -71,12 +84,30 @@ _preview_capability_cache_lock = threading.Lock()
 _PREVIEW_CAPABILITY_CACHE_SECONDS = 90
 
 
+def _append_historical_source_note(note: str, source_note: str) -> str:
+    """Keep an existing Review note while making historical provenance visible."""
+
+    current = _as_text(note).strip()
+    source = _as_text(source_note).strip()
+    if not source:
+        return current[:4000]
+    if source in current:
+        return current[:4000]
+    if not current:
+        return source[:4000]
+    # Preserve the provenance even for a previously max-length note.  The
+    # original human note stays first and is clipped only as much as needed.
+    available = max(0, 4000 - len(source) - 2)
+    return f"{current[:available].rstrip()}\n\n{source}"[:4000]
+
+
 def _mark_local_review_exclusions(
     issue_ids: list[str],
     *,
     actor: Any,
     fallback_note: str = "",
     fallback_notes: Mapping[str, str] | None = None,
+    source_notes: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Persist the direct shielding result into the Review exclusion flag.
 
@@ -117,6 +148,11 @@ def _mark_local_review_exclusions(
         for issue_id, note in (fallback_notes or {}).items()
         if _as_text(issue_id).strip()
     }
+    normalized_source_notes = {
+        _as_text(issue_id).strip(): _as_text(note).strip()[:4000]
+        for issue_id, note in (source_notes or {}).items()
+        if _as_text(issue_id).strip()
+    }
     for issue_id in normalized_ids:
         try:
             case = database.get_case(issue_id)
@@ -154,9 +190,12 @@ def _mark_local_review_exclusions(
                 is_excluded=True,
                 tags=list(current.get("tags") or []),
                 missing_evidence=list(current.get("missing_evidence") or []),
-                note=_as_text(current.get("note"))
-                or normalized_fallback_notes.get(issue_id)
-                or normalized_fallback_note,
+                note=_append_historical_source_note(
+                    _as_text(current.get("note"))
+                    or normalized_fallback_notes.get(issue_id)
+                    or normalized_fallback_note,
+                    normalized_source_notes.get(issue_id, ""),
+                ),
                 author=actor_name,
                 author_source=actor_source,
                 author_verified=actor_verified,
@@ -552,7 +591,7 @@ def _normalise_issue_entries(
     raw: Any,
     *,
     fallback_comment: str = "",
-) -> tuple[list[dict[str, str]], list[str]]:
+) -> tuple[list[dict[str, Any]], list[str]]:
     """Normalize one Issue-ID/comment pair per editable row.
 
     The original API accepted ``issue_ids`` plus one shared ``comment``.  Keep
@@ -571,13 +610,21 @@ def _normalise_issue_entries(
         # per-row note, so the optional shared comment applies to each one.
         values = re.split(r"[\s,，、;；|]+", _as_text(raw))
 
-    entries: list[dict[str, str]] = []
+    entries: list[dict[str, Any]] = []
     invalid: list[str] = []
     seen: set[str] = set()
     for value in values:
+        source: dict[str, Any] | None = None
         if isinstance(value, Mapping):
             raw_issue_id = value.get("issue_id", value.get("id", ""))
             comment = _as_text(value.get("comment", value.get("note", default_comment))).strip()[:4000]
+            raw_source = value.get("source")
+            if raw_source is not None:
+                if not isinstance(raw_source, Mapping):
+                    issue_text = _as_text(raw_issue_id).strip() or "未填写 Issue ID"
+                    invalid.append(f"{issue_text}（标注来源格式无效）")
+                    continue
+                source = dict(raw_source)
         else:
             raw_issue_id = value
             comment = default_comment
@@ -591,9 +638,80 @@ def _normalise_issue_entries(
             invalid.append(f"{issue_id}（重复）")
             continue
         seen.add(issue_id)
-        entries.append({"issue_id": issue_id, "comment": comment})
+        entry: dict[str, Any] = {"issue_id": issue_id, "comment": comment}
+        if source is not None:
+            entry["source"] = source
+        entries.append(entry)
     entries.sort(key=lambda item: item["issue_id"])
     return entries, invalid
+
+
+def _historical_source_payload(value: Any) -> dict[str, Any] | None:
+    """Copy the bounded, server-verified provenance shape into public drafts."""
+
+    if not isinstance(value, Mapping):
+        return None
+    if _as_text(value.get("kind")) != HISTORICAL_EXCLUSION_SOURCE_KIND:
+        return None
+    source: dict[str, Any] = {}
+    for key in _HISTORICAL_EXCLUSION_SOURCE_FIELDS:
+        raw = value.get(key)
+        if key == "row_number":
+            try:
+                number = int(raw)
+            except (TypeError, ValueError):
+                return None
+            if number < 1:
+                return None
+            source[key] = number
+            continue
+        text = _as_text(raw).strip()
+        if not text:
+            return None
+        source[key] = text[:512]
+    return source
+
+
+def _resolve_historical_exclusion_entries(
+    entries: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Replace browser hints with the exact loaded-XLSX source and comment."""
+
+    resolved: list[dict[str, Any]] = []
+    invalid: list[str] = []
+    for entry in entries:
+        issue_id = _as_text(entry.get("issue_id")).strip()
+        source = entry.get("source")
+        if source is None:
+            resolved.append(
+                {"issue_id": issue_id, "comment": _as_text(entry.get("comment")).strip()[:4000]}
+            )
+            continue
+        if not isinstance(source, Mapping):
+            invalid.append(f"{issue_id}（历史抽检来源格式无效）")
+            continue
+        candidate = issue_tag_sources.resolve_exclusion_candidate(
+            issue_id=issue_id,
+            source=source,
+        )
+        if candidate is None:
+            invalid.append(f"{issue_id}（历史抽检来源无效或已变化）")
+            continue
+        resolved_source = _historical_source_payload(candidate.get("source"))
+        if resolved_source is None:
+            # This is an internal contract failure.  Do not accept a source
+            # record that cannot be represented in the signed preview.
+            invalid.append(f"{issue_id}（历史抽检来源不可用）")
+            continue
+        resolved.append(
+            {
+                "issue_id": issue_id,
+                "comment": _as_text(candidate.get("comment")).strip()[:4000],
+                "source": resolved_source,
+            }
+        )
+    resolved.sort(key=lambda item: item["issue_id"])
+    return resolved, invalid
 
 
 def build_trail_issue_exclusion_payload(
@@ -603,7 +721,7 @@ def build_trail_issue_exclusion_payload(
     invalid_issue_ids: list[str] | None = None,
     comment: str = "",
     comment_by_issue: Mapping[str, str] | None = None,
-    requested_entries: list[dict[str, str]] | None = None,
+    requested_entries: list[dict[str, Any]] | None = None,
     baseline_by_issue: Mapping[str, Mapping[str, Any]] | None = None,
     info_field: str = TRAIL_INFO_FIELD,
     trail_capability: dict[str, Any] | None = None,
@@ -637,14 +755,19 @@ def build_trail_issue_exclusion_payload(
         # Preserve the legacy top-level summary for old clients/tests; each
         # item still carries its own effective default in the patch.
         normalized_comment = TRAIL_ISSUE_EXCLUSION_COMMENT
-    normalized_entries = [
-        {
-            "issue_id": _as_text(item.get("issue_id")).strip(),
+    normalized_entries: list[dict[str, Any]] = []
+    for item in requested_entries or []:
+        issue_id = _as_text(item.get("issue_id")).strip()
+        if not issue_id:
+            continue
+        entry: dict[str, Any] = {
+            "issue_id": issue_id,
             "comment": _as_text(item.get("comment")).strip()[:4000],
         }
-        for item in (requested_entries or [])
-        if _as_text(item.get("issue_id")).strip()
-    ]
+        source = _historical_source_payload(item.get("source"))
+        if source is not None:
+            entry["source"] = source
+        normalized_entries.append(entry)
     # Keep the structured request self-contained when this helper is called
     # directly (rather than through the HTTP route, which supplies both
     # ``requested_entries`` and ``comment_by_issue``).  The row value is the
@@ -658,6 +781,11 @@ def build_trail_issue_exclusion_payload(
             for issue_id in issue_ids
         ]
     normalized_entries.sort(key=lambda item: item["issue_id"])
+    source_by_issue = {
+        entry["issue_id"]: entry["source"]
+        for entry in normalized_entries
+        if isinstance(entry.get("source"), Mapping)
+    }
     release_by_issue = baseline_by_issue or {}
     missing = sorted(issue_id for issue_id in issue_ids if issue_id not in current_by_issue)
     items: list[dict[str, Any]] = []
@@ -715,6 +843,9 @@ def build_trail_issue_exclusion_payload(
             "comment_defaulted": comment_defaulted,
             "write_ready": True,
         }
+        source = source_by_issue.get(issue_id)
+        if source is not None:
+            item["source"] = source
         items.append(item)
     items.sort(key=lambda item: item["issue_id"])
     draft: dict[str, Any] = {
@@ -899,7 +1030,7 @@ async def _build_direct_preview(
     invalid_issue_ids: list[str] | None = None,
     comment: str = "",
     comment_by_issue: Mapping[str, str] | None = None,
-    requested_entries: list[dict[str, str]] | None = None,
+    requested_entries: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], Any]:
     """Read target fields and build the direct Issue-ID draft."""
 
@@ -1035,14 +1166,16 @@ async def _save_issue_exclusion_history(
         else:
             item_status = "pending" if status == "pending" else "unknown"
             detail = "等待提交结果。" if status == "pending" else "未返回明确结果。"
-        entries.append(
-            {
-                "issue_id": issue_id,
-                "comment": _as_text(item.get("comment")).strip()[:4000],
-                "status": item_status,
-                "detail": detail[:1000],
-            }
-        )
+        entry = {
+            "issue_id": issue_id,
+            "comment": _as_text(item.get("comment")).strip()[:4000],
+            "status": item_status,
+            "detail": detail[:1000],
+        }
+        source = _historical_source_payload(item.get("source"))
+        if source is not None:
+            entry["source"] = source
+        entries.append(entry)
     actor = {
         "username": _as_text(getattr(identity, "username", "")),
         "source": _as_text(getattr(identity, "source", "")),
@@ -1099,6 +1232,31 @@ async def trail_issue_exclusion_history(
     )
 
 
+@router.get("/api/trail-attribute-update/historical-exclusions")
+async def trail_historical_exclusions(
+    request: Request,
+    baselines: str = "",
+) -> dict[str, Any]:
+    """Return read-only XLSX exclusion candidates for the selected baselines.
+
+    Loading this list does not create a Review and does not contact Trail.  A
+    user still has to build a preview and explicitly confirm a write.
+    """
+
+    baseline_ids = resolve_request_baseline_ids(baselines, request=request)
+    items = await asyncio.to_thread(
+        issue_tag_sources.exclusion_candidates,
+        baseline_ids=baseline_ids,
+    )
+    return {
+        "schema_version": "historical-exclusion-source-v1",
+        "mode": "historical_spotcheck_xlsx",
+        "baselines": baseline_ids,
+        "count": len(items),
+        "items": items,
+    }
+
+
 @router.post("/api/trail-attribute-update/issue-preview")
 async def trail_issue_exclusion_preview(request: Request) -> dict[str, Any]:
     """Preview direct Issue-ID shielding without contacting a write API."""
@@ -1115,6 +1273,10 @@ async def trail_issue_exclusion_preview(request: Request) -> dict[str, Any]:
         raw_entries,
         fallback_comment=fallback_comment,
     )
+    normalized_entries, source_invalid = _resolve_historical_exclusion_entries(
+        normalized_entries
+    )
+    invalid.extend(source_invalid)
     normalized_ids = [item["issue_id"] for item in normalized_entries]
     if not normalized_ids and not invalid:
         raise _detail(400, "请输入至少一个 Issue ID。")
@@ -1254,6 +1416,10 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
         raw_entries,
         fallback_comment=fallback_comment,
     )
+    requested_entries, source_invalid = _resolve_historical_exclusion_entries(
+        requested_entries
+    )
+    invalid.extend(source_invalid)
     issue_ids = [item["issue_id"] for item in requested_entries]
     if invalid:
         raise _detail(400, "提交内容包含无法识别的 Issue ID。")
@@ -1289,8 +1455,28 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
             for item in (preview.get("items") or [])
             if _as_text(item.get("issue_id")).strip()
         }
+        source_by_issue = {
+            _as_text(item.get("issue_id")).strip(): _historical_source_payload(
+                item.get("source")
+            )
+            for item in (preview.get("requested_entries") or [])
+            if _as_text(item.get("issue_id")).strip()
+            and _historical_source_payload(item.get("source")) is not None
+        }
+        source_notes = {
+            issue_id: effective_comments.get(issue_id, "")
+            for issue_id in source_by_issue
+        }
         history_entries = [
-            {"issue_id": issue_id, "comment": effective_comments.get(issue_id, "")}
+            {
+                "issue_id": issue_id,
+                "comment": effective_comments.get(issue_id, ""),
+                **(
+                    {"source": source_by_issue[issue_id]}
+                    if issue_id in source_by_issue
+                    else {}
+                ),
+            }
             for issue_id in issue_ids
         ]
         await _save_issue_exclusion_history(
@@ -1348,6 +1534,7 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
                     verified_issue_ids,
                     actor=identity,
                     fallback_notes=effective_comments,
+                    source_notes=source_notes,
                 )
                 if readback.get("complete")
                 else {
