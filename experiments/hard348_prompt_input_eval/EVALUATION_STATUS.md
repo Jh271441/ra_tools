@@ -18,6 +18,21 @@ candidate must first pass a source-only gate and reproduce on the exact
 independent Fresh12 set before it can be evaluated on Holdout36 or a larger
 set. The currently available candidates have not met that gate.
 
+## Source18 label authority check (2026-08-20)
+
+The external source18 score receipt was checked against the read-only
+authoritative Trail field. A query of view 1000 returned all 18 exact issue
+IDs; `ra_merge_result` and `ra_review_result_new` agreed on every returned row.
+The documented normalization is `成功`/`失败` → A, `误触发` → B, and
+`无需协助` → C, producing the same 6/7/5 A/B/C mapping used by the receipt.
+No label, issue identifier, or Trail field was sent to the model. The raw
+evidence artifact remains label-free and the receipt remains an external
+scoring input only.
+
+This verifies the score source, but does not promote any prompt: the current
+causal prompt still fails the source gate and no candidate is authorized for
+Fresh12, Holdout36, Hard-348, or full1071.
+
 Representative results, all scored externally and not fed back into the
 model input:
 
