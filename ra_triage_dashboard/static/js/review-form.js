@@ -495,7 +495,7 @@ function renderReview(caseData) {
         </div>
       </section>
       <label><span><span class="ui-lang-zh">复核人${authorLocked ? "（SSO）" : "（必填）"}</span><span class="ui-lang-en">Reviewer${authorLocked ? " (SSO)" : " (required)"}</span></span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" required ${authorLocked ? "readonly" : ""} /></label>
-      <button class="button button-primary full-width" type="submit"><span class="ui-lang-zh">保存新的 review 版本</span><span class="ui-lang-en">Save new review version</span></button>
+      <button class="button button-primary full-width review-save-button" id="reviewSaveButton" type="submit"><span class="ui-lang-zh">保存新的 review 版本</span><span class="ui-lang-en">Save new review version</span></button>
     </form>`;
   bindSelectedReviewTagControls($("#reviewPane"));
   const expectedOutputInput = $("#expectedOutputInput");

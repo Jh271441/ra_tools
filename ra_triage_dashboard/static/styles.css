@@ -1019,6 +1019,18 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 
 .review-pane { max-height: none; overflow: visible; position: static; padding: 11px; }
 .review-form { display: grid; gap: 8px; }
+/* Keep the whole save control as one pointer target.  The language spans are
+   presentation-only, so clicks anywhere on the visible cyan surface submit
+   through the native parent button. */
+.review-save-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.review-save-button > .ui-lang-zh,
+.review-save-button > .ui-lang-en { pointer-events: none; }
 .review-status-field { display: grid; gap: 3px; }
 .review-status-field > span { color: var(--muted); font-size: 12px; }
 .review-expected-output-field { display: grid; gap: 4px; }
