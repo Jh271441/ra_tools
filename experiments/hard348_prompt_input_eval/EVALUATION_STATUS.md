@@ -80,6 +80,34 @@ scored as C) as well as a clean background-construction-versus-current-corridor
 distinction. These observations are diagnostic only and do not authorize GT
 changes or case-specific prompt rules.
 
+## Additional frozen source18 diagnostics (2026-08-20)
+
+The same frozen `causal_compare_v1` configuration was rerun in a separate
+output directory and again scored 14/18 with the same four predicted cases as
+the prior control. This makes the observed source result stable at the label
+level rather than a one-run decode fluctuation.
+
+The following single-hypothesis checks were then run against the same raw
+evidence, reports, images, model, and external score receipt. None was
+promoted:
+
+| Hypothesis | Result | Decision |
+| --- | ---: | --- |
+| `causal_compare_v1` + full `effect_gate_v3` rules | 10/18 (A 16.7%, B 85.7%, C 60.0%) | rejected; long-rule composition collapsed A |
+| `causal_compare_v1` with label-only JSON output | 13/18 (A 66.7%, B 85.7%, C 60.0%) | rejected; output rationale was not the bottleneck |
+| compact prompt rewritten as plain Chinese business prose | 12/18 (A 33.3%, B 71.4%, C 100.0%) | rejected; C/normal boundary remained unstable |
+| narrow trigger-state lock on the effect gate | 10/18 (A 16.7%, B 85.7%, C 60.0%) | rejected; normal-mechanism overgeneralization |
+| `effect_gate_v3` with `observation_v1` report projection | 10/18 (A 16.7%, B 100.0%, C 40.0%) | rejected |
+| `causal_compare_v1` without Trigger/Recovery reports | 8/18 (A 16.7%, B 85.7%, C 20.0%) | rejected; reports carry useful role/timing evidence |
+
+The failures are consistent with a business-state conflict, not a missing
+label parser: prompting the model more strongly toward normal traffic removes
+real-stuck A/C cases, while prompting more strongly toward release timing
+turns normal B waits into C. The current evidence also contains source cases
+where the visual/observer normal-mechanism explanation conflicts with the
+external score receipt. No prompt may resolve that by importing GT or adding a
+case-specific exception.
+
 ## Evaluation gates
 
 1. Freeze one prompt, evidence projection, image selection, and model.
