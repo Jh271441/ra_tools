@@ -229,7 +229,9 @@ class Settings:
                 baseline_id="0206",
                 path=_path(
                     "DASHBOARD_ISSUE_TAG_SOURCE_0206_XLSX",
-                    ra_root / "data/release0206版本 RA问题review.xlsx",
+                    data_dir
+                    / "issue_tag_sources"
+                    / "release0206版本 RA问题review.xlsx",
                 ),
             ),
             IssueTagSourceSpec(
@@ -238,7 +240,7 @@ class Settings:
                 baseline_id="0626",
                 path=_path(
                     "DASHBOARD_ISSUE_TAG_SOURCE_0626_XLSX",
-                    ra_root / "data/release0626-300-抽检.xlsx",
+                    data_dir / "issue_tag_sources" / "release0626抽检.xlsx",
                 ),
             ),
         )

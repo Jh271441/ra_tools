@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,9 +18,32 @@ from ra_triage_dashboard.app.issue_tag_sources import (
 from ra_triage_dashboard.app.review_workflow import resolve_expected_output
 from ra_triage_dashboard.app.routers import cases as cases_router
 from ra_triage_dashboard.app.runtime import REVIEW_TAG_CATALOG
+from ra_triage_dashboard.app.settings import Settings
 
 
 class IssueTagSourceTests(unittest.TestCase):
+    def test_default_source_paths_stay_under_dashboard_data(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {
+                "DASHBOARD_DATA_DIR": directory,
+                "DASHBOARD_ISSUE_TAG_SOURCE_0206_XLSX": "",
+                "DASHBOARD_ISSUE_TAG_SOURCE_0626_XLSX": "",
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        sources = {source.source_id: source.path for source in settings.issue_tag_sources}
+        root = (Path(directory) / "issue_tag_sources").resolve()
+        self.assertEqual(
+            sources["spotcheck-0206"],
+            root / "release0206版本 RA问题review.xlsx",
+        )
+        self.assertEqual(
+            sources["spotcheck-0626"], root / "release0626抽检.xlsx"
+        )
+
     def _write_source(self, path: Path) -> None:
         workbook = openpyxl.Workbook()
         worksheet = workbook.active
