@@ -317,6 +317,10 @@ async function resetReviewFilters() {
   setMultiFilterValues($("#gtFilter"), []);
   setMultiFilterValues($("#annotationFilter"), []);
   setMultiFilterValues($("#reviewerFilter"), []);
+  // The URL is intentionally the durable reviewer-filter source while a
+  // custom multi-select is rebuilt. Clear it synchronously for an explicit
+  // reset so the fallback cannot revive a deliberately removed reviewer.
+  persistReviewerFilterRoute?.("review", []);
   setMultiFilterValues($("#reviewStatusFilter"), []);
   setMultiFilterValues($("#workAssigneeFilter"), []);
   if ($("#modelRunFilter")) $("#modelRunFilter").value = "";

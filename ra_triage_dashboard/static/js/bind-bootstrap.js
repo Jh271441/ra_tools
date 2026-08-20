@@ -120,6 +120,10 @@ function bindEvents() {
       "#analysisTriggerFilter",
       "#analysisEgressFilter",
     ].forEach((selector) => setMultiFilterValues($(selector), []));
+    // See resetReviewFilters: clear the durable route state as well as the
+    // widget state, otherwise an analysis reset would restore reviewer=… on
+    // the next async facet refresh.
+    persistReviewerFilterRoute?.("analysis", []);
     $("#analysisSearchInput").value = "";
     state.reviewAnalysis.page = 1;
     try {

@@ -513,7 +513,9 @@ async function loadCases({
   const gtLabel = joinFilterList(getMultiFilterValues($("#gtFilter")));
   const modelLabel = joinFilterList(getMultiFilterValues($("#annotationFilter")));
   const annotationAuthor = joinFilterList(
-    getMultiFilterValues($("#reviewerFilter"))
+    typeof reviewerFilterSelection === "function"
+      ? reviewerFilterSelection("review")
+      : getMultiFilterValues($("#reviewerFilter"))
   );
   const reviewStatus = joinFilterList(
     getMultiFilterValues($("#reviewStatusFilter"))

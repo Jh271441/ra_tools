@@ -395,7 +395,10 @@ function currentReviewRouteOptions(overrides = {}) {
     issueIds: [...(state.reviewIssueIds || [])],
     gtLabel: getMultiFilterValues($("#gtFilter")),
     modelLabel: getMultiFilterValues($("#annotationFilter")),
-    annotationAuthor: getMultiFilterValues($("#reviewerFilter")),
+    annotationAuthor:
+      typeof reviewerFilterSelection === "function"
+        ? reviewerFilterSelection("review")
+        : getMultiFilterValues($("#reviewerFilter")),
     reviewStatus: getMultiFilterValues($("#reviewStatusFilter")),
     workAssignee: getMultiFilterValues($("#workAssigneeFilter")),
     clusterKey: state.clusterKey,
@@ -439,7 +442,10 @@ function currentAnalysisRouteOptions(overrides = {}) {
     search: $("#analysisSearchInput")?.value.trim() || "",
     gtLabel: getMultiFilterValues($("#analysisGtFilter")),
     modelLabel: getMultiFilterValues($("#analysisModelLabelFilter")),
-    annotationAuthor: getMultiFilterValues($("#analysisReviewerFilter")),
+    annotationAuthor:
+      typeof reviewerFilterSelection === "function"
+        ? reviewerFilterSelection("analysis")
+        : getMultiFilterValues($("#analysisReviewerFilter")),
     reviewStatus: getMultiFilterValues($("#analysisStatusFilter")),
     missingEvidence: getMultiFilterValues($("#analysisEvidenceFilter")),
     sceneTag: getMultiFilterValues($("#analysisSceneFilter")),

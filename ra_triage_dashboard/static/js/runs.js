@@ -3,22 +3,48 @@
  * Loaded as a classic script (shared global scope). Do not convert to
  * ES modules without auditing cross-file function/state dependencies.
  */
-function reviewerFilterSelections() {
+function reviewerRouteSelection() {
   const params = new URLSearchParams(window.location.search);
-  const routeSelection = parseFilterList(params.get("reviewer"));
-  const selected = (root, page) => {
-    const values = getMultiFilterValues(root);
-    // A refresh can rebuild the reviewer facet for a newly selected Run before
-    // its option list arrives.  The route is the durable source of truth for
-    // the active page in that short gap; do not turn a valid reviewer filter
-    // into “all reviewers” merely because the facet is temporarily empty.
-    if (values.length || state.activePage !== page) return values;
-    return routeSelection;
-  };
+  return parseFilterList(params.get("reviewer"));
+}
+
+function reviewerFilterSelection(page) {
+  const target = page === "analysis" ? "analysis" : "review";
+  const root = target === "analysis" ? $("#analysisReviewerFilter") : $("#reviewerFilter");
+  const values = parseFilterList(getMultiFilterValues(root));
+  // A refresh can rebuild the reviewer facet for a newly selected Run before
+  // its option list arrives. The route is the durable source of truth for the
+  // active page in that short gap; do not turn a valid reviewer filter into
+  // “all reviewers” merely because the facet is temporarily empty.
+  if (values.length || state.activePage !== target) return values;
+  return reviewerRouteSelection();
+}
+
+function reviewerFilterSelections() {
   return {
-    review: selected($("#reviewerFilter"), "review"),
-    analysis: selected($("#analysisReviewerFilter"), "analysis"),
+    review: reviewerFilterSelection("review"),
+    analysis: reviewerFilterSelection("analysis"),
   };
+}
+
+function persistReviewerFilterRoute(page, values) {
+  const target = page === "analysis" ? "analysis" : "review";
+  if (state.activePage !== target) return;
+  const selection = parseFilterList(
+    values === undefined ? reviewerFilterSelection(target) : values
+  );
+  const options =
+    target === "analysis"
+      ? currentAnalysisRouteOptions({ annotationAuthor: selection })
+      : currentReviewRouteOptions({ annotationAuthor: selection });
+  const nextUrl = pageUrl(target, options);
+  const currentUrl = `${window.location.pathname}${window.location.search}`;
+  if (nextUrl === currentUrl) return;
+  window.history.replaceState(
+    { ...(window.history.state || {}), page: target },
+    "",
+    nextUrl
+  );
 }
 
 function reviewerOptionsWithSelected(options, selected) {
@@ -61,7 +87,13 @@ async function loadReviewers(selections = reviewerFilterSelections()) {
     renderMultiFilter(reviewSelect, {
       options: reviewerOptionsWithSelected(reviewerOptions, reviewSelection),
       selected: reviewSelection,
-      onChange: () => scheduleReviewFilterReload?.(0),
+      onChange: (values) => {
+        // Persist selection before its async facet/case refresh. Opening a
+        // detail or pressing the top refresh button can then never serialize
+        // an in-flight empty widget as “all reviewers”.
+        persistReviewerFilterRoute("review", values);
+        scheduleReviewFilterReload?.(0);
+      },
     });
   }
   const analysisReviewer = $("#analysisReviewerFilter");
@@ -69,7 +101,10 @@ async function loadReviewers(selections = reviewerFilterSelections()) {
     renderMultiFilter(analysisReviewer, {
       options: reviewerOptionsWithSelected(reviewerOptions, analysisSelection),
       selected: analysisSelection,
-      onChange: () => scheduleAnalysisFilterReload(),
+      onChange: (values) => {
+        persistReviewerFilterRoute("analysis", values);
+        scheduleAnalysisFilterReload();
+      },
     });
   }
 }

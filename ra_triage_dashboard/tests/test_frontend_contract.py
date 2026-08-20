@@ -32,7 +32,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-225", APP_ENTRY_JS)
+        self.assertIn("manual-triage-226", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -73,7 +73,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-225", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-226", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
         self.assertNotIn("async function bootstrap", APP_ENTRY_JS)
@@ -140,7 +140,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('styles.css?v=manual-triage-225', INDEX_HTML)
+        self.assertIn('styles.css?v=manual-triage-226', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -781,7 +781,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-225", APP_ENTRY_JS)
+        self.assertIn("manual-triage-226", APP_ENTRY_JS)
 
     def test_multi_issue_query_contract(self) -> None:
         self.assertIn('id="openIssueQueryButton"', INDEX_HTML)
@@ -793,9 +793,17 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("state.reviewIssueIds", APP_JS)
 
     def test_reviewer_filter_survives_top_bar_and_collaboration_refresh(self) -> None:
+        self.assertIn("function reviewerFilterSelection(page)", APP_JS)
+        self.assertIn("function persistReviewerFilterRoute(page, values)", APP_JS)
         self.assertIn("function reviewerFilterSelections()", APP_JS)
         self.assertIn("function reviewerOptionsWithSelected(options, selected)", APP_JS)
         self.assertIn("Current filter", APP_JS)
+        # Persist the active custom-filter selection before the asynchronous
+        # facet reload so an Issue detail URL retains reviewer=jasperchen.
+        self.assertIn('persistReviewerFilterRoute("review", values)', APP_JS)
+        self.assertIn('persistReviewerFilterRoute("analysis", values)', APP_JS)
+        self.assertIn('reviewerFilterSelection("review")', APP_JS)
+        self.assertIn('reviewerFilterSelection("analysis")', APP_JS)
         self.assertIn("const reviewerSelections = typeof reviewerFilterSelections", APP_JS)
         self.assertIn("loadReviewers(reviewerSelections)", APP_JS)
         # A deliberately empty Run picker is a real filter state.  Refreshing

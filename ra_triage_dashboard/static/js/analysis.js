@@ -23,7 +23,11 @@ async function loadClusters() {
   const params = new URLSearchParams();
   if (state.selectedRunId) params.set("model_run_id", state.selectedRunId);
   params.set("failure_only", String(Boolean(state.failureOnly && state.selectedRunId)));
-  const annotationAuthor = $("#reviewerFilter")?.value;
+  const annotationAuthor = joinFilterList(
+    typeof reviewerFilterSelection === "function"
+      ? reviewerFilterSelection("review")
+      : getMultiFilterValues($("#reviewerFilter"))
+  );
   if (annotationAuthor) params.set("annotation_author", annotationAuthor);
   // The exclusion slice belongs to 原因聚类/分析.  Review's quick cluster
   // chips should keep the neutral all-inclusive scope even if a previous
