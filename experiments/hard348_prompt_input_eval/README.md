@@ -106,10 +106,13 @@ python3 experiments/hard348_prompt_input_eval/compact_business_batch.py \
 The batch scorer is an external diagnostic only. It does not alter model
 labels or apply a deterministic ABC rule. Keep all run directories outside
 Git and do not use evaluation results to change the frozen prompt/input
-within the same comparison. `--score-receipt` is read only after the child
-probe returns and is never passed to the model; use it when the raw evidence
-artifact is deliberately label-free. Its rows must contain `issue_id` and
-`expected_label_for_scoring_only` (or `gt`) and are used only for scoring.
+within the same comparison. The parent process may load `--score-receipt`
+before scheduling cases to validate exact coverage, but it applies each
+expected label only after that case's child probe returns. The receipt is
+never included in the child command or model request; use it only when the
+raw evidence artifact is deliberately label-free. Its rows must contain
+`issue_id` and `expected_label_for_scoring_only` (or `gt`) and are used only
+for scoring.
 
 ## Candidate: role-first observation firewall
 

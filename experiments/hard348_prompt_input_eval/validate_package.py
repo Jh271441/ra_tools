@@ -33,6 +33,7 @@ def main() -> None:
         ROOT / "PROMPT_SPEC.md",
         ROOT / "README.md",
         ROOT / "MANIFEST.md",
+        ROOT / "EVALUATION_STATUS.md",
     )
     missing = [str(path) for path in required if not path.is_file()]
     if missing:
@@ -49,6 +50,12 @@ def main() -> None:
         for fragment in forbidden_runtime_fragments:
             if fragment in source:
                 raise SystemExit(f"forbidden runtime fragment {fragment!r} in {path}")
+
+    batch_source = RUNTIME_FILES[1].read_text(encoding="utf-8")
+    if "--score-receipt" not in batch_source:
+        raise SystemExit("batch runner no longer declares the external score receipt")
+    if 'command.extend(["--score-receipt"' in batch_source:
+        raise SystemExit("score receipt must not be forwarded to the child probe")
 
     probe = _load_probe()
     facts = {"safe_observation": {"speed": 0.0}}
