@@ -323,6 +323,9 @@ async function resetReviewFilters() {
   persistReviewerFilterRoute?.("review", []);
   setMultiFilterValues($("#reviewStatusFilter"), []);
   setMultiFilterValues($("#workAssigneeFilter"), []);
+  // The task-owner filter also falls back to its URL value while its custom
+  // facet is being rebuilt. Remove that durable value for an explicit reset.
+  persistWorkAssigneeFilterRoute?.([]);
   if ($("#modelRunFilter")) $("#modelRunFilter").value = "";
   state.selectedRunId = "";
   state.reviewComparisonStatus = "all";

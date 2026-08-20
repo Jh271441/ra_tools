@@ -32,7 +32,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-226", APP_ENTRY_JS)
+        self.assertIn("manual-triage-227", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -73,7 +73,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-226", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-227", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
         self.assertNotIn("async function bootstrap", APP_ENTRY_JS)
@@ -140,7 +140,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('styles.css?v=manual-triage-226', INDEX_HTML)
+        self.assertIn('styles.css?v=manual-triage-227', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -781,7 +781,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-226", APP_ENTRY_JS)
+        self.assertIn("manual-triage-227", APP_ENTRY_JS)
 
     def test_multi_issue_query_contract(self) -> None:
         self.assertIn('id="openIssueQueryButton"', INDEX_HTML)
@@ -810,6 +810,20 @@ class FrontendContractTest(unittest.TestCase):
         # must not silently switch to the default Run and replace its reviewer
         # facet with a different set of names.
         self.assertIn("await loadRuns({ preserveEmpty: !state.selectedRunId });", APP_JS)
+
+    def test_work_assignee_filter_survives_custom_facet_rebuild(self) -> None:
+        self.assertIn("function workAssigneeRouteSelection()", APP_JS)
+        self.assertIn("function workAssigneeFilterSelection()", APP_JS)
+        self.assertIn("function persistWorkAssigneeFilterRoute(values)", APP_JS)
+        self.assertIn("function workAssigneeOptionsWithSelected(options, selected)", APP_JS)
+        # The canonical URL is the fallback while the custom multi-select has
+        # no inputs during an async work-assignee facet refresh.
+        self.assertIn('params.get("work_assignee") || params.get("assignee")', APP_JS)
+        self.assertIn('persistWorkAssigneeFilterRoute(values)', APP_JS)
+        self.assertIn('persistWorkAssigneeFilterRoute([name])', APP_JS)
+        self.assertIn('persistWorkAssigneeFilterRoute?.([])', APP_JS)
+        self.assertIn('workAssigneeFilterSelection()', APP_JS)
+        self.assertIn('renderWorkAssigneeFilter(workAssigneeFilterSelection())', APP_JS)
 
     def test_trail_update_exposes_safe_preview_and_commit_contract(self) -> None:
         self.assertIn('id="trailUpdateCommitButton"', INDEX_HTML)

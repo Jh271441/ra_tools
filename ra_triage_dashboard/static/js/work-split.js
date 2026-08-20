@@ -2,6 +2,38 @@
  * Admin Review work-split: persist assignee ownership and gallery filters.
  * Loaded as a classic script (shared global scope).
  */
+function workAssigneeRouteSelection() {
+  const params = new URLSearchParams(window.location.search);
+  return parseFilterList(params.get("work_assignee") || params.get("assignee") || "");
+}
+
+function workAssigneeFilterSelection() {
+  const values = parseFilterList(getMultiFilterValues($("#workAssigneeFilter")));
+  // The custom facet is rebuilt after an asynchronous request.  During that
+  // short window it has no checked inputs, but the active Review URL still
+  // carries the operator's intended task-assignee filter.
+  if (values.length || state.activePage !== "review") return values;
+  return workAssigneeRouteSelection();
+}
+
+function persistWorkAssigneeFilterRoute(values) {
+  if (state.activePage !== "review") return;
+  const selection = parseFilterList(
+    values === undefined ? workAssigneeFilterSelection() : values
+  );
+  const nextUrl = pageUrl(
+    "review",
+    currentReviewRouteOptions({ workAssignee: selection })
+  );
+  const currentUrl = `${window.location.pathname}${window.location.search}`;
+  if (nextUrl === currentUrl) return;
+  window.history.replaceState(
+    { ...(window.history.state || {}), page: "review" },
+    "",
+    nextUrl
+  );
+}
+
 function currentReviewFilterPayload() {
   return {
     search: $("#searchInput")?.value.trim() || "",
@@ -68,20 +100,39 @@ function readWorkSplitAssignees() {
     .filter((item) => item.name);
 }
 
-function renderWorkAssigneeFilter() {
+function workAssigneeOptionsWithSelected(options, selected) {
+  const known = new Set(options.map((item) => String(item.value || "")));
+  const retained = parseFilterList(selected)
+    .filter((name) => !known.has(name))
+    .map((name) => ({
+      value: name,
+      // A task owner can be absent from the current facet after changing Run
+      // or baseline. Keep the URL-restored choice visible and removable.
+      label: `${name} · ${uiText("当前筛选", "Current filter")}`,
+    }));
+  return [...options, ...retained];
+}
+
+function renderWorkAssigneeFilter(selected = workAssigneeFilterSelection()) {
   const root = $("#workAssigneeFilter");
   if (!root) return;
   const items = Array.isArray(state.workAssignees) ? state.workAssignees : [];
+  const options = [
+    { value: "__none__", label: t("work.unassigned") },
+    ...items.map((item) => ({
+      value: item.username,
+      label: `${item.username} · ${Number(item.issue_count || 0)}`,
+    })),
+  ];
   renderMultiFilter(root, {
-    options: [
-      { value: "__none__", label: t("work.unassigned") },
-      ...items.map((item) => ({
-        value: item.username,
-        label: `${item.username} · ${Number(item.issue_count || 0)}`,
-      })),
-    ],
-    selected: getMultiFilterValues(root),
-    onChange: () => scheduleReviewFilterReload?.(0),
+    options: workAssigneeOptionsWithSelected(options, selected),
+    selected,
+    onChange: (values) => {
+      // Persist before triggering the async facet refresh.  Any in-flight
+      // detail navigation or top-bar refresh then serializes the same filter.
+      persistWorkAssigneeFilterRoute(values);
+      scheduleReviewFilterReload?.(0);
+    },
   });
 }
 
@@ -97,7 +148,7 @@ async function loadWorkAssignees() {
     const result = await api(`/api/work-assignees${query ? `?${query}` : ""}`);
     if (requestSeq !== state.workAssigneeRequestSeq) return;
     state.workAssignees = result.items || [];
-    renderWorkAssigneeFilter();
+    renderWorkAssigneeFilter(workAssigneeFilterSelection());
   } catch (_error) {
     // Filter remains usable with default options.
   }
@@ -254,6 +305,7 @@ function filterGalleryByWorkAssignee(assignee) {
   if (!name) return;
   state.reviewIssueIds = [];
   setMultiFilterValues($("#workAssigneeFilter"), [name]);
+  persistWorkAssigneeFilterRoute([name]);
   state.casePage = 1;
   closeDialog("workSplitDialog");
   loadCases({ keepSelection: false, page: 1 })
@@ -324,12 +376,5 @@ function bindWorkSplitControls() {
     }
     const filter = event.target.closest("[data-filter-work-assignee]");
     if (filter) filterGalleryByWorkAssignee(filter.dataset.filterWorkAssignee);
-  });
-  $("#workAssigneeFilter")?.addEventListener("change", () => {
-    state.reviewIssueIds = [];
-    state.casePage = 1;
-    loadCases({ keepSelection: false, page: 1 }).catch((error) =>
-      showToast(error.message, true)
-    );
   });
 }

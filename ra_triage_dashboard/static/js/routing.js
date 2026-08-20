@@ -400,7 +400,10 @@ function currentReviewRouteOptions(overrides = {}) {
         ? reviewerFilterSelection("review")
         : getMultiFilterValues($("#reviewerFilter")),
     reviewStatus: getMultiFilterValues($("#reviewStatusFilter")),
-    workAssignee: getMultiFilterValues($("#workAssigneeFilter")),
+    workAssignee:
+      typeof workAssigneeFilterSelection === "function"
+        ? workAssigneeFilterSelection()
+        : getMultiFilterValues($("#workAssigneeFilter")),
     clusterKey: state.clusterKey,
     casePage: state.casePage,
     casePageSize: state.casePageSize,

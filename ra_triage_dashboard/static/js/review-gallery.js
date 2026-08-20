@@ -413,7 +413,11 @@ function updateFilteredPredictionButton() {
   }
   const summary = $("#galleryResultSummary");
   if (summary) {
-    const assignee = $("#workAssigneeFilter")?.value || "";
+    const assignee = joinFilterList(
+      typeof workAssigneeFilterSelection === "function"
+        ? workAssigneeFilterSelection()
+        : getMultiFilterValues($("#workAssigneeFilter"))
+    );
     if (assignee && assignee !== "__none__") {
       summary.textContent = uiText(
         `任务负责人 ${assignee} · ${total} 个 Issue`,
@@ -521,7 +525,9 @@ async function loadCases({
     getMultiFilterValues($("#reviewStatusFilter"))
   );
   const workAssignee = joinFilterList(
-    getMultiFilterValues($("#workAssigneeFilter"))
+    typeof workAssigneeFilterSelection === "function"
+      ? workAssigneeFilterSelection()
+      : getMultiFilterValues($("#workAssigneeFilter"))
   );
   const runFilter = $("#modelRunFilter");
   // During first paint the Run request and gallery request overlap.  A deep

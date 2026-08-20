@@ -342,6 +342,8 @@ Review 首页筛选参数可写入 URL：
   &gt=<三分类标签>
   &model_label=<三分类标签>
   &reviewer=<author>
+  &status=pending|reviewed|needs_gt_review
+  &work_assignee=<task_owner>
   &evidence=<stable_missing_evidence_key>
   &page=<positive_integer>
 ```

@@ -568,6 +568,9 @@ async function refreshChangedData() {
       loadCases({ keepSelection: true, page: state.casePage }),
       loadClusters(),
       loadReviewers(reviewerSelections),
+      typeof loadWorkAssignees === "function"
+        ? loadWorkAssignees()
+        : Promise.resolve(),
     ]);
     if (state.selectedId) {
       if (
