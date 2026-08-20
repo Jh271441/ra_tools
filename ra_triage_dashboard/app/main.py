@@ -26,6 +26,7 @@ from .runtime import (
     asset_index,
     batch_prediction_runner,
     database,
+    issue_tag_sources,
     settings,
 )
 from .routers import (
@@ -139,6 +140,10 @@ async def lifespan(_: FastAPI):
     database.seed_examples(EXAMPLE_CASES)
     # Local-only seed from baseline workbooks / registry. No Trail I/O.
     bootstrap_baseline()
+    # Historical spot-check tags are read-only form suggestions.  They do not
+    # create Reviews, modify GT, or block startup when an optional file is
+    # unavailable.
+    issue_tag_sources.reload(settings.issue_tag_sources)
     asset_index.refresh(force=True)
     bootstrap_model_result()
     # Never await remote Trail during startup — it freezes first paint.

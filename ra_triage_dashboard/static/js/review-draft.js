@@ -44,8 +44,22 @@ function reviewAnnotationsForAllRuns(caseData) {
   );
 }
 
+function currentReviewSourceSuggestion(caseData) {
+  const suggestion = caseData?.issue_tag_suggestion;
+  const annotation = suggestion?.annotation;
+  if (!suggestion || !annotation || !Array.isArray(annotation.tags)) return null;
+  // A historical source is only an unsaved form default. A Review in the
+  // selected Run always wins and remains the sole persisted/auditable record.
+  if (reviewAnnotationsForCurrentRun(caseData).length) return null;
+  return suggestion;
+}
+
 function currentReviewAnnotation(caseData) {
-  return reviewAnnotationsForCurrentRun(caseData)[0] || {};
+  return (
+    reviewAnnotationsForCurrentRun(caseData)[0] ||
+    currentReviewSourceSuggestion(caseData)?.annotation ||
+    {}
+  );
 }
 
 const REVIEW_DRAFT_STORAGE_PREFIX = "ra-triage-review-draft:v1:";

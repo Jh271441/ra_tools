@@ -24,6 +24,23 @@ function annotationExpectedOutput(annotation) {
   return String(annotation?.label || "").trim();
 }
 
+function issueTagSourceSuggestionMarkup(suggestion) {
+  const source = suggestion?.source;
+  if (!source?.label) return "";
+  const label = String(source.label || "").trim();
+  const filename = String(source.filename || "").trim();
+  const row = Number(source.row_number || 0);
+  const partial = suggestion.status === "partial";
+  const title = [
+    filename,
+    row ? `第 ${row} 行` : "",
+    partial ? "部分标签未映射，请人工补充" : "保存后才会创建新的 Review 版本",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return `<span class="evidence-summary-count review-tag-source" title="${escapeHtml(title)}"><span class="ui-lang-zh">${escapeHtml(partial ? "历史抽检部分预填" : "历史抽检预填")} · ${escapeHtml(label)}</span><span class="ui-lang-en">${escapeHtml(partial ? "Partial historical prefill" : "Historical prefill")} · ${escapeHtml(label)}</span></span>`;
+}
+
 function inferExpectedOutputFromSelectedTags(root = $("#reviewPane") || document) {
   const inferred = new Set(
     [...root.querySelectorAll('input[name="reviewTags"]:checked')]
@@ -341,7 +358,8 @@ function renderReview(caseData) {
   const reviewRunId = currentReviewRunId(caseData);
   const runAnnotations = reviewAnnotationsForCurrentRun(caseData);
   const allAnnotations = reviewAnnotationsForAllRuns(caseData);
-  const serverPrevious = runAnnotations[0] || {};
+  const sourceSuggestion = currentReviewSourceSuggestion(caseData);
+  const serverPrevious = currentReviewAnnotation(caseData);
   const draft = reviewDraftForCase(caseData);
   const previous = applyReviewDraft(serverPrevious, draft);
   state.reviewEditRunId = reviewRunId;
@@ -390,10 +408,11 @@ function renderReview(caseData) {
     .map((key) => tagOption(key, tagLabel(key), true))
     .join("");
   const issueTagGroups = renderReviewTagGroups(tagCatalog, chosenTags, tagOption);
+  const sourceSuggestionMarkup = issueTagSourceSuggestionMarkup(sourceSuggestion);
   $("#reviewPane").innerHTML = `
     <form class="review-form" id="annotationForm">
       <section class="review-section issue-tag-section">
-        <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span></h2></div><span class="evidence-summary-count" id="tagSummaryCount">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
+        <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span></h2>${sourceSuggestionMarkup}</div><span class="evidence-summary-count" id="tagSummaryCount">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
         <div class="review-tag-groups-shell">${issueTagGroups}${customTagOptions ? `<div class="review-tag-legacy"><span class="ui-lang-zh">历史标签</span><span class="ui-lang-en">Legacy tags</span><div class="review-tag-options">${customTagOptions}</div></div>` : ""}</div>
         <label class="review-exclude-toggle"><input id="reviewExcludeInput" type="checkbox" ${previous.is_excluded ? "checked" : ""} /><span><strong class="ui-lang-zh">应该排除</strong><strong class="ui-lang-en">Exclude</strong><small class="ui-lang-zh">不是模型需要解决的场景 case</small><small class="ui-lang-en">Not a case the model is expected to solve</small></span></label>
       </section>

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+from .issue_tag_sources import IssueTagSourceSpec
 from .web_paths import normalize_base_path
 
 
@@ -113,6 +114,7 @@ class Settings:
     baseline_scope: str
     baselines_file: Path | None
     baseline_overlap_mode: str
+    issue_tag_sources: tuple[IssueTagSourceSpec, ...]
     bootstrap_model_json: Path | None
     trail_view_id: int
     trail_sync_on_start: bool
@@ -219,6 +221,26 @@ class Settings:
         baseline_xlsx = _path(
             "DASHBOARD_BASELINE_LABEL_XLSX",
             ra_root / "data/trail_label_baseline_20260729.xlsx",
+        )
+        issue_tag_sources = (
+            IssueTagSourceSpec(
+                source_id="spotcheck-0206",
+                label="0206 抽检",
+                baseline_id="0206",
+                path=_path(
+                    "DASHBOARD_ISSUE_TAG_SOURCE_0206_XLSX",
+                    ra_root / "data/release0206版本 RA问题review.xlsx",
+                ),
+            ),
+            IssueTagSourceSpec(
+                source_id="spotcheck-0626",
+                label="0626 抽检",
+                baseline_id="0626",
+                path=_path(
+                    "DASHBOARD_ISSUE_TAG_SOURCE_0626_XLSX",
+                    ra_root / "data/release0626-300-抽检.xlsx",
+                ),
+            ),
         )
         bootstrap_value = os.getenv("DASHBOARD_BOOTSTRAP_MODEL_JSON", "").strip()
         bootstrap = Path(bootstrap_value).expanduser().resolve() if bootstrap_value else None
@@ -391,6 +413,7 @@ class Settings:
                 os.getenv("DASHBOARD_BASELINE_OVERLAP_MODE", "fail_skip").strip()
                 or "fail_skip"
             ),
+            issue_tag_sources=issue_tag_sources,
             bootstrap_model_json=bootstrap,
             trail_view_id=_integer("DASHBOARD_TRAIL_VIEW_ID", 2410),
             trail_sync_on_start=_bool("DASHBOARD_SYNC_TRAIL_ON_START", True),

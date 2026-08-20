@@ -63,6 +63,11 @@ export ARES_CAPTURE_VIDEO_ROOT="${ARES_CAPTURE_VIDEO_ROOT:-${_MEDIA_LAYOUT}/vide
 export DASHBOARD_BASELINE_LABEL_XLSX="/volume/home/workspace/ra_auto_triage/data/trail_label_baseline_20260729.xlsx"
 export DASHBOARD_BASELINE_DATASET="0508"
 export DASHBOARD_BASELINE_SCOPE="release0508_1071_20260729"
+# Historical spot checks are read-only Issue-tag suggestions.  Missing files
+# simply leave their matching forms blank; they never block startup or mutate
+# GT / Review data. Override either path for a staged source snapshot.
+export DASHBOARD_ISSUE_TAG_SOURCE_0206_XLSX="${DASHBOARD_ISSUE_TAG_SOURCE_0206_XLSX:-$RA_AUTO_TRIAGE_ROOT/data/release0206版本 RA问题review.xlsx}"
+export DASHBOARD_ISSUE_TAG_SOURCE_0626_XLSX="${DASHBOARD_ISSUE_TAG_SOURCE_0626_XLSX:-$RA_AUTO_TRIAGE_ROOT/data/release0626-300-抽检.xlsx}"
 export DASHBOARD_TRAIL_VIEW_ID="${DASHBOARD_TRAIL_VIEW_ID:-2410}"
 # Trail Attribute Update is fail-closed by default.  Enable only after the
 # configured view exposes the info target and a gray deployment has passed

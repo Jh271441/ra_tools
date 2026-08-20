@@ -18,6 +18,7 @@ from .baseline_registry import (
 )
 from .batch_prediction_runner import BatchPredictionRunner
 from .db import Database
+from .issue_tag_sources import IssueTagSourceIndex
 from .media_registry import build_media_registry
 from .model_catalog import ModelCatalog
 from .observability import BoundedObservationSet
@@ -76,6 +77,7 @@ model_catalog = ModelCatalog(settings)
 prompt_catalog = PromptCatalog(settings.ra_auto_triage_root)
 autotriage_source = AutoTriageSource(settings.autotriage_api_base_url)
 batch_prediction_runner = BatchPredictionRunner(settings, database)
+issue_tag_sources = IssueTagSourceIndex()
 trail_sync_lock = threading.Lock()
 gt_sync_lock = threading.Lock()
 review_image_semaphore = asyncio.Semaphore(2)
@@ -122,12 +124,17 @@ REVIEW_TAG_CATALOG: tuple[dict[str, Any], ...] = (
     {"key": "obstacle_not_avoided", "label": "未避障", "section": "interaction_decision", "group": "true_trigger"},
     {"key": "close_distance", "label": "距离近", "section": "interaction_decision", "group": "true_trigger"},
     {"key": "perception_fp", "label": "感知FP", "section": "interaction_decision", "group": "true_trigger"},
+    {"key": "true_eol", "label": "EOL", "section": "interaction_decision", "group": "true_trigger"},
+    {"key": "true_map_change", "label": "地图变更", "section": "interaction_decision", "group": "true_trigger"},
+    {"key": "true_traffic_light_unavailable", "label": "红绿灯无灯坏", "section": "interaction_decision", "group": "true_trigger"},
+    {"key": "true_unnecessary_lane_change", "label": "多余变道", "section": "interaction_decision", "group": "true_trigger"},
     {"key": "scene_true_other", "label": "其他", "section": "interaction_decision", "group": "true_trigger"},
     # Issue resolution: how could the vehicle leave the scene?
     {"key": "egress_swag", "label": "SWAG", "section": "egress", "group": "ra"},
     {"key": "egress_detour", "label": "左右绕行", "section": "egress", "group": "ra"},
     {"key": "egress_waypoint", "label": "Waypoint", "section": "egress", "group": "ra"},
     {"key": "egress_reverse", "label": "倒车", "section": "egress", "group": "ra"},
+    {"key": "egress_takeover", "label": "接管", "section": "egress", "group": "ra"},
     {"key": "egress_traffic_light", "label": "红绿灯通行", "section": "egress", "group": "ra"},
     {"key": "egress_ra_other", "label": "其他", "section": "egress", "group": "ra"},
     {"key": "lead_vehicle_departed", "label": "前车驶离", "section": "egress", "group": "no_assist"},
@@ -182,6 +189,10 @@ REVIEW_TAG_ALIASES = {
     "人工触发": "manual_trigger",
     "感知FP消失": "perception_fp_cleared",
     "感知FP": "perception_fp",
+    "EOL": "true_eol",
+    "地图变更": "true_map_change",
+    "红绿灯无灯坏": "true_traffic_light_unavailable",
+    "多余变道": "true_unnecessary_lane_change",
     "前车驶离": "lead_vehicle_departed",
     "主系统决策变化": "system_decision_change",
     "未避障": "obstacle_not_avoided",
@@ -190,6 +201,7 @@ REVIEW_TAG_ALIASES = {
     "左右绕行": "egress_detour",
     "Waypoint": "egress_waypoint",
     "倒车": "egress_reverse",
+    "接管": "egress_takeover",
     "感知FP变化": "perception_fp_change",
     "双闪临停": "temporary_stop",
     "前方大车遮挡": "occlusion",

@@ -18,9 +18,19 @@
 | 0206 媒体 | planning_2k Ares Capture 产物增量物化到 `release0206_1326_planning_2k_20260813`；媒体缺失不阻塞 GT 看板 |
 | 0626 媒体 | bag 源 `frames_v2_0626` + animation jobs；Camera 可空 |
 | Batch 推理 | **不**改服务端固定 `bags/ares_animation` 策略（与 review 媒体解耦） |
+| 历史抽检标签 | 0206 / 0626 XLSX 只读加载为同 baseline 的 Issue 标签预填；不是 GT，也不会自动创建 Review |
 | 生产隔离 | 新版本先在独立 worktree、临时 SQLite 与 8786 端口验证，再快进生产代码并重启 8785 |
 
 实现入口：`app/baseline_registry.py`、`app/media_registry.py`、DB `baseline_scopes` IN 过滤、顶栏 `#baselineFilter`。
+
+### 历史抽检 Issue 标签预填
+
+`0206` 与 `0626` 的历史抽检工作簿只在启动时以只读方式解析。匹配到相同 baseline 和 Issue ID 时，若当前 Model Run 尚无人工 Review，详情中的 `Issue 标签`、`期望输出` 与“应该排除”会作为未保存表单默认值出现，并标明文件、行号和内容 SHA-256。点击保存后才会创建一条普通的追加式 Review；历史文件不会写入 SQLite、不修改 GT，也不会覆盖已有 Review。
+
+来源内标签方向互相冲突、与来源 label 矛盾或同一来源重复 Issue ID 时，Dashboard 会 fail closed：该 Issue 不预填，仍由人工判断。来源文件缺失或格式不合法同样不阻断启动，只会让对应表单保持空白。生产文件可用以下只读环境变量覆盖：
+
+- `DASHBOARD_ISSUE_TAG_SOURCE_0206_XLSX`：默认 `$RA_AUTO_TRIAGE_ROOT/data/release0206版本 RA问题review.xlsx`。
+- `DASHBOARD_ISSUE_TAG_SOURCE_0626_XLSX`：默认 `$RA_AUTO_TRIAGE_ROOT/data/release0626-300-抽检.xlsx`。
 - 首页是服务端筛选的紧凑 Issue 缩略图队列（宽屏五列、随可用宽度降列），默认每页 20 条并可切换 10 / 20 / 50 / 100；页码和单页数量写入 URL，接口单页最多返回 100 条。判错复核与原因聚类统一显示“当前页 / 总页数”和显式跳转输入框、按钮；只有按回车或点击跳转按钮才执行，输入框失焦不会误跳页。BEV 缩略图按源文件版本生成 640×360 缓存并懒加载，不把 1071 张原图一次送进浏览器。点击 Issue 后才进入 URL 可恢复的详情态，加载大图、媒体、模型输出和人工 Review；详情支持返回列表及跨页上一/下一 Issue，并在具备 trip 与事件时间戳时提供同域 Ares Studio ±10 秒跳转链接。Issue 详情第二行通过紧凑下拉框切换 `BEV 图片 / Camera 图片 / Ares Studio 视频`，相邻的同尺寸按钮展开完整预览；有视频时详情默认展示视频首帧，没有视频时再展示 BEV / Camera 图片。Gallery 卡片的“媒体预览”和详情媒体共用一个近乎占满浏览器视口的三模式弹窗，首页仅在点击预览时按需读取该 Issue 的完整资产。详情页媒体快捷键采用页面级监听：焦点不在输入、选择、按钮或链接时，`B/C/V`、空格、左右方向键和 `F` 无需聚焦播放器即可生效；打开弹窗后由弹窗接管。三种媒体都默认适配可视范围，并支持 1:1 原始像素、按钮/键盘/Ctrl/⌘+滚轮缩放、放大后指针拖拽平移以及全屏；进入或退出全屏不会重置缩放比例。BEV 视频使用 Workbench 自有的紧凑控制条，支持播放/暂停、0.5× / 1× / 1.5× / 2×、回到 t0、进度拖动、可配置 0.1 / 0.5 / 1 / 5 秒左右跳转和键盘控制；默认左右跳转 1 秒，元数据帧步长作为“1 帧”选项，切换到图片时暂停但保留播放位置。
 - 首页的“模型判断结果”是下拉筛选：选择模型 Run 后可切换 `全部`、红色 `MISMATCH`、绿色 `MATCH` 和灰色 `NONE（未预测）`；卡片右上角同步显示状态。旧 `failure=1` / `failure_only=true` 仍兼容为 `MISMATCH`，新 Review URL 使用 `comparison=all|mismatch|match|none`。
 - 管理员“均分当前筛选”只覆盖当前 Review 队列，并保留每次分配的历史审计。任务负责人下拉框的人员与数量严格按当前 baseline、Model Run、判断结果、GT、Review 状态等筛选重新统计；其他数据集或旧 split 的负责人不会混入当前计数，移除本轮人员也不会破坏其历史分配记录。
@@ -102,6 +112,7 @@ Runs 的「人员」统一显示/筛选创建人；旧 Run 没有创建人时回
     `/volume/home/workspace/ra_triage_dashboard_data/media_layouts/release0206_1326_planning_2k_20260813`；允许先注册 GT、再按完整 manifest 增量物化媒体
   - 从带聚合软链接的 bags 刷新：使用 `rsync -aL` 物化到新的版本化 layout，禁止 `--delete`；完成 manifest、PNG、MP4、meta 和媒体规格校验后再切换 baseline `layout_id`
 - 0508 GT 种子/回滚快照：`/volume/home/workspace/ra_auto_triage/data/trail_label_baseline_20260729.xlsx`（只读）；当前权威 overlay 持久化在 Dashboard 数据库
+- 0206 / 0626 历史抽检标签来源：分别由 `DASHBOARD_ISSUE_TAG_SOURCE_0206_XLSX` 和 `DASHBOARD_ISSUE_TAG_SOURCE_0626_XLSX` 指向的只读 XLSX；只用于人工 Review 表单预填，不是 GT 种子、不进入数据库
 - 模型 / Trail 逻辑：`/volume/home/workspace/ra_auto_triage`（代码与 bags 采集工作区只读；Batch 新下载只写 dashboard 独立缓存）
 
 模型 endpoint 是服务端固定配置，API key 只存在于上述受限文件和预测 worker 的一次性 stdin，不进入浏览器 HTTP 请求、dashboard 数据库、argv、子进程环境或公共 API。Batch Run 只保存脱敏后的模型、Prompt、输入策略、目录 SHA-256 和配置 SHA-256；上传 JSON / CSV / XLSX 时，metadata、原始行和扩展字段中的 credential / endpoint key 也会在入库前递归脱敏，公共读取再执行一次同样的防护。模型结果原文件只通过同源 Run source endpoint 提供 inline 预览或 attachment 下载，不直接暴露服务器路径；遗留 Run 不会凭空补造归档文件。
@@ -115,7 +126,7 @@ records 链接只用于提取数字 Batch ID，后端不会跟随其中的 hostn
 
 Review 截图绑定到单条追加式 annotation：前端粘贴后先本地预览，保存时才上传；后端在受限后台线程中解码并重新编码为 PNG/JPEG/WebP，去除原始元数据。每次最多 4 张、单张 8 MB、总计 24 MB，单图不超过 4000 万像素；HTTP 请求上限为 26 MB，缺少 `Content-Length` 或固定同源请求标记会在 multipart 解析前拒绝，应用级截图配额为 20 GB，并保留至少 256 MB 磁盘空间。API 只返回附件 ID、尺寸、类型和不含服务器路径的读取 URL。备份 SQLite 时必须同时备份 `review_attachments/`，否则历史记录仍在但图片文件无法恢复。
 
-Issue 标签可以不选，前端按三层语义分组：`场景` 包括 `environment`（环境，含施工/变更区域、道闸、园区出入口、掉头、其他）和 `self_intent`（自车意图，含 `intent_straight`、`intent_left_turn`、`intent_right_turn`、`intent_u_turn`）；`触发判定` 保留 `误触发`（`traffic_light`、`queue`、`yielding`、`u_turn`、`park_in`、`park_out`、`scene_false_other`）和 `应该触发`（`obstacle_not_avoided`、`close_distance`、`perception_fp`、`scene_true_other`）；`如何驶离` 仍包括正确触发与无需协助两组。场景和缺失信息使用共享的固定目录，以绝对定位弹出多选，不因选项展开而撑高 Review 面板；当前 Review UI 不提供新建、编辑或删除标签的入口，历史自定义 key 仍可读。缺失信息默认不选中，`is_excluded` 与 Review 版本一起追加保存。
+Issue 标签可以不选，前端按三层语义分组：`场景` 包括 `environment`（环境，含施工/变更区域、道闸、园区出入口、掉头、其他）和 `self_intent`（自车意图，含 `intent_straight`、`intent_left_turn`、`intent_right_turn`、`intent_u_turn`）；`触发判定` 保留 `误触发`（`traffic_light`、`queue`、`yielding`、`u_turn`、`park_in`、`park_out`、`scene_false_other`）和 `应该触发`（`obstacle_not_avoided`、`close_distance`、`perception_fp`、`true_eol`、`true_map_change`、`true_traffic_light_unavailable`、`true_unnecessary_lane_change`、`scene_true_other`）；`如何驶离` 的正确触发组另含 `egress_takeover`，并和无需协助共同保留为两组。场景和缺失信息使用共享的固定目录，以绝对定位弹出多选，不因选项展开而撑高 Review 面板；当前 Review UI 不提供新建、编辑或删除标签的入口，历史自定义 key 仍可读。缺失信息默认不选中，`is_excluded` 与 Review 版本一起追加保存。
 
 ## 用户身份、部署模式与 Kylin SSO
 

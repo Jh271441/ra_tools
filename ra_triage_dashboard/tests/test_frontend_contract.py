@@ -967,6 +967,14 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("loadPageData &&", APP_JS)
         self.assertIn("trailAttributePreviewNeedsLoad", APP_JS)
 
+    def test_historical_spotcheck_tags_only_prefill_unsaved_reviews(self) -> None:
+        self.assertIn("function currentReviewSourceSuggestion", APP_JS)
+        self.assertIn("issue_tag_suggestion", APP_JS)
+        self.assertIn("currentReviewSourceSuggestion(caseData)?.annotation", APP_JS)
+        self.assertIn("function issueTagSourceSuggestionMarkup", APP_JS)
+        self.assertIn("历史抽检预填", APP_JS)
+        self.assertIn("保存后才会创建新的 Review 版本", APP_JS)
+
 
 if __name__ == "__main__":
     unittest.main()

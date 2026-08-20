@@ -38,6 +38,7 @@ from ..runtime import (
     baseline_registry,
     camera_index,
     database,
+    issue_tag_sources,
     logger,
     settings,
     trail_detail_semaphore,
@@ -651,6 +652,10 @@ async def get_case(issue_id: str) -> dict[str, Any]:
         )
     entry = baseline_registry.by_scope(scope)
     case["baseline_id"] = entry.id if entry else ""
+    case["issue_tag_suggestion"] = issue_tag_sources.lookup(
+        baseline_id=case["baseline_id"],
+        issue_id=issue_id,
+    )
     case["voyager_issue_url"] = _voyager_issue_url(issue_id)
     case["external_links"] = _case_external_links(
         issue_id, _case_link_metadata_fallback(case)
