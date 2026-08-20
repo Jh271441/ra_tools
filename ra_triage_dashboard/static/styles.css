@@ -1432,14 +1432,6 @@ html[data-ui-lang="en"] .expected-output-rule-popover ul.ui-lang-en { display: g
 .review-reason > span { color: #d7edf0; font-size: 12px; font-weight: 700; }
 .review-reason textarea { min-height: 54px; height: 54px; padding: 7px 8px; border-color: rgba(34,211,238,.24); background: #0b1119; font-size: 11px; line-height: 1.45; }
 .review-reason textarea:focus { border-color: var(--accent); box-shadow: none; }
-.evidence-dropdown-shell {
-  display: grid; grid-template-columns: minmax(0, 1fr) 28px; align-items: start; gap: 6px;
-}
-.evidence-dropdown-shell > .evidence-dropdown { min-width: 0; width: 100%; }
-.evidence-catalog-add-button {
-  width: 28px; height: 28px; margin-top: 4px; padding: 0;
-  font-size: 17px; line-height: 1;
-}
 .evidence-dropdown { position: relative; container-type: inline-size; border: 1px solid var(--line); border-radius: 8px; background: #0e131c; }
 .evidence-dropdown[open] { z-index: 20; }
 .evidence-dropdown > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 10px; color: #dbe7f3; cursor: pointer; list-style: none; font-size: 12px; }

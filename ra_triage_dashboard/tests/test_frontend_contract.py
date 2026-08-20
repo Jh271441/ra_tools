@@ -32,7 +32,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-228", APP_ENTRY_JS)
+        self.assertIn("manual-triage-229", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -73,7 +73,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-228", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-229", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
         self.assertNotIn("async function bootstrap", APP_ENTRY_JS)
@@ -140,7 +140,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('styles.css?v=manual-triage-228', INDEX_HTML)
+        self.assertIn('styles.css?v=manual-triage-229', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -659,9 +659,14 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function resetReviewDropdownPanel", APP_JS)
         self.assertIn("is-fixed-dropdown", APP_JS)
         self.assertIn(".is-fixed-dropdown", STYLES_CSS)
-        self.assertIn('class="evidence-dropdown-shell"', APP_JS)
-        self.assertIn("evidence-catalog-add-button", APP_JS)
-        self.assertIn(".evidence-dropdown-shell", STYLES_CSS)
+        evidence_start = APP_JS.index('class="evidence-dropdown review-dropdown review-tag-dropdown"')
+        evidence_end = APP_JS.index('id="missingEvidenceOptions"', evidence_start)
+        evidence_header = APP_JS[evidence_start:evidence_end]
+        self.assertIn('data-open-missing-evidence-creator', evidence_header)
+        self.assertLess(
+            evidence_header.index('data-open-missing-evidence-creator'),
+            evidence_header.index('id="evidenceSummaryCount"'),
+        )
 
         self.assertIn("function bindReviewDropdownDismiss", APP_JS)
         self.assertIn("reviewDropdownDismissBound", APP_JS)
@@ -786,7 +791,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-228", APP_ENTRY_JS)
+        self.assertIn("manual-triage-229", APP_ENTRY_JS)
 
     def test_multi_issue_query_contract(self) -> None:
         self.assertIn('id="openIssueQueryButton"', INDEX_HTML)
