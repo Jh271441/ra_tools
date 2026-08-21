@@ -72,6 +72,65 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
         self.assertEqual(excluded["total"], 1)
         self.assertEqual([item["issue_id"] for item in excluded["items"]], ["cn-excluded"])
 
+    def test_case_gallery_exclusion_filter_keeps_unreviewed_cases_included(self) -> None:
+        """The gallery's normal slice is not Review-only."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "triage.sqlite3")
+            database.init()
+            scope = "test-case-exclusion"
+            database.upsert_issues(
+                [
+                    {"issue_id": "cn-excluded", "gt_label": "误触发"},
+                    {"issue_id": "cn-included", "gt_label": "误触发"},
+                    {"issue_id": "cn-unreviewed", "gt_label": "误触发"},
+                ],
+                source="test",
+                replace_gt=True,
+                baseline_scope=scope,
+            )
+            database.create_annotation(
+                issue_id="cn-excluded",
+                label="误触发",
+                review_status="reviewed",
+                tags=[],
+                missing_evidence=[],
+                note="not a model issue",
+                author="tester",
+                is_excluded=True,
+            )
+            database.create_annotation(
+                issue_id="cn-included",
+                label="误触发",
+                review_status="reviewed",
+                tags=[],
+                missing_evidence=[],
+                note="keep in queue",
+                author="tester",
+                is_excluded=False,
+            )
+
+            included = database.list_cases(
+                baseline_scope=scope, is_excluded=False, page_size=20
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in included["items"]],
+                ["cn-included", "cn-unreviewed"],
+            )
+            excluded = database.list_cases(
+                baseline_scope=scope, is_excluded=True, page_size=20
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in excluded["items"]],
+                ["cn-excluded"],
+            )
+            self.assertEqual(
+                database.list_case_issue_ids(
+                    baseline_scope=scope, is_excluded=False
+                ),
+                ["cn-included", "cn-unreviewed"],
+            )
+
     def test_historical_tags_drive_effective_output_and_automatic_status(self) -> None:
         tag_catalog = {
             "queue": {"label": "排队", "group": "false_trigger"},

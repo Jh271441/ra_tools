@@ -522,6 +522,13 @@ function renderOverview(data) {
   $("#statIssues").textContent = data.issues ?? "—";
   $("#statFailures").textContent = data.model_failures ?? "—";
   $("#statReviewed").textContent = data.reviewed_failures ?? data.labelled ?? "—";
+  const reviewedMetric = $("#statReviewed")?.closest("div");
+  if (reviewedMetric) {
+    reviewedMetric.title = uiText(
+      "仅统计当前模型 Run 中模型预测与 GT 不一致且已有 Review 的 Issue。",
+      "Counts only reviewed issues whose model prediction mismatches GT in the current Model Run."
+    );
+  }
   $("#statPredictions").textContent = data.predictions ?? "—";
   renderActiveRun(data);
 }

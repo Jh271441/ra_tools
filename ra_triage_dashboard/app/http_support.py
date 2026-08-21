@@ -609,6 +609,7 @@ def _case_filter_kwargs(
     missing_evidence: str = "",
     issue_ids: str = "",
     work_assignee: str = "",
+    exclusion: str = "",
     baselines: str = "",
     request: Request | None = None,
 ) -> dict[str, Any]:
@@ -645,6 +646,7 @@ def _case_filter_kwargs(
     for status in review_statuses:
         if status not in REVIEW_STATUSES:
             raise _detail(400, "review_status 不在支持范围内。")
+    exclusion_filter, is_excluded = resolve_review_exclusion_filter(exclusion)
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     return {
         "baseline_scope": scopes[0] if len(scopes) == 1 else "",
@@ -663,6 +665,8 @@ def _case_filter_kwargs(
         "missing_evidence": missing_evidence,
         "issue_ids": _parse_issue_id_filter(issue_ids),
         "work_assignee": _as_text(work_assignee).strip(),
+        "is_excluded": is_excluded,
+        "exclusion": exclusion_filter,
     }
 
 

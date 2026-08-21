@@ -27,6 +27,14 @@ function reviewerFilterSelections() {
   };
 }
 
+function selectedReviewExclusionFilter() {
+  const values = parseFilterList(getMultiFilterValues($("#reviewExclusionFilter")));
+  if (values.length === 1 && ["included", "excluded"].includes(values[0])) {
+    return values[0];
+  }
+  return "all";
+}
+
 function persistReviewerFilterRoute(page, values) {
   const target = page === "analysis" ? "analysis" : "review";
   if (state.activePage !== target) return;
@@ -147,6 +155,20 @@ function renderReviewCatalogFilters() {
       { value: "needs_gt_review", label: t("status.needs_gt") },
     ],
     selected: getMultiFilterValues($("#reviewStatusFilter")),
+    onChange,
+  });
+  renderMultiFilter($("#reviewExclusionFilter"), {
+    options: [
+      {
+        value: "included",
+        label: uiText("不含问题排除", "Exclude shielded cases"),
+      },
+      {
+        value: "excluded",
+        label: uiText("仅问题排除", "Only shielded cases"),
+      },
+    ],
+    selected: getMultiFilterValues($("#reviewExclusionFilter")),
     onChange,
   });
 }

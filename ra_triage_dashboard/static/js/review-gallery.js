@@ -529,6 +529,10 @@ async function loadCases({
       ? workAssigneeFilterSelection()
       : getMultiFilterValues($("#workAssigneeFilter"))
   );
+  const exclusion =
+    typeof selectedReviewExclusionFilter === "function"
+      ? selectedReviewExclusionFilter()
+      : "all";
   const runFilter = $("#modelRunFilter");
   // During first paint the Run request and gallery request overlap.  A deep
   // link already owns ``state.selectedRunId``, but the native select has no
@@ -549,6 +553,7 @@ async function loadCases({
   if (annotationAuthor) params.set("annotation_author", annotationAuthor);
   if (reviewStatus) params.set("review_status", reviewStatus);
   if (workAssignee) params.set("work_assignee", workAssignee);
+  if (exclusion !== "all") params.set("exclusion", exclusion);
   if (state.selectedRunId) params.set("model_run_id", state.selectedRunId);
   if (state.selectedRunId && state.reviewComparisonStatus !== "all") {
     params.set("comparison", state.reviewComparisonStatus);

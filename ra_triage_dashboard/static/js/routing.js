@@ -282,6 +282,10 @@ function normalizedReviewRouteFilters(params) {
     params.get("page_size") || String(DEFAULT_CASE_PAGE_SIZE),
     10
   );
+  const exclusionValue = String(params.get("exclusion") || "all").trim().toLowerCase();
+  const exclusion = ["included", "excluded"].includes(exclusionValue)
+    ? exclusionValue
+    : "all";
   return {
     search: params.get("q") || "",
     gtLabel: parseFilterList(params.get("gt") || gtLabel).filter((value) =>
@@ -295,6 +299,7 @@ function normalizedReviewRouteFilters(params) {
     workAssignee: parseFilterList(
       params.get("work_assignee") || params.get("assignee") || ""
     ),
+    exclusion,
     clusterKey: params.get("evidence") || "",
     casePage: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
     casePageSize: CASE_PAGE_SIZES.includes(rawPageSize)
@@ -404,6 +409,10 @@ function currentReviewRouteOptions(overrides = {}) {
       typeof workAssigneeFilterSelection === "function"
         ? workAssigneeFilterSelection()
         : getMultiFilterValues($("#workAssigneeFilter")),
+    exclusion:
+      typeof selectedReviewExclusionFilter === "function"
+        ? selectedReviewExclusionFilter()
+        : "all",
     clusterKey: state.clusterKey,
     casePage: state.casePage,
     casePageSize: state.casePageSize,
@@ -424,6 +433,10 @@ function applyReviewRouteControls(route) {
   setMultiFilterValues($("#workAssigneeFilter"), route.workAssignee);
   setMultiFilterValues($("#reviewerFilter"), route.annotationAuthor);
   setMultiFilterValues($("#reviewStatusFilter"), route.reviewStatus);
+  setMultiFilterValues(
+    $("#reviewExclusionFilter"),
+    route.exclusion && route.exclusion !== "all" ? [route.exclusion] : []
+  );
   state.clusterKey = route.clusterKey || "";
   state.casePage = Math.max(1, Number(route.casePage) || 1);
   state.casePageSize = CASE_PAGE_SIZES.includes(Number(route.casePageSize))
@@ -536,6 +549,9 @@ function pageUrl(page, options = {}) {
     if (reviewer) url.searchParams.set("reviewer", reviewer);
     if (status) url.searchParams.set("status", status);
     if (assignee) url.searchParams.set("work_assignee", assignee);
+    if (review.exclusion && review.exclusion !== "all") {
+      url.searchParams.set("exclusion", review.exclusion);
+    }
     if (review.clusterKey) url.searchParams.set("evidence", review.clusterKey);
     if (Number(review.casePage) > 1) url.searchParams.set("page", String(review.casePage));
     if (Number(review.casePageSize) !== DEFAULT_CASE_PAGE_SIZE) {

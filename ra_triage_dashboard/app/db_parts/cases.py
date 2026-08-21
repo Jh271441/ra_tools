@@ -203,6 +203,7 @@ class DatabaseCasesMixin:
         missing_evidence: str = "",
         issue_ids: list[str] | None = None,
         work_assignee: str = "",
+        is_excluded: bool | None = None,
     ) -> tuple[str, list[Any], list[Any], str]:
         comparison_status = str(comparison_status or "all").strip().lower()
         if failure_only:
@@ -268,6 +269,12 @@ class DatabaseCasesMixin:
         if authors:
             where.append(f"ann.author IN ({', '.join('?' for _ in authors)})")
             params.extend(authors)
+        if is_excluded is not None:
+            # No local Review is an included case.  COALESCE keeps that
+            # intuitive all/included/excluded split while supporting SQLite
+            # and PostgreSQL boolean storage.
+            where.append("COALESCE(ann.is_excluded, FALSE) = ?")
+            params.append(bool(is_excluded))
         if missing_evidence.strip():
             # Values are serialized as a JSON array; matching the quoted token
             # avoids treating a prefix as a different evidence item.
@@ -362,6 +369,7 @@ class DatabaseCasesMixin:
         missing_evidence: str = "",
         issue_ids: list[str] | None = None,
         work_assignee: str = "",
+        is_excluded: bool | None = None,
         page: int = 1,
         page_size: int = 100,
     ) -> dict[str, Any]:
@@ -384,6 +392,7 @@ class DatabaseCasesMixin:
             missing_evidence=missing_evidence,
             issue_ids=issue_ids,
             work_assignee=work_assignee,
+            is_excluded=is_excluded,
         )
         with self.connect() as conn:
             total = conn.execute(
@@ -434,6 +443,7 @@ class DatabaseCasesMixin:
         missing_evidence: str = "",
         issue_ids: list[str] | None = None,
         work_assignee: str = "",
+        is_excluded: bool | None = None,
         limit: int = 5000,
     ) -> list[str]:
         """Return ordered issue IDs matching the same filters as list_cases."""
@@ -452,6 +462,7 @@ class DatabaseCasesMixin:
             missing_evidence=missing_evidence,
             issue_ids=issue_ids,
             work_assignee=work_assignee,
+            is_excluded=is_excluded,
         )
         limit = min(max(1, int(limit)), 5000)
         with self.connect() as conn:

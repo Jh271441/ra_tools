@@ -513,7 +513,7 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
   min-width: 0; display: grid;
   grid-template-columns:
     minmax(150px, 1.35fr) minmax(118px, .72fr) minmax(120px, 1fr)
-    repeat(5, minmax(84px, .58fr)) auto;
+    repeat(6, minmax(84px, .58fr)) auto;
   align-items: end; gap: 5px;
 }
 .review-filters label { min-width: 0; display: grid; gap: 3px; color: var(--faint); font-size: 11px; }
@@ -2614,7 +2614,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .review-filters {
     grid-template-columns:
       minmax(140px, 1.3fr) minmax(110px, .7fr) minmax(120px, 1fr)
-      repeat(5, minmax(80px, .55fr)) auto;
+      repeat(6, minmax(80px, .55fr)) auto;
   }
   .review-quick-actions { justify-content: flex-end; }
   .tool-page-grid { grid-template-columns: 230px minmax(0, 1fr); }

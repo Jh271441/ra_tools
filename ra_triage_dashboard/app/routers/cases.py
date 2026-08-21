@@ -252,6 +252,7 @@ async def list_cases(
     missing_evidence: str = "",
     issue_ids: str = "",
     work_assignee: str = "",
+    exclusion: str = "",
     baselines: str = "",
     page: int = 1,
     page_size: int = 100,
@@ -270,10 +271,12 @@ async def list_cases(
         missing_evidence=missing_evidence,
         issue_ids=issue_ids,
         work_assignee=work_assignee,
+        exclusion=exclusion,
         baselines=baselines,
         request=request,
     )
     review_statuses = tuple(filters.pop("review_statuses", ()))
+    exclusion_filter = str(filters.pop("exclusion", "all"))
     comparison_status = filters["comparison_status"]
     safe_page = max(1, int(page))
     safe_page_size = min(max(1, int(page_size)), 100)
@@ -296,6 +299,7 @@ async def list_cases(
         "issue_ids": filters["issue_ids"],
         "work_assignee": filters["work_assignee"],
         "review_status": list(review_statuses),
+        "exclusion": exclusion_filter,
         "baselines": resolve_request_baseline_ids(baselines, request=request),
         "baseline_scopes": filters.get("baseline_scopes") or [],
     }
@@ -318,6 +322,7 @@ async def list_case_issue_ids(
     missing_evidence: str = "",
     issue_ids: str = "",
     work_assignee: str = "",
+    exclusion: str = "",
     baselines: str = "",
 ) -> dict[str, Any]:
     """Return all matching issue IDs for the current Review filters (capped)."""
@@ -335,10 +340,12 @@ async def list_case_issue_ids(
         missing_evidence=missing_evidence,
         issue_ids=issue_ids,
         work_assignee=work_assignee,
+        exclusion=exclusion,
         baselines=baselines,
         request=request,
     )
     review_statuses = tuple(filters.pop("review_statuses", ()))
+    exclusion_filter = str(filters.pop("exclusion", "all"))
     ids = await asyncio.to_thread(
         _case_issue_ids_with_status_filter,
         filters=filters,
@@ -355,6 +362,7 @@ async def list_case_issue_ids(
             "issue_ids": filters["issue_ids"],
             "work_assignee": filters["work_assignee"],
             "review_status": list(review_statuses),
+            "exclusion": exclusion_filter,
         },
     }
 
@@ -372,6 +380,7 @@ async def work_assignees(
     failure_only: bool = False,
     missing_evidence: str = "",
     issue_ids: str = "",
+    exclusion: str = "",
     baselines: str = "",
 ) -> dict[str, Any]:
     """Assignee facet scoped to the current Review queue."""
@@ -389,10 +398,12 @@ async def work_assignees(
         missing_evidence=missing_evidence,
         issue_ids=issue_ids,
         work_assignee="",
+        exclusion=exclusion,
         baselines=baselines,
         request=request,
     )
     review_statuses = tuple(filters.pop("review_statuses", ()))
+    exclusion_filter = str(filters.pop("exclusion", "all"))
     filtered_issue_ids = await asyncio.to_thread(
         _case_issue_ids_with_status_filter,
         filters=filters,
@@ -408,6 +419,7 @@ async def work_assignees(
             "model_run_id": filters["model_run_id"],
             "comparison_status": filters["comparison_status"],
             "review_status": list(review_statuses),
+            "exclusion": exclusion_filter,
             "baselines": resolve_request_baseline_ids(
                 baselines, request=request
             ),
@@ -441,10 +453,12 @@ async def split_case_work(request: Request) -> dict[str, Any]:
         missing_evidence=_as_text(filter_body.get("missing_evidence")),
         issue_ids=_as_text(filter_body.get("issue_ids")),
         work_assignee=_as_text(filter_body.get("work_assignee")),
+        exclusion=_as_text(filter_body.get("exclusion")),
         baselines=_as_text(filter_body.get("baselines") or filter_body.get("baseline_scopes")),
         request=request,
     )
     review_statuses = tuple(filters.pop("review_statuses", ()))
+    exclusion_filter = str(filters.pop("exclusion", "all"))
     issue_ids = await asyncio.to_thread(
         _case_issue_ids_with_status_filter,
         filters=filters,
@@ -477,6 +491,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                 "model_label": filters["model_label"],
                 "annotation_author": filters["annotation_author"],
                 "review_status": list(review_statuses),
+                "exclusion": exclusion_filter,
                 "missing_evidence": filters["missing_evidence"],
                 "baselines": filters.get("baseline_scopes") and resolve_request_baseline_ids(
                     ",".join(
@@ -508,6 +523,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
             "failure_only": filters["comparison_status"] == "mismatch",
             "work_assignee": filters["work_assignee"],
             "review_status": list(review_statuses),
+            "exclusion": exclusion_filter,
         },
     }
 

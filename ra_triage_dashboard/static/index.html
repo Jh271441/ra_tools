@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-233`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-234`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -148,7 +148,7 @@
           <div class="header-metrics" aria-label="概览">
             <div><span class="ui-lang-zh">基线</span><span class="ui-lang-en">Baseline</span><strong id="statIssues">—</strong></div>
             <div class="metric-fail"><span class="ui-lang-zh">判断失败</span><span class="ui-lang-en">Mismatches</span><strong id="statFailures">—</strong></div>
-            <div><span class="ui-lang-zh">人工复核</span><span class="ui-lang-en">Reviewed</span><strong id="statReviewed">—</strong></div>
+            <div class="metric-reviewed"><span class="ui-lang-zh">判错已复核</span><span class="ui-lang-en">Reviewed mismatches</span><strong id="statReviewed">—</strong></div>
             <div><span class="ui-lang-zh">模型输出</span><span class="ui-lang-en">Predictions</span><strong id="statPredictions">—</strong></div>
           </div>
           <div class="gt-sync-control" id="gtSyncControl" data-status="not_started">
@@ -221,6 +221,10 @@
                 <label class="filter-review-status">
                   <span class="ui-lang-zh">Issue GT Review状态</span><span class="ui-lang-en">Issue GT review status</span>
                   <div class="multi-filter" id="reviewStatusFilter" data-placeholder="全部状态" data-placeholder-en="All statuses" data-i18n-placeholder="analysis.all_statuses"></div>
+                </label>
+                <label class="filter-exclusion">
+                  <span class="ui-lang-zh">问题排除</span><span class="ui-lang-en">Issue exclusion</span>
+                  <div class="multi-filter" id="reviewExclusionFilter" data-placeholder="全部（含问题排除）" data-placeholder-en="All (including shielded)" aria-label="Issue exclusion filter"></div>
                 </label>
                 <label>
                   <span class="ui-lang-zh">任务负责人</span><span class="ui-lang-en">Assignee</span>
@@ -1320,7 +1324,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-233`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-234`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
