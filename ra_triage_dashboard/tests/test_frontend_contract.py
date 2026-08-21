@@ -32,7 +32,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-232", APP_ENTRY_JS)
+        self.assertIn("manual-triage-233", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -73,7 +73,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-232", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-233", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
         self.assertNotIn("async function bootstrap", APP_ENTRY_JS)
@@ -140,7 +140,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('styles.css?v=manual-triage-232', INDEX_HTML)
+        self.assertIn('styles.css?v=manual-triage-233', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -664,8 +664,8 @@ class FrontendContractTest(unittest.TestCase):
         evidence_header = APP_JS[evidence_start:evidence_end]
         self.assertIn('data-open-missing-evidence-creator', evidence_header)
         self.assertLess(
-            evidence_header.index('id="evidenceSummaryCount"'),
             evidence_header.index('data-open-missing-evidence-creator'),
+            evidence_header.index('id="evidenceSummaryCount"'),
         )
 
         self.assertIn("function bindReviewDropdownDismiss", APP_JS)
@@ -705,15 +705,17 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn(".review-save-button {", STYLES_CSS)
         self.assertIn("button > * { pointer-events: none; }", STYLES_CSS)
 
-    def test_review_catalog_creator_buttons_do_not_live_inside_details_summary(self) -> None:
+    def test_review_catalog_creator_buttons_keep_the_compact_summary_order(self) -> None:
         evidence_start = APP_JS.index('class="evidence-dropdown review-dropdown review-tag-dropdown"')
         evidence_end = APP_JS.index('id="missingEvidenceOptions"', evidence_start)
         evidence_header = APP_JS[evidence_start:evidence_end]
         self.assertLess(
-            evidence_header.index("</summary>"),
             evidence_header.index('data-open-missing-evidence-creator'),
+            evidence_header.index("</summary>"),
         )
-        self.assertIn(".review-tag-dropdown > .tag-catalog-add-button", STYLES_CSS)
+        self.assertIn(".review-tag-dropdown > summary .tag-catalog-add-button", STYLES_CSS)
+        self.assertIn('target?.closest(".tag-catalog-add-button")', APP_JS)
+        self.assertIn('if (target?.closest(".tag-catalog-add-button")) event.preventDefault();', APP_JS)
 
     def test_missing_evidence_creation_uses_shared_catalog_and_hint(self) -> None:
         self.assertIn('id="missingEvidenceCreateHint"', INDEX_HTML)
@@ -811,7 +813,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-232", APP_ENTRY_JS)
+        self.assertIn("manual-triage-233", APP_ENTRY_JS)
 
     def test_multi_issue_query_contract(self) -> None:
         self.assertIn('id="openIssueQueryButton"', INDEX_HTML)

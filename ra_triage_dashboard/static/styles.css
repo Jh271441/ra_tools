@@ -1292,12 +1292,11 @@ html[data-ui-lang="en"] .expected-output-rule-popover ul.ui-lang-en { display: g
 }
 .review-tag-dropdown > summary:hover .tag-group-chevron { color: var(--accent); }
 .review-tag-dropdown[open] .tag-group-chevron { transform: rotate(180deg); color: var(--accent); }
-/* Keep creator controls outside <summary>: nested buttons inside a details
- * summary have inconsistent activation behavior across browsers. Reserve a
- * stable top-right slot so they still align with the count and chevron. */
-.review-tag-dropdown > summary { padding-right: 38px; }
-.review-tag-dropdown > .tag-catalog-add-button {
-  position: absolute; top: 8px; right: 10px; z-index: 2;
+/* Keep the add control in the familiar compact summary order:
+ * ＋ → selected count → chevron.  Its summary click is explicitly
+ * cancelled in review-form.js, so opening the creator does not toggle details. */
+.review-tag-dropdown > summary .tag-catalog-add-button {
+  position: relative; z-index: 1;
   width: 20px; height: 20px; font-size: 13px; border-radius: 4px;
 }
 .review-tag-options { display: flex; flex-wrap: wrap; gap: 4px; }

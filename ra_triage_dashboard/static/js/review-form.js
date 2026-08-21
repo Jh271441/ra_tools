@@ -474,12 +474,12 @@ function renderReview(caseData) {
           <summary>
             <span class="tag-group-label"><span class="ui-lang-zh">缺失信息（多选）</span><span class="ui-lang-en">Missing evidence</span></span>
             <span class="tag-group-trailing">
+              <button class="tag-catalog-add-button" type="button" data-open-missing-evidence-creator aria-label="新增缺失信息" title="新增缺失信息">＋</button>
               <span class="evidence-summary-count tag-group-summary" id="evidenceSummaryCount">已选 ${chosenEvidence.size} 项</span>
               <span class="tag-group-chevron" aria-hidden="true"></span>
             </span>
             <span class="review-axis-selected review-evidence-selected" data-selected-missing-evidence${chosenEvidence.size ? "" : " hidden"}></span>
           </summary>
-          <button class="tag-catalog-add-button" type="button" data-open-missing-evidence-creator aria-label="新增缺失信息" title="新增缺失信息">＋</button>
           <div class="evidence-options review-tag-options" id="missingEvidenceOptions">${visibleCatalog.map((item) => missingEvidenceOptionMarkup(item, chosenEvidence.has(item.key), true)).join("")}${deletedEvidenceOptions}${customEvidenceOptions}${!visibleCatalog.length && !deletedEvidenceOptions && !customEvidenceOptions ? '<div class="review-tag-empty">暂无条目，点 ＋ 添加</div>' : ""}</div>
         </details>
         <div class="review-attachment-field">
@@ -521,10 +521,23 @@ function renderReview(caseData) {
     if (dropdown.dataset.reviewDropdownToggleBound === "1") return;
     dropdown.dataset.reviewDropdownToggleBound = "1";
     const summary = dropdown.querySelector(":scope > summary");
+    // Creator controls remain in the compact familiar order: ＋ → count →
+    // chevron.  Prevent only the surrounding details summary from toggling;
+    // the native button keeps its own complete click target and handler.
+    summary?.addEventListener(
+      "click",
+      (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (target?.closest(".tag-catalog-add-button")) event.preventDefault();
+      },
+      true
+    );
     // Park off-screen before <details> flips open so the first paint never uses absolute top:100%.
     summary?.addEventListener(
       "pointerdown",
-      () => {
+      (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (target?.closest(".tag-catalog-add-button")) return;
         if (dropdown.open) return;
         prepareReviewDropdownPanelForMeasure(reviewDropdownPanel(dropdown));
       },
