@@ -10,11 +10,12 @@ import json
 import re
 import threading
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Optional, Protocol
 from urllib.parse import quote
 
 from .assets import AssetIndex, CameraIndex, VideoIndex
 from .baseline_registry import BaselineEntry, BaselineRegistry
+from .timed_cache import TimedSingleFlightCache
 from .web_paths import with_base_path
 
 
@@ -114,6 +115,25 @@ class BagsAresAnimationProvider:
         self._lock = threading.RLock()
         self._bev_assets: dict[str, dict[str, Path]] = {}
         self._video_assets: dict[str, dict[str, Path]] = {}
+        # A bare filesystem lookup can become unexpectedly expensive on the
+        # shared bags volume (``glob`` + metadata round trips).  Keep these
+        # descriptors deliberately short-lived: captures may appear while the
+        # dashboard is running, but repeated route changes must not rescan the
+        # same Issue directory.
+        self._bev_directories = TimedSingleFlightCache[str, Optional[Path]](
+            ttl_seconds=20,
+            max_entries=4000,
+        )
+        self._bev_descriptors = TimedSingleFlightCache[str, dict[str, Any]](
+            ttl_seconds=30,
+            max_entries=4000,
+        )
+        self._video_descriptors = TimedSingleFlightCache[
+            str, Optional[dict[str, Any]]
+        ](
+            ttl_seconds=15,
+            max_entries=4000,
+        )
         self._camera = (
             CameraIndex(self.camera_root, base_path=base_path)
             if self.camera_root
@@ -125,6 +145,12 @@ class BagsAresAnimationProvider:
         return bool(self._find_bev_dir(issue_id)) or self.get_video(issue_id) is not None
 
     def get_assets(self, issue_id: str) -> dict[str, Any]:
+        return self._bev_descriptors.get_or_load(
+            issue_id,
+            lambda: self._load_assets(issue_id),
+        )
+
+    def _load_assets(self, issue_id: str) -> dict[str, Any]:
         folder = self._find_bev_dir(issue_id)
         if folder is None:
             return {
@@ -259,6 +285,12 @@ class BagsAresAnimationProvider:
         return self._camera.get_assets(issue_id, timestamp_ms)
 
     def get_video(self, issue_id: str) -> dict[str, Any] | None:
+        return self._video_descriptors.get_or_load(
+            issue_id,
+            lambda: self._load_video(issue_id),
+        )
+
+    def _load_video(self, issue_id: str) -> dict[str, Any] | None:
         index = self._ensure_video_index()
         meta = index.get(issue_id)
         if not meta:
@@ -312,6 +344,12 @@ class BagsAresAnimationProvider:
         }
 
     def _find_bev_dir(self, issue_id: str) -> Path | None:
+        return self._bev_directories.get_or_load(
+            issue_id,
+            lambda: self._load_bev_dir(issue_id),
+        )
+
+    def _load_bev_dir(self, issue_id: str) -> Path | None:
         if not self.bev_frames_root.is_dir():
             return None
         exact = (self.bev_frames_root / f"{issue_id}_0").resolve()

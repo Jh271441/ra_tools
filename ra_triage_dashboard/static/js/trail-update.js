@@ -486,6 +486,7 @@ function clearTrailAttributePreview(message = "") {
   state.trailUpdate.jsonPreview = null;
   state.trailUpdate.previewKey = "";
   state.trailUpdate.previewLoadedAt = 0;
+  state.trailUpdate.statusLoadedAt = 0;
   setTrailAttributeUpdatePreviewVisible(false);
   setTrailAttributeCapability(null);
   $("#trailUpdateCount").textContent = "—";
@@ -550,6 +551,16 @@ function trailUpdateEndpoint(runId, probeTrail = true, refresh = false) {
   return `/api/trail-attribute-update/preview?${params.toString()}`;
 }
 
+function trailUpdateStatusEndpoint(items = [], refresh = false) {
+  const ids = [...new Set((items || [])
+    .map((item) => String(item?.issue_id || "").trim())
+    .filter(Boolean))];
+  const params = new URLSearchParams();
+  if (ids.length) params.set("issue_ids", ids.join(","));
+  if (refresh) params.set("refresh", "true");
+  return `/api/trail-attribute-update/status?${params.toString()}`;
+}
+
 function trailUpdateStatusMeta(status = "not_checked") {
   const key = String(status || "not_checked");
   const labels = {
@@ -562,6 +573,11 @@ function trailUpdateStatusMeta(status = "not_checked") {
   };
   const [zh, en, className, detail] = labels[key] || labels.not_checked;
   return { key, label: uiText(zh, en), className, detail: uiText(detail, detail) };
+}
+
+function trailUpdateStatusCellMarkup(status = "not_checked") {
+  const meta = trailUpdateStatusMeta(status);
+  return `<span class="trail-update-state-badge ${meta.className}" title="${escapeHtml(meta.detail)}">${escapeHtml(meta.label)}</span><small>${escapeHtml(meta.detail)}</small>`;
 }
 
 function trailUpdateStatusSummary(data, items) {
@@ -679,9 +695,34 @@ function renderTrailAttributePreview(data) {
       <td data-label="Review"><div>${escapeHtml(review.reviewer || "未记录")}</div><small>${escapeHtml(review.status || "pending")} · ${escapeHtml(formatTime(review.reviewed_at))}</small></td>
       <td data-label="Comment"><div class="trail-update-comment" title="${escapeHtml(comment || uiText("未填写 Comment", "No Comment"))}">${escapeHtml(comment || "未填写")}</div><small class="trail-update-comment-target" title="${escapeHtml(comment ? uiText("提交时写入 info.ra_triage_dashboard.should_exclude_comment", "Saved in info.ra_triage_dashboard.should_exclude_comment on commit") : uiText("不会写入排除说明", "No exclusion note will be written"))}">${comment ? uiText("提交时写入 info.ra_triage_dashboard.should_exclude_comment", "Saved in info.ra_triage_dashboard.should_exclude_comment on commit") : uiText("不会写入排除说明", "No exclusion note will be written")}</small></td>
       <td data-label="数据集版本" class="trail-update-source-cell" title="${escapeHtml(sourceRun.title)}"><strong>${escapeHtml(sourceRun.label)}</strong></td>
-      <td data-label="Trail 更新状态"><span class="trail-update-state-badge ${status.className}" title="${escapeHtml(status.detail)}">${escapeHtml(status.label)}</span><small>${escapeHtml(status.detail)}</small></td>
+      <td data-label="Trail 更新状态" data-trail-update-status-issue="${escapeHtml(item.issue_id || "")}">${trailUpdateStatusCellMarkup(status.key)}</td>
     </tr>`;
   }).join("");
+}
+
+function patchTrailAttributeStatus(statusData) {
+  const data = state.trailUpdate?.data;
+  if (!data || !statusData || typeof statusData !== "object") return data;
+  const statuses = statusData.trail_update_statuses || {};
+  data.trail_capability = statusData.trail_capability || data.trail_capability;
+  data.trail_update_status_summary = statusData.trail_update_status_summary || {};
+  data.write_status = statusData.write_status || data.write_status;
+  data.write_ready = statusData.write_ready === true;
+  data.capability_pending = false;
+  (data.items || []).forEach((item) => {
+    const issueId = String(item?.issue_id || "");
+    if (Object.prototype.hasOwnProperty.call(statuses, issueId)) {
+      item.trail_update_status = statuses[issueId];
+    }
+    const cell = document.querySelector(
+      `[data-trail-update-status-issue="${CSS.escape(issueId)}"]`
+    );
+    if (cell) cell.innerHTML = trailUpdateStatusCellMarkup(item.trail_update_status);
+  });
+  setTrailAttributeCapability(data);
+  trailUpdateStatusSummary(data, data.items || []);
+  syncTrailAttributeActions(data);
+  return data;
 }
 
 async function refreshTrailAttributeStatus({ runId, previewKey, requestSeq, force = false } = {}) {
@@ -689,16 +730,17 @@ async function refreshTrailAttributeStatus({ runId, previewKey, requestSeq, forc
     // This is deliberately a second-stage request.  The Review aggregate has
     // already rendered from local data, so a slow Trail view must never hold
     // candidate rows hostage.
-    const data = await api(trailUpdateEndpoint(runId, true, force), { cache: "no-store" });
+    const current = state.trailUpdate?.data;
+    const items = Array.isArray(current?.items) ? current.items : [];
+    if (!items.length) return current;
+    const data = await api(trailUpdateStatusEndpoint(items, force), { cache: "no-store" });
     if (
       requestSeq !== state.trailUpdate.requestSeq ||
       previewKey !== trailUpdatePreviewKey(runId)
     ) return data;
-    state.trailUpdate.data = data;
+    patchTrailAttributeStatus(data);
     state.trailUpdate.previewKey = previewKey;
-    state.trailUpdate.previewLoadedAt = Date.now();
-    renderTrailAttributePreview(data);
-    syncTrailAttributeActions(data);
+    state.trailUpdate.statusLoadedAt = Date.now();
     setTrailAttributeStatus("");
     return data;
   } catch (error) {
@@ -786,7 +828,7 @@ async function refreshTrailReviewAfterIssueCommit() {
   // server-side.  Refresh the Review aggregate in the background without
   // switching tabs or putting the active Issue form into a loading state.
   try {
-    await loadTrailAttributePreview(true, { background: true });
+    await loadTrailAttributePreview(true);
     showToast(uiText("Review 排除汇总已自动刷新。", "Review exclusion summary refreshed automatically."));
   } catch (error) {
     showToast(uiText(

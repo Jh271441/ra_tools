@@ -4,9 +4,10 @@ import json
 import re
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import quote
 
+from .timed_cache import TimedSingleFlightCache
 from .web_paths import with_base_path
 
 
@@ -31,6 +32,13 @@ class AssetIndex:
         self._manifest_mtime_ns = -1
         self._meta_paths: dict[str, Path] = {}
         self._assets: dict[str, dict[str, Path]] = {}
+        # Building the public descriptor requires a meta read plus a stat for
+        # every frame.  Cache the rendered descriptor separately from the
+        # opaque asset-path map used by the file endpoint.
+        self._descriptors = TimedSingleFlightCache[str, dict[str, Any]](
+            ttl_seconds=30,
+            max_entries=4_000,
+        )
 
     def refresh(self, force: bool = False) -> int:
         try:
@@ -39,6 +47,7 @@ class AssetIndex:
             with self._lock:
                 self._meta_paths = {}
                 self._assets = {}
+                self._descriptors.clear()
             return 0
         if not force and stat.st_mtime_ns == self._manifest_mtime_ns:
             return len(self._meta_paths)
@@ -61,6 +70,7 @@ class AssetIndex:
             self._manifest_mtime_ns = stat.st_mtime_ns
             self._meta_paths = parsed
             self._assets = {}
+            self._descriptors.clear()
         return len(parsed)
 
     def indexed_count(self) -> int:
@@ -150,27 +160,33 @@ class AssetIndex:
 
     def get_assets(self, issue_id: str) -> dict[str, Any]:
         self.refresh()
+        return self._descriptors.get_or_load(
+            issue_id,
+            lambda: self._load_assets(issue_id),
+        )
+
+    @staticmethod
+    def _empty_assets(issue_id: str) -> dict[str, Any]:
+        return {
+            "available": False,
+            "issue_id": issue_id,
+            "frames": [],
+            "video": None,
+            "capture": {},
+        }
+
+    def _load_assets(self, issue_id: str) -> dict[str, Any]:
+        """Build one JSON-safe descriptor after a cache miss on a worker."""
+
         with self._lock:
             meta_path = self._meta_paths.get(issue_id)
         if not meta_path or not meta_path.is_file():
-            return {
-                "available": False,
-                "issue_id": issue_id,
-                "frames": [],
-                "video": None,
-                "capture": {},
-            }
+            return self._empty_assets(issue_id)
 
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            return {
-                "available": False,
-                "issue_id": issue_id,
-                "frames": [],
-                "video": None,
-                "capture": {},
-            }
+            return self._empty_assets(issue_id)
 
         base = meta_path.parent
         assets: dict[str, Path] = {}
@@ -280,8 +296,21 @@ class CameraIndex:
         self.base_path = base_path
         self._lock = threading.RLock()
         self._assets: dict[str, dict[str, Path]] = {}
+        self._descriptors = TimedSingleFlightCache[str, dict[str, Any]](
+            ttl_seconds=30,
+            max_entries=4_000,
+        )
 
     def get_assets(self, issue_id: str, timestamp_ms: Any = None) -> dict[str, Any]:
+        cache_key = f"{issue_id}:{str(timestamp_ms or '').strip()}"
+        return self._descriptors.get_or_load(
+            cache_key,
+            lambda: self._load_assets(issue_id, timestamp_ms),
+        )
+
+    def _load_assets(self, issue_id: str, timestamp_ms: Any = None) -> dict[str, Any]:
+        """Scan one camera directory after a cache miss on a worker."""
+
         folder = self._select_folder(issue_id, timestamp_ms)
         if folder is None:
             return {
@@ -396,10 +425,25 @@ class VideoIndex:
         self.base_path = base_path
         self._lock = threading.RLock()
         self._assets: dict[str, dict[str, Path]] = {}
+        # Captures may appear shortly after a job completes, so keep negative
+        # entries short-lived while still avoiding a glob of every shard for
+        # each click on a no-video Issue.
+        self._descriptors = TimedSingleFlightCache[str, Optional[dict[str, Any]]](
+            ttl_seconds=15,
+            max_entries=4_000,
+        )
 
     def get_video(self, issue_id: str) -> dict[str, Any] | None:
         if not self._issue_id.fullmatch(issue_id) or not self.video_root.is_dir():
             return None
+        return self._descriptors.get_or_load(
+            issue_id,
+            lambda: self._load_video(issue_id),
+        )
+
+    def _load_video(self, issue_id: str) -> dict[str, Any] | None:
+        """Resolve one video after a cache miss on a worker thread."""
+
         # Support both shard layout and flat aggregate layout:
         #   shard-*-of-*/{issue_id}_{ts}/meta.json
         #   {issue_id}_{ts}/meta.json

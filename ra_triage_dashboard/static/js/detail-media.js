@@ -19,7 +19,9 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {
     .sort((left, right) => left - right)
     .map((step) => `<option value="${escapeHtml(step)}" ${step === 1 ? "selected" : ""}>${escapeHtml(step)}s${step === frameStepSec ? escapeHtml(t("media.frame_step")) : ""}</option>`)
     .join("");
-  const videoMarkup = `<video src="${escapeHtml(video.url)}" preload="metadata" playsinline draggable="false" aria-label="Ares Studio BEV 视频"></video>`;
+  const posterUrl = String(video?.poster_url || "").trim();
+  const posterAttribute = posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : "";
+  const videoMarkup = `<video src="${escapeHtml(video.url)}"${posterAttribute} preload="metadata" playsinline draggable="false" aria-label="Ares Studio BEV 视频"></video>`;
   const mediaMarkup = zoomable
     ? `<div class="media-viewport media-video-viewport" data-video-viewport><div class="media-canvas media-video-canvas" data-video-canvas>${videoMarkup}</div></div>`
     : `<div class="hero-media-button hero-media-video">${videoMarkup}</div>`;
@@ -234,6 +236,9 @@ function heroMediaSection(caseData) {
   const video = caseData?.assets?.video;
   const camera = caseData?.camera?.frames || [];
   if (!frames.length && !camera.length && !video?.url) {
+    if (caseData?.media_status === "pending") {
+      return `<section class="hero-media"><div class="no-asset hero-media-placeholder detail-media-pending"><span>${escapeHtml(uiText("正在加载 BEV、Camera 与视频…", "Loading BEV, camera, and video…"))}</span></div></section>`;
+    }
     return '<section class="hero-media"><div class="no-asset hero-media-placeholder"><span>${escapeHtml(t("media.no_assets"))}</span></div></section>';
   }
   ensureDetailMediaState(caseData);

@@ -11,6 +11,7 @@ from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse
 from PIL import Image, UnidentifiedImageError
 
+from ..case_media import empty_case_media, resolve_case_media
 from ..contracts import ISSUE_ID_RE
 from ..http_support import (
     _admin_identity,
@@ -195,21 +196,6 @@ def _case_issue_ids_with_status_filter(
         page_size=5000,
     )
     return [str(item.get("issue_id") or "") for item in result["items"]]
-
-
-def _load_case_media(provider: Any, issue_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Resolve all filesystem-backed media for one issue on a worker thread."""
-
-    assets = provider.get_assets(issue_id)
-    captured_video = provider.get_video(issue_id)
-    if captured_video is not None:
-        assets["video"] = captured_video
-        assets["available"] = True
-    camera = provider.get_camera_assets(
-        issue_id,
-        (assets.get("capture") or {}).get("timestamp_ms"),
-    )
-    return assets, camera
 
 
 def _public_case_items(
@@ -629,8 +615,35 @@ async def get_case_trail_metadata(issue_id: str) -> dict[str, Any]:
 
 
 
+@router.get("/api/cases/{issue_id}/media")
+async def get_case_media(issue_id: str) -> dict[str, Any]:
+    """Resolve deferred filesystem media for an already-loaded Issue detail.
+
+    This intentionally contains no Trail metadata or Review DB projection.  A
+    browser can render the reviewer form from ``/api/cases/{issue_id}`` first,
+    then attach video/BEV/camera when their indexes finish scanning.
+    """
+
+    case = await asyncio.to_thread(database.get_case, issue_id)
+    if case is None:
+        raise _detail(404, "Issue 不存在。")
+    provider = media_for_issue(issue_id, str(case.get("baseline_scope") or ""))
+    if provider is None:
+        assets, camera = empty_case_media(issue_id)
+        status = "unavailable"
+    else:
+        assets, camera = await resolve_case_media(provider, issue_id)
+        status = "ready"
+    return {
+        "issue_id": issue_id,
+        "assets": assets,
+        "camera": camera,
+        "media_status": status,
+    }
+
+
 @router.get("/api/cases/{issue_id}")
-async def get_case(issue_id: str) -> dict[str, Any]:
+async def get_case(issue_id: str, include_media: bool = True) -> dict[str, Any]:
     case = await asyncio.to_thread(database.get_case, issue_id)
     if case is None:
         raise _detail(404, "Issue 不存在。")
@@ -641,15 +654,12 @@ async def get_case(issue_id: str) -> dict[str, Any]:
         ]
     scope = str(case.get("baseline_scope") or "")
     provider = media_for_issue(issue_id, scope)
-    if provider is None:
-        case["assets"] = {"available": False, "issue_id": issue_id, "frames": [], "capture": {}}
-        case["camera"] = {"available": False, "issue_id": issue_id, "frames": [], "capture": {}}
+    if include_media and provider is not None:
+        case["assets"], case["camera"] = await resolve_case_media(provider, issue_id)
+        case["media_status"] = "ready"
     else:
-        case["assets"], case["camera"] = await asyncio.to_thread(
-            _load_case_media,
-            provider,
-            issue_id,
-        )
+        case["assets"], case["camera"] = empty_case_media(issue_id)
+        case["media_status"] = "pending" if provider is not None else "unavailable"
     entry = baseline_registry.by_scope(scope)
     case["baseline_id"] = entry.id if entry else ""
     case["issue_tag_suggestion"] = issue_tag_sources.lookup(

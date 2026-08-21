@@ -17,7 +17,6 @@ import json
 import logging
 import re
 import threading
-import time
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -46,6 +45,7 @@ from ..trail_writer import (
     verify_trail_readback,
     write_trail_model_results,
 )
+from ..timed_cache import TimedSingleFlightCache
 from ..upload_limits import UploadLimitExceeded, read_upload_limited
 
 router = APIRouter()
@@ -120,12 +120,13 @@ _TRAIL_ISSUE_IMPORT_FALSE_VALUES = frozenset(
     {"0", "false", "no", "n", "否", "不排除", "无需排除", "不需要排除"}
 )
 _commit_lock = threading.Lock()
-_preview_capability_cache: dict[
-    tuple[int, str, tuple[str, ...]],
-    tuple[float, dict[str, Any], dict[str, str]],
-] = {}
-_preview_capability_cache_lock = threading.Lock()
-_PREVIEW_CAPABILITY_CACHE_SECONDS = 90
+# Trail probes are remote and commonly arrive in a burst (initial page load,
+# route transition, an explicit status refresh).  A short single-flight cache
+# avoids repeating the same read while preserving the commit path's fresh,
+# server-side verification.
+_preview_capability_cache = TimedSingleFlightCache[
+    tuple[int, str, tuple[str, ...]], dict[str, Any]
+](ttl_seconds=90, max_entries=256)
 
 
 def _append_historical_source_note(note: str, source_note: str) -> str:
@@ -420,6 +421,75 @@ def _trail_update_statuses(
     return statuses
 
 
+def _trail_update_status_summary(statuses: Mapping[str, str]) -> dict[str, int]:
+    """Return compact counts for a per-Issue Trail status projection."""
+
+    summary: dict[str, int] = {}
+    for status in statuses.values():
+        normalized = _as_text(status) or "not_checked"
+        summary[normalized] = summary.get(normalized, 0) + 1
+    return summary
+
+
+def _read_preview_trail_status_sync(
+    issue_ids: list[str],
+    *,
+    info_field: str,
+    refresh: bool = False,
+) -> dict[str, Any]:
+    """Read one batched status projection, coalescing duplicate probes.
+
+    This function intentionally owns only the remote projection.  Building
+    Review candidates stays in ``_build_preview`` so the initial page response
+    does not have to wait for Trail or recreate the table after it returns.
+    """
+
+    normalized_ids = sorted({
+        _as_text(issue_id).strip()
+        for issue_id in issue_ids
+        if _as_text(issue_id).strip()
+    })
+    cache_key = (int(settings.trail_view_id), info_field, tuple(normalized_ids))
+    if refresh:
+        _preview_capability_cache.invalidate(cache_key)
+
+    def load() -> dict[str, Any]:
+        sync_result = read_trail_model_fields(
+            ra_root=settings.ra_auto_triage_root,
+            issue_ids=normalized_ids,
+            view_id=settings.trail_view_id,
+            chunk_size=settings.trail_sync_chunk_size,
+        )
+        statuses = _trail_update_statuses(
+            sync_result,
+            normalized_ids,
+            info_field=info_field,
+        )
+        return {
+            "trail_capability": _capability_for_info_write(sync_result, info_field),
+            "trail_update_statuses": statuses,
+            "trail_update_status_summary": _trail_update_status_summary(statuses),
+        }
+
+    return _preview_capability_cache.get_or_load(cache_key, load)
+
+
+async def _read_preview_trail_status(
+    issue_ids: list[str],
+    *,
+    info_field: str,
+    refresh: bool = False,
+) -> dict[str, Any]:
+    """Offload the cache/remote probe so route handlers keep the loop free."""
+
+    return await asyncio.to_thread(
+        _read_preview_trail_status_sync,
+        issue_ids,
+        info_field=info_field,
+        refresh=refresh,
+    )
+
+
 def build_trail_attribute_update_payload(
     rows: list[dict[str, Any]],
     *,
@@ -552,7 +622,21 @@ def build_trail_attribute_update_payload(
         "baseline_scopes": list(baseline_scopes),
         "items": items,
     }
-    digest = hashlib.sha256(_canonical_json(draft).encode("utf-8")).hexdigest()
+    # Trail readback status is presentation-only and may legitimately change
+    # while a reviewer inspects a draft.  Do not make that remote observation
+    # invalidate an otherwise identical, server-revalidated write payload.
+    digest_draft = {
+        **draft,
+        "items": [
+            {
+                key: value
+                for key, value in item.items()
+                if key != "trail_update_status"
+            }
+            for item in items
+        ],
+    }
+    digest = hashlib.sha256(_canonical_json(digest_draft).encode("utf-8")).hexdigest()
     draft["payload_sha256"] = digest
     draft["operation_id"] = digest
     capability = trail_capability or (
@@ -1434,43 +1518,13 @@ async def _build_preview(
     # perform one batched read when the caller explicitly asks for it.
     trail_statuses: dict[str, str] | None = None
     if issue_ids and probe_trail:
-        # Capability probing is a remote read and is the slowest part of the
-        # page preview.  Cache only this short-lived, Issue-set-specific
-        # summary; the actual commit path always bypasses the cache and does a
-        # fresh read immediately before writing.
-        cache_key = (int(settings.trail_view_id), info_field, tuple(issue_ids))
-        cached_capability = None
-        if request.method.upper() == "GET" and not refresh_trail:
-            now = time.monotonic()
-            with _preview_capability_cache_lock:
-                cached = _preview_capability_cache.get(cache_key)
-                if cached and now - cached[0] < _PREVIEW_CAPABILITY_CACHE_SECONDS:
-                    cached_capability = dict(cached[1])
-                    trail_statuses = dict(cached[2])
-        if cached_capability is not None:
-            capability = cached_capability
-            capability["cached"] = True
-        else:
-            sync_result = await asyncio.to_thread(
-                read_trail_model_fields,
-                ra_root=settings.ra_auto_triage_root,
-                issue_ids=issue_ids,
-                view_id=settings.trail_view_id,
-                chunk_size=settings.trail_sync_chunk_size,
-            )
-            capability = _capability_for_info_write(sync_result, info_field)
-            trail_statuses = _trail_update_statuses(
-                sync_result,
-                issue_ids,
-                info_field=info_field,
-            )
-            if request.method.upper() == "GET" and not refresh_trail:
-                with _preview_capability_cache_lock:
-                    _preview_capability_cache[cache_key] = (
-                        time.monotonic(),
-                        dict(capability),
-                        dict(trail_statuses),
-                    )
+        projection = await _read_preview_trail_status(
+            issue_ids,
+            info_field=info_field,
+            refresh=refresh_trail,
+        )
+        capability = dict(projection["trail_capability"])
+        trail_statuses = dict(projection["trail_update_statuses"])
     else:
         capability = _capability_not_checked(result_field, info_field)
         capability["target_fields"] = [info_field]
@@ -1693,6 +1747,65 @@ async def trail_attribute_update_preview(
         probe_trail=probe_trail,
         refresh_trail=refresh,
     )
+
+
+@router.get("/api/trail-attribute-update/status")
+async def trail_attribute_update_status(
+    issue_ids: str = "",
+    refresh: bool = False,
+) -> dict[str, Any]:
+    """Return only the batched Trail state for an existing Review preview.
+
+    The browser uses this after the local candidate table has painted.  Keeping
+    the remote state response compact avoids a second DB aggregation and, more
+    importantly, avoids replacing the table/controls when Trail is slow.
+    """
+
+    normalized_ids, invalid_ids = _normalise_issue_ids(issue_ids)
+    if invalid_ids:
+        raise _detail(422, f"Issue ID 格式不合法：{', '.join(invalid_ids[:5])}")
+    if len(normalized_ids) > 500:
+        raise _detail(422, "一次最多查询 500 个 Issue。")
+    result_field, info_field = _field_names()
+    if not normalized_ids:
+        capability = _capability_not_checked(result_field, info_field)
+        capability["target_fields"] = [info_field]
+        capability["required_fields"] = [info_field]
+        return {
+            "issue_ids": [],
+            "trail_capability": capability,
+            "trail_update_statuses": {},
+            "trail_update_status_summary": {},
+            "write_status": "disabled",
+            "write_ready": False,
+        }
+    projection = await _read_preview_trail_status(
+        normalized_ids,
+        info_field=info_field,
+        refresh=refresh,
+    )
+    capability = dict(projection["trail_capability"])
+    review_write_enabled = bool(
+        settings.trail_attribute_write_enabled
+        and getattr(settings, "trail_attribute_review_write_enabled", False)
+    )
+    write_status = (
+        "disabled"
+        if not review_write_enabled
+        else "ready"
+        if capability.get("ready")
+        else "fields_unavailable"
+    )
+    return {
+        "issue_ids": normalized_ids,
+        "trail_capability": capability,
+        "trail_update_statuses": dict(projection["trail_update_statuses"]),
+        "trail_update_status_summary": dict(
+            projection["trail_update_status_summary"]
+        ),
+        "write_status": write_status,
+        "write_ready": write_status == "ready",
+    }
 
 
 @router.get("/api/trail-attribute-update/issue-history")

@@ -6,6 +6,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from ra_triage_dashboard.app.baseline import load_spotcheck_zh_baseline, normalize_gt_label
 from ra_triage_dashboard.app.baseline_registry import (
@@ -252,8 +253,23 @@ class BaselineRegistryTests(unittest.TestCase):
                 animation_job_ids=(1,),
                 base_path="",
             )
-            self.assertTrue(provider.has_issue("cn_demo"))
-            assets = provider.get_assets("cn_demo")
+            with patch.object(
+                provider,
+                "_load_bev_dir",
+                wraps=provider._load_bev_dir,
+            ) as load_bev_dir:
+                self.assertTrue(provider.has_issue("cn_demo"))
+                self.assertTrue(provider.has_issue("cn_demo"))
+                load_bev_dir.assert_called_once_with("cn_demo")
+
+            with patch.object(
+                provider,
+                "_load_assets",
+                wraps=provider._load_assets,
+            ) as load_assets:
+                assets = provider.get_assets("cn_demo")
+                self.assertEqual(provider.get_assets("cn_demo"), assets)
+                load_assets.assert_called_once_with("cn_demo")
             self.assertTrue(assets["available"])
             self.assertEqual(len(assets["frames"]), 2)
             offsets = [frame["offset_ms"] for frame in assets["frames"]]
@@ -261,7 +277,14 @@ class BaselineRegistryTests(unittest.TestCase):
             self.assertIn(-10000, offsets)
             thumb = provider.get_thumbnail_source("cn_demo")
             self.assertIsNotNone(thumb)
-            video_meta = provider.get_video("cn_demo")
+            with patch.object(
+                provider,
+                "_load_video",
+                wraps=provider._load_video,
+            ) as load_video:
+                video_meta = provider.get_video("cn_demo")
+                self.assertEqual(provider.get_video("cn_demo"), video_meta)
+                load_video.assert_called_once_with("cn_demo")
             self.assertIsNotNone(video_meta)
             self.assertEqual(video_meta["source"], "ares_animation")
             path = provider.get_asset_path("cn_demo", video_meta["id"])

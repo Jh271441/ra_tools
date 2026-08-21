@@ -430,6 +430,73 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         self.assertFalse(payload["write_ready"])
         probe.assert_not_called()
 
+    def test_compact_status_endpoint_skips_review_aggregation(self) -> None:
+        sync = SimpleNamespace(
+            rows=[
+                {
+                    "issue_id": "cn00000001",
+                    TRAIL_INFO_FIELD: {
+                        "ra_triage_dashboard": {"should_exclude": True}
+                    },
+                }
+            ],
+            fields_visible=(TRAIL_INFO_FIELD,),
+            complete=True,
+            queried_issues=1,
+            returned_issues=1,
+            view_id=2410,
+            message="Trail status read",
+        )
+        trail_update._preview_capability_cache.clear()
+        with patch.object(
+            trail_update, "read_trail_model_fields", return_value=sync
+        ) as probe, patch.object(
+            trail_update.database,
+            "review_reason_rows",
+            side_effect=AssertionError("status endpoint must not rebuild candidates"),
+        ):
+            payload = asyncio.run(
+                trail_update.trail_attribute_update_status(
+                    issue_ids="cn00000001"
+                )
+            )
+        self.assertEqual(payload["trail_update_statuses"], {"cn00000001": "synced"})
+        self.assertEqual(payload["trail_update_status_summary"], {"synced": 1})
+        self.assertNotIn("items", payload)
+        self.assertNotIn("draft", payload)
+        probe.assert_called_once()
+
+    def test_display_only_trail_status_does_not_expire_preview_digest(self) -> None:
+        rows = [
+            {
+                "issue_id": "cn00000001",
+                "gt_label": "误触发",
+                "annotation": {"id": 1, "is_excluded": True},
+                "prediction": {"model_run_id": "run-1", "label": "误触发"},
+            }
+        ]
+        common = {
+            "run": {"id": "run-1", "name": "test", "source_name": ""},
+            "baseline_ids": ["0508"],
+            "baseline_scopes": ["release0508_1071"],
+            "write_mode": "info_only",
+        }
+        pending = build_trail_attribute_update_payload(
+            rows,
+            trail_statuses={"cn00000001": "pending"},
+            **common,
+        )
+        synced = build_trail_attribute_update_payload(
+            rows,
+            trail_statuses={"cn00000001": "synced"},
+            **common,
+        )
+        self.assertEqual(pending["payload_sha256"], synced["payload_sha256"])
+        self.assertNotEqual(
+            pending["items"][0]["trail_update_status"],
+            synced["items"][0]["trail_update_status"],
+        )
+
     def test_payload_is_run_bound_sorted_and_write_disabled(self) -> None:
         rows = [
             {

@@ -770,10 +770,10 @@ async function selectCase(
     loadingTimer = window.setTimeout(() => {
       if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId) return;
       $("#detailPane").innerHTML = `
-        <div class="empty-state detail-loading-state">
+          <div class="empty-state detail-loading-state">
           <div class="empty-glyph" aria-hidden="true">…</div>
           <h2>正在加载 ${escapeHtml(issueId)}</h2>
-          <p>正在读取 Issue 媒体与模型输出。</p>
+          <p>正在读取 Issue 与模型输出。</p>
         </div>`;
       $("#reviewPane").innerHTML = `
         <div class="review-placeholder"><h2>正在加载标注</h2><p>Issue 数据返回后即可继续 Review。</p></div>`;
@@ -792,7 +792,9 @@ async function selectCase(
   }
   const trailMetadataPromise = startTrailDetailMetadata(issueId, requestSeq);
   try {
-    const data = await api(`/api/cases/${encodeURIComponent(issueId)}`);
+    // Review text and form state do not depend on filesystem media.  Ask for
+    // the lightweight core record first; BEV/video/camera hydrate below.
+    const data = await api(`/api/cases/${encodeURIComponent(issueId)}?include_media=false`);
     if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId) return;
     if (loadingTimer !== null) {
       window.clearTimeout(loadingTimer);
@@ -801,6 +803,7 @@ async function selectCase(
     state.selectedCase = data;
     renderDetail(data);
     renderReview(data);
+    void loadDeferredCaseMedia(issueId, requestSeq);
     void trailMetadataPromise.then((result) => {
       applyTrailDetailMetadata(result, issueId, requestSeq);
     });
@@ -817,6 +820,31 @@ async function selectCase(
         <p>${escapeHtml(error.message)}</p>
       </div>`;
     showToast(error.message, true);
+  }
+}
+
+async function loadDeferredCaseMedia(issueId, requestSeq) {
+  try {
+    const media = await api(`/api/cases/${encodeURIComponent(issueId)}/media`, { cache: "no-store" });
+    if (
+      requestSeq !== state.caseRequestSeq ||
+      state.selectedId !== issueId ||
+      !state.selectedCase
+    ) return;
+    state.selectedCase.assets = media?.assets || state.selectedCase.assets;
+    state.selectedCase.camera = media?.camera || state.selectedCase.camera;
+    state.selectedCase.media_status = media?.media_status || "ready";
+    // Only replace the media/detail pane.  The Review form remains mounted so
+    // a reviewer can start typing before a cold media index completes.
+    renderDetail(state.selectedCase);
+  } catch (_error) {
+    if (
+      requestSeq !== state.caseRequestSeq ||
+      state.selectedId !== issueId ||
+      !state.selectedCase
+    ) return;
+    state.selectedCase.media_status = "unavailable";
+    renderDetail(state.selectedCase);
   }
 }
 

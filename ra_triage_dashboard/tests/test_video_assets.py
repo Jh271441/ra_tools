@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from ra_triage_dashboard.app.assets import VideoIndex
 
@@ -142,6 +143,15 @@ class VideoIndexTest(unittest.TestCase):
                 video["url"],
                 "/dashboard/api/assets/cn31842459/bev-video-0",
             )
+
+    def test_negative_video_lookup_is_short_lived_but_cached(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            index = VideoIndex(root)
+            with patch.object(index, "_load_video", return_value=None) as loader:
+                self.assertIsNone(index.get_video("cn31842459"))
+                self.assertIsNone(index.get_video("cn31842459"))
+            loader.assert_called_once_with("cn31842459")
 
 
 if __name__ == "__main__":
