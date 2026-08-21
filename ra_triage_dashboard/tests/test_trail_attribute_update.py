@@ -286,7 +286,9 @@ class TrailAttributeUpdateTest(unittest.TestCase):
             message="Trail status read",
         )
         trail_update._preview_capability_cache.clear()
-        with patch.object(trail_update.database, "review_reason_rows", return_value=[row]), patch.object(
+        with patch.object(
+            trail_update.database, "review_reason_rows", return_value=[row]
+        ) as review_rows, patch.object(
             trail_update, "read_trail_model_fields", return_value=sync
         ) as probe:
             payload = asyncio.run(
@@ -299,6 +301,12 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         self.assertEqual(payload["count"], 1)
         self.assertEqual(payload["trail_capability"]["status"], "ready")
         self.assertEqual(payload["items"][0]["trail_update_status"], "synced")
+        # Trail candidates stay strictly bound to the requested Run.  The
+        # read-only Gallery/analysis legacy fallback is intentionally opt-in
+        # and must never leak into the signed writer preview.
+        self.assertNotIn(
+            "include_unbound_fallback", review_rows.call_args.kwargs
+        )
         probe.assert_called_once()
 
     def test_manual_refresh_bypasses_trail_status_cache(self) -> None:

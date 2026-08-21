@@ -1063,13 +1063,17 @@ class DatabaseCoreMixin:
         search: str = "",
         search_aliases: tuple[str, ...] = (),
         is_excluded: bool | None = None,
+        include_unbound_fallback: bool = False,
     ) -> list[dict[str, Any]]:
         """Return one latest-review row per baseline issue for analysis.
 
-        When ``model_run_id`` is selected, the latest Review is resolved within
-        that immutable Run. Legacy annotations with an empty run id remain
-        available when no Run is selected. ``comparison_status`` can narrow the
-        slice to MATCH, MISMATCH, or NONE (no canonical prediction).
+        When ``model_run_id`` is selected, the latest Review is normally
+        resolved within that immutable Run.  Read-only Review/analysis surfaces
+        can opt into an unbound legacy fallback: the selected Run's own Review
+        still wins, while a pre-Run shared Review is used only when no such row
+        exists.  Safety-sensitive callers (for example Trail candidate
+        generation) keep the strict default. ``comparison_status`` can narrow
+        the slice to MATCH, MISMATCH, or NONE (no canonical prediction).
         ``failure_only`` remains a compatibility alias for MISMATCH.
         """
 
@@ -1119,11 +1123,14 @@ class DatabaseCoreMixin:
         # A selected Run joins its prediction namespace explicitly.  With no
         # Run selected, the Trail update page is an all-Run aggregate: use the
         # latest annotation's own Run so its model label/reason are retained.
+        annotation_params = self._latest_annotation_join_params(
+            model_run_id, include_unbound_fallback=include_unbound_fallback
+        )
         if model_run_id:
             prediction_join = "mp.model_run_id = ?"
             # The correlated latest-annotation join appears before the
-            # prediction join in SQL, so bind the selected Run twice.
-            params: list[Any] = [model_run_id, model_run_id, *scope_params]
+            # prediction join in SQL, so bind the annotation selector first.
+            params: list[Any] = [*annotation_params, model_run_id, *scope_params]
         else:
             prediction_join = "mp.model_run_id = NULLIF(ann.model_run_id, '')"
             params = list(scope_params)
@@ -1247,7 +1254,10 @@ class DatabaseCoreMixin:
                    mp.model_run_id, mp.model_label, mp.model_reason,
                    mp.model_confidence
             FROM issues i
-            {self._latest_annotation_join(model_run_id)}
+            {self._latest_annotation_join(
+                model_run_id,
+                include_unbound_fallback=include_unbound_fallback,
+            )}
             LEFT JOIN model_predictions mp
               ON mp.issue_id = i.issue_id AND {prediction_join}
             WHERE {' AND '.join(where)}

@@ -338,9 +338,19 @@ class DatabaseCasesMixin:
                     params.extend(LABELS)
             where.append(f"({' OR '.join(status_clauses)})")
         condition = f"WHERE {' AND '.join(where)}" if where else ""
+        # The Gallery is the operator's Review-progress surface.  A legacy
+        # unbound Review is valid shared human evidence when no Review exists
+        # for the selected Run; see ``_latest_annotation_join`` for its
+        # selected-Run precedence rule.  This deliberately differs from the
+        # strict Trail-writing aggregate.
+        annotation_params = self._latest_annotation_join_params(
+            model_run_id, include_unbound_fallback=True
+        )
         common = f"""
             FROM issues i
-            {self._latest_annotation_join(model_run_id)}
+            {self._latest_annotation_join(
+                model_run_id, include_unbound_fallback=True
+            )}
             LEFT JOIN model_predictions mp
               ON mp.issue_id = i.issue_id
              AND mp.model_run_id = ?
@@ -348,9 +358,8 @@ class DatabaseCasesMixin:
               ON wa.issue_id = i.issue_id
         """
         # The correlated annotation lookup appears before the prediction JOIN
-        # in the SQL, so its run id must be the first bound parameter.  A
-        # selected Run has strict Review isolation; no legacy fallback.
-        model_args = ([model_run_id] if model_run_id else []) + [model_run_id]
+        # in the SQL, so its bind values must precede the prediction Run id.
+        model_args = [*annotation_params, model_run_id]
         return condition, params, model_args, common
 
     def list_cases(
@@ -562,10 +571,10 @@ class DatabaseCasesMixin:
             raise ValueError("baseline_scopes must not be empty")
         scope_clause, scope_params = self._scope_in_sql(scopes)
         where = [scope_clause, "ann.id IS NOT NULL"]
-        params: list[Any] = ([model_run_id] if model_run_id else []) + [
-            model_run_id,
-            *scope_params,
-        ]
+        annotation_params = self._latest_annotation_join_params(
+            model_run_id, include_unbound_fallback=True
+        )
+        params: list[Any] = [*annotation_params, model_run_id, *scope_params]
         if failure_only and model_run_id:
             where.extend(
                 [
@@ -586,7 +595,9 @@ class DatabaseCasesMixin:
         query = f"""
             SELECT ann.missing_evidence_json
             FROM issues i
-            {self._latest_annotation_join(model_run_id)}
+            {self._latest_annotation_join(
+                model_run_id, include_unbound_fallback=True
+            )}
             LEFT JOIN model_predictions mp
               ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
             WHERE {' AND '.join(where)}
@@ -623,37 +634,55 @@ class DatabaseCasesMixin:
             total = conn.execute(
                 f"SELECT COUNT(*) FROM issues i {base_where}", tuple(scope_params)
             ).fetchone()[0]
+            annotation_params = self._latest_annotation_join_params(
+                model_run_id, include_unbound_fallback=True
+            )
             labelled = conn.execute(
                 f"""
                 SELECT COUNT(*)
                 FROM issues i
-                {self._latest_annotation_join(model_run_id)}
+                {self._latest_annotation_join(
+                    model_run_id, include_unbound_fallback=True
+                )}
                 {base_where} AND ann.id IS NOT NULL
                 """,
-                ((model_run_id, *scope_params)
-                 if model_run_id else tuple(scope_params)),
+                (*annotation_params, *scope_params),
             ).fetchone()[0]
             predictions = failures = reviewed_failures = 0
             if model_run_id:
                 common = f"""
                     FROM issues i
-                    {self._latest_annotation_join(model_run_id)}
+                    {self._latest_annotation_join(
+                        model_run_id, include_unbound_fallback=True
+                    )}
                     LEFT JOIN model_predictions mp
                       ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
                     WHERE {scope_clause}
                 """
                 predictions = conn.execute(
                     f"SELECT COUNT(mp.id) {common}",
-                    (model_run_id, model_run_id, *scope_params),
+                    (*annotation_params, model_run_id, *scope_params),
                 ).fetchone()[0]
                 failure_condition = " AND i.gt_label IN (?, ?, ?) AND mp.model_label IN (?, ?, ?) AND mp.model_label != i.gt_label"
                 failures = conn.execute(
                     f"SELECT COUNT(*) {common}{failure_condition}",
-                    (model_run_id, model_run_id, *scope_params, *LABELS, *LABELS),
+                    (
+                        *annotation_params,
+                        model_run_id,
+                        *scope_params,
+                        *LABELS,
+                        *LABELS,
+                    ),
                 ).fetchone()[0]
                 reviewed_failures = conn.execute(
                     f"SELECT COUNT(*) {common}{failure_condition} AND ann.id IS NOT NULL",
-                    (model_run_id, model_run_id, *scope_params, *LABELS, *LABELS),
+                    (
+                        *annotation_params,
+                        model_run_id,
+                        *scope_params,
+                        *LABELS,
+                        *LABELS,
+                    ),
                 ).fetchone()[0]
             running = conn.execute(
                 "SELECT COUNT(*) FROM inference_jobs WHERE status IN ('queued', 'running')"

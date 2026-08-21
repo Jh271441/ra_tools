@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi import HTTPException
 
@@ -11,6 +12,10 @@ from ra_triage_dashboard.app.http_support import resolve_review_exclusion_filter
 from ra_triage_dashboard.app.review_analysis import (
     build_review_reason_analysis,
     classify_review_reason,
+)
+from ra_triage_dashboard.app.routers.cases import (
+    _case_result_with_status_filter,
+    _with_effective_case_review_status,
 )
 
 
@@ -676,17 +681,26 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
             )
             self.assertEqual(old_note_search, [])
 
-    def test_selected_run_never_falls_back_to_unbound_or_other_run_reviews(self) -> None:
+    def test_selected_run_prefers_own_review_and_exposes_legacy_history_to_progress_views(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             database = Database(Path(directory) / "triage.sqlite3")
             database.init()
             scope = "test-run-binding"
             database.upsert_issues(
-                [{
-                    "issue_id": "cn30001",
-                    "gt_label": "误触发",
-                    "title": "同 issue 多 Run",
-                }],
+                [
+                    {
+                        "issue_id": "cn30001",
+                        "gt_label": "误触发",
+                        "title": "同 issue 多 Run",
+                    },
+                    {
+                        "issue_id": "cn30002",
+                        "gt_label": "误触发",
+                        "title": "只有历史 Review",
+                    },
+                ],
                 source="test",
                 replace_gt=True,
                 baseline_scope=scope,
@@ -696,7 +710,10 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
                 source_name="a.json",
                 source_sha256="a" * 64,
                 metadata={},
-                rows=[{"issue_id": "cn30001", "model_label": "正确触发"}],
+                rows=[
+                    {"issue_id": "cn30001", "model_label": "正确触发"},
+                    {"issue_id": "cn30002", "model_label": "正确触发"},
+                ],
             )
             run_b, _ = database.import_model_run(
                 name="run-b",
@@ -734,7 +751,19 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
                 note="Legacy review",
                 author="legacy",
             )
+            database.create_annotation(
+                issue_id="cn30002",
+                label="误触发",
+                review_status="reviewed",
+                tags=[],
+                missing_evidence=["legacy_only_missing"],
+                note="Pre-Run shared Review",
+                author="legacy",
+            )
 
+            # The strict default is used by safety-sensitive consumers such
+            # as Trail candidate generation. A Run-bound Review always wins
+            # over an unbound historical Review for the same Issue.
             rows_a = database.review_reason_rows(
                 baseline_scope=scope,
                 model_run_id=run_a["id"],
@@ -748,24 +777,94 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
             self.assertEqual([row["annotation"]["author"] for row in rows_b], ["bob"])
             self.assertEqual(rows_b[0]["annotation"]["model_run_id"], run_b["id"])
 
+            # Review-progress surfaces can use the compatibility projection:
+            # legacy history is visible only for Issues with no selected-Run
+            # Review, so it does not appear as a synthetic pending Review.
+            projected_rows_a = database.review_reason_rows(
+                baseline_scope=scope,
+                model_run_id=run_a["id"],
+                include_unbound_fallback=True,
+            )
+            self.assertEqual(
+                [row["annotation"]["author"] for row in projected_rows_a],
+                ["alice", "legacy"],
+            )
+            self.assertEqual(
+                projected_rows_a[1]["annotation"]["model_run_id"], ""
+            )
+            progress_cases = database.list_cases(
+                baseline_scope=scope,
+                model_run_id=run_a["id"],
+                comparison_status="all",
+                page_size=50,
+            )
+            self.assertEqual(
+                [item["annotation"]["author"] for item in progress_cases["items"]],
+                ["alice", "legacy"],
+            )
+            self.assertEqual(
+                progress_cases["items"][1]["annotation"]["review_status"],
+                "reviewed",
+            )
+            self.assertEqual(
+                _with_effective_case_review_status(
+                    progress_cases["items"][1], ()
+                )["annotation"]["review_status"],
+                "reviewed",
+            )
+            # This is the same post-read status projection used by
+            # `/api/cases?review_status=...`; a historical Review must not be
+            # returned in the synthetic pending slice merely because it is
+            # unbound to the selected Run.
+            with patch(
+                "ra_triage_dashboard.app.routers.cases.database.list_cases",
+                return_value=progress_cases,
+            ), patch(
+                "ra_triage_dashboard.app.routers.cases._review_tag_catalog",
+                return_value=(),
+            ):
+                pending_cases = _case_result_with_status_filter(
+                    filters={},
+                    review_statuses=("pending",),
+                    page=1,
+                    page_size=50,
+                )
+            self.assertEqual(pending_cases["total"], 0)
+            self.assertEqual(
+                database.list_case_issue_ids(
+                    baseline_scope=scope,
+                    model_run_id=run_a["id"],
+                    comparison_status="all",
+                ),
+                ["cn30001", "cn30002"],
+            )
+
             reviewers_a = database.list_reviewers(
                 baseline_scope=scope,
                 model_run_id=run_a["id"],
             )
-            self.assertEqual([item["name"] for item in reviewers_a], ["alice"])
+            self.assertEqual(
+                [item["name"] for item in reviewers_a], ["alice", "legacy"]
+            )
             clusters_a = database.review_clusters(
                 baseline_scope=scope,
                 model_run_id=run_a["id"],
                 failure_only=False,
             )
-            self.assertEqual([item["key"] for item in clusters_a], ["run_a_missing"])
+            self.assertEqual(
+                {item["key"] for item in clusters_a},
+                {"legacy_only_missing", "run_a_missing"},
+            )
             self.assertEqual(
                 database.overview(baseline_scope=scope, model_run_id=run_a["id"])["labelled"],
-                1,
+                2,
             )
 
             all_rows = database.review_reason_rows(baseline_scope=scope)
-            self.assertEqual(all_rows[0]["annotation"]["author"], "legacy")
+            self.assertEqual(
+                [row["annotation"]["author"] for row in all_rows],
+                ["legacy", "legacy"],
+            )
 
     def test_unselected_run_keeps_prediction_namespace_for_exclusion_aggregate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

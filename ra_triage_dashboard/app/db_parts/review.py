@@ -489,10 +489,16 @@ class DatabaseReviewMixin:
         *,
         baseline_scopes: Sequence[str] | None = None,
     ) -> list[dict[str, Any]]:
-        # When a Run is selected, reviewer facets must use the same strict
-        # annotation scope as the analysis rows.  Do not attribute legacy
-        # (empty model_run_id) annotations to a selected Run.
-        params: list[Any] = [model_run_id] if model_run_id else []
+        # Older Review records predate immutable Run binding.  The Review
+        # workspace treats those unbound records as shared human evidence when
+        # the selected Run has no own Review for the same Issue.  A Run-bound
+        # Review always wins, so the facet remains deterministic and does not
+        # overwrite the audit identity of the legacy row.
+        params: list[Any] = list(
+            self._latest_annotation_join_params(
+                model_run_id, include_unbound_fallback=True
+            )
+        )
         scopes = self._normalize_baseline_scopes(
             baseline_scopes,
             baseline_scope=baseline_scope if isinstance(baseline_scope, str) else "",
@@ -514,7 +520,9 @@ class DatabaseReviewMixin:
                            AS unverified_count,
                        COUNT(*) AS review_count
                 FROM issues i
-                {self._latest_annotation_join(model_run_id)}
+                {self._latest_annotation_join(
+                    model_run_id, include_unbound_fallback=True
+                )}
                 WHERE ann.id IS NOT NULL
                   AND TRIM(ann.author) != ''
                   {scope_filter}
@@ -536,12 +544,54 @@ class DatabaseReviewMixin:
         ]
 
     @staticmethod
-    def _latest_annotation_join(model_run_id: str = "") -> str:
+    def _latest_annotation_join_params(
+        model_run_id: str = "", *, include_unbound_fallback: bool = False
+    ) -> tuple[str, ...]:
+        """Return bind values required by :meth:`_latest_annotation_join`.
+
+        Keep the join and its parameter ordering together.  Several high-traffic
+        queries place the correlated annotation lookup before the prediction
+        join, and a mismatched bind list silently produces incorrect Review
+        status/filter results.
+        """
+
+        normalized_run = str(model_run_id or "").strip()
+        if not normalized_run:
+            return ()
+        # The legacy namespace (when selected) is the SQL literal ``''``;
+        # only the selected-Run probe consumes a bind value.
+        return (normalized_run,)
+
+    @staticmethod
+    def _latest_annotation_join(
+        model_run_id: str = "", *, include_unbound_fallback: bool = False
+    ) -> str:
         normalized_run = str(model_run_id or "").strip()
         if normalized_run:
-            # A selected model Run is an explicit Review namespace.  Legacy
-            # unbound rows stay unbound and must never leak into another Run's
-            # latest-review, reviewer, cluster, or aggregate queries.
+            if include_unbound_fallback:
+                # Legacy Review rows were created before the UI recorded a
+                # model_run_id.  They are shared human evidence, not a hidden
+                # Run Review: use one only when this Issue has no newer
+                # selected-Run Review.  COALESCE keeps the two indexed probes
+                # independent (important for the large Gallery query) and
+                # preserves the selected Run as the unambiguous winner.
+                return """
+                    LEFT JOIN annotations ann
+                      ON ann.id = COALESCE(
+                          (
+                              SELECT a.id FROM annotations a
+                              WHERE a.issue_id = i.issue_id
+                                AND a.model_run_id = ?
+                              ORDER BY a.id DESC LIMIT 1
+                          ),
+                          (
+                              SELECT a.id FROM annotations a
+                              WHERE a.issue_id = i.issue_id
+                                AND a.model_run_id = ''
+                              ORDER BY a.id DESC LIMIT 1
+                          )
+                      )
+                """
             run_clause = "AND a.model_run_id = ?"
         else:
             run_clause = ""

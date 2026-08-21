@@ -868,6 +868,12 @@ def _review_reason_analysis_payload(
             baseline_scopes=scopes,
             model_run_id=model_run_id,
             comparison_status=comparison_status,
+            # Reason clustering is a read-only progress/analysis surface.
+            # Pre-Run Review history remains useful human evidence when no
+            # selected-Run Review exists for the Issue. The selected Run
+            # always wins inside the DB join; Trail candidate generation keeps
+            # its strict default and never receives this compatibility view.
+            include_unbound_fallback=True,
             # Keep the exclusion slice at the DB boundary so cards, charts,
             # detail rows, and all analysis exports agree.  ``None`` means
             # the default all-inclusive view.
