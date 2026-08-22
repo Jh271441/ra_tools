@@ -410,7 +410,14 @@ def _capability_for_info_write(sync_result: Any, info_field: str) -> dict[str, A
         status = "ready"
         ready = True
         if info_field in visible:
-            message = _as_text(sync_result.message)
+            # The shared Trail reader also reports whether the historical
+            # model-label field is visible.  This workflow deliberately does
+            # not require or write that field, so its diagnostic must not
+            # imply an otherwise-ready info-only update is unavailable.
+            message = (
+                f"Trail view {sync_result.view_id} 已返回 {info_field}；"
+                "将仅 deep-merge 排除标记与说明，不改模型 label。"
+            )
         else:
             message = (
                 f"Trail view {sync_result.view_id} 未为当前旧 Issue 返回 {info_field}；"
