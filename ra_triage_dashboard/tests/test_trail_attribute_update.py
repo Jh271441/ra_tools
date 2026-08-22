@@ -372,6 +372,7 @@ class TrailAttributeUpdateTest(unittest.TestCase):
             "prediction": {"model_run_id": "run-1", "label": "误触发"},
         }
         sync = SimpleNamespace(
+            rows=[{"issue_id": "cn00000001", TRAIL_INFO_FIELD: {}}],
             fields_visible=(),
             complete=True,
             queried_issues=1,
@@ -384,6 +385,7 @@ class TrailAttributeUpdateTest(unittest.TestCase):
             trail_attribute_write_enabled=True,
             trail_attribute_review_write_enabled=True,
         )
+        trail_update._preview_capability_cache.clear()
         with patch.object(trail_update, "settings", test_settings), patch.object(
             trail_update.database, "review_reason_rows", return_value=[row]
         ), patch.object(
@@ -607,6 +609,7 @@ class TrailAttributeUpdateTest(unittest.TestCase):
             baseline_ids=["0508"],
             baseline_scopes=["scope"],
             trail_capability=capability,
+            trail_statuses={"cn00000001": "pending"},
             trail_write_enabled=True,
             write_mode="info_only",
         )
@@ -629,6 +632,7 @@ class TrailAttributeUpdateTest(unittest.TestCase):
             baseline_ids=["0508"],
             baseline_scopes=["scope"],
             trail_capability={"ready": True, "status": "ready", "fields_visible": [TRAIL_INFO_FIELD]},
+            trail_statuses={"cn00000003": "pending"},
             trail_write_enabled=True,
             write_mode="info_only",
         )
@@ -660,6 +664,43 @@ class TrailAttributeUpdateTest(unittest.TestCase):
                 "cn00000002": "pending",
                 "cn00000003": "not_found",
             },
+        )
+
+    def test_trail_status_requires_matching_dashboard_exclusion_comment(self) -> None:
+        sync = SimpleNamespace(
+            rows=[
+                {
+                    "issue_id": "cn00000001",
+                    TRAIL_INFO_FIELD: {
+                        "ra_triage_dashboard": {
+                            "should_exclude": True,
+                            "should_exclude_comment": "旧说明",
+                        }
+                    },
+                },
+                {
+                    "issue_id": "cn00000002",
+                    TRAIL_INFO_FIELD: {
+                        "ra_triage_dashboard": {
+                            "should_exclude": True,
+                            "should_exclude_comment": "当前说明",
+                        }
+                    },
+                },
+            ],
+            complete=True,
+        )
+        self.assertEqual(
+            trail_update._trail_update_statuses(
+                sync,
+                ["cn00000001", "cn00000002"],
+                info_field=TRAIL_INFO_FIELD,
+                expected_comments={
+                    "cn00000001": "当前说明",
+                    "cn00000002": "当前说明",
+                },
+            ),
+            {"cn00000001": "pending", "cn00000002": "synced"},
         )
 
     def test_first_paint_marks_status_querying_without_remote_read(self) -> None:

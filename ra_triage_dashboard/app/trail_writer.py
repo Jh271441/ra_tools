@@ -279,19 +279,21 @@ def build_manual_exclusion_changes(
             continue
         current = current_by_issue.get(issue_id) or {}
         current_info = _json_object(current.get(info_field))
-        patch = {"ra_triage_dashboard": {"should_exclude": True}}
+        issue_comment = normalized_comments.get(issue_id, normalized_comment)
+        # Keep the direct workflow's comparison and write contract identical:
+        # a blank note is intentional and must clear a stale dashboard-owned
+        # note rather than leaving this Issue permanently "待同步".
+        patch = {
+            "ra_triage_dashboard": {
+                "should_exclude": True,
+                "should_exclude_comment": issue_comment,
+            }
+        }
         merged_info = deep_merge_dict(current_info, patch)
         change: dict[str, Any] = {
             "issue_id": issue_id,
             info_field: merged_info,
         }
-        issue_comment = normalized_comments.get(issue_id, normalized_comment)
-        if issue_comment:
-            merged_info = deep_merge_dict(
-                merged_info,
-                {"ra_triage_dashboard": {"should_exclude_comment": issue_comment}},
-            )
-            change[info_field] = merged_info
         changes.append(change)
     return changes
 

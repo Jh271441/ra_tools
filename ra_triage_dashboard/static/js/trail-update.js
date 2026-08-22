@@ -557,6 +557,8 @@ function trailUpdateStatusEndpoint(items = [], refresh = false) {
     .filter(Boolean))];
   const params = new URLSearchParams();
   if (ids.length) params.set("issue_ids", ids.join(","));
+  const digest = String(state.trailUpdate?.data?.payload_sha256 || "").trim();
+  if (digest) params.set("payload_sha256", digest);
   if (refresh) params.set("refresh", "true");
   return `/api/trail-attribute-update/status?${params.toString()}`;
 }
@@ -565,8 +567,8 @@ function trailUpdateStatusMeta(status = "not_checked") {
   const key = String(status || "not_checked");
   const labels = {
     querying: ["查询中", "Checking", "is-querying", "Trail 查询尚未完成"],
-    synced: ["已同步", "Synced", "is-synced", "已读到 should_exclude=true"],
-    pending: ["待同步", "Pending", "is-pending", "尚未读到 should_exclude=true"],
+    synced: ["已同步", "Synced", "is-synced", "排除标记与排除说明均与当前 Review 一致"],
+    pending: ["待同步", "Pending", "is-pending", "排除标记或排除说明与当前 Review 不一致"],
     not_found: ["未找到", "Not found", "is-not-found", "Trail 未返回该 Issue"],
     query_failed: ["查询失败", "Query failed", "is-failed", "请刷新后重试"],
     not_checked: ["未检查", "Not checked", "is-not-checked", "当前环境未执行 Trail 查询"],
@@ -706,6 +708,11 @@ function patchTrailAttributeStatus(statusData) {
   const statuses = statusData.trail_update_statuses || {};
   data.trail_capability = statusData.trail_capability || data.trail_capability;
   data.trail_update_status_summary = statusData.trail_update_status_summary || {};
+  data.pending_count = Number(statusData.pending_count || 0);
+  data.pending_issue_ids = (data.items || [])
+    .filter((item) => String(statuses[String(item?.issue_id || "")] || item?.trail_update_status || "") === "pending")
+    .map((item) => String(item?.issue_id || "").trim())
+    .filter(Boolean);
   data.write_status = statusData.write_status || data.write_status;
   data.write_ready = statusData.write_ready === true;
   data.capability_pending = false;
@@ -1406,7 +1413,12 @@ function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
   }
   if (trailUpdateConfirmResolver) trailUpdateConfirmClose(false);
   const directMode = mode === "direct_issue_ids" || data?.mode === "direct_issue_ids";
-  const items = Array.isArray(data?.items) ? data.items : [];
+  const allItems = Array.isArray(data?.items) ? data.items : [];
+  // The server rechecks this state immediately before the write, but make the
+  // confirmation surface match the operation: only rows whose dashboard
+  // marker *or* exclusion note differs from Trail will be submitted.
+  const items = allItems.filter((item) => item?.trail_update_status === "pending");
+  const skippedSyncedCount = Math.max(0, allItems.length - items.length);
   const infoField = String(
     data?.target_field
       || (data?.write_mode === "info_only" ? data?.target_fields?.[0] : data?.target_fields?.[1])
@@ -1415,7 +1427,7 @@ function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
   const targetSpec = trailUpdateTargetSpec(data);
   const resultField = String(data?.model_result_field || "ra_stuck_auto_result");
   const infoOnly = data?.write_mode === "info_only" || directMode;
-  const count = Number(data?.count || items.length);
+  const count = Number(data?.pending_count ?? items.length);
   const run = data?.selected_run || {};
   const runLabel = directMode
     ? uiText("Issue ID 屏蔽", "Shield by Issue ID")
@@ -1460,8 +1472,8 @@ function openTrailUpdateConfirm({ mode = "review", data = {} } = {}) {
   const listCount = $("#trailUpdateConfirmListCount");
   const shownItems = items.slice(0, 12);
   if (listCount) listCount.textContent = uiText(
-    count > shownItems.length ? `共 ${count} 条，展示前 ${shownItems.length} 条` : `共 ${count} 条`,
-    count > shownItems.length ? `${count} total · first ${shownItems.length} shown` : `${count} item(s)`
+    `${count > shownItems.length ? `共 ${count} 条，展示前 ${shownItems.length} 条` : `共 ${count} 条`}${skippedSyncedCount ? `；已同步跳过 ${skippedSyncedCount} 条` : ""}`,
+    `${count > shownItems.length ? `${count} total · first ${shownItems.length} shown` : `${count} item(s)`}${skippedSyncedCount ? `; ${skippedSyncedCount} synced item(s) skipped` : ""}`
   );
   if (list) {
     list.innerHTML = shownItems.length
@@ -1590,11 +1602,14 @@ async function commitTrailIssueExclusion() {
   const entries = Array.isArray(data.requested_entries)
     ? data.requested_entries
     : ids.map((issueId) => ({ issue_id: issueId, comment: data.comment || "" }));
+  const pendingCount = Number(data?.pending_count ?? data?.items?.filter(
+    (item) => item?.trail_update_status === "pending"
+  ).length ?? ids.length);
   if (!await openTrailUpdateConfirm({ mode: "direct_issue_ids", data })) return;
   const button = $("#trailUpdateIssueCommitButton");
   button?.toggleAttribute("disabled", true);
   setTrailIssueStatus(uiText("正在写入 Trail 字段和 info 排除说明…", "Writing Trail fields and info notes…"));
-  openTrailUpdateProgress({ mode: "issue", total: ids.length });
+  openTrailUpdateProgress({ mode: "issue", total: pendingCount });
   trailUpdateProgressSetStage("request");
   try {
     const result = await api("/api/trail-attribute-update/issue-commit", {
@@ -1634,8 +1649,8 @@ async function commitTrailIssueExclusion() {
       ? `${localReviewText}${uiText(`；本地标记失败 ${localFailures.length} 条`, `; ${localFailures.length} local mark failures`)}`
       : localReviewText;
     const progressMessage = uiText(
-      `字段与 info 排除说明 ${stats.success_count || 0}/${stats.total || ids.length}；${readbackText}；${localReviewWithFailures}。`,
-      `Trail fields and info notes ${stats.success_count || 0}/${stats.total || ids.length}; ${readbackText}; ${localReviewWithFailures}.`
+      `字段与 info 排除说明 ${stats.success_count || 0}/${stats.total || pendingCount}；${readbackText}；${localReviewWithFailures}。`,
+      `Trail fields and info notes ${stats.success_count || 0}/${stats.total || pendingCount}; ${readbackText}; ${localReviewWithFailures}.`
     );
     const localSyncWarning = outsideDashboard.length > 0 || localFailures.length > 0;
     finishTrailUpdateProgress({ ok: trailOk, warning: trailOk && localSyncWarning, message: progressMessage });
@@ -1673,7 +1688,7 @@ async function commitTrailAttributeUpdate() {
   const button = $("#trailUpdateCommitButton");
   button?.toggleAttribute("disabled", true);
   setTrailAttributeStatus(uiText("正在提交 Trail 属性…", "Committing Trail info…"));
-  openTrailUpdateProgress({ mode: "review", total: Number(data?.count || data?.items?.length || 0) });
+  openTrailUpdateProgress({ mode: "review", total: Number(data?.pending_count ?? data?.count ?? data?.items?.length ?? 0) });
   trailUpdateProgressSetStage("request");
   try {
     const result = await api("/api/trail-attribute-update/commit", {
@@ -1706,6 +1721,15 @@ async function commitTrailAttributeUpdate() {
         : uiText("Trail 属性更新部分失败，请查看回读和失败明细。", "Trail attribute update is incomplete; inspect readback and failures."),
       !result?.ok
     );
+    if (result?.ok) {
+      const runId = String(data?.selected_run?.id || state.trailUpdate?.runId || "").trim();
+      void refreshTrailAttributeStatus({
+        runId,
+        previewKey: trailUpdatePreviewKey(runId),
+        requestSeq: state.trailUpdate.requestSeq,
+        force: true,
+      }).catch(() => {});
+    }
   } catch (error) {
     finishTrailUpdateProgress({ ok: false, message: error?.message || uiText("提交失败，请稍后重试。", "Commit failed; try again later.") });
     setTrailAttributeStatus(error?.message || uiText("Trail 更新失败。", "Trail update failed."));

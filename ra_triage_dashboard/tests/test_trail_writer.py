@@ -184,6 +184,27 @@ class TrailWriterTest(unittest.TestCase):
             "泊入二次寻点，应该排除",
         )
 
+    def test_manual_exclusion_clears_a_stale_dashboard_note_when_blank(self) -> None:
+        changes = build_manual_exclusion_changes(
+            ["cn00000001"],
+            current_rows=[
+                {
+                    "issue_id": "cn00000001",
+                    "ra_stuck_auto_result_info": {
+                        "ra_triage_dashboard": {
+                            "should_exclude": True,
+                            "should_exclude_comment": "旧说明",
+                        }
+                    },
+                }
+            ],
+            comment_by_issue={"cn00000001": ""},
+        )
+        self.assertEqual(
+            changes[0]["ra_stuck_auto_result_info"]["ra_triage_dashboard"]["should_exclude_comment"],
+            "",
+        )
+
     def test_writer_separately_reports_comment_result(self) -> None:
         calls = []
 

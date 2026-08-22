@@ -35,7 +35,7 @@ from ..import_parsing import parse_source_bytes
 from ..issue_tag_sources import HISTORICAL_EXCLUSION_SOURCE_KIND
 from ..runtime import baseline_registry, database, issue_tag_sources, settings
 from ..review_workflow import derive_review_status
-from ..trail_sync import _dashboard_should_exclude, read_trail_model_fields
+from ..trail_sync import read_trail_model_fields
 from ..trail_writer import (
     attach_trail_operation_id,
     build_manual_exclusion_changes,
@@ -125,8 +125,21 @@ _commit_lock = threading.Lock()
 # avoids repeating the same read while preserving the commit path's fresh,
 # server-side verification.
 _preview_capability_cache = TimedSingleFlightCache[
-    tuple[int, str, tuple[str, ...]], dict[str, Any]
+    tuple[int, str, str, tuple[str, ...]], dict[str, Any]
 ](ttl_seconds=90, max_entries=256)
+# The first Review-exclusion response deliberately contains no remote Trail
+# read, so the browser can paint the local candidate list immediately.  Keep
+# the signed, local expectation for that short window and let the compact
+# status endpoint use it when comparing the single batched Trail read.  The
+# browser supplies the preview digest; unknown/expired digests fail closed
+# instead of silently falling back to a marker-only comparison.
+# ``TimedSingleFlightCache``'s generic subscription is evaluated at import
+# time on the Python 3.9 deployments.  Keep ``None`` in the value contract
+# but avoid PEP-604 unions inside that runtime-evaluated subscription.
+_preview_status_expectation_cache = TimedSingleFlightCache[str, Any](
+    ttl_seconds=180,
+    max_entries=512,
+)
 
 
 def _append_historical_source_note(note: str, source_note: str) -> str:
@@ -383,20 +396,94 @@ def _capability_for_info_write(sync_result: Any, info_field: str) -> dict[str, A
     }
 
 
+def _dashboard_exclusion_values(value: Any) -> tuple[bool | None, str]:
+    """Return the Dashboard-owned exclusion marker and normalized note.
+
+    Trail may return JSON text, a mapping, or a dataframe scalar.  The status
+    projection owns only the namespaced values and must not treat another
+    producer's top-level fields as proof that this dashboard update landed.
+    """
+
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            value = {}
+    if not isinstance(value, dict):
+        return None, ""
+    dashboard = value.get("ra_triage_dashboard")
+    if not isinstance(dashboard, dict):
+        return None, ""
+    marker = dashboard.get("should_exclude")
+    note = _as_text(dashboard.get("should_exclude_comment")).strip()[:4000]
+    return (marker if isinstance(marker, bool) else None), note
+
+
+def _normalise_exclusion_comment(value: Any) -> str:
+    """Use the exact value the info-only writer persists for comparison."""
+
+    return _as_text(value).strip()[:4000]
+
+
+def _expected_exclusion_comments(items: list[dict[str, Any]]) -> dict[str, str]:
+    """Extract the exact Dashboard note that a signed preview owns."""
+
+    expected: dict[str, str] = {}
+    for item in items:
+        issue_id = _as_text(item.get("issue_id")).strip()
+        target = item.get("target") if isinstance(item.get("target"), Mapping) else {}
+        patch = target.get("patch") if isinstance(target.get("patch"), Mapping) else {}
+        dashboard = patch.get("ra_triage_dashboard") if isinstance(patch.get("ra_triage_dashboard"), Mapping) else {}
+        if issue_id:
+            expected[issue_id] = _normalise_exclusion_comment(
+                dashboard.get("should_exclude_comment", item.get("comment", ""))
+            )
+    return expected
+
+
+def _remember_preview_status_expectations(payload: Mapping[str, Any]) -> None:
+    """Make a local Review preview usable by the compact remote status read."""
+
+    digest = _as_text(payload.get("payload_sha256"))
+    if not digest:
+        return
+    expected = _expected_exclusion_comments(
+        [item for item in (payload.get("items") or []) if isinstance(item, dict)]
+    )
+    # Replace a possible cached negative lookup from an expired browser
+    # preview.  Without this invalidation, reopening the page with the same
+    # deterministic digest would keep returning that old ``None`` until its
+    # TTL elapsed and leave the submit button needlessly unavailable.
+    _preview_status_expectation_cache.invalidate(digest)
+    _preview_status_expectation_cache.get_or_load(digest, lambda: expected)
+
+
+def _preview_status_expectations(payload_sha256: str) -> dict[str, str] | None:
+    """Fetch a short-lived signed expectation map without reconstructing rows."""
+
+    digest = _as_text(payload_sha256)
+    if not digest:
+        return None
+    value = _preview_status_expectation_cache.get_or_load(digest, lambda: None)
+    return dict(value) if isinstance(value, dict) else None
+
+
 def _trail_update_statuses(
     sync_result: Any,
     issue_ids: list[str],
     *,
     info_field: str,
+    expected_comments: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
     """Project one batched Trail read into per-Issue update states.
 
     The status is intentionally derived from the same single batched read used
     for capability validation.  It never performs a follow-up request per
     Issue: a missing marker means the candidate is waiting to be synchronized,
-    an explicit ``true`` marker means it is already synchronized, and a missing
-    returned row is surfaced as ``not_found`` rather than being treated as a
-    successful write.
+    an explicit ``true`` marker *and the expected Dashboard-owned exclusion
+    note* means it is already synchronized.  A stale/missing note is pending,
+    so retries update only the divergent records.  A missing returned row is
+    surfaced as ``not_found`` rather than being treated as a successful write.
     """
 
     normalized_ids = [str(issue_id or "").strip() for issue_id in issue_ids if str(issue_id or "").strip()]
@@ -413,11 +500,14 @@ def _trail_update_statuses(
         if row is None:
             statuses[issue_id] = "not_found"
             continue
-        statuses[issue_id] = (
-            "synced"
-            if _dashboard_should_exclude(row.get(info_field)) is True
-            else "pending"
+        marker, current_comment = _dashboard_exclusion_values(row.get(info_field))
+        expected_comment = _normalise_exclusion_comment(
+            (expected_comments or {}).get(issue_id, "")
         )
+        # Keep the marker-only fallback solely for direct callers of the old
+        # helper/tests.  All page and commit paths provide expected comments.
+        note_matches = expected_comments is None or current_comment == expected_comment
+        statuses[issue_id] = "synced" if marker is True and note_matches else "pending"
     return statuses
 
 
@@ -435,6 +525,7 @@ def _read_preview_trail_status_sync(
     issue_ids: list[str],
     *,
     info_field: str,
+    expected_comments: Mapping[str, str] | None = None,
     refresh: bool = False,
 ) -> dict[str, Any]:
     """Read one batched status projection, coalescing duplicate probes.
@@ -449,7 +540,19 @@ def _read_preview_trail_status_sync(
         for issue_id in issue_ids
         if _as_text(issue_id).strip()
     })
-    cache_key = (int(settings.trail_view_id), info_field, tuple(normalized_ids))
+    normalised_comments = {
+        issue_id: _normalise_exclusion_comment((expected_comments or {}).get(issue_id, ""))
+        for issue_id in normalized_ids
+    }
+    expectation_signature = hashlib.sha256(
+        _canonical_json(normalised_comments).encode("utf-8")
+    ).hexdigest()
+    cache_key = (
+        int(settings.trail_view_id),
+        info_field,
+        expectation_signature,
+        tuple(normalized_ids),
+    )
     if refresh:
         _preview_capability_cache.invalidate(cache_key)
 
@@ -464,6 +567,7 @@ def _read_preview_trail_status_sync(
             sync_result,
             normalized_ids,
             info_field=info_field,
+            expected_comments=normalised_comments,
         )
         return {
             "trail_capability": _capability_for_info_write(sync_result, info_field),
@@ -478,6 +582,7 @@ async def _read_preview_trail_status(
     issue_ids: list[str],
     *,
     info_field: str,
+    expected_comments: Mapping[str, str] | None = None,
     refresh: bool = False,
 ) -> dict[str, Any]:
     """Offload the cache/remote probe so route handlers keep the loop free."""
@@ -486,6 +591,7 @@ async def _read_preview_trail_status(
         _read_preview_trail_status_sync,
         issue_ids,
         info_field=info_field,
+        expected_comments=expected_comments,
         refresh=refresh,
     )
 
@@ -539,10 +645,14 @@ def build_trail_attribute_update_payload(
         # Trail only needs Dashboard-owned fields.  Keep the operator's
         # explanation beside the exclusion marker in the same info JSON so
         # the update is atomic and does not create a separate Trail Comment.
-        comment_text = _as_text(annotation.get("note"))[:4000]
-        dashboard_patch: dict[str, Any] = {"should_exclude": True}
-        if comment_text:
-            dashboard_patch["should_exclude_comment"] = comment_text
+        comment_text = _normalise_exclusion_comment(annotation.get("note"))
+        # An empty local note is also an intentional expected value.  Include
+        # it explicitly so a stale Trail explanation is cleared and the
+        # next status probe can honestly report the item as synchronized.
+        dashboard_patch: dict[str, Any] = {
+            "should_exclude": True,
+            "should_exclude_comment": comment_text,
+        }
         patch = {"ra_triage_dashboard": dashboard_patch}
         items.append(
             {
@@ -599,6 +709,18 @@ def build_trail_attribute_update_payload(
     for item in items:
         status = _as_text(item.get("trail_update_status")) or "not_checked"
         status_summary[status] = status_summary.get(status, 0) + 1
+    pending_issue_ids = [
+        _as_text(item.get("issue_id"))
+        for item in items
+        if _as_text(item.get("trail_update_status")) == "pending"
+    ]
+    incomplete_statuses = {
+        "querying", "query_failed", "not_found", "not_checked"
+    }
+    status_check_complete = not any(
+        _as_text(item.get("trail_update_status")) in incomplete_statuses
+        for item in items
+    )
     draft: dict[str, Any] = {
         "schema_version": TRAIL_DRAFT_SCHEMA,
         "mode": "preview",
@@ -654,6 +776,10 @@ def build_trail_attribute_update_payload(
         write_status = "fields_unavailable"
     elif invalid_labels:
         write_status = "invalid_labels"
+    elif not status_check_complete:
+        write_status = "status_check_incomplete"
+    elif not pending_issue_ids:
+        write_status = "already_synced"
     else:
         write_status = "ready"
     return {
@@ -680,6 +806,8 @@ def build_trail_attribute_update_payload(
         "baselines": list(baseline_ids),
         "baseline_scopes": list(baseline_scopes),
         "count": len(items),
+        "pending_count": len(pending_issue_ids),
+        "pending_issue_ids": pending_issue_ids,
         "invalid_label_issue_ids": invalid_labels,
         "payload_sha256": digest,
         "operation_id": digest,
@@ -1367,7 +1495,10 @@ def build_trail_issue_exclusion_payload(
             dashboard_info = {}
         supplied_item_comment = supplied_comments.get(issue_id, supplied_comment)
         comment_defaulted = not bool(supplied_item_comment)
-        normalized_item_comment = supplied_item_comment or TRAIL_ISSUE_EXCLUSION_COMMENT
+        normalized_item_comment = _normalise_exclusion_comment(
+            supplied_item_comment or TRAIL_ISSUE_EXCLUSION_COMMENT
+        )
+        current_marker, current_comment = _dashboard_exclusion_values(current_info)
         patch = {
             "ra_triage_dashboard": {
                 "should_exclude": True,
@@ -1380,7 +1511,12 @@ def build_trail_issue_exclusion_payload(
             "baseline_id": _as_text((release_by_issue.get(issue_id) or {}).get("baseline_id")),
             "baseline_scope": _as_text((release_by_issue.get(issue_id) or {}).get("baseline_scope")),
             "current_label": _as_text(current.get(TRAIL_RESULT_FIELD)),
-            "current_should_exclude": bool(dashboard_info.get("should_exclude")),
+            "current_should_exclude": current_marker is True,
+            "trail_update_status": (
+                "synced"
+                if current_marker is True and current_comment == normalized_item_comment
+                else "pending"
+            ),
             # Keep the exact before/after object in the preview contract so
             # the operator can see what the production write will preserve
             # and what it will add.  The direct workflow never includes the
@@ -1409,6 +1545,17 @@ def build_trail_issue_exclusion_payload(
             item["source"] = source
         items.append(item)
     items.sort(key=lambda item: item["issue_id"])
+    status_summary = _trail_update_status_summary(
+        {
+            _as_text(item.get("issue_id")): _as_text(item.get("trail_update_status"))
+            for item in items
+        }
+    )
+    pending_issue_ids = [
+        _as_text(item.get("issue_id"))
+        for item in items
+        if _as_text(item.get("trail_update_status")) == "pending"
+    ]
     draft: dict[str, Any] = {
         "schema_version": TRAIL_ISSUE_DRAFT_SCHEMA,
         "mode": "direct_issue_ids",
@@ -1430,7 +1577,14 @@ def build_trail_issue_exclusion_payload(
         },
         "items": items,
     }
-    digest = hashlib.sha256(_canonical_json(draft).encode("utf-8")).hexdigest()
+    digest_draft = {
+        **draft,
+        "items": [
+            {key: value for key, value in item.items() if key != "trail_update_status"}
+            for item in items
+        ],
+    }
+    digest = hashlib.sha256(_canonical_json(digest_draft).encode("utf-8")).hexdigest()
     draft["payload_sha256"] = digest
     draft["operation_id"] = digest
     capability = trail_capability or {
@@ -1452,6 +1606,8 @@ def build_trail_issue_exclusion_payload(
         write_status = "missing_issues"
     elif not items:
         write_status = "empty"
+    elif not pending_issue_ids:
+        write_status = "already_synced"
     else:
         write_status = "ready"
     return {
@@ -1467,6 +1623,8 @@ def build_trail_issue_exclusion_payload(
         "comment_target_path": TRAIL_COMMENT_PATH,
         "merge_strategy": "deep_merge",
         "count": len(items),
+        "pending_count": len(pending_issue_ids),
+        "pending_issue_ids": pending_issue_ids,
         "requested_issue_ids": list(issue_ids),
         "requested_entries": normalized_entries,
         "invalid_issue_ids": list(invalid_issue_ids or []),
@@ -1479,6 +1637,7 @@ def build_trail_issue_exclusion_payload(
         "payload_sha256": digest,
         "operation_id": digest,
         "items": items,
+        "trail_update_status_summary": status_summary,
         "trail_capability": capability,
         "draft": draft,
     }
@@ -1513,6 +1672,26 @@ async def _build_preview(
         and getattr(settings, "trail_attribute_review_write_enabled", False)
     )
     issue_ids = [_as_text(row.get("issue_id")) for row in rows if _as_text(row.get("issue_id"))]
+    # Build the deterministic local draft first.  Its expected per-Issue note
+    # is needed by the later batched Trail comparison, but this local work does
+    # not touch Trail and stays on the fast first-paint path.
+    initial_capability = _capability_not_checked(result_field, info_field)
+    initial_capability["target_fields"] = [info_field]
+    initial_capability["required_fields"] = [info_field]
+    local_payload = await asyncio.to_thread(
+        build_trail_attribute_update_payload,
+        rows,
+        run=run,
+        baseline_ids=baseline_ids,
+        baseline_scopes=baseline_scopes,
+        result_field=result_field,
+        info_field=info_field,
+        trail_capability=initial_capability,
+        trail_statuses=None,
+        trail_write_enabled=review_write_enabled,
+        write_mode="info_only",
+    )
+    expected_comments = _expected_exclusion_comments(local_payload.get("items") or [])
     # Trail status is a read-only projection and is useful even when the
     # controlled writer is disabled. Keep the first local paint cheap, then
     # perform one batched read when the caller explicitly asks for it.
@@ -1521,20 +1700,19 @@ async def _build_preview(
         projection = await _read_preview_trail_status(
             issue_ids,
             info_field=info_field,
+            expected_comments=expected_comments,
             refresh=refresh_trail,
         )
         capability = dict(projection["trail_capability"])
         trail_statuses = dict(projection["trail_update_statuses"])
     else:
-        capability = _capability_not_checked(result_field, info_field)
-        capability["target_fields"] = [info_field]
-        capability["required_fields"] = [info_field]
+        capability = initial_capability
         # The first-paint request is intentionally still waiting for the
         # background probe. Keep rows in “查询中” until that single batched
         # read returns, regardless of whether writing is enabled.
         if not (issue_ids and not probe_trail):
             trail_statuses = {}
-    payload = await asyncio.to_thread(
+    payload = local_payload if not probe_trail else await asyncio.to_thread(
         build_trail_attribute_update_payload,
         rows,
         run=run,
@@ -1552,6 +1730,7 @@ async def _build_preview(
     # follows it with the checked request in the background and replaces the
     # payload before enabling a possible commit.
     payload["capability_pending"] = bool(issue_ids and not probe_trail)
+    _remember_preview_status_expectations(payload)
     return payload
 
 
@@ -1752,6 +1931,7 @@ async def trail_attribute_update_preview(
 @router.get("/api/trail-attribute-update/status")
 async def trail_attribute_update_status(
     issue_ids: str = "",
+    payload_sha256: str = "",
     refresh: bool = False,
 ) -> dict[str, Any]:
     """Return only the batched Trail state for an existing Review preview.
@@ -1779,9 +1959,33 @@ async def trail_attribute_update_status(
             "write_status": "disabled",
             "write_ready": False,
         }
+    expected_comments = _preview_status_expectations(payload_sha256)
+    # A digest is supplied by current clients.  If its short-lived local
+    # expectation has expired, do not downgrade to marker-only matching: that
+    # could incorrectly hide a changed exclusion note.  Ask the client to
+    # reload the local preview instead.  Keep the no-digest fallback for one
+    # rolling-deploy window with older cached static assets.
+    if payload_sha256 and expected_comments is None:
+        capability = _capability_not_checked(result_field, info_field)
+        capability.update({
+            "target_fields": [info_field],
+            "required_fields": [info_field],
+            "message": "本地排除预览已过期，请重新打开问题排除页面后再检查 Trail 状态。",
+        })
+        statuses = {issue_id: "query_failed" for issue_id in normalized_ids}
+        return {
+            "issue_ids": normalized_ids,
+            "trail_capability": capability,
+            "trail_update_statuses": statuses,
+            "trail_update_status_summary": _trail_update_status_summary(statuses),
+            "pending_count": 0,
+            "write_status": "status_check_incomplete",
+            "write_ready": False,
+        }
     projection = await _read_preview_trail_status(
         normalized_ids,
         info_field=info_field,
+        expected_comments=expected_comments,
         refresh=refresh,
     )
     capability = dict(projection["trail_capability"])
@@ -1789,20 +1993,29 @@ async def trail_attribute_update_status(
         settings.trail_attribute_write_enabled
         and getattr(settings, "trail_attribute_review_write_enabled", False)
     )
-    write_status = (
-        "disabled"
-        if not review_write_enabled
-        else "ready"
-        if capability.get("ready")
-        else "fields_unavailable"
+    statuses = dict(projection["trail_update_statuses"])
+    pending_count = sum(1 for status in statuses.values() if status == "pending")
+    status_check_complete = all(
+        status in {"pending", "synced"} for status in statuses.values()
     )
+    write_status = "disabled"
+    if review_write_enabled:
+        if not capability.get("ready"):
+            write_status = "fields_unavailable"
+        elif not status_check_complete:
+            write_status = "status_check_incomplete"
+        elif not pending_count:
+            write_status = "already_synced"
+        else:
+            write_status = "ready"
     return {
         "issue_ids": normalized_ids,
         "trail_capability": capability,
-        "trail_update_statuses": dict(projection["trail_update_statuses"]),
+        "trail_update_statuses": statuses,
         "trail_update_status_summary": dict(
             projection["trail_update_status_summary"]
         ),
+        "pending_count": pending_count,
         "write_status": write_status,
         "write_ready": write_status == "ready",
     }
@@ -1993,9 +2206,63 @@ async def trail_attribute_update_commit(request: Request) -> dict[str, Any]:
             or int(sync_result.returned_issues) != int(sync_result.queried_issues)
         ):
             raise _detail(409, _as_text(sync_result.message) or "Trail Issue 回读不完整。")
+        expected_comments = _expected_exclusion_comments(
+            [item for item in (preview.get("items") or []) if isinstance(item, dict)]
+        )
+        statuses = _trail_update_statuses(
+            sync_result,
+            [_as_text(item.get("issue_id")) for item in preview.get("items", [])],
+            info_field=info_field,
+            expected_comments=expected_comments,
+        )
+        incomplete_ids = [
+            issue_id for issue_id, status in statuses.items()
+            if status not in {"synced", "pending"}
+        ]
+        if incomplete_ids:
+            raise _detail(
+                409,
+                f"Trail 状态检查不完整，未写入任何 Issue：{', '.join(incomplete_ids[:8])}",
+            )
+        pending_items = [
+            item for item in (preview.get("items") or [])
+            if _as_text(statuses.get(_as_text(item.get("issue_id")))) == "pending"
+        ]
+        skipped_synced_issue_ids = sorted(
+            issue_id for issue_id, status in statuses.items() if status == "synced"
+        )
+        if not pending_items:
+            _preview_capability_cache.clear()
+            return {
+                "ok": True,
+                "mode": "commit",
+                "payload_sha256": submitted_digest,
+                "model_run_id": run_id,
+                "actor": {
+                    "username": identity.username,
+                    "source": identity.source,
+                    "verified": identity.verified,
+                },
+                "write_mode": "info_only",
+                "model_result_field": result_field,
+                "target_fields": [info_field],
+                "submitted_count": 0,
+                "skipped_synced_issue_ids": skipped_synced_issue_ids,
+                "trail_update_status_summary": _trail_update_status_summary(statuses),
+                "stats": write_trail_model_results([], ra_root=settings.ra_auto_triage_root),
+                "readback": {
+                    "complete": True,
+                    "ok": True,
+                    "checked_count": 0,
+                    "verified_count": 0,
+                    "missing_issue_ids": [],
+                    "mismatched_issue_ids": [],
+                    "message": "所有候选项的排除标记和排除说明均已同步；未发送 Trail 写入。",
+                },
+            }
         changes = await asyncio.to_thread(
             build_trail_changes,
-            preview.get("items", []),
+            pending_items,
             current_rows=sync_result.rows,
             result_field=result_field,
             info_field=info_field,
@@ -2016,6 +2283,7 @@ async def trail_attribute_update_commit(request: Request) -> dict[str, Any]:
             result_field="",
             info_field=info_field,
         )
+        _preview_capability_cache.clear()
     return {
         "ok": (
             not stats.get("failed_count")
@@ -2033,6 +2301,9 @@ async def trail_attribute_update_commit(request: Request) -> dict[str, Any]:
         "write_mode": "info_only",
         "model_result_field": result_field,
         "target_fields": [info_field],
+        "submitted_count": len(changes),
+        "skipped_synced_issue_ids": skipped_synced_issue_ids,
+        "trail_update_status_summary": _trail_update_status_summary(statuses),
         "stats": stats,
         "readback": readback,
     }
@@ -2085,7 +2356,13 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
         )
         if submitted_digest != _as_text(preview.get("payload_sha256")):
             raise _detail(409, "预览已过期或内容发生变化，请重新生成后再提交。")
-        if not preview.get("write_ready"):
+        # ``already_synced`` is a successful, idempotent terminal state for
+        # Trail itself.  Still allow this request to refresh the local Review
+        # exclusion flag below; do not send a duplicate field update.
+        if (
+            not preview.get("write_ready")
+            and _as_text(preview.get("write_status")) != "already_synced"
+        ):
             capability = preview.get("trail_capability") or {}
             detail = _as_text(capability.get("message")) or "目标字段不可写。"
             missing = preview.get("missing_issue_ids") or []
@@ -2124,35 +2401,80 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
             }
             for issue_id in issue_ids
         ]
+        statuses = {
+            _as_text(item.get("issue_id")).strip(): _as_text(
+                item.get("trail_update_status")
+            )
+            for item in (preview.get("items") or [])
+            if _as_text(item.get("issue_id")).strip()
+        }
+        unchecked_issue_ids = sorted(
+            issue_id
+            for issue_id, status in statuses.items()
+            if status not in {"pending", "synced"}
+        )
+        if unchecked_issue_ids:
+            raise _detail(
+                409,
+                "Trail 状态检查不完整，未写入任何 Issue："
+                f"{', '.join(unchecked_issue_ids[:8])}",
+            )
+        pending_issue_ids = sorted(
+            issue_id for issue_id, status in statuses.items() if status == "pending"
+        )
+        skipped_synced_issue_ids = sorted(
+            issue_id for issue_id, status in statuses.items() if status == "synced"
+        )
         await _save_issue_exclusion_history(
             operation_id=submitted_digest,
             identity=identity,
             status="pending",
             requested_entries=history_entries,
-            message="已生成待提交记录，等待 Trail 写入和回读。",
+            message=(
+                f"已生成待提交记录：待写 {len(pending_issue_ids)} 条，"
+                f"已同步跳过 {len(skipped_synced_issue_ids)} 条。"
+            ),
         )
         _, info_field = _field_names()
         try:
-            changes = await asyncio.to_thread(
-                build_manual_exclusion_changes,
-                issue_ids,
-                current_rows=sync_result.rows,
-                info_field=info_field,
-                comment_by_issue=effective_comments,
-            )
-            changes = attach_trail_operation_id(changes, operation_id=submitted_digest)
-            stats = await asyncio.to_thread(
-                write_trail_model_results,
-                changes,
-                ra_root=settings.ra_auto_triage_root,
-                chunk_size=settings.trail_attribute_write_chunk_size,
-            )
-            readback = await _readback_changes(
-                changes,
-                stats,
-                result_field="",
-                info_field=info_field,
-            )
+            if pending_issue_ids:
+                changes = await asyncio.to_thread(
+                    build_manual_exclusion_changes,
+                    pending_issue_ids,
+                    current_rows=sync_result.rows,
+                    info_field=info_field,
+                    comment_by_issue=effective_comments,
+                )
+                changes = attach_trail_operation_id(changes, operation_id=submitted_digest)
+                stats = await asyncio.to_thread(
+                    write_trail_model_results,
+                    changes,
+                    ra_root=settings.ra_auto_triage_root,
+                    chunk_size=settings.trail_attribute_write_chunk_size,
+                )
+                readback = await _readback_changes(
+                    changes,
+                    stats,
+                    result_field="",
+                    info_field=info_field,
+                )
+            else:
+                # Keep the response contract identical for an idempotent
+                # retry, without instantiating a Trail client or sending any
+                # write request.
+                changes = []
+                stats = write_trail_model_results(
+                    [], ra_root=settings.ra_auto_triage_root
+                )
+                readback = {
+                    "complete": True,
+                    "ok": True,
+                    "checked_count": 0,
+                    "verified_count": 0,
+                    "missing_issue_ids": [],
+                    "mismatched_issue_ids": [],
+                    "message": "所有候选项的排除标记和排除说明均已同步；未发送 Trail 写入。",
+                }
             field_failed = {
                 str(item).strip()
                 for item in stats.get("failed_issue_ids", [])
@@ -2166,13 +2488,16 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
                 )
                 if str(item).strip()
             }
-            verified_issue_ids = [
+            newly_verified_issue_ids = [
                 str(item.get("issue_id") or "").strip()
                 for item in changes
                 if str(item.get("issue_id") or "").strip()
                 and str(item.get("issue_id") or "").strip() not in field_failed
                 and str(item.get("issue_id") or "").strip() not in readback_failed
             ]
+            verified_issue_ids = sorted(
+                set(skipped_synced_issue_ids) | set(newly_verified_issue_ids)
+            )
             local_review = (
                 await asyncio.to_thread(
                     _mark_local_review_exclusions,
@@ -2227,7 +2552,8 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
             else "partial" if verified_issue_ids else "failed"
         )
         history_message = (
-            f"Trail 回读 {len(verified_issue_ids)}/{len(changes)} 条成功。"
+            f"Trail 新写并回读 {len(newly_verified_issue_ids)}/{len(changes)} 条成功；"
+            f"已同步跳过 {len(skipped_synced_issue_ids)} 条。"
             if readback.get("complete")
             else "Trail 回读不完整，未同步本地 Review 排除状态。"
         )
@@ -2285,6 +2611,9 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
         },
         "target_fields": [info_field],
         "target_path": TRAIL_TARGET_PATH,
+        "submitted_count": len(changes),
+        "skipped_synced_issue_ids": skipped_synced_issue_ids,
+        "trail_update_status_summary": _trail_update_status_summary(statuses),
         "stats": stats,
         "readback": readback,
         "local_review": local_review,
