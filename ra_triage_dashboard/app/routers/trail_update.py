@@ -35,6 +35,29 @@ from ..import_parsing import parse_source_bytes
 from ..issue_tag_sources import HISTORICAL_EXCLUSION_SOURCE_KIND
 from ..runtime import baseline_registry, database, issue_tag_sources, settings
 from ..review_workflow import derive_review_status
+from ..trail_exclusion_contracts import (
+    TRAIL_COMMENT_PATH,
+    TRAIL_DRAFT_SCHEMA,
+    TRAIL_INFO_FIELD,
+    TRAIL_ISSUE_DRAFT_SCHEMA,
+    TRAIL_ISSUE_EXCLUSION_COMMENT,
+    TRAIL_ISSUE_IMPORT_PREVIEW_SCHEMA,
+    TRAIL_RESULT_FIELD,
+    TRAIL_TARGET_FIELD,
+    TRAIL_TARGET_PATH,
+    canonical_json as _canonical_json,
+    dashboard_exclusion_values as _dashboard_exclusion_values,
+    expected_exclusion_comments as _expected_exclusion_comments,
+    normalise_exclusion_comment as _normalise_exclusion_comment,
+    normalise_issue_entries as _normalise_issue_entries,
+    normalise_issue_ids as _normalise_issue_ids,
+    trail_update_status_summary as _trail_update_status_summary,
+    trail_update_statuses as _trail_update_statuses,
+)
+from ..trail_exclusion_payloads import (
+    build_direct_issue_exclusion_payload as _build_direct_issue_exclusion_payload,
+    build_review_exclusion_payload as _build_review_exclusion_payload,
+)
 from ..trail_sync import read_trail_model_fields
 from ..trail_writer import (
     attach_trail_operation_id,
@@ -51,22 +74,6 @@ from ..upload_limits import UploadLimitExceeded, read_upload_limited
 router = APIRouter()
 logger = logging.getLogger("ra_triage_dashboard.trail_update")
 
-TRAIL_RESULT_FIELD = "ra_stuck_auto_result"
-TRAIL_INFO_FIELD = "ra_stuck_auto_result_info"
-# Backward-compatible aliases used by older imports/tests.
-TRAIL_TARGET_FIELD = TRAIL_INFO_FIELD
-TRAIL_TARGET_PATH = "ra_triage_dashboard.should_exclude"
-TRAIL_COMMENT_PATH = "ra_triage_dashboard.should_exclude_comment"
-TRAIL_DRAFT_SCHEMA = "trail-attribute-update-v2"
-TRAIL_ISSUE_DRAFT_SCHEMA = "trail-issue-exclusion-v2"
-TRAIL_ISSUE_IMPORT_PREVIEW_SCHEMA = "trail-issue-import-preview-v1"
-# A direct Issue-ID action must leave an auditable reason even when the
-# operator does not type a custom note.  The model label remains untouched;
-# both the marker and its explanation are written under the namespaced info
-# field, not through Trail's separate Comment API.
-TRAIL_ISSUE_EXCLUSION_COMMENT = (
-    "问题排除：Issue ID 直接屏蔽（仅写入 should_exclude=true，模型 label 不变）。"
-)
 _HISTORICAL_EXCLUSION_SOURCE_FIELDS = (
     "kind",
     "source_id",
@@ -127,6 +134,12 @@ _commit_lock = threading.Lock()
 _preview_capability_cache = TimedSingleFlightCache[
     tuple[int, str, str, tuple[str, ...]], dict[str, Any]
 ](ttl_seconds=90, max_entries=256)
+# Candidate construction is local SQLite work, but can still dominate a page
+# transition with multiple baselines. Keep it separate from the remote Trail
+# cache so local rendering remains reusable without extending Trail freshness.
+_review_exclusion_candidate_cache = TimedSingleFlightCache[
+    tuple[str, tuple[str, ...]], list[dict[str, Any]]
+](ttl_seconds=12, max_entries=128)
 # The first Review-exclusion response deliberately contains no remote Trail
 # read, so the browser can paint the local candidate list immediately.  Keep
 # the signed, local expectation for that short window and let the compact
@@ -265,17 +278,37 @@ def _mark_local_review_exclusions(
             result["failed_issue_ids"].append(issue_id)
             result["failure_messages"][issue_id] = str(exc)[:240]
     result["ok"] = result["failed_count"] == 0
+    if result["marked_count"]:
+        # A direct Issue action changes the exact source projection consumed by
+        # the Review-exclusion tab. Do not make an operator wait for the short
+        # local TTL after a successful write/readback.
+        _review_exclusion_candidate_cache.clear()
     return result
-
-
-def _canonical_json(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _field_names() -> tuple[str, str]:
     return (
         _as_text(getattr(settings, "trail_attribute_result_field", "")) or TRAIL_RESULT_FIELD,
         _as_text(getattr(settings, "trail_attribute_info_field", "")) or TRAIL_INFO_FIELD,
+    )
+
+
+def _review_exclusion_candidate_rows(
+    *,
+    selected_run_id: str,
+    baseline_scopes: list[str],
+) -> list[dict[str, Any]]:
+    """Load a short-lived local Review projection with per-scope coalescing."""
+
+    cache_key = (selected_run_id, tuple(sorted(baseline_scopes)))
+    return _review_exclusion_candidate_cache.get_or_load(
+        cache_key,
+        lambda: database.review_reason_rows(
+            baseline_scopes=baseline_scopes,
+            model_run_id=selected_run_id,
+            comparison_status="all",
+            is_excluded=True,
+        ),
     )
 
 
@@ -396,51 +429,6 @@ def _capability_for_info_write(sync_result: Any, info_field: str) -> dict[str, A
     }
 
 
-def _dashboard_exclusion_values(value: Any) -> tuple[bool | None, str]:
-    """Return the Dashboard-owned exclusion marker and normalized note.
-
-    Trail may return JSON text, a mapping, or a dataframe scalar.  The status
-    projection owns only the namespaced values and must not treat another
-    producer's top-level fields as proof that this dashboard update landed.
-    """
-
-    if isinstance(value, str):
-        try:
-            value = json.loads(value)
-        except (TypeError, ValueError, json.JSONDecodeError):
-            value = {}
-    if not isinstance(value, dict):
-        return None, ""
-    dashboard = value.get("ra_triage_dashboard")
-    if not isinstance(dashboard, dict):
-        return None, ""
-    marker = dashboard.get("should_exclude")
-    note = _as_text(dashboard.get("should_exclude_comment")).strip()[:4000]
-    return (marker if isinstance(marker, bool) else None), note
-
-
-def _normalise_exclusion_comment(value: Any) -> str:
-    """Use the exact value the info-only writer persists for comparison."""
-
-    return _as_text(value).strip()[:4000]
-
-
-def _expected_exclusion_comments(items: list[dict[str, Any]]) -> dict[str, str]:
-    """Extract the exact Dashboard note that a signed preview owns."""
-
-    expected: dict[str, str] = {}
-    for item in items:
-        issue_id = _as_text(item.get("issue_id")).strip()
-        target = item.get("target") if isinstance(item.get("target"), Mapping) else {}
-        patch = target.get("patch") if isinstance(target.get("patch"), Mapping) else {}
-        dashboard = patch.get("ra_triage_dashboard") if isinstance(patch.get("ra_triage_dashboard"), Mapping) else {}
-        if issue_id:
-            expected[issue_id] = _normalise_exclusion_comment(
-                dashboard.get("should_exclude_comment", item.get("comment", ""))
-            )
-    return expected
-
-
 def _remember_preview_status_expectations(payload: Mapping[str, Any]) -> None:
     """Make a local Review preview usable by the compact remote status read."""
 
@@ -466,59 +454,6 @@ def _preview_status_expectations(payload_sha256: str) -> dict[str, str] | None:
         return None
     value = _preview_status_expectation_cache.get_or_load(digest, lambda: None)
     return dict(value) if isinstance(value, dict) else None
-
-
-def _trail_update_statuses(
-    sync_result: Any,
-    issue_ids: list[str],
-    *,
-    info_field: str,
-    expected_comments: Mapping[str, str] | None = None,
-) -> dict[str, str]:
-    """Project one batched Trail read into per-Issue update states.
-
-    The status is intentionally derived from the same single batched read used
-    for capability validation.  It never performs a follow-up request per
-    Issue: a missing marker means the candidate is waiting to be synchronized,
-    an explicit ``true`` marker *and the expected Dashboard-owned exclusion
-    note* means it is already synchronized.  A stale/missing note is pending,
-    so retries update only the divergent records.  A missing returned row is
-    surfaced as ``not_found`` rather than being treated as a successful write.
-    """
-
-    normalized_ids = [str(issue_id or "").strip() for issue_id in issue_ids if str(issue_id or "").strip()]
-    rows_by_issue = {
-        _as_text(row.get("issue_id")): row
-        for row in (getattr(sync_result, "rows", None) or [])
-        if _as_text(row.get("issue_id"))
-    }
-    if not bool(getattr(sync_result, "complete", False)):
-        return {issue_id: "query_failed" for issue_id in normalized_ids}
-    statuses: dict[str, str] = {}
-    for issue_id in normalized_ids:
-        row = rows_by_issue.get(issue_id)
-        if row is None:
-            statuses[issue_id] = "not_found"
-            continue
-        marker, current_comment = _dashboard_exclusion_values(row.get(info_field))
-        expected_comment = _normalise_exclusion_comment(
-            (expected_comments or {}).get(issue_id, "")
-        )
-        # Keep the marker-only fallback solely for direct callers of the old
-        # helper/tests.  All page and commit paths provide expected comments.
-        note_matches = expected_comments is None or current_comment == expected_comment
-        statuses[issue_id] = "synced" if marker is True and note_matches else "pending"
-    return statuses
-
-
-def _trail_update_status_summary(statuses: Mapping[str, str]) -> dict[str, int]:
-    """Return compact counts for a per-Issue Trail status projection."""
-
-    summary: dict[str, int] = {}
-    for status in statuses.values():
-        normalized = _as_text(status) or "not_checked"
-        summary[normalized] = summary.get(normalized, 0) + 1
-    return summary
 
 
 def _read_preview_trail_status_sync(
@@ -595,311 +530,6 @@ async def _read_preview_trail_status(
         refresh=refresh,
     )
 
-
-def build_trail_attribute_update_payload(
-    rows: list[dict[str, Any]],
-    *,
-    run: dict[str, Any],
-    baseline_ids: list[str],
-    baseline_scopes: list[str],
-    result_field: str = TRAIL_RESULT_FIELD,
-    info_field: str = TRAIL_INFO_FIELD,
-    trail_capability: dict[str, Any] | None = None,
-    trail_statuses: dict[str, str] | None = None,
-    trail_write_enabled: bool = False,
-    write_mode: str = "model_and_info",
-) -> dict[str, Any]:
-    """Build a deterministic, Run-bound candidate payload.
-
-    ``rows`` is already the latest Review projection for one immutable Run or
-    the all-Run aggregate; filtering is repeated here so callers cannot
-    accidentally include a non-excluded annotation. Invalid labels remain
-    visible in preview but make the item and the whole payload non-write-ready.
-    """
-
-    run_id = _as_text(run.get("id"))
-    info_only = write_mode == "info_only"
-    baseline_by_scope = {
-        _as_text(scope): _as_text(baseline_ids[index])
-        for index, scope in enumerate(baseline_scopes)
-        if index < len(baseline_ids) and _as_text(scope) and _as_text(baseline_ids[index])
-    }
-    items: list[dict[str, Any]] = []
-    invalid_labels: list[str] = []
-    for row in rows:
-        annotation = row.get("annotation") or {}
-        prediction = row.get("prediction") or {}
-        issue_id = _as_text(row.get("issue_id"))
-        if not issue_id or not bool(annotation.get("is_excluded")):
-            continue
-        review_id = annotation.get("id")
-        raw_label = _as_text(prediction.get("label"))
-        label = normalise_model_label(raw_label)
-        source_run_id = (
-            _as_text(prediction.get("model_run_id"))
-            or _as_text(annotation.get("model_run_id"))
-            or run_id
-        )
-        if not label and not info_only:
-            invalid_labels.append(issue_id)
-        # Trail only needs Dashboard-owned fields.  Keep the operator's
-        # explanation beside the exclusion marker in the same info JSON so
-        # the update is atomic and does not create a separate Trail Comment.
-        comment_text = _normalise_exclusion_comment(annotation.get("note"))
-        # An empty local note is also an intentional expected value.  Include
-        # it explicitly so a stale Trail explanation is cleared and the
-        # next status probe can honestly report the item as synchronized.
-        dashboard_patch: dict[str, Any] = {
-            "should_exclude": True,
-            "should_exclude_comment": comment_text,
-        }
-        patch = {"ra_triage_dashboard": dashboard_patch}
-        items.append(
-            {
-                "issue_id": issue_id,
-                "baseline_id": baseline_by_scope.get(_as_text(row.get("baseline_scope")), ""),
-                "baseline_scope": _as_text(row.get("baseline_scope")),
-                "title": _as_text(row.get("title")),
-                "scenario": _as_text(row.get("scenario")),
-                "gt_label": _as_text(row.get("gt_label")),
-                "model": {
-                    "run_id": source_run_id,
-                    "label": label or raw_label,
-                    "reason": _as_text(prediction.get("reason")),
-                    "confidence": prediction.get("confidence"),
-                },
-                "review": {
-                    "id": review_id,
-                    "model_run_id": source_run_id,
-                    "status": _as_text(annotation.get("review_status")),
-                    "reviewer": _as_text(annotation.get("author")),
-                    "reviewed_at": _as_text(annotation.get("created_at")),
-                    "note": _as_text(annotation.get("note")),
-                    "tags": list(annotation.get("tags") or []),
-                    "missing_evidence": list(annotation.get("missing_evidence") or []),
-                    "is_excluded": True,
-                },
-                "comment": comment_text,
-                # The current workflow is info-only, so a missing model label
-                # does not make the marker write invalid.  Keep the strict
-                # label gate for the legacy model+info mode.
-                "write_ready": bool(label) or info_only,
-                "trail_update_status": _as_text((trail_statuses or {}).get(issue_id))
-                or ("querying" if trail_statuses is None else "not_checked"),
-                "target": {
-                    "field": info_field,
-                    "result_field": result_field,
-                    "path": TRAIL_TARGET_PATH,
-                    "comment_path": TRAIL_COMMENT_PATH,
-                    "merge_strategy": "deep_merge",
-                    "patch": patch,
-                },
-                "field_updates": (
-                    {info_field: patch}
-                    if info_only
-                    else {
-                        result_field: label or raw_label,
-                        info_field: patch,
-                    }
-                ),
-            }
-        )
-    items.sort(key=lambda item: item["issue_id"])
-    status_summary: dict[str, int] = {}
-    for item in items:
-        status = _as_text(item.get("trail_update_status")) or "not_checked"
-        status_summary[status] = status_summary.get(status, 0) + 1
-    pending_issue_ids = [
-        _as_text(item.get("issue_id"))
-        for item in items
-        if _as_text(item.get("trail_update_status")) == "pending"
-    ]
-    incomplete_statuses = {
-        "querying", "query_failed", "not_found", "not_checked"
-    }
-    status_check_complete = not any(
-        _as_text(item.get("trail_update_status")) in incomplete_statuses
-        for item in items
-    )
-    draft: dict[str, Any] = {
-        "schema_version": TRAIL_DRAFT_SCHEMA,
-        "mode": "preview",
-        "trail_write_enabled": bool(trail_write_enabled),
-        "write_mode": "info_only" if info_only else "model_and_info",
-        "target_fields": [info_field] if info_only else [result_field, info_field],
-        "target_field": info_field,
-        "target_path": TRAIL_TARGET_PATH,
-        "comment_target_path": TRAIL_COMMENT_PATH,
-        "merge_strategy": "deep_merge",
-        "model_run_id": run_id,
-        "model_run_ids": sorted(
-            {
-                _as_text(item.get("model", {}).get("run_id"))
-                for item in items
-                if _as_text(item.get("model", {}).get("run_id"))
-            }
-        ),
-        "model_run_name": _as_text(run.get("name")),
-        "baseline_ids": list(baseline_ids),
-        "baseline_scopes": list(baseline_scopes),
-        "items": items,
-    }
-    # Trail readback status is presentation-only and may legitimately change
-    # while a reviewer inspects a draft.  Do not make that remote observation
-    # invalidate an otherwise identical, server-revalidated write payload.
-    digest_draft = {
-        **draft,
-        "items": [
-            {
-                key: value
-                for key, value in item.items()
-                if key != "trail_update_status"
-            }
-            for item in items
-        ],
-    }
-    digest = hashlib.sha256(_canonical_json(digest_draft).encode("utf-8")).hexdigest()
-    draft["payload_sha256"] = digest
-    draft["operation_id"] = digest
-    capability = trail_capability or (
-        {
-            **_capability_not_checked(result_field, info_field),
-            "target_fields": [info_field],
-            "required_fields": [info_field],
-        }
-        if info_only
-        else _capability_not_checked(result_field, info_field)
-    )
-    if not trail_write_enabled:
-        write_status = "disabled"
-    elif not capability.get("ready"):
-        write_status = "fields_unavailable"
-    elif invalid_labels:
-        write_status = "invalid_labels"
-    elif not status_check_complete:
-        write_status = "status_check_incomplete"
-    elif not pending_issue_ids:
-        write_status = "already_synced"
-    else:
-        write_status = "ready"
-    return {
-        "schema_version": TRAIL_DRAFT_SCHEMA,
-        "mode": "preview",
-        "trail_write_enabled": bool(trail_write_enabled),
-        "write_status": write_status,
-        "write_ready": write_status == "ready",
-        "write_mode": "info_only" if info_only else "model_and_info",
-        "model_result_field": result_field,
-        "target_fields": [info_field] if info_only else [result_field, info_field],
-        "target_field": info_field,
-        "target_path": TRAIL_TARGET_PATH,
-        "comment_target_path": TRAIL_COMMENT_PATH,
-        "merge_strategy": "deep_merge",
-        "trail_capability": capability,
-        "selected_run": {
-            "id": run_id,
-            "name": _as_text(run.get("name")) or ("全部 Model Runs" if not run_id else ""),
-            "source_name": _as_text(run.get("source_name")),
-            "created_at": _as_text(run.get("created_at")),
-            "all_runs": not bool(run_id),
-        },
-        "baselines": list(baseline_ids),
-        "baseline_scopes": list(baseline_scopes),
-        "count": len(items),
-        "pending_count": len(pending_issue_ids),
-        "pending_issue_ids": pending_issue_ids,
-        "invalid_label_issue_ids": invalid_labels,
-        "payload_sha256": digest,
-        "operation_id": digest,
-        "trail_update_status_summary": status_summary,
-        "items": items,
-        "draft": draft,
-    }
-
-
-def _normalise_issue_ids(raw: Any) -> tuple[list[str], list[str]]:
-    """Normalize a bounded direct Issue-ID request without accepting URLs."""
-
-    values: list[Any]
-    if isinstance(raw, (list, tuple)):
-        values = list(raw)
-    else:
-        values = re.split(r"[\s,，、;；|]+", _as_text(raw))
-    ids: list[str] = []
-    invalid: list[str] = []
-    seen: set[str] = set()
-    for value in values:
-        text = _as_text(value).strip()
-        if not text:
-            continue
-        # Keep the endpoint deliberately strict: direct shielding should not
-        # silently extract an ID from a pasted URL or arbitrary prose.
-        if not ISSUE_ID_RE.fullmatch(text):
-            invalid.append(text[:128])
-            continue
-        if text not in seen:
-            seen.add(text)
-            ids.append(text)
-    return sorted(ids), invalid
-
-
-def _normalise_issue_entries(
-    raw: Any,
-    *,
-    fallback_comment: str = "",
-) -> tuple[list[dict[str, Any]], list[str]]:
-    """Normalize one Issue-ID/comment pair per editable row.
-
-    The original API accepted ``issue_ids`` plus one shared ``comment``.  Keep
-    that shape working for old clients, while allowing the UI to send
-    ``entries=[{"issue_id": ..., "comment": ...}, ...]`` so every Issue can
-    carry a different explanation in the namespaced Trail info JSON.
-    """
-
-    default_comment = _as_text(fallback_comment).strip()[:4000]
-    if isinstance(raw, (list, tuple)):
-        values: list[Any] = list(raw)
-    elif isinstance(raw, dict):
-        values = [raw]
-    else:
-        # A legacy string may contain comma/newline-separated IDs.  It has no
-        # per-row note, so the optional shared comment applies to each one.
-        values = re.split(r"[\s,，、;；|]+", _as_text(raw))
-
-    entries: list[dict[str, Any]] = []
-    invalid: list[str] = []
-    seen: set[str] = set()
-    for value in values:
-        source: dict[str, Any] | None = None
-        if isinstance(value, Mapping):
-            raw_issue_id = value.get("issue_id", value.get("id", ""))
-            comment = _as_text(value.get("comment", value.get("note", default_comment))).strip()[:4000]
-            raw_source = value.get("source")
-            if raw_source is not None:
-                if not isinstance(raw_source, Mapping):
-                    issue_text = _as_text(raw_issue_id).strip() or "未填写 Issue ID"
-                    invalid.append(f"{issue_text}（标注来源格式无效）")
-                    continue
-                source = dict(raw_source)
-        else:
-            raw_issue_id = value
-            comment = default_comment
-        issue_id = _as_text(raw_issue_id).strip()
-        if not issue_id:
-            continue
-        if not ISSUE_ID_RE.fullmatch(issue_id):
-            invalid.append(issue_id[:128])
-            continue
-        if issue_id in seen:
-            invalid.append(f"{issue_id}（重复）")
-            continue
-        seen.add(issue_id)
-        entry: dict[str, Any] = {"issue_id": issue_id, "comment": comment}
-        if source is not None:
-            entry["source"] = source
-        entries.append(entry)
-    entries.sort(key=lambda item: item["issue_id"])
-    return entries, invalid
 
 
 def _historical_source_payload(value: Any) -> dict[str, Any] | None:
@@ -1403,6 +1033,41 @@ def build_trail_issue_import_preview(
     }
 
 
+
+def build_trail_attribute_update_payload(
+    rows: list[dict[str, Any]],
+    *,
+    run: dict[str, Any],
+    baseline_ids: list[str],
+    baseline_scopes: list[str],
+    result_field: str = TRAIL_RESULT_FIELD,
+    info_field: str = TRAIL_INFO_FIELD,
+    trail_capability: dict[str, Any] | None = None,
+    trail_statuses: dict[str, str] | None = None,
+    trail_write_enabled: bool = False,
+    write_mode: str = "model_and_info",
+) -> dict[str, Any]:
+    """Compatibility facade for the extracted deterministic draft builder.
+
+    Keeping this public name protects existing API-level tests and extensions,
+    while all live calls now share the framework-free implementation.
+    """
+
+    return _build_review_exclusion_payload(
+        rows,
+        run=run,
+        baseline_ids=baseline_ids,
+        baseline_scopes=baseline_scopes,
+        result_field=result_field,
+        info_field=info_field,
+        trail_capability=trail_capability,
+        trail_statuses=trail_statuses,
+        trail_write_enabled=trail_write_enabled,
+        write_mode=write_mode,
+        not_checked_capability=_capability_not_checked(result_field, info_field),
+    )
+
+
 def build_trail_issue_exclusion_payload(
     issue_ids: list[str],
     *,
@@ -1416,231 +1081,22 @@ def build_trail_issue_exclusion_payload(
     trail_capability: dict[str, Any] | None = None,
     trail_write_enabled: bool = False,
 ) -> dict[str, Any]:
-    """Build a deterministic direct-Issue shielding preview.
+    """Compatibility facade for the extracted direct-Issue draft builder."""
 
-    This workflow only writes ``ra_stuck_auto_result_info`` and preserves the
-    existing model label.  Missing IDs are surfaced and make the draft
-    non-write-ready; an operator must never infer that an unknown Issue was
-    successfully shielded.
-    """
-
-    current_by_issue = {
-        _as_text(row.get("issue_id")): row
-        for row in current_rows
-        if _as_text(row.get("issue_id"))
-    }
-    supplied_comment = _as_text(comment).strip()[:4000]
-    supplied_comments = {
-        _as_text(issue_id).strip(): _as_text(note).strip()[:4000]
-        for issue_id, note in (comment_by_issue or {}).items()
-        if _as_text(issue_id).strip()
-    }
-    if not supplied_comments and supplied_comment:
-        supplied_comments = {issue_id: supplied_comment for issue_id in issue_ids}
-    normalized_comment = supplied_comment or (
-        next(iter(supplied_comments.values())) if len(set(supplied_comments.values())) == 1 else ""
+    return _build_direct_issue_exclusion_payload(
+        issue_ids,
+        current_rows=current_rows,
+        invalid_issue_ids=invalid_issue_ids,
+        comment=comment,
+        comment_by_issue=comment_by_issue,
+        requested_entries=requested_entries,
+        baseline_by_issue=baseline_by_issue,
+        info_field=info_field,
+        trail_capability=trail_capability,
+        trail_write_enabled=trail_write_enabled,
+        view_id=int(settings.trail_view_id),
+        normalise_source=_historical_source_payload,
     )
-    if not normalized_comment and all(not note for note in supplied_comments.values()):
-        # Preserve the legacy top-level summary for old clients/tests; each
-        # item still carries its own effective default in the patch.
-        normalized_comment = TRAIL_ISSUE_EXCLUSION_COMMENT
-    normalized_entries: list[dict[str, Any]] = []
-    for item in requested_entries or []:
-        issue_id = _as_text(item.get("issue_id")).strip()
-        if not issue_id:
-            continue
-        entry: dict[str, Any] = {
-            "issue_id": issue_id,
-            "comment": _as_text(item.get("comment")).strip()[:4000],
-        }
-        source = _historical_source_payload(item.get("source"))
-        if source is not None:
-            entry["source"] = source
-        normalized_entries.append(entry)
-    # Keep the structured request self-contained when this helper is called
-    # directly (rather than through the HTTP route, which supplies both
-    # ``requested_entries`` and ``comment_by_issue``).  The row value is the
-    # most specific source of truth; the legacy shared comment remains the
-    # fallback for old callers.
-    for entry in normalized_entries:
-        supplied_comments.setdefault(entry["issue_id"], entry["comment"])
-    if not normalized_entries:
-        normalized_entries = [
-            {"issue_id": issue_id, "comment": supplied_comments.get(issue_id, supplied_comment)}
-            for issue_id in issue_ids
-        ]
-    normalized_entries.sort(key=lambda item: item["issue_id"])
-    source_by_issue = {
-        entry["issue_id"]: entry["source"]
-        for entry in normalized_entries
-        if isinstance(entry.get("source"), Mapping)
-    }
-    release_by_issue = baseline_by_issue or {}
-    missing = sorted(issue_id for issue_id in issue_ids if issue_id not in current_by_issue)
-    items: list[dict[str, Any]] = []
-    for issue_id in issue_ids:
-        current = current_by_issue.get(issue_id)
-        if current is None:
-            continue
-        current_info = current.get(info_field)
-        if isinstance(current_info, str):
-            try:
-                current_info = json.loads(current_info)
-            except (TypeError, ValueError, json.JSONDecodeError):
-                current_info = {}
-        if not isinstance(current_info, dict):
-            current_info = {}
-        dashboard_info = current_info.get("ra_triage_dashboard")
-        if not isinstance(dashboard_info, dict):
-            dashboard_info = {}
-        supplied_item_comment = supplied_comments.get(issue_id, supplied_comment)
-        comment_defaulted = not bool(supplied_item_comment)
-        normalized_item_comment = _normalise_exclusion_comment(
-            supplied_item_comment or TRAIL_ISSUE_EXCLUSION_COMMENT
-        )
-        current_marker, current_comment = _dashboard_exclusion_values(current_info)
-        patch = {
-            "ra_triage_dashboard": {
-                "should_exclude": True,
-                "should_exclude_comment": normalized_item_comment,
-            }
-        }
-        merged_info = deep_merge_dict(current_info, patch)
-        item: dict[str, Any] = {
-            "issue_id": issue_id,
-            "baseline_id": _as_text((release_by_issue.get(issue_id) or {}).get("baseline_id")),
-            "baseline_scope": _as_text((release_by_issue.get(issue_id) or {}).get("baseline_scope")),
-            "current_label": _as_text(current.get(TRAIL_RESULT_FIELD)),
-            "current_should_exclude": current_marker is True,
-            "trail_update_status": (
-                "synced"
-                if current_marker is True and current_comment == normalized_item_comment
-                else "pending"
-            ),
-            # Keep the exact before/after object in the preview contract so
-            # the operator can see what the production write will preserve
-            # and what it will add.  The direct workflow never includes the
-            # model label in its field update.
-            "field_update": {
-                "field": info_field,
-                "operation": "deep_merge",
-                "before": current_info,
-                "after": merged_info,
-                "patch": patch,
-                "model_label_unchanged": True,
-            },
-            "target": {
-                "field": info_field,
-                "path": TRAIL_TARGET_PATH,
-                "comment_path": TRAIL_COMMENT_PATH,
-                "merge_strategy": "deep_merge",
-                "patch": patch,
-            },
-            "comment": normalized_item_comment,
-            "comment_defaulted": comment_defaulted,
-            "write_ready": True,
-        }
-        source = source_by_issue.get(issue_id)
-        if source is not None:
-            item["source"] = source
-        items.append(item)
-    items.sort(key=lambda item: item["issue_id"])
-    status_summary = _trail_update_status_summary(
-        {
-            _as_text(item.get("issue_id")): _as_text(item.get("trail_update_status"))
-            for item in items
-        }
-    )
-    pending_issue_ids = [
-        _as_text(item.get("issue_id"))
-        for item in items
-        if _as_text(item.get("trail_update_status")) == "pending"
-    ]
-    draft: dict[str, Any] = {
-        "schema_version": TRAIL_ISSUE_DRAFT_SCHEMA,
-        "mode": "direct_issue_ids",
-        "write_mode": "info_only",
-        "trail_write_enabled": bool(trail_write_enabled),
-        "target_fields": [info_field],
-        "target_field": info_field,
-        "target_path": TRAIL_TARGET_PATH,
-        "comment_target_path": TRAIL_COMMENT_PATH,
-        "merge_strategy": "deep_merge",
-        "requested_issue_ids": list(issue_ids),
-        "requested_entries": normalized_entries,
-        "invalid_issue_ids": list(invalid_issue_ids or []),
-        "missing_issue_ids": missing,
-        "comment": normalized_comment,
-        "comment_by_issue": {
-            issue_id: supplied_comments.get(issue_id, supplied_comment)
-            for issue_id in issue_ids
-        },
-        "items": items,
-    }
-    digest_draft = {
-        **draft,
-        "items": [
-            {key: value for key, value in item.items() if key != "trail_update_status"}
-            for item in items
-        ],
-    }
-    digest = hashlib.sha256(_canonical_json(digest_draft).encode("utf-8")).hexdigest()
-    draft["payload_sha256"] = digest
-    draft["operation_id"] = digest
-    capability = trail_capability or {
-        "view_id": int(settings.trail_view_id),
-        "target_fields": [info_field],
-        "required_fields": [info_field],
-        "fields_visible": [],
-        "ready": False,
-        "status": "not_checked",
-        "message": "提交前检查 Trail view 字段。",
-    }
-    if not trail_write_enabled:
-        write_status = "disabled"
-    elif not capability.get("ready"):
-        write_status = "fields_unavailable"
-    elif invalid_issue_ids:
-        write_status = "invalid_issue_ids"
-    elif missing:
-        write_status = "missing_issues"
-    elif not items:
-        write_status = "empty"
-    elif not pending_issue_ids:
-        write_status = "already_synced"
-    else:
-        write_status = "ready"
-    return {
-        "schema_version": TRAIL_ISSUE_DRAFT_SCHEMA,
-        "mode": "direct_issue_ids",
-        "write_mode": "info_only",
-        "trail_write_enabled": bool(trail_write_enabled),
-        "write_status": write_status,
-        "write_ready": write_status == "ready",
-        "target_fields": [info_field],
-        "target_field": info_field,
-        "target_path": TRAIL_TARGET_PATH,
-        "comment_target_path": TRAIL_COMMENT_PATH,
-        "merge_strategy": "deep_merge",
-        "count": len(items),
-        "pending_count": len(pending_issue_ids),
-        "pending_issue_ids": pending_issue_ids,
-        "requested_issue_ids": list(issue_ids),
-        "requested_entries": normalized_entries,
-        "invalid_issue_ids": list(invalid_issue_ids or []),
-        "missing_issue_ids": missing,
-        "comment": normalized_comment,
-        "comment_by_issue": {
-            issue_id: supplied_comments.get(issue_id, supplied_comment)
-            for issue_id in issue_ids
-        },
-        "payload_sha256": digest,
-        "operation_id": digest,
-        "items": items,
-        "trail_update_status_summary": status_summary,
-        "trail_capability": capability,
-        "draft": draft,
-    }
 
 
 async def _build_preview(
@@ -1659,13 +1115,24 @@ async def _build_preview(
         run = {"id": "", "name": "全部 Model Runs", "source_name": ""}
     if selected_run_id and run is None:
         raise _detail(404, "模型 Run 不存在，无法生成 Trail 属性更新预览。")
-    rows = await asyncio.to_thread(
-        database.review_reason_rows,
-        baseline_scopes=baseline_scopes,
-        model_run_id=selected_run_id,
-        comparison_status="all",
-        is_excluded=True,
-    )
+    # The browser's initial paint intentionally skips the remote Trail probe;
+    # cache only that local fast path. A checked/refresh request always takes
+    # a fresh database snapshot so its signed write validation cannot reuse a
+    # short-lived presentation result.
+    if probe_trail:
+        rows = await asyncio.to_thread(
+            database.review_reason_rows,
+            baseline_scopes=baseline_scopes,
+            model_run_id=selected_run_id,
+            comparison_status="all",
+            is_excluded=True,
+        )
+    else:
+        rows = await asyncio.to_thread(
+            _review_exclusion_candidate_rows,
+            selected_run_id=selected_run_id,
+            baseline_scopes=baseline_scopes,
+        )
     result_field, info_field = _field_names()
     review_write_enabled = bool(
         settings.trail_attribute_write_enabled

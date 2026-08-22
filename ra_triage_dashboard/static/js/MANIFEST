@@ -23,5 +23,6 @@ batch-gateway.js
 batch-config.js
 batch.js
 import-refresh.js
+trail-update-state.js
 trail-update.js
 bind-bootstrap.js
