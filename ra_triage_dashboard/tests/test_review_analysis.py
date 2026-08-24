@@ -866,6 +866,111 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
                 ["legacy", "legacy"],
             )
 
+    def test_progress_view_reuses_previous_bound_run_review_without_relaxing_strict_rows(
+        self,
+    ) -> None:
+        """A prior Model Run is evidence for progress, not Trail write input."""
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "triage.sqlite3")
+            database.init()
+            scope = "test-bound-history-progress"
+            database.upsert_issues(
+                [{"issue_id": "cn30003", "gt_label": "误触发"}],
+                source="test",
+                replace_gt=True,
+                baseline_scope=scope,
+            )
+            run_a, _ = database.import_model_run(
+                name="current-run",
+                source_name="current.json",
+                source_sha256="c" * 64,
+                metadata={},
+                rows=[{"issue_id": "cn30003", "model_label": "正确触发"}],
+            )
+            run_b, _ = database.import_model_run(
+                name="previous-run",
+                source_name="previous.json",
+                source_sha256="d" * 64,
+                metadata={},
+                rows=[{"issue_id": "cn30003", "model_label": "无需协助"}],
+            )
+            database.create_annotation(
+                issue_id="cn30003",
+                model_run_id=run_b["id"],
+                label="误触发",
+                review_status="reviewed",
+                tags=["traffic_light"],
+                missing_evidence=["previous_run_missing"],
+                note="Previous Run review",
+                author="caoliwen_i",
+            )
+
+            # Strict consumers remain isolated to the selected Run. This is
+            # the contract used by Trail candidate generation and writers.
+            self.assertEqual(
+                database.review_reason_rows(
+                    baseline_scope=scope,
+                    model_run_id=run_a["id"],
+                ),
+                [],
+            )
+            self.assertEqual(
+                database.review_reason_rows(
+                    baseline_scope=scope,
+                    model_run_id=run_a["id"],
+                    include_unbound_fallback=True,
+                ),
+                [],
+            )
+
+            # Gallery / reviewer progress opts into the read-only previous
+            # Run fallback so the same completed human Review is not shown as
+            # a synthetic pending case on a later model Run.
+            projected = database.review_reason_rows(
+                baseline_scope=scope,
+                model_run_id=run_a["id"],
+                include_unbound_fallback=True,
+                include_bound_history_fallback=True,
+            )
+            self.assertEqual(len(projected), 1)
+            self.assertEqual(projected[0]["annotation"]["author"], "caoliwen_i")
+            self.assertEqual(projected[0]["annotation"]["model_run_id"], run_b["id"])
+
+            progress_cases = database.list_cases(
+                baseline_scope=scope,
+                model_run_id=run_a["id"],
+                comparison_status="all",
+                page_size=50,
+            )
+            self.assertEqual(progress_cases["total"], 1)
+            self.assertEqual(
+                progress_cases["items"][0]["annotation"]["review_status"],
+                "reviewed",
+            )
+            self.assertEqual(
+                progress_cases["items"][0]["annotation"]["model_run_id"], run_b["id"]
+            )
+            self.assertEqual(
+                database.overview(
+                    baseline_scope=scope, model_run_id=run_a["id"]
+                )["labelled"],
+                1,
+            )
+            self.assertEqual(
+                database.list_reviewers(
+                    baseline_scope=scope, model_run_id=run_a["id"]
+                ),
+                [
+                    {
+                        "name": "caoliwen_i",
+                        "verified": False,
+                        "verified_count": 0,
+                        "unverified_count": 1,
+                        "review_count": 1,
+                    }
+                ],
+            )
+
     def test_unselected_run_keeps_prediction_namespace_for_exclusion_aggregate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             database = Database(Path(directory) / "triage.sqlite3")

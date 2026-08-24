@@ -1064,16 +1064,17 @@ class DatabaseCoreMixin:
         search_aliases: tuple[str, ...] = (),
         is_excluded: bool | None = None,
         include_unbound_fallback: bool = False,
+        include_bound_history_fallback: bool = False,
     ) -> list[dict[str, Any]]:
         """Return one latest-review row per baseline issue for analysis.
 
         When ``model_run_id`` is selected, the latest Review is normally
         resolved within that immutable Run.  Read-only Review/analysis surfaces
-        can opt into an unbound legacy fallback: the selected Run's own Review
-        still wins, while a pre-Run shared Review is used only when no such row
-        exists.  Safety-sensitive callers (for example Trail candidate
-        generation) keep the strict default. ``comparison_status`` can narrow
-        the slice to MATCH, MISMATCH, or NONE (no canonical prediction).
+        can opt into historical fallbacks: the selected Run's own Review still
+        wins, then a pre-Run shared Review, then the newest Review from another
+        Run. Safety-sensitive callers (for example Trail candidate generation)
+        keep the strict default. ``comparison_status`` can narrow the slice to
+        MATCH, MISMATCH, or NONE (no canonical prediction).
         ``failure_only`` remains a compatibility alias for MISMATCH.
         """
 
@@ -1124,7 +1125,9 @@ class DatabaseCoreMixin:
         # Run selected, the Trail update page is an all-Run aggregate: use the
         # latest annotation's own Run so its model label/reason are retained.
         annotation_params = self._latest_annotation_join_params(
-            model_run_id, include_unbound_fallback=include_unbound_fallback
+            model_run_id,
+            include_unbound_fallback=include_unbound_fallback,
+            include_bound_history_fallback=include_bound_history_fallback,
         )
         if model_run_id:
             prediction_join = "mp.model_run_id = ?"
@@ -1257,6 +1260,7 @@ class DatabaseCoreMixin:
             {self._latest_annotation_join(
                 model_run_id,
                 include_unbound_fallback=include_unbound_fallback,
+                include_bound_history_fallback=include_bound_history_fallback,
             )}
             LEFT JOIN model_predictions mp
               ON mp.issue_id = i.issue_id AND {prediction_join}

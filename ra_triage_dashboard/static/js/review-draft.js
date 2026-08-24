@@ -62,21 +62,26 @@ function currentReviewAnnotation(caseData) {
   );
 }
 
-// The detail form must remain bound to the selected Run.  There is one safe
-// exception when choosing its initial Tag state: an older unbound Review is
-// exactly the fallback that Gallery/analysis use for this Run.  If the form
-// starts empty and is saved, the new bound version would otherwise hide that
-// historical environment/self-intent evidence from the current Run.
+// The detail form must remain bound to the selected Run. There is one safe
+// exception when choosing its initial Tag state: Gallery/analysis can display
+// legacy and prior-Run Review evidence when this Run has no own Review. If the
+// form starts empty and is saved, the new bound version would otherwise hide
+// that historical environment/self-intent evidence from the current Run.
 //
 // We only use this for the initial checkbox values.  It never changes the
 // legacy record and a user can still deliberately clear a Tag before saving.
-function inheritedLegacyTagsForCurrentRun(caseData) {
+function inheritedHistoricalTagsForCurrentRun(caseData) {
   const runId = currentReviewRunId(caseData);
   if (!runId || reviewAnnotationsForCurrentRun(caseData).length) return [];
-  const legacy = reviewAnnotationsForAllRuns(caseData).find(
+  const history = reviewAnnotationsForAllRuns(caseData);
+  const legacy = history.find(
     (annotation) => !String(annotation?.model_run_id || "").trim()
   );
-  return Array.isArray(legacy?.tags) ? legacy.tags : [];
+  const priorRun = history.find(
+    (annotation) => String(annotation?.model_run_id || "").trim() !== runId
+  );
+  const source = legacy || priorRun;
+  return Array.isArray(source?.tags) ? source.tags : [];
 }
 
 function initialReviewTagsForCurrentRun(caseData, annotation, draft) {
@@ -85,7 +90,7 @@ function initialReviewTagsForCurrentRun(caseData, annotation, draft) {
   if (draft || reviewAnnotationsForCurrentRun(caseData).length) {
     return Array.isArray(annotation?.tags) ? annotation.tags : [];
   }
-  const inherited = inheritedLegacyTagsForCurrentRun(caseData);
+  const inherited = inheritedHistoricalTagsForCurrentRun(caseData);
   if (inherited.length) return inherited;
   return Array.isArray(annotation?.tags) ? annotation.tags : [];
 }

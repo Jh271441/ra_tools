@@ -496,7 +496,9 @@ class DatabaseReviewMixin:
         # overwrite the audit identity of the legacy row.
         params: list[Any] = list(
             self._latest_annotation_join_params(
-                model_run_id, include_unbound_fallback=True
+                model_run_id,
+                include_unbound_fallback=True,
+                include_bound_history_fallback=True,
             )
         )
         scopes = self._normalize_baseline_scopes(
@@ -521,7 +523,9 @@ class DatabaseReviewMixin:
                        COUNT(*) AS review_count
                 FROM issues i
                 {self._latest_annotation_join(
-                    model_run_id, include_unbound_fallback=True
+                    model_run_id,
+                    include_unbound_fallback=True,
+                    include_bound_history_fallback=True,
                 )}
                 WHERE ann.id IS NOT NULL
                   AND TRIM(ann.author) != ''
@@ -545,7 +549,10 @@ class DatabaseReviewMixin:
 
     @staticmethod
     def _latest_annotation_join_params(
-        model_run_id: str = "", *, include_unbound_fallback: bool = False
+        model_run_id: str = "",
+        *,
+        include_unbound_fallback: bool = False,
+        include_bound_history_fallback: bool = False,
     ) -> tuple[str, ...]:
         """Return bind values required by :meth:`_latest_annotation_join`.
 
@@ -558,23 +565,51 @@ class DatabaseReviewMixin:
         normalized_run = str(model_run_id or "").strip()
         if not normalized_run:
             return ()
-        # The legacy namespace (when selected) is the SQL literal ``''``;
-        # only the selected-Run probe consumes a bind value.
+        # The legacy namespace is the SQL literal ``''``. A selected-Run
+        # lookup always consumes one bind. The optional historical fallback
+        # excludes that selected Run in a second indexed probe.
+        if include_bound_history_fallback:
+            return (normalized_run, normalized_run)
         return (normalized_run,)
 
     @staticmethod
     def _latest_annotation_join(
-        model_run_id: str = "", *, include_unbound_fallback: bool = False
+        model_run_id: str = "",
+        *,
+        include_unbound_fallback: bool = False,
+        include_bound_history_fallback: bool = False,
     ) -> str:
         normalized_run = str(model_run_id or "").strip()
         if normalized_run:
-            if include_unbound_fallback:
-                # Legacy Review rows were created before the UI recorded a
-                # model_run_id.  They are shared human evidence, not a hidden
-                # Run Review: use one only when this Issue has no newer
-                # selected-Run Review.  COALESCE keeps the two indexed probes
-                # independent (important for the large Gallery query) and
-                # preserves the selected Run as the unambiguous winner.
+            if include_unbound_fallback or include_bound_history_fallback:
+                # Read-only progress surfaces can reuse a prior human
+                # judgement when the selected Run has no Review. Keep the
+                # order deterministic: selected Run, unbound legacy evidence,
+                # then the newest different Run. Trail keeps the strict
+                # default and never opts into the third probe.
+                fallbacks: list[str] = []
+                if include_unbound_fallback:
+                    fallbacks.append(
+                        """
+                          (
+                              SELECT a.id FROM annotations a
+                              WHERE a.issue_id = i.issue_id
+                                AND a.model_run_id = ''
+                              ORDER BY a.id DESC LIMIT 1
+                          )
+                        """
+                    )
+                if include_bound_history_fallback:
+                    fallbacks.append(
+                        """
+                          (
+                              SELECT a.id FROM annotations a
+                              WHERE a.issue_id = i.issue_id
+                                AND a.model_run_id NOT IN (?, '')
+                              ORDER BY a.id DESC LIMIT 1
+                          )
+                        """
+                    )
                 return """
                     LEFT JOIN annotations ann
                       ON ann.id = COALESCE(
@@ -584,14 +619,9 @@ class DatabaseReviewMixin:
                                 AND a.model_run_id = ?
                               ORDER BY a.id DESC LIMIT 1
                           ),
-                          (
-                              SELECT a.id FROM annotations a
-                              WHERE a.issue_id = i.issue_id
-                                AND a.model_run_id = ''
-                              ORDER BY a.id DESC LIMIT 1
-                          )
+                          {fallbacks}
                       )
-                """
+                """.format(fallbacks=",\n".join(fallbacks))
             run_clause = "AND a.model_run_id = ?"
         else:
             run_clause = ""

@@ -17,6 +17,7 @@ function issueCard(item) {
   const title =
     rawTitle && !LABELS.includes(rawTitle) && rawTitle !== item.gt_label ? rawTitle : "";
   const annotation = item.annotation?.label;
+  const annotationRunId = String(item.annotation?.model_run_id || "").trim();
   const prediction = item.prediction?.label;
   const comparisonStatus = reviewComparisonStatusForItem(item);
   const comparisonMeta = REVIEW_COMPARISON_META[comparisonStatus];
@@ -36,6 +37,9 @@ function issueCard(item) {
         .map((key) => `<span>${escapeHtml(evidenceLabel(key))}</span>`)
         .join("")}</div>`
     : "";
+  const historicalReview = Boolean(
+    state.selectedRunId && annotationRunId && annotationRunId !== state.selectedRunId
+  );
   return `
     <article class="issue-card ${isSelected ? "selected" : ""}" data-issue-id="${escapeHtml(item.issue_id)}">
       <button class="issue-card-open" type="button" data-open-issue="${escapeHtml(item.issue_id)}" aria-label="打开 ${escapeHtml(item.issue_id)} Review"></button>
@@ -58,6 +62,7 @@ function issueCard(item) {
         <div class="issue-card-labels">
           <span class="issue-label-pair"><small>GT</small>${labelBadge(item.gt_label, "—")}</span>
           <span class="issue-label-pair"><small class="ui-lang-zh">模型</small><small class="ui-lang-en">Model</small>${displayPrediction ? labelBadge(displayPrediction, "—") : labelBadge("", "—")}</span>
+          ${historicalReview ? `<span class="issue-reviewer historical-review" title="${escapeHtml(uiText("复用其他 Model Run 的历史 Review；当前 Run 尚未保存独立版本", "Reusing a Review from another Model Run; this Run has no saved version yet"))}"><span class="ui-lang-zh">历史 Review</span><span class="ui-lang-en">Historical review</span></span>` : ""}
           ${item.annotation?.author ? `<span class="issue-reviewer" title="${escapeHtml(uiText(`复核人：${item.annotation.author}${item.annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}`, `Reviewer: ${item.annotation.author}${item.annotation.author_verified ? " · SSO verified" : " · unverified"}`))}"><span class="ui-lang-zh">复核</span><span class="ui-lang-en">Review</span> · ${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO" : ""}</span>` : ""}
         </div>
       </div>

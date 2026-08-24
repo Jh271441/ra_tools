@@ -344,12 +344,16 @@ class DatabaseCasesMixin:
         # selected-Run precedence rule.  This deliberately differs from the
         # strict Trail-writing aggregate.
         annotation_params = self._latest_annotation_join_params(
-            model_run_id, include_unbound_fallback=True
+            model_run_id,
+            include_unbound_fallback=True,
+            include_bound_history_fallback=True,
         )
         common = f"""
             FROM issues i
             {self._latest_annotation_join(
-                model_run_id, include_unbound_fallback=True
+                model_run_id,
+                include_unbound_fallback=True,
+                include_bound_history_fallback=True,
             )}
             LEFT JOIN model_predictions mp
               ON mp.issue_id = i.issue_id
@@ -572,7 +576,9 @@ class DatabaseCasesMixin:
         scope_clause, scope_params = self._scope_in_sql(scopes)
         where = [scope_clause, "ann.id IS NOT NULL"]
         annotation_params = self._latest_annotation_join_params(
-            model_run_id, include_unbound_fallback=True
+            model_run_id,
+            include_unbound_fallback=True,
+            include_bound_history_fallback=True,
         )
         params: list[Any] = [*annotation_params, model_run_id, *scope_params]
         if failure_only and model_run_id:
@@ -596,7 +602,9 @@ class DatabaseCasesMixin:
             SELECT ann.missing_evidence_json
             FROM issues i
             {self._latest_annotation_join(
-                model_run_id, include_unbound_fallback=True
+                model_run_id,
+                include_unbound_fallback=True,
+                include_bound_history_fallback=True,
             )}
             LEFT JOIN model_predictions mp
               ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
@@ -635,14 +643,18 @@ class DatabaseCasesMixin:
                 f"SELECT COUNT(*) FROM issues i {base_where}", tuple(scope_params)
             ).fetchone()[0]
             annotation_params = self._latest_annotation_join_params(
-                model_run_id, include_unbound_fallback=True
+                model_run_id,
+                include_unbound_fallback=True,
+                include_bound_history_fallback=True,
             )
             labelled = conn.execute(
                 f"""
                 SELECT COUNT(*)
                 FROM issues i
                 {self._latest_annotation_join(
-                    model_run_id, include_unbound_fallback=True
+                    model_run_id,
+                    include_unbound_fallback=True,
+                    include_bound_history_fallback=True,
                 )}
                 {base_where} AND ann.id IS NOT NULL
                 """,
@@ -653,7 +665,9 @@ class DatabaseCasesMixin:
                 common = f"""
                     FROM issues i
                     {self._latest_annotation_join(
-                        model_run_id, include_unbound_fallback=True
+                        model_run_id,
+                        include_unbound_fallback=True,
+                        include_bound_history_fallback=True,
                     )}
                     LEFT JOIN model_predictions mp
                       ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
