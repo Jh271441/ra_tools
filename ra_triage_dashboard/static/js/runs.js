@@ -517,13 +517,13 @@ function renderActiveRun(overview = null) {
   }
   const coverage = overview?.predictions ?? run.baseline_prediction_count ?? 0;
   const failures = overview?.model_failures ?? run.failure_count ?? 0;
-  const reviewed = overview?.reviewed_failures;
+  const reviewedMismatches = overview?.reviewed_failures;
   const sourceLabel = runSourceMeta(run).label;
   const worksetCount = currentWorksetIssueCount();
   if (activeMeta) {
     activeMeta.textContent =
       `${coverage} / ${worksetCount || "—"} 覆盖 · ${failures} 条判断失败` +
-      `${reviewed === undefined ? "" : ` · ${reviewed} 条已复核`}` +
+      `${reviewedMismatches === undefined ? "" : ` · ${reviewedMismatches} 条判错已复核`}` +
       ` · ${sourceLabel}`;
   }
 }

@@ -260,7 +260,9 @@ function syncReviewFormFromCase(caseData) {
   const chosenEvidence = new Set(
     hasPreviousReview ? previous.missing_evidence || [] : []
   );
-  const chosenTags = new Set(previous.tags || []);
+  const chosenTags = new Set(
+    initialReviewTagsForCurrentRun(caseData, previous, draft)
+  );
   const evidenceCatalog = state.config?.missing_evidence_catalog || [];
   const tagCatalog = state.config?.review_tag_catalog || [];
   const evidenceKeys = new Set(evidenceCatalog.map((item) => item.key));
@@ -383,7 +385,9 @@ function renderReview(caseData) {
     (item) => item.deleted && chosenEvidence.has(item.key)
   );
   const customEvidenceKeys = [...chosenEvidence].filter((key) => !catalogKeys.has(key));
-  const chosenTags = new Set(previous.tags || []);
+  const chosenTags = new Set(
+    initialReviewTagsForCurrentRun(caseData, previous, draft)
+  );
   const tagCatalogKeys = new Set(tagCatalog.map((item) => item.key));
   const customTagKeys = [...chosenTags].filter((tag) => !tagCatalogKeys.has(tag));
   const author = state.session.username || previous.author || "";

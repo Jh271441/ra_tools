@@ -62,6 +62,34 @@ function currentReviewAnnotation(caseData) {
   );
 }
 
+// The detail form must remain bound to the selected Run.  There is one safe
+// exception when choosing its initial Tag state: an older unbound Review is
+// exactly the fallback that Gallery/analysis use for this Run.  If the form
+// starts empty and is saved, the new bound version would otherwise hide that
+// historical environment/self-intent evidence from the current Run.
+//
+// We only use this for the initial checkbox values.  It never changes the
+// legacy record and a user can still deliberately clear a Tag before saving.
+function inheritedLegacyTagsForCurrentRun(caseData) {
+  const runId = currentReviewRunId(caseData);
+  if (!runId || reviewAnnotationsForCurrentRun(caseData).length) return [];
+  const legacy = reviewAnnotationsForAllRuns(caseData).find(
+    (annotation) => !String(annotation?.model_run_id || "").trim()
+  );
+  return Array.isArray(legacy?.tags) ? legacy.tags : [];
+}
+
+function initialReviewTagsForCurrentRun(caseData, annotation, draft) {
+  // A local draft is an explicit user edit, including an intentionally empty
+  // set of Tags.  Likewise, a bound Review is authoritative for its Run.
+  if (draft || reviewAnnotationsForCurrentRun(caseData).length) {
+    return Array.isArray(annotation?.tags) ? annotation.tags : [];
+  }
+  const inherited = inheritedLegacyTagsForCurrentRun(caseData);
+  if (inherited.length) return inherited;
+  return Array.isArray(annotation?.tags) ? annotation.tags : [];
+}
+
 const REVIEW_DRAFT_STORAGE_PREFIX = "ra-triage-review-draft:v1:";
 const REVIEW_DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 function reviewDraftStorageKey(issueId, runId = "") {

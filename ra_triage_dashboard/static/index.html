@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-236`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-237`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -148,7 +148,7 @@
           <div class="header-metrics" aria-label="概览">
             <div><span class="ui-lang-zh">基线</span><span class="ui-lang-en">Baseline</span><strong id="statIssues">—</strong></div>
             <div class="metric-fail"><span class="ui-lang-zh">判断失败</span><span class="ui-lang-en">Mismatches</span><strong id="statFailures">—</strong></div>
-            <div class="metric-reviewed"><span class="ui-lang-zh">判错已复核</span><span class="ui-lang-en">Reviewed mismatches</span><strong id="statReviewed">—</strong></div>
+            <div class="metric-reviewed"><span class="ui-lang-zh">人工复核</span><span class="ui-lang-en">Human reviews</span><strong id="statReviewed">—</strong></div>
             <div><span class="ui-lang-zh">模型输出</span><span class="ui-lang-en">Predictions</span><strong id="statPredictions">—</strong></div>
           </div>
           <div class="gt-sync-control" id="gtSyncControl" data-status="not_started">
@@ -1324,7 +1324,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-236`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-237`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

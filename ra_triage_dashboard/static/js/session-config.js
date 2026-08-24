@@ -521,12 +521,15 @@ async function settleInitialRequests(requests, scope) {
 function renderOverview(data) {
   $("#statIssues").textContent = data.issues ?? "—";
   $("#statFailures").textContent = data.model_failures ?? "—";
-  $("#statReviewed").textContent = data.reviewed_failures ?? data.labelled ?? "—";
+  // The top bar is a human-Review progress metric.  It must include every
+  // effective Review for the active Run/dataset (including model matches),
+  // rather than only the mismatch subset used by the error-analysis view.
+  $("#statReviewed").textContent = data.labelled ?? data.reviewed_failures ?? "—";
   const reviewedMetric = $("#statReviewed")?.closest("div");
   if (reviewedMetric) {
     reviewedMetric.title = uiText(
-      "仅统计当前模型 Run 中模型预测与 GT 不一致且已有 Review 的 Issue。",
-      "Counts only reviewed issues whose model prediction mismatches GT in the current Model Run."
+      "统计当前数据集和模型 Run 下已有 Review 的 Issue；包含模型与 GT 一致的 Review。",
+      "Counts every issue with an effective Review in the current dataset and Model Run, including model/GT matches."
     );
   }
   $("#statPredictions").textContent = data.predictions ?? "—";
