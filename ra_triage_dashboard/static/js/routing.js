@@ -80,6 +80,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
     "renderReviewerFilter",
     "renderWorkAssigneeFilter",
     "renderTrailAttributeRunPicker",
+    "renderTrailUpdateFilters",
   ];
   for (const name of refreshers) {
     try {
@@ -342,6 +343,25 @@ function normalizedAnalysisRouteFilters(params) {
   };
 }
 
+function normalizedTrailUpdateRouteFilters(params) {
+  const rawPage = Number.parseInt(params.get("page") || "1", 10);
+  const rawPageSize = Number.parseInt(params.get("page_size") || "", 10);
+  return {
+    search: params.get("q") || "",
+    gtLabel: parseFilterList(params.get("gt")).filter((value) => LABELS.includes(value)),
+    modelLabel: parseFilterList(params.get("model_label") || params.get("annotation") || ""),
+    annotationAuthor: parseFilterList(params.get("reviewer")),
+    reviewStatus: parseFilterList(params.get("review_status")).filter((value) =>
+      ["pending", "reviewed", "needs_gt_review"].includes(value)
+    ),
+    trailStatus: parseFilterList(params.get("trail_status")).filter((value) =>
+      ["querying", "synced", "pending", "not_found", "query_failed", "not_checked"].includes(value)
+    ),
+    page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
+    pageSize: CASE_PAGE_SIZES.includes(rawPageSize) ? rawPageSize : DEFAULT_CASE_PAGE_SIZE,
+  };
+}
+
 function parsePageRoute() {
   const pathname = stripBasePath(window.location.pathname);
   const match = Object.entries(PAGE_ROUTES).find(([, config]) => config.path === pathname);
@@ -377,6 +397,7 @@ function parsePageRoute() {
     failureOnly: params.has("failure") ? params.get("failure") === "1" : params.has("run") ? false : null,
     ...reviewFilters,
     analysisFilters: normalizedAnalysisRouteFilters(params),
+    trailUpdateFilters: normalizedTrailUpdateRouteFilters(params),
     // Issue / GT 上传已从页面移除；旧链接统一落到安全的模型结果导入区。
     importKind:
       params.get("import") === "model" ||
@@ -593,8 +614,26 @@ function pageUrl(page, options = {}) {
     }
   }
   if (page === "trail-update") {
-    const runId = options.runId ?? state.trailUpdate?.runId ?? state.selectedRunId;
+    const trail = typeof currentTrailUpdateRouteOptions === "function"
+      ? currentTrailUpdateRouteOptions(options)
+      : options;
+    const runId = trail.runId ?? state.trailUpdate?.runId ?? state.selectedRunId;
     if (runId) url.searchParams.set("run", runId);
+    if (trail.search) url.searchParams.set("q", trail.search);
+    const gt = joinFilterList(trail.gtLabel);
+    const modelLabel = joinFilterList(trail.modelLabel);
+    const reviewer = joinFilterList(trail.annotationAuthor);
+    const reviewStatus = joinFilterList(trail.reviewStatus);
+    const trailStatus = joinFilterList(trail.trailStatus);
+    if (gt) url.searchParams.set("gt", gt);
+    if (modelLabel) url.searchParams.set("model_label", modelLabel);
+    if (reviewer) url.searchParams.set("reviewer", reviewer);
+    if (reviewStatus) url.searchParams.set("review_status", reviewStatus);
+    if (trailStatus) url.searchParams.set("trail_status", trailStatus);
+    if (Number(trail.page) > 1) url.searchParams.set("page", String(trail.page));
+    if (Number(trail.pageSize) !== DEFAULT_CASE_PAGE_SIZE) {
+      url.searchParams.set("page_size", String(trail.pageSize));
+    }
   }
   if (page === "prediction") {
     const issueIds = options.issues ?? (options.issue ? [options.issue] : []);
@@ -736,7 +775,9 @@ function showPage(
       : target === "analysis"
         ? currentAnalysisRouteOptions()
         : target === "trail-update"
-          ? { runId: state.trailUpdate?.runId || "" }
+          ? (typeof currentTrailUpdateRouteOptions === "function"
+              ? currentTrailUpdateRouteOptions()
+              : { runId: state.trailUpdate?.runId || "" })
         : { issue, issues, source, importKind };
   const historyState = {
     page: target,

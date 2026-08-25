@@ -1984,6 +1984,16 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .trail-update-actions .button:disabled { opacity: .72; }
 .trail-update-page.is-loading .button:disabled { opacity: 1; filter: none; }
 .trail-update-page.is-loading .trail-update-actions .button:disabled { cursor: wait; }
+.trail-update-filters {
+  min-width: 0; display: grid;
+  grid-template-columns: minmax(180px, 1.3fr) repeat(5, minmax(132px, 1fr)) auto;
+  align-items: end; gap: 7px; padding-top: 2px;
+}
+.trail-update-filters > label { min-width: 0; display: grid; gap: 3px; color: var(--faint); font-size: 10px; }
+.trail-update-filters input { width: 100%; min-width: 0; height: 34px; box-sizing: border-box; padding: 5px 9px; font-size: 11px; }
+.trail-update-filters .multi-filter .multi-filter-trigger { min-height: 34px; font-size: 11px; }
+.trail-update-filter-actions { display: flex; align-items: center; gap: 5px; min-height: 34px; }
+.trail-update-filter-actions .button { min-width: 0; min-height: 34px; padding: 5px 8px; font-size: 11px; white-space: nowrap; }
 .trail-update-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .trail-update-review-summary-grid {
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 2fr);
@@ -2009,9 +2019,11 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   display: -webkit-box; text-overflow: ellipsis; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
 }
 .trail-update-results-heading { align-items: center; margin-bottom: 0; }
+.trail-update-result-summary { display: block; margin-top: 3px; color: var(--faint); font-size: 10px; font-weight: 500; }
 .trail-update-result-actions { min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .trail-update-result-actions .button { min-width: 0; min-height: 30px; padding: 5px 8px; font-size: 11px; white-space: nowrap; }
 .trail-update-table-wrap { min-width: 0; overflow-x: auto; }
+.trail-update-pagination { margin-top: 1px; }
 .trail-update-table { width: 100%; min-width: 1080px; border-collapse: separate; border-spacing: 0 5px; table-layout: fixed; font-size: 11px; }
 .trail-update-table th,
 .trail-update-table td { padding: 7px 8px; border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); color: var(--muted); background: var(--overlay); text-align: center; vertical-align: middle; }
@@ -2944,7 +2956,9 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .trail-update-tab { padding: 8px 9px; }
   .trail-update-header-card { padding: 10px; }
   .trail-update-onboarding { padding-top: 8px; }
-  .trail-update-control-grid, .trail-update-summary-grid { grid-template-columns: minmax(0, 1fr); }
+  .trail-update-control-grid, .trail-update-summary-grid, .trail-update-filters { grid-template-columns: minmax(0, 1fr); }
+  .trail-update-filter-actions { justify-content: flex-start; }
+  .trail-update-filter-actions .button { flex: 1 1 120px; }
   .trail-update-status-card { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .trail-update-actions { justify-content: flex-start; }
   .trail-update-actions .button { flex: 1 1 150px; }

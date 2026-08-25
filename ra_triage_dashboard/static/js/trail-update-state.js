@@ -62,18 +62,21 @@ function trailUpdateStatusCellMarkup(status = "not_checked") {
 
 function trailUpdateStatusSummary(data, items) {
   const counts = {};
-  const provided = data?.trail_update_status_summary;
-  if (provided && typeof provided === "object") {
-    Object.entries(provided).forEach(([key, value]) => {
-      const count = Number(value || 0);
-      if (count > 0) counts[key] = count;
-    });
-  }
-  if (!Object.keys(counts).length) {
-    (items || []).forEach((item) => {
+  // A locally filtered/paged table must project its own status distribution;
+  // the server aggregate remains useful only when callers have no item list.
+  if (Array.isArray(items)) {
+    items.forEach((item) => {
       const key = String(item?.trail_update_status || "not_checked");
       counts[key] = Number(counts[key] || 0) + 1;
     });
+  } else {
+    const provided = data?.trail_update_status_summary;
+    if (provided && typeof provided === "object") {
+      Object.entries(provided).forEach(([key, value]) => {
+        const count = Number(value || 0);
+        if (count > 0) counts[key] = count;
+      });
+    }
   }
   const entries = Object.entries(counts).filter(([, count]) => count > 0);
   const priority = ["querying", "query_failed", "pending", "not_found", "not_checked", "synced"];

@@ -565,6 +565,9 @@ function bindEvents() {
           ? route.runId
           : "";
       state.trailUpdate.runId = nextRunId;
+      if (typeof applyTrailUpdateRouteControls === "function") {
+        applyTrailUpdateRouteControls(route.trailUpdateFilters);
+      }
       renderTrailAttributeRunPicker();
       showPage("trail-update", {
         runId: nextRunId,
@@ -683,6 +686,9 @@ async function bootstrap() {
       initialRoute.page === "trail-update" && initialRoute.runId !== "none"
         ? initialRoute.runId || ""
         : "";
+    if (initialRoute.page === "trail-update" && typeof applyTrailUpdateRouteControls === "function") {
+      applyTrailUpdateRouteControls(initialRoute.trailUpdateFilters);
+    }
     if (initialRoute.page === "analysis") {
       state.reviewAnalysis.comparisonStatus = state.selectedRunId
         ? normalizedAnalysisComparisonStatus(

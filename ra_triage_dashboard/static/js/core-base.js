@@ -627,6 +627,21 @@ const state = {
   trailUpdate: {
     runId: "",
     tab: "review",
+    // The Review-exclusion payload is intentionally fetched once and then
+    // filtered/paginated locally.  That keeps the controlled Trail status
+    // probe asynchronous and avoids reloading the full candidate set for
+    // every query change.
+    filters: {
+      search: "",
+      gtLabel: [],
+      modelLabel: [],
+      reviewer: [],
+      reviewStatus: [],
+      trailStatus: [],
+    },
+    page: 1,
+    pageSize: DEFAULT_CASE_PAGE_SIZE,
+    filterTimer: null,
     requestSeq: 0,
     data: null,
     previewKey: "",

@@ -481,6 +481,225 @@ function renderTrailUpdateTargetField(data = {}, fieldId = "trailUpdateInfoField
   return spec;
 }
 
+function trailUpdateFilterValues(key) {
+  const filters = state.trailUpdate?.filters || {};
+  return parseFilterList(filters[key]);
+}
+
+function currentTrailUpdateRouteOptions(overrides = {}) {
+  const filters = state.trailUpdate?.filters || {};
+  return {
+    runId: state.trailUpdate?.runId || "",
+    search: String(filters.search || "").trim(),
+    gtLabel: trailUpdateFilterValues("gtLabel"),
+    modelLabel: trailUpdateFilterValues("modelLabel"),
+    annotationAuthor: trailUpdateFilterValues("reviewer"),
+    reviewStatus: trailUpdateFilterValues("reviewStatus"),
+    trailStatus: trailUpdateFilterValues("trailStatus"),
+    page: Math.max(1, Number(state.trailUpdate?.page) || 1),
+    pageSize: CASE_PAGE_SIZES.includes(Number(state.trailUpdate?.pageSize))
+      ? Number(state.trailUpdate.pageSize)
+      : DEFAULT_CASE_PAGE_SIZE,
+    ...overrides,
+  };
+}
+
+function applyTrailUpdateRouteControls(filters = {}) {
+  const source = filters || {};
+  state.trailUpdate.filters = {
+    search: String(source.search || ""),
+    gtLabel: parseFilterList(source.gtLabel).filter((value) => LABELS.includes(value)),
+    modelLabel: parseFilterList(source.modelLabel),
+    reviewer: parseFilterList(source.annotationAuthor || source.reviewer),
+    reviewStatus: parseFilterList(source.reviewStatus).filter((value) =>
+      ["pending", "reviewed", "needs_gt_review"].includes(value)
+    ),
+    trailStatus: parseFilterList(source.trailStatus).filter((value) =>
+      ["querying", "synced", "pending", "not_found", "query_failed", "not_checked"].includes(value)
+    ),
+  };
+  state.trailUpdate.page = Math.max(1, Number(source.page) || 1);
+  state.trailUpdate.pageSize = CASE_PAGE_SIZES.includes(Number(source.pageSize))
+    ? Number(source.pageSize)
+    : DEFAULT_CASE_PAGE_SIZE;
+  const search = $("#trailUpdateSearchInput");
+  if (search && document.activeElement !== search) search.value = state.trailUpdate.filters.search;
+  const pageSize = $("#trailUpdatePageSize");
+  if (pageSize) pageSize.value = String(state.trailUpdate.pageSize);
+  if (state.trailUpdate?.data) renderTrailAttributePreview(state.trailUpdate.data);
+}
+
+function trailUpdatePersistRoute() {
+  if (typeof pageUrl !== "function") return;
+  history.replaceState(
+    { page: "trail-update" },
+    "",
+    pageUrl("trail-update", currentTrailUpdateRouteOptions())
+  );
+}
+
+function trailUpdateModelValue(item = {}) {
+  return String(item?.model?.label || "").trim() || "__none__";
+}
+
+function trailUpdateSearchText(item = {}) {
+  const review = item.review || {};
+  const model = item.model || {};
+  return [
+    item.issue_id,
+    item.title,
+    item.scenario,
+    item.gt_label,
+    model.label,
+    model.reason,
+    review.reviewer,
+    review.status,
+    review.note,
+    item.comment,
+    item.baseline_id,
+    item.baseline_scope,
+  ].filter(Boolean).join(" ").toLocaleLowerCase();
+}
+
+function trailUpdateFilteredItems(data = state.trailUpdate?.data) {
+  const items = Array.isArray(data?.items) ? data.items : [];
+  const filters = state.trailUpdate?.filters || {};
+  const search = String(filters.search || "").trim().toLocaleLowerCase();
+  const gt = new Set(trailUpdateFilterValues("gtLabel"));
+  const modelLabel = new Set(trailUpdateFilterValues("modelLabel"));
+  const reviewer = new Set(trailUpdateFilterValues("reviewer"));
+  const reviewStatus = new Set(trailUpdateFilterValues("reviewStatus"));
+  const trailStatus = new Set(trailUpdateFilterValues("trailStatus"));
+  return items.filter((item) => {
+    const review = item.review || {};
+    if (search && !trailUpdateSearchText(item).includes(search)) return false;
+    if (gt.size && !gt.has(String(item?.gt_label || ""))) return false;
+    if (modelLabel.size && !modelLabel.has(trailUpdateModelValue(item))) return false;
+    if (reviewer.size && !reviewer.has(String(review.reviewer || ""))) return false;
+    if (reviewStatus.size && !reviewStatus.has(String(review.status || "pending"))) return false;
+    if (trailStatus.size && !trailStatus.has(String(item?.trail_update_status || "not_checked"))) return false;
+    return true;
+  });
+}
+
+function trailUpdateFilterOptions(items = []) {
+  const distinct = (values) => [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+  const modelValues = distinct(items.map(trailUpdateModelValue));
+  const reviewerValues = distinct(items.map((item) => item?.review?.reviewer));
+  const reviewValues = distinct(items.map((item) => item?.review?.status || "pending"));
+  const statusValues = distinct(items.map((item) => item?.trail_update_status || "not_checked"));
+  return {
+    gt: LABELS.filter((label) => items.some((item) => item?.gt_label === label)).map((value) => ({ value, label: value })),
+    model: modelValues.map((value) => ({ value, label: value === "__none__" ? uiText("未输出", "No output") : value })),
+    reviewer: reviewerValues.map((value) => ({ value, label: value })),
+    review: reviewValues.map((value) => ({
+      value,
+      label: ({ pending: uiText("待补充", "Pending"), reviewed: uiText("已复核", "Reviewed"), needs_gt_review: uiText("GT 需复核", "Needs GT review") })[value] || value,
+    })),
+    trail: statusValues.map((value) => ({ value, label: trailUpdateStatusMeta(value).label })),
+  };
+}
+
+function applyTrailUpdateFilters({ resetPage = true, persist = true } = {}) {
+  if (resetPage) state.trailUpdate.page = 1;
+  if (state.trailUpdate?.data) renderTrailAttributePreview(state.trailUpdate.data);
+  if (persist) trailUpdatePersistRoute();
+}
+
+function scheduleTrailUpdateFilterRender() {
+  if (state.trailUpdate.filterTimer) window.clearTimeout(state.trailUpdate.filterTimer);
+  state.trailUpdate.filterTimer = window.setTimeout(() => {
+    state.trailUpdate.filterTimer = null;
+    const search = $("#trailUpdateSearchInput");
+    state.trailUpdate.filters.search = String(search?.value || "");
+    applyTrailUpdateFilters();
+  }, 180);
+}
+
+function renderTrailUpdateFilters(data = state.trailUpdate?.data) {
+  const items = Array.isArray(data?.items) ? data.items : [];
+  const options = trailUpdateFilterOptions(items);
+  const filters = state.trailUpdate?.filters || {};
+  const search = $("#trailUpdateSearchInput");
+  if (search && document.activeElement !== search) search.value = String(filters.search || "");
+  const pageSize = $("#trailUpdatePageSize");
+  if (pageSize) pageSize.value = String(state.trailUpdate.pageSize || DEFAULT_CASE_PAGE_SIZE);
+  const bind = (id, values, selected, onChange) => {
+    const root = $(id);
+    if (!root || typeof renderMultiFilter !== "function") return;
+    renderMultiFilter(root, { options: values, selected, onChange });
+  };
+  bind("#trailUpdateGtFilter", options.gt, filters.gtLabel, (values) => {
+    state.trailUpdate.filters.gtLabel = values;
+    applyTrailUpdateFilters();
+  });
+  bind("#trailUpdateModelLabelFilter", options.model, filters.modelLabel, (values) => {
+    state.trailUpdate.filters.modelLabel = values;
+    applyTrailUpdateFilters();
+  });
+  bind("#trailUpdateReviewerFilter", options.reviewer, filters.reviewer, (values) => {
+    state.trailUpdate.filters.reviewer = values;
+    applyTrailUpdateFilters();
+  });
+  bind("#trailUpdateReviewStatusFilter", options.review, filters.reviewStatus, (values) => {
+    state.trailUpdate.filters.reviewStatus = values;
+    applyTrailUpdateFilters();
+  });
+  bind("#trailUpdateStatusFilter", options.trail, filters.trailStatus, (values) => {
+    state.trailUpdate.filters.trailStatus = values;
+    applyTrailUpdateFilters();
+  });
+}
+
+function renderTrailUpdatePagination(filteredItems = []) {
+  const total = filteredItems.length;
+  const pageSize = CASE_PAGE_SIZES.includes(Number(state.trailUpdate?.pageSize))
+    ? Number(state.trailUpdate.pageSize)
+    : DEFAULT_CASE_PAGE_SIZE;
+  state.trailUpdate.pageSize = pageSize;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  state.trailUpdate.page = Math.min(Math.max(1, Number(state.trailUpdate?.page) || 1), totalPages);
+  const page = state.trailUpdate.page;
+  const start = total ? (page - 1) * pageSize + 1 : 0;
+  const end = Math.min(page * pageSize, total);
+  const previous = $("#trailUpdatePagePrevious");
+  const next = $("#trailUpdatePageNext");
+  const summary = $("#trailUpdatePageSummary");
+  const result = $("#trailUpdateResultSummary");
+  const jump = $("#trailUpdatePageJump");
+  const jumpButton = $("#trailUpdatePageJumpButton");
+  const pageSizeSelect = $("#trailUpdatePageSize");
+  const pagination = $("#trailUpdatePagination");
+  if (pagination) pagination.hidden = total === 0;
+  if (previous) previous.disabled = page <= 1 || !total;
+  if (next) next.disabled = page >= totalPages || !total;
+  if (summary) summary.textContent = `${page} / ${totalPages}`;
+  if (result) {
+    result.textContent = total
+      ? uiText(`当前显示 ${start}–${end} / 共 ${total} 条`, `Showing ${start}–${end} of ${total}`)
+      : uiText("当前筛选没有匹配案例", "No cases match the current filters");
+  }
+  if (jump) {
+    jump.min = "1";
+    jump.max = String(totalPages);
+    jump.disabled = totalPages <= 1;
+    if (document.activeElement !== jump) jump.value = String(page);
+  }
+  if (jumpButton) jumpButton.disabled = totalPages <= 1;
+  if (pageSizeSelect) pageSizeSelect.value = String(pageSize);
+  return { start: total ? (page - 1) * pageSize : 0, end: page * pageSize, total, page, totalPages };
+}
+
+function goToTrailUpdatePage(nextPage) {
+  const total = trailUpdateFilteredItems().length;
+  const pageSize = CASE_PAGE_SIZES.includes(Number(state.trailUpdate?.pageSize))
+    ? Number(state.trailUpdate.pageSize)
+    : DEFAULT_CASE_PAGE_SIZE;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  state.trailUpdate.page = Math.min(Math.max(1, Number(nextPage) || 1), totalPages);
+  applyTrailUpdateFilters({ resetPage: false });
+}
+
 function clearTrailAttributePreview(message = "") {
   state.trailUpdate.data = null;
   state.trailUpdate.jsonPreview = null;
@@ -494,6 +713,10 @@ function clearTrailAttributePreview(message = "") {
   $("#trailUpdateStatusSummary").textContent = "—";
   const digestElement = $("#trailUpdateDigest");
   if (digestElement) digestElement.textContent = "—";
+  const resultSummary = $("#trailUpdateResultSummary");
+  if (resultSummary) resultSummary.textContent = "—";
+  const pagination = $("#trailUpdatePagination");
+  if (pagination) pagination.hidden = true;
   setTrailAttributeLoading(false);
   syncTrailAttributeActions(null);
   setTrailAttributeStatus(message);
@@ -523,16 +746,23 @@ function clearTrailIssuePreview(message = "") {
 }
 
 function renderTrailAttributePreview(data) {
-  const items = Array.isArray(data?.items) ? data.items : [];
+  const allItems = Array.isArray(data?.items) ? data.items : [];
+  renderTrailUpdateFilters(data);
+  const filteredItems = trailUpdateFilteredItems(data);
+  const page = renderTrailUpdatePagination(filteredItems);
+  const items = filteredItems.slice(page.start, page.end);
   const run = data?.selected_run || {};
   const digest = String(data?.payload_sha256 || "");
   const capability = data?.trail_capability || {};
   setTrailAttributeUpdatePreviewVisible(true);
   setTrailAttributeCapability(data);
-  $("#trailUpdateCount").textContent = String(items.length);
-  $("#trailUpdateRunSummary").textContent = run.name || run.id || uiText("全部 Model Runs", "All model Runs");
+  $("#trailUpdateCount").textContent = String(filteredItems.length);
+  const sourceLabel = run.name || run.id || uiText("全部 Model Runs", "All model Runs");
+  $("#trailUpdateRunSummary").textContent = filteredItems.length === allItems.length
+    ? sourceLabel
+    : `${sourceLabel} · ${uiText(`筛选 ${filteredItems.length}/${allItems.length} 条`, `${filteredItems.length}/${allItems.length} filtered`)}`;
   renderTrailUpdateTargetField(data);
-  trailUpdateStatusSummary(data, items);
+  trailUpdateStatusSummary(data, filteredItems);
   const digestElement = $("#trailUpdateDigest");
   if (digestElement) {
     digestElement.textContent = digest ? `${digest.slice(0, 12)}…` : "—";
@@ -540,9 +770,12 @@ function renderTrailAttributePreview(data) {
   }
   const body = $("#trailUpdateTableBody");
   if (!body) return;
+  if (!allItems.length) {
+    body.innerHTML = `<tr><td colspan="8" class="trail-update-empty">${uiText("当前数据集与 Run 范围没有已标记“应该排除”的 Review。", "No reviewed “should exclude” cases in the current dataset and Run.")}</td></tr>`;
+    return;
+  }
   if (!items.length) {
-    trailUpdateStatusSummary(data, []);
-    body.innerHTML = `<tr><td colspan="8" class="trail-update-empty">${uiText("当前筛选范围没有已标记“应该排除”的 Review。", "No reviewed “should exclude” cases in the current filter.")}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8" class="trail-update-empty">${uiText("当前筛选没有匹配的排除案例。", "No excluded cases match the current filters.")}</td></tr>`;
     return;
   }
   body.innerHTML = items.map((item) => {
@@ -580,17 +813,15 @@ function patchTrailAttributeStatus(statusData) {
   data.write_ready = statusData.write_ready === true;
   data.capability_pending = false;
   (data.items || []).forEach((item) => {
-    const issueId = String(item?.issue_id || "");
-    if (Object.prototype.hasOwnProperty.call(statuses, issueId)) {
-      item.trail_update_status = statuses[issueId];
+    const itemIssueId = String(item?.issue_id || "");
+    if (Object.prototype.hasOwnProperty.call(statuses, itemIssueId)) {
+      item.trail_update_status = statuses[itemIssueId];
     }
-    const cell = document.querySelector(
-      `[data-trail-update-status-issue="${CSS.escape(issueId)}"]`
-    );
-    if (cell) cell.innerHTML = trailUpdateStatusCellMarkup(item.trail_update_status);
   });
-  setTrailAttributeCapability(data);
-  trailUpdateStatusSummary(data, data.items || []);
+  // This remains the second-stage Trail response.  Re-rendering only this
+  // local projection updates filters/pagination and visible rows without a
+  // second Review aggregation or a new Trail request.
+  renderTrailAttributePreview(data);
   syncTrailAttributeActions(data);
   return data;
 }
@@ -1650,11 +1881,53 @@ function bindTrailAttributeUpdateEvents() {
   const select = $("#trailUpdateRunSelect");
   select?.addEventListener("change", () => {
     state.trailUpdate.runId = String(select.value || "");
+    state.trailUpdate.page = 1;
     clearTrailAttributePreview();
     if (typeof pageUrl === "function") {
       history.replaceState({ page: "trail-update" }, "", pageUrl("trail-update", { runId: state.trailUpdate.runId }));
     }
     loadTrailAttributePreview().catch((error) => showToast(error.message, true));
+  });
+  $("#trailUpdateFilterForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    state.trailUpdate.filters.search = String($("#trailUpdateSearchInput")?.value || "");
+    applyTrailUpdateFilters();
+  });
+  $("#trailUpdateSearchInput")?.addEventListener("input", scheduleTrailUpdateFilterRender);
+  $("#trailUpdateResetFiltersButton")?.addEventListener("click", () => {
+    state.trailUpdate.filters = {
+      search: "",
+      gtLabel: [],
+      modelLabel: [],
+      reviewer: [],
+      reviewStatus: [],
+      trailStatus: [],
+    };
+    const search = $("#trailUpdateSearchInput");
+    if (search) search.value = "";
+    applyTrailUpdateFilters();
+  });
+  $("#trailUpdatePagePrevious")?.addEventListener("click", () => {
+    goToTrailUpdatePage((Number(state.trailUpdate?.page) || 1) - 1);
+  });
+  $("#trailUpdatePageNext")?.addEventListener("click", () => {
+    goToTrailUpdatePage((Number(state.trailUpdate?.page) || 1) + 1);
+  });
+  const pageJump = $("#trailUpdatePageJump");
+  const jumpTrailUpdatePage = () => goToTrailUpdatePage(pageJump?.value);
+  $("#trailUpdatePageJumpButton")?.addEventListener("click", jumpTrailUpdatePage);
+  pageJump?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      jumpTrailUpdatePage();
+    }
+  });
+  $("#trailUpdatePageSize")?.addEventListener("change", (event) => {
+    const nextSize = Number(event.currentTarget?.value);
+    state.trailUpdate.pageSize = CASE_PAGE_SIZES.includes(nextSize)
+      ? nextSize
+      : DEFAULT_CASE_PAGE_SIZE;
+    applyTrailUpdateFilters();
   });
   $("#trailUpdateCommitButton")?.addEventListener("click", () => {
     commitTrailAttributeUpdate().catch((error) => showToast(error.message, true));
