@@ -325,7 +325,7 @@ function safeSameOriginAssetUrl(url) {
 
 function labelBadge(label, fallback = "—") {
   const actual = label || "";
-  const className = LABELS.includes(actual) ? `label-${actual}` : "label-empty";
+  const className = MODEL_LABELS.includes(actual) ? `label-${actual}` : "label-empty";
   return `<span class="label-badge ${className}">${escapeHtml(actual || fallback)}</span>`;
 }
 

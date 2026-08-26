@@ -5,7 +5,13 @@ import uuid
 from typing import Any, Iterable, Sequence
 
 from ..sanitization import redact_sensitive_fields
-from .shared import LABELS, _json, _json_load, utc_now
+from .shared import (
+    LABELS,
+    _json,
+    _json_load,
+    model_prediction_mismatch_sql,
+    utc_now,
+)
 
 
 class DatabaseRunsMixin:
@@ -185,6 +191,7 @@ class DatabaseRunsMixin:
         baseline_scopes: Sequence[str] | None = None,
     ) -> list[dict[str, Any]]:
         labels = tuple(LABELS)
+        mismatch_sql, mismatch_params = model_prediction_mismatch_sql()
         scopes = self._normalize_baseline_scopes(
             baseline_scopes,
             baseline_scope=baseline_scope if isinstance(baseline_scope, str) else "",
@@ -204,8 +211,7 @@ class DatabaseRunsMixin:
                        SUM(CASE
                              WHEN {in_clause}
                               AND i.gt_label IN (?, ?, ?)
-                              AND mp.model_label IN (?, ?, ?)
-                              AND mp.model_label != i.gt_label
+                              AND {mismatch_sql}
                              THEN 1 ELSE 0 END) AS failure_count
                 FROM model_runs mr
                 LEFT JOIN model_predictions mp ON mp.model_run_id = mr.id
@@ -213,7 +219,7 @@ class DatabaseRunsMixin:
                 GROUP BY mr.id
                 ORDER BY mr.is_default DESC, mr.created_at DESC
                 """,
-                (*scope_params, *scope_params, *labels, *labels),
+                (*scope_params, *scope_params, *labels, *mismatch_params),
             ).fetchall()
         return [
             self._run_dict(row)

@@ -7,7 +7,7 @@ function reviewComparisonStatusForItem(item) {
   if (!state.selectedRunId) return "";
   const prediction = item?.prediction || {};
   if (!prediction.model_run_id) return "none";
-  if (!LABELS.includes(prediction.label)) return "none";
+  if (!MODEL_LABELS.includes(prediction.label)) return "none";
   return prediction.mismatch ? "mismatch" : "match";
 }
 

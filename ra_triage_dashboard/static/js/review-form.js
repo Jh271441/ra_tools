@@ -184,9 +184,11 @@ function renderDetail(caseData) {
   ensureDetailMediaState(caseData);
   const predCount = (caseData.predictions || []).length;
   const modelHistoryButton = `<button class="history-inline-button" type="button" data-open-history="model"><span class="ui-lang-zh">评测 Run 历史 · ${predCount} 条</span><span class="ui-lang-en">Run history · ${predCount}</span></button>`;
-  const compareText = !primary?.model_label
+  const predictionComparable = MODEL_LABELS.includes(primary?.model_label);
+  const predictionMatches = modelLabelMatchesGt(primary?.model_label, caseData.gt_label);
+  const compareText = !predictionComparable
     ? `<span class="ui-lang-zh">不可比较</span><span class="ui-lang-en">N/A</span>`
-    : primary.model_label === caseData.gt_label
+    : predictionMatches
       ? `<span class="ui-lang-zh">一致</span><span class="ui-lang-en">Match</span>`
       : `<span class="ui-lang-zh">不一致</span><span class="ui-lang-en">Mismatch</span>`;
   $("#detailPane").innerHTML = `
@@ -211,7 +213,7 @@ function renderDetail(caseData) {
           <span class="comparison-side-label comparison-side-gt">GT</span>${labelBadge(caseData.gt_label, uiText("缺失", "Missing"))}
           <b aria-hidden="true">→</b>
           <span class="comparison-side-label comparison-side-model"><span class="ui-lang-zh">当前模型</span><span class="ui-lang-en">Model</span></span>${labelBadge(primary?.model_label, uiText("未输出", "None"))}
-          <strong class="${primary?.model_label && primary.model_label !== caseData.gt_label ? "comparison-fail" : "comparison-neutral"}">${compareText}</strong>
+          <strong class="${predictionComparable && !predictionMatches ? "comparison-fail" : "comparison-neutral"}">${compareText}</strong>
         </div>
         <button class="button button-quiet detail-back-button" id="backToGalleryButton" type="button"><span class="ui-lang-zh">← 返回筛选结果</span><span class="ui-lang-en">← Back to gallery</span></button>
         ${caseData.summary ? `<p class="detail-summary">${escapeHtml(caseData.summary)}</p>` : ""}

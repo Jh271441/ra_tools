@@ -10,9 +10,34 @@ from ra_triage_dashboard.app.import_parsing import (
     normalize_model_row,
     parse_source_bytes,
 )
+from ra_triage_dashboard.app.filenames import safe_filename
 
 
 class ImportParsingTest(unittest.TestCase):
+    def test_long_upload_filename_keeps_spreadsheet_suffix(self) -> None:
+        filename = f"{'stage1_result_' * 12}0508.xlsx"
+        safe = safe_filename(filename)
+        self.assertLessEqual(len(safe), 120)
+        self.assertTrue(safe.endswith(".xlsx"))
+
+    def test_stage1_true_stuck_aliases_share_one_model_label(self) -> None:
+        for value in ("真实卡住", "非误触发"):
+            with self.subTest(value=value):
+                row = normalize_model_row(
+                    {"issue_id": "cn31842459", "model_label": value}
+                )
+                self.assertIsNotNone(row)
+                assert row is not None
+                self.assertEqual(row["model_label"], "真实卡住")
+
+    def test_stage1_prediction_column_is_supported(self) -> None:
+        row = normalize_model_row(
+            {"issue_id": "cn31842459", "stage1_prediction": "非误触发"}
+        )
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(row["model_label"], "真实卡住")
+
     def test_normalize_model_row_preserves_supported_contract(self) -> None:
         row = normalize_model_row(
             {

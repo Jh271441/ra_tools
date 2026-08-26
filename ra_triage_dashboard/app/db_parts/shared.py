@@ -13,10 +13,16 @@ from datetime import datetime, timezone
 from typing import Any, Iterable
 from uuid import UUID
 
+from ..model_labels import (
+    MODEL_LABELS,
+    STAGE1_TRUE_STUCK_LABEL,
+    TRIAGE_LABELS,
+    model_label_matches_gt,
+)
 from ..sanitization import redact_sensitive_fields
 
 
-LABELS = ("误触发", "正确触发", "无需协助")
+LABELS = TRIAGE_LABELS
 COMPARISON_STATUSES = ("all", "mismatch", "match", "none")
 REVIEW_STATUSES = ("pending", "reviewed", "needs_gt_review")
 BATCH_JOB_STATUSES = ("queued", "running", "succeeded", "partial", "failed")
@@ -28,6 +34,39 @@ BATCH_PUBLISH_STATUSES = (
     "failed",
 )
 ACCESS_ROLES = ("writer", "admin")
+
+
+def model_prediction_none_sql(
+    model_column: str = "mp.model_label",
+) -> tuple[str, tuple[str, ...]]:
+    placeholders = ", ".join("?" for _ in MODEL_LABELS)
+    return (
+        f"({model_column} IS NULL OR {model_column} NOT IN ({placeholders}))",
+        MODEL_LABELS,
+    )
+
+
+def model_prediction_match_sql(
+    model_column: str = "mp.model_label",
+    gt_column: str = "i.gt_label",
+) -> tuple[str, tuple[str, ...]]:
+    return (
+        f"({model_column} = {gt_column} OR "
+        f"({model_column} = ? AND {gt_column} IN (?, ?)))",
+        (STAGE1_TRUE_STUCK_LABEL, "正确触发", "无需协助"),
+    )
+
+
+def model_prediction_mismatch_sql(
+    model_column: str = "mp.model_label",
+    gt_column: str = "i.gt_label",
+) -> tuple[str, tuple[str, ...]]:
+    supported = ", ".join("?" for _ in MODEL_LABELS)
+    match_sql, match_params = model_prediction_match_sql(model_column, gt_column)
+    return (
+        f"({model_column} IN ({supported}) AND NOT {match_sql})",
+        (*MODEL_LABELS, *match_params),
+    )
 
 
 class AnnotationConflictError(RuntimeError):

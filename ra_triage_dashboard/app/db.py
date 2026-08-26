@@ -6,6 +6,7 @@ from .db_parts.shared import (
     BATCH_PUBLISH_STATUSES,
     COMPARISON_STATUSES,
     LABELS,
+    MODEL_LABELS,
     REVIEW_STATUSES,
     AnnotationConflictError,
     _CompatRow,
@@ -18,6 +19,7 @@ from .db_parts.shared import (
     _NoopCursor,
     redact_sensitive_fields,
     utc_now,
+    model_label_matches_gt,
 )
 
 from .db_parts.access import DatabaseAccessMixin

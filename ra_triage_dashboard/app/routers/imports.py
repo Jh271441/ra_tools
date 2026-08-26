@@ -66,7 +66,10 @@ async def import_contract() -> dict[str, Any]:
             ],
         },
         "model_results": {
-            "required": ["issue_id", "model_label 或 ra_stuck_auto_result"],
+            "required": [
+                "issue_id",
+                "model_label、stage1_prediction 或 ra_stuck_auto_result",
+            ],
             "optional": [
                 "trip_id",
                 "model_reason / reason",
@@ -84,6 +87,7 @@ async def import_contract() -> dict[str, Any]:
         },
         "notes": [
             "每次导入会创建不可变 model run，并按 SHA-256 去重。",
+            "Stage1 的 非误触发/真实卡住 统一保存为真实卡住；与 GT 比较时同时兼容正确触发和无需协助，不推断 Stage2 结论。",
             "页面不提供 Issue / GT 上传；旧 issues 接口仅为兼容客户端保留。Trail 真值不因模型导入而覆盖；仅显式 issues API 调用且 replace_gt=true 才会覆盖已有 GT。",
         ],
     }

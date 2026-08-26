@@ -20,6 +20,106 @@ from ra_triage_dashboard.app.routers.cases import (
 
 
 class ReviewReasonAnalysisTest(unittest.TestCase):
+    def test_stage1_true_stuck_matches_both_true_stuck_gt_outcomes(self) -> None:
+        rows = [
+            {
+                "issue_id": f"cn-stage1-{index}",
+                "gt_label": gt_label,
+                "annotation": {"label": gt_label},
+                "prediction": {"label": "真实卡住"},
+            }
+            for index, gt_label in enumerate(
+                ("正确触发", "无需协助", "误触发"), start=1
+            )
+        ]
+        result = build_review_reason_analysis(
+            rows, has_model_run=True, include_reason_themes=False
+        )
+        self.assertEqual(
+            [item["comparison_status"] for item in result["items"]],
+            ["match", "match", "mismatch"],
+        )
+        self.assertEqual(result["summary"]["model_matches"], 2)
+        self.assertEqual(result["summary"]["model_mismatches"], 1)
+        self.assertEqual(result["summary"]["missing_predictions"], 0)
+        self.assertIn("真实卡住", result["confusion"]["model_labels"])
+
+    def test_database_stage1_comparison_filters_and_run_failure_count(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "triage.sqlite3")
+            database.init()
+            scope = "stage1-compat"
+            database.upsert_issues(
+                [
+                    {"issue_id": "cn-stage1-fp", "gt_label": "误触发"},
+                    {"issue_id": "cn-stage1-ra", "gt_label": "正确触发"},
+                    {"issue_id": "cn-stage1-na", "gt_label": "无需协助"},
+                    {"issue_id": "cn-stage1-wrong", "gt_label": "误触发"},
+                ],
+                source="test",
+                replace_gt=True,
+                baseline_scope=scope,
+            )
+            run, _ = database.import_model_run(
+                name="stage1",
+                source_name="stage1.xlsx",
+                source_sha256="1" * 64,
+                metadata={},
+                rows=[
+                    {"issue_id": "cn-stage1-fp", "model_label": "误触发"},
+                    {"issue_id": "cn-stage1-ra", "model_label": "真实卡住"},
+                    {"issue_id": "cn-stage1-na", "model_label": "真实卡住"},
+                    {"issue_id": "cn-stage1-wrong", "model_label": "真实卡住"},
+                ],
+            )
+            matches = database.list_cases(
+                baseline_scope=scope,
+                model_run_id=run["id"],
+                comparison_status="match",
+                page_size=20,
+            )
+            mismatches = database.list_cases(
+                baseline_scope=scope,
+                model_run_id=run["id"],
+                comparison_status="mismatch",
+                page_size=20,
+            )
+            self.assertEqual(matches["total"], 3)
+            self.assertEqual(mismatches["total"], 1)
+            self.assertEqual(mismatches["items"][0]["issue_id"], "cn-stage1-wrong")
+            self.assertTrue(mismatches["items"][0]["prediction"]["mismatch"])
+            listed = database.list_model_runs(baseline_scope=scope)
+            self.assertEqual(listed[0]["failure_count"], 1)
+            for issue_id, label in (
+                ("cn-stage1-fp", "误触发"),
+                ("cn-stage1-ra", "正确触发"),
+                ("cn-stage1-na", "无需协助"),
+                ("cn-stage1-wrong", "误触发"),
+            ):
+                database.create_annotation(
+                    issue_id=issue_id,
+                    model_run_id=run["id"],
+                    label=label,
+                    review_status="reviewed",
+                    tags=[],
+                    missing_evidence=[],
+                    note="stage1 compatibility",
+                    author="tester",
+                )
+            analysis_matches = database.review_reason_rows(
+                baseline_scope=scope,
+                model_run_id=run["id"],
+                comparison_status="match",
+            )
+            analysis_mismatches = database.review_reason_rows(
+                baseline_scope=scope,
+                model_run_id=run["id"],
+                comparison_status="mismatch",
+            )
+            self.assertEqual(len(analysis_matches), 3)
+            self.assertEqual(len(analysis_mismatches), 1)
+            self.assertEqual(analysis_mismatches[0]["issue_id"], "cn-stage1-wrong")
+
     def test_exclusion_filter_normalizes_explicit_slices(self) -> None:
         self.assertEqual(resolve_review_exclusion_filter(""), ("all", None))
         self.assertEqual(resolve_review_exclusion_filter("included"), ("included", False))
@@ -306,7 +406,7 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
         self.assertEqual(result["items"][0]["comparison_status"], "mismatch")
         self.assertEqual(
             result["confusion"]["model_labels"],
-            ["误触发", "正确触发", "无需协助", "NONE"],
+            ["误触发", "正确触发", "无需协助", "真实卡住", "NONE"],
         )
         self.assertEqual(result["confusion"]["matches"], 1)
         self.assertEqual(result["confusion"]["mismatches"], 1)

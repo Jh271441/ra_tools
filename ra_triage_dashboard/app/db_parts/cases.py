@@ -5,7 +5,18 @@ import sqlite3
 import uuid
 from typing import Any, Iterable, Sequence
 
-from .shared import COMPARISON_STATUSES, LABELS, _json, _json_load, utc_now
+from .shared import (
+    COMPARISON_STATUSES,
+    LABELS,
+    MODEL_LABELS,
+    _json,
+    _json_load,
+    model_label_matches_gt,
+    model_prediction_match_sql,
+    model_prediction_mismatch_sql,
+    model_prediction_none_sql,
+    utc_now,
+)
 
 
 class DatabaseCasesMixin:
@@ -250,7 +261,7 @@ class DatabaseCasesMixin:
             where.append(f"i.gt_label IN ({', '.join('?' for _ in gt_labels)})")
             params.extend(gt_labels)
         model_labels = tuple(
-            value for value in _multi_values(model_label) if value in LABELS
+            value for value in _multi_values(model_label) if value in MODEL_LABELS
         )
         if model_labels:
             where.append(
@@ -322,20 +333,13 @@ class DatabaseCasesMixin:
             status_clauses: list[str] = []
             for status in comparison_statuses:
                 if status == "none":
-                    status_clauses.append(
-                        "(mp.model_label IS NULL OR mp.model_label NOT IN (?, ?, ?))"
-                    )
-                    params.extend(LABELS)
+                    clause, clause_params = model_prediction_none_sql()
                 elif status == "match":
-                    status_clauses.append(
-                        "(mp.model_label IN (?, ?, ?) AND mp.model_label = i.gt_label)"
-                    )
-                    params.extend(LABELS)
+                    clause, clause_params = model_prediction_match_sql()
                 else:
-                    status_clauses.append(
-                        "(mp.model_label IN (?, ?, ?) AND mp.model_label != i.gt_label)"
-                    )
-                    params.extend(LABELS)
+                    clause, clause_params = model_prediction_mismatch_sql()
+                status_clauses.append(clause)
+                params.extend(clause_params)
             where.append(f"({' OR '.join(status_clauses)})")
         condition = f"WHERE {' AND '.join(where)}" if where else ""
         # The Gallery is the operator's Review-progress surface.  A legacy
@@ -582,14 +586,14 @@ class DatabaseCasesMixin:
         )
         params: list[Any] = [*annotation_params, model_run_id, *scope_params]
         if failure_only and model_run_id:
+            mismatch_sql, mismatch_params = model_prediction_mismatch_sql()
             where.extend(
                 [
                     "i.gt_label IN (?, ?, ?)",
-                    "mp.model_label IN (?, ?, ?)",
-                    "mp.model_label != i.gt_label",
+                    mismatch_sql,
                 ]
             )
-            params.extend((*LABELS, *LABELS))
+            params.extend((*LABELS, *mismatch_params))
         if annotation_author.strip():
             where.append("ann.author = ?")
             params.append(annotation_author.strip())
@@ -677,7 +681,8 @@ class DatabaseCasesMixin:
                     f"SELECT COUNT(mp.id) {common}",
                     (*annotation_params, model_run_id, *scope_params),
                 ).fetchone()[0]
-                failure_condition = " AND i.gt_label IN (?, ?, ?) AND mp.model_label IN (?, ?, ?) AND mp.model_label != i.gt_label"
+                mismatch_sql, mismatch_params = model_prediction_mismatch_sql()
+                failure_condition = f" AND i.gt_label IN (?, ?, ?) AND {mismatch_sql}"
                 failures = conn.execute(
                     f"SELECT COUNT(*) {common}{failure_condition}",
                     (
@@ -685,7 +690,7 @@ class DatabaseCasesMixin:
                         model_run_id,
                         *scope_params,
                         *LABELS,
-                        *LABELS,
+                        *mismatch_params,
                     ),
                 ).fetchone()[0]
                 reviewed_failures = conn.execute(
@@ -695,7 +700,7 @@ class DatabaseCasesMixin:
                         model_run_id,
                         *scope_params,
                         *LABELS,
-                        *LABELS,
+                        *mismatch_params,
                     ),
                 ).fetchone()[0]
             running = conn.execute(
@@ -737,7 +742,10 @@ class DatabaseCasesMixin:
     def _case_summary(cls, row: sqlite3.Row) -> dict[str, Any]:
         data = cls._issue_dict(row)
         model_label = row["model_label"] or ""
-        comparable = bool(data["gt_label"] in LABELS and model_label in LABELS)
+        comparable = bool(
+            data["gt_label"] in LABELS and model_label in MODEL_LABELS
+        )
+        matches = model_label_matches_gt(model_label, data["gt_label"])
         keys = set(row.keys()) if hasattr(row, "keys") else set()
         work_assignee = (
             str(row["work_assignee"] or "") if "work_assignee" in keys else ""
@@ -773,7 +781,7 @@ class DatabaseCasesMixin:
                     "reason": row["model_reason"] or "",
                     "confidence": row["model_confidence"],
                     "comparable": comparable,
-                    "mismatch": bool(comparable and model_label != data["gt_label"]),
+                    "mismatch": bool(comparable and not matches),
                 },
             }
         )

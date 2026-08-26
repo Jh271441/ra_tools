@@ -313,7 +313,7 @@ function renderAnalysisCatalogFilters() {
     onChange,
   });
   renderMultiFilter($("#analysisModelLabelFilter"), {
-    options: LABELS.map((label) => ({ value: label, label })),
+    options: MODEL_LABELS.map((label) => ({ value: label, label })),
     selected: getMultiFilterValues($("#analysisModelLabelFilter")),
     onChange,
   });

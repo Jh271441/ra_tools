@@ -588,7 +588,7 @@ function renderAnalysisConfusion(data) {
                 const cellClass =
                   cell.model_label === "NONE"
                     ? "confusion-none"
-                    : cell.model_label === row.gt_label
+                    : modelLabelMatchesGt(cell.model_label, row.gt_label)
                       ? "confusion-match"
                       : cell.count
                         ? "confusion-mismatch"

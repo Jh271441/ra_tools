@@ -18,7 +18,7 @@ from .contracts import (
     MAX_SPREADSHEET_COMPRESSION_RATIO,
     MAX_SPREADSHEET_UNCOMPRESSED_BYTES,
 )
-from .db import LABELS
+from .model_labels import MODEL_LABELS, TRIAGE_LABELS, canonical_model_label
 from .sanitization import redact_sensitive_fields
 
 
@@ -86,13 +86,17 @@ def _canonical_gt_label(value: Any) -> str:
         "无需人工协助": "无需协助",
     }
     text = mapping.get(text.lower(), text)
-    return text if text in LABELS else ""
+    return text if text in TRIAGE_LABELS else ""
+
+
+def _canonical_model_label(value: Any) -> str:
+    return canonical_model_label(_as_text(value))
 
 
 def _label_from_structured(value: dict[str, Any]) -> str:
     for key in ("label", "model_label", "result", "prediction", "triage_result", "class"):
-        candidate = _canonical_gt_label(value.get(key))
-        if candidate:
+        candidate = _canonical_model_label(value.get(key))
+        if candidate in MODEL_LABELS:
             return candidate
     return ""
 
@@ -117,13 +121,14 @@ def normalize_model_row(row: dict[str, Any]) -> dict[str, Any] | None:
         "ra_stuck_auto_result",
         "prediction",
         "pred_label",
+        "stage1_prediction",
         "预测标签",
     )
     result_info = _parse_structured(raw_result)
     info = _parse_structured(_value(row, "ra_stuck_auto_result_info", "result_info"))
     raw_label = _as_text(raw_result)
     label = (
-        _canonical_gt_label(raw_label)
+        _canonical_model_label(raw_label)
         or _label_from_structured(result_info)
         or _label_from_structured(info)
     )

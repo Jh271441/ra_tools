@@ -386,8 +386,10 @@ function renderMediaDialog() {
   const videoMode = state.media.kind === "video";
   const gtLabel = snapshot?.gtLabel || "";
   const modelLabel = snapshot?.modelLabel || "";
-  const comparisonText = modelLabel ? (modelLabel === gtLabel ? "一致" : "不一致") : "未输出";
-  const comparisonClass = modelLabel && modelLabel !== gtLabel ? "comparison-fail" : "comparison-neutral";
+  const predictionComparable = MODEL_LABELS.includes(modelLabel);
+  const predictionMatches = modelLabelMatchesGt(modelLabel, gtLabel);
+  const comparisonText = predictionComparable ? (predictionMatches ? "一致" : "不一致") : "未输出";
+  const comparisonClass = predictionComparable && !predictionMatches ? "comparison-fail" : "comparison-neutral";
   $("#mediaDecisionSummary").innerHTML = `
     <span class="comparison-side-label comparison-side-gt">GT</span>${labelBadge(gtLabel, "缺失")}
     <b aria-hidden="true">→</b>

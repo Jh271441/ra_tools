@@ -293,7 +293,7 @@ function normalizedReviewRouteFilters(params) {
       LABELS.includes(value)
     ),
     modelLabel: parseFilterList(modelLabel).filter((value) =>
-      LABELS.includes(value)
+      MODEL_LABELS.includes(value)
     ),
     annotationAuthor: parseFilterList(params.get("reviewer")),
     reviewStatus,
@@ -320,7 +320,7 @@ function normalizedAnalysisRouteFilters(params) {
   );
   const modelLabels = parseFilterList(
     params.get("model_label") || params.get("annotation") || ""
-  ).filter((value) => LABELS.includes(value));
+  ).filter((value) => MODEL_LABELS.includes(value));
   const exclusionValue = String(params.get("exclusion") || "all").trim().toLowerCase();
   const exclusion = ["included", "excluded"].includes(exclusionValue)
     ? exclusionValue

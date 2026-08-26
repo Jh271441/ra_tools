@@ -805,6 +805,7 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .label-误触发 { border-color: rgba(248,113,113,.3); color: #fda4a4; background: rgba(248,113,113,.09); }
 .label-正确触发 { border-color: rgba(52,211,153,.3); color: #9ae6c9; background: rgba(52,211,153,.09); }
 .label-无需协助 { border-color: rgba(251,191,36,.3); color: #f7d78b; background: rgba(251,191,36,.09); }
+.label-真实卡住 { border-color: rgba(34,211,238,.35); color: #8ee7f5; background: rgba(34,211,238,.09); }
 .row-evidence {
   display: flex; flex-wrap: nowrap; align-items: center; gap: 3px;
   min-width: 0; max-width: 100%; overflow: hidden;
@@ -887,6 +888,8 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 .media-decision-summary > .label-正确触发 { border-color: rgba(52,211,153,.72); color: #bbf7d0; background: rgba(52,211,153,.2); }
 .comparison-summary > .label-无需协助,
 .media-decision-summary > .label-无需协助 { border-color: rgba(251,191,36,.72); color: #fde68a; background: rgba(251,191,36,.2); }
+.comparison-summary > .label-真实卡住,
+.media-decision-summary > .label-真实卡住 { border-color: rgba(34,211,238,.72); color: #b9f3fb; background: rgba(34,211,238,.18); }
 .comparison-summary > b,
 .media-decision-summary > b { color: var(--faint); font-size: 12px; font-weight: 600; }
 .comparison-summary > strong,
@@ -3751,6 +3754,7 @@ html[data-color-theme="light"] .analysis-confusion-table .confusion-mismatch { c
 html[data-color-theme="light"] .status-partial,
 html[data-color-theme="light"] .status-partially_succeeded,
 html[data-color-theme="light"] .label-无需协助 { color: #946100; }
+html[data-color-theme="light"] .label-真实卡住 { color: #08758d; }
 html[data-color-theme="light"] .status-queued,
 html[data-color-theme="light"] .status-running,
 html[data-color-theme="light"] .run-source-preview,

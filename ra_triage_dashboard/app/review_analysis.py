@@ -5,10 +5,14 @@ import re
 import unicodedata
 from typing import Any, Iterable
 
+from .model_labels import (
+    MODEL_LABELS,
+    TRIAGE_LABELS,
+    model_label_matches_gt,
+)
 from .review_workflow import derive_review_status, effective_expected_output
 
 
-TRIAGE_LABELS = ("误触发", "正确触发", "无需协助")
 COMPARISON_STATUSES = ("all", "mismatch", "match", "none")
 NONE_PREDICTION_LABEL = "NONE"
 
@@ -393,11 +397,13 @@ def build_review_reason_analysis(
         model_label = str(prediction.get("label") or "")
         comparison_status = ""
         if has_model_run:
-            if model_label not in TRIAGE_LABELS:
+            if model_label not in MODEL_LABELS:
                 comparison_status = "none"
             elif gt_label in TRIAGE_LABELS:
                 comparison_status = (
-                    "match" if model_label == gt_label else "mismatch"
+                    "match"
+                    if model_label_matches_gt(model_label, gt_label)
+                    else "mismatch"
                 )
         item["comparison_status"] = comparison_status
         item["reason_themes"] = (
@@ -457,7 +463,7 @@ def build_review_reason_analysis(
         "needs_gt_review": 0,
     }
     confusion_counts: dict[str, dict[str, int]] = {
-        gt_label: {model_label: 0 for model_label in TRIAGE_LABELS}
+        gt_label: {model_label: 0 for model_label in MODEL_LABELS}
         for gt_label in TRIAGE_LABELS
     }
     none_counts: dict[str, int] = {gt_label: 0 for gt_label in TRIAGE_LABELS}
@@ -504,18 +510,18 @@ def build_review_reason_analysis(
         if (
             has_model_run
             and gt_label in TRIAGE_LABELS
-            and model_label in TRIAGE_LABELS
+            and model_label in MODEL_LABELS
         ):
             comparable += 1
             confusion_counts[gt_label][model_label] += 1
-            if gt_label == model_label:
+            if model_label_matches_gt(model_label, gt_label):
                 matches += 1
             else:
                 mismatches += 1
         elif (
             has_model_run
             and gt_label in TRIAGE_LABELS
-            and model_label not in TRIAGE_LABELS
+            and model_label not in MODEL_LABELS
         ):
             missing_predictions += 1
             none_counts[gt_label] += 1
@@ -599,10 +605,10 @@ def build_review_reason_analysis(
             catalog=reason_catalog,
         ),
         "confusion": {
-            "labels": list(TRIAGE_LABELS)
+            "labels": list(MODEL_LABELS if has_model_run else TRIAGE_LABELS)
             + ([NONE_PREDICTION_LABEL] if has_model_run else []),
             "gt_labels": list(TRIAGE_LABELS),
-            "model_labels": list(TRIAGE_LABELS)
+            "model_labels": list(MODEL_LABELS if has_model_run else TRIAGE_LABELS)
             + ([NONE_PREDICTION_LABEL] if has_model_run else []),
             "total": comparable + missing_predictions,
             "comparable": comparable,
@@ -624,7 +630,7 @@ def build_review_reason_analysis(
                             ),
                         }
                         for model_label in (
-                            list(TRIAGE_LABELS)
+                            list(MODEL_LABELS if has_model_run else TRIAGE_LABELS)
                             + ([NONE_PREDICTION_LABEL] if has_model_run else [])
                         )
                     ],

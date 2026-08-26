@@ -10,10 +10,15 @@ from typing import Any, Iterable, Sequence
 from ..sanitization import redact_sensitive_fields
 from .shared import (
     LABELS,
+    MODEL_LABELS,
     REVIEW_STATUSES,
     _PostgresConnection,
     _json,
     _json_load,
+    model_label_matches_gt,
+    model_prediction_match_sql,
+    model_prediction_mismatch_sql,
+    model_prediction_none_sql,
     utc_now,
 )
 
@@ -1149,20 +1154,13 @@ class DatabaseCoreMixin:
             status_clauses: list[str] = []
             for status in comparison_statuses:
                 if status == "none":
-                    status_clauses.append(
-                        "(mp.model_label IS NULL OR mp.model_label NOT IN (?, ?, ?))"
-                    )
-                    params.extend(LABELS)
+                    clause, clause_params = model_prediction_none_sql()
                 elif status == "match":
-                    status_clauses.append(
-                        "(mp.model_label IN (?, ?, ?) AND mp.model_label = i.gt_label)"
-                    )
-                    params.extend(LABELS)
+                    clause, clause_params = model_prediction_match_sql()
                 else:
-                    status_clauses.append(
-                        "(mp.model_label IN (?, ?, ?) AND mp.model_label != i.gt_label)"
-                    )
-                    params.extend(LABELS)
+                    clause, clause_params = model_prediction_mismatch_sql()
+                status_clauses.append(clause)
+                params.extend(clause_params)
             where.append(f"({' OR '.join(status_clauses)})")
         authors = _multi_values(annotation_author)
         if authors:
@@ -1191,7 +1189,7 @@ class DatabaseCoreMixin:
             )
             params.extend(annotation_labels)
         model_labels = tuple(
-            value for value in _multi_values(model_label) if value in LABELS
+            value for value in _multi_values(model_label) if value in MODEL_LABELS
         )
         if model_labels:
             where.append(
@@ -1273,7 +1271,7 @@ class DatabaseCoreMixin:
         for row in rows:
             model_label = str(row["model_label"] or "")
             current_gt = str(row["gt_label"] or "")
-            comparable = current_gt in LABELS and model_label in LABELS
+            comparable = current_gt in LABELS and model_label in MODEL_LABELS
             results.append(
                 {
                     "issue_id": str(row["issue_id"]),
@@ -1311,7 +1309,8 @@ class DatabaseCoreMixin:
                         "confidence": row["model_confidence"],
                         "comparable": comparable,
                         "mismatch": bool(
-                            comparable and model_label != current_gt
+                            comparable
+                            and not model_label_matches_gt(model_label, current_gt)
                         ),
                     },
                 }

@@ -40,8 +40,10 @@ from .contracts import (
     MAX_SOURCE_PREVIEW_CELL_LENGTH,
     MIN_REVIEW_ATTACHMENT_DISK_FREE,
 )
-from .db import AnnotationConflictError, LABELS, REVIEW_STATUSES
+from .filenames import safe_filename as _safe_filename
+from .db import AnnotationConflictError, LABELS, MODEL_LABELS, REVIEW_STATUSES
 from .import_parsing import normalize_model_row, parse_source_bytes
+from .model_labels import canonical_model_label
 from .gt_sync import TRAIL_GT_FIELD, read_trail_gt_labels
 from .review_analysis import COMPARISON_STATUSES, build_review_reason_analysis
 from .review_workflow import (
@@ -76,11 +78,6 @@ logger = logging.getLogger("ra_triage_dashboard")
 
 def _detail(status_code: int, message: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail=message)
-
-
-def _safe_filename(name: str) -> str:
-    result = re.sub(r"[^A-Za-z0-9._-]+", "_", name or "upload")
-    return result.strip("._")[:120] or "upload"
 
 
 def _model_source_artifact_path(source_hash: str, filename: str) -> Path:
@@ -632,10 +629,12 @@ def _case_filter_kwargs(
     comparison_status = ",".join(comparison_values) if comparison_values else "all"
     if comparison_status != "all" and not model_run_id:
         raise _detail(400, "筛选模型对比关系时必须选择 Model Run。")
-    model_labels = _csv_filter_values(model_label)
+    model_labels = [
+        canonical_model_label(value) for value in _csv_filter_values(model_label)
+    ]
     for label in model_labels:
-        if label not in LABELS:
-            raise _detail(400, "model_label 不在三分类范围内。")
+        if label not in MODEL_LABELS:
+            raise _detail(400, "model_label 不在支持的三分类或 Stage1 范围内。")
     if model_labels and not model_run_id:
         raise _detail(400, "按模型标注筛选时必须选择 Model Run。")
     gt_labels = _csv_filter_values(gt_label)
@@ -764,7 +763,9 @@ def _review_reason_analysis_payload(
     statuses = _csv_filter_values(review_status)
     gt_labels = _csv_filter_values(gt_label)
     annotation_labels = _csv_filter_values(annotation_label)
-    model_labels = _csv_filter_values(model_label)
+    model_labels = [
+        canonical_model_label(value) for value in _csv_filter_values(model_label)
+    ]
     evidence_keys = _csv_filter_values(missing_evidence)
     for status in statuses:
         if status not in REVIEW_STATUSES:
@@ -776,8 +777,8 @@ def _review_reason_analysis_payload(
         if label not in LABELS:
             raise _detail(400, "annotation_label 不在三分类范围内。")
     for label in model_labels:
-        if label not in LABELS:
-            raise _detail(400, "model_label 不在三分类范围内。")
+        if label not in MODEL_LABELS:
+            raise _detail(400, "model_label 不在支持的三分类或 Stage1 范围内。")
     if model_labels and not model_run_id:
         raise _detail(400, "按模型预测筛选时必须选择 Model Run。")
     for key in evidence_keys:

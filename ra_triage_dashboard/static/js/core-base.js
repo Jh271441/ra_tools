@@ -4,6 +4,15 @@
  * ES modules without auditing cross-file function/state dependencies.
  */
 const LABELS = ["误触发", "正确触发", "无需协助"];
+const STAGE1_TRUE_STUCK_LABEL = "真实卡住";
+const MODEL_LABELS = [...LABELS, STAGE1_TRUE_STUCK_LABEL];
+function modelLabelMatchesGt(modelLabel, gtLabel) {
+  if (!MODEL_LABELS.includes(modelLabel) || !LABELS.includes(gtLabel)) return false;
+  if (modelLabel === STAGE1_TRUE_STUCK_LABEL) {
+    return gtLabel === "正确触发" || gtLabel === "无需协助";
+  }
+  return modelLabel === gtLabel;
+}
 const CASE_PAGE_SIZES = [10, 20, 50, 100];
 const DEFAULT_CASE_PAGE_SIZE = 20;
 const ANALYSIS_COMPARISON_STATUSES = ["all", "mismatch", "match", "none"];
