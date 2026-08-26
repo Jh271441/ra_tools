@@ -769,9 +769,11 @@ function renderReviewReasonAnalysis(data, { animatePies = true } = {}) {
     .join(" / ");
   const exclusion = data.scope?.exclusion || "all";
   const exclusionSuffix = exclusion === "all" ? "" : ` · ${analysisExclusionLabel(exclusion)}`;
-  $("#analysisReviewScope").textContent = run
+  const reviewScope = run
     ? `${run.name}${comparisonStatus === "all" ? "" : ` · ${comparisonLabels}`}${exclusionSuffix}`
     : `${uiText("全部最新 Review", "All latest reviews")}${exclusionSuffix}`;
+  $("#analysisReviewScope").textContent = reviewScope;
+  $("#analysisReviewScope").title = reviewScope;
   renderAnalysisReviewStatus(data);
   renderAnalysisClusterPanels(data, { animatePies });
   renderAnalysisConfusion(data);

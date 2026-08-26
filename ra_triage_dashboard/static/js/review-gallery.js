@@ -11,17 +11,25 @@ function reviewComparisonStatusForItem(item) {
   return prediction.mismatch ? "mismatch" : "match";
 }
 
+function issueCardReviewFlag(annotation) {
+  if (annotation?.is_excluded) {
+    return `<span class="issue-card-flag issue-card-flag-excluded" data-card-review-flag="excluded"><span class="ui-lang-zh">应该排除</span><span class="ui-lang-en">Exclude</span></span>`;
+  }
+  if (annotation?.review_status === "needs_gt_review") {
+    return `<span class="issue-card-flag issue-card-flag-needs-gt" data-card-review-flag="needs_gt_review"><span class="ui-lang-zh">GT 待复核</span><span class="ui-lang-en">Review GT</span></span>`;
+  }
+  return "";
+}
+
 function issueCard(item) {
   const isSelected = item.issue_id === state.selectedId;
   const rawTitle = String(item.title || item.scenario || "").trim();
   const title =
     rawTitle && !LABELS.includes(rawTitle) && rawTitle !== item.gt_label ? rawTitle : "";
-  const annotation = item.annotation?.label;
   const annotationRunId = String(item.annotation?.model_run_id || "").trim();
   const prediction = item.prediction?.label;
   const comparisonStatus = reviewComparisonStatusForItem(item);
   const comparisonMeta = REVIEW_COMPARISON_META[comparisonStatus];
-  const mismatch = comparisonStatus === "mismatch";
   const displayPrediction = prediction || (comparisonStatus === "none" ? "NONE" : "");
   const thumbnailUrl = safeSameOriginAssetUrl(item.thumbnail?.url);
   const thumbnailLabel = String(
@@ -40,6 +48,7 @@ function issueCard(item) {
   const historicalReview = Boolean(
     state.selectedRunId && annotationRunId && annotationRunId !== state.selectedRunId
   );
+  const reviewFlag = issueCardReviewFlag(item.annotation);
   return `
     <article class="issue-card ${isSelected ? "selected" : ""}" data-issue-id="${escapeHtml(item.issue_id)}">
       <button class="issue-card-open" type="button" data-open-issue="${escapeHtml(item.issue_id)}" aria-label="打开 ${escapeHtml(item.issue_id)} Review"></button>
@@ -56,7 +65,7 @@ function issueCard(item) {
             ${issueUrl ? `<a class="issue-id" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" data-card-link title="打开 Voyager Issue">${escapeHtml(item.issue_id)}</a>` : `<span class="issue-id">${escapeHtml(item.issue_id)}</span>`}
             ${evidenceRow}
           </div>
-          ${!mismatch ? labelBadge(annotation, t("gallery.pending_review")) : ""}
+          ${reviewFlag}
         </div>
         ${title ? `<div class="issue-title">${escapeHtml(title)}</div>` : ""}
         <div class="issue-card-labels">
@@ -85,6 +94,8 @@ function caseGallerySignature(items) {
       annotation: item.annotation
         ? {
             label: item.annotation.label || "",
+            review_status: item.annotation.review_status || "",
+            is_excluded: Boolean(item.annotation.is_excluded),
             author: item.annotation.author || "",
             author_verified: Boolean(item.annotation.author_verified),
             missing_evidence: item.annotation.missing_evidence || [],
