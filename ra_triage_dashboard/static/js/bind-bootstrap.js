@@ -308,6 +308,34 @@ function bindEvents() {
       } catch (error) { showToast(error.message, true); }
     }
   });
+  $("#mentionUserForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const input = $("#mentionUserName");
+    const username = String(input?.value || "").trim().toLowerCase();
+    if (!username) return showToast("请输入 LDAP 用户名。", true);
+    try {
+      await saveMentionUser(username, true);
+      input.value = "";
+      showToast("可 @ 人员已保存。");
+    } catch (error) { showToast(error.message, true); }
+  });
+  $("#mentionUserList")?.addEventListener("click", async (event) => {
+    const row = event.target.closest("[data-mention-user]");
+    if (!row) return;
+    const username = row.dataset.mentionUser;
+    try {
+      if (event.target.closest("[data-save-mention-user]")) {
+        await saveMentionUser(username, row.querySelector("[data-mention-enabled]").checked);
+        showToast("@ 人员状态已更新。");
+      } else if (event.target.closest("[data-remove-mention-user]")) {
+        const result = await api(`/api/mention-users/${encodeURIComponent(username)}`, { method: "DELETE" });
+        acknowledgeLocalChange(result);
+        await loadMentionUsers();
+        showToast("@ 人员已移除。");
+      }
+    } catch (error) { showToast(error.message, true); }
+  });
+  $("#analysisDiscussionForm")?.addEventListener("submit", saveAnalysisDiscussion);
   $("#predictFilteredButton").addEventListener("click", () => {
     const limit = predictionBatchLimit();
     if (state.caseTotal > limit) {
@@ -747,7 +775,7 @@ async function bootstrap() {
     } else if (initialRoute.page === "status") {
       initialPageRequests.push(loadStatus());
     } else if (initialRoute.page === "users") {
-      initialPageRequests.push(loadAccessUsers());
+      initialPageRequests.push(loadAccessUsers(), loadMentionUsers());
     } else if (initialRoute.page === "prediction") {
       initialPageRequests.push(loadPredictionConfig(), loadPredictionBatches());
     }

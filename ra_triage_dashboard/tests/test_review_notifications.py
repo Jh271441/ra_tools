@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from fastapi import HTTPException
 from starlette.requests import Request
 
 from ra_triage_dashboard.app.db import Database
@@ -76,6 +77,7 @@ class ReviewNotificationTest(unittest.TestCase):
             database = Database(Path(directory) / "triage.sqlite3")
             database.init()
             database.upsert_issues([{"issue_id": "cn1", "gt_label": "误触发"}], source="test", replace_gt=True)
+            database.set_mention_user(username="bob", enabled=True, actor="alice")
             with patch("ra_triage_dashboard.app.http_support.database", database), patch(
                 "ra_triage_dashboard.app.http_support._action_actor",
                 return_value=("alice", "kylin_ticket", True),
@@ -90,6 +92,29 @@ class ReviewNotificationTest(unittest.TestCase):
                 )
             self.assertEqual(annotation["notification"]["status"], "queued")
             self.assertEqual(annotation["notification"]["queued"], ["bob"])
+
+    def test_verified_identity_rejects_recipient_outside_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "triage.sqlite3")
+            database.init()
+            database.upsert_issues(
+                [{"issue_id": "cn1", "gt_label": "误触发"}],
+                source="test",
+                replace_gt=True,
+            )
+            with patch("ra_triage_dashboard.app.http_support.database", database), patch(
+                "ra_triage_dashboard.app.http_support._action_actor",
+                return_value=("alice", "kylin_ticket", True),
+            ), patch(
+                "ra_triage_dashboard.app.http_support.settings",
+                SimpleNamespace(dchat_notifications_enabled=True),
+            ):
+                with self.assertRaisesRegex(HTTPException, "不在可 @"):
+                    _create_annotation_record(
+                        issue_id="cn1",
+                        request=make_request(),
+                        body={"expected_output": "误触发", "note": "@unknown 请确认"},
+                    )
 
     def test_dchat_endpoint_and_review_url_are_fixed_and_encoded(self) -> None:
         self.assertEqual(

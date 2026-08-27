@@ -46,6 +46,34 @@ class DatabaseAccessMixin:
                     for name in names
                 ],
             )
+            conn.executemany(
+                """
+                INSERT INTO mention_users (
+                    username, enabled, created_by, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(username) DO NOTHING
+                """,
+                [(name, True, "bootstrap", now, now) for name in names],
+            )
+
+    def bootstrap_mention_users(self) -> None:
+        """Seed the notification directory from the ACL without overwriting choices."""
+
+        now = utc_now()
+        with self._write_lock, self.connect() as conn:
+            rows = conn.execute("SELECT username FROM access_users").fetchall()
+            conn.executemany(
+                """
+                INSERT INTO mention_users (
+                    username, enabled, created_by, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(username) DO NOTHING
+                """,
+                [
+                    (str(row["username"]), True, "bootstrap", now, now)
+                    for row in rows
+                ],
+            )
 
     def access_role(self, username: str) -> str:
         normalized = str(username or "").strip().lower()
@@ -103,6 +131,15 @@ class DatabaseAccessMixin:
                     """,
                     (normalized, normalized_role, actor, now, now),
                 )
+            conn.execute(
+                """
+                INSERT INTO mention_users (
+                    username, enabled, created_by, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(username) DO NOTHING
+                """,
+                (normalized, True, actor, now, now),
+            )
         return next(
             item for item in self.list_access_users() if item["username"] == normalized
         )
@@ -126,3 +163,69 @@ class DatabaseAccessMixin:
                 "DELETE FROM access_users WHERE username = ?", (normalized,)
             )
             return cursor.rowcount > 0
+
+    def list_mention_users(self, *, include_disabled: bool = False) -> list[dict[str, Any]]:
+        where = "" if include_disabled else "WHERE enabled = ?"
+        parameters: tuple[bool, ...] = () if include_disabled else (True,)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT username, enabled, created_by, created_at, updated_at
+                FROM mention_users
+                {where}
+                ORDER BY enabled DESC, username ASC
+                """,
+                parameters,
+            ).fetchall()
+        return [
+            {**{key: row[key] for key in row.keys()}, "enabled": bool(row["enabled"])}
+            for row in rows
+        ]
+
+    def set_mention_user(self, *, username: str, enabled: bool, actor: str) -> dict[str, Any]:
+        normalized = str(username or "").strip().lower()
+        if not normalized:
+            raise ValueError("用户名不能为空。")
+        now = utc_now()
+        with self._write_lock, self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO mention_users (
+                    username, enabled, created_by, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(username) DO UPDATE SET
+                    enabled = excluded.enabled,
+                    updated_at = excluded.updated_at
+                """,
+                (normalized, bool(enabled), actor, now, now),
+            )
+        return next(
+            item
+            for item in self.list_mention_users(include_disabled=True)
+            if item["username"] == normalized
+        )
+
+    def delete_mention_user(self, username: str) -> bool:
+        normalized = str(username or "").strip().lower()
+        with self._write_lock, self.connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM mention_users WHERE username = ?", (normalized,)
+            )
+        return cursor.rowcount > 0
+
+    def enabled_mention_recipients(self, usernames: Sequence[str]) -> list[str]:
+        normalized = list(dict.fromkeys(
+            str(value or "").strip().lower()
+            for value in usernames
+            if str(value or "").strip()
+        ))
+        if not normalized:
+            return []
+        placeholders = ",".join("?" for _ in normalized)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"SELECT username FROM mention_users WHERE enabled = ? AND username IN ({placeholders})",
+                (True, *normalized),
+            ).fetchall()
+        allowed = {str(row["username"]) for row in rows}
+        return [name for name in normalized if name in allowed]

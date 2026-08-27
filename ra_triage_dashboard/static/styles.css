@@ -625,7 +625,7 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
 .issue-media-preview:disabled { opacity: .72; cursor: wait; }
 .issue-thumbnail-status { position: absolute; top: 7px; right: 7px; z-index: 2; pointer-events: none; }
 .issue-card-body { min-height: 0; display: grid; align-content: start; gap: 6px; padding: 8px 9px 9px; }
-.issue-card-heading { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.issue-card-heading { min-width: 0; min-height: 19px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .issue-card-heading-main {
   min-width: 0; flex: 1 1 auto; display: flex; align-items: center; gap: 6px; overflow: hidden;
 }
@@ -1051,6 +1051,7 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 button.review-mention-chip { cursor: pointer; }
 button.review-mention-chip:hover { border-color: rgba(34,211,238,.62); background: rgba(34,211,238,.14); }
 .review-mention-chip.is-selected { border-color: rgba(167,139,250,.38); background: rgba(167,139,250,.1); color: #c4b5fd; }
+.review-mention-chip.is-invalid { border-color: rgba(248,113,113,.55); background: rgba(248,113,113,.1); color: #fca5a5; }
 /* Keep the whole save control as one pointer target.  The language spans are
    presentation-only, so clicks anywhere on the visible cyan surface submit
    through the native parent button. */
@@ -3899,6 +3900,7 @@ html[data-color-theme="light"] .analysis-pie-tooltip span { color: #5eead4; }
 html[data-color-theme="light"] .analysis-pie-tooltip small { color: #94a3b8; }
 html[data-color-theme="light"] .analysis-stat-card > strong { color: #08758d; }
 
+.access-page { display: grid; align-content: start; gap: 16px; }
 .access-panel { width: min(980px, 100%); max-width: 980px; margin-inline: auto; box-sizing: border-box; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--raised); }
 .access-heading h2 { margin: 4px 0; }
 .access-heading p { margin: 0; color: var(--faint); font-size: 12px; }
@@ -3909,5 +3911,6 @@ html[data-color-theme="light"] .analysis-stat-card > strong { color: #08758d; }
 .access-row { display: grid; grid-template-columns: minmax(180px, 1fr) 180px auto; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--raised); }
 .access-identity strong { display: block; }
 .access-identity small { color: var(--faint); }
+.access-enabled-toggle { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
 .access-row-actions { display: flex; justify-content: flex-end; gap: 7px; }
 @media (max-width: 760px) { .access-create, .access-row { grid-template-columns: 1fr; } .access-row-actions { justify-content: flex-start; } }

@@ -117,7 +117,8 @@ function renderTrailIssueEntryRow(entry = {}) {
     </label>
     <label>
       <span class="ui-lang-zh">排除说明（可选，写入 info）</span><span class="ui-lang-en">Exclusion note (optional; saved in info)</span>
-      <textarea data-trail-issue-entry-comment rows="2" placeholder="留空时使用默认说明；会写入 info.ra_triage_dashboard.should_exclude_comment。">${comment}</textarea>
+      <textarea data-trail-issue-entry-comment data-mention-composer rows="2" placeholder="留空时使用默认说明；可输入 @ldap，写入 info 并在提交成功后通知。">${comment}</textarea>
+      <div class="review-mention-composer" data-mention-composer-root aria-live="polite"></div>
     </label>
     <button class="button button-quiet trail-update-entry-remove" data-trail-issue-entry-remove type="button" aria-label="删除此行" title="删除此行">×</button>
     ${sourceMarkup}
@@ -138,6 +139,10 @@ function addTrailIssueEntryRow(entry = {}, { focus = true } = {}) {
   list.insertAdjacentHTML("beforeend", renderTrailIssueEntryRow(entry));
   syncTrailIssueEntryRemoveButtons();
   const row = list.lastElementChild;
+  bindReviewMentionComposer(
+    row?.querySelector("[data-trail-issue-entry-comment]"),
+    row?.querySelector("[data-mention-composer-root]")
+  );
   if (focus) row?.querySelector("[data-trail-issue-entry-id]")?.focus();
   return row;
 }
@@ -1717,6 +1722,7 @@ async function commitTrailIssueExclusion() {
     const stats = result?.stats || {};
     const readback = result?.readback || {};
     const localReview = result?.local_review || {};
+    const notificationQueued = Number(localReview.notification_queued_count || 0);
     const trailOk = typeof result?.trail_ok === "boolean" ? result.trail_ok : Boolean(result?.ok);
     const outsideDashboard = Array.isArray(localReview.not_in_dashboard_issue_ids)
       ? localReview.not_in_dashboard_issue_ids
@@ -1759,7 +1765,10 @@ async function commitTrailIssueExclusion() {
           ? outsideDashboard.length
             ? uiText(`Trail 已完成；${outsideDashboard.length} 条不在当前看板，未创建本地 Review 排除标记。`, `Trail completed; ${outsideDashboard.length} Issues are outside this dashboard and have no local Review mark.`)
             : uiText(`Trail 已完成；本地 Review 排除标记失败 ${localFailures.length} 条。`, `Trail completed; ${localFailures.length} local Review exclusion marks failed.`)
-          : uiText("Issue 屏蔽已提交，Trail 与判错复核排除标记均已更新。", "Issue shielding and Review exclusion marks were updated."),
+          : uiText(
+              `Issue 屏蔽已提交，Trail 与判错复核排除标记均已更新${notificationQueued ? `；DChat 通知已排队 ${notificationQueued} 人` : ""}。`,
+              `Issue shielding and Review exclusion marks were updated${notificationQueued ? `; ${notificationQueued} DChat notifications queued` : ""}.`
+            ),
       !trailOk
     );
     if (readback.complete && Number(localReview.requested_count || 0) > 0) {
@@ -1967,6 +1976,11 @@ function bindTrailAttributeUpdateEvents() {
     parseTrailIssueIds();
     clearTrailIssuePreview();
   });
+  $("#trailUpdateIssueEntries")?.querySelectorAll("[data-trail-issue-entry-comment]")
+    .forEach((textarea) => bindReviewMentionComposer(
+      textarea,
+      textarea.parentElement?.querySelector("[data-mention-composer-root]")
+    ));
   $("#trailUpdateIssueEntries")?.addEventListener("click", (event) => {
     const remove = event.target.closest("[data-trail-issue-entry-remove]");
     if (!remove || remove.disabled) return;

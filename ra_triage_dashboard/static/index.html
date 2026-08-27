@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-243`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-244`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -543,7 +543,8 @@
                         </label>
                         <label>
                           <span class="ui-lang-zh">排除说明（可选，写入 info）</span><span class="ui-lang-en">Exclusion note (optional; saved in info)</span>
-                          <textarea data-trail-issue-entry-comment rows="2" placeholder="留空时使用默认说明；会写入 info.ra_triage_dashboard.should_exclude_comment。"></textarea>
+                          <textarea data-trail-issue-entry-comment data-mention-composer rows="2" placeholder="留空时使用默认说明；可输入 @ldap；会写入 info.ra_triage_dashboard.should_exclude_comment，并在提交成功后通知。"></textarea>
+                          <div class="review-mention-composer" data-mention-composer-root aria-live="polite"></div>
                         </label>
                         <button class="button button-quiet trail-update-entry-remove" data-trail-issue-entry-remove type="button" aria-label="删除此行" title="删除此行" disabled>×</button>
                       </div>
@@ -985,10 +986,45 @@
               </form>
               <div class="access-list" id="accessUserList"><div class="no-asset" data-i18n="access.loading">正在加载用户权限…</div></div>
             </section>
+            <section class="access-panel">
+              <div class="access-heading">
+                <div>
+                  <span class="eyebrow">DCHAT DIRECTORY</span>
+                  <h2><span class="ui-lang-zh">可 @ 人员</span><span class="ui-lang-en">Mention directory</span></h2>
+                  <p><span class="ui-lang-zh">只控制评论中可被 @ 并接收 DChat 的人员，不授予看板写入或管理员权限。</span><span class="ui-lang-en">Controls mention and DChat eligibility only; it does not grant Dashboard write or admin access.</span></p>
+                </div>
+              </div>
+              <form class="access-create" id="mentionUserForm">
+                <label><span class="ui-lang-zh">LDAP 用户名</span><span class="ui-lang-en">LDAP username</span><input id="mentionUserName" maxlength="64" autocomplete="off" placeholder="例如 jasperchen" /></label>
+                <button class="button button-primary" type="submit"><span class="ui-lang-zh">添加可 @ 人员</span><span class="ui-lang-en">Add mention user</span></button>
+              </form>
+              <div class="access-list" id="mentionUserList"><div class="no-asset">正在加载可 @ 人员…</div></div>
+            </section>
           </section>
         </main>
       </div>
     </div>
+
+    <dialog class="dialog" id="analysisDiscussionDialog">
+      <form class="dialog-card" id="analysisDiscussionForm">
+        <div class="dialog-heading">
+          <div>
+            <h2><span class="ui-lang-zh">原因聚类 · @讨论</span><span class="ui-lang-en">Reason cluster · Discuss</span></h2>
+            <p class="dialog-copy" id="analysisDiscussionContext"></p>
+          </div>
+          <button class="icon-button" type="button" data-close="analysisDiscussionDialog" aria-label="Close">×</button>
+        </div>
+        <label class="issue-query-field">
+          <span class="ui-lang-zh">追加讨论</span><span class="ui-lang-en">Append discussion</span>
+          <textarea id="analysisDiscussionNote" data-mention-composer rows="5" maxlength="3500" placeholder="输入讨论内容，可用 @ldap 通知同事。"></textarea>
+          <div class="review-mention-composer" id="analysisDiscussionMentionComposer" data-mention-composer-root aria-live="polite"></div>
+        </label>
+        <div class="dialog-actions">
+          <button class="button button-quiet" type="button" data-close="analysisDiscussionDialog"><span class="ui-lang-zh">取消</span><span class="ui-lang-en">Cancel</span></button>
+          <button class="button button-primary" type="submit"><span class="ui-lang-zh">保存并通知</span><span class="ui-lang-en">Save and notify</span></button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog class="dialog issue-query-dialog" id="issueQueryDialog">
       <div class="dialog-card">
@@ -1377,7 +1413,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-243`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-244`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

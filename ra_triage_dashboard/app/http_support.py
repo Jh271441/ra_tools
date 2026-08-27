@@ -1334,9 +1334,21 @@ def _create_annotation_record(
         mentions = extract_review_mentions(note)
     except ValueError as exc:
         raise _detail(400, str(exc)) from exc
-    recipients = notification_recipients(mentions, author=author)
+    enabled_mentions = database.enabled_mention_recipients(mentions)
+    unsupported_mentions = [
+        username for username in mentions if username not in enabled_mentions
+    ]
+    if unsupported_mentions:
+        raise _detail(
+            400,
+            "以下用户不在可 @ / DChat 通知人员目录中："
+            + "、".join(f"@{item}" for item in unsupported_mentions),
+        )
+    recipients = notification_recipients(enabled_mentions, author=author)
     queued_recipients = (
-        recipients if settings.dchat_notifications_enabled and author_verified else []
+        recipients
+        if settings.dchat_notifications_enabled and author_verified
+        else []
     )
     annotation_kwargs: dict[str, Any] = {
         "issue_id": issue_id,

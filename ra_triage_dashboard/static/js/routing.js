@@ -151,6 +151,9 @@ function applyUiLanguage(language, { persist = true } = {}) {
     if (typeof renderAccessUsers === "function" && state.accessUsers) renderAccessUsers();
   } catch (_) {}
   try {
+    if (typeof renderMentionUsers === "function" && state.mentionUsers) renderMentionUsers();
+  } catch (_) {}
+  try {
     if (typeof renderRunManager === "function" && state.modelRuns?.length) renderRunManager();
   } catch (_) {}
   try {
@@ -767,6 +770,7 @@ function showPage(
   }
   if (target === "users" && loadPageData) {
     loadAccessUsers().catch((error) => showToast(error.message, true));
+    loadMentionUsers().catch((error) => showToast(error.message, true));
   }
   if (target === "review") setReviewView(issue);
   const routeOptions =

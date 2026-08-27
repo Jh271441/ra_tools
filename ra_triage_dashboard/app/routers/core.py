@@ -33,7 +33,7 @@ from ..http_support import (
 )
 from ..model_catalog import MODEL_ID_RE
 from ..dchat import dchat_credentials_status
-from ..review_mentions import MAX_REVIEW_MENTIONS
+from ..review_mentions import MAX_REVIEW_MENTIONS, normalize_mention_username
 from ..runtime import (
     APP_STARTED_AT,
     APP_STARTED_MONOTONIC,
@@ -431,6 +431,62 @@ async def delete_access_user(username: str, request: Request) -> dict[str, Any]:
         raise _detail(409, str(exc))
     if not deleted:
         raise _detail(404, "用户权限记录不存在。")
+    return {
+        "deleted": True,
+        "username": normalized,
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
+@router.get("/api/mention-users")
+async def list_mention_users(request: Request) -> dict[str, Any]:
+    identity = await asyncio.to_thread(request_identity, request, settings)
+    if not identity.verified or not identity.username:
+        raise _detail(403, "@ 人员目录需要已验证的 SSO 身份。")
+    is_admin = await asyncio.to_thread(database.access_role, identity.username) == "admin"
+    items = await asyncio.to_thread(
+        database.list_mention_users, include_disabled=is_admin
+    )
+    if not is_admin:
+        items = [
+            {"username": item["username"], "enabled": True}
+            for item in items
+        ]
+    return {"items": items}
+
+
+@router.put("/api/mention-users/{username}")
+async def set_mention_user(username: str, request: Request) -> dict[str, Any]:
+    identity = await asyncio.to_thread(_admin_identity, request)
+    normalized = normalize_mention_username(username)
+    if not normalized:
+        raise _detail(400, "用户名格式不合法。")
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        raise _detail(400, "请求 JSON 不合法。")
+    if not isinstance(body, dict) or not isinstance(body.get("enabled", True), bool):
+        raise _detail(400, "enabled 必须是布尔值。")
+    user = await asyncio.to_thread(
+        database.set_mention_user,
+        username=normalized,
+        enabled=body.get("enabled", True),
+        actor=identity.username,
+    )
+    return {
+        "user": user,
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
+@router.delete("/api/mention-users/{username}")
+async def delete_mention_user(username: str, request: Request) -> dict[str, Any]:
+    await asyncio.to_thread(_admin_identity, request)
+    normalized = normalize_mention_username(username)
+    if not normalized:
+        raise _detail(400, "用户名格式不合法。")
+    if not await asyncio.to_thread(database.delete_mention_user, normalized):
+        raise _detail(404, "@ 人员记录不存在。")
     return {
         "deleted": True,
         "username": normalized,

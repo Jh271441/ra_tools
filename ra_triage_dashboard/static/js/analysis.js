@@ -704,6 +704,7 @@ function renderAnalysisCases(data) {
             <span>${escapeHtml(annotation.author || "未记录复核人")}${annotation.author_verified ? " · SSO" : ""}</span>
             <span>${escapeHtml(reviewStatusLabel(annotation.review_status))} · ${formatTime(annotation.created_at)}</span>
             <span class="analysis-case-actions">
+              ${state.session?.read_only ? "" : `<button class="button button-quiet" type="button" data-analysis-discussion="${issueId}">@讨论</button>`}
               ${reviewUrl ? `<a class="text-link" href="${escapeHtml(reviewUrl)}" title="打开问题详情与 Review">问题详情</a>` : ""}
             </span>
           </div>
@@ -724,6 +725,13 @@ function renderAnalysisCases(data) {
         } finally {
           button.removeAttribute("aria-busy");
         }
+      });
+    });
+    target.querySelectorAll("[data-analysis-discussion]").forEach((button) => {
+      button.addEventListener("click", () => {
+        openAnalysisDiscussion(button.dataset.analysisDiscussion).catch((error) => {
+          showToast(error.message, true);
+        });
       });
     });
   }
@@ -748,6 +756,66 @@ function renderAnalysisCases(data) {
     if (!focused) jumpInput.value = String(page);
   }
   if (jumpButton) jumpButton.disabled = pageCount <= 1;
+}
+
+async function openAnalysisDiscussion(issueId) {
+  const caseData = await api(`/api/cases/${encodeURIComponent(issueId)}`);
+  const annotations = (caseData.annotations || []).filter((item) =>
+    String(item.model_run_id || "") === String(state.selectedRunId || "")
+  );
+  const annotation = annotations[0] || null;
+  state.analysisDiscussion = { issueId, annotation };
+  $("#analysisDiscussionContext").textContent = `${issueId} · ${state.selectedRunId || "未绑定 Run"}`;
+  const textarea = $("#analysisDiscussionNote");
+  textarea.value = "";
+  bindReviewMentionComposer(textarea, $("#analysisDiscussionMentionComposer"));
+  updateReviewMentionComposer(textarea, $("#analysisDiscussionMentionComposer"));
+  $("#analysisDiscussionDialog").showModal();
+  textarea.focus();
+}
+
+async function saveAnalysisDiscussion(event) {
+  event.preventDefault();
+  const context = state.analysisDiscussion;
+  const discussion = String($("#analysisDiscussionNote")?.value || "").trim();
+  if (!context?.issueId || !discussion) {
+    showToast("请输入讨论内容。", true);
+    return;
+  }
+  const previous = context.annotation || {};
+  // Preserve the prior reason for current-view continuity, but neutralize old
+  // @ tokens so a new discussion never re-notifies recipients from history.
+  const existingNote = String(previous.note || "").trim().replaceAll("@", "＠");
+  const author = String(state.session?.username || "").trim();
+  const prefix = author ? `[讨论 · ${author}] ` : "[讨论] ";
+  const note = `${existingNote}${existingNote ? "\n\n" : ""}${prefix}${discussion}`.slice(-4000);
+  const submit = event.submitter;
+  if (submit) submit.disabled = true;
+  try {
+    const result = await api(`/api/cases/${encodeURIComponent(context.issueId)}/annotations`, {
+      method: "POST",
+      body: JSON.stringify({
+        model_run_id: state.selectedRunId || String(previous.model_run_id || ""),
+        expected_previous_annotation_id: previous.id || null,
+        expected_output: annotationExpectedOutput(previous),
+        is_excluded: Boolean(previous.is_excluded),
+        tags: previous.tags || [],
+        missing_evidence: previous.missing_evidence || [],
+        note,
+        author,
+      }),
+    });
+    acknowledgeLocalChange(result);
+    $("#analysisDiscussionDialog").close();
+    state.analysisDiscussion = null;
+    const queued = result?.annotation?.notification?.queued?.length || 0;
+    showToast(`讨论已保存${queued ? `；DChat 通知已排队 ${queued} 人` : ""}。`);
+    await loadReviewReasonAnalysis();
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    if (submit) submit.disabled = false;
+  }
 }
 
 function renderReviewReasonAnalysis(data, { animatePies = true } = {}) {

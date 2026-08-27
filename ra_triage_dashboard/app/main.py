@@ -139,6 +139,7 @@ async def lifespan(_: FastAPI):
         writers=settings.sso_write_users,
         administrators=settings.team_default_managers,
     )
+    database.bootstrap_mention_users()
     database.seed_examples(EXAMPLE_CASES)
     # Local-only seed from baseline workbooks / registry. No Trail I/O.
     bootstrap_baseline()

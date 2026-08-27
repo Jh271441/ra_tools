@@ -650,6 +650,14 @@ class DatabaseCoreMixin:
                     updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS mention_users (
+                    username TEXT PRIMARY KEY,
+                    enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+                    created_by TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS issue_work_splits (
                     id TEXT PRIMARY KEY,
                     created_by TEXT NOT NULL DEFAULT '',
@@ -700,6 +708,7 @@ class DatabaseCoreMixin:
                 "review_tag_catalog",
                 "missing_evidence_catalog",
                 "access_users",
+                "mention_users",
                 "issue_work_splits",
                 "issue_work_assignments",
                 "trail_issue_exclusion_history",

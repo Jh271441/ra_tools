@@ -34,6 +34,8 @@ from ..http_support import (
 from ..import_parsing import parse_source_bytes
 from ..issue_tag_sources import HISTORICAL_EXCLUSION_SOURCE_KIND
 from ..runtime import baseline_registry, database, issue_tag_sources, settings
+from ..runtime import review_notification_dispatcher
+from ..review_mentions import extract_review_mentions, notification_recipients
 from ..review_workflow import derive_review_status
 from ..trail_exclusion_contracts import (
     TRAIL_COMMENT_PATH,
@@ -172,6 +174,20 @@ def _append_historical_source_note(note: str, source_note: str) -> str:
     return f"{current[:available].rstrip()}\n\n{source}"[:4000]
 
 
+def _append_exclusion_note(note: str, exclusion_note: str) -> str:
+    """Add the submitted Issue-exclusion comment to the new Review version."""
+
+    current = _as_text(note).strip()
+    exclusion = _as_text(exclusion_note).strip()
+    if not exclusion or exclusion in current:
+        return current[:4000]
+    suffix = f"问题排除说明：{exclusion}"
+    if not current:
+        return suffix[:4000]
+    available = max(0, 4000 - len(suffix) - 2)
+    return f"{current[:available].rstrip()}\n\n{suffix}"[:4000]
+
+
 def _mark_local_review_exclusions(
     issue_ids: list[str],
     *,
@@ -179,6 +195,8 @@ def _mark_local_review_exclusions(
     fallback_note: str = "",
     fallback_notes: Mapping[str, str] | None = None,
     source_notes: Mapping[str, str] | None = None,
+    mentions_by_issue: Mapping[str, list[str]] | None = None,
+    notification_recipients_by_issue: Mapping[str, list[str]] | None = None,
 ) -> dict[str, Any]:
     """Persist the direct shielding result into the Review exclusion flag.
 
@@ -186,9 +204,10 @@ def _mark_local_review_exclusions(
     stores ``应该排除`` in its append-only annotation history.  Once Trail has
     been written and read back successfully, create a new annotation in the
     same Run as the latest Review for each Issue.  Existing expected output,
-    Tags, missing evidence and note are copied unchanged; only
-    ``is_excluded`` is forced to ``True``.  Repeating the same operation is
-    idempotent when the latest annotation is already excluded.
+    Tags and missing evidence are copied unchanged; the submitted exclusion
+    comment is appended to the note and ``is_excluded`` is forced to ``True``.
+    Repeating the same operation is idempotent when the latest annotation is
+    already excluded.
     """
 
     normalized_ids = list(dict.fromkeys(
@@ -209,6 +228,7 @@ def _mark_local_review_exclusions(
         "failed_count": 0,
         "failed_issue_ids": [],
         "failure_messages": {},
+        "notification_queued_count": 0,
     }
     actor_name = _as_text(getattr(actor, "username", ""))
     actor_source = _as_text(getattr(actor, "source", "")) or "trail_attribute_update"
@@ -253,7 +273,7 @@ def _mark_local_review_exclusions(
                 previous_id = int(previous_id)
             else:
                 previous_id = None
-            database.create_annotation(
+            annotation_kwargs: dict[str, Any] = dict(
                 issue_id=issue_id,
                 model_run_id=_as_text(current.get("model_run_id")),
                 label=expected_output,
@@ -262,9 +282,11 @@ def _mark_local_review_exclusions(
                 tags=list(current.get("tags") or []),
                 missing_evidence=list(current.get("missing_evidence") or []),
                 note=_append_historical_source_note(
-                    _as_text(current.get("note"))
-                    or normalized_fallback_notes.get(issue_id)
-                    or normalized_fallback_note,
+                    _append_exclusion_note(
+                        _as_text(current.get("note")),
+                        normalized_fallback_notes.get(issue_id)
+                        or normalized_fallback_note,
+                    ),
                     normalized_source_notes.get(issue_id, ""),
                 ),
                 author=actor_name,
@@ -272,7 +294,19 @@ def _mark_local_review_exclusions(
                 author_verified=actor_verified,
                 expected_previous_annotation_id=previous_id,
             )
+            if mentions_by_issue is not None:
+                annotation_kwargs["mentions"] = list(
+                    mentions_by_issue.get(issue_id, [])
+                )
+            if notification_recipients_by_issue is not None:
+                annotation_kwargs["notification_recipients"] = list(
+                    notification_recipients_by_issue.get(issue_id, [])
+                )
+            database.create_annotation(**annotation_kwargs)
             result["marked_count"] += 1
+            result["notification_queued_count"] += len(
+                (notification_recipients_by_issue or {}).get(issue_id, [])
+            )
         except Exception as exc:
             result["failed_count"] += 1
             result["failed_issue_ids"].append(issue_id)
@@ -1851,6 +1885,36 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
             for item in (preview.get("items") or [])
             if _as_text(item.get("issue_id")).strip()
         }
+        mentions_by_issue: dict[str, list[str]] = {}
+        notification_recipients_by_issue: dict[str, list[str]] = {}
+        for issue_id, comment in effective_comments.items():
+            try:
+                mentions = extract_review_mentions(comment)
+            except ValueError as exc:
+                raise _detail(400, f"{issue_id}: {exc}") from exc
+            enabled_mentions = await asyncio.to_thread(
+                database.enabled_mention_recipients, mentions
+            )
+            unsupported = [
+                username
+                for username in mentions
+                if username not in enabled_mentions
+            ]
+            if unsupported:
+                raise _detail(
+                    400,
+                    f"{issue_id}: 以下用户不在可 @ / DChat 通知人员目录中："
+                    + "、".join(f"@{item}" for item in unsupported),
+                )
+            mentions_by_issue[issue_id] = mentions
+            recipients = notification_recipients(
+                enabled_mentions, author=identity.username
+            )
+            notification_recipients_by_issue[issue_id] = (
+                recipients
+                if settings.dchat_notifications_enabled and identity.verified
+                else []
+            )
         source_by_issue = {
             _as_text(item.get("issue_id")).strip(): _historical_source_payload(
                 item.get("source")
@@ -1979,6 +2043,8 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
                     actor=identity,
                     fallback_notes=effective_comments,
                     source_notes=source_notes,
+                    mentions_by_issue=mentions_by_issue,
+                    notification_recipients_by_issue=notification_recipients_by_issue,
                 )
                 if readback.get("complete")
                 else {
@@ -2066,6 +2132,8 @@ async def trail_issue_exclusion_commit(request: Request) -> dict[str, Any]:
             },
             message=history_message,
         )
+        if local_review.get("notification_queued_count"):
+            review_notification_dispatcher.wake()
     return {
         # ``ok`` is the Trail write contract.  A Trail-only Issue is already
         # correctly updated and should not make the operator retry it simply
