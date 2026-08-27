@@ -2689,7 +2689,8 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .text-link:hover, .text-link:focus-visible {
   color: var(--accent); background: rgba(34,211,238,.08); outline: none;
 }
-.trail-update-issue-line { display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; }
+.trail-update-issue-meta { display: flex; align-items: baseline; justify-content: center; gap: 6px; min-width: 0; margin-top: 3px; }
+.trail-update-issue-meta > small { margin-top: 0; }
 .trail-update-discussion-link { flex: 0 0 auto; display: inline-flex; margin: 0; }
 
 @container (max-width: 1499px) {
@@ -3309,7 +3310,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   .trail-update-table td.trail-update-empty::before { display: none; }
   .trail-update-table td small { min-width: 0; margin-top: 2px; overflow-wrap: anywhere; }
   .trail-update-issue { text-align: left; overflow-wrap: anywhere; }
-  .trail-update-issue-line { justify-content: flex-start; }
+  .trail-update-issue-meta { justify-content: flex-start; }
   .trail-update-source-cell > strong,
   .trail-update-info-cell > strong { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; text-align: left; }
   .trail-update-source-cell > strong { text-align: center; }
