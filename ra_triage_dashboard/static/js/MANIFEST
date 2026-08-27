@@ -16,6 +16,7 @@ analysis.js
 detail-media.js
 review-draft.js
 review-history.js
+review-mentions.js
 review-tags.js
 review-form.js
 media-dialog.js

@@ -28,6 +28,7 @@ from .db_parts.cases import DatabaseCasesMixin
 from .db_parts.core import DatabaseCoreMixin
 from .db_parts.gt_sync import DatabaseGtSyncMixin
 from .db_parts.review import DatabaseReviewMixin
+from .db_parts.notifications import DatabaseNotificationsMixin
 from .db_parts.runs import DatabaseRunsMixin
 
 class Database(
@@ -37,6 +38,7 @@ class Database(
     DatabaseCoreMixin,
     DatabaseGtSyncMixin,
     DatabaseReviewMixin,
+    DatabaseNotificationsMixin,
     DatabaseRunsMixin,
 ):
     """SQLite/PostgreSQL storage with versioned review history.

@@ -46,6 +46,7 @@ from .import_parsing import normalize_model_row, parse_source_bytes
 from .model_labels import canonical_model_label
 from .gt_sync import TRAIL_GT_FIELD, read_trail_gt_labels
 from .review_analysis import COMPARISON_STATUSES, build_review_reason_analysis
+from .review_mentions import extract_review_mentions, notification_recipients
 from .review_workflow import (
     derive_review_status,
     resolve_expected_output,
@@ -1328,6 +1329,15 @@ def _create_annotation_record(
             if expected_previous_annotation_id <= 0:
                 raise _detail(400, "expected_previous_annotation_id 不合法。")
     author, author_source, author_verified = _action_actor(request, body.get("author"))
+    note = _as_text(body.get("note"))
+    try:
+        mentions = extract_review_mentions(note)
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    recipients = notification_recipients(mentions, author=author)
+    queued_recipients = (
+        recipients if settings.dchat_notifications_enabled and author_verified else []
+    )
     annotation_kwargs: dict[str, Any] = {
         "issue_id": issue_id,
         "model_run_id": model_run_id,
@@ -1339,18 +1349,31 @@ def _create_annotation_record(
         "is_excluded": is_excluded,
         "tags": tags,
         "missing_evidence": missing_evidence,
-        "note": _as_text(body.get("note")),
+        "note": note,
         "author": author,
         "author_source": author_source,
         "author_verified": author_verified,
         "attachments": attachments,
+        "mentions": mentions,
+        "notification_recipients": queued_recipients,
     }
     if has_expected_previous:
         annotation_kwargs["expected_previous_annotation_id"] = expected_previous_annotation_id
     try:
-        return database.create_annotation(
+        annotation = database.create_annotation(
             **annotation_kwargs,
         )
+        annotation["notification"] = {
+            "mentions": mentions,
+            "queued": queued_recipients,
+            "status": (
+                "no_mentions" if not recipients
+                else "queued" if queued_recipients
+                else "disabled" if not settings.dchat_notifications_enabled
+                else "unverified_identity"
+            ),
+        }
+        return annotation
     except AnnotationConflictError as exc:
         raise _detail(409, str(exc))
     except ValueError as exc:

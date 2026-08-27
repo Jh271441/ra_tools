@@ -32,6 +32,8 @@ from ..http_support import (
     sync_authoritative_gt,
 )
 from ..model_catalog import MODEL_ID_RE
+from ..dchat import dchat_credentials_status
+from ..review_mentions import MAX_REVIEW_MENTIONS
 from ..runtime import (
     APP_STARTED_AT,
     APP_STARTED_MONOTONIC,
@@ -102,6 +104,13 @@ def _dashboard_config_payload() -> dict[str, Any]:
             "max_bytes_total": MAX_REVIEW_ATTACHMENTS_TOTAL_BYTES,
             "media_types": ["image/png", "image/jpeg", "image/webp"],
         },
+        "review_notifications": {
+            "enabled": settings.dchat_notifications_enabled,
+            "provider": "DChat",
+            "delivery_mode": settings.dchat_delivery_mode,
+            "mention_limit": MAX_REVIEW_MENTIONS,
+            "requires_verified_sso": True,
+        },
         "default_failure_only": bool(default_model_run_id),
         "batch_prediction": {
             "enabled": settings.batch_prediction_enabled,
@@ -171,6 +180,21 @@ async def health() -> dict[str, Any]:
         ],
         "batch_prediction_enabled": settings.batch_prediction_enabled,
         "autotriage_push_enabled": settings.autotriage_push_enabled,
+        "review_notifications": {
+            "enabled": settings.dchat_notifications_enabled,
+            "delivery_mode": settings.dchat_delivery_mode,
+            "credentials": await asyncio.to_thread(
+                dchat_credentials_status, settings.dchat_credentials_file
+            ) if settings.dchat_notifications_enabled and settings.dchat_delivery_mode == "openapi" else {
+                "ready": False,
+                "message": "DChat loopback 不使用真实凭据。"
+                if settings.dchat_delivery_mode == "loopback"
+                else "DChat 评论通知未启用。",
+            },
+            "outbox": await asyncio.to_thread(
+                database.review_notification_status
+            ),
+        },
         "model_gateway": model_catalog.status(),
         "change_revision": await asyncio.to_thread(database.change_revision),
         "storage": database.storage_label,
@@ -497,6 +521,19 @@ async def status(response: Response) -> dict[str, Any]:
         "batch_prediction_enabled": settings.batch_prediction_enabled,
         "autotriage_push_enabled": settings.autotriage_push_enabled,
         "batch_max_issues": settings.batch_max_issues,
+        "review_notifications": {
+            "enabled": settings.dchat_notifications_enabled,
+            "delivery_mode": settings.dchat_delivery_mode,
+            "credentials": await asyncio.to_thread(
+                dchat_credentials_status, settings.dchat_credentials_file
+            ) if settings.dchat_notifications_enabled and settings.dchat_delivery_mode == "openapi" else {
+                "ready": False,
+                "message": "DChat loopback 不使用真实凭据。"
+                if settings.dchat_delivery_mode == "loopback"
+                else "DChat 评论通知未启用。",
+            },
+            "outbox": await asyncio.to_thread(database.review_notification_status),
+        },
         "model_gateway": model_catalog.status(),
         "storage": database.storage_label,
         "database": database_state,

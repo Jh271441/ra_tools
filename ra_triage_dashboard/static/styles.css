@@ -1045,6 +1045,12 @@ textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
 
 .review-pane { max-height: none; overflow: visible; position: static; padding: 11px; }
 .review-form { display: grid; gap: 8px; }
+.review-mention-composer { min-height: 22px; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: -4px; }
+.review-mention-status { color: var(--faint); font-size: 10px; }
+.review-mention-chip { width: auto; min-height: 22px; padding: 2px 7px; border: 1px solid rgba(34,211,238,.28); border-radius: 999px; background: rgba(34,211,238,.07); color: #91ddeb; font: inherit; font-size: 10px; line-height: 1.2; }
+button.review-mention-chip { cursor: pointer; }
+button.review-mention-chip:hover { border-color: rgba(34,211,238,.62); background: rgba(34,211,238,.14); }
+.review-mention-chip.is-selected { border-color: rgba(167,139,250,.38); background: rgba(167,139,250,.1); color: #c4b5fd; }
 /* Keep the whole save control as one pointer target.  The language spans are
    presentation-only, so clicks anywhere on the visible cyan surface submit
    through the native parent button. */

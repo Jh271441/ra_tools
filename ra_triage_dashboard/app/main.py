@@ -27,6 +27,7 @@ from .runtime import (
     batch_prediction_runner,
     database,
     issue_tag_sources,
+    review_notification_dispatcher,
     settings,
 )
 from .routers import (
@@ -131,6 +132,7 @@ async def _authoritative_gt_sync_loop() -> None:
 async def lifespan(_: FastAPI):
     gt_sync_task: asyncio.Task[None] | None = None
     trail_sync_task: asyncio.Task[None] | None = None
+    review_notification_task: asyncio.Task[None] | None = None
     settings.ensure_directories()
     database.init()
     database.bootstrap_access_users(
@@ -157,11 +159,16 @@ async def lifespan(_: FastAPI):
             _authoritative_gt_sync_loop(),
             name="authoritative-gt-sync",
         )
+    if settings.dchat_notifications_enabled:
+        review_notification_task = asyncio.create_task(
+            review_notification_dispatcher.run(),
+            name="review-dchat-notifications",
+        )
     batch_prediction_runner.resume_queued_predictions()
     try:
         yield
     finally:
-        for task in (gt_sync_task, trail_sync_task):
+        for task in (review_notification_task, gt_sync_task, trail_sync_task):
             if task is not None:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):

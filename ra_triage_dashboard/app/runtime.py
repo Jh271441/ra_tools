@@ -24,6 +24,7 @@ from .model_catalog import ModelCatalog
 from .observability import BoundedObservationSet
 from .prompt_catalog import PromptCatalog
 from .settings import Settings
+from .review_notification_dispatcher import ReviewNotificationDispatcher
 from .web_paths import render_index_html, with_base_path
 
 
@@ -77,6 +78,7 @@ model_catalog = ModelCatalog(settings)
 prompt_catalog = PromptCatalog(settings.ra_auto_triage_root)
 autotriage_source = AutoTriageSource(settings.autotriage_api_base_url)
 batch_prediction_runner = BatchPredictionRunner(settings, database)
+review_notification_dispatcher = ReviewNotificationDispatcher(settings, database)
 issue_tag_sources = IssueTagSourceIndex()
 trail_sync_lock = threading.Lock()
 gt_sync_lock = threading.Lock()

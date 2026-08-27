@@ -413,6 +413,7 @@ class DatabaseCoreMixin:
                     is_excluded INTEGER NOT NULL DEFAULT 0,
                     tags_json TEXT NOT NULL DEFAULT '[]',
                     missing_evidence_json TEXT NOT NULL DEFAULT '[]',
+                    mentions_json TEXT NOT NULL DEFAULT '[]',
                     note TEXT NOT NULL DEFAULT '',
                     author TEXT NOT NULL DEFAULT '',
                     author_source TEXT NOT NULL DEFAULT 'legacy',
@@ -439,6 +440,26 @@ class DatabaseCoreMixin:
                 );
                 CREATE INDEX IF NOT EXISTS idx_review_attachments_annotation
                     ON review_attachments(annotation_id, created_at ASC);
+
+                CREATE TABLE IF NOT EXISTS review_notifications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    annotation_id INTEGER NOT NULL REFERENCES annotations(id) ON DELETE CASCADE,
+                    issue_id TEXT NOT NULL,
+                    recipient TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending'
+                        CHECK(status IN ('pending', 'sending', 'retry', 'sent', 'failed')),
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    next_attempt_at TEXT NOT NULL,
+                    last_error TEXT NOT NULL DEFAULT '',
+                    trace_id TEXT NOT NULL DEFAULT '',
+                    message_unique_id TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    sent_at TEXT,
+                    UNIQUE(annotation_id, recipient)
+                );
+                CREATE INDEX IF NOT EXISTS idx_review_notifications_dispatch
+                    ON review_notifications(status, next_attempt_at, id);
 
                 CREATE TABLE IF NOT EXISTS model_runs (
                     id TEXT PRIMARY KEY,
@@ -709,6 +730,7 @@ class DatabaseCoreMixin:
             self._ensure_column(conn, "annotations", "missing_evidence_json", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_column(conn, "annotations", "author_source", "TEXT NOT NULL DEFAULT 'legacy'")
             self._ensure_column(conn, "annotations", "author_verified", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "annotations", "mentions_json", "TEXT NOT NULL DEFAULT '[]'")
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_annotations_issue_run_id "
                 "ON annotations(issue_id, model_run_id, id DESC)"

@@ -137,6 +137,18 @@ class IdentityAccessTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Kylin ticket"):
                 Settings.from_env()
 
+    def test_production_rejects_dchat_loopback(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "DASHBOARD_DEPLOYMENT_MODE": "production",
+                "DASHBOARD_DCHAT_DELIVERY_MODE": "loopback",
+            },
+            clear=True,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "禁止.*loopback"):
+                Settings.from_env()
+
     def test_kylin_ticket_identity_is_server_validated(self) -> None:
         settings = SimpleNamespace(
             trust_proxy_identity_headers=False,

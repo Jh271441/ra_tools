@@ -41,6 +41,7 @@ from ..runtime import (
     database,
     issue_tag_sources,
     logger,
+    review_notification_dispatcher,
     settings,
     trail_detail_semaphore,
     video_index,
@@ -755,6 +756,8 @@ async def create_annotation(issue_id: str, request: Request) -> dict[str, Any]:
         request=request,
         body=body,
     )
+    if annotation.get("notification", {}).get("status") == "queued":
+        review_notification_dispatcher.wake()
     return {
         "annotation": annotation,
         "change_revision": await asyncio.to_thread(database.change_revision),
@@ -794,6 +797,8 @@ async def create_annotation_with_attachments(
         _public_review_attachment(attachment)
         for attachment in annotation.get("attachments", [])
     ]
+    if annotation.get("notification", {}).get("status") == "queued":
+        review_notification_dispatcher.wake()
     return {
         "annotation": annotation,
         "change_revision": await asyncio.to_thread(database.change_revision),

@@ -333,7 +333,10 @@ function syncReviewFormFromCase(caseData) {
     expectedOutputInput.dataset.selectionSource = expectedOutput ? "stored" : "empty";
   }
   const note = $("#annotationNote");
-  if (note) note.value = previous.note || "";
+  if (note) {
+    note.value = previous.note || "";
+    updateReviewMentionComposer(note);
+  }
   const author = $("#annotationAuthor");
   if (author && !(state.session.verified && state.session.username)) {
     author.value = state.session.username || previous.author || "";
@@ -473,9 +476,10 @@ function renderReview(caseData) {
           <input id="reviewStatusInput" type="hidden" value="${escapeHtml(reviewStatus)}" />
         </div>
         <label class="review-reason">
-          <span><span class="ui-lang-zh">模型为什么判错？</span><span class="ui-lang-en">Why was the model wrong?</span></span>
-          <textarea id="annotationNote" rows="2" placeholder="简要说明模型漏掉的关键证据，例如 routing、绕行空间或时序。">${escapeHtml(previous.note || "")}</textarea>
+          <span><span class="ui-lang-zh">模型为什么判错？可用 @ldap 通知同事</span><span class="ui-lang-en">Why was the model wrong? Use @ldap to notify teammates</span></span>
+          <textarea id="annotationNote" rows="2" placeholder="说明关键证据；例如：@zhangsan 请一起确认 routing 是否合理。">${escapeHtml(previous.note || "")}</textarea>
         </label>
+        <div class="review-mention-composer" id="reviewMentionComposer" aria-live="polite"></div>
         <details class="evidence-dropdown review-dropdown review-tag-dropdown">
           <summary>
             <span class="tag-group-label"><span class="ui-lang-zh">缺失信息（多选）</span><span class="ui-lang-en">Missing evidence</span></span>
@@ -673,6 +677,7 @@ function renderReview(caseData) {
     });
   }
   renderPendingReviewImages();
+  bindReviewMentionComposer($("#annotationNote"));
   const annotationForm = $("#annotationForm");
   const markDraftDirty = () => {
     state.reviewFormDirty = true;
@@ -964,8 +969,9 @@ async function saveAnnotation(event) {
       ];
       updateReviewHistory(state.selectedCase);
     }
+    const queuedCount = result?.annotation?.notification?.queued?.length || 0;
     showToast(
-      `已保存新的 review 版本${screenshotCount ? `和 ${screenshotCount} 张截图` : ""}。`
+      `已保存新的 review 版本${screenshotCount ? `和 ${screenshotCount} 张截图` : ""}${queuedCount ? `；DChat 通知已排队 ${queuedCount} 人` : ""}。`
     );
     refreshReviewDerivedData();
   } catch (error) {
