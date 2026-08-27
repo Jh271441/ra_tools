@@ -147,6 +147,29 @@ def build_review_notification_text(
     return "\n".join(lines)[:_MAX_DCHAT_TEXT_LENGTH]
 
 
+def build_comment_notification_text(
+    *,
+    issue_id: str,
+    author: str,
+    body: str,
+    review_url: str,
+    is_reply: bool = False,
+) -> str:
+    excerpt = str(body or "").strip()
+    if len(excerpt) > 1200:
+        excerpt = excerpt[:1199] + "…"
+    action = "回复了你的评论" if is_reply else "在评论中提到了你"
+    lines = [
+        "**【RA Triage】评论通知**",
+        "",
+        f"{_markdown_plaintext(author or '一位同事')} 在 `{_markdown_plaintext(issue_id)}` 中{action}：",
+    ]
+    if excerpt:
+        lines.extend(["", f"> {_markdown_plaintext(excerpt).replace(chr(10), chr(10) + '> ')}"])
+    lines.extend(["", f"[查看评论]({review_url})"])
+    return "\n".join(lines)[:_MAX_DCHAT_TEXT_LENGTH]
+
+
 def build_review_url(return_url: str, *, issue_id: str, model_run_id: str = "") -> str:
     parsed = urlparse(return_url)
     query = {"issue": issue_id}

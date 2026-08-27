@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-251`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-252`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -1005,23 +1005,25 @@
       </div>
     </div>
 
-    <dialog class="dialog" id="analysisDiscussionDialog">
+    <dialog class="dialog comment-thread-dialog" id="analysisDiscussionDialog">
       <form class="dialog-card" id="analysisDiscussionForm">
         <div class="dialog-heading">
           <div>
-            <h2><span class="ui-lang-zh">原因聚类 · @讨论</span><span class="ui-lang-en">Reason cluster · Discuss</span></h2>
+            <h2><span class="ui-lang-zh">评论</span><span class="ui-lang-en">Comments</span></h2>
             <p class="dialog-copy" id="analysisDiscussionContext"></p>
           </div>
           <button class="icon-button" type="button" data-close="analysisDiscussionDialog" aria-label="Close">×</button>
         </div>
-        <label class="issue-query-field">
-          <span class="ui-lang-zh">追加讨论</span><span class="ui-lang-en">Append discussion</span>
-          <textarea id="analysisDiscussionNote" data-mention-composer rows="5" maxlength="3500" placeholder="输入讨论内容；输入 @ 可通知同事。"></textarea>
+        <div class="comment-thread-list" id="analysisDiscussionThread" aria-live="polite"></div>
+        <div class="comment-reply-context" id="analysisDiscussionReplyContext" hidden></div>
+        <label class="issue-query-field" id="analysisDiscussionComposer">
+          <span class="ui-lang-zh">添加评论</span><span class="ui-lang-en">Add comment</span>
+          <textarea id="analysisDiscussionNote" data-mention-composer rows="4" maxlength="3500" placeholder="输入评论；输入 @ 可通知同事。"></textarea>
           <div class="review-mention-composer" id="analysisDiscussionMentionComposer" data-mention-composer-root aria-live="polite"></div>
         </label>
         <div class="dialog-actions">
-          <button class="button button-quiet" type="button" data-close="analysisDiscussionDialog"><span class="ui-lang-zh">取消</span><span class="ui-lang-en">Cancel</span></button>
-          <button class="button button-primary" type="submit"><span class="ui-lang-zh">保存并通知</span><span class="ui-lang-en">Save and notify</span></button>
+          <button class="button button-quiet" type="button" data-close="analysisDiscussionDialog"><span class="ui-lang-zh">关闭</span><span class="ui-lang-en">Close</span></button>
+          <button class="button button-primary" id="analysisDiscussionSubmit" type="submit"><span class="ui-lang-zh">发表评论</span><span class="ui-lang-en">Post comment</span></button>
         </div>
       </form>
     </dialog>
@@ -1413,7 +1415,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-251`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-252`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

@@ -4,7 +4,7 @@
 flowchart LR
   U[Verified SSO user] --> F{Comment surface}
   F --> R[Failure review]
-  F --> A[Reason cluster @discussion]
+  F --> A[Reason cluster comments]
   F --> T[Issue exclusion note]
   D[(mention_users)] --> C[Shared mention composer]
   D --> V[Server-side recipient validation]
@@ -15,10 +15,12 @@ flowchart LR
   A --> V
   T --> V
   V -->|unsupported / disabled| X[400; no mutation]
-  V -->|allowed| N[(annotations + review_notifications)]
+  V -->|comment| CDB[(review_comments + comment_notifications)]
+  V -->|Review / exclusion note| N[(annotations + review_notifications)]
   T -->|validate before mutation| W[Trail info write + readback]
   W -->|verified| N
-  N --> Q[Async outbox dispatcher]
+  CDB --> Q[Async outbox dispatcher]
+  N --> Q
   Q --> O[DChat OpenAPI]
   O --> P[LDAP recipient]
 ```
@@ -39,14 +41,21 @@ multiple mentions follow the token under the caret. It opens above or below
 according to the remaining viewport space and repositions while the textarea
 or page scrolls. The current verified user remains a valid candidate and can
 deliberately notify themself as a follow-up reminder.
-The same versioned discussion dialog is available from reason-analysis rows
-and Review exclusion candidate rows. Each exclusion-row action carries that
-row's model Run binding; saving appends a Review version and refreshes the local
-candidate aggregate, but never commits a Trail write.
-Every submitted comment is parsed again by the server, limited to ten unique
-recipients, and rejected if any recipient is absent or disabled. Annotation and
-outbox rows commit in one database transaction. DChat delivery is asynchronous,
-so a temporary DChat failure cannot roll back a saved Review.
+The same comment-thread dialog is available from reason-analysis rows and
+Review exclusion candidate rows. Each entry carries its model Run binding, so
+the authoritative thread key is `issue_id + model_run_id`. Comments are
+append-only rows in `review_comments`; they do not append an annotation and
+cannot change the Review conclusion, tags, evidence, or exclusion flag.
+
+A reply stores `reply_to_id` and renders the parent author/excerpt. The browser
+prefills `@parent`, while the server independently adds the enabled parent
+author to the effective DChat recipient set. This makes reverse notification
+reliable even if a client omits the visible token. Every submitted comment is
+parsed again by the server, limited to ten explicit mentions, and rejected if
+an explicitly mentioned recipient is absent or disabled. Comment and
+`comment_notifications` outbox rows commit in one database transaction. DChat
+delivery is asynchronous, so a temporary DChat failure cannot roll back a
+saved comment or Review.
 
 For direct Issue exclusion, all comments are validated before the first Trail
 write. Only after Trail reports a complete successful readback does the server

@@ -10,6 +10,7 @@ from .dchat import (
     DChatLoopbackClient,
     DChatSendError,
     build_review_notification_text,
+    build_comment_notification_text,
     build_review_url,
 )
 
@@ -28,6 +29,7 @@ class ReviewNotificationDispatcher:
 
     async def run(self) -> None:
         await asyncio.to_thread(self.database.recover_review_notifications)
+        await asyncio.to_thread(self.database.recover_comment_notifications)
         while True:
             handled = await asyncio.to_thread(self._dispatch_one)
             if handled:
@@ -44,9 +46,12 @@ class ReviewNotificationDispatcher:
 
     def _dispatch_one(self) -> bool:
         now = datetime.now(timezone.utc)
-        item = self.database.claim_review_notification(
-            now=now.isoformat(timespec="seconds")
-        )
+        timestamp = now.isoformat(timespec="seconds")
+        item = self.database.claim_comment_notification(now=timestamp)
+        notification_kind = "comment"
+        if item is None:
+            item = self.database.claim_review_notification(now=timestamp)
+            notification_kind = "review"
         if item is None:
             return False
         notification_id = int(item["id"])
@@ -65,18 +70,36 @@ class ReviewNotificationDispatcher:
                 issue_id=str(item["issue_id"]),
                 model_run_id=str(item.get("model_run_id") or ""),
             )
-            text = build_review_notification_text(
-                issue_id=str(item["issue_id"]),
-                author=str(item.get("author") or ""),
-                note=str(item.get("note") or ""),
-                review_url=review_url,
-            )
+            if notification_kind == "comment":
+                text = build_comment_notification_text(
+                    issue_id=str(item["issue_id"]),
+                    author=str(item.get("author") or ""),
+                    body=str(item.get("body") or ""),
+                    review_url=review_url,
+                    is_reply=(
+                        bool(item.get("reply_to_id"))
+                        and str(item.get("recipient") or "").lower()
+                        == str(item.get("reply_to_author") or "").lower()
+                    ),
+                )
+            else:
+                text = build_review_notification_text(
+                    issue_id=str(item["issue_id"]),
+                    author=str(item.get("author") or ""),
+                    note=str(item.get("note") or ""),
+                    review_url=review_url,
+                )
             result = client.send_to_username(str(item["recipient"]), text)
         except DChatSendError as exc:
             attempts = int(item.get("attempt_count") or 1)
             terminal = not exc.transient or attempts >= self.settings.dchat_max_attempts
             delay_seconds = min(300, 2 ** min(attempts, 8))
-            self.database.defer_review_notification(
+            defer = (
+                self.database.defer_comment_notification
+                if notification_kind == "comment"
+                else self.database.defer_review_notification
+            )
+            defer(
                 notification_id,
                 next_attempt_at=(now + timedelta(seconds=delay_seconds)).isoformat(
                     timespec="seconds"
@@ -96,7 +119,12 @@ class ReviewNotificationDispatcher:
                 notification_id,
             )
             attempts = int(item.get("attempt_count") or 1)
-            self.database.defer_review_notification(
+            defer = (
+                self.database.defer_comment_notification
+                if notification_kind == "comment"
+                else self.database.defer_review_notification
+            )
+            defer(
                 notification_id,
                 next_attempt_at=(now + timedelta(seconds=30)).isoformat(
                     timespec="seconds"
@@ -105,7 +133,12 @@ class ReviewNotificationDispatcher:
                 terminal=attempts >= self.settings.dchat_max_attempts,
             )
             return True
-        self.database.complete_review_notification(
+        complete = (
+            self.database.complete_comment_notification
+            if notification_kind == "comment"
+            else self.database.complete_review_notification
+        )
+        complete(
             notification_id,
             trace_id=result.trace_id,
             message_unique_id=result.message_unique_id,

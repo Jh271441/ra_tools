@@ -194,6 +194,9 @@ async def health() -> dict[str, Any]:
             "outbox": await asyncio.to_thread(
                 database.review_notification_status
             ),
+            "comment_outbox": await asyncio.to_thread(
+                database.comment_notification_status
+            ),
         },
         "model_gateway": model_catalog.status(),
         "change_revision": await asyncio.to_thread(database.change_revision),
@@ -589,6 +592,9 @@ async def status(response: Response) -> dict[str, Any]:
                 else "DChat 评论通知未启用。",
             },
             "outbox": await asyncio.to_thread(database.review_notification_status),
+            "comment_outbox": await asyncio.to_thread(
+                database.comment_notification_status
+            ),
         },
         "model_gateway": model_catalog.status(),
         "storage": database.storage_label,

@@ -791,7 +791,7 @@ function renderTrailAttributePreview(data) {
     const sourceRun = trailUpdateSourceRun(model, data, item);
     const status = trailUpdateStatusMeta(item.trail_update_status || "not_checked");
     return `<tr class="${ready ? "" : "is-invalid"}">
-      <td data-label="Issue"><strong class="trail-update-issue">${escapeHtml(item.issue_id || "—")}</strong><div class="trail-update-issue-meta"><small>${escapeHtml(item.title || item.scenario || "")}</small>${state.session?.read_only ? "" : `<button class="analysis-discussion-link trail-update-discussion-link" type="button" data-trail-update-discussion="${escapeHtml(item.issue_id || "")}" data-model-run-id="${escapeHtml(review.model_run_id || model.run_id || "")}">@讨论</button>`}</div></td>
+      <td data-label="Issue"><strong class="trail-update-issue">${escapeHtml(item.issue_id || "—")}</strong><div class="trail-update-issue-meta"><small>${escapeHtml(item.title || item.scenario || "")}</small><button class="analysis-discussion-link trail-update-discussion-link" type="button" data-trail-update-discussion="${escapeHtml(item.issue_id || "")}" data-model-run-id="${escapeHtml(review.model_run_id || model.run_id || "")}">评论</button></div></td>
       <td data-label="GT">${labelBadge(item.gt_label, "—")}</td>
       <td data-label="模型 label">${labelBadge(model.label, "未输出")}<small>${ready ? "" : uiText("label 不在三分类契约内", "label is outside the contract")}</small></td>
       <td data-label="模型 reason"><div class="trail-update-reason" title="${escapeHtml(model.reason || "模型未返回 reason")}">${escapeHtml(model.reason || "模型未返回 reason")}</div><small>${escapeHtml(formatModelConfidence(model.confidence))} confidence</small></td>

@@ -461,6 +461,41 @@ class DatabaseCoreMixin:
                 CREATE INDEX IF NOT EXISTS idx_review_notifications_dispatch
                     ON review_notifications(status, next_attempt_at, id);
 
+                CREATE TABLE IF NOT EXISTS review_comments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE CASCADE,
+                    model_run_id TEXT NOT NULL DEFAULT '',
+                    body TEXT NOT NULL,
+                    author TEXT NOT NULL,
+                    author_source TEXT NOT NULL DEFAULT 'legacy',
+                    author_verified INTEGER NOT NULL DEFAULT 0,
+                    mentions_json TEXT NOT NULL DEFAULT '[]',
+                    reply_to_id INTEGER REFERENCES review_comments(id),
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_review_comments_thread
+                    ON review_comments(issue_id, model_run_id, id ASC);
+
+                CREATE TABLE IF NOT EXISTS comment_notifications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    comment_id INTEGER NOT NULL REFERENCES review_comments(id) ON DELETE CASCADE,
+                    issue_id TEXT NOT NULL,
+                    recipient TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending'
+                        CHECK(status IN ('pending', 'sending', 'retry', 'sent', 'failed')),
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    next_attempt_at TEXT NOT NULL,
+                    last_error TEXT NOT NULL DEFAULT '',
+                    trace_id TEXT NOT NULL DEFAULT '',
+                    message_unique_id TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    sent_at TEXT,
+                    UNIQUE(comment_id, recipient)
+                );
+                CREATE INDEX IF NOT EXISTS idx_comment_notifications_dispatch
+                    ON comment_notifications(status, next_attempt_at, id);
+
                 CREATE TABLE IF NOT EXISTS model_runs (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -709,6 +744,7 @@ class DatabaseCoreMixin:
                 "missing_evidence_catalog",
                 "access_users",
                 "mention_users",
+                "review_comments",
                 "issue_work_splits",
                 "issue_work_assignments",
                 "trail_issue_exclusion_history",

@@ -704,7 +704,7 @@ function renderAnalysisCases(data) {
             <span>${escapeHtml(annotation.author || "未记录复核人")}${annotation.author_verified ? " · SSO" : ""}</span>
             <span>${escapeHtml(reviewStatusLabel(annotation.review_status))} · ${formatTime(annotation.created_at)}</span>
             <span class="analysis-case-actions">
-              ${state.session?.read_only ? "" : `<button class="analysis-discussion-link" type="button" data-analysis-discussion="${issueId}">@讨论</button>`}
+              <button class="analysis-discussion-link" type="button" data-analysis-discussion="${issueId}" data-model-run-id="${escapeHtml(state.selectedRunId || "")}">评论</button>
               ${reviewUrl ? `<a class="text-link" href="${escapeHtml(reviewUrl)}" title="打开问题详情与 Review">问题详情</a>` : ""}
             </span>
           </div>
@@ -762,19 +762,103 @@ async function openAnalysisDiscussion(
   issueId,
   { runId = state.selectedRunId || "", source = "analysis" } = {}
 ) {
-  const caseData = await api(`/api/cases/${encodeURIComponent(issueId)}`);
-  const annotations = (caseData.annotations || []).filter((item) =>
-    String(item.model_run_id || "") === String(runId || "")
-  );
-  const annotation = annotations[0] || null;
-  state.analysisDiscussion = { issueId, annotation, runId, source };
+  const normalizedRunId = String(runId || "");
+  state.analysisDiscussion = {
+    issueId,
+    runId: normalizedRunId,
+    source,
+    replyTo: null,
+    comments: [],
+  };
   $("#analysisDiscussionContext").textContent = `${issueId} · ${runId || "未绑定 Run"}`;
   const textarea = $("#analysisDiscussionNote");
   textarea.value = "";
+  $("#analysisDiscussionComposer").hidden = Boolean(state.session?.read_only);
+  $("#analysisDiscussionSubmit").hidden = Boolean(state.session?.read_only);
+  renderAnalysisDiscussionReplyContext();
+  $("#analysisDiscussionThread").innerHTML =
+    `<div class="comment-thread-empty">正在加载评论…</div>`;
   bindReviewMentionComposer(textarea, $("#analysisDiscussionMentionComposer"));
   updateReviewMentionComposer(textarea, $("#analysisDiscussionMentionComposer"));
   $("#analysisDiscussionDialog").showModal();
+  const result = await api(
+    `/api/cases/${encodeURIComponent(issueId)}/comments?model_run_id=${encodeURIComponent(normalizedRunId)}`
+  );
+  if (!state.analysisDiscussion || state.analysisDiscussion.issueId !== issueId) return;
+  state.analysisDiscussion.comments = result.comments || [];
+  renderAnalysisDiscussionThread();
+  updateAnalysisDiscussionCount(issueId, normalizedRunId, Number(result.count || 0));
   textarea.focus();
+}
+
+function updateAnalysisDiscussionCount(issueId, runId, count) {
+  document.querySelectorAll("[data-analysis-discussion], [data-trail-update-discussion]").forEach((button) => {
+    const buttonIssue = button.dataset.analysisDiscussion || button.dataset.trailUpdateDiscussion;
+    if (String(buttonIssue || "") !== String(issueId || "")) return;
+    if (String(button.dataset.modelRunId || "") !== String(runId || "")) return;
+    button.textContent = count > 0 ? `评论 · ${count}` : "评论";
+  });
+}
+
+function renderAnalysisDiscussionThread() {
+  const context = state.analysisDiscussion;
+  const target = $("#analysisDiscussionThread");
+  if (!target || !context) return;
+  const comments = context.comments || [];
+  if (!comments.length) {
+    target.innerHTML = `<div class="comment-thread-empty">还没有评论，可以发起第一条讨论。</div>`;
+    return;
+  }
+  target.innerHTML = comments.map((comment) => {
+    const replyContext = comment.reply_to_id
+      ? `<div class="comment-reply-quote">回复 @${escapeHtml(comment.reply_to_author || "评论人")}：${escapeHtml(String(comment.reply_to_body || "").slice(0, 120))}</div>`
+      : "";
+    return `<article class="comment-thread-item" data-comment-id="${Number(comment.id)}">
+      <div class="comment-thread-meta">
+        <strong>@${escapeHtml(comment.author || "unknown")}</strong>
+        <span>${comment.author_verified ? "SSO · " : ""}${escapeHtml(formatTime(comment.created_at))}</span>
+      </div>
+      ${replyContext}
+      <div class="comment-thread-body">${escapeHtml(comment.body || "")}</div>
+      ${state.session?.read_only ? "" : `<button class="analysis-discussion-link comment-reply-button" type="button" data-comment-reply="${Number(comment.id)}">回复</button>`}
+    </article>`;
+  }).join("");
+  target.querySelectorAll("[data-comment-reply]").forEach((button) => {
+    button.addEventListener("click", () =>
+      beginAnalysisDiscussionReply(Number(button.dataset.commentReply))
+    );
+  });
+  target.scrollTop = target.scrollHeight;
+}
+
+function beginAnalysisDiscussionReply(commentId) {
+  const context = state.analysisDiscussion;
+  const comment = context?.comments?.find(
+    (item) => Number(item.id) === Number(commentId)
+  );
+  if (!context || !comment) return;
+  context.replyTo = comment;
+  const textarea = $("#analysisDiscussionNote");
+  const prefix = `@${comment.author} `;
+  if (!String(textarea.value || "").trim()) textarea.value = prefix;
+  renderAnalysisDiscussionReplyContext();
+  updateReviewMentionComposer(textarea, $("#analysisDiscussionMentionComposer"));
+  textarea.focus();
+  textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+}
+
+function renderAnalysisDiscussionReplyContext() {
+  const target = $("#analysisDiscussionReplyContext");
+  const reply = state.analysisDiscussion?.replyTo;
+  if (!target) return;
+  target.hidden = !reply;
+  target.innerHTML = reply
+    ? `<span>正在回复 <strong>@${escapeHtml(reply.author || "unknown")}</strong></span><button type="button" data-cancel-comment-reply>取消回复</button>`
+    : "";
+  target.querySelector("[data-cancel-comment-reply]")?.addEventListener("click", () => {
+    if (state.analysisDiscussion) state.analysisDiscussion.replyTo = null;
+    renderAnalysisDiscussionReplyContext();
+  });
 }
 
 async function saveAnalysisDiscussion(event) {
@@ -785,39 +869,36 @@ async function saveAnalysisDiscussion(event) {
     showToast("请输入讨论内容。", true);
     return;
   }
-  const previous = context.annotation || {};
-  // Preserve the prior reason for current-view continuity, but neutralize old
-  // @ tokens so a new discussion never re-notifies recipients from history.
-  const existingNote = String(previous.note || "").trim().replaceAll("@", "＠");
   const author = String(state.session?.username || "").trim();
-  const prefix = author ? `[讨论 · ${author}] ` : "[讨论] ";
-  const note = `${existingNote}${existingNote ? "\n\n" : ""}${prefix}${discussion}`.slice(-4000);
   const submit = event.submitter;
   if (submit) submit.disabled = true;
   try {
-    const result = await api(`/api/cases/${encodeURIComponent(context.issueId)}/annotations`, {
+    const result = await api(`/api/cases/${encodeURIComponent(context.issueId)}/comments`, {
       method: "POST",
       body: JSON.stringify({
-        model_run_id: String(context.runId || previous.model_run_id || ""),
-        expected_previous_annotation_id: previous.id || null,
-        expected_output: annotationExpectedOutput(previous),
-        is_excluded: Boolean(previous.is_excluded),
-        tags: previous.tags || [],
-        missing_evidence: previous.missing_evidence || [],
-        note,
+        model_run_id: String(context.runId || ""),
+        body: discussion,
+        reply_to_id: context.replyTo?.id || null,
         author,
       }),
     });
     acknowledgeLocalChange(result);
-    $("#analysisDiscussionDialog").close();
-    const queued = result?.annotation?.notification?.queued?.length || 0;
-    showToast(`讨论已保存${queued ? `；DChat 通知已排队 ${queued} 人` : ""}。`);
-    state.analysisDiscussion = null;
-    if (context.source === "trail-update") {
-      await loadTrailAttributePreview(true);
-    } else {
-      await loadReviewReasonAnalysis();
-    }
+    context.comments.push(result.comment);
+    context.replyTo = null;
+    $("#analysisDiscussionNote").value = "";
+    renderAnalysisDiscussionReplyContext();
+    updateReviewMentionComposer(
+      $("#analysisDiscussionNote"),
+      $("#analysisDiscussionMentionComposer")
+    );
+    renderAnalysisDiscussionThread();
+    updateAnalysisDiscussionCount(
+      context.issueId,
+      context.runId,
+      Number(result.comment_count || context.comments.length)
+    );
+    const queued = result?.notification?.queued?.length || 0;
+    showToast(`评论已发表${queued ? `；DChat 通知已排队 ${queued} 人` : ""}。`);
   } catch (error) {
     showToast(error.message, true);
   } finally {

@@ -25,6 +25,7 @@ from .db_parts.shared import (
 from .db_parts.access import DatabaseAccessMixin
 from .db_parts.batch import DatabaseBatchMixin
 from .db_parts.cases import DatabaseCasesMixin
+from .db_parts.comments import DatabaseCommentsMixin
 from .db_parts.core import DatabaseCoreMixin
 from .db_parts.gt_sync import DatabaseGtSyncMixin
 from .db_parts.review import DatabaseReviewMixin
@@ -35,6 +36,7 @@ class Database(
     DatabaseAccessMixin,
     DatabaseBatchMixin,
     DatabaseCasesMixin,
+    DatabaseCommentsMixin,
     DatabaseCoreMixin,
     DatabaseGtSyncMixin,
     DatabaseReviewMixin,
