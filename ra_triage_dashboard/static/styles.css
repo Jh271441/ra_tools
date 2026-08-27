@@ -625,7 +625,7 @@ html[data-sidebar-pref="collapsed"] .sidebar-collapse > span:first-child {
 .issue-media-preview:disabled { opacity: .72; cursor: wait; }
 .issue-thumbnail-status { position: absolute; top: 7px; right: 7px; z-index: 2; pointer-events: none; }
 .issue-card-body { min-height: 0; display: grid; align-content: start; gap: 6px; padding: 8px 9px 9px; }
-.issue-card-heading { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.issue-card-heading { min-width: 0; min-height: 19px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .issue-card-heading-main {
   min-width: 0; flex: 1 1 auto; display: flex; align-items: center; gap: 6px; overflow: hidden;
 }

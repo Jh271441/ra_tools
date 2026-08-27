@@ -23,9 +23,6 @@ function issueCardReviewFlag(annotation) {
 
 function issueCard(item) {
   const isSelected = item.issue_id === state.selectedId;
-  const rawTitle = String(item.title || item.scenario || "").trim();
-  const title =
-    rawTitle && !LABELS.includes(rawTitle) && rawTitle !== item.gt_label ? rawTitle : "";
   const annotationRunId = String(item.annotation?.model_run_id || "").trim();
   const prediction = item.prediction?.label;
   const comparisonStatus = reviewComparisonStatusForItem(item);
@@ -67,7 +64,6 @@ function issueCard(item) {
           </div>
           ${reviewFlag}
         </div>
-        ${title ? `<div class="issue-title">${escapeHtml(title)}</div>` : ""}
         <div class="issue-card-labels">
           <span class="issue-label-pair"><small>GT</small>${labelBadge(item.gt_label, "—")}</span>
           <span class="issue-label-pair"><small class="ui-lang-zh">模型</small><small class="ui-lang-en">Model</small>${displayPrediction ? labelBadge(displayPrediction, "—") : labelBadge("", "—")}</span>
@@ -83,7 +79,6 @@ function caseGallerySignature(items) {
     selectedId: state.selectedId,
     items: (items || []).map((item) => ({
       issue_id: item.issue_id,
-      title: item.title || item.scenario || "",
       gt_label: item.gt_label || "",
       prediction: item.prediction
         ? {
