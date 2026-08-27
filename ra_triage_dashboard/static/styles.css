@@ -2680,8 +2680,15 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
   color: var(--faint); font-size: 10px; line-height: 1.45;
 }
 .analysis-case-meta > span { white-space: nowrap; }
-.analysis-case-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.text-link { color: #86dce4; }
+.analysis-case-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.analysis-discussion-link, .text-link {
+  width: auto; padding: 0; border: 0; border-radius: 3px; color: #86dce4;
+  background: transparent; font: inherit; line-height: inherit; text-decoration: none;
+}
+.analysis-discussion-link:hover, .analysis-discussion-link:focus-visible,
+.text-link:hover, .text-link:focus-visible {
+  color: var(--accent); background: rgba(34,211,238,.08); outline: none;
+}
 
 @container (max-width: 1499px) {
   .issue-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }

@@ -704,7 +704,7 @@ function renderAnalysisCases(data) {
             <span>${escapeHtml(annotation.author || "未记录复核人")}${annotation.author_verified ? " · SSO" : ""}</span>
             <span>${escapeHtml(reviewStatusLabel(annotation.review_status))} · ${formatTime(annotation.created_at)}</span>
             <span class="analysis-case-actions">
-              ${state.session?.read_only ? "" : `<button class="button button-quiet" type="button" data-analysis-discussion="${issueId}">@讨论</button>`}
+              ${state.session?.read_only ? "" : `<button class="analysis-discussion-link" type="button" data-analysis-discussion="${issueId}">@讨论</button>`}
               ${reviewUrl ? `<a class="text-link" href="${escapeHtml(reviewUrl)}" title="打开问题详情与 Review">问题详情</a>` : ""}
             </span>
           </div>
