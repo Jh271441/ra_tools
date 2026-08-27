@@ -1124,15 +1124,38 @@ def _normalise_review_image(content: bytes) -> tuple[bytes, str, str, int, int]:
 async def _store_review_attachments(
     uploads: list[UploadFile],
 ) -> tuple[list[dict[str, Any]], list[Path]]:
+    return await _store_image_attachments(
+        uploads,
+        destination=settings.review_attachments_dir,
+        noun="截图",
+    )
+
+
+async def _store_comment_attachments(
+    uploads: list[UploadFile],
+) -> tuple[list[dict[str, Any]], list[Path]]:
+    return await _store_image_attachments(
+        uploads,
+        destination=settings.comment_attachments_dir,
+        noun="评论图片",
+    )
+
+
+async def _store_image_attachments(
+    uploads: list[UploadFile],
+    *,
+    destination: Path,
+    noun: str,
+) -> tuple[list[dict[str, Any]], list[Path]]:
     if len(uploads) > MAX_REVIEW_ATTACHMENTS:
-        raise _detail(400, f"每次最多粘贴 {MAX_REVIEW_ATTACHMENTS} 张截图。")
+        raise _detail(400, f"每次最多添加 {MAX_REVIEW_ATTACHMENTS} 张{noun}。")
     prepared: list[tuple[dict[str, Any], bytes]] = []
     raw_total_bytes = 0
     total_bytes = 0
     for upload in uploads:
         content = await upload.read(MAX_REVIEW_ATTACHMENT_BYTES + 1)
         if not content:
-            raise _detail(400, "截图文件为空。")
+            raise _detail(400, f"{noun}文件为空。")
         if len(content) > MAX_REVIEW_ATTACHMENT_BYTES:
             raise _detail(413, "单张截图不能超过 8 MB。")
         raw_total_bytes += len(content)
@@ -1167,26 +1190,30 @@ async def _store_review_attachments(
         )
 
     return await asyncio.to_thread(
-        _persist_review_attachments,
+        _persist_image_attachments,
         prepared,
         total_bytes,
+        destination,
+        noun,
     )
 
 
-def _persist_review_attachments(
+def _persist_image_attachments(
     prepared: list[tuple[dict[str, Any], bytes]],
     total_bytes: int,
+    destination: Path,
+    noun: str,
 ) -> tuple[list[dict[str, Any]], list[Path]]:
-    """Persist normalized Review images outside the asyncio event loop."""
+    """Persist normalized Review/comment images outside the asyncio event loop."""
 
-    root = settings.review_attachments_dir.resolve()
+    root = destination.resolve()
     root.mkdir(parents=True, exist_ok=True)
     if (
         prepared
-        and database.review_attachment_storage_bytes() + total_bytes
+        and database.image_attachment_storage_bytes() + total_bytes
         > MAX_REVIEW_ATTACHMENT_STORAGE_BYTES
     ):
-        raise _detail(507, "Review 截图已达到 20 GB 存储配额，请联系管理员清理或扩容。")
+        raise _detail(507, f"{noun}已达到 20 GB 存储配额，请联系管理员清理或扩容。")
     if prepared and shutil.disk_usage(root).free < total_bytes + MIN_REVIEW_ATTACHMENT_DISK_FREE:
         raise _detail(507, "截图存储空间不足，请联系管理员。")
     temp_paths: list[Path] = []
@@ -1194,7 +1221,7 @@ def _persist_review_attachments(
     try:
         for record, content in prepared:
             stored_name = str(record["stored_name"])
-            path = (settings.review_attachments_dir / stored_name).resolve()
+            path = (destination / stored_name).resolve()
             if root not in path.parents:
                 raise _detail(400, "截图存储路径非法。")
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -1220,6 +1247,18 @@ def _public_review_attachment(attachment: dict[str, Any]) -> dict[str, Any]:
         "height": int(attachment["height"]),
         "created_at": attachment.get("created_at"),
         "url": _public_path(f"/api/review-attachments/{attachment['id']}"),
+    }
+
+
+def _public_comment_attachment(attachment: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": attachment["id"],
+        "media_type": attachment["media_type"],
+        "size_bytes": int(attachment["size_bytes"]),
+        "width": int(attachment["width"]),
+        "height": int(attachment["height"]),
+        "created_at": attachment.get("created_at"),
+        "url": _public_path(f"/api/comment-attachments/{attachment['id']}"),
     }
 
 

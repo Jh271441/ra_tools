@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import ssl
 import stat
 import urllib.error
@@ -155,7 +156,11 @@ def build_comment_notification_text(
     review_url: str,
     is_reply: bool = False,
 ) -> str:
-    excerpt = str(body or "").strip()
+    excerpt = re.sub(
+        r"!\[[^\]\n]*\]\(attachment:[A-Za-z0-9-]{1,80}\)",
+        "[图片]",
+        str(body or ""),
+    ).strip()
     if len(excerpt) > 1200:
         excerpt = excerpt[:1199] + "…"
     action = "回复了你的评论" if is_reply else "在评论中提到了你"

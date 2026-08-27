@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import threading
 from pathlib import Path
 from typing import Any, List, Optional
@@ -23,11 +24,13 @@ from ..http_support import (
     _create_annotation_record,
     _detail,
     _public_batch_job,
+    _public_comment_attachment,
     _public_path,
     _public_review_attachment,
     _render_case_thumbnail,
     _review_tag_catalog,
     _store_review_attachments,
+    _store_comment_attachments,
     _thumbnail_cache_path,
     _voyager_issue_url,
     media_for_issue,
@@ -56,6 +59,17 @@ router = APIRouter()
 # issue_id -> (source_path, mtime_ns, size, dest_jpeg)
 _thumbnail_dest_cache: dict[str, tuple[str, int, int, Path]] = {}
 _thumbnail_encode_gate = threading.Semaphore(8)
+_COMMENT_ATTACHMENT_TOKEN_RE = re.compile(r"^[A-Za-z0-9-]{1,80}$")
+
+
+def _public_review_comment(comment: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **comment,
+        "attachments": [
+            _public_comment_attachment(attachment)
+            for attachment in comment.get("attachments", [])
+        ],
+    }
 
 
 @router.get("/api/cases/{issue_id}/comments")
@@ -74,7 +88,10 @@ async def list_review_comments(
         issue_id=issue_id,
         model_run_id=str(model_run_id or "").strip(),
     )
-    return {"comments": comments, "count": count}
+    return {
+        "comments": [_public_review_comment(comment) for comment in comments],
+        "count": count,
+    }
 
 
 @router.post("/api/cases/{issue_id}/comments")
@@ -85,6 +102,78 @@ async def create_review_comment(issue_id: str, request: Request) -> dict[str, An
         raise _detail(400, "评论请求必须是 JSON。")
     if not isinstance(body, dict):
         raise _detail(400, "评论请求必须是 JSON 对象。")
+    return await _create_review_comment_record(issue_id, request, body)
+
+
+@router.post("/api/cases/{issue_id}/comments-with-attachments")
+async def create_review_comment_with_attachments(
+    issue_id: str,
+    request: Request,
+    payload: str = Form(...),
+    attachments: Optional[List[UploadFile]] = File(None),
+) -> dict[str, Any]:
+    try:
+        body = json.loads(payload)
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise _detail(400, "评论 payload 不是合法 JSON。") from exc
+    if not isinstance(body, dict):
+        raise _detail(400, "评论 payload 必须是 JSON 对象。")
+    uploads = attachments or []
+    raw_tokens = body.get("attachment_tokens", [])
+    if not isinstance(raw_tokens, list) or len(raw_tokens) != len(uploads):
+        raise _detail(400, "评论图片占位符与上传文件不匹配。")
+    tokens = [str(token or "").strip() for token in raw_tokens]
+    if (
+        len(set(tokens)) != len(tokens)
+        or any(not _COMMENT_ATTACHMENT_TOKEN_RE.fullmatch(token) for token in tokens)
+    ):
+        raise _detail(400, "评论图片占位符不合法。")
+    records: list[dict[str, Any]] = []
+    paths: list[Path] = []
+    try:
+        records, paths = await _store_comment_attachments(uploads)
+        text = _as_text(body.get("body"))
+        for token, record in zip(tokens, records):
+            placeholder = f"attachment:{token}"
+            if placeholder not in text:
+                raise _detail(400, "评论内容缺少已选图片的 Markdown 占位符。")
+            text = text.replace(placeholder, f"attachment:{record['id']}")
+        body["body"] = text
+        return await _create_review_comment_record(
+            issue_id,
+            request,
+            body,
+            attachments=records,
+        )
+    except Exception:
+        # The comment insert is transactional, but response assembly happens
+        # afterwards.  If a later count/revision lookup fails, keep files that
+        # are already referenced by the committed comment instead of turning
+        # a recoverable HTTP error into broken images.
+        persisted = False
+        if records:
+            try:
+                persisted = bool(
+                    await asyncio.to_thread(
+                        database.get_comment_attachment,
+                        str(records[0]["id"]),
+                    )
+                )
+            except Exception:
+                persisted = True
+        if not persisted:
+            for path in paths:
+                await asyncio.to_thread(path.unlink, missing_ok=True)
+        raise
+
+
+async def _create_review_comment_record(
+    issue_id: str,
+    request: Request,
+    body: dict[str, Any],
+    *,
+    attachments: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     text = _as_text(body.get("body")).strip()
     if not text:
         raise _detail(400, "评论内容不能为空。")
@@ -152,6 +241,7 @@ async def create_review_comment(issue_id: str, request: Request) -> dict[str, An
             mentions=mentions,
             notification_recipients=queued_recipients,
             reply_to_id=reply_to_id,
+            attachments=attachments,
         )
     except ValueError as exc:
         raise _detail(400, str(exc)) from exc
@@ -163,7 +253,7 @@ async def create_review_comment(issue_id: str, request: Request) -> dict[str, An
         model_run_id=model_run_id,
     )
     return {
-        "comment": comment,
+        "comment": _public_review_comment(comment),
         "comment_count": comment_count,
         "notification": {
             "mentions": mentions,
@@ -177,6 +267,28 @@ async def create_review_comment(issue_id: str, request: Request) -> dict[str, An
         },
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
+
+
+@router.get("/api/comment-attachments/{attachment_id}")
+async def get_comment_attachment(attachment_id: str) -> FileResponse:
+    attachment = await asyncio.to_thread(
+        database.get_comment_attachment, attachment_id
+    )
+    if attachment is None:
+        raise _detail(404, "评论图片不存在。")
+    root = settings.comment_attachments_dir.resolve()
+    path = (root / attachment["stored_name"]).resolve()
+    if root not in path.parents or not await asyncio.to_thread(path.is_file):
+        raise _detail(404, "评论图片文件不存在。")
+    return FileResponse(
+        path,
+        media_type=attachment["media_type"],
+        headers={
+            "Content-Disposition": "inline",
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, max-age=31536000, immutable",
+        },
+    )
 
 
 def _resolve_thumbnail_file(issue_id: str) -> Path | None:

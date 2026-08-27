@@ -10,6 +10,7 @@ _DEFAULT_MENTION_DISPLAY_NAMES = {
     "caoliwen_i": "曹立文",
     "xuhaoxuan_i": "徐浩轩",
     "chadyang": "杨超",
+    "liangxianghui": "梁祥辉",
 }
 
 

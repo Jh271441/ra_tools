@@ -630,6 +630,10 @@ class Settings:
         return self.data_dir / "review_attachments"
 
     @property
+    def comment_attachments_dir(self) -> Path:
+        return self.data_dir / "comment_attachments"
+
+    @property
     def case_thumbnails_dir(self) -> Path:
         return self.data_dir / "case_thumbnails"
 
@@ -638,6 +642,7 @@ class Settings:
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
         self.uploads_dir.mkdir(parents=True, exist_ok=True)
         self.review_attachments_dir.mkdir(parents=True, exist_ok=True)
+        self.comment_attachments_dir.mkdir(parents=True, exist_ok=True)
         self.case_thumbnails_dir.mkdir(parents=True, exist_ok=True)
         self.batch_bag_cache_dir.mkdir(parents=True, exist_ok=True)
         if self.storage_backend == "sqlite":

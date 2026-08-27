@@ -22,7 +22,7 @@ function reviewMentions(value) {
 }
 
 function reviewMentionCandidates(query = "") {
-  const normalizedQuery = String(query || "").toLowerCase();
+  const normalizedQuery = String(query || "").trim().toLocaleLowerCase("zh-CN");
   const seen = new Set();
   return (state.mentionUsers || [])
     .filter((item) => item.enabled !== false)
@@ -39,12 +39,14 @@ function reviewMentionCandidates(query = "") {
       /^[A-Za-z0-9._-]{1,64}$/.test(item.username) &&
       (!normalizedQuery ||
         item.username.includes(normalizedQuery) ||
-        item.displayName.toLowerCase().includes(normalizedQuery))
+        item.displayName.toLocaleLowerCase("zh-CN").includes(normalizedQuery))
     )
     .sort((left, right) => {
-      const leftPrefix = left.username.startsWith(normalizedQuery) ? 0 : 1;
-      const rightPrefix = right.username.startsWith(normalizedQuery) ? 0 : 1;
-      return leftPrefix - rightPrefix || left.username.localeCompare(right.username);
+      const leftPrefix = left.username.startsWith(normalizedQuery) ||
+        left.displayName.toLocaleLowerCase("zh-CN").startsWith(normalizedQuery) ? 0 : 1;
+      const rightPrefix = right.username.startsWith(normalizedQuery) ||
+        right.displayName.toLocaleLowerCase("zh-CN").startsWith(normalizedQuery) ? 0 : 1;
+      return leftPrefix - rightPrefix || left.displayName.localeCompare(right.displayName, "zh-CN");
     });
 }
 
@@ -56,29 +58,126 @@ function reviewMentionDisplayName(username) {
   return String(item?.display_name || item?.username || username || "");
 }
 
-function reviewCommentBodyMarkup(value) {
+function reviewCommentPlainInlineMarkup(value) {
+  return escapeHtml(String(value || ""))
+    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/~~([^~\n]+)~~/g, "<del>$1</del>")
+    .replace(/(^|[\s(>])\*([^*\n]+)\*(?=$|[\s).,!?:;，。！？：；])/g, "$1<em>$2</em>");
+}
+
+function reviewCommentInlineMarkup(value, attachments = []) {
   const source = String(value || "");
+  const attachmentMap = new Map(
+    (attachments || []).map((attachment) => [
+      String(attachment.id || ""),
+      String(attachment.url || attachment.previewUrl || ""),
+    ])
+  );
+  const tokenPattern = /!\[([^\]\n]{0,120})\]\(attachment:([A-Za-z0-9-]{1,80})\)|\[([^\]\n]{1,200})\]\((https?:\/\/[^\s)]+)\)|`([^`\n]+)`|(^|[^A-Za-z0-9._@-])@(?:\{([A-Za-z0-9._-]{1,64})\}|([A-Za-z0-9._-]{1,64}))/g;
   let markup = "";
   let cursor = 0;
-  for (const match of source.matchAll(REVIEW_MENTION_RE)) {
-    markup += escapeHtml(source.slice(cursor, match.index));
-    const boundary = String(match[1] || "");
-    const username = String(match[2] || match[3] || "").toLowerCase();
-    markup += `${escapeHtml(boundary)}<span class="comment-mention" title="@${escapeHtml(username)}">@${escapeHtml(reviewMentionDisplayName(username))}</span>`;
+  for (const match of source.matchAll(tokenPattern)) {
+    markup += reviewCommentPlainInlineMarkup(source.slice(cursor, match.index));
+    if (match[2]) {
+      const attachmentId = String(match[2]);
+      const imageUrl = attachmentMap.get(attachmentId);
+      const alt = String(match[1] || "评论图片");
+      markup += imageUrl
+        ? `<a class="comment-markdown-image" href="${escapeHtml(imageUrl)}" target="_blank" rel="noreferrer"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(alt)}" loading="lazy" /></a>`
+        : `<span class="comment-markdown-image-missing">[图片不可用]</span>`;
+    } else if (match[4]) {
+      markup += `<a href="${escapeHtml(match[4])}" target="_blank" rel="noreferrer">${escapeHtml(match[3])}</a>`;
+    } else if (match[5]) {
+      markup += `<code>${escapeHtml(match[5])}</code>`;
+    } else {
+      const boundary = String(match[6] || "");
+      const username = String(match[7] || match[8] || "").toLowerCase();
+      markup += `${escapeHtml(boundary)}<span class="comment-mention" title="@${escapeHtml(username)}">@${escapeHtml(reviewMentionDisplayName(username))}</span>`;
+    }
     cursor = Number(match.index) + match[0].length;
   }
-  return markup + escapeHtml(source.slice(cursor));
+  return markup + reviewCommentPlainInlineMarkup(source.slice(cursor));
+}
+
+function reviewCommentBodyMarkup(value, attachments = []) {
+  const lines = String(value || "").replace(/\r\n?/g, "\n").split("\n");
+  const blocks = [];
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index];
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+    const fence = line.match(/^\s*```([^`]*)$/);
+    if (fence) {
+      const code = [];
+      index += 1;
+      while (index < lines.length && !/^\s*```\s*$/.test(lines[index])) {
+        code.push(lines[index]);
+        index += 1;
+      }
+      if (index < lines.length) index += 1;
+      blocks.push(`<pre><code${fence[1].trim() ? ` data-language="${escapeHtml(fence[1].trim().slice(0, 32))}"` : ""}>${escapeHtml(code.join("\n"))}</code></pre>`);
+      continue;
+    }
+    const heading = line.match(/^\s*(#{1,3})\s+(.+)$/);
+    if (heading) {
+      const level = heading[1].length + 2;
+      blocks.push(`<h${level}>${reviewCommentInlineMarkup(heading[2], attachments)}</h${level}>`);
+      index += 1;
+      continue;
+    }
+    if (/^\s*>\s?/.test(line)) {
+      const quote = [];
+      while (index < lines.length && /^\s*>\s?/.test(lines[index])) {
+        quote.push(lines[index].replace(/^\s*>\s?/, ""));
+        index += 1;
+      }
+      blocks.push(`<blockquote>${quote.map((item) => reviewCommentInlineMarkup(item, attachments)).join("<br>")}</blockquote>`);
+      continue;
+    }
+    const unordered = line.match(/^\s*[-+*]\s+(.+)$/);
+    const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if (unordered || ordered) {
+      const tag = unordered ? "ul" : "ol";
+      const items = [];
+      const matcher = unordered ? /^\s*[-+*]\s+(.+)$/ : /^\s*\d+[.)]\s+(.+)$/;
+      while (index < lines.length) {
+        const item = lines[index].match(matcher);
+        if (!item) break;
+        items.push(`<li>${reviewCommentInlineMarkup(item[1], attachments)}</li>`);
+        index += 1;
+      }
+      blocks.push(`<${tag}>${items.join("")}</${tag}>`);
+      continue;
+    }
+    const paragraph = [line];
+    index += 1;
+    while (
+      index < lines.length && lines[index].trim() &&
+      !/^\s*```/.test(lines[index]) &&
+      !/^\s*(#{1,3})\s+/.test(lines[index]) &&
+      !/^\s*>\s?/.test(lines[index]) &&
+      !/^\s*(?:[-+*]\s+|\d+[.)]\s+)/.test(lines[index])
+    ) {
+      paragraph.push(lines[index]);
+      index += 1;
+    }
+    blocks.push(`<p>${paragraph.map((item) => reviewCommentInlineMarkup(item, attachments)).join("<br>")}</p>`);
+  }
+  return blocks.join("");
 }
 
 function activeMentionQuery(textarea) {
   const cursor = textarea.selectionStart ?? textarea.value.length;
   const prefix = textarea.value.slice(0, cursor);
-  const match = prefix.match(/(^|[^A-Za-z0-9._@-])@(?:\{)?([A-Za-z0-9._-]{0,64})$/);
+  const match = prefix.match(/(^|[^A-Za-z0-9._@-])@(?:\{)?([A-Za-z0-9._\-\u3400-\u9fff]{0,64})$/);
   if (!match) return null;
   const boundary = String(match[1] || "");
   const token = match[0].slice(boundary.length);
   return {
-    query: String(match[2] || "").toLowerCase(),
+    query: String(match[2] || "").toLocaleLowerCase("zh-CN"),
     start: cursor - token.length,
     end: cursor,
   };

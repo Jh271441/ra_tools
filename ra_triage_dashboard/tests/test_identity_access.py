@@ -271,7 +271,7 @@ class IdentityAccessTest(unittest.TestCase):
                 make_request({"X-RA-Triage-Request": "unexpected"})
             )
         )
-        for marker in ("browser-v1", "review-v1", "publish-v1"):
+        for marker in ("browser-v1", "review-v1", "comment-v1", "publish-v1"):
             with self.subTest(marker=marker):
                 self.assertTrue(
                     has_same_origin_mutation_marker(

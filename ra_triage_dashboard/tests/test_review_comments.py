@@ -11,7 +11,10 @@ from unittest.mock import Mock, patch
 from starlette.requests import Request
 
 from ra_triage_dashboard.app.db import Database
-from ra_triage_dashboard.app.routers.cases import create_review_comment
+from ra_triage_dashboard.app.routers.cases import (
+    create_review_comment,
+    create_review_comment_with_attachments,
+)
 
 
 def json_request(payload: dict[str, object]) -> Request:
@@ -179,6 +182,98 @@ class ReviewCommentsTest(unittest.TestCase):
                 database.mention_display_names(["jasperchen"]),
                 {"jasperchen": "陈俊豪"},
             )
+
+    def test_bootstrap_directory_includes_liangxianghui_display_name(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = self.make_database(directory)
+            database.set_access_user(
+                username="liangxianghui", role="writer", actor="admin"
+            )
+            database.bootstrap_mention_users()
+            item = next(
+                entry
+                for entry in database.list_mention_users()
+                if entry["username"] == "liangxianghui"
+            )
+            self.assertEqual(item["display_name"], "梁祥辉")
+
+    def test_comment_attachments_are_scoped_to_the_created_comment(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = self.make_database(directory)
+            comment = database.create_review_comment(
+                issue_id="cn1",
+                body="![现场图](attachment:image-1)",
+                author="alice",
+                attachments=[
+                    {
+                        "id": "image-1",
+                        "original_name": "scene.png",
+                        "stored_name": "im/image-1.png",
+                        "media_type": "image/png",
+                        "size_bytes": 16,
+                        "width": 10,
+                        "height": 8,
+                        "sha256": "a" * 64,
+                    }
+                ],
+            )
+            self.assertEqual(comment["attachments"][0]["id"], "image-1")
+            listed = database.list_review_comments(issue_id="cn1")
+            self.assertEqual(listed[0]["attachments"][0]["stored_name"], "im/image-1.png")
+            self.assertEqual(database.get_comment_attachment("image-1")["comment_id"], comment["id"])
+            self.assertEqual(database.image_attachment_storage_bytes(), 16)
+
+    def test_multipart_comment_replaces_image_tokens_without_review_write(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = self.make_database(directory)
+            dispatcher = Mock()
+            stored = {
+                "id": "image-1",
+                "original_name": "scene.png",
+                "stored_name": "im/image-1.png",
+                "media_type": "image/png",
+                "size_bytes": 16,
+                "width": 10,
+                "height": 8,
+                "sha256": "a" * 64,
+            }
+            request = json_request({})
+            with patch(
+                "ra_triage_dashboard.app.routers.cases.database", database
+            ), patch(
+                "ra_triage_dashboard.app.routers.cases._action_actor",
+                return_value=("alice", "kylin_ticket", True),
+            ), patch(
+                "ra_triage_dashboard.app.routers.cases.settings",
+                SimpleNamespace(dchat_notifications_enabled=False),
+            ), patch(
+                "ra_triage_dashboard.app.routers.cases.review_notification_dispatcher",
+                dispatcher,
+            ), patch(
+                "ra_triage_dashboard.app.routers.cases._store_comment_attachments",
+                return_value=([stored], [Path(directory) / "image-1.png"]),
+            ):
+                result = asyncio.run(
+                    create_review_comment_with_attachments(
+                        "cn1",
+                        request,
+                        payload=json.dumps(
+                            {
+                                "body": "![现场图](attachment:pending-1)",
+                                "attachment_tokens": ["pending-1"],
+                            }
+                        ),
+                        attachments=[Mock()],
+                    )
+                )
+            self.assertEqual(
+                result["comment"]["body"], "![现场图](attachment:image-1)"
+            )
+            self.assertEqual(
+                result["comment"]["attachments"][0]["url"],
+                "/api/comment-attachments/image-1",
+            )
+            self.assertEqual(database.get_case("cn1")["annotations"], [])
 
 
 if __name__ == "__main__":

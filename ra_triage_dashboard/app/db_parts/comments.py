@@ -25,7 +25,13 @@ class DatabaseCommentsMixin:
                 """,
                 (issue_id, str(model_run_id or "").strip(), bounded_limit),
             ).fetchall()
-        return [self._review_comment_dict(row) for row in rows]
+            attachments = self._comment_attachments_for_rows(conn, rows)
+        return [
+            self._review_comment_dict(
+                row, attachments=attachments.get(int(row["id"]), [])
+            )
+            for row in rows
+        ]
 
     def review_comment_count(self, *, issue_id: str, model_run_id: str = "") -> int:
         with self.connect() as conn:
@@ -50,7 +56,16 @@ class DatabaseCommentsMixin:
                 """,
                 (int(comment_id),),
             ).fetchone()
-        return self._review_comment_dict(row) if row else None
+            attachments = self._comment_attachments_for_rows(
+                conn, [row] if row else []
+            )
+        return (
+            self._review_comment_dict(
+                row, attachments=attachments.get(int(row["id"]), [])
+            )
+            if row
+            else None
+        )
 
     def create_review_comment(
         self,
@@ -64,6 +79,7 @@ class DatabaseCommentsMixin:
         mentions: list[str] | None = None,
         notification_recipients: list[str] | None = None,
         reply_to_id: int | None = None,
+        attachments: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         normalized_body = str(body or "").strip()
         if not normalized_body:
@@ -88,6 +104,7 @@ class DatabaseCommentsMixin:
                 if str(item).strip()
             )
         )
+        attachments = attachments or []
         now = utc_now()
         with self._write_lock, self.connect() as conn:
             issue = conn.execute(
@@ -140,6 +157,27 @@ class DatabaseCommentsMixin:
                 if self.backend == "postgresql"
                 else int(cursor.lastrowid)
             )
+            for attachment in attachments:
+                conn.execute(
+                    """
+                    INSERT INTO comment_attachments (
+                        id, comment_id, original_name, stored_name, media_type,
+                        size_bytes, width, height, sha256, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        attachment["id"],
+                        comment_id,
+                        attachment.get("original_name", ""),
+                        attachment["stored_name"],
+                        attachment["media_type"],
+                        int(attachment["size_bytes"]),
+                        int(attachment["width"]),
+                        int(attachment["height"]),
+                        attachment["sha256"],
+                        now,
+                    ),
+                )
             for recipient in recipients:
                 conn.execute(
                     """
@@ -161,10 +199,70 @@ class DatabaseCommentsMixin:
                 """,
                 (comment_id,),
             ).fetchone()
-        return self._review_comment_dict(row)
+        return self._review_comment_dict(row, attachments=attachments)
+
+    def get_comment_attachment(self, attachment_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM comment_attachments WHERE id = ?",
+                (str(attachment_id or "").strip(),),
+            ).fetchone()
+        return self._comment_attachment_dict(row) if row else None
+
+    def image_attachment_storage_bytes(self) -> int:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    (SELECT COALESCE(SUM(size_bytes), 0) FROM review_attachments) +
+                    (SELECT COALESCE(SUM(size_bytes), 0) FROM comment_attachments)
+                    AS total
+                """
+            ).fetchone()
+        return int(row["total"] or 0)
+
+    @classmethod
+    def _comment_attachments_for_rows(
+        cls, conn: Any, rows: list[Any]
+    ) -> dict[int, list[dict[str, Any]]]:
+        comment_ids = [int(row["id"]) for row in rows if row]
+        if not comment_ids:
+            return {}
+        placeholders = ",".join("?" for _ in comment_ids)
+        attachment_rows = conn.execute(
+            f"""
+            SELECT * FROM comment_attachments
+            WHERE comment_id IN ({placeholders})
+            ORDER BY created_at ASC, id ASC
+            """,
+            comment_ids,
+        ).fetchall()
+        grouped: dict[int, list[dict[str, Any]]] = {}
+        for attachment in attachment_rows:
+            grouped.setdefault(int(attachment["comment_id"]), []).append(
+                cls._comment_attachment_dict(attachment)
+            )
+        return grouped
 
     @staticmethod
-    def _review_comment_dict(row: Any) -> dict[str, Any]:
+    def _comment_attachment_dict(row: Any) -> dict[str, Any]:
+        return {
+            "id": str(row["id"]),
+            "comment_id": int(row["comment_id"]),
+            "original_name": str(row["original_name"] or ""),
+            "stored_name": str(row["stored_name"]),
+            "media_type": str(row["media_type"]),
+            "size_bytes": int(row["size_bytes"]),
+            "width": int(row["width"]),
+            "height": int(row["height"]),
+            "sha256": str(row["sha256"]),
+            "created_at": str(row["created_at"]),
+        }
+
+    @staticmethod
+    def _review_comment_dict(
+        row: Any, *, attachments: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
         keys = set(row.keys())
         return {
             "id": int(row["id"]),
@@ -182,5 +280,6 @@ class DatabaseCommentsMixin:
             "reply_to_body": str(row["reply_to_body"] or "")
             if "reply_to_body" in keys
             else "",
+            "attachments": list(attachments or []),
             "created_at": str(row["created_at"]),
         }

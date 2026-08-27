@@ -476,6 +476,21 @@ class DatabaseCoreMixin:
                 CREATE INDEX IF NOT EXISTS idx_review_comments_thread
                     ON review_comments(issue_id, model_run_id, id ASC);
 
+                CREATE TABLE IF NOT EXISTS comment_attachments (
+                    id TEXT PRIMARY KEY,
+                    comment_id INTEGER NOT NULL REFERENCES review_comments(id) ON DELETE CASCADE,
+                    original_name TEXT NOT NULL DEFAULT '',
+                    stored_name TEXT NOT NULL UNIQUE,
+                    media_type TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL,
+                    width INTEGER NOT NULL,
+                    height INTEGER NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_comment_attachments_comment
+                    ON comment_attachments(comment_id, created_at ASC);
+
                 CREATE TABLE IF NOT EXISTS comment_notifications (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     comment_id INTEGER NOT NULL REFERENCES review_comments(id) ON DELETE CASCADE,
@@ -746,6 +761,7 @@ class DatabaseCoreMixin:
                 "access_users",
                 "mention_users",
                 "review_comments",
+                "comment_attachments",
                 "issue_work_splits",
                 "issue_work_assignments",
                 "trail_issue_exclusion_history",

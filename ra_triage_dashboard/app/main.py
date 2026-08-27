@@ -262,18 +262,26 @@ async def request_size_guard(request: Request, call_next):
     if (
         request.method == "POST"
         and request.url.path.startswith("/api/cases/")
-        and request.url.path.endswith("/annotations-with-attachments")
+        and request.url.path.endswith(
+            ("/annotations-with-attachments", "/comments-with-attachments")
+        )
     ):
-        if request.headers.get("x-ra-triage-request") != "review-v1":
+        is_comment_upload = request.url.path.endswith("/comments-with-attachments")
+        required_marker = "comment-v1" if is_comment_upload else "review-v1"
+        if request.headers.get("x-ra-triage-request") != required_marker:
             return JSONResponse(
                 status_code=403,
-                content={"detail": "缺少 Review 截图请求标记。"},
+                content={
+                    "detail": "缺少评论图片请求标记。"
+                    if is_comment_upload
+                    else "缺少 Review 截图请求标记。"
+                },
             )
         content_length = request.headers.get("content-length", "").strip()
         if not content_length:
             return JSONResponse(
                 status_code=411,
-                content={"detail": "Review 截图请求必须提供 Content-Length。"},
+                content={"detail": "图片上传请求必须提供 Content-Length。"},
             )
         try:
             request_bytes = int(content_length)

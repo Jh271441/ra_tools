@@ -34,6 +34,7 @@ grants write access.
 The browser fetches only enabled usernames for normal verified users. It is a
 convenience layer, not the security boundary. Candidates stay hidden until the
 caret is inside an `@` token; typing filters the directory incrementally,
+matching either the stable LDAP username or the Chinese display name,
 keyboard arrows plus Enter/Tab select a result, and Escape dismisses the
 popover without deleting the typed token. The popover is anchored to the
 active token's `@` glyph rather than the textarea edge, so comments containing
@@ -46,6 +47,14 @@ Review exclusion candidate rows. Each entry carries its model Run binding, so
 the authoritative thread key is `issue_id + model_run_id`. Comments are
 append-only rows in `review_comments`; they do not append an annotation and
 cannot change the Review conclusion, tags, evidence, or exclusion flag.
+
+The composer uses a deliberately small Markdown surface instead of a general
+rich-text/HTML editor. Text, headings, lists, quotes, links, inline/fenced code,
+emphasis, and strikethrough are rendered after escaping source HTML. Images may
+only reference an uploaded `comment_attachments` row through an opaque
+same-origin URL; pasted or selected PNG/JPEG/WebP files are normalized by the
+server and share the existing review-image quota. This keeps technical comments
+readable and portable without allowing arbitrary HTML or remote image tracking.
 
 A reply stores `reply_to_id` and renders the parent author/excerpt. The browser
 prefills `@parent`, while the server independently adds the enabled parent
@@ -63,6 +72,8 @@ thread and focuses the notified comment. The same thread entry is available in
 failure review, reason analysis, and Review exclusion candidates. LDAP remains
 the authoritative token stored in comment text; the directory's `display_name`
 is used in suggestions, rendered comments, reply context, and DChat copy.
+The same deep link is exposed by the per-comment Share action, using the native
+share sheet when available and a clipboard fallback otherwise.
 
 For direct Issue exclusion, all comments are validated before the first Trail
 write. Only after Trail reports a complete successful readback does the server

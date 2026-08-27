@@ -15,6 +15,7 @@ from ra_triage_dashboard.app.db import Database
 from ra_triage_dashboard.app.dchat import (
     DChatClient,
     DChatLoopbackClient,
+    build_comment_notification_text,
     build_review_url,
     dchat_credentials_status,
     validate_dchat_base_url,
@@ -176,6 +177,16 @@ class ReviewNotificationTest(unittest.TestCase):
             ),
             "https://auto-triage.intra.xiaojukeji.com/manual/review?issue=cn+1&run=run%2F1",
         )
+
+    def test_comment_notification_replaces_internal_image_tokens(self) -> None:
+        text = build_comment_notification_text(
+            issue_id="cn1",
+            author="陈俊豪",
+            body="请查看 ![现场截图](attachment:7f7c5e1a-1234) 后确认。",
+            review_url="https://example.test/review?issue=cn1&comments=1&comment=7",
+        )
+        self.assertIn("图片", text)
+        self.assertNotIn("attachment", text)
 
     def test_loopback_returns_a_local_receipt_without_network(self) -> None:
         result = DChatLoopbackClient().send_to_username("jasperchen", "hello")

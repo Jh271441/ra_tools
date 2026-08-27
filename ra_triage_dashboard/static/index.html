@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-253`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-256`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -1016,11 +1016,28 @@
         </div>
         <div class="comment-thread-list" id="analysisDiscussionThread" aria-live="polite"></div>
         <div class="comment-reply-context" id="analysisDiscussionReplyContext" hidden></div>
-        <label class="issue-query-field" id="analysisDiscussionComposer">
-          <span class="ui-lang-zh">添加评论</span><span class="ui-lang-en">Add comment</span>
-          <textarea id="analysisDiscussionNote" data-mention-composer rows="4" maxlength="3500" placeholder="输入评论；输入 @ 可通知同事。"></textarea>
+        <div class="comment-editor" id="analysisDiscussionComposer">
+          <div class="comment-editor-heading">
+            <span><span class="ui-lang-zh">添加评论</span><span class="ui-lang-en">Add comment</span></span>
+            <small>Markdown</small>
+          </div>
+          <div class="comment-editor-toolbar" role="toolbar" aria-label="Markdown 工具栏">
+            <button type="button" data-comment-format="bold" title="粗体"><strong>B</strong></button>
+            <button type="button" data-comment-format="italic" title="斜体"><em>I</em></button>
+            <button type="button" data-comment-format="code" title="行内代码">&lt;/&gt;</button>
+            <button type="button" data-comment-format="quote" title="引用">“”</button>
+            <button type="button" data-comment-format="list" title="列表">≡</button>
+            <button type="button" data-comment-format="link" title="链接">链接</button>
+            <button type="button" data-comment-image title="插入图片">图片</button>
+            <span class="comment-editor-toolbar-spacer"></span>
+            <button type="button" data-comment-preview-toggle>预览</button>
+          </div>
+          <textarea id="analysisDiscussionNote" data-mention-composer rows="4" maxlength="3500" placeholder="支持 Markdown；输入 @ 可按 LDAP 或中文姓名搜索。"></textarea>
           <div class="review-mention-composer" id="analysisDiscussionMentionComposer" data-mention-composer-root aria-live="polite"></div>
-        </label>
+          <div class="comment-markdown-preview comment-thread-body" id="analysisDiscussionPreview" hidden></div>
+          <div class="comment-pending-images" id="analysisDiscussionImages"></div>
+          <input id="analysisDiscussionImageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
+        </div>
         <div class="dialog-actions">
           <button class="button button-quiet" type="button" data-close="analysisDiscussionDialog"><span class="ui-lang-zh">关闭</span><span class="ui-lang-en">Close</span></button>
           <button class="button button-primary" id="analysisDiscussionSubmit" type="submit"><span class="ui-lang-zh">发表评论</span><span class="ui-lang-en">Post comment</span></button>
@@ -1415,7 +1432,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-253`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-256`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

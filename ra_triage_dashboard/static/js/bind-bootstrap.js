@@ -335,6 +335,8 @@ function bindEvents() {
       }
     } catch (error) { showToast(error.message, true); }
   });
+  bindAnalysisDiscussionEditor();
+  $("#analysisDiscussionDialog")?.addEventListener("close", clearAnalysisDiscussionImages);
   $("#analysisDiscussionForm")?.addEventListener("submit", saveAnalysisDiscussion);
   $("#predictFilteredButton").addEventListener("click", () => {
     const limit = predictionBatchLimit();
