@@ -117,7 +117,7 @@ function renderTrailIssueEntryRow(entry = {}) {
     </label>
     <label>
       <span class="ui-lang-zh">排除说明（可选，写入 info）</span><span class="ui-lang-en">Exclusion note (optional; saved in info)</span>
-      <textarea data-trail-issue-entry-comment data-mention-composer rows="2" placeholder="留空时使用默认说明；可输入 @ldap，写入 info 并在提交成功后通知。">${comment}</textarea>
+      <textarea data-trail-issue-entry-comment data-mention-composer rows="2" placeholder="留空时使用默认说明；输入 @ 可通知同事；提交后写入 info.ra_triage_dashboard.should_exclude_comment。">${comment}</textarea>
       <div class="review-mention-composer" data-mention-composer-root aria-live="polite"></div>
     </label>
     <button class="button button-quiet trail-update-entry-remove" data-trail-issue-entry-remove type="button" aria-label="删除此行" title="删除此行">×</button>

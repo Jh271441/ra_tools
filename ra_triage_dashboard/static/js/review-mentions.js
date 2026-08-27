@@ -2,6 +2,12 @@
 
 const REVIEW_MENTION_RE = /(^|[^A-Za-z0-9._@-])@(?:\{([A-Za-z0-9._-]{1,64})\}|([A-Za-z0-9._-]{1,64}))/g;
 const reviewMentionComposerStates = new WeakMap();
+const REVIEW_MENTION_CARET_STYLE_PROPERTIES = [
+  "boxSizing", "width", "height", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+  "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
+  "fontFamily", "fontSize", "fontStyle", "fontWeight", "fontVariant", "lineHeight",
+  "letterSpacing", "textAlign", "textIndent", "textTransform", "tabSize", "wordSpacing",
+];
 
 function reviewMentions(value) {
   const mentions = [];
@@ -53,6 +59,70 @@ function reviewMentionComposerState(textarea) {
     });
   }
   return reviewMentionComposerStates.get(textarea);
+}
+
+function reviewMentionCaretAnchor(textarea, tokenStart) {
+  const rect = textarea.getBoundingClientRect();
+  const computed = window.getComputedStyle(textarea);
+  const mirror = document.createElement("div");
+  mirror.setAttribute("aria-hidden", "true");
+  Object.assign(mirror.style, {
+    position: "fixed",
+    visibility: "hidden",
+    pointerEvents: "none",
+    overflow: "hidden",
+    whiteSpace: "pre-wrap",
+    overflowWrap: "break-word",
+    wordBreak: "normal",
+    left: `${rect.left}px`,
+    top: `${rect.top}px`,
+  });
+  REVIEW_MENTION_CARET_STYLE_PROPERTIES.forEach((property) => {
+    mirror.style[property] = computed[property];
+  });
+  mirror.textContent = textarea.value.slice(0, tokenStart);
+  const marker = document.createElement("span");
+  marker.textContent = textarea.value.slice(tokenStart, tokenStart + 1) || "\u200b";
+  mirror.append(marker);
+  document.body.append(mirror);
+  mirror.scrollTop = textarea.scrollTop;
+  mirror.scrollLeft = textarea.scrollLeft;
+  const markerRect = marker.getBoundingClientRect();
+  const parsedLineHeight = Number.parseFloat(computed.lineHeight);
+  const parsedFontSize = Number.parseFloat(computed.fontSize) || 14;
+  mirror.remove();
+  return {
+    left: markerRect.left,
+    top: markerRect.top,
+    lineHeight: Number.isFinite(parsedLineHeight) ? parsedLineHeight : parsedFontSize * 1.2,
+  };
+}
+
+function positionReviewMentionPopover(textarea, root, active = activeMentionQuery(textarea)) {
+  const popover = root?.querySelector(".review-mention-popover");
+  if (!popover || !active) return;
+  const anchor = reviewMentionCaretAnchor(textarea, active.start);
+  const viewportMargin = 8;
+  const gap = 6;
+  const textareaWidth = textarea.getBoundingClientRect().width;
+  const width = Math.min(430, Math.max(220, textareaWidth), window.innerWidth - viewportMargin * 2);
+  const spaceAbove = Math.max(0, anchor.top - viewportMargin);
+  const spaceBelow = Math.max(0, window.innerHeight - anchor.top - anchor.lineHeight - viewportMargin);
+  const preferredHeight = Math.min(290, popover.scrollHeight || 290);
+  const opensUp = spaceBelow < preferredHeight && spaceAbove > spaceBelow;
+  const availableSpace = Math.max(112, (opensUp ? spaceAbove : spaceBelow) - gap);
+  const left = Math.min(
+    Math.max(viewportMargin, anchor.left),
+    Math.max(viewportMargin, window.innerWidth - width - viewportMargin)
+  );
+  popover.style.setProperty("--review-mention-left", `${Math.round(left)}px`);
+  popover.style.setProperty(
+    "--review-mention-top",
+    `${Math.round(opensUp ? anchor.top - gap : anchor.top + anchor.lineHeight + gap)}px`
+  );
+  popover.style.setProperty("--review-mention-width", `${Math.round(width)}px`);
+  popover.style.setProperty("--review-mention-space", `${Math.floor(availableSpace)}px`);
+  popover.classList.toggle("opens-up", opensUp);
 }
 
 function closeReviewMentionComposer(textarea, root, { preserveTrigger = false } = {}) {
@@ -119,7 +189,7 @@ function updateReviewMentionComposer(
   const active = activeMentionQuery(textarea);
   if (!active) composer.dismissedStart = null;
   // The token under the caret is a search query until the user inserts a
-  // delimiter or chooses a result. Do not flag a partial LDAP as invalid and
+  // delimiter or chooses a result. Do not flag a partial username as invalid and
   // do not hide an exact match merely because the parser can already read it.
   const mentions = active
     ? parsedMentions.filter((name) => name !== active.query)
@@ -139,7 +209,7 @@ function updateReviewMentionComposer(
     ? `<div class="review-mention-popover" role="listbox" aria-label="${escapeHtml(uiText("可 @ 人员", "Mention users"))}">
         <div class="review-mention-search-row">
           <span class="review-mention-search-icon" aria-hidden="true">@</span>
-          <span class="review-mention-search-query">${escapeHtml(active.query || uiText("输入 LDAP 搜索", "Type LDAP to search"))}</span>
+          <span class="review-mention-search-query">${escapeHtml(active.query || uiText("搜索可 @ 人员", "Search mention users"))}</span>
           <kbd>Esc</kbd>
         </div>
         <div class="review-mention-options">
@@ -154,6 +224,7 @@ function updateReviewMentionComposer(
     : "";
   root.innerHTML = `${statusMarkup}${popoverMarkup}`;
   root.hidden = !statusMarkup && !popoverMarkup;
+  if (popoverMarkup) positionReviewMentionPopover(textarea, root, active);
   root.querySelectorAll("[data-review-mention]").forEach((button) => {
     button.addEventListener("pointerdown", (event) => event.preventDefault());
     button.addEventListener("mouseenter", () => {
@@ -208,6 +279,10 @@ function bindReviewMentionComposer(
   ["click", "focus", "select"].forEach((eventName) => {
     textarea.addEventListener(eventName, () => updateReviewMentionComposer(textarea, root));
   });
+  const reposition = () => positionReviewMentionPopover(textarea, root);
+  textarea.addEventListener("scroll", reposition, { passive: true });
+  window.addEventListener("resize", reposition, { passive: true });
+  window.addEventListener("scroll", reposition, { passive: true, capture: true });
   textarea.addEventListener("blur", () => {
     window.setTimeout(() => {
       if (!root.contains(document.activeElement)) closeReviewMentionComposer(textarea, root);

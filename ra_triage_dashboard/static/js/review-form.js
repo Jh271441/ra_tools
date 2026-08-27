@@ -476,8 +476,8 @@ function renderReview(caseData) {
           <input id="reviewStatusInput" type="hidden" value="${escapeHtml(reviewStatus)}" />
         </div>
         <label class="review-reason">
-          <span><span class="ui-lang-zh">模型为什么判错？可用 @ldap 通知同事</span><span class="ui-lang-en">Why was the model wrong? Use @ldap to notify teammates</span></span>
-          <textarea id="annotationNote" rows="2" placeholder="说明关键证据；例如：@zhangsan 请一起确认 routing 是否合理。">${escapeHtml(previous.note || "")}</textarea>
+          <span><span class="ui-lang-zh">模型为什么判错？</span><span class="ui-lang-en">Why was the model wrong?</span></span>
+          <textarea id="annotationNote" rows="2" placeholder="说明关键证据；输入 @ 可通知同事。">${escapeHtml(previous.note || "")}</textarea>
         </label>
         <div class="review-mention-composer" id="reviewMentionComposer" aria-live="polite"></div>
         <details class="evidence-dropdown review-dropdown review-tag-dropdown">
