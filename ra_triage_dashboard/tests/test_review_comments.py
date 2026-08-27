@@ -161,6 +161,25 @@ class ReviewCommentsTest(unittest.TestCase):
             self.assertEqual(result["comment"]["reply_to_author"], "alice")
             dispatcher.wake.assert_called_once_with()
 
+    def test_mention_directory_exposes_human_display_names(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = self.make_database(directory)
+            database.set_mention_user(
+                username="jasperchen",
+                display_name="陈俊豪",
+                enabled=True,
+                actor="admin",
+            )
+            item = next(
+                entry for entry in database.list_mention_users()
+                if entry["username"] == "jasperchen"
+            )
+            self.assertEqual(item["display_name"], "陈俊豪")
+            self.assertEqual(
+                database.mention_display_names(["jasperchen"]),
+                {"jasperchen": "陈俊豪"},
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

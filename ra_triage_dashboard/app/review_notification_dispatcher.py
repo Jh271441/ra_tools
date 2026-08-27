@@ -13,6 +13,8 @@ from .dchat import (
     build_comment_notification_text,
     build_review_url,
 )
+from .review_mentions import mentions_for_display
+from .db_parts.shared import _json_load
 
 
 logger = logging.getLogger("ra_triage_dashboard")
@@ -69,12 +71,30 @@ class ReviewNotificationDispatcher:
                 self.settings.kylin_sso_return_url,
                 issue_id=str(item["issue_id"]),
                 model_run_id=str(item.get("model_run_id") or ""),
+                open_comments=notification_kind == "comment",
+                comment_id=(
+                    int(item["comment_id"])
+                    if notification_kind == "comment" and item.get("comment_id")
+                    else None
+                ),
             )
             if notification_kind == "comment":
+                display_names = self.database.mention_display_names(
+                    [
+                        *_json_load(item.get("mentions_json"), []),
+                        str(item.get("author") or ""),
+                        str(item.get("reply_to_author") or ""),
+                    ]
+                )
                 text = build_comment_notification_text(
                     issue_id=str(item["issue_id"]),
-                    author=str(item.get("author") or ""),
-                    body=str(item.get("body") or ""),
+                    author=display_names.get(
+                        str(item.get("author") or "").lower(),
+                        str(item.get("author") or ""),
+                    ),
+                    body=mentions_for_display(
+                        item.get("body") or "", display_names
+                    ),
                     review_url=review_url,
                     is_reply=(
                         bool(item.get("reply_to_id"))

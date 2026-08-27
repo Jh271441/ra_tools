@@ -22,6 +22,7 @@ from ra_triage_dashboard.app.dchat import (
 from ra_triage_dashboard.app.http_support import _create_annotation_record
 from ra_triage_dashboard.app.review_mentions import (
     extract_review_mentions,
+    mentions_for_display,
     notification_recipients,
 )
 
@@ -39,6 +40,13 @@ class ReviewNotificationTest(unittest.TestCase):
         self.assertEqual(
             notification_recipients(["alice", "bob", "bob"], author="Alice"),
             ["alice", "bob"],
+        )
+        self.assertEqual(
+            mentions_for_display(
+                "@jasperchen 请和 @{caoliwen_i} 确认",
+                {"jasperchen": "陈俊豪", "caoliwen_i": "曹立文"},
+            ),
+            "@陈俊豪 请和 @曹立文 确认",
         )
 
     def test_verified_author_can_notify_themself(self) -> None:
@@ -148,6 +156,18 @@ class ReviewNotificationTest(unittest.TestCase):
         )
         with self.assertRaises(RuntimeError):
             validate_dchat_base_url("https://example.com")
+
+    def test_comment_deep_link_opens_exact_thread(self) -> None:
+        self.assertEqual(
+            build_review_url(
+                "https://auto-triage.intra.xiaojukeji.com/manual/review",
+                issue_id="cn1",
+                model_run_id="run one",
+                open_comments=True,
+                comment_id=42,
+            ),
+            "https://auto-triage.intra.xiaojukeji.com/manual/review?issue=cn1&run=run+one&comments=1&comment=42",
+        )
         self.assertEqual(
             build_review_url(
                 "https://auto-triage.intra.xiaojukeji.com/manual/review",

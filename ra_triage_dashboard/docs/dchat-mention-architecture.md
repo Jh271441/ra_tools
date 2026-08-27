@@ -57,6 +57,13 @@ an explicitly mentioned recipient is absent or disabled. Comment and
 delivery is asynchronous, so a temporary DChat failure cannot roll back a
 saved comment or Review.
 
+DChat comment messages link to `/review?issue=...&run=...&comments=1&comment=...`.
+After the Issue and Run load, the Dashboard automatically opens the shared
+thread and focuses the notified comment. The same thread entry is available in
+failure review, reason analysis, and Review exclusion candidates. LDAP remains
+the authoritative token stored in comment text; the directory's `display_name`
+is used in suggestions, rendered comments, reply context, and DChat copy.
+
 For direct Issue exclusion, all comments are validated before the first Trail
 write. Only after Trail reports a complete successful readback does the server
 append the local Review exclusion version and its notification outbox rows.

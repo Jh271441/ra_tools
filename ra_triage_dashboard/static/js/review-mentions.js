@@ -23,18 +23,51 @@ function reviewMentions(value) {
 
 function reviewMentionCandidates(query = "") {
   const normalizedQuery = String(query || "").toLowerCase();
-  return [...new Set((state.mentionUsers || [])
+  const seen = new Set();
+  return (state.mentionUsers || [])
     .filter((item) => item.enabled !== false)
-    .map((item) => String(item.username || "").trim().toLowerCase()))]
+    .map((item) => ({
+      username: String(item.username || "").trim().toLowerCase(),
+      displayName: String(item.display_name || item.username || "").trim(),
+    }))
+    .filter((item) => {
+      if (seen.has(item.username)) return false;
+      seen.add(item.username);
+      return true;
+    })
     .filter((item) =>
-      /^[A-Za-z0-9._-]{1,64}$/.test(item) &&
-      (!normalizedQuery || item.includes(normalizedQuery))
+      /^[A-Za-z0-9._-]{1,64}$/.test(item.username) &&
+      (!normalizedQuery ||
+        item.username.includes(normalizedQuery) ||
+        item.displayName.toLowerCase().includes(normalizedQuery))
     )
     .sort((left, right) => {
-      const leftPrefix = left.startsWith(normalizedQuery) ? 0 : 1;
-      const rightPrefix = right.startsWith(normalizedQuery) ? 0 : 1;
-      return leftPrefix - rightPrefix || left.localeCompare(right);
+      const leftPrefix = left.username.startsWith(normalizedQuery) ? 0 : 1;
+      const rightPrefix = right.username.startsWith(normalizedQuery) ? 0 : 1;
+      return leftPrefix - rightPrefix || left.username.localeCompare(right.username);
     });
+}
+
+function reviewMentionDisplayName(username) {
+  const normalized = String(username || "").trim().toLowerCase();
+  const item = (state.mentionUsers || []).find(
+    (candidate) => String(candidate.username || "").trim().toLowerCase() === normalized
+  );
+  return String(item?.display_name || item?.username || username || "");
+}
+
+function reviewCommentBodyMarkup(value) {
+  const source = String(value || "");
+  let markup = "";
+  let cursor = 0;
+  for (const match of source.matchAll(REVIEW_MENTION_RE)) {
+    markup += escapeHtml(source.slice(cursor, match.index));
+    const boundary = String(match[1] || "");
+    const username = String(match[2] || match[3] || "").toLowerCase();
+    markup += `${escapeHtml(boundary)}<span class="comment-mention" title="@${escapeHtml(username)}">@${escapeHtml(reviewMentionDisplayName(username))}</span>`;
+    cursor = Number(match.index) + match[0].length;
+  }
+  return markup + escapeHtml(source.slice(cursor));
 }
 
 function activeMentionQuery(textarea) {
@@ -198,7 +231,7 @@ function updateReviewMentionComposer(
   const status = reviewMentionStatus(mentions, unsupported);
   const dismissed = active && composer.dismissedStart === active.start;
   const candidates = active && !dismissed
-    ? reviewMentionCandidates(active.query).filter((name) => !mentions.includes(name)).slice(0, 8)
+    ? reviewMentionCandidates(active.query).filter((item) => !mentions.includes(item.username)).slice(0, 8)
     : [];
   composer.activeIndex = Math.min(Math.max(0, composer.activeIndex), Math.max(0, candidates.length - 1));
   const current = String(state.session?.username || "").trim().toLowerCase();
@@ -213,11 +246,11 @@ function updateReviewMentionComposer(
           <kbd>Esc</kbd>
         </div>
         <div class="review-mention-options">
-          ${candidates.length ? candidates.map((name, index) => `
-            <button class="review-mention-option${index === composer.activeIndex ? " is-active" : ""}" type="button" role="option" aria-selected="${index === composer.activeIndex ? "true" : "false"}" data-review-mention="${escapeHtml(name)}" data-review-mention-index="${index}">
-              <span class="review-mention-avatar" aria-hidden="true">${escapeHtml(name.slice(0, 1).toUpperCase())}</span>
-              <strong>@${escapeHtml(name)}</strong>
-              ${name === current ? `<small>${escapeHtml(uiText("自己", "You"))}</small>` : ""}
+          ${candidates.length ? candidates.map((item, index) => `
+            <button class="review-mention-option${index === composer.activeIndex ? " is-active" : ""}" type="button" role="option" aria-selected="${index === composer.activeIndex ? "true" : "false"}" data-review-mention="${escapeHtml(item.username)}" data-review-mention-index="${index}">
+              <span class="review-mention-avatar" aria-hidden="true">${escapeHtml(item.displayName.slice(0, 1).toUpperCase())}</span>
+              <span class="review-mention-identity"><strong>${escapeHtml(item.displayName)}</strong><span>@${escapeHtml(item.username)}</span></span>
+              ${item.username === current ? `<small>${escapeHtml(uiText("自己", "You"))}</small>` : ""}
             </button>`).join("") : `<div class="review-mention-empty">${escapeHtml(uiText("没有匹配的可 @ 人员", "No matching mention user"))}</div>`}
         </div>
       </div>`

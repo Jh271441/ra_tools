@@ -760,7 +760,11 @@ function renderAnalysisCases(data) {
 
 async function openAnalysisDiscussion(
   issueId,
-  { runId = state.selectedRunId || "", source = "analysis" } = {}
+  {
+    runId = state.selectedRunId || "",
+    source = "analysis",
+    focusCommentId = 0,
+  } = {}
 ) {
   const normalizedRunId = String(runId || "");
   state.analysisDiscussion = {
@@ -788,6 +792,13 @@ async function openAnalysisDiscussion(
   state.analysisDiscussion.comments = result.comments || [];
   renderAnalysisDiscussionThread();
   updateAnalysisDiscussionCount(issueId, normalizedRunId, Number(result.count || 0));
+  if (focusCommentId) {
+    const focused = $("#analysisDiscussionThread")?.querySelector(
+      `[data-comment-id="${Number(focusCommentId)}"]`
+    );
+    focused?.classList.add("is-deep-linked");
+    focused?.scrollIntoView({ block: "center" });
+  }
   textarea.focus();
 }
 
@@ -811,15 +822,15 @@ function renderAnalysisDiscussionThread() {
   }
   target.innerHTML = comments.map((comment) => {
     const replyContext = comment.reply_to_id
-      ? `<div class="comment-reply-quote">回复 @${escapeHtml(comment.reply_to_author || "评论人")}：${escapeHtml(String(comment.reply_to_body || "").slice(0, 120))}</div>`
+      ? `<div class="comment-reply-quote">回复 ${escapeHtml(reviewMentionDisplayName(comment.reply_to_author || "评论人"))}：${reviewCommentBodyMarkup(String(comment.reply_to_body || "").slice(0, 120))}</div>`
       : "";
     return `<article class="comment-thread-item" data-comment-id="${Number(comment.id)}">
       <div class="comment-thread-meta">
-        <strong>@${escapeHtml(comment.author || "unknown")}</strong>
+        <strong>${escapeHtml(reviewMentionDisplayName(comment.author || "unknown"))}</strong>
         <span>${comment.author_verified ? "SSO · " : ""}${escapeHtml(formatTime(comment.created_at))}</span>
       </div>
       ${replyContext}
-      <div class="comment-thread-body">${escapeHtml(comment.body || "")}</div>
+      <div class="comment-thread-body">${reviewCommentBodyMarkup(comment.body || "")}</div>
       ${state.session?.read_only ? "" : `<button class="analysis-discussion-link comment-reply-button" type="button" data-comment-reply="${Number(comment.id)}">回复</button>`}
     </article>`;
   }).join("");
@@ -853,7 +864,7 @@ function renderAnalysisDiscussionReplyContext() {
   if (!target) return;
   target.hidden = !reply;
   target.innerHTML = reply
-    ? `<span>正在回复 <strong>@${escapeHtml(reply.author || "unknown")}</strong></span><button type="button" data-cancel-comment-reply>取消回复</button>`
+    ? `<span>正在回复 <strong>${escapeHtml(reviewMentionDisplayName(reply.author || "unknown"))}</strong></span><button type="button" data-cancel-comment-reply>取消回复</button>`
     : "";
   target.querySelector("[data-cancel-comment-reply]")?.addEventListener("click", () => {
     if (state.analysisDiscussion) state.analysisDiscussion.replyTo = null;

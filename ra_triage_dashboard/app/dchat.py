@@ -170,11 +170,22 @@ def build_comment_notification_text(
     return "\n".join(lines)[:_MAX_DCHAT_TEXT_LENGTH]
 
 
-def build_review_url(return_url: str, *, issue_id: str, model_run_id: str = "") -> str:
+def build_review_url(
+    return_url: str,
+    *,
+    issue_id: str,
+    model_run_id: str = "",
+    open_comments: bool = False,
+    comment_id: int | None = None,
+) -> str:
     parsed = urlparse(return_url)
     query = {"issue": issue_id}
     if model_run_id:
         query["run"] = model_run_id
+    if open_comments:
+        query["comments"] = "1"
+    if comment_id is not None:
+        query["comment"] = str(int(comment_id))
     return urlunparse(parsed._replace(query=urlencode(query), fragment=""))
 
 

@@ -687,6 +687,7 @@ class DatabaseCoreMixin:
 
                 CREATE TABLE IF NOT EXISTS mention_users (
                     username TEXT PRIMARY KEY,
+                    display_name TEXT NOT NULL DEFAULT '',
                     enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
                     created_by TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
@@ -776,6 +777,7 @@ class DatabaseCoreMixin:
             self._ensure_column(conn, "annotations", "author_source", "TEXT NOT NULL DEFAULT 'legacy'")
             self._ensure_column(conn, "annotations", "author_verified", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "annotations", "mentions_json", "TEXT NOT NULL DEFAULT '[]'")
+            self._ensure_column(conn, "mention_users", "display_name", "TEXT NOT NULL DEFAULT ''")
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_annotations_issue_run_id "
                 "ON annotations(issue_id, model_run_id, id DESC)"

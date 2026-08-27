@@ -452,7 +452,11 @@ async def list_mention_users(request: Request) -> dict[str, Any]:
     )
     if not is_admin:
         items = [
-            {"username": item["username"], "enabled": True}
+            {
+                "username": item["username"],
+                "display_name": item.get("display_name") or item["username"],
+                "enabled": True,
+            }
             for item in items
         ]
     return {"items": items}
@@ -470,11 +474,15 @@ async def set_mention_user(username: str, request: Request) -> dict[str, Any]:
         raise _detail(400, "请求 JSON 不合法。")
     if not isinstance(body, dict) or not isinstance(body.get("enabled", True), bool):
         raise _detail(400, "enabled 必须是布尔值。")
+    display_name = _as_text(body.get("display_name")).strip()
+    if len(display_name) > 80 or any(ord(character) < 32 for character in display_name):
+        raise _detail(400, "显示姓名不合法。")
     user = await asyncio.to_thread(
         database.set_mention_user,
         username=normalized,
         enabled=body.get("enabled", True),
         actor=identity.username,
+        display_name=display_name,
     )
     return {
         "user": user,

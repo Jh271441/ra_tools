@@ -396,6 +396,8 @@ function parsePageRoute() {
     reviewIssueIds,
     source: params.get("source") || "",
     runId: params.get("run") || "",
+    openComments: params.get("comments") === "1",
+    commentId: Number.parseInt(params.get("comment") || "0", 10) || 0,
     comparisonStatus: routeReviewComparisonStatus(params),
     failureOnly: params.has("failure") ? params.get("failure") === "1" : params.has("run") ? false : null,
     ...reviewFilters,

@@ -5,6 +5,14 @@ from typing import Any, Iterable, Sequence
 from .shared import ACCESS_ROLES, utc_now
 
 
+_DEFAULT_MENTION_DISPLAY_NAMES = {
+    "jasperchen": "陈俊豪",
+    "caoliwen_i": "曹立文",
+    "xuhaoxuan_i": "徐浩轩",
+    "chadyang": "杨超",
+}
+
+
 class DatabaseAccessMixin:
     def bootstrap_access_users(
         self, *, writers: Iterable[str], administrators: Iterable[str]
@@ -55,6 +63,10 @@ class DatabaseAccessMixin:
                 """,
                 [(name, True, "bootstrap", now, now) for name in names],
             )
+            conn.executemany(
+                "UPDATE mention_users SET display_name = ? WHERE username = ? AND display_name = ''",
+                [(display_name, username) for username, display_name in _DEFAULT_MENTION_DISPLAY_NAMES.items()],
+            )
 
     def bootstrap_mention_users(self) -> None:
         """Seed the notification directory from the ACL without overwriting choices."""
@@ -73,6 +85,10 @@ class DatabaseAccessMixin:
                     (str(row["username"]), True, "bootstrap", now, now)
                     for row in rows
                 ],
+            )
+            conn.executemany(
+                "UPDATE mention_users SET display_name = ? WHERE username = ? AND display_name = ''",
+                [(display_name, username) for username, display_name in _DEFAULT_MENTION_DISPLAY_NAMES.items()],
             )
 
     def access_role(self, username: str) -> str:
@@ -170,7 +186,7 @@ class DatabaseAccessMixin:
         with self.connect() as conn:
             rows = conn.execute(
                 f"""
-                SELECT username, enabled, created_by, created_at, updated_at
+                SELECT username, display_name, enabled, created_by, created_at, updated_at
                 FROM mention_users
                 {where}
                 ORDER BY enabled DESC, username ASC
@@ -182,7 +198,9 @@ class DatabaseAccessMixin:
             for row in rows
         ]
 
-    def set_mention_user(self, *, username: str, enabled: bool, actor: str) -> dict[str, Any]:
+    def set_mention_user(
+        self, *, username: str, enabled: bool, actor: str, display_name: str = ""
+    ) -> dict[str, Any]:
         normalized = str(username or "").strip().lower()
         if not normalized:
             raise ValueError("用户名不能为空。")
@@ -191,13 +209,15 @@ class DatabaseAccessMixin:
             conn.execute(
                 """
                 INSERT INTO mention_users (
-                    username, enabled, created_by, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?)
+                    username, display_name, enabled, created_by, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(username) DO UPDATE SET
                     enabled = excluded.enabled,
+                    display_name = CASE WHEN excluded.display_name = ''
+                        THEN mention_users.display_name ELSE excluded.display_name END,
                     updated_at = excluded.updated_at
                 """,
-                (normalized, bool(enabled), actor, now, now),
+                (normalized, str(display_name or "").strip()[:80], bool(enabled), actor, now, now),
             )
         return next(
             item
@@ -229,3 +249,22 @@ class DatabaseAccessMixin:
             ).fetchall()
         allowed = {str(row["username"]) for row in rows}
         return [name for name in normalized if name in allowed]
+
+    def mention_display_names(self, usernames: Sequence[str]) -> dict[str, str]:
+        normalized = list(dict.fromkeys(
+            str(value or "").strip().lower()
+            for value in usernames
+            if str(value or "").strip()
+        ))
+        if not normalized:
+            return {}
+        placeholders = ",".join("?" for _ in normalized)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"SELECT username, display_name FROM mention_users WHERE username IN ({placeholders})",
+                tuple(normalized),
+            ).fetchall()
+        return {
+            str(row["username"]): str(row["display_name"] or row["username"])
+            for row in rows
+        }

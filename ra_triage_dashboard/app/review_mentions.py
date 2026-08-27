@@ -54,3 +54,15 @@ def notification_recipients(
         seen.add(username)
         recipients.append(username)
     return recipients
+
+
+def mentions_for_display(text: object, display_names: dict[str, str]) -> str:
+    """Replace LDAP mention tokens with human names for presentation only."""
+
+    def replace(match: re.Match[str]) -> str:
+        username = normalize_mention_username(
+            match.group("braced") or match.group("plain")
+        )
+        return f"@{display_names.get(username, username)}" if username else match.group(0)
+
+    return _MENTION_RE.sub(replace, str(text or ""))

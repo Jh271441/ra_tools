@@ -433,10 +433,15 @@ function renderReview(caseData) {
               <span class="ui-lang-en">Model Result Review</span>
             </h2>
           </div>
-          <button class="history-inline-button" type="button" data-open-history="review" id="reviewHistoryLaunchButton">
-            <span class="ui-lang-zh">Review 历史 · ${allAnnotations.length} 条</span>
-            <span class="ui-lang-en">Review history · ${allAnnotations.length}</span>
-          </button>
+          <div class="review-heading-actions">
+            <button class="history-inline-button" type="button" data-review-comments>
+              <span class="ui-lang-zh">评论</span><span class="ui-lang-en">Comments</span>
+            </button>
+            <button class="history-inline-button" type="button" data-open-history="review" id="reviewHistoryLaunchButton">
+              <span class="ui-lang-zh">Review 历史 · ${allAnnotations.length} 条</span>
+              <span class="ui-lang-en">Review history · ${allAnnotations.length}</span>
+            </button>
+          </div>
         </div>
         <div class="review-expected-output-field">
           <div class="review-expected-output-heading">
@@ -508,6 +513,12 @@ function renderReview(caseData) {
       <button class="button button-primary full-width review-save-button" id="reviewSaveButton" type="submit"><span class="ui-lang-zh">保存新的 review 版本</span><span class="ui-lang-en">Save new review version</span></button>
     </form>`;
   bindSelectedReviewTagControls($("#reviewPane"));
+  $("#reviewPane").querySelector("[data-review-comments]")?.addEventListener("click", () => {
+    openAnalysisDiscussion(state.selectedId, {
+      runId: state.selectedRunId || "",
+      source: "review",
+    }).catch((error) => showToast(error.message, true));
+  });
   const expectedOutputInput = $("#expectedOutputInput");
   if (expectedOutputInput) {
     expectedOutputInput.addEventListener("change", () => {

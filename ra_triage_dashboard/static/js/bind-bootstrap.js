@@ -663,6 +663,13 @@ function bindEvents() {
           setReviewView(route.issue);
           renderCaseNavigation();
         }
+        if (route.openComments) {
+          await openAnalysisDiscussion(route.issue, {
+            runId: route.runId || "",
+            source: "deep-link",
+            focusCommentId: route.commentId || 0,
+          });
+        }
       }
     } catch (error) {
       showToast(error.message, true);
@@ -799,6 +806,14 @@ async function bootstrap() {
     });
     if (initialDetailRequest) {
       await settleInitialRequests([initialDetailRequest], "问题详情");
+    }
+    if (initialRoute.openComments && initialRoute.issue) {
+      await sessionRequest;
+      await openAnalysisDiscussion(initialRoute.issue, {
+        runId: initialRoute.runId || "",
+        source: "deep-link",
+        focusCommentId: initialRoute.commentId || 0,
+      });
     }
     showPage(initialRoute.page, {
       historyMode: "replace",

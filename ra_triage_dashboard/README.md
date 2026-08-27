@@ -450,6 +450,7 @@ ssh -L 8785:127.0.0.1:8785 cloud_server
 19. `020_review_dchat_notifications.sql`：为 Review 保存 mentions，并增加可靠的 DChat 通知 outbox。
 20. `021_mention_users.sql`：增加与 writer/admin 权限解耦的可 @ / DChat 通知人员目录，并用现有访问用户做一次安全种子。
 21. `022_review_comments.sql`：增加按 Issue + Model Run 隔离的追加式评论线程、回复关系与独立 DChat 评论通知 outbox；评论不再创建 Review 版本。
+22. `023_mention_display_names.sql`：为通知目录增加中文显示姓名；LDAP 仍是存储、校验和 DChat 投递的稳定标识。
 
 `003_identity_attribution.sql` 对旧行使用 `legacy` / `verified=false`，不会把历史自由填写姓名升级成可信 SSO。所有人工标注、模型结果、任务记录与附件元数据都保留历史行；附件二进制仍留在同一受限 `review_attachments/` 目录，PostgreSQL 保存其元数据。
 
