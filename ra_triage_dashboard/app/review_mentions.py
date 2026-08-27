@@ -41,12 +41,15 @@ def extract_review_mentions(note: object, *, limit: int = MAX_REVIEW_MENTIONS) -
 def notification_recipients(
     mentions: Iterable[object], *, author: object = ""
 ) -> list[str]:
-    normalized_author = normalize_mention_username(author)
+    # Mentioning oneself is intentional: reviewers often use DChat as a
+    # follow-up reminder. Keep ``author`` in the compatible call signature,
+    # but do not silently remove it from an explicit, directory-approved list.
+    del author
     recipients: list[str] = []
     seen: set[str] = set()
     for value in mentions:
         username = normalize_mention_username(value)
-        if not username or username == normalized_author or username in seen:
+        if not username or username in seen:
             continue
         seen.add(username)
         recipients.append(username)

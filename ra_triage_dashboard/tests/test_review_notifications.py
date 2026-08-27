@@ -38,8 +38,33 @@ class ReviewNotificationTest(unittest.TestCase):
         )
         self.assertEqual(
             notification_recipients(["alice", "bob", "bob"], author="Alice"),
-            ["bob"],
+            ["alice", "bob"],
         )
+
+    def test_verified_author_can_notify_themself(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "triage.sqlite3")
+            database.init()
+            database.upsert_issues(
+                [{"issue_id": "cn1", "gt_label": "误触发"}],
+                source="test",
+                replace_gt=True,
+            )
+            database.set_mention_user(username="alice", enabled=True, actor="alice")
+            with patch("ra_triage_dashboard.app.http_support.database", database), patch(
+                "ra_triage_dashboard.app.http_support._action_actor",
+                return_value=("alice", "kylin_ticket", True),
+            ), patch(
+                "ra_triage_dashboard.app.http_support.settings",
+                SimpleNamespace(dchat_notifications_enabled=True),
+            ):
+                annotation = _create_annotation_record(
+                    issue_id="cn1",
+                    request=make_request(),
+                    body={"expected_output": "误触发", "note": "@alice 稍后继续处理"},
+                )
+            self.assertEqual(annotation["notification"]["queued"], ["alice"])
+            self.assertEqual(database.review_notification_status()["pending"], 1)
 
     def test_mention_limit_fails_closed(self) -> None:
         with self.assertRaisesRegex(ValueError, "最多"):

@@ -1,6 +1,7 @@
-/* Shared @mention composer backed by the server-managed notification directory. */
+/* Shared @mention autocomplete backed by the server-managed notification directory. */
 
 const REVIEW_MENTION_RE = /(^|[^A-Za-z0-9._@-])@(?:\{([A-Za-z0-9._-]{1,64})\}|([A-Za-z0-9._-]{1,64}))/g;
+const reviewMentionComposerStates = new WeakMap();
 
 function reviewMentions(value) {
   const mentions = [];
@@ -15,25 +16,94 @@ function reviewMentions(value) {
 }
 
 function reviewMentionCandidates(query = "") {
-  const current = String(state.session?.username || "").toLowerCase();
   const normalizedQuery = String(query || "").toLowerCase();
   return [...new Set((state.mentionUsers || [])
     .filter((item) => item.enabled !== false)
     .map((item) => String(item.username || "").trim().toLowerCase()))]
     .filter((item) =>
       /^[A-Za-z0-9._-]{1,64}$/.test(item) &&
-      item !== current &&
-      (!normalizedQuery || item.startsWith(normalizedQuery))
-    );
+      (!normalizedQuery || item.includes(normalizedQuery))
+    )
+    .sort((left, right) => {
+      const leftPrefix = left.startsWith(normalizedQuery) ? 0 : 1;
+      const rightPrefix = right.startsWith(normalizedQuery) ? 0 : 1;
+      return leftPrefix - rightPrefix || left.localeCompare(right);
+    });
 }
 
 function activeMentionQuery(textarea) {
   const cursor = textarea.selectionStart ?? textarea.value.length;
   const prefix = textarea.value.slice(0, cursor);
-  const match = prefix.match(/(?:^|\s)@(?:\{)?([A-Za-z0-9._-]{0,64})$/);
-  return match
-    ? { query: String(match[1] || "").toLowerCase(), start: cursor - match[0].trimStart().length, end: cursor }
-    : null;
+  const match = prefix.match(/(^|[^A-Za-z0-9._@-])@(?:\{)?([A-Za-z0-9._-]{0,64})$/);
+  if (!match) return null;
+  const boundary = String(match[1] || "");
+  const token = match[0].slice(boundary.length);
+  return {
+    query: String(match[2] || "").toLowerCase(),
+    start: cursor - token.length,
+    end: cursor,
+  };
+}
+
+function reviewMentionComposerState(textarea) {
+  if (!reviewMentionComposerStates.has(textarea)) {
+    reviewMentionComposerStates.set(textarea, {
+      activeIndex: 0,
+      dismissedStart: null,
+    });
+  }
+  return reviewMentionComposerStates.get(textarea);
+}
+
+function closeReviewMentionComposer(textarea, root, { preserveTrigger = false } = {}) {
+  if (!textarea || !root) return;
+  const composer = reviewMentionComposerState(textarea);
+  const active = activeMentionQuery(textarea);
+  composer.dismissedStart = preserveTrigger && active ? active.start : null;
+  composer.activeIndex = 0;
+  root.replaceChildren();
+  root.hidden = true;
+}
+
+function insertReviewMention(textarea, root, username) {
+  const active = activeMentionQuery(textarea);
+  if (!active) return;
+  textarea.setRangeText(`@${username} `, active.start, active.end, "end");
+  reviewMentionComposerState(textarea).dismissedStart = null;
+  textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  textarea.focus();
+  closeReviewMentionComposer(textarea, root);
+}
+
+function reviewMentionStatus(mentions, unsupported) {
+  const enabled = Boolean(state.config?.review_notifications?.enabled);
+  const verified = Boolean(state.session?.verified);
+  if (unsupported.length) {
+    return {
+      text: uiText(
+        `目录外人员无法保存：${unsupported.map((name) => `@${name}`).join("、")}`,
+        `Not in mention directory: ${unsupported.map((name) => `@${name}`).join(", ")}`
+      ),
+      invalid: true,
+    };
+  }
+  if (!mentions.length) return { text: "", invalid: false };
+  if (!enabled) {
+    return {
+      text: uiText(`已识别 ${mentions.length} 人 · DChat 尚未启用`, `${mentions.length} mentioned · DChat disabled`),
+      invalid: false,
+    };
+  }
+  if (!verified) {
+    return {
+      text: uiText(`已识别 ${mentions.length} 人 · 需从 SSO 入口保存才会通知`, `${mentions.length} mentioned · verified SSO required`),
+      invalid: false,
+    };
+  }
+  return {
+    text: uiText(`保存后将异步通知 ${mentions.length} 人`, `${mentions.length} will be notified after save`),
+    invalid: false,
+  };
 }
 
 function updateReviewMentionComposer(
@@ -41,44 +111,59 @@ function updateReviewMentionComposer(
   root = $("#reviewMentionComposer")
 ) {
   if (!root || !textarea) return;
-  const mentions = reviewMentions(textarea.value);
+  const composer = reviewMentionComposerState(textarea);
+  const parsedMentions = reviewMentions(textarea.value);
   const allowed = new Set((state.mentionUsers || [])
     .filter((item) => item.enabled !== false)
     .map((item) => String(item.username || "").trim().toLowerCase()));
+  const active = activeMentionQuery(textarea);
+  if (!active) composer.dismissedStart = null;
+  // The token under the caret is a search query until the user inserts a
+  // delimiter or chooses a result. Do not flag a partial LDAP as invalid and
+  // do not hide an exact match merely because the parser can already read it.
+  const mentions = active
+    ? parsedMentions.filter((name) => name !== active.query)
+    : parsedMentions;
   const unsupported = mentions.filter((name) => !allowed.has(name));
-  const enabled = Boolean(state.config?.review_notifications?.enabled);
-  const verified = Boolean(state.session?.verified);
-  const status = unsupported.length
-    ? uiText(
-        `目录外人员无法保存：${unsupported.map((name) => `@${name}`).join("、")}`,
-        `Not in mention directory: ${unsupported.map((name) => `@${name}`).join(", ")}`
-      )
-    : !mentions.length
-    ? uiText("输入 @ldap 提及同事", "Type @ldap to mention a teammate")
-    : !enabled
-      ? uiText(`已识别 ${mentions.length} 人 · DChat 尚未启用`, `${mentions.length} mentioned · DChat disabled`)
-      : !verified
-        ? uiText(`已识别 ${mentions.length} 人 · 需从 SSO 入口保存才会通知`, `${mentions.length} mentioned · verified SSO required`)
-        : uiText(`保存后将异步通知 ${mentions.length} 人`, `${mentions.length} will be notified after save`);
-  const activeQuery = activeMentionQuery(textarea);
-  const candidates = reviewMentionCandidates(activeQuery?.query)
-    .filter((name) => !mentions.includes(name))
-    .slice(0, 8);
-  root.innerHTML = `
-    <span class="review-mention-status">${escapeHtml(status)}</span>
-    ${mentions.map((name) => `<span class="review-mention-chip is-selected${allowed.has(name) ? "" : " is-invalid"}">@${escapeHtml(name)}</span>`).join("")}
-    ${candidates.map((name) => `<button class="review-mention-chip" type="button" data-review-mention="${escapeHtml(name)}">@${escapeHtml(name)}</button>`).join("")}`;
+  const status = reviewMentionStatus(mentions, unsupported);
+  const dismissed = active && composer.dismissedStart === active.start;
+  const candidates = active && !dismissed
+    ? reviewMentionCandidates(active.query).filter((name) => !mentions.includes(name)).slice(0, 8)
+    : [];
+  composer.activeIndex = Math.min(Math.max(0, composer.activeIndex), Math.max(0, candidates.length - 1));
+  const current = String(state.session?.username || "").trim().toLowerCase();
+  const statusMarkup = status.text
+    ? `<span class="review-mention-status${status.invalid ? " is-invalid" : ""}">${escapeHtml(status.text)}</span>`
+    : "";
+  const popoverMarkup = active && !dismissed
+    ? `<div class="review-mention-popover" role="listbox" aria-label="${escapeHtml(uiText("可 @ 人员", "Mention users"))}">
+        <div class="review-mention-search-row">
+          <span class="review-mention-search-icon" aria-hidden="true">@</span>
+          <span class="review-mention-search-query">${escapeHtml(active.query || uiText("输入 LDAP 搜索", "Type LDAP to search"))}</span>
+          <kbd>Esc</kbd>
+        </div>
+        <div class="review-mention-options">
+          ${candidates.length ? candidates.map((name, index) => `
+            <button class="review-mention-option${index === composer.activeIndex ? " is-active" : ""}" type="button" role="option" aria-selected="${index === composer.activeIndex ? "true" : "false"}" data-review-mention="${escapeHtml(name)}" data-review-mention-index="${index}">
+              <span class="review-mention-avatar" aria-hidden="true">${escapeHtml(name.slice(0, 1).toUpperCase())}</span>
+              <strong>@${escapeHtml(name)}</strong>
+              ${name === current ? `<small>${escapeHtml(uiText("自己", "You"))}</small>` : ""}
+            </button>`).join("") : `<div class="review-mention-empty">${escapeHtml(uiText("没有匹配的可 @ 人员", "No matching mention user"))}</div>`}
+        </div>
+      </div>`
+    : "";
+  root.innerHTML = `${statusMarkup}${popoverMarkup}`;
+  root.hidden = !statusMarkup && !popoverMarkup;
   root.querySelectorAll("[data-review-mention]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const active = activeMentionQuery(textarea);
-      const separator = !active && textarea.value && !/\s$/.test(textarea.value) ? " " : "";
-      const insertion = `${separator}@${button.dataset.reviewMention} `;
-      const start = active?.start ?? textarea.selectionStart ?? textarea.value.length;
-      const end = active?.end ?? textarea.selectionEnd ?? start;
-      textarea.setRangeText(insertion, start, end, "end");
-      textarea.dispatchEvent(new Event("input", { bubbles: true }));
-      textarea.focus();
+    button.addEventListener("pointerdown", (event) => event.preventDefault());
+    button.addEventListener("mouseenter", () => {
+      composer.activeIndex = Number(button.dataset.reviewMentionIndex) || 0;
+      root.querySelectorAll("[data-review-mention]").forEach((option, index) => {
+        option.classList.toggle("is-active", index === composer.activeIndex);
+        option.setAttribute("aria-selected", index === composer.activeIndex ? "true" : "false");
+      });
     });
+    button.addEventListener("click", () => insertReviewMention(textarea, root, button.dataset.reviewMention));
   });
 }
 
@@ -86,8 +171,47 @@ function bindReviewMentionComposer(
   textarea = $("#annotationNote"),
   root = $("#reviewMentionComposer")
 ) {
-  if (!textarea || textarea.dataset.reviewMentionBound === "1") return;
+  if (!textarea || !root || textarea.dataset.reviewMentionBound === "1") return;
   textarea.dataset.reviewMentionBound = "1";
-  textarea.addEventListener("input", () => updateReviewMentionComposer(textarea, root));
+  textarea.setAttribute("autocomplete", "off");
+  const composer = reviewMentionComposerState(textarea);
+  textarea.addEventListener("input", () => {
+    composer.activeIndex = 0;
+    updateReviewMentionComposer(textarea, root);
+  });
+  textarea.addEventListener("keydown", (event) => {
+    const active = activeMentionQuery(textarea);
+    const options = [...root.querySelectorAll("[data-review-mention]")];
+    const popoverOpen = Boolean(active && !root.hidden && root.querySelector(".review-mention-popover"));
+    if (event.key === "Escape" && popoverOpen) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeReviewMentionComposer(textarea, root, { preserveTrigger: true });
+      return;
+    }
+    if (!popoverOpen || !options.length) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const delta = event.key === "ArrowDown" ? 1 : -1;
+      composer.activeIndex = (composer.activeIndex + delta + options.length) % options.length;
+      updateReviewMentionComposer(textarea, root);
+      root.querySelector(".review-mention-option.is-active")?.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    if (event.key === "Enter" || event.key === "Tab") {
+      const selected = options[composer.activeIndex];
+      if (!selected) return;
+      event.preventDefault();
+      insertReviewMention(textarea, root, selected.dataset.reviewMention);
+    }
+  });
+  ["click", "focus", "select"].forEach((eventName) => {
+    textarea.addEventListener(eventName, () => updateReviewMentionComposer(textarea, root));
+  });
+  textarea.addEventListener("blur", () => {
+    window.setTimeout(() => {
+      if (!root.contains(document.activeElement)) closeReviewMentionComposer(textarea, root);
+    }, 0);
+  });
   updateReviewMentionComposer(textarea, root);
 }
