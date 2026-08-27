@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from .issue_tag_sources import IssueTagSourceSpec
+from .dchat import validate_dchat_base_url
 from .web_paths import normalize_base_path
 
 
@@ -174,6 +175,13 @@ class Settings:
     kylin_sso_cache_seconds: int
     sso_write_users: tuple[str, ...]
     team_default_managers: tuple[str, ...]
+    dchat_notifications_enabled: bool
+    dchat_delivery_mode: str
+    dchat_base_url: str
+    dchat_credentials_file: Path
+    dchat_timeout_seconds: float
+    dchat_max_attempts: int
+    dchat_poll_seconds: float
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -263,6 +271,16 @@ class Settings:
             raise RuntimeError(
                 "DASHBOARD_DEPLOYMENT_MODE 必须是 development 或 production。"
             )
+        dchat_delivery_mode = (
+            os.getenv("DASHBOARD_DCHAT_DELIVERY_MODE", "openapi").strip().lower()
+            or "openapi"
+        )
+        if dchat_delivery_mode not in {"openapi", "loopback"}:
+            raise RuntimeError(
+                "DASHBOARD_DCHAT_DELIVERY_MODE 必须是 openapi 或 loopback。"
+            )
+        if deployment_mode == "production" and dchat_delivery_mode == "loopback":
+            raise RuntimeError("production 模式禁止使用 DChat loopback。")
         ingress_token_file_value = os.getenv(
             "DASHBOARD_TRUSTED_INGRESS_TOKEN_FILE", ""
         ).strip()
@@ -278,6 +296,19 @@ class Settings:
         )
         if any(not IDENTITY_NAME_RE.fullmatch(username) for username in sso_write_users):
             raise RuntimeError("DASHBOARD_SSO_WRITE_USERS 包含非法用户名。")
+        try:
+            dchat_timeout_seconds = float(
+                os.getenv("DASHBOARD_DCHAT_TIMEOUT_SECONDS", "3.0")
+            )
+            dchat_poll_seconds = float(
+                os.getenv("DASHBOARD_DCHAT_POLL_SECONDS", "2.0")
+            )
+        except ValueError as exc:
+            raise RuntimeError("DChat timeout/poll 配置必须是数字。") from exc
+        if not 0.2 <= dchat_timeout_seconds <= 10.0:
+            raise RuntimeError("DASHBOARD_DCHAT_TIMEOUT_SECONDS 必须在 0.2 到 10 秒之间。")
+        if not 0.2 <= dchat_poll_seconds <= 60.0:
+            raise RuntimeError("DASHBOARD_DCHAT_POLL_SECONDS 必须在 0.2 到 60 秒之间。")
         trail_attribute_result_field = (
             os.getenv(
                 "DASHBOARD_TRAIL_ATTRIBUTE_RESULT_FIELD",
@@ -546,6 +577,25 @@ class Settings:
             ),
             sso_write_users=sso_write_users,
             team_default_managers=team_default_managers,
+            dchat_notifications_enabled=_bool(
+                "DASHBOARD_DCHAT_NOTIFICATIONS_ENABLED", False
+            ),
+            dchat_delivery_mode=dchat_delivery_mode,
+            dchat_base_url=validate_dchat_base_url(
+                os.getenv(
+                    "DASHBOARD_DCHAT_BASE_URL",
+                    "https://oapi-dichat.intra.xiaojukeji.com",
+                ).strip()
+            ),
+            dchat_credentials_file=_path(
+                "DASHBOARD_DCHAT_CREDENTIALS_FILE",
+                data_dir / "dchat_credentials.json",
+            ),
+            dchat_timeout_seconds=dchat_timeout_seconds,
+            dchat_max_attempts=min(
+                10, _integer("DASHBOARD_DCHAT_MAX_ATTEMPTS", 5, 1)
+            ),
+            dchat_poll_seconds=dchat_poll_seconds,
         )
 
     @property
@@ -580,6 +630,10 @@ class Settings:
         return self.data_dir / "review_attachments"
 
     @property
+    def comment_attachments_dir(self) -> Path:
+        return self.data_dir / "comment_attachments"
+
+    @property
     def case_thumbnails_dir(self) -> Path:
         return self.data_dir / "case_thumbnails"
 
@@ -588,6 +642,7 @@ class Settings:
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
         self.uploads_dir.mkdir(parents=True, exist_ok=True)
         self.review_attachments_dir.mkdir(parents=True, exist_ok=True)
+        self.comment_attachments_dir.mkdir(parents=True, exist_ok=True)
         self.case_thumbnails_dir.mkdir(parents=True, exist_ok=True)
         self.batch_bag_cache_dir.mkdir(parents=True, exist_ok=True)
         if self.storage_backend == "sqlite":

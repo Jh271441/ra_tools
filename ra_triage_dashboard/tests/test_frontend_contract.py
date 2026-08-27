@@ -39,7 +39,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-242", APP_ENTRY_JS)
+        self.assertIn("manual-triage-256", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -80,7 +80,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-242", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-256", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
         self.assertNotIn("async function bootstrap", APP_ENTRY_JS)
@@ -120,7 +120,13 @@ class FrontendContractTest(unittest.TestCase):
         self.assertNotIn('<div class="issue-reviewer">', card_body)
 
     def test_dense_gallery_labels_do_not_split_or_overflow_the_card(self) -> None:
+        card_start = APP_JS.index("function issueCard(item)")
+        card_end = APP_JS.index("\nfunction caseGallerySignature", card_start)
+        card_body = APP_JS[card_start:card_end]
         self.assertIn("grid-auto-rows: 1fr; align-items: stretch;", STYLES_CSS)
+        self.assertIn(".issue-card-heading { min-width: 0; min-height: 19px;", STYLES_CSS)
+        self.assertNotIn('class="issue-title"', card_body)
+        self.assertNotIn("rawTitle", card_body)
         self.assertIn(".issue-card-labels {\n  min-width: 0; overflow: hidden;", STYLES_CSS)
         self.assertIn(
             ".issue-label-pair { flex: 0 0 auto; display: inline-flex;",
@@ -181,7 +187,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('styles.css?v=manual-triage-242', INDEX_HTML)
+        self.assertIn('styles.css?v=manual-triage-256', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -314,9 +320,11 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("imageFilesFromDataTransfer", APP_JS)
         self.assertIn('pasteZone.addEventListener("drop"', APP_JS)
         self.assertIn("拖拽到此处", APP_JS)
-        # Exactly one paste path — zone+form double listeners caused duplicate images.
+        # Exactly one Review evidence paste path; the second belongs to the
+        # independent Markdown comment composer.
         self.assertIn('// Single form-level paste handler', APP_JS)
-        self.assertEqual(APP_JS.count('addEventListener("paste"'), 1)
+        self.assertEqual(APP_JS.count('addEventListener("paste"'), 2)
+        self.assertIn('textarea.addEventListener("paste"', APP_JS)
         self.assertIn("event.stopPropagation()", APP_JS)
         # Shared anchored dropdowns: prefer down, flip by free space.
         self.assertIn("function positionAnchoredPanel", APP_JS)
@@ -865,7 +873,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-242", APP_ENTRY_JS)
+        self.assertIn("manual-triage-256", APP_ENTRY_JS)
 
     def test_multi_issue_query_contract(self) -> None:
         self.assertIn('id="openIssueQueryButton"', INDEX_HTML)
@@ -1133,6 +1141,74 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function issueTagSourceSuggestionMarkup", APP_JS)
         self.assertIn("历史抽检预填", APP_JS)
         self.assertIn("保存后才会创建新的 Review 版本", APP_JS)
+
+    def test_db_backed_mentions_cover_review_analysis_and_issue_exclusion(self) -> None:
+        self.assertIn('api("/api/mention-users")', APP_JS)
+        self.assertIn("state.mentionUsers", APP_JS)
+        self.assertIn("activeMentionQuery", APP_JS)
+        self.assertIn("review-mention-popover", APP_JS)
+        self.assertIn("function reviewMentionCaretAnchor", APP_JS)
+        self.assertIn("function positionReviewMentionPopover", APP_JS)
+        self.assertIn("reviewMentionCaretAnchor(textarea, active.start)", APP_JS)
+        self.assertIn('popover.classList.toggle("opens-up", opensUp)', APP_JS)
+        self.assertIn('event.key === "Escape"', APP_JS)
+        self.assertIn("preserveTrigger: true", APP_JS)
+        self.assertIn("item.username.includes(normalizedQuery)", APP_JS)
+        self.assertIn('item.displayName.toLocaleLowerCase("zh-CN").includes(normalizedQuery)', APP_JS)
+        self.assertIn("\\u3400-\\u9fff", APP_JS)
+        self.assertIn(
+            "梁祥辉",
+            (STATIC_DIR.parent / "app" / "db_parts" / "access.py").read_text(
+                encoding="utf-8"
+            ),
+        )
+        self.assertIn("reviewCommentBodyMarkup", APP_JS)
+        self.assertIn('uiText("自己", "You")', APP_JS)
+        self.assertNotIn("item !== current", APP_JS)
+        self.assertIn(".review-mention-popover", STYLES_CSS)
+        self.assertIn("position: fixed", STYLES_CSS)
+        self.assertIn(".review-mention-popover.opens-up", STYLES_CSS)
+        self.assertIn(".review-mention-option.is-active", STYLES_CSS)
+        self.assertNotIn("可用 @ldap 通知同事", APP_JS)
+        self.assertNotIn("可输入 @ldap", INDEX_HTML)
+        self.assertIn('id="analysisDiscussionDialog"', INDEX_HTML)
+        self.assertIn("data-analysis-discussion", APP_JS)
+        self.assertIn('class="analysis-discussion-link"', APP_JS)
+        self.assertNotIn('class="button button-quiet" type="button" data-analysis-discussion', APP_JS)
+        self.assertIn(".analysis-discussion-link, .text-link", STYLES_CSS)
+        self.assertIn("data-trail-update-discussion", APP_JS)
+        self.assertNotIn('<th>操作</th>', INDEX_HTML)
+        self.assertIn('class="trail-update-issue-meta"', APP_JS)
+        self.assertIn(".trail-update-issue-meta > small", STYLES_CSS)
+        self.assertNotIn('data-label="操作"', APP_JS)
+        self.assertIn('colspan="8" class="trail-update-empty"', INDEX_HTML)
+        self.assertIn('source: "trail-update"', APP_JS)
+        self.assertIn("review.model_run_id || model.run_id", APP_JS)
+        self.assertIn('/comments?model_run_id=', APP_JS)
+        self.assertIn('openComments: params.get("comments") === "1"', APP_JS)
+        self.assertIn('source: "deep-link"', APP_JS)
+        self.assertIn("data-review-comments", APP_JS)
+        self.assertIn('reply_to_id: context.replyTo?.id || null', APP_JS)
+        self.assertIn('data-comment-reply=', APP_JS)
+        self.assertIn('data-comment-share=', APP_JS)
+        self.assertIn("analysisDiscussionShareUrl", APP_JS)
+        self.assertIn("navigator.share", APP_JS)
+        self.assertIn("navigator.clipboard?.writeText", APP_JS)
+        self.assertIn('url.searchParams.set("comment"', APP_JS)
+        self.assertIn('.replace(/^\\s*(?:#{1,3}|>|[-+*]|\\d+[.)])\\s+/gm, "")', APP_JS)
+        self.assertIn('data-comment-format="bold"', INDEX_HTML)
+        self.assertIn("data-comment-image", INDEX_HTML)
+        self.assertIn("comments-with-attachments", APP_JS)
+        self.assertIn('"X-RA-Triage-Request": "comment-v1"', APP_JS)
+        self.assertIn("comment-markdown-image", STYLES_CSS)
+        self.assertIn('html[data-color-theme="light"] .comment-thread-list', STYLES_CSS)
+        self.assertNotIn('/annotations`, {\n      method: "POST",\n      body: JSON.stringify({\n        model_run_id: String(context.runId', APP_JS)
+        self.assertIn(".trail-update-discussion-link", STYLES_CSS)
+        self.assertIn("saveAnalysisDiscussion", APP_JS)
+        self.assertIn("data-mention-composer", INDEX_HTML)
+        self.assertIn("data-trail-issue-entry-comment data-mention-composer", APP_JS)
+        self.assertIn('id="mentionUserForm"', INDEX_HTML)
+        self.assertIn("does not grant Dashboard write or admin access", INDEX_HTML)
 
 
 if __name__ == "__main__":

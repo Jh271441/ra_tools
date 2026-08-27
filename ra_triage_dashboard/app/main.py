@@ -27,6 +27,7 @@ from .runtime import (
     batch_prediction_runner,
     database,
     issue_tag_sources,
+    review_notification_dispatcher,
     settings,
 )
 from .routers import (
@@ -131,12 +132,14 @@ async def _authoritative_gt_sync_loop() -> None:
 async def lifespan(_: FastAPI):
     gt_sync_task: asyncio.Task[None] | None = None
     trail_sync_task: asyncio.Task[None] | None = None
+    review_notification_task: asyncio.Task[None] | None = None
     settings.ensure_directories()
     database.init()
     database.bootstrap_access_users(
         writers=settings.sso_write_users,
         administrators=settings.team_default_managers,
     )
+    database.bootstrap_mention_users()
     database.seed_examples(EXAMPLE_CASES)
     # Local-only seed from baseline workbooks / registry. No Trail I/O.
     bootstrap_baseline()
@@ -157,11 +160,16 @@ async def lifespan(_: FastAPI):
             _authoritative_gt_sync_loop(),
             name="authoritative-gt-sync",
         )
+    if settings.dchat_notifications_enabled:
+        review_notification_task = asyncio.create_task(
+            review_notification_dispatcher.run(),
+            name="review-dchat-notifications",
+        )
     batch_prediction_runner.resume_queued_predictions()
     try:
         yield
     finally:
-        for task in (gt_sync_task, trail_sync_task):
+        for task in (review_notification_task, gt_sync_task, trail_sync_task):
             if task is not None:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -254,18 +262,26 @@ async def request_size_guard(request: Request, call_next):
     if (
         request.method == "POST"
         and request.url.path.startswith("/api/cases/")
-        and request.url.path.endswith("/annotations-with-attachments")
+        and request.url.path.endswith(
+            ("/annotations-with-attachments", "/comments-with-attachments")
+        )
     ):
-        if request.headers.get("x-ra-triage-request") != "review-v1":
+        is_comment_upload = request.url.path.endswith("/comments-with-attachments")
+        required_marker = "comment-v1" if is_comment_upload else "review-v1"
+        if request.headers.get("x-ra-triage-request") != required_marker:
             return JSONResponse(
                 status_code=403,
-                content={"detail": "缺少 Review 截图请求标记。"},
+                content={
+                    "detail": "缺少评论图片请求标记。"
+                    if is_comment_upload
+                    else "缺少 Review 截图请求标记。"
+                },
             )
         content_length = request.headers.get("content-length", "").strip()
         if not content_length:
             return JSONResponse(
                 status_code=411,
-                content={"detail": "Review 截图请求必须提供 Content-Length。"},
+                content={"detail": "图片上传请求必须提供 Content-Length。"},
             )
         try:
             request_bytes = int(content_length)

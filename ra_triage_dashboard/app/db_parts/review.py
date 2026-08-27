@@ -648,6 +648,8 @@ class DatabaseReviewMixin:
         author: str,
         author_source: str = "legacy",
         author_verified: bool = False,
+        mentions: list[str] | None = None,
+        notification_recipients: list[str] | None = None,
         attachments: list[dict[str, Any]] | None = None,
         is_excluded: bool = False,
         expected_previous_annotation_id: int | None | object = _EXPECTED_ANNOTATION_UNSET,
@@ -664,6 +666,20 @@ class DatabaseReviewMixin:
             {str(item).strip() for item in missing_evidence if str(item).strip()}
         )
         attachments = attachments or []
+        mentions = list(
+            dict.fromkeys(
+                str(item).strip().lower()
+                for item in (mentions or [])
+                if str(item).strip()
+            )
+        )
+        notification_recipients = list(
+            dict.fromkeys(
+                str(item).strip().lower()
+                for item in (notification_recipients or [])
+                if str(item).strip()
+            )
+        )
         now = utc_now()
         with self._write_lock, self.connect() as conn:
             if model_run_id:
@@ -703,9 +719,9 @@ class DatabaseReviewMixin:
             annotation_sql = """
                 INSERT INTO annotations (
                     issue_id, model_run_id, label, review_status, is_excluded,
-                    tags_json, missing_evidence_json, note, author, author_source,
+                    tags_json, missing_evidence_json, mentions_json, note, author, author_source,
                     author_verified, supersedes_id, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             if self.backend == "postgresql":
                 annotation_sql += " RETURNING id"
@@ -719,6 +735,7 @@ class DatabaseReviewMixin:
                     bool(is_excluded),
                     _json(tags),
                     _json(missing_evidence),
+                    _json(mentions),
                     note.strip(),
                     author.strip(),
                     author_source.strip() or "legacy",
@@ -733,6 +750,17 @@ class DatabaseReviewMixin:
                 else int(cursor.lastrowid)
             )
             conn.execute("UPDATE issues SET updated_at = ? WHERE issue_id = ?", (now, issue_id))
+            for recipient in notification_recipients:
+                conn.execute(
+                    """
+                    INSERT INTO review_notifications (
+                        annotation_id, issue_id, recipient, status, attempt_count,
+                        next_attempt_at, created_at, updated_at
+                    ) VALUES (?, ?, ?, 'pending', 0, ?, ?, ?)
+                    ON CONFLICT(annotation_id, recipient) DO NOTHING
+                    """,
+                    (annotation_id, issue_id, recipient, now, now, now),
+                )
             for attachment in attachments:
                 conn.execute(
                     """
@@ -836,6 +864,9 @@ class DatabaseReviewMixin:
             "tags": _json_load(row["tags_json"], []),
             "missing_evidence": _json_load(
                 row["missing_evidence_json"] if "missing_evidence_json" in row.keys() else "[]", []
+            ),
+            "mentions": _json_load(
+                row["mentions_json"] if "mentions_json" in row.keys() else "[]", []
             ),
             "note": row["note"],
             "author": row["author"],

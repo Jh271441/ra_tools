@@ -888,7 +888,7 @@ class TrailAttributeUpdateTest(unittest.TestCase):
             is_excluded=True,
             tags=["排队"],
             missing_evidence=[],
-            note="原有 Review",
+            note="原有 Review\n\n问题排除说明：人工屏蔽",
             author="jasperchen",
             author_source="kylin_ticket",
             author_verified=True,
@@ -954,6 +954,36 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         self.assertEqual(result["not_in_dashboard_count"], 1)
         self.assertEqual(result["not_in_dashboard_issue_ids"], ["cn00000002"])
         create.assert_called_once()
+
+    def test_local_exclusion_queues_validated_mentions_with_review(self) -> None:
+        actor = SimpleNamespace(username="alice", source="kylin_ticket", verified=True)
+        case = {
+            "issue_id": "cn00000001",
+            "gt_label": "误触发",
+            "annotations": [{
+                "id": 7,
+                "model_run_id": "run-1",
+                "label": "误触发",
+                "review_status": "reviewed",
+                "is_excluded": False,
+                "tags": [],
+                "missing_evidence": [],
+                "note": "@bob 请确认",
+            }],
+        }
+        with patch.object(trail_update.database, "get_case", return_value=case), patch.object(
+            trail_update.database, "create_annotation"
+        ) as create:
+            result = trail_update._mark_local_review_exclusions(
+                ["cn00000001"],
+                actor=actor,
+                mentions_by_issue={"cn00000001": ["bob"]},
+                notification_recipients_by_issue={"cn00000001": ["bob"]},
+            )
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["notification_queued_count"], 1)
+        self.assertEqual(create.call_args.kwargs["mentions"], ["bob"])
+        self.assertEqual(create.call_args.kwargs["notification_recipients"], ["bob"])
 
 
 if __name__ == "__main__":

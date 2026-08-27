@@ -61,6 +61,30 @@ class AccessUsersTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "唯一的管理员"):
                 database.delete_access_user("jasperchen")
 
+    def test_mention_directory_is_separate_from_write_access(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = self.make_database(directory)
+            database.bootstrap_access_users(
+                writers=("jasperchen",), administrators=("jasperchen",)
+            )
+            database.bootstrap_mention_users()
+            self.assertEqual(
+                database.enabled_mention_recipients(["jasperchen", "unknown"]),
+                ["jasperchen"],
+            )
+            database.set_mention_user(
+                username="reviewer_only", enabled=True, actor="jasperchen"
+            )
+            self.assertEqual(database.access_role("reviewer_only"), "")
+            self.assertEqual(
+                database.enabled_mention_recipients(["reviewer_only"]),
+                ["reviewer_only"],
+            )
+            database.set_mention_user(
+                username="reviewer_only", enabled=False, actor="jasperchen"
+            )
+            self.assertEqual(database.enabled_mention_recipients(["reviewer_only"]), [])
+
 
 if __name__ == "__main__":
     unittest.main()

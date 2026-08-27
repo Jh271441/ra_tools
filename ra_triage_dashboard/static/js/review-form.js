@@ -333,7 +333,10 @@ function syncReviewFormFromCase(caseData) {
     expectedOutputInput.dataset.selectionSource = expectedOutput ? "stored" : "empty";
   }
   const note = $("#annotationNote");
-  if (note) note.value = previous.note || "";
+  if (note) {
+    note.value = previous.note || "";
+    updateReviewMentionComposer(note);
+  }
   const author = $("#annotationAuthor");
   if (author && !(state.session.verified && state.session.username)) {
     author.value = state.session.username || previous.author || "";
@@ -430,10 +433,15 @@ function renderReview(caseData) {
               <span class="ui-lang-en">Model Result Review</span>
             </h2>
           </div>
-          <button class="history-inline-button" type="button" data-open-history="review" id="reviewHistoryLaunchButton">
-            <span class="ui-lang-zh">Review 历史 · ${allAnnotations.length} 条</span>
-            <span class="ui-lang-en">Review history · ${allAnnotations.length}</span>
-          </button>
+          <div class="review-heading-actions">
+            <button class="history-inline-button" type="button" data-review-comments>
+              <span class="ui-lang-zh">评论</span><span class="ui-lang-en">Comments</span>
+            </button>
+            <button class="history-inline-button" type="button" data-open-history="review" id="reviewHistoryLaunchButton">
+              <span class="ui-lang-zh">Review 历史 · ${allAnnotations.length} 条</span>
+              <span class="ui-lang-en">Review history · ${allAnnotations.length}</span>
+            </button>
+          </div>
         </div>
         <div class="review-expected-output-field">
           <div class="review-expected-output-heading">
@@ -474,8 +482,9 @@ function renderReview(caseData) {
         </div>
         <label class="review-reason">
           <span><span class="ui-lang-zh">模型为什么判错？</span><span class="ui-lang-en">Why was the model wrong?</span></span>
-          <textarea id="annotationNote" rows="2" placeholder="简要说明模型漏掉的关键证据，例如 routing、绕行空间或时序。">${escapeHtml(previous.note || "")}</textarea>
+          <textarea id="annotationNote" rows="2" placeholder="说明关键证据；输入 @ 可通知同事。">${escapeHtml(previous.note || "")}</textarea>
         </label>
+        <div class="review-mention-composer" id="reviewMentionComposer" aria-live="polite"></div>
         <details class="evidence-dropdown review-dropdown review-tag-dropdown">
           <summary>
             <span class="tag-group-label"><span class="ui-lang-zh">缺失信息（多选）</span><span class="ui-lang-en">Missing evidence</span></span>
@@ -504,6 +513,12 @@ function renderReview(caseData) {
       <button class="button button-primary full-width review-save-button" id="reviewSaveButton" type="submit"><span class="ui-lang-zh">保存新的 review 版本</span><span class="ui-lang-en">Save new review version</span></button>
     </form>`;
   bindSelectedReviewTagControls($("#reviewPane"));
+  $("#reviewPane").querySelector("[data-review-comments]")?.addEventListener("click", () => {
+    openAnalysisDiscussion(state.selectedId, {
+      runId: state.selectedRunId || "",
+      source: "review",
+    }).catch((error) => showToast(error.message, true));
+  });
   const expectedOutputInput = $("#expectedOutputInput");
   if (expectedOutputInput) {
     expectedOutputInput.addEventListener("change", () => {
@@ -673,6 +688,7 @@ function renderReview(caseData) {
     });
   }
   renderPendingReviewImages();
+  bindReviewMentionComposer($("#annotationNote"));
   const annotationForm = $("#annotationForm");
   const markDraftDirty = () => {
     state.reviewFormDirty = true;
@@ -964,8 +980,9 @@ async function saveAnnotation(event) {
       ];
       updateReviewHistory(state.selectedCase);
     }
+    const queuedCount = result?.annotation?.notification?.queued?.length || 0;
     showToast(
-      `已保存新的 review 版本${screenshotCount ? `和 ${screenshotCount} 张截图` : ""}。`
+      `已保存新的 review 版本${screenshotCount ? `和 ${screenshotCount} 张截图` : ""}${queuedCount ? `；DChat 通知已排队 ${queuedCount} 人` : ""}。`
     );
     refreshReviewDerivedData();
   } catch (error) {

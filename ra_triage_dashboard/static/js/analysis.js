@@ -704,6 +704,7 @@ function renderAnalysisCases(data) {
             <span>${escapeHtml(annotation.author || "未记录复核人")}${annotation.author_verified ? " · SSO" : ""}</span>
             <span>${escapeHtml(reviewStatusLabel(annotation.review_status))} · ${formatTime(annotation.created_at)}</span>
             <span class="analysis-case-actions">
+              <button class="analysis-discussion-link" type="button" data-analysis-discussion="${issueId}" data-model-run-id="${escapeHtml(state.selectedRunId || "")}">评论</button>
               ${reviewUrl ? `<a class="text-link" href="${escapeHtml(reviewUrl)}" title="打开问题详情与 Review">问题详情</a>` : ""}
             </span>
           </div>
@@ -724,6 +725,13 @@ function renderAnalysisCases(data) {
         } finally {
           button.removeAttribute("aria-busy");
         }
+      });
+    });
+    target.querySelectorAll("[data-analysis-discussion]").forEach((button) => {
+      button.addEventListener("click", () => {
+        openAnalysisDiscussion(button.dataset.analysisDiscussion).catch((error) => {
+          showToast(error.message, true);
+        });
       });
     });
   }
@@ -748,6 +756,393 @@ function renderAnalysisCases(data) {
     if (!focused) jumpInput.value = String(page);
   }
   if (jumpButton) jumpButton.disabled = pageCount <= 1;
+}
+
+async function openAnalysisDiscussion(
+  issueId,
+  {
+    runId = state.selectedRunId || "",
+    source = "analysis",
+    focusCommentId = 0,
+  } = {}
+) {
+  clearAnalysisDiscussionImages();
+  const normalizedRunId = String(runId || "");
+  state.analysisDiscussion = {
+    issueId,
+    runId: normalizedRunId,
+    source,
+    replyTo: null,
+    comments: [],
+    pendingImages: [],
+    preview: false,
+  };
+  $("#analysisDiscussionContext").textContent = `${issueId} · ${runId || "未绑定 Run"}`;
+  const textarea = $("#analysisDiscussionNote");
+  textarea.value = "";
+  textarea.hidden = false;
+  $("#analysisDiscussionPreview").hidden = true;
+  $("[data-comment-preview-toggle]").textContent = "预览";
+  renderAnalysisDiscussionImages();
+  $("#analysisDiscussionComposer").hidden = Boolean(state.session?.read_only);
+  $("#analysisDiscussionSubmit").hidden = Boolean(state.session?.read_only);
+  renderAnalysisDiscussionReplyContext();
+  $("#analysisDiscussionThread").innerHTML =
+    `<div class="comment-thread-empty">正在加载评论…</div>`;
+  bindReviewMentionComposer(textarea, $("#analysisDiscussionMentionComposer"));
+  updateReviewMentionComposer(textarea, $("#analysisDiscussionMentionComposer"));
+  $("#analysisDiscussionDialog").showModal();
+  const result = await api(
+    `/api/cases/${encodeURIComponent(issueId)}/comments?model_run_id=${encodeURIComponent(normalizedRunId)}`
+  );
+  if (!state.analysisDiscussion || state.analysisDiscussion.issueId !== issueId) return;
+  state.analysisDiscussion.comments = result.comments || [];
+  renderAnalysisDiscussionThread();
+  updateAnalysisDiscussionCount(issueId, normalizedRunId, Number(result.count || 0));
+  if (focusCommentId) {
+    const focused = $("#analysisDiscussionThread")?.querySelector(
+      `[data-comment-id="${Number(focusCommentId)}"]`
+    );
+    focused?.classList.add("is-deep-linked");
+    focused?.scrollIntoView({ block: "center" });
+  }
+  textarea.focus();
+}
+
+function clearAnalysisDiscussionImages() {
+  const images = state.analysisDiscussion?.pendingImages || [];
+  images.forEach((item) => {
+    if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+  });
+  if (state.analysisDiscussion) state.analysisDiscussion.pendingImages = [];
+  const input = $("#analysisDiscussionImageInput");
+  if (input) input.value = "";
+  renderAnalysisDiscussionImages();
+}
+
+function insertAnalysisDiscussionText(before, after = "", placeholder = "") {
+  const textarea = $("#analysisDiscussionNote");
+  if (!textarea) return;
+  const start = textarea.selectionStart ?? textarea.value.length;
+  const end = textarea.selectionEnd ?? start;
+  const selected = textarea.value.slice(start, end) || placeholder;
+  textarea.setRangeText(`${before}${selected}${after}`, start, end, "end");
+  textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  textarea.focus();
+}
+
+function applyAnalysisDiscussionFormat(kind) {
+  if (kind === "bold") return insertAnalysisDiscussionText("**", "**", "粗体文字");
+  if (kind === "italic") return insertAnalysisDiscussionText("*", "*", "斜体文字");
+  if (kind === "code") return insertAnalysisDiscussionText("`", "`", "code");
+  if (kind === "link") return insertAnalysisDiscussionText("[", "](https://)", "链接文字");
+  const textarea = $("#analysisDiscussionNote");
+  if (!textarea) return;
+  const start = textarea.selectionStart ?? textarea.value.length;
+  const end = textarea.selectionEnd ?? start;
+  const selected = textarea.value.slice(start, end) || (kind === "quote" ? "引用内容" : "列表项");
+  const prefix = kind === "quote" ? "> " : "- ";
+  const replacement = selected.split("\n").map((line) => `${prefix}${line}`).join("\n");
+  textarea.setRangeText(replacement, start, end, "end");
+  textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  textarea.focus();
+}
+
+function addAnalysisDiscussionImages(files) {
+  const context = state.analysisDiscussion;
+  if (!context) return;
+  const limits = state.config?.review_attachment_limits || {};
+  const maxCount = Number(limits.max_count || 4);
+  const maxBytes = Number(limits.max_bytes_each || 8 * 1024 * 1024);
+  const maxTotalBytes = Number(limits.max_bytes_total || 24 * 1024 * 1024);
+  const allowed = new Set(limits.media_types || ["image/png", "image/jpeg", "image/webp"]);
+  let rejected = "";
+  [...files].forEach((file) => {
+    if (context.pendingImages.length >= maxCount) return void (rejected = `每条评论最多 ${maxCount} 张图片。`);
+    if (!allowed.has(file.type)) return void (rejected = "仅支持 PNG、JPEG 或 WebP 图片。");
+    if (file.size > maxBytes) return void (rejected = "单张图片不能超过 8 MB。");
+    const total = context.pendingImages.reduce((sum, item) => sum + item.file.size, 0);
+    if (total + file.size > maxTotalBytes) return void (rejected = "本次图片总大小不能超过 24 MB。");
+    const randomId = crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+    const token = `pending-${String(randomId).replace(/[^A-Za-z0-9-]/g, "-")}`;
+    const item = { token, file, previewUrl: URL.createObjectURL(file) };
+    context.pendingImages.push(item);
+    const safeAlt = String(file.name || "评论图片").replace(/[\]\n]/g, "").slice(0, 80);
+    const textarea = $("#analysisDiscussionNote");
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? start;
+    const separator = start > 0 && !textarea.value.slice(0, start).endsWith("\n") ? "\n" : "";
+    textarea.setRangeText(`${separator}![${safeAlt}](attachment:${token})\n`, start, end, "end");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  renderAnalysisDiscussionImages();
+  if (context.preview) renderAnalysisDiscussionPreview();
+  if (rejected) showToast(rejected, true);
+}
+
+function renderAnalysisDiscussionImages() {
+  const target = $("#analysisDiscussionImages");
+  if (!target) return;
+  const images = state.analysisDiscussion?.pendingImages || [];
+  target.innerHTML = images.map((item) => `
+    <div class="comment-pending-image">
+      <img src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.file.name || "待上传图片")}" />
+      <span>${escapeHtml(item.file.name || "图片")}</span>
+      <button type="button" data-remove-comment-image="${escapeHtml(item.token)}" aria-label="移除图片">×</button>
+    </div>`).join("");
+  target.querySelectorAll("[data-remove-comment-image]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const context = state.analysisDiscussion;
+      const index = context?.pendingImages?.findIndex((item) => item.token === button.dataset.removeCommentImage) ?? -1;
+      if (!context || index < 0) return;
+      const [item] = context.pendingImages.splice(index, 1);
+      URL.revokeObjectURL(item.previewUrl);
+      const textarea = $("#analysisDiscussionNote");
+      const escapedToken = item.token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      textarea.value = textarea.value.replace(
+        new RegExp(`!?\\[[^\\]\\n]*\\]\\(attachment:${escapedToken}\\)\\n?`, "g"),
+        ""
+      );
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      renderAnalysisDiscussionImages();
+    });
+  });
+}
+
+function renderAnalysisDiscussionPreview() {
+  const preview = $("#analysisDiscussionPreview");
+  if (!preview) return;
+  const attachments = (state.analysisDiscussion?.pendingImages || []).map((item) => ({
+    id: item.token,
+    url: item.previewUrl,
+  }));
+  preview.innerHTML = reviewCommentBodyMarkup($("#analysisDiscussionNote")?.value || "", attachments) ||
+    `<span class="comment-markdown-empty">暂无可预览内容。</span>`;
+}
+
+function toggleAnalysisDiscussionPreview() {
+  const context = state.analysisDiscussion;
+  if (!context) return;
+  context.preview = !context.preview;
+  const textarea = $("#analysisDiscussionNote");
+  const preview = $("#analysisDiscussionPreview");
+  textarea.hidden = context.preview;
+  preview.hidden = !context.preview;
+  $("[data-comment-preview-toggle]").textContent = context.preview ? "继续编辑" : "预览";
+  if (context.preview) renderAnalysisDiscussionPreview();
+  else textarea.focus();
+}
+
+function bindAnalysisDiscussionEditor() {
+  const textarea = $("#analysisDiscussionNote");
+  const imageInput = $("#analysisDiscussionImageInput");
+  if (!textarea || textarea.dataset.commentEditorBound === "1") return;
+  textarea.dataset.commentEditorBound = "1";
+  document.querySelectorAll("[data-comment-format]").forEach((button) => {
+    button.addEventListener("click", () => applyAnalysisDiscussionFormat(button.dataset.commentFormat));
+  });
+  $("[data-comment-preview-toggle]")?.addEventListener("click", toggleAnalysisDiscussionPreview);
+  $("[data-comment-image]")?.addEventListener("click", () => imageInput?.click());
+  imageInput?.addEventListener("change", () => {
+    addAnalysisDiscussionImages(imageInput.files || []);
+    imageInput.value = "";
+  });
+  textarea.addEventListener("paste", (event) => {
+    const images = [...(event.clipboardData?.files || [])].filter((file) => file.type.startsWith("image/"));
+    if (!images.length) return;
+    event.preventDefault();
+    addAnalysisDiscussionImages(images);
+  });
+  textarea.addEventListener("input", () => {
+    if (state.analysisDiscussion?.preview) renderAnalysisDiscussionPreview();
+  });
+}
+
+function analysisDiscussionShareUrl(commentId) {
+  const context = state.analysisDiscussion;
+  const url = new URL(withBase(PAGE_ROUTES.review.path), window.location.origin);
+  url.searchParams.set("issue", String(context?.issueId || ""));
+  if (context?.runId) url.searchParams.set("run", String(context.runId));
+  url.searchParams.set("comments", "1");
+  url.searchParams.set("comment", String(Number(commentId)));
+  return url.href;
+}
+
+async function shareAnalysisDiscussionComment(commentId) {
+  const url = analysisDiscussionShareUrl(commentId);
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: "RA Triage 评论", url });
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+    }
+  }
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(url);
+  } else {
+    const input = document.createElement("textarea");
+    input.value = url;
+    input.style.position = "fixed";
+    input.style.opacity = "0";
+    document.body.append(input);
+    input.select();
+    document.execCommand("copy");
+    input.remove();
+  }
+  showToast("评论链接已复制。");
+}
+
+function updateAnalysisDiscussionCount(issueId, runId, count) {
+  document.querySelectorAll("[data-analysis-discussion], [data-trail-update-discussion]").forEach((button) => {
+    const buttonIssue = button.dataset.analysisDiscussion || button.dataset.trailUpdateDiscussion;
+    if (String(buttonIssue || "") !== String(issueId || "")) return;
+    if (String(button.dataset.modelRunId || "") !== String(runId || "")) return;
+    button.textContent = count > 0 ? `评论 · ${count}` : "评论";
+  });
+}
+
+function renderAnalysisDiscussionThread() {
+  const context = state.analysisDiscussion;
+  const target = $("#analysisDiscussionThread");
+  if (!target || !context) return;
+  const comments = context.comments || [];
+  if (!comments.length) {
+    target.innerHTML = `<div class="comment-thread-empty">还没有评论，可以发起第一条讨论。</div>`;
+    return;
+  }
+  target.innerHTML = comments.map((comment) => {
+    const replyExcerpt = String(comment.reply_to_body || "")
+      .replace(/!\[[^\]\n]*\]\([^\n)]+\)/g, "[图片]")
+      .replace(/\[([^\]\n]+)\]\(https?:\/\/[^\s)]+\)/g, "$1")
+      .replace(/^\s*(?:#{1,3}|>|[-+*]|\d+[.)])\s+/gm, "")
+      .replace(/[*_~`]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120);
+    const replyContext = comment.reply_to_id
+      ? `<div class="comment-reply-quote">回复 ${escapeHtml(reviewMentionDisplayName(comment.reply_to_author || "评论人"))}：${escapeHtml(replyExcerpt)}</div>`
+      : "";
+    return `<article class="comment-thread-item" data-comment-id="${Number(comment.id)}">
+      <div class="comment-thread-meta">
+        <strong>${escapeHtml(reviewMentionDisplayName(comment.author || "unknown"))}</strong>
+        <span>${comment.author_verified ? "SSO · " : ""}${escapeHtml(formatTime(comment.created_at))}</span>
+      </div>
+      ${replyContext}
+      <div class="comment-thread-body">${reviewCommentBodyMarkup(comment.body || "", comment.attachments || [])}</div>
+      <div class="comment-thread-actions">
+        <button class="analysis-discussion-link" type="button" data-comment-share="${Number(comment.id)}">分享</button>
+        ${state.session?.read_only ? "" : `<button class="analysis-discussion-link" type="button" data-comment-reply="${Number(comment.id)}">回复</button>`}
+      </div>
+    </article>`;
+  }).join("");
+  target.querySelectorAll("[data-comment-reply]").forEach((button) => {
+    button.addEventListener("click", () =>
+      beginAnalysisDiscussionReply(Number(button.dataset.commentReply))
+    );
+  });
+  target.querySelectorAll("[data-comment-share]").forEach((button) => {
+    button.addEventListener("click", () => {
+      shareAnalysisDiscussionComment(Number(button.dataset.commentShare)).catch((error) => showToast(error.message, true));
+    });
+  });
+  target.scrollTop = target.scrollHeight;
+}
+
+function beginAnalysisDiscussionReply(commentId) {
+  const context = state.analysisDiscussion;
+  const comment = context?.comments?.find(
+    (item) => Number(item.id) === Number(commentId)
+  );
+  if (!context || !comment) return;
+  context.replyTo = comment;
+  const textarea = $("#analysisDiscussionNote");
+  const prefix = `@${comment.author} `;
+  if (!String(textarea.value || "").trim()) textarea.value = prefix;
+  renderAnalysisDiscussionReplyContext();
+  updateReviewMentionComposer(textarea, $("#analysisDiscussionMentionComposer"));
+  textarea.focus();
+  textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+}
+
+function renderAnalysisDiscussionReplyContext() {
+  const target = $("#analysisDiscussionReplyContext");
+  const reply = state.analysisDiscussion?.replyTo;
+  if (!target) return;
+  target.hidden = !reply;
+  target.innerHTML = reply
+    ? `<span>正在回复 <strong>${escapeHtml(reviewMentionDisplayName(reply.author || "unknown"))}</strong></span><button type="button" data-cancel-comment-reply>取消回复</button>`
+    : "";
+  target.querySelector("[data-cancel-comment-reply]")?.addEventListener("click", () => {
+    if (state.analysisDiscussion) state.analysisDiscussion.replyTo = null;
+    renderAnalysisDiscussionReplyContext();
+  });
+}
+
+async function saveAnalysisDiscussion(event) {
+  event.preventDefault();
+  const context = state.analysisDiscussion;
+  const discussion = String($("#analysisDiscussionNote")?.value || "").trim();
+  if (!context?.issueId || !discussion) {
+    showToast("请输入讨论内容。", true);
+    return;
+  }
+  const author = String(state.session?.username || "").trim();
+  const submit = event.submitter;
+  if (submit) submit.disabled = true;
+  try {
+    const payload = {
+      model_run_id: String(context.runId || ""),
+      body: discussion,
+      reply_to_id: context.replyTo?.id || null,
+      author,
+    };
+    let result;
+    if (context.pendingImages?.length) {
+      const form = new FormData();
+      payload.attachment_tokens = context.pendingImages.map((item) => item.token);
+      form.append("payload", JSON.stringify(payload));
+      context.pendingImages.forEach((item, index) => {
+        form.append("attachments", item.file, item.file.name || `comment-${index + 1}.png`);
+      });
+      result = await api(`/api/cases/${encodeURIComponent(context.issueId)}/comments-with-attachments`, {
+        method: "POST",
+        body: form,
+        headers: { "X-RA-Triage-Request": "comment-v1" },
+      });
+    } else {
+      result = await api(`/api/cases/${encodeURIComponent(context.issueId)}/comments`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    }
+    acknowledgeLocalChange(result);
+    context.comments.push(result.comment);
+    context.replyTo = null;
+    $("#analysisDiscussionNote").value = "";
+    clearAnalysisDiscussionImages();
+    context.preview = false;
+    $("#analysisDiscussionNote").hidden = false;
+    $("#analysisDiscussionPreview").hidden = true;
+    $("[data-comment-preview-toggle]").textContent = "预览";
+    renderAnalysisDiscussionReplyContext();
+    updateReviewMentionComposer(
+      $("#analysisDiscussionNote"),
+      $("#analysisDiscussionMentionComposer")
+    );
+    renderAnalysisDiscussionThread();
+    updateAnalysisDiscussionCount(
+      context.issueId,
+      context.runId,
+      Number(result.comment_count || context.comments.length)
+    );
+    const queued = result?.notification?.queued?.length || 0;
+    showToast(`评论已发表${queued ? `；DChat 通知已排队 ${queued} 人` : ""}。`);
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    if (submit) submit.disabled = false;
+  }
 }
 
 function renderReviewReasonAnalysis(data, { animatePies = true } = {}) {

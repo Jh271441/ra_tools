@@ -46,6 +46,7 @@ from .import_parsing import normalize_model_row, parse_source_bytes
 from .model_labels import canonical_model_label
 from .gt_sync import TRAIL_GT_FIELD, read_trail_gt_labels
 from .review_analysis import COMPARISON_STATUSES, build_review_reason_analysis
+from .review_mentions import extract_review_mentions, notification_recipients
 from .review_workflow import (
     derive_review_status,
     resolve_expected_output,
@@ -1123,15 +1124,38 @@ def _normalise_review_image(content: bytes) -> tuple[bytes, str, str, int, int]:
 async def _store_review_attachments(
     uploads: list[UploadFile],
 ) -> tuple[list[dict[str, Any]], list[Path]]:
+    return await _store_image_attachments(
+        uploads,
+        destination=settings.review_attachments_dir,
+        noun="截图",
+    )
+
+
+async def _store_comment_attachments(
+    uploads: list[UploadFile],
+) -> tuple[list[dict[str, Any]], list[Path]]:
+    return await _store_image_attachments(
+        uploads,
+        destination=settings.comment_attachments_dir,
+        noun="评论图片",
+    )
+
+
+async def _store_image_attachments(
+    uploads: list[UploadFile],
+    *,
+    destination: Path,
+    noun: str,
+) -> tuple[list[dict[str, Any]], list[Path]]:
     if len(uploads) > MAX_REVIEW_ATTACHMENTS:
-        raise _detail(400, f"每次最多粘贴 {MAX_REVIEW_ATTACHMENTS} 张截图。")
+        raise _detail(400, f"每次最多添加 {MAX_REVIEW_ATTACHMENTS} 张{noun}。")
     prepared: list[tuple[dict[str, Any], bytes]] = []
     raw_total_bytes = 0
     total_bytes = 0
     for upload in uploads:
         content = await upload.read(MAX_REVIEW_ATTACHMENT_BYTES + 1)
         if not content:
-            raise _detail(400, "截图文件为空。")
+            raise _detail(400, f"{noun}文件为空。")
         if len(content) > MAX_REVIEW_ATTACHMENT_BYTES:
             raise _detail(413, "单张截图不能超过 8 MB。")
         raw_total_bytes += len(content)
@@ -1166,26 +1190,30 @@ async def _store_review_attachments(
         )
 
     return await asyncio.to_thread(
-        _persist_review_attachments,
+        _persist_image_attachments,
         prepared,
         total_bytes,
+        destination,
+        noun,
     )
 
 
-def _persist_review_attachments(
+def _persist_image_attachments(
     prepared: list[tuple[dict[str, Any], bytes]],
     total_bytes: int,
+    destination: Path,
+    noun: str,
 ) -> tuple[list[dict[str, Any]], list[Path]]:
-    """Persist normalized Review images outside the asyncio event loop."""
+    """Persist normalized Review/comment images outside the asyncio event loop."""
 
-    root = settings.review_attachments_dir.resolve()
+    root = destination.resolve()
     root.mkdir(parents=True, exist_ok=True)
     if (
         prepared
-        and database.review_attachment_storage_bytes() + total_bytes
+        and database.image_attachment_storage_bytes() + total_bytes
         > MAX_REVIEW_ATTACHMENT_STORAGE_BYTES
     ):
-        raise _detail(507, "Review 截图已达到 20 GB 存储配额，请联系管理员清理或扩容。")
+        raise _detail(507, f"{noun}已达到 20 GB 存储配额，请联系管理员清理或扩容。")
     if prepared and shutil.disk_usage(root).free < total_bytes + MIN_REVIEW_ATTACHMENT_DISK_FREE:
         raise _detail(507, "截图存储空间不足，请联系管理员。")
     temp_paths: list[Path] = []
@@ -1193,7 +1221,7 @@ def _persist_review_attachments(
     try:
         for record, content in prepared:
             stored_name = str(record["stored_name"])
-            path = (settings.review_attachments_dir / stored_name).resolve()
+            path = (destination / stored_name).resolve()
             if root not in path.parents:
                 raise _detail(400, "截图存储路径非法。")
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -1219,6 +1247,18 @@ def _public_review_attachment(attachment: dict[str, Any]) -> dict[str, Any]:
         "height": int(attachment["height"]),
         "created_at": attachment.get("created_at"),
         "url": _public_path(f"/api/review-attachments/{attachment['id']}"),
+    }
+
+
+def _public_comment_attachment(attachment: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": attachment["id"],
+        "media_type": attachment["media_type"],
+        "size_bytes": int(attachment["size_bytes"]),
+        "width": int(attachment["width"]),
+        "height": int(attachment["height"]),
+        "created_at": attachment.get("created_at"),
+        "url": _public_path(f"/api/comment-attachments/{attachment['id']}"),
     }
 
 
@@ -1328,6 +1368,27 @@ def _create_annotation_record(
             if expected_previous_annotation_id <= 0:
                 raise _detail(400, "expected_previous_annotation_id 不合法。")
     author, author_source, author_verified = _action_actor(request, body.get("author"))
+    note = _as_text(body.get("note"))
+    try:
+        mentions = extract_review_mentions(note)
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    enabled_mentions = database.enabled_mention_recipients(mentions)
+    unsupported_mentions = [
+        username for username in mentions if username not in enabled_mentions
+    ]
+    if unsupported_mentions:
+        raise _detail(
+            400,
+            "以下用户不在可 @ / DChat 通知人员目录中："
+            + "、".join(f"@{item}" for item in unsupported_mentions),
+        )
+    recipients = notification_recipients(enabled_mentions, author=author)
+    queued_recipients = (
+        recipients
+        if settings.dchat_notifications_enabled and author_verified
+        else []
+    )
     annotation_kwargs: dict[str, Any] = {
         "issue_id": issue_id,
         "model_run_id": model_run_id,
@@ -1339,18 +1400,31 @@ def _create_annotation_record(
         "is_excluded": is_excluded,
         "tags": tags,
         "missing_evidence": missing_evidence,
-        "note": _as_text(body.get("note")),
+        "note": note,
         "author": author,
         "author_source": author_source,
         "author_verified": author_verified,
         "attachments": attachments,
+        "mentions": mentions,
+        "notification_recipients": queued_recipients,
     }
     if has_expected_previous:
         annotation_kwargs["expected_previous_annotation_id"] = expected_previous_annotation_id
     try:
-        return database.create_annotation(
+        annotation = database.create_annotation(
             **annotation_kwargs,
         )
+        annotation["notification"] = {
+            "mentions": mentions,
+            "queued": queued_recipients,
+            "status": (
+                "no_mentions" if not recipients
+                else "queued" if queued_recipients
+                else "disabled" if not settings.dchat_notifications_enabled
+                else "unverified_identity"
+            ),
+        }
+        return annotation
     except AnnotationConflictError as exc:
         raise _detail(409, str(exc))
     except ValueError as exc:

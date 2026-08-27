@@ -32,6 +32,8 @@ from ..http_support import (
     sync_authoritative_gt,
 )
 from ..model_catalog import MODEL_ID_RE
+from ..dchat import dchat_credentials_status
+from ..review_mentions import MAX_REVIEW_MENTIONS, normalize_mention_username
 from ..runtime import (
     APP_STARTED_AT,
     APP_STARTED_MONOTONIC,
@@ -102,6 +104,13 @@ def _dashboard_config_payload() -> dict[str, Any]:
             "max_bytes_total": MAX_REVIEW_ATTACHMENTS_TOTAL_BYTES,
             "media_types": ["image/png", "image/jpeg", "image/webp"],
         },
+        "review_notifications": {
+            "enabled": settings.dchat_notifications_enabled,
+            "provider": "DChat",
+            "delivery_mode": settings.dchat_delivery_mode,
+            "mention_limit": MAX_REVIEW_MENTIONS,
+            "requires_verified_sso": True,
+        },
         "default_failure_only": bool(default_model_run_id),
         "batch_prediction": {
             "enabled": settings.batch_prediction_enabled,
@@ -171,6 +180,24 @@ async def health() -> dict[str, Any]:
         ],
         "batch_prediction_enabled": settings.batch_prediction_enabled,
         "autotriage_push_enabled": settings.autotriage_push_enabled,
+        "review_notifications": {
+            "enabled": settings.dchat_notifications_enabled,
+            "delivery_mode": settings.dchat_delivery_mode,
+            "credentials": await asyncio.to_thread(
+                dchat_credentials_status, settings.dchat_credentials_file
+            ) if settings.dchat_notifications_enabled and settings.dchat_delivery_mode == "openapi" else {
+                "ready": False,
+                "message": "DChat loopback 不使用真实凭据。"
+                if settings.dchat_delivery_mode == "loopback"
+                else "DChat 评论通知未启用。",
+            },
+            "outbox": await asyncio.to_thread(
+                database.review_notification_status
+            ),
+            "comment_outbox": await asyncio.to_thread(
+                database.comment_notification_status
+            ),
+        },
         "model_gateway": model_catalog.status(),
         "change_revision": await asyncio.to_thread(database.change_revision),
         "storage": database.storage_label,
@@ -414,6 +441,70 @@ async def delete_access_user(username: str, request: Request) -> dict[str, Any]:
     }
 
 
+@router.get("/api/mention-users")
+async def list_mention_users(request: Request) -> dict[str, Any]:
+    identity = await asyncio.to_thread(request_identity, request, settings)
+    if not identity.verified or not identity.username:
+        raise _detail(403, "@ 人员目录需要已验证的 SSO 身份。")
+    is_admin = await asyncio.to_thread(database.access_role, identity.username) == "admin"
+    items = await asyncio.to_thread(
+        database.list_mention_users, include_disabled=is_admin
+    )
+    if not is_admin:
+        items = [
+            {
+                "username": item["username"],
+                "display_name": item.get("display_name") or item["username"],
+                "enabled": True,
+            }
+            for item in items
+        ]
+    return {"items": items}
+
+
+@router.put("/api/mention-users/{username}")
+async def set_mention_user(username: str, request: Request) -> dict[str, Any]:
+    identity = await asyncio.to_thread(_admin_identity, request)
+    normalized = normalize_mention_username(username)
+    if not normalized:
+        raise _detail(400, "用户名格式不合法。")
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        raise _detail(400, "请求 JSON 不合法。")
+    if not isinstance(body, dict) or not isinstance(body.get("enabled", True), bool):
+        raise _detail(400, "enabled 必须是布尔值。")
+    display_name = _as_text(body.get("display_name")).strip()
+    if len(display_name) > 80 or any(ord(character) < 32 for character in display_name):
+        raise _detail(400, "显示姓名不合法。")
+    user = await asyncio.to_thread(
+        database.set_mention_user,
+        username=normalized,
+        enabled=body.get("enabled", True),
+        actor=identity.username,
+        display_name=display_name,
+    )
+    return {
+        "user": user,
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
+@router.delete("/api/mention-users/{username}")
+async def delete_mention_user(username: str, request: Request) -> dict[str, Any]:
+    await asyncio.to_thread(_admin_identity, request)
+    normalized = normalize_mention_username(username)
+    if not normalized:
+        raise _detail(400, "用户名格式不合法。")
+    if not await asyncio.to_thread(database.delete_mention_user, normalized):
+        raise _detail(404, "@ 人员记录不存在。")
+    return {
+        "deleted": True,
+        "username": normalized,
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
 
 @router.get("/auth/logout")
 async def logout() -> RedirectResponse:
@@ -497,6 +588,22 @@ async def status(response: Response) -> dict[str, Any]:
         "batch_prediction_enabled": settings.batch_prediction_enabled,
         "autotriage_push_enabled": settings.autotriage_push_enabled,
         "batch_max_issues": settings.batch_max_issues,
+        "review_notifications": {
+            "enabled": settings.dchat_notifications_enabled,
+            "delivery_mode": settings.dchat_delivery_mode,
+            "credentials": await asyncio.to_thread(
+                dchat_credentials_status, settings.dchat_credentials_file
+            ) if settings.dchat_notifications_enabled and settings.dchat_delivery_mode == "openapi" else {
+                "ready": False,
+                "message": "DChat loopback 不使用真实凭据。"
+                if settings.dchat_delivery_mode == "loopback"
+                else "DChat 评论通知未启用。",
+            },
+            "outbox": await asyncio.to_thread(database.review_notification_status),
+            "comment_outbox": await asyncio.to_thread(
+                database.comment_notification_status
+            ),
+        },
         "model_gateway": model_catalog.status(),
         "storage": database.storage_label,
         "database": database_state,

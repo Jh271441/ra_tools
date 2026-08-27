@@ -633,6 +633,7 @@ const state = {
     data: null,
     comparisonStatus: "mismatch",
   },
+  analysisDiscussion: null,
   trailUpdate: {
     runId: "",
     tab: "review",
@@ -710,6 +711,7 @@ const state = {
   activePage: "review",
   systemStatus: null,
   accessUsers: [],
+  mentionUsers: [],
   trailInspection: null,
   pendingReviewImages: [],
   savingAnnotation: false,

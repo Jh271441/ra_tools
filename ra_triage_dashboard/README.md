@@ -40,6 +40,7 @@
 - 权威 GT 同步与模型字段快照是两条独立链路。服务端默认每 30 分钟依次完整读取所有已注册数据集在 Trail view 1000 的 `ra_merge_result`，顶栏也可按当前选中的一个或多个数据集点击「同步」；手动请求会立即返回 `202`，耗时的 Trail 完整校验在后台执行，页面通过共享状态轮询自动显示完成或失败，避免代理长请求超时。每个数据集都必须与自己的完整 issue 集合完全一致且每条都能归一化为三分类才会独立原子应用。各数据集的来源更新时间、Manual 检查时间、应用时间和变更数会分别持久化；一个数据集失败不会阻断其他数据集，失败或部分返回仍保留该数据集上次成功快照。应用 GT 后，Issue GT Review 状态、筛选、比例与混淆矩阵按最新 GT 读时重算，不修改 Review 历史。
 - 页面只允许导入批量模型输出（JSON、CSV、XLSX），Issue / GT 上传入口已移除，避免误污染任何 GT 数据集；后端旧 `/api/import/issues` 仅保留兼容客户端，不由页面调用。Runs 页上方用三个自然高度 Tab 统一组织模型文件、AutoTriage 快照和 Trail 快照，页面标题始终固定为 `MODEL RUN REGISTRY / 模型结果 Runs`，不会随来源 Tab 改名；每条 Run 都显示来源徽标及原始 records 链接、文件名或 Trail view。新上传的模型结果原文件按 SHA-256 归档到 dashboard data 的 `uploads/`，Run 行可直接在页面内预览 CSV/JSON/XLSX 或下载；上传文件名超过 120 字符时会在保留扩展名的前提下截短。历史 Run 若没有归档文件，会优先用已保存的脱敏预测行重建可复核副本，并明确标注“Run 重建”。Run 行提供带二次确认的删除按钮：只删除该 Run 的模型输出和来源归档，不删除任何 GT 数据集、Issue 或人工 review；团队默认 Run 需先切换后才能删除。模型文件也支持 Stage1 二分类：`非误触发` 和 `真实卡住` 统一保存并展示为 `真实卡住`，比较时同时兼容 GT `正确触发` 与 `无需协助`，但不会伪造具体 Stage2 结论。也可按 AutoTriage Batch ID / records 链接经固定只读内网接口拉取结果，或检查 Trail 字段后创建只读快照。所有模型结果都按规范化内容 SHA-256 创建或复用不可变 Model Run，不覆盖 GT、不切换团队默认 Run；AutoTriage 拉取会显式比较声明数、完成数、结果数和唯一 Issue 数，并标记部分覆盖。
 - 人工标注为追加式历史，最新一条为当前标注，不覆盖旧 review。每条 Review 版本明确绑定创建时选择的 `model_run_id`；切换 Model Run 后，详情编辑表单、历史筛选、列表、原因聚类和统计只读取该 Run 的最新版本，不会把不同 Run 的人工结论混在一起。迁移前的旧记录使用空 Run 标识：选中任意 Run 时不会作为兼容 fallback 混入，只有不选择 Run 的全局历史视图才会读取它们。保存时前端提交编辑开始时看到的版本 ID；若同一 Issue、同一 Run 已被其他人先保存，服务端返回 `409`，后提交者需要刷新后再保存，避免静默覆盖。详情右侧分为两个区域：`Issue 标签` 将场景拆成「环境 / 自车意图」，将触发判定拆成「误触发 / 应该触发」，并把脱困方式拆成「正确触发 / 无需协助」；同时提供 `is_excluded`（应该排除、非模型需要解决的场景）布尔开关。`模型结果 Review` 使用“期望输出”替代人工选择复核状态：误触发 Tags 自动推出 `误触发`，RA/正确触发 Tags 推出 `正确触发`，无需协助 Tags 推出 `无需协助`；真卡但只填“应该触发”时仍需补充驶离结论。唯一推断项会在仍可操作的下拉框内标记“自动推断”；选择其他项会立即显示选择冲突并禁止保存，改回推断项或调整 Tags 后恢复。期望输出留空对应状态「待补充」(`pending`)，与 baseline GT 相同对应「与 GT 一致」(`reviewed`)，不同对应「GT 需复核」(`needs_gt_review`)；详情内的“推算规则”入口解释这两步。多类输出 Tags 冲突时同样显示冲突并禁止保存，服务端也会拒绝；历史 Review 若尚未保存期望输出，分析和 GT 更新表会只读复用同一 Tag 推断，无法唯一推断或冲突时 fail closed 为「待补充」，不会回写历史记录。每个新版本必须记录复核人及其可信状态，右侧 Review 历史把期望输出、状态、复核人、Run 和时间紧凑展示；详情左右外框在桌面端随较高一侧等高。每个版本可粘贴或选择最多 4 张补充截图。
+- 判错复核、原因聚类与问题排除候选明细共用按 `Issue + Model Run` 隔离的追加式评论线程；评论保存在 `review_comments`，不会创建 Review 版本或修改期望输出、Tags、证据与排除状态。线程采用受限 Markdown（标题、列表、引用、链接、代码、粗斜体等），支持粘贴/选择 PNG、JPEG、WebP 图片并通过独立附件表保存；不接受原始 HTML 或外部图片嵌入。每条评论都可分享为包含 `Issue + Run + comment ID` 的深链，打开后自动进入线程并定位。回复会显示父评论上下文，前端自动填入 `@原评论人`，后端也会把目录内的原评论人加入通知收件人。评论和问题排除逐 Issue 说明都支持 `@ldap` 与 `@{ldap}`；候选人只来自数据库 `mention_users`，可按 LDAP 或中文姓名增量搜索，最多提及 10 人，目录外或已停用人员不能被 @。只有服务端验证过的 SSO 操作才会真正触发 DChat；评论使用独立 `comment_notifications` outbox，直接 IP/LCA 的未验证姓名不能外发通知。后台串行发送、限制在 5 QPS 内并对临时失败指数退避，DChat 不可用不会阻塞评论或 Review 保存。
 - 页面每约 1.8 秒只读检查一次共享数据 revision；只有 Issue、Review、Run、预测或 Batch 状态确实变化时才刷新当前页面。多人同时 Review 时，正在编辑的表单和待上传截图不会被后台刷新覆盖，而会在保存后合并最新数据。API 响应包含 `Server-Timing` 与 `X-Request-Duration-Ms`，超过 500 ms 的 API 请求写入服务慢请求日志。
 - 判错复核首页与原因聚类页共用「Issue GT Review状态」三项筛选：待补充、与 GT 一致、GT 需复核；首页的 Gallery、URL、分页、预测当前筛选和均分任务使用同一筛选范围。原因聚类页用紧凑三段比例条展示当前筛选范围内三种状态的数量和占比；宽屏时它与压缩后的 GT × 模型预测混淆矩阵左右并排，窄屏再恢复上下排列。三段状态条与图例在 hover 或键盘聚焦时联动，混淆矩阵当前格也会同步强调对应 GT 行和模型列并弱化无关格；两处仅高亮，不会隐式改变筛选。页面只消费每个 Issue 最新一版 Review：稳定的 `missing_evidence[]` 是主聚类，Review 结构化 Tags 按「场景 / 触发判定 / 如何脱困」分别筛选，原因卡片标题保持顶部、图表主体在卡片剩余空间垂直居中；下拉筛选选择后立即刷新，搜索输入短暂防抖后立即刷新，不再需要额外点击“应用”；自由文本只作为明细中的解释，不再生成并展示旧的关键词主题卡片。自定义缺失信息按共享目录的正式标题展示，不泄露 `custom:` 或哈希 key。检索只匹配最新人工 Review 的原因、复核人、标签、Issue GT Review状态与缺失信息，不检索模型说明或 Issue 场景文本。选择 Model Run 后，“模型预测”可按三分类标签及 Stage1 `真实卡住` 筛选，另可按红色 `MISMATCH`、绿色 `MATCH`、灰色 `NONE（未预测）` 或全部切片，混淆矩阵与 Case 明细使用同一兼容规则；明细行同时展示 GT、模型结论和人工期望输出。当前筛选结果可导出 UTF-8 CSV 或明细 XLSX；“导出 GT 更新表”额外生成张扬批量回刷工具“期望输出模式”可直接导入的两列表，只包含按“期望输出与 GT 不同”规则判定为需复核的 Issue，不信任历史手选状态。筛选、聚类和分页都写入 `/review-analysis` URL，可硬刷新并用浏览器前进/后退恢复。
 - Issue 详情先渲染本地 Issue、模型和 Review；BEV、Camera、视频在独立请求中并发解析并增量补齐，目录/清单/视频描述符使用有界短 TTL 单飞缓存，避免重复路由切换重复扫共享盘。随后在 Voyager / Ares Studio 链接之后后台按需补齐 Trail 2410 视图中的只读 `ra_id` 对应的 `RA 录屏`，以及有 `ra_event` 时的 `RA Event` 入口。Trail 请求的延迟、超时或不可用不会阻塞 Issue 首屏，入口会在元数据返回后增量出现。`RA Event` 会直接打开与 Trail 一致的事件表弹窗，支持按事件名/值筛选，并保留 Trail Issue 外链；录屏 URL 由服务端使用 canonical `ra_id` 构造，浏览器不根据时间戳猜任务 ID；Trail 不可用或字段缺失时两个入口自动隐藏。该元数据查询只允许 `ra_id`、`ra_event`、`car_id`、`trip_id` 和 RA 起止时间等字段，独立于模型结果同步，不创建 Run、不写回 Trail。
@@ -99,6 +100,7 @@ Runs 的「人员」统一显示/筛选创建人；旧 Run 没有创建人时回
 - Batch bag 缓存：`/volume/home/workspace/ra_triage_dashboard_data/batch_bags`（可重建、与 RA 仓库隔离）
 - 模型网关密钥：`/volume/home/workspace/ra_triage_dashboard_data/model_gateway_api_key`（服务用户持有的 `0600` 普通文件，不进入代码备份）
 - TokenService 网关密钥：`/volume/home/workspace/ra_triage_dashboard_data/tokenservice_api_key`（同样由服务用户持有、`0600`，不进入代码备份；未配置时 Provider 只读展示）
+- DChat BotUser 凭据：项目根目录的 `dchat_credentials.json`（由 `scripts/configure_dchat_credentials.py` 交互生成、Git 忽略、服务用户持有的 `0600` JSON，不进入源码、环境变量、浏览器、数据库或日志）
 - RA 模型 Profile：`config/model_profiles.json`（版本化兼容白名单，不含凭证）
 - 产品媒体 layout（只读，与 `ra_auto_triage/bags` 工作区分离）：
   `/volume/home/workspace/ra_triage_dashboard_data/media_layouts/release0508_1071_20260729`
@@ -153,6 +155,35 @@ export DASHBOARD_DEPLOYMENT_MODE=production
 生产模式下的写请求还必须携带页面自动添加的 `X-RA-Triage-Request` 同源标记。该非简单请求头会让跨站脚本先触发 CORS 预检，并阻止普通跨站表单借用已登录 SSO 会话发起写操作；Kylin 应原样转发该 header，但不能用它替代 SSO 身份或 ingress marker。
 
 AutoTriage 推送默认关闭（`DASHBOARD_AUTOTRIAGE_PUSH_ENABLED=false`），即使打开开关也必须通过后端验证的 SSO 身份；自定义请求头和浏览器提交姓名只用于请求完整性/展示，不能授权生产写入。套好内网域名、清除客户端伪造 header 并由 ingress 注入可信身份后，再显式打开该开关。Batch 预测本身不依赖此开关。
+
+### Review @mention 与 DChat
+
+完整的数据流和权限边界见 [`docs/dchat-mention-architecture.md`](docs/dchat-mention-architecture.md)。
+
+需要在 DChat 开放平台创建一个应用，申请 `message:send` 权限，并为应用配置 BotUser。服务端按官方契约调用国内地址的 `POST /v3/message.create`，使用 Basic Auth、`X-Bot-Type: bot_user`、`X-Bot-Id`，并以 `receive_id_type=2` 向 LDAP 用户发送 Markdown。运行下面的交互脚本即可在项目根目录生成已被 Git 忽略的凭据文件，Secret 输入不会回显：
+
+```bash
+cd ra_triage_dashboard
+python3 scripts/configure_dchat_credentials.py
+```
+
+生成的文件格式如下；不要提交到 Git：
+
+```json
+{"client_id":"<app client id>","client_secret":"<app client secret>","bot_id":"<numeric bot id>"}
+```
+
+```bash
+chmod 600 ./dchat_credentials.json
+export DASHBOARD_DCHAT_NOTIFICATIONS_ENABLED=true
+export DASHBOARD_DCHAT_CREDENTIALS_FILE="$PWD/dchat_credentials.json"
+```
+
+默认开关为 `false`。启用前必须先在灰度实例用测试账号验证应用权限、BotUser 身份、Review 深链和失败重试；本地/CI 测试只 mock DChat，不发送真实消息。允许的 API host 固定为国内 `oapi-dichat.intra.xiaojukeji.com` 或备用 Kylin 路径，客户端禁用代理与重定向。`/health`、`/api/status` 只暴露开关、凭据是否就绪和 outbox 计数，不返回凭据内容或路径。
+
+可 @ 人员与应用写权限是两个独立维度，但由同一个 `/users` 管理页维护：`access_users` 决定 viewer/writer/admin，`mention_users` 只决定能否出现在 @ 候选中并接收 DChat，不会因为加入通知目录而获得看板写权限。管理员可以新增、停用或移除通知人员；新增 writer/admin 时会自动补入通知目录，但移除写权限不会删除其通知资格。普通已验证 SSO 用户只能读取启用人员的用户名，不能看到停用项或管理审计字段。
+
+灰度可设置 `DASHBOARD_DCHAT_DELIVERY_MODE=loopback`，完整执行 Review、可信身份、outbox 与 dispatcher，但不建立 DChat 网络连接。该模式仅允许 `development`，production 配置会拒绝启动；正式发送必须使用默认 `openapi`。
 
 当前数据和 Review 截图都属于看板团队共享内容：任何能访问域名或直接 IP 的用户仍可读取，不能在截图中粘贴超出该协作范围的敏感信息。正式多人使用应通过 HTTPS + SSO ingress 限制域名访问，并在 ingress 配置请求体大小、速率和审计策略；若还要求裸 IP 完全不可读，需要另加网络 ACL，应用的 production flag 只保证裸 IP 不可写。
 
@@ -415,6 +446,12 @@ ssh -L 8785:127.0.0.1:8785 cloud_server
 15. `016_issue_work_assignments.sql`：增加 Issue 均分后的持久化分配记录。
 16. `017_review_run_binding.sql`：为 Review annotation 增加 `model_run_id` 及 Issue/Run 复合索引；旧记录保持空 Run 标识，保存接口通过版本 ID 做乐观并发校验。
 17. `018_gt_sync.sql`：增加权威 GT 完整快照 overlay 与同步状态；不为状态检查增加共享 revision，只有实际 GT 变化才触发重型页面刷新。
+18. `019_trail_issue_exclusion_history.sql`：保存 Issue ID 屏蔽操作的批次与逐条结果审计。
+19. `020_review_dchat_notifications.sql`：为 Review 保存 mentions，并增加可靠的 DChat 通知 outbox。
+20. `021_mention_users.sql`：增加与 writer/admin 权限解耦的可 @ / DChat 通知人员目录，并用现有访问用户做一次安全种子。
+21. `022_review_comments.sql`：增加按 Issue + Model Run 隔离的追加式评论线程、回复关系与独立 DChat 评论通知 outbox；评论不再创建 Review 版本。
+22. `023_mention_display_names.sql`：为通知目录增加中文显示姓名；LDAP 仍是存储、校验和 DChat 投递的稳定标识。
+23. `024_comment_markdown_attachments.sql`：增加评论图片附件元数据与变更版本触发器，并补充梁祥辉的中文显示姓名；图片文件继续由服务端受控目录保存。
 
 `003_identity_attribution.sql` 对旧行使用 `legacy` / `verified=false`，不会把历史自由填写姓名升级成可信 SSO。所有人工标注、模型结果、任务记录与附件元数据都保留历史行；附件二进制仍留在同一受限 `review_attachments/` 目录，PostgreSQL 保存其元数据。
 

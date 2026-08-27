@@ -98,6 +98,12 @@ async function loadSession() {
   if (serverSession.authenticated && validDisplayName(serverSession.username)) {
     state.session = serverSession;
     renderSession();
+    try {
+      await loadMentionUsers();
+    } catch (_error) {
+      state.mentionUsers = [];
+      renderMentionUsers();
+    }
     return;
   }
   state.session = {
@@ -398,13 +404,54 @@ async function loadAccessUsers() {
   renderAccessUsers();
 }
 
+function renderMentionUsers() {
+  const target = $("#mentionUserList");
+  if (!target) return;
+  if (!state.mentionUsers.length) {
+    target.innerHTML = `<div class="no-asset">尚未配置可 @ 人员。</div>`;
+    return;
+  }
+  target.innerHTML = state.mentionUsers.map((item) => `
+    <div class="access-row" data-mention-user="${escapeHtml(item.username)}">
+      <div class="access-identity"><strong>${escapeHtml(item.display_name || item.username)}</strong><small>@${escapeHtml(item.username)} · ${item.enabled ? "可被提及并接收 DChat" : "已停用通知"}</small></div>
+      <label class="access-enabled-toggle"><input type="checkbox" data-mention-enabled${item.enabled ? " checked" : ""} /> 启用</label>
+      <div class="access-row-actions"><button class="button button-quiet" type="button" data-save-mention-user>保存</button><button class="button button-danger" type="button" data-remove-mention-user>移除</button></div>
+    </div>
+  `).join("");
+}
+
+async function loadMentionUsers() {
+  if (!state.session?.verified) {
+    state.mentionUsers = [];
+    renderMentionUsers();
+    return;
+  }
+  const result = await api("/api/mention-users");
+  state.mentionUsers = result.items || [];
+  renderMentionUsers();
+  document.querySelectorAll("textarea[data-mention-composer]").forEach((textarea) => {
+    const root = textarea.parentElement?.querySelector("[data-mention-composer-root]");
+    updateReviewMentionComposer(textarea, root);
+  });
+  updateReviewMentionComposer();
+}
+
+async function saveMentionUser(username, enabled) {
+  const result = await api(`/api/mention-users/${encodeURIComponent(username)}`, {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
+  acknowledgeLocalChange(result);
+  await loadMentionUsers();
+}
+
 async function saveAccessUser(username, role) {
   const result = await api(`/api/access-users/${encodeURIComponent(username)}`, {
     method: "PUT",
     body: JSON.stringify({ role }),
   });
   acknowledgeLocalChange(result);
-  await loadAccessUsers();
+  await Promise.all([loadAccessUsers(), loadMentionUsers()]);
 }
 
 function renderTrailSyncState() {

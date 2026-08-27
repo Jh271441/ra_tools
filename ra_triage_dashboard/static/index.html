@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-242`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-256`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -543,7 +543,8 @@
                         </label>
                         <label>
                           <span class="ui-lang-zh">排除说明（可选，写入 info）</span><span class="ui-lang-en">Exclusion note (optional; saved in info)</span>
-                          <textarea data-trail-issue-entry-comment rows="2" placeholder="留空时使用默认说明；会写入 info.ra_triage_dashboard.should_exclude_comment。"></textarea>
+                          <textarea data-trail-issue-entry-comment data-mention-composer rows="2" placeholder="留空时使用默认说明；输入 @ 可通知同事；提交后写入 info.ra_triage_dashboard.should_exclude_comment。"></textarea>
+                          <div class="review-mention-composer" data-mention-composer-root aria-live="polite"></div>
                         </label>
                         <button class="button button-quiet trail-update-entry-remove" data-trail-issue-entry-remove type="button" aria-label="删除此行" title="删除此行" disabled>×</button>
                       </div>
@@ -985,10 +986,64 @@
               </form>
               <div class="access-list" id="accessUserList"><div class="no-asset" data-i18n="access.loading">正在加载用户权限…</div></div>
             </section>
+            <section class="access-panel">
+              <div class="access-heading">
+                <div>
+                  <span class="eyebrow">DCHAT DIRECTORY</span>
+                  <h2><span class="ui-lang-zh">可 @ 人员</span><span class="ui-lang-en">Mention directory</span></h2>
+                  <p><span class="ui-lang-zh">只控制评论中可被 @ 并接收 DChat 的人员，不授予看板写入或管理员权限。</span><span class="ui-lang-en">Controls mention and DChat eligibility only; it does not grant Dashboard write or admin access.</span></p>
+                </div>
+              </div>
+              <form class="access-create" id="mentionUserForm">
+                <label><span class="ui-lang-zh">LDAP 用户名</span><span class="ui-lang-en">LDAP username</span><input id="mentionUserName" maxlength="64" autocomplete="off" placeholder="例如 jasperchen" /></label>
+                <button class="button button-primary" type="submit"><span class="ui-lang-zh">添加可 @ 人员</span><span class="ui-lang-en">Add mention user</span></button>
+              </form>
+              <div class="access-list" id="mentionUserList"><div class="no-asset">正在加载可 @ 人员…</div></div>
+            </section>
           </section>
         </main>
       </div>
     </div>
+
+    <dialog class="dialog comment-thread-dialog" id="analysisDiscussionDialog">
+      <form class="dialog-card" id="analysisDiscussionForm">
+        <div class="dialog-heading">
+          <div>
+            <h2><span class="ui-lang-zh">评论</span><span class="ui-lang-en">Comments</span></h2>
+            <p class="dialog-copy" id="analysisDiscussionContext"></p>
+          </div>
+          <button class="icon-button" type="button" data-close="analysisDiscussionDialog" aria-label="Close">×</button>
+        </div>
+        <div class="comment-thread-list" id="analysisDiscussionThread" aria-live="polite"></div>
+        <div class="comment-reply-context" id="analysisDiscussionReplyContext" hidden></div>
+        <div class="comment-editor" id="analysisDiscussionComposer">
+          <div class="comment-editor-heading">
+            <span><span class="ui-lang-zh">添加评论</span><span class="ui-lang-en">Add comment</span></span>
+            <small>Markdown</small>
+          </div>
+          <div class="comment-editor-toolbar" role="toolbar" aria-label="Markdown 工具栏">
+            <button type="button" data-comment-format="bold" title="粗体"><strong>B</strong></button>
+            <button type="button" data-comment-format="italic" title="斜体"><em>I</em></button>
+            <button type="button" data-comment-format="code" title="行内代码">&lt;/&gt;</button>
+            <button type="button" data-comment-format="quote" title="引用">“”</button>
+            <button type="button" data-comment-format="list" title="列表">≡</button>
+            <button type="button" data-comment-format="link" title="链接">链接</button>
+            <button type="button" data-comment-image title="插入图片">图片</button>
+            <span class="comment-editor-toolbar-spacer"></span>
+            <button type="button" data-comment-preview-toggle>预览</button>
+          </div>
+          <textarea id="analysisDiscussionNote" data-mention-composer rows="4" maxlength="3500" placeholder="支持 Markdown；输入 @ 可按 LDAP 或中文姓名搜索。"></textarea>
+          <div class="review-mention-composer" id="analysisDiscussionMentionComposer" data-mention-composer-root aria-live="polite"></div>
+          <div class="comment-markdown-preview comment-thread-body" id="analysisDiscussionPreview" hidden></div>
+          <div class="comment-pending-images" id="analysisDiscussionImages"></div>
+          <input id="analysisDiscussionImageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
+        </div>
+        <div class="dialog-actions">
+          <button class="button button-quiet" type="button" data-close="analysisDiscussionDialog"><span class="ui-lang-zh">关闭</span><span class="ui-lang-en">Close</span></button>
+          <button class="button button-primary" id="analysisDiscussionSubmit" type="submit"><span class="ui-lang-zh">发表评论</span><span class="ui-lang-en">Post comment</span></button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog class="dialog issue-query-dialog" id="issueQueryDialog">
       <div class="dialog-card">
@@ -1377,7 +1432,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-242`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-256`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

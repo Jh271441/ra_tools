@@ -151,6 +151,9 @@ function applyUiLanguage(language, { persist = true } = {}) {
     if (typeof renderAccessUsers === "function" && state.accessUsers) renderAccessUsers();
   } catch (_) {}
   try {
+    if (typeof renderMentionUsers === "function" && state.mentionUsers) renderMentionUsers();
+  } catch (_) {}
+  try {
     if (typeof renderRunManager === "function" && state.modelRuns?.length) renderRunManager();
   } catch (_) {}
   try {
@@ -393,6 +396,8 @@ function parsePageRoute() {
     reviewIssueIds,
     source: params.get("source") || "",
     runId: params.get("run") || "",
+    openComments: params.get("comments") === "1",
+    commentId: Number.parseInt(params.get("comment") || "0", 10) || 0,
     comparisonStatus: routeReviewComparisonStatus(params),
     failureOnly: params.has("failure") ? params.get("failure") === "1" : params.has("run") ? false : null,
     ...reviewFilters,
@@ -767,6 +772,7 @@ function showPage(
   }
   if (target === "users" && loadPageData) {
     loadAccessUsers().catch((error) => showToast(error.message, true));
+    loadMentionUsers().catch((error) => showToast(error.message, true));
   }
   if (target === "review") setReviewView(issue);
   const routeOptions =
