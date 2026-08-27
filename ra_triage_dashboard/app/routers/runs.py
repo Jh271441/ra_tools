@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, Response
 
 from ..contracts import MAX_SOURCE_PREVIEW_ROWS, MAX_UPLOAD_BYTES
 from ..http_support import (
+    _admin_identity,
     _can_manage_team_default,
     _detail,
     _model_source_file,
@@ -22,12 +23,47 @@ from ..http_support import (
     _source_preview_value,
     enrich_model_run_baseline_hint,
     resolve_review_exclusion_filter,
+    resolve_request_baseline_ids,
     resolve_request_baseline_scopes,
 )
 from ..import_parsing import parse_source_bytes
 from ..runtime import database, settings
 
 router = APIRouter()
+
+
+@router.get("/api/model-run-comparison")
+async def compare_model_runs(
+    request: Request,
+    baseline_run_id: str = "",
+    candidate_run_id: str = "",
+    transition: str = "all",
+    q: str = "",
+    page: int = 1,
+    page_size: int = 50,
+    baselines: str = "",
+) -> dict[str, Any]:
+    """Return an admin-only, immutable comparison of two Model Runs."""
+
+    await asyncio.to_thread(_admin_identity, request)
+    scopes = resolve_request_baseline_scopes(baselines, request=request)
+    try:
+        payload = await asyncio.to_thread(
+            database.compare_model_runs,
+            baseline_run_id=baseline_run_id,
+            candidate_run_id=candidate_run_id,
+            baseline_scopes=scopes,
+            transition=transition,
+            search=q,
+            page=page,
+            page_size=page_size,
+        )
+    except ValueError as exc:
+        raise _detail(400, str(exc))
+    payload["baseline_ids"] = resolve_request_baseline_ids(
+        baselines, request=request
+    )
+    return payload
 
 @router.get("/api/model-runs")
 async def model_runs(request: Request, baselines: str = "") -> dict[str, Any]:

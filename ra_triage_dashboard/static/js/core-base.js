@@ -561,6 +561,11 @@ const PAGE_ROUTES = {
     titleZh: "模型结果",
     titleEn: "Model Runs",
   },
+  comparison: {
+    path: "/run-comparison",
+    titleZh: "Run 对比",
+    titleEn: "Run Comparison",
+  },
   prediction: {
     path: "/batch-prediction",
     titleZh: "批次预测",
@@ -618,6 +623,17 @@ const state = {
   batchDraftSource: "",
   batchDefaultName: "",
   selectedRunId: "",
+  runComparison: {
+    baselineRunId: "",
+    candidateRunId: "",
+    transition: "ALL",
+    search: "",
+    page: 1,
+    pageSize: 50,
+    requestSeq: 0,
+    data: null,
+    loading: false,
+  },
   // Short baseline ids from registry (e.g. ["0508"] or ["0508","0626"]).
   selectedBaselineIds: ["0508"],
   baselineCatalog: [],

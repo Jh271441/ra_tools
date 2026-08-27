@@ -23,11 +23,12 @@ class FrontendBootstrapTest(unittest.TestCase):
 
     def test_initial_route_owns_its_heavy_requests(self) -> None:
         self.assertIn("loadPageData = true", APP_JS)
-        self.assertEqual(APP_JS.count("loadPageData: false"), 3)
+        self.assertEqual(APP_JS.count("loadPageData: false"), 4)
         self.assertIn("const initialPageRequests = [loadOverview()]", APP_JS)
         self.assertIn('initialRoute.page === "review"', APP_JS)
         self.assertIn('initialRoute.page === "status"', APP_JS)
         self.assertIn('initialRoute.page === "prediction"', APP_JS)
+        self.assertIn('initialRoute.page === "comparison"', APP_JS)
 
     def test_optional_lca_and_deep_link_support_data_do_not_block_first_content(self) -> None:
         session_start = APP_JS.index("async function loadSession()")

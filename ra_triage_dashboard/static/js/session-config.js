@@ -73,6 +73,8 @@ function renderSession() {
     : "write";
   const userManagementNav = $("#userManagementNavButton");
   if (userManagementNav) userManagementNav.hidden = !state.session.is_admin;
+  const runComparisonNav = $("#runComparisonNavButton");
+  if (runComparisonNav) runComparisonNav.hidden = !state.session.is_admin;
   const batchActor = $("#batchActorSummary");
   if (batchActor) {
     batchActor.textContent = state.session.verified

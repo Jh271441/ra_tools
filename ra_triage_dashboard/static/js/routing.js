@@ -365,6 +365,20 @@ function normalizedTrailUpdateRouteFilters(params) {
   };
 }
 
+function normalizedRunComparisonRouteFilters(params) {
+  const transition = String(params.get("transition") || "ALL").toUpperCase();
+  const rawPage = Number.parseInt(params.get("page") || "1", 10);
+  const rawPageSize = Number.parseInt(params.get("page_size") || "50", 10);
+  return {
+    baselineRunId: params.get("baseline_run") || params.get("baseline") || "",
+    candidateRunId: params.get("candidate_run") || params.get("new") || "",
+    transition: ["ALL", "P2P", "P2F", "F2P", "F2F"].includes(transition) ? transition : "ALL",
+    search: String(params.get("q") || "").slice(0, 128),
+    page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
+    pageSize: [20, 50, 100].includes(rawPageSize) ? rawPageSize : 50,
+  };
+}
+
 function parsePageRoute() {
   const pathname = stripBasePath(window.location.pathname);
   const match = Object.entries(PAGE_ROUTES).find(([, config]) => config.path === pathname);
@@ -403,6 +417,7 @@ function parsePageRoute() {
     ...reviewFilters,
     analysisFilters: normalizedAnalysisRouteFilters(params),
     trailUpdateFilters: normalizedTrailUpdateRouteFilters(params),
+    comparisonFilters: normalizedRunComparisonRouteFilters(params),
     // Issue / GT 上传已从页面移除；旧链接统一落到安全的模型结果导入区。
     importKind:
       params.get("import") === "model" ||
@@ -650,6 +665,21 @@ function pageUrl(page, options = {}) {
   if (page === "runs" && options.importKind) {
     url.searchParams.set("import", "model");
   }
+  if (page === "comparison") {
+    const comparison = typeof runComparisonRouteOptions === "function"
+      ? runComparisonRouteOptions(options)
+      : options;
+    if (comparison.baselineRunId) url.searchParams.set("baseline_run", comparison.baselineRunId);
+    if (comparison.candidateRunId) url.searchParams.set("candidate_run", comparison.candidateRunId);
+    if (comparison.transition && comparison.transition !== "ALL") {
+      url.searchParams.set("transition", comparison.transition);
+    }
+    if (comparison.search) url.searchParams.set("q", comparison.search);
+    if (Number(comparison.page) > 1) url.searchParams.set("page", String(comparison.page));
+    if (Number(comparison.pageSize) !== 50) {
+      url.searchParams.set("page_size", String(comparison.pageSize));
+    }
+  }
   // Persist multi-baseline selection for shareable URLs on all pages.
   const baselineValue =
     options.baselines != null
@@ -714,6 +744,17 @@ function showPage(
     renderRunManager();
     if (importKind) setImportKind(importKind);
     else activateRunSourceTab(runSourceTab || "upload");
+  }
+  if (target === "comparison") {
+    if (!state.session.identity_pending && !state.session.is_admin) {
+      showToast(uiText("Run 对比仅对管理员开放。", "Run comparison is admin-only."), true);
+      return showPage("review", { historyMode: historyMode || "replace" });
+    }
+    renderRunComparisonSelectors?.();
+    renderRunComparison?.();
+    if (loadPageData && state.session.is_admin) {
+      loadRunComparison({ historyMode: historyMode || "replace" }).catch((error) => showToast(error.message, true));
+    }
   }
   if (target === "prediction") {
     const issueIds = issues.length ? issues : issue ? [issue] : [];
@@ -784,7 +825,9 @@ function showPage(
           ? (typeof currentTrailUpdateRouteOptions === "function"
               ? currentTrailUpdateRouteOptions()
               : { runId: state.trailUpdate?.runId || "" })
-        : { issue, issues, source, importKind };
+        : target === "comparison" && typeof runComparisonRouteOptions === "function"
+          ? runComparisonRouteOptions()
+          : { issue, issues, source, importKind };
   const historyState = {
     page: target,
     issue: target === "review" ? issue : "",

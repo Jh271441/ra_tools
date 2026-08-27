@@ -268,6 +268,9 @@ async function setBaselineScopes(
       await loadRuns({ preserveEmpty: true });
     } else if (state.activePage === "trail-update") {
       await loadTrailAttributePreview(true);
+    } else if (state.activePage === "comparison" && state.session.is_admin) {
+      state.runComparison.page = 1;
+      await loadRunComparison();
     }
   } catch (error) {
     showToast(error.message || String(error), true);
@@ -600,6 +603,14 @@ async function refreshChangedData() {
   }
   if (state.activePage === "runs") {
     await Promise.all([loadRuns({ preserveEmpty: true }), loadOverview()]);
+    return;
+  }
+  if (state.activePage === "comparison") {
+    await Promise.all([
+      loadRuns({ preserveEmpty: true }),
+      loadOverview(),
+    ]);
+    if (state.session.is_admin) await loadRunComparison();
     return;
   }
   if (state.activePage === "trail-update") {

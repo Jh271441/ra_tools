@@ -207,7 +207,9 @@ export DASHBOARD_TEAM_DEFAULT_MANAGERS=alice,bob
 
 Kylin 必须把 SSO 用户写入 `X-SSO-User`，把该文件中的值写入 `X-RA-Triage-Ingress`，且两个 header 都必须覆盖而非追加客户端值；不要把 marker 返回给浏览器。若实际用户名 header 或变量名不同，只改 `DASHBOARD_IDENTITY_HEADER`，代码无需修改。生产模式会在启动时校验 marker 文件为当前服务用户所有、普通文件、权限 0600、内容至少 32 字符；配置不安全时拒绝启动。
 
-`DASHBOARD_SSO_WRITE_USERS` 与 `DASHBOARD_TEAM_DEFAULT_MANAGERS` 只在权限表为空时执行一次初始化。此后 PostgreSQL/SQLite 中的权限表是运行时权威来源：未列出的 SSO 用户与裸 IP 访问均为只读，`writer` 可执行普通 Review、Run 与 Tag 选择操作，`admin` 额外拥有独立的 `/users` 用户管理页。Kylin Portal 的「SSO 白名单」属于网关访问策略，不能直接等同于本应用写白名单。
+`DASHBOARD_SSO_WRITE_USERS` 与 `DASHBOARD_TEAM_DEFAULT_MANAGERS` 只在权限表为空时执行一次初始化。此后 PostgreSQL/SQLite 中的权限表是运行时权威来源：未列出的 SSO 用户与裸 IP 访问均为只读，`writer` 可执行普通 Review、Run 与 Tag 选择操作，`admin` 额外拥有独立的 `/users` 用户管理页和内测 `/run-comparison` Run 对比页。Run 对比的页面路由与 `/api/model-run-comparison` API 都会在服务端重新验证管理员身份；前端隐藏入口不作为权限边界。Kylin Portal 的「SSO 白名单」属于网关访问策略，不能直接等同于本应用写白名单。
+
+Run 对比始终在当前选中的不可变 GT 数据集上计算。`P/F` 表示该 Run 输出相对 GT 是否正确：`P2F` 是退化、`F2P` 是改善；缺失或不支持的输出以 `NONE` 留在混淆矩阵与准确率分母中。页面提供双 Run 混淆矩阵、Case 搜索与变化筛选，并可携带 `issue + run + comparison=all` 深链到判错复核。网页 Batch Run 若保存过 Prompt、模型及输入配置，会展示经过敏感字段脱敏的创建时快照；比较本身不会修改 Review、Run、GT 或 Trail。
 
 只有管理员能读取或修改 `/api/access-users`；前端隐藏入口不是权限边界。管理员可添加可写用户、提升管理员或移除写权限，服务端禁止降级或移除最后一个管理员。场景 Tag 固定使用内置目录，Review 中可以选择，但不提供新增、删除或 Tag 管理入口。
 

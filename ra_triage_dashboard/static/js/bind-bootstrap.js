@@ -20,6 +20,7 @@ function scheduleReviewFilterReload(delay = 0) {
 
 function bindEvents() {
   bindWorkSplitControls();
+  if (typeof bindRunComparisonEvents === "function") bindRunComparisonEvents();
   if (typeof bindIssueQueryControls === "function") bindIssueQueryControls();
   document.querySelectorAll("[data-page-target]").forEach((element) => {
     element.addEventListener("click", (event) => {
@@ -547,6 +548,21 @@ function bindEvents() {
   });
   window.addEventListener("popstate", async () => {
     const route = parsePageRoute();
+    if (route.page === "comparison") {
+      if (!state.session.is_admin) {
+        showPage("review", { historyMode: "replace" });
+        showToast(uiText("Run 对比仅对管理员开放。", "Run comparison is admin-only."), true);
+        return;
+      }
+      applyRunComparisonRoute(route.comparisonFilters);
+      showPage("comparison", { restoreRoute: true, loadPageData: false });
+      try {
+        await loadRunComparison({ historyMode: "" });
+      } catch (error) {
+        showToast(error.message, true);
+      }
+      return;
+    }
     if (route.page === "analysis") {
       const previousRunId = state.selectedRunId;
       const previousFailureOnly = state.failureOnly;
@@ -707,10 +723,10 @@ async function bootstrap() {
   const sessionRequest = resolveSessionInBackground();
   try {
     await settleInitialRequests([loadConfig()], "基础配置");
-    if (initialRoute.page === "users") {
+    if (["users", "comparison"].includes(initialRoute.page)) {
       await sessionRequest;
     }
-    if (initialRoute.page === "users" && !state.session.is_admin) {
+    if (["users", "comparison"].includes(initialRoute.page) && !state.session.is_admin) {
       initialRoute.page = "review";
       showToast(t("toast.admin_only"), true);
     }
@@ -756,6 +772,9 @@ async function bootstrap() {
       ],
       "模型 Run"
     );
+    if (initialRoute.page === "comparison") {
+      applyRunComparisonRoute(initialRoute.comparisonFilters);
+    }
     const sharedDataPromise = settleInitialRequests(
       [
         loadReviewers(),
@@ -787,6 +806,8 @@ async function bootstrap() {
       initialPageRequests.push(loadAccessUsers(), loadMentionUsers());
     } else if (initialRoute.page === "prediction") {
       initialPageRequests.push(loadPredictionConfig(), loadPredictionBatches());
+    } else if (initialRoute.page === "comparison") {
+      initialPageRequests.push(loadRunComparison({ historyMode: "" }));
     }
     if (initialRoute.page === "analysis") {
       initialPageRequests.push(loadReviewReasonAnalysis());

@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-256`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-257`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -96,6 +96,12 @@
               <svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="m4 8 8-5 8 5v11H4z"/><path d="M5 19V9m7 10V5m7 14v-7M3 19h18"/><path class="icon-emphasis" d="m5 7 7-4 7 6"/><path d="M8.5 15v-3m7 3V9"/></svg>
             </span>
             <span class="sidebar-label"><strong class="ui-lang-zh">模型结果</strong><strong class="ui-lang-en">Model Runs</strong></span>
+          </a>
+          <a class="sidebar-item" id="runComparisonNavButton" data-page-target="comparison" data-app-path="/run-comparison" href="/run-comparison" title="Run 对比（管理员内测）" hidden>
+            <span class="sidebar-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 4h6v16H4zm10 0h6v16h-6z"/><path d="M7 8h9m-2-3 3 3-3 3M17 16H8m2-3-3 3 3 3"/><circle class="icon-emphasis" cx="7" cy="8" r="1.6"/><circle class="icon-emphasis" cx="17" cy="16" r="1.6"/></svg>
+            </span>
+            <span class="sidebar-label"><strong class="ui-lang-zh">Run 对比 <small class="nav-beta">内测</small></strong><strong class="ui-lang-en">Run comparison <small class="nav-beta">Beta</small></strong></span>
           </a>
           <a class="sidebar-item" id="openBatchPredictionButton" data-page-target="prediction" data-app-path="/batch-prediction" href="/batch-prediction" title="Batch 预测">
             <span class="sidebar-icon" aria-hidden="true">
@@ -774,6 +780,88 @@
             </section>
           </section>
 
+          <section class="app-page tool-page run-comparison-page hidden" id="runComparisonPage" data-page="comparison">
+            <div class="compact-page-lead run-comparison-lead">
+              <div>
+                <p><strong><span class="ui-lang-zh">管理员内测</span><span class="ui-lang-en">Admin beta</span></strong> · <span class="ui-lang-zh">基于同一份不可变 GT 比较两个 Run；P2F 表示退化，F2P 表示改善。</span><span class="ui-lang-en">Compare two Runs against the same immutable GT; P2F is a regression and F2P an improvement.</span></p>
+              </div>
+              <button class="button button-quiet" type="button" data-page-target="runs"><span class="ui-lang-zh">查看模型结果</span><span class="ui-lang-en">View Model Runs</span></button>
+            </div>
+
+            <section class="page-card run-comparison-controls">
+              <div class="run-comparison-picker-grid">
+                <label>
+                  <span><span class="ui-lang-zh">基线 Run</span><span class="ui-lang-en">Baseline Run</span></span>
+                  <select id="comparisonBaselineRun"></select>
+                </label>
+                <button class="button button-quiet comparison-swap" id="comparisonSwapButton" type="button" aria-label="交换两个 Run" title="交换两个 Run">⇄</button>
+                <label>
+                  <span><span class="ui-lang-zh">新 Run</span><span class="ui-lang-en">Candidate Run</span></span>
+                  <select id="comparisonCandidateRun"></select>
+                </label>
+                <button class="button button-primary" id="comparisonLoadButton" type="button"><span class="ui-lang-zh">开始对比</span><span class="ui-lang-en">Compare</span></button>
+              </div>
+              <p class="muted comparison-selection-note" id="comparisonSelectionNote"><span class="ui-lang-zh">请选择两个不同的 Run。</span><span class="ui-lang-en">Choose two different Runs.</span></p>
+            </section>
+
+            <section class="comparison-empty page-card" id="comparisonEmptyState">
+              <strong><span class="ui-lang-zh">选择两个 Run 开始对比</span><span class="ui-lang-en">Select two Runs to compare</span></strong>
+              <p class="muted"><span class="ui-lang-zh">结果不会修改 Review、GT、Run 或 Trail。</span><span class="ui-lang-en">Comparison does not change Reviews, GT, Runs, or Trail.</span></p>
+            </section>
+
+            <div class="comparison-results hidden" id="comparisonResults">
+              <section class="comparison-summary-grid" id="comparisonSummary"></section>
+
+              <section class="comparison-matrix-grid">
+                <article class="page-card comparison-matrix-card">
+                  <div class="comparison-card-heading"><h3><span class="ui-lang-zh">基线混淆矩阵</span><span class="ui-lang-en">Baseline matrix</span></h3><span id="comparisonBaselineMatrixMeta"></span></div>
+                  <div class="comparison-matrix-wrap" id="comparisonBaselineMatrix"></div>
+                </article>
+                <article class="page-card comparison-matrix-card">
+                  <div class="comparison-card-heading"><h3><span class="ui-lang-zh">新 Run 混淆矩阵</span><span class="ui-lang-en">Candidate matrix</span></h3><span id="comparisonCandidateMatrixMeta"></span></div>
+                  <div class="comparison-matrix-wrap" id="comparisonCandidateMatrix"></div>
+                </article>
+              </section>
+
+              <section class="comparison-snapshot-grid">
+                <details class="page-card comparison-snapshot" id="comparisonBaselineSnapshot">
+                  <summary><span class="ui-lang-zh">基线 Prompt / 输入快照</span><span class="ui-lang-en">Baseline Prompt / input snapshot</span></summary>
+                  <div class="comparison-snapshot-body"></div>
+                </details>
+                <details class="page-card comparison-snapshot" id="comparisonCandidateSnapshot">
+                  <summary><span class="ui-lang-zh">新 Run Prompt / 输入快照</span><span class="ui-lang-en">Candidate Prompt / input snapshot</span></summary>
+                  <div class="comparison-snapshot-body"></div>
+                </details>
+              </section>
+
+              <section class="page-card comparison-cases-card">
+                <div class="comparison-cases-heading">
+                  <div><h3><span class="ui-lang-zh">Case 变化明细</span><span class="ui-lang-en">Case transitions</span></h3><p class="muted" id="comparisonCaseCount"></p></div>
+                  <label class="comparison-search"><span class="sr-only">Issue ID</span><input id="comparisonSearchInput" type="search" placeholder="搜索 Issue ID" autocomplete="off" /></label>
+                </div>
+                <div class="comparison-transition-filter" id="comparisonTransitionFilter" role="group" aria-label="变化类型">
+                  <button class="button button-quiet active" type="button" data-comparison-transition="ALL">全部</button>
+                  <button class="button button-quiet transition-regression" type="button" data-comparison-transition="P2F">P2F 退化</button>
+                  <button class="button button-quiet transition-improvement" type="button" data-comparison-transition="F2P">F2P 改善</button>
+                  <button class="button button-quiet" type="button" data-comparison-transition="F2F">F2F 仍错误</button>
+                  <button class="button button-quiet" type="button" data-comparison-transition="P2P">P2P 均正确</button>
+                </div>
+                <div class="comparison-table-wrap">
+                  <table class="comparison-case-table">
+                    <thead><tr><th>Issue / GT</th><th><span class="ui-lang-zh">基线输出</span><span class="ui-lang-en">Baseline</span></th><th><span class="ui-lang-zh">新 Run 输出</span><span class="ui-lang-en">Candidate</span></th><th><span class="ui-lang-zh">变化</span><span class="ui-lang-en">Change</span></th><th><span class="ui-lang-zh">复核</span><span class="ui-lang-en">Review</span></th></tr></thead>
+                    <tbody id="comparisonCaseRows"></tbody>
+                  </table>
+                </div>
+                <div class="pagination comparison-pagination">
+                  <button class="button button-quiet" id="comparisonPagePrevious" type="button">← <span class="ui-lang-zh">上一页</span><span class="ui-lang-en">Previous</span></button>
+                  <span id="comparisonPageSummary">—</span>
+                  <button class="button button-quiet" id="comparisonPageNext" type="button"><span class="ui-lang-zh">下一页</span><span class="ui-lang-en">Next</span> →</button>
+                  <label><span class="ui-lang-zh">每页</span><span class="ui-lang-en">Per page</span><select id="comparisonPageSize"><option>20</option><option selected>50</option><option>100</option></select></label>
+                </div>
+              </section>
+            </div>
+          </section>
+
           <section class="app-page tool-page hidden" id="predictionPage" data-page="prediction">
             <div class="compact-page-lead">
               <p><span class="ui-lang-zh">从服务器模型网关选择模型并批量预测；完成后再显式推送到 AutoTriage。</span><span class="ui-lang-en">Pick a gateway model and run batch prediction; publish to AutoTriage explicitly when ready.</span></p>
@@ -1432,7 +1520,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-256`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-257`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

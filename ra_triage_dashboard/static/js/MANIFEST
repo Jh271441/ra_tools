@@ -10,6 +10,7 @@ gt-sync.js
 session-config.js
 system-status.js
 runs.js
+run-comparison.js
 review-gallery.js
 work-split.js
 analysis.js
