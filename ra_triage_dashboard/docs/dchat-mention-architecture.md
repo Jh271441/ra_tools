@@ -39,6 +39,10 @@ multiple mentions follow the token under the caret. It opens above or below
 according to the remaining viewport space and repositions while the textarea
 or page scrolls. The current verified user remains a valid candidate and can
 deliberately notify themself as a follow-up reminder.
+The same versioned discussion dialog is available from reason-analysis rows
+and Review exclusion candidate rows. Each exclusion-row action carries that
+row's model Run binding; saving appends a Review version and refreshes the local
+candidate aggregate, but never commits a Trail write.
 Every submitted comment is parsed again by the server, limited to ten unique
 recipients, and rejected if any recipient is absent or disabled. Annotation and
 outbox rows commit in one database transaction. DChat delivery is asynchronous,

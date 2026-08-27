@@ -2689,6 +2689,7 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .text-link:hover, .text-link:focus-visible {
   color: var(--accent); background: rgba(34,211,238,.08); outline: none;
 }
+.trail-update-discussion-link { display: block; margin-top: 3px; }
 
 @container (max-width: 1499px) {
   .issue-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }

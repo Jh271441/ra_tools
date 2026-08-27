@@ -758,14 +758,17 @@ function renderAnalysisCases(data) {
   if (jumpButton) jumpButton.disabled = pageCount <= 1;
 }
 
-async function openAnalysisDiscussion(issueId) {
+async function openAnalysisDiscussion(
+  issueId,
+  { runId = state.selectedRunId || "", source = "analysis" } = {}
+) {
   const caseData = await api(`/api/cases/${encodeURIComponent(issueId)}`);
   const annotations = (caseData.annotations || []).filter((item) =>
-    String(item.model_run_id || "") === String(state.selectedRunId || "")
+    String(item.model_run_id || "") === String(runId || "")
   );
   const annotation = annotations[0] || null;
-  state.analysisDiscussion = { issueId, annotation };
-  $("#analysisDiscussionContext").textContent = `${issueId} · ${state.selectedRunId || "未绑定 Run"}`;
+  state.analysisDiscussion = { issueId, annotation, runId, source };
+  $("#analysisDiscussionContext").textContent = `${issueId} · ${runId || "未绑定 Run"}`;
   const textarea = $("#analysisDiscussionNote");
   textarea.value = "";
   bindReviewMentionComposer(textarea, $("#analysisDiscussionMentionComposer"));
@@ -795,7 +798,7 @@ async function saveAnalysisDiscussion(event) {
     const result = await api(`/api/cases/${encodeURIComponent(context.issueId)}/annotations`, {
       method: "POST",
       body: JSON.stringify({
-        model_run_id: state.selectedRunId || String(previous.model_run_id || ""),
+        model_run_id: String(context.runId || previous.model_run_id || ""),
         expected_previous_annotation_id: previous.id || null,
         expected_output: annotationExpectedOutput(previous),
         is_excluded: Boolean(previous.is_excluded),
@@ -807,10 +810,14 @@ async function saveAnalysisDiscussion(event) {
     });
     acknowledgeLocalChange(result);
     $("#analysisDiscussionDialog").close();
-    state.analysisDiscussion = null;
     const queued = result?.annotation?.notification?.queued?.length || 0;
     showToast(`讨论已保存${queued ? `；DChat 通知已排队 ${queued} 人` : ""}。`);
-    await loadReviewReasonAnalysis();
+    state.analysisDiscussion = null;
+    if (context.source === "trail-update") {
+      await loadTrailAttributePreview(true);
+    } else {
+      await loadReviewReasonAnalysis();
+    }
   } catch (error) {
     showToast(error.message, true);
   } finally {
