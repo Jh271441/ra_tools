@@ -727,7 +727,7 @@ function clearTrailAttributePreview(message = "") {
   setTrailAttributeStatus(message);
   const body = $("#trailUpdateTableBody");
   if (body) {
-    body.innerHTML = `<tr><td colspan="9" class="trail-update-empty">${uiText("正在加载排除案例。", "Loading excluded cases.")}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8" class="trail-update-empty">${uiText("正在加载排除案例。", "Loading excluded cases.")}</td></tr>`;
   }
 }
 
@@ -776,11 +776,11 @@ function renderTrailAttributePreview(data) {
   const body = $("#trailUpdateTableBody");
   if (!body) return;
   if (!allItems.length) {
-    body.innerHTML = `<tr><td colspan="9" class="trail-update-empty">${uiText("当前数据集与 Run 范围没有已标记“应该排除”的 Review。", "No reviewed “should exclude” cases in the current dataset and Run.")}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8" class="trail-update-empty">${uiText("当前数据集与 Run 范围没有已标记“应该排除”的 Review。", "No reviewed “should exclude” cases in the current dataset and Run.")}</td></tr>`;
     return;
   }
   if (!items.length) {
-    body.innerHTML = `<tr><td colspan="9" class="trail-update-empty">${uiText("当前筛选没有匹配的排除案例。", "No excluded cases match the current filters.")}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8" class="trail-update-empty">${uiText("当前筛选没有匹配的排除案例。", "No excluded cases match the current filters.")}</td></tr>`;
     return;
   }
   body.innerHTML = items.map((item) => {
@@ -791,7 +791,7 @@ function renderTrailAttributePreview(data) {
     const sourceRun = trailUpdateSourceRun(model, data, item);
     const status = trailUpdateStatusMeta(item.trail_update_status || "not_checked");
     return `<tr class="${ready ? "" : "is-invalid"}">
-      <td data-label="Issue"><strong class="trail-update-issue">${escapeHtml(item.issue_id || "—")}</strong><small>${escapeHtml(item.title || item.scenario || "")}</small></td>
+      <td data-label="Issue"><div class="trail-update-issue-line"><strong class="trail-update-issue">${escapeHtml(item.issue_id || "—")}</strong>${state.session?.read_only ? "" : `<button class="analysis-discussion-link trail-update-discussion-link" type="button" data-trail-update-discussion="${escapeHtml(item.issue_id || "")}" data-model-run-id="${escapeHtml(review.model_run_id || model.run_id || "")}">@讨论</button>`}</div><small>${escapeHtml(item.title || item.scenario || "")}</small></td>
       <td data-label="GT">${labelBadge(item.gt_label, "—")}</td>
       <td data-label="模型 label">${labelBadge(model.label, "未输出")}<small>${ready ? "" : uiText("label 不在三分类契约内", "label is outside the contract")}</small></td>
       <td data-label="模型 reason"><div class="trail-update-reason" title="${escapeHtml(model.reason || "模型未返回 reason")}">${escapeHtml(model.reason || "模型未返回 reason")}</div><small>${escapeHtml(formatModelConfidence(model.confidence))} confidence</small></td>
@@ -799,7 +799,6 @@ function renderTrailAttributePreview(data) {
       <td data-label="Comment"><div class="trail-update-comment" title="${escapeHtml(comment || uiText("未填写 Comment", "No Comment"))}">${escapeHtml(comment || "未填写")}</div><small class="trail-update-comment-target" title="${escapeHtml(comment ? uiText("提交时写入 info.ra_triage_dashboard.should_exclude_comment", "Saved in info.ra_triage_dashboard.should_exclude_comment on commit") : uiText("不会写入排除说明", "No exclusion note will be written"))}">${comment ? uiText("提交时写入 info.ra_triage_dashboard.should_exclude_comment", "Saved in info.ra_triage_dashboard.should_exclude_comment on commit") : uiText("不会写入排除说明", "No exclusion note will be written")}</small></td>
       <td data-label="数据集版本" class="trail-update-source-cell" title="${escapeHtml(sourceRun.title)}"><strong>${escapeHtml(sourceRun.label)}</strong></td>
       <td data-label="Trail 更新状态" data-trail-update-status-issue="${escapeHtml(item.issue_id || "")}">${trailUpdateStatusCellMarkup(status.key)}</td>
-      <td data-label="操作" class="trail-update-action-cell">${state.session?.read_only ? "—" : `<button class="analysis-discussion-link trail-update-discussion-link" type="button" data-trail-update-discussion="${escapeHtml(item.issue_id || "")}" data-model-run-id="${escapeHtml(review.model_run_id || model.run_id || "")}">@讨论</button>`}</td>
     </tr>`;
   }).join("");
   body.querySelectorAll("[data-trail-update-discussion]").forEach((button) => {
