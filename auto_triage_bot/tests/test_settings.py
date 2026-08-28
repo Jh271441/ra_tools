@@ -45,6 +45,27 @@ class SettingsTest(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     Settings.from_env()
 
+    def test_relay_url_is_fixed_to_worker_gateway(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"AUTOTRIAGE_BOT_RELAY_URL": "https://example.com/dchat-worker"},
+            clear=False,
+        ):
+            with self.assertRaises(RuntimeError):
+                Settings.from_env()
+
+        with patch.dict(
+            os.environ,
+            {
+                "AUTOTRIAGE_BOT_RELAY_URL": (
+                    "https://ra-model.intra.xiaojukeji.com/dchat-worker"
+                )
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+        self.assertEqual(settings.worker_base_path, "/dchat-worker")
+
 
 if __name__ == "__main__":
     unittest.main()

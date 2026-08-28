@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 
 
 MODEL_ID_RE = re.compile(r"^[A-Za-z0-9._/@:+-]{1,160}$")
+WORKER_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 BASE_PATH_RE = re.compile(r"^/[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*$")
 _DASHBOARD_HOSTS = {"127.0.0.1", "localhost"}
 _MODEL_HOSTS = {
@@ -16,6 +17,7 @@ _MODEL_HOSTS = {
     "ra-model.intra.xiaojukeji.com",
     "tokenservice-gateway-ys.intra.xiaojukeji.com",
 }
+_RELAY_HOSTS = {"127.0.0.1", "localhost", "ra-model.intra.xiaojukeji.com"}
 
 
 def _bool(name: str, default: bool = False) -> bool:
@@ -88,6 +90,13 @@ class Settings:
     model_temperature: float
     max_question_chars: int
     max_answer_chars: int
+    relay_url: str
+    relay_worker_secret_file: Path
+    relay_worker_id: str
+    relay_poll_seconds: float
+    relay_lease_seconds: int
+    relay_max_attempts: int
+    worker_base_path: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -114,6 +123,17 @@ class Settings:
         )
         if any(not re.fullmatch(r"[A-Za-z0-9._@-]{1,128}", value) for value in allowed_users):
             raise RuntimeError("AUTOTRIAGE_BOT_ALLOWED_USERS 含非法 LDAP。")
+        relay_worker_id = os.getenv(
+            "AUTOTRIAGE_BOT_RELAY_WORKER_ID", "cloud-server-1"
+        ).strip()
+        if not WORKER_ID_RE.fullmatch(relay_worker_id):
+            raise RuntimeError("AUTOTRIAGE_BOT_RELAY_WORKER_ID 格式非法。")
+        relay_lease_seconds = int(
+            _number("AUTOTRIAGE_BOT_RELAY_LEASE_SECONDS", 120.0, 30.0, 600.0)
+        )
+        relay_max_attempts = int(
+            _number("AUTOTRIAGE_BOT_RELAY_MAX_ATTEMPTS", 5.0, 1.0, 20.0)
+        )
         enabled = _bool("AUTOTRIAGE_BOT_ENABLED", False)
         smoke_enabled = _bool("AUTOTRIAGE_BOT_SMOKE_ENABLED", False)
         allow_all_users = _bool("AUTOTRIAGE_BOT_ALLOW_ALL_USERS", False)
@@ -186,6 +206,29 @@ class Settings:
             ),
             max_question_chars=max_question,
             max_answer_chars=max_answer,
+            relay_url=_fixed_url(
+                os.getenv(
+                    "AUTOTRIAGE_BOT_RELAY_URL",
+                    "https://ra-model.intra.xiaojukeji.com/dchat-worker",
+                ),
+                hosts=_RELAY_HOSTS,
+                path="/dchat-worker",
+            ),
+            relay_worker_secret_file=Path(
+                os.getenv(
+                    "AUTOTRIAGE_BOT_RELAY_WORKER_SECRET_FILE",
+                    str(data_dir / "relay_worker_secret"),
+                )
+            ).expanduser().resolve(),
+            relay_worker_id=relay_worker_id,
+            relay_poll_seconds=_number(
+                "AUTOTRIAGE_BOT_RELAY_POLL_SECONDS", 1.0, 0.2, 30.0
+            ),
+            relay_lease_seconds=relay_lease_seconds,
+            relay_max_attempts=relay_max_attempts,
+            worker_base_path=_base_path(
+                "AUTOTRIAGE_BOT_WORKER_BASE_PATH", "/dchat-worker"
+            ),
         )
 
     def ensure_directories(self) -> None:

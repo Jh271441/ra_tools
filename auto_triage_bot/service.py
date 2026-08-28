@@ -15,6 +15,7 @@ from .dashboard_client import DashboardClient, DashboardError, build_case_contex
 from .events import extract_issue_id, extract_run_id
 from .knowledge import deterministic_answer, load_knowledge
 from .llm import LLMClient, LLMError
+from .relay_client import RelayClient, RelayError
 
 
 logger = logging.getLogger("auto_triage_bot")
@@ -182,6 +183,104 @@ class BotWorker:
                 event_id,
                 error="Bot 内部错误。",
                 attempts=int(item.get("attempt_count") or 1),
+            )
+
+    def _send(self, username: str, answer: str):  # noqa: ANN202
+        client = (
+            DChatLoopbackClient()
+            if self.settings.delivery_mode == "loopback"
+            else DChatClient(
+                base_url=self.settings.dchat_base_url,
+                credentials_file=self.settings.dchat_credentials_file,
+                timeout_seconds=self.settings.dchat_timeout_seconds,
+            )
+        )
+        return client.send_to_username(username, answer)
+
+
+class RemoteBotWorker:
+    """Poll the online relay while keeping Dashboard and credentials offline."""
+
+    def __init__(self, *, settings: Any) -> None:
+        self.settings = settings
+        self.answer_service = AnswerService(settings)
+        self.relay = RelayClient(
+            base_url=settings.relay_url,
+            secret_file=settings.relay_worker_secret_file,
+            worker_id=settings.relay_worker_id,
+            timeout_seconds=min(10.0, settings.dchat_timeout_seconds + 2.0),
+        )
+        self.relay_reachable = False
+        self.last_error = ""
+
+    async def run(self) -> None:
+        failure_delay = self.settings.relay_poll_seconds
+        while True:
+            try:
+                item = await asyncio.to_thread(self.relay.pull)
+                self.relay_reachable = True
+                self.last_error = ""
+                failure_delay = self.settings.relay_poll_seconds
+            except RelayError as exc:
+                self.relay_reachable = False
+                self.last_error = str(exc)
+                logger.warning("relay pull failed: %s", exc)
+                await asyncio.sleep(failure_delay)
+                failure_delay = min(30.0, max(1.0, failure_delay * 2))
+                continue
+            if item is None:
+                await asyncio.sleep(self.settings.relay_poll_seconds)
+                continue
+            await self._process(item)
+            await asyncio.sleep(0.21)
+
+    async def _process(self, item: dict[str, Any]) -> None:
+        event_id = str(item.get("event_id") or "")
+        try:
+            answer = await asyncio.to_thread(
+                self.answer_service.answer, str(item["question"])
+            )
+            result = await asyncio.to_thread(
+                self._send, str(item["sender"]), answer
+            )
+        except DChatSendError as exc:
+            await self._nack(item, error=str(exc), terminal=not exc.transient)
+            return
+        except Exception:
+            logger.exception("unexpected remote Bot failure event_id=%s", event_id)
+            await self._nack(item, error="Bot 内部错误。", terminal=False)
+            return
+
+        # A short ACK retry window minimizes duplicate final replies if the
+        # answer was sent but the first acknowledgement response was lost.
+        for attempt in range(3):
+            try:
+                await asyncio.to_thread(
+                    self.relay.ack,
+                    item,
+                    delivery_id=result.message_unique_id,
+                )
+                return
+            except RelayError as exc:
+                self.last_error = str(exc)
+                if not exc.transient:
+                    break
+                await asyncio.sleep(0.5 * (attempt + 1))
+        logger.error("relay ACK failed after delivery event_id=%s", event_id)
+
+    async def _nack(
+        self, item: dict[str, Any], *, error: str, terminal: bool
+    ) -> None:
+        try:
+            await asyncio.to_thread(
+                self.relay.nack,
+                item,
+                error=error,
+                terminal=terminal,
+            )
+        except RelayError:
+            logger.exception(
+                "relay NACK failed event_id=%s", str(item.get("event_id") or "")
             )
 
     def _send(self, username: str, answer: str):  # noqa: ANN202

@@ -4,6 +4,25 @@
 
 首版不会写 Review、Trail 或 GT，不会发布 AutoTriage 结果。D-Chat BotUser 要求回调在 5 秒内直接返回一条消息，因此服务先返回 `{"text":"收到，正在处理…"}`；看板查询和大模型调用在后台执行，完成后复用看板已经验证的 DChat BotUser `POST /v3/message.create` 回复到提问人的 LDAP 私聊。群聊中的即时确认会留在原会话，最终答案首版发私聊；若后续确认群内主动回复 API，再扩展为原会话回复。
 
+## 跨机房中继架构
+
+正式链路把接入面和数据面拆开，避免线上 DChat 主动访问线下 Cloud Server：
+
+```text
+DChat -> Kylin 永顺 /dchat -> Luban Relay (在线)
+                                  ^
+                                  | Cloud Server 主动 HTTPS pull/ack/nack
+                                  |
+Kylin 内蒙古 /dchat-worker <------+
+Cloud Worker (线下) -> loopback Dashboard + model + DChat OpenAPI
+```
+
+- Kylin 会剥离公开前缀：`/dchat` 到 Relay `/`；`/dchat-worker/pull`、`/ack`、`/nack` 到 Relay 对应根路径。
+- Relay 只保存标准化的 `event_id`、发送人、问题和可选 `chat_id`，不持有 Dashboard、模型或 DChat OpenAPI 凭据。
+- Worker 使用单独的 `0600` Bearer token 主动拉取，任务采用超时租约、ACK/NACK、去重和最多 5 次退避重试。
+- Relay 的 SQLite 必须位于 Luban 持久卷。`/dev/shm` 或容器根盘只允许临时联调，Pod 重建会丢失未完成任务。
+- 回调 token 与 worker token 必须不同；任一 token 都不得放进 URL、仓库、进程参数或日志。
+
 ## 本地启动
 
 默认是关闭状态和 loopback 投递，不会发送真实 DChat：
@@ -93,8 +112,31 @@ bash auto_triage_bot/scripts/smoke.sh http://127.0.0.1:8790
 | `AUTOTRIAGE_BOT_MODEL_ID` | 空；为空时对 Issue 做事实摘录，不调用模型 |
 | `AUTOTRIAGE_BOT_MODEL_API_KEY_FILE` | `<data_dir>/model_gateway_api_key` |
 | `AUTOTRIAGE_BOT_DCHAT_CREDENTIALS_FILE` | `<data_dir>/dchat_credentials.json` |
+| `AUTOTRIAGE_BOT_RELAY_URL` | `https://ra-model.intra.xiaojukeji.com/dchat-worker`；Cloud Worker 固定出口 |
+| `AUTOTRIAGE_BOT_RELAY_WORKER_SECRET_FILE` | `<data_dir>/relay_worker_secret`；独立 `0600` token |
+| `AUTOTRIAGE_BOT_RELAY_WORKER_ID` | `cloud-server-1` |
+| `AUTOTRIAGE_BOT_RELAY_LEASE_SECONDS` | `120`；任务租约时间 |
+| `AUTOTRIAGE_BOT_RELAY_MAX_ATTEMPTS` | `5`；最大交付尝试次数 |
 
 事件状态保存在 `<data_dir>/bot_events.sqlite3`。`event_id` 唯一，进程重启会把中断的 `running` 事件恢复为 `queued`；临时失败指数退避，最多尝试 5 次。
+
+## Luban Relay + Cloud Worker 启动
+
+Luban 上先挂载一个持久化目录，并放入两个当前用户持有的 `0600` 文件：`webhook_secret` 是 Kylin 为 `/dchat` 注入的固定 token；`relay_worker_secret` 是只给 Cloud Worker 使用的独立随机 token。然后启动：
+
+```bash
+AUTOTRIAGE_BOT_DATA_DIR=/path/to/persistent/auto-triage-relay \
+bash auto_triage_bot/scripts/run_luban_relay.sh
+```
+
+同一个 `relay_worker_secret` 通过受控凭据渠道写到 Cloud Server 的 `/volume/home/workspace/ra_triage_bot_data/relay_worker_secret`，权限设为 `0600`。Cloud Server 主动访问固定 HTTPS 地址并启动只读 worker：
+
+```bash
+bash auto_triage_bot/scripts/run_cloud_worker.sh
+curl --noproxy '*' -fsS http://127.0.0.1:8790/health
+```
+
+先以 `AUTOTRIAGE_BOT_DELIVERY_MODE=loopback` 做队列 smoke；确认 callback → pull → ACK 后，再改成 `openapi` 做一个灰度 LDAP 的真实私聊。旧的 `auto_triage_bot.main:app` 直连进程保留为回滚入口，但不应与 remote worker 同时消费同一条回调。
 
 ## 测试
 
