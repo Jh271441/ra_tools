@@ -107,6 +107,11 @@ class RunComparisonDatabaseTest(unittest.TestCase):
         self.assertEqual(candidate_rows["无需协助"]["cells"]["真实卡住"], 1)
 
     def test_transition_search_and_pagination(self) -> None:
+        default_order = self.compare()
+        self.assertEqual(
+            [item["issue_id"] for item in default_order["items"]],
+            ["cn-f2f", "cn-f2p", "cn-p2f", "cn-p2p"],
+        )
         regression = self.compare(transition="P2F")
         self.assertEqual(regression["total"], 1)
         self.assertEqual(regression["items"][0]["issue_id"], "cn-p2f")

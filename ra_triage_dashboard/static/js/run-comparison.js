@@ -202,15 +202,12 @@ function comparisonSnapshotHtml(run) {
     ${inputJson ? `<pre>${escapeHtml(inputJson)}</pre>` : `<p class="muted">${uiText("该 Run 没有保存输入配置快照。", "No input snapshot was saved for this Run.")}</p>`}`;
 }
 
-function comparisonPredictionHtml(prediction, side = "baseline") {
+function comparisonPredictionHtml(prediction) {
   const label = prediction?.model_label || "NONE";
   const confidence = prediction?.model_confidence;
-  const isCandidate = side === "candidate";
-  const sideLabel = isCandidate ? uiText("新 Run", "Candidate") : uiText("基线", "Baseline");
-  const verdict = prediction?.correct ? uiText("与 GT 一致", "Matches GT") : uiText("与 GT 不一致", "Differs from GT");
-  return `<div class="comparison-prediction comparison-prediction-${escapeHtml(side)} ${prediction?.correct ? "is-correct" : "is-error"}">
-    <div class="comparison-prediction-head"><span class="comparison-prediction-side">${escapeHtml(sideLabel)}</span><span class="comparison-prediction-verdict">${escapeHtml(verdict)}</span></div>
-    <div class="comparison-prediction-output"><strong>${escapeHtml(label)}</strong>${confidence == null ? "" : `<span>${Number(confidence).toFixed(3)}</span>`}</div>
+  const verdict = prediction?.correct ? uiText("匹配 GT", "Matches GT") : uiText("不匹配 GT", "Differs from GT");
+  return `<div class="comparison-prediction ${prediction?.correct ? "is-correct" : "is-error"}">
+    <div class="comparison-prediction-output"><strong>${escapeHtml(label)}</strong>${confidence == null ? "" : `<span>${Number(confidence).toFixed(3)}</span>`}<small class="comparison-prediction-verdict">${escapeHtml(verdict)}</small></div>
     <p title="${escapeHtml(prediction?.model_reason || "")}">${escapeHtml(prediction?.model_reason || uiText("无 reason", "No reason"))}</p>
   </div>`;
 }
@@ -220,8 +217,8 @@ function renderRunComparisonCases(payload) {
   const candidateRunId = payload.candidate_run?.id || "";
   const rows = (payload.items || []).map((item) => `<tr class="transition-${escapeHtml(String(item.transition || "").toLowerCase())}">
     <td><a class="comparison-issue-link" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, candidateRunId))}">${escapeHtml(item.issue_id)}</a><div class="comparison-issue-meta"><span class="status-pill status-ready">GT ${escapeHtml(item.gt_label)}</span><small>${escapeHtml(item.baseline_scope || "")}</small></div></td>
-    <td>${comparisonPredictionHtml(item.baseline, "baseline")}</td>
-    <td>${comparisonPredictionHtml(item.candidate, "candidate")}</td>
+    <td>${comparisonPredictionHtml(item.baseline)}</td>
+    <td>${comparisonPredictionHtml(item.candidate)}</td>
     <td><span class="comparison-transition-badge ${escapeHtml(String(item.transition || "").toLowerCase())}">${escapeHtml(comparisonTransitionText(item.transition))}</span></td>
     <td><div class="comparison-review-links"><a class="button button-quiet" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, baselineRunId))}">${uiText("基线复核", "Baseline review")}</a><a class="button button-quiet" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, candidateRunId))}">${uiText("新 Run 复核", "Candidate review")}</a></div></td>
   </tr>`).join("");

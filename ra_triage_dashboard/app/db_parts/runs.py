@@ -473,13 +473,10 @@ class DatabaseRunsMixin:
                 in str(item["candidate"]["model_reason"] or "").lower()
             )
         ]
-        transition_priority = {"P2F": 0, "F2P": 1, "F2F": 2, "P2P": 3}
-        filtered_rows.sort(
-            key=lambda item: (
-                transition_priority.get(str(item["transition"]), 9),
-                str(item["issue_id"]),
-            )
-        )
+        # Keep the case list predictable across filter changes. Transition counts
+        # remain available as filters, but never override the canonical Issue ID
+        # ordering of the underlying dataset.
+        filtered_rows.sort(key=lambda item: str(item["issue_id"]))
         total_filtered = len(filtered_rows)
         page_count = max(1, math.ceil(total_filtered / page_size))
         page = min(page, page_count)

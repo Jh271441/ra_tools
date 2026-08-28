@@ -429,61 +429,39 @@
 }
 
 .comparison-prediction {
-  --comparison-side: #7aa2f7;
   min-width: 0;
   display: grid;
-  gap: 5px;
-  padding: 7px 8px;
-  border: 1px solid color-mix(in srgb, var(--comparison-side) 34%, var(--line));
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--raised) 91%, var(--comparison-side) 9%);
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--comparison-side) 75%, transparent);
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--raised) 96%, transparent);
   text-align: left;
 }
 
-.comparison-prediction-candidate {
-  --comparison-side: var(--accent);
-}
-
-.comparison-prediction.is-error {
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--fail) 78%, transparent);
-}
-
-.comparison-prediction-head,
 .comparison-prediction-output {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 6px;
 }
 
-.comparison-prediction-side {
-  color: var(--comparison-side);
-  font-size: 9px;
-  font-weight: 750;
-  letter-spacing: .05em;
-  text-transform: uppercase;
-}
-
 .comparison-prediction-verdict {
-  color: var(--ok);
-  font-size: 9px;
-  font-weight: 650;
+  display: inline;
+  margin: 0 0 0 auto;
+  color: color-mix(in srgb, var(--ok) 72%, var(--muted));
+  font-size: 8px;
+  font-weight: 600;
 }
 
 .comparison-prediction.is-error .comparison-prediction-verdict {
-  color: var(--fail);
-}
-
-.comparison-prediction-output {
-  justify-content: center;
-  min-height: 26px;
+  color: color-mix(in srgb, var(--fail) 70%, var(--muted));
 }
 
 .comparison-prediction-output strong {
   color: var(--text);
-  font-size: 15px;
-  font-weight: 720;
+  font-size: 12px;
+  font-weight: 680;
 }
 
 .comparison-prediction-output span {
@@ -496,7 +474,7 @@
 
 .comparison-prediction p {
   display: -webkit-box;
-  min-height: 30px;
+  min-height: 28px;
   margin: 0;
   overflow: hidden;
   color: var(--text);
