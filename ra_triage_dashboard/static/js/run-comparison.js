@@ -202,14 +202,43 @@ function comparisonSnapshotHtml(run) {
     ${inputJson ? `<pre>${escapeHtml(inputJson)}</pre>` : `<p class="muted">${uiText("该 Run 没有保存输入配置快照。", "No input snapshot was saved for this Run.")}</p>`}`;
 }
 
-function comparisonPredictionHtml(prediction) {
+function comparisonPredictionHtml(prediction, issueId, side) {
   const label = prediction?.model_label || "NONE";
   const confidence = prediction?.model_confidence;
   const verdict = prediction?.correct ? uiText("匹配 GT", "Matches GT") : uiText("不匹配 GT", "Differs from GT");
-  return `<div class="comparison-prediction ${prediction?.correct ? "is-correct" : "is-error"}">
+  const sideLabel = side === "baseline" ? uiText("基线", "Baseline") : uiText("新 Run", "Candidate");
+  const accessibleLabel = uiText(
+    `查看 ${issueId} ${sideLabel}的完整 Reason`,
+    `View the full reason for ${issueId} ${sideLabel}`,
+  );
+  return `<button type="button" class="comparison-prediction ${prediction?.correct ? "is-correct" : "is-error"}" data-comparison-reason data-issue-id="${escapeHtml(issueId)}" data-run-side="${escapeHtml(side)}" aria-label="${escapeHtml(accessibleLabel)}">
     <div class="comparison-prediction-output"><strong>${escapeHtml(label)}</strong>${confidence == null ? "" : `<span>${Number(confidence).toFixed(3)}</span>`}<small class="comparison-prediction-verdict">${escapeHtml(verdict)}</small></div>
     <p title="${escapeHtml(prediction?.model_reason || "")}">${escapeHtml(prediction?.model_reason || uiText("无 reason", "No reason"))}</p>
-  </div>`;
+    <span class="comparison-prediction-open"><span class="ui-lang-zh">查看完整 Reason</span><span class="ui-lang-en">View full reason</span></span>
+  </button>`;
+}
+
+function openComparisonReasonDialog(issueId, side) {
+  const payload = state.runComparison.data;
+  const item = (payload?.items || []).find((entry) => String(entry.issue_id) === String(issueId));
+  const normalizedSide = side === "baseline" ? "baseline" : "candidate";
+  const prediction = item?.[normalizedSide];
+  const run = normalizedSide === "baseline" ? payload?.baseline_run : payload?.candidate_run;
+  if (!item || !prediction) return;
+  const sideLabel = normalizedSide === "baseline" ? uiText("基线输出", "Baseline output") : uiText("新 Run 输出", "Candidate output");
+  const confidence = prediction.model_confidence;
+  const verdict = prediction.correct ? uiText("匹配 GT", "Matches GT") : uiText("不匹配 GT", "Differs from GT");
+  const dialog = $("#comparisonReasonDialog");
+  $("#comparisonReasonTitle").textContent = `${item.issue_id} · ${sideLabel}`;
+  $("#comparisonReasonContext").textContent = run?.name || run?.id || "—";
+  $("#comparisonReasonModelLabel").textContent = prediction.model_label || "NONE";
+  $("#comparisonReasonConfidence").textContent = confidence == null ? "—" : Number(confidence).toFixed(3);
+  $("#comparisonReasonGtLabel").textContent = item.gt_label || "—";
+  const verdictElement = $("#comparisonReasonVerdict");
+  verdictElement.textContent = verdict;
+  verdictElement.classList.toggle("is-error", !prediction.correct);
+  $("#comparisonReasonBody").textContent = prediction.model_reason || uiText("该输出没有 Reason。", "This output has no reason.");
+  if (dialog && !dialog.open) dialog.showModal();
 }
 
 function renderRunComparisonCases(payload) {
@@ -217,8 +246,8 @@ function renderRunComparisonCases(payload) {
   const candidateRunId = payload.candidate_run?.id || "";
   const rows = (payload.items || []).map((item) => `<tr class="transition-${escapeHtml(String(item.transition || "").toLowerCase())}">
     <td><a class="comparison-issue-link" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, candidateRunId))}">${escapeHtml(item.issue_id)}</a><div class="comparison-issue-meta"><span class="status-pill status-ready">GT ${escapeHtml(item.gt_label)}</span><small>${escapeHtml(item.baseline_scope || "")}</small></div></td>
-    <td>${comparisonPredictionHtml(item.baseline)}</td>
-    <td>${comparisonPredictionHtml(item.candidate)}</td>
+    <td>${comparisonPredictionHtml(item.baseline, item.issue_id, "baseline")}</td>
+    <td>${comparisonPredictionHtml(item.candidate, item.issue_id, "candidate")}</td>
     <td><span class="comparison-transition-badge ${escapeHtml(String(item.transition || "").toLowerCase())}">${escapeHtml(comparisonTransitionText(item.transition))}</span></td>
     <td><div class="comparison-review-links"><a class="button button-quiet" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, baselineRunId))}">${uiText("基线复核", "Baseline review")}</a><a class="button button-quiet" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, candidateRunId))}">${uiText("新 Run 复核", "Candidate review")}</a></div></td>
   </tr>`).join("");
@@ -322,6 +351,14 @@ async function jumpToRunComparisonPage(rawPage) {
 }
 
 function bindRunComparisonEvents() {
+  $("#comparisonCaseRows")?.addEventListener("click", (event) => {
+    const trigger = event.target.closest("[data-comparison-reason]");
+    if (!trigger) return;
+    openComparisonReasonDialog(trigger.dataset.issueId, trigger.dataset.runSide);
+  });
+  $("#comparisonReasonDialog")?.addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) event.currentTarget.close();
+  });
   $("#comparisonBaselineRun")?.addEventListener("change", (event) => {
     state.runComparison.baselineRunId = event.target.value;
     state.runComparison.page = 1;

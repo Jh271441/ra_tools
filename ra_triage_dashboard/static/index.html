@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-262`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-263`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -1152,6 +1152,31 @@
       </form>
     </dialog>
 
+    <dialog class="dialog comparison-reason-dialog" id="comparisonReasonDialog" aria-labelledby="comparisonReasonTitle">
+      <div class="dialog-card">
+        <div class="dialog-heading">
+          <div>
+            <h2 id="comparisonReasonTitle"><span class="ui-lang-zh">完整 Reason</span><span class="ui-lang-en">Full reason</span></h2>
+            <p class="dialog-copy" id="comparisonReasonContext"></p>
+          </div>
+          <button class="icon-button" type="button" data-close="comparisonReasonDialog" aria-label="Close">×</button>
+        </div>
+        <div class="comparison-reason-summary">
+          <div><span>Model</span><strong id="comparisonReasonModelLabel">—</strong></div>
+          <div><span>Confidence</span><strong id="comparisonReasonConfidence">—</strong></div>
+          <div><span>GT</span><strong id="comparisonReasonGtLabel">—</strong></div>
+          <div><span>Status</span><strong id="comparisonReasonVerdict">—</strong></div>
+        </div>
+        <section class="comparison-reason-content">
+          <h3><span class="ui-lang-zh">完整 Reason</span><span class="ui-lang-en">Full reason</span></h3>
+          <p id="comparisonReasonBody"></p>
+        </section>
+        <div class="dialog-actions">
+          <button class="button button-primary" type="button" data-close="comparisonReasonDialog"><span class="ui-lang-zh">关闭</span><span class="ui-lang-en">Close</span></button>
+        </div>
+      </div>
+    </dialog>
+
     <dialog class="dialog issue-query-dialog" id="issueQueryDialog">
       <div class="dialog-card">
         <div class="dialog-heading">
@@ -1539,7 +1564,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-262`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-263`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
