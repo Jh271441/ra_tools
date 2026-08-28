@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 
 
 MODEL_ID_RE = re.compile(r"^[A-Za-z0-9._/@:+-]{1,160}$")
+BASE_PATH_RE = re.compile(r"^/[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*$")
 _DASHBOARD_HOSTS = {"127.0.0.1", "localhost"}
 _MODEL_HOSTS = {
     "127.0.0.1",
@@ -39,6 +40,13 @@ def _number(name: str, default: float, minimum: float, maximum: float) -> float:
     return value
 
 
+def _base_path(name: str, default: str) -> str:
+    value = os.getenv(name, default).strip().rstrip("/")
+    if not BASE_PATH_RE.fullmatch(value):
+        raise RuntimeError(f"{name} 必须是形如 /dchat 的非根路径。")
+    return value
+
+
 def _fixed_url(value: str, *, hosts: set[str], path: str | None = None) -> str:
     parsed = urlsplit(value.strip().rstrip("/"))
     if (
@@ -58,6 +66,7 @@ def _fixed_url(value: str, *, hosts: set[str], path: str | None = None) -> str:
 class Settings:
     enabled: bool
     smoke_enabled: bool
+    base_path: str
     allowed_users: frozenset[str]
     allow_all_users: bool
     host: str
@@ -116,6 +125,7 @@ class Settings:
         return cls(
             enabled=enabled,
             smoke_enabled=smoke_enabled,
+            base_path=_base_path("AUTOTRIAGE_BOT_BASE_PATH", "/dchat"),
             allowed_users=allowed_users,
             allow_all_users=allow_all_users,
             host=os.getenv("AUTOTRIAGE_BOT_HOST", "127.0.0.1").strip(),

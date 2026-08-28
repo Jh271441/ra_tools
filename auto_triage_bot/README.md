@@ -51,17 +51,18 @@ export AUTOTRIAGE_BOT_DELIVERY_MODE=openapi
 1. 可以复用现有发送通知的 DChat 应用，也可以新建独立的测试版工作台应用。复用时确认已有 BotUser 和主动发消息所需的 OpenAPI 权限；新建时需要重新申请。
 2. 在应用详情右上角开启 **应用机器人（BotUser）** 形态。
 3. 编辑 BotUser 形态，把 `notification_url` 填成网关暴露的 `/dchat`。该地址必须能被 D-Chat 服务器访问；不要填写本机的 `127.0.0.1:8790`。
-4. 在受控网关校验来源并注入固定验证 token，Bot 服务以当前服务用户持有的 `0600` 文件读取该 token。若联调发现 D-Chat 自带签名，再按真实 header/body 契约适配 `security.py`。
-5. 安装测试版应用。用户私聊 BotUser、或在群聊中 @BotUser 时，D-Chat 会 POST 到 `notification_url`；服务必须在 5 秒内返回一条普通文本、带附件文本或交互消息。
-6. 申请/确认后台完成答案所需的主动消息 OpenAPI 权限，并配置应用的 `client_id`、`client_secret`、数字 `bot_id` 到服务用户 `0600` 凭据文件。
-7. 在灰度环境各测试一次私聊和群 @，保存脱敏后的真实 POST body/header 样例，用于核对 `events.py` 的发送人、消息文本和消息 ID 字段映射。
-8. 先用测试 LDAP 验证即时确认、最终私聊、重复消息去重、看板链接、超时重试和限流；验证完成后再扩大群和用户范围。
+4. Kylin 仅暴露公网前缀 `/dchat`，转发到独立的 `8790` 并剥离该前缀，和看板 `/manual` 的规则一致。公网 `/dchat`、`/dchat/smoke` 分别到达 8790 内部的 `/`、`/smoke`；这不会占用域名根目录或看板的 `8785`。
+5. 在受控网关校验来源并注入固定验证 token，Bot 服务以当前服务用户持有的 `0600` 文件读取该 token。若联调发现 D-Chat 自带签名，再按真实 header/body 契约适配 `security.py`。
+6. 安装测试版应用。用户私聊 BotUser、或在群聊中 @BotUser 时，D-Chat 会 POST 到 `notification_url`；服务必须在 5 秒内返回一条普通文本、带附件文本或交互消息。
+7. 申请/确认后台完成答案所需的主动消息 OpenAPI 权限，并配置应用的 `client_id`、`client_secret`、数字 `bot_id` 到服务用户 `0600` 凭据文件。
+8. 在灰度环境各测试一次私聊和群 @，保存脱敏后的真实 POST body/header 样例，用于核对 `events.py` 的发送人、消息文本和消息 ID 字段映射。
+9. 先用测试 LDAP 验证即时确认、最终私聊、重复消息去重、看板链接、超时重试和限流；验证完成后再扩大群和用户范围。
 
 已确认的 BotUser 契约：私聊 BotUser 和群聊 @BotUser 都会触发 `notification_url` POST，业务方需在 5 秒内直接返回一条消息；耗时任务可以先返回处理中消息，再通过 OpenAPI 通知结果。仍需用平台联调样例确认三项细节：入站签名/来源验证方式、POST 字段结构、群内主动回复 API。未确认前，正式模式只承诺“认证回调 + 即时确认 + LDAP 私聊最终答案”。
 
 ## Cloud Server 部署与连通性 smoke
 
-Cloud Server 使用独立端口 `8790`，不复用或重启看板的 `8785`。启动脚本默认只开放测试 LDAP、使用 loopback 投递，并启用无副作用的 `/dchat/smoke`：
+Cloud Server 使用独立端口 `8790`，不复用或重启看板的 `8785`。`AUTOTRIAGE_BOT_BASE_PATH=/dchat` 声明公网前缀；Kylin 剥离前缀后，8790 内部接收 `/`、`/smoke` 和 `/health`。启动脚本默认只开放测试 LDAP、使用 loopback 投递，并启用无副作用的公网 `/dchat/smoke`：
 
 ```bash
 bash auto_triage_bot/scripts/run_cloud_server.sh
@@ -73,7 +74,7 @@ bash auto_triage_bot/scripts/run_cloud_server.sh
 bash auto_triage_bot/scripts/smoke.sh http://127.0.0.1:8790
 ```
 
-`/dchat/smoke` 只返回固定文本，不读取消息、看板或模型，也不发送 DChat。它用于验证 D-Chat 服务器能否访问部署地址；联通后再切换到经过认证的 `/dchat`。旧的 `/v1/dchat/events` 和 `/v1/dchat/smoke` 只作为兼容别名保留。公网/办公网入口必须由网关或防火墙限制来源，不能把未认证的事件处理接口直接暴露。
+公网 `/dchat/smoke` 只返回固定文本，不读取消息、看板或模型，也不发送 DChat。它用于验证 D-Chat 服务器能否访问部署地址；联通后再切换到经过认证的公网 `/dchat`。Kylin 不应暴露 8790 的任何其它前缀；公网/办公网入口必须由网关或防火墙限制来源，不能把未认证的事件处理接口直接暴露。
 
 ## 运行配置
 
@@ -81,6 +82,7 @@ bash auto_triage_bot/scripts/smoke.sh http://127.0.0.1:8790
 |---|---|
 | `AUTOTRIAGE_BOT_ENABLED` | `false`，fail-closed 总开关 |
 | `AUTOTRIAGE_BOT_SMOKE_ENABLED` | `false`；临时启用无副作用连通性端点 |
+| `AUTOTRIAGE_BOT_BASE_PATH` | `/dchat`；Kylin 对外暴露并剥离的非根前缀 |
 | `AUTOTRIAGE_BOT_ALLOWED_USERS` | 逗号分隔 LDAP；启用时默认必须非空 |
 | `AUTOTRIAGE_BOT_ALLOW_ALL_USERS` | `false`；全员开放必须显式设为 `true` |
 | `AUTOTRIAGE_BOT_DATA_DIR` | `auto_triage_bot/.data` |

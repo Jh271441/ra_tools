@@ -37,10 +37,14 @@ class BotApiTest(unittest.TestCase):
             )
             app = create_app(config)
             with TestClient(app) as client:
-                self.assertEqual(client.get("/dchat/smoke").status_code, 404)
+                self.assertEqual(app.root_path, "/dchat")
+                self.assertEqual(client.get("/smoke").status_code, 404)
+                self.assertEqual(
+                    client.get("/").json()["callback_path"], "/dchat"
+                )
                 challenge = json.dumps({"challenge": "verify-me"}).encode()
                 response = client.post(
-                    "/dchat",
+                    "/",
                     content=challenge,
                     headers={
                         "Content-Type": "application/json",
@@ -66,8 +70,8 @@ class BotApiTest(unittest.TestCase):
                         b"test-secret", event, hashlib.sha256
                     ).hexdigest(),
                 }
-                accepted = client.post("/dchat", content=event, headers=headers)
-                duplicate = client.post("/dchat", content=event, headers=headers)
+                accepted = client.post("/", content=event, headers=headers)
+                duplicate = client.post("/", content=event, headers=headers)
                 self.assertEqual(accepted.status_code, 200)
                 self.assertEqual(
                     accepted.json(), {"text": "收到，正在处理，结果会私聊发送给你。"}
@@ -88,7 +92,7 @@ class BotApiTest(unittest.TestCase):
                 self.assertIn("我可以解释", row["answer"])
 
                 completed_duplicate = client.post(
-                    "/dchat", content=event, headers=headers
+                    "/", content=event, headers=headers
                 )
                 self.assertEqual(completed_duplicate.status_code, 200)
                 self.assertIn("我可以解释", completed_duplicate.json()["text"])
@@ -97,7 +101,7 @@ class BotApiTest(unittest.TestCase):
         config = Settings.from_env()
         app = create_app(config)
         with TestClient(app) as client:
-            self.assertEqual(client.post("/dchat", json={}).status_code, 404)
+            self.assertEqual(client.post("/", json={}).status_code, 404)
 
 
 if __name__ == "__main__":

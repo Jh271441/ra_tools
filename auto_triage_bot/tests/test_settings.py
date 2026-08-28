@@ -33,8 +33,17 @@ class SettingsTest(unittest.TestCase):
         ):
             settings = Settings.from_env()
         self.assertFalse(settings.smoke_enabled)
+        self.assertEqual(settings.base_path, "/dchat")
         self.assertTrue(settings.user_allowed("ALICE"))
         self.assertFalse(settings.user_allowed("mallory"))
+
+    def test_base_path_must_be_a_non_root_prefix(self) -> None:
+        for value in ("", "/", "dchat", "/dchat/../manual"):
+            with self.subTest(value=value), patch.dict(
+                os.environ, {"AUTOTRIAGE_BOT_BASE_PATH": value}, clear=False
+            ):
+                with self.assertRaises(RuntimeError):
+                    Settings.from_env()
 
 
 if __name__ == "__main__":

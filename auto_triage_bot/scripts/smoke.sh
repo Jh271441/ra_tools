@@ -7,5 +7,5 @@ curl --fail --silent --show-error "${base_url}/health"
 echo
 curl --fail --silent --show-error \
   --request POST \
-  "${base_url}/dchat/smoke"
+  "${base_url}/smoke"
 echo
