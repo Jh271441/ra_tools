@@ -65,13 +65,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "dashboard_mode": "read_only_loopback",
         }
 
-    @app.api_route("/v1/dchat/smoke", methods=["GET", "POST"])
+    @app.api_route(
+        "/v1/dchat/smoke", methods=["GET", "POST"], include_in_schema=False
+    )
+    @app.api_route("/dchat/smoke", methods=["GET", "POST"])
     async def dchat_smoke() -> JSONResponse:
         if not config.smoke_enabled:
             raise HTTPException(404, "Smoke endpoint 未启用。")
         return JSONResponse({"text": "Auto Triage Bot callback is reachable."})
 
-    @app.post("/v1/dchat/events")
+    @app.post("/v1/dchat/events", include_in_schema=False)
+    @app.post("/dchat")
     async def dchat_events(request: Request) -> JSONResponse:
         if not config.enabled:
             raise HTTPException(404, "Bot 未启用。")

@@ -50,7 +50,7 @@ export AUTOTRIAGE_BOT_DELIVERY_MODE=openapi
 
 1. 可以复用现有发送通知的 DChat 应用，也可以新建独立的测试版工作台应用。复用时确认已有 BotUser 和主动发消息所需的 OpenAPI 权限；新建时需要重新申请。
 2. 在应用详情右上角开启 **应用机器人（BotUser）** 形态。
-3. 编辑 BotUser 形态，把 `notification_url` 填成网关暴露的 HTTPS `/v1/dchat/events`。该地址必须能被 D-Chat 服务器访问；不要直接暴露本机的 `127.0.0.1:8790`。
+3. 编辑 BotUser 形态，把 `notification_url` 填成网关暴露的 `/dchat`。该地址必须能被 D-Chat 服务器访问；不要填写本机的 `127.0.0.1:8790`。
 4. 在受控网关校验来源并注入固定验证 token，Bot 服务以当前服务用户持有的 `0600` 文件读取该 token。若联调发现 D-Chat 自带签名，再按真实 header/body 契约适配 `security.py`。
 5. 安装测试版应用。用户私聊 BotUser、或在群聊中 @BotUser 时，D-Chat 会 POST 到 `notification_url`；服务必须在 5 秒内返回一条普通文本、带附件文本或交互消息。
 6. 申请/确认后台完成答案所需的主动消息 OpenAPI 权限，并配置应用的 `client_id`、`client_secret`、数字 `bot_id` 到服务用户 `0600` 凭据文件。
@@ -61,7 +61,7 @@ export AUTOTRIAGE_BOT_DELIVERY_MODE=openapi
 
 ## Cloud Server 部署与连通性 smoke
 
-Cloud Server 使用独立端口 `8790`，不复用或重启看板的 `8785`。启动脚本默认只开放测试 LDAP、使用 loopback 投递，并启用无副作用的 `/v1/dchat/smoke`：
+Cloud Server 使用独立端口 `8790`，不复用或重启看板的 `8785`。启动脚本默认只开放测试 LDAP、使用 loopback 投递，并启用无副作用的 `/dchat/smoke`：
 
 ```bash
 bash auto_triage_bot/scripts/run_cloud_server.sh
@@ -73,7 +73,7 @@ bash auto_triage_bot/scripts/run_cloud_server.sh
 bash auto_triage_bot/scripts/smoke.sh http://127.0.0.1:8790
 ```
 
-`/v1/dchat/smoke` 只返回固定文本，不读取消息、看板或模型，也不发送 DChat。它用于验证 D-Chat 服务器能否访问部署地址；联通后再切换到经过认证的 `/v1/dchat/events`。公网/办公网入口必须由网关或防火墙限制来源，不能把未认证的事件处理接口直接暴露。
+`/dchat/smoke` 只返回固定文本，不读取消息、看板或模型，也不发送 DChat。它用于验证 D-Chat 服务器能否访问部署地址；联通后再切换到经过认证的 `/dchat`。旧的 `/v1/dchat/events` 和 `/v1/dchat/smoke` 只作为兼容别名保留。公网/办公网入口必须由网关或防火墙限制来源，不能把未认证的事件处理接口直接暴露。
 
 ## 运行配置
 
