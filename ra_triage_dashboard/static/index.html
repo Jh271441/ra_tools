@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-268`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-269`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -837,21 +837,21 @@
               <section class="page-card comparison-cases-card">
                 <div class="comparison-cases-heading">
                   <div><h3><span class="ui-lang-zh">Case 变化明细</span><span class="ui-lang-en">Case transitions</span></h3><p class="muted" id="comparisonCaseCount"></p></div>
-                  <label class="comparison-search"><span class="sr-only">Issue ID / reason</span><input id="comparisonSearchInput" type="search" placeholder="搜索 Issue ID / reason" autocomplete="off" /></label>
+                  <div class="comparison-transition-filter" id="comparisonTransitionFilter" role="group" aria-label="变化类型">
+                    <button class="button button-quiet active" type="button" data-comparison-transition="ALL">全部</button>
+                    <button class="button button-quiet transition-regression" type="button" data-comparison-transition="P2F">P2F 退化</button>
+                    <button class="button button-quiet transition-improvement" type="button" data-comparison-transition="F2P">F2P 改善</button>
+                    <button class="button button-quiet" type="button" data-comparison-transition="F2F">F2F 仍错误</button>
+                    <button class="button button-quiet" type="button" data-comparison-transition="P2P">P2P 均正确</button>
+                  </div>
                 </div>
                 <div class="comparison-filter-grid" aria-label="Case 筛选">
+                  <label class="comparison-search"><span>Issue ID / reason</span><input id="comparisonSearchInput" type="search" placeholder="搜索 Issue ID / reason" autocomplete="off" /></label>
                   <label><span>GT</span><select id="comparisonGtFilter"><option value="ALL">全部 GT</option><option value="误触发">误触发</option><option value="正确触发">正确触发</option><option value="无需协助">无需协助</option></select></label>
                   <label><span>基线输出</span><select id="comparisonBaselineLabelFilter"><option value="ALL">全部输出</option><option value="误触发">误触发</option><option value="正确触发">正确触发</option><option value="无需协助">无需协助</option><option value="真实卡住">真实卡住</option><option value="NONE">NONE / 无输出</option></select></label>
                   <label><span>新 Run 输出</span><select id="comparisonCandidateLabelFilter"><option value="ALL">全部输出</option><option value="误触发">误触发</option><option value="正确触发">正确触发</option><option value="无需协助">无需协助</option><option value="真实卡住">真实卡住</option><option value="NONE">NONE / 无输出</option></select></label>
                   <label><span>标签变化</span><select id="comparisonLabelChangeFilter"><option value="ALL">全部</option><option value="CHANGED">输出有变化</option><option value="UNCHANGED">输出未变化</option></select></label>
                   <button class="button button-quiet" id="comparisonResetFilters" type="button">重置筛选</button>
-                </div>
-                <div class="comparison-transition-filter" id="comparisonTransitionFilter" role="group" aria-label="变化类型">
-                  <button class="button button-quiet active" type="button" data-comparison-transition="ALL">全部</button>
-                  <button class="button button-quiet transition-regression" type="button" data-comparison-transition="P2F">P2F 退化</button>
-                  <button class="button button-quiet transition-improvement" type="button" data-comparison-transition="F2P">F2P 改善</button>
-                  <button class="button button-quiet" type="button" data-comparison-transition="F2F">F2F 仍错误</button>
-                  <button class="button button-quiet" type="button" data-comparison-transition="P2P">P2P 均正确</button>
                 </div>
                 <div class="comparison-table-wrap">
                   <table class="comparison-case-table">
@@ -1586,7 +1586,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-268`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-269`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

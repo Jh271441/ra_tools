@@ -284,19 +284,19 @@
 }
 
 .comparison-search {
-  width: min(20rem, 42vw);
+  min-width: 0;
 }
 
 .comparison-search input {
   width: 100%;
-  height: 34px;
+  height: 32px;
   padding: 5px 8px;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .comparison-filter-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  grid-template-columns: minmax(14rem, 1.25fr) repeat(4, minmax(0, 1fr)) auto;
   align-items: end;
   gap: 6px;
   margin-top: 8px;
@@ -326,9 +326,9 @@
 .comparison-transition-filter {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-end;
   gap: 5px;
-  margin: 8px 0;
+  margin: 0;
 }
 
 .comparison-transition-filter .button {
@@ -634,6 +634,16 @@
   }
   .comparison-filter-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .comparison-cases-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .comparison-transition-filter {
+    justify-content: flex-start;
+  }
+  .comparison-filter-grid .comparison-search {
+    grid-column: 1 / -1;
   }
   .comparison-filter-grid .button {
     grid-column: 1 / -1;
