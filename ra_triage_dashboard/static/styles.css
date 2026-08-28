@@ -458,6 +458,7 @@
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--raised);
+  overflow: hidden;
   color: inherit;
   font: inherit;
   text-align: center;
@@ -512,9 +513,14 @@
 
 .comparison-prediction-reason {
   display: -webkit-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 28px;
   margin: 0;
   overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   color: var(--text);
   font-size: 10px;
   font-weight: 520;

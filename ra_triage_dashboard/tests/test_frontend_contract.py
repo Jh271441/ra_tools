@@ -68,6 +68,8 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('event.target.closest("a, button, input, select, textarea")', APP_JS)
         self.assertIn('!["Enter", " "].includes(event.key)', APP_JS)
         self.assertIn('点击整行对比 Reason', APP_JS)
+        self.assertIn('.comparison-prediction-reason {', STYLES_CSS)
+        self.assertIn('overflow-wrap: anywhere;\n  word-break: break-word;', STYLES_CSS)
         self.assertIn('function openComparisonReasonDialog(issueId)', APP_JS)
         self.assertIn('renderComparisonReasonSide("Baseline", item.baseline', APP_JS)
         self.assertIn('renderComparisonReasonSide("Candidate", item.candidate', APP_JS)
