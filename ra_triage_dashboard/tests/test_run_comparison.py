@@ -21,6 +21,7 @@ class RunComparisonDatabaseTest(unittest.TestCase):
                 {"issue_id": "cn-p2p", "gt_label": "无需协助"},
                 {"issue_id": "cn-f2f", "gt_label": "正确触发"},
                 {"issue_id": "cn-candidate-missing", "gt_label": "误触发"},
+                {"issue_id": "cn-both-missing", "gt_label": "无需协助"},
             ],
             source="test",
             replace_gt=True,
@@ -96,19 +97,19 @@ class RunComparisonDatabaseTest(unittest.TestCase):
         payload = self.compare()
         self.assertEqual(
             payload["summary"]["transition_counts"],
-            {"P2P": 1, "P2F": 1, "F2P": 1, "F2F": 0},
+            {"P2P": 1, "P2F": 2, "F2P": 1, "F2F": 1},
         )
-        self.assertEqual(payload["summary"]["baseline"]["correct_count"], 2)
+        self.assertEqual(payload["summary"]["baseline"]["correct_count"], 3)
         self.assertEqual(payload["summary"]["candidate"]["correct_count"], 2)
-        self.assertEqual(payload["summary"]["total_count"], 3)
-        self.assertEqual(payload["summary"]["baseline"]["missing_count"], 0)
-        self.assertEqual(payload["summary"]["candidate"]["missing_count"], 0)
+        self.assertEqual(payload["summary"]["total_count"], 5)
+        self.assertEqual(payload["summary"]["baseline"]["missing_count"], 1)
+        self.assertEqual(payload["summary"]["candidate"]["missing_count"], 1)
         baseline_rows = {
             row["gt_label"]: row
             for row in payload["summary"]["baseline"]["rows"]
         }
-        self.assertNotIn("NONE", payload["summary"]["baseline"]["columns"])
-        self.assertEqual(baseline_rows["正确触发"]["total"], 1)
+        self.assertIn("NONE", payload["summary"]["baseline"]["columns"])
+        self.assertEqual(baseline_rows["正确触发"]["cells"]["NONE"], 1)
         candidate_rows = {
             row["gt_label"]: row
             for row in payload["summary"]["candidate"]["rows"]
@@ -119,35 +120,52 @@ class RunComparisonDatabaseTest(unittest.TestCase):
         default_order = self.compare()
         self.assertEqual(
             [item["issue_id"] for item in default_order["items"]],
-            ["cn-f2p", "cn-p2f", "cn-p2p"],
+            [
+                "cn-candidate-missing",
+                "cn-f2f",
+                "cn-f2p",
+                "cn-p2f",
+                "cn-p2p",
+            ],
         )
         compared_ids = {item["issue_id"] for item in default_order["items"]}
-        self.assertNotIn("cn-f2f", compared_ids)
-        self.assertNotIn("cn-candidate-missing", compared_ids)
-        self.assertEqual(self.compare(search="candidate has no output")["total"], 0)
+        self.assertIn("cn-f2f", compared_ids)
+        self.assertIn("cn-candidate-missing", compared_ids)
+        self.assertNotIn("cn-both-missing", compared_ids)
+        self.assertEqual(self.compare(search="candidate has no output")["total"], 1)
         regression = self.compare(transition="P2F")
-        self.assertEqual(regression["total"], 1)
-        self.assertEqual(regression["items"][0]["issue_id"], "cn-p2f")
+        self.assertEqual(regression["total"], 2)
+        self.assertEqual(
+            [item["issue_id"] for item in regression["items"]],
+            ["cn-candidate-missing", "cn-p2f"],
+        )
         searched = self.compare(search="f2", page_size=1, page=2)
-        self.assertEqual(searched["total"], 1)
-        self.assertEqual(searched["page_count"], 1)
-        self.assertEqual(searched["page"], 1)
+        self.assertEqual(searched["total"], 2)
+        self.assertEqual(searched["page_count"], 2)
+        self.assertEqual(searched["page"], 2)
         self.assertEqual(len(searched["items"]), 1)
 
     def test_label_reason_and_change_filters(self) -> None:
         by_gt = self.compare(gt_label="正确触发")
         self.assertEqual(
             {item["issue_id"] for item in by_gt["items"]},
-            {"cn-f2p"},
+            {"cn-f2p", "cn-f2f"},
         )
-        with self.assertRaises(ValueError):
-            self.compare(baseline_label="NONE")
+        by_baseline = self.compare(baseline_label="NONE")
+        self.assertEqual(
+            [item["issue_id"] for item in by_baseline["items"]], ["cn-f2f"]
+        )
+        by_candidate_missing = self.compare(candidate_label="NONE")
+        self.assertEqual(
+            [item["issue_id"] for item in by_candidate_missing["items"]],
+            ["cn-candidate-missing"],
+        )
         by_candidate = self.compare(candidate_label="真实卡住")
         self.assertEqual(
             [item["issue_id"] for item in by_candidate["items"]], ["cn-p2p"]
         )
         changed = self.compare(label_change="changed")
-        self.assertEqual(changed["total"], 3)
+        self.assertEqual(changed["total"], 5)
         unchanged = self.compare(label_change="unchanged")
         self.assertEqual(unchanged["total"], 0)
         self.assertEqual(unchanged["items"], [])

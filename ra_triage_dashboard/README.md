@@ -209,7 +209,7 @@ Kylin 必须把 SSO 用户写入 `X-SSO-User`，把该文件中的值写入 `X-R
 
 `DASHBOARD_SSO_WRITE_USERS` 与 `DASHBOARD_TEAM_DEFAULT_MANAGERS` 只在权限表为空时执行一次初始化。此后 PostgreSQL/SQLite 中的权限表是运行时权威来源：未列出的 SSO 用户与裸 IP 访问均为只读，`writer` 可执行普通 Review、Run 与 Tag 选择操作，`admin` 额外拥有独立的 `/users` 用户管理页和内测 `/run-comparison` Run 对比页。Run 对比的页面路由与 `/api/model-run-comparison` API 都会在服务端重新验证管理员身份；前端隐藏入口不作为权限边界。Kylin Portal 的「SSO 白名单」属于网关访问策略，不能直接等同于本应用写白名单。
 
-Run 对比始终在当前选中的不可变 GT 数据集上计算。`P/F` 表示该 Run 输出相对 GT 是否正确：`P2F` 是退化、`F2P` 是改善；只有两个 Run 都存在受支持输出的 Case 才进入对比，任一侧缺失或不支持而归一为 `NONE` 的 Case 不进入明细、矩阵、统计或分页。页面提供双 Run 混淆矩阵、并排的两次输出与 reason；GT 匹配/不匹配只用绿/红文字提示，不改变输出卡片底色。点击 Case 整行的非链接区域（或聚焦行后按 Enter/Space）会打开同一只读对比弹窗，左右同时展示基线 Run 与新 Run 的批次名、完整 Reason、标签、置信度及 GT 匹配状态。Issue 链接和两侧复核按钮保留原导航行为。页面支持按变化类型、GT、基线输出、新 Run 输出、标签是否变化以及 Issue ID/reason 组合筛选；Case 默认严格按 Issue ID 升序、每页 10 条，可携带 `issue + run + comparison=all` 深链到判错复核。网页 Batch Run 若保存过 Prompt、模型及输入配置，会展示经过敏感字段脱敏的创建时快照；比较本身不会修改 Review、Run、GT 或 Trail。
+Run 对比始终在当前选中的不可变 GT 数据集上计算。`P/F` 表示该 Run 输出相对 GT 是否正确：`P2F` 是退化、`F2P` 是改善；比较集合取两个 Run 有效输出的并集，只要任一侧存在受支持输出就保留 Case，缺失或不支持的一侧归一为 `NONE`，仅两侧都为 `NONE` 时从明细、矩阵、统计和分页中排除。页面提供双 Run 混淆矩阵、并排的两次输出与 reason；GT 匹配/不匹配只用绿/红文字提示，不改变输出卡片底色。点击 Case 整行的非链接区域（或聚焦行后按 Enter/Space）会打开同一只读对比弹窗，左右同时展示基线 Run 与新 Run 的批次名、完整 Reason、标签、置信度及 GT 匹配状态。Issue 链接和两侧复核按钮保留原导航行为。页面支持按变化类型、GT、基线输出、新 Run 输出、标签是否变化以及 Issue ID/reason 组合筛选；Case 默认严格按 Issue ID 升序、每页 10 条，可携带 `issue + run + comparison=all` 深链到判错复核。网页 Batch Run 若保存过 Prompt、模型及输入配置，会展示经过敏感字段脱敏的创建时快照；比较本身不会修改 Review、Run、GT 或 Trail。
 
 只有管理员能读取或修改 `/api/access-users`；前端隐藏入口不是权限边界。管理员可添加可写用户、提升管理员或移除写权限，服务端禁止降级或移除最后一个管理员。场景 Tag 固定使用内置目录，Review 中可以选择，但不提供新增、删除或 Tag 管理入口。
 

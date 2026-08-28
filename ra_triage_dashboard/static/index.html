@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-266`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-267`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -841,8 +841,8 @@
                 </div>
                 <div class="comparison-filter-grid" aria-label="Case 筛选">
                   <label><span>GT</span><select id="comparisonGtFilter"><option value="ALL">全部 GT</option><option value="误触发">误触发</option><option value="正确触发">正确触发</option><option value="无需协助">无需协助</option></select></label>
-                  <label><span>基线输出</span><select id="comparisonBaselineLabelFilter"><option value="ALL">全部输出</option><option value="误触发">误触发</option><option value="正确触发">正确触发</option><option value="无需协助">无需协助</option><option value="真实卡住">真实卡住</option></select></label>
-                  <label><span>新 Run 输出</span><select id="comparisonCandidateLabelFilter"><option value="ALL">全部输出</option><option value="误触发">误触发</option><option value="正确触发">正确触发</option><option value="无需协助">无需协助</option><option value="真实卡住">真实卡住</option></select></label>
+                  <label><span>基线输出</span><select id="comparisonBaselineLabelFilter"><option value="ALL">全部输出</option><option value="误触发">误触发</option><option value="正确触发">正确触发</option><option value="无需协助">无需协助</option><option value="真实卡住">真实卡住</option><option value="NONE">NONE / 无输出</option></select></label>
+                  <label><span>新 Run 输出</span><select id="comparisonCandidateLabelFilter"><option value="ALL">全部输出</option><option value="误触发">误触发</option><option value="正确触发">正确触发</option><option value="无需协助">无需协助</option><option value="真实卡住">真实卡住</option><option value="NONE">NONE / 无输出</option></select></label>
                   <label><span>标签变化</span><select id="comparisonLabelChangeFilter"><option value="ALL">全部</option><option value="CHANGED">输出有变化</option><option value="UNCHANGED">输出未变化</option></select></label>
                   <button class="button button-quiet" id="comparisonResetFilters" type="button">重置筛选</button>
                 </div>
@@ -1586,7 +1586,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-266`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-267`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
