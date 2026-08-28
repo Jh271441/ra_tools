@@ -4,11 +4,17 @@ const RUN_TRANSITIONS = ["ALL", "P2F", "F2P", "F2F", "P2P"];
 
 function comparisonRunOptionLabel(run) {
   const name = String(run?.name || run?.source_name || run?.id || "未命名 Run");
+  const coverage = Math.max(0, Number(run?.baseline_prediction_count || 0));
   const shortId = String(run?.id || "").slice(0, 8);
   const createdAt = typeof formatTime === "function"
     ? formatTime(run?.created_at)
     : String(run?.created_at || "");
-  return [name, shortId, createdAt].filter(Boolean).join(" · ");
+  return [
+    name,
+    `${coverage} ${uiText("条当前数据集输出", "outputs in current dataset")}`,
+    shortId,
+    createdAt,
+  ].filter(Boolean).join(" · ");
 }
 
 function comparisonRunOptionHtml(run) {
@@ -17,18 +23,40 @@ function comparisonRunOptionHtml(run) {
 
 function normalizeComparisonRunSelection() {
   const available = (state.modelRuns || []).filter((run) => run?.id);
+  const covered = available.filter((run) => Number(run.baseline_prediction_count || 0) > 0);
   const ids = new Set(available.map((run) => String(run.id)));
   if (!ids.has(String(state.runComparison.baselineRunId || ""))) {
-    state.runComparison.baselineRunId = available[1]?.id || available[0]?.id || "";
+    state.runComparison.baselineRunId = covered[1]?.id || covered[0]?.id || available[1]?.id || available[0]?.id || "";
   }
   if (!ids.has(String(state.runComparison.candidateRunId || ""))) {
-    state.runComparison.candidateRunId = available[0]?.id || available[1]?.id || "";
+    state.runComparison.candidateRunId = covered[0]?.id || available[0]?.id || available[1]?.id || "";
   }
   if (
     state.runComparison.baselineRunId === state.runComparison.candidateRunId &&
     available.length > 1
   ) {
-    state.runComparison.baselineRunId = String(available[1].id);
+    state.runComparison.baselineRunId = String(
+      covered.find((run) => String(run.id) !== String(state.runComparison.candidateRunId))?.id
+        || available.find((run) => String(run.id) !== String(state.runComparison.candidateRunId))?.id
+        || ""
+    );
+  }
+  const selectedCoverage = available
+    .filter((run) => [
+      String(state.runComparison.baselineRunId || ""),
+      String(state.runComparison.candidateRunId || ""),
+    ].includes(String(run.id)))
+    .reduce((sum, run) => sum + Number(run.baseline_prediction_count || 0), 0);
+  // Dataset switches can leave two valid Run IDs in the URL even though both
+  // belong to another workset. Prefer a useful pair for the current dataset;
+  // a covered + zero-coverage pair remains valid for union/NONE comparison.
+  if (selectedCoverage <= 0 && covered.length) {
+    state.runComparison.candidateRunId = String(covered[0].id);
+    state.runComparison.baselineRunId = String(
+      covered[1]?.id
+        || available.find((run) => String(run.id) !== String(covered[0].id))?.id
+        || ""
+    );
   }
 }
 
@@ -49,15 +77,26 @@ function renderRunComparisonSelectors() {
   const valid = Boolean(
     state.runComparison.baselineRunId &&
     state.runComparison.candidateRunId &&
-    state.runComparison.baselineRunId !== state.runComparison.candidateRunId
+    state.runComparison.baselineRunId !== state.runComparison.candidateRunId &&
+    [state.runComparison.baselineRunId, state.runComparison.candidateRunId]
+      .map((runId) => (state.modelRuns || []).find((run) => String(run.id) === String(runId)))
+      .some((run) => Number(run?.baseline_prediction_count || 0) > 0)
   );
   if ($("#comparisonLoadButton")) $("#comparisonLoadButton").disabled = !valid || state.runComparison.loading;
   if ($("#comparisonSelectionNote")) {
+    const selectedRuns = [state.runComparison.baselineRunId, state.runComparison.candidateRunId]
+      .map((runId) => (state.modelRuns || []).find((run) => String(run.id) === String(runId)))
+      .filter(Boolean);
+    const oneSideMissing = selectedRuns.length === 2 && selectedRuns.some(
+      (run) => Number(run.baseline_prediction_count || 0) <= 0
+    );
     $("#comparisonSelectionNote").textContent = (state.modelRuns || []).length < 2
       ? uiText("至少需要两个 Run；请先导入或完成批次预测。", "At least two Runs are required.")
       : valid
-        ? uiText("比较只读，不会修改任何 Review 或 Run。", "Comparison is read-only.")
-        : uiText("请选择两个不同的 Run。", "Choose two different Runs.");
+        ? oneSideMissing
+          ? uiText("按并集比较；无当前数据集输出的一侧将显示为 NONE。", "Union comparison; the uncovered side is shown as NONE.")
+          : uiText("比较只读，不会修改任何 Review 或 Run。", "Comparison is read-only.")
+        : uiText("请选择两个不同的 Run，且至少一侧覆盖当前数据集。", "Choose two different Runs with coverage on at least one side.");
   }
 }
 
