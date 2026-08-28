@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import logging
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
@@ -13,6 +14,7 @@ from .settings import Settings
 
 MAX_CALLBACK_BYTES = 256 * 1024
 MAX_WORKER_BYTES = 64 * 1024
+logger = logging.getLogger("auto_triage_bot.relay")
 
 
 class RelayHTTPError(RuntimeError):
@@ -104,6 +106,7 @@ def create_server(
             except RelayHTTPError as exc:
                 self._respond(exc.status, {"detail": str(exc)})
             except Exception:
+                logger.exception("relay request failed path=%s", self.path[:128])
                 self._respond(500, {"detail": "Relay 内部错误。"})
 
         def _body(self, *, limit: int) -> bytes:
@@ -131,10 +134,16 @@ def create_server(
                 secret = read_secret_file(config.webhook_secret_file)
             except SecretError as exc:
                 raise RelayHTTPError(503, str(exc)) from exc
+            authorization = self.headers.get("Authorization", "")
+            bearer = (
+                authorization[len("Bearer ") :]
+                if authorization.startswith("Bearer ")
+                else authorization
+            )
             signature = (
                 self.headers.get("X-DChat-Signature")
                 or self.headers.get("X-Auto-Triage-Signature")
-                or self.headers.get("Authorization", "").removeprefix("Bearer ")
+                or bearer
             )
             if not verify_webhook(
                 body=body,
