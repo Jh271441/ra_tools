@@ -206,9 +206,21 @@ function renderRunComparisonCases(payload) {
     `筛选后 ${payload.total || 0} 条；当前第 ${payload.page || 1} / ${payload.page_count || 1} 页`,
     `${payload.total || 0} filtered · page ${payload.page || 1} / ${payload.page_count || 1}`
   );
-  $("#comparisonPageSummary").textContent = `${payload.page || 1} / ${payload.page_count || 1}`;
-  $("#comparisonPagePrevious").disabled = Number(payload.page || 1) <= 1;
-  $("#comparisonPageNext").disabled = Number(payload.page || 1) >= Number(payload.page_count || 1);
+  const page = Math.max(1, Number(payload.page) || 1);
+  const pageCount = Math.max(1, Number(payload.page_count) || 1);
+  $("#comparisonPageSummary").textContent = `${page} / ${pageCount}`;
+  $("#comparisonPagePrevious").disabled = page <= 1;
+  $("#comparisonPageNext").disabled = page >= pageCount;
+  const jumpInput = $("#comparisonPageJump");
+  if (jumpInput) {
+    const focused = document.activeElement === jumpInput;
+    jumpInput.max = String(pageCount);
+    jumpInput.disabled = pageCount <= 1;
+    jumpInput.dataset.pageCount = String(pageCount);
+    if (!focused) jumpInput.value = String(page);
+  }
+  if ($("#comparisonPageJumpButton")) $("#comparisonPageJumpButton").disabled = pageCount <= 1;
+  if ($("#comparisonPageSize")) $("#comparisonPageSize").value = String(state.runComparison.pageSize);
 }
 
 function renderRunComparison(payload = state.runComparison.data) {
@@ -268,6 +280,22 @@ async function loadRunComparison({ historyMode = "replace" } = {}) {
   }
 }
 
+async function jumpToRunComparisonPage(rawPage) {
+  const pageCount = Math.max(1, Number(state.runComparison.data?.page_count) || 1);
+  const target = Number(rawPage);
+  if (!Number.isInteger(target) || target < 1 || target > pageCount) {
+    showToast(uiText(`请输入 1–${pageCount} 之间的页码。`, `Enter a page from 1–${pageCount}.`), true);
+    return;
+  }
+  if (target === state.runComparison.page) {
+    const input = $("#comparisonPageJump");
+    if (input) input.value = String(target);
+    return;
+  }
+  state.runComparison.page = target;
+  await loadRunComparison({ historyMode: "push" });
+}
+
 function bindRunComparisonEvents() {
   $("#comparisonBaselineRun")?.addEventListener("change", (event) => {
     state.runComparison.baselineRunId = event.target.value;
@@ -309,15 +337,34 @@ function bindRunComparisonEvents() {
   });
   $("#comparisonPagePrevious")?.addEventListener("click", () => {
     state.runComparison.page = Math.max(1, state.runComparison.page - 1);
-    loadRunComparison().catch((error) => showToast(error.message, true));
+    loadRunComparison({ historyMode: "push" }).catch((error) => showToast(error.message, true));
   });
   $("#comparisonPageNext")?.addEventListener("click", () => {
     state.runComparison.page += 1;
-    loadRunComparison().catch((error) => showToast(error.message, true));
+    loadRunComparison({ historyMode: "push" }).catch((error) => showToast(error.message, true));
+  });
+  const comparisonPageJump = $("#comparisonPageJump");
+  const commitComparisonPageJump = () => {
+    jumpToRunComparisonPage(comparisonPageJump?.value).catch((error) => showToast(error.message, true));
+  };
+  $("#comparisonPageJumpButton")?.addEventListener("click", commitComparisonPageJump);
+  comparisonPageJump?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitComparisonPageJump();
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      comparisonPageJump.value = String(state.runComparison.page);
+      comparisonPageJump.blur();
+    }
+  });
+  comparisonPageJump?.addEventListener("focus", () => {
+    window.requestAnimationFrame(() => comparisonPageJump.select());
   });
   $("#comparisonPageSize")?.addEventListener("change", (event) => {
     state.runComparison.pageSize = [20, 50, 100].includes(Number(event.target.value)) ? Number(event.target.value) : 50;
     state.runComparison.page = 1;
-    loadRunComparison().catch((error) => showToast(error.message, true));
+    loadRunComparison({ historyMode: "push" }).catch((error) => showToast(error.message, true));
   });
 }

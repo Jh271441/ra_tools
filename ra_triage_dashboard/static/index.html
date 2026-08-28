@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-257`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-259`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -852,12 +852,24 @@
                     <tbody id="comparisonCaseRows"></tbody>
                   </table>
                 </div>
-                <div class="pagination comparison-pagination">
-                  <button class="button button-quiet" id="comparisonPagePrevious" type="button">← <span class="ui-lang-zh">上一页</span><span class="ui-lang-en">Previous</span></button>
-                  <span id="comparisonPageSummary">—</span>
-                  <button class="button button-quiet" id="comparisonPageNext" type="button"><span class="ui-lang-zh">下一页</span><span class="ui-lang-en">Next</span> →</button>
-                  <label><span class="ui-lang-zh">每页</span><span class="ui-lang-en">Per page</span><select id="comparisonPageSize"><option>20</option><option selected>50</option><option>100</option></select></label>
-                </div>
+                <nav class="case-pagination gallery-pagination comparison-pagination" aria-label="Run comparison case pagination">
+                  <div class="case-pagination-main">
+                    <button class="button button-quiet" id="comparisonPagePrevious" type="button"><span class="ui-lang-zh">上一页</span><span class="ui-lang-en">Previous</span></button>
+                    <span id="comparisonPageSummary">— / —</span>
+                    <button class="button button-quiet" id="comparisonPageNext" type="button"><span class="ui-lang-zh">下一页</span><span class="ui-lang-en">Next</span></button>
+                    <span class="page-jump-control">
+                      <label for="comparisonPageJump"><span class="ui-lang-zh">跳至</span><span class="ui-lang-en">Go to</span></label>
+                      <input id="comparisonPageJump" type="number" min="1" step="1" inputmode="numeric" aria-label="Jump to comparison page" />
+                      <span><span class="ui-lang-zh">页</span><span class="ui-lang-en">page</span></span>
+                      <button class="button button-quiet" id="comparisonPageJumpButton" type="button"><span class="ui-lang-zh">跳转</span><span class="ui-lang-en">Go</span></button>
+                    </span>
+                  </div>
+                  <label class="case-page-size" for="comparisonPageSize">
+                    <span class="ui-lang-zh">每页</span><span class="ui-lang-en">Per page</span>
+                    <select id="comparisonPageSize" aria-label="Comparison page size"><option>20</option><option selected>50</option><option>100</option></select>
+                    <span class="ui-lang-zh">条</span><span class="ui-lang-en"></span>
+                  </label>
+                </nav>
               </section>
             </div>
           </section>
@@ -1520,7 +1532,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-257`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-259`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
