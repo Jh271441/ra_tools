@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-263`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-264`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -1156,21 +1156,43 @@
       <div class="dialog-card">
         <div class="dialog-heading">
           <div>
-            <h2 id="comparisonReasonTitle"><span class="ui-lang-zh">完整 Reason</span><span class="ui-lang-en">Full reason</span></h2>
+            <h2 id="comparisonReasonTitle"><span class="ui-lang-zh">Reason 对比</span><span class="ui-lang-en">Reason comparison</span></h2>
             <p class="dialog-copy" id="comparisonReasonContext"></p>
           </div>
           <button class="icon-button" type="button" data-close="comparisonReasonDialog" aria-label="Close">×</button>
         </div>
-        <div class="comparison-reason-summary">
-          <div><span>Model</span><strong id="comparisonReasonModelLabel">—</strong></div>
-          <div><span>Confidence</span><strong id="comparisonReasonConfidence">—</strong></div>
-          <div><span>GT</span><strong id="comparisonReasonGtLabel">—</strong></div>
-          <div><span>Status</span><strong id="comparisonReasonVerdict">—</strong></div>
+        <div class="comparison-reason-grid">
+          <section class="comparison-reason-panel" id="comparisonReasonBaselinePanel">
+            <header>
+              <h3><span class="ui-lang-zh">基线 Run</span><span class="ui-lang-en">Baseline Run</span></h3>
+              <p id="comparisonReasonBaselineRun">—</p>
+            </header>
+            <div class="comparison-reason-summary">
+              <div><span>Model</span><strong id="comparisonReasonBaselineModelLabel">—</strong></div>
+              <div><span>Confidence</span><strong id="comparisonReasonBaselineConfidence">—</strong></div>
+              <div><span>Status</span><strong id="comparisonReasonBaselineVerdict">—</strong></div>
+            </div>
+            <div class="comparison-reason-content">
+              <h4><span class="ui-lang-zh">完整 Reason</span><span class="ui-lang-en">Full reason</span></h4>
+              <p id="comparisonReasonBaselineBody"></p>
+            </div>
+          </section>
+          <section class="comparison-reason-panel" id="comparisonReasonCandidatePanel">
+            <header>
+              <h3><span class="ui-lang-zh">新 Run</span><span class="ui-lang-en">Candidate Run</span></h3>
+              <p id="comparisonReasonCandidateRun">—</p>
+            </header>
+            <div class="comparison-reason-summary">
+              <div><span>Model</span><strong id="comparisonReasonCandidateModelLabel">—</strong></div>
+              <div><span>Confidence</span><strong id="comparisonReasonCandidateConfidence">—</strong></div>
+              <div><span>Status</span><strong id="comparisonReasonCandidateVerdict">—</strong></div>
+            </div>
+            <div class="comparison-reason-content">
+              <h4><span class="ui-lang-zh">完整 Reason</span><span class="ui-lang-en">Full reason</span></h4>
+              <p id="comparisonReasonCandidateBody"></p>
+            </div>
+          </section>
         </div>
-        <section class="comparison-reason-content">
-          <h3><span class="ui-lang-zh">完整 Reason</span><span class="ui-lang-en">Full reason</span></h3>
-          <p id="comparisonReasonBody"></p>
-        </section>
         <div class="dialog-actions">
           <button class="button button-primary" type="button" data-close="comparisonReasonDialog"><span class="ui-lang-zh">关闭</span><span class="ui-lang-en">Close</span></button>
         </div>
@@ -1564,7 +1586,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-263`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-264`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

@@ -437,9 +437,9 @@
   justify-items: center;
   gap: 6px;
   padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, var(--ok) 42%, var(--line));
+  border: 1px solid color-mix(in srgb, var(--ok) 24%, var(--line));
   border-radius: 8px;
-  background: color-mix(in srgb, var(--raised) 91%, var(--ok) 9%);
+  background: var(--raised);
   color: inherit;
   font: inherit;
   text-align: center;
@@ -449,21 +449,21 @@
 }
 
 .comparison-prediction.is-error {
-  border-color: color-mix(in srgb, var(--fail) 46%, var(--line));
-  background: color-mix(in srgb, var(--raised) 91%, var(--fail) 9%);
+  border-color: color-mix(in srgb, var(--fail) 28%, var(--line));
+  background: var(--raised);
 }
 
 .comparison-prediction:hover,
 .comparison-prediction:focus-visible {
-  border-color: color-mix(in srgb, var(--ok) 72%, var(--line));
-  background: color-mix(in srgb, var(--raised) 86%, var(--ok) 14%);
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
+  background: color-mix(in srgb, var(--raised) 96%, var(--accent) 4%);
   outline: none;
 }
 
 .comparison-prediction.is-error:hover,
 .comparison-prediction.is-error:focus-visible {
-  border-color: color-mix(in srgb, var(--fail) 74%, var(--line));
-  background: color-mix(in srgb, var(--raised) 86%, var(--fail) 14%);
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
+  background: color-mix(in srgb, var(--raised) 96%, var(--accent) 4%);
 }
 
 .comparison-prediction-output {
@@ -507,7 +507,7 @@
   font: 9px "SFMono-Regular", Consolas, monospace;
 }
 
-.comparison-prediction p {
+.comparison-prediction-reason {
   display: -webkit-box;
   min-height: 28px;
   margin: 0;
@@ -531,17 +531,31 @@
 .comparison-prediction:hover .comparison-prediction-open,
 .comparison-prediction:focus-visible .comparison-prediction-open { opacity: 1; }
 
-.comparison-reason-dialog { width: min(780px, calc(100vw - 30px)); max-height: min(82dvh, 760px); overflow: hidden; }
-.comparison-reason-dialog .dialog-card { min-height: 0; max-height: min(82dvh, 760px); grid-template-rows: auto auto minmax(0, 1fr) auto; }
-.comparison-reason-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
+.comparison-reason-dialog { width: min(1080px, calc(100vw - 30px)); max-height: min(86dvh, 820px); overflow: hidden; }
+.comparison-reason-dialog .dialog-card { min-height: 0; max-height: min(86dvh, 820px); grid-template-rows: auto minmax(0, 1fr) auto; }
+.comparison-reason-grid { min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; overflow: hidden; }
+.comparison-reason-panel { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 9px; padding: 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--overlay); }
+.comparison-reason-panel.is-correct { border-color: color-mix(in srgb, var(--ok) 26%, var(--line)); }
+.comparison-reason-panel.is-error { border-color: color-mix(in srgb, var(--fail) 30%, var(--line)); }
+.comparison-reason-panel > header { min-width: 0; display: grid; gap: 3px; text-align: center; }
+.comparison-reason-panel > header h3 { color: var(--text); font-size: 14px; }
+.comparison-reason-panel > header p { margin: 0; overflow-wrap: anywhere; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.comparison-reason-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
 .comparison-reason-summary > div { min-width: 0; display: grid; gap: 3px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--overlay); text-align: center; }
 .comparison-reason-summary span { color: var(--faint); font-size: 9px; }
 .comparison-reason-summary strong { overflow-wrap: anywhere; color: var(--text); font-size: 12px; }
-.comparison-reason-summary #comparisonReasonVerdict { color: color-mix(in srgb, var(--ok) 84%, var(--text)); }
-.comparison-reason-summary #comparisonReasonVerdict.is-error { color: color-mix(in srgb, var(--fail) 84%, var(--text)); }
+.comparison-reason-summary [id$="Verdict"] { color: color-mix(in srgb, var(--ok) 84%, var(--text)); }
+.comparison-reason-summary [id$="Verdict"].is-error { color: color-mix(in srgb, var(--fail) 84%, var(--text)); }
 .comparison-reason-content { min-height: 0; display: grid; align-content: start; gap: 8px; overflow: auto; padding: 12px 13px; border: 1px solid var(--line); border-radius: 8px; background: #0b1018; }
-.comparison-reason-content h3 { color: var(--muted); font-size: 11px; }
+.comparison-reason-content h4 { color: var(--muted); font-size: 11px; }
 .comparison-reason-content p { margin: 0; color: var(--text); font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (max-width: 760px) {
+  .comparison-reason-dialog,
+  .comparison-reason-dialog .dialog-card { max-height: min(92dvh, 920px); }
+  .comparison-reason-grid { grid-template-columns: 1fr; overflow: auto; }
+  .comparison-reason-panel { min-height: 300px; }
+}
 
 .comparison-transition-badge {
   display: inline-flex;
