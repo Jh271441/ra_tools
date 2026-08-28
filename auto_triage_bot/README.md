@@ -9,15 +9,16 @@
 正式链路把接入面和数据面拆开，避免线上 DChat 主动访问线下 Cloud Server：
 
 ```text
-DChat -> Kylin 永顺 /dchat -> Luban Relay (在线)
-                                  ^
-                                  | Cloud Server 主动 HTTPS pull/ack/nack
-                                  |
-Kylin 内蒙古 /dchat-worker <------+
+DChat -> Kylin 内蒙古 /dchat-worker -> Luban Relay (在线)
+                                             ^
+                                             | Cloud Server 主动 HTTPS pull/ack/nack
+                                             |
+Cloud Server --------------------------------+
 Cloud Worker (线下) -> loopback Dashboard + model + DChat OpenAPI
 ```
 
-- Kylin 会剥离公开前缀：`/dchat` 到 Relay `/`；`/dchat-worker/pull`、`/ack`、`/nack` 到 Relay 对应根路径。
+- Kylin 会剥离公开前缀：`POST /dchat-worker` 到 Relay `/`；`/dchat-worker/pull`、`/ack`、`/nack` 到 Relay 对应根路径。
+- 同一入口通过两套认证隔离：Kylin 为 DChat callback 注入 `X-Auto-Triage-Signature`；Cloud Worker 的 `Authorization: Bearer ...` 不应被网关改写。
 - Relay 只保存标准化的 `event_id`、发送人、问题和可选 `chat_id`，不持有 Dashboard、模型或 DChat OpenAPI 凭据。
 - Worker 使用单独的 `0600` Bearer token 主动拉取，任务采用超时租约、ACK/NACK、去重和最多 5 次退避重试。
 - Relay 的 SQLite 必须位于 Luban 持久卷。`/dev/shm` 或容器根盘只允许临时联调，Pod 重建会丢失未完成任务。
@@ -69,9 +70,9 @@ export AUTOTRIAGE_BOT_DELIVERY_MODE=openapi
 
 1. 可以复用现有发送通知的 DChat 应用，也可以新建独立的测试版工作台应用。复用时确认已有 BotUser 和主动发消息所需的 OpenAPI 权限；新建时需要重新申请。
 2. 在应用详情右上角开启 **应用机器人（BotUser）** 形态。
-3. 编辑 BotUser 形态，把 `notification_url` 填成网关暴露的 `/dchat`。该地址必须能被 D-Chat 服务器访问；不要填写本机的 `127.0.0.1:8790`。
-4. Kylin 仅暴露公网前缀 `/dchat`，转发到独立的 `8790` 并剥离该前缀，和看板 `/manual` 的规则一致。公网 `/dchat`、`/dchat/smoke` 分别到达 8790 内部的 `/`、`/smoke`；这不会占用域名根目录或看板的 `8785`。
-5. 在受控网关校验来源并注入固定验证 token，Bot 服务以当前服务用户持有的 `0600` 文件读取该 token。若联调发现 D-Chat 自带签名，再按真实 header/body 契约适配 `security.py`。
+3. Relay 模式下，把 BotUser 的 `notification_url` 填成 `https://ra-model.intra.xiaojukeji.com/dchat-worker`。该地址必须能被 D-Chat 服务器访问；不要填写本机的 `127.0.0.1:8790`。
+4. Kylin 剥离 `/dchat-worker` 后，exact POST 到 Relay `/`，Cloud Worker 的 `/pull`、`/ack`、`/nack` 保留为后缀路径；这不会占用域名根目录或看板的 `8785`。
+5. 在 Kylin 请求头转换中注入固定 `X-Auto-Triage-Signature`，不要替换 `Authorization`，否则会破坏 worker 的独立 Bearer 认证。Relay 以当前服务用户持有的 `0600` 文件读取 callback token。
 6. 安装测试版应用。用户私聊 BotUser、或在群聊中 @BotUser 时，D-Chat 会 POST 到 `notification_url`；服务必须在 5 秒内返回一条普通文本、带附件文本或交互消息。
 7. 申请/确认后台完成答案所需的主动消息 OpenAPI 权限，并配置应用的 `client_id`、`client_secret`、数字 `bot_id` 到服务用户 `0600` 凭据文件。
 8. 在灰度环境各测试一次私聊和群 @，保存脱敏后的真实 POST body/header 样例，用于核对 `events.py` 的发送人、消息文本和消息 ID 字段映射。
@@ -117,6 +118,7 @@ bash auto_triage_bot/scripts/smoke.sh http://127.0.0.1:8790
 | `AUTOTRIAGE_BOT_RELAY_WORKER_ID` | `cloud-server-1` |
 | `AUTOTRIAGE_BOT_RELAY_LEASE_SECONDS` | `120`；任务租约时间 |
 | `AUTOTRIAGE_BOT_RELAY_MAX_ATTEMPTS` | `5`；最大交付尝试次数 |
+| `AUTOTRIAGE_BOT_WORKER_BASE_PATH` | `/dchat-worker`；Kylin 对外统一中继前缀 |
 
 事件状态保存在 `<data_dir>/bot_events.sqlite3`。`event_id` 唯一，进程重启会把中断的 `running` 事件恢复为 `queued`；临时失败指数退避，最多尝试 5 次。
 
