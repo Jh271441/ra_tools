@@ -140,18 +140,58 @@ def create_server(
                 if authorization.startswith("Bearer ")
                 else authorization
             )
-            signature = (
-                self.headers.get("X-DChat-Signature")
-                or self.headers.get("X-Auto-Triage-Signature")
-                or bearer
-            )
-            if not verify_webhook(
+            dchat_signature = self.headers.get("X-DChat-Signature", "")
+            relay_signature = self.headers.get("X-Auto-Triage-Signature", "")
+            signature = dchat_signature or relay_signature or bearer
+            verified = verify_webhook(
                 body=body,
                 secret=secret,
                 mode=config.webhook_auth_mode,
                 signature=signature,
                 timestamp=self.headers.get("X-DChat-Timestamp", ""),
-            ):
+            )
+            if not verified:
+                # Intentionally log only presence/match booleans. Never expose
+                # callback credentials or request bodies while diagnosing a
+                # gateway header transformation.
+                logger.warning(
+                    "callback auth rejected mode=%s "
+                    "x_dchat_present=%s x_dchat_valid=%s "
+                    "x_auto_triage_present=%s x_auto_triage_valid=%s "
+                    "authorization_present=%s bearer_valid=%s selected=%s",
+                    config.webhook_auth_mode,
+                    bool(dchat_signature),
+                    verify_webhook(
+                        body=body,
+                        secret=secret,
+                        mode=config.webhook_auth_mode,
+                        signature=dchat_signature,
+                        timestamp=self.headers.get("X-DChat-Timestamp", ""),
+                    ),
+                    bool(relay_signature),
+                    verify_webhook(
+                        body=body,
+                        secret=secret,
+                        mode=config.webhook_auth_mode,
+                        signature=relay_signature,
+                        timestamp=self.headers.get("X-DChat-Timestamp", ""),
+                    ),
+                    bool(authorization),
+                    verify_webhook(
+                        body=body,
+                        secret=secret,
+                        mode=config.webhook_auth_mode,
+                        signature=bearer,
+                        timestamp=self.headers.get("X-DChat-Timestamp", ""),
+                    ),
+                    (
+                        "x-dchat-signature"
+                        if dchat_signature
+                        else "x-auto-triage-signature"
+                        if relay_signature
+                        else "authorization"
+                    ),
+                )
                 raise RelayHTTPError(401, "DChat 回调认证失败。")
             payload = _object(body)
             challenge = challenge_value(payload)
