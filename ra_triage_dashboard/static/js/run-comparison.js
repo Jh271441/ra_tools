@@ -86,10 +86,10 @@ function applyRunComparisonRoute(filters = {}) {
   state.runComparison.gtLabel = ["ALL", ...LABELS].includes(String(filters.gtLabel || ""))
     ? String(filters.gtLabel)
     : "ALL";
-  state.runComparison.baselineLabel = ["ALL", ...MODEL_LABELS, "NONE"].includes(String(filters.baselineLabel || ""))
+  state.runComparison.baselineLabel = ["ALL", ...MODEL_LABELS].includes(String(filters.baselineLabel || ""))
     ? String(filters.baselineLabel)
     : "ALL";
-  state.runComparison.candidateLabel = ["ALL", ...MODEL_LABELS, "NONE"].includes(String(filters.candidateLabel || ""))
+  state.runComparison.candidateLabel = ["ALL", ...MODEL_LABELS].includes(String(filters.candidateLabel || ""))
     ? String(filters.candidateLabel)
     : "ALL";
   state.runComparison.labelChange = ["ALL", "CHANGED", "UNCHANGED"].includes(String(filters.labelChange || "").toUpperCase())

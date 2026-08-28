@@ -484,17 +484,16 @@
   align-items: center;
   justify-content: center;
   margin: 0;
-  padding: 2px 6px;
-  border-radius: 999px;
+  padding: 0;
   color: color-mix(in srgb, var(--ok) 84%, var(--text));
-  background: color-mix(in srgb, var(--ok) 12%, transparent);
+  background: transparent;
   font-size: 9px;
   font-weight: 650;
 }
 
 .comparison-prediction.is-error .comparison-prediction-verdict {
   color: color-mix(in srgb, var(--fail) 84%, var(--text));
-  background: color-mix(in srgb, var(--fail) 12%, transparent);
+  background: transparent;
 }
 
 .comparison-prediction-output strong {

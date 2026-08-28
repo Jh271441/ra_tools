@@ -252,8 +252,9 @@ class DatabaseRunsMixin:
         """Compare two immutable Runs over the same baseline workset.
 
         P/F describes correctness against immutable GT, not a particular model
-        label: P2F is a regression and F2P is an improvement. Missing or
-        unsupported predictions remain visible as ``NONE`` and count as F.
+        label: P2F is a regression and F2P is an improvement. Compare only the
+        intersection where both Runs have a supported model output; missing or
+        unsupported predictions never enter rows, matrices, counts, or pages.
         """
 
         baseline_run_id = str(baseline_run_id or "").strip()
@@ -273,7 +274,7 @@ class DatabaseRunsMixin:
             normalized_gt_label = "ALL"
         elif normalized_gt_label not in LABELS:
             raise ValueError("不支持的 GT 标签筛选。")
-        allowed_model_labels = {*MODEL_LABELS, "NONE"}
+        allowed_model_labels = set(MODEL_LABELS)
 
         def normalize_model_filter(value: str, field_name: str) -> str:
             normalized = str(value or "all").strip()
@@ -349,7 +350,7 @@ class DatabaseRunsMixin:
             if run_id and run_id not in jobs:
                 jobs[run_id] = self._batch_job_dict(row)
 
-        model_columns = [*MODEL_LABELS, "NONE"]
+        model_columns = [*MODEL_LABELS]
         matrices = {
             "baseline": {
                 gt_label: {column: 0 for column in model_columns}
@@ -372,6 +373,8 @@ class DatabaseRunsMixin:
             candidate_bucket = (
                 candidate_label if candidate_label in MODEL_LABELS else "NONE"
             )
+            if baseline_bucket == "NONE" or candidate_bucket == "NONE":
+                continue
             baseline_correct = model_label_matches_gt(baseline_bucket, gt_label)
             candidate_correct = model_label_matches_gt(candidate_bucket, gt_label)
             transition_key = (
@@ -417,7 +420,7 @@ class DatabaseRunsMixin:
                     if model_label_matches_gt(model_label, gt_label)
                 )
                 correct_count += row_correct
-                prediction_count += total - cells["NONE"]
+                prediction_count += total
                 matrix_rows.append(
                     {
                         "gt_label": gt_label,
@@ -433,7 +436,7 @@ class DatabaseRunsMixin:
                 "rows": matrix_rows,
                 "total_count": total_count,
                 "prediction_count": prediction_count,
-                "missing_count": total_count - prediction_count,
+                "missing_count": 0,
                 "correct_count": correct_count,
                 "accuracy": (correct_count / total_count) if total_count else 0.0,
             }
