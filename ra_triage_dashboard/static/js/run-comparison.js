@@ -202,19 +202,14 @@ function comparisonSnapshotHtml(run) {
     ${inputJson ? `<pre>${escapeHtml(inputJson)}</pre>` : `<p class="muted">${uiText("该 Run 没有保存输入配置快照。", "No input snapshot was saved for this Run.")}</p>`}`;
 }
 
-function comparisonPredictionHtml(prediction, issueId, side) {
+function comparisonPredictionHtml(prediction) {
   const label = prediction?.model_label || "NONE";
   const confidence = prediction?.model_confidence;
   const verdict = prediction?.correct ? uiText("匹配 GT", "Matches GT") : uiText("不匹配 GT", "Differs from GT");
-  const accessibleLabel = uiText(
-    `对比 ${issueId} 两个 Run 的完整 Reason`,
-    `Compare the full reasons from both Runs for ${issueId}`,
-  );
-  return `<button type="button" class="comparison-prediction ${prediction?.correct ? "is-correct" : "is-error"}" data-comparison-reason data-issue-id="${escapeHtml(issueId)}" data-run-side="${escapeHtml(side)}" aria-label="${escapeHtml(accessibleLabel)}">
+  return `<div class="comparison-prediction ${prediction?.correct ? "is-correct" : "is-error"}">
     <div class="comparison-prediction-output"><strong>${escapeHtml(label)}</strong>${confidence == null ? "" : `<span>${Number(confidence).toFixed(3)}</span>`}<small class="comparison-prediction-verdict">${escapeHtml(verdict)}</small></div>
     <span class="comparison-prediction-reason" title="${escapeHtml(prediction?.model_reason || "")}">${escapeHtml(prediction?.model_reason || uiText("无 reason", "No reason"))}</span>
-    <span class="comparison-prediction-open"><span class="ui-lang-zh">对比完整 Reason</span><span class="ui-lang-en">Compare full reasons</span></span>
-  </button>`;
+  </div>`;
 }
 
 function renderComparisonReasonSide(prefix, prediction, run) {
@@ -226,9 +221,6 @@ function renderComparisonReasonSide(prefix, prediction, run) {
   const verdictElement = $(`#comparisonReason${prefix}Verdict`);
   verdictElement.textContent = verdict;
   verdictElement.classList.toggle("is-error", !prediction?.correct);
-  const panel = $(`#comparisonReason${prefix}Panel`);
-  panel.classList.toggle("is-correct", Boolean(prediction?.correct));
-  panel.classList.toggle("is-error", !prediction?.correct);
   $(`#comparisonReason${prefix}Body`).textContent = prediction?.model_reason || uiText("该输出没有 Reason。", "This output has no reason.");
 }
 
@@ -247,13 +239,19 @@ function openComparisonReasonDialog(issueId) {
 function renderRunComparisonCases(payload) {
   const baselineRunId = payload.baseline_run?.id || "";
   const candidateRunId = payload.candidate_run?.id || "";
-  const rows = (payload.items || []).map((item) => `<tr class="transition-${escapeHtml(String(item.transition || "").toLowerCase())}">
-    <td><a class="comparison-issue-link" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, candidateRunId))}">${escapeHtml(item.issue_id)}</a><div class="comparison-issue-meta"><span class="status-pill status-ready">GT ${escapeHtml(item.gt_label)}</span><small>${escapeHtml(item.baseline_scope || "")}</small></div></td>
-    <td>${comparisonPredictionHtml(item.baseline, item.issue_id, "baseline")}</td>
-    <td>${comparisonPredictionHtml(item.candidate, item.issue_id, "candidate")}</td>
-    <td><span class="comparison-transition-badge ${escapeHtml(String(item.transition || "").toLowerCase())}">${escapeHtml(comparisonTransitionText(item.transition))}</span></td>
-    <td><div class="comparison-review-links"><a class="button button-quiet" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, baselineRunId))}">${uiText("基线复核", "Baseline review")}</a><a class="button button-quiet" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, candidateRunId))}">${uiText("新 Run 复核", "Candidate review")}</a></div></td>
-  </tr>`).join("");
+  const rows = (payload.items || []).map((item) => {
+    const rowLabel = uiText(
+      `打开 ${item.issue_id} 的双 Run Reason 对比`,
+      `Open the two-Run reason comparison for ${item.issue_id}`,
+    );
+    return `<tr class="transition-${escapeHtml(String(item.transition || "").toLowerCase())}" data-comparison-row data-issue-id="${escapeHtml(item.issue_id)}" tabindex="0" aria-label="${escapeHtml(rowLabel)}">
+      <td><a class="comparison-issue-link" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, candidateRunId))}">${escapeHtml(item.issue_id)}</a><div class="comparison-issue-meta"><span class="status-pill status-ready">GT ${escapeHtml(item.gt_label)}</span><small>${escapeHtml(item.baseline_scope || "")}</small></div></td>
+      <td>${comparisonPredictionHtml(item.baseline)}</td>
+      <td>${comparisonPredictionHtml(item.candidate)}</td>
+      <td><div class="comparison-transition-cell"><span class="comparison-transition-badge ${escapeHtml(String(item.transition || "").toLowerCase())}">${escapeHtml(comparisonTransitionText(item.transition))}</span><small>${uiText("点击整行对比 Reason", "Click row to compare reasons")}</small></div></td>
+      <td><div class="comparison-review-links"><a class="button button-quiet" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, baselineRunId))}">${uiText("基线复核", "Baseline review")}</a><a class="button button-quiet" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, candidateRunId))}">${uiText("新 Run 复核", "Candidate review")}</a></div></td>
+    </tr>`;
+  }).join("");
   $("#comparisonCaseRows").innerHTML = rows || `<tr><td colspan="5" class="comparison-no-rows">${uiText("当前条件下没有 Case。", "No cases match the current filters.")}</td></tr>`;
   $("#comparisonCaseCount").textContent = uiText(
     `筛选后 ${payload.total || 0} 条；当前第 ${payload.page || 1} / ${payload.page_count || 1} 页`,
@@ -355,9 +353,15 @@ async function jumpToRunComparisonPage(rawPage) {
 
 function bindRunComparisonEvents() {
   $("#comparisonCaseRows")?.addEventListener("click", (event) => {
-    const trigger = event.target.closest("[data-comparison-reason]");
-    if (!trigger) return;
-    openComparisonReasonDialog(trigger.dataset.issueId);
+    const row = event.target.closest("[data-comparison-row]");
+    if (!row || event.target.closest("a, button, input, select, textarea")) return;
+    openComparisonReasonDialog(row.dataset.issueId);
+  });
+  $("#comparisonCaseRows")?.addEventListener("keydown", (event) => {
+    const row = event.target.closest("[data-comparison-row]");
+    if (!row || event.target !== row || !["Enter", " "].includes(event.key)) return;
+    event.preventDefault();
+    openComparisonReasonDialog(row.dataset.issueId);
   });
   $("#comparisonReasonDialog")?.addEventListener("click", (event) => {
     if (event.target === event.currentTarget) event.currentTarget.close();

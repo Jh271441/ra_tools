@@ -374,6 +374,24 @@
   font-weight: 650;
 }
 
+.comparison-case-table tbody tr[data-comparison-row] {
+  cursor: pointer;
+  outline: none;
+}
+
+.comparison-case-table tbody tr[data-comparison-row] > td {
+  transition: background 140ms ease;
+}
+
+.comparison-case-table tbody tr[data-comparison-row]:hover > td,
+.comparison-case-table tbody tr[data-comparison-row]:focus-visible > td {
+  background: color-mix(in srgb, var(--accent) 3%, transparent);
+}
+
+.comparison-case-table tbody tr[data-comparison-row]:focus-visible > td:first-child {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 72%, transparent);
+}
+
 .comparison-case-table td:first-child {
   width: 14%;
 }
@@ -437,33 +455,18 @@
   justify-items: center;
   gap: 6px;
   padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, var(--ok) 24%, var(--line));
+  border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--raised);
   color: inherit;
   font: inherit;
   text-align: center;
-  cursor: pointer;
-  appearance: none;
-  transition: border-color 140ms ease, background 140ms ease;
+  cursor: inherit;
 }
 
 .comparison-prediction.is-error {
-  border-color: color-mix(in srgb, var(--fail) 28%, var(--line));
+  border-color: var(--line);
   background: var(--raised);
-}
-
-.comparison-prediction:hover,
-.comparison-prediction:focus-visible {
-  border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
-  background: color-mix(in srgb, var(--raised) 96%, var(--accent) 4%);
-  outline: none;
-}
-
-.comparison-prediction.is-error:hover,
-.comparison-prediction.is-error:focus-visible {
-  border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
-  background: color-mix(in srgb, var(--raised) 96%, var(--accent) 4%);
 }
 
 .comparison-prediction-output {
@@ -521,22 +524,10 @@
   -webkit-line-clamp: 3;
 }
 
-.comparison-prediction-open {
-  color: var(--accent);
-  font-size: 9px;
-  font-weight: 650;
-  opacity: .82;
-}
-
-.comparison-prediction:hover .comparison-prediction-open,
-.comparison-prediction:focus-visible .comparison-prediction-open { opacity: 1; }
-
 .comparison-reason-dialog { width: min(1080px, calc(100vw - 30px)); max-height: min(86dvh, 820px); overflow: hidden; }
 .comparison-reason-dialog .dialog-card { min-height: 0; max-height: min(86dvh, 820px); grid-template-rows: auto minmax(0, 1fr) auto; }
 .comparison-reason-grid { min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; overflow: hidden; }
 .comparison-reason-panel { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 9px; padding: 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--overlay); }
-.comparison-reason-panel.is-correct { border-color: color-mix(in srgb, var(--ok) 26%, var(--line)); }
-.comparison-reason-panel.is-error { border-color: color-mix(in srgb, var(--fail) 30%, var(--line)); }
 .comparison-reason-panel > header { min-width: 0; display: grid; gap: 3px; text-align: center; }
 .comparison-reason-panel > header h3 { color: var(--text); font-size: 14px; }
 .comparison-reason-panel > header p { margin: 0; overflow-wrap: anywhere; color: var(--muted); font-size: 10px; line-height: 1.45; }
@@ -569,6 +560,9 @@
   font: 700 9px "SFMono-Regular", Consolas, monospace;
   letter-spacing: .02em;
 }
+
+.comparison-transition-cell { display: grid; justify-items: center; gap: 5px; }
+.comparison-transition-cell > small { color: var(--faint); font-size: 9px; line-height: 1.35; }
 
 .comparison-transition-badge.p2f {
   color: #f5a1a1;
