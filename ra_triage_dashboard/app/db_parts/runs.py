@@ -241,9 +241,13 @@ class DatabaseRunsMixin:
         candidate_run_id: str,
         baseline_scopes: Sequence[str],
         transition: str = "all",
+        gt_label: str = "all",
+        baseline_label: str = "all",
+        candidate_label: str = "all",
+        label_change: str = "all",
         search: str = "",
         page: int = 1,
-        page_size: int = 50,
+        page_size: int = 10,
     ) -> dict[str, Any]:
         """Compare two immutable Runs over the same baseline workset.
 
@@ -264,6 +268,30 @@ class DatabaseRunsMixin:
         normalized_transition = str(transition or "all").strip().upper()
         if normalized_transition not in {"ALL", "P2P", "P2F", "F2P", "F2F"}:
             raise ValueError("不支持的 Run 变化类型。")
+        normalized_gt_label = str(gt_label or "all").strip()
+        if normalized_gt_label.upper() == "ALL":
+            normalized_gt_label = "ALL"
+        elif normalized_gt_label not in LABELS:
+            raise ValueError("不支持的 GT 标签筛选。")
+        allowed_model_labels = {*MODEL_LABELS, "NONE"}
+
+        def normalize_model_filter(value: str, field_name: str) -> str:
+            normalized = str(value or "all").strip()
+            if normalized.upper() == "ALL":
+                return "ALL"
+            if normalized not in allowed_model_labels:
+                raise ValueError(f"不支持的{field_name}筛选。")
+            return normalized
+
+        normalized_baseline_label = normalize_model_filter(
+            baseline_label, "基线输出"
+        )
+        normalized_candidate_label = normalize_model_filter(
+            candidate_label, "新 Run 输出"
+        )
+        normalized_label_change = str(label_change or "all").strip().upper()
+        if normalized_label_change not in {"ALL", "CHANGED", "UNCHANGED"}:
+            raise ValueError("不支持的标签变化筛选。")
         normalized_search = str(search or "").strip().lower()[:128]
         page_size = min(max(int(page_size), 1), 100)
         page = max(int(page), 1)
@@ -420,8 +448,29 @@ class DatabaseRunsMixin:
                 or item["transition"] == normalized_transition
             )
             and (
+                normalized_gt_label == "ALL"
+                or item["gt_label"] == normalized_gt_label
+            )
+            and (
+                normalized_baseline_label == "ALL"
+                or item["baseline"]["model_label"] == normalized_baseline_label
+            )
+            and (
+                normalized_candidate_label == "ALL"
+                or item["candidate"]["model_label"] == normalized_candidate_label
+            )
+            and (
+                normalized_label_change == "ALL"
+                or item["label_changed"]
+                == (normalized_label_change == "CHANGED")
+            )
+            and (
                 not normalized_search
                 or normalized_search in item["issue_id"].lower()
+                or normalized_search
+                in str(item["baseline"]["model_reason"] or "").lower()
+                or normalized_search
+                in str(item["candidate"]["model_reason"] or "").lower()
             )
         ]
         transition_priority = {"P2F": 0, "F2P": 1, "F2F": 2, "P2P": 3}
@@ -462,6 +511,10 @@ class DatabaseRunsMixin:
             },
             "filters": {
                 "transition": normalized_transition,
+                "gt_label": normalized_gt_label,
+                "baseline_label": normalized_baseline_label,
+                "candidate_label": normalized_candidate_label,
+                "label_change": normalized_label_change,
                 "search": normalized_search,
             },
             "items": filtered_rows[offset : offset + page_size],

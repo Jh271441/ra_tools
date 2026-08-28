@@ -66,6 +66,10 @@ function runComparisonRouteOptions(overrides = {}) {
     baselineRunId: state.runComparison.baselineRunId,
     candidateRunId: state.runComparison.candidateRunId,
     transition: state.runComparison.transition,
+    gtLabel: state.runComparison.gtLabel,
+    baselineLabel: state.runComparison.baselineLabel,
+    candidateLabel: state.runComparison.candidateLabel,
+    labelChange: state.runComparison.labelChange,
     search: state.runComparison.search,
     page: state.runComparison.page,
     pageSize: state.runComparison.pageSize,
@@ -79,13 +83,29 @@ function applyRunComparisonRoute(filters = {}) {
   state.runComparison.transition = RUN_TRANSITIONS.includes(String(filters.transition || "").toUpperCase())
     ? String(filters.transition).toUpperCase()
     : "ALL";
+  state.runComparison.gtLabel = ["ALL", ...LABELS].includes(String(filters.gtLabel || ""))
+    ? String(filters.gtLabel)
+    : "ALL";
+  state.runComparison.baselineLabel = ["ALL", ...MODEL_LABELS, "NONE"].includes(String(filters.baselineLabel || ""))
+    ? String(filters.baselineLabel)
+    : "ALL";
+  state.runComparison.candidateLabel = ["ALL", ...MODEL_LABELS, "NONE"].includes(String(filters.candidateLabel || ""))
+    ? String(filters.candidateLabel)
+    : "ALL";
+  state.runComparison.labelChange = ["ALL", "CHANGED", "UNCHANGED"].includes(String(filters.labelChange || "").toUpperCase())
+    ? String(filters.labelChange).toUpperCase()
+    : "ALL";
   state.runComparison.search = String(filters.search || "").trim().slice(0, 128);
   state.runComparison.page = Math.max(1, Number(filters.page) || 1);
-  state.runComparison.pageSize = [20, 50, 100].includes(Number(filters.pageSize))
+  state.runComparison.pageSize = CASE_PAGE_SIZES.includes(Number(filters.pageSize))
     ? Number(filters.pageSize)
-    : 50;
+    : 10;
   if ($("#comparisonSearchInput")) $("#comparisonSearchInput").value = state.runComparison.search;
   if ($("#comparisonPageSize")) $("#comparisonPageSize").value = String(state.runComparison.pageSize);
+  if ($("#comparisonGtFilter")) $("#comparisonGtFilter").value = state.runComparison.gtLabel;
+  if ($("#comparisonBaselineLabelFilter")) $("#comparisonBaselineLabelFilter").value = state.runComparison.baselineLabel;
+  if ($("#comparisonCandidateLabelFilter")) $("#comparisonCandidateLabelFilter").value = state.runComparison.candidateLabel;
+  if ($("#comparisonLabelChangeFilter")) $("#comparisonLabelChangeFilter").value = state.runComparison.labelChange;
   renderRunComparisonSelectors();
   renderRunComparisonTransitionFilter();
 }
@@ -182,11 +202,15 @@ function comparisonSnapshotHtml(run) {
     ${inputJson ? `<pre>${escapeHtml(inputJson)}</pre>` : `<p class="muted">${uiText("该 Run 没有保存输入配置快照。", "No input snapshot was saved for this Run.")}</p>`}`;
 }
 
-function comparisonPredictionHtml(prediction) {
+function comparisonPredictionHtml(prediction, side = "baseline") {
   const label = prediction?.model_label || "NONE";
   const confidence = prediction?.model_confidence;
-  return `<div class="comparison-prediction">
-    <div><span class="status-pill ${prediction?.correct ? "status-ready" : "status-error"}">${escapeHtml(label)}</span>${confidence == null ? "" : `<small>${Number(confidence).toFixed(3)}</small>`}</div>
+  const isCandidate = side === "candidate";
+  const sideLabel = isCandidate ? uiText("新 Run", "Candidate") : uiText("基线", "Baseline");
+  const verdict = prediction?.correct ? uiText("与 GT 一致", "Matches GT") : uiText("与 GT 不一致", "Differs from GT");
+  return `<div class="comparison-prediction comparison-prediction-${escapeHtml(side)} ${prediction?.correct ? "is-correct" : "is-error"}">
+    <div class="comparison-prediction-head"><span class="comparison-prediction-side">${escapeHtml(sideLabel)}</span><span class="comparison-prediction-verdict">${escapeHtml(verdict)}</span></div>
+    <div class="comparison-prediction-output"><strong>${escapeHtml(label)}</strong>${confidence == null ? "" : `<span>${Number(confidence).toFixed(3)}</span>`}</div>
     <p title="${escapeHtml(prediction?.model_reason || "")}">${escapeHtml(prediction?.model_reason || uiText("无 reason", "No reason"))}</p>
   </div>`;
 }
@@ -195,9 +219,9 @@ function renderRunComparisonCases(payload) {
   const baselineRunId = payload.baseline_run?.id || "";
   const candidateRunId = payload.candidate_run?.id || "";
   const rows = (payload.items || []).map((item) => `<tr class="transition-${escapeHtml(String(item.transition || "").toLowerCase())}">
-    <td><a class="comparison-issue-link" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, candidateRunId))}">${escapeHtml(item.issue_id)}</a><small>${escapeHtml(item.gt_label)} · ${escapeHtml(item.baseline_scope || "")}</small></td>
-    <td>${comparisonPredictionHtml(item.baseline)}</td>
-    <td>${comparisonPredictionHtml(item.candidate)}</td>
+    <td><a class="comparison-issue-link" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, candidateRunId))}">${escapeHtml(item.issue_id)}</a><div class="comparison-issue-meta"><span class="status-pill status-ready">GT ${escapeHtml(item.gt_label)}</span><small>${escapeHtml(item.baseline_scope || "")}</small></div></td>
+    <td>${comparisonPredictionHtml(item.baseline, "baseline")}</td>
+    <td>${comparisonPredictionHtml(item.candidate, "candidate")}</td>
     <td><span class="comparison-transition-badge ${escapeHtml(String(item.transition || "").toLowerCase())}">${escapeHtml(comparisonTransitionText(item.transition))}</span></td>
     <td><div class="comparison-review-links"><a class="button button-quiet" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, baselineRunId))}">${uiText("基线复核", "Baseline review")}</a><a class="button button-quiet" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, candidateRunId))}">${uiText("新 Run 复核", "Candidate review")}</a></div></td>
   </tr>`).join("");
@@ -256,6 +280,10 @@ async function loadRunComparison({ historyMode = "replace" } = {}) {
     baseline_run_id: baselineRunId,
     candidate_run_id: candidateRunId,
     transition: state.runComparison.transition,
+    gt_label: state.runComparison.gtLabel,
+    baseline_label: state.runComparison.baselineLabel,
+    candidate_label: state.runComparison.candidateLabel,
+    label_change: state.runComparison.labelChange,
     q: state.runComparison.search,
     page: String(state.runComparison.page),
     page_size: String(state.runComparison.pageSize),
@@ -328,6 +356,35 @@ function bindRunComparisonEvents() {
       loadRunComparison().catch((error) => showToast(error.message, true));
     });
   });
+  const filterBindings = [
+    ["#comparisonGtFilter", "gtLabel"],
+    ["#comparisonBaselineLabelFilter", "baselineLabel"],
+    ["#comparisonCandidateLabelFilter", "candidateLabel"],
+    ["#comparisonLabelChangeFilter", "labelChange"],
+  ];
+  filterBindings.forEach(([selector, stateKey]) => {
+    $(selector)?.addEventListener("change", (event) => {
+      state.runComparison[stateKey] = event.target.value || "ALL";
+      state.runComparison.page = 1;
+      loadRunComparison({ historyMode: "push" }).catch((error) => showToast(error.message, true));
+    });
+  });
+  $("#comparisonResetFilters")?.addEventListener("click", () => {
+    state.runComparison.transition = "ALL";
+    state.runComparison.gtLabel = "ALL";
+    state.runComparison.baselineLabel = "ALL";
+    state.runComparison.candidateLabel = "ALL";
+    state.runComparison.labelChange = "ALL";
+    state.runComparison.search = "";
+    state.runComparison.page = 1;
+    if ($("#comparisonSearchInput")) $("#comparisonSearchInput").value = "";
+    if ($("#comparisonGtFilter")) $("#comparisonGtFilter").value = "ALL";
+    if ($("#comparisonBaselineLabelFilter")) $("#comparisonBaselineLabelFilter").value = "ALL";
+    if ($("#comparisonCandidateLabelFilter")) $("#comparisonCandidateLabelFilter").value = "ALL";
+    if ($("#comparisonLabelChangeFilter")) $("#comparisonLabelChangeFilter").value = "ALL";
+    renderRunComparisonTransitionFilter();
+    loadRunComparison({ historyMode: "push" }).catch((error) => showToast(error.message, true));
+  });
   let searchTimer = null;
   $("#comparisonSearchInput")?.addEventListener("input", (event) => {
     state.runComparison.search = event.target.value.trim().slice(0, 128);
@@ -363,7 +420,7 @@ function bindRunComparisonEvents() {
     window.requestAnimationFrame(() => comparisonPageJump.select());
   });
   $("#comparisonPageSize")?.addEventListener("change", (event) => {
-    state.runComparison.pageSize = [20, 50, 100].includes(Number(event.target.value)) ? Number(event.target.value) : 50;
+    state.runComparison.pageSize = CASE_PAGE_SIZES.includes(Number(event.target.value)) ? Number(event.target.value) : 10;
     state.runComparison.page = 1;
     loadRunComparison({ historyMode: "push" }).catch((error) => showToast(error.message, true));
   });

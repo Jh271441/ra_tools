@@ -367,15 +367,23 @@ function normalizedTrailUpdateRouteFilters(params) {
 
 function normalizedRunComparisonRouteFilters(params) {
   const transition = String(params.get("transition") || "ALL").toUpperCase();
+  const gtLabel = String(params.get("gt") || "ALL");
+  const baselineLabel = String(params.get("baseline_label") || "ALL");
+  const candidateLabel = String(params.get("candidate_label") || "ALL");
+  const labelChange = String(params.get("label_change") || "ALL").toUpperCase();
   const rawPage = Number.parseInt(params.get("page") || "1", 10);
-  const rawPageSize = Number.parseInt(params.get("page_size") || "50", 10);
+  const rawPageSize = Number.parseInt(params.get("page_size") || "10", 10);
   return {
     baselineRunId: params.get("baseline_run") || params.get("baseline") || "",
     candidateRunId: params.get("candidate_run") || params.get("new") || "",
     transition: ["ALL", "P2P", "P2F", "F2P", "F2F"].includes(transition) ? transition : "ALL",
+    gtLabel: ["ALL", ...LABELS].includes(gtLabel) ? gtLabel : "ALL",
+    baselineLabel: ["ALL", ...MODEL_LABELS, "NONE"].includes(baselineLabel) ? baselineLabel : "ALL",
+    candidateLabel: ["ALL", ...MODEL_LABELS, "NONE"].includes(candidateLabel) ? candidateLabel : "ALL",
+    labelChange: ["ALL", "CHANGED", "UNCHANGED"].includes(labelChange) ? labelChange : "ALL",
     search: String(params.get("q") || "").slice(0, 128),
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
-    pageSize: [20, 50, 100].includes(rawPageSize) ? rawPageSize : 50,
+    pageSize: CASE_PAGE_SIZES.includes(rawPageSize) ? rawPageSize : 10,
   };
 }
 
@@ -674,9 +682,21 @@ function pageUrl(page, options = {}) {
     if (comparison.transition && comparison.transition !== "ALL") {
       url.searchParams.set("transition", comparison.transition);
     }
+    if (comparison.gtLabel && comparison.gtLabel !== "ALL") {
+      url.searchParams.set("gt", comparison.gtLabel);
+    }
+    if (comparison.baselineLabel && comparison.baselineLabel !== "ALL") {
+      url.searchParams.set("baseline_label", comparison.baselineLabel);
+    }
+    if (comparison.candidateLabel && comparison.candidateLabel !== "ALL") {
+      url.searchParams.set("candidate_label", comparison.candidateLabel);
+    }
+    if (comparison.labelChange && comparison.labelChange !== "ALL") {
+      url.searchParams.set("label_change", comparison.labelChange);
+    }
     if (comparison.search) url.searchParams.set("q", comparison.search);
     if (Number(comparison.page) > 1) url.searchParams.set("page", String(comparison.page));
-    if (Number(comparison.pageSize) !== 50) {
+    if (Number(comparison.pageSize) !== 10) {
       url.searchParams.set("page_size", String(comparison.pageSize));
     }
   }

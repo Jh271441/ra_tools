@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-259`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-260`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -837,7 +837,14 @@
               <section class="page-card comparison-cases-card">
                 <div class="comparison-cases-heading">
                   <div><h3><span class="ui-lang-zh">Case 变化明细</span><span class="ui-lang-en">Case transitions</span></h3><p class="muted" id="comparisonCaseCount"></p></div>
-                  <label class="comparison-search"><span class="sr-only">Issue ID</span><input id="comparisonSearchInput" type="search" placeholder="搜索 Issue ID" autocomplete="off" /></label>
+                  <label class="comparison-search"><span class="sr-only">Issue ID / reason</span><input id="comparisonSearchInput" type="search" placeholder="搜索 Issue ID / reason" autocomplete="off" /></label>
+                </div>
+                <div class="comparison-filter-grid" aria-label="Case 筛选">
+                  <label><span>GT</span><select id="comparisonGtFilter"><option value="ALL">全部 GT</option><option value="误触发">误触发</option><option value="正确触发">正确触发</option><option value="无需协助">无需协助</option></select></label>
+                  <label><span>基线输出</span><select id="comparisonBaselineLabelFilter"><option value="ALL">全部输出</option><option value="误触发">误触发</option><option value="正确触发">正确触发</option><option value="无需协助">无需协助</option><option value="真实卡住">真实卡住</option><option value="NONE">NONE / 无输出</option></select></label>
+                  <label><span>新 Run 输出</span><select id="comparisonCandidateLabelFilter"><option value="ALL">全部输出</option><option value="误触发">误触发</option><option value="正确触发">正确触发</option><option value="无需协助">无需协助</option><option value="真实卡住">真实卡住</option><option value="NONE">NONE / 无输出</option></select></label>
+                  <label><span>标签变化</span><select id="comparisonLabelChangeFilter"><option value="ALL">全部</option><option value="CHANGED">输出有变化</option><option value="UNCHANGED">输出未变化</option></select></label>
+                  <button class="button button-quiet" id="comparisonResetFilters" type="button">重置筛选</button>
                 </div>
                 <div class="comparison-transition-filter" id="comparisonTransitionFilter" role="group" aria-label="变化类型">
                   <button class="button button-quiet active" type="button" data-comparison-transition="ALL">全部</button>
@@ -866,7 +873,7 @@
                   </div>
                   <label class="case-page-size" for="comparisonPageSize">
                     <span class="ui-lang-zh">每页</span><span class="ui-lang-en">Per page</span>
-                    <select id="comparisonPageSize" aria-label="Comparison page size"><option>20</option><option selected>50</option><option>100</option></select>
+                    <select id="comparisonPageSize" aria-label="Comparison page size"><option selected>10</option><option>20</option><option>50</option><option>100</option></select>
                     <span class="ui-lang-zh">条</span><span class="ui-lang-en"></span>
                   </label>
                 </nav>
@@ -1532,7 +1539,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-259`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-260`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

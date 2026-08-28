@@ -294,6 +294,35 @@
   font-size: 12px;
 }
 
+.comparison-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.comparison-filter-grid label {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.comparison-filter-grid select,
+.comparison-filter-grid .button {
+  height: 32px;
+  min-width: 0;
+  padding-block: 4px;
+  font-size: 11px;
+}
+
+.comparison-filter-grid .button {
+  white-space: nowrap;
+}
+
 .comparison-transition-filter {
   display: flex;
   flex-wrap: wrap;
@@ -332,7 +361,7 @@
 
 .comparison-case-table th,
 .comparison-case-table td {
-  padding: 8px 6px;
+  padding: 7px 6px;
   border-bottom: 1px solid var(--line-soft);
   text-align: center;
   vertical-align: middle;
@@ -386,30 +415,97 @@
   font-size: 10px;
 }
 
-.comparison-prediction {
-  min-width: 0;
+.comparison-issue-meta {
   display: grid;
   justify-items: center;
+  gap: 2px;
+  margin-top: 5px;
 }
 
-.comparison-prediction > div {
-  display: flex;
-  justify-content: center;
+.comparison-issue-meta .status-pill {
+  min-height: 20px;
+  padding: 2px 6px;
+  font-size: 9px;
+}
+
+.comparison-prediction {
+  --comparison-side: #7aa2f7;
+  min-width: 0;
+  display: grid;
   gap: 5px;
+  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, var(--comparison-side) 34%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--raised) 91%, var(--comparison-side) 9%);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--comparison-side) 75%, transparent);
+  text-align: left;
+}
+
+.comparison-prediction-candidate {
+  --comparison-side: var(--accent);
+}
+
+.comparison-prediction.is-error {
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--fail) 78%, transparent);
+}
+
+.comparison-prediction-head,
+.comparison-prediction-output {
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.comparison-prediction-side {
+  color: var(--comparison-side);
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.comparison-prediction-verdict {
+  color: var(--ok);
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.comparison-prediction.is-error .comparison-prediction-verdict {
+  color: var(--fail);
+}
+
+.comparison-prediction-output {
+  justify-content: center;
+  min-height: 26px;
+}
+
+.comparison-prediction-output strong {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 720;
+}
+
+.comparison-prediction-output span {
+  padding: 1px 5px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--overlay-2) 86%, transparent);
+  font: 9px "SFMono-Regular", Consolas, monospace;
 }
 
 .comparison-prediction p {
   display: -webkit-box;
-  margin: 4px 0 0;
+  min-height: 30px;
+  margin: 0;
   overflow: hidden;
-  color: #d7e0eb;
-  font-size: 11px;
-  font-weight: 560;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 520;
   line-height: 1.4;
-  text-align: center;
+  text-align: left;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
 }
 
 .comparison-transition-badge {
@@ -487,6 +583,12 @@
   }
   .comparison-swap {
     display: none;
+  }
+  .comparison-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .comparison-filter-grid .button {
+    grid-column: 1 / -1;
   }
   .comparison-summary-grid,
   .comparison-matrix-grid,

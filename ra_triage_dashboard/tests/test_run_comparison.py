@@ -115,6 +115,37 @@ class RunComparisonDatabaseTest(unittest.TestCase):
         self.assertEqual(searched["page_count"], 2)
         self.assertEqual(len(searched["items"]), 1)
 
+    def test_label_reason_and_change_filters(self) -> None:
+        by_gt = self.compare(gt_label="正确触发")
+        self.assertEqual(
+            {item["issue_id"] for item in by_gt["items"]},
+            {"cn-f2p", "cn-f2f"},
+        )
+        by_baseline = self.compare(baseline_label="NONE")
+        self.assertEqual(
+            [item["issue_id"] for item in by_baseline["items"]], ["cn-f2f"]
+        )
+        by_candidate = self.compare(candidate_label="真实卡住")
+        self.assertEqual(
+            [item["issue_id"] for item in by_candidate["items"]], ["cn-p2p"]
+        )
+        changed = self.compare(label_change="changed")
+        self.assertEqual(changed["total"], 4)
+        unchanged = self.compare(label_change="unchanged")
+        self.assertEqual(unchanged["total"], 0)
+        self.assertEqual(unchanged["items"], [])
+        reason = self.compare(search="stage1 compatible")
+        self.assertEqual(
+            [item["issue_id"] for item in reason["items"]], ["cn-p2p"]
+        )
+
+    def test_defaults_to_ten_cases_per_page_and_rejects_unknown_filters(self) -> None:
+        payload = self.compare()
+        self.assertEqual(payload["page_size"], 10)
+        for field in ("gt_label", "baseline_label", "candidate_label", "label_change"):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.compare(**{field: "unsupported"})
+
     def test_batch_prompt_and_input_snapshot_is_redacted(self) -> None:
         job = self.database.create_batch_prediction_job(
             name="candidate batch",
