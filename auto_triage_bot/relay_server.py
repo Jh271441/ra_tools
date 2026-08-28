@@ -156,11 +156,13 @@ def create_server(
                 # gateway header transformation.
                 logger.warning(
                     "callback auth rejected mode=%s "
-                    "x_dchat_present=%s x_dchat_valid=%s "
-                    "x_auto_triage_present=%s x_auto_triage_valid=%s "
-                    "authorization_present=%s bearer_valid=%s selected=%s",
+                    "x_dchat_present=%s x_dchat_len=%s x_dchat_valid=%s "
+                    "x_auto_triage_present=%s x_auto_triage_len=%s "
+                    "x_auto_triage_valid=%s authorization_present=%s "
+                    "bearer_len=%s bearer_valid=%s expected_len=%s selected=%s",
                     config.webhook_auth_mode,
                     bool(dchat_signature),
+                    len(dchat_signature),
                     verify_webhook(
                         body=body,
                         secret=secret,
@@ -169,6 +171,7 @@ def create_server(
                         timestamp=self.headers.get("X-DChat-Timestamp", ""),
                     ),
                     bool(relay_signature),
+                    len(relay_signature),
                     verify_webhook(
                         body=body,
                         secret=secret,
@@ -177,6 +180,7 @@ def create_server(
                         timestamp=self.headers.get("X-DChat-Timestamp", ""),
                     ),
                     bool(authorization),
+                    len(bearer),
                     verify_webhook(
                         body=body,
                         secret=secret,
@@ -184,6 +188,7 @@ def create_server(
                         signature=bearer,
                         timestamp=self.headers.get("X-DChat-Timestamp", ""),
                     ),
+                    len(secret),
                     (
                         "x-dchat-signature"
                         if dchat_signature
