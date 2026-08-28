@@ -11,6 +11,7 @@
 - `stuck/`、`swag/`：按具体问题域拆分的脚本
 - `model_release_pipeline/`：scenario dnn 模型导出、IFX 转换和 Voyager handoff 工具
 - `check_sim/`：scenario 路测 bag 下载、EzSim 复现和 road/sim 模型差异分析
+- `auto_triage_bot/`：DChat Auto Triage 只读问答 Bot（看板上下文 + 内部大模型）
 
 从当前代码结构看，这个仓库更偏向“脚本工具箱”，而不是一个完整打包发布的 Python 包。
 
@@ -20,6 +21,7 @@
 ra_tools/
 ├── ares_playwright/            # Ares Studio 登录态 / 截图
 ├── auto_triage/                # triage JSONL 特征分析
+├── auto_triage_bot/            # DChat 事件、看板知识和 LLM 回复服务
 ├── check_sim/                  # scenario 复现与 road/sim 分析完整链路
 │   ├── bag/ analysis/ repro/
 │   └── repro/legacy/           # 旧版按时间段下载路测 bag
@@ -69,6 +71,10 @@ python -m model_release_pipeline.cli print-config
 ```
 
 ## 核心模块
+
+### `auto_triage_bot/`
+
+独立于看板运行的只读 DChat 助手。它从 RA Triage Workbench 的 loopback API 获取不可变 GT、指定 Model Run 和该 Run 的 Review，上下文受限后调用内部模型网关，并通过 DChat BotUser 回复。启动配置、回调验签和开放平台操作见 [`auto_triage_bot/README.md`](auto_triage_bot/README.md)。
 
 ### `ra_api/issue_api.py`
 
