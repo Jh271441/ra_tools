@@ -1,0 +1,1 @@
+"""Auto Triage Bot tests."""
