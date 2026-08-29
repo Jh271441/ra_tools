@@ -104,6 +104,17 @@ def create_server(
                 else:
                     raise RelayHTTPError(404, "Not Found")
             except RelayHTTPError as exc:
+                # Keep rejection diagnostics metadata-only: never log request
+                # bodies, sender identities, message text, or credentials.
+                logger.warning(
+                    "relay request rejected path=%s status=%s reason=%s "
+                    "content_type=%s content_length=%s",
+                    self.path[:128],
+                    exc.status,
+                    str(exc),
+                    self.headers.get("Content-Type", "")[:128],
+                    self.headers.get("Content-Length", "")[:32],
+                )
                 self._respond(exc.status, {"detail": str(exc)})
             except Exception:
                 logger.exception("relay request failed path=%s", self.path[:128])
