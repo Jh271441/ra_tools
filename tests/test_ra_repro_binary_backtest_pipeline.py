@@ -241,6 +241,63 @@ def test_advance_stops_active_job_on_incremental_quality_failure(
   }]
 
 
+def test_advance_refreshes_status_after_incremental_validation(
+    tmp_path, monkeypatch):
+  registry = tmp_path / "jobs.json"
+  registry.write_text(json.dumps({
+      "valid": {
+          "job_id": 100,
+          "target_release": "gen4-release-20260821",
+          "scenario_count": 90,
+          "binary_id": 1775147,
+          "selected_manifest": "manifest.csv",
+      }
+  }), encoding="utf-8")
+  observations = iter([
+      {100: {"UNASSIGNED": 81, "RUNNING": 1, "COMPLETED": 8}},
+      {100: {"UNASSIGNED": 80, "RUNNING": 1, "COMPLETED": 9}},
+  ])
+  monkeypatch.setattr(
+      advance_module, "_status_by_job", lambda job_ids: next(observations))
+
+  class Regions:
+    CN = "cn"
+
+  monkeypatch.setattr(
+      advance_module,
+      "_load_orion_status_api",
+      lambda: (None, lambda *_: "token", None, Regions, None),
+  )
+  checked = {
+      "job_id": 100,
+      "incremental_gate_passed": True,
+      "completed": 9,
+  }
+  monkeypatch.setattr(
+      advance_module, "_validate_entry", lambda entry, token: checked)
+
+  result = advance_module.advance(
+      manifest_path=tmp_path / "unused.csv",
+      registry_path=registry,
+      metrics_path=tmp_path / "metrics.json",
+      target_release="gen4-release-20260821",
+      window_size=4,
+      sample_per_cohort=10,
+      seed="seed",
+      execute=True,
+      token=None,
+  )
+
+  assert result == {
+      "action": "wait",
+      "active_jobs": [{
+          "job_id": 100,
+          "status": {"UNASSIGNED": 80, "RUNNING": 1, "COMPLETED": 9},
+      }],
+      "incremental_validations": [checked],
+  }
+
+
 def test_advance_launches_only_missing_diagonal_after_cross_job_passes(
     tmp_path, monkeypatch):
   registry = tmp_path / "jobs.json"

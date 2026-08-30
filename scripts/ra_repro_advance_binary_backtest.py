@@ -79,6 +79,57 @@ def _entry_is_complete(entry: dict[str, Any],
           "UNASSIGNED", "RUNNING", "FAILED", "CANCELLED")))
 
 
+def _find_anomalous_jobs(
+    entries: Sequence[dict[str, Any]],
+    statuses: dict[int, dict[str, int]],
+) -> list[dict[str, Any]]:
+  anomalous = []
+  for entry in entries:
+    job_id = int(entry["job_id"])
+    status = statuses.get(job_id, {})
+    if status.get("FAILED", 0) or status.get("CANCELLED", 0):
+      anomalous.append({"job_id": job_id, "status": status})
+  return anomalous
+
+
+def _confirm_anomalous_jobs(
+    entries: Sequence[dict[str, Any]],
+    statuses: dict[int, dict[str, int]],
+    confirm_seconds: float,
+) -> tuple[dict[int, dict[str, int]], list[dict[str, Any]],
+           dict[str, Any] | None]:
+  """Confirm terminal anomalies while tolerating Orion's retry transition."""
+  first_observation = _find_anomalous_jobs(entries, statuses)
+  if not first_observation:
+    return statuses, [], None
+  if confirm_seconds > 0:
+    time.sleep(confirm_seconds)
+    statuses = _status_by_job(
+        [int(entry["job_id"]) for entry in entries])
+  anomalous = _find_anomalous_jobs(entries, statuses)
+  confirmation = {
+      "first_observation": first_observation,
+      "confirm_after_seconds": confirm_seconds,
+      "confirmed": bool(anomalous),
+  }
+  return statuses, anomalous, confirmation
+
+
+def _active_jobs(
+    entries: Sequence[dict[str, Any]],
+    statuses: dict[int, dict[str, int]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+  active = []
+  active_entries = []
+  for entry in entries:
+    job_id = int(entry["job_id"])
+    status = statuses.get(job_id, {})
+    if status.get("UNASSIGNED", 0) or status.get("RUNNING", 0):
+      active.append({"job_id": job_id, "status": status})
+      active_entries.append(entry)
+  return active, active_entries
+
+
 def _validate_entry(entry: dict[str, Any], token: str) -> dict[str, Any]:
   job_id = int(entry["job_id"])
   configuration = inspect_job_configuration([job_id], int(entry["binary_id"]))
@@ -145,44 +196,17 @@ def advance(
   entries = _valid_entries(registry)
   statuses = _status_by_job([int(entry["job_id"]) for entry in entries])
 
-  anomalous = []
-  for entry in entries:
-    job_id = int(entry["job_id"])
-    status = statuses.get(job_id, {})
-    if status.get("FAILED", 0) or status.get("CANCELLED", 0):
-      anomalous.append({"job_id": job_id, "status": status})
+  statuses, anomalous, anomaly_confirmation = _confirm_anomalous_jobs(
+      entries, statuses, anomaly_confirm_seconds)
   if anomalous:
-    first_observation = anomalous
-    if anomaly_confirm_seconds > 0:
-      time.sleep(anomaly_confirm_seconds)
-      statuses = _status_by_job(
-          [int(entry["job_id"]) for entry in entries])
-      anomalous = []
-      for entry in entries:
-        job_id = int(entry["job_id"])
-        status = statuses.get(job_id, {})
-        if status.get("FAILED", 0) or status.get("CANCELLED", 0):
-          anomalous.append({"job_id": job_id, "status": status})
-    if anomalous:
-      return {
-          "action": "stop",
-          "reason": "active or terminal job has failed/cancelled tasks",
-          "anomalous_jobs": anomalous,
-          "anomaly_confirmation": {
-              "first_observation": first_observation,
-              "confirm_after_seconds": anomaly_confirm_seconds,
-              "confirmed": True,
-          },
-      }
+    return {
+        "action": "stop",
+        "reason": "active or terminal job has failed/cancelled tasks",
+        "anomalous_jobs": anomalous,
+        "anomaly_confirmation": anomaly_confirmation,
+    }
 
-  active = []
-  active_entries = []
-  for entry in entries:
-    job_id = int(entry["job_id"])
-    status = statuses.get(job_id, {})
-    if status.get("UNASSIGNED", 0) or status.get("RUNNING", 0):
-      active.append({"job_id": job_id, "status": status})
-      active_entries.append(entry)
+  active, active_entries = _active_jobs(entries, statuses)
   if active:
     incremental_validations = []
     completed_entries = [
@@ -209,10 +233,26 @@ def advance(
             "reason": "active job failed incremental quality gate",
             "anomalous_jobs": incremental_anomalies,
         }
-    result = {"action": "wait", "active_jobs": active}
-    if incremental_validations:
-      result["incremental_validations"] = incremental_validations
-    return result
+      # Validation can take long enough for Orion to complete another task.
+      # Refresh before emitting the audit record so status and validation
+      # counts describe one coherent observation rather than adjacent states.
+      statuses = _status_by_job(
+          [int(entry["job_id"]) for entry in entries])
+      statuses, anomalous, anomaly_confirmation = _confirm_anomalous_jobs(
+          entries, statuses, anomaly_confirm_seconds)
+      if anomalous:
+        return {
+            "action": "stop",
+            "reason": "active or terminal job has failed/cancelled tasks",
+            "anomalous_jobs": anomalous,
+            "anomaly_confirmation": anomaly_confirmation,
+        }
+      active, active_entries = _active_jobs(entries, statuses)
+    if active:
+      result = {"action": "wait", "active_jobs": active}
+      if incremental_validations:
+        result["incremental_validations"] = incremental_validations
+      return result
 
   _, get_auth_token, _, Regions, _ = _load_orion_status_api()
   token = token or get_auth_token(None, Regions.CN)
