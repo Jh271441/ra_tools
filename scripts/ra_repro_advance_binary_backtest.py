@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 from typing import Any, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -122,6 +123,7 @@ def advance(
     seed: str,
     execute: bool,
     token: str | None,
+    anomaly_confirm_seconds: float = 5.0,
 ) -> dict[str, Any]:
   registry = (
       json.loads(registry_path.read_text(encoding="utf-8"))
@@ -150,11 +152,28 @@ def advance(
     if status.get("FAILED", 0) or status.get("CANCELLED", 0):
       anomalous.append({"job_id": job_id, "status": status})
   if anomalous:
-    return {
-        "action": "stop",
-        "reason": "active or terminal job has failed/cancelled tasks",
-        "anomalous_jobs": anomalous,
-    }
+    first_observation = anomalous
+    if anomaly_confirm_seconds > 0:
+      time.sleep(anomaly_confirm_seconds)
+      statuses = _status_by_job(
+          [int(entry["job_id"]) for entry in entries])
+      anomalous = []
+      for entry in entries:
+        job_id = int(entry["job_id"])
+        status = statuses.get(job_id, {})
+        if status.get("FAILED", 0) or status.get("CANCELLED", 0):
+          anomalous.append({"job_id": job_id, "status": status})
+    if anomalous:
+      return {
+          "action": "stop",
+          "reason": "active or terminal job has failed/cancelled tasks",
+          "anomalous_jobs": anomalous,
+          "anomaly_confirmation": {
+              "first_observation": first_observation,
+              "confirm_after_seconds": anomaly_confirm_seconds,
+              "confirmed": True,
+          },
+      }
 
   active = []
   active_entries = []
@@ -330,6 +349,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
   parser.add_argument("--sample-per-cohort", type=int, default=10)
   parser.add_argument("--seed", default="ra_binary_backtest_20260831_v1")
   parser.add_argument("--execute", action="store_true")
+  parser.add_argument("--anomaly-confirm-seconds", type=float, default=5.0)
   parser.add_argument("--orion-token", default=os.environ.get("ORION_TOKEN"))
   return parser.parse_args(argv)
 
@@ -340,6 +360,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     raise SystemExit("--window-size must be at least 2")
   if args.sample_per_cohort <= 0:
     raise SystemExit("--sample-per-cohort must be positive for canary advance")
+  if args.anomaly_confirm_seconds < 0:
+    raise SystemExit("--anomaly-confirm-seconds must be non-negative")
   result = advance(
       manifest_path=args.manifest,
       registry_path=args.registry,
@@ -350,6 +372,7 @@ def main(argv: Sequence[str] | None = None) -> None:
       seed=args.seed,
       execute=args.execute,
       token=args.orion_token,
+      anomaly_confirm_seconds=args.anomaly_confirm_seconds,
   )
   result["observed_at"] = datetime.now(timezone.utc).isoformat()
   print(json.dumps(result, ensure_ascii=False, indent=2))

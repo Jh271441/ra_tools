@@ -141,6 +141,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
   parser.add_argument("--seed", default="ra_binary_backtest_20260831_v1")
   parser.add_argument("--poll-seconds", type=float, default=300)
   parser.add_argument("--max-consecutive-errors", type=int, default=3)
+  parser.add_argument("--anomaly-confirm-seconds", type=float, default=5.0)
   parser.add_argument(
       "--dashboard-api-base-url",
       default="http://127.0.0.1/sim/api",
@@ -169,6 +170,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     raise SystemExit("Pipeline runner requires --execute")
   if args.poll_seconds < 30:
     raise SystemExit("--poll-seconds must be at least 30")
+  if args.anomaly_confirm_seconds < 0:
+    raise SystemExit("--anomaly-confirm-seconds must be non-negative")
 
   consecutive_errors = 0
   while True:
@@ -195,6 +198,7 @@ def main(argv: Sequence[str] | None = None) -> None:
           seed=args.seed,
           execute=True,
           token=None,
+          anomaly_confirm_seconds=args.anomaly_confirm_seconds,
       )
       result["observed_at"] = datetime.now(timezone.utc).isoformat()
       _emit(result, args.audit_log)

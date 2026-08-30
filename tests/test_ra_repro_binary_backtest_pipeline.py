@@ -121,6 +121,7 @@ def test_advance_stops_on_failure_before_treating_job_as_active(
           100: {"UNASSIGNED": 88, "RUNNING": 1, "FAILED": 1},
       },
   )
+  monkeypatch.setattr(advance_module.time, "sleep", lambda seconds: None)
 
   result = advance_module.advance(
       manifest_path=tmp_path / "unused.csv",
@@ -136,6 +137,49 @@ def test_advance_stops_on_failure_before_treating_job_as_active(
 
   assert result["action"] == "stop"
   assert result["anomalous_jobs"][0]["status"]["FAILED"] == 1
+  assert result["anomaly_confirmation"]["confirmed"] is True
+
+
+def test_advance_does_not_stop_on_transient_failed_status(
+    tmp_path, monkeypatch):
+  registry = tmp_path / "jobs.json"
+  registry.write_text(json.dumps({
+      "valid": {
+          "job_id": 100,
+          "target_release": "gen4-release-20260821",
+          "scenario_count": 90,
+      }
+  }), encoding="utf-8")
+  observations = iter([
+      {100: {"UNASSIGNED": 88, "RUNNING": 0, "FAILED": 1}},
+      {100: {"UNASSIGNED": 88, "RUNNING": 1, "FAILED": 0}},
+  ])
+  monkeypatch.setattr(
+      advance_module, "_status_by_job", lambda job_ids: next(observations))
+  sleeps = []
+  monkeypatch.setattr(
+      advance_module.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+  result = advance_module.advance(
+      manifest_path=tmp_path / "unused.csv",
+      registry_path=registry,
+      metrics_path=tmp_path / "metrics.json",
+      target_release="gen4-release-20260821",
+      window_size=4,
+      sample_per_cohort=10,
+      seed="seed",
+      execute=True,
+      token=None,
+  )
+
+  assert result == {
+      "action": "wait",
+      "active_jobs": [{
+          "job_id": 100,
+          "status": {"UNASSIGNED": 88, "RUNNING": 1, "FAILED": 0},
+      }],
+  }
+  assert sleeps == [5.0]
 
 
 def test_advance_stops_active_job_on_incremental_quality_failure(
