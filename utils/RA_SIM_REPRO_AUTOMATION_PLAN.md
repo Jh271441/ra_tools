@@ -154,6 +154,7 @@ Dashboard 的“当前 Binary 跨版本准召预估”按可调 2/3/4 版本窗�
 - `scripts/ra_repro_launch_binary_backtest.py`
 - `scripts/ra_repro_advance_binary_backtest.py`
 - `scripts/ra_repro_run_binary_backtest_pipeline.py`
+- `scripts/run_with_voyager_env.py`
 - `scripts/ra_repro_validate_orion.py`
 - `scripts/ra_repro_finalize_binary_backtest.py`
 - `reports/ra_binary_backtest_20260831_jobs.json`

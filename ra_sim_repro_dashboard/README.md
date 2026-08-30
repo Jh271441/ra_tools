@@ -282,7 +282,8 @@ release 场景进行分层抽样。三个 cohort 为 `positive_auto`、`negative
 Dry-run 单批计划：
 
 ```bash
-python scripts/ra_repro_launch_binary_backtest.py \
+python3 scripts/run_with_voyager_env.py -- \
+  .venv/bin/python scripts/ra_repro_launch_binary_backtest.py \
   --manifest reports/ra_repro_full_20260829_manifest.csv \
   --target-release gen4-release-20260821 \
   --source-release gen4-release-20260731 \
@@ -300,9 +301,15 @@ seed、manifest hash 和 replay 配置 hash，重复提交会被拒绝。
 无人值守串行推进：
 
 ```bash
-python scripts/ra_repro_run_binary_backtest_pipeline.py \
+python3 scripts/run_with_voyager_env.py -- \
+  .venv/bin/python scripts/ra_repro_run_binary_backtest_pipeline.py \
   --execute --cancel-on-anomaly --poll-seconds 300
 ```
+
+`run_with_voyager_env.py` 将 Voyager `.vscode/voyager.env` 当作数据解析，只传递
+Orion 客户端所需的 Python、动态库和 Voyager 路径；不要直接 `source` 该文件，
+其中的 `LS_COLORS` 等值包含 shell 分隔符。若已在完整 Voyager 开发环境中，也可直接
+运行后面的 `.venv/bin/python ...` 命令。
 
 推进器每次只做一个状态转换：等待当前 Job、验证门禁、补缺失窗口、发布一个目标，
 或因质量异常停止。最终 artifact 为
