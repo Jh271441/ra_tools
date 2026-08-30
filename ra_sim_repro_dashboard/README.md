@@ -318,6 +318,12 @@ refresh API，等待刷新成功再写 refresh stamp。Dashboard 暂时不可用
 `dashboard_refresh_error` 并在后续轮询重试，但不会阻断后续 Orion 窗口；Orion
 查询、提交或质量门禁异常仍按严格失败策略处理。
 
+分层 canary 对 `positive_auto`、`negative_auto`、`positive_manual` 等量抽样，不能把
+样本内原始 TP/FP/FN 直接当作线上分布。artifact 保存每个 source release 的三类
+触发率；看板使用同版本线上 `auto_trigger_tp`、`auto_trigger_fp`、
+`manual_trigger_fn` 做后分层加权，再计算目标 binary 的预测 Precision/Recall。样本
+原始混淆计数只用于审计。
+
 `--cancel-on-anomaly` 只处理已经出现 `FAILED`/`CANCELLED` task、同时仍有
 `UNASSIGNED`/`RUNNING` task 的 Job。推进器先把异常状态写入 JSONL 审计日志，再取消
 剩余工作并写入取消回执。活动 Job 每轮还会增量检查 binary、cluster、并发、cache、

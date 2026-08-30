@@ -121,6 +121,22 @@ function optionalNumber(value: unknown) {
   return Number.isFinite(numeric) ? numeric : undefined;
 }
 
+function cohortTriggerRate(row: Record<string, unknown>, cohortName: string) {
+  const cohorts = row.cohorts;
+  if (!cohorts || typeof cohorts !== 'object') return undefined;
+  const cohort = (cohorts as Record<string, unknown>)[cohortName];
+  if (!cohort || typeof cohort !== 'object') return undefined;
+  const metrics = cohort as Record<string, unknown>;
+  const expected = optionalNumber(metrics.expected);
+  const evaluated = optionalNumber(metrics.evaluated);
+  const triggerRate = optionalNumber(metrics.trigger_rate);
+  if (
+    expected == null || expected <= 0 || evaluated !== expected
+    || triggerRate == null || triggerRate < 0 || triggerRate > 1
+  ) return undefined;
+  return triggerRate;
+}
+
 function maybePct(value: unknown) {
   const numeric = numberValue(value);
   return numeric ? pct(numeric) : '-';
@@ -299,11 +315,28 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
       const expected = numberValue(row.expected);
       const evaluated = numberValue(row.evaluated);
       const dpeCoverage = numberValue(row.dpe_coverage);
-      return expected > 0 && evaluated === expected && dpeCoverage >= 1;
+      return expected > 0 && evaluated === expected && dpeCoverage >= 1
+        && cohortTriggerRate(row, 'positive_auto') != null
+        && cohortTriggerRate(row, 'negative_auto') != null
+        && cohortTriggerRate(row, 'positive_manual') != null;
     });
-    const simTp = matrixComplete ? matrixRows.reduce((sum, row) => sum + numberValue(row.estimated_tp ?? row.tp), 0) : 0;
-    const simFp = matrixComplete ? matrixRows.reduce((sum, row) => sum + numberValue(row.estimated_fp ?? row.fp), 0) : 0;
-    const simFn = matrixComplete ? matrixRows.reduce((sum, row) => sum + numberValue(row.estimated_fn ?? row.fn), 0) : 0;
+    let simTp = 0;
+    let simFp = 0;
+    let simFn = 0;
+    if (matrixComplete) {
+      matrixRows.forEach((row, rowIndex) => {
+        const source = window[rowIndex].source_gt || {};
+        const autoTp = numberValue(source.auto_trigger_tp);
+        const autoFp = numberValue(source.auto_trigger_fp);
+        const manualFn = numberValue(source.manual_trigger_fn);
+        const positiveAutoRate = cohortTriggerRate(row, 'positive_auto') ?? 0;
+        const negativeAutoRate = cohortTriggerRate(row, 'negative_auto') ?? 0;
+        const positiveManualRate = cohortTriggerRate(row, 'positive_manual') ?? 0;
+        simTp += autoTp * positiveAutoRate + manualFn * positiveManualRate;
+        simFp += autoFp * negativeAutoRate;
+        simFn += autoTp * (1 - positiveAutoRate) + manualFn * (1 - positiveManualRate);
+      });
+    }
     return [{
       version_key: item.version_key,
       actualPrecision: Math.round(sourcePrecision * 1000) / 10,

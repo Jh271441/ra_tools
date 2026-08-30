@@ -132,6 +132,10 @@ Dashboard 的“当前 Binary 跨版本准召预估”按可调 2/3/4 版本窗�
 - 线上：窗口内 `auto_trigger_tp`、`auto_trigger_fp`、`manual_trigger_fn`；
 - 仿真：目标 binary 对相同 source 窗口的 TP/FP/FN。
 
+分层 canary 的三个 cohort 等量抽样，最终仿真 P/R 必须使用各 cohort 触发率，并以
+同 source release 的线上 TP/FP/FN 做后分层加权；禁止直接使用等量样本的原始混淆
+计数与线上准召比较。
+
 只有 target `quality_gate_passed=true`，且每个 source 满足
 `expected=evaluated`、DPE coverage=100% 时，才允许展示仿真曲线。Dashboard refresh 失败可重试，
 不能阻塞后续 Orion 实验。

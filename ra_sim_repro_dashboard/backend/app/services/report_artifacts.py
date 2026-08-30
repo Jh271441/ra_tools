@@ -109,6 +109,25 @@ def load_binary_backtest_sources(
             return {}
         if expected <= 0 or evaluated != expected or dpe_coverage < 1.0:
             return {}
+        cohorts = metrics.get("cohorts")
+        if not isinstance(cohorts, dict) or set(cohorts) != set(COHORT_TRUTH):
+            return {}
+        for cohort_name in COHORT_TRUTH:
+            cohort = cohorts.get(cohort_name)
+            if not isinstance(cohort, dict):
+                return {}
+            try:
+                cohort_expected = int(cohort.get("expected"))
+                cohort_evaluated = int(cohort.get("evaluated"))
+                trigger_rate = float(cohort.get("trigger_rate"))
+            except (TypeError, ValueError):
+                return {}
+            if (
+                cohort_expected <= 0
+                or cohort_evaluated != cohort_expected
+                or not 0.0 <= trigger_rate <= 1.0
+            ):
+                return {}
     return normalized
 
 

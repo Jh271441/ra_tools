@@ -45,6 +45,10 @@ def test_summarize_sources_keeps_release_truth_counts_separate():
   assert sources["v2"]["estimated_fp"] == 0
   assert sources["v2"]["estimated_tn"] == 1
   assert sources["v2"]["dpe_coverage"] == 1.0
+  assert sources["v1"]["cohorts"]["positive_auto"]["trigger_rate"] == 1.0
+  assert sources["v1"]["cohorts"]["positive_manual"]["trigger_rate"] == 0.0
+  assert sources["v1"]["cohorts"]["negative_auto"]["trigger_rate"] == 1.0
+  assert sources["v2"]["estimation_method"] == "cohort_poststratification"
 
 
 def test_summarize_job_configuration_requires_all_submission_gates():

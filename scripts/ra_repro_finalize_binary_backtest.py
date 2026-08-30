@@ -147,16 +147,40 @@ def summarize_sources(manifest: pd.DataFrame,
     tn = int((truth_negative & ~triggered).sum())
     expected = len(group)
     evaluated_count = int(evaluated.sum())
+    cohort_metrics = {}
+    for cohort in COHORTS:
+      cohort_group = group[group["cohort"].eq(cohort)]
+      cohort_evaluated = cohort_group["sim_triggered"].notna()
+      cohort_triggered = (
+          cohort_group["sim_triggered"].eq(True) & cohort_evaluated)
+      cohort_expected = len(cohort_group)
+      cohort_evaluated_count = int(cohort_evaluated.sum())
+      cohort_triggered_count = int(cohort_triggered.sum())
+      cohort_metrics[cohort] = {
+          "expected": cohort_expected,
+          "evaluated": cohort_evaluated_count,
+          "triggered": cohort_triggered_count,
+          "not_triggered": cohort_evaluated_count - cohort_triggered_count,
+          "trigger_rate": (
+              cohort_triggered_count / cohort_evaluated_count
+              if cohort_evaluated_count else None),
+      }
     sources[str(release)] = {
         "expected": expected,
         "evaluated": evaluated_count,
         "dpe_coverage": evaluated_count / expected if expected else 0.0,
+        # Raw canary confusion counts are retained for audit. Dashboard P/R is
+        # post-stratified with these per-cohort trigger rates and the online
+        # TP/FP/FN population; equal-size canary cohorts must not be treated as
+        # the online class distribution.
         "estimated_tp": tp,
         "estimated_fp": fp,
         "estimated_fn": fn,
         "estimated_tn": tn,
         "precision": tp / (tp + fp) if tp + fp else 0.0,
         "recall": tp / (tp + fn) if tp + fn else 0.0,
+        "estimation_method": "cohort_poststratification",
+        "cohorts": cohort_metrics,
         "cohort_counts": {
             str(cohort): int(count)
             for cohort, count in group["cohort"].value_counts().items()
@@ -185,13 +209,23 @@ def finalize(
   source_releases = sorted(sources)
   source_complete = all(
       item["expected"] == item["evaluated"] for item in sources.values())
+  cohort_complete = all(
+      set(item.get("cohorts") or {}) == set(COHORTS) and
+      all(
+          int(cohort["expected"]) > 0 and
+          int(cohort["evaluated"]) == int(cohort["expected"]) and
+          cohort["trigger_rate"] is not None
+          for cohort in item["cohorts"].values())
+      for item in sources.values())
   gate_passed = bool(
-      validation.get("is_terminal_and_complete") and source_complete)
+      validation.get("is_terminal_and_complete") and source_complete and
+      cohort_complete)
   if not gate_passed and not allow_partial:
     raise RuntimeError(
         "Binary backtest quality gate is not complete; refusing to publish. "
         f"terminal_complete={validation.get('is_terminal_and_complete')}, "
-        f"source_complete={source_complete}")
+        f"source_complete={source_complete}, "
+        f"cohort_complete={cohort_complete}")
 
   payload: dict[str, Any] = {"targets": {}}
   if output_path.exists():

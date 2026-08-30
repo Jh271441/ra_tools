@@ -10,6 +10,17 @@ from app.services.report_artifacts import (
 )
 
 
+def _complete_cohorts(expected=10, trigger_rate=0.5):
+    return {
+        cohort: {
+            "expected": expected,
+            "evaluated": expected,
+            "trigger_rate": trigger_rate,
+        }
+        for cohort in ("positive_auto", "negative_auto", "positive_manual")
+    }
+
+
 def test_manifest_index_preserves_cohort_truth_and_canonicalizes_id(tmp_path):
     path = tmp_path / "manifest.csv"
     with path.open("w", encoding="utf-8", newline="") as fh:
@@ -119,6 +130,7 @@ def test_load_binary_backtest_sources_by_target_release(tmp_path):
                         "expected": 30,
                         "evaluated": 30,
                         "dpe_coverage": 1.0,
+                        "cohorts": _complete_cohorts(),
                         "estimated_tp": 8,
                         "estimated_fp": 2,
                         "estimated_fn": 1,
@@ -127,6 +139,7 @@ def test_load_binary_backtest_sources_by_target_release(tmp_path):
                         "expected": 30,
                         "evaluated": 30,
                         "dpe_coverage": 1.0,
+                        "cohorts": _complete_cohorts(),
                         "estimated_tp": 9,
                         "estimated_fp": 1,
                         "estimated_fn": 0,
@@ -158,6 +171,7 @@ def test_binary_backtest_reader_invalidates_cache_when_artifact_changes(tmp_path
                         "expected": 1,
                         "evaluated": 1,
                         "dpe_coverage": 1.0,
+                        "cohorts": _complete_cohorts(expected=1),
                         "estimated_tp": 1,
                     }
                 },
@@ -179,12 +193,14 @@ def test_binary_backtest_reader_invalidates_cache_when_artifact_changes(tmp_path
                         "expected": 1,
                         "evaluated": 1,
                         "dpe_coverage": 1.0,
+                        "cohorts": _complete_cohorts(expected=1),
                         "estimated_tp": 123,
                     },
                     "v2": {
                         "expected": 1,
                         "evaluated": 1,
                         "dpe_coverage": 1.0,
+                        "cohorts": _complete_cohorts(expected=1),
                         "estimated_tp": 456,
                     },
                 }
