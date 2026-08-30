@@ -11,17 +11,23 @@ function numeric(value: unknown) {
   return 0;
 }
 
+function optionalNumeric(value: unknown) {
+  if (value == null || value === '') return undefined;
+  const result = numeric(value);
+  return Number.isFinite(result) ? result : undefined;
+}
+
 function cohortTriggerRate(row: Record<string, unknown>, cohortName: string) {
   const cohorts = row.cohorts;
   if (!cohorts || typeof cohorts !== 'object') return undefined;
   const cohort = (cohorts as Record<string, unknown>)[cohortName];
   if (!cohort || typeof cohort !== 'object') return undefined;
   const metrics = cohort as Record<string, unknown>;
-  const expected = numeric(metrics.expected);
-  const evaluated = numeric(metrics.evaluated);
-  const triggerRate = numeric(metrics.trigger_rate);
+  const expected = optionalNumeric(metrics.expected);
+  const evaluated = optionalNumeric(metrics.evaluated);
+  const triggerRate = optionalNumeric(metrics.trigger_rate);
   if (
-    expected <= 0 || evaluated !== expected || !Number.isFinite(triggerRate)
+    expected == null || expected <= 0 || evaluated !== expected || triggerRate == null
     || triggerRate < 0 || triggerRate > 1
   ) return undefined;
   return triggerRate;

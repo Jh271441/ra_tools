@@ -42,3 +42,20 @@ test('rejects an incomplete cohort instead of drawing a partial curve', () => {
 
   assert.deepEqual(result, { complete: false, tp: 0, fp: 0, fn: 0 });
 });
+
+test('rejects a cohort with no trigger rate', () => {
+  const result = poststratifyBacktestWindow([
+    { auto_trigger_tp: 100, auto_trigger_fp: 20, manual_trigger_fn: 50 },
+  ], [{
+    expected: 30,
+    evaluated: 30,
+    dpe_coverage: 1,
+    cohorts: {
+      positive_auto: cohort(10, 0.8),
+      negative_auto: { expected: 10, evaluated: 10 },
+      positive_manual: cohort(10, 0.6),
+    },
+  }]);
+
+  assert.deepEqual(result, { complete: false, tp: 0, fp: 0, fn: 0 });
+});
