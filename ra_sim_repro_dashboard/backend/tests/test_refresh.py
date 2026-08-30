@@ -123,3 +123,65 @@ def test_refresh_keeps_existing_results_when_sim_fetch_fails(monkeypatch):
         assert "fallback" in job.message
     finally:
         db.close()
+
+
+def test_build_snapshot_injects_binary_backtest_matrix(monkeypatch):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+    db = SessionLocal()
+    payload = {
+        "current_version": "v2",
+        "compare_versions": ["v1"],
+        "binary_backtest": {"result_metrics": "backtest.json"},
+        "versions": {
+            "v1": {
+                "label": "release v1",
+                "source_gt_counts": {
+                    "auto_trigger_tp": 8,
+                    "manual_trigger_fn": 2,
+                    "auto_trigger_fp": 2,
+                },
+            },
+            "v2": {
+                "label": "release v2",
+                "source_gt_counts": {
+                    "auto_trigger_tp": 9,
+                    "manual_trigger_fn": 1,
+                    "auto_trigger_fp": 1,
+                },
+            },
+        },
+    }
+    try:
+        for index, version_key in enumerate(("v1", "v2")):
+            metadata = payload["versions"][version_key]
+            db.add(
+                Version(
+                    version_key=version_key,
+                    label=metadata["label"],
+                    sort_order=index,
+                    metadata_json=metadata,
+                )
+            )
+        db.commit()
+        monkeypatch.setattr(
+            refresh_module,
+            "load_binary_backtest_sources",
+            lambda config, version_key: ({
+                "v1": {"estimated_tp": 7, "estimated_fp": 1, "estimated_fn": 3},
+                "v2": {"estimated_tp": 8, "estimated_fp": 2, "estimated_fn": 2},
+            } if version_key == "v2" else {}),
+        )
+
+        snapshot = refresh_module.build_snapshot(db, payload)
+        comparison = {
+            row["version_key"]: row for row in snapshot["comparison"]
+        }
+
+        matrix = comparison["v2"]["sim_estimate"]["binary_backtest_sources"]
+        assert matrix["v1"]["estimated_tp"] == 7
+        assert matrix["v2"]["estimated_fp"] == 2
+        assert "binary_backtest_sources" not in comparison["v1"]["sim_estimate"]
+    finally:
+        db.close()

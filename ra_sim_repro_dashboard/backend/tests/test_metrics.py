@@ -90,3 +90,7 @@ def test_summary_repro_rate_uses_only_auto_trigger_source_groups():
     assert summary["sim_repro_rate"] == 0.5
     assert summary["precision"] == 0.6667
     assert summary["recall"] == 0.5
+    assert summary["positive_auto_repro_rate"] == 0.5
+    assert summary["negative_auto_repro_rate"] == 0.5
+    assert summary["positive_manual_repro_rate"] == 0.5
+    assert summary["specificity"] == 0.5

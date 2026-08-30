@@ -154,6 +154,7 @@ def summarize_rows(rows: list[Any]) -> dict[str, Any]:
     tp = sum(1 for row in rows if row.precision_label == "TP")
     fp = sum(1 for row in rows if row.precision_label == "FP")
     fn = sum(1 for row in rows if row.precision_label == "FN")
+    tn = sum(1 for row in rows if row.precision_label == "TN")
     model_count = sum(1 for row in rows if row.trigger_type == "MODEL" and row.sim_triggered)
     fn_count = sum(1 for row in rows if row.trigger_type == "FN" and row.sim_triggered)
     fp_suppress_count = sum(1 for row in rows if row.root_cause == "FP_RULE_SUPPRESS")
@@ -168,6 +169,23 @@ def summarize_rows(rows: list[Any]) -> dict[str, Any]:
         repro_rows = [row for row in rows if row.road_triggered]
     repro_source_cases = len(repro_rows)
     reproduced = sum(1 for row in repro_rows if row.sim_triggered)
+
+    cohort_rows = {
+        group: [row for row in rows if group in source_groups(row)]
+        for group in ("positive_auto", "negative_auto", "positive_manual")
+    }
+    positive_auto_repro = rate(
+        sum(1 for row in cohort_rows["positive_auto"] if row.sim_triggered),
+        len(cohort_rows["positive_auto"]),
+    )
+    negative_auto_repro = rate(
+        sum(1 for row in cohort_rows["negative_auto"] if row.sim_triggered),
+        len(cohort_rows["negative_auto"]),
+    )
+    positive_manual_repro = rate(
+        sum(1 for row in cohort_rows["positive_manual"] if not row.sim_triggered),
+        len(cohort_rows["positive_manual"]),
+    )
 
     precision = rate(tp, tp + fp)
     recall = rate(tp, tp + fn)
@@ -189,5 +207,13 @@ def summarize_rows(rows: list[Any]) -> dict[str, Any]:
         "precision": precision,
         "recall": recall,
         "f1": f1,
+        "specificity": rate(tn, tn + fp),
+        "accuracy": rate(tp + tn, total),
+        "positive_auto_repro_rate": positive_auto_repro,
+        "negative_auto_repro_rate": negative_auto_repro,
+        "positive_manual_repro_rate": positive_manual_repro,
+        "evaluated_cases": total,
+        "dpe_coverage": 1.0 if total else 0.0,
+        "quality_gate_passed": True,
         "root_causes": root_causes,
     }

@@ -1,198 +1,129 @@
-current_version: "gen4-release-20260417"
+current_version: "gen4-release-20260821"
+binary_backtest:
+  include_current: true
+  window_size: 4
+  supported_window_sizes: [2, 3, 4]
+  result_metrics: "ra_binary_backtest_20260831_metrics.json"
 compare_versions:
-  - "gen4-release-20260327"
-  - "gen4-release-20260403"
-  - "gen4-release-20260410"
+  - "gen4-release-20260605"
+  - "gen4-release-20260612"
+  - "gen4-release-20260618"
+  - "gen4-release-20260626"
+  - "gen4-release-20260710"
+  - "gen4-release-20260717"
+  - "gen4-release-20260724"
+  - "gen4-release-20260731"
+  - "gen4-release-20260807"
+  - "gen4-release-20260814"
 
 versions:
-  "gen4-release-20260327":
-    label: "release20260327"
-    release_date: "2026-03-27"
+  "gen4-release-20260605":
+    label: "release20260605"
+    release_date: "2026-06-05"
     platform_gen: "GEN4_PT"
-    version_category: "release版本"
-    big_version: "gen4-release"
-    test_version: "20260327"
-    binary: "gen4-release-20260327"
-    binary_id: 1590059
-    commit: "d6f0c9aef3a2ac682d8691292eb792d17a83d80d"
-    code_url: "https://git.xiaojukeji.com/av/voyager/tree/gen4_release_20260327"
-    sim_plan: "lxh_ra_stuck_release_20260327-openloop"
-    sim_job_id: 39467349
-    baseline_job_id:
-    scenario_sets:
-      positive:
-        labels:
-          - "lxh_ra_stuck_20260425_pos"
-          - "lxh_ra_stuck_20260425_AutoTrigger"
-          - "lxh_ra_stuck_20260425_gen4-release-20260327"
-        expected_triggered: true
-        manual_labels:
-          - "lxh_ra_stuck_20260425_pos"
-          - "lxh_ra_stuck_20260425_ManualTrigger"
-          - "lxh_ra_stuck_20260425_gen4-release-20260327"
-      negative:
-        labels:
-          - "lxh_ra_stuck_20260425_neg"
-          - "lxh_ra_stuck_20260425_AutoTrigger"
-          - "lxh_ra_stuck_20260425_gen4-release-20260327"
-        expected_triggered: false
-        manual_labels:
-          - "lxh_ra_stuck_20260425_neg"
-          - "lxh_ra_stuck_20260425_ManualTrigger"
-          - "lxh_ra_stuck_20260425_gen4-release-20260327"
-        normal_stop_labels:
-          - "lxh_ra_stuck_20260425_gen4-release-20260327"
-          - "lxh_ra_stuck_20260425_neg"
-          - "lxh_ra_stuck_20260425_normal_stop"
-    sim_jobs:
-      positive_job_id: 39467349
-      negative_job_id: 39467345
-    source_gt_counts:
-      online_trigger_count: 929
-      online_precision: 0.6783
-      online_recall: 0.7613
-      calculated_precision: 0.6906
-      calculated_recall: 0.7353
-      total_scenarios: 1003
-      auto_trigger_tp: 438
-      manual_trigger_fn: 229
-      auto_trigger_fp: 284
-      manual_trigger_irrelevant: 26
-      normal_wait_tn_partial: 26
-    sim_eval:
-      pos_job_id: 39467349
-      neg_job_id: 39467345
-      precision: 0.6906
-      recall: 0.7353
-  "gen4-release-20260403":
-    label: "release20260403"
-    release_date: "2026-04-03"
+    binary: "gen4-release-20260605"
+    binary_id: 1679675
+    sim_plan: "full-release-openloop"
+    sim_job_id: 45191823
+    source_manifest: "ra_repro_full_20260829_manifest.csv"
+    result_metrics: "ra_repro_full_20260829_metrics.json"
+  "gen4-release-20260612":
+    label: "release20260612"
+    release_date: "2026-06-12"
     platform_gen: "GEN4_PT"
-    version_category: "release版本"
-    big_version: "gen4-release"
-    test_version: "20260403"
-    binary: "gen4-release-20260403"
-    binary_id: 1624911
-    commit: "975d69de3b568163fbea0ac21532f77ab3606500"
-    code_url: "https://git.xiaojukeji.com/av/voyager/commit/975d69de3b568163fbea0ac21532f77ab3606500"
-    sim_plan: "lxh_ra_stuck_release_20260403-openloop"
-    sim_job_id: 39467411
-    baseline_job_id:
-    scenario_sets:
-      positive:
-        labels: ["lxh_ra_stuck_20260425_pos", "lxh_ra_stuck_20260425_AutoTrigger", "lxh_ra_stuck_20260425_gen4-release-20260403"]
-        manual_labels: ["lxh_ra_stuck_20260425_pos", "lxh_ra_stuck_20260425_ManualTrigger", "lxh_ra_stuck_20260425_gen4-release-20260403"]
-        expected_triggered: true
-      negative:
-        labels: ["lxh_ra_stuck_20260425_neg", "lxh_ra_stuck_20260425_AutoTrigger", "lxh_ra_stuck_20260425_gen4-release-20260403"]
-        manual_labels: ["lxh_ra_stuck_20260425_neg", "lxh_ra_stuck_20260425_ManualTrigger", "lxh_ra_stuck_20260425_gen4-release-20260403"]
-        normal_stop_labels: ["lxh_ra_stuck_20260425_gen4-release-20260403", "lxh_ra_stuck_20260425_neg", "lxh_ra_stuck_20260425_normal_stop"]
-        expected_triggered: false
-    sim_jobs:
-      positive_job_id: 39467411
-      negative_job_id: 39467401
-    source_gt_counts:
-      online_trigger_count: 1149
-      online_precision: 0.7513
-      online_recall: 0.7652
-      calculated_precision: 0.7644
-      calculated_recall: 0.7464
-      total_scenarios: 1328
-      auto_trigger_tp: 570
-      manual_trigger_fn: 302
-      auto_trigger_fp: 269
-      manual_trigger_irrelevant: 33
-      normal_wait_tn_partial: 154
-    sim_eval:
-      pos_job_id: 39467411
-      neg_job_id: 39467401
-      precision: 0.7644
-      recall: 0.7464
-  "gen4-release-20260410":
-    label: "release20260410"
-    release_date: "2026-04-10"
+    binary: "gen4-release-20260612"
+    binary_id: 1693635
+    sim_plan: "full-release-openloop"
+    sim_job_id: 45192003
+    source_manifest: "ra_repro_full_20260829_manifest.csv"
+    result_metrics: "ra_repro_full_20260829_metrics.json"
+  "gen4-release-20260618":
+    label: "release20260618"
+    release_date: "2026-06-18"
     platform_gen: "GEN4_PT"
-    version_category: "release版本"
-    big_version: "gen4-release"
-    test_version: "20260410"
-    binary: "gen4-release-20260410"
-    binary_id: 1605095
-    commit: "4917c5dbe8ab3cb9e5630a3e5c29b17b37386dc7"
-    code_url: "https://git.xiaojukeji.com/av/voyager/commit/4917c5dbe8ab3cb9e5630a3e5c29b17b37386dc7"
-    sim_plan: "lxh_ra_stuck_release_20260410-openloop"
-    sim_job_id: 39467433
-    baseline_job_id:
-    scenario_sets:
-      positive:
-        labels: ["lxh_ra_stuck_20260425_pos", "lxh_ra_stuck_20260425_AutoTrigger", "lxh_ra_stuck_20260425_gen4-release-20260410"]
-        manual_labels: ["lxh_ra_stuck_20260425_pos", "lxh_ra_stuck_20260425_ManualTrigger", "lxh_ra_stuck_20260425_gen4-release-20260410"]
-        expected_triggered: true
-      negative:
-        labels: ["lxh_ra_stuck_20260425_neg", "lxh_ra_stuck_20260425_AutoTrigger", "lxh_ra_stuck_20260425_gen4-release-20260410"]
-        manual_labels: ["lxh_ra_stuck_20260425_neg", "lxh_ra_stuck_20260425_ManualTrigger", "lxh_ra_stuck_20260425_gen4-release-20260410"]
-        normal_stop_labels: ["lxh_ra_stuck_20260425_gen4-release-20260410", "lxh_ra_stuck_20260425_neg", "lxh_ra_stuck_20260425_normal_stop"]
-        expected_triggered: false
-    sim_jobs:
-      positive_job_id: 39467433
-      negative_job_id: 39467427
-    source_gt_counts:
-      online_trigger_count: 1562
-      online_precision: 0.7476
-      online_recall: 0.8116
-      calculated_precision: 0.7643
-      calculated_recall: 0.8043
-      total_scenarios: 1825
-      auto_trigger_tp: 696
-      manual_trigger_fn: 293
-      auto_trigger_fp: 354
-      manual_trigger_irrelevant: 52
-      normal_wait_tn_partial: 430
-    sim_eval:
-      pos_job_id: 39467433
-      neg_job_id: 39467427
-      precision: 0.7643
-      recall: 0.8043
-  "gen4-release-20260417":
-    label: "release20260417"
-    release_date: "2026-04-17"
+    binary: "gen4-release-20260618"
+    binary_id: 1698875
+    sim_plan: "full-release-openloop"
+    sim_job_id: 45192287
+    source_manifest: "ra_repro_full_20260829_manifest.csv"
+    result_metrics: "ra_repro_full_20260829_metrics.json"
+  "gen4-release-20260626":
+    label: "release20260626"
+    release_date: "2026-06-26"
     platform_gen: "GEN4_PT"
-    version_category: "release版本"
-    big_version: "gen4-release"
-    test_version: "20260417"
-    binary: "gen4-release-20260417"
-    binary_id: 1616813
-    commit: "2e2ac367c9d1355fb10c4462d95a3f70c939d052"
-    code_url: "https://git.xiaojukeji.com/av/voyager/commit/2e2ac367c9d1355fb10c4462d95a3f70c939d052"
-    sim_plan: "lxh_ra_stuck_release_20260417-openloop"
-    sim_job_id: 39467319
-    baseline_job_id:
-    scenario_sets:
-      positive:
-        labels: ["lxh_ra_stuck_20260425_pos", "lxh_ra_stuck_20260425_AutoTrigger", "lxh_ra_stuck_20260425_gen4-release-20260417"]
-        manual_labels: ["lxh_ra_stuck_20260425_pos", "lxh_ra_stuck_20260425_ManualTrigger", "lxh_ra_stuck_20260425_gen4-release-20260417"]
-        expected_triggered: true
-      negative:
-        labels: ["lxh_ra_stuck_20260425_neg", "lxh_ra_stuck_20260425_AutoTrigger", "lxh_ra_stuck_20260425_gen4-release-20260417"]
-        manual_labels: ["lxh_ra_stuck_20260425_neg", "lxh_ra_stuck_20260425_ManualTrigger", "lxh_ra_stuck_20260425_gen4-release-20260417"]
-        normal_stop_labels: ["lxh_ra_stuck_20260425_gen4-release-20260417", "lxh_ra_stuck_20260425_neg", "lxh_ra_stuck_20260425_normal_stop"]
-        expected_triggered: false
-    sim_jobs:
-      positive_job_id: 39467319
-      negative_job_id: 39367009
-    source_gt_counts:
-      online_trigger_count: 1369
-      online_precision: 0.6768
-      online_recall: 0.7872
-      calculated_precision: 0.7084
-      calculated_recall: 0.7830
-      total_scenarios: 1785
-      auto_trigger_tp: 582
-      manual_trigger_fn: 254
-      auto_trigger_fp: 359
-      manual_trigger_irrelevant: 53
-      normal_wait_tn_partial: 537
-    sim_eval:
-      pos_job_id: 39467319
-      neg_job_id: 39367009
-      precision: 0.7084
-      recall: 0.7830
+    binary: "gen4-release-20260626"
+    binary_id: 1714319
+    sim_plan: "full-release-openloop"
+    sim_job_id: 45192695
+    source_manifest: "ra_repro_full_20260829_manifest.csv"
+    result_metrics: "ra_repro_full_20260829_metrics.json"
+  "gen4-release-20260710":
+    label: "release20260710"
+    release_date: "2026-07-10"
+    platform_gen: "GEN4_PT"
+    binary: "gen4-release-20260710"
+    binary_id: 1724971
+    sim_plan: "full-release-openloop"
+    sim_job_id: 45192959
+    source_manifest: "ra_repro_full_20260829_manifest.csv"
+    result_metrics: "ra_repro_full_20260829_metrics.json"
+  "gen4-release-20260717":
+    label: "release20260717"
+    release_date: "2026-07-17"
+    platform_gen: "GEN4_PT"
+    binary: "gen4-release-20260717"
+    binary_id: 1734857
+    sim_plan: "full-release-openloop"
+    sim_job_id: 45193117
+    source_manifest: "ra_repro_full_20260829_manifest.csv"
+    result_metrics: "ra_repro_full_20260829_metrics.json"
+  "gen4-release-20260724":
+    label: "release20260724"
+    release_date: "2026-07-24"
+    platform_gen: "GEN4_PT"
+    binary: "gen4-release-20260724"
+    binary_id: 1743401
+    sim_plan: "full-release-openloop"
+    sim_job_id: 45193257
+    source_manifest: "ra_repro_full_20260829_manifest.csv"
+    result_metrics: "ra_repro_full_20260829_metrics.json"
+  "gen4-release-20260731":
+    label: "release20260731"
+    release_date: "2026-07-31"
+    platform_gen: "GEN4_PT"
+    binary: "gen4-release-20260731"
+    binary_id: 1751621
+    sim_plan: "full-release-openloop"
+    sim_job_id: 45193409
+    source_manifest: "ra_repro_full_20260829_manifest.csv"
+    result_metrics: "ra_repro_full_20260829_metrics.json"
+  "gen4-release-20260807":
+    label: "release20260807"
+    release_date: "2026-08-07"
+    platform_gen: "GEN4_PT"
+    binary: "gen4-release-20260807"
+    binary_id: 1762169
+    sim_plan: "full-release-openloop"
+    sim_job_id: 45193549
+    source_manifest: "ra_repro_full_20260829_manifest.csv"
+    result_metrics: "ra_repro_full_20260829_metrics.json"
+  "gen4-release-20260814":
+    label: "release20260814"
+    release_date: "2026-08-14"
+    platform_gen: "GEN4_PT"
+    binary: "gen4-release-20260814"
+    binary_id: 1769573
+    sim_plan: "full-release-openloop"
+    sim_job_id: 45193633
+    source_manifest: "ra_repro_full_20260829_manifest.csv"
+    result_metrics: "ra_repro_full_20260829_metrics.json"
+  "gen4-release-20260821":
+    label: "release20260821"
+    release_date: "2026-08-21"
+    platform_gen: "GEN4_PT"
+    binary: "gen4-release-20260821"
+    binary_id: 1775147
+    sim_plan: "full-release-openloop"
+    sim_job_id: 45193683
+    source_manifest: "ra_repro_full_20260829_manifest.csv"
+    result_metrics: "ra_repro_full_20260829_metrics.json"

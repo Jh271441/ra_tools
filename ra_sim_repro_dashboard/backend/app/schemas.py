@@ -40,6 +40,14 @@ class KpiSummary(BaseModel):
     precision: float
     recall: float
     f1: float
+    specificity: float = 0.0
+    accuracy: float = 0.0
+    positive_auto_repro_rate: float = 0.0
+    negative_auto_repro_rate: float = 0.0
+    positive_manual_repro_rate: float = 0.0
+    evaluated_cases: int = 0
+    dpe_coverage: float = 0.0
+    quality_gate_passed: bool = True
     root_causes: dict[str, int]
     source_gt: dict[str, Any] | None = None
     sim_estimate: dict[str, Any] | None = None

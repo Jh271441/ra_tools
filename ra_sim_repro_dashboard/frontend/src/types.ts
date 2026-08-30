@@ -30,6 +30,14 @@ export interface KpiSummary {
   precision: number;
   recall: number;
   f1: number;
+  specificity: number;
+  accuracy: number;
+  positive_auto_repro_rate: number;
+  negative_auto_repro_rate: number;
+  positive_manual_repro_rate: number;
+  evaluated_cases: number;
+  dpe_coverage: number;
+  quality_gate_passed: boolean;
   root_causes: Record<string, number>;
   source_gt?: Record<string, unknown> | null;
   sim_estimate?: Record<string, unknown> | null;

@@ -13,6 +13,7 @@ import yaml
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CONFIG_DIR = ROOT_DIR / "config"
 DATA_DIR = ROOT_DIR / "data"
+DEFAULT_REPORT_DIR = ROOT_DIR.parent / "reports"
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,7 @@ class Settings:
         os.getenv("VERSIONS_CONFIG", str(CONFIG_DIR / "versions.yaml"))
     )
     mock_data_dir: Path = Path(os.getenv("MOCK_DATA_DIR", str(DATA_DIR / "mock")))
+    report_dir: Path = Path(os.getenv("REPORT_DIR", str(DEFAULT_REPORT_DIR)))
     trail_base_url: str = os.getenv("TRAIL_BASE_URL", "http://100.69.238.11:8000/voyager/trail")
     trail_app_id: str = os.getenv("TRAIL_APP_ID", "")
     trail_app_token: str = os.getenv("TRAIL_APP_TOKEN", "")

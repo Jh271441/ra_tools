@@ -9,7 +9,7 @@ RA stuck 自触发模型仿真复现看板。该应用是 `ra_sim_repro_dashboar
 看板用于把 release 版本的 source scenario 与仿真 job 结果对齐，回答三个问题：
 
 - 当前版本的仿真复现率是多少。
-- 当前版本跑前序版本场景集后，Precision / Recall / F1 趋势是否合理。
+- 各 release 自身全量场景的 Precision / Recall / Specificity / Accuracy 趋势是否合理。
 - 每一个 issue / scenario 为什么是 TP、FP、FN、TN，以及它在不同版本上的仿真触发表现。
 
 核心指标：
@@ -23,7 +23,7 @@ sim_repro_rate = sim-triggered source auto-trigger scenarios
                / source auto-trigger scenarios
 
 source auto-trigger scenarios = positive_auto + negative_auto
-positive_manual only participates in recall / FN estimation, not sim_repro_rate.
+positive_manual 的路测行为复现要求仿真不自动触发；业务 truth 中仍属于正样本。
 ```
 
 ## 2. 系统边界
@@ -110,71 +110,41 @@ sequenceDiagram
 
 数据优先级：
 
-1. Mock JSON: `data/mock/sim_job_{job_id}.json` 和 `data/mock/issues.json`。
-2. Voyager `query_report`: 依赖 `VOYAGER_COOKIE`。
-3. Trail signed API: 依赖 `TRAIL_APP_ID` / `TRAIL_APP_TOKEN`。
-4. Config fallback: 内部 API 不可用时使用 `source_gt_counts` / `sim_eval` 保证看板可启动。
+1. Full-release artifacts: `reports/ra_repro_full_20260829_manifest.csv` 提供 cohort/truth，
+   `reports/ra_repro_full_20260829_metrics.json` 提供 scenario DPE 与质量门禁。
+2. Mock JSON: `data/mock/sim_job_{job_id}.json` 和 `data/mock/issues.json`。
+3. Voyager `query_report`: 依赖 `VOYAGER_COOKIE`。
+4. Trail signed API: 依赖 `TRAIL_APP_ID` / `TRAIL_APP_TOKEN`。
+5. Config fallback: 内部 API 不可用时使用 `source_gt_counts` / `sim_eval` 保证看板可启动。
 
 ## 6. 版本配置
 
-版本配置在 [config/versions.yaml](config/versions.yaml)。当前已配置四个 release：
-
-| Version | Positive Job | Negative Job | Source TP | Source FN | Source FP |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `gen4-release-20260327` | `39467349` | `39467345` | 438 | 229 | 284 |
-| `gen4-release-20260403` | `39467411` | `39467401` | 570 | 302 | 269 |
-| `gen4-release-20260410` | `39467433` | `39467427` | 696 | 293 | 354 |
-| `gen4-release-20260417` | `39467319` | `39367009` | 582 | 254 | 359 |
+版本配置在 [config/versions.yaml](config/versions.yaml)。当前配置 2026-06-05 至
+2026-08-21 的 11 个 full-release job。每个版本使用单一 Orion job，并通过 manifest
+中的 `cohort` 区分 `positive_auto`、`negative_auto` 和 `positive_manual`。
 
 单版本结构示例：
 
 ```yaml
 versions:
-  "gen4-release-20260417":
-    label: "release20260417"
-    binary: "gen4-release-20260417"
-    binary_id: 1616813
-    commit: "2e2ac367c9d1355fb10c4462d95a3f70c939d052"
-    sim_plan: "lxh_ra_stuck_release_20260417-openloop"
-    sim_jobs:
-      positive_job_id: 39467319
-      negative_job_id: 39367009
-    scenario_sets:
-      positive:
-        labels:
-          - "lxh_ra_stuck_20260425_pos"
-          - "lxh_ra_stuck_20260425_AutoTrigger"
-          - "lxh_ra_stuck_20260425_gen4-release-20260417"
-        manual_labels:
-          - "lxh_ra_stuck_20260425_pos"
-          - "lxh_ra_stuck_20260425_ManualTrigger"
-          - "lxh_ra_stuck_20260425_gen4-release-20260417"
-      negative:
-        labels:
-          - "lxh_ra_stuck_20260425_neg"
-          - "lxh_ra_stuck_20260425_AutoTrigger"
-          - "lxh_ra_stuck_20260425_gen4-release-20260417"
-        normal_stop_labels:
-          - "lxh_ra_stuck_20260425_gen4-release-20260417"
-          - "lxh_ra_stuck_20260425_neg"
-          - "lxh_ra_stuck_20260425_normal_stop"
-    source_gt_counts:
-      auto_trigger_tp: 582
-      manual_trigger_fn: 254
-      auto_trigger_fp: 359
+  "gen4-release-20260821":
+    label: "release20260821"
+    binary: "gen4-release-20260821"
+    binary_id: 1775147
+    sim_job_id: 45193683
+    source_manifest: "ra_repro_full_20260829_manifest.csv"
+    result_metrics: "ra_repro_full_20260829_metrics.json"
 ```
 
 ## 7. 仿真判定
 
-positive job 对应 source road-positive 场景：
+full-release 三类场景的双重语义：
 
-- `Base.dpe_assist_channel_triggered.value >= 1`: TP。
-- `Base.dpe_assist_channel_triggered.value < 1`: FN。
+- 路测行为：`positive_auto`、`negative_auto` 预期触发，`positive_manual` 预期不触发。
+- 业务 truth：`positive_auto`、`positive_manual` 为正，`negative_auto` 为负。
 
-negative job 对应 source road-negative 场景：
-
-- `Base.dpe_assist_channel_triggered.value >= 1`: FP。
-- `Base.dpe_assist_channel_triggered.value < 1`: TN。
+因此历史误触发复现率高不等于业务正确率高；看板同时展示三类行为复现率和
+Precision / Recall / Specificity / Accuracy。
 
 后端归一化字段为 `dpe_assist_channel_triggered`。`0` 和 `false` 是有效值，不能被 truthy fallback 覆盖。
 
@@ -291,7 +261,63 @@ ISSUE_APP_TOKEN=...
 
 不要提交真实 cookie、token、个人登录态或 `.env`。
 
-## 13. 测试
+## 13. Binary 四版本滚动回测
+
+滚动回测使用目标 release 的 binary/runtime，对包含目标版本在内的连续四个
+release 场景进行分层抽样。三个 cohort 为 `positive_auto`、`negative_auto`、
+`positive_manual`。其中 `negative_auto` 在路测中确实触发，但业务真值是误触发：
+它在路测复现率中期望触发，在 Precision 中记作 FP。
+
+硬门禁：
+
+- Gen4 只使用 `prod_gen4`，单 Job、`max_concurrency=1`。
+- `--simulator-cache=disabled`。
+- 每个 task 都必须启用 DPE，并包含
+  `--planning_enable_sim_assist_stuck_independent_replay`。
+- 完成后要求 inference log、DPE output、critical output bag 非空，且无 cache hit、
+  failed evaluation 或异常 warning。
+- legacy full-release Job 即使 binary/cache 相同，只要缺 independent replay 或并发
+  不符，就不能拼入新指标。
+
+Dry-run 单批计划：
+
+```bash
+python scripts/ra_repro_launch_binary_backtest.py \
+  --manifest reports/ra_repro_full_20260829_manifest.csv \
+  --target-release gen4-release-20260821 \
+  --source-release gen4-release-20260731 \
+  --source-release gen4-release-20260807 \
+  --source-release gen4-release-20260814 \
+  --sample-per-cohort 10 --max-concurrency 1 \
+  --selected-manifest reports/backtest_manifest.csv \
+  --analysis-manifest reports/backtest_analysis_manifest.csv
+```
+
+`--execute` 才会创建 Orion Job。所有提交写入
+`reports/ra_binary_backtest_20260831_jobs.json`，registry key 包含目标、来源、抽样
+seed、manifest hash 和 replay 配置 hash，重复提交会被拒绝。
+
+无人值守串行推进：
+
+```bash
+python scripts/ra_repro_run_binary_backtest_pipeline.py \
+  --execute --cancel-on-anomaly --poll-seconds 300
+```
+
+推进器每次只做一个状态转换：等待当前 Job、验证门禁、补缺失窗口、发布一个目标，
+或因质量异常停止。最终 artifact 为
+`reports/ra_binary_backtest_20260831_metrics.json`；更新后推进器会调用 Dashboard
+refresh API，等待刷新成功再写 refresh stamp。Dashboard 暂时不可用时会记录
+`dashboard_refresh_error` 并在后续轮询重试，但不会阻断后续 Orion 窗口；Orion
+查询、提交或质量门禁异常仍按严格失败策略处理。
+
+`--cancel-on-anomaly` 只处理已经出现 `FAILED`/`CANCELLED` task、同时仍有
+`UNASSIGNED`/`RUNNING` task 的 Job。推进器先把异常状态写入 JSONL 审计日志，再取消
+剩余工作并写入取消回执。活动 Job 每轮还会增量检查 binary、cluster、并发、cache、
+DPE、independent replay、inference log 和关键输出；若已完成样本污染且仍有剩余任务，
+同样先审计再取消。已全部完成的 Job 只会停止发布，不会执行无意义的取消操作。
+
+## 14. 测试
 
 Frontend:
 
@@ -315,7 +341,7 @@ docker compose -f ra_sim_repro_dashboard/docker-compose.yml run --rm --no-deps \
   backend pytest tests
 ```
 
-## 14. 排障入口
+## 15. 排障入口
 
 页面无数据：
 
@@ -338,7 +364,7 @@ docker compose -f ra_sim_repro_dashboard/docker-compose.yml run --rm --no-deps \
 - 对比 `source_gt.data_source` 是 `scenario_api` 还是 `config_fallback`。
 - 对比 `sim_estimate.data_source` 是 `query_report` 还是 fallback。
 
-## 15. 进一步文档
+## 16. 进一步文档
 
 - [ARCHITECTURE.md](ARCHITECTURE.md): 完整架构、数据模型、刷新链路、前端模块和扩展计划。
 - [config/versions.example.yaml](config/versions.example.yaml): 新版本配置模板。

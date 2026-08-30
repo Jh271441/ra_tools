@@ -12,7 +12,7 @@ import {
   type LabelProps,
 } from 'recharts';
 import { useState, type CSSProperties, type KeyboardEvent } from 'react';
-import { Activity, ArrowDownRight, ArrowUpRight, CircleAlert, Gauge, ShieldCheck, Target } from 'lucide-react';
+import { Activity, ArrowDownRight, ArrowUpRight, Gauge, ShieldCheck, Target } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { KpiSummary, SummaryResponse } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -143,6 +143,11 @@ function formatChartLabel(value: unknown) {
   return `${Math.round(numeric * 10) / 10}%`;
 }
 
+function shortVersionLabel(value: string) {
+  const match = value.match(/(\d{8})$/);
+  return match ? `${match[1].slice(4, 6)}-${match[1].slice(6, 8)}` : value;
+}
+
 function TrendValueLabel({
   color,
   dx,
@@ -185,14 +190,15 @@ function renderTrendLabel(color: string, dx: number, dy: number) {
 function VersionTick(props: { x?: number; y?: number; payload?: { value?: unknown; index?: number } }) {
   const x = numberValue(props.x);
   const y = numberValue(props.y);
-  const value = String(props.payload?.value ?? '');
+  const fullValue = String(props.payload?.value ?? '');
+  const value = shortVersionLabel(fullValue);
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
   return (
     <text
       x={x}
       y={y + 14}
       fill="hsl(var(--muted-foreground))"
-      fontSize={12}
+      fontSize={11}
       fontWeight={600}
       textAnchor="middle"
     >
@@ -241,6 +247,7 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
     fp: true,
   });
   const [showTrendLabels, setShowTrendLabels] = useState(true);
+  const [backtestWindowSize, setBacktestWindowSize] = useState(4);
 
   if (!summary) {
     return (
@@ -261,12 +268,11 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
     { label: t('precision'), value: pct(current.precision), delta: summary.deltas.precision, icon: Target, filters: { version: current.version_key, precisionLabel: 'FP' } },
     { label: t('recall'), value: pct(current.recall), delta: summary.deltas.recall, icon: Gauge, filters: { version: current.version_key, precisionLabel: 'FN' } },
     { label: t('f1'), value: pct(current.f1), delta: summary.deltas.f1, icon: ShieldCheck, filters: { version: current.version_key } },
-    { label: t('fpSuppressRate'), value: pct(current.fp_suppress_rate), delta: summary.deltas.fp_suppress_rate, icon: CircleAlert, inverse: true, filters: { version: current.version_key, precisionLabel: 'FP' } },
   ];
 
   const trend = comparison.map((item) => ({
     version_key: item.version_key,
-    version: item.label || item.version_key,
+    version: shortVersionLabel(item.version_key),
     precision: Math.round(item.precision * 1000) / 10,
     recall: Math.round(item.recall * 1000) / 10,
     f1: Math.round(item.f1 * 1000) / 10,
@@ -274,20 +280,47 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
     tp: firstNumber(item.sim_estimate?.estimated_tp, item.sim_estimate?.tp, item.reproduced_cases),
     fn: firstNumber(item.sim_estimate?.estimated_fn, item.sim_estimate?.fn, item.road_positive_cases - item.reproduced_cases),
     fp: firstNumber(item.sim_estimate?.estimated_fp, item.sim_estimate?.fp, item.sim_positive_cases - item.reproduced_cases),
-    actualPrecision: Math.round(numberValue(item.source_gt?.online_precision || item.source_gt?.calculated_precision || item.precision) * 1000) / 10,
-    actualRecall: Math.round(numberValue(item.source_gt?.online_recall || item.source_gt?.calculated_recall || item.recall) * 1000) / 10,
-    simPrecision: undefined,
-    simRecall: undefined,
   }));
+  const backtestTrend = comparison.flatMap((item, index) => {
+    if (index + 1 < backtestWindowSize) return [];
+    const window = comparison.slice(index + 1 - backtestWindowSize, index + 1);
+    const sourceTp = window.reduce((sum, row) => sum + numberValue(row.source_gt?.auto_trigger_tp), 0);
+    const sourceFp = window.reduce((sum, row) => sum + numberValue(row.source_gt?.auto_trigger_fp), 0);
+    const sourceFn = window.reduce((sum, row) => sum + numberValue(row.source_gt?.manual_trigger_fn), 0);
+    const sourcePrecision = sourceTp + sourceFp ? sourceTp / (sourceTp + sourceFp) : 0;
+    const sourceRecall = sourceTp + sourceFn ? sourceTp / (sourceTp + sourceFn) : 0;
+
+    const matrix = item.sim_estimate?.binary_backtest_sources;
+    const matrixRows = matrix && typeof matrix === 'object'
+      ? window.map((row) => (matrix as Record<string, Record<string, unknown>>)[row.version_key])
+      : [];
+    const matrixComplete = matrixRows.length === backtestWindowSize && matrixRows.every((row) => {
+      if (!row) return false;
+      const expected = numberValue(row.expected);
+      const evaluated = numberValue(row.evaluated);
+      const dpeCoverage = numberValue(row.dpe_coverage);
+      return expected > 0 && evaluated === expected && dpeCoverage >= 1;
+    });
+    const simTp = matrixComplete ? matrixRows.reduce((sum, row) => sum + numberValue(row.estimated_tp ?? row.tp), 0) : 0;
+    const simFp = matrixComplete ? matrixRows.reduce((sum, row) => sum + numberValue(row.estimated_fp ?? row.fp), 0) : 0;
+    const simFn = matrixComplete ? matrixRows.reduce((sum, row) => sum + numberValue(row.estimated_fn ?? row.fn), 0) : 0;
+    return [{
+      version_key: item.version_key,
+      actualPrecision: Math.round(sourcePrecision * 1000) / 10,
+      actualRecall: Math.round(sourceRecall * 1000) / 10,
+      simPrecision: matrixComplete && simTp + simFp ? Math.round(simTp / (simTp + simFp) * 1000) / 10 : undefined,
+      simRecall: matrixComplete && simTp + simFn ? Math.round(simTp / (simTp + simFn) * 1000) / 10 : undefined,
+    }];
+  });
   const reproDomain = pctDomain(trend, ['repro']);
-  const prDomain = pctDomain(trend, ['actualPrecision', 'actualRecall', 'simPrecision', 'simRecall']);
+  const prDomain = pctDomain(backtestTrend, ['actualPrecision', 'actualRecall', 'simPrecision', 'simRecall']);
   const reproControls: Array<{ key: ReproMetric; label: string; color: string }> = [
     { key: 'repro', label: t('simReproRate'), color: chartColors.repro },
     { key: 'tp', label: 'TP', color: chartColors.model },
     { key: 'fn', label: 'FN', color: chartColors.fn },
     { key: 'fp', label: 'FP', color: chartColors.fp },
   ];
-  const hasBinaryMatrix = trend.some((item) => item.simPrecision != null || item.simRecall != null);
+  const hasBinaryMatrix = backtestTrend.some((item) => item.simPrecision != null || item.simRecall != null);
 
   function toggleReproMetric(key: ReproMetric) {
     setVisibleReproMetrics((current) => {
@@ -301,10 +334,10 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
 
   return (
     <div className="grid gap-4">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {kpis.map((item) => {
           const deltaValue = item.delta ?? 0;
-          const healthy = item.inverse ? deltaValue <= 0 : deltaValue >= 0;
+          const healthy = deltaValue >= 0;
           const TrendIcon = deltaValue >= 0 ? ArrowUpRight : ArrowDownRight;
           return (
             <Card
@@ -333,7 +366,7 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
         })}
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4">
         <Card>
           <CardHeader className="min-h-[86px] flex-row items-start justify-between gap-2 px-5 pb-2 pt-4">
             <div className="min-w-0">
@@ -379,31 +412,31 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.68)" vertical={false} />
                 <XAxis
-                  dataKey="version"
+                  dataKey="version_key"
                   scale="point"
                   tickLine={false}
                   axisLine={false}
                   interval={0}
                   minTickGap={0}
-                  height={44}
-                  tickMargin={12}
-                  padding={{ left: 64, right: 64 }}
+                  height={40}
+                  tickMargin={10}
+                  padding={{ left: 44, right: 44 }}
                   tick={<VersionTick />}
                 />
                 <YAxis yAxisId="rate" domain={reproDomain} tickLine={false} axisLine={false} width={38} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
                 <YAxis yAxisId="count" hide width={0} />
                 <Tooltip {...tooltipProps} cursor={<ChartHoverCursor />} />
                 {visibleReproMetrics.tp ? (
-                  <Bar yAxisId="count" dataKey="tp" fill={chartColors.model} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive animationDuration={520} animationEasing="ease-out" />
+                  <Bar yAxisId="count" dataKey="tp" fill={chartColors.model} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false} />
                 ) : null}
                 {visibleReproMetrics.fn ? (
-                  <Bar yAxisId="count" dataKey="fn" fill={chartColors.fn} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive animationDuration={520} animationEasing="ease-out" />
+                  <Bar yAxisId="count" dataKey="fn" fill={chartColors.fn} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false} />
                 ) : null}
                 {visibleReproMetrics.fp ? (
-                  <Bar yAxisId="count" dataKey="fp" fill={chartColors.fp} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive animationDuration={520} animationEasing="ease-out" />
+                  <Bar yAxisId="count" dataKey="fp" fill={chartColors.fp} fillOpacity={0.78} radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false} />
                 ) : null}
                 {visibleReproMetrics.repro ? (
-                  <Line yAxisId="rate" type="linear" dataKey="repro" stroke={chartColors.repro} strokeWidth={3} dot={hollowDot(chartColors.repro, 4)} activeDot={hollowDot(chartColors.repro, 5.5)} isAnimationActive animationDuration={560} animationEasing="ease-out">
+                  <Line yAxisId="rate" type="linear" dataKey="repro" stroke={chartColors.repro} strokeWidth={3} dot={hollowDot(chartColors.repro, 4)} activeDot={hollowDot(chartColors.repro, 5.5)} isAnimationActive={false}>
                     {showTrendLabels ? <LabelList dataKey="repro" content={renderTrendLabel(chartColors.repro, -8, -14)} /> : null}
                   </Line>
                 ) : null}
@@ -423,25 +456,40 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                 {hasBinaryMatrix ? <span className="inline-flex items-center gap-1.5"><LegendDot color={chartColors.repro} />{t('simPR')}</span> : null}
               </div>
             </div>
-            <Badge variant="secondary">{current.version_key}</Badge>
+            <div className="flex shrink-0 items-center gap-2">
+              <label className="text-xs font-medium text-muted-foreground" htmlFor="backtest-window-size">
+                {t('backtestWindow')}
+              </label>
+              <select
+                id="backtest-window-size"
+                className="h-8 rounded-md border border-border bg-background px-2 text-xs font-semibold text-foreground"
+                value={backtestWindowSize}
+                onChange={(event) => setBacktestWindowSize(Number(event.target.value))}
+              >
+                {[2, 3, 4].map((value) => (
+                  <option key={value} value={value}>{value} {t('versionsUnit')}</option>
+                ))}
+              </select>
+              <Badge variant="secondary">{current.version_key}</Badge>
+            </div>
           </CardHeader>
           <CardContent className="relative h-80 px-4 pb-4 pt-0">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={trend} margin={{ top: 18, right: 42, left: 0, bottom: 8 }}>
+              <LineChart data={backtestTrend} margin={{ top: 18, right: 42, left: 0, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.68)" vertical={false} />
-                <XAxis dataKey="version" scale="point" tickLine={false} axisLine={false} interval={0} minTickGap={0} height={44} tickMargin={12} padding={{ left: 64, right: 64 }} tick={<VersionTick />} />
+                <XAxis dataKey="version_key" scale="point" tickLine={false} axisLine={false} interval={0} minTickGap={0} height={40} tickMargin={10} padding={{ left: 44, right: 44 }} tick={<VersionTick />} />
                 <YAxis domain={prDomain} tickLine={false} axisLine={false} width={40} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
                 <Tooltip {...tooltipProps} cursor={<ChartHoverCursor />} />
-                <Line type="linear" dataKey="actualPrecision" name={t('actualPrecision')} stroke={chartColors.precision} strokeWidth={2.2} dot={hollowDot(chartColors.precision)} activeDot={hollowDot(chartColors.precision, 5)} isAnimationActive animationDuration={560} animationEasing="ease-out">
+                <Line type="linear" dataKey="actualPrecision" name={t('actualPrecision')} stroke={chartColors.precision} strokeWidth={2.2} dot={hollowDot(chartColors.precision)} activeDot={hollowDot(chartColors.precision, 5)} isAnimationActive={false}>
                   {showTrendLabels ? <LabelList dataKey="actualPrecision" content={renderTrendLabel(chartColors.precision, 8, -12)} /> : null}
                 </Line>
-                <Line type="linear" dataKey="actualRecall" name={t('actualRecall')} stroke={chartColors.recall} strokeWidth={2.2} dot={hollowDot(chartColors.recall)} activeDot={hollowDot(chartColors.recall, 5)} isAnimationActive animationDuration={560} animationEasing="ease-out">
+                <Line type="linear" dataKey="actualRecall" name={t('actualRecall')} stroke={chartColors.recall} strokeWidth={2.2} dot={hollowDot(chartColors.recall)} activeDot={hollowDot(chartColors.recall, 5)} isAnimationActive={false}>
                   {showTrendLabels ? <LabelList dataKey="actualRecall" content={renderTrendLabel(chartColors.recall, -8, 12)} /> : null}
                 </Line>
                 {hasBinaryMatrix ? (
                   <>
-                    <Line type="linear" dataKey="simPrecision" name={t('simPrecisionEstimate')} stroke={chartColors.fp} strokeDasharray="5 4" strokeWidth={2.2} dot={hollowDot(chartColors.fp)} activeDot={hollowDot(chartColors.fp, 5)} isAnimationActive animationDuration={560} animationEasing="ease-out" />
-                    <Line type="linear" dataKey="simRecall" name={t('simRecallEstimate')} stroke={chartColors.repro} strokeDasharray="5 4" strokeWidth={2.2} dot={hollowDot(chartColors.repro)} activeDot={hollowDot(chartColors.repro, 5)} isAnimationActive animationDuration={560} animationEasing="ease-out" />
+                    <Line type="linear" dataKey="simPrecision" name={t('simPrecisionEstimate')} stroke={chartColors.fp} strokeDasharray="5 4" strokeWidth={2.2} dot={hollowDot(chartColors.fp)} activeDot={hollowDot(chartColors.fp, 5)} isAnimationActive={false} />
+                    <Line type="linear" dataKey="simRecall" name={t('simRecallEstimate')} stroke={chartColors.repro} strokeDasharray="5 4" strokeWidth={2.2} dot={hollowDot(chartColors.repro)} activeDot={hollowDot(chartColors.repro, 5)} isAnimationActive={false} />
                   </>
                 ) : null}
               </LineChart>
@@ -470,12 +518,16 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                   <tr>
                     <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('version')}</th>
                     <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('dataSource')}</th>
-                    <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">TP/FP/FN</th>
+                    <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">Pos-auto / Neg-auto / Pos-manual</th>
                     <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('onlinePR')}</th>
                     <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('offlinePR')}</th>
                     <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('simPR')}</th>
                     <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('simJobs')}</th>
-                    <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('scenarioTotal')}</th>
+                    <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">Auto + / FP / Manual</th>
+                    <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">P / R / Spec / Acc</th>
+                    <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('evaluatedCases')}</th>
+                    <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('dpeCoverage')}</th>
+                    <th className="h-10 px-4 text-xs font-medium uppercase text-muted-foreground">{t('qualityGate')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -515,10 +567,24 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                           {pct(item.precision)} / {pct(item.recall)}
                         </td>
                         <td className="px-4 py-3 align-middle font-mono text-xs">
-                          {String(sim.pos_job_id || '-')} / {String(sim.neg_job_id || '-')}
+                          {sim.job_id ? String(sim.job_id) : `${String(sim.pos_job_id || '-')} / ${String(sim.neg_job_id || '-')}`}
                         </td>
                         <td className="px-4 py-3 align-middle font-mono text-xs">
-                          {numberValue(source.total_scenarios)}
+                          {pct(item.positive_auto_repro_rate)} / {pct(item.negative_auto_repro_rate)} / {pct(item.positive_manual_repro_rate)}
+                        </td>
+                        <td className="px-4 py-3 align-middle font-mono text-xs">
+                          {pct(item.precision)} / {pct(item.recall)} / {pct(item.specificity)} / {pct(item.accuracy)}
+                        </td>
+                        <td className="px-4 py-3 align-middle font-mono text-xs">
+                          {formatCount(item.evaluated_cases)} / {formatCount(numberValue(source.total_scenarios))}
+                        </td>
+                        <td className="px-4 py-3 align-middle font-mono text-xs">
+                          {pct(item.dpe_coverage)}
+                        </td>
+                        <td className="px-4 py-3 align-middle">
+                          <Badge variant={item.quality_gate_passed ? 'success' : 'destructive'}>
+                            {item.quality_gate_passed ? t('qualityPassed') : t('qualityFailed')}
+                          </Badge>
                         </td>
                       </tr>
                     );

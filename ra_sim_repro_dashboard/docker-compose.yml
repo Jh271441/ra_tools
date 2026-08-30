@@ -26,6 +26,7 @@ services:
       ENABLE_RQ: "1"
       VERSIONS_CONFIG: /app/config/versions.yaml
       MOCK_DATA_DIR: /app/data/mock
+      REPORT_DIR: /app/reports
       VOYAGER_RESULT_BASE_URL: ${VOYAGER_RESULT_BASE_URL:-https://voyager.intra.xiaojukeji.com}
       VOYAGER_COOKIE: ${VOYAGER_COOKIE:-}
       VOYAGER_QUERY_PAGE_SIZE: ${VOYAGER_QUERY_PAGE_SIZE:-1000}
@@ -39,6 +40,7 @@ services:
     volumes:
       - ./config:/app/config:ro
       - ./data:/app/data
+      - ../reports:/app/reports:ro
     ports:
       - "8000:8000"
     depends_on:
@@ -57,6 +59,7 @@ services:
       ENABLE_RQ: "1"
       VERSIONS_CONFIG: /app/config/versions.yaml
       MOCK_DATA_DIR: /app/data/mock
+      REPORT_DIR: /app/reports
       VOYAGER_RESULT_BASE_URL: ${VOYAGER_RESULT_BASE_URL:-https://voyager.intra.xiaojukeji.com}
       VOYAGER_COOKIE: ${VOYAGER_COOKIE:-}
       VOYAGER_QUERY_PAGE_SIZE: ${VOYAGER_QUERY_PAGE_SIZE:-1000}
@@ -70,6 +73,7 @@ services:
     volumes:
       - ./config:/app/config:ro
       - ./data:/app/data
+      - ../reports:/app/reports:ro
     depends_on:
       - backend
       - redis
