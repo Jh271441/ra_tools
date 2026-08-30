@@ -18,6 +18,7 @@ import type { KpiSummary, SummaryResponse } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { cn } from '../lib/utils';
+import { poststratifyBacktestWindow } from '../lib/backtest';
 
 interface OverviewProps {
   summary: SummaryResponse | null;
@@ -119,22 +120,6 @@ function optionalNumber(value: unknown) {
   if (value == null || value === '') return undefined;
   const numeric = numberValue(value);
   return Number.isFinite(numeric) ? numeric : undefined;
-}
-
-function cohortTriggerRate(row: Record<string, unknown>, cohortName: string) {
-  const cohorts = row.cohorts;
-  if (!cohorts || typeof cohorts !== 'object') return undefined;
-  const cohort = (cohorts as Record<string, unknown>)[cohortName];
-  if (!cohort || typeof cohort !== 'object') return undefined;
-  const metrics = cohort as Record<string, unknown>;
-  const expected = optionalNumber(metrics.expected);
-  const evaluated = optionalNumber(metrics.evaluated);
-  const triggerRate = optionalNumber(metrics.trigger_rate);
-  if (
-    expected == null || expected <= 0 || evaluated !== expected
-    || triggerRate == null || triggerRate < 0 || triggerRate > 1
-  ) return undefined;
-  return triggerRate;
 }
 
 function maybePct(value: unknown) {
@@ -310,33 +295,13 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
     const matrixRows = matrix && typeof matrix === 'object'
       ? window.map((row) => (matrix as Record<string, Record<string, unknown>>)[row.version_key])
       : [];
-    const matrixComplete = matrixRows.length === backtestWindowSize && matrixRows.every((row) => {
-      if (!row) return false;
-      const expected = numberValue(row.expected);
-      const evaluated = numberValue(row.evaluated);
-      const dpeCoverage = numberValue(row.dpe_coverage);
-      return expected > 0 && evaluated === expected && dpeCoverage >= 1
-        && cohortTriggerRate(row, 'positive_auto') != null
-        && cohortTriggerRate(row, 'negative_auto') != null
-        && cohortTriggerRate(row, 'positive_manual') != null;
-    });
-    let simTp = 0;
-    let simFp = 0;
-    let simFn = 0;
-    if (matrixComplete) {
-      matrixRows.forEach((row, rowIndex) => {
-        const source = window[rowIndex].source_gt || {};
-        const autoTp = numberValue(source.auto_trigger_tp);
-        const autoFp = numberValue(source.auto_trigger_fp);
-        const manualFn = numberValue(source.manual_trigger_fn);
-        const positiveAutoRate = cohortTriggerRate(row, 'positive_auto') ?? 0;
-        const negativeAutoRate = cohortTriggerRate(row, 'negative_auto') ?? 0;
-        const positiveManualRate = cohortTriggerRate(row, 'positive_manual') ?? 0;
-        simTp += autoTp * positiveAutoRate + manualFn * positiveManualRate;
-        simFp += autoFp * negativeAutoRate;
-        simFn += autoTp * (1 - positiveAutoRate) + manualFn * (1 - positiveManualRate);
-      });
-    }
+    const projected = poststratifyBacktestWindow(
+      window.map((row) => row.source_gt || {}), matrixRows,
+    );
+    const matrixComplete = projected.complete;
+    const simTp = projected.tp;
+    const simFp = projected.fp;
+    const simFn = projected.fn;
     return [{
       version_key: item.version_key,
       actualPrecision: Math.round(sourcePrecision * 1000) / 10,
