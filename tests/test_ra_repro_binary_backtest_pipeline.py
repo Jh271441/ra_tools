@@ -1,14 +1,24 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 import sys
 
 import pandas as pd
+import pytest
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts import ra_repro_advance_binary_backtest as advance_module
 from scripts import ra_repro_run_binary_backtest_pipeline as pipeline_module
+
+_RUNNING_TASK_DETAILS = advance_module._running_task_details
+
+
+@pytest.fixture(autouse=True)
+def _stub_running_task_details(monkeypatch):
+  monkeypatch.setattr(
+      advance_module, "_running_task_details", lambda job_ids: [])
 
 
 def test_four_release_windows_include_target_and_previous_three():
@@ -24,6 +34,75 @@ def test_four_release_windows_include_target_and_previous_three():
       "gen4-release-20260807",
       "gen4-release-20260814",
   ]
+
+
+def test_running_task_details_reports_elapsed_timeout_and_worker(monkeypatch):
+  class TaskAccessor:
+
+    @staticmethod
+    def query(query):
+      assert query == {"job_id": 100}
+      return [{
+          "id": 1000002,
+          "signature": "38216327",
+          "status": 2,
+          "task_runs": [{
+              "assign_time": "2026-08-30T23:01:47.285Z",
+              "timeout_sec": 18000,
+              "worker_name": "worker-1",
+              "worker_ip": "192.0.2.1",
+              "version": 1,
+          }],
+      }, {
+          "id": 1000003,
+          "signature": "38216328",
+          "status": 3,
+      }]
+
+  class OrionTask:
+    RUNNING = 2
+
+  class Regions:
+    CN = "cn"
+
+  class TrailRegionMgr:
+
+    def __init__(self, region, is_pre):
+      assert region == "cn"
+      assert is_pre is False
+
+    def __enter__(self):
+      return self
+
+    def __exit__(self, *_):
+      return None
+
+  class FixedDatetime(datetime):
+
+    @classmethod
+    def now(cls, tz=None):
+      return cls(2026, 8, 30, 23, 31, 47, 285000,
+                 tzinfo=timezone.utc)
+
+  monkeypatch.setattr(
+      advance_module,
+      "_load_orion_status_api",
+      lambda: (TaskAccessor, None, OrionTask, Regions, TrailRegionMgr),
+  )
+  monkeypatch.setattr(advance_module, "datetime", FixedDatetime)
+
+  assert _RUNNING_TASK_DETAILS([100]) == [{
+      "job_id": 100,
+      "task_id": 1000002,
+      "scenario_id": 38216327,
+      "assigned_at": "2026-08-30T23:01:47.285000+00:00",
+      "elapsed_seconds": 1800.0,
+      "timeout_seconds": 18000,
+      "elapsed_fraction_of_timeout": 0.1,
+      "worker_name": "worker-1",
+      "worker_ip": "192.0.2.1",
+      "run_version": 1,
+  }]
 
 
 def test_advance_waits_without_launch_when_valid_job_is_active(
@@ -68,6 +147,7 @@ def test_advance_waits_without_launch_when_valid_job_is_active(
           "job_id": 100,
           "status": {"UNASSIGNED": 89, "RUNNING": 1},
       }],
+      "running_tasks": [],
   }
 
 
@@ -178,6 +258,7 @@ def test_advance_does_not_stop_on_transient_failed_status(
           "job_id": 100,
           "status": {"UNASSIGNED": 88, "RUNNING": 1, "FAILED": 0},
       }],
+      "running_tasks": [],
   }
   assert sleeps == [5.0]
 
@@ -294,6 +375,7 @@ def test_advance_refreshes_status_after_incremental_validation(
           "job_id": 100,
           "status": {"UNASSIGNED": 80, "RUNNING": 1, "COMPLETED": 9},
       }],
+      "running_tasks": [],
       "incremental_validations": [checked],
   }
 

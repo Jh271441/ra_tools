@@ -63,6 +63,57 @@ def _status_by_job(job_ids: Sequence[int]) -> dict[int, dict[str, int]]:
   }
 
 
+def _parse_orion_time(value: Any) -> datetime | None:
+  if not value:
+    return None
+  text = str(value).strip()
+  if text.endswith("Z"):
+    text = f"{text[:-1]}+00:00"
+  try:
+    parsed = datetime.fromisoformat(text)
+  except ValueError:
+    return None
+  if parsed.tzinfo is None:
+    parsed = parsed.replace(tzinfo=timezone.utc)
+  return parsed.astimezone(timezone.utc)
+
+
+def _running_task_details(job_ids: Sequence[int]) -> list[dict[str, Any]]:
+  """Return auditable timing details for currently running mapper tasks."""
+  TaskAccessor, _, OrionTask, Regions, TrailRegionMgr = (
+      _load_orion_status_api())
+  now = datetime.now(timezone.utc)
+  details = []
+  with TrailRegionMgr(Regions.CN, is_pre=False):
+    for job_id in job_ids:
+      for task in TaskAccessor.query({"job_id": int(job_id)}):
+        if int(task.get("status", -1)) != OrionTask.RUNNING:
+          continue
+        runs = task.get("task_runs") or []
+        run = runs[-1] if runs else task
+        assigned_at = _parse_orion_time(run.get("assign_time"))
+        elapsed_seconds = (
+            max((now - assigned_at).total_seconds(), 0.0)
+            if assigned_at else None)
+        timeout_seconds = int(run.get("timeout_sec") or 0) or None
+        details.append({
+            "job_id": int(job_id),
+            "task_id": int(task["id"]),
+            "scenario_id": int(task["signature"]),
+            "assigned_at": (
+                assigned_at.isoformat() if assigned_at else None),
+            "elapsed_seconds": elapsed_seconds,
+            "timeout_seconds": timeout_seconds,
+            "elapsed_fraction_of_timeout": (
+                elapsed_seconds / timeout_seconds
+                if elapsed_seconds is not None and timeout_seconds else None),
+            "worker_name": run.get("worker_name"),
+            "worker_ip": run.get("worker_ip"),
+            "run_version": int(run.get("version") or 0),
+        })
+  return sorted(details, key=lambda item: (item["job_id"], item["task_id"]))
+
+
 def _window(target: str, size: int) -> list[str]:
   releases = list(TEMPLATE_JOBS)
   index = releases.index(target)
@@ -249,7 +300,12 @@ def advance(
         }
       active, active_entries = _active_jobs(entries, statuses)
     if active:
-      result = {"action": "wait", "active_jobs": active}
+      result = {
+          "action": "wait",
+          "active_jobs": active,
+          "running_tasks": _running_task_details(
+              [int(entry["job_id"]) for entry in active_entries]),
+      }
       if incremental_validations:
         result["incremental_validations"] = incremental_validations
       return result
