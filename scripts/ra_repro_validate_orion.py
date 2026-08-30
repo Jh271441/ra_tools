@@ -168,7 +168,17 @@ def _query_orion(job_id: int, token: str) -> pd.DataFrame:
 
   rows = []
   for task in tasks:
-    run = task.get("task_runs", [])[-1] if task.get("task_runs") else task
+    task_runs = task.get("task_runs") or []
+    run = task_runs[-1] if task_runs else task
+    prior_runs = task_runs[:-1]
+    prior_failed_runs = sum(
+        int(item.get("status", -1)) in (4, 5) for item in prior_runs)
+    prior_dpe_oom_runs = sum(
+        "dpe exceeded memory quota" in " ".join((
+            str(item.get("outcome") or ""),
+            str(item.get("outcome_detail") or ""),
+        )).lower()
+        for item in prior_runs)
     result = run.get("result", {}) or {}
     warnings = result.get("warnings") or []
     warning_modules = {
@@ -184,6 +194,9 @@ def _query_orion(job_id: int, token: str) -> pd.DataFrame:
         "task_outcome_detail": run.get("outcome_detail", ""),
         "task_duration_seconds": run.get("duration_time", 0),
         "task_update_time": task.get("update_time"),
+        "task_retry_count": max(len(task_runs) - 1, 0),
+        "prior_failed_task_run_count": prior_failed_runs,
+        "prior_dpe_oom_task_run_count": prior_dpe_oom_runs,
         "simulator_cache_hit": result.get("simulator_cache_hit"),
         "inference_log_count": len(result.get("inference_log_locations") or []),
         "dpe_output_count": len(result.get("dpe_output_locations") or []),
@@ -298,6 +311,19 @@ def _summarize(joined: pd.DataFrame,
   warnings = int((completed & joined["warning_count"].gt(0)).sum())
   unexpected_warnings = int(
       (completed & joined["unexpected_warning_count"].gt(0)).sum())
+  retry_counts = pd.to_numeric(
+      joined.get("task_retry_count", pd.Series(0, index=joined.index)),
+      errors="coerce").fillna(0).astype(int)
+  prior_failed_run_counts = pd.to_numeric(
+      joined.get("prior_failed_task_run_count",
+                 pd.Series(0, index=joined.index)),
+      errors="coerce").fillna(0).astype(int)
+  prior_dpe_oom_run_counts = pd.to_numeric(
+      joined.get("prior_dpe_oom_task_run_count",
+                 pd.Series(0, index=joined.index)),
+      errors="coerce").fillna(0).astype(int)
+  retried = retry_counts.gt(0)
+  prior_dpe_oom = prior_dpe_oom_run_counts.gt(0)
   update_times = pd.to_datetime(
       joined["task_update_time"], utc=True, errors="coerce", format="mixed")
   dpe_grace_cutoff = (pd.Timestamp.now(tz="UTC") -
@@ -394,6 +420,15 @@ def _summarize(joined: pd.DataFrame,
           "failed_evaluations": failed_evaluations,
           "tasks_with_warnings": warnings,
           "tasks_with_unexpected_warnings": unexpected_warnings,
+          "tasks_retried": int(retried.sum()),
+          "retry_attempts": int(retry_counts.sum()),
+          "prior_failed_task_runs": int(prior_failed_run_counts.sum()),
+          "prior_dpe_oom_task_runs": int(prior_dpe_oom_run_counts.sum()),
+          "retried_scenario_ids": sorted(
+              joined.loc[retried, "scenario_id"].astype(int).tolist()),
+          "prior_dpe_oom_scenario_ids": sorted(
+              joined.loc[prior_dpe_oom,
+                         "scenario_id"].astype(int).tolist()),
           "gate_passed_so_far": quality_gate_passed_so_far,
       },
       "cohorts": cohorts,

@@ -4,6 +4,7 @@ import pytest
 from scripts.ra_repro_validate_orion import (
     _load_manifest,
     _post_orion_query,
+    _query_orion,
     _query_results_by_task_ids,
     _select_scenario_results,
     _summarize,
@@ -60,6 +61,41 @@ def test_task_id_fallback_requires_complete_exact_batches(monkeypatch):
   rows = _query_results_by_task_ids(123, "token")
 
   assert {row["id"] for row in rows} == set(range(1, 24))
+
+
+def test_query_orion_audits_prior_dpe_oom_retry(monkeypatch):
+  task = {
+      "id": 10,
+      "signature": "123",
+      "status": 2,
+      "update_time": "2026-08-31T00:00:00Z",
+      "task_runs": [
+          {
+              "status": 4,
+              "outcome": "DPE exceeded memory quota of 24576 MB",
+              "outcome_detail": "Running DPE failed",
+              "duration_time": 589,
+              "result": {},
+          },
+          {
+              "status": 2,
+              "outcome": "",
+              "outcome_detail": "",
+              "duration_time": 0,
+              "result": {},
+          },
+      ],
+  }
+  monkeypatch.setattr(
+      "scripts.ra_repro_validate_orion._query_pages",
+      lambda *args: [task],
+  )
+
+  row = _query_orion(100, "token").iloc[0]
+
+  assert row["task_retry_count"] == 1
+  assert row["prior_failed_task_run_count"] == 1
+  assert row["prior_dpe_oom_task_run_count"] == 1
 
 
 def _row(cohort, metric, *, outcome="Done with warnings", cache_hit=False):
@@ -148,6 +184,27 @@ def test_summarize_reports_recent_completed_result_in_dpe_grace():
       row["scenario_id"]]
   assert result["quality"]["gate_passed_so_far"] is True
   assert result["is_terminal_and_complete"] is False
+
+
+def test_summarize_reports_retries_without_failing_clean_final_result():
+  row = _row("positive_auto", 1)
+  row.update({
+      "task_retry_count": 1,
+      "prior_failed_task_run_count": 1,
+      "prior_dpe_oom_task_run_count": 1,
+  })
+
+  result = _summarize(pd.DataFrame([row]), job_id=123)
+
+  assert result["quality"]["tasks_retried"] == 1
+  assert result["quality"]["retry_attempts"] == 1
+  assert result["quality"]["prior_failed_task_runs"] == 1
+  assert result["quality"]["prior_dpe_oom_task_runs"] == 1
+  assert result["quality"]["retried_scenario_ids"] == [row["scenario_id"]]
+  assert result["quality"]["prior_dpe_oom_scenario_ids"] == [
+      row["scenario_id"]]
+  assert result["quality"]["gate_passed_so_far"] is True
+  assert result["is_terminal_and_complete"] is True
 
 
 def test_summarize_counts_failed_and_cancelled_as_terminal_failures():
