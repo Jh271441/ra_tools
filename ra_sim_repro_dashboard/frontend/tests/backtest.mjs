@@ -59,3 +59,20 @@ test('rejects a cohort with no trigger rate', () => {
 
   assert.deepEqual(result, { complete: false, tp: 0, fp: 0, fn: 0 });
 });
+
+test('rejects missing online population counts instead of treating them as zero', () => {
+  const result = poststratifyBacktestWindow([
+    { auto_trigger_tp: 100, auto_trigger_fp: 20 },
+  ], [{
+    expected: 30,
+    evaluated: 30,
+    dpe_coverage: 1,
+    cohorts: {
+      positive_auto: cohort(10, 0.8),
+      negative_auto: cohort(10, 0.25),
+      positive_manual: cohort(10, 0.6),
+    },
+  }]);
+
+  assert.deepEqual(result, { complete: false, tp: 0, fp: 0, fn: 0 });
+});

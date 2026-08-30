@@ -59,9 +59,13 @@ export function poststratifyBacktestWindow(
     ) return { complete: false, tp: 0, fp: 0, fn: 0 };
 
     const source = sourceRows[index];
-    const autoTp = numeric(source.auto_trigger_tp);
-    const autoFp = numeric(source.auto_trigger_fp);
-    const manualFn = numeric(source.manual_trigger_fn);
+    const autoTp = optionalNumeric(source.auto_trigger_tp);
+    const autoFp = optionalNumeric(source.auto_trigger_fp);
+    const manualFn = optionalNumeric(source.manual_trigger_fn);
+    if (
+      autoTp == null || autoTp < 0 || autoFp == null || autoFp < 0
+      || manualFn == null || manualFn < 0
+    ) return { complete: false, tp: 0, fp: 0, fn: 0 };
     tp += autoTp * positiveAutoRate + manualFn * positiveManualRate;
     fp += autoFp * negativeAutoRate;
     fn += autoTp * (1 - positiveAutoRate) + manualFn * (1 - positiveManualRate);
