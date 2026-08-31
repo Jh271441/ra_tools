@@ -774,6 +774,28 @@ def test_pipeline_audit_log_is_jsonl(tmp_path, capsys):
   assert '"action": "launch"' in capsys.readouterr().out
 
 
+def test_pipeline_status_snapshot_atomically_replaces_previous_state(tmp_path):
+  path = tmp_path / "status" / "current.json"
+
+  pipeline_module._write_status_snapshot({
+      "action": "wait",
+      "observed_at": "2026-08-31T00:00:00+00:00",
+      "completed": 25,
+  }, path)
+  pipeline_module._write_status_snapshot({
+      "action": "wait",
+      "observed_at": "2026-08-31T00:01:00+00:00",
+      "completed": 26,
+  }, path)
+
+  assert json.loads(path.read_text(encoding="utf-8")) == {
+      "action": "wait",
+      "observed_at": "2026-08-31T00:01:00+00:00",
+      "completed": 26,
+  }
+  assert not path.with_suffix(".json.tmp").exists()
+
+
 def test_parse_task_profile_annotations_keeps_execution_stages():
   html = """
   {"text": "unrelated", "x": "2026-08-31T00:00:00", "y": 1.0,

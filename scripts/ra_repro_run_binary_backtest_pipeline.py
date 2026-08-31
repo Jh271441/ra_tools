@@ -123,6 +123,17 @@ def _emit(payload: dict, audit_log: Path) -> None:
     fh.write(text + "\n")
 
 
+def _write_status_snapshot(payload: dict, status_path: Path) -> None:
+  """Atomically publish the latest pipeline state for read-only consumers."""
+  status_path.parent.mkdir(parents=True, exist_ok=True)
+  temporary = status_path.with_suffix(status_path.suffix + ".tmp")
+  temporary.write_text(
+      json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+      encoding="utf-8",
+  )
+  temporary.replace(status_path)
+
+
 def _refresh_dashboard_if_needed(
     metrics_path: Path,
     stamp_path: Path,
@@ -251,6 +262,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
       "--audit-log", type=Path,
       default=Path("reports/ra_binary_backtest_20260831_pipeline.jsonl"),
   )
+  parser.add_argument(
+      "--status-snapshot", type=Path,
+      default=Path("reports/ra_binary_backtest_20260831_status.json"),
+      help="Atomically updated latest pipeline state.",
+  )
   return parser.parse_args(argv)
 
 
@@ -296,6 +312,7 @@ def main(argv: Sequence[str] | None = None) -> None:
       _enrich_long_running_tasks(result, args.profile_after_seconds)
       result["observed_at"] = datetime.now(timezone.utc).isoformat()
       _emit(result, args.audit_log)
+      _write_status_snapshot(result, args.status_snapshot)
       consecutive_errors = 0
     except Exception as exc:  # pylint: disable=broad-exception-caught
       consecutive_errors += 1
