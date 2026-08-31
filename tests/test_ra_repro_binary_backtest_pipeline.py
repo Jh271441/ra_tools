@@ -344,6 +344,10 @@ def test_validate_entry_rejects_terminal_result_with_manifest_count_mismatch(
           "completed": 89,
           "terminal_failed": 0,
           "mean_completed_duration_seconds": 1200.0,
+          "median_completed_duration_seconds": 900.0,
+          "p90_completed_duration_seconds": 1800.0,
+          "p95_completed_duration_seconds": 2100.0,
+          "max_completed_duration_seconds": 2400.0,
           "estimated_remaining_hours_at_concurrency_1": 0.3333333333,
           "completed_missing_dpe": 0,
           "completed_pending_dpe_grace": 0,
@@ -363,6 +367,10 @@ def test_validate_entry_rejects_terminal_result_with_manifest_count_mismatch(
   assert result["manifest_rows"] == 89
   assert result["expected_manifest_rows"] == 90
   assert result["mean_completed_duration_seconds"] == 1200.0
+  assert result["median_completed_duration_seconds"] == 900.0
+  assert result["p90_completed_duration_seconds"] == 1800.0
+  assert result["p95_completed_duration_seconds"] == 2100.0
+  assert result["max_completed_duration_seconds"] == 2400.0
   assert result["estimated_remaining_hours_at_concurrency_1"] == pytest.approx(
       1 / 3)
 

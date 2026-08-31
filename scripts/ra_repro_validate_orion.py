@@ -293,9 +293,21 @@ def _summarize(joined: pd.DataFrame,
   evaluated = completed & has_dpe
   triggered = joined[_TRIGGER_METRIC].ge(1)
   completed_durations = pd.to_numeric(
-      joined.loc[completed, "task_duration_seconds"], errors="coerce")
+      joined.loc[completed, "task_duration_seconds"], errors="coerce").dropna()
   mean_duration = (
       float(completed_durations.mean()) if not completed_durations.empty else None)
+  median_duration = (
+      float(completed_durations.median())
+      if not completed_durations.empty else None)
+  p90_duration = (
+      float(completed_durations.quantile(0.90))
+      if not completed_durations.empty else None)
+  p95_duration = (
+      float(completed_durations.quantile(0.95))
+      if not completed_durations.empty else None)
+  max_duration = (
+      float(completed_durations.max())
+      if not completed_durations.empty else None)
   remaining_tasks = int((~terminal).sum())
   cache_hits = int((completed & joined["simulator_cache_hit"].eq(True)).sum())
   cache_field_missing = int(
@@ -399,6 +411,10 @@ def _summarize(joined: pd.DataFrame,
       "terminal_failed": int(terminal_failed.sum()),
       "terminal_failed_scenario_ids": terminal_failed_scenario_ids,
       "mean_completed_duration_seconds": mean_duration,
+      "median_completed_duration_seconds": median_duration,
+      "p90_completed_duration_seconds": p90_duration,
+      "p95_completed_duration_seconds": p95_duration,
+      "max_completed_duration_seconds": max_duration,
       "estimated_remaining_hours_at_concurrency_1": (
           mean_duration * remaining_tasks / 3600 if mean_duration else None),
       "dpe_covered": int(has_dpe.sum()),

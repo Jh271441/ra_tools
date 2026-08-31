@@ -217,6 +217,14 @@ def _validate_entry(entry: dict[str, Any], token: str) -> dict[str, Any]:
       "terminal_failed": result.get("terminal_failed"),
       "mean_completed_duration_seconds": result.get(
           "mean_completed_duration_seconds"),
+      "median_completed_duration_seconds": result.get(
+          "median_completed_duration_seconds"),
+      "p90_completed_duration_seconds": result.get(
+          "p90_completed_duration_seconds"),
+      "p95_completed_duration_seconds": result.get(
+          "p95_completed_duration_seconds"),
+      "max_completed_duration_seconds": result.get(
+          "max_completed_duration_seconds"),
       "estimated_remaining_hours_at_concurrency_1": result.get(
           "estimated_remaining_hours_at_concurrency_1"),
       "completed_missing_dpe": result.get("completed_missing_dpe"),

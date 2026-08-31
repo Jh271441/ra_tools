@@ -131,6 +131,11 @@ def test_summarize_separates_road_behavior_from_truth():
   assert result["completed_missing_dpe"] == 0
   assert result["terminal_dpe_covered"] == 3
   assert result["completed_dpe_covered"] == 3
+  assert result["mean_completed_duration_seconds"] == 600.0
+  assert result["median_completed_duration_seconds"] == 600.0
+  assert result["p90_completed_duration_seconds"] == 600.0
+  assert result["p95_completed_duration_seconds"] == 600.0
+  assert result["max_completed_duration_seconds"] == 600.0
   assert result["quality"]["tasks_with_warnings"] == 3
   assert result["quality"]["gate_passed_so_far"] is True
 
