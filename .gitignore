@@ -39,3 +39,12 @@ prepare_release*_probe*.py
 ra_triage_dashboard.backup-*/
 scripts/inspect_*.py
 auto_triage_bot/.data/
+
+# macOS Finder junk
+.DS_Store
+
+# Generated results and audit tree snapshots (keep outside Git)
+outputs/
+
+# Build/release artifacts
+*.zip
