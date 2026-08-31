@@ -835,6 +835,13 @@ def test_pipeline_error_snapshot_retains_last_good_job_state(tmp_path):
   assert second_error["monitor_error"]["consecutive_errors"] == 2
 
 
+def test_control_plane_error_retry_uses_capped_exponential_backoff():
+  assert [
+      pipeline_module._error_retry_seconds(index, 60, 300)
+      for index in range(1, 8)
+  ] == [60, 120, 240, 300, 300, 300, 300]
+
+
 def test_parse_task_profile_annotations_keeps_execution_stages():
   html = """
   {"text": "unrelated", "x": "2026-08-31T00:00:00", "y": 1.0,

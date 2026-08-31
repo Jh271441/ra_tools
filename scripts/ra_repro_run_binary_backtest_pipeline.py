@@ -147,7 +147,17 @@ def _write_error_status_snapshot(error: dict, status_path: Path) -> None:
       "consecutive_errors": error["consecutive_errors"],
       "error": error["error"],
   }
+  if "retry_after_seconds" in error:
+    current["monitor_error"]["retry_after_seconds"] = error[
+        "retry_after_seconds"]
   _write_status_snapshot(current, status_path)
+
+
+def _error_retry_seconds(consecutive_errors: int, poll_seconds: float,
+                         maximum_seconds: float) -> float:
+  """Back off repeated control-plane failures without stopping workers."""
+  exponent = min(max(consecutive_errors - 1, 0), 4)
+  return min(poll_seconds * (2 ** exponent), maximum_seconds)
 
 
 def _refresh_dashboard_if_needed(
@@ -257,6 +267,10 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
       help=("Exit only after this many consecutive control-plane failures; "
             "individual API calls already retry internally."),
   )
+  parser.add_argument(
+      "--max-error-backoff-seconds", type=float, default=300,
+      help="Maximum sleep between consecutive control-plane failure retries.",
+  )
   parser.add_argument("--anomaly-confirm-seconds", type=float, default=5.0)
   parser.add_argument(
       "--profile-after-seconds", type=float, default=1800.0,
@@ -300,6 +314,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     raise SystemExit("--anomaly-confirm-seconds must be non-negative")
   if args.profile_after_seconds < 0:
     raise SystemExit("--profile-after-seconds must be non-negative")
+  if args.max_error_backoff_seconds < args.poll_seconds:
+    raise SystemExit(
+        "--max-error-backoff-seconds must be at least --poll-seconds")
 
   consecutive_errors = 0
   while True:
@@ -339,10 +356,16 @@ def main(argv: Sequence[str] | None = None) -> None:
       consecutive_errors = 0
     except Exception as exc:  # pylint: disable=broad-exception-caught
       consecutive_errors += 1
+      retry_seconds = _error_retry_seconds(
+          consecutive_errors,
+          args.poll_seconds,
+          args.max_error_backoff_seconds,
+      )
       error = {
           "action": "error",
           "observed_at": datetime.now(timezone.utc).isoformat(),
           "consecutive_errors": consecutive_errors,
+          "retry_after_seconds": retry_seconds,
           "error": repr(exc),
           "traceback": traceback.format_exc(),
       }
@@ -350,7 +373,7 @@ def main(argv: Sequence[str] | None = None) -> None:
       _write_error_status_snapshot(error, args.status_snapshot)
       if consecutive_errors >= args.max_consecutive_errors:
         raise
-      time.sleep(args.poll_seconds)
+      time.sleep(retry_seconds)
       continue
 
     action = result.get("action")
