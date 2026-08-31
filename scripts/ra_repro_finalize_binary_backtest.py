@@ -21,12 +21,14 @@ from scripts.ra_repro_validate_orion import validate
 
 COHORTS = ("positive_auto", "negative_auto", "positive_manual")
 INDEPENDENT_REPLAY_FLAG = "--planning_enable_sim_assist_stuck_independent_replay"
+MAX_BACKTEST_CONCURRENCY = 20
 
 
 def summarize_job_configuration(
     jobs: Sequence[dict[str, Any]],
     expected_binary_id: int,
     expected_scenario_ids: Sequence[int] | None = None,
+    expected_max_concurrency: int | None = None,
 ) -> dict[str, Any]:
   """Summarize immutable submission-time gates for a set of Orion jobs."""
   total_tasks = sum(len(job["tasks"]) for job in jobs)
@@ -67,7 +69,10 @@ def summarize_job_configuration(
   cluster_mismatches = sum(
       item["cluster"] != "prod_gen4" for item in per_job)
   concurrency_mismatches = sum(
-      item["max_concurrency"] != 1 for item in per_job)
+      not 1 <= item["max_concurrency"] <= MAX_BACKTEST_CONCURRENCY or
+      (expected_max_concurrency is not None and
+       item["max_concurrency"] != expected_max_concurrency)
+      for item in per_job)
   expected_task_set = (
       {int(value) for value in expected_scenario_ids}
       if expected_scenario_ids is not None else None)
@@ -95,6 +100,7 @@ def summarize_job_configuration(
   )))
   return {
       "expected_binary_id": expected_binary_id,
+      "expected_max_concurrency": expected_max_concurrency,
       "job_count": len(jobs),
       "task_count": total_tasks,
       "binary_mismatches": binary_mismatches,
@@ -120,7 +126,8 @@ def summarize_job_configuration(
 
 def inspect_job_configuration(job_ids: Sequence[int],
                               expected_binary_id: int,
-                              expected_scenario_ids: Sequence[int] | None = None
+                              expected_scenario_ids: Sequence[int] | None = None,
+                              expected_max_concurrency: int | None = None,
                               ) -> dict[str, Any]:
   """Read task arguments and job placement settings from Orion storage."""
   try:
@@ -146,7 +153,8 @@ def inspect_job_configuration(job_ids: Sequence[int],
           "tasks": tasks,
       })
   return summarize_job_configuration(
-      jobs, expected_binary_id, expected_scenario_ids)
+      jobs, expected_binary_id, expected_scenario_ids,
+      expected_max_concurrency)
 
 
 def summarize_sources(manifest: pd.DataFrame,
@@ -234,10 +242,12 @@ def finalize(
     output_path: Path,
     token: str,
     allow_partial: bool,
+    expected_max_concurrency: int | None = None,
 ) -> dict[str, Any]:
   manifest = pd.read_csv(analysis_manifest_path, low_memory=False)
   job_configuration = inspect_job_configuration(
-      job_ids, binary_id, manifest["scenario_id"].astype(int).tolist())
+      job_ids, binary_id, manifest["scenario_id"].astype(int).tolist(),
+      expected_max_concurrency)
   if not job_configuration["gate_passed"]:
     raise RuntimeError(
         "Binary backtest submission configuration gate failed; refusing to "
@@ -304,6 +314,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
       default=Path("reports/ra_binary_backtest_20260831_metrics.json"))
   parser.add_argument("--orion-token", default=os.environ.get("ORION_TOKEN"))
   parser.add_argument("--allow-partial", action="store_true")
+  parser.add_argument(
+      "--expected-max-concurrency", type=int,
+      default=MAX_BACKTEST_CONCURRENCY)
   return parser.parse_args(argv)
 
 
@@ -324,6 +337,7 @@ def main(argv: Sequence[str] | None = None) -> None:
       args.output,
       args.orion_token,
       args.allow_partial,
+      args.expected_max_concurrency,
   )
   print(json.dumps(result, ensure_ascii=False, indent=2))
 

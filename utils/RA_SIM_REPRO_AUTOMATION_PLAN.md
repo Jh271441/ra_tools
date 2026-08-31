@@ -96,7 +96,8 @@ target T binary × [T-3, T-2, T-1, T] source scenarios
 Gen4 硬门禁：
 
 - cluster=`prod_gen4`；
-- 同一时刻仅一个活动 Orion Job，`max_concurrency=1`；
+- 同一时刻仅一个活动 Orion Job；Job 内使用已通过 150-case 验证的受控并发，
+  `max_concurrency` 范围为 1～20、默认 20，并作为提交配置精确校验；
 - simulator cache disabled；
 - 每个 task 启用 DPE；
 - `--planning_enable_sim_assist_stuck_independent_replay`；

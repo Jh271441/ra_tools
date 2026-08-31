@@ -76,6 +76,22 @@ def test_summarize_job_configuration_requires_all_submission_gates():
   assert summary["missing_scenario_ids"] == []
   assert summary["unexpected_scenario_ids"] == []
 
+  jobs[0]["max_concurrency"] = 20
+  controlled_parallel = summarize_job_configuration(
+      jobs, 1775147, [0, 1, 2], expected_max_concurrency=20)
+  assert controlled_parallel["gate_passed"] is True
+  assert controlled_parallel["concurrency_mismatches"] == 0
+
+  jobs[0]["max_concurrency"] = 21
+  too_high = summarize_job_configuration(jobs, 1775147, [0, 1, 2])
+  assert too_high["gate_passed"] is False
+  assert too_high["concurrency_mismatches"] == 1
+  too_high_exact = summarize_job_configuration(
+      jobs, 1775147, [0, 1, 2], expected_max_concurrency=21)
+  assert too_high_exact["gate_passed"] is False
+  assert too_high_exact["concurrency_mismatches"] == 1
+  jobs[0]["max_concurrency"] = 1
+
   jobs[0]["tasks"][1]["task_args"].pop("--enable-dpe")
   jobs[0]["tasks"][2]["task_args"]["--sim-exec-args"] = "--sim_aligned_mode"
   summary = summarize_job_configuration(jobs, 1775147)
@@ -117,7 +133,7 @@ def test_finalize_atomically_publishes_only_complete_four_release_matrix(
   } for row in manifest.itertuples()]
   monkeypatch.setattr(
       "ra_repro_finalize_binary_backtest.inspect_job_configuration",
-      lambda job_ids, binary_id, scenario_ids: {
+      lambda job_ids, binary_id, scenario_ids, expected_max_concurrency: {
           "gate_passed": True,
           "expected_binary_id": binary_id,
           "expected_scenario_count": len(scenario_ids),
@@ -159,7 +175,9 @@ def test_finalize_refuses_partial_matrix_without_writing_artifact(
   output = tmp_path / "metrics.json"
   monkeypatch.setattr(
       "ra_repro_finalize_binary_backtest.inspect_job_configuration",
-      lambda job_ids, binary_id, scenario_ids: {"gate_passed": True},
+      lambda job_ids, binary_id, scenario_ids, expected_max_concurrency: {
+          "gate_passed": True
+      },
   )
   monkeypatch.setattr(
       "ra_repro_finalize_binary_backtest.validate",

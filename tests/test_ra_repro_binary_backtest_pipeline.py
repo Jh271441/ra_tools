@@ -329,7 +329,7 @@ def test_validate_entry_rejects_terminal_result_with_manifest_count_mismatch(
   monkeypatch.setattr(
       advance_module,
       "inspect_job_configuration",
-      lambda job_ids, binary_id, scenario_ids: {
+      lambda job_ids, binary_id, scenario_ids, expected_max_concurrency: {
           "gate_passed": True,
           "expected_scenario_count": len(scenario_ids),
       },
@@ -498,7 +498,7 @@ def test_advance_launches_only_missing_diagonal_after_cross_job_passes(
   assert result["missing_releases"] == ["gen4-release-20260821"]
   assert len(launches) == 1
   assert launches[0]["source_releases"] == ["gen4-release-20260821"]
-  assert launches[0]["max_concurrency"] == 1
+  assert launches[0]["max_concurrency"] == 20
   assert launches[0]["execute"] is True
 
 
@@ -511,6 +511,7 @@ def test_advance_finalizes_four_release_target_after_both_jobs_pass(
       "sample_per_cohort": 10,
       "seed": "seed",
       "binary_id": 1775147,
+      "max_concurrency": 20,
   }
   registry.write_text(json.dumps({
       "cross": {

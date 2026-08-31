@@ -260,6 +260,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
       default=Path("reports/ra_online_metrics_20260831.json"))
   parser.add_argument("--window-size", type=int, default=4)
   parser.add_argument("--sample-per-cohort", type=int, default=10)
+  parser.add_argument("--max-concurrency", type=int, default=20)
   parser.add_argument("--seed", default="ra_binary_backtest_20260831_v1")
   parser.add_argument("--poll-seconds", type=float, default=300)
   parser.add_argument(
@@ -314,6 +315,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     raise SystemExit("--anomaly-confirm-seconds must be non-negative")
   if args.profile_after_seconds < 0:
     raise SystemExit("--profile-after-seconds must be non-negative")
+  if not 1 <= args.max_concurrency <= 20:
+    raise SystemExit("--max-concurrency must be between 1 and 20")
   if args.max_error_backoff_seconds < args.poll_seconds:
     raise SystemExit(
         "--max-error-backoff-seconds must be at least --poll-seconds")
@@ -345,6 +348,7 @@ def main(argv: Sequence[str] | None = None) -> None:
           execute=True,
           token=None,
           anomaly_confirm_seconds=args.anomaly_confirm_seconds,
+          max_concurrency=args.max_concurrency,
       )
       _enrich_long_running_tasks(result, args.profile_after_seconds)
       result["observed_at"] = datetime.now(timezone.utc).isoformat()

@@ -35,6 +35,7 @@ TEMPLATE_JOBS = {
 }
 COHORTS = ("positive_auto", "negative_auto", "positive_manual")
 INDEPENDENT_REPLAY_FLAG = "--planning_enable_sim_assist_stuck_independent_replay"
+MAX_BACKTEST_CONCURRENCY = 20
 
 
 def _write_registry(path: Path, registry: dict[str, Any]) -> None:
@@ -159,10 +160,11 @@ def select_manifest(manifest_path: Path, source_releases: Sequence[str],
 
 def _registry_key(target_release: str, source_releases: Sequence[str],
                   sample_per_cohort: int, seed: str,
-                  selected_hash: str) -> str:
+                  selected_hash: str, max_concurrency: int) -> str:
   sources = ",".join(source_releases)
   sim_config_hash = hashlib.sha256(
-      INDEPENDENT_REPLAY_FLAG.encode("utf-8")).hexdigest()[:12]
+      (f"{INDEPENDENT_REPLAY_FLAG}|simulator_cache=disabled|dpe=enabled|"
+       f"max_concurrency={max_concurrency}").encode("utf-8")).hexdigest()[:12]
   return (f"target={target_release}|sources={sources}|sample="
           f"{sample_per_cohort}|seed={seed}|manifest={selected_hash[:16]}|"
           f"sim_config={sim_config_hash}")
@@ -199,7 +201,7 @@ def build_and_maybe_launch(
       manifest_path, source_releases, sample_per_cohort, seed)
   selected_hash = _manifest_hash(selected)
   key = _registry_key(target_release, source_releases, sample_per_cohort, seed,
-                      selected_hash)
+                      selected_hash, max_concurrency)
 
   registry: dict[str, Any] = {}
   if registry_path.exists():
@@ -223,8 +225,10 @@ def build_and_maybe_launch(
   if metadata["cluster"] != "prod_gen4":
     raise RuntimeError(
         f"Gen4 backtest requires prod_gen4, got {metadata['cluster']}")
-  if max_concurrency != 1:
-    raise ValueError("RA binary backtest requires max_concurrency=1")
+  if not 1 <= max_concurrency <= MAX_BACKTEST_CONCURRENCY:
+    raise ValueError(
+        "RA binary backtest max_concurrency must be between 1 and "
+        f"{MAX_BACKTEST_CONCURRENCY}")
 
   template_task_id = int(template_tasks[0]["id"])
   orion_job = clone_job(
@@ -361,7 +365,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                       dest="source_releases")
   parser.add_argument("--sample-per-cohort", type=int, default=10)
   parser.add_argument("--seed", default="ra_binary_backtest_20260831_v1")
-  parser.add_argument("--max-concurrency", type=int, default=1)
+  parser.add_argument(
+      "--max-concurrency", type=int, default=MAX_BACKTEST_CONCURRENCY)
   parser.add_argument("--selected-manifest", type=Path, required=True)
   parser.add_argument("--analysis-manifest", type=Path, default=None)
   parser.add_argument(
@@ -376,8 +381,10 @@ def main(argv: Sequence[str] | None = None) -> None:
   args = _parse_args(argv)
   if args.sample_per_cohort < 0:
     raise SystemExit("--sample-per-cohort must be >= 0 (0 means full)")
-  if args.max_concurrency != 1:
-    raise SystemExit("RA binary backtest requires --max-concurrency 1")
+  if not 1 <= args.max_concurrency <= MAX_BACKTEST_CONCURRENCY:
+    raise SystemExit(
+        "--max-concurrency must be between 1 and "
+        f"{MAX_BACKTEST_CONCURRENCY}")
   release_order = list(TEMPLATE_JOBS)
   target_index = release_order.index(args.target_release)
   if any(release_order.index(item) > target_index

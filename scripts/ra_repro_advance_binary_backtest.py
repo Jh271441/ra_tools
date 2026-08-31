@@ -26,6 +26,7 @@ from scripts.ra_repro_finalize_binary_backtest import (
     inspect_job_configuration,
 )
 from scripts.ra_repro_launch_binary_backtest import (
+    MAX_BACKTEST_CONCURRENCY,
     TEMPLATE_JOBS,
     build_and_maybe_launch,
     select_manifest,
@@ -190,7 +191,8 @@ def _validate_entry(entry: dict[str, Any], token: str) -> dict[str, Any]:
         int(row["scenario_id"]) for row in csv.DictReader(stream)
     ]
   configuration = inspect_job_configuration(
-      [job_id], int(entry["binary_id"]), expected_scenario_ids)
+      [job_id], int(entry["binary_id"]), expected_scenario_ids,
+      int(entry.get("max_concurrency", 1)))
   result = validate(
       [job_id], selected_manifest, None, token)
   quality = result.get("quality") or {}
@@ -247,7 +249,12 @@ def advance(
     execute: bool,
     token: str | None,
     anomaly_confirm_seconds: float = 5.0,
+    max_concurrency: int = MAX_BACKTEST_CONCURRENCY,
 ) -> dict[str, Any]:
+  if not 1 <= max_concurrency <= MAX_BACKTEST_CONCURRENCY:
+    raise ValueError(
+        "max_concurrency must be between 1 and "
+        f"{MAX_BACKTEST_CONCURRENCY}")
   registry = (
       json.loads(registry_path.read_text(encoding="utf-8"))
       if registry_path.exists() else {})
@@ -399,7 +406,7 @@ def advance(
           selected_manifest_path=Path(f"{prefix}_manifest.csv"),
           analysis_manifest_path=Path(f"{prefix}_analysis_manifest.csv"),
           registry_path=registry_path,
-          max_concurrency=1,
+          max_concurrency=max_concurrency,
           execute=execute,
           token=token,
       )
@@ -429,6 +436,15 @@ def advance(
           "reason": "target entries disagree on binary id",
           "binary_ids": sorted(binary_ids),
       }
+    expected_concurrencies = {
+        int(entry.get("max_concurrency", 1)) for entry in target_entries
+    }
+    if len(expected_concurrencies) != 1:
+      return {
+          "action": "stop",
+          "reason": "target entries disagree on max concurrency",
+          "max_concurrencies": sorted(expected_concurrencies),
+      }
     result = finalize(
         job_ids=job_ids,
         analysis_manifest_path=combined_path,
@@ -437,6 +453,7 @@ def advance(
         output_path=metrics_path,
         token=token,
         allow_partial=False,
+        expected_max_concurrency=expected_concurrencies.pop(),
     )
     return {
         "action": "finalize",
@@ -466,6 +483,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
   parser.add_argument("--sample-per-cohort", type=int, default=10)
   parser.add_argument("--seed", default="ra_binary_backtest_20260831_v1")
   parser.add_argument("--execute", action="store_true")
+  parser.add_argument(
+      "--max-concurrency", type=int, default=MAX_BACKTEST_CONCURRENCY)
   parser.add_argument("--anomaly-confirm-seconds", type=float, default=5.0)
   parser.add_argument("--orion-token", default=os.environ.get("ORION_TOKEN"))
   return parser.parse_args(argv)
@@ -490,6 +509,7 @@ def main(argv: Sequence[str] | None = None) -> None:
       execute=args.execute,
       token=args.orion_token,
       anomaly_confirm_seconds=args.anomaly_confirm_seconds,
+      max_concurrency=args.max_concurrency,
   )
   result["observed_at"] = datetime.now(timezone.utc).isoformat()
   print(json.dumps(result, ensure_ascii=False, indent=2))
