@@ -823,6 +823,17 @@ def test_pipeline_error_snapshot_retains_last_good_job_state(tmp_path):
       },
   }
 
+  pipeline_module._write_error_status_snapshot({
+      "observed_at": "2026-08-31T00:02:00+00:00",
+      "consecutive_errors": 2,
+      "error": "OrionDbAccessError('HTTP status code 502')",
+  }, path)
+  second_error = json.loads(path.read_text(encoding="utf-8"))
+  assert second_error["observed_at"] == "2026-08-31T00:02:00+00:00"
+  assert second_error["last_successful_observed_at"] == (
+      "2026-08-31T00:00:00+00:00")
+  assert second_error["monitor_error"]["consecutive_errors"] == 2
+
 
 def test_parse_task_profile_annotations_keeps_execution_stages():
   html = """

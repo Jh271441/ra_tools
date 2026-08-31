@@ -139,7 +139,8 @@ def _write_error_status_snapshot(error: dict, status_path: Path) -> None:
   current = {}
   if status_path.exists():
     current = json.loads(status_path.read_text(encoding="utf-8"))
-  current["last_successful_observed_at"] = current.get("observed_at")
+  if current.get("snapshot_status") != "stale_due_to_monitor_error":
+    current["last_successful_observed_at"] = current.get("observed_at")
   current["observed_at"] = error["observed_at"]
   current["snapshot_status"] = "stale_due_to_monitor_error"
   current["monitor_error"] = {
