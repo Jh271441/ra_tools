@@ -322,6 +322,41 @@ def test_advance_stops_active_job_on_incremental_quality_failure(
   }]
 
 
+def test_validate_entry_rejects_terminal_result_with_manifest_count_mismatch(
+    monkeypatch):
+  monkeypatch.setattr(
+      advance_module,
+      "inspect_job_configuration",
+      lambda job_ids, binary_id: {"gate_passed": True},
+  )
+  monkeypatch.setattr(
+      advance_module,
+      "validate",
+      lambda job_ids, manifest_path, output_path, token: {
+          "is_terminal_and_complete": True,
+          "manifest_rows": 89,
+          "quality": {"gate_passed_so_far": True},
+          "completed": 89,
+          "terminal_failed": 0,
+          "completed_missing_dpe": 0,
+          "completed_pending_dpe_grace": 0,
+      },
+  )
+
+  result = advance_module._validate_entry({
+      "job_id": 100,
+      "binary_id": 1775147,
+      "selected_manifest": "manifest.csv",
+      "scenario_count": 90,
+  }, "token")
+
+  assert result["passed"] is False
+  assert result["incremental_gate_passed"] is False
+  assert result["manifest_matches_expected"] is False
+  assert result["manifest_rows"] == 89
+  assert result["expected_manifest_rows"] == 90
+
+
 def test_advance_refreshes_status_after_incremental_validation(
     tmp_path, monkeypatch):
   registry = tmp_path / "jobs.json"

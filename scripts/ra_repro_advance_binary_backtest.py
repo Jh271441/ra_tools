@@ -186,11 +186,12 @@ def _validate_entry(entry: dict[str, Any], token: str) -> dict[str, Any]:
   configuration = inspect_job_configuration([job_id], int(entry["binary_id"]))
   result = validate(
       [job_id], Path(entry["selected_manifest"]), None, token)
-  passed = bool(
-      configuration["gate_passed"] and result["is_terminal_and_complete"])
   quality = result.get("quality") or {}
   manifest_matches = (
       int(result.get("manifest_rows") or 0) == int(entry["scenario_count"]))
+  passed = bool(
+      configuration["gate_passed"] and manifest_matches and
+      result["is_terminal_and_complete"])
   incremental_gate_passed = bool(
       configuration["gate_passed"] and manifest_matches and
       not int(result.get("terminal_failed") or 0) and
@@ -212,6 +213,7 @@ def _validate_entry(entry: dict[str, Any], token: str) -> dict[str, Any]:
           "completed_pending_dpe_grace"),
       "manifest_rows": result.get("manifest_rows"),
       "expected_manifest_rows": int(entry["scenario_count"]),
+      "manifest_matches_expected": manifest_matches,
   }
 
 
