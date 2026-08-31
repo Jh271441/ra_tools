@@ -28,6 +28,10 @@ FORWARDED_KEYS = (
     "PLATFORM",
 )
 _KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_PROXY_KEYS = (
+    "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "all_proxy", "no_proxy",
+)
 
 
 def read_env_file(path: Path) -> dict[str, str]:
@@ -49,19 +53,28 @@ def read_env_file(path: Path) -> dict[str, str]:
   return values
 
 
-def build_environment(path: Path) -> dict[str, str]:
+def build_environment(path: Path, preserve_proxy: bool = False) -> dict[str, str]:
   source = read_env_file(path)
   missing = [key for key in FORWARDED_KEYS if key not in source]
   if missing:
     raise ValueError(f"Voyager env is missing required keys: {missing}")
   environment = dict(os.environ)
   environment.update({key: source[key] for key in FORWARDED_KEYS})
+  if not preserve_proxy:
+    for key in _PROXY_KEYS:
+      environment.pop(key, None)
   return environment
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
   parser = argparse.ArgumentParser()
   parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV_FILE)
+  parser.add_argument(
+      "--preserve-proxy",
+      action="store_true",
+      help=("Preserve HTTP(S)/ALL/NO_PROXY variables. Internal Voyager APIs "
+            "use direct routing by default."),
+  )
   parser.add_argument("command", nargs=argparse.REMAINDER)
   args = parser.parse_args(argv)
   if args.command and args.command[0] == "--":
@@ -73,7 +86,10 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> None:
   args = _parse_args(argv)
-  environment = build_environment(args.env_file)
+  environment = build_environment(
+      args.env_file,
+      preserve_proxy=args.preserve_proxy,
+  )
   os.execvpe(args.command[0], args.command, environment)
 
 

@@ -26,6 +26,9 @@ def test_build_environment_parses_values_as_data(tmp_path, monkeypatch):
   )
   monkeypatch.setenv("EXISTING", "kept")
   monkeypatch.setenv("LS_COLORS", "original")
+  monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:7890")
+  monkeypatch.setenv("https_proxy", "http://127.0.0.1:7890")
+  monkeypatch.setenv("NO_PROXY", "localhost")
 
   environment = run_with_voyager_env.build_environment(env_file)
 
@@ -33,6 +36,15 @@ def test_build_environment_parses_values_as_data(tmp_path, monkeypatch):
   assert environment["PYTHONPATH"] == "/voyager/python:/sdk/python"
   assert environment["LS_COLORS"] == "original"
   assert "IGNORED_SECRET" not in environment
+  assert "HTTP_PROXY" not in environment
+  assert "https_proxy" not in environment
+  assert "NO_PROXY" not in environment
+
+  preserved = run_with_voyager_env.build_environment(
+      env_file, preserve_proxy=True)
+  assert preserved["HTTP_PROXY"] == "http://127.0.0.1:7890"
+  assert preserved["https_proxy"] == "http://127.0.0.1:7890"
+  assert preserved["NO_PROXY"] == "localhost"
 
 
 def test_read_env_file_accepts_export_prefix(tmp_path):
