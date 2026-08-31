@@ -4,6 +4,23 @@
 
 首版不会写 Review、Trail 或 GT，不会发布 AutoTriage 结果。D-Chat BotUser 要求回调在 5 秒内直接返回一条消息，因此服务先返回 `{"text":"收到，正在处理…"}`；看板查询和大模型调用在后台执行，完成后复用看板已经验证的 DChat BotUser `POST /v3/message.create` 回复到提问人的 LDAP 私聊。群聊中的即时确认会留在原会话，最终答案首版发私聊；若后续确认群内主动回复 API，再扩展为原会话回复。
 
+## 鲁班直连 thin server（推荐先做）
+
+联调 DChat 入站链路时，不必先启用跨机房中继。`thin_server` 直接部署在在线鲁班，只校验回调、解析用户消息，并在同一个 HTTP 响应中返回固定模板：
+
+```text
+DChat -> Kylin /dchat-thin -> Luban thin server -> 固定 JSON 文本回复
+```
+
+这个模式不连接 Cloud Server、看板、模型或 DChat OpenAPI，不使用 SQLite，不提供 `/pull`、`/ack`、`/nack`，也不需要 `relay_worker_secret`、DChat `client_id` 或 `client_secret`。Kylin 只需为 `/dchat-thin` **添加** `X-Auto-Triage-Signature: <webhook token>`；不要添加或替换 `Authorization`。
+
+```bash
+AUTOTRIAGE_BOT_DATA_DIR=/path/to/persistent/auto-triage-thin \
+bash auto_triage_bot/scripts/run_luban_thin.sh
+```
+
+默认监听 `0.0.0.0:18791`。Kylin 在在线内蒙古集群注册 `/dchat-thin`，开启 `strip_uri`，上游指向鲁班实例 IP 的 `18791`；DChat `notification_url` 填 `https://ra-model.intra.xiaojukeji.com/dchat-thin` 并发布。外部 `/dchat-thin/health` 应返回 `role=luban_direct_template`。验证完成后，再决定保留固定回复，还是切换到后面的 Relay + Cloud Worker 完整链路。
+
 ## 跨机房中继架构
 
 正式链路把接入面和数据面拆开，避免线上 DChat 主动访问线下 Cloud Server：
