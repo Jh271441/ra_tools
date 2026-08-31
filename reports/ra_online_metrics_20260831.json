@@ -1,0 +1,518 @@
+{
+  "generated_at": "2026-08-31T01:18:00.030969+00:00",
+  "view_id": 2410,
+  "query_contract": {
+    "trip_category": [
+      0
+    ],
+    "abnormal_behavior": [
+      292,
+      297,
+      299,
+      393,
+      391
+    ],
+    "ra_type": [
+      2,
+      3
+    ],
+    "trip_odd": [
+      "ODD2"
+    ],
+    "is_deleted": [
+      0
+    ],
+    "platform": [
+      7,
+      8
+    ],
+    "distinct_key": "issue_id"
+  },
+  "formulas": {
+    "precision_good_results": [
+      "失败",
+      "成功",
+      "无需协助",
+      "限制使用"
+    ],
+    "precision_excluded_results": [
+      "out_of_scope",
+      "未填写",
+      "未接起"
+    ],
+    "recall_excluded_results": [
+      "out_of_scope",
+      "未填写",
+      "未接起",
+      "误触发"
+    ]
+  },
+  "releases": {
+    "gen4-release-20260605": {
+      "release": "gen4-release-20260605",
+      "raw_rows": 1865,
+      "unique_issue_ids": 1865,
+      "duplicate_issue_rows": 0,
+      "auto_trigger_total": 1614,
+      "manual_trigger_total": 251,
+      "precision_auto_tp": 1165,
+      "precision_auto_fp": 439,
+      "precision_numerator": 1165,
+      "precision_denominator": 1604,
+      "online_precision": 0.7263092269326683,
+      "recall_auto_tp": 1172,
+      "recall_manual_fn": 188,
+      "recall_numerator": 1172,
+      "recall_denominator": 1360,
+      "online_recall": 0.861764705882353,
+      "auto_trigger_tp": 1165,
+      "auto_trigger_fp": 439,
+      "manual_trigger_fn": 188,
+      "auto_recall_only_count": 7,
+      "result_counts_by_ra_type": {
+        "2": {
+          "成功": 618,
+          "无需协助": 519,
+          "误触发": 432,
+          "失败": 28,
+          "待确认": 7,
+          "未接起": 5,
+          "<null>": 4,
+          "out_of_scope": 1
+        },
+        "3": {
+          "成功": 95,
+          "无需协助": 77,
+          "误触发": 59,
+          "失败": 16,
+          "out_of_scope": 2,
+          "<null>": 1,
+          "未接起": 1
+        }
+      },
+      "data_source": "trail_view_2410_shuyi_contract"
+    },
+    "gen4-release-20260612": {
+      "release": "gen4-release-20260612",
+      "raw_rows": 768,
+      "unique_issue_ids": 768,
+      "duplicate_issue_rows": 0,
+      "auto_trigger_total": 631,
+      "manual_trigger_total": 137,
+      "precision_auto_tp": 443,
+      "precision_auto_fp": 182,
+      "precision_numerator": 443,
+      "precision_denominator": 625,
+      "online_precision": 0.7088,
+      "recall_auto_tp": 447,
+      "recall_manual_fn": 96,
+      "recall_numerator": 447,
+      "recall_denominator": 543,
+      "online_recall": 0.8232044198895028,
+      "auto_trigger_tp": 443,
+      "auto_trigger_fp": 182,
+      "manual_trigger_fn": 96,
+      "auto_recall_only_count": 4,
+      "result_counts_by_ra_type": {
+        "2": {
+          "成功": 243,
+          "无需协助": 188,
+          "误触发": 178,
+          "失败": 12,
+          "待确认": 4,
+          "out_of_scope": 3,
+          "<null>": 2,
+          "未接起": 1
+        },
+        "3": {
+          "成功": 61,
+          "误触发": 37,
+          "无需协助": 30,
+          "失败": 5,
+          "out_of_scope": 3,
+          "<null>": 1
+        }
+      },
+      "data_source": "trail_view_2410_shuyi_contract"
+    },
+    "gen4-release-20260618": {
+      "release": "gen4-release-20260618",
+      "raw_rows": 1044,
+      "unique_issue_ids": 1044,
+      "duplicate_issue_rows": 0,
+      "auto_trigger_total": 862,
+      "manual_trigger_total": 182,
+      "precision_auto_tp": 684,
+      "precision_auto_fp": 168,
+      "precision_numerator": 684,
+      "precision_denominator": 852,
+      "online_precision": 0.8028169014084507,
+      "recall_auto_tp": 685,
+      "recall_manual_fn": 140,
+      "recall_numerator": 685,
+      "recall_denominator": 825,
+      "online_recall": 0.8303030303030303,
+      "auto_trigger_tp": 684,
+      "auto_trigger_fp": 168,
+      "manual_trigger_fn": 140,
+      "auto_recall_only_count": 1,
+      "result_counts_by_ra_type": {
+        "2": {
+          "无需协助": 343,
+          "成功": 318,
+          "误触发": 167,
+          "失败": 23,
+          "<null>": 5,
+          "out_of_scope": 5,
+          "待确认": 1
+        },
+        "3": {
+          "成功": 87,
+          "无需协助": 43,
+          "误触发": 38,
+          "失败": 9,
+          "未接起": 2,
+          "<null>": 1,
+          "待确认": 1,
+          "out_of_scope": 1
+        }
+      },
+      "data_source": "trail_view_2410_shuyi_contract"
+    },
+    "gen4-release-20260626": {
+      "release": "gen4-release-20260626",
+      "raw_rows": 3755,
+      "unique_issue_ids": 3755,
+      "duplicate_issue_rows": 0,
+      "auto_trigger_total": 3181,
+      "manual_trigger_total": 574,
+      "precision_auto_tp": 2465,
+      "precision_auto_fp": 682,
+      "precision_numerator": 2465,
+      "precision_denominator": 3147,
+      "online_precision": 0.7832856688910073,
+      "recall_auto_tp": 2473,
+      "recall_manual_fn": 445,
+      "recall_numerator": 2473,
+      "recall_denominator": 2918,
+      "online_recall": 0.8474982864976011,
+      "auto_trigger_tp": 2465,
+      "auto_trigger_fp": 682,
+      "manual_trigger_fn": 445,
+      "auto_recall_only_count": 8,
+      "result_counts_by_ra_type": {
+        "2": {
+          "成功": 1578,
+          "无需协助": 840,
+          "误触发": 674,
+          "失败": 47,
+          "未接起": 18,
+          "待确认": 8,
+          "out_of_scope": 8,
+          "<null>": 8
+        },
+        "3": {
+          "成功": 304,
+          "误触发": 121,
+          "无需协助": 119,
+          "失败": 21,
+          "未接起": 4,
+          "out_of_scope": 3,
+          "限制使用": 1,
+          "<null>": 1
+        }
+      },
+      "data_source": "trail_view_2410_shuyi_contract"
+    },
+    "gen4-release-20260710": {
+      "release": "gen4-release-20260710",
+      "raw_rows": 1526,
+      "unique_issue_ids": 1526,
+      "duplicate_issue_rows": 0,
+      "auto_trigger_total": 1185,
+      "manual_trigger_total": 341,
+      "precision_auto_tp": 918,
+      "precision_auto_fp": 259,
+      "precision_numerator": 918,
+      "precision_denominator": 1177,
+      "online_precision": 0.7799490229396772,
+      "recall_auto_tp": 924,
+      "recall_manual_fn": 280,
+      "recall_numerator": 924,
+      "recall_denominator": 1204,
+      "online_recall": 0.7674418604651163,
+      "auto_trigger_tp": 918,
+      "auto_trigger_fp": 259,
+      "manual_trigger_fn": 280,
+      "auto_recall_only_count": 6,
+      "result_counts_by_ra_type": {
+        "2": {
+          "无需协助": 467,
+          "成功": 423,
+          "误触发": 253,
+          "失败": 28,
+          "未接起": 7,
+          "待确认": 6,
+          "out_of_scope": 1
+        },
+        "3": {
+          "成功": 213,
+          "无需协助": 64,
+          "误触发": 58,
+          "失败": 3,
+          "未接起": 2,
+          "out_of_scope": 1
+        }
+      },
+      "data_source": "trail_view_2410_shuyi_contract"
+    },
+    "gen4-release-20260717": {
+      "release": "gen4-release-20260717",
+      "raw_rows": 1360,
+      "unique_issue_ids": 1360,
+      "duplicate_issue_rows": 0,
+      "auto_trigger_total": 1083,
+      "manual_trigger_total": 277,
+      "precision_auto_tp": 857,
+      "precision_auto_fp": 213,
+      "precision_numerator": 857,
+      "precision_denominator": 1070,
+      "online_precision": 0.8009345794392523,
+      "recall_auto_tp": 859,
+      "recall_manual_fn": 228,
+      "recall_numerator": 859,
+      "recall_denominator": 1087,
+      "online_recall": 0.7902483900643974,
+      "auto_trigger_tp": 857,
+      "auto_trigger_fp": 213,
+      "manual_trigger_fn": 228,
+      "auto_recall_only_count": 2,
+      "result_counts_by_ra_type": {
+        "2": {
+          "成功": 492,
+          "无需协助": 337,
+          "误触发": 211,
+          "失败": 28,
+          "未接起": 6,
+          "out_of_scope": 5,
+          "待确认": 2,
+          "未填写": 2
+        },
+        "3": {
+          "成功": 149,
+          "无需协助": 64,
+          "误触发": 39,
+          "失败": 13,
+          "out_of_scope": 8,
+          "未接起": 2,
+          "待确认": 2
+        }
+      },
+      "data_source": "trail_view_2410_shuyi_contract"
+    },
+    "gen4-release-20260724": {
+      "release": "gen4-release-20260724",
+      "raw_rows": 1430,
+      "unique_issue_ids": 1430,
+      "duplicate_issue_rows": 0,
+      "auto_trigger_total": 1181,
+      "manual_trigger_total": 249,
+      "precision_auto_tp": 988,
+      "precision_auto_fp": 188,
+      "precision_numerator": 988,
+      "precision_denominator": 1176,
+      "online_precision": 0.8401360544217688,
+      "recall_auto_tp": 990,
+      "recall_manual_fn": 212,
+      "recall_numerator": 990,
+      "recall_denominator": 1202,
+      "online_recall": 0.8236272878535774,
+      "auto_trigger_tp": 988,
+      "auto_trigger_fp": 188,
+      "manual_trigger_fn": 212,
+      "auto_recall_only_count": 2,
+      "result_counts_by_ra_type": {
+        "2": {
+          "成功": 593,
+          "无需协助": 377,
+          "误触发": 186,
+          "失败": 18,
+          "未接起": 3,
+          "out_of_scope": 2,
+          "待确认": 2
+        },
+        "3": {
+          "成功": 140,
+          "无需协助": 61,
+          "误触发": 35,
+          "失败": 10,
+          "out_of_scope": 2,
+          "待确认": 1
+        }
+      },
+      "data_source": "trail_view_2410_shuyi_contract"
+    },
+    "gen4-release-20260731": {
+      "release": "gen4-release-20260731",
+      "raw_rows": 1557,
+      "unique_issue_ids": 1557,
+      "duplicate_issue_rows": 0,
+      "auto_trigger_total": 1220,
+      "manual_trigger_total": 337,
+      "precision_auto_tp": 1019,
+      "precision_auto_fp": 193,
+      "precision_numerator": 1019,
+      "precision_denominator": 1212,
+      "online_precision": 0.8407590759075908,
+      "recall_auto_tp": 1019,
+      "recall_manual_fn": 295,
+      "recall_numerator": 1019,
+      "recall_denominator": 1314,
+      "online_recall": 0.7754946727549468,
+      "auto_trigger_tp": 1019,
+      "auto_trigger_fp": 193,
+      "manual_trigger_fn": 295,
+      "auto_recall_only_count": 0,
+      "result_counts_by_ra_type": {
+        "2": {
+          "成功": 605,
+          "无需协助": 374,
+          "误触发": 193,
+          "失败": 40,
+          "out_of_scope": 6,
+          "未接起": 2
+        },
+        "3": {
+          "成功": 198,
+          "无需协助": 77,
+          "误触发": 40,
+          "失败": 20,
+          "out_of_scope": 1,
+          "未接起": 1
+        }
+      },
+      "data_source": "trail_view_2410_shuyi_contract"
+    },
+    "gen4-release-20260807": {
+      "release": "gen4-release-20260807",
+      "raw_rows": 1246,
+      "unique_issue_ids": 1246,
+      "duplicate_issue_rows": 0,
+      "auto_trigger_total": 948,
+      "manual_trigger_total": 298,
+      "precision_auto_tp": 734,
+      "precision_auto_fp": 212,
+      "precision_numerator": 734,
+      "precision_denominator": 946,
+      "online_precision": 0.7758985200845666,
+      "recall_auto_tp": 734,
+      "recall_manual_fn": 259,
+      "recall_numerator": 734,
+      "recall_denominator": 993,
+      "online_recall": 0.7391742195367573,
+      "auto_trigger_tp": 734,
+      "auto_trigger_fp": 212,
+      "manual_trigger_fn": 259,
+      "auto_recall_only_count": 0,
+      "result_counts_by_ra_type": {
+        "2": {
+          "成功": 365,
+          "无需协助": 364,
+          "误触发": 212,
+          "失败": 5,
+          "out_of_scope": 2
+        },
+        "3": {
+          "成功": 184,
+          "无需协助": 71,
+          "误触发": 37,
+          "失败": 4,
+          "out_of_scope": 2
+        }
+      },
+      "data_source": "trail_view_2410_shuyi_contract"
+    },
+    "gen4-release-20260814": {
+      "release": "gen4-release-20260814",
+      "raw_rows": 901,
+      "unique_issue_ids": 901,
+      "duplicate_issue_rows": 0,
+      "auto_trigger_total": 716,
+      "manual_trigger_total": 185,
+      "precision_auto_tp": 561,
+      "precision_auto_fp": 149,
+      "precision_numerator": 561,
+      "precision_denominator": 710,
+      "online_precision": 0.7901408450704225,
+      "recall_auto_tp": 561,
+      "recall_manual_fn": 142,
+      "recall_numerator": 561,
+      "recall_denominator": 703,
+      "online_recall": 0.7980085348506402,
+      "auto_trigger_tp": 561,
+      "auto_trigger_fp": 149,
+      "manual_trigger_fn": 142,
+      "auto_recall_only_count": 0,
+      "result_counts_by_ra_type": {
+        "2": {
+          "无需协助": 279,
+          "成功": 269,
+          "误触发": 149,
+          "失败": 13,
+          "未接起": 4,
+          "out_of_scope": 1,
+          "未填写": 1
+        },
+        "3": {
+          "成功": 99,
+          "误触发": 40,
+          "无需协助": 37,
+          "失败": 6,
+          "out_of_scope": 3
+        }
+      },
+      "data_source": "trail_view_2410_shuyi_contract"
+    },
+    "gen4-release-20260821": {
+      "release": "gen4-release-20260821",
+      "raw_rows": 674,
+      "unique_issue_ids": 674,
+      "duplicate_issue_rows": 0,
+      "auto_trigger_total": 567,
+      "manual_trigger_total": 107,
+      "precision_auto_tp": 438,
+      "precision_auto_fp": 122,
+      "precision_numerator": 438,
+      "precision_denominator": 560,
+      "online_precision": 0.7821428571428571,
+      "recall_auto_tp": 438,
+      "recall_manual_fn": 94,
+      "recall_numerator": 438,
+      "recall_denominator": 532,
+      "online_recall": 0.8233082706766918,
+      "auto_trigger_tp": 438,
+      "auto_trigger_fp": 122,
+      "manual_trigger_fn": 94,
+      "auto_recall_only_count": 0,
+      "result_counts_by_ra_type": {
+        "2": {
+          "成功": 219,
+          "无需协助": 194,
+          "误触发": 122,
+          "失败": 25,
+          "out_of_scope": 3,
+          "未填写": 3,
+          "<null>": 1
+        },
+        "3": {
+          "成功": 55,
+          "无需协助": 32,
+          "误触发": 11,
+          "失败": 7,
+          "未接起": 2
+        }
+      },
+      "data_source": "trail_view_2410_shuyi_contract"
+    }
+  }
+}
