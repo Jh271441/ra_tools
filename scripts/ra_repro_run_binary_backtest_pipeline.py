@@ -7,6 +7,7 @@ import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 import sys
 import time
 import traceback
@@ -17,6 +18,65 @@ import requests
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.ra_repro_advance_binary_backtest import advance
+
+
+_PROFILE_ANNOTATION_PATTERN = re.compile(
+    r'\{"text":\s*"(?P<text>(?:[^"\\]|\\.)*)",\s*'
+    r'"x":\s*"(?P<timestamp>[^"]+)"[^}]*"yref":\s*"paper"\}')
+
+
+def _parse_task_profile_annotations(html: str) -> list[dict[str, str]]:
+  """Extract stage transitions from Orion's live Plotly task profile."""
+  annotations = []
+  seen = set()
+  for match in _PROFILE_ANNOTATION_PATTERN.finditer(html):
+    text = json.loads(f'"{match.group("text")}"')
+    if not any(stage in text for stage in (
+        "Downloading data", "Running simulation", "Result evaluation",
+        "PERSISTING", "Uploading data", "__end__")):
+      continue
+    key = (match.group("timestamp"), text)
+    if key in seen:
+      continue
+    seen.add(key)
+    annotations.append({
+        "timestamp": match.group("timestamp"),
+        "stage": text.replace("<br>", " / "),
+    })
+  return annotations
+
+
+def _fetch_task_profile_summary(task_id: int) -> dict:
+  """Read a running worker's profile through Orion's production proxy."""
+  from orion.utils.node_type import NodeType
+  from orion_internal.cluster.config import get_mgmt_nodes
+  from orion_internal.cluster.constants import ClusterNames
+  from orion_internal.cluster.rpc_service import get_node_rpc_url
+  from voy_data_utils.regions import Regions
+
+  proxy_ip = get_mgmt_nodes()[NodeType.PROXY][ClusterNames.PROD][Regions.CN].ip
+  url = get_node_rpc_url(proxy_ip, NodeType.PROXY, "get_task_info_page")
+  response = requests.get(url, params={"task_id": task_id}, timeout=60)
+  response.raise_for_status()
+  annotations = _parse_task_profile_annotations(response.text)
+  return {
+      "response_bytes": len(response.content),
+      "latest_stage": annotations[-1] if annotations else None,
+      "stage_transitions": annotations,
+  }
+
+
+def _enrich_long_running_tasks(result: dict,
+                               profile_after_seconds: float) -> None:
+  """Attach best-effort live stage data without affecting quality gates."""
+  for task in result.get("running_tasks", []):
+    elapsed = task.get("elapsed_seconds")
+    if elapsed is None or float(elapsed) < profile_after_seconds:
+      continue
+    try:
+      task["live_profile"] = _fetch_task_profile_summary(int(task["task_id"]))
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+      task["live_profile_error"] = repr(exc)
 
 
 def _cancel_anomalous_jobs(result: dict) -> dict | None:
@@ -143,6 +203,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
   parser.add_argument("--max-consecutive-errors", type=int, default=3)
   parser.add_argument("--anomaly-confirm-seconds", type=float, default=5.0)
   parser.add_argument(
+      "--profile-after-seconds", type=float, default=1800.0,
+      help=("Attach best-effort live worker stage transitions to audit rows "
+            "after a task has run this long."),
+  )
+  parser.add_argument(
       "--dashboard-api-base-url",
       default="http://127.0.0.1/sim/api",
   )
@@ -172,6 +237,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     raise SystemExit("--poll-seconds must be at least 30")
   if args.anomaly_confirm_seconds < 0:
     raise SystemExit("--anomaly-confirm-seconds must be non-negative")
+  if args.profile_after_seconds < 0:
+    raise SystemExit("--profile-after-seconds must be non-negative")
 
   consecutive_errors = 0
   while True:
@@ -200,6 +267,7 @@ def main(argv: Sequence[str] | None = None) -> None:
           token=None,
           anomaly_confirm_seconds=args.anomaly_confirm_seconds,
       )
+      _enrich_long_running_tasks(result, args.profile_after_seconds)
       result["observed_at"] = datetime.now(timezone.utc).isoformat()
       _emit(result, args.audit_log)
       consecutive_errors = 0

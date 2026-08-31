@@ -672,6 +672,66 @@ def test_pipeline_audit_log_is_jsonl(tmp_path, capsys):
   assert '"action": "launch"' in capsys.readouterr().out
 
 
+def test_parse_task_profile_annotations_keeps_execution_stages():
+  html = """
+  {"text": "unrelated", "x": "2026-08-31T00:00:00", "y": 1.0,
+   "yref": "paper"}
+  {"text": "Waiting COMPUTING<br>Running simulation",
+   "x": "2026-08-31T00:01:00", "y": 1.0, "yref": "paper"}
+  {"text": "Result evaluation", "x": "2026-08-31T00:02:00",
+   "y": 1.0, "yref": "paper"}
+  {"text": "__exit__<br>__end__", "x": "2026-08-31T00:03:00",
+   "y": 1.0, "yref": "paper"}
+  {"text": "__exit__<br>__end__", "x": "2026-08-31T00:03:00",
+   "y": 1.0, "yref": "paper"}
+  """
+
+  assert pipeline_module._parse_task_profile_annotations(html) == [{
+      "timestamp": "2026-08-31T00:01:00",
+      "stage": "Waiting COMPUTING / Running simulation",
+  }, {
+      "timestamp": "2026-08-31T00:02:00",
+      "stage": "Result evaluation",
+  }, {
+      "timestamp": "2026-08-31T00:03:00",
+      "stage": "__exit__ / __end__",
+  }]
+
+
+def test_enrich_long_running_tasks_is_thresholded_and_best_effort(monkeypatch):
+  calls = []
+
+  def fetch(task_id):
+    calls.append(task_id)
+    if task_id == 2:
+      raise ConnectionError("profile unavailable")
+    return {"latest_stage": {"stage": "Running simulation"}}
+
+  monkeypatch.setattr(pipeline_module, "_fetch_task_profile_summary", fetch)
+  result = {
+      "running_tasks": [{
+          "task_id": 1,
+          "elapsed_seconds": 1799,
+      }, {
+          "task_id": 2,
+          "elapsed_seconds": 1800,
+      }, {
+          "task_id": 3,
+          "elapsed_seconds": 1900,
+      }],
+  }
+
+  pipeline_module._enrich_long_running_tasks(result, 1800)
+
+  assert calls == [2, 3]
+  assert "live_profile" not in result["running_tasks"][0]
+  assert "profile unavailable" in result["running_tasks"][1][
+      "live_profile_error"]
+  assert result["running_tasks"][2]["live_profile"]["latest_stage"] == {
+      "stage": "Running simulation",
+  }
+
+
 def test_cancel_anomalous_jobs_only_cancels_jobs_with_remaining_work(
     monkeypatch):
   calls = []
