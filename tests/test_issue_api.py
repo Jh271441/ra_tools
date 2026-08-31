@@ -4,6 +4,7 @@ import sys
 import threading
 
 import pandas as pd
+import pytest
 import requests
 
 
@@ -92,3 +93,22 @@ def test_query_issue_poll_returns_empty_frame_on_unavailable_first_page(
 
     assert isinstance(result, pd.DataFrame)
     assert result.empty
+
+
+def test_query_issue_poll_rejects_partial_pagination_in_strict_mode(
+        monkeypatch):
+    trail = TrailInterface()
+    monkeypatch.setattr(
+        trail,
+        "send_request",
+        lambda *args, **kwargs: {"data": {"total": 2}},
+    )
+    monkeypatch.setattr(
+        trail,
+        "_get_page_content",
+        lambda *args, **kwargs: [{"issue_id": "only-one"}],
+    )
+
+    with pytest.raises(RuntimeError, match="expected 2 rows, received 1"):
+        trail.query_issue_poll(
+            2410, [], size=2, require_complete=True)

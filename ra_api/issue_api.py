@@ -164,12 +164,14 @@ class TrailInterface:
             # 发送请求
             return res_all
 
-    def query_issue_poll(self, view_id, query_attrs, size=None):
+    def query_issue_poll(self, view_id, query_attrs, size=None,
+                         require_complete=False):
         """
         查询 issue 数据，自动补全缺失字段
         :param view_id: 视图ID
         :param query_attrs: 查询条件
         :param size: 每页数据数量
+        :param require_complete: 是否要求分页行数严格等于首包 total
         :return: pd.DataFrame
         """
         page_size = size or 200
@@ -219,6 +221,10 @@ class TrailInterface:
 
         if not results:
             return pd.DataFrame()
+        if require_complete and len(results) != total_count:
+            raise RuntimeError(
+                f"Incomplete Trail pagination: expected {total_count} rows, "
+                f"received {len(results)}")
 
         # 收集所有字段
         all_keys = set()

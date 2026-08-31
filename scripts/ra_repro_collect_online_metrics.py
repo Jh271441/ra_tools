@@ -143,7 +143,8 @@ def collect(
         flush=True,
     )
     attrs = build_query_attrs(release, abnormal_behavior_ids)
-    issues = trail.query_issue_poll(view_id, attrs, size=page_size)
+    issues = trail.query_issue_poll(
+        view_id, attrs, size=page_size, require_complete=True)
     if issues.empty:
       raise RuntimeError(
           f"Trail returned no rows for {release}; refusing to publish a "
