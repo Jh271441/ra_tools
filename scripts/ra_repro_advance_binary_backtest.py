@@ -208,6 +208,10 @@ def _validate_entry(entry: dict[str, Any], token: str) -> dict[str, Any]:
       "quality": quality,
       "completed": result.get("completed"),
       "terminal_failed": result.get("terminal_failed"),
+      "mean_completed_duration_seconds": result.get(
+          "mean_completed_duration_seconds"),
+      "estimated_remaining_hours_at_concurrency_1": result.get(
+          "estimated_remaining_hours_at_concurrency_1"),
       "completed_missing_dpe": result.get("completed_missing_dpe"),
       "completed_pending_dpe_grace": result.get(
           "completed_pending_dpe_grace"),

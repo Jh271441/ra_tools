@@ -338,6 +338,8 @@ def test_validate_entry_rejects_terminal_result_with_manifest_count_mismatch(
           "quality": {"gate_passed_so_far": True},
           "completed": 89,
           "terminal_failed": 0,
+          "mean_completed_duration_seconds": 1200.0,
+          "estimated_remaining_hours_at_concurrency_1": 0.3333333333,
           "completed_missing_dpe": 0,
           "completed_pending_dpe_grace": 0,
       },
@@ -355,6 +357,9 @@ def test_validate_entry_rejects_terminal_result_with_manifest_count_mismatch(
   assert result["manifest_matches_expected"] is False
   assert result["manifest_rows"] == 89
   assert result["expected_manifest_rows"] == 90
+  assert result["mean_completed_duration_seconds"] == 1200.0
+  assert result["estimated_remaining_hours_at_concurrency_1"] == pytest.approx(
+      1 / 3)
 
 
 def test_advance_refreshes_status_after_incremental_validation(
