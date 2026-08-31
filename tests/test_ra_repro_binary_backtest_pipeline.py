@@ -323,11 +323,16 @@ def test_advance_stops_active_job_on_incremental_quality_failure(
 
 
 def test_validate_entry_rejects_terminal_result_with_manifest_count_mismatch(
-    monkeypatch):
+    tmp_path, monkeypatch):
+  manifest = tmp_path / "manifest.csv"
+  pd.DataFrame({"scenario_id": range(90)}).to_csv(manifest, index=False)
   monkeypatch.setattr(
       advance_module,
       "inspect_job_configuration",
-      lambda job_ids, binary_id: {"gate_passed": True},
+      lambda job_ids, binary_id, scenario_ids: {
+          "gate_passed": True,
+          "expected_scenario_count": len(scenario_ids),
+      },
   )
   monkeypatch.setattr(
       advance_module,
@@ -348,7 +353,7 @@ def test_validate_entry_rejects_terminal_result_with_manifest_count_mismatch(
   result = advance_module._validate_entry({
       "job_id": 100,
       "binary_id": 1775147,
-      "selected_manifest": "manifest.csv",
+      "selected_manifest": str(manifest),
       "scenario_count": 90,
   }, "token")
 

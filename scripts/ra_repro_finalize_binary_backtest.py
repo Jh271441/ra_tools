@@ -26,6 +26,7 @@ INDEPENDENT_REPLAY_FLAG = "--planning_enable_sim_assist_stuck_independent_replay
 def summarize_job_configuration(
     jobs: Sequence[dict[str, Any]],
     expected_binary_id: int,
+    expected_scenario_ids: Sequence[int] | None = None,
 ) -> dict[str, Any]:
   """Summarize immutable submission-time gates for a set of Orion jobs."""
   total_tasks = sum(len(job["tasks"]) for job in jobs)
@@ -33,10 +34,16 @@ def summarize_job_configuration(
   cache_mismatches = 0
   dpe_disabled = 0
   independent_replay_missing = 0
+  task_scenario_ids = []
+  task_signature_parse_failures = 0
   per_job = []
   for job in jobs:
     tasks = job["tasks"]
     for task in tasks:
+      try:
+        task_scenario_ids.append(int(task["signature"]))
+      except (KeyError, TypeError, ValueError):
+        task_signature_parse_failures += 1
       args = task.get("task_args") or {}
       if hasattr(args, "as_dict"):
         args = args.as_dict()
@@ -61,6 +68,18 @@ def summarize_job_configuration(
       item["cluster"] != "prod_gen4" for item in per_job)
   concurrency_mismatches = sum(
       item["max_concurrency"] != 1 for item in per_job)
+  expected_task_set = (
+      {int(value) for value in expected_scenario_ids}
+      if expected_scenario_ids is not None else None)
+  actual_task_set = set(task_scenario_ids)
+  task_signature_duplicates = len(task_scenario_ids) - len(actual_task_set)
+  expected_scenario_duplicates = (
+      len(expected_scenario_ids) - len(expected_task_set)
+      if expected_scenario_ids is not None else 0)
+  missing_scenario_ids = sorted(
+      expected_task_set - actual_task_set) if expected_task_set is not None else []
+  unexpected_scenario_ids = sorted(
+      actual_task_set - expected_task_set) if expected_task_set is not None else []
   gate_passed = bool(total_tasks and not any((
       binary_mismatches,
       cache_mismatches,
@@ -68,6 +87,11 @@ def summarize_job_configuration(
       independent_replay_missing,
       cluster_mismatches,
       concurrency_mismatches,
+      task_signature_parse_failures if expected_task_set is not None else 0,
+      task_signature_duplicates if expected_task_set is not None else 0,
+      expected_scenario_duplicates,
+      len(missing_scenario_ids),
+      len(unexpected_scenario_ids),
   )))
   return {
       "expected_binary_id": expected_binary_id,
@@ -79,13 +103,25 @@ def summarize_job_configuration(
       "independent_replay_missing": independent_replay_missing,
       "cluster_mismatches": cluster_mismatches,
       "concurrency_mismatches": concurrency_mismatches,
+      "task_set_checked": expected_task_set is not None,
+      "expected_scenario_count": (
+          len(expected_scenario_ids)
+          if expected_scenario_ids is not None else None),
+      "actual_unique_scenario_count": len(actual_task_set),
+      "task_signature_parse_failures": task_signature_parse_failures,
+      "task_signature_duplicates": task_signature_duplicates,
+      "expected_scenario_duplicates": expected_scenario_duplicates,
+      "missing_scenario_ids": missing_scenario_ids,
+      "unexpected_scenario_ids": unexpected_scenario_ids,
       "gate_passed": gate_passed,
       "jobs": per_job,
   }
 
 
 def inspect_job_configuration(job_ids: Sequence[int],
-                              expected_binary_id: int) -> dict[str, Any]:
+                              expected_binary_id: int,
+                              expected_scenario_ids: Sequence[int] | None = None
+                              ) -> dict[str, Any]:
   """Read task arguments and job placement settings from Orion storage."""
   try:
     from orion.db_accessor.job_accessor import JobAccessor
@@ -109,7 +145,8 @@ def inspect_job_configuration(job_ids: Sequence[int],
           "max_concurrency": metadata.get("max_concurrency"),
           "tasks": tasks,
       })
-  return summarize_job_configuration(jobs, expected_binary_id)
+  return summarize_job_configuration(
+      jobs, expected_binary_id, expected_scenario_ids)
 
 
 def summarize_sources(manifest: pd.DataFrame,
@@ -198,13 +235,14 @@ def finalize(
     token: str,
     allow_partial: bool,
 ) -> dict[str, Any]:
-  job_configuration = inspect_job_configuration(job_ids, binary_id)
+  manifest = pd.read_csv(analysis_manifest_path, low_memory=False)
+  job_configuration = inspect_job_configuration(
+      job_ids, binary_id, manifest["scenario_id"].astype(int).tolist())
   if not job_configuration["gate_passed"]:
     raise RuntimeError(
         "Binary backtest submission configuration gate failed; refusing to "
         f"publish: {job_configuration}")
   validation = validate(job_ids, analysis_manifest_path, None, token)
-  manifest = pd.read_csv(analysis_manifest_path, low_memory=False)
   sources = summarize_sources(manifest, validation.get("scenario_results") or [])
   source_releases = sorted(sources)
   source_complete = all(

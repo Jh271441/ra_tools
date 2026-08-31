@@ -62,13 +62,19 @@ def test_summarize_job_configuration_requires_all_submission_gates():
       "job_id": 10,
       "cluster": "prod_gen4",
       "max_concurrency": 1,
-      "tasks": [{"task_args": valid_args.copy()} for _ in range(3)],
+      "tasks": [{
+          "signature": scenario_id,
+          "task_args": valid_args.copy(),
+      } for scenario_id in range(3)],
   }]
 
-  summary = summarize_job_configuration(jobs, 1775147)
+  summary = summarize_job_configuration(jobs, 1775147, [0, 1, 2])
 
   assert summary["gate_passed"] is True
   assert summary["task_count"] == 3
+  assert summary["task_set_checked"] is True
+  assert summary["missing_scenario_ids"] == []
+  assert summary["unexpected_scenario_ids"] == []
 
   jobs[0]["tasks"][1]["task_args"].pop("--enable-dpe")
   jobs[0]["tasks"][2]["task_args"]["--sim-exec-args"] = "--sim_aligned_mode"
@@ -77,6 +83,12 @@ def test_summarize_job_configuration_requires_all_submission_gates():
   assert summary["gate_passed"] is False
   assert summary["dpe_disabled"] == 1
   assert summary["independent_replay_missing"] == 1
+
+  jobs[0]["tasks"][0]["signature"] = 99
+  task_mismatch = summarize_job_configuration(jobs, 1775147, [0, 1, 2])
+  assert task_mismatch["gate_passed"] is False
+  assert task_mismatch["missing_scenario_ids"] == [0]
+  assert task_mismatch["unexpected_scenario_ids"] == [99]
 
 
 def _four_release_manifest() -> pd.DataFrame:
@@ -105,9 +117,10 @@ def test_finalize_atomically_publishes_only_complete_four_release_matrix(
   } for row in manifest.itertuples()]
   monkeypatch.setattr(
       "ra_repro_finalize_binary_backtest.inspect_job_configuration",
-      lambda job_ids, binary_id: {
+      lambda job_ids, binary_id, scenario_ids: {
           "gate_passed": True,
           "expected_binary_id": binary_id,
+          "expected_scenario_count": len(scenario_ids),
       },
   )
   monkeypatch.setattr(
@@ -146,7 +159,7 @@ def test_finalize_refuses_partial_matrix_without_writing_artifact(
   output = tmp_path / "metrics.json"
   monkeypatch.setattr(
       "ra_repro_finalize_binary_backtest.inspect_job_configuration",
-      lambda job_ids, binary_id: {"gate_passed": True},
+      lambda job_ids, binary_id, scenario_ids: {"gate_passed": True},
   )
   monkeypatch.setattr(
       "ra_repro_finalize_binary_backtest.validate",

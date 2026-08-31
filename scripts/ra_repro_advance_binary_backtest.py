@@ -10,6 +10,7 @@ backtest job is active.
 from __future__ import annotations
 
 import argparse
+import csv
 from datetime import datetime, timezone
 import json
 import os
@@ -183,9 +184,15 @@ def _active_jobs(
 
 def _validate_entry(entry: dict[str, Any], token: str) -> dict[str, Any]:
   job_id = int(entry["job_id"])
-  configuration = inspect_job_configuration([job_id], int(entry["binary_id"]))
+  selected_manifest = Path(entry["selected_manifest"])
+  with selected_manifest.open(encoding="utf-8", newline="") as stream:
+    expected_scenario_ids = [
+        int(row["scenario_id"]) for row in csv.DictReader(stream)
+    ]
+  configuration = inspect_job_configuration(
+      [job_id], int(entry["binary_id"]), expected_scenario_ids)
   result = validate(
-      [job_id], Path(entry["selected_manifest"]), None, token)
+      [job_id], selected_manifest, None, token)
   quality = result.get("quality") or {}
   manifest_matches = (
       int(result.get("manifest_rows") or 0) == int(entry["scenario_count"]))
