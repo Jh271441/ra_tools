@@ -96,6 +96,43 @@ def test_query_orion_audits_prior_dpe_oom_retry(monkeypatch):
   assert row["task_retry_count"] == 1
   assert row["prior_failed_task_run_count"] == 1
   assert row["prior_dpe_oom_task_run_count"] == 1
+  assert row["prior_dpe_timeout_task_run_count"] == 0
+
+
+def test_query_orion_audits_prior_dpe_timeout_retry(monkeypatch):
+  task = {
+      "id": 11,
+      "signature": "124",
+      "status": 2,
+      "update_time": "2026-08-31T00:00:00Z",
+      "task_runs": [
+          {
+              "status": 4,
+              "outcome": "DPE timed out after 3600 seconds",
+              "outcome_detail": "Running DPE failed with return code -9",
+              "duration_time": 4116,
+              "result": {},
+          },
+          {
+              "status": 2,
+              "outcome": "",
+              "outcome_detail": "",
+              "duration_time": 0,
+              "result": {},
+          },
+      ],
+  }
+  monkeypatch.setattr(
+      "scripts.ra_repro_validate_orion._query_pages",
+      lambda *args: [task],
+  )
+
+  row = _query_orion(100, "token").iloc[0]
+
+  assert row["task_retry_count"] == 1
+  assert row["prior_failed_task_run_count"] == 1
+  assert row["prior_dpe_oom_task_run_count"] == 0
+  assert row["prior_dpe_timeout_task_run_count"] == 1
 
 
 def _row(cohort, metric, *, outcome="Done with warnings", cache_hit=False):
@@ -197,6 +234,7 @@ def test_summarize_reports_retries_without_failing_clean_final_result():
       "task_retry_count": 1,
       "prior_failed_task_run_count": 1,
       "prior_dpe_oom_task_run_count": 1,
+      "prior_dpe_timeout_task_run_count": 1,
   })
 
   result = _summarize(pd.DataFrame([row]), job_id=123)
@@ -205,8 +243,11 @@ def test_summarize_reports_retries_without_failing_clean_final_result():
   assert result["quality"]["retry_attempts"] == 1
   assert result["quality"]["prior_failed_task_runs"] == 1
   assert result["quality"]["prior_dpe_oom_task_runs"] == 1
+  assert result["quality"]["prior_dpe_timeout_task_runs"] == 1
   assert result["quality"]["retried_scenario_ids"] == [row["scenario_id"]]
   assert result["quality"]["prior_dpe_oom_scenario_ids"] == [
+      row["scenario_id"]]
+  assert result["quality"]["prior_dpe_timeout_scenario_ids"] == [
       row["scenario_id"]]
   assert result["quality"]["gate_passed_so_far"] is True
   assert result["is_terminal_and_complete"] is True

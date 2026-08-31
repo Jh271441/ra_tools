@@ -112,8 +112,9 @@ Gen4 硬门禁：
 - manifest 与 Orion scenario 必须有精确交集并保持完整计数。
 
 Orion 可能因 DPE 内存不足等基础设施原因自动提升资源并重试同一 task。报告必须保留
-`task_runs` 的重试次数、历史失败 run 和 DPE OOM scenario id；只有最终 task 成功且输出
-完整时才允许通过。历史 infra retry 本身不计作模型失败，也不能从审计中删除。
+`task_runs` 的重试次数、历史失败 run、DPE OOM 和 DPE timeout scenario id；只有最终
+task 成功且输出完整时才允许通过。历史 infra retry 本身不计作模型失败，也不能从审计中
+删除。DPE 自身 timeout 当前为 3600 秒，长尾不能仅按 mapper 的 18000 秒总 timeout 判断。
 
 出现 task 异常或质量污染时，先写 JSONL 审计，再按授权取消剩余任务。完整 Job 通过后才补齐
 同 target 的缺失 source；四个 source 全部通过后才发布指标。

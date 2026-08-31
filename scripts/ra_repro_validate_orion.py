@@ -179,6 +179,12 @@ def _query_orion(job_id: int, token: str) -> pd.DataFrame:
             str(item.get("outcome_detail") or ""),
         )).lower()
         for item in prior_runs)
+    prior_dpe_timeout_runs = sum(
+        "dpe timed out after" in " ".join((
+            str(item.get("outcome") or ""),
+            str(item.get("outcome_detail") or ""),
+        )).lower()
+        for item in prior_runs)
     result = run.get("result", {}) or {}
     warnings = result.get("warnings") or []
     warning_modules = {
@@ -197,6 +203,7 @@ def _query_orion(job_id: int, token: str) -> pd.DataFrame:
         "task_retry_count": max(len(task_runs) - 1, 0),
         "prior_failed_task_run_count": prior_failed_runs,
         "prior_dpe_oom_task_run_count": prior_dpe_oom_runs,
+        "prior_dpe_timeout_task_run_count": prior_dpe_timeout_runs,
         "simulator_cache_hit": result.get("simulator_cache_hit"),
         "inference_log_count": len(result.get("inference_log_locations") or []),
         "dpe_output_count": len(result.get("dpe_output_locations") or []),
@@ -334,8 +341,13 @@ def _summarize(joined: pd.DataFrame,
       joined.get("prior_dpe_oom_task_run_count",
                  pd.Series(0, index=joined.index)),
       errors="coerce").fillna(0).astype(int)
+  prior_dpe_timeout_run_counts = pd.to_numeric(
+      joined.get("prior_dpe_timeout_task_run_count",
+                 pd.Series(0, index=joined.index)),
+      errors="coerce").fillna(0).astype(int)
   retried = retry_counts.gt(0)
   prior_dpe_oom = prior_dpe_oom_run_counts.gt(0)
+  prior_dpe_timeout = prior_dpe_timeout_run_counts.gt(0)
   update_times = pd.to_datetime(
       joined["task_update_time"], utc=True, errors="coerce", format="mixed")
   dpe_grace_cutoff = (pd.Timestamp.now(tz="UTC") -
@@ -440,10 +452,15 @@ def _summarize(joined: pd.DataFrame,
           "retry_attempts": int(retry_counts.sum()),
           "prior_failed_task_runs": int(prior_failed_run_counts.sum()),
           "prior_dpe_oom_task_runs": int(prior_dpe_oom_run_counts.sum()),
+          "prior_dpe_timeout_task_runs": int(
+              prior_dpe_timeout_run_counts.sum()),
           "retried_scenario_ids": sorted(
               joined.loc[retried, "scenario_id"].astype(int).tolist()),
           "prior_dpe_oom_scenario_ids": sorted(
               joined.loc[prior_dpe_oom,
+                         "scenario_id"].astype(int).tolist()),
+          "prior_dpe_timeout_scenario_ids": sorted(
+              joined.loc[prior_dpe_timeout,
                          "scenario_id"].astype(int).tolist()),
           "gate_passed_so_far": quality_gate_passed_so_far,
       },
