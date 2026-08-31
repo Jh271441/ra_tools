@@ -285,11 +285,22 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
   const backtestTrend = comparison.flatMap((item, index) => {
     if (index + 1 < backtestWindowSize) return [];
     const window = comparison.slice(index + 1 - backtestWindowSize, index + 1);
-    const sourceTp = window.reduce((sum, row) => sum + numberValue(row.source_gt?.auto_trigger_tp), 0);
-    const sourceFp = window.reduce((sum, row) => sum + numberValue(row.source_gt?.auto_trigger_fp), 0);
-    const sourceFn = window.reduce((sum, row) => sum + numberValue(row.source_gt?.manual_trigger_fn), 0);
-    const sourcePrecision = sourceTp + sourceFp ? sourceTp / (sourceTp + sourceFp) : 0;
-    const sourceRecall = sourceTp + sourceFn ? sourceTp / (sourceTp + sourceFn) : 0;
+    const sourcePrecisionTp = window.reduce((sum, row) => sum + firstNumber(
+      row.source_gt?.precision_auto_tp, row.source_gt?.auto_trigger_tp,
+    ), 0);
+    const sourcePrecisionFp = window.reduce((sum, row) => sum + firstNumber(
+      row.source_gt?.precision_auto_fp, row.source_gt?.auto_trigger_fp,
+    ), 0);
+    const sourceRecallTp = window.reduce((sum, row) => sum + firstNumber(
+      row.source_gt?.recall_auto_tp, row.source_gt?.auto_trigger_tp,
+    ), 0);
+    const sourceRecallFn = window.reduce((sum, row) => sum + firstNumber(
+      row.source_gt?.recall_manual_fn, row.source_gt?.manual_trigger_fn,
+    ), 0);
+    const sourcePrecision = sourcePrecisionTp + sourcePrecisionFp
+      ? sourcePrecisionTp / (sourcePrecisionTp + sourcePrecisionFp) : 0;
+    const sourceRecall = sourceRecallTp + sourceRecallFn
+      ? sourceRecallTp / (sourceRecallTp + sourceRecallFn) : 0;
 
     const matrix = item.sim_estimate?.binary_backtest_sources;
     const matrixRows = matrix && typeof matrix === 'object'
@@ -299,15 +310,14 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
       window.map((row) => row.source_gt || {}), matrixRows,
     );
     const matrixComplete = projected.complete;
-    const simTp = projected.tp;
-    const simFp = projected.fp;
-    const simFn = projected.fn;
     return [{
       version_key: item.version_key,
       actualPrecision: Math.round(sourcePrecision * 1000) / 10,
       actualRecall: Math.round(sourceRecall * 1000) / 10,
-      simPrecision: matrixComplete && simTp + simFp ? Math.round(simTp / (simTp + simFp) * 1000) / 10 : undefined,
-      simRecall: matrixComplete && simTp + simFn ? Math.round(simTp / (simTp + simFn) * 1000) / 10 : undefined,
+      simPrecision: matrixComplete && projected.precisionTp + projected.precisionFp
+        ? Math.round(projected.precisionTp / (projected.precisionTp + projected.precisionFp) * 1000) / 10 : undefined,
+      simRecall: matrixComplete && projected.recallTp + projected.recallFn
+        ? Math.round(projected.recallTp / (projected.recallTp + projected.recallFn) * 1000) / 10 : undefined,
     }];
   });
   const reproDomain = pctDomain(trend, ['repro']);

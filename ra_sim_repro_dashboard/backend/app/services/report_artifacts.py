@@ -64,6 +64,50 @@ def load_release_metrics(metadata: dict[str, Any], version_key: str) -> dict[str
     return dict(value) if isinstance(value, dict) else {}
 
 
+def load_online_release_metrics(
+    config: dict[str, Any],
+    version_key: str,
+) -> dict[str, Any]:
+    """Load one Shuyi-aligned full Trail population with formula checks."""
+    online = config.get("online_metrics") or {}
+    artifact = online.get("result_metrics")
+    if not artifact:
+        return {}
+    path = resolve_report_path(str(artifact))
+    if not path.exists():
+        return {}
+    payload = _read_json(path)
+    releases = payload.get("releases") or {}
+    metrics = releases.get(version_key) if isinstance(releases, dict) else None
+    if not isinstance(metrics, dict):
+        return {}
+    try:
+        precision_tp = int(metrics["precision_auto_tp"])
+        precision_fp = int(metrics["precision_auto_fp"])
+        precision_numerator = int(metrics["precision_numerator"])
+        precision_denominator = int(metrics["precision_denominator"])
+        recall_tp = int(metrics["recall_auto_tp"])
+        recall_fn = int(metrics["recall_manual_fn"])
+        recall_numerator = int(metrics["recall_numerator"])
+        recall_denominator = int(metrics["recall_denominator"])
+    except (KeyError, TypeError, ValueError):
+        return {}
+    if any(value < 0 for value in (
+        precision_tp, precision_fp, recall_tp, recall_fn,
+    )):
+        return {}
+    if (
+        precision_numerator != precision_tp
+        or precision_denominator != precision_tp + precision_fp
+        or recall_numerator != recall_tp
+        or recall_denominator != recall_tp + recall_fn
+        or precision_denominator <= 0
+        or recall_denominator <= 0
+    ):
+        return {}
+    return dict(metrics)
+
+
 def load_binary_backtest_sources(
     config: dict[str, Any],
     target_version: str,

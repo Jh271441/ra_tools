@@ -129,8 +129,15 @@ Orion 可能因 DPE 内存不足等基础设施原因自动提升资源并重试
 
 Dashboard 的“当前 Binary 跨版本准召预估”按可调 2/3/4 版本窗口聚合：
 
-- 线上：窗口内 `auto_trigger_tp`、`auto_trigger_fp`、`manual_trigger_fn`；
+- 线上：由 Trail view 2410 按数易最终 query contract 全量去重采集，分别保留
+  `precision_auto_tp` / `precision_auto_fp` 和
+  `recall_auto_tp` / `recall_manual_fn`；
 - 仿真：目标 binary 对相同 source 窗口的 TP/FP/FN。
+
+数易 Precision 与 Recall 的自触发分子并不总相同：例如 20260724 分别为
+988 和 990（差异来自 `待确认/其它`）。看板不得用一个 `auto_trigger_tp` 同时近似
+两条公式。线上采集器为 `scripts/ra_repro_collect_online_metrics.py`，原子产物为
+`reports/ra_online_metrics_20260831.json`。
 
 分层 canary 的三个 cohort 等量抽样，最终仿真 P/R 必须使用各 cohort 触发率，并以
 同 source release 的线上 TP/FP/FN 做后分层加权；禁止直接使用等量样本的原始混淆
@@ -161,6 +168,8 @@ Dashboard 的“当前 Binary 跨版本准召预估”按可调 2/3/4 版本窗�
 - `scripts/run_with_voyager_env.py`
 - `scripts/ra_repro_validate_orion.py`
 - `scripts/ra_repro_finalize_binary_backtest.py`
+- `scripts/ra_repro_collect_online_metrics.py`
+- `reports/ra_online_metrics_20260831.json`
 - `reports/ra_binary_backtest_20260831_jobs.json`
 - `reports/ra_binary_backtest_20260831_pipeline.jsonl`
 - `reports/ra_binary_backtest_20260831_metrics.json`

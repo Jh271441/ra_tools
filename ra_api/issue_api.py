@@ -7,25 +7,26 @@ import os
 import random
 import time
 import traceback
-from enum import Enum
 
 import pandas as pd
 import requests
 
 logger = logging.getLogger(__name__)
 
-
-class IssueURL(Enum):
-    query_by_issue_id_list = 'http://voyager.intra.xiaojukeji.com/paladin/issue/pool/query_by_issue_id_list/'
-    query = 'http://voyager.intra.xiaojukeji.com/paladin/issue/pool/query/'
-    query_issue_pool_url = 'http://voyager.intra.xiaojukeji.com/paladin/issue/pool/query/'
-
-
 class TrailInterface:
-    def __init__(self) -> None:
+    def __init__(self, base_url=None) -> None:
         self.orion_token = 'Bearer 8ba193ea-123f-44c4-a98a-3f2cb21aa1fa'
         self.token = 'd2570c086ea9c64219c81ab95dd1e31f'
         self.default_timeout = 60
+        base_url = (
+            base_url
+            or os.environ.get('TRAIL_ISSUE_BASE_URL')
+            or 'http://10.88.128.83'
+        ).rstrip('/')
+        self.query_by_issue_id_url = (
+            f'{base_url}/paladin/issue/pool/query_by_issue_id_list/')
+        self.query_issue_pool_url = (
+            f'{base_url}/paladin/issue/pool/query/')
 
     def _sign_for_json_string(self, json_data):
         """
@@ -54,8 +55,14 @@ class TrailInterface:
         用于获取单页的内容
         """
         time.sleep(random.uniform(0, 2))
-        query_json['page'] = page
-        response = self.send_request(url, query_json)
+        # Each worker must own its request payload.  Mutating the shared query
+        # dict races with the other page workers and can silently fetch the
+        # same page more than once while skipping another page.
+        page_query = dict(query_json)
+        page_query['page'] = page
+        response = self.send_request(url, page_query)
+        if not response:
+            return []
         res = response['data'].get('res', [])
         if res:
             return res
@@ -139,7 +146,8 @@ class TrailInterface:
                 "issue_id_list": issue_id_list,
                 "select_field_list": select_field_list
             }
-            return self.send_request(IssueURL.query_by_issue_id_list.value, request_data).get('data', {})
+            response = self.send_request(self.query_by_issue_id_url, request_data)
+            return (response or {}).get('data', {})
         else:
             count = math.ceil(len(issue_id_list) / 200)
             res_all = {}
@@ -149,7 +157,9 @@ class TrailInterface:
                     "issue_id_list": issue_id_list[i * 200:(i + 1) * 200],
                     "select_field_list": select_field_list
                 }
-                res = self.send_request(IssueURL.query_by_issue_id_list.value, request_data).get('data', {})
+                response = self.send_request(
+                    self.query_by_issue_id_url, request_data)
+                res = (response or {}).get('data', {})
                 res_all.update(res)
             # 发送请求
             return res_all
@@ -173,11 +183,13 @@ class TrailInterface:
 
         # 请求第一页,获得问题总数，方便得到分页数
         try:
-            response = self.send_request(IssueURL.query_issue_pool_url.value, query_json)
+            response = self.send_request(self.query_issue_pool_url, query_json)
         except Exception as e:
             print(f"Request or JSON parsing failed: {e}")
             return pd.DataFrame()
 
+        if not response:
+            return pd.DataFrame()
         total_count = response.get('data', {}).get('total', 0)
         if total_count == 0:
             return pd.DataFrame()
@@ -188,7 +200,12 @@ class TrailInterface:
         # 多线程抓取所有页
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
             futures = {
-                executor.submit(self._get_page_content, IssueURL.query_issue_pool_url.value, query_json, page): page
+                executor.submit(
+                    self._get_page_content,
+                    self.query_issue_pool_url,
+                    query_json,
+                    page,
+                ): page
                 for page in range(1, page_count + 1)
             }
             for future in concurrent.futures.as_completed(futures):
@@ -237,28 +254,36 @@ class TrailInterface:
         """
         if timeout is None:
             timeout = self.default_timeout
-        try:
-            sign = self._sign_for_json_string(json.dumps(json_data))
-            headers = {
-                'content-type': 'application/json',
-                'sign': sign,
-                'appid': '21',
-                'time': str(int(time.time())),
-            }
-            response = requests.post(url=url, json=json_data, timeout=timeout, headers=headers)
+        for attempt in range(1, 4):
+            try:
+                sign = self._sign_for_json_string(json.dumps(json_data))
+                headers = {
+                    'content-type': 'application/json',
+                    'sign': sign,
+                    'appid': '21',
+                    'time': str(int(time.time())),
+                }
+                response = requests.post(
+                    url=url, json=json_data, timeout=timeout, headers=headers)
 
-            if response.status_code == 200:
-                response_data = response.json()
-                code = response_data.get('code')
-                msg = response_data.get('msg')
-                if msg != 'success':
-                    logger.error("Request failed - Code: %s,\n Msg: %s\n Request: %s", code, msg, json_data)
-                return response_data
-            else:
+                if response.status_code == 200:
+                    response_data = response.json()
+                    code = response_data.get('code')
+                    msg = response_data.get('msg')
+                    if msg != 'success':
+                        logger.error(
+                            "Request failed - Code: %s,\n Msg: %s\n Request: %s",
+                            code, msg, json_data)
+                    return response_data
                 response.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            logger.error("Request failed: %s", e)
-            return None
+            except requests.exceptions.RequestException as e:
+                if attempt == 3:
+                    logger.error("Request failed after %d attempts: %s", attempt, e)
+                    return None
+                logger.warning(
+                    "Request attempt %d/3 failed, retrying: %s", attempt, e)
+                time.sleep(attempt)
+        return None
 
 
 if __name__ == '__main__':

@@ -16,6 +16,7 @@ from app.services.report_artifacts import (
     build_manifest_scenario_index,
     canonical_scenario_id,
     load_binary_backtest_sources,
+    load_online_release_metrics,
     load_release_metrics,
 )
 from app.services.scenario_client import ScenarioClient, build_source_scenario_index, source_counts_from_index
@@ -314,6 +315,11 @@ def build_snapshot(db: Session, payload: dict[str, Any] | None = None) -> dict[s
         ).scalars().all()
         summary = _summary_from_live_rows(rows, version.metadata_json) if rows else None
         summary = summary or _summary_from_metadata(version.metadata_json) or summarize_rows(rows)
+        online_source_gt = load_online_release_metrics(payload, version.version_key)
+        if online_source_gt:
+            # Full Trail populations are authoritative for online P/R.  The
+            # release simulation manifest must not become a class-weight proxy.
+            summary["source_gt"] = online_source_gt
         backtest_sources = load_binary_backtest_sources(payload, version.version_key)
         if backtest_sources:
             summary["sim_estimate"] = {

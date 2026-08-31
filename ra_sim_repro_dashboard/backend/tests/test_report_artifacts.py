@@ -6,6 +6,7 @@ from app.services.report_artifacts import (
     build_manifest_scenario_index,
     canonical_scenario_id,
     load_binary_backtest_sources,
+    load_online_release_metrics,
     load_release_metrics,
 )
 
@@ -19,6 +20,35 @@ def _complete_cohorts(expected=10, trigger_rate=0.5):
         }
         for cohort in ("positive_auto", "negative_auto", "positive_manual")
     }
+
+
+def test_load_online_release_metrics_validates_separate_pr_populations(tmp_path):
+    path = tmp_path / "online.json"
+    path.write_text(json.dumps({
+        "releases": {
+            "v1": {
+                "precision_auto_tp": 988,
+                "precision_auto_fp": 188,
+                "precision_numerator": 988,
+                "precision_denominator": 1176,
+                "recall_auto_tp": 990,
+                "recall_manual_fn": 212,
+                "recall_numerator": 990,
+                "recall_denominator": 1202,
+            }
+        }
+    }), encoding="utf-8")
+    config = {"online_metrics": {"result_metrics": str(path)}}
+
+    result = load_online_release_metrics(config, "v1")
+
+    assert result["precision_auto_tp"] == 988
+    assert result["recall_auto_tp"] == 990
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["releases"]["v1"]["precision_denominator"] = 999
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    assert load_online_release_metrics(config, "v1") == {}
 
 
 def test_manifest_index_preserves_cohort_truth_and_canonicalizes_id(tmp_path):

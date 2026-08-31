@@ -133,6 +133,7 @@ def test_build_snapshot_injects_binary_backtest_matrix(monkeypatch):
     payload = {
         "current_version": "v2",
         "compare_versions": ["v1"],
+        "online_metrics": {"result_metrics": "online.json"},
         "binary_backtest": {"result_metrics": "backtest.json"},
         "versions": {
             "v1": {
@@ -167,6 +168,17 @@ def test_build_snapshot_injects_binary_backtest_matrix(monkeypatch):
         db.commit()
         monkeypatch.setattr(
             refresh_module,
+            "load_online_release_metrics",
+            lambda config, version_key: {
+                "precision_auto_tp": 100 if version_key == "v1" else 200,
+                "precision_auto_fp": 20,
+                "recall_auto_tp": 101 if version_key == "v1" else 201,
+                "recall_manual_fn": 30,
+                "data_source": "trail_view_2410_shuyi_contract",
+            },
+        )
+        monkeypatch.setattr(
+            refresh_module,
             "load_binary_backtest_sources",
             lambda config, version_key: ({
                 "v1": {"estimated_tp": 7, "estimated_fp": 1, "estimated_fn": 3},
@@ -182,6 +194,8 @@ def test_build_snapshot_injects_binary_backtest_matrix(monkeypatch):
         matrix = comparison["v2"]["sim_estimate"]["binary_backtest_sources"]
         assert matrix["v1"]["estimated_tp"] == 7
         assert matrix["v2"]["estimated_fp"] == 2
+        assert comparison["v1"]["source_gt"]["precision_auto_tp"] == 100
+        assert comparison["v2"]["source_gt"]["recall_auto_tp"] == 201
         assert "binary_backtest_sources" not in comparison["v1"]["sim_estimate"]
     finally:
         db.close()

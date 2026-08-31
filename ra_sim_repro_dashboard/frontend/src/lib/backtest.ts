@@ -1,8 +1,9 @@
 export interface PoststratifiedCounts {
   complete: boolean;
-  tp: number;
-  fp: number;
-  fn: number;
+  precisionTp: number;
+  precisionFp: number;
+  recallTp: number;
+  recallFn: number;
 }
 
 function numeric(value: unknown) {
@@ -38,14 +39,15 @@ export function poststratifyBacktestWindow(
   matrixRows: Array<Record<string, unknown> | undefined>,
 ): PoststratifiedCounts {
   if (!sourceRows.length || matrixRows.length !== sourceRows.length) {
-    return { complete: false, tp: 0, fp: 0, fn: 0 };
+    return { complete: false, precisionTp: 0, precisionFp: 0, recallTp: 0, recallFn: 0 };
   }
-  let tp = 0;
-  let fp = 0;
-  let fn = 0;
+  let precisionTp = 0;
+  let precisionFp = 0;
+  let recallTp = 0;
+  let recallFn = 0;
   for (let index = 0; index < matrixRows.length; index += 1) {
     const matrix = matrixRows[index];
-    if (!matrix) return { complete: false, tp: 0, fp: 0, fn: 0 };
+    if (!matrix) return { complete: false, precisionTp: 0, precisionFp: 0, recallTp: 0, recallFn: 0 };
     const expected = numeric(matrix.expected);
     const evaluated = numeric(matrix.evaluated);
     const dpeCoverage = numeric(matrix.dpe_coverage);
@@ -56,19 +58,40 @@ export function poststratifyBacktestWindow(
       expected <= 0 || evaluated !== expected || dpeCoverage < 1
       || positiveAutoRate == null || negativeAutoRate == null
       || positiveManualRate == null
-    ) return { complete: false, tp: 0, fp: 0, fn: 0 };
+    ) return { complete: false, precisionTp: 0, precisionFp: 0, recallTp: 0, recallFn: 0 };
 
     const source = sourceRows[index];
-    const autoTp = optionalNumeric(source.auto_trigger_tp);
-    const autoFp = optionalNumeric(source.auto_trigger_fp);
-    const manualFn = optionalNumeric(source.manual_trigger_fn);
+    const precisionAutoTp = optionalNumeric(
+      source.precision_auto_tp ?? source.auto_trigger_tp,
+    );
+    const precisionAutoFp = optionalNumeric(
+      source.precision_auto_fp ?? source.auto_trigger_fp,
+    );
+    const recallAutoTp = optionalNumeric(
+      source.recall_auto_tp ?? source.auto_trigger_tp,
+    );
+    const recallManualFn = optionalNumeric(
+      source.recall_manual_fn ?? source.manual_trigger_fn,
+    );
     if (
-      autoTp == null || autoTp < 0 || autoFp == null || autoFp < 0
-      || manualFn == null || manualFn < 0
-    ) return { complete: false, tp: 0, fp: 0, fn: 0 };
-    tp += autoTp * positiveAutoRate + manualFn * positiveManualRate;
-    fp += autoFp * negativeAutoRate;
-    fn += autoTp * (1 - positiveAutoRate) + manualFn * (1 - positiveManualRate);
+      precisionAutoTp == null || precisionAutoTp < 0
+      || precisionAutoFp == null || precisionAutoFp < 0
+      || recallAutoTp == null || recallAutoTp < 0
+      || recallManualFn == null || recallManualFn < 0
+    ) return { complete: false, precisionTp: 0, precisionFp: 0, recallTp: 0, recallFn: 0 };
+    precisionTp += (
+      precisionAutoTp * positiveAutoRate
+      + recallManualFn * positiveManualRate
+    );
+    precisionFp += precisionAutoFp * negativeAutoRate;
+    recallTp += (
+      recallAutoTp * positiveAutoRate
+      + recallManualFn * positiveManualRate
+    );
+    recallFn += (
+      recallAutoTp * (1 - positiveAutoRate)
+      + recallManualFn * (1 - positiveManualRate)
+    );
   }
-  return { complete: true, tp, fp, fn };
+  return { complete: true, precisionTp, precisionFp, recallTp, recallFn };
 }
