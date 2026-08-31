@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+import time
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import quote
@@ -30,6 +31,13 @@ class AssetIndex:
         self.base_path = base_path
         self._lock = threading.RLock()
         self._manifest_mtime_ns = -1
+        # Bound how often an unforced refresh re-stats the manifest.  Gallery
+        # list traffic calls has_issue() once per row, and each refresh() would
+        # otherwise stat the manifest on (possibly network) storage.  Within the
+        # window the last known-good snapshot is reused; a manifest change is
+        # still picked up on the next stat and by the forced startup refresh.
+        self._stat_ttl_seconds = 5.0
+        self._next_stat_monotonic = 0.0
         self._meta_paths: dict[str, Path] = {}
         self._assets: dict[str, dict[str, Path]] = {}
         # Building the public descriptor requires a meta read plus a stat for
@@ -41,6 +49,12 @@ class AssetIndex:
         )
 
     def refresh(self, force: bool = False) -> int:
+        if not force:
+            now = time.monotonic()
+            with self._lock:
+                if self._meta_paths and now < self._next_stat_monotonic:
+                    return len(self._meta_paths)
+                self._next_stat_monotonic = now + self._stat_ttl_seconds
         try:
             stat = self.manifest_path.stat()
         except FileNotFoundError:

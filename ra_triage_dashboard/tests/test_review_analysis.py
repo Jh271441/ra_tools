@@ -120,6 +120,57 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
             self.assertEqual(len(analysis_mismatches), 1)
             self.assertEqual(analysis_mismatches[0]["issue_id"], "cn-stage1-wrong")
 
+    def test_model_run_with_scope_counts_matches_list_model_runs_row(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "triage.sqlite3")
+            database.init()
+            scope = "single-run-scope"
+            database.upsert_issues(
+                [
+                    {"issue_id": "cn-one-fp", "gt_label": "误触发"},
+                    {"issue_id": "cn-one-ra", "gt_label": "正确触发"},
+                    {"issue_id": "cn-one-wrong", "gt_label": "误触发"},
+                ],
+                source="test",
+                replace_gt=True,
+                baseline_scope=scope,
+            )
+            run, _ = database.import_model_run(
+                name="single",
+                source_name="single.xlsx",
+                source_sha256="2" * 64,
+                metadata={},
+                rows=[
+                    {"issue_id": "cn-one-fp", "model_label": "误触发"},
+                    {"issue_id": "cn-one-ra", "model_label": "真实卡住"},
+                    {"issue_id": "cn-one-wrong", "model_label": "真实卡住"},
+                ],
+            )
+            listed = database.list_model_runs(baseline_scope=scope)
+            listed_row = next(r for r in listed if r["id"] == run["id"])
+            single = database.model_run_with_scope_counts(
+                run["id"], baseline_scopes=[scope]
+            )
+            self.assertIsNotNone(single)
+            # The single-run lookup must expose the identical scope-derived
+            # counts that http_support reads off the full-list scan it replaces.
+            for key in (
+                "id",
+                "name",
+                "kind",
+                "prediction_count",
+                "baseline_prediction_count",
+                "failure_count",
+            ):
+                self.assertEqual(single[key], listed_row[key], key)
+            self.assertEqual(single["failure_count"], 1)
+            # A missing run resolves to None so callers keep their 404 branch.
+            self.assertIsNone(
+                database.model_run_with_scope_counts(
+                    "no-such-run", baseline_scopes=[scope]
+                )
+            )
+
     def test_exclusion_filter_normalizes_explicit_slices(self) -> None:
         self.assertEqual(resolve_review_exclusion_filter(""), ("all", None))
         self.assertEqual(resolve_review_exclusion_filter("included"), ("included", False))

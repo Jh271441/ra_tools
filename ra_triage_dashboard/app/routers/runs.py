@@ -90,32 +90,39 @@ async def model_runs(request: Request, baselines: str = "") -> dict[str, Any]:
         )
         for item in items
     ]
-    for item in items:
-        if item.get("kind") != "upload":
-            continue
-        source_file = _model_source_file(item)
-        filename = _model_source_filename(item)
-        suffix = Path(filename).suffix.lower()
-        preview_supported = suffix in {".json", ".csv", ".xlsx", ".xlsm"}
-        reconstructed = (
-            source_file is None
-            and preview_supported
-            and bool(item.get("prediction_count"))
-        )
-        item["source_file"] = {
-            "filename": filename,
-            "available": bool(source_file) or reconstructed,
-            "reconstructed": reconstructed,
-            "preview_supported": preview_supported,
-            "preview_url": _public_path(
-                f"/api/model-runs/{quote(str(item['id']), safe='')}/source-preview"
-                if preview_supported
-                else f"/api/model-runs/{quote(str(item['id']), safe='')}/source"
-            ),
-            "download_url": _public_path(
-                f"/api/model-runs/{quote(str(item['id']), safe='')}/source?download=1"
-            ),
-        }
+
+    def _attach_source_files(rows: list[dict[str, Any]]) -> None:
+        # Each iteration stats the archived upload on (possibly network) disk,
+        # so run the whole enrichment pass in one worker thread rather than
+        # blocking the event loop once per upload Run.
+        for item in rows:
+            if item.get("kind") != "upload":
+                continue
+            source_file = _model_source_file(item)
+            filename = _model_source_filename(item)
+            suffix = Path(filename).suffix.lower()
+            preview_supported = suffix in {".json", ".csv", ".xlsx", ".xlsm"}
+            reconstructed = (
+                source_file is None
+                and preview_supported
+                and bool(item.get("prediction_count"))
+            )
+            item["source_file"] = {
+                "filename": filename,
+                "available": bool(source_file) or reconstructed,
+                "reconstructed": reconstructed,
+                "preview_supported": preview_supported,
+                "preview_url": _public_path(
+                    f"/api/model-runs/{quote(str(item['id']), safe='')}/source-preview"
+                    if preview_supported
+                    else f"/api/model-runs/{quote(str(item['id']), safe='')}/source"
+                ),
+                "download_url": _public_path(
+                    f"/api/model-runs/{quote(str(item['id']), safe='')}/source?download=1"
+                ),
+            }
+
+    await asyncio.to_thread(_attach_source_files, items)
     return {
         "items": items,
         "default_model_run_id": await asyncio.to_thread(
