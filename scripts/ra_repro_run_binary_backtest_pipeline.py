@@ -134,6 +134,21 @@ def _write_status_snapshot(payload: dict, status_path: Path) -> None:
   temporary.replace(status_path)
 
 
+def _write_error_status_snapshot(error: dict, status_path: Path) -> None:
+  """Mark the last good snapshot stale while retaining its job state."""
+  current = {}
+  if status_path.exists():
+    current = json.loads(status_path.read_text(encoding="utf-8"))
+  current["last_successful_observed_at"] = current.get("observed_at")
+  current["observed_at"] = error["observed_at"]
+  current["snapshot_status"] = "stale_due_to_monitor_error"
+  current["monitor_error"] = {
+      "consecutive_errors": error["consecutive_errors"],
+      "error": error["error"],
+  }
+  _write_status_snapshot(current, status_path)
+
+
 def _refresh_dashboard_if_needed(
     metrics_path: Path,
     stamp_path: Path,
@@ -236,7 +251,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
   parser.add_argument("--sample-per-cohort", type=int, default=10)
   parser.add_argument("--seed", default="ra_binary_backtest_20260831_v1")
   parser.add_argument("--poll-seconds", type=float, default=300)
-  parser.add_argument("--max-consecutive-errors", type=int, default=3)
+  parser.add_argument(
+      "--max-consecutive-errors", type=int, default=30,
+      help=("Exit only after this many consecutive control-plane failures; "
+            "individual API calls already retry internally."),
+  )
   parser.add_argument("--anomaly-confirm-seconds", type=float, default=5.0)
   parser.add_argument(
       "--profile-after-seconds", type=float, default=1800.0,
@@ -312,17 +331,22 @@ def main(argv: Sequence[str] | None = None) -> None:
       _enrich_long_running_tasks(result, args.profile_after_seconds)
       result["observed_at"] = datetime.now(timezone.utc).isoformat()
       _emit(result, args.audit_log)
-      _write_status_snapshot(result, args.status_snapshot)
+      _write_status_snapshot({
+          **result,
+          "snapshot_status": "current",
+      }, args.status_snapshot)
       consecutive_errors = 0
     except Exception as exc:  # pylint: disable=broad-exception-caught
       consecutive_errors += 1
-      _emit({
+      error = {
           "action": "error",
           "observed_at": datetime.now(timezone.utc).isoformat(),
           "consecutive_errors": consecutive_errors,
           "error": repr(exc),
           "traceback": traceback.format_exc(),
-      }, args.audit_log)
+      }
+      _emit(error, args.audit_log)
+      _write_error_status_snapshot(error, args.status_snapshot)
       if consecutive_errors >= args.max_consecutive_errors:
         raise
       time.sleep(args.poll_seconds)

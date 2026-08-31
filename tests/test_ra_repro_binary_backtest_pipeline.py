@@ -796,6 +796,34 @@ def test_pipeline_status_snapshot_atomically_replaces_previous_state(tmp_path):
   assert not path.with_suffix(".json.tmp").exists()
 
 
+def test_pipeline_error_snapshot_retains_last_good_job_state(tmp_path):
+  path = tmp_path / "status.json"
+  pipeline_module._write_status_snapshot({
+      "action": "wait",
+      "observed_at": "2026-08-31T00:00:00+00:00",
+      "active_jobs": [{"job_id": 100}],
+      "snapshot_status": "current",
+  }, path)
+
+  pipeline_module._write_error_status_snapshot({
+      "observed_at": "2026-08-31T00:01:00+00:00",
+      "consecutive_errors": 1,
+      "error": "OrionDbAccessError('HTTP status code 502')",
+  }, path)
+
+  assert json.loads(path.read_text(encoding="utf-8")) == {
+      "action": "wait",
+      "observed_at": "2026-08-31T00:01:00+00:00",
+      "active_jobs": [{"job_id": 100}],
+      "snapshot_status": "stale_due_to_monitor_error",
+      "last_successful_observed_at": "2026-08-31T00:00:00+00:00",
+      "monitor_error": {
+          "consecutive_errors": 1,
+          "error": "OrionDbAccessError('HTTP status code 502')",
+      },
+  }
+
+
 def test_parse_task_profile_annotations_keeps_execution_stages():
   html = """
   {"text": "unrelated", "x": "2026-08-31T00:00:00", "y": 1.0,
