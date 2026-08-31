@@ -682,6 +682,55 @@ def test_dashboard_refresh_stamp_written_only_after_completion(
       metrics, stamp, "http://dashboard/api") is None
 
 
+def test_dashboard_refresh_tracks_online_artifact_without_binary_metrics(
+    tmp_path, monkeypatch):
+  binary_metrics = tmp_path / "missing-binary.json"
+  online_metrics = tmp_path / "online.json"
+  stamp = tmp_path / "stamp.json"
+  online_metrics.write_text(json.dumps({
+      "generated_at": "2026-08-31T01:18:00+00:00",
+      "releases": {},
+  }), encoding="utf-8")
+
+  class Response:
+    def __init__(self, payload):
+      self._payload = payload
+
+    def raise_for_status(self):
+      return None
+
+    def json(self):
+      return self._payload
+
+  monkeypatch.setattr(
+      pipeline_module.requests,
+      "post",
+      lambda *args, **kwargs: Response({"job_id": "refresh-online"}),
+  )
+  monkeypatch.setattr(
+      pipeline_module.requests,
+      "get",
+      lambda *args, **kwargs: Response({"status": "completed"}),
+  )
+
+  result = pipeline_module._refresh_dashboard_if_needed(
+      binary_metrics,
+      stamp,
+      "http://dashboard/api",
+      online_metrics,
+  )
+
+  assert result["artifact_generations"] == {
+      "online_metrics": "2026-08-31T01:18:00+00:00",
+  }
+  assert pipeline_module._refresh_dashboard_if_needed(
+      binary_metrics,
+      stamp,
+      "http://dashboard/api",
+      online_metrics,
+  ) is None
+
+
 def test_dashboard_refresh_failure_is_audited_without_raising(
     tmp_path, monkeypatch):
   monkeypatch.setattr(

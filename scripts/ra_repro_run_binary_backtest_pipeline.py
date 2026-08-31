@@ -123,17 +123,35 @@ def _emit(payload: dict, audit_log: Path) -> None:
     fh.write(text + "\n")
 
 
-def _refresh_dashboard_if_needed(metrics_path: Path, stamp_path: Path,
-                                 api_base_url: str) -> dict | None:
-  if not metrics_path.exists():
-    return None
-  metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
-  generated_at = str(metrics.get("generated_at") or "")
-  if not generated_at:
+def _refresh_dashboard_if_needed(
+    metrics_path: Path,
+    stamp_path: Path,
+    api_base_url: str,
+    online_metrics_path: Path | None = None,
+) -> dict | None:
+  artifact_paths = {"binary_backtest": metrics_path}
+  if online_metrics_path is not None:
+    artifact_paths["online_metrics"] = online_metrics_path
+  artifact_generations = {}
+  for name, path in artifact_paths.items():
+    if not path.exists():
+      continue
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    generated_at = str(payload.get("generated_at") or "")
+    if generated_at:
+      artifact_generations[name] = generated_at
+  if not artifact_generations:
     return None
   if stamp_path.exists():
     stamp = json.loads(stamp_path.read_text(encoding="utf-8"))
-    if stamp.get("generated_at") == generated_at:
+    if stamp.get("artifact_generations") == artifact_generations:
+      return None
+    # Preserve compatibility with stamps written before online metrics were
+    # tracked as a separate dashboard input.
+    if (
+        set(artifact_generations) == {"binary_backtest"}
+        and stamp.get("generated_at") == artifact_generations["binary_backtest"]
+    ):
       return None
 
   response = requests.post(
@@ -154,7 +172,8 @@ def _refresh_dashboard_if_needed(metrics_path: Path, stamp_path: Path,
     status = status_response.json()
     if status.get("status") == "completed":
       stamp = {
-          "generated_at": generated_at,
+          "generated_at": max(artifact_generations.values()),
+          "artifact_generations": artifact_generations,
           "refresh_job_id": job_id,
           "completed_at": datetime.now(timezone.utc).isoformat(),
       }
@@ -169,13 +188,16 @@ def _refresh_dashboard_if_needed(metrics_path: Path, stamp_path: Path,
   raise TimeoutError(f"Dashboard refresh {job_id} did not finish in 1800s")
 
 
-def _attempt_dashboard_refresh(metrics_path: Path, stamp_path: Path,
-                               api_base_url: str) -> tuple[dict | None,
-                                                           dict | None]:
+def _attempt_dashboard_refresh(
+    metrics_path: Path,
+    stamp_path: Path,
+    api_base_url: str,
+    online_metrics_path: Path | None = None,
+) -> tuple[dict | None, dict | None]:
   """Retry dashboard publication without blocking Orion experiment progress."""
   try:
     return _refresh_dashboard_if_needed(
-        metrics_path, stamp_path, api_base_url), None
+        metrics_path, stamp_path, api_base_url, online_metrics_path), None
   except Exception as exc:  # pylint: disable=broad-exception-caught
     return None, {
         "action": "dashboard_refresh_error",
@@ -196,6 +218,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
   parser.add_argument(
       "--metrics", type=Path,
       default=Path("reports/ra_binary_backtest_20260831_metrics.json"))
+  parser.add_argument(
+      "--online-metrics", type=Path,
+      default=Path("reports/ra_online_metrics_20260831.json"))
   parser.add_argument("--window-size", type=int, default=4)
   parser.add_argument("--sample-per-cohort", type=int, default=10)
   parser.add_argument("--seed", default="ra_binary_backtest_20260831_v1")
@@ -247,6 +272,7 @@ def main(argv: Sequence[str] | None = None) -> None:
           args.metrics,
           args.dashboard_refresh_stamp,
           args.dashboard_api_base_url,
+          args.online_metrics,
       )
       if refresh_error:
         _emit(refresh_error, args.audit_log)
