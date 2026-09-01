@@ -11,7 +11,11 @@ const REVIEW_TAG_GROUP_SHORTCUTS = Object.freeze({
   z: "ra",
   x: "no_assist",
 });
-const REVIEW_TAG_OPTION_SHORTCUTS = Object.freeze(["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
+// Follow the physical number row so large groups remain one-keystroke actions:
+// items 1-9 use 1-9, item 10 uses 0, then items 11-12 use - and =.
+const REVIEW_TAG_OPTION_SHORTCUTS = Object.freeze([
+  "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=",
+]);
 
 function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
   // Axis/group chrome is translated; option labels stay catalog Chinese (domain).
