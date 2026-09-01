@@ -1927,12 +1927,16 @@ html[data-ui-lang="en"] .expected-output-rule-popover ul.ui-lang-en { display: g
 .review-tag-dropdown { position: relative; width: 100%; min-width: 0; container-type: inline-size; border: 1px solid var(--line); border-radius: 7px; background: #0e131c; }
 .review-tag-dropdown[open] { z-index: 20; }
 .review-tag-dropdown > summary {
-  display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 6px 8px;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 3px;
+  min-height: 34px; padding: 6px 4px;
   color: #dbe7f3; cursor: pointer; list-style: none; font-size: 11px; line-height: 1.2;
 }
-.tag-group-shortcut { margin-left: 2px; }
+.tag-group-shortcut { margin-left: 0; justify-self: end; }
 .review-tag-dropdown > summary::-webkit-details-marker { display: none; }
-.tag-group-label { flex: 0 0 auto; min-width: 0; display: flex; align-items: center; }
+.tag-group-label {
+  min-width: 0; display: block; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
 .tag-group-selected-chip {
   min-width: 0; max-width: 160px; display: inline-flex; align-items: center; gap: 3px;
   position: relative; height: 20px; box-sizing: border-box; padding: 3px 5px; border: 1px solid rgba(34,211,238,.25); border-radius: 4px;
@@ -1993,12 +1997,12 @@ html[data-ui-lang="en"] .expected-output-rule-popover ul.ui-lang-en { display: g
   border-color: rgba(251,146,60,.72); color: #ffe0c4; background: rgba(251,146,60,.22);
 }
 .tag-group-trailing {
-  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: flex-end; gap: 5px;
-  margin-left: auto;
+  min-width: 67px; display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px;
 }
 .tag-group-summary {
-  display: inline-flex; align-items: center; justify-content: center; min-height: 20px;
-  padding: 2px 6px; border-radius: 4px; color: var(--accent); background: var(--accent-soft);
+  min-width: 27px; min-height: 20px; box-sizing: border-box;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 2px 3px; border-radius: 4px; color: var(--accent); background: var(--accent-soft);
   font-size: 9px; line-height: 1; white-space: nowrap;
 }
 .tag-group-chevron {
