@@ -453,10 +453,8 @@
   font-weight: 650;
 }
 
-.comparison-gt-summary .label-badge {
-  min-height: 23px;
-  padding: 3px 8px;
-  border-radius: 6px;
+.comparison-gt-summary > strong {
+  color: var(--text);
   font-size: 11px;
   font-weight: 750;
 }
@@ -504,19 +502,10 @@
   font-weight: 650;
 }
 
-.comparison-prediction-output .label-badge {
-  min-height: 25px;
-  padding: 3px 9px;
-  border-width: 1px;
-  border-radius: 6px;
+.comparison-output-label {
+  color: var(--text);
   font-size: 13px;
   font-weight: 760;
-}
-
-.comparison-prediction-output .label-empty {
-  border-color: rgba(148, 163, 184, .42);
-  color: #b6c0cf;
-  background: rgba(148, 163, 184, .1);
 }
 
 .comparison-prediction-output .comparison-prediction-confidence {

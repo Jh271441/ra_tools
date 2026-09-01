@@ -247,7 +247,7 @@ function comparisonPredictionHtml(prediction) {
   const verdict = prediction?.correct ? uiText("匹配 GT", "Matches GT") : uiText("不匹配 GT", "Differs from GT");
   const reason = prediction?.model_reason || uiText("无 reason", "No reason");
   return `<div class="comparison-prediction ${prediction?.correct ? "is-correct" : "is-error"}">
-    <div class="comparison-prediction-output">${labelBadge(label, "NONE")}${confidence == null ? "" : `<span class="comparison-prediction-confidence">${Number(confidence).toFixed(3)}</span>`}<small class="comparison-prediction-verdict comparison-chip ${prediction?.correct ? "comparison-match" : "comparison-mismatch"}">${escapeHtml(verdict)}</small></div>
+    <div class="comparison-prediction-output"><strong class="comparison-output-label">${escapeHtml(label)}</strong>${confidence == null ? "" : `<span class="comparison-prediction-confidence">${Number(confidence).toFixed(3)}</span>`}<small class="comparison-prediction-verdict comparison-chip ${prediction?.correct ? "comparison-match" : "comparison-mismatch"}">${escapeHtml(verdict)}</small></div>
     <span class="comparison-prediction-reason" title="${escapeHtml(reason)}" aria-label="${escapeHtml(reason)}">${escapeHtml(reason)}</span>
   </div>`;
 }
@@ -285,7 +285,7 @@ function renderRunComparisonCases(payload) {
       `Open the two-Run reason comparison for ${item.issue_id}`,
     );
     return `<tr class="transition-${escapeHtml(String(item.transition || "").toLowerCase())}" data-comparison-row data-issue-id="${escapeHtml(item.issue_id)}" tabindex="0" aria-label="${escapeHtml(rowLabel)}">
-      <td><a class="comparison-issue-link" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, candidateRunId))}">${escapeHtml(item.issue_id)}</a><div class="comparison-issue-meta"><span class="comparison-gt-summary"><span>GT</span>${labelBadge(item.gt_label, "—")}</span><small>${escapeHtml(item.baseline_scope || "")}</small></div></td>
+      <td><a class="comparison-issue-link" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, candidateRunId))}">${escapeHtml(item.issue_id)}</a><div class="comparison-issue-meta"><span class="comparison-gt-summary"><span>GT</span><strong>${escapeHtml(item.gt_label || "—")}</strong></span><small>${escapeHtml(item.baseline_scope || "")}</small></div></td>
       <td>${comparisonPredictionHtml(item.baseline)}</td>
       <td>${comparisonPredictionHtml(item.candidate)}</td>
       <td><div class="comparison-transition-cell"><span class="comparison-transition-badge ${escapeHtml(String(item.transition || "").toLowerCase())}">${escapeHtml(comparisonTransitionText(item.transition))}</span><small>${uiText("点击整行对比 Reason", "Click row to compare reasons")}</small></div></td>
