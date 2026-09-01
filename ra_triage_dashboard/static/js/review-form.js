@@ -199,12 +199,12 @@ function renderDetail(caseData) {
         </div>
         <div class="detail-navigation">
           <div class="case-detail-pager">
-            <button class="button button-quiet" id="previousIssueButton" type="button"><span class="ui-lang-zh">← 上一 Issue</span><span class="ui-lang-en">← Prev</span></button>
+            <button class="button button-quiet" id="previousIssueButton" type="button"><span class="ui-lang-zh">← 上一 Issue</span><span class="ui-lang-en">← Prev</span><kbd class="review-control-shortcut review-nav-shortcut" aria-hidden="true">[</kbd></button>
             <span class="detail-queue-position" id="detailQueuePosition" title="${escapeHtml(uiText("输入序号后回车跳转", "Enter index and press Return to jump"))}">
               <input class="detail-queue-index-input" id="detailQueueIndexInput" type="number" min="1" step="1" inputmode="numeric" aria-label="${escapeHtml(uiText("跳转到筛选队列中的第几条", "Jump to queue index"))}" disabled />
               <span class="detail-queue-total" id="detailQueueTotal">/ —</span>
             </span>
-            <button class="button button-quiet" id="nextIssueButton" type="button"><span class="ui-lang-zh">下一 Issue →</span><span class="ui-lang-en">Next →</span></button>
+            <button class="button button-quiet" id="nextIssueButton" type="button"><span class="ui-lang-zh">下一 Issue →</span><span class="ui-lang-en">Next →</span><kbd class="review-control-shortcut review-nav-shortcut" aria-hidden="true">]</kbd></button>
           </div>
         </div>
       </div>
@@ -538,6 +538,8 @@ function renderReview(caseData) {
     input.addEventListener("change", updateTagSummary);
   });
   updateTagSummary();
+  syncReviewTagShortcutHints($("#reviewPane"));
+  bindReviewKeyboardShortcuts();
   $("#reviewPane").querySelectorAll(".review-dropdown").forEach((dropdown) => {
     if (dropdown.dataset.reviewDropdownToggleBound === "1") return;
     dropdown.dataset.reviewDropdownToggleBound = "1";
