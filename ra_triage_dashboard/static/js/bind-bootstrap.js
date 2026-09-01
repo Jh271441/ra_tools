@@ -23,14 +23,20 @@ function openShortcutGuide() {
 }
 
 function bindShortcutGuide() {
+  const dialog = $("#shortcutGuideDialog");
   $("#shortcutHelpButton")?.addEventListener("click", openShortcutGuide);
   document.querySelectorAll("[data-open-shortcut-guide]").forEach((button) => {
     button.addEventListener("click", openShortcutGuide);
   });
+  dialog?.addEventListener("close", () => {
+    window.requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (active?.matches?.("#shortcutHelpButton, [data-open-shortcut-guide]")) active.blur();
+    });
+  });
   document.addEventListener("keydown", (event) => {
     if (String(event.key || "").toLowerCase() !== "h" || event.isComposing || event.repeat) return;
     if (event.ctrlKey || event.metaKey || event.altKey) return;
-    const dialog = $("#shortcutGuideDialog");
     if (dialog?.open) {
       event.preventDefault();
       event.stopPropagation();
