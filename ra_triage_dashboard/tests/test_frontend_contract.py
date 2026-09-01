@@ -1019,6 +1019,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('id="shortcutGuideDialog"', INDEX_HTML)
         self.assertIn('data-shortcut-guide-page="review"', INDEX_HTML)
         self.assertIn("function bindShortcutGuide", APP_JS)
+        self.assertIn(".media-decision-summary[hidden]", STYLES_CSS)
         self.assertIn('placeholder="例如 cn28896325"', INDEX_HTML)
         self.assertIn("批量预填（全部时间点）", INDEX_HTML)
         self.assertNotIn("同步时间点", INDEX_HTML)
