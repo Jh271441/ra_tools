@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-275`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-277`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -78,6 +78,12 @@
               <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="3.5" y="4.5" width="17" height="16" rx="3"/><path d="M8 4h8M9 3v3m6-3v3M7 5H5.8A1.8 1.8 0 0 0 4 6.8v11.4A1.8 1.8 0 0 0 5.8 20h12.4a1.8 1.8 0 0 0 1.8-1.8V6.8A1.8 1.8 0 0 0 18.2 5H17"/><path class="icon-emphasis" d="m8 12 2.1 2.1L16.4 8.8"/><path d="M8 17h8"/></svg>
             </span>
             <span class="sidebar-label"><strong class="ui-lang-zh">判错复核</strong><strong class="ui-lang-en">Failure review</strong></span>
+          </a>
+          <a class="sidebar-item" id="intentLabelingNavButton" data-page-target="intent" data-app-path="/intent-labeling" href="/intent-labeling" title="意图标注">
+            <span class="sidebar-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="4" y="3.5" width="16" height="17" rx="3"/><path d="M8 8h8M8 12h5M8 16h8"/><path class="icon-emphasis" d="m14 13 2 2 4-5"/></svg>
+            </span>
+            <span class="sidebar-label"><strong class="ui-lang-zh">意图标注</strong><strong class="ui-lang-en">Intent labeling</strong></span>
           </a>
           <a class="sidebar-item" id="reviewAnalysisNavButton" data-page-target="analysis" data-app-path="/review-analysis" href="/review-analysis" title="Review 原因聚类">
             <span class="sidebar-icon" aria-hidden="true">
@@ -302,6 +308,44 @@
                 </aside>
               </section>
             </section>
+          </section>
+
+          <section class="app-page intent-labeling-page hidden" id="intentLabelingPage" data-page="intent">
+            <section class="intent-commandbar" aria-label="意图标注导航">
+              <label><span>数据集</span><select id="intentDatasetSelect"></select></label>
+              <label class="intent-case-field"><span>Case</span><input id="intentCaseInput" autocomplete="off" spellcheck="false"/><button class="button button-quiet" id="intentLoadCaseButton" type="button">打开</button></label>
+              <label><span>媒体时间点</span><select id="intentTimepointSelect"></select></label>
+              <span class="intent-save-state" id="intentSaveState">尚未修改</span>
+              <div class="intent-command-actions">
+                <button class="button button-quiet" id="intentPreviousCase" type="button">← 上一 Case</button>
+                <button class="button button-quiet" id="intentPreviousFrame" type="button">↓ 上一帧</button>
+                <button class="button button-quiet" id="intentNextFrame" type="button">↑ 下一帧</button>
+                <button class="button button-quiet" id="intentNextCase" type="button">下一 Case →</button>
+              </div>
+            </section>
+            <div class="intent-workspace">
+              <div class="intent-main-column">
+                <section class="intent-media-panel">
+                  <header><h2 id="intentMediaHeading">同步媒体</h2><span class="intent-sync-badge">🔗 同步时间点</span></header>
+                  <div class="intent-media-grid">
+                    <figure class="intent-media-card"><figcaption>Camera 102 <span id="intentCameraDelta"></span></figcaption><div class="intent-media-stage"><img id="intentCameraImage" alt="当前 Camera 帧"/><div class="intent-media-missing" id="intentCameraMissing">当前时间点无 Camera</div></div></figure>
+                    <figure class="intent-media-card"><figcaption>BEV</figcaption><div class="intent-media-stage"><img id="intentBevImage" alt="当前 BEV 帧"/><div class="intent-media-missing" id="intentBevMissing">当前时间点无 BEV</div></div></figure>
+                  </div>
+                </section>
+                <section class="intent-timeline-panel" aria-label="Case 时间轴">
+                  <div class="intent-timeline" id="intentTimeline"></div>
+                </section>
+              </div>
+              <aside class="intent-label-rail">
+                <section class="intent-card"><h3>Case 信息</h3><dl class="intent-case-meta"><dt>case</dt><dd id="intentCaseId">—</dd><dt>场景集</dt><dd id="intentSceneSet">—</dd><dt>时间点</dt><dd id="intentFrameCount">—</dd></dl></section>
+                <section class="intent-card"><h3>Case 聚合标签 <small>应用到未单独修改的全部时间点</small></h3><h4>Routing 意图</h4><div class="intent-label-grid intent-routing-grid" id="intentAggregateRouting">
+                  <button type="button" data-intent-aggregate-axis="routing" data-value="left_turn"><kbd>1</kbd>左转</button><button type="button" data-intent-aggregate-axis="routing" data-value="right_turn"><kbd>2</kbd>右转</button><button type="button" data-intent-aggregate-axis="routing" data-value="straight"><kbd>3</kbd>直行</button><button type="button" data-intent-aggregate-axis="routing" data-value="u_turn"><kbd>4</kbd>掉头</button><button type="button" data-intent-aggregate-axis="routing" data-value="parking"><kbd>5</kbd>泊车</button>
+                </div><h4>自车变道意图</h4><div class="intent-label-grid" id="intentAggregateLane"><button type="button" data-intent-aggregate-axis="laneChange" data-value="no_lane_change"><kbd>6</kbd>非变道</button><button type="button" data-intent-aggregate-axis="laneChange" data-value="lane_change"><kbd>7</kbd>变道</button></div><p class="intent-coverage" id="intentCoverage">—</p></section>
+                <section class="intent-card"><h3>当前帧标签 <small id="intentFrameInheritance">继承 Case 聚合</small></h3><h4>Routing</h4><div class="intent-label-grid intent-routing-grid"><button type="button" data-intent-frame-axis="routing" data-value="left_turn">左转</button><button type="button" data-intent-frame-axis="routing" data-value="right_turn">右转</button><button type="button" data-intent-frame-axis="routing" data-value="straight">直行</button><button type="button" data-intent-frame-axis="routing" data-value="u_turn">掉头</button><button type="button" data-intent-frame-axis="routing" data-value="parking">泊车</button></div><h4>变道意图</h4><div class="intent-label-grid"><button type="button" data-intent-frame-axis="laneChange" data-value="no_lane_change">非变道</button><button type="button" data-intent-frame-axis="laneChange" data-value="lane_change">变道</button></div><button class="button button-quiet intent-restore-button" id="intentRestoreInheritance" type="button">恢复继承 <kbd>0</kbd></button></section>
+                <section class="intent-card"><h3>模型建议 <small>仅参考</small></h3><p id="intentSuggestions">当前数据源暂无可信逐帧 Routing 建议；不会自动填充人工标签。</p></section>
+                <section class="intent-card intent-shortcuts"><p>←/→ 切帧　[/] 切 Case</p><p>1–7 当前帧　Shift+数字 Case 聚合</p><p>0 恢复继承　Space 保存并下一条</p></section>
+              </aside>
+            </div>
           </section>
 
           <section class="app-page tool-page analysis-page hidden" id="reviewAnalysisPage" data-page="analysis">
@@ -1586,7 +1630,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-275`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-277`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

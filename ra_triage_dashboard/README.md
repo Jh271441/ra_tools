@@ -23,6 +23,25 @@
 
 实现入口：`app/baseline_registry.py`、`app/media_registry.py`、DB `baseline_scopes` IN 过滤、顶栏 `#baselineFilter`。
 
+### Routing / 自车变道意图标注
+
+`/intent-labeling` 是与三分类 Review 隔离的人工标注页。数据集由版本化的
+`config/intent_datasets.json` 注册，成员集合优先读取数据根目录中的固定
+membership 文件；API 只返回数据集内的 opaque 媒体 URL，不允许浏览器提交或
+读取任意服务器路径。页面在同一时间点并排展示 Camera 与 BEV，两者使用 16:9
+`cover` 视窗；时间轴从实际 BEV/Camera 文件构造，因此支持 9、41 或任意数量的
+时间点，单路媒体缺失会显式显示但不阻塞另一侧。
+
+标注模型由 Case 级 Routing 默认值（左转、右转、直行、掉头、泊车）和自车变道
+默认值（变道、非变道），加稀疏的单时间点覆盖组成。Case 聚合修改只影响仍在
+继承的时间点，不会擦除人工单帧修订；`0` 可恢复当前帧继承。每次保存写入追加式
+revision snapshot，并使用 `expected_revision_id` 做乐观并发控制，冲突返回 `409`。
+快捷键为 `1–7` 当前帧、`Shift+1–7` Case 聚合、方向键切帧、方括号切 Case、
+`Space` 保存并前进；输入控件、弹窗、IME 和重复按键期间均不触发。导出接口支持
+保留默认值与 overrides 的 compact JSONL，以及逐时间点展开并带来源字段的 expanded
+JSONL。当前模型文件没有可信的逐帧 Routing 轨迹，因此建议区只读且不会预填人工
+标签。
+
 ### 历史抽检 Issue 标签预填
 
 `0206` 与 `0626` 的历史抽检工作簿只在启动时以只读方式解析。匹配到相同 baseline 和 Issue ID 时，若当前 Model Run 尚无人工 Review，详情中的 `Issue 标签`、`期望输出` 与“应该排除”会作为未保存表单默认值出现，并标明文件、行号和内容 SHA-256。点击保存后才会创建一条普通的追加式 Review；历史文件不会写入 SQLite、不修改 GT，也不会覆盖已有 Review。

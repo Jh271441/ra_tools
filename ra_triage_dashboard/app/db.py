@@ -9,6 +9,7 @@ from .db_parts.shared import (
     MODEL_LABELS,
     REVIEW_STATUSES,
     AnnotationConflictError,
+    IntentAnnotationConflictError,
     _CompatRow,
     _EXPECTED_ANNOTATION_UNSET,
     _json,
@@ -31,6 +32,7 @@ from .db_parts.gt_sync import DatabaseGtSyncMixin
 from .db_parts.review import DatabaseReviewMixin
 from .db_parts.notifications import DatabaseNotificationsMixin
 from .db_parts.runs import DatabaseRunsMixin
+from .db_parts.intent import DatabaseIntentMixin
 
 class Database(
     DatabaseAccessMixin,
@@ -39,6 +41,7 @@ class Database(
     DatabaseCommentsMixin,
     DatabaseCoreMixin,
     DatabaseGtSyncMixin,
+    DatabaseIntentMixin,
     DatabaseReviewMixin,
     DatabaseNotificationsMixin,
     DatabaseRunsMixin,

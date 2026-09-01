@@ -19,6 +19,7 @@ function scheduleReviewFilterReload(delay = 0) {
 }
 
 function bindEvents() {
+  if (typeof bindIntentLabelingEvents === "function") bindIntentLabelingEvents();
   bindWorkSplitControls();
   if (typeof bindRunComparisonEvents === "function") bindRunComparisonEvents();
   if (typeof bindIssueQueryControls === "function") bindIssueQueryControls();
@@ -234,6 +235,16 @@ function bindEvents() {
   });
   $("#refreshButton").addEventListener("click", async () => {
     try {
+      if (state.activePage === "intent") {
+        await intentFlushSave();
+        await loadIntentLabeling({
+          datasetId: state.intentLabeling.datasetId,
+          caseId: state.intentLabeling.caseId,
+          offsetMs: intentActiveTimepoint()?.offset_ms,
+        });
+        showToast(t("toast.page_refreshed"));
+        return;
+      }
       await refreshAll();
       if (state.activePage === "analysis") {
         await loadReviewReasonAnalysis();
@@ -636,6 +647,9 @@ function bindEvents() {
         importKind: route.importKind,
         runId: route.runId,
         restoreRoute: true,
+        intentDatasetId: route.intentDatasetId,
+        intentCaseId: route.intentCaseId,
+        intentOffsetMs: route.intentOffsetMs,
       });
       return;
     }
@@ -719,6 +733,9 @@ async function bootstrap() {
     importKind: initialRoute.importKind,
     restoreRoute: true,
     loadPageData: false,
+    intentDatasetId: initialRoute.intentDatasetId,
+    intentCaseId: initialRoute.intentCaseId,
+    intentOffsetMs: initialRoute.intentOffsetMs,
   });
   const sessionRequest = resolveSessionInBackground();
   try {
@@ -808,6 +825,12 @@ async function bootstrap() {
       initialPageRequests.push(loadPredictionConfig(), loadPredictionBatches());
     } else if (initialRoute.page === "comparison") {
       initialPageRequests.push(loadRunComparison({ historyMode: "" }));
+    } else if (initialRoute.page === "intent") {
+      initialPageRequests.push(loadIntentLabeling({
+        datasetId: initialRoute.intentDatasetId,
+        caseId: initialRoute.intentCaseId,
+        offsetMs: initialRoute.intentOffsetMs,
+      }));
     }
     if (initialRoute.page === "analysis") {
       initialPageRequests.push(loadReviewReasonAnalysis());
@@ -847,6 +870,9 @@ async function bootstrap() {
       importKind: initialRoute.importKind,
       restoreRoute: true,
       loadPageData: false,
+      intentDatasetId: initialRoute.intentDatasetId,
+      intentCaseId: initialRoute.intentCaseId,
+      intentOffsetMs: initialRoute.intentOffsetMs,
     });
     if (initialRoute.page === "trail-update") {
       // Do not hold the initial shell on the remote Trail read. The local
