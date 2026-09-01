@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-273`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-274`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -841,8 +841,8 @@
                     <button class="button button-quiet active" type="button" data-comparison-transition="ALL">全部</button>
                     <button class="button button-quiet transition-regression" type="button" data-comparison-transition="P2F">P2F 退化</button>
                     <button class="button button-quiet transition-improvement" type="button" data-comparison-transition="F2P">F2P 改善</button>
-                    <button class="button button-quiet" type="button" data-comparison-transition="F2F">F2F 仍错误</button>
-                    <button class="button button-quiet" type="button" data-comparison-transition="P2P">P2P 均正确</button>
+                    <button class="button button-quiet transition-f2f" type="button" data-comparison-transition="F2F">F2F 仍错误</button>
+                    <button class="button button-quiet transition-p2p" type="button" data-comparison-transition="P2P">P2P 均正确</button>
                   </div>
                 </div>
                 <div class="comparison-filter-grid" aria-label="Case 筛选">
@@ -1586,7 +1586,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-273`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-274`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
