@@ -301,8 +301,19 @@ function switchMediaKind(kind) {
   if (state.media.kind === "video" && kind !== "video") {
     $("#mediaVideoStage")?.querySelector("video")?.pause();
   }
+  const currentOffset = state.media.kind === "video"
+    ? null
+    : Number(mediaFrames(state.media.kind)[state.media.index]?.offset_ms);
   state.media.kind = kind;
-  state.media.index = 0;
+  const nextFrames = kind === "video" ? [] : mediaFrames(kind);
+  state.media.index = Number.isFinite(currentOffset) && nextFrames.length
+    ? nextFrames.reduce((bestIndex, frame, index) => (
+      Math.abs(Number(frame.offset_ms) - currentOffset)
+        < Math.abs(Number(nextFrames[bestIndex]?.offset_ms) - currentOffset)
+        ? index
+        : bestIndex
+    ), 0)
+    : 0;
   state.media.zoom = 1;
   renderMediaDialog();
 }
@@ -390,6 +401,7 @@ function renderMediaDialog() {
   const predictionMatches = modelLabelMatchesGt(modelLabel, gtLabel);
   const comparisonText = predictionComparable ? (predictionMatches ? "一致" : "不一致") : "未输出";
   const comparisonClass = predictionComparable && !predictionMatches ? "comparison-fail" : "comparison-neutral";
+  $("#mediaDecisionSummary").hidden = Boolean(snapshot?.intentPreview);
   $("#mediaDecisionSummary").innerHTML = `
     <span class="comparison-side-label comparison-side-gt">GT</span>${labelBadge(gtLabel, "缺失")}
     <b aria-hidden="true">→</b>
@@ -456,7 +468,9 @@ function renderMediaDialog() {
   } else if (targetUrl) {
     preloadMediaDialogImage(targetUrl, applyImage);
   }
-  $("#mediaHelp").textContent = "← / ↑ 上一帧 · → / ↓ 下一帧 · B/C/V 切媒体 · +/− 缩放 · 0 复位 · 放大后拖拽平移 · F 全屏 · Esc 退出";
+  $("#mediaHelp").textContent = snapshot?.intentPreview
+    ? "[ / ] 或方向键切帧 · B/C 切媒体 · +/− 缩放 · 0 复位 · 放大后拖拽平移 · F 全屏 · Esc 退出"
+    : "← / ↑ 上一帧 · → / ↓ 下一帧 · B/C/V 切媒体 · +/− 缩放 · 0 复位 · 放大后拖拽平移 · F 全屏 · Esc 退出";
   $("#mediaTimeline").innerHTML = mediaTimelineButtonsMarkup(frames, state.media.index, "media-frame");
   $("#mediaTimeline").querySelectorAll("[data-media-frame]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -474,6 +488,7 @@ function openMedia(kind, index, { caseData = state.selectedCase } = {}) {
     issueId: String(caseData?.issue_id || ""),
     gtLabel: String(caseData?.gt_label || ""),
     modelLabel: String(selectedPrediction?.model_label || ""),
+    intentPreview: Boolean(caseData?.intent_preview),
     bev: [...(caseData?.assets?.frames || [])],
     camera: [...(caseData?.camera?.frames || [])],
     video: caseData?.assets?.video?.url ? { ...caseData.assets.video } : null,

@@ -5,6 +5,47 @@
  */
 let reviewSearchTimer = null;
 
+function shortcutGuidePage() {
+  return ["review", "intent"].includes(state.activePage) ? state.activePage : "";
+}
+
+function openShortcutGuide() {
+  const page = shortcutGuidePage();
+  const dialog = $("#shortcutGuideDialog");
+  if (!page || !dialog || (document.querySelector("dialog[open]") && !dialog.open)) return;
+  dialog.querySelectorAll("[data-shortcut-guide-page]").forEach((panel) => {
+    panel.hidden = panel.dataset.shortcutGuidePage !== page;
+  });
+  $("#shortcutGuideSubtitle").textContent = page === "intent"
+    ? "意图标注页 · 当前焦点位于输入控件时快捷键暂停"
+    : "判错复核页 · 媒体快捷键在 Issue 详情中可用";
+  if (!dialog.open) dialog.showModal();
+}
+
+function bindShortcutGuide() {
+  $("#shortcutHelpButton")?.addEventListener("click", openShortcutGuide);
+  document.querySelectorAll("[data-open-shortcut-guide]").forEach((button) => {
+    button.addEventListener("click", openShortcutGuide);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (String(event.key || "").toLowerCase() !== "h" || event.isComposing || event.repeat) return;
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    const dialog = $("#shortcutGuideDialog");
+    if (dialog?.open) {
+      event.preventDefault();
+      event.stopPropagation();
+      dialog.close();
+      return;
+    }
+    if (!shortcutGuidePage() || document.querySelector("dialog[open]")) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest("input, textarea, select, [contenteditable='true'], [role='textbox']")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openShortcutGuide();
+  }, true);
+}
+
 function scheduleReviewFilterReload(delay = 0) {
   if (reviewSearchTimer) window.clearTimeout(reviewSearchTimer);
   reviewSearchTimer = window.setTimeout(() => {
@@ -19,6 +60,7 @@ function scheduleReviewFilterReload(delay = 0) {
 }
 
 function bindEvents() {
+  bindShortcutGuide();
   if (typeof bindIntentLabelingEvents === "function") bindIntentLabelingEvents();
   bindWorkSplitControls();
   if (typeof bindRunComparisonEvents === "function") bindRunComparisonEvents();
@@ -540,8 +582,8 @@ function bindEvents() {
       }
       return;
     }
-    if (["ArrowLeft", "ArrowUp"].includes(event.key)) { event.preventDefault(); moveMedia(-1); }
-    if (["ArrowRight", "ArrowDown"].includes(event.key)) { event.preventDefault(); moveMedia(1); }
+    if (["ArrowLeft", "ArrowUp", "["].includes(event.key)) { event.preventDefault(); moveMedia(-1); }
+    if (["ArrowRight", "ArrowDown", "]"].includes(event.key)) { event.preventDefault(); moveMedia(1); }
     if (event.key.toLowerCase() === "b") switchMediaKind("bev");
     if (event.key.toLowerCase() === "c") switchMediaKind("camera");
     if (event.key.toLowerCase() === "v") switchMediaKind("video");

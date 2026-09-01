@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-279`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-280`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -174,6 +174,7 @@
             <div class="gt-sync-tooltip" id="gtSyncTooltip" role="tooltip"></div>
           </div>
           <div class="top-actions">
+            <button class="button button-quiet shortcut-help-button" id="shortcutHelpButton" type="button" aria-haspopup="dialog" aria-controls="shortcutGuideDialog" title="快捷键指南（H）"><span class="ui-lang-zh">快捷键</span><span class="ui-lang-en">Shortcuts</span><kbd aria-hidden="true">H</kbd></button>
             <button class="button button-quiet theme-toggle" id="themeToggleButton" type="button" aria-label="切换到浅色模式" title="切换到浅色模式">☀</button>
             <button class="button button-quiet language-toggle" id="languageToggleButton" type="button" aria-label="切换到 English">EN</button>
             <button class="button button-quiet" id="refreshButton"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
@@ -317,10 +318,10 @@
               <label><span>媒体时间点</span><select id="intentTimepointSelect"></select></label>
               <span class="intent-save-state" id="intentSaveState">尚未修改</span>
               <div class="intent-command-actions">
-                <button class="button button-quiet" id="intentPreviousCase" type="button">← 上一 Issue</button>
-                <button class="button button-quiet" id="intentPreviousFrame" type="button">↓ 上一帧</button>
-                <button class="button button-quiet" id="intentNextFrame" type="button">↑ 下一帧</button>
-                <button class="button button-quiet" id="intentNextCase" type="button">下一 Issue →</button>
+                <button class="button button-quiet" id="intentPreviousCase" type="button"><kbd>PageUp</kbd> 上一 Issue</button>
+                <button class="button button-quiet" id="intentPreviousFrame" type="button"><kbd>[</kbd> 上一帧</button>
+                <button class="button button-quiet" id="intentNextFrame" type="button">下一帧 <kbd>]</kbd></button>
+                <button class="button button-quiet" id="intentNextCase" type="button">下一 Issue <kbd>PageDown</kbd></button>
               </div>
             </section>
             <div class="intent-workspace">
@@ -328,8 +329,8 @@
                 <section class="intent-media-panel">
                   <header><h2 id="intentMediaHeading">Camera + BEV</h2></header>
                   <div class="intent-media-grid">
-                    <figure class="intent-media-card"><figcaption>Camera 102 <span id="intentCameraDelta"></span></figcaption><div class="intent-media-stage" data-intent-media-stage="camera"><img id="intentCameraImage" alt="当前 Camera 帧" draggable="false"/><div class="intent-media-missing" id="intentCameraMissing">当前时间点无 Camera</div><div class="intent-media-zoom" data-intent-media-controls="camera"><button type="button" data-intent-media-zoom="out" aria-label="缩小 Camera">−</button><button type="button" data-intent-media-zoom="reset" id="intentCameraZoomLevel" aria-label="恢复 Camera 到 100%">100%</button><button type="button" data-intent-media-zoom="in" aria-label="放大 Camera">＋</button></div></div></figure>
-                    <figure class="intent-media-card"><figcaption>BEV</figcaption><div class="intent-media-stage" data-intent-media-stage="bev"><img id="intentBevImage" alt="当前 BEV 帧" draggable="false"/><div class="intent-media-missing" id="intentBevMissing">当前时间点无 BEV</div><div class="intent-media-zoom" data-intent-media-controls="bev"><button type="button" data-intent-media-zoom="out" aria-label="缩小 BEV">−</button><button type="button" data-intent-media-zoom="reset" id="intentBevZoomLevel" aria-label="恢复 BEV 到 100%">100%</button><button type="button" data-intent-media-zoom="in" aria-label="放大 BEV">＋</button></div></div></figure>
+                    <figure class="intent-media-card"><figcaption><span class="intent-media-caption">Camera 102 <span id="intentCameraDelta"></span></span><button class="intent-media-open" type="button" data-intent-open-media="camera" aria-label="打开 Camera 大图">打开大图 <kbd>C</kbd></button></figcaption><div class="intent-media-stage" data-intent-media-stage="camera"><img id="intentCameraImage" alt="当前 Camera 帧" draggable="false"/><div class="intent-media-missing" id="intentCameraMissing">当前时间点无 Camera</div><div class="intent-media-zoom" data-intent-media-controls="camera"><button type="button" data-intent-media-zoom="out" aria-label="缩小 Camera">−</button><button type="button" data-intent-media-zoom="reset" id="intentCameraZoomLevel" aria-label="恢复 Camera 到 100%">100%</button><button type="button" data-intent-media-zoom="in" aria-label="放大 Camera">＋</button></div></div></figure>
+                    <figure class="intent-media-card"><figcaption><span class="intent-media-caption">BEV</span><button class="intent-media-open" type="button" data-intent-open-media="bev" aria-label="打开 BEV 大图">打开大图 <kbd>B</kbd></button></figcaption><div class="intent-media-stage" data-intent-media-stage="bev"><img id="intentBevImage" alt="当前 BEV 帧" draggable="false"/><div class="intent-media-missing" id="intentBevMissing">当前时间点无 BEV</div><div class="intent-media-zoom" data-intent-media-controls="bev"><button type="button" data-intent-media-zoom="out" aria-label="缩小 BEV">−</button><button type="button" data-intent-media-zoom="reset" id="intentBevZoomLevel" aria-label="恢复 BEV 到 100%">100%</button><button type="button" data-intent-media-zoom="in" aria-label="放大 BEV">＋</button></div></div></figure>
                   </div>
                 </section>
                 <section class="intent-timeline-panel" aria-label="Case 时间轴">
@@ -343,7 +344,7 @@
                 </div><h4>自车变道意图</h4><div class="intent-label-grid" id="intentAggregateLane"><button type="button" data-intent-aggregate-axis="laneChange" data-value="no_lane_change"><kbd>6</kbd>非变道</button><button type="button" data-intent-aggregate-axis="laneChange" data-value="lane_change"><kbd>7</kbd>变道</button></div><p class="intent-coverage" id="intentCoverage">—</p></section>
                 <section class="intent-card"><h3>当前帧标签 <small id="intentFrameSource">来自批量预填</small></h3><h4>Routing</h4><div class="intent-label-grid intent-routing-grid"><button type="button" data-intent-frame-axis="routing" data-value="left_turn">左转</button><button type="button" data-intent-frame-axis="routing" data-value="right_turn">右转</button><button type="button" data-intent-frame-axis="routing" data-value="straight">直行</button><button type="button" data-intent-frame-axis="routing" data-value="u_turn">掉头</button><button type="button" data-intent-frame-axis="routing" data-value="parking">泊车</button></div><h4>变道意图</h4><div class="intent-label-grid"><button type="button" data-intent-frame-axis="laneChange" data-value="no_lane_change">非变道</button><button type="button" data-intent-frame-axis="laneChange" data-value="lane_change">变道</button></div><button class="button button-quiet intent-restore-button" id="intentRestoreBatchPrefill" type="button">恢复批量预填 <kbd>0</kbd></button></section>
                 <section class="intent-card"><h3>模型建议 <small>仅参考</small></h3><p id="intentSuggestions">当前数据源暂无可信逐帧 Routing 建议；不会自动填充人工标签。</p></section>
-                <section class="intent-card intent-shortcuts"><p>←/→ 切帧　[/] 切 Issue</p><p>1–7 当前帧　Shift+数字 批量预填</p><p>0 恢复批量预填　Space 保存并下一条</p></section>
+                <section class="intent-card intent-shortcuts"><p>[ / ] 切帧　PageUp / PageDown 切 Issue</p><p>B / C 打开 BEV / Camera 大图</p><button class="button button-quiet" type="button" data-open-shortcut-guide>查看完整快捷键指南 <kbd>H</kbd></button></section>
               </aside>
             </div>
           </section>
@@ -1327,6 +1328,32 @@
       </div>
     </dialog>
 
+    <dialog class="dialog shortcut-guide-dialog" id="shortcutGuideDialog" aria-labelledby="shortcutGuideTitle">
+      <div class="dialog-card">
+        <div class="dialog-heading">
+          <div><h2 id="shortcutGuideTitle">快捷键指南</h2><p class="dialog-copy" id="shortcutGuideSubtitle">当前页面可用快捷键</p></div>
+          <button class="icon-button" type="button" data-close="shortcutGuideDialog" aria-label="关闭">×</button>
+        </div>
+        <div class="shortcut-guide-panel" data-shortcut-guide-page="intent" hidden>
+          <div class="shortcut-guide-row"><span><kbd>[</kbd><kbd>]</kbd></span><strong>上一帧 / 下一帧</strong></div>
+          <div class="shortcut-guide-row"><span><kbd>PageUp</kbd><kbd>PageDown</kbd></span><strong>上一 Issue / 下一 Issue</strong></div>
+          <div class="shortcut-guide-row"><span><kbd>B</kbd><kbd>C</kbd></span><strong>打开 BEV / Camera 大图</strong></div>
+          <div class="shortcut-guide-row"><span><kbd>1</kbd>–<kbd>7</kbd></span><strong>设置当前帧标签</strong></div>
+          <div class="shortcut-guide-row"><span><kbd>Shift</kbd> + <kbd>1</kbd>–<kbd>7</kbd></span><strong>批量预填全部时间点</strong></div>
+          <div class="shortcut-guide-row"><span><kbd>0</kbd><kbd>Space</kbd></span><strong>恢复批量预填 / 保存并下一条</strong></div>
+        </div>
+        <div class="shortcut-guide-panel" data-shortcut-guide-page="review" hidden>
+          <div class="shortcut-guide-row"><span><kbd>[</kbd><kbd>]</kbd></span><strong>上一 Issue / 下一 Issue</strong></div>
+          <div class="shortcut-guide-row"><span><kbd>Q</kbd><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>Z</kbd><kbd>X</kbd></span><strong>打开对应标签组</strong></div>
+          <div class="shortcut-guide-row"><span><kbd>1</kbd>–<kbd>0</kbd><kbd>-</kbd><kbd>=</kbd></span><strong>切换已打开标签组中的选项</strong></div>
+          <div class="shortcut-guide-row"><span><kbd>B</kbd><kbd>C</kbd><kbd>V</kbd></span><strong>切换 BEV / Camera / 视频</strong></div>
+          <div class="shortcut-guide-row"><span><kbd>←</kbd><kbd>→</kbd><kbd>F</kbd></span><strong>切换媒体帧 / 打开大图</strong></div>
+          <div class="shortcut-guide-row"><span><kbd>+</kbd><kbd>-</kbd><kbd>0</kbd></span><strong>大图缩放 / 复位</strong></div>
+        </div>
+        <p class="shortcut-guide-footer"><kbd>H</kbd> 再按一次关闭指南 · 输入框中不会触发快捷键 · <kbd>Esc</kbd> 关闭弹窗</p>
+      </div>
+    </dialog>
+
     <dialog class="media-dialog" id="mediaDialog">
       <div class="media-dialog-card">
         <div class="dialog-heading media-heading">
@@ -1630,7 +1657,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-279`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-280`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

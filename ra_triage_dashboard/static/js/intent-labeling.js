@@ -464,6 +464,43 @@ async function intentNavigateCase(direction) {
   await loadIntentLabeling({ datasetId: state.intentLabeling.datasetId, caseId, historyMode: "push" });
 }
 
+function intentPreviewFrames(kind) {
+  const descriptorKey = kind === "camera" ? "camera" : "bev";
+  return (state.intentLabeling.caseData?.timepoints || []).flatMap((timepoint) => {
+    const descriptor = timepoint?.[descriptorKey];
+    if (!descriptor?.url) return [];
+    return [{ ...descriptor, offset_ms: timepoint.offset_ms, timepoint_id: timepoint.id }];
+  });
+}
+
+function openIntentMedia(kind) {
+  const frames = intentPreviewFrames(kind);
+  const active = intentActiveTimepoint();
+  if (!frames.length) {
+    showToast(`当前 Issue 没有可用的 ${kind === "camera" ? "Camera" : "BEV"} 图片。`, true);
+    return;
+  }
+  const exactIndex = frames.findIndex((frame) => frame.timepoint_id === active?.id);
+  const index = exactIndex >= 0
+    ? exactIndex
+    : frames.reduce((bestIndex, frame, frameIndex) => (
+      Math.abs(Number(frame.offset_ms) - Number(active?.offset_ms || 0))
+        < Math.abs(Number(frames[bestIndex]?.offset_ms) - Number(active?.offset_ms || 0))
+        ? frameIndex
+        : bestIndex
+    ), 0);
+  const data = state.intentLabeling.caseData;
+  openMedia(kind, index, {
+    caseData: {
+      issue_id: data?.issue_id || "",
+      intent_preview: true,
+      assets: { frames: intentPreviewFrames("bev") },
+      camera: { frames: intentPreviewFrames("camera") },
+      predictions: [],
+    },
+  });
+}
+
 function intentShortcutIsEditable(target) {
   return Boolean(target?.closest?.("input, textarea, select, button, [contenteditable='true'], dialog[open]"));
 }
@@ -483,8 +520,12 @@ function handleIntentShortcut(event) {
   const actions = {
     ArrowLeft: () => intentMoveFrame(-1),
     ArrowRight: () => intentMoveFrame(1),
-    BracketLeft: () => intentNavigateCase(-1),
-    BracketRight: () => intentNavigateCase(1),
+    BracketLeft: () => intentMoveFrame(-1),
+    BracketRight: () => intentMoveFrame(1),
+    PageUp: () => intentNavigateCase(-1),
+    PageDown: () => intentNavigateCase(1),
+    KeyB: () => openIntentMedia("bev"),
+    KeyC: () => openIntentMedia("camera"),
     Digit0: () => intentRestoreBatchPrefill(),
     Space: async () => { await intentFlushSave(); await intentNavigateCase(1); },
   };
@@ -521,6 +562,9 @@ function bindIntentLabelingEvents() {
   $("#intentPreviousCase")?.addEventListener("click", () => intentNavigateCase(-1).catch((error) => showToast(error.message, true)));
   $("#intentNextCase")?.addEventListener("click", () => intentNavigateCase(1).catch((error) => showToast(error.message, true)));
   $("#intentRestoreBatchPrefill")?.addEventListener("click", intentRestoreBatchPrefill);
+  document.querySelectorAll("[data-intent-open-media]").forEach((button) => {
+    button.addEventListener("click", () => openIntentMedia(button.dataset.intentOpenMedia));
+  });
   document.querySelectorAll("[data-intent-media-controls]").forEach((controls) => {
     controls.addEventListener("click", (event) => {
       const button = event.target.closest("[data-intent-media-zoom]");
