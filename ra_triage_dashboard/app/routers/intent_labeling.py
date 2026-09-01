@@ -4,15 +4,21 @@ import asyncio
 import json
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
 from ..db_parts.shared import IntentAnnotationConflictError
-from ..http_support import _action_actor, _detail
+from ..http_support import _action_actor, _admin_identity, _detail
 from ..runtime import database, intent_dataset_registry
 
 
-router = APIRouter()
+async def _require_intent_admin(request: Request) -> None:
+    """Protect labels and media with the same verified-admin boundary."""
+
+    await asyncio.to_thread(_admin_identity, request)
+
+
+router = APIRouter(dependencies=[Depends(_require_intent_admin)])
 MAX_LABEL_REQUEST_BYTES = 512 * 1024
 
 

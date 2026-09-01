@@ -740,10 +740,10 @@ async function bootstrap() {
   const sessionRequest = resolveSessionInBackground();
   try {
     await settleInitialRequests([loadConfig()], "基础配置");
-    if (["users", "comparison"].includes(initialRoute.page)) {
+    if (["users", "comparison", "intent"].includes(initialRoute.page)) {
       await sessionRequest;
     }
-    if (["users", "comparison"].includes(initialRoute.page) && !state.session.is_admin) {
+    if (["users", "comparison", "intent"].includes(initialRoute.page) && !state.session.is_admin) {
       initialRoute.page = "review";
       showToast(t("toast.admin_only"), true);
     }

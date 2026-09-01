@@ -133,8 +133,18 @@ def _dashboard_config_payload() -> dict[str, Any]:
 @router.get("/system-status", include_in_schema=False)
 @router.get("/users", include_in_schema=False)
 @router.get("/trail-attribute-update", include_in_schema=False)
-@router.get("/intent-labeling", include_in_schema=False)
 async def index() -> HTMLResponse:
+    return HTMLResponse(
+        content=INDEX_HTML,
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@router.get("/intent-labeling", include_in_schema=False)
+async def intent_labeling_page(request: Request) -> HTMLResponse:
+    """Serve the internal-beta intent workspace only to Dashboard admins."""
+
+    await asyncio.to_thread(_admin_identity, request)
     return HTMLResponse(
         content=INDEX_HTML,
         headers={"Cache-Control": "no-store, max-age=0"},

@@ -25,7 +25,9 @@
 
 ### Routing / 自车变道意图标注
 
-`/intent-labeling` 是与三分类 Review 隔离的人工标注页。数据集由版本化的
+`/intent-labeling` 是与三分类 Review 隔离的管理员内测人工标注页。页面路由、
+全部意图标注 API 以及 Camera/BEV 图片资产都由服务端要求已验证的 Dashboard
+管理员身份；侧边栏隐藏仅用于界面提示，不是权限边界。数据集由版本化的
 `config/intent_datasets.json` 注册，成员集合优先读取数据根目录中的固定
 membership 文件；API 只返回数据集内的 opaque 媒体 URL，不允许浏览器提交或
 读取任意服务器路径。页面在同一时间点并排展示 Camera 与 BEV，两者使用 16:9
@@ -226,7 +228,7 @@ export DASHBOARD_TEAM_DEFAULT_MANAGERS=alice,bob
 
 Kylin 必须把 SSO 用户写入 `X-SSO-User`，把该文件中的值写入 `X-RA-Triage-Ingress`，且两个 header 都必须覆盖而非追加客户端值；不要把 marker 返回给浏览器。若实际用户名 header 或变量名不同，只改 `DASHBOARD_IDENTITY_HEADER`，代码无需修改。生产模式会在启动时校验 marker 文件为当前服务用户所有、普通文件、权限 0600、内容至少 32 字符；配置不安全时拒绝启动。
 
-`DASHBOARD_SSO_WRITE_USERS` 与 `DASHBOARD_TEAM_DEFAULT_MANAGERS` 只在权限表为空时执行一次初始化。此后 PostgreSQL/SQLite 中的权限表是运行时权威来源：未列出的 SSO 用户与裸 IP 访问均为只读，`writer` 可执行普通 Review、Run 与 Tag 选择操作，`admin` 额外拥有独立的 `/users` 用户管理页和内测 `/run-comparison` Run 对比页。Run 对比的页面路由与 `/api/model-run-comparison` API 都会在服务端重新验证管理员身份；前端隐藏入口不作为权限边界。Kylin Portal 的「SSO 白名单」属于网关访问策略，不能直接等同于本应用写白名单。
+`DASHBOARD_SSO_WRITE_USERS` 与 `DASHBOARD_TEAM_DEFAULT_MANAGERS` 只在权限表为空时执行一次初始化。此后 PostgreSQL/SQLite 中的权限表是运行时权威来源：未列出的 SSO 用户与裸 IP 访问均为只读，`writer` 可执行普通 Review、Run 与 Tag 选择操作，`admin` 额外拥有独立的 `/users` 用户管理页、内测 `/run-comparison` Run 对比页和 `/intent-labeling` 意图标注页。Run 对比和意图标注的页面路由与全部对应 API 都会在服务端重新验证管理员身份；前端隐藏入口不作为权限边界。Kylin Portal 的「SSO 白名单」属于网关访问策略，不能直接等同于本应用写白名单。
 
 Run 对比始终在当前选中的不可变 GT 数据集上计算。Run 选择器会显示每个 Run 对当前数据集的覆盖数；如果切换数据集后 URL 遗留的两次 Run 都是零覆盖，页面会优先改选当前数据集有输出的 Run，避免返回一个看似失败的空比较。仍允许“有覆盖 Run + 零覆盖 Run”的组合，用于查看单侧 `NONE` 的并集差异。`P/F` 表示该 Run 输出相对 GT 是否正确：`P2F` 是退化、`F2P` 是改善；比较集合取两个 Run 有效输出的并集，只要任一侧存在受支持输出就保留 Case，缺失或不支持的一侧归一为 `NONE`，仅两侧都为 `NONE` 时从明细、矩阵、统计和分页中排除。页面提供双 Run 混淆矩阵、并排的两次输出与 reason；GT 与模型输出使用无框的中性文字，只有匹配/不匹配 GT 状态使用独立的绿/红状态框，输出卡片底色保持中性，避免标签类别颜色干扰正确性判断。变化框用红→绿、纯绿、绿→红、纯红分别表达 `F2P`、`P2P`、`P2F`、`F2F`。列表 reason 保留三行预览并可 hover 查看全文；点击 Case 整行的非链接区域（或聚焦行后按 Enter/Space）仍会打开同一只读对比弹窗，左右同时展示基线 Run 与新 Run 的批次名、完整 Reason、标签、置信度及 GT 匹配状态。Issue 链接和两侧复核按钮保留原导航行为。页面支持按变化类型、GT、基线输出、新 Run 输出、标签是否变化以及 Issue ID/reason 组合筛选；Case 默认严格按 Issue ID 升序、每页 10 条，可携带 `issue + run + comparison=all` 深链到判错复核。网页 Batch Run 若保存过 Prompt、模型及输入配置，会展示经过敏感字段脱敏的创建时快照；比较本身不会修改 Review、Run、GT 或 Trail。
 

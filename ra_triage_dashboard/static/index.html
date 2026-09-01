@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-278`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-279`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -79,11 +79,11 @@
             </span>
             <span class="sidebar-label"><strong class="ui-lang-zh">判错复核</strong><strong class="ui-lang-en">Failure review</strong></span>
           </a>
-          <a class="sidebar-item" id="intentLabelingNavButton" data-page-target="intent" data-app-path="/intent-labeling" href="/intent-labeling" title="意图标注">
+          <a class="sidebar-item" id="intentLabelingNavButton" data-page-target="intent" data-app-path="/intent-labeling" href="/intent-labeling" title="意图标注（管理员内测）" hidden>
             <span class="sidebar-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="4" y="3.5" width="16" height="17" rx="3"/><path d="M8 8h8M8 12h5M8 16h8"/><path class="icon-emphasis" d="m14 13 2 2 4-5"/></svg>
             </span>
-            <span class="sidebar-label"><strong class="ui-lang-zh">意图标注</strong><strong class="ui-lang-en">Intent labeling</strong></span>
+            <span class="sidebar-label"><strong class="ui-lang-zh">意图标注 <small class="nav-beta">内测</small></strong><strong class="ui-lang-en">Intent labeling <small class="nav-beta">Beta</small></strong></span>
           </a>
           <a class="sidebar-item" id="reviewAnalysisNavButton" data-page-target="analysis" data-app-path="/review-analysis" href="/review-analysis" title="Review 原因聚类">
             <span class="sidebar-icon" aria-hidden="true">
@@ -1630,7 +1630,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-278`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-279`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
