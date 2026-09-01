@@ -59,6 +59,13 @@ function intentEffective(timepoint = intentActiveTimepoint()) {
   };
 }
 
+function intentLabelSummary(timepoint) {
+  const effective = intentEffective(timepoint);
+  const routing = INTENT_ROUTING_LABELS[effective.routing] || "Routing 待填";
+  const laneChange = INTENT_LANE_LABELS[effective.laneChange] || "变道待填";
+  return `${routing} · ${laneChange}`;
+}
+
 function renderIntentDatasetPicker() {
   const select = $("#intentDatasetSelect");
   if (!select) return;
@@ -74,8 +81,54 @@ function intentSetSaveState(text, kind = "") {
   element.dataset.status = kind;
 }
 
-function intentSetImage(image, missing, descriptor, sequence) {
+function intentMediaTransform(kind) {
+  return state.intentLabeling.mediaZoom[kind];
+}
+
+function intentApplyMediaTransform(kind) {
+  const transform = intentMediaTransform(kind);
+  const stage = document.querySelector(`[data-intent-media-stage="${kind}"]`);
+  const image = kind === "camera" ? $("#intentCameraImage") : $("#intentBevImage");
+  const level = kind === "camera" ? $("#intentCameraZoomLevel") : $("#intentBevZoomLevel");
+  if (!transform || !stage || !image || !level) return;
+  const maxX = stage.clientWidth * (transform.scale - 1) / 2;
+  const maxY = stage.clientHeight * (transform.scale - 1) / 2;
+  transform.x = Math.max(-maxX, Math.min(maxX, transform.x));
+  transform.y = Math.max(-maxY, Math.min(maxY, transform.y));
+  image.style.transform = `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`;
+  stage.classList.toggle("is-zoomed", transform.scale > 1);
+  level.textContent = `${Math.round(transform.scale * 100)}%`;
+}
+
+function intentResetMediaZoom(kind, source = intentMediaTransform(kind)?.source || "") {
+  const transform = intentMediaTransform(kind);
+  if (!transform) return;
+  Object.assign(transform, { scale: 1, x: 0, y: 0, source });
+  intentApplyMediaTransform(kind);
+}
+
+function intentSetMediaZoom(kind, scale) {
+  const transform = intentMediaTransform(kind);
+  if (!transform) return;
+  transform.scale = Math.max(1, Math.min(4, Math.round(scale * 10) / 10));
+  if (transform.scale === 1) {
+    transform.x = 0;
+    transform.y = 0;
+  }
+  intentApplyMediaTransform(kind);
+}
+
+function intentPrepareMediaZoom(kind, descriptor) {
+  const source = descriptor?.url || "";
+  const transform = intentMediaTransform(kind);
+  if (transform && transform.source !== source) intentResetMediaZoom(kind, source);
+  const controls = document.querySelector(`[data-intent-media-controls="${kind}"]`);
+  if (controls) controls.dataset.available = source ? "true" : "false";
+}
+
+function intentSetImage(kind, image, missing, descriptor, sequence) {
   if (!image || !missing) return;
+  intentPrepareMediaZoom(kind, descriptor);
   if (!descriptor?.url) {
     image.removeAttribute("src");
     image.hidden = true;
@@ -89,9 +142,16 @@ function intentSetImage(image, missing, descriptor, sequence) {
     : Promise.resolve();
   ready.then(() => {
     if (sequence !== state.intentLabeling.mediaSeq) return;
+    if (!probe.naturalWidth) {
+      image.removeAttribute("src");
+      image.hidden = true;
+      missing.hidden = false;
+      return;
+    }
     image.src = descriptor.url;
     image.hidden = false;
     missing.hidden = true;
+    intentApplyMediaTransform(kind);
   });
 }
 
@@ -101,14 +161,14 @@ function renderIntentHero() {
   const active = intentActiveTimepoint();
   const index = active ? timepoints.findIndex((item) => item.id === active.id) : -1;
   $("#intentMediaHeading").textContent = active
-    ? `同步媒体 · 第 ${index + 1} / ${timepoints.length} 帧 · t = ${active.offset_ms} ms`
-    : "同步媒体";
+    ? `Camera + BEV · 第 ${index + 1} / ${timepoints.length} 帧 · t = ${active.offset_ms} ms`
+    : "Camera + BEV";
   $("#intentCameraDelta").textContent = active?.camera_delta_ms == null
     ? ""
     : `Δ ${active.camera_delta_ms >= 0 ? "+" : ""}${active.camera_delta_ms} ms`;
   const sequence = ++intent.mediaSeq;
-  intentSetImage($("#intentCameraImage"), $("#intentCameraMissing"), active?.camera, sequence);
-  intentSetImage($("#intentBevImage"), $("#intentBevMissing"), active?.bev, sequence);
+  intentSetImage("camera", $("#intentCameraImage"), $("#intentCameraMissing"), active?.camera, sequence);
+  intentSetImage("bev", $("#intentBevImage"), $("#intentBevMissing"), active?.bev, sequence);
 }
 
 function renderIntentTimeline() {
@@ -126,7 +186,7 @@ function renderIntentTimeline() {
         ${camera ? `<img data-intent-lazy-src="${escapeHtml(camera)}" alt=""/>` : '<span class="intent-thumb-missing">Camera 缺失</span>'}
         ${bev ? `<img data-intent-lazy-src="${escapeHtml(bev)}" alt=""/>` : '<span class="intent-thumb-missing">BEV 缺失</span>'}
       </span>
-      <small class="${override ? "is-override" : ""}">${override ? "覆盖" : "继承"}</small>
+      <small class="${override ? "is-override" : ""}">${escapeHtml(intentLabelSummary(item))}</small>
     </button>`;
   }).join("");
   timeline.querySelectorAll("[data-intent-timepoint]").forEach((button) => {
@@ -179,12 +239,12 @@ function renderIntentLabels() {
     ));
     button.setAttribute("aria-pressed", selected ? "true" : "false");
   });
-  $("#intentFrameInheritance").textContent = currentOverride
-    ? "含单帧覆盖"
-    : "继承 Case 聚合";
+  $("#intentFrameSource").textContent = currentOverride
+    ? "已单独修改"
+    : "来自批量预填";
   const total = intent.caseData?.timepoints?.length || 0;
   const overrideCount = Object.keys(intent.overrides).length;
-  $("#intentCoverage").textContent = `${Math.max(0, total - overrideCount)} 帧继承 · ${overrideCount} 帧覆盖`;
+  $("#intentCoverage").textContent = `${Math.max(0, total - overrideCount)} 帧使用批量预填 · ${overrideCount} 帧单独修改`;
 }
 
 function renderIntentCase() {
@@ -192,7 +252,8 @@ function renderIntentCase() {
   const data = intent.caseData;
   renderIntentDatasetPicker();
   if (!data) return;
-  $("#intentCaseInput").value = data.case_id;
+  $("#intentCaseInput").value = data.issue_id;
+  $("#intentIssueId").textContent = data.issue_id;
   $("#intentCaseId").textContent = data.case_id;
   $("#intentSceneSet").textContent = intent.datasets.find((item) => item.id === intent.datasetId)?.scene_set || "—";
   $("#intentFrameCount").textContent = `${data.timepoints.length} / ${data.timepoints.length}`;
@@ -225,6 +286,14 @@ async function loadIntentLabeling({ datasetId = "", caseId = "", offsetMs = null
   }
   intent.datasetId = selectedDataset.id;
   let targetCaseId = caseId;
+  if (targetCaseId && !/^cn[0-9]+_[0-9]+$/.test(targetCaseId)) {
+    if (!/^cn[0-9]+$/.test(targetCaseId)) throw new Error("请输入完整的 Issue ID，例如 cn28896325。");
+    const matches = await api(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases?q=${encodeURIComponent(targetCaseId)}&page_size=200`);
+    if (requestSeq !== intent.requestSeq) return;
+    const exact = (matches.items || []).filter((item) => item.issue_id === targetCaseId);
+    if (exact.length !== 1) throw new Error(exact.length ? "该 Issue 对应多个 Episode，无法唯一打开。" : "该数据集中没有这个 Issue。");
+    targetCaseId = exact[0].case_id;
+  }
   if (!targetCaseId) {
     const pending = await api(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases?status=unlabeled&page_size=1`);
     const fallback = pending.items?.length
@@ -332,8 +401,14 @@ async function intentFlushSave() {
 }
 
 function intentSetAggregate(axis, value) {
-  if (axis === "routing") state.intentLabeling.aggregate.routing = value;
-  else state.intentLabeling.aggregate.laneChange = value;
+  const intent = state.intentLabeling;
+  const key = axis === "routing" ? "routing_intent" : "lane_change_intent";
+  if (axis === "routing") intent.aggregate.routing = value;
+  else intent.aggregate.laneChange = value;
+  Object.entries(intent.overrides).forEach(([timepointId, override]) => {
+    if (override[key] === value) delete override[key];
+    if (!override.routing_intent && !override.lane_change_intent) delete intent.overrides[timepointId];
+  });
   intentMarkDirty();
   renderIntentLabels();
   renderIntentTimeline();
@@ -355,7 +430,7 @@ function intentSetFrameLabel(axis, value) {
   renderIntentTimeline();
 }
 
-function intentRestoreInheritance() {
+function intentRestoreBatchPrefill() {
   const id = state.intentLabeling.activeTimepointId;
   if (!id || !state.intentLabeling.overrides[id]) return;
   delete state.intentLabeling.overrides[id];
@@ -410,7 +485,7 @@ function handleIntentShortcut(event) {
     ArrowRight: () => intentMoveFrame(1),
     BracketLeft: () => intentNavigateCase(-1),
     BracketRight: () => intentNavigateCase(1),
-    Digit0: () => intentRestoreInheritance(),
+    Digit0: () => intentRestoreBatchPrefill(),
     Space: async () => { await intentFlushSave(); await intentNavigateCase(1); },
   };
   const action = actions[event.code];
@@ -425,20 +500,69 @@ function bindIntentLabelingEvents() {
     await intentFlushSave();
     await loadIntentLabeling({ datasetId: event.target.value, historyMode: "push" });
   });
-  $("#intentLoadCaseButton")?.addEventListener("click", async () => {
-    await intentFlushSave();
-    await loadIntentLabeling({
-      datasetId: state.intentLabeling.datasetId,
-      caseId: $("#intentCaseInput")?.value.trim() || "",
-      historyMode: "push",
-    });
+  $("#intentLoadCaseButton")?.addEventListener("click", () => {
+    (async () => {
+      await intentFlushSave();
+      await loadIntentLabeling({
+        datasetId: state.intentLabeling.datasetId,
+        caseId: $("#intentCaseInput")?.value.trim() || "",
+        historyMode: "push",
+      });
+    })().catch((error) => showToast(error.message, true));
+  });
+  $("#intentCaseInput")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    $("#intentLoadCaseButton")?.click();
   });
   $("#intentTimepointSelect")?.addEventListener("change", (event) => intentSelectTimepoint(event.target.value));
   $("#intentPreviousFrame")?.addEventListener("click", () => intentMoveFrame(-1));
   $("#intentNextFrame")?.addEventListener("click", () => intentMoveFrame(1));
   $("#intentPreviousCase")?.addEventListener("click", () => intentNavigateCase(-1).catch((error) => showToast(error.message, true)));
   $("#intentNextCase")?.addEventListener("click", () => intentNavigateCase(1).catch((error) => showToast(error.message, true)));
-  $("#intentRestoreInheritance")?.addEventListener("click", intentRestoreInheritance);
+  $("#intentRestoreBatchPrefill")?.addEventListener("click", intentRestoreBatchPrefill);
+  document.querySelectorAll("[data-intent-media-controls]").forEach((controls) => {
+    controls.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-intent-media-zoom]");
+      if (!button) return;
+      const kind = controls.dataset.intentMediaControls;
+      const current = intentMediaTransform(kind)?.scale || 1;
+      if (button.dataset.intentMediaZoom === "reset") intentResetMediaZoom(kind);
+      else intentSetMediaZoom(kind, current + (button.dataset.intentMediaZoom === "in" ? .2 : -.2));
+    });
+  });
+  document.querySelectorAll("[data-intent-media-stage]").forEach((stage) => {
+    const kind = stage.dataset.intentMediaStage;
+    let drag = null;
+    stage.addEventListener("pointerdown", (event) => {
+      const transform = intentMediaTransform(kind);
+      if (event.target.tagName !== "IMG" || !transform || transform.scale <= 1) return;
+      drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, startX: transform.x, startY: transform.y };
+      stage.setPointerCapture(event.pointerId);
+      stage.classList.add("is-dragging");
+      event.preventDefault();
+    });
+    stage.addEventListener("pointermove", (event) => {
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      const transform = intentMediaTransform(kind);
+      transform.x = drag.startX + event.clientX - drag.x;
+      transform.y = drag.startY + event.clientY - drag.y;
+      intentApplyMediaTransform(kind);
+    });
+    const stopDrag = (event) => {
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      drag = null;
+      stage.classList.remove("is-dragging");
+    };
+    stage.addEventListener("pointerup", stopDrag);
+    stage.addEventListener("pointercancel", stopDrag);
+    stage.addEventListener("wheel", (event) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      const current = intentMediaTransform(kind)?.scale || 1;
+      intentSetMediaZoom(kind, current + (event.deltaY < 0 ? .2 : -.2));
+    }, { passive: false });
+  });
   document.querySelectorAll("[data-intent-aggregate-axis]").forEach((button) => {
     button.addEventListener("click", () => intentSetAggregate(button.dataset.intentAggregateAxis, button.dataset.value));
   });

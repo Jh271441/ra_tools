@@ -659,6 +659,10 @@ const state = {
     saveTimer: null,
     requestSeq: 0,
     mediaSeq: 0,
+    mediaZoom: {
+      camera: { scale: 1, x: 0, y: 0, source: "" },
+      bev: { scale: 1, x: 0, y: 0, source: "" },
+    },
     thumbnailObserver: null,
   },
   // Short baseline ids from registry (e.g. ["0508"] or ["0508","0626"]).

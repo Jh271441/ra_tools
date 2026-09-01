@@ -83,6 +83,69 @@ class IntentDatasetIndexTest(unittest.TestCase):
             self.assertEqual(path.name, "1.jpg")
             self.assertEqual(media_type, "image/jpeg")
 
+    def test_camera41_manifest_uses_exact_episode_offsets_and_confined_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            bev_root = root / "bev"
+            camera_root = root / "camera41"
+            case_id = "cn12345_1770000000000"
+            frames = bev_root / case_id / "frames"
+            frames.mkdir(parents=True)
+            (frames / "bev_default_t-01000ms.png").write_bytes(b"bev")
+            (bev_root / "membership.txt").write_text(
+                f"deadbeef  {case_id}/frames/bev_default_t-01000ms.png\n",
+                encoding="utf-8",
+            )
+            copied = camera_root / "frames" / case_id
+            copied.mkdir(parents=True)
+            (copied / "camera_t-1000ms.jpg").write_bytes(b"camera")
+            (copied / "camera_t+0ms.jpg").write_bytes(b"camera")
+            manifest = root / "camera41.jsonl"
+            manifest.write_text(
+                "\n".join(
+                    json.dumps(
+                        {
+                            "schema": "routing_camera41_frame_asset_v1",
+                            "episode": case_id,
+                            "frame_offset_ms": offset,
+                            "selection_diff_ms": delta,
+                            # The deployed copy never trusts or serves this source path.
+                            "image_path": f"/unmounted/source/frame_{index:03d}.jpg",
+                        }
+                    )
+                    for index, (offset, delta) in enumerate(((-1000, 42), (0, -17)))
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            config = root / "intent.json"
+            config.write_text(
+                json.dumps(
+                    {
+                        "datasets": [
+                            {
+                                "id": "test-v1",
+                                "bev_root": str(bev_root),
+                                "camera_root": str(camera_root),
+                                "camera_manifest": str(manifest),
+                                "camera_manifest_frame_subdir": "frames",
+                                "membership_file": "membership.txt",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            index = IntentDatasetIndex.from_file(config)
+            index.refresh()
+            timeline = index.timeline("test-v1", case_id)
+            self.assertEqual([item["offset_ms"] for item in timeline], [-1000, 0])
+            self.assertEqual([item["camera_delta_ms"] for item in timeline], [42, -17])
+            self.assertEqual(index.public_datasets()[0]["camera_frame_count"], 2)
+            path, media_type = index.resolve_asset("test-v1", case_id, "camera_-1000")
+            self.assertEqual(path, (copied / "camera_t-1000ms.jpg").resolve())
+            self.assertEqual(media_type, "image/jpeg")
+
 
 class IntentLabelStorageTest(unittest.TestCase):
     def test_case_defaults_sparse_override_and_optimistic_lock(self) -> None:

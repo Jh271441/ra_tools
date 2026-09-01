@@ -46,6 +46,8 @@ class IntentDatasetSpec:
     source_sha256: str
     bev_root: Path
     camera_root: Path | None
+    camera_manifest: Path | None
+    camera_manifest_frame_subdir: str
     membership_file: Path | None
     camera_offsets_ms: tuple[int, ...]
     camera_subdir: str
@@ -61,6 +63,9 @@ class IntentDatasetIndex:
         self._lock = threading.RLock()
         self._cases: dict[str, tuple[str, ...]] = {}
         self._camera_by_issue: dict[str, dict[str, tuple[str, ...]]] = {}
+        self._camera_manifest_frames: dict[
+            str, dict[str, dict[int, tuple[Path, int | None]]]
+        ] = {}
 
     @classmethod
     def from_file(cls, path: Path, *, base_path: str = "") -> "IntentDatasetIndex":
@@ -80,6 +85,9 @@ class IntentDatasetIndex:
             bev_root = cls._configured_path(row, "bev_root", "bev_root_env")
             camera_root = cls._configured_path(
                 row, "camera_root", "camera_root_env", optional=True
+            )
+            camera_manifest = cls._configured_path(
+                row, "camera_manifest", "camera_manifest_env", optional=True
             )
             membership = str(row.get("membership_file") or "").strip()
             membership_file = (bev_root / membership).resolve() if membership else None
@@ -103,6 +111,10 @@ class IntentDatasetIndex:
                     source_sha256=str(row.get("source_sha256") or "").strip(),
                     bev_root=bev_root,
                     camera_root=camera_root,
+                    camera_manifest=camera_manifest,
+                    camera_manifest_frame_subdir=str(
+                        row.get("camera_manifest_frame_subdir") or "frames"
+                    ).strip(),
                     membership_file=membership_file,
                     camera_offsets_ms=tuple(sorted(camera_offsets)),
                     camera_subdir=str(row.get("camera_subdir") or "after_compress").strip(),
@@ -132,6 +144,9 @@ class IntentDatasetIndex:
     def refresh(self) -> None:
         cases: dict[str, tuple[str, ...]] = {}
         camera_by_issue: dict[str, dict[str, tuple[str, ...]]] = {}
+        camera_manifest_frames: dict[
+            str, dict[str, dict[int, tuple[Path, int | None]]]
+        ] = {}
         for dataset_id, spec in self._specs.items():
             case_ids = self._membership_cases(spec)
             cases[dataset_id] = tuple(case_ids)
@@ -145,9 +160,83 @@ class IntentDatasetIndex:
             camera_by_issue[dataset_id] = {
                 issue_id: tuple(sorted(names)) for issue_id, names in camera_map.items()
             }
+            camera_manifest_frames[dataset_id] = self._load_camera_manifest(
+                spec, frozenset(case_ids)
+            )
         with self._lock:
             self._cases = cases
             self._camera_by_issue = camera_by_issue
+            self._camera_manifest_frames = camera_manifest_frames
+
+    @staticmethod
+    def _load_camera_manifest(
+        spec: IntentDatasetSpec, case_ids: frozenset[str]
+    ) -> dict[str, dict[int, tuple[Path, int | None]]]:
+        manifest = spec.camera_manifest
+        if (
+            spec.camera_root is None
+            or manifest is None
+            or not manifest.is_file()
+            or not spec.camera_root.is_dir()
+        ):
+            return {}
+        root = spec.camera_root.resolve()
+        frame_root = (root / spec.camera_manifest_frame_subdir).resolve()
+        try:
+            frame_root.relative_to(root)
+        except ValueError as exc:
+            raise ValueError(
+                f"{spec.dataset_id}: Camera manifest frame 子目录越界。"
+            ) from exc
+        result: dict[str, dict[int, tuple[Path, int | None]]] = {}
+        with manifest.open(encoding="utf-8", errors="strict") as handle:
+            for line_number, raw in enumerate(handle, 1):
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    row = json.loads(raw)
+                    case_id = str(row.get("episode") or "").strip()
+                    offset_ms = int(row["frame_offset_ms"])
+                    source_suffix = Path(str(row.get("image_path") or "")).suffix.lower()
+                except (
+                    AttributeError,
+                    KeyError,
+                    TypeError,
+                    ValueError,
+                    json.JSONDecodeError,
+                ) as exc:
+                    raise ValueError(
+                        f"{spec.dataset_id}: Camera manifest 第 {line_number} 行不合法。"
+                    ) from exc
+                if row.get("schema") != "routing_camera41_frame_asset_v1":
+                    raise ValueError(
+                        f"{spec.dataset_id}: Camera manifest 第 {line_number} 行 "
+                        "schema 不合法。"
+                    )
+                if case_id not in case_ids:
+                    continue
+                if source_suffix not in {".jpg", ".jpeg", ".png", ".webp"}:
+                    raise ValueError(
+                        f"{spec.dataset_id}: Camera manifest 第 {line_number} 行"
+                        "图片格式不合法。"
+                    )
+                candidate = (
+                    frame_root
+                    / case_id
+                    / f"camera_t{offset_ms:+d}ms{source_suffix}"
+                )
+                if not candidate.is_file():
+                    continue
+                by_offset = result.setdefault(case_id, {})
+                if offset_ms in by_offset:
+                    raise ValueError(
+                        f"{case_id}: Camera manifest offset 重复: {offset_ms}"
+                    )
+                raw_delta = row.get("selection_diff_ms")
+                delta_ms = int(raw_delta) if raw_delta is not None else None
+                by_offset[offset_ms] = (candidate, delta_ms)
+        return result
 
     def _membership_cases(self, spec: IntentDatasetSpec) -> list[str]:
         if not spec.bev_root.is_dir():
@@ -181,9 +270,11 @@ class IntentDatasetIndex:
     def public_datasets(self) -> list[dict[str, Any]]:
         with self._lock:
             indexed = dict(self._cases)
+            manifest_frames = dict(self._camera_manifest_frames)
         items = []
         for dataset_id, spec in self._specs.items():
             case_ids = indexed.get(dataset_id, ())
+            camera_cases = manifest_frames.get(dataset_id, {})
             items.append(
                 {
                     "id": dataset_id,
@@ -196,6 +287,8 @@ class IntentDatasetIndex:
                     "coverage_ok": bool(case_ids) and (
                         not spec.expected_case_count or len(case_ids) == spec.expected_case_count
                     ),
+                    "camera_case_count": len(camera_cases),
+                    "camera_frame_count": sum(len(items) for items in camera_cases.values()),
                 }
             )
         return items
@@ -250,9 +343,17 @@ class IntentDatasetIndex:
                     raise ValueError(f"{case_id}: BEV offset 重复: {offset_ms}")
                 bev_frames[offset_ms] = path
         camera_frames: dict[int, Path] = {}
+        camera_deltas: dict[int, int | None] = {}
+        with self._lock:
+            manifest_camera = dict(
+                self._camera_manifest_frames.get(dataset_id, {}).get(case_id, {})
+            )
+        for offset_ms, (path, delta_ms) in manifest_camera.items():
+            camera_frames[offset_ms] = path
+            camera_deltas[offset_ms] = delta_ms
         camera_case_id = self._camera_case_id(dataset_id, case_id)
         camera_trigger_delta_ms: int | None = None
-        if spec.camera_root and camera_case_id:
+        if not camera_frames and spec.camera_root and camera_case_id:
             try:
                 camera_trigger_delta_ms = int(camera_case_id.rsplit("_", 1)[1]) - int(
                     case_id.rsplit("_", 1)[1]
@@ -286,7 +387,11 @@ class IntentDatasetIndex:
                     "offset_ms": offset_ms,
                     "bev": self._descriptor(dataset_id, case_id, "bev", offset_ms, bev),
                     "camera": self._descriptor(dataset_id, case_id, "camera", offset_ms, camera),
-                    "camera_delta_ms": camera_trigger_delta_ms if camera is not None else None,
+                    "camera_delta_ms": (
+                        camera_deltas.get(offset_ms)
+                        if offset_ms in camera_deltas
+                        else camera_trigger_delta_ms if camera is not None else None
+                    ),
                 }
             )
         return result
@@ -343,6 +448,17 @@ class IntentDatasetIndex:
         else:
             if spec.camera_root is None:
                 raise KeyError("Camera 根目录不可用。")
+            with self._lock:
+                manifest_frame = self._camera_manifest_frames.get(dataset_id, {}).get(
+                    case_id, {}
+                ).get(offset_ms)
+            if manifest_frame is not None:
+                resolved = _root_confined(spec.camera_root, manifest_frame[0])
+                media_type = {
+                    ".png": "image/png",
+                    ".webp": "image/webp",
+                }.get(resolved.suffix.lower(), "image/jpeg")
+                return resolved, media_type
             camera_case_id = self._camera_case_id(dataset_id, case_id)
             if camera_case_id is None:
                 raise KeyError("Camera Case 不存在。")
