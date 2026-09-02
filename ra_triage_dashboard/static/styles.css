@@ -4842,10 +4842,9 @@ body[data-active-page="intent"] .top-actions { min-width: 0; margin-left: auto; 
 .intent-card h3 small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; font-weight: 500; }
 .intent-card h4 { margin: 10px 0 6px; color: var(--muted); font-size: 11px; }
 .intent-card h4 small { margin-left: 5px; color: var(--faint); font-size: 9px; font-weight: 500; }
-.intent-axis-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; padding: 3px; border: 1px solid var(--line); border-radius: 8px; background: var(--overlay); }
-.intent-axis-tabs button { min-height: 34px; border: 0; border-radius: 6px; color: var(--muted); background: transparent; cursor: pointer; font-weight: 650; }
-.intent-axis-tabs button.active { color: #eaffff; background: rgba(24, 178, 203, .7); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); }
-.intent-axis-panel[hidden] { display: none; }
+.intent-current-frame-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
+.intent-current-frame-heading h3 { margin: 0; }
+.intent-current-frame-heading small { color: var(--muted); font-size: 9px; }
 .intent-case-meta { display: grid; grid-template-columns: 68px minmax(0, 1fr); gap: 6px 8px; margin: 0; font-size: 12px; }
 .intent-case-meta dt { color: var(--muted); }
 .intent-case-meta dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }

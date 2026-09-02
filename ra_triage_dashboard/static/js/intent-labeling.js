@@ -12,18 +12,14 @@ const INTENT_LANE_LABELS = {
   no_lane_change: "非变道",
   lane_change: "变道",
 };
-const INTENT_MODE_DIGIT_LABELS = {
-  routing: {
-    Digit1: "left_turn",
-    Digit2: "right_turn",
-    Digit3: "straight",
-    Digit4: "u_turn",
-    Digit5: "parking",
-  },
-  laneChange: {
-    Digit1: "no_lane_change",
-    Digit2: "lane_change",
-  },
+const INTENT_DIGIT_LABELS = {
+  Digit1: ["routing", "left_turn"],
+  Digit2: ["routing", "right_turn"],
+  Digit3: ["routing", "straight"],
+  Digit4: ["routing", "u_turn"],
+  Digit5: ["routing", "parking"],
+  Digit6: ["laneChange", "no_lane_change"],
+  Digit7: ["laneChange", "lane_change"],
 };
 
 function intentRouteOptions(overrides = {}) {
@@ -217,14 +213,6 @@ function renderIntentLabels() {
   const intent = state.intentLabeling;
   const currentOverride = intentOverride();
   const effective = intentEffective();
-  document.querySelectorAll("[data-intent-axis-mode]").forEach((button) => {
-    const selected = button.dataset.intentAxisMode === intent.activeAxis;
-    button.classList.toggle("active", selected);
-    button.setAttribute("aria-selected", selected ? "true" : "false");
-  });
-  document.querySelectorAll("[data-intent-axis-panel]").forEach((panel) => {
-    panel.hidden = panel.dataset.intentAxisPanel !== intent.activeAxis;
-  });
   document.querySelectorAll("[data-intent-aggregate-axis]").forEach((button) => {
     const value = button.dataset.value;
     const selected = button.dataset.intentAggregateAxis === "routing"
@@ -246,22 +234,10 @@ function renderIntentLabels() {
     ));
     button.setAttribute("aria-pressed", selected ? "true" : "false");
   });
-  document.querySelectorAll("[data-intent-frame-source]").forEach((source) => {
-    const key = source.dataset.intentFrameSource === "routing"
-      ? "routing_intent"
-      : "lane_change_intent";
-    source.textContent = currentOverride?.[key] ? "已单独修改" : "来自批量预填";
-  });
+  $("#intentFrameSource").textContent = currentOverride ? "已单独修改" : "来自批量预填";
   const total = intent.caseData?.timepoints?.length || 0;
-  const overrideKey = intent.activeAxis === "routing" ? "routing_intent" : "lane_change_intent";
-  const overrideCount = Object.values(intent.overrides).filter((item) => item?.[overrideKey]).length;
+  const overrideCount = Object.keys(intent.overrides).length;
   $("#intentCoverage").textContent = `${Math.max(0, total - overrideCount)} 帧使用批量预填 · ${overrideCount} 帧单独修改`;
-}
-
-function intentSetActiveAxis(axis) {
-  if (!INTENT_MODE_DIGIT_LABELS[axis]) return;
-  state.intentLabeling.activeAxis = axis;
-  renderIntentLabels();
 }
 
 function renderIntentCase() {
@@ -443,15 +419,10 @@ function intentSetFrameLabel(axis, value) {
   renderIntentTimeline();
 }
 
-function intentRestoreBatchPrefill(axis = state.intentLabeling.activeAxis) {
+function intentRestoreBatchPrefill() {
   const id = state.intentLabeling.activeTimepointId;
-  const override = state.intentLabeling.overrides[id];
-  if (!id || !override) return;
-  if (axis === "routing") delete override.routing_intent;
-  else delete override.lane_change_intent;
-  if (!override.routing_intent && !override.lane_change_intent) {
-    delete state.intentLabeling.overrides[id];
-  }
+  if (!id || !state.intentLabeling.overrides[id]) return;
+  delete state.intentLabeling.overrides[id];
   intentMarkDirty();
   renderIntentLabels();
   renderIntentTimeline();
@@ -526,13 +497,12 @@ function intentShortcutIsEditable(target) {
 function handleIntentShortcut(event) {
   if (state.activePage !== "intent" || event.isComposing || event.repeat) return;
   if (event.ctrlKey || event.metaKey || event.altKey || intentShortcutIsEditable(event.target)) return;
-  const axis = state.intentLabeling.activeAxis;
-  const value = INTENT_MODE_DIGIT_LABELS[axis]?.[event.code];
-  if (value) {
+  const digit = INTENT_DIGIT_LABELS[event.code];
+  if (digit) {
     event.preventDefault();
     event.stopPropagation();
-    if (event.shiftKey) intentSetAggregate(axis, value);
-    else intentSetFrameLabel(axis, value);
+    if (event.shiftKey) intentSetAggregate(digit[0], digit[1]);
+    else intentSetFrameLabel(digit[0], digit[1]);
     return;
   }
   if (event.shiftKey) return;
@@ -579,9 +549,6 @@ function bindIntentLabelingEvents() {
   $("#intentPreviousCase")?.addEventListener("click", () => intentNavigateCase(-1).catch((error) => showToast(error.message, true)));
   $("#intentNextCase")?.addEventListener("click", () => intentNavigateCase(1).catch((error) => showToast(error.message, true)));
   $("#intentRestoreBatchPrefill")?.addEventListener("click", () => intentRestoreBatchPrefill());
-  document.querySelectorAll("[data-intent-axis-mode]").forEach((button) => {
-    button.addEventListener("click", () => intentSetActiveAxis(button.dataset.intentAxisMode));
-  });
   document.querySelectorAll("[data-intent-open-media]").forEach((button) => {
     button.addEventListener("click", () => openIntentMedia(button.dataset.intentOpenMedia));
   });

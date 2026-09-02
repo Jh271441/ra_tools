@@ -338,27 +338,20 @@
               </div>
               <aside class="intent-label-rail">
                 <section class="intent-card intent-label-editor">
-                  <h3>意图标注 <small>Routing 与变道意图分开标注</small></h3>
-                  <div class="intent-axis-tabs" role="tablist" aria-label="标注模式">
-                    <button class="active" type="button" role="tab" aria-selected="true" data-intent-axis-mode="routing">Routing</button>
-                    <button type="button" role="tab" aria-selected="false" data-intent-axis-mode="laneChange">变道意图</button>
+                  <h3>批量预填 <small>一次选择会填入全部时间点；之后仍可单独修改任意帧</small></h3>
+                  <h4>Routing 意图</h4>
+                  <div class="intent-label-grid intent-routing-grid" id="intentAggregateRouting">
+                    <button type="button" data-intent-aggregate-axis="routing" data-value="left_turn" aria-keyshortcuts="Shift+1"><kbd>⇧1</kbd>左转</button><button type="button" data-intent-aggregate-axis="routing" data-value="right_turn" aria-keyshortcuts="Shift+2"><kbd>⇧2</kbd>右转</button><button type="button" data-intent-aggregate-axis="routing" data-value="straight" aria-keyshortcuts="Shift+3"><kbd>⇧3</kbd>直行</button><button type="button" data-intent-aggregate-axis="routing" data-value="u_turn" aria-keyshortcuts="Shift+4"><kbd>⇧4</kbd>掉头</button><button type="button" data-intent-aggregate-axis="routing" data-value="parking" aria-keyshortcuts="Shift+5"><kbd>⇧5</kbd>泊车</button>
                   </div>
-                  <div class="intent-axis-panel" data-intent-axis-panel="routing">
-                    <h4>批量预填 · 全部时间点</h4>
-                    <div class="intent-label-grid intent-routing-grid" id="intentAggregateRouting">
-                      <button type="button" data-intent-aggregate-axis="routing" data-value="left_turn" aria-keyshortcuts="Shift+1"><kbd>⇧1</kbd>左转</button><button type="button" data-intent-aggregate-axis="routing" data-value="right_turn" aria-keyshortcuts="Shift+2"><kbd>⇧2</kbd>右转</button><button type="button" data-intent-aggregate-axis="routing" data-value="straight" aria-keyshortcuts="Shift+3"><kbd>⇧3</kbd>直行</button><button type="button" data-intent-aggregate-axis="routing" data-value="u_turn" aria-keyshortcuts="Shift+4"><kbd>⇧4</kbd>掉头</button><button type="button" data-intent-aggregate-axis="routing" data-value="parking" aria-keyshortcuts="Shift+5"><kbd>⇧5</kbd>泊车</button>
-                    </div>
-                    <h4>当前帧 <small class="intent-frame-source" data-intent-frame-source="routing">来自批量预填</small></h4>
-                    <div class="intent-label-grid intent-routing-grid"><button type="button" data-intent-frame-axis="routing" data-value="left_turn" aria-keyshortcuts="1"><kbd>1</kbd>左转</button><button type="button" data-intent-frame-axis="routing" data-value="right_turn" aria-keyshortcuts="2"><kbd>2</kbd>右转</button><button type="button" data-intent-frame-axis="routing" data-value="straight" aria-keyshortcuts="3"><kbd>3</kbd>直行</button><button type="button" data-intent-frame-axis="routing" data-value="u_turn" aria-keyshortcuts="4"><kbd>4</kbd>掉头</button><button type="button" data-intent-frame-axis="routing" data-value="parking" aria-keyshortcuts="5"><kbd>5</kbd>泊车</button></div>
-                  </div>
-                  <div class="intent-axis-panel" data-intent-axis-panel="laneChange" hidden>
-                    <h4>批量预填 · 全部时间点</h4>
-                    <div class="intent-label-grid" id="intentAggregateLane"><button type="button" data-intent-aggregate-axis="laneChange" data-value="no_lane_change" aria-keyshortcuts="Shift+1"><kbd>⇧1</kbd>非变道</button><button type="button" data-intent-aggregate-axis="laneChange" data-value="lane_change" aria-keyshortcuts="Shift+2"><kbd>⇧2</kbd>变道</button></div>
-                    <h4>当前帧 <small class="intent-frame-source" data-intent-frame-source="laneChange">来自批量预填</small></h4>
-                    <div class="intent-label-grid"><button type="button" data-intent-frame-axis="laneChange" data-value="no_lane_change" aria-keyshortcuts="1"><kbd>1</kbd>非变道</button><button type="button" data-intent-frame-axis="laneChange" data-value="lane_change" aria-keyshortcuts="2"><kbd>2</kbd>变道</button></div>
-                  </div>
+                  <h4>变道意图</h4>
+                  <div class="intent-label-grid" id="intentAggregateLane"><button type="button" data-intent-aggregate-axis="laneChange" data-value="no_lane_change" aria-keyshortcuts="Shift+6"><kbd>⇧6</kbd>非变道</button><button type="button" data-intent-aggregate-axis="laneChange" data-value="lane_change" aria-keyshortcuts="Shift+7"><kbd>⇧7</kbd>变道</button></div>
+                  <div class="intent-current-frame-heading"><h3>当前帧标签</h3><small id="intentFrameSource">来自批量预填</small></div>
+                  <h4>Routing 意图</h4>
+                  <div class="intent-label-grid intent-routing-grid"><button type="button" data-intent-frame-axis="routing" data-value="left_turn" aria-keyshortcuts="1"><kbd>1</kbd>左转</button><button type="button" data-intent-frame-axis="routing" data-value="right_turn" aria-keyshortcuts="2"><kbd>2</kbd>右转</button><button type="button" data-intent-frame-axis="routing" data-value="straight" aria-keyshortcuts="3"><kbd>3</kbd>直行</button><button type="button" data-intent-frame-axis="routing" data-value="u_turn" aria-keyshortcuts="4"><kbd>4</kbd>掉头</button><button type="button" data-intent-frame-axis="routing" data-value="parking" aria-keyshortcuts="5"><kbd>5</kbd>泊车</button></div>
+                  <h4>变道意图</h4>
+                  <div class="intent-label-grid"><button type="button" data-intent-frame-axis="laneChange" data-value="no_lane_change" aria-keyshortcuts="6"><kbd>6</kbd>非变道</button><button type="button" data-intent-frame-axis="laneChange" data-value="lane_change" aria-keyshortcuts="7"><kbd>7</kbd>变道</button></div>
                   <p class="intent-coverage" id="intentCoverage">—</p>
-                  <button class="button button-quiet intent-restore-button" id="intentRestoreBatchPrefill" type="button" aria-keyshortcuts="0">当前帧恢复本模式批量预填 <kbd>0</kbd></button>
+                  <button class="button button-quiet intent-restore-button" id="intentRestoreBatchPrefill" type="button" aria-keyshortcuts="0">当前帧恢复批量预填 <kbd>0</kbd></button>
                 </section>
               </aside>
             </div>
@@ -1353,9 +1346,9 @@
           <div class="shortcut-guide-row"><span><kbd>←</kbd><kbd>→</kbd></span><strong>上一帧 / 下一帧</strong></div>
           <div class="shortcut-guide-row"><span><kbd>↑</kbd><kbd>↓</kbd></span><strong>上一 Issue / 下一 Issue</strong></div>
           <div class="shortcut-guide-row"><span><kbd>Space</kbd><kbd>B</kbd><kbd>C</kbd></span><strong>打开大图；同帧轮换 / 直达 BEV / Camera</strong></div>
-          <div class="shortcut-guide-row"><span><kbd>1</kbd>–<kbd>5</kbd></span><strong>设置当前模式的当前帧标签</strong></div>
-          <div class="shortcut-guide-row"><span><kbd>Shift</kbd> + <kbd>1</kbd>–<kbd>5</kbd></span><strong>批量预填当前模式</strong></div>
-          <div class="shortcut-guide-row"><span><kbd>0</kbd></span><strong>当前帧恢复本模式批量预填</strong></div>
+          <div class="shortcut-guide-row"><span><kbd>1</kbd>–<kbd>7</kbd></span><strong>设置当前帧标签</strong></div>
+          <div class="shortcut-guide-row"><span><kbd>Shift</kbd> + <kbd>1</kbd>–<kbd>7</kbd></span><strong>批量预填全部时间点</strong></div>
+          <div class="shortcut-guide-row"><span><kbd>0</kbd></span><strong>当前帧恢复批量预填</strong></div>
           <div class="shortcut-guide-row"><span><kbd>R</kbd></span><strong>刷新当前页</strong></div>
         </div>
         <div class="shortcut-guide-panel" data-shortcut-guide-page="review" hidden>
