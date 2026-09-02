@@ -794,9 +794,12 @@ function showPage(
       loadRunComparison({ historyMode: historyMode || "replace" }).catch((error) => showToast(error.message, true));
     }
   }
-  if (target === "intent") {
+  if (["intent", "intent-experiments"].includes(target)) {
     if (!state.session.identity_pending && !state.session.is_admin) {
-      showToast(uiText("意图标注仅对管理员开放。", "Intent labeling is admin-only."), true);
+      const message = target === "intent"
+        ? uiText("意图标注仅对管理员开放。", "Intent labeling is admin-only.")
+        : uiText("实验分配仅对管理员开放。", "Experiment assignment is admin-only.");
+      showToast(message, true);
       return showPage("review", { historyMode: historyMode || "replace" });
     }
   }
@@ -826,6 +829,10 @@ function showPage(
       caseId: intentCaseId,
       offsetMs: intentOffsetMs,
     }).catch((error) => showToast(error.message, true));
+  }
+  if (target === "intent-experiments" && loadPageData && typeof loadIntentExperimentAdmin === "function") {
+    loadIntentExperimentAdmin({ datasetId: intentDatasetId })
+      .catch((error) => showToast(error.message, true));
   }
   if (target === "analysis") renderAnalysisRunFilter();
   if (target === "trail-update") {

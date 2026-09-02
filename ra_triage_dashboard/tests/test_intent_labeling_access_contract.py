@@ -18,6 +18,11 @@ class IntentLabelingAccessContractTest(unittest.TestCase):
         self.assertIn("intent_labeling_page(request: Request)", page_block)
         self.assertIn("_admin_identity, request", page_block)
 
+        experiments_start = CORE_ROUTER.index('@router.get("/intent-experiments"')
+        experiments_block = CORE_ROUTER[experiments_start : experiments_start + 650]
+        self.assertIn("intent_experiments_page(request: Request)", experiments_block)
+        self.assertIn("_admin_identity, request", experiments_block)
+
         self.assertIn("async def _require_intent_admin(request: Request)", INTENT_ROUTER)
         self.assertIn("_admin_identity, request", INTENT_ROUTER)
         self.assertIn(

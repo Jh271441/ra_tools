@@ -323,6 +323,14 @@ function bindEvents() {
         showToast(t("toast.page_refreshed"));
         return;
       }
+      if (state.activePage === "intent-experiments") {
+        await loadIntentExperimentAdmin({
+          datasetId: state.intentLabeling.experimentDatasetId,
+          force: true,
+        });
+        showToast(t("toast.page_refreshed"));
+        return;
+      }
       await refreshAll();
       if (state.activePage === "analysis") {
         await loadReviewReasonAnalysis();
@@ -827,10 +835,10 @@ async function bootstrap() {
   const sessionRequest = resolveSessionInBackground();
   try {
     await settleInitialRequests([loadConfig()], "基础配置");
-    if (["users", "comparison", "intent"].includes(initialRoute.page)) {
+    if (["users", "comparison", "intent", "intent-experiments"].includes(initialRoute.page)) {
       await sessionRequest;
     }
-    if (["users", "comparison", "intent"].includes(initialRoute.page) && !state.session.is_admin) {
+    if (["users", "comparison", "intent", "intent-experiments"].includes(initialRoute.page) && !state.session.is_admin) {
       initialRoute.page = "review";
       showToast(t("toast.admin_only"), true);
     }
@@ -917,6 +925,10 @@ async function bootstrap() {
         datasetId: initialRoute.intentDatasetId,
         caseId: initialRoute.intentCaseId,
         offsetMs: initialRoute.intentOffsetMs,
+      }));
+    } else if (initialRoute.page === "intent-experiments") {
+      initialPageRequests.push(loadIntentExperimentAdmin({
+        datasetId: initialRoute.intentDatasetId,
       }));
     }
     if (initialRoute.page === "analysis") {

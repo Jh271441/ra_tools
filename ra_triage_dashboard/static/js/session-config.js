@@ -75,6 +75,8 @@ function renderSession() {
   if (userManagementNav) userManagementNav.hidden = !state.session.is_admin;
   const intentLabelingNav = $("#intentLabelingNavButton");
   if (intentLabelingNav) intentLabelingNav.hidden = !state.session.is_admin;
+  const intentExperimentsNav = $("#intentExperimentsNavButton");
+  if (intentExperimentsNav) intentExperimentsNav.hidden = !state.session.is_admin;
   const runComparisonNav = $("#runComparisonNavButton");
   if (runComparisonNav) runComparisonNav.hidden = !state.session.is_admin;
   const batchActor = $("#batchActorSummary");

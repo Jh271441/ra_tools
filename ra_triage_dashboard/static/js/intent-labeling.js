@@ -154,18 +154,18 @@ function renderIntentExperiments() {
 
 async function loadIntentExperiments({ force = false } = {}) {
   const intent = state.intentLabeling;
-  if (!intent.datasetId) return;
-  const requestedDatasetId = intent.datasetId;
-  if (!force && intent.experimentsDatasetId === intent.datasetId) {
+  const requestedDatasetId = intent.experimentDatasetId;
+  if (!requestedDatasetId) return;
+  if (!force && intent.experimentsDatasetId === requestedDatasetId) {
     renderIntentExperiments();
     return;
   }
   const payload = await api(`/api/intent-experiments?dataset_id=${encodeURIComponent(requestedDatasetId)}`);
-  if (intent.datasetId !== requestedDatasetId) return;
+  if (intent.experimentDatasetId !== requestedDatasetId) return;
   intent.experiments = payload.items || [];
   intent.experimentMembers = payload.eligible_members || [];
   intent.experimentsDatasetId = requestedDatasetId;
-  const dataset = intent.datasets.find((item) => item.id === intent.datasetId);
+  const dataset = intent.datasets.find((item) => item.id === requestedDatasetId);
   const countInput = $("#intentExperimentCaseCount");
   if (countInput) {
     countInput.max = String(dataset?.case_count || 1);
@@ -174,6 +174,36 @@ async function loadIntentExperiments({ force = false } = {}) {
   renderIntentExperimentMembers();
   renderIntentExperiments();
   updateIntentExperimentEstimate();
+}
+
+function renderIntentExperimentDatasetPicker() {
+  const select = $("#intentExperimentDatasetSelect");
+  if (!select) return;
+  select.innerHTML = state.intentLabeling.datasets.map((item) => (
+    `<option value="${escapeHtml(item.id)}"${item.id === state.intentLabeling.experimentDatasetId ? " selected" : ""}${item.available ? "" : " disabled"}>${escapeHtml(item.display_name)}</option>`
+  )).join("");
+}
+
+async function loadIntentExperimentAdmin({ datasetId = "", force = false } = {}) {
+  const intent = state.intentLabeling;
+  if (!intent.datasets.length) {
+    const payload = await api("/api/intent-datasets");
+    intent.datasets = payload.items || [];
+  }
+  const selected = intent.datasets.find((item) => item.id === datasetId && item.available)
+    || intent.datasets.find((item) => item.id === intent.experimentDatasetId && item.available)
+    || intent.datasets.find((item) => item.available);
+  if (!selected) throw new Error("没有可用于实验分配的数据集。");
+  intent.experimentDatasetId = selected.id;
+  renderIntentExperimentDatasetPicker();
+  await loadIntentExperiments({ force });
+  if (state.activePage === "intent-experiments") {
+    history.replaceState(
+      { page: "intent-experiments", datasetId: selected.id },
+      "",
+      `${withBase("/intent-experiments")}?dataset=${encodeURIComponent(selected.id)}`
+    );
+  }
 }
 
 async function createIntentExperiment(event) {
@@ -188,7 +218,7 @@ async function createIntentExperiment(event) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        dataset_id: intent.datasetId,
+        dataset_id: intent.experimentDatasetId,
         name: $("#intentExperimentName")?.value.trim() || "",
         annotation_mode: $("#intentExperimentMode")?.value || "blind",
         case_count: Number($("#intentExperimentCaseCount")?.value) || 0,
@@ -421,7 +451,6 @@ async function loadIntentLabeling({ datasetId = "", caseId = "", offsetMs = null
     return;
   }
   intent.datasetId = selectedDataset.id;
-  loadIntentExperiments().catch((error) => showToast(error.message, true));
   let targetCaseId = caseId;
   if (targetCaseId && !/^cn[0-9]+_[0-9]+$/.test(targetCaseId)) {
     if (!/^cn[0-9]+$/.test(targetCaseId)) throw new Error("请输入完整的 Issue ID，例如 cn28896325。");
@@ -698,6 +727,11 @@ function handleIntentShortcut(event) {
 }
 
 function bindIntentLabelingEvents() {
+  $("#intentExperimentDatasetSelect")?.addEventListener("change", (event) => {
+    state.intentLabeling.experimentsDatasetId = "";
+    loadIntentExperimentAdmin({ datasetId: event.target.value, force: true })
+      .catch((error) => showToast(error.message, true));
+  });
   $("#intentExperimentForm")?.addEventListener("submit", (event) => {
     createIntentExperiment(event).catch((error) => showToast(error.message, true));
   });

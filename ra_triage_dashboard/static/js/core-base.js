@@ -551,6 +551,11 @@ const PAGE_ROUTES = {
     titleZh: "意图标注",
     titleEn: "Intent Labeling",
   },
+  "intent-experiments": {
+    path: "/intent-experiments",
+    titleZh: "实验分配",
+    titleEn: "Experiment Assignment",
+  },
   analysis: {
     path: "/review-analysis",
     titleZh: "原因聚类",
@@ -669,6 +674,7 @@ const state = {
     experiments: [],
     experimentMembers: [],
     experimentsDatasetId: "",
+    experimentDatasetId: "",
   },
   // Short baseline ids from registry (e.g. ["0508"] or ["0508","0626"]).
   selectedBaselineIds: ["0508"],
