@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-282`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-283`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -340,9 +340,9 @@
               <aside class="intent-label-rail">
                 <section class="intent-card"><h3>Issue 信息</h3><dl class="intent-case-meta"><dt>Issue</dt><dd id="intentIssueId">—</dd><dt>Episode</dt><dd id="intentCaseId">—</dd><dt>场景集</dt><dd id="intentSceneSet">—</dd><dt>时间点</dt><dd id="intentFrameCount">—</dd></dl></section>
                 <section class="intent-card"><h3>批量预填（全部时间点） <small>一次选择会填入全部帧；之后仍可单独修改任意帧</small></h3><h4>Routing 意图</h4><div class="intent-label-grid intent-routing-grid" id="intentAggregateRouting">
-                  <button type="button" data-intent-aggregate-axis="routing" data-value="left_turn"><kbd>1</kbd>左转</button><button type="button" data-intent-aggregate-axis="routing" data-value="right_turn"><kbd>2</kbd>右转</button><button type="button" data-intent-aggregate-axis="routing" data-value="straight"><kbd>3</kbd>直行</button><button type="button" data-intent-aggregate-axis="routing" data-value="u_turn"><kbd>4</kbd>掉头</button><button type="button" data-intent-aggregate-axis="routing" data-value="parking"><kbd>5</kbd>泊车</button>
-                </div><h4>自车变道意图</h4><div class="intent-label-grid" id="intentAggregateLane"><button type="button" data-intent-aggregate-axis="laneChange" data-value="no_lane_change"><kbd>6</kbd>非变道</button><button type="button" data-intent-aggregate-axis="laneChange" data-value="lane_change"><kbd>7</kbd>变道</button></div><p class="intent-coverage" id="intentCoverage">—</p></section>
-                <section class="intent-card"><h3>当前帧标签 <small id="intentFrameSource">来自批量预填</small></h3><h4>Routing</h4><div class="intent-label-grid intent-routing-grid"><button type="button" data-intent-frame-axis="routing" data-value="left_turn">左转</button><button type="button" data-intent-frame-axis="routing" data-value="right_turn">右转</button><button type="button" data-intent-frame-axis="routing" data-value="straight">直行</button><button type="button" data-intent-frame-axis="routing" data-value="u_turn">掉头</button><button type="button" data-intent-frame-axis="routing" data-value="parking">泊车</button></div><h4>变道意图</h4><div class="intent-label-grid"><button type="button" data-intent-frame-axis="laneChange" data-value="no_lane_change">非变道</button><button type="button" data-intent-frame-axis="laneChange" data-value="lane_change">变道</button></div><button class="button button-quiet intent-restore-button" id="intentRestoreBatchPrefill" type="button">恢复批量预填 <kbd>0</kbd></button></section>
+                  <button type="button" data-intent-aggregate-axis="routing" data-value="left_turn" aria-keyshortcuts="Shift+1"><kbd>⇧1</kbd>左转</button><button type="button" data-intent-aggregate-axis="routing" data-value="right_turn" aria-keyshortcuts="Shift+2"><kbd>⇧2</kbd>右转</button><button type="button" data-intent-aggregate-axis="routing" data-value="straight" aria-keyshortcuts="Shift+3"><kbd>⇧3</kbd>直行</button><button type="button" data-intent-aggregate-axis="routing" data-value="u_turn" aria-keyshortcuts="Shift+4"><kbd>⇧4</kbd>掉头</button><button type="button" data-intent-aggregate-axis="routing" data-value="parking" aria-keyshortcuts="Shift+5"><kbd>⇧5</kbd>泊车</button>
+                </div><h4>自车变道意图</h4><div class="intent-label-grid" id="intentAggregateLane"><button type="button" data-intent-aggregate-axis="laneChange" data-value="no_lane_change" aria-keyshortcuts="Shift+6"><kbd>⇧6</kbd>非变道</button><button type="button" data-intent-aggregate-axis="laneChange" data-value="lane_change" aria-keyshortcuts="Shift+7"><kbd>⇧7</kbd>变道</button></div><p class="intent-coverage" id="intentCoverage">—</p></section>
+                <section class="intent-card"><h3>当前帧标签 <small id="intentFrameSource">来自批量预填</small></h3><h4>Routing</h4><div class="intent-label-grid intent-routing-grid"><button type="button" data-intent-frame-axis="routing" data-value="left_turn" aria-keyshortcuts="1"><kbd>1</kbd>左转</button><button type="button" data-intent-frame-axis="routing" data-value="right_turn" aria-keyshortcuts="2"><kbd>2</kbd>右转</button><button type="button" data-intent-frame-axis="routing" data-value="straight" aria-keyshortcuts="3"><kbd>3</kbd>直行</button><button type="button" data-intent-frame-axis="routing" data-value="u_turn" aria-keyshortcuts="4"><kbd>4</kbd>掉头</button><button type="button" data-intent-frame-axis="routing" data-value="parking" aria-keyshortcuts="5"><kbd>5</kbd>泊车</button></div><h4>变道意图</h4><div class="intent-label-grid"><button type="button" data-intent-frame-axis="laneChange" data-value="no_lane_change" aria-keyshortcuts="6"><kbd>6</kbd>非变道</button><button type="button" data-intent-frame-axis="laneChange" data-value="lane_change" aria-keyshortcuts="7"><kbd>7</kbd>变道</button></div><button class="button button-quiet intent-restore-button" id="intentRestoreBatchPrefill" type="button" aria-keyshortcuts="0">恢复批量预填 <kbd>0</kbd></button></section>
                 <section class="intent-card"><h3>模型建议 <small>仅参考</small></h3><p id="intentSuggestions">当前数据源暂无可信逐帧 Routing 建议；不会自动填充人工标签。</p></section>
                 <section class="intent-card intent-shortcuts"><p>[ / ] 切帧　PageUp / PageDown 切 Issue</p><p>B / C 打开 BEV / Camera 大图</p><button class="button button-quiet" type="button" data-open-shortcut-guide>查看完整快捷键指南 <kbd>H</kbd></button></section>
               </aside>
@@ -1657,7 +1657,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-282`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-283`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
