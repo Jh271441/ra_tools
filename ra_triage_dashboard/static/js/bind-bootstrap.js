@@ -52,6 +52,21 @@ function bindShortcutGuide() {
   }, true);
 }
 
+function bindGlobalRefreshShortcut() {
+  document.addEventListener("keydown", (event) => {
+    if (event.code !== "KeyR" || event.isComposing || event.repeat) return;
+    if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    if (document.querySelector("dialog[open]")) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest("input, textarea, select, button, a, [contenteditable='true'], [role='textbox']")) return;
+    const refreshButton = $("#refreshButton");
+    if (!refreshButton || refreshButton.disabled) return;
+    event.preventDefault();
+    event.stopPropagation();
+    refreshButton.click();
+  }, true);
+}
+
 function scheduleReviewFilterReload(delay = 0) {
   if (reviewSearchTimer) window.clearTimeout(reviewSearchTimer);
   reviewSearchTimer = window.setTimeout(() => {
@@ -67,6 +82,7 @@ function scheduleReviewFilterReload(delay = 0) {
 
 function bindEvents() {
   bindShortcutGuide();
+  bindGlobalRefreshShortcut();
   if (typeof bindIntentLabelingEvents === "function") bindIntentLabelingEvents();
   bindWorkSplitControls();
   if (typeof bindRunComparisonEvents === "function") bindRunComparisonEvents();

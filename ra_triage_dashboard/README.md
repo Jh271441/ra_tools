@@ -41,7 +41,7 @@ revision snapshot，并使用 `expected_revision_id` 做乐观并发控制，冲
 快捷键为 `1–7` 当前帧、`Shift+1–7` 批量预填、`[` / `]`（兼容左右方向键）切帧、
 `PageUp` / `PageDown` 切 Issue、`B` / `C` 打开当前时间点附近的 BEV / Camera
 完整预览，以及 `Space` 保存并前进；输入控件、弹窗、IME 和重复按键期间均不触发。
-页内按钮和顶栏都可打开快捷键指南，`H` 可直接呼出或关闭。导出接口支持
+页内按钮和顶栏都可打开快捷键指南，`H` 可直接呼出或关闭，`R` 可刷新当前页。导出接口支持
 保留默认值与 overrides 的 compact JSONL，以及逐时间点展开并带来源字段的 expanded
 JSONL。当前模型文件没有可信的逐帧 Routing 轨迹，因此建议区只读且不会预填人工
 标签。
