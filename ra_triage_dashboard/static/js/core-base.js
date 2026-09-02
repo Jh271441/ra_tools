@@ -649,6 +649,8 @@ const state = {
     caseId: "",
     caseData: null,
     activeTimepointId: "",
+    selectedTimepointIds: [],
+    selectionAnchorId: "",
     revisionId: null,
     aggregate: { routing: "", laneChange: "" },
     overrides: {},

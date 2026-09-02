@@ -46,6 +46,25 @@ function intentActiveTimepoint() {
   ) || null;
 }
 
+function intentSelectedTimepoints() {
+  const intent = state.intentLabeling;
+  const selected = new Set(intent.selectedTimepointIds || []);
+  const items = (intent.caseData?.timepoints || []).filter((item) => selected.has(item.id));
+  if (items.length) return items;
+  const active = intentActiveTimepoint();
+  return active ? [active] : [];
+}
+
+function intentSelectionRange(anchorId, focusId) {
+  const items = state.intentLabeling.caseData?.timepoints || [];
+  const anchorIndex = items.findIndex((item) => item.id === anchorId);
+  const focusIndex = items.findIndex((item) => item.id === focusId);
+  if (anchorIndex < 0 || focusIndex < 0) return focusId ? [focusId] : [];
+  const start = Math.min(anchorIndex, focusIndex);
+  const end = Math.max(anchorIndex, focusIndex);
+  return items.slice(start, end + 1).map((item) => item.id);
+}
+
 function intentOverride(timepointId = state.intentLabeling.activeTimepointId) {
   return state.intentLabeling.overrides[timepointId] || null;
 }
@@ -175,7 +194,8 @@ function renderIntentTimeline() {
     const override = intentOverride(item.id);
     const camera = item.camera?.thumbnail_url;
     const bev = item.bev?.thumbnail_url;
-    return `<button class="intent-timepoint${item.id === intent.activeTimepointId ? " active" : ""}" type="button" data-intent-timepoint="${escapeHtml(item.id)}" aria-label="切换到 ${escapeHtml(intentTimeLabel(item.offset_ms))}">
+    const selected = (intent.selectedTimepointIds || []).includes(item.id);
+    return `<button class="intent-timepoint${selected ? " selected" : ""}${item.id === intent.activeTimepointId ? " active" : ""}" type="button" data-intent-timepoint="${escapeHtml(item.id)}" aria-label="切换到 ${escapeHtml(intentTimeLabel(item.offset_ms))}" aria-pressed="${selected ? "true" : "false"}">
       <strong>${escapeHtml(intentTimeLabel(item.offset_ms))}</strong>
       <span class="intent-thumb-stack">
         ${camera ? `<img data-intent-lazy-src="${escapeHtml(camera)}" alt=""/>` : '<span class="intent-thumb-missing">Camera 缺失</span>'}
@@ -185,7 +205,7 @@ function renderIntentTimeline() {
     </button>`;
   }).join("");
   timeline.querySelectorAll("[data-intent-timepoint]").forEach((button) => {
-    button.addEventListener("click", () => intentSelectTimepoint(button.dataset.intentTimepoint));
+    button.addEventListener("click", (event) => intentSelectTimepoint(button.dataset.intentTimepoint, { extendSelection: event.shiftKey }));
   });
   state.intentLabeling.thumbnailObserver?.disconnect();
   if ("IntersectionObserver" in window) {
@@ -213,6 +233,8 @@ function renderIntentLabels() {
   const intent = state.intentLabeling;
   const currentOverride = intentOverride();
   const effective = intentEffective();
+  const selectedCount = intentSelectedTimepoints().length;
+  $("#intentFrameTitle").textContent = selectedCount > 1 ? "多个帧标签" : "当前帧标签";
   document.querySelectorAll("[data-intent-aggregate-axis]").forEach((button) => {
     const value = button.dataset.value;
     const selected = button.dataset.intentAggregateAxis === "routing"
@@ -234,7 +256,12 @@ function renderIntentLabels() {
     ));
     button.setAttribute("aria-pressed", selected ? "true" : "false");
   });
-  $("#intentFrameSource").textContent = currentOverride ? "已单独修改" : "来自批量预填";
+  $("#intentFrameSource").textContent = selectedCount > 1
+    ? `已选 ${selectedCount} 帧，数字键应用到全部选中帧`
+    : (currentOverride ? "当前帧已单独修改" : "当前帧来自批量预填");
+  $("#intentRestoreBatchPrefillText").textContent = selectedCount > 1
+    ? `选中 ${selectedCount} 帧恢复批量预填`
+    : "当前帧恢复批量预填";
   const total = intent.caseData?.timepoints?.length || 0;
   const overrideCount = Object.keys(intent.overrides).length;
   $("#intentCoverage").textContent = `${Math.max(0, total - overrideCount)} 帧使用批量预填 · ${overrideCount} 帧单独修改`;
@@ -310,6 +337,8 @@ async function loadIntentLabeling({ datasetId = "", caseId = "", offsetMs = null
   intent.activeTimepointId = (active
     || data.timepoints.reduce((best, item) => !best || Math.abs(item.offset_ms) < Math.abs(best.offset_ms) ? item : best, null)
   )?.id || "";
+  intent.selectedTimepointIds = intent.activeTimepointId ? [intent.activeTimepointId] : [];
+  intent.selectionAnchorId = intent.activeTimepointId;
   renderIntentCase();
   intentSetSaveState(intent.revisionId ? "已自动保存" : "尚未标注", intent.revisionId ? "saved" : "");
   if (state.activePage === "intent" && historyMode) {
@@ -405,32 +434,44 @@ function intentSetAggregate(axis, value) {
 
 function intentSetFrameLabel(axis, value) {
   const intent = state.intentLabeling;
-  const active = intentActiveTimepoint();
-  if (!active) return;
-  const override = { ...(intentOverride(active.id) || {}), timepoint_id: active.id, offset_ms: active.offset_ms };
+  const selected = intentSelectedTimepoints();
+  if (!selected.length) return;
   const aggregateValue = axis === "routing" ? intent.aggregate.routing : intent.aggregate.laneChange;
   const key = axis === "routing" ? "routing_intent" : "lane_change_intent";
-  if (value === aggregateValue) delete override[key];
-  else override[key] = value;
-  if (!override.routing_intent && !override.lane_change_intent) delete intent.overrides[active.id];
-  else intent.overrides[active.id] = override;
+  selected.forEach((timepoint) => {
+    const override = { ...(intentOverride(timepoint.id) || {}), timepoint_id: timepoint.id, offset_ms: timepoint.offset_ms };
+    if (value === aggregateValue) delete override[key];
+    else override[key] = value;
+    if (!override.routing_intent && !override.lane_change_intent) delete intent.overrides[timepoint.id];
+    else intent.overrides[timepoint.id] = override;
+  });
   intentMarkDirty();
   renderIntentLabels();
   renderIntentTimeline();
 }
 
 function intentRestoreBatchPrefill() {
-  const id = state.intentLabeling.activeTimepointId;
-  if (!id || !state.intentLabeling.overrides[id]) return;
-  delete state.intentLabeling.overrides[id];
+  const intent = state.intentLabeling;
+  const selected = intentSelectedTimepoints();
+  const changed = selected.some((timepoint) => Boolean(intent.overrides[timepoint.id]));
+  if (!changed) return;
+  selected.forEach((timepoint) => delete intent.overrides[timepoint.id]);
   intentMarkDirty();
   renderIntentLabels();
   renderIntentTimeline();
 }
 
-function intentSelectTimepoint(timepointId, { updateRoute = true } = {}) {
+function intentSelectTimepoint(timepointId, { updateRoute = true, extendSelection = false } = {}) {
   const intent = state.intentLabeling;
   if (!(intent.caseData?.timepoints || []).some((item) => item.id === timepointId)) return;
+  if (extendSelection) {
+    const anchorId = intent.selectionAnchorId || intent.activeTimepointId || timepointId;
+    intent.selectionAnchorId = anchorId;
+    intent.selectedTimepointIds = intentSelectionRange(anchorId, timepointId);
+  } else {
+    intent.selectionAnchorId = timepointId;
+    intent.selectedTimepointIds = [timepointId];
+  }
   intent.activeTimepointId = timepointId;
   renderIntentCase();
   if (updateRoute && state.activePage === "intent") {
@@ -438,11 +479,14 @@ function intentSelectTimepoint(timepointId, { updateRoute = true } = {}) {
   }
 }
 
-function intentMoveFrame(delta) {
+function intentMoveFrame(delta, { extendSelection = false, toBoundary = false } = {}) {
   const items = state.intentLabeling.caseData?.timepoints || [];
   const index = items.findIndex((item) => item.id === state.intentLabeling.activeTimepointId);
   if (index < 0 || !items.length) return;
-  intentSelectTimepoint(items[Math.max(0, Math.min(items.length - 1, index + delta))].id);
+  const targetIndex = toBoundary
+    ? (delta < 0 ? 0 : items.length - 1)
+    : Math.max(0, Math.min(items.length - 1, index + delta));
+  intentSelectTimepoint(items[targetIndex].id, { extendSelection });
 }
 
 async function intentNavigateCase(direction) {
@@ -496,21 +540,30 @@ function intentShortcutIsEditable(target) {
 
 function handleIntentShortcut(event) {
   if (state.activePage !== "intent" || event.isComposing || event.repeat) return;
-  if (event.ctrlKey || event.metaKey || event.altKey || intentShortcutIsEditable(event.target)) return;
+  if (event.altKey || intentShortcutIsEditable(event.target)) return;
+  const boundaryModifier = event.ctrlKey || event.metaKey;
   const digit = INTENT_DIGIT_LABELS[event.code];
   if (digit) {
+    if (boundaryModifier) return;
     event.preventDefault();
     event.stopPropagation();
     if (event.shiftKey) intentSetAggregate(digit[0], digit[1]);
     else intentSetFrameLabel(digit[0], digit[1]);
     return;
   }
-  if (event.shiftKey) return;
+  if (event.code === "ArrowLeft" || event.code === "ArrowRight") {
+    event.preventDefault();
+    event.stopPropagation();
+    intentMoveFrame(event.code === "ArrowLeft" ? -1 : 1, {
+      extendSelection: event.shiftKey,
+      toBoundary: boundaryModifier,
+    });
+    return;
+  }
+  if (event.shiftKey || boundaryModifier) return;
   const actions = {
     ArrowUp: () => intentNavigateCase(-1),
     ArrowDown: () => intentNavigateCase(1),
-    ArrowLeft: () => intentMoveFrame(-1),
-    ArrowRight: () => intentMoveFrame(1),
     KeyB: () => openIntentMedia("bev"),
     KeyC: () => openIntentMedia("camera"),
     Digit0: () => intentRestoreBatchPrefill(),
