@@ -708,7 +708,7 @@ function applySidebarState() {
       ? uiText("展开工具栏", "Expand toolbar")
       : uiText("折叠工具栏", "Collapse toolbar"));
   $("#sidebarToggle").setAttribute("aria-expanded", expanded);
-  $("#sidebarToggle").title = title;
+  $("#sidebarToggle").title = `${title}（\\）`;
   $("#sidebarToggle").setAttribute("aria-label", title);
   $("#sidebarToggle").hidden = mobile;
   $("#sidebarBrandToggle").setAttribute("aria-expanded", expanded);

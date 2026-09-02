@@ -780,11 +780,14 @@ html[data-sidebar-pref="collapsed"] .app-sidebar { width: 64px; }
 .sidebar-collapse:hover { color: var(--accent); border-color: rgba(34,211,238,.35); }
 .sidebar-collapse > span:first-child { width: 32px; flex: 0 0 32px; text-align: center; font-size: 22px; line-height: 1; transition: transform 200ms ease-out; }
 .sidebar-collapse .sidebar-label { display: block; font-size: 10px; }
+.sidebar-shortcut { margin-left: auto; }
 /* Runtime class + early-paint data-attr stay in lockstep (see applySidebarState / index head). */
 .app-shell.sidebar-collapsed .sidebar-copy,
 .app-shell.sidebar-collapsed .sidebar-label,
 html[data-sidebar-pref="collapsed"] .sidebar-copy,
 html[data-sidebar-pref="collapsed"] .sidebar-label { display: none; }
+.app-shell.sidebar-collapsed .sidebar-shortcut,
+html[data-sidebar-pref="collapsed"] .sidebar-shortcut { display: none; }
 .app-shell.sidebar-collapsed .sidebar-brand,
 .app-shell.sidebar-collapsed .sidebar-item,
 .app-shell.sidebar-collapsed .sidebar-user,
@@ -4867,10 +4870,13 @@ body[data-active-page="intent"] .top-actions { min-width: 0; margin-left: auto; 
 .shortcut-guide-footer { margin: 12px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
 
 @media (max-width: 1600px) {
-  .intent-commandbar { grid-template-columns: 200px minmax(260px, 1fr) 160px auto; }
-  .intent-command-actions { grid-column: 1 / -1; justify-self: end; width: min(100%, 660px); }
+  .intent-commandbar { grid-template-columns: minmax(160px, 190px) minmax(220px, 1fr) minmax(140px, 150px) auto minmax(420px, 480px); }
   .intent-workspace { grid-template-columns: minmax(0, 1fr) 400px; }
   .intent-routing-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 1400px) {
+  .intent-commandbar { grid-template-columns: 180px minmax(220px, 1fr) 150px auto; }
+  .intent-command-actions { grid-column: 1 / -1; justify-self: end; width: min(100%, 660px); }
 }
 @media (max-width: 1250px) {
   .intent-workspace { grid-template-columns: 1fr; }

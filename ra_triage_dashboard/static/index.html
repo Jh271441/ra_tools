@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-286`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-287`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -138,9 +138,10 @@
               <a class="sidebar-session-action" id="sessionLogoutLink" href="#" hidden>退出</a>
             </span>
           </div>
-          <button class="sidebar-collapse" id="sidebarToggle" type="button" aria-expanded="true" title="折叠工具栏">
+          <button class="sidebar-collapse" id="sidebarToggle" type="button" aria-expanded="true" aria-keyshortcuts="Backslash" title="折叠工具栏（\）">
             <span aria-hidden="true">‹</span>
             <span class="sidebar-label"><span class="ui-lang-zh">折叠工具栏</span><span class="ui-lang-en">Collapse</span></span>
+            <kbd class="sidebar-shortcut" aria-hidden="true">\</kbd>
           </button>
         </div>
         </aside>
@@ -1351,6 +1352,7 @@
           <div class="shortcut-guide-row"><span><kbd>1</kbd>–<kbd>7</kbd></span><strong>设置当前帧标签</strong></div>
           <div class="shortcut-guide-row"><span><kbd>Shift</kbd> + <kbd>1</kbd>–<kbd>7</kbd></span><strong>批量预填全部时间点</strong></div>
           <div class="shortcut-guide-row"><span><kbd>0</kbd></span><strong>当前帧恢复批量预填</strong></div>
+          <div class="shortcut-guide-row"><span><kbd>\</kbd></span><strong>展开 / 折叠左侧工具栏</strong></div>
           <div class="shortcut-guide-row"><span><kbd>R</kbd></span><strong>刷新当前页</strong></div>
         </div>
         <div class="shortcut-guide-panel" data-shortcut-guide-page="review" hidden>
@@ -1360,6 +1362,7 @@
           <div class="shortcut-guide-row"><span><kbd>B</kbd><kbd>C</kbd><kbd>V</kbd></span><strong>切换 BEV / Camera / 视频</strong></div>
           <div class="shortcut-guide-row"><span><kbd>←</kbd><kbd>→</kbd><kbd>F</kbd></span><strong>切换媒体帧 / 打开大图</strong></div>
           <div class="shortcut-guide-row"><span><kbd>+</kbd><kbd>-</kbd><kbd>0</kbd></span><strong>大图缩放 / 复位</strong></div>
+          <div class="shortcut-guide-row"><span><kbd>\</kbd></span><strong>展开 / 折叠左侧工具栏</strong></div>
           <div class="shortcut-guide-row"><span><kbd>R</kbd></span><strong>刷新当前页</strong></div>
         </div>
         <p class="shortcut-guide-footer"><kbd>H</kbd> 再按一次关闭指南 · 输入框中不会触发快捷键 · <kbd>Esc</kbd> 关闭弹窗</p>
@@ -1669,7 +1672,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-286`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-287`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
