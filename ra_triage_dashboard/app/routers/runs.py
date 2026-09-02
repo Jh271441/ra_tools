@@ -13,7 +13,6 @@ from fastapi.responses import FileResponse, Response
 
 from ..contracts import MAX_SOURCE_PREVIEW_ROWS, MAX_UPLOAD_BYTES
 from ..http_support import (
-    _admin_identity,
     _can_manage_team_default,
     _detail,
     _model_source_file,
@@ -47,9 +46,8 @@ async def compare_model_runs(
     page_size: int = 10,
     baselines: str = "",
 ) -> dict[str, Any]:
-    """Return an admin-only, immutable comparison of two Model Runs."""
+    """Return an immutable, read-only comparison of two Model Runs."""
 
-    await asyncio.to_thread(_admin_identity, request)
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     try:
         payload = await asyncio.to_thread(

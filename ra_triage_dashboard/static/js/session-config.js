@@ -78,7 +78,7 @@ function renderSession() {
   const intentExperimentsNav = $("#intentExperimentsNavButton");
   if (intentExperimentsNav) intentExperimentsNav.hidden = !state.session.is_admin;
   const runComparisonNav = $("#runComparisonNavButton");
-  if (runComparisonNav) runComparisonNav.hidden = !state.session.is_admin;
+  if (runComparisonNav) runComparisonNav.hidden = false;
   const batchActor = $("#batchActorSummary");
   if (batchActor) {
     batchActor.textContent = state.session.verified

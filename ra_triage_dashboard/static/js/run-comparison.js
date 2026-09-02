@@ -332,7 +332,6 @@ function renderRunComparison(payload = state.runComparison.data) {
 }
 
 async function loadRunComparison({ historyMode = "replace" } = {}) {
-  if (!state.session.is_admin) throw new Error(uiText("Run 对比仅限管理员。", "Run comparison is admin-only."));
   const baselineRunId = String(state.runComparison.baselineRunId || "");
   const candidateRunId = String(state.runComparison.candidateRunId || "");
   if (!baselineRunId || !candidateRunId || baselineRunId === candidateRunId) {

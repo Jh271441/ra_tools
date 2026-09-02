@@ -655,11 +655,6 @@ function bindEvents() {
   window.addEventListener("popstate", async () => {
     const route = parsePageRoute();
     if (route.page === "comparison") {
-      if (!state.session.is_admin) {
-        showPage("review", { historyMode: "replace" });
-        showToast(uiText("Run 对比仅对管理员开放。", "Run comparison is admin-only."), true);
-        return;
-      }
       applyRunComparisonRoute(route.comparisonFilters);
       showPage("comparison", { restoreRoute: true, loadPageData: false });
       try {
@@ -835,10 +830,10 @@ async function bootstrap() {
   const sessionRequest = resolveSessionInBackground();
   try {
     await settleInitialRequests([loadConfig()], "基础配置");
-    if (["users", "comparison", "intent", "intent-experiments"].includes(initialRoute.page)) {
+    if (["users", "intent", "intent-experiments"].includes(initialRoute.page)) {
       await sessionRequest;
     }
-    if (["users", "comparison", "intent", "intent-experiments"].includes(initialRoute.page) && !state.session.is_admin) {
+    if (["users", "intent", "intent-experiments"].includes(initialRoute.page) && !state.session.is_admin) {
       initialRoute.page = "review";
       showToast(t("toast.admin_only"), true);
     }

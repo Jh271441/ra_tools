@@ -163,10 +163,9 @@ async def intent_experiments_page(request: Request) -> HTMLResponse:
 
 
 @router.get("/run-comparison", include_in_schema=False)
-async def run_comparison_page(request: Request) -> HTMLResponse:
-    """Serve the internal-beta comparison shell only to Dashboard admins."""
+async def run_comparison_page() -> HTMLResponse:
+    """Serve the read-only Run comparison workspace to Dashboard visitors."""
 
-    await asyncio.to_thread(_admin_identity, request)
     return HTMLResponse(
         content=INDEX_HTML,
         headers={"Cache-Control": "no-store, max-age=0"},

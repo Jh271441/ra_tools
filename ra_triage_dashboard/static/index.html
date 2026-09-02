@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-290`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-291`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -109,11 +109,11 @@
             </span>
             <span class="sidebar-label"><strong class="ui-lang-zh">模型结果</strong><strong class="ui-lang-en">Model Runs</strong></span>
           </a>
-          <a class="sidebar-item" id="runComparisonNavButton" data-page-target="comparison" data-app-path="/run-comparison" href="/run-comparison" title="Run 对比（管理员内测）" hidden>
+          <a class="sidebar-item" id="runComparisonNavButton" data-page-target="comparison" data-app-path="/run-comparison" href="/run-comparison" title="Run 对比（只读）">
             <span class="sidebar-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 4h6v16H4zm10 0h6v16h-6z"/><path d="M7 8h9m-2-3 3 3-3 3M17 16H8m2-3-3 3 3 3"/><circle class="icon-emphasis" cx="7" cy="8" r="1.6"/><circle class="icon-emphasis" cx="17" cy="16" r="1.6"/></svg>
             </span>
-            <span class="sidebar-label"><strong class="ui-lang-zh">Run 对比 <small class="nav-beta">内测</small></strong><strong class="ui-lang-en">Run comparison <small class="nav-beta">Beta</small></strong></span>
+            <span class="sidebar-label"><strong class="ui-lang-zh">Run 对比</strong><strong class="ui-lang-en">Run comparison</strong></span>
           </a>
           <a class="sidebar-item" id="openBatchPredictionButton" data-page-target="prediction" data-app-path="/batch-prediction" href="/batch-prediction" title="Batch 预测">
             <span class="sidebar-icon" aria-hidden="true">
@@ -866,7 +866,7 @@
           <section class="app-page tool-page run-comparison-page hidden" id="runComparisonPage" data-page="comparison">
             <div class="compact-page-lead run-comparison-lead">
               <div>
-                <p><strong><span class="ui-lang-zh">管理员内测</span><span class="ui-lang-en">Admin beta</span></strong> · <span class="ui-lang-zh">基于同一份不可变 GT 比较两个 Run；P2F 表示退化，F2P 表示改善。</span><span class="ui-lang-en">Compare two Runs against the same immutable GT; P2F is a regression and F2P an improvement.</span></p>
+                <p><strong><span class="ui-lang-zh">只读分析</span><span class="ui-lang-en">Read-only analysis</span></strong> · <span class="ui-lang-zh">基于同一份不可变 GT 比较两个 Run；P2F 表示退化，F2P 表示改善。</span><span class="ui-lang-en">Compare two Runs against the same immutable GT; P2F is a regression and F2P an improvement.</span></p>
               </div>
               <button class="button button-quiet" type="button" data-page-target="runs"><span class="ui-lang-zh">查看模型结果</span><span class="ui-lang-en">View Model Runs</span></button>
             </div>
@@ -1702,7 +1702,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-290`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-291`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

@@ -784,13 +784,9 @@ function showPage(
     else activateRunSourceTab(runSourceTab || "upload");
   }
   if (target === "comparison") {
-    if (!state.session.identity_pending && !state.session.is_admin) {
-      showToast(uiText("Run 对比仅对管理员开放。", "Run comparison is admin-only."), true);
-      return showPage("review", { historyMode: historyMode || "replace" });
-    }
     renderRunComparisonSelectors?.();
     renderRunComparison?.();
-    if (loadPageData && state.session.is_admin) {
+    if (loadPageData) {
       loadRunComparison({ historyMode: historyMode || "replace" }).catch((error) => showToast(error.message, true));
     }
   }
