@@ -808,16 +808,10 @@ def _review_reason_analysis_payload(
 
     selected_run: dict[str, Any] | None = None
     if model_run_id:
-        selected_run = next(
-            (
-                run
-                for run in database.list_model_runs(
-                    baseline_scopes=baseline_scopes
-                    or resolve_request_baseline_scopes(baselines)
-                )
-                if run["id"] == model_run_id
-            ),
-            None,
+        selected_run = database.model_run_with_scope_counts(
+            model_run_id,
+            baseline_scopes=baseline_scopes
+            or resolve_request_baseline_scopes(baselines),
         )
         if selected_run is None:
             raise _detail(404, "Model Run 不存在。")

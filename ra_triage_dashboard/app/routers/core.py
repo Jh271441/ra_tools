@@ -140,6 +140,17 @@ async def index() -> HTMLResponse:
     )
 
 
+@router.get("/intent-labeling", include_in_schema=False)
+async def intent_labeling_page(request: Request) -> HTMLResponse:
+    """Serve the internal-beta intent workspace only to Dashboard admins."""
+
+    await asyncio.to_thread(_admin_identity, request)
+    return HTMLResponse(
+        content=INDEX_HTML,
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
 @router.get("/run-comparison", include_in_schema=False)
 async def run_comparison_page(request: Request) -> HTMLResponse:
     """Serve the internal-beta comparison shell only to Dashboard admins."""

@@ -5,6 +5,68 @@
  */
 let reviewSearchTimer = null;
 
+function shortcutGuidePage() {
+  return ["review", "intent"].includes(state.activePage) ? state.activePage : "";
+}
+
+function openShortcutGuide() {
+  const page = shortcutGuidePage();
+  const dialog = $("#shortcutGuideDialog");
+  if (!page || !dialog || (document.querySelector("dialog[open]") && !dialog.open)) return;
+  dialog.querySelectorAll("[data-shortcut-guide-page]").forEach((panel) => {
+    panel.hidden = panel.dataset.shortcutGuidePage !== page;
+  });
+  $("#shortcutGuideSubtitle").textContent = page === "intent"
+    ? "意图标注页 · 当前焦点位于输入控件时快捷键暂停"
+    : "判错复核页 · 媒体快捷键在 Issue 详情中可用";
+  if (!dialog.open) dialog.showModal();
+}
+
+function bindShortcutGuide() {
+  const dialog = $("#shortcutGuideDialog");
+  $("#shortcutHelpButton")?.addEventListener("click", openShortcutGuide);
+  document.querySelectorAll("[data-open-shortcut-guide]").forEach((button) => {
+    button.addEventListener("click", openShortcutGuide);
+  });
+  dialog?.addEventListener("close", () => {
+    window.requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (active?.matches?.("#shortcutHelpButton, [data-open-shortcut-guide]")) active.blur();
+    });
+  });
+  document.addEventListener("keydown", (event) => {
+    if (String(event.key || "").toLowerCase() !== "h" || event.isComposing || event.repeat) return;
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (dialog?.open) {
+      event.preventDefault();
+      event.stopPropagation();
+      dialog.close();
+      return;
+    }
+    if (!shortcutGuidePage() || document.querySelector("dialog[open]")) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest("input, textarea, select, [contenteditable='true'], [role='textbox']")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openShortcutGuide();
+  }, true);
+}
+
+function bindGlobalRefreshShortcut() {
+  document.addEventListener("keydown", (event) => {
+    if (event.code !== "KeyR" || event.isComposing || event.repeat) return;
+    if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    if (document.querySelector("dialog[open]")) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest("input, textarea, select, button, a, [contenteditable='true'], [role='textbox']")) return;
+    const refreshButton = $("#refreshButton");
+    if (!refreshButton || refreshButton.disabled) return;
+    event.preventDefault();
+    event.stopPropagation();
+    refreshButton.click();
+  }, true);
+}
+
 function scheduleReviewFilterReload(delay = 0) {
   if (reviewSearchTimer) window.clearTimeout(reviewSearchTimer);
   reviewSearchTimer = window.setTimeout(() => {
@@ -19,6 +81,9 @@ function scheduleReviewFilterReload(delay = 0) {
 }
 
 function bindEvents() {
+  bindShortcutGuide();
+  bindGlobalRefreshShortcut();
+  if (typeof bindIntentLabelingEvents === "function") bindIntentLabelingEvents();
   bindWorkSplitControls();
   if (typeof bindRunComparisonEvents === "function") bindRunComparisonEvents();
   if (typeof bindIssueQueryControls === "function") bindIssueQueryControls();
@@ -234,6 +299,16 @@ function bindEvents() {
   });
   $("#refreshButton").addEventListener("click", async () => {
     try {
+      if (state.activePage === "intent") {
+        await intentFlushSave();
+        await loadIntentLabeling({
+          datasetId: state.intentLabeling.datasetId,
+          caseId: state.intentLabeling.caseId,
+          offsetMs: intentActiveTimepoint()?.offset_ms,
+        });
+        showToast(t("toast.page_refreshed"));
+        return;
+      }
       await refreshAll();
       if (state.activePage === "analysis") {
         await loadReviewReasonAnalysis();
@@ -529,8 +604,8 @@ function bindEvents() {
       }
       return;
     }
-    if (["ArrowLeft", "ArrowUp"].includes(event.key)) { event.preventDefault(); moveMedia(-1); }
-    if (["ArrowRight", "ArrowDown"].includes(event.key)) { event.preventDefault(); moveMedia(1); }
+    if (["ArrowLeft", "ArrowUp", "["].includes(event.key)) { event.preventDefault(); moveMedia(-1); }
+    if (["ArrowRight", "ArrowDown", "]"].includes(event.key)) { event.preventDefault(); moveMedia(1); }
     if (event.key.toLowerCase() === "b") switchMediaKind("bev");
     if (event.key.toLowerCase() === "c") switchMediaKind("camera");
     if (event.key.toLowerCase() === "v") switchMediaKind("video");
@@ -636,6 +711,9 @@ function bindEvents() {
         importKind: route.importKind,
         runId: route.runId,
         restoreRoute: true,
+        intentDatasetId: route.intentDatasetId,
+        intentCaseId: route.intentCaseId,
+        intentOffsetMs: route.intentOffsetMs,
       });
       return;
     }
@@ -719,14 +797,17 @@ async function bootstrap() {
     importKind: initialRoute.importKind,
     restoreRoute: true,
     loadPageData: false,
+    intentDatasetId: initialRoute.intentDatasetId,
+    intentCaseId: initialRoute.intentCaseId,
+    intentOffsetMs: initialRoute.intentOffsetMs,
   });
   const sessionRequest = resolveSessionInBackground();
   try {
     await settleInitialRequests([loadConfig()], "基础配置");
-    if (["users", "comparison"].includes(initialRoute.page)) {
+    if (["users", "comparison", "intent"].includes(initialRoute.page)) {
       await sessionRequest;
     }
-    if (["users", "comparison"].includes(initialRoute.page) && !state.session.is_admin) {
+    if (["users", "comparison", "intent"].includes(initialRoute.page) && !state.session.is_admin) {
       initialRoute.page = "review";
       showToast(t("toast.admin_only"), true);
     }
@@ -808,6 +889,12 @@ async function bootstrap() {
       initialPageRequests.push(loadPredictionConfig(), loadPredictionBatches());
     } else if (initialRoute.page === "comparison") {
       initialPageRequests.push(loadRunComparison({ historyMode: "" }));
+    } else if (initialRoute.page === "intent") {
+      initialPageRequests.push(loadIntentLabeling({
+        datasetId: initialRoute.intentDatasetId,
+        caseId: initialRoute.intentCaseId,
+        offsetMs: initialRoute.intentOffsetMs,
+      }));
     }
     if (initialRoute.page === "analysis") {
       initialPageRequests.push(loadReviewReasonAnalysis());
@@ -847,6 +934,9 @@ async function bootstrap() {
       importKind: initialRoute.importKind,
       restoreRoute: true,
       loadPageData: false,
+      intentDatasetId: initialRoute.intentDatasetId,
+      intentCaseId: initialRoute.intentCaseId,
+      intentOffsetMs: initialRoute.intentOffsetMs,
     });
     if (initialRoute.page === "trail-update") {
       // Do not hold the initial shell on the remote Trail read. The local

@@ -234,6 +234,54 @@ class DatabaseRunsMixin:
             for row in rows
         ]
 
+    def model_run_with_scope_counts(
+        self,
+        run_id: str,
+        *,
+        baseline_scopes: Sequence[str] | None = None,
+    ) -> dict[str, Any] | None:
+        """Return one Run with the same scope-derived counts as list_model_runs.
+
+        Callers that need only a single Run's scoped ``prediction_count`` /
+        ``baseline_prediction_count`` / ``failure_count`` should use this instead
+        of scanning the full :meth:`list_model_runs` result and picking one row;
+        it applies the identical aggregate SQL filtered to ``run_id``.
+        """
+
+        labels = tuple(LABELS)
+        mismatch_sql, mismatch_params = model_prediction_mismatch_sql()
+        scopes = self._normalize_baseline_scopes(baseline_scopes)
+        if not scopes:
+            # No scope filter → treat as empty membership (counts 0 against baseline).
+            scopes = ["__no_such_scope__"]
+        in_clause, scope_params = self._scope_in_sql(scopes, "i.baseline_scope")
+        with self.connect() as conn:
+            row = conn.execute(
+                f"""
+                SELECT mr.*,
+                       COUNT(mp.id) AS prediction_count,
+                       SUM(CASE WHEN {in_clause} THEN 1 ELSE 0 END) AS baseline_prediction_count,
+                       SUM(CASE
+                             WHEN {in_clause}
+                              AND i.gt_label IN (?, ?, ?)
+                              AND {mismatch_sql}
+                             THEN 1 ELSE 0 END) AS failure_count
+                FROM model_runs mr
+                LEFT JOIN model_predictions mp ON mp.model_run_id = mr.id
+                LEFT JOIN issues i ON i.issue_id = mp.issue_id
+                WHERE mr.id = ?
+                GROUP BY mr.id
+                """,
+                (*scope_params, *scope_params, *labels, *mismatch_params, run_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._run_dict(row) | {
+            "prediction_count": int(row["prediction_count"] or 0),
+            "baseline_prediction_count": int(row["baseline_prediction_count"] or 0),
+            "failure_count": int(row["failure_count"] or 0),
+        }
+
     def compare_model_runs(
         self,
         *,

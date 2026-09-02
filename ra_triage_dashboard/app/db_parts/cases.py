@@ -564,6 +564,24 @@ class DatabaseCasesMixin:
         data["batch_jobs"] = [self._case_batch_job_dict(row) for row in batch_jobs]
         return data
 
+    def get_issue(self, issue_id: str) -> dict[str, Any] | None:
+        """Return only the ``issues`` row for callers that need scope/link fields.
+
+        This is a light alternative to :meth:`get_case` for endpoints that only
+        read ``baseline_scope`` (media/asset resolution) or the imported RA link
+        fallback (``ra_id``/``ra_event``/``extra``) and never touch annotations,
+        predictions, jobs, attachments, or materialized review history.  Those
+        five extra queries plus history assembly are pure overhead there.
+        """
+
+        with self.connect() as conn:
+            issue = conn.execute(
+                "SELECT * FROM issues WHERE issue_id = ?", (issue_id,)
+            ).fetchone()
+        if issue is None:
+            return None
+        return self._issue_dict(issue)
+
     def review_clusters(
         self,
         *,

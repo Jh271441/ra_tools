@@ -76,7 +76,7 @@ def _public_review_comment(comment: dict[str, Any]) -> dict[str, Any]:
 async def list_review_comments(
     issue_id: str, model_run_id: str = ""
 ) -> dict[str, Any]:
-    if await asyncio.to_thread(database.get_case, issue_id) is None:
+    if await asyncio.to_thread(database.get_issue, issue_id) is None:
         raise _detail(404, "Issue 不存在。")
     comments = await asyncio.to_thread(
         database.list_review_comments,
@@ -817,7 +817,7 @@ async def get_case_trail_metadata(issue_id: str) -> dict[str, Any]:
     dependency and is fetched by the browser after the detail has rendered.
     """
 
-    case = await asyncio.to_thread(database.get_case, issue_id)
+    case = await asyncio.to_thread(database.get_issue, issue_id)
     if case is None:
         raise _detail(404, "Issue 不存在。")
 
@@ -876,7 +876,7 @@ async def get_case_media(issue_id: str) -> dict[str, Any]:
     then attach video/BEV/camera when their indexes finish scanning.
     """
 
-    case = await asyncio.to_thread(database.get_case, issue_id)
+    case = await asyncio.to_thread(database.get_issue, issue_id)
     if case is None:
         raise _detail(404, "Issue 不存在。")
     provider = media_for_issue(issue_id, str(case.get("baseline_scope") or ""))
@@ -934,7 +934,7 @@ async def get_case(issue_id: str, include_media: bool = True) -> dict[str, Any]:
 
 @router.get("/api/assets/{issue_id}/{asset_id}")
 async def get_asset(issue_id: str, asset_id: str) -> FileResponse:
-    case = await asyncio.to_thread(database.get_case, issue_id)
+    case = await asyncio.to_thread(database.get_issue, issue_id)
     scope = str((case or {}).get("baseline_scope") or "")
     provider = media_for_issue(issue_id, scope)
     path = (
@@ -977,7 +977,7 @@ async def get_asset(issue_id: str, asset_id: str) -> FileResponse:
 
 @router.post("/api/cases/{issue_id}/annotations")
 async def create_annotation(issue_id: str, request: Request) -> dict[str, Any]:
-    if await asyncio.to_thread(database.get_case, issue_id) is None:
+    if await asyncio.to_thread(database.get_issue, issue_id) is None:
         raise _detail(404, "Issue 不存在。")
     try:
         body = await request.json()
@@ -1007,7 +1007,7 @@ async def create_annotation_with_attachments(
     payload: str = Form(...),
     attachments: Optional[List[UploadFile]] = File(None),
 ) -> dict[str, Any]:
-    if await asyncio.to_thread(database.get_case, issue_id) is None:
+    if await asyncio.to_thread(database.get_issue, issue_id) is None:
         raise _detail(404, "Issue 不存在。")
     try:
         body = json.loads(payload)

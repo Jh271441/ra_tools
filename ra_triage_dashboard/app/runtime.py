@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -19,6 +20,7 @@ from .baseline_registry import (
 from .batch_prediction_runner import BatchPredictionRunner
 from .db import Database
 from .issue_tag_sources import IssueTagSourceIndex
+from .intent_dataset_registry import IntentDatasetIndex
 from .media_registry import build_media_registry
 from .model_catalog import ModelCatalog
 from .observability import BoundedObservationSet
@@ -46,6 +48,15 @@ asset_index = AssetIndex(
 )
 camera_index = CameraIndex(settings.camera_root, base_path=settings.base_path)
 video_index = VideoIndex(settings.ares_video_root, base_path=settings.base_path)
+intent_dataset_registry = IntentDatasetIndex.from_file(
+    Path(
+        os.getenv(
+            "DASHBOARD_INTENT_DATASETS_FILE",
+            str(settings.app_root / "config" / "intent_datasets.json"),
+        )
+    ).expanduser().resolve(),
+    base_path=settings.base_path,
+)
 
 def _load_active_baseline_registry() -> BaselineRegistry:
     path = settings.baselines_file

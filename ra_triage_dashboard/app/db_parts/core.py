@@ -729,6 +729,56 @@ class DatabaseCoreMixin:
                 CREATE INDEX IF NOT EXISTS idx_issue_work_assignments_assignee
                     ON issue_work_assignments(assignee, assigned_at DESC);
 
+                CREATE TABLE IF NOT EXISTS intent_label_revisions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    dataset_id TEXT NOT NULL,
+                    case_id TEXT NOT NULL,
+                    routing_default TEXT
+                        CHECK(routing_default IS NULL OR routing_default IN (
+                            'left_turn', 'right_turn', 'straight', 'u_turn', 'parking'
+                        )),
+                    lane_change_default TEXT
+                        CHECK(lane_change_default IS NULL OR lane_change_default IN (
+                            'lane_change', 'no_lane_change'
+                        )),
+                    author TEXT NOT NULL DEFAULT '',
+                    author_source TEXT NOT NULL DEFAULT 'legacy',
+                    author_verified INTEGER NOT NULL DEFAULT 0,
+                    supersedes_id INTEGER REFERENCES intent_label_revisions(id),
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_intent_label_revisions_case
+                    ON intent_label_revisions(dataset_id, case_id, id DESC);
+
+                CREATE TABLE IF NOT EXISTS intent_frame_overrides (
+                    revision_id INTEGER NOT NULL
+                        REFERENCES intent_label_revisions(id) ON DELETE CASCADE,
+                    timepoint_id TEXT NOT NULL,
+                    offset_ms INTEGER NOT NULL,
+                    routing_intent TEXT
+                        CHECK(routing_intent IS NULL OR routing_intent IN (
+                            'left_turn', 'right_turn', 'straight', 'u_turn', 'parking'
+                        )),
+                    lane_change_intent TEXT
+                        CHECK(lane_change_intent IS NULL OR lane_change_intent IN (
+                            'lane_change', 'no_lane_change'
+                        )),
+                    PRIMARY KEY (revision_id, timepoint_id),
+                    CHECK(routing_intent IS NOT NULL OR lane_change_intent IS NOT NULL)
+                );
+                CREATE INDEX IF NOT EXISTS idx_intent_frame_overrides_offset
+                    ON intent_frame_overrides(revision_id, offset_ms ASC);
+
+                CREATE TABLE IF NOT EXISTS intent_label_heads (
+                    dataset_id TEXT NOT NULL,
+                    case_id TEXT NOT NULL,
+                    current_revision_id INTEGER NOT NULL
+                        REFERENCES intent_label_revisions(id),
+                    version INTEGER NOT NULL DEFAULT 1,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (dataset_id, case_id)
+                );
+
                 CREATE TABLE IF NOT EXISTS trail_issue_exclusion_history (
                     operation_id TEXT PRIMARY KEY,
                     created_at TEXT NOT NULL,
@@ -764,6 +814,9 @@ class DatabaseCoreMixin:
                 "comment_attachments",
                 "issue_work_splits",
                 "issue_work_assignments",
+                "intent_label_revisions",
+                "intent_frame_overrides",
+                "intent_label_heads",
                 "trail_issue_exclusion_history",
             )
             for table in revision_tables:

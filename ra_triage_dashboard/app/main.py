@@ -27,6 +27,7 @@ from .runtime import (
     batch_prediction_runner,
     database,
     issue_tag_sources,
+    intent_dataset_registry,
     review_notification_dispatcher,
     settings,
 )
@@ -40,6 +41,7 @@ from .routers import (
     reviews,
     runs,
     trail_update,
+    intent_labeling,
 )
 
 logger = logging.getLogger("ra_triage_dashboard")
@@ -148,6 +150,7 @@ async def lifespan(_: FastAPI):
     # unavailable.
     issue_tag_sources.reload(settings.issue_tag_sources)
     asset_index.refresh(force=True)
+    intent_dataset_registry.refresh()
     bootstrap_model_result()
     # Never await remote Trail during startup — it freezes first paint.
     if settings.trail_sync_on_start:
@@ -380,3 +383,4 @@ app.include_router(imports.router)
 app.include_router(batch.router)
 app.include_router(inference.router)
 app.include_router(trail_update.router)
+app.include_router(intent_labeling.router)

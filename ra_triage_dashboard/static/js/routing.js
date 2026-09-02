@@ -426,6 +426,9 @@ function parsePageRoute() {
     analysisFilters: normalizedAnalysisRouteFilters(params),
     trailUpdateFilters: normalizedTrailUpdateRouteFilters(params),
     comparisonFilters: normalizedRunComparisonRouteFilters(params),
+    intentDatasetId: params.get("dataset") || "",
+    intentCaseId: params.get("case") || "",
+    intentOffsetMs: Number.parseInt(params.get("t") || "", 10),
     // Issue / GT 上传已从页面移除；旧链接统一落到安全的模型结果导入区。
     importKind:
       params.get("import") === "model" ||
@@ -700,6 +703,17 @@ function pageUrl(page, options = {}) {
       url.searchParams.set("page_size", String(comparison.pageSize));
     }
   }
+  if (page === "intent") {
+    const intent = typeof intentRouteOptions === "function"
+      ? intentRouteOptions(options)
+      : options;
+    if (intent.datasetId) url.searchParams.set("dataset", intent.datasetId);
+    if (intent.caseId) url.searchParams.set("case", intent.caseId);
+    if (intent.offsetMs !== null && intent.offsetMs !== "" && Number.isFinite(Number(intent.offsetMs))) {
+      url.searchParams.set("t", String(Number(intent.offsetMs)));
+    }
+    return `${url.pathname}${url.search}`;
+  }
   // Persist multi-baseline selection for shareable URLs on all pages.
   const baselineValue =
     options.baselines != null
@@ -745,11 +759,15 @@ function showPage(
     runSourceTab = "",
     restoreRoute = false,
     loadPageData = true,
+    intentDatasetId = "",
+    intentCaseId = "",
+    intentOffsetMs = null,
   } = {}
 ) {
   const target = PAGE_ROUTES[page] ? page : "review";
   if (target !== "review") $("#detailHeroMedia")?.querySelector("video")?.pause();
   state.activePage = target;
+  document.body.dataset.activePage = target;
   document.querySelectorAll("[data-page]").forEach((section) => {
     section.classList.toggle("hidden", section.dataset.page !== target);
   });
@@ -776,6 +794,12 @@ function showPage(
       loadRunComparison({ historyMode: historyMode || "replace" }).catch((error) => showToast(error.message, true));
     }
   }
+  if (target === "intent") {
+    if (!state.session.identity_pending && !state.session.is_admin) {
+      showToast(uiText("意图标注仅对管理员开放。", "Intent labeling is admin-only."), true);
+      return showPage("review", { historyMode: historyMode || "replace" });
+    }
+  }
   if (target === "prediction") {
     const issueIds = issues.length ? issues : issue ? [issue] : [];
     ensurePredictionBatchName();
@@ -795,6 +819,13 @@ function showPage(
       loadPredictionConfig().catch((error) => showToast(error.message, true));
       loadPredictionBatches().catch((error) => showToast(error.message, true));
     }
+  }
+  if (target === "intent" && loadPageData && typeof loadIntentLabeling === "function") {
+    loadIntentLabeling({
+      datasetId: intentDatasetId,
+      caseId: intentCaseId,
+      offsetMs: intentOffsetMs,
+    }).catch((error) => showToast(error.message, true));
   }
   if (target === "analysis") renderAnalysisRunFilter();
   if (target === "trail-update") {
@@ -847,6 +878,12 @@ function showPage(
               : { runId: state.trailUpdate?.runId || "" })
         : target === "comparison" && typeof runComparisonRouteOptions === "function"
           ? runComparisonRouteOptions()
+        : target === "intent" && typeof intentRouteOptions === "function"
+          ? intentRouteOptions({
+              datasetId: intentDatasetId,
+              caseId: intentCaseId,
+              offsetMs: intentOffsetMs,
+            })
           : { issue, issues, source, importKind };
   const historyState = {
     page: target,

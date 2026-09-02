@@ -3,6 +3,20 @@
  * Loaded as a classic script (shared global scope). Do not convert to
  * ES modules without auditing cross-file function/state dependencies.
  */
+const REVIEW_TAG_GROUP_SHORTCUTS = Object.freeze({
+  q: "environment",
+  w: "self_intent",
+  a: "false_trigger",
+  s: "true_trigger",
+  z: "ra",
+  x: "no_assist",
+});
+// Follow the physical number row so large groups remain one-keystroke actions:
+// items 1-9 use 1-9, item 10 uses 0, then items 11-12 use - and =.
+const REVIEW_TAG_OPTION_SHORTCUTS = Object.freeze([
+  "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=",
+]);
+
 function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
   // Axis/group chrome is translated; option labels stay catalog Chinese (domain).
   const definitions = [
@@ -10,24 +24,24 @@ function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
       section: "scene",
       label: t("tag.scene"),
       groups: [
-        { key: "environment", label: t("tag.env") },
-        { key: "self_intent", label: t("tag.ego_intent") },
+        { key: "environment", label: t("tag.env"), shortcut: "Q" },
+        { key: "self_intent", label: t("tag.ego_intent"), shortcut: "W" },
       ],
     },
     {
       section: "interaction_decision",
       label: t("tag.trigger"),
       groups: [
-        { key: "false_trigger", label: t("tag.false_trigger") },
-        { key: "true_trigger", label: t("tag.should_trigger") },
+        { key: "false_trigger", label: t("tag.false_trigger"), shortcut: "A" },
+        { key: "true_trigger", label: t("tag.should_trigger"), shortcut: "S" },
       ],
     },
     {
       section: "egress",
       label: t("tag.egress"),
       groups: [
-        { key: "ra", label: t("tag.correct_trigger") },
-        { key: "no_assist", label: t("tag.no_assist") },
+        { key: "ra", label: t("tag.correct_trigger"), shortcut: "Z" },
+        { key: "no_assist", label: t("tag.no_assist"), shortcut: "X" },
       ],
     },
   ];
@@ -54,9 +68,10 @@ function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
           );
           const selectedCount = items.filter((item) => chosenTags.has(item.key)).length;
           const creatorAction = `<button class="tag-catalog-add-button" type="button" data-open-review-tag-creator="${escapeHtml(group.key)}" data-tag-create-group-label="${escapeHtml(group.label)}" aria-label="${escapeHtml(uiText(`新增${group.label}标签`, `Add ${group.label} tag`))}" title="${escapeHtml(uiText(`新增${group.label}标签`, `Add ${group.label} tag`))}">＋</button>`;
-          return `<details class="review-tag-dropdown review-dropdown" data-tag-dropdown-group="${escapeHtml(group.key)}">
+          return `<details class="review-tag-dropdown review-dropdown" data-tag-dropdown-group="${escapeHtml(group.key)}" data-tag-dropdown-shortcut="${escapeHtml(group.shortcut)}">
             <summary>
               <span class="tag-group-label">${escapeHtml(group.label)}</span>
+              <kbd class="review-control-shortcut tag-group-shortcut" aria-hidden="true" title="${escapeHtml(uiText(`按 ${group.shortcut} 打开`, `Press ${group.shortcut} to open`))}">${escapeHtml(group.shortcut)}</kbd>
               <span class="tag-group-trailing">
                 ${creatorAction}
                 <span class="tag-group-summary" data-tag-summary="${escapeHtml(group.key)}">${escapeHtml(t("detail.count_n", { n: selectedCount }))}</span>
@@ -358,6 +373,105 @@ function updateTagSummary() {
   }
 }
 
+function syncReviewTagShortcutHints(root = document) {
+  root.querySelectorAll(".review-tag-dropdown[data-tag-dropdown-group]").forEach((dropdown) => {
+    const groupShortcut = String(dropdown.dataset.tagDropdownShortcut || "").toUpperCase();
+    const inputs = [...dropdown.querySelectorAll('input[name="reviewTags"]')];
+    inputs.forEach((input, index) => {
+      const label = input.closest("label");
+      label?.querySelector(".tag-option-shortcut")?.remove();
+      delete input.dataset.reviewTagOptionShortcut;
+      const shortcut = REVIEW_TAG_OPTION_SHORTCUTS[index] || "";
+      if (!label || !shortcut) return;
+      input.dataset.reviewTagOptionShortcut = shortcut;
+      const hint = document.createElement("kbd");
+      hint.className = "review-control-shortcut tag-option-shortcut";
+      hint.setAttribute("aria-hidden", "true");
+      hint.title = uiText(
+        `按 ${groupShortcut} 再按 ${shortcut} 切换`,
+        `Press ${groupShortcut}, then ${shortcut} to toggle`
+      );
+      hint.textContent = shortcut;
+      label.appendChild(hint);
+    });
+  });
+}
+
+function reviewShortcutHasEditableTarget(target) {
+  return Boolean(
+    target?.closest(
+      "input, textarea, select, button, a, [contenteditable='true'], [role='textbox']"
+    )
+  );
+}
+
+function openReviewTagShortcutGroup(groupKey) {
+  const dropdown = document.querySelector(
+    `.review-tag-dropdown[data-tag-dropdown-group="${CSS.escape(groupKey)}"]`
+  );
+  if (!dropdown) return false;
+  closeAllReviewDropdowns(dropdown);
+  if (!dropdown.open) {
+    prepareReviewDropdownPanelForMeasure(reviewDropdownPanel(dropdown));
+    dropdown.open = true;
+  } else {
+    positionReviewDropdownPanel(dropdown);
+  }
+  dropdown.querySelector(":scope > summary")?.focus({ preventScroll: true });
+  return true;
+}
+
+function bindReviewKeyboardShortcuts() {
+  if (document.documentElement.dataset.reviewKeyboardShortcutsBound === "1") return;
+  document.documentElement.dataset.reviewKeyboardShortcutsBound = "1";
+  document.addEventListener("keydown", (event) => {
+    if (
+      event.defaultPrevented ||
+      event.repeat ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      state.activePage !== "review" ||
+      !state.selectedCase ||
+      !document.querySelector("#annotationForm") ||
+      document.querySelector("dialog[open]")
+    ) {
+      return;
+    }
+    const target = event.target instanceof Element ? event.target : null;
+    if (reviewShortcutHasEditableTarget(target)) return;
+
+    const key = String(event.key || "").toLowerCase();
+    const groupKey = REVIEW_TAG_GROUP_SHORTCUTS[key];
+    if (groupKey && openReviewTagShortcutGroup(groupKey)) {
+      event.preventDefault();
+      return;
+    }
+
+    if (key === "[" || key === "]") {
+      const direction = key === "[" ? -1 : 1;
+      const button = $(direction < 0 ? "#previousIssueButton" : "#nextIssueButton");
+      if (!button || button.disabled) return;
+      event.preventDefault();
+      closeAllReviewDropdowns();
+      navigateAdjacentCase(direction).catch((error) => showToast(error.message, true));
+      return;
+    }
+
+    if (!REVIEW_TAG_OPTION_SHORTCUTS.includes(key)) return;
+    const openDropdown = document.querySelector(
+      "#reviewPane .review-tag-dropdown[open][data-tag-dropdown-group]"
+    );
+    const input = openDropdown?.querySelector(
+      `input[name="reviewTags"][data-review-tag-option-shortcut="${key}"]`
+    );
+    if (!input || input.disabled) return;
+    event.preventDefault();
+    input.checked = !input.checked;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
 function bindSelectedReviewTagControls(root) {
   if (!root || root.dataset.selectedReviewTagControlsBound === "1") return;
   root.dataset.selectedReviewTagControlsBound = "1";
@@ -419,6 +533,7 @@ function markDeletedReviewTagOption(item) {
     row.remove();
   }
   updateTagSummary();
+  syncReviewTagShortcutHints($("#reviewPane") || document);
 }
 
 function reviewTagGroupLabel(group = "environment") {
@@ -501,6 +616,7 @@ function appendReviewTagOptionToGroup(item, group) {
   list.appendChild(option);
   option?.querySelector('input[name="reviewTags"]')?.addEventListener("change", updateTagSummary);
   bindReviewTagCatalogControls(option || list);
+  syncReviewTagShortcutHints($("#reviewPane") || document);
 }
 
 function resetTagOptionMenuPanel(panel) {
