@@ -830,6 +830,8 @@ class DatabaseCoreMixin:
                         CHECK(annotation_mode IN ('blind', 'full')),
                     overlap_ratio REAL NOT NULL DEFAULT 0
                         CHECK(overlap_ratio >= 0 AND overlap_ratio <= 1),
+                    overlap_reviewers INTEGER NOT NULL DEFAULT 2
+                        CHECK(overlap_reviewers >= 2),
                     case_count INTEGER NOT NULL DEFAULT 0 CHECK(case_count >= 0),
                     status TEXT NOT NULL DEFAULT 'active'
                         CHECK(status IN ('active', 'closed')),
@@ -928,6 +930,10 @@ class DatabaseCoreMixin:
             self._ensure_column(conn, "issues", "baseline_scope", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "annotations", "review_status", "TEXT NOT NULL DEFAULT 'pending'")
             self._ensure_column(conn, "annotations", "model_run_id", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(
+                conn, "intent_experiments", "overlap_reviewers",
+                "INTEGER NOT NULL DEFAULT 2",
+            )
             self._ensure_column(conn, "annotations", "is_excluded", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "annotations", "missing_evidence_json", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_column(conn, "annotations", "author_source", "TEXT NOT NULL DEFAULT 'legacy'")

@@ -429,7 +429,7 @@ function parsePageRoute() {
     intentDatasetId: params.get("dataset") || "",
     intentCaseId: params.get("case") || "",
     intentOffsetMs: Number.parseInt(params.get("t") || "", 10),
-    intentAssignees: parseFilterList(params.get("assignee") || ""),
+    intentAssignees: params.has("assignee") ? parseFilterList(params.get("assignee") || "") : null,
     // Issue / GT 上传已从页面移除；旧链接统一落到安全的模型结果导入区。
     importKind:
       params.get("import") === "model" ||
@@ -764,7 +764,7 @@ function showPage(
     intentDatasetId = "",
     intentCaseId = "",
     intentOffsetMs = null,
-    intentAssignees = [],
+    intentAssignees = null,
   } = {}
 ) {
   const target = PAGE_ROUTES[page] ? page : "review";

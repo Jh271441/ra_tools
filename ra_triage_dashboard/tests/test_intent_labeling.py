@@ -324,6 +324,20 @@ class IntentExperimentTest(unittest.TestCase):
         }
         self.assertLessEqual(max(base_counts.values()) - min(base_counts.values()), 1)
 
+    def test_blind_assignment_supports_three_reviewers_per_overlap_case(self) -> None:
+        cases = [f"cn12345_{index}" for index in range(10)]
+        assignments = build_intent_experiment_assignments(
+            cases, ["alice", "bob", "charlie", "dora"], "blind", 0.4, 42, 3
+        )
+        by_case: dict[str, list[dict[str, object]]] = {}
+        for assignment in assignments:
+            by_case.setdefault(str(assignment["case_id"]), []).append(assignment)
+        three_reviewer_cases = [items for items in by_case.values() if len(items) == 3]
+        self.assertEqual(len(three_reviewer_cases), 4)
+        self.assertTrue(
+            all(len({str(item["username"]) for item in items}) == 3 for items in three_reviewer_cases)
+        )
+
     def test_full_assignment_and_storage_snapshot(self) -> None:
         cases = ["cn1_1", "cn2_2"]
         assignments = build_intent_experiment_assignments(cases, ["alice", "bob"], "full", 1, 7)
@@ -347,6 +361,7 @@ class IntentExperimentTest(unittest.TestCase):
             )
             self.assertEqual(experiment["member_count"], 2)
             self.assertEqual(experiment["assignment_count"], 4)
+            self.assertEqual(experiment["overlap_reviewers"], 2)
             self.assertEqual({item["total"] for item in experiment["members"]}, {2})
             closed = database.close_intent_experiment("experiment-1", closed_by="admin")
             self.assertEqual(closed["status"], "closed")

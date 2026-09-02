@@ -146,8 +146,9 @@ async def create_intent_experiment(request: Request) -> dict[str, Any]:
     try:
         requested_count = int(body.get("case_count") or len(all_case_ids))
         overlap_ratio = float(body.get("overlap_ratio") or 0)
+        overlap_reviewers = int(body.get("overlap_reviewers") or 2)
     except (TypeError, ValueError) as exc:
-        raise _detail(400, "Case 数量或交叉比例不合法。") from exc
+        raise _detail(400, "Case 数量、交叉比例或交叉人数不合法。") from exc
     if requested_count < 1 or requested_count > len(all_case_ids):
         raise _detail(400, f"Case 数量必须在 1 到 {len(all_case_ids)} 之间。")
     if not 0 <= overlap_ratio <= 1:
@@ -161,6 +162,10 @@ async def create_intent_experiment(request: Request) -> dict[str, Any]:
     members = [item for item in members if item]
     if len(members) < 2:
         raise _detail(400, "多盲实验至少选择 2 名标注成员。")
+    if mode == "full":
+        overlap_reviewers = len(members)
+    elif not 2 <= overlap_reviewers <= len(members):
+        raise _detail(400, f"交叉标注人数必须在 2 到 {len(members)} 之间。")
     access_users = await asyncio.to_thread(database.list_access_users)
     eligible = {item["username"] for item in access_users if item["role"] in {"writer", "admin"}}
     unknown = [member for member in members if member not in eligible]
@@ -174,7 +179,7 @@ async def create_intent_experiment(request: Request) -> dict[str, Any]:
     random.Random(seed).shuffle(selected_cases)
     selected_cases = selected_cases[:requested_count]
     assignments = build_intent_experiment_assignments(
-        selected_cases, members, mode, overlap_ratio, seed
+        selected_cases, members, mode, overlap_ratio, seed, overlap_reviewers
     )
     identity = await asyncio.to_thread(_admin_identity, request)
     experiment = await asyncio.to_thread(
@@ -184,6 +189,7 @@ async def create_intent_experiment(request: Request) -> dict[str, Any]:
         name=name,
         annotation_mode=mode,
         overlap_ratio=overlap_ratio,
+        overlap_reviewers=overlap_reviewers,
         case_count=requested_count,
         seed=seed,
         assignments=assignments,
@@ -294,6 +300,7 @@ def _case_payload(
     case_id: str,
     username: str = "",
     assignees: tuple[str, ...] = (),
+    reveal_answers: bool = False,
 ) -> dict[str, Any]:
     try:
         case_ids = intent_dataset_registry.case_ids(dataset_id)
@@ -314,9 +321,10 @@ def _case_payload(
         dataset_id, case_id
     )
     contributors = database.list_intent_contributors(dataset_id, case_id)
-    answers_revealed = not database.intent_case_has_active_experiment(
+    blind_active = database.intent_case_has_active_experiment(
         dataset_id, case_id
     )
+    answers_revealed = reveal_answers or not blind_active
     public_contributors = []
     for contributor in contributors:
         is_current = contributor["username"] == username.lower()
@@ -334,7 +342,8 @@ def _case_payload(
         if item["revealed"]:
             item["routing_default"] = contributor["routing_default"]
             item["lane_change_default"] = contributor["lane_change_default"]
-        public_contributors.append(item)
+        if item["revealed"]:
+            public_contributors.append(item)
     overrides = {item["timepoint_id"]: item for item in labels["overrides"]}
     enriched = []
     for timepoint in timeline:
@@ -371,6 +380,7 @@ def _case_payload(
             "routing_per_frame_available": False,
         },
         "collaboration": {
+            "blind_active": blind_active,
             "answers_revealed": answers_revealed,
             "contributors": public_contributors,
             "comments": database.list_intent_comments(dataset_id, case_id),
@@ -384,14 +394,18 @@ async def get_intent_case(
     dataset_id: str,
     case_id: str,
     assignee: list[str] = Query(default=[]),
+    reveal_answers: bool = False,
 ) -> dict[str, Any]:
     identity = await asyncio.to_thread(_intent_identity, request)
+    if reveal_answers:
+        await asyncio.to_thread(_admin_identity, request)
     return await asyncio.to_thread(
         _case_payload,
         dataset_id,
         case_id,
         identity.username,
         tuple(assignee[:20]),
+        reveal_answers,
     )
 
 

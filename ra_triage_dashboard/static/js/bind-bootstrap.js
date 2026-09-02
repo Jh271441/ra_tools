@@ -9,6 +9,59 @@ function shortcutGuidePage() {
   return ["review", "intent"].includes(state.activePage) ? state.activePage : "";
 }
 
+function shortcutGuideKeyToken(event) {
+  if (["Shift", "Control", "Meta", "Alt"].includes(event.key)) return "";
+  const codeTokens = {
+    ArrowLeft: "arrowleft",
+    ArrowRight: "arrowright",
+    ArrowUp: "arrowup",
+    ArrowDown: "arrowdown",
+    Space: "space",
+    Backslash: "backslash",
+    BracketLeft: "bracketleft",
+    BracketRight: "bracketright",
+    Minus: "minus",
+    Equal: event.key === "+" ? "plus" : "equal",
+  };
+  let token = codeTokens[event.code] || "";
+  if (!token && /^Key[A-Z]$/.test(event.code)) token = event.code.slice(3).toLowerCase();
+  if (!token && /^Digit[0-9]$/.test(event.code)) token = event.code.slice(5);
+  if (!token) return "";
+  if (token === "plus") return token;
+  const modifiers = [];
+  if (event.ctrlKey || event.metaKey) modifiers.push("mod");
+  if (event.shiftKey) modifiers.push("shift");
+  return [...modifiers, token].join("+");
+}
+
+function resetShortcutGuideSearch() {
+  const dialog = $("#shortcutGuideDialog");
+  dialog?.querySelectorAll(".shortcut-guide-row").forEach((row) => { row.hidden = false; });
+  const stateText = $("#shortcutGuideSearchState");
+  if (stateText) stateText.textContent = "直接按下任意按键筛选快捷键";
+  if ($("#shortcutGuideSearchClear")) $("#shortcutGuideSearchClear").hidden = true;
+  if ($("#shortcutGuideEmpty")) $("#shortcutGuideEmpty").hidden = true;
+  if (dialog) delete dialog.dataset.shortcutSearch;
+}
+
+function filterShortcutGuide(token, displayKey) {
+  const dialog = $("#shortcutGuideDialog");
+  const panel = dialog?.querySelector("[data-shortcut-guide-page]:not([hidden])");
+  if (!dialog || !panel || !token) return;
+  let matches = 0;
+  panel.querySelectorAll(".shortcut-guide-row").forEach((row) => {
+    const tokens = new Set(String(row.dataset.shortcutSearch || "").split(/\s+/).filter(Boolean));
+    const visible = tokens.has(token);
+    row.hidden = !visible;
+    if (visible) matches += 1;
+  });
+  dialog.dataset.shortcutSearch = token;
+  $("#shortcutGuideSearchState").textContent = `按键 ${displayKey} · ${matches} 个匹配`;
+  $("#shortcutGuideSearchClear").hidden = false;
+  $("#shortcutGuideEmpty").hidden = matches > 0;
+  panel.scrollTop = 0;
+}
+
 function openShortcutGuide() {
   const page = shortcutGuidePage();
   const dialog = $("#shortcutGuideDialog");
@@ -19,6 +72,7 @@ function openShortcutGuide() {
   $("#shortcutGuideSubtitle").textContent = page === "intent"
     ? "意图标注页 · 当前焦点位于输入控件时快捷键暂停"
     : "判错复核页 · 媒体快捷键在 Issue 详情中可用";
+  resetShortcutGuideSearch();
   if (!dialog.open) dialog.showModal();
 }
 
@@ -28,7 +82,24 @@ function bindShortcutGuide() {
   document.querySelectorAll("[data-open-shortcut-guide]").forEach((button) => {
     button.addEventListener("click", openShortcutGuide);
   });
+  $("#shortcutGuideSearchClear")?.addEventListener("click", resetShortcutGuideSearch);
+  dialog?.addEventListener("keydown", (event) => {
+    if (event.isComposing || event.repeat || ["Tab", "Enter", "Escape"].includes(event.key)) return;
+    if (event.key === " " && event.target instanceof Element && event.target.closest("button")) return;
+    if (String(event.key || "").toLowerCase() === "h" && !event.ctrlKey && !event.metaKey && !event.altKey) return;
+    const token = shortcutGuideKeyToken(event);
+    if (!token) return;
+    event.preventDefault();
+    event.stopPropagation();
+    filterShortcutGuide(token, event.key === " " ? "Space" : event.key);
+  });
+  dialog?.addEventListener("cancel", (event) => {
+    if (!dialog.dataset.shortcutSearch) return;
+    event.preventDefault();
+    resetShortcutGuideSearch();
+  });
   dialog?.addEventListener("close", () => {
+    resetShortcutGuideSearch();
     window.requestAnimationFrame(() => {
       const active = document.activeElement;
       if (active?.matches?.("#shortcutHelpButton, [data-open-shortcut-guide]")) active.blur();

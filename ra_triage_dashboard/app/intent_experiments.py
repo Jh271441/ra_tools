@@ -5,7 +5,12 @@ from typing import Any
 
 
 def build_intent_experiment_assignments(
-    case_ids: list[str], members: list[str], mode: str, overlap_ratio: float, seed: int
+    case_ids: list[str],
+    members: list[str],
+    mode: str,
+    overlap_ratio: float,
+    seed: int,
+    reviewers_per_overlap_case: int = 2,
 ) -> list[dict[str, Any]]:
     """Build a deterministic, balanced assignment snapshot."""
 
@@ -42,6 +47,7 @@ def build_intent_experiment_assignments(
         )
     overlap_count = min(len(shuffled), round(len(shuffled) * overlap_ratio))
     cross_counts = {member: 0 for member in members}
+    extra_reviewers = max(1, min(len(members), reviewers_per_overlap_case) - 1)
     for index, case_id in enumerate(shuffled[:overlap_count]):
         eligible = [member for member in members if member != base_owner[case_id]]
         eligible.sort(
@@ -50,15 +56,15 @@ def build_intent_experiment_assignments(
                 (members.index(member) - index) % len(members),
             )
         )
-        member = eligible[0]
-        cross_counts[member] += 1
-        ordinals[member] += 1
-        assignments.append(
-            {
-                "username": member,
-                "case_id": case_id,
-                "assignment_kind": "cross",
-                "ordinal": ordinals[member],
-            }
-        )
+        for member in eligible[:extra_reviewers]:
+            cross_counts[member] += 1
+            ordinals[member] += 1
+            assignments.append(
+                {
+                    "username": member,
+                    "case_id": case_id,
+                    "assignment_kind": "cross",
+                    "ordinal": ordinals[member],
+                }
+            )
     return assignments

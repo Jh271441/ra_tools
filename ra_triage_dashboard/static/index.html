@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-297`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-299`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -324,9 +324,9 @@
 
           <section class="app-page intent-labeling-page hidden" id="intentLabelingPage" data-page="intent">
             <section class="intent-commandbar" aria-label="意图标注导航">
-              <label class="intent-case-field"><span>Issue</span><input id="intentCaseInput" autocomplete="off" spellcheck="false" placeholder="例如 cn28896325"/><button class="button button-quiet" id="intentLoadCaseButton" type="button">打开</button></label>
-              <label class="intent-assignee-field"><span>任务负责人</span><div class="multi-filter" id="intentAssigneeFilter" data-placeholder="全部负责人"></div></label>
-              <label class="intent-timepoint-field"><span class="intent-field-heading"><span>媒体时间点</span><span class="intent-save-state" id="intentSaveState">尚未修改</span></span><select id="intentTimepointSelect"></select></label>
+              <label class="intent-case-field"><span>Issue</span><input id="intentCaseInput" autocomplete="off" spellcheck="false" placeholder="例如 cn28896325"/></label>
+              <div class="intent-assignee-field intent-command-field"><span class="intent-field-heading"><span>任务负责人</span><button class="intent-my-tasks" id="intentMyTasks" type="button">我的任务</button></span><div class="multi-filter" id="intentAssigneeFilter" data-placeholder="全部负责人"></div></div>
+              <button class="button button-quiet intent-load-case-button" id="intentLoadCaseButton" type="button" aria-label="搜索并打开 Issue">打开</button>
               <div class="intent-command-navigator intent-case-navigator">
                 <span>Issue 跳转</span>
                 <div class="intent-stepper">
@@ -379,12 +379,12 @@
                   <button class="button button-quiet intent-restore-button" id="intentRestoreBatchPrefill" type="button" aria-keyshortcuts="0"><span id="intentRestoreBatchPrefillText">当前帧恢复批量预填</span> <kbd>0</kbd></button>
                 </section>
                 <section class="intent-card intent-collaboration-card intent-contributors-card" aria-labelledby="intentContributorsTitle">
-                  <h3><span id="intentContributorsTitle">已有标注</span><small id="intentRevealState">未进入实验</small></h3>
-                  <div class="intent-contributor-list" id="intentContributorList"><p>尚无其他标注</p></div>
+                  <h3><span id="intentContributorsTitle">已有标注</span><span class="intent-card-heading-actions"><small id="intentRevealState">未进入实验</small><button class="button button-quiet" id="intentToggleReveal" type="button" hidden>管理员解盲</button></span></h3>
+                  <div class="intent-contributor-list" id="intentContributorList"><p>尚无标注</p></div>
                 </section>
                 <section class="intent-card intent-collaboration-card intent-discussion-card" aria-labelledby="intentCommentsTitle">
                   <h3><span id="intentCommentsTitle">讨论</span><small id="intentCommentCount">0 条</small></h3>
-                  <button class="button button-quiet" id="intentOpenComments" type="button">打开讨论</button>
+                  <button class="button button-quiet" id="intentOpenComments" type="button" aria-keyshortcuts="D">打开讨论 <kbd>D</kbd></button>
                 </section>
               </aside>
             </div>
@@ -404,6 +404,7 @@
                       <label><span>实验模式</span><select id="intentExperimentMode"><option value="blind">交叉盲标</option><option value="full">全量盲标</option></select></label>
                       <label><span>Case 数量</span><input id="intentExperimentCaseCount" type="number" min="1" step="1" required/></label>
                       <label id="intentExperimentOverlapField"><span>交叉复核比例</span><select id="intentExperimentOverlap"><option value="0">0%</option><option value="0.1">10%</option><option value="0.2" selected>20%</option><option value="0.3">30%</option><option value="0.5">50%</option><option value="1">100%</option></select></label>
+                      <label id="intentExperimentReviewersField"><span>每个交叉 Case 人数</span><input id="intentExperimentReviewers" type="number" min="2" step="1" value="2" required/></label>
                     </div>
                     <fieldset class="intent-experiment-members"><legend>标注成员 <small>至少 2 人，仅可选择已有写入权限的账号</small></legend><div id="intentExperimentMembers"></div></fieldset>
                     <div class="intent-experiment-form-footer"><p id="intentExperimentEstimate">选择成员后显示预计任务量。</p><button class="button button-primary" id="intentCreateExperiment" type="submit">创建并分配</button></div>
@@ -1420,30 +1421,36 @@
           <div><h2 id="shortcutGuideTitle">快捷键指南</h2><p class="dialog-copy" id="shortcutGuideSubtitle">当前页面可用快捷键</p></div>
           <button class="icon-button" type="button" data-close="shortcutGuideDialog" aria-label="关闭">×</button>
         </div>
+        <div class="shortcut-guide-search" aria-live="polite">
+          <span id="shortcutGuideSearchState">直接按下任意按键筛选快捷键</span>
+          <button class="button button-quiet" id="shortcutGuideSearchClear" type="button" hidden>清除筛选</button>
+        </div>
         <div class="shortcut-guide-panel" data-shortcut-guide-page="intent" hidden>
-          <div class="shortcut-guide-row"><span><kbd>←</kbd><kbd>→</kbd></span><strong>上一帧 / 下一帧</strong></div>
-          <div class="shortcut-guide-row"><span><kbd>Shift</kbd> + <kbd>←</kbd><kbd>→</kbd></span><strong>连续扩选 / 收缩时间帧</strong></div>
-          <div class="shortcut-guide-row"><span><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>←</kbd><kbd>→</kbd></span><strong>单选跳到最左 / 最右时间帧</strong></div>
-          <div class="shortcut-guide-row"><span><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>←</kbd><kbd>→</kbd></span><strong>从锚点扩选到最左 / 最右</strong></div>
-          <div class="shortcut-guide-row"><span><kbd>↑</kbd><kbd>↓</kbd></span><strong>上一 Issue / 下一 Issue</strong></div>
-          <div class="shortcut-guide-row"><span><kbd>Space</kbd><kbd>B</kbd><kbd>C</kbd></span><strong>打开大图；同帧轮换 / 直达 BEV / Camera</strong></div>
-          <div class="shortcut-guide-row"><span><kbd>1</kbd>–<kbd>7</kbd></span><strong>设置当前帧标签</strong></div>
-          <div class="shortcut-guide-row"><span><kbd>Shift</kbd> + <kbd>1</kbd>–<kbd>7</kbd></span><strong>批量预填全部时间点</strong></div>
-          <div class="shortcut-guide-row"><span><kbd>0</kbd></span><strong>当前帧恢复批量预填</strong></div>
-          <div class="shortcut-guide-row"><span><kbd>\</kbd></span><strong>展开 / 折叠左侧工具栏</strong></div>
-          <div class="shortcut-guide-row"><span><kbd>R</kbd></span><strong>刷新当前页</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="arrowleft arrowright"><span><kbd>←</kbd><kbd>→</kbd></span><strong>上一帧 / 下一帧</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="shift+arrowleft shift+arrowright"><span><kbd>Shift</kbd> + <kbd>←</kbd><kbd>→</kbd></span><strong>连续扩选 / 收缩时间帧</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="mod+arrowleft mod+arrowright"><span><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>←</kbd><kbd>→</kbd></span><strong>单选跳到最左 / 最右时间帧</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="mod+shift+arrowleft mod+shift+arrowright"><span><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>←</kbd><kbd>→</kbd></span><strong>从锚点扩选到最左 / 最右</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="arrowup arrowdown"><span><kbd>↑</kbd><kbd>↓</kbd></span><strong>上一 Issue / 下一 Issue</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="space b c"><span><kbd>Space</kbd><kbd>B</kbd><kbd>C</kbd></span><strong>打开大图；同帧轮换 / 直达 BEV / Camera</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="1 2 3 4 5 6 7"><span><kbd>1</kbd>–<kbd>7</kbd></span><strong>设置当前帧标签</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="shift+1 shift+2 shift+3 shift+4 shift+5 shift+6 shift+7"><span><kbd>Shift</kbd> + <kbd>1</kbd>–<kbd>7</kbd></span><strong>批量预填全部时间点</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="0"><span><kbd>0</kbd></span><strong>当前帧恢复批量预填</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="d"><span><kbd>D</kbd></span><strong>打开讨论</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="backslash"><span><kbd>\</kbd></span><strong>展开 / 折叠左侧工具栏</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="r"><span><kbd>R</kbd></span><strong>刷新当前页</strong></div>
         </div>
         <div class="shortcut-guide-panel" data-shortcut-guide-page="review" hidden>
-          <div class="shortcut-guide-row"><span><kbd>[</kbd><kbd>]</kbd></span><strong>上一 Issue / 下一 Issue</strong></div>
-          <div class="shortcut-guide-row"><span><kbd>Q</kbd><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>Z</kbd><kbd>X</kbd></span><strong>打开对应标签组</strong></div>
-          <div class="shortcut-guide-row"><span><kbd>1</kbd>–<kbd>0</kbd><kbd>-</kbd><kbd>=</kbd></span><strong>切换已打开标签组中的选项</strong></div>
-          <div class="shortcut-guide-row"><span><kbd>B</kbd><kbd>C</kbd><kbd>V</kbd></span><strong>切换 BEV / Camera / 视频</strong></div>
-          <div class="shortcut-guide-row"><span><kbd>←</kbd><kbd>→</kbd><kbd>F</kbd></span><strong>切换媒体帧 / 打开大图</strong></div>
-          <div class="shortcut-guide-row"><span><kbd>+</kbd><kbd>-</kbd><kbd>0</kbd></span><strong>大图缩放 / 复位</strong></div>
-          <div class="shortcut-guide-row"><span><kbd>\</kbd></span><strong>展开 / 折叠左侧工具栏</strong></div>
-          <div class="shortcut-guide-row"><span><kbd>R</kbd></span><strong>刷新当前页</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="bracketleft bracketright"><span><kbd>[</kbd><kbd>]</kbd></span><strong>上一 Issue / 下一 Issue</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="q w a s z x"><span><kbd>Q</kbd><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>Z</kbd><kbd>X</kbd></span><strong>打开对应标签组</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="0 1 2 3 4 5 6 7 8 9 minus equal"><span><kbd>1</kbd>–<kbd>0</kbd><kbd>-</kbd><kbd>=</kbd></span><strong>切换已打开标签组中的选项</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="b c v"><span><kbd>B</kbd><kbd>C</kbd><kbd>V</kbd></span><strong>切换 BEV / Camera / 视频</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="arrowleft arrowright f"><span><kbd>←</kbd><kbd>→</kbd><kbd>F</kbd></span><strong>切换媒体帧 / 打开大图</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="plus minus 0"><span><kbd>+</kbd><kbd>-</kbd><kbd>0</kbd></span><strong>大图缩放 / 复位</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="backslash"><span><kbd>\</kbd></span><strong>展开 / 折叠左侧工具栏</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="r"><span><kbd>R</kbd></span><strong>刷新当前页</strong></div>
         </div>
-        <p class="shortcut-guide-footer"><kbd>H</kbd> 再按一次关闭指南 · 输入框中不会触发快捷键 · <kbd>Esc</kbd> 关闭弹窗</p>
+        <p class="shortcut-guide-empty" id="shortcutGuideEmpty" hidden>当前页面没有匹配的快捷键。</p>
+        <p class="shortcut-guide-footer"><kbd>H</kbd> 再按一次关闭指南 · 直接按键筛选 · <kbd>Esc</kbd> 先清除筛选，再关闭弹窗</p>
       </div>
     </dialog>
 
@@ -1750,7 +1757,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-297`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-299`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

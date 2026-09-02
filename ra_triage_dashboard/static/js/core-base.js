@@ -653,6 +653,7 @@ const state = {
     assignees: [],
     selectedAssignees: [],
     assigneeDatasetId: "",
+    assigneeSelectionDatasetId: "",
     datasetId: "",
     caseId: "",
     caseData: null,
@@ -679,6 +680,7 @@ const state = {
     experimentsDatasetId: "",
     experimentDatasetId: "",
     postingComment: false,
+    adminRevealAnswers: false,
   },
   // Short baseline ids from registry (e.g. ["0508"] or ["0508","0626"]).
   selectedBaselineIds: ["0508"],

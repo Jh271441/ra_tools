@@ -1392,6 +1392,7 @@ html[data-color-theme="light"] .review-control-shortcut {
 .top-actions #refreshButton kbd,
 .intent-stepper kbd,
 .intent-media-open kbd,
+.intent-discussion-card kbd,
 .shortcut-guide-dialog kbd {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 20px; min-height: 19px; padding: 1px 5px; border: 1px solid #334155;
@@ -4792,19 +4793,24 @@ body:is([data-active-page="intent"], [data-active-page="intent-experiments"]) .i
 .intent-labeling-page { width: 100%; max-width: 100%; min-width: 0; display: grid; gap: 10px; }
 .intent-commandbar {
   width: 100%; max-width: 100%; min-width: 0; display: grid;
-  grid-template-columns: minmax(250px, 1.15fr) 190px 190px minmax(310px, 1.2fr) minmax(290px, 1fr);
+  grid-template-columns: minmax(235px, 1fr) 210px 66px minmax(310px, 1.2fr) minmax(290px, 1fr);
   align-items: end; gap: 10px; padding: 10px 14px; border: 1px solid var(--line);
   border-radius: 12px; background: var(--raised);
 }
-.intent-commandbar label { display: grid; gap: 5px; min-width: 0; color: var(--muted); font-size: 11px; }
+.intent-commandbar label, .intent-command-field { display: grid; gap: 5px; min-width: 0; color: var(--muted); font-size: 11px; }
 .intent-commandbar select, .intent-commandbar input { min-width: 0; height: 36px; }
-.intent-case-field { grid-template-columns: minmax(0, 1fr) auto; }
-.intent-case-field > span { grid-column: 1 / -1; }
+.intent-load-case-button { min-width: 0; height: 36px; align-self: end; padding-inline: 9px; }
+.intent-my-tasks { padding: 0; border: 0; color: var(--accent); background: transparent; cursor: pointer; font-size: 9px; }
+.intent-my-tasks:disabled { color: var(--faint); cursor: default; }
+.intent-my-tasks.is-active { text-decoration: underline; text-underline-offset: 2px; }
 .intent-field-heading { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .intent-command-navigator { min-width: 0; display: grid; gap: 5px; color: var(--muted); font-size: 11px; }
 .intent-stepper { min-width: 0; display: grid; grid-template-columns: minmax(92px, 1fr) 46px auto minmax(92px, 1fr); align-items: center; gap: 5px; }
 .intent-stepper .button { min-width: 0; height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding-inline: 7px; white-space: nowrap; }
 .intent-stepper input { width: 46px; min-width: 0; height: 36px; padding-inline: 4px; text-align: center; font-variant-numeric: tabular-nums; }
+.intent-stepper input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+.intent-stepper input[type="number"]::-webkit-inner-spin-button,
+.intent-stepper input[type="number"]::-webkit-outer-spin-button { margin: 0; -webkit-appearance: none; }
 .intent-stepper-total { min-width: 34px; color: var(--faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .intent-stepper-total strong { color: var(--muted); }
 .intent-save-state { min-width: 0; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
@@ -4861,6 +4867,8 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-card { min-width: 0; max-width: 100%; overflow: hidden; padding: 9px 12px; }
 .intent-card h3 { margin: 0 0 5px; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: var(--accent); font-size: 13px; }
 .intent-card h3 small { min-width: 0; overflow: hidden; color: var(--muted); font-size: 9px; font-weight: 500; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.intent-card-heading-actions { min-width: 0; display: inline-flex; align-items: center; justify-content: flex-end; gap: 5px; }
+.intent-card-heading-actions .button { min-height: 24px; padding: 2px 7px; font-size: 8px; }
 .intent-card h4 { margin: 6px 0 4px; color: var(--muted); font-size: 10px; }
 .intent-card h4 small { margin-left: 5px; color: var(--faint); font-size: 9px; font-weight: 500; }
 .intent-case-meta { display: grid; grid-template-columns: 68px minmax(0, 1fr); gap: 6px 8px; margin: 0; font-size: 12px; }
@@ -4927,7 +4935,7 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-experiment-form { min-width: 0; display: grid; align-content: start; gap: 12px; padding: 0; }
 .intent-experiment-form label { min-width: 0; display: grid; gap: 5px; color: var(--muted); font-size: 10px; }
 .intent-experiment-form input, .intent-experiment-form select { width: 100%; min-width: 0; height: 34px; }
-.intent-experiment-form-row { min-width: 0; display: grid; grid-template-columns: 1fr .7fr .85fr; gap: 8px; }
+.intent-experiment-form-row { min-width: 0; display: grid; grid-template-columns: 1fr .7fr .85fr .9fr; gap: 8px; }
 .intent-experiment-members { min-width: 0; margin: 0; padding: 9px 10px 10px; border: 1px solid var(--line); border-radius: 8px; }
 .intent-experiment-members legend { padding: 0 5px; color: var(--text); font-size: 11px; }
 .intent-experiment-members legend small { margin-left: 6px; color: var(--faint); font-size: 9px; font-weight: 400; }
@@ -4956,17 +4964,20 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-experiment-actions .button { min-height: 28px; padding: 4px 9px; font-size: 9px; }
 
 .shortcut-guide-dialog { width: min(660px, calc(100vw - 28px)); max-width: calc(100vw - 28px); box-sizing: border-box; overflow: hidden; }
-.shortcut-guide-dialog .dialog-card { width: auto; min-width: 0; max-width: 100%; max-height: calc(100dvh - 28px); box-sizing: border-box; overflow-y: auto; }
+.shortcut-guide-dialog .dialog-card { width: auto; min-width: 0; max-width: 100%; max-height: calc(100dvh - 28px); box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .media-decision-summary[hidden] { display: none; }
+.shortcut-guide-search { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; padding: 6px 8px; border: 1px solid var(--line-soft); border-radius: 7px; color: var(--muted); background: var(--overlay); font-size: 10px; }
+.shortcut-guide-search .button { min-height: 25px; padding: 3px 8px; font-size: 9px; }
 .shortcut-guide-panel { display: grid; gap: 7px; margin-top: 14px; }
 .shortcut-guide-panel[hidden] { display: none; }
 .shortcut-guide-row { min-width: 0; display: grid; grid-template-columns: minmax(150px, .75fr) minmax(0, 1.25fr); align-items: center; gap: 14px; min-height: 45px; padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--overlay); }
 .shortcut-guide-row > span { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
 .shortcut-guide-row strong { color: var(--text); font-size: 12px; font-weight: 650; }
+.shortcut-guide-empty { margin: 14px 0 0; padding: 20px; border: 1px dashed var(--line); border-radius: 8px; color: var(--faint); text-align: center; font-size: 11px; }
 .shortcut-guide-footer { margin: 12px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
 
 @media (max-width: 1600px) {
-  .intent-commandbar { grid-template-columns: minmax(240px, 1.1fr) 180px 180px minmax(290px, 1.1fr) minmax(270px, 1fr); gap: 8px; }
+  .intent-commandbar { grid-template-columns: minmax(220px, 1fr) 180px 62px minmax(290px, 1.1fr) minmax(270px, 1fr); gap: 8px; }
   .intent-stepper { grid-template-columns: minmax(82px, 1fr) 42px auto minmax(82px, 1fr); gap: 4px; }
   .intent-stepper input { width: 42px; }
   .intent-workspace { grid-template-columns: minmax(0, 1fr) 280px; }
@@ -4994,7 +5005,9 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 }
 @media (max-width: 1400px) {
   .intent-commandbar { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  .intent-case-field, .intent-assignee-field, .intent-timepoint-field { grid-column: span 2; }
+  .intent-case-field { grid-column: span 3; }
+  .intent-assignee-field { grid-column: span 2; }
+  .intent-load-case-button { grid-column: span 1; }
   .intent-command-navigator { grid-column: span 3; }
 }
 @media (max-width: 1250px) {
@@ -5005,7 +5018,7 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 }
 @media (max-width: 800px) {
   .intent-commandbar { grid-template-columns: 1fr; }
-  .intent-case-field, .intent-assignee-field, .intent-timepoint-field, .intent-command-navigator { grid-column: auto; }
+  .intent-case-field, .intent-assignee-field, .intent-load-case-button, .intent-command-navigator { grid-column: auto; }
   body:is([data-active-page="intent"], [data-active-page="intent-experiments"]) .intent-topbar-dataset { grid-template-columns: auto minmax(120px, 1fr); }
   .intent-media-grid, .intent-label-rail { grid-template-columns: 1fr; }
   .intent-experiment-form-row, .intent-experiment-members > div { grid-template-columns: 1fr; }
@@ -5024,6 +5037,7 @@ html[data-color-theme="light"] .shortcut-help-button kbd,
 html[data-color-theme="light"] .top-actions #refreshButton kbd,
 html[data-color-theme="light"] .intent-stepper kbd,
 html[data-color-theme="light"] .intent-media-open kbd,
+html[data-color-theme="light"] .intent-discussion-card kbd,
 html[data-color-theme="light"] .shortcut-guide-dialog kbd { color: #53657a; border-color: #c7d3df; background: #fff; }
 
 @media (max-width: 639px) {

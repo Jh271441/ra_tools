@@ -107,10 +107,11 @@ function renderIntentTopbarDatasetPicker(selectedId = state.intentLabeling.datas
 
 function renderIntentAssigneeFilter() {
   const intent = state.intentLabeling;
+  const currentUsername = String(state.session.username || "").toLowerCase();
   renderMultiFilter($("#intentAssigneeFilter"), {
     options: intent.assignees.map((item) => ({
       value: item.username,
-      label: `${item.username} · ${item.case_count} Case`,
+      label: `${item.username}${item.username === currentUsername ? "（我）" : ""} · ${item.case_count} Case`,
     })),
     selected: intent.selectedAssignees,
     onChange: (values) => {
@@ -126,6 +127,13 @@ function renderIntentAssigneeFilter() {
       })().catch((error) => showToast(error.message, true));
     },
   });
+  const myTasks = $("#intentMyTasks");
+  const assignedToMe = intent.assignees.some((item) => item.username === currentUsername);
+  if (myTasks) {
+    myTasks.disabled = !assignedToMe;
+    myTasks.classList.toggle("is-active", intent.selectedAssignees.length === 1 && intent.selectedAssignees[0] === currentUsername);
+    myTasks.title = assignedToMe ? "只看实验分配给我的 Case" : "当前数据集没有分配给我的任务";
+  }
 }
 
 async function loadIntentAssignees(datasetId, requested = null) {
@@ -137,7 +145,13 @@ async function loadIntentAssignees(datasetId, requested = null) {
     intent.assigneeDatasetId = datasetId;
   }
   const available = new Set(intent.assignees.map((item) => item.username));
-  const selected = requested == null ? intent.selectedAssignees : parseFilterList(requested);
+  const currentUsername = String(state.session.username || "").toLowerCase();
+  const firstSelectionForDataset = intent.assigneeSelectionDatasetId !== datasetId;
+  let selected = requested == null ? intent.selectedAssignees : parseFilterList(requested);
+  if (requested == null && firstSelectionForDataset && available.has(currentUsername)) {
+    selected = [currentUsername];
+  }
+  intent.assigneeSelectionDatasetId = datasetId;
   intent.selectedAssignees = selected.filter((username) => available.has(username));
   renderIntentAssigneeFilter();
 }
@@ -165,12 +179,21 @@ function updateIntentExperimentEstimate() {
   const count = Math.max(0, Number($("#intentExperimentCaseCount")?.value) || 0);
   const mode = $("#intentExperimentMode")?.value || "blind";
   const overlap = Math.max(0, Number($("#intentExperimentOverlap")?.value) || 0);
+  const reviewerInput = $("#intentExperimentReviewers");
+  if (reviewerInput) {
+    reviewerInput.max = String(Math.max(2, members.length));
+    if (Number(reviewerInput.value) > members.length) reviewerInput.value = String(Math.max(2, members.length));
+  }
+  const reviewers = Math.max(2, Math.min(members.length, Number(reviewerInput?.value) || 2));
   if (members.length < 2) {
     output.textContent = "至少选择 2 名成员。";
     return;
   }
-  const assignments = mode === "full" ? count * members.length : count + Math.round(count * overlap);
-  output.textContent = `${count} 个 Case · ${members.length} 人 · 共 ${assignments} 份独立任务`;
+  const overlapCases = Math.round(count * overlap);
+  const assignments = mode === "full" ? count * members.length : count + overlapCases * (reviewers - 1);
+  output.textContent = mode === "full"
+    ? `${count} 个 Case · ${members.length} 人全量复核 · 共 ${assignments} 份独立任务`
+    : `${count} 个 Case · ${overlapCases} 个交叉 Case 由 ${reviewers} 人复核 · 共 ${assignments} 份独立任务`;
 }
 
 function renderIntentExperiments() {
@@ -186,7 +209,7 @@ function renderIntentExperiments() {
         : `基础 ${member.base} · 交叉 ${member.cross}`;
       return `<span title="${escapeHtml(member.username)}">${escapeHtml(member.username)} · ${detail}</span>`;
     }).join("");
-    const overlap = item.annotation_mode === "blind" ? ` · 交叉 ${Math.round(item.overlap_ratio * 100)}%` : "";
+    const overlap = item.annotation_mode === "blind" ? ` · 交叉 ${Math.round(item.overlap_ratio * 100)}% · 每 Case ${item.overlap_reviewers || 2} 人` : "";
     return `<article class="intent-experiment-item${item.status === "closed" ? " is-closed" : ""}" data-intent-experiment="${escapeHtml(item.id)}">
       <div><h4>${escapeHtml(item.name)}</h4><div class="intent-experiment-meta">${intentExperimentModeLabel(item.annotation_mode)}${overlap} · ${item.case_count} 个 Case · ${item.assignment_count} 份任务 · ${escapeHtml(item.created_by)}</div></div>
       <span class="intent-experiment-status">${item.status === "closed" ? "已关闭" : "进行中"}</span>
@@ -266,6 +289,7 @@ async function createIntentExperiment(event) {
         annotation_mode: $("#intentExperimentMode")?.value || "blind",
         case_count: Number($("#intentExperimentCaseCount")?.value) || 0,
         overlap_ratio: Number($("#intentExperimentOverlap")?.value) || 0,
+        overlap_reviewers: Number($("#intentExperimentReviewers")?.value) || 2,
         members,
       }),
     });
@@ -520,12 +544,19 @@ function renderIntentLabels() {
 
 function renderIntentCollaboration() {
   const collaboration = state.intentLabeling.caseData?.collaboration || {};
-  const contributors = collaboration.contributors || [];
+  const contributors = (collaboration.contributors || []).filter(
+    (item) => collaboration.answers_revealed || item.is_current
+  );
   const contributorList = $("#intentContributorList");
   const revealState = $("#intentRevealState");
   if (revealState) revealState.textContent = collaboration.answers_revealed
     ? "已解盲"
-    : "实验进行中 · 答案隐藏";
+    : "盲标中 · 仅显示自己";
+  const revealButton = $("#intentToggleReveal");
+  if (revealButton) {
+    revealButton.hidden = !(state.session.is_admin && collaboration.blind_active);
+    revealButton.textContent = collaboration.answers_revealed ? "恢复盲态" : "管理员解盲";
+  }
   if (contributorList) {
     contributorList.innerHTML = contributors.length ? contributors.map((item) => {
       const status = item.completed ? "已完成" : "进行中";
@@ -543,6 +574,24 @@ function renderIntentCollaboration() {
       `<article class="intent-comment"><div><strong>${escapeHtml(item.author)}</strong><time>${escapeHtml(new Date(item.created_at).toLocaleString())}</time></div><p>${escapeHtml(item.body)}</p></article>`
     )).join("") : "<p>还没有评论</p>";
     commentList.scrollTop = commentList.scrollHeight;
+  }
+}
+
+async function toggleIntentAnswerReveal() {
+  const intent = state.intentLabeling;
+  if (!state.session.is_admin || !intent.caseId) return;
+  await intentFlushSave();
+  intent.adminRevealAnswers = !intent.adminRevealAnswers;
+  const params = intentAssigneeSearchParams();
+  if (intent.adminRevealAnswers) params.set("reveal_answers", "true");
+  try {
+    const data = await api(intentApiUrl(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases/${encodeURIComponent(intent.caseId)}`, params));
+    if (intent.caseId !== data.case_id) return;
+    intent.caseData.collaboration = data.collaboration;
+    renderIntentCollaboration();
+  } catch (error) {
+    intent.adminRevealAnswers = !intent.adminRevealAnswers;
+    throw error;
   }
 }
 
@@ -568,10 +617,6 @@ function renderIntentCase({ deferTimelineThumbnails = false } = {}) {
     caseOrdinal.max = String(Math.max(1, data.case_count || 0));
   }
   if ($("#intentCaseCount")) $("#intentCaseCount").textContent = String(data.case_count || "—");
-  const select = $("#intentTimepointSelect");
-  select.innerHTML = data.timepoints.map((item, index) => (
-    `<option value="${escapeHtml(item.id)}"${item.id === intent.activeTimepointId ? " selected" : ""}>${index + 1} / ${data.timepoints.length} · ${escapeHtml(intentTimeLabel(item.offset_ms))}</option>`
-  )).join("");
   updateIntentFrameNavigation();
   const heroReady = renderIntentHero();
   renderIntentTimeline({ loadThumbnails: !deferTimelineThumbnails });
@@ -669,6 +714,7 @@ async function loadIntentLabeling({ datasetId = "", caseId = "", offsetMs = null
   if (requestSeq !== intent.requestSeq) return;
   intent.caseId = data.case_id;
   intent.caseData = data;
+  intent.adminRevealAnswers = false;
   intent.revisionId = data.labels?.revision_id || null;
   intent.aggregate = {
     routing: data.labels?.routing_default || "",
@@ -747,6 +793,24 @@ async function intentFlushSave() {
       intentSetSaveState("已自动保存", "saved");
       updateIntentTimelineState({ scroll: false });
       renderIntentLabels();
+      const username = String(state.session.username || "").toLowerCase();
+      intent.caseData.collaboration ||= { contributors: [], comments: [] };
+      const contributors = intent.caseData.collaboration.contributors ||= [];
+      let current = contributors.find((item) => item.is_current || item.username === username);
+      if (!current) {
+        current = { username, is_current: true };
+        contributors.push(current);
+      }
+      Object.assign(current, {
+        username,
+        is_current: true,
+        revealed: true,
+        completed: Boolean(payload.labels?.routing_default && payload.labels?.lane_change_default),
+        routing_default: payload.labels?.routing_default || "",
+        lane_change_default: payload.labels?.lane_change_default || "",
+        updated_at: payload.labels?.created_at || "",
+      });
+      renderIntentCollaboration();
     } else {
       intent.dirty = true;
       intentSetSaveState("等待自动保存…", "dirty");
@@ -948,6 +1012,7 @@ function handleIntentShortcut(event) {
     ArrowDown: () => intentNavigateCase(1),
     KeyB: () => openIntentMedia("bev"),
     KeyC: () => openIntentMedia("camera"),
+    KeyD: () => openIntentComments(),
     Digit0: () => intentRestoreBatchPrefill(),
     Space: () => openIntentMedia(intentActiveTimepoint()?.camera?.url ? "camera" : "bev"),
   };
@@ -979,7 +1044,7 @@ function bindIntentLabelingEvents() {
     }
     (async () => {
       await intentFlushSave();
-      await loadIntentLabeling({ datasetId, assignees: [], historyMode: "push" });
+      await loadIntentLabeling({ datasetId, assignees: null, historyMode: "push" });
     })().catch((error) => showToast(error.message, true));
   });
   $("#intentExperimentForm")?.addEventListener("submit", (event) => {
@@ -993,10 +1058,30 @@ function bindIntentLabelingEvents() {
       if (full) overlap.value = "1";
     }
     $("#intentExperimentOverlapField")?.classList.toggle("is-disabled", full);
+    const reviewers = $("#intentExperimentReviewers");
+    if (reviewers) reviewers.disabled = full;
+    $("#intentExperimentReviewersField")?.classList.toggle("is-disabled", full);
     updateIntentExperimentEstimate();
   });
   $("#intentExperimentCaseCount")?.addEventListener("input", updateIntentExperimentEstimate);
   $("#intentExperimentOverlap")?.addEventListener("change", updateIntentExperimentEstimate);
+  $("#intentExperimentReviewers")?.addEventListener("input", updateIntentExperimentEstimate);
+  $("#intentMyTasks")?.addEventListener("click", () => {
+    const username = String(state.session.username || "").toLowerCase();
+    if (!state.intentLabeling.assignees.some((item) => item.username === username)) return;
+    (async () => {
+      await intentFlushSave();
+      await loadIntentLabeling({
+        datasetId: state.intentLabeling.datasetId,
+        caseId: "",
+        assignees: [username],
+        historyMode: "push",
+      });
+    })().catch((error) => showToast(error.message, true));
+  });
+  $("#intentToggleReveal")?.addEventListener("click", () => {
+    toggleIntentAnswerReveal().catch((error) => showToast(error.message, true));
+  });
   $("#intentLoadCaseButton")?.addEventListener("click", () => {
     (async () => {
       await intentFlushSave();
@@ -1013,7 +1098,6 @@ function bindIntentLabelingEvents() {
     event.preventDefault();
     $("#intentLoadCaseButton")?.click();
   });
-  $("#intentTimepointSelect")?.addEventListener("change", (event) => intentSelectTimepoint(event.target.value));
   $("#intentCaseOrdinalInput")?.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;
     event.preventDefault();
