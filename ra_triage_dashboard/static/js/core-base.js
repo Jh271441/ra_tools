@@ -556,6 +556,11 @@ const PAGE_ROUTES = {
     titleZh: "实验分配",
     titleEn: "Experiment Assignment",
   },
+  "intent-summary": {
+    path: "/intent-summary",
+    titleZh: "意图轨迹标注汇总",
+    titleEn: "Intent Trajectory Summary",
+  },
   analysis: {
     path: "/review-analysis",
     titleZh: "原因聚类",
@@ -683,6 +688,12 @@ const state = {
     experimentDatasetId: "",
     postingComment: false,
     adminRevealAnswers: false,
+    summaryDatasetId: "",
+    summaryExperimentId: "",
+    summaryAssignees: [],
+    summaryReveal: false,
+    summaryPayload: null,
+    summaryPage: 1,
   },
   // Short baseline ids from registry (e.g. ["0508"] or ["0508","0626"]).
   selectedBaselineIds: ["0508"],

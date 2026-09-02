@@ -402,6 +402,14 @@ function bindEvents() {
         showToast(t("toast.page_refreshed"));
         return;
       }
+      if (state.activePage === "intent-summary") {
+        await loadIntentSummary({
+          datasetId: state.intentLabeling.summaryDatasetId,
+          force: true,
+        });
+        showToast(t("toast.page_refreshed"));
+        return;
+      }
       await refreshAll();
       if (state.activePage === "analysis") {
         await loadReviewReasonAnalysis();
@@ -448,7 +456,7 @@ function bindEvents() {
     const submit = event.submitter || event.currentTarget.querySelector("button[type='submit']");
     submit.disabled = true;
     try {
-      await saveAccessUser(username, $("#accessUserRole").value);
+      await saveAccessUser(username, $("#accessUserRole").value, $("#accessIntentPermission").value);
       input.value = "";
       showToast(t("toast.access_saved"));
     } catch (error) {
@@ -463,7 +471,7 @@ function bindEvents() {
     const username = row.dataset.accessUser;
     if (event.target.closest("[data-save-access-user]")) {
       try {
-        await saveAccessUser(username, row.querySelector("[data-access-role]").value);
+        await saveAccessUser(username, row.querySelector("[data-access-role]").value, row.querySelector("[data-intent-permission]").value);
         showToast(t("toast.access_updated"));
       } catch (error) { showToast(error.message, true); }
     }
@@ -802,6 +810,11 @@ function bindEvents() {
       return;
     }
     if (route.page !== "review") {
+      if (route.page === "intent-summary") {
+        state.intentLabeling.summaryExperimentId = route.intentExperimentId || "";
+        state.intentLabeling.summaryAssignees = route.intentSummaryOwners || [];
+        state.intentLabeling.summaryPage = route.intentSummaryPage || 1;
+      }
       showPage(route.page, {
         issues: route.issues,
         source: route.source,
@@ -905,14 +918,18 @@ async function bootstrap() {
   const sessionRequest = resolveSessionInBackground();
   try {
     await settleInitialRequests([loadConfig()], "基础配置");
-    if (["users", "intent", "intent-experiments"].includes(initialRoute.page)) {
+    if (["users", "intent", "intent-experiments", "intent-summary"].includes(initialRoute.page)) {
       await sessionRequest;
     }
-    if (["users", "intent-experiments"].includes(initialRoute.page) && !state.session.is_admin) {
+    if (initialRoute.page === "users" && !state.session.is_admin) {
       initialRoute.page = "review";
       showToast(t("toast.admin_only"), true);
     }
-    if (initialRoute.page === "intent" && !["writer", "admin"].includes(state.session.access_role)) {
+    if (initialRoute.page === "intent-experiments" && !state.session.can_view_intent) {
+      initialRoute.page = "review";
+      showToast("当前账号没有实验查看权限。", true);
+    }
+    if (["intent", "intent-summary"].includes(initialRoute.page) && !state.session.can_view_intent) {
       initialRoute.page = "review";
       showToast("意图标注仅对已授权标注人开放。", true);
     }
@@ -1006,6 +1023,11 @@ async function bootstrap() {
       initialPageRequests.push(loadIntentExperimentAdmin({
         datasetId: initialRoute.intentDatasetId,
       }));
+    } else if (initialRoute.page === "intent-summary") {
+      state.intentLabeling.summaryExperimentId = initialRoute.intentExperimentId || "";
+      state.intentLabeling.summaryAssignees = initialRoute.intentSummaryOwners || [];
+      state.intentLabeling.summaryPage = initialRoute.intentSummaryPage || 1;
+      initialPageRequests.push(loadIntentSummary({ datasetId: initialRoute.intentDatasetId }));
     }
     if (initialRoute.page === "analysis") {
       initialPageRequests.push(loadReviewReasonAnalysis());

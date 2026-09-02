@@ -23,6 +23,7 @@ class AccessUsersTest(unittest.TestCase):
             self.assertEqual(database.access_role("jasperchen"), "admin")
             self.assertEqual(database.access_role("xuhaoxuan_i"), "writer")
             self.assertEqual(database.access_role("unknown"), "")
+            self.assertEqual(database.intent_permission("jasperchen"), "manage")
 
             database.delete_access_user("xuhaoxuan_i")
             database.bootstrap_access_users(
@@ -41,6 +42,12 @@ class AccessUsersTest(unittest.TestCase):
                 username="new_user", role="writer", actor="jasperchen"
             )
             self.assertEqual(user["role"], "writer")
+            self.assertEqual(user["intent_permission"], "manage")
+            user = database.set_access_user(
+                username="new_user", role="writer", actor="jasperchen",
+                intent_permission="view",
+            )
+            self.assertEqual(user["intent_permission"], "view")
             promoted = database.set_access_user(
                 username="new_user", role="admin", actor="jasperchen"
             )

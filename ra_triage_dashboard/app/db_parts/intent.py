@@ -558,6 +558,45 @@ class DatabaseIntentMixin:
             for row in rows
         ]
 
+    def intent_report_rows(self, dataset_id: str) -> dict[str, Any]:
+        """Bounded bulk reads; never open per-case media or issue N+1 queries."""
+        with self.connect() as conn:
+            heads = conn.execute(
+                """SELECT head.case_id, head.username, revision.id AS revision_id,
+                          revision.routing_default, revision.lane_change_default,
+                          head.updated_at
+                   FROM intent_user_label_heads head
+                   JOIN intent_label_revisions revision ON revision.id = head.current_revision_id
+                   WHERE head.dataset_id = ? ORDER BY head.case_id, head.username""",
+                (dataset_id,),
+            ).fetchall()
+            overrides = conn.execute(
+                """SELECT frame.* FROM intent_frame_overrides frame
+                   JOIN intent_user_label_heads head ON head.current_revision_id = frame.revision_id
+                   WHERE head.dataset_id = ? ORDER BY frame.offset_ms, frame.timepoint_id""",
+                (dataset_id,),
+            ).fetchall()
+            assignments = conn.execute(
+                """SELECT assignment.case_id, assignment.username, experiment.id AS experiment_id,
+                          experiment.status
+                   FROM intent_experiment_assignments assignment
+                   JOIN intent_experiments experiment ON experiment.id = assignment.experiment_id
+                   WHERE experiment.dataset_id = ?""",
+                (dataset_id,),
+            ).fetchall()
+        by_revision: dict[int, list[dict[str, Any]]] = {}
+        for row in overrides:
+            by_revision.setdefault(int(row["revision_id"]), []).append({
+                "offset_ms": int(row["offset_ms"]), "timepoint_id": str(row["timepoint_id"]),
+                "routing_intent": str(row["routing_intent"] or ""),
+                "lane_change_intent": str(row["lane_change_intent"] or ""),
+            })
+        return {
+            "heads": [{**dict(row), "updated_at": str(row["updated_at"]),
+                       "overrides": by_revision.get(int(row["revision_id"]), [])} for row in heads],
+            "assignments": [dict(row) for row in assignments],
+        }
+
     def intent_case_has_active_experiment(self, dataset_id: str, case_id: str) -> bool:
         with self.connect() as conn:
             row = conn.execute(

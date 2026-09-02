@@ -153,10 +153,11 @@ async def intent_labeling_page(request: Request) -> HTMLResponse:
 
 
 @router.get("/intent-experiments", include_in_schema=False)
+@router.get("/intent-summary", include_in_schema=False)
 async def intent_experiments_page(request: Request) -> HTMLResponse:
-    """Serve the intent experiment allocator only to Dashboard admins."""
+    """Read surfaces are shared by all explicitly authorized intent members."""
 
-    await asyncio.to_thread(_admin_identity, request)
+    await asyncio.to_thread(_intent_identity, request)
     return HTMLResponse(
         content=INDEX_HTML,
         headers={"Cache-Control": "no-store, max-age=0"},
@@ -389,6 +390,7 @@ async def session(request: Request, response: Response) -> dict[str, object]:
         else ""
     )
     is_admin = access_role == "admin"
+    intent_permission = await asyncio.to_thread(database.intent_permission, identity.username) if identity.verified else ""
     can_write = settings.deployment_mode != "production" or access_role in {
         "writer",
         "admin",
@@ -404,6 +406,10 @@ async def session(request: Request, response: Response) -> dict[str, object]:
         ),
         "access_role": access_role or "viewer",
         "is_admin": is_admin,
+        "intent_permission": intent_permission,
+        "can_view_intent": bool(intent_permission),
+        "can_annotate_intent": intent_permission in {"manage", "annotate"},
+        "can_manage_intent": intent_permission == "manage",
         "can_manage_team_default": is_admin,
         "deployment_mode": settings.deployment_mode,
         "can_write": can_write,
@@ -445,6 +451,7 @@ async def set_access_user(
             username=normalized,
             role=role,
             actor=identity.username,
+            intent_permission=body.get("intent_permission") if isinstance(body, dict) else None,
         )
     except ValueError as exc:
         raise _detail(409, str(exc))

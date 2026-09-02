@@ -258,7 +258,7 @@ function renderIntentExperiments() {
       <div><h4>${escapeHtml(item.name)}</h4><div class="intent-experiment-meta">${intentExperimentModeLabel(item.annotation_mode)}${overlap} · ${item.case_count} 个 Case · ${item.assignment_count} 份任务 · ${escapeHtml(item.created_by)}</div></div>
       <span class="intent-experiment-status">${item.status === "closed" ? "已关闭" : "进行中"}</span>
       <div class="intent-experiment-member-stats">${members}</div>
-      ${item.status === "active" ? '<div class="intent-experiment-actions"><button class="button button-quiet" type="button" data-close-intent-experiment>关闭实验</button></div>' : ""}
+      ${item.status === "active" && state.session.can_manage_intent ? '<div class="intent-experiment-actions"><button class="button button-quiet" type="button" data-close-intent-experiment>关闭实验</button></div>' : ""}
     </article>`;
   }).join("") : '<div class="intent-experiment-empty"><span aria-hidden="true">◎</span><strong>这个数据集尚未创建实验</strong><p>在左侧完成配置后，实验与每位成员的任务量会显示在这里。</p></div>';
   container.querySelectorAll("[data-close-intent-experiment]").forEach((button) => {
@@ -359,6 +359,49 @@ function intentSetSaveState(text, kind = "") {
   if (!element) return;
   element.textContent = text;
   element.dataset.status = kind;
+}
+
+function renderIntentSummary(payload) {
+  const metrics = [
+    ["范围 Case", payload.case_count], ["已标注 Case", payload.annotated_cases],
+    ["完整标注记录", payload.complete_records],
+    ["多人一致性", payload.agreement.comparable_cases ? `${payload.agreement.matching_cases} / ${payload.agreement.comparable_cases}` : "—"],
+  ];
+  $("#intentSummaryMetrics").innerHTML = metrics.map(([label, value]) => `<article class="intent-summary-metric"><small>${label}</small><strong>${escapeHtml(value)}</strong></article>`).join("");
+  $("#intentSummaryRows").innerHTML = (payload.items || []).map((item) => `<tr><td>${escapeHtml(item.case_id)}</td><td>${escapeHtml(item.username)}${item.username === state.session.username ? "（我）" : ""}</td><td>${escapeHtml(INTENT_ROUTING_LABELS[item.routing_default] || "None")}</td><td>${escapeHtml(INTENT_LANE_LABELS[item.lane_change_default] || "None")}</td><td>${item.overrides.length}</td><td>${escapeHtml(formatTime(item.updated_at) || "—")}</td></tr>`).join("") || '<tr><td colspan="6">当前筛选下没有可显示的标注。</td></tr>';
+  $("#intentSummarySafety").textContent = payload.blind_active && !payload.answers_revealed ? "进行中的盲标实验仅显示自己的答案。" : "汇总当前标注头；不会加载 Camera / BEV 图片。";
+  const reveal = $("#intentSummaryReveal");
+  reveal.hidden = !(state.session.is_admin && payload.blind_active);
+  reveal.textContent = payload.answers_revealed ? "恢复盲态" : "管理员解盲";
+  const pageCount = Math.max(1, Math.ceil(Number(payload.total || 0) / Number(payload.page_size || 20)));
+  $("#intentSummaryPageState").textContent = `${payload.page} / ${pageCount}`;
+  $("#intentSummaryPrevious").disabled = payload.page <= 1;
+  $("#intentSummaryNext").disabled = payload.page >= pageCount;
+}
+
+async function loadIntentSummary({ datasetId = "", force = false } = {}) {
+  const intent = state.intentLabeling;
+  if (!intent.datasets.length) intent.datasets = (await api("/api/intent-datasets")).items || [];
+  const selected = intent.datasets.find((item) => item.id === datasetId && item.available) || intent.datasets.find((item) => item.id === intent.summaryDatasetId && item.available) || intent.datasets.find((item) => item.available);
+  if (!selected) throw new Error("没有可汇总的数据集。");
+  intent.summaryDatasetId = selected.id;
+  renderIntentTopbarDatasetPicker(selected.id);
+  const params = new URLSearchParams({ dataset_id: selected.id });
+  if (intent.summaryExperimentId) params.set("experiment_id", intent.summaryExperimentId);
+  (intent.summaryAssignees || []).forEach((value) => params.append("assignee", value));
+  if (intent.summaryReveal) params.set("reveal_answers", "true");
+  params.set("page", String(intent.summaryPage || 1));
+  const payload = await api(`/api/intent-summary?${params}`);
+  intent.summaryPayload = payload;
+  populateUiSelect($("#intentSummaryExperimentPicker"), [{ value: "", label: "全部实验" }, ...(payload.experiments || []).map((item) => ({ value: item.id, label: item.name }))], intent.summaryExperimentId || "");
+  bindUiSelect($("#intentSummaryExperimentPicker"), { maxWidth: 420 });
+  renderMultiFilter($("#intentSummaryAssignees"), { options: (payload.owners || []).map((value) => ({ value, label: value === state.session.username ? `${value}（我）` : value })), selected: intent.summaryAssignees || [], onChange: (values) => { intent.summaryAssignees = values; intent.summaryPage = 1; loadIntentSummary({ datasetId: selected.id, force: true }).catch((error) => showToast(error.message, true)); } });
+  renderIntentSummary(payload);
+  const routeParams = new URLSearchParams({ dataset: selected.id });
+  if (intent.summaryExperimentId) routeParams.set("experiment", intent.summaryExperimentId);
+  (intent.summaryAssignees || []).forEach((value) => routeParams.append("owner", value));
+  if ((intent.summaryPage || 1) > 1) routeParams.set("page", String(intent.summaryPage));
+  history.replaceState({ page: "intent-summary", datasetId: selected.id }, "", `${withBase("/intent-summary")}?${routeParams}`);
 }
 
 function intentMediaTransform(kind) {
@@ -1089,6 +1132,13 @@ function bindIntentLabelingEvents() {
         .catch((error) => showToast(error.message, true));
       return;
     }
+    if (state.activePage === "intent-summary") {
+      state.intentLabeling.summaryExperimentId = "";
+      state.intentLabeling.summaryAssignees = [];
+      state.intentLabeling.summaryPage = 1;
+      loadIntentSummary({ datasetId, force: true }).catch((error) => showToast(error.message, true));
+      return;
+    }
     (async () => {
       await intentFlushSave();
       await loadIntentLabeling({ datasetId, assignees: null, historyMode: "push" });
@@ -1096,6 +1146,25 @@ function bindIntentLabelingEvents() {
   });
   $("#intentExperimentForm")?.addEventListener("submit", (event) => {
     createIntentExperiment(event).catch((error) => showToast(error.message, true));
+  });
+  $("#intentSummaryExperiment")?.addEventListener("change", (event) => {
+    state.intentLabeling.summaryExperimentId = event.target.value || "";
+    state.intentLabeling.summaryAssignees = [];
+    state.intentLabeling.summaryPage = 1;
+    loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true }).catch((error) => showToast(error.message, true));
+  });
+  $("#intentSummaryRefresh")?.addEventListener("click", () => loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true }).catch((error) => showToast(error.message, true)));
+  $("#intentSummaryReveal")?.addEventListener("click", () => {
+    state.intentLabeling.summaryReveal = !state.intentLabeling.summaryReveal;
+    loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true }).catch((error) => showToast(error.message, true));
+  });
+  $("#intentSummaryPrevious")?.addEventListener("click", () => {
+    state.intentLabeling.summaryPage = Math.max(1, state.intentLabeling.summaryPage - 1);
+    loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true }).catch((error) => showToast(error.message, true));
+  });
+  $("#intentSummaryNext")?.addEventListener("click", () => {
+    state.intentLabeling.summaryPage += 1;
+    loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true }).catch((error) => showToast(error.message, true));
   });
   initializeIntentExperimentSelects();
   $("#intentAssignmentSelect")?.addEventListener("change", (event) => {

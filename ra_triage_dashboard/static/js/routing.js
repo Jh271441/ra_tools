@@ -431,6 +431,8 @@ function parsePageRoute() {
     intentOffsetMs: Number.parseInt(params.get("t") || "", 10),
     intentAssignees: params.has("assignee") ? parseFilterList(params.get("assignee") || "") : null,
     intentExperimentId: params.get("experiment") || "",
+    intentSummaryOwners: params.getAll("owner").filter((value) => /^[A-Za-z0-9._@-]{1,128}$/.test(value)),
+    intentSummaryPage: Math.max(1, Number.parseInt(params.get("page") || "1", 10) || 1),
     // Issue / GT 上传已从页面移除；旧链接统一落到安全的模型结果导入区。
     importKind:
       params.get("import") === "model" ||
@@ -796,14 +798,12 @@ function showPage(
       loadRunComparison({ historyMode: historyMode || "replace" }).catch((error) => showToast(error.message, true));
     }
   }
-  if (["intent", "intent-experiments"].includes(target)) {
-    const allowed = target === "intent"
-      ? ["writer", "admin"].includes(state.session.access_role)
-      : state.session.is_admin;
+  if (["intent", "intent-experiments", "intent-summary"].includes(target)) {
+    const allowed = state.session.can_view_intent;
     if (!state.session.identity_pending && !allowed) {
       const message = target === "intent"
-        ? uiText("意图标注仅对已授权标注人开放。", "Intent labeling requires writer access.")
-        : uiText("实验分配仅对管理员开放。", "Experiment assignment is admin-only.");
+        ? uiText("当前账号没有意图标注查看权限。", "Intent access is required.")
+        : uiText("当前账号没有实验查看权限。", "Intent viewing access is required.");
       showToast(message, true);
       return showPage("review", { historyMode: historyMode || "replace" });
     }
@@ -840,6 +840,9 @@ function showPage(
   if (target === "intent-experiments" && loadPageData && typeof loadIntentExperimentAdmin === "function") {
     loadIntentExperimentAdmin({ datasetId: intentDatasetId })
       .catch((error) => showToast(error.message, true));
+  }
+  if (target === "intent-summary" && loadPageData && typeof loadIntentSummary === "function") {
+    loadIntentSummary({ datasetId: intentDatasetId }).catch((error) => showToast(error.message, true));
   }
   if (target === "analysis") renderAnalysisRunFilter();
   if (target === "trail-update") {

@@ -13,25 +13,68 @@ from fastapi.responses import FileResponse, StreamingResponse
 from ..db_parts.shared import IntentAnnotationConflictError
 from ..http_support import _action_actor, _admin_identity, _detail, _intent_identity
 from ..intent_experiments import build_intent_experiment_assignments
+from ..intent_summary import summarize_intent
 from ..runtime import database, intent_dataset_registry
 
 
 async def _require_intent_writer(request: Request) -> None:
-    """Protect labels and media with a verified writer boundary."""
+    """Protect mutations independently of read access."""
 
+    await asyncio.to_thread(_intent_identity, request, "annotate")
+
+
+async def _require_intent_viewer(request: Request) -> None:
     await asyncio.to_thread(_intent_identity, request)
 
 
+async def _require_intent_manager(request: Request) -> None:
+    await asyncio.to_thread(_intent_identity, request, "manage")
+
+
 async def _require_intent_admin(request: Request) -> None:
-    """Keep experiment management and export behind the administrator gate."""
+    """Keep explicit blind-answer reveal and bulk export administrator-only."""
 
     await asyncio.to_thread(_admin_identity, request)
 
 
-router = APIRouter(dependencies=[Depends(_require_intent_writer)])
+router = APIRouter(dependencies=[Depends(_require_intent_viewer)])
 MAX_LABEL_REQUEST_BYTES = 512 * 1024
 MAX_EXPERIMENT_REQUEST_BYTES = 64 * 1024
 MAX_COMMENT_REQUEST_BYTES = 8 * 1024
+
+
+def _intent_summary_payload(dataset_id: str, identity: Any, experiment_id: str,
+                            assignees: tuple[str, ...], reveal_answers: bool,
+                            page: int, page_size: int) -> dict[str, Any]:
+    try:
+        case_ids = intent_dataset_registry.case_ids(dataset_id)
+    except KeyError as exc:
+        raise _detail(404, str(exc)) from exc
+    experiments = database.list_intent_experiments(dataset_id)
+    if experiment_id and not any(item["id"] == experiment_id for item in experiments):
+        raise _detail(404, "实验不属于当前数据集。")
+    data = database.intent_report_rows(dataset_id)
+    report = summarize_intent(data, case_ids, username=identity.username,
+                              experiment_id=experiment_id, assignees=assignees,
+                              reveal_answers=reveal_answers, page=page, page_size=page_size)
+    report["experiments"] = [{"id": item["id"], "name": item["name"]} for item in experiments]
+    assignment_owners = {row["username"] for row in data["assignments"]
+                         if not experiment_id or row["experiment_id"] == experiment_id}
+    head_owners = {row["username"] for row in data["heads"]} if not experiment_id else set()
+    report["owners"] = sorted(assignment_owners | head_owners)
+    return report
+
+
+@router.get("/api/intent-summary")
+async def intent_summary(request: Request, dataset_id: str, experiment_id: str = "",
+                         assignee: list[str] = Query(default=[]), reveal_answers: bool = False,
+                         page: int = 1, page_size: int = 20) -> dict[str, Any]:
+    identity = await asyncio.to_thread(_intent_identity, request)
+    if reveal_answers:
+        await asyncio.to_thread(_admin_identity, request)
+    return await asyncio.to_thread(_intent_summary_payload, dataset_id, identity,
+                                   experiment_id, tuple(assignee[:20]), reveal_answers,
+                                   page, page_size)
 
 
 def _empty_labels(dataset_id: str, case_id: str) -> dict[str, Any]:
@@ -116,7 +159,7 @@ async def list_intent_assignees(
 
 
 @router.get(
-    "/api/intent-experiments", dependencies=[Depends(_require_intent_admin)]
+    "/api/intent-experiments"
 )
 async def list_intent_experiments(dataset_id: str = "") -> dict[str, Any]:
     if dataset_id:
@@ -133,13 +176,13 @@ async def list_intent_experiments(dataset_id: str = "") -> dict[str, Any]:
         "eligible_members": [
             {"username": item["username"], "role": item["role"]}
             for item in users
-            if item["role"] in {"writer", "admin"}
+            if item["intent_permission"] in {"manage", "annotate"}
         ],
     }
 
 
 @router.post(
-    "/api/intent-experiments", dependencies=[Depends(_require_intent_admin)]
+    "/api/intent-experiments", dependencies=[Depends(_require_intent_manager)]
 )
 async def create_intent_experiment(request: Request) -> dict[str, Any]:
     raw = await request.body()
@@ -186,7 +229,7 @@ async def create_intent_experiment(request: Request) -> dict[str, Any]:
     elif not 1 <= overlap_reviewers <= len(members):
         raise _detail(400, f"每个 Case 的标注人数必须在 1 到 {len(members)} 之间。")
     access_users = await asyncio.to_thread(database.list_access_users)
-    eligible = {item["username"] for item in access_users if item["role"] in {"writer", "admin"}}
+    eligible = {item["username"] for item in access_users if item["intent_permission"] in {"manage", "annotate"}}
     unknown = [member for member in members if member not in eligible]
     if unknown:
         raise _detail(400, f"以下成员没有 Dashboard 写入权限：{', '.join(unknown)}")
@@ -200,7 +243,7 @@ async def create_intent_experiment(request: Request) -> dict[str, Any]:
     assignments = build_intent_experiment_assignments(
         selected_cases, members, mode, overlap_ratio, seed, overlap_reviewers
     )
-    identity = await asyncio.to_thread(_admin_identity, request)
+    identity = await asyncio.to_thread(_intent_identity, request, "manage")
     experiment = await asyncio.to_thread(
         database.create_intent_experiment,
         experiment_id=str(uuid.uuid4()),
@@ -224,10 +267,10 @@ async def create_intent_experiment(request: Request) -> dict[str, Any]:
 
 @router.post(
     "/api/intent-experiments/{experiment_id}/close",
-    dependencies=[Depends(_require_intent_admin)],
+    dependencies=[Depends(_require_intent_manager)],
 )
 async def close_intent_experiment(experiment_id: str, request: Request) -> dict[str, Any]:
-    identity = await asyncio.to_thread(_admin_identity, request)
+    identity = await asyncio.to_thread(_intent_identity, request, "manage")
     experiment = await asyncio.to_thread(
         database.close_intent_experiment,
         experiment_id,
@@ -451,7 +494,7 @@ async def get_intent_timeline(
     return {"items": payload["timepoints"], "count": len(payload["timepoints"])}
 
 
-@router.post("/api/intent-datasets/{dataset_id}/cases/{case_id}/comments")
+@router.post("/api/intent-datasets/{dataset_id}/cases/{case_id}/comments", dependencies=[Depends(_require_intent_writer)])
 async def post_intent_comment(
     request: Request, dataset_id: str, case_id: str
 ) -> dict[str, Any]:
@@ -596,7 +639,7 @@ async def export_intent_labels(
     )
 
 
-@router.put("/api/intent-datasets/{dataset_id}/cases/{case_id}/labels")
+@router.put("/api/intent-datasets/{dataset_id}/cases/{case_id}/labels", dependencies=[Depends(_require_intent_writer)])
 async def put_intent_labels(
     dataset_id: str, case_id: str, request: Request
 ) -> dict[str, Any]:

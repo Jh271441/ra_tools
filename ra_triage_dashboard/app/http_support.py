@@ -451,16 +451,20 @@ def _admin_identity(request: Request):
     return identity
 
 
-def _intent_identity(request: Request):
-    """Allow verified writers to label while retaining admin-only management."""
+def _intent_identity(request: Request, permission: str = "view"):
+    """Independent intent capability; neither SSO nor navigation grants writes."""
 
     identity = request_identity(request, settings)
     if not (
         identity.verified
         and identity.username
-        and database.access_role(identity.username) in {"writer", "admin"}
+        and database.intent_permission(identity.username) in {
+            "view": {"view", "annotate", "manage"},
+            "annotate": {"annotate", "manage"},
+            "manage": {"manage"},
+        }[permission]
     ):
-        raise _detail(403, "意图标注仅限已授权标注人。")
+        raise _detail(403, "当前账号没有此标注操作的权限，请联系管理员。")
     return identity
 
 

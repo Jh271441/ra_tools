@@ -107,7 +107,7 @@ class DatabaseAccessMixin:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT username, role, created_by, created_at, updated_at
+                SELECT username, role, intent_permission, created_by, created_at, updated_at
                 FROM access_users
                 ORDER BY CASE role WHEN 'admin' THEN 0 ELSE 1 END,
                          username ASC
@@ -115,17 +115,27 @@ class DatabaseAccessMixin:
             ).fetchall()
         return [{key: row[key] for key in row.keys()} for row in rows]
 
+    def intent_permission(self, username: str) -> str:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT intent_permission FROM access_users WHERE username = ?",
+                (str(username or "").strip().lower(),),
+            ).fetchone()
+        return str(row["intent_permission"]) if row else ""
+
     def set_access_user(
-        self, *, username: str, role: str, actor: str
+        self, *, username: str, role: str, actor: str, intent_permission: str | None = None
     ) -> dict[str, Any]:
         normalized = str(username or "").strip().lower()
         normalized_role = str(role or "").strip().lower()
         if normalized_role not in ACCESS_ROLES:
             raise ValueError("权限角色必须是 writer 或 admin。")
+        if intent_permission is not None and intent_permission not in {"manage", "annotate", "view"}:
+            raise ValueError("标注权限必须是 manage、annotate 或 view。")
         now = utc_now()
         with self._write_lock, self.connect() as conn:
             current = conn.execute(
-                "SELECT role FROM access_users WHERE username = ?",
+                "SELECT role, intent_permission FROM access_users WHERE username = ?",
                 (normalized,),
             ).fetchone()
             if current and current["role"] == "admin" and normalized_role != "admin":
@@ -136,17 +146,17 @@ class DatabaseAccessMixin:
                     raise ValueError("不能降级唯一的管理员。")
             if current:
                 conn.execute(
-                    "UPDATE access_users SET role = ?, updated_at = ? WHERE username = ?",
-                    (normalized_role, now, normalized),
+                    "UPDATE access_users SET role = ?, intent_permission = ?, updated_at = ? WHERE username = ?",
+                    (normalized_role, intent_permission or current["intent_permission"], now, normalized),
                 )
             else:
                 conn.execute(
                     """
                     INSERT INTO access_users (
-                        username, role, created_by, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?)
+                        username, role, intent_permission, created_by, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
                     """,
-                    (normalized, normalized_role, actor, now, now),
+                    (normalized, normalized_role, intent_permission or "manage", actor, now, now),
                 )
             conn.execute(
                 """

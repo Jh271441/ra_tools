@@ -940,6 +940,7 @@ class DatabaseCoreMixin:
             self._ensure_column(conn, "annotations", "author_verified", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "annotations", "mentions_json", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_column(conn, "mention_users", "display_name", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "access_users", "intent_permission", "TEXT NOT NULL DEFAULT 'manage'")
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_annotations_issue_run_id "
                 "ON annotations(issue_id, model_run_id, id DESC)"

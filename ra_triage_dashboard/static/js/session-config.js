@@ -74,9 +74,16 @@ function renderSession() {
   const userManagementNav = $("#userManagementNavButton");
   if (userManagementNav) userManagementNav.hidden = !state.session.is_admin;
   const intentLabelingNav = $("#intentLabelingNavButton");
-  if (intentLabelingNav) intentLabelingNav.hidden = !["writer", "admin"].includes(state.session.access_role);
+  if (intentLabelingNav) intentLabelingNav.hidden = !state.session.can_view_intent;
   const intentExperimentsNav = $("#intentExperimentsNavButton");
-  if (intentExperimentsNav) intentExperimentsNav.hidden = !state.session.is_admin;
+  if (intentExperimentsNav) intentExperimentsNav.hidden = !state.session.can_view_intent;
+  $("#intentExperimentForm")?.closest(".intent-experiment-create")?.classList.toggle("hidden", !state.session.can_manage_intent);
+  $("#intentExperimentsPage")?.classList.toggle("is-readonly", state.session.can_view_intent && !state.session.can_manage_intent);
+  const intentSummaryNav = $("#intentSummaryNavButton");
+  if (intentSummaryNav) intentSummaryNav.hidden = !state.session.can_view_intent;
+  document.querySelectorAll("[data-intent-frame-axis], [data-intent-aggregate-axis], #intentRestoreBatchPrefill, #intentCommentForm textarea, #intentCommentForm button[type='submit']").forEach((element) => {
+    element.disabled = state.session.can_annotate_intent === false;
+  });
   const runComparisonNav = $("#runComparisonNavButton");
   if (runComparisonNav) runComparisonNav.hidden = false;
   const batchActor = $("#batchActorSummary");
@@ -120,6 +127,10 @@ async function loadSession() {
     verified: false,
     is_admin: false,
     access_role: "viewer",
+    intent_permission: "",
+    can_view_intent: false,
+    can_annotate_intent: false,
+    can_manage_intent: false,
     can_manage_team_default: false,
     can_write: serverSession.can_write !== false,
     read_only: Boolean(serverSession.read_only),
@@ -398,6 +409,7 @@ function renderAccessUsers() {
     <div class="access-row" data-access-user="${escapeHtml(item.username)}">
       <div class="access-identity"><strong>${escapeHtml(item.username)}</strong><small>${escapeHtml(item.role === "admin" ? t("access.admin_user") : t("access.writer_user"))}</small></div>
       <select data-access-role aria-label="${escapeHtml(t("access.role_aria", { user: item.username }))}"><option value="writer"${item.role === "writer" ? " selected" : ""}>${escapeHtml(t("access.writer"))}</option><option value="admin"${item.role === "admin" ? " selected" : ""}>${escapeHtml(t("access.admin"))}</option></select>
+      <select data-intent-permission aria-label="${escapeHtml(item.username)} 的标注权限"><option value="manage"${item.intent_permission === "manage" ? " selected" : ""}>创建与分配</option><option value="annotate"${item.intent_permission === "annotate" ? " selected" : ""}>仅标注</option><option value="view"${item.intent_permission === "view" ? " selected" : ""}>仅查看</option></select>
       <div class="access-row-actions"><button class="button button-quiet" type="button" data-save-access-user>${escapeHtml(t("access.save"))}</button><button class="button button-danger" type="button" data-remove-access-user>${escapeHtml(t("access.remove"))}</button></div>
     </div>
   `).join("");
@@ -451,10 +463,10 @@ async function saveMentionUser(username, enabled) {
   await loadMentionUsers();
 }
 
-async function saveAccessUser(username, role) {
+async function saveAccessUser(username, role, intentPermission = "manage") {
   const result = await api(`/api/access-users/${encodeURIComponent(username)}`, {
     method: "PUT",
-    body: JSON.stringify({ role }),
+    body: JSON.stringify({ role, intent_permission: intentPermission }),
   });
   acknowledgeLocalChange(result);
   await Promise.all([loadAccessUsers(), loadMentionUsers()]);

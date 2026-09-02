@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-300`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-301`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -73,23 +73,29 @@
           </div>
 
         <nav class="sidebar-nav" aria-label="工作台工具">
+          <div class="sidebar-group-label sidebar-label review-group-label">判错复核</div>
           <a class="sidebar-item active" id="reviewNavButton" data-page-target="review" data-app-path="/review" href="/review" title="判错复核">
             <span class="sidebar-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="3.5" y="4.5" width="17" height="16" rx="3"/><path d="M8 4h8M9 3v3m6-3v3M7 5H5.8A1.8 1.8 0 0 0 4 6.8v11.4A1.8 1.8 0 0 0 5.8 20h12.4a1.8 1.8 0 0 0 1.8-1.8V6.8A1.8 1.8 0 0 0 18.2 5H17"/><path class="icon-emphasis" d="m8 12 2.1 2.1L16.4 8.8"/><path d="M8 17h8"/></svg>
             </span>
             <span class="sidebar-label"><strong class="ui-lang-zh">判错复核</strong><strong class="ui-lang-en">Failure review</strong></span>
           </a>
+          <div class="sidebar-group-label sidebar-label intent-group-label">意图标注</div>
           <a class="sidebar-item" id="intentLabelingNavButton" data-page-target="intent" data-app-path="/intent-labeling" href="/intent-labeling" title="意图标注" hidden>
             <span class="sidebar-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="4" y="3.5" width="16" height="17" rx="3"/><path d="M8 8h8M8 12h5M8 16h8"/><path class="icon-emphasis" d="m14 13 2 2 4-5"/></svg>
             </span>
             <span class="sidebar-label"><strong class="ui-lang-zh">意图标注 <small class="nav-beta">内测</small></strong><strong class="ui-lang-en">Intent labeling <small class="nav-beta">Beta</small></strong></span>
           </a>
-          <a class="sidebar-item" id="intentExperimentsNavButton" data-page-target="intent-experiments" data-app-path="/intent-experiments" href="/intent-experiments" title="多盲实验分配（管理员）" hidden>
+          <a class="sidebar-item" id="intentExperimentsNavButton" data-page-target="intent-experiments" data-app-path="/intent-experiments" href="/intent-experiments" title="多盲实验分配" hidden>
             <span class="sidebar-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 5h16v14H4z"/><circle cx="8" cy="10" r="2"/><circle cx="16" cy="10" r="2"/><path d="M5.5 17c.4-2.3 1.5-3.5 3.5-3.5s3.1 1.2 3.5 3.5m-1 0c.4-2.3 1.5-3.5 3.5-3.5s3.1 1.2 3.5 3.5"/><path class="icon-emphasis" d="M7 5V3m10 2V3"/></svg>
             </span>
             <span class="sidebar-label"><strong class="ui-lang-zh">实验分配 <small class="nav-beta">内测</small></strong><strong class="ui-lang-en">Experiment assignment <small class="nav-beta">Beta</small></strong></span>
+          </a>
+          <a class="sidebar-item" id="intentSummaryNavButton" data-page-target="intent-summary" data-app-path="/intent-summary" href="/intent-summary" title="意图轨迹标注汇总" hidden>
+            <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 5h16v14H4z"/><path d="M7 16v-4m5 4V8m5 8v-6M6 19h13"/></svg></span>
+            <span class="sidebar-label"><strong>标注汇总</strong></span>
           </a>
           <a class="sidebar-item" id="reviewAnalysisNavButton" data-page-target="analysis" data-app-path="/review-analysis" href="/review-analysis" title="Review 原因聚类">
             <span class="sidebar-icon" aria-hidden="true">
@@ -398,7 +404,7 @@
           <section class="app-page intent-experiment-page hidden" id="intentExperimentsPage" data-page="intent-experiments">
             <section class="intent-experiment-panel" aria-labelledby="intentExperimentTitle">
               <header class="intent-experiment-header">
-                <div><span class="intent-admin-badge">管理员</span><h3 id="intentExperimentTitle">多盲实验与任务分配</h3><p>创建独立实验并生成不可变分配快照；实验关闭后仍保留审计记录，不会清空标注。</p></div>
+                <div><span class="intent-admin-badge">标注权限</span><h3 id="intentExperimentTitle">多盲实验与任务分配</h3><p>具有“创建与分配”权限的人员可创建独立实验；所有意图成员均可查看实验记录。</p></div>
               </header>
               <div class="intent-experiment-layout">
                 <section class="intent-experiment-create" aria-labelledby="intentExperimentCreateTitle">
@@ -421,6 +427,17 @@
                 </section>
               </div>
             </section>
+          </section>
+
+          <section class="app-page intent-summary-page hidden" id="intentSummaryPage" data-page="intent-summary">
+            <section class="intent-summary-filters page-card">
+              <div class="intent-command-field"><span>实验分配</span><div class="ui-select" id="intentSummaryExperimentPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">全部实验</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="intentSummaryExperiment"></select></div></div>
+              <div class="intent-command-field"><span>任务负责人</span><div class="multi-filter" id="intentSummaryAssignees" data-placeholder="全部负责人"></div></div>
+              <button class="button button-quiet" id="intentSummaryRefresh" type="button">刷新汇总</button>
+              <button class="button button-quiet" id="intentSummaryReveal" type="button" hidden>管理员解盲</button>
+            </section>
+            <section class="intent-summary-metrics" id="intentSummaryMetrics"></section>
+            <section class="page-card intent-summary-table-card"><header><h2>意图轨迹标注汇总</h2><p id="intentSummarySafety">进行中的盲标实验仅显示自己的答案。</p></header><div class="table-scroll"><table><thead><tr><th>Issue / Case</th><th>标注人</th><th>Routing</th><th>变道意图</th><th>轨迹修改</th><th>更新时间</th></tr></thead><tbody id="intentSummaryRows"></tbody></table></div><footer class="intent-summary-pagination"><button class="button button-quiet" id="intentSummaryPrevious" type="button">上一页</button><span id="intentSummaryPageState">1 / 1</span><button class="button button-quiet" id="intentSummaryNext" type="button">下一页</button></footer></section>
           </section>
 
           <section class="app-page tool-page analysis-page hidden" id="reviewAnalysisPage" data-page="analysis">
@@ -1205,9 +1222,10 @@
                   <p><span class="ui-lang-zh">未列出的 SSO 用户与裸 IP 访问均为只读。</span><span class="ui-lang-en">Unlisted SSO users and direct-IP sessions are read-only.</span></p>
                 </div>
               </div>
-              <form class="access-create" id="accessUserForm">
+              <form class="access-create access-create-permissions" id="accessUserForm">
                 <label><span class="ui-lang-zh">用户名</span><span class="ui-lang-en">Username</span><input id="accessUserName" maxlength="64" autocomplete="off" data-placeholder-zh="例如 xuhaoxuan_i" data-placeholder-en="e.g. xuhaoxuan_i" placeholder="例如 xuhaoxuan_i" /></label>
                 <label><span class="ui-lang-zh">权限</span><span class="ui-lang-en">Role</span><select id="accessUserRole"><option value="writer" data-i18n="access.writer">可写</option><option value="admin" data-i18n="access.admin">管理员</option></select></label>
+                <label><span>标注权限</span><select id="accessIntentPermission"><option value="manage">创建与分配</option><option value="annotate">仅标注</option><option value="view">仅查看</option></select></label>
                 <button class="button button-primary" type="submit"><span class="ui-lang-zh">添加用户</span><span class="ui-lang-en">Add user</span></button>
               </form>
               <div class="access-list" id="accessUserList"><div class="no-asset" data-i18n="access.loading">正在加载用户权限…</div></div>
@@ -1762,7 +1780,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-300`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-301`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

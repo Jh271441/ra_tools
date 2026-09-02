@@ -12,7 +12,7 @@ INTENT_ROUTER = (ROOT / "app" / "routers" / "intent_labeling.py").read_text(
 
 
 class IntentLabelingAccessContractTest(unittest.TestCase):
-    def test_labeling_requires_writer_and_experiment_management_requires_admin(self) -> None:
+    def test_intent_capabilities_separate_view_annotation_management_and_reveal(self) -> None:
         page_start = CORE_ROUTER.index('@router.get("/intent-labeling"')
         page_block = CORE_ROUTER[page_start : page_start + 650]
         self.assertIn("intent_labeling_page(request: Request)", page_block)
@@ -21,19 +21,20 @@ class IntentLabelingAccessContractTest(unittest.TestCase):
         experiments_start = CORE_ROUTER.index('@router.get("/intent-experiments"')
         experiments_block = CORE_ROUTER[experiments_start : experiments_start + 650]
         self.assertIn("intent_experiments_page(request: Request)", experiments_block)
-        self.assertIn("_admin_identity, request", experiments_block)
+        self.assertIn("_intent_identity, request", experiments_block)
 
         self.assertIn("async def _require_intent_writer(request: Request)", INTENT_ROUTER)
-        self.assertIn("async def _require_intent_admin(request: Request)", INTENT_ROUTER)
+        self.assertIn("async def _require_intent_manager(request: Request)", INTENT_ROUTER)
         self.assertIn("_intent_identity, request", INTENT_ROUTER)
         self.assertIn(
-            "router = APIRouter(dependencies=[Depends(_require_intent_writer)])",
+            "router = APIRouter(dependencies=[Depends(_require_intent_viewer)])",
             INTENT_ROUTER,
         )
-        self.assertGreaterEqual(INTENT_ROUTER.count("Depends(_require_intent_admin)"), 3)
+        self.assertGreaterEqual(INTENT_ROUTER.count("Depends(_require_intent_manager)"), 2)
+        self.assertIn("Depends(_require_intent_writer)", INTENT_ROUTER)
         self.assertIn('"/api/intent-experiments"', INTENT_ROUTER)
         self.assertIn('"/api/intent-experiments/{experiment_id}/close"', INTENT_ROUTER)
-        self.assertIn('cases/{case_id}/comments")', INTENT_ROUTER)
+        self.assertIn('cases/{case_id}/comments"', INTENT_ROUTER)
         self.assertIn('"answers_revealed": answers_revealed', INTENT_ROUTER)
         self.assertIn("if reveal_answers:", INTENT_ROUTER)
         self.assertIn("await asyncio.to_thread(_admin_identity, request)", INTENT_ROUTER)
