@@ -128,6 +128,8 @@ function renderIntentExperiments() {
   const container = $("#intentExperimentList");
   if (!container) return;
   const experiments = state.intentLabeling.experiments || [];
+  const count = $("#intentExperimentCount");
+  if (count) count.textContent = String(experiments.length);
   container.innerHTML = experiments.length ? experiments.map((item) => {
     const members = (item.members || []).map((member) => {
       const detail = item.annotation_mode === "full"
@@ -142,7 +144,7 @@ function renderIntentExperiments() {
       <div class="intent-experiment-member-stats">${members}</div>
       ${item.status === "active" ? '<div class="intent-experiment-actions"><button class="button button-quiet" type="button" data-close-intent-experiment>关闭实验</button></div>' : ""}
     </article>`;
-  }).join("") : '<div class="empty-note">这个数据集尚未创建多盲实验。</div>';
+  }).join("") : '<div class="intent-experiment-empty"><span aria-hidden="true">◎</span><strong>这个数据集尚未创建实验</strong><p>在左侧完成配置后，实验与每位成员的任务量会显示在这里。</p></div>';
   container.querySelectorAll("[data-close-intent-experiment]").forEach((button) => {
     button.addEventListener("click", () => {
       const experimentId = button.closest("[data-intent-experiment]")?.dataset.intentExperiment;
