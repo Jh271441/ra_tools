@@ -518,12 +518,10 @@ function handleIntentShortcut(event) {
   }
   if (event.shiftKey) return;
   const actions = {
-    ArrowLeft: () => intentMoveFrame(-1),
-    ArrowRight: () => intentMoveFrame(1),
+    ArrowUp: () => intentNavigateCase(-1),
+    ArrowDown: () => intentNavigateCase(1),
     BracketLeft: () => intentMoveFrame(-1),
     BracketRight: () => intentMoveFrame(1),
-    PageUp: () => intentNavigateCase(-1),
-    PageDown: () => intentNavigateCase(1),
     KeyB: () => openIntentMedia("bev"),
     KeyC: () => openIntentMedia("camera"),
     Digit0: () => intentRestoreBatchPrefill(),

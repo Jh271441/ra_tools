@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-284`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-285`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -318,16 +318,19 @@
               <label><span>媒体时间点</span><select id="intentTimepointSelect"></select></label>
               <span class="intent-save-state" id="intentSaveState">尚未修改</span>
               <div class="intent-command-actions">
-                <button class="button button-quiet" id="intentPreviousCase" type="button"><kbd>PageUp</kbd> 上一 Issue</button>
+                <button class="button button-quiet" id="intentPreviousCase" type="button" aria-keyshortcuts="ArrowUp"><kbd>↑</kbd> 上一 Issue</button>
                 <button class="button button-quiet" id="intentPreviousFrame" type="button"><kbd>[</kbd> 上一帧</button>
                 <button class="button button-quiet" id="intentNextFrame" type="button">下一帧 <kbd>]</kbd></button>
-                <button class="button button-quiet" id="intentNextCase" type="button">下一 Issue <kbd>PageDown</kbd></button>
+                <button class="button button-quiet" id="intentNextCase" type="button" aria-keyshortcuts="ArrowDown">下一 Issue <kbd>↓</kbd></button>
               </div>
             </section>
             <div class="intent-workspace">
               <div class="intent-main-column">
                 <section class="intent-media-panel">
-                  <header><h2 id="intentMediaHeading">Camera + BEV</h2></header>
+                  <header>
+                    <h2 id="intentMediaHeading">Camera + BEV</h2>
+                    <dl class="intent-media-header-meta" aria-label="当前 Issue 信息"><div><dt>Issue</dt><dd id="intentIssueId">—</dd></div><div><dt>Episode</dt><dd id="intentCaseId">—</dd></div><div><dt>场景集</dt><dd id="intentSceneSet">—</dd></div><div><dt>时间点</dt><dd id="intentFrameCount">—</dd></div></dl>
+                  </header>
                   <div class="intent-media-grid">
                     <figure class="intent-media-card"><figcaption><span class="intent-media-caption">Camera 102 <span id="intentCameraDelta"></span></span><button class="intent-media-open" type="button" data-intent-open-media="camera" aria-label="打开 Camera 大图">打开大图 <kbd>C</kbd></button></figcaption><div class="intent-media-stage" data-intent-media-stage="camera"><img id="intentCameraImage" alt="当前 Camera 帧" draggable="false"/><div class="intent-media-missing" id="intentCameraMissing">当前时间点无 Camera</div><div class="intent-media-zoom" data-intent-media-controls="camera"><button type="button" data-intent-media-zoom="out" aria-label="缩小 Camera">−</button><button type="button" data-intent-media-zoom="reset" id="intentCameraZoomLevel" aria-label="恢复 Camera 到 100%">100%</button><button type="button" data-intent-media-zoom="in" aria-label="放大 Camera">＋</button></div></div></figure>
                     <figure class="intent-media-card"><figcaption><span class="intent-media-caption">BEV</span><button class="intent-media-open" type="button" data-intent-open-media="bev" aria-label="打开 BEV 大图">打开大图 <kbd>B</kbd></button></figcaption><div class="intent-media-stage" data-intent-media-stage="bev"><img id="intentBevImage" alt="当前 BEV 帧" draggable="false"/><div class="intent-media-missing" id="intentBevMissing">当前时间点无 BEV</div><div class="intent-media-zoom" data-intent-media-controls="bev"><button type="button" data-intent-media-zoom="out" aria-label="缩小 BEV">−</button><button type="button" data-intent-media-zoom="reset" id="intentBevZoomLevel" aria-label="恢复 BEV 到 100%">100%</button><button type="button" data-intent-media-zoom="in" aria-label="放大 BEV">＋</button></div></div></figure>
@@ -338,13 +341,12 @@
                 </section>
               </div>
               <aside class="intent-label-rail">
-                <section class="intent-card"><h3>Issue 信息</h3><dl class="intent-case-meta"><dt>Issue</dt><dd id="intentIssueId">—</dd><dt>Episode</dt><dd id="intentCaseId">—</dd><dt>场景集</dt><dd id="intentSceneSet">—</dd><dt>时间点</dt><dd id="intentFrameCount">—</dd></dl></section>
                 <section class="intent-card"><h3>批量预填（全部时间点） <small>一次选择会填入全部帧；之后仍可单独修改任意帧</small></h3><h4>Routing 意图</h4><div class="intent-label-grid intent-routing-grid" id="intentAggregateRouting">
                   <button type="button" data-intent-aggregate-axis="routing" data-value="left_turn" aria-keyshortcuts="Shift+1"><kbd>⇧1</kbd>左转</button><button type="button" data-intent-aggregate-axis="routing" data-value="right_turn" aria-keyshortcuts="Shift+2"><kbd>⇧2</kbd>右转</button><button type="button" data-intent-aggregate-axis="routing" data-value="straight" aria-keyshortcuts="Shift+3"><kbd>⇧3</kbd>直行</button><button type="button" data-intent-aggregate-axis="routing" data-value="u_turn" aria-keyshortcuts="Shift+4"><kbd>⇧4</kbd>掉头</button><button type="button" data-intent-aggregate-axis="routing" data-value="parking" aria-keyshortcuts="Shift+5"><kbd>⇧5</kbd>泊车</button>
                 </div><h4>自车变道意图</h4><div class="intent-label-grid" id="intentAggregateLane"><button type="button" data-intent-aggregate-axis="laneChange" data-value="no_lane_change" aria-keyshortcuts="Shift+6"><kbd>⇧6</kbd>非变道</button><button type="button" data-intent-aggregate-axis="laneChange" data-value="lane_change" aria-keyshortcuts="Shift+7"><kbd>⇧7</kbd>变道</button></div><p class="intent-coverage" id="intentCoverage">—</p></section>
                 <section class="intent-card"><h3>当前帧标签 <small id="intentFrameSource">来自批量预填</small></h3><h4>Routing</h4><div class="intent-label-grid intent-routing-grid"><button type="button" data-intent-frame-axis="routing" data-value="left_turn" aria-keyshortcuts="1"><kbd>1</kbd>左转</button><button type="button" data-intent-frame-axis="routing" data-value="right_turn" aria-keyshortcuts="2"><kbd>2</kbd>右转</button><button type="button" data-intent-frame-axis="routing" data-value="straight" aria-keyshortcuts="3"><kbd>3</kbd>直行</button><button type="button" data-intent-frame-axis="routing" data-value="u_turn" aria-keyshortcuts="4"><kbd>4</kbd>掉头</button><button type="button" data-intent-frame-axis="routing" data-value="parking" aria-keyshortcuts="5"><kbd>5</kbd>泊车</button></div><h4>变道意图</h4><div class="intent-label-grid"><button type="button" data-intent-frame-axis="laneChange" data-value="no_lane_change" aria-keyshortcuts="6"><kbd>6</kbd>非变道</button><button type="button" data-intent-frame-axis="laneChange" data-value="lane_change" aria-keyshortcuts="7"><kbd>7</kbd>变道</button></div><button class="button button-quiet intent-restore-button" id="intentRestoreBatchPrefill" type="button" aria-keyshortcuts="0">恢复批量预填 <kbd>0</kbd></button></section>
                 <section class="intent-card"><h3>模型建议 <small>仅参考</small></h3><p id="intentSuggestions">当前数据源暂无可信逐帧 Routing 建议；不会自动填充人工标签。</p></section>
-                <section class="intent-card intent-shortcuts"><p>[ / ] 切帧　PageUp / PageDown 切 Issue</p><p>B / C 打开 BEV / Camera 大图　R 刷新当前页</p><button class="button button-quiet" type="button" data-open-shortcut-guide>查看完整快捷键指南 <kbd>H</kbd></button></section>
+                <section class="intent-card intent-shortcuts"><p>[ / ] 切帧　↑ / ↓ 切 Issue</p><p>B / C 打开 BEV / Camera 大图　R 刷新当前页</p><button class="button button-quiet" type="button" data-open-shortcut-guide>查看完整快捷键指南 <kbd>H</kbd></button></section>
               </aside>
             </div>
           </section>
@@ -1336,7 +1338,7 @@
         </div>
         <div class="shortcut-guide-panel" data-shortcut-guide-page="intent" hidden>
           <div class="shortcut-guide-row"><span><kbd>[</kbd><kbd>]</kbd></span><strong>上一帧 / 下一帧</strong></div>
-          <div class="shortcut-guide-row"><span><kbd>PageUp</kbd><kbd>PageDown</kbd></span><strong>上一 Issue / 下一 Issue</strong></div>
+          <div class="shortcut-guide-row"><span><kbd>↑</kbd><kbd>↓</kbd></span><strong>上一 Issue / 下一 Issue</strong></div>
           <div class="shortcut-guide-row"><span><kbd>B</kbd><kbd>C</kbd></span><strong>打开 BEV / Camera 大图</strong></div>
           <div class="shortcut-guide-row"><span><kbd>1</kbd>–<kbd>7</kbd></span><strong>设置当前帧标签</strong></div>
           <div class="shortcut-guide-row"><span><kbd>Shift</kbd> + <kbd>1</kbd>–<kbd>7</kbd></span><strong>批量预填全部时间点</strong></div>
@@ -1659,7 +1661,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-284`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-285`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

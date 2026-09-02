@@ -4781,7 +4781,7 @@ body[data-active-page="intent"] .top-actions { min-width: 0; margin-left: auto; 
 .intent-labeling-page { width: 100%; max-width: 100%; min-width: 0; display: grid; gap: 10px; }
 .intent-commandbar {
   width: 100%; max-width: 100%; min-width: 0; display: grid;
-  grid-template-columns: 250px minmax(260px, 1fr) 170px auto;
+  grid-template-columns: 220px minmax(280px, 420px) 180px auto minmax(560px, 1fr);
   align-items: end; gap: 10px; padding: 10px 14px; border: 1px solid var(--line);
   border-radius: 12px; background: var(--raised);
 }
@@ -4789,7 +4789,7 @@ body[data-active-page="intent"] .top-actions { min-width: 0; margin-left: auto; 
 .intent-commandbar select, .intent-commandbar input { min-width: 0; height: 36px; }
 .intent-case-field { grid-template-columns: minmax(0, 1fr) auto; }
 .intent-case-field > span { grid-column: 1 / -1; }
-.intent-command-actions { min-width: 0; max-width: 100%; grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 7px; justify-content: flex-end; }
+.intent-command-actions { min-width: 0; max-width: 100%; display: grid; grid-template-columns: repeat(4, minmax(112px, 1fr)); gap: 7px; }
 .intent-command-actions .button { white-space: nowrap; }
 .intent-command-actions .button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
 .intent-save-state { align-self: center; color: var(--muted); white-space: nowrap; }
@@ -4797,14 +4797,18 @@ body[data-active-page="intent"] .top-actions { min-width: 0; margin-left: auto; 
 .intent-save-state[data-status="dirty"], .intent-save-state[data-status="saving"] { color: var(--warn); }
 .intent-save-state[data-status="error"] { color: var(--fail); }
 
-.intent-workspace { width: 100%; max-width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 10px; min-width: 0; align-items: start; }
+.intent-workspace { width: 100%; max-width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 440px; gap: 10px; min-width: 0; align-items: start; }
 .intent-main-column { display: grid; gap: 10px; min-width: 0; }
 .intent-media-panel, .intent-timeline-panel, .intent-card {
   border: 1px solid var(--line); border-radius: 12px; background: var(--raised);
 }
 .intent-media-panel { padding: 12px; min-width: 0; }
-.intent-media-panel > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.intent-media-panel > header { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 10px; }
 .intent-media-panel h2 { margin: 0; font-size: 16px; }
+.intent-media-header-meta { min-width: 0; flex: 1 1 auto; display: grid; grid-template-columns: minmax(90px, .8fr) minmax(190px, 1.5fr) minmax(70px, .6fr) minmax(72px, .6fr); gap: 8px 16px; margin: 0; }
+.intent-media-header-meta > div { min-width: 0; display: flex; align-items: baseline; gap: 6px; }
+.intent-media-header-meta dt { flex: 0 0 auto; color: var(--faint); font-size: 9px; }
+.intent-media-header-meta dd { min-width: 0; margin: 0; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .intent-media-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; min-width: 0; }
 .intent-media-card { min-width: 0; margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: #05070a; }
 .intent-media-card figcaption { height: 30px; display: flex; align-items: center; justify-content: space-between; padding: 0 9px; color: #eaf6fa; background: rgba(11, 14, 20, .9); font-size: 12px; }
@@ -4861,23 +4865,27 @@ body[data-active-page="intent"] .top-actions { min-width: 0; margin-left: auto; 
 .intent-shortcuts p + p { margin-top: 3px; }
 .intent-shortcuts .button { width: 100%; margin-top: 9px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 
-.shortcut-guide-dialog .dialog-card { width: min(680px, calc(100vw - 28px)); }
+.shortcut-guide-dialog { width: min(660px, calc(100vw - 28px)); max-width: calc(100vw - 28px); box-sizing: border-box; overflow: hidden; }
+.shortcut-guide-dialog .dialog-card { width: auto; min-width: 0; max-width: 100%; max-height: calc(100dvh - 28px); box-sizing: border-box; overflow-y: auto; }
 .media-decision-summary[hidden] { display: none; }
 .shortcut-guide-panel { display: grid; gap: 7px; margin-top: 14px; }
 .shortcut-guide-panel[hidden] { display: none; }
-.shortcut-guide-row { display: grid; grid-template-columns: minmax(170px, .85fr) minmax(0, 1.15fr); align-items: center; gap: 14px; min-height: 45px; padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--overlay); }
+.shortcut-guide-row { min-width: 0; display: grid; grid-template-columns: minmax(150px, .75fr) minmax(0, 1.25fr); align-items: center; gap: 14px; min-height: 45px; padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--overlay); }
 .shortcut-guide-row > span { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
 .shortcut-guide-row strong { color: var(--text); font-size: 12px; font-weight: 650; }
 .shortcut-guide-footer { margin: 12px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
 
-@media (max-width: 1500px) {
-  .intent-commandbar { grid-template-columns: 220px minmax(260px, 1fr) 150px auto; }
-  .intent-workspace { grid-template-columns: minmax(0, 1fr) 330px; }
+@media (max-width: 1600px) {
+  .intent-commandbar { grid-template-columns: 200px minmax(260px, 1fr) 160px auto; }
+  .intent-command-actions { grid-column: 1 / -1; justify-self: end; width: min(100%, 660px); }
+  .intent-workspace { grid-template-columns: minmax(0, 1fr) 400px; }
   .intent-routing-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 1250px) {
   .intent-workspace { grid-template-columns: 1fr; }
   .intent-label-rail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .intent-media-panel > header { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .intent-media-header-meta { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 800px) {
   .intent-commandbar { grid-template-columns: 1fr; }
