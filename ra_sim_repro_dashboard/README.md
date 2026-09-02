@@ -19,12 +19,35 @@ precision = TP / (TP + FP)
 recall    = TP / (TP + FN)
 f1        = 2 * precision * recall / (precision + recall)
 
-sim_repro_rate = sim-triggered source auto-trigger scenarios
-               / source auto-trigger scenarios
+sim_repro_rate = road_behavior_matches / evaluated_three_cohorts
 
-source auto-trigger scenarios = positive_auto + negative_auto
-positive_manual 的路测行为复现要求仿真不自动触发；业务 truth 中仍属于正样本。
+road_behavior_matches = triggered(positive_auto)
+                      + triggered(negative_auto)
+                      + not_triggered(positive_manual)
+
+rolling_sim_precision = projected_tp / (projected_tp + projected_fp)
+rolling_sim_trigger_recall = projected_tp
+                           / (projected_tp
+                              + positive_auto_not_triggered
+                              + positive_manual_not_triggered
+                              + negative_auto_not_triggered)
+
+same_version_sim_business_recall = projected_tp
+                                 / (projected_tp
+                                    + positive_auto_not_triggered
+                                    + positive_manual_not_triggered)
 ```
+
+`positive_manual` 在第一张复现图中要求仿真不自动触发；在当前 Binary
+跨版本评估中，若新 Binary 触发该场景，则按正样本 TP 计入。误触发集
+未触发会单独保存，并计入看板的“仿真全场景触发 Recall”未触发分母。
+
+首页第二张图默认展示各 release 使用自身 binary 跑自身全量场景后，按数易
+`precision_auto_tp` / `precision_auto_fp` / `recall_auto_tp` /
+`recall_manual_fn` 人口分层得到的 P/R；其中 Recall 使用业务口径，不把
+`negative_auto` 未触发计为 FN。`rolling canary` 仅作为可切换的跨版本模式。
+全量 artifact 人口与数易人口的覆盖率必须位于 95%～105%，否则该版本不画预估点，
+避免旧的局部任务或数据更新后的过期样本冒充全量结果。
 
 ## 2. 系统边界
 

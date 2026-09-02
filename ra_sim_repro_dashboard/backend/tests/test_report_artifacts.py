@@ -1,7 +1,10 @@
 import csv
 import json
 
-from app.services.refresh import _summary_from_release_metrics
+from app.services.refresh import (
+    _project_same_version_metrics,
+    _summary_from_release_metrics,
+)
 from app.services.report_artifacts import (
     build_manifest_scenario_index,
     canonical_scenario_id,
@@ -137,7 +140,9 @@ def test_release_metrics_summary_uses_three_cohort_semantics(tmp_path):
     metrics = load_release_metrics({"result_metrics": str(path)}, "v1")
     summary = _summary_from_release_metrics(metrics, {})
 
-    assert summary["sim_repro_rate"] == 0.75
+    assert summary["road_behavior_cases"] == 6
+    assert summary["reproduced_cases"] == 4
+    assert summary["sim_repro_rate"] == 0.6667
     assert summary["positive_auto_repro_rate"] == 0.5
     assert summary["negative_auto_repro_rate"] == 1.0
     assert summary["positive_manual_repro_rate"] == 0.5
@@ -145,6 +150,99 @@ def test_release_metrics_summary_uses_three_cohort_semantics(tmp_path):
     assert summary["recall"] == 0.5
     assert summary["source_gt"]["excluded_scenarios"] == 1
     assert summary["sim_estimate"]["job_id"] == 101
+    assert summary["sim_estimate"]["same_version_cohorts"] == {
+        "positive_auto": {
+            "expected": 2,
+            "evaluated": 2,
+            "triggered": 1,
+            "not_triggered": 1,
+            "trigger_rate": 0.5,
+        },
+        "negative_auto": {
+            "expected": 2,
+            "evaluated": 2,
+            "triggered": 2,
+            "not_triggered": 0,
+            "trigger_rate": 1.0,
+        },
+        "positive_manual": {
+            "expected": 2,
+            "evaluated": 2,
+            "triggered": 1,
+            "not_triggered": 1,
+            "trigger_rate": 0.5,
+        },
+    }
+
+
+def test_same_version_projection_uses_online_populations_and_trigger_rates():
+    projection = _project_same_version_metrics(
+        {
+            "precision_auto_tp": 80,
+            "precision_auto_fp": 20,
+            "recall_auto_tp": 100,
+            "recall_manual_fn": 50,
+        },
+        {
+            "positive_auto": {
+                "expected": 80,
+                "evaluated": 80,
+                "trigger_rate": 0.8,
+            },
+            "negative_auto": {
+                "expected": 20,
+                "evaluated": 20,
+                "trigger_rate": 0.25,
+            },
+            "positive_manual": {
+                "expected": 50,
+                "evaluated": 50,
+                "trigger_rate": 0.6,
+            },
+        },
+    )
+
+    assert projection["available"] is True
+    assert projection["precision_tp"] == 94
+    assert projection["precision_fp"] == 5
+    assert projection["recall_tp"] == 110
+    assert projection["business_recall_fn"] == 40
+    assert projection["negative_auto_not_triggered"] == 15
+    assert projection["sim_precision"] == 94 / 99
+    assert projection["sim_business_recall"] == 110 / 150
+    assert projection["sim_all_cohort_trigger_recall"] == 110 / 165
+
+
+def test_same_version_projection_rejects_stale_partial_population():
+    projection = _project_same_version_metrics(
+        {
+            "precision_auto_tp": 438,
+            "precision_auto_fp": 122,
+            "recall_auto_tp": 438,
+            "recall_manual_fn": 94,
+        },
+        {
+            "positive_auto": {
+                "expected": 141,
+                "evaluated": 141,
+                "trigger_rate": 0.9,
+            },
+            "negative_auto": {
+                "expected": 45,
+                "evaluated": 45,
+                "trigger_rate": 0.9,
+            },
+            "positive_manual": {
+                "expected": 24,
+                "evaluated": 24,
+                "trigger_rate": 0.2,
+            },
+        },
+    )
+
+    assert projection["available"] is False
+    assert projection["reason"] == "population_coverage_out_of_range"
+    assert projection["population_coverage"] == 210 / 654
 
 
 def test_load_binary_backtest_sources_by_target_release(tmp_path):

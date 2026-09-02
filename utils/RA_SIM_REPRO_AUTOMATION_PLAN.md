@@ -100,8 +100,14 @@ Gen4 硬门禁：
   `max_concurrency` 范围为 1～20、默认 20，并作为提交配置精确校验；
 - simulator cache disabled；
 - 每个 task 启用 DPE；
+- `--sim_state_recovery_level=4`，恢复上游规划状态；
 - `--planning_enable_sim_assist_stuck_independent_replay`；
-- binary ID 与 target release 配置一致。
+- 默认 binary ID 与 target release 配置一致；验证代码修复时可显式传入 patched
+  binary ID，但 registry 和结果门禁必须记录并校验实际 binary。
+
+Level-4 与 independent replay 缺一不可：前者用于对齐上游状态，后者避免直接回放
+路测 RA 判定而得到虚假的高复现率。launcher 会移除冲突的 recovery level，finalizer
+会拒绝发布缺 flag、重复 level 或 binary 不一致的任务。
 
 运行中增量检查已完成样本：
 

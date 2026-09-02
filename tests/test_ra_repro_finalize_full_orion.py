@@ -1,6 +1,9 @@
 from copy import deepcopy
+import json
 
-from scripts.ra_repro_finalize_full_orion import _markdown, _overall
+import pytest
+
+from scripts.ra_repro_finalize_full_orion import _markdown, _overall, finalize
 
 
 def _result(*, evaluated, road_matches, truth, complete=True):
@@ -77,6 +80,9 @@ def test_overall_uses_weighted_counts_not_mean_of_release_rates():
       "road_behavior_reproduction"] == 0.1
   assert overall["cohorts"]["negative_auto"][
       "road_behavior_reproduction"] == 0.1
+  assert overall["road_behavior"]["matches"] == 3
+  assert overall["road_behavior"]["evaluated"] == 30
+  assert overall["road_behavior"]["reproduction"] == 0.1
   assert overall["truth"]["precision"] == 2 / 3
   assert overall["truth"]["recall"] == 0.1
   assert overall["truth"]["specificity"] == 0.9
@@ -109,6 +115,7 @@ def test_overall_and_markdown_surface_incomplete_quality_gate():
       "completed": 3,
       "submitted_rows": 3,
       "completed_dpe_covered": 3,
+      "road_behavior_reproduction": 1.0,
       "positive_auto_road_reproduction": 1.0,
       "negative_auto_road_reproduction": 1.0,
       "positive_manual_road_reproduction": 1.0,
@@ -150,3 +157,30 @@ def test_markdown_stays_provisional_while_submitted_task_is_not_terminal():
 
   assert overall["all_tasks_terminal"] is False
   assert overall["report_state"] == "PROVISIONAL"
+
+
+def test_finalize_rejects_uncontrolled_submission(tmp_path, monkeypatch):
+  registry_path = tmp_path / "jobs.json"
+  registry_path.write_text(json.dumps({
+      "gen4-release-20260814": {
+          "job_id": 10,
+          "binary_id": 20,
+          "max_concurrency": 100,
+      }
+  }), encoding="utf-8")
+  monkeypatch.setattr(
+      "scripts.ra_repro_finalize_full_orion.inspect_job_configuration",
+      lambda *args, **kwargs: {
+          "gate_passed": False,
+          "state_recovery_level_mismatches": 1,
+      })
+
+  with pytest.raises(RuntimeError, match="configuration gate failed"):
+    finalize(
+        registry_path,
+        str(tmp_path / "{release}.csv"),
+        "token",
+        tmp_path / "output",
+    )
+
+  assert not (tmp_path / "output.json").exists()

@@ -2,6 +2,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from app.config import config_hash
+from app.api.routes import _public_version_metadata
 from app.database import Base
 from app.models import RefreshJob, Scenario, ScenarioVersionResult, Version
 from app.services import refresh as refresh_module
@@ -27,6 +28,20 @@ def test_normalize_result_raw_preserves_zero_values():
     assert normalized["road_triggered"] is False
     assert normalized["model_score_max"] == 0
     assert normalized["threshold"] == 0
+
+
+def test_public_version_metadata_omits_refresh_runtime_blobs():
+    metadata = {
+        "label": "release v1",
+        "platform_gen": "GEN4_PT",
+        "_source_gt_live": {"total_scenarios": 100},
+        "_result_metrics_live": {"scenario_results": [{"scenario_id": 1}]},
+    }
+
+    assert _public_version_metadata(metadata) == {
+        "label": "release v1",
+        "platform_gen": "GEN4_PT",
+    }
 
 
 def test_source_index_accumulates_groups_and_labels_for_same_scenario():

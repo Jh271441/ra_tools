@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from ra_repro_finalize_binary_backtest import (
     INDEPENDENT_REPLAY_FLAG,
+    STATE_RECOVERY_LEVEL4_FLAG,
     finalize,
     summarize_job_configuration,
     summarize_sources,
@@ -48,6 +49,18 @@ def test_summarize_sources_keeps_release_truth_counts_separate():
   assert sources["v1"]["cohorts"]["positive_auto"]["trigger_rate"] == 1.0
   assert sources["v1"]["cohorts"]["positive_manual"]["trigger_rate"] == 0.0
   assert sources["v1"]["cohorts"]["negative_auto"]["trigger_rate"] == 1.0
+  assert sources["v1"]["positive_auto_not_triggered"] == 0
+  assert sources["v1"]["positive_manual_not_triggered"] == 1
+  assert sources["v1"]["negative_auto_not_triggered"] == 0
+  assert sources["v1"]["business_recall_fn"] == 1
+  assert sources["v1"]["trigger_repro_fn"] == 1
+  assert sources["v1"]["road_behavior_matches"] == 3
+  assert sources["v1"]["road_behavior_reproduction"] == 1.0
+  assert sources["v2"]["business_recall_fn"] == 0
+  assert sources["v2"]["trigger_repro_fn"] == 1
+  assert sources["v2"]["trigger_repro_recall"] == 2 / 3
+  assert sources["v2"]["road_behavior_matches"] == 1
+  assert sources["v2"]["road_behavior_reproduction"] == 1 / 3
   assert sources["v2"]["estimation_method"] == "cohort_poststratification"
 
 
@@ -56,7 +69,9 @@ def test_summarize_job_configuration_requires_all_submission_gates():
       "--binary-id": 1775147,
       "--simulator-cache": "disabled",
       "--enable-dpe": "",
-      "--sim-exec-args": f"--sim_aligned_mode {INDEPENDENT_REPLAY_FLAG}",
+      "--sim-exec-args": (
+          f"--sim_aligned_mode {STATE_RECOVERY_LEVEL4_FLAG} "
+          f"{INDEPENDENT_REPLAY_FLAG}"),
   }
   jobs = [{
       "job_id": 10,
@@ -82,6 +97,16 @@ def test_summarize_job_configuration_requires_all_submission_gates():
   assert controlled_parallel["gate_passed"] is True
   assert controlled_parallel["concurrency_mismatches"] == 0
 
+  controlled_full_parallel = summarize_job_configuration(
+      jobs,
+      1775147,
+      [0, 1, 2],
+      expected_max_concurrency=20,
+      max_allowed_concurrency=100,
+  )
+  assert controlled_full_parallel["gate_passed"] is True
+  assert controlled_full_parallel["max_allowed_concurrency"] == 100
+
   jobs[0]["max_concurrency"] = 21
   too_high = summarize_job_configuration(jobs, 1775147, [0, 1, 2])
   assert too_high["gate_passed"] is False
@@ -99,6 +124,14 @@ def test_summarize_job_configuration_requires_all_submission_gates():
   assert summary["gate_passed"] is False
   assert summary["dpe_disabled"] == 1
   assert summary["independent_replay_missing"] == 1
+  assert summary["state_recovery_level_mismatches"] == 1
+
+  jobs[0]["tasks"][2]["task_args"]["--sim-exec-args"] = (
+      f"--sim_state_recovery_level=3 {STATE_RECOVERY_LEVEL4_FLAG} "
+      f"{INDEPENDENT_REPLAY_FLAG}")
+  conflicting_levels = summarize_job_configuration(jobs, 1775147)
+  assert conflicting_levels["gate_passed"] is False
+  assert conflicting_levels["state_recovery_level_mismatches"] == 1
 
   jobs[0]["tasks"][0]["signature"] = 99
   task_mismatch = summarize_job_configuration(jobs, 1775147, [0, 1, 2])

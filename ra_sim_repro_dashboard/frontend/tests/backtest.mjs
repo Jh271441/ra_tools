@@ -26,10 +26,15 @@ test('post-stratifies equal canary cohorts with online TP FP FN populations', ()
     precisionTp: 110,
     precisionFp: 5,
     recallTp: 110,
-    recallFn: 40,
+    positiveAutoNotTriggered: 20,
+    positiveManualNotTriggered: 20,
+    negativeAutoNotTriggered: 15,
+    businessRecallFn: 40,
+    triggerReproFn: 55,
   });
   assert.equal(result.precisionTp / (result.precisionTp + result.precisionFp), 110 / 115);
-  assert.equal(result.recallTp / (result.recallTp + result.recallFn), 110 / 150);
+  assert.equal(result.recallTp / (result.recallTp + result.businessRecallFn), 110 / 150);
+  assert.equal(result.recallTp / (result.recallTp + result.triggerReproFn), 110 / 165);
 });
 
 test('keeps distinct Shuyi precision and recall numerators', () => {
@@ -54,7 +59,11 @@ test('keeps distinct Shuyi precision and recall numerators', () => {
     precisionTp: 94,
     precisionFp: 5,
     recallTp: 110,
-    recallFn: 40,
+    positiveAutoNotTriggered: 20,
+    positiveManualNotTriggered: 20,
+    negativeAutoNotTriggered: 15,
+    businessRecallFn: 40,
+    triggerReproFn: 55,
   });
 });
 
@@ -72,7 +81,17 @@ test('rejects an incomplete cohort instead of drawing a partial curve', () => {
     },
   }]);
 
-  assert.deepEqual(result, { complete: false, precisionTp: 0, precisionFp: 0, recallTp: 0, recallFn: 0 });
+  assert.deepEqual(result, {
+    complete: false,
+    precisionTp: 0,
+    precisionFp: 0,
+    recallTp: 0,
+    positiveAutoNotTriggered: 0,
+    positiveManualNotTriggered: 0,
+    negativeAutoNotTriggered: 0,
+    businessRecallFn: 0,
+    triggerReproFn: 0,
+  });
 });
 
 test('rejects a cohort with no trigger rate', () => {
@@ -89,7 +108,8 @@ test('rejects a cohort with no trigger rate', () => {
     },
   }]);
 
-  assert.deepEqual(result, { complete: false, precisionTp: 0, precisionFp: 0, recallTp: 0, recallFn: 0 });
+  assert.equal(result.complete, false);
+  assert.equal(result.triggerReproFn, 0);
 });
 
 test('rejects missing online population counts instead of treating them as zero', () => {
@@ -106,5 +126,6 @@ test('rejects missing online population counts instead of treating them as zero'
     },
   }]);
 
-  assert.deepEqual(result, { complete: false, precisionTp: 0, precisionFp: 0, recallTp: 0, recallFn: 0 });
+  assert.equal(result.complete, false);
+  assert.equal(result.triggerReproFn, 0);
 });

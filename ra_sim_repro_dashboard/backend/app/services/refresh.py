@@ -320,6 +320,17 @@ def build_snapshot(db: Session, payload: dict[str, Any] | None = None) -> dict[s
             # Full Trail populations are authoritative for online P/R.  The
             # release simulation manifest must not become a class-weight proxy.
             summary["source_gt"] = online_source_gt
+            same_version_cohorts = (summary.get("sim_estimate") or {}).get(
+                "same_version_cohorts"
+            )
+            if same_version_cohorts:
+                summary["sim_estimate"] = {
+                    **(summary.get("sim_estimate") or {}),
+                    "same_version_projection": _project_same_version_metrics(
+                        online_source_gt,
+                        same_version_cohorts,
+                    ),
+                }
         backtest_sources = load_binary_backtest_sources(payload, version.version_key)
         if backtest_sources:
             summary["sim_estimate"] = {
@@ -541,9 +552,16 @@ def _summary_from_release_metrics(
     auto_evaluated = _int_value(positive_auto.get("evaluated")) + _int_value(
         negative_auto.get("evaluated")
     )
-    auto_reproduced = _int_value(positive_auto.get("triggered")) + _int_value(
-        negative_auto.get("triggered")
+    road_behavior_reproduced = (
+        _int_value(positive_auto.get("triggered"))
+        + _int_value(negative_auto.get("triggered"))
+        + _int_value(positive_manual.get("not_triggered"))
     )
+    if "not_triggered" not in positive_manual:
+        road_behavior_reproduced += (
+            _int_value(positive_manual.get("evaluated"))
+            - _int_value(positive_manual.get("triggered"))
+        )
     tp = _int_value(truth.get("tp"))
     fp = _int_value(truth.get("fp"))
     fn = _int_value(truth.get("fn"))
@@ -558,6 +576,22 @@ def _summary_from_release_metrics(
     job_ids = release_metrics.get("job_id") or []
     if not isinstance(job_ids, list):
         job_ids = [job_ids]
+
+    same_version_cohorts = {}
+    for cohort_name, cohort in (
+        ("positive_auto", positive_auto),
+        ("negative_auto", negative_auto),
+        ("positive_manual", positive_manual),
+    ):
+        cohort_evaluated = _int_value(cohort.get("evaluated"))
+        cohort_triggered = _int_value(cohort.get("triggered"))
+        same_version_cohorts[cohort_name] = {
+            "expected": cohort_evaluated,
+            "evaluated": cohort_evaluated,
+            "triggered": cohort_triggered,
+            "not_triggered": max(cohort_evaluated - cohort_triggered, 0),
+            "trigger_rate": _rate(cohort_triggered, cohort_evaluated),
+        }
 
     source_gt = _source_gt_payload(metadata)
     source_gt.update(
@@ -574,9 +608,10 @@ def _summary_from_release_metrics(
     return {
         "total_cases": evaluated,
         "road_positive_cases": auto_evaluated,
+        "road_behavior_cases": evaluated,
         "sim_positive_cases": tp + fp,
-        "reproduced_cases": auto_reproduced,
-        "sim_repro_rate": _rate(auto_reproduced, auto_evaluated),
+        "reproduced_cases": road_behavior_reproduced,
+        "sim_repro_rate": _rate(road_behavior_reproduced, evaluated),
         "model_repro_rate": 0.0,
         "fn_fallback_rate": 0.0,
         "fp_suppress_rate": specificity,
@@ -611,7 +646,155 @@ def _summary_from_release_metrics(
             "quality": quality,
             "data_source": "full_release_metrics",
             "source_gt_status": metadata.get("_source_gt_status", "manifest"),
+            "same_version_cohorts": same_version_cohorts,
         },
+    }
+
+
+def _project_same_version_metrics(
+    source_gt: dict[str, Any],
+    cohort_matrix: dict[str, Any],
+    minimum_population_coverage: float = 0.95,
+    maximum_population_coverage: float = 1.05,
+) -> dict[str, Any]:
+    """Project one release's full-sim trigger rates onto its Trail population.
+
+    The full-release manifest is close to the online population but is not
+    itself the class-weight authority.  This keeps the three simulation
+    trigger rates and the Shuyi TP/FP/FN populations separate, then performs
+    one-release post-stratification.  A stale/partial manifest (notably the old
+    20260821 snapshot) is returned as unavailable instead of drawing a
+    misleading P/R point.
+    """
+    required_cohorts = ("positive_auto", "negative_auto", "positive_manual")
+    try:
+        precision_auto_tp = int(source_gt["precision_auto_tp"])
+        precision_auto_fp = int(source_gt["precision_auto_fp"])
+        recall_auto_tp = int(source_gt["recall_auto_tp"])
+        recall_manual_fn = int(source_gt["recall_manual_fn"])
+    except (KeyError, TypeError, ValueError):
+        return {
+            "available": False,
+            "reason": "missing_online_population",
+            "estimation_method": "same_version_full_cohort_poststratification",
+        }
+
+    rates: dict[str, float] = {}
+    artifact_population = 0
+    for cohort_name in required_cohorts:
+        cohort = cohort_matrix.get(cohort_name)
+        if not isinstance(cohort, dict):
+            return {
+                "available": False,
+                "reason": f"missing_{cohort_name}_cohort",
+                "estimation_method": "same_version_full_cohort_poststratification",
+            }
+        try:
+            expected = int(cohort["expected"])
+            evaluated = int(cohort["evaluated"])
+            trigger_rate = float(cohort["trigger_rate"])
+        except (KeyError, TypeError, ValueError):
+            return {
+                "available": False,
+                "reason": f"invalid_{cohort_name}_cohort",
+                "estimation_method": "same_version_full_cohort_poststratification",
+            }
+        if (
+            expected <= 0
+            or evaluated != expected
+            or not 0.0 <= trigger_rate <= 1.0
+        ):
+            return {
+                "available": False,
+                "reason": f"incomplete_{cohort_name}_cohort",
+                "estimation_method": "same_version_full_cohort_poststratification",
+            }
+        artifact_population += expected
+        rates[cohort_name] = trigger_rate
+
+    online_population = precision_auto_tp + precision_auto_fp + recall_manual_fn
+    population_coverage = (
+        artifact_population / online_population if online_population else 0.0
+    )
+    base = {
+        "estimation_method": "same_version_full_cohort_poststratification",
+        "artifact_population": artifact_population,
+        "online_population": online_population,
+        "population_coverage": population_coverage,
+        "minimum_population_coverage": minimum_population_coverage,
+        "maximum_population_coverage": maximum_population_coverage,
+        "cohort_trigger_rates": rates,
+    }
+    if not (
+        minimum_population_coverage
+        <= population_coverage
+        <= maximum_population_coverage
+    ):
+        return {
+            **base,
+            "available": False,
+            "reason": "population_coverage_out_of_range",
+        }
+
+    positive_auto_rate = rates["positive_auto"]
+    negative_auto_rate = rates["negative_auto"]
+    positive_manual_rate = rates["positive_manual"]
+    precision_tp = (
+        precision_auto_tp * positive_auto_rate
+        + recall_manual_fn * positive_manual_rate
+    )
+    precision_fp = precision_auto_fp * negative_auto_rate
+    recall_tp = (
+        recall_auto_tp * positive_auto_rate
+        + recall_manual_fn * positive_manual_rate
+    )
+    positive_auto_not_triggered = recall_auto_tp * (1 - positive_auto_rate)
+    positive_manual_not_triggered = recall_manual_fn * (1 - positive_manual_rate)
+    negative_auto_not_triggered = precision_auto_fp * (1 - negative_auto_rate)
+    business_recall_fn = (
+        positive_auto_not_triggered + positive_manual_not_triggered
+    )
+    trigger_repro_fn = business_recall_fn + negative_auto_not_triggered
+
+    online_precision = _rate(precision_auto_tp, precision_auto_tp + precision_auto_fp)
+    online_recall = _rate(recall_auto_tp, recall_auto_tp + recall_manual_fn)
+    sim_precision = (
+        precision_tp / (precision_tp + precision_fp)
+        if precision_tp + precision_fp
+        else 0.0
+    )
+    sim_business_recall = (
+        recall_tp / (recall_tp + business_recall_fn)
+        if recall_tp + business_recall_fn
+        else 0.0
+    )
+    sim_all_cohort_trigger_recall = (
+        recall_tp / (recall_tp + trigger_repro_fn)
+        if recall_tp + trigger_repro_fn
+        else 0.0
+    )
+    return {
+        **base,
+        "available": True,
+        "reason": "",
+        "precision_tp": precision_tp,
+        "precision_fp": precision_fp,
+        "recall_tp": recall_tp,
+        "positive_auto_not_triggered": positive_auto_not_triggered,
+        "positive_manual_not_triggered": positive_manual_not_triggered,
+        "negative_auto_not_triggered": negative_auto_not_triggered,
+        "business_recall_fn": business_recall_fn,
+        "trigger_repro_fn": trigger_repro_fn,
+        "online_precision": online_precision,
+        "online_recall": online_recall,
+        "sim_precision": sim_precision,
+        "sim_business_recall": sim_business_recall,
+        "sim_all_cohort_trigger_recall": sim_all_cohort_trigger_recall,
+        "precision_gap": sim_precision - online_precision,
+        "business_recall_gap": sim_business_recall - online_recall,
+        "all_cohort_trigger_recall_gap": (
+            sim_all_cohort_trigger_recall - online_recall
+        ),
     }
 
 

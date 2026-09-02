@@ -48,3 +48,8 @@ outputs/
 
 # Build/release artifacts
 *.zip
+
+# Local-only RA experiment payloads. Versioned source and receipts live in the
+# cloud experiment branches; raw datasets, predictions, and caches remain here
+# until their destination receives explicit data-transfer approval.
+local_experiment_artifacts/

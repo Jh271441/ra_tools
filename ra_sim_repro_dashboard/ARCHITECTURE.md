@@ -265,14 +265,39 @@ f1        = 2 * precision * recall / (precision + recall)
 仿真复现率：
 
 ```text
-sim_repro_rate = reproduced_auto_trigger_cases / source_auto_trigger_cases
+sim_repro_rate = road_behavior_matches / road_behavior_cases
 ```
 
 其中：
 
-- `source_auto_trigger_cases`: source group 为 `positive_auto` 或 `negative_auto` 的场景。
-- `reproduced_auto_trigger_cases`: 上述 source 自触发场景中 `sim_triggered=true` 的数量。
-- `positive_manual`: 人工触发正样本只参与 `recall = TP / (TP + FN)`，不进入仿真复现率分母。
+- `road_behavior_cases`: `positive_auto` + `negative_auto` + `positive_manual`。
+- `road_behavior_matches`: `positive_auto` 和 `negative_auto` 在仿真中触发，加上
+  `positive_manual` 在仿真中未触发。
+
+当前 Binary 跨版本看板使用三类场景后分层：
+
+```text
+TP = triggered(positive_auto) + triggered(positive_manual)
+FP = triggered(negative_auto)
+
+business_FN = not_triggered(positive_auto)
+            + not_triggered(positive_manual)
+
+trigger_repro_FN = business_FN + not_triggered(negative_auto)
+
+sim_precision = TP / (TP + FP)
+sim_business_recall = TP / (TP + business_FN)
+sim_all_cohort_trigger_recall = TP / (TP + trigger_repro_FN)
+```
+
+首页“同版本全量仿真准召预估”默认使用 `sim_precision` 和
+`sim_business_recall` 与数易线上 P/R 直接比较；
+`sim_all_cohort_trigger_recall` 是行为触发审计指标，不得标为数易 Recall。
+只有三类 cohort 均完成，且 artifact 人口 / 数易人口位于 95%～105% 时才发布该版本
+预估值。当前版本配置可临时排除数据仍在更新、全量覆盖不足的 release。
+
+`not_triggered(negative_auto)` 在标准 truth matrix 中仍是 TN；看板另外把它计入
+“全场景触发 Recall”分母，用于表示路测触发是否被当前 Binary 重现。
 
 ### 8.3 触发类型与根因
 
@@ -418,9 +443,9 @@ flowchart TD
 
 首页总览：
 
-- KPI cards。
-- 版本准召趋势折线图。
-- 复现拆分柱状图。
+- 四张 KPI cards。
+- 连续版本仿真复现评估图。
+- 同版本全量仿真准召预估图；可切换到 rolling canary 跨版本模式。
 - Source GT / Sim Estimate 表。
 - 当前版本 root cause 分布。
 

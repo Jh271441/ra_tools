@@ -73,7 +73,7 @@ def test_summary_rates():
     assert summary["recall"] == 0.5
 
 
-def test_summary_repro_rate_uses_only_auto_trigger_source_groups():
+def test_summary_repro_rate_uses_all_three_road_behavior_cohorts():
     rows = [
         Row(road_triggered=True, sim_triggered=True, precision_label="TP", source_groups=["positive_auto"]),
         Row(road_triggered=True, sim_triggered=False, precision_label="FN", source_groups=["positive_auto"]),
@@ -86,7 +86,8 @@ def test_summary_repro_rate_uses_only_auto_trigger_source_groups():
     summary = summarize_rows(rows)
 
     assert summary["road_positive_cases"] == 4
-    assert summary["reproduced_cases"] == 2
+    assert summary["road_behavior_cases"] == 6
+    assert summary["reproduced_cases"] == 3
     assert summary["sim_repro_rate"] == 0.5
     assert summary["precision"] == 0.6667
     assert summary["recall"] == 0.5

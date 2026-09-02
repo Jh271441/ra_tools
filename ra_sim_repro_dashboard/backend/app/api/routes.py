@@ -59,7 +59,12 @@ def versions(db: DbSession) -> VersionsResponse:
         current_version=str(payload.get("current_version") or ""),
         compare_versions=[str(item) for item in payload.get("compare_versions", [])],
         config_hash=config_hash(payload),
-        versions=[VersionOut.model_validate(row) for row in rows],
+        versions=[
+            VersionOut.model_validate(row).model_copy(
+                update={"metadata_json": _public_version_metadata(row.metadata_json)}
+            )
+            for row in rows
+        ],
     )
 
 
@@ -295,3 +300,12 @@ def _configured_version_keys(payload: dict[str, object] | None = None) -> list[s
     if current:
         keys.append(current)
     return list(dict.fromkeys(keys))
+
+
+def _public_version_metadata(metadata: dict[str, object] | None) -> dict[str, object]:
+    """Hide refresh-runtime blobs from the lightweight versions endpoint."""
+    return {
+        str(key): value
+        for key, value in (metadata or {}).items()
+        if not str(key).startswith("_")
+    }

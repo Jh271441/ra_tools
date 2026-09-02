@@ -3,8 +3,24 @@ export interface PoststratifiedCounts {
   precisionTp: number;
   precisionFp: number;
   recallTp: number;
-  recallFn: number;
+  positiveAutoNotTriggered: number;
+  positiveManualNotTriggered: number;
+  negativeAutoNotTriggered: number;
+  businessRecallFn: number;
+  triggerReproFn: number;
 }
+
+const EMPTY_COUNTS: PoststratifiedCounts = {
+  complete: false,
+  precisionTp: 0,
+  precisionFp: 0,
+  recallTp: 0,
+  positiveAutoNotTriggered: 0,
+  positiveManualNotTriggered: 0,
+  negativeAutoNotTriggered: 0,
+  businessRecallFn: 0,
+  triggerReproFn: 0,
+};
 
 function numeric(value: unknown) {
   if (typeof value === 'number') return value;
@@ -39,15 +55,17 @@ export function poststratifyBacktestWindow(
   matrixRows: Array<Record<string, unknown> | undefined>,
 ): PoststratifiedCounts {
   if (!sourceRows.length || matrixRows.length !== sourceRows.length) {
-    return { complete: false, precisionTp: 0, precisionFp: 0, recallTp: 0, recallFn: 0 };
+    return { ...EMPTY_COUNTS };
   }
   let precisionTp = 0;
   let precisionFp = 0;
   let recallTp = 0;
-  let recallFn = 0;
+  let positiveAutoNotTriggered = 0;
+  let positiveManualNotTriggered = 0;
+  let negativeAutoNotTriggered = 0;
   for (let index = 0; index < matrixRows.length; index += 1) {
     const matrix = matrixRows[index];
-    if (!matrix) return { complete: false, precisionTp: 0, precisionFp: 0, recallTp: 0, recallFn: 0 };
+    if (!matrix) return { ...EMPTY_COUNTS };
     const expected = numeric(matrix.expected);
     const evaluated = numeric(matrix.evaluated);
     const dpeCoverage = numeric(matrix.dpe_coverage);
@@ -58,7 +76,7 @@ export function poststratifyBacktestWindow(
       expected <= 0 || evaluated !== expected || dpeCoverage < 1
       || positiveAutoRate == null || negativeAutoRate == null
       || positiveManualRate == null
-    ) return { complete: false, precisionTp: 0, precisionFp: 0, recallTp: 0, recallFn: 0 };
+    ) return { ...EMPTY_COUNTS };
 
     const source = sourceRows[index];
     const precisionAutoTp = optionalNumeric(
@@ -78,7 +96,7 @@ export function poststratifyBacktestWindow(
       || precisionAutoFp == null || precisionAutoFp < 0
       || recallAutoTp == null || recallAutoTp < 0
       || recallManualFn == null || recallManualFn < 0
-    ) return { complete: false, precisionTp: 0, precisionFp: 0, recallTp: 0, recallFn: 0 };
+    ) return { ...EMPTY_COUNTS };
     precisionTp += (
       precisionAutoTp * positiveAutoRate
       + recallManualFn * positiveManualRate
@@ -88,10 +106,26 @@ export function poststratifyBacktestWindow(
       recallAutoTp * positiveAutoRate
       + recallManualFn * positiveManualRate
     );
-    recallFn += (
-      recallAutoTp * (1 - positiveAutoRate)
-      + recallManualFn * (1 - positiveManualRate)
+    positiveAutoNotTriggered += (
+      recallAutoTp - recallAutoTp * positiveAutoRate
+    );
+    positiveManualNotTriggered += (
+      recallManualFn - recallManualFn * positiveManualRate
+    );
+    negativeAutoNotTriggered += (
+      precisionAutoFp - precisionAutoFp * negativeAutoRate
     );
   }
-  return { complete: true, precisionTp, precisionFp, recallTp, recallFn };
+  const businessRecallFn = positiveAutoNotTriggered + positiveManualNotTriggered;
+  return {
+    complete: true,
+    precisionTp,
+    precisionFp,
+    recallTp,
+    positiveAutoNotTriggered,
+    positiveManualNotTriggered,
+    negativeAutoNotTriggered,
+    businessRecallFn,
+    triggerReproFn: businessRecallFn + negativeAutoNotTriggered,
+  };
 }

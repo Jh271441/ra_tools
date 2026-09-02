@@ -17,6 +17,32 @@ from typing import Any, Sequence
 import pandas as pd
 
 
+INDEPENDENT_REPLAY_FLAG = "--planning_enable_sim_assist_stuck_independent_replay"
+STATE_RECOVERY_LEVEL4_FLAG = "--sim_state_recovery_level=4"
+
+
+def _enable_controlled_ra_replay(task: Any) -> None:
+  """Restore upstream state while independently evaluating current RA code."""
+  exec_args_key = "--sim-exec-args"
+  tokens = str(task.arguments.get(exec_args_key, "")).split()
+  normalized_tokens = []
+  skip_next = False
+  for token in tokens:
+    if skip_next:
+      skip_next = False
+      continue
+    if token == "--sim_state_recovery_level":
+      skip_next = True
+      continue
+    if token.startswith("--sim_state_recovery_level="):
+      continue
+    normalized_tokens.append(token)
+  normalized_tokens.append(STATE_RECOVERY_LEVEL4_FLAG)
+  if INDEPENDENT_REPLAY_FLAG not in normalized_tokens:
+    normalized_tokens.append(INDEPENDENT_REPLAY_FLAG)
+  task.arguments[exec_args_key] = " " + " ".join(normalized_tokens)
+
+
 TEMPLATE_JOBS = {
     "gen4-release-20260605": 45142557,
     "gen4-release-20260612": 45142603,
@@ -85,10 +111,16 @@ def _load_manifest(path: Path, release: str) -> tuple[pd.DataFrame, dict[str, in
   return frame, exclusions
 
 
-def build_and_maybe_launch(manifest_path: Path, release: str,
-                           max_concurrency: int, run_label: str,
-                           execute: bool, token: str | None,
-                           registry_path: Path) -> dict[str, Any]:
+def build_and_maybe_launch(
+    manifest_path: Path,
+    release: str,
+    max_concurrency: int,
+    run_label: str,
+    execute: bool,
+    token: str | None,
+    registry_path: Path,
+    binary_id_override: int | None = None,
+) -> dict[str, Any]:
   (JobAccessor, TaskAccessor, TaskArgKeys, clone_job, launch_job,
    get_auth_token, JobArgKeys, OrionTask, Regions,
    TrailRegionMgr) = _load_api()
@@ -114,6 +146,9 @@ def build_and_maybe_launch(manifest_path: Path, release: str,
     }))
   if not metadata or not template_tasks:
     raise RuntimeError(f"Template Job {template_job_id} is incomplete")
+  if metadata["cluster"] != "prod_gen4":
+    raise RuntimeError(
+        f"Gen4 reproduction requires prod_gen4, got {metadata['cluster']}")
   template_task_id = int(template_tasks[0]["id"])
   orion_job = clone_job(
       job_id=template_job_id,
@@ -122,6 +157,10 @@ def build_and_maybe_launch(manifest_path: Path, release: str,
   )
   template = OrionTask()
   template.CopyFrom(orion_job.mapper_tasks[0])
+  template_binary_id = int(template.arguments[TaskArgKeys.BINARY_ID])
+  effective_binary_id = binary_id_override or template_binary_id
+  if effective_binary_id <= 0:
+    raise ValueError("Binary id must be positive")
   orion_job.ClearField("mapper_tasks")
   for scenario_id in frame["scenario_id"]:
     task = orion_job.mapper_tasks.add()
@@ -129,7 +168,20 @@ def build_and_maybe_launch(manifest_path: Path, release: str,
     task.signature = str(scenario_id)
     task.arguments[TaskArgKeys.SCENARIO_ID if hasattr(
         TaskArgKeys, "SCENARIO_ID") else "--scenario-id"] = str(scenario_id)
+    task.arguments[TaskArgKeys.BINARY_ID] = str(effective_binary_id)
     task.arguments[TaskArgKeys.SIMULATOR_CACHE] = "disabled"
+    _enable_controlled_ra_replay(task)
+
+  for task in orion_job.mapper_tasks:
+    exec_args = str(task.arguments.get("--sim-exec-args", "")).split()
+    if "--enable-dpe" not in task.arguments:
+      raise RuntimeError("RA reproduction requires DPE on every task")
+    if task.arguments[TaskArgKeys.SIMULATOR_CACHE] != "disabled":
+      raise RuntimeError("RA reproduction requires simulator cache disabled")
+    if exec_args.count(STATE_RECOVERY_LEVEL4_FLAG) != 1:
+      raise RuntimeError("RA reproduction requires Level-4 state recovery")
+    if INDEPENDENT_REPLAY_FLAG not in exec_args:
+      raise RuntimeError("RA reproduction requires independent RA replay")
 
   orion_job.description = description
   labels = [run_label, release, "simulation", "full"]
@@ -139,7 +191,9 @@ def build_and_maybe_launch(manifest_path: Path, release: str,
   summary = {
       "release": release,
       "template_job_id": template_job_id,
-      "binary_id": int(template.arguments[TaskArgKeys.BINARY_ID]),
+      "template_binary_id": template_binary_id,
+      "binary_id": effective_binary_id,
+      "binary_overridden": binary_id_override is not None,
       "scenario_count": len(frame),
       **exclusions,
       "cohort_counts": {
@@ -151,6 +205,10 @@ def build_and_maybe_launch(manifest_path: Path, release: str,
       "priority": metadata["priority"],
       "max_concurrency": max_concurrency,
       "simulator_cache": "disabled",
+      "required_sim_flags": [
+          STATE_RECOVERY_LEVEL4_FLAG,
+          INDEPENDENT_REPLAY_FLAG,
+      ],
       "execute": execute,
   }
   if not execute:
@@ -183,6 +241,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
       "--registry", type=Path,
       default=Path("reports/ra_repro_full_20260829_jobs.json"))
   parser.add_argument("--execute", action="store_true")
+  parser.add_argument(
+      "--binary-id", type=int, default=None,
+      help=(
+          "Optional patched binary id; defaults to the release template "
+          "binary."))
   parser.add_argument("--orion-token", default=os.environ.get("ORION_TOKEN"))
   return parser.parse_args(argv)
 
@@ -193,7 +256,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     raise SystemExit("--max-concurrency must be between 1 and 100")
   print(json.dumps(build_and_maybe_launch(
       args.manifest, args.release, args.max_concurrency, args.run_label,
-      args.execute, args.orion_token, args.registry),
+      args.execute, args.orion_token, args.registry, args.binary_id),
       ensure_ascii=False, indent=2))
 
 

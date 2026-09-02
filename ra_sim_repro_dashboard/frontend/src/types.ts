@@ -21,6 +21,7 @@ export interface KpiSummary {
   label: string;
   total_cases: number;
   road_positive_cases: number;
+  road_behavior_cases?: number;
   sim_positive_cases: number;
   reproduced_cases: number;
   sim_repro_rate: number;

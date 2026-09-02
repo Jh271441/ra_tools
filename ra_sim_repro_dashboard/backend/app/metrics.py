@@ -7,7 +7,11 @@ MODEL_REASONS = {"ASSIST_STUCK_MODEL", "MODEL_REQUEST", "MODEL_DETECT"}
 FN_PREFIXES = ("FN_",)
 FP_PREFIXES = ("FP_",)
 FP_STATUSES = {"MODEL_FP", "kAbort", "ABORT", "3"}
-AUTO_TRIGGER_SOURCE_GROUPS = {"positive_auto", "negative_auto"}
+ROAD_BEHAVIOR_SOURCE_GROUPS = {
+    "positive_auto",
+    "negative_auto",
+    "positive_manual",
+}
 
 
 @dataclass(frozen=True)
@@ -163,12 +167,26 @@ def summarize_rows(rows: list[Any]) -> dict[str, Any]:
         repro_rows = [
             row
             for row in rows
-            if source_groups(row) & AUTO_TRIGGER_SOURCE_GROUPS
+            if source_groups(row) & ROAD_BEHAVIOR_SOURCE_GROUPS
         ]
+        reproduced = sum(
+            1
+            for row in repro_rows
+            if (
+                not row.sim_triggered
+                if "positive_manual" in source_groups(row)
+                else row.sim_triggered
+            )
+        )
     else:
         repro_rows = [row for row in rows if row.road_triggered]
+        reproduced = sum(1 for row in repro_rows if row.sim_triggered)
     repro_source_cases = len(repro_rows)
-    reproduced = sum(1 for row in repro_rows if row.sim_triggered)
+    auto_trigger_source_cases = sum(
+        1
+        for row in rows
+        if source_groups(row) & {"positive_auto", "negative_auto"}
+    ) if rows_have_source_groups else repro_source_cases
 
     cohort_rows = {
         group: [row for row in rows if group in source_groups(row)]
@@ -197,7 +215,11 @@ def summarize_rows(rows: list[Any]) -> dict[str, Any]:
 
     return {
         "total_cases": total,
-        "road_positive_cases": repro_source_cases,
+        # Kept for API compatibility: this is the historical auto-trigger
+        # population, while road_behavior_cases is the denominator of the
+        # first-chart road->sim behavior reproduction rate.
+        "road_positive_cases": auto_trigger_source_cases,
+        "road_behavior_cases": repro_source_cases,
         "sim_positive_cases": sim_positive,
         "reproduced_cases": reproduced,
         "sim_repro_rate": rate(reproduced, repro_source_cases),

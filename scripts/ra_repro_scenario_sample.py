@@ -29,6 +29,8 @@ DEFAULT_SOURCE = "/tmp/ra_trail_20260601_20260828/simulation_cohorts.csv"
 DEFAULT_OUTPUT = "/tmp/ra_repro_20260828_sample50.csv"
 COHORTS = ("positive_auto", "negative_auto", "positive_manual")
 MODULES = ["PREDICTION", "PLANNING", "ROUTING", "MODEL_POSE", "CONTROL"]
+DEFAULT_PRE_BUFFER_MS = 60_000
+DEFAULT_POST_BUFFER_MS = 10_000
 
 
 def _as_int(value: object, field: str) -> int:
@@ -83,7 +85,11 @@ def _round_robin_sample(frame: pd.DataFrame, count: int, seed: str) -> pd.DataFr
 
 def build_manifest(source: Path, sample_size: int, seed: str,
                    releases: Iterable[str] | None, cohorts: Iterable[str] | None,
-                   run_label: str) -> pd.DataFrame:
+                   run_label: str,
+                   pre_buffer_ms: int = DEFAULT_PRE_BUFFER_MS,
+                   post_buffer_ms: int = DEFAULT_POST_BUFFER_MS) -> pd.DataFrame:
+  if pre_buffer_ms <= 0 or post_buffer_ms <= 0:
+    raise ValueError("scenario pre/post buffers must be positive")
   frame = pd.read_csv(source, low_memory=False)
   if "datae_visible_filters_match" in frame:
     frame = frame[frame["datae_visible_filters_match"].astype(str).str.lower().isin(
@@ -127,11 +133,11 @@ def build_manifest(source: Path, sample_size: int, seed: str,
       trip_start = _as_int(row.get("trip_start_time"), "trip_start_time")
       trip_end = _as_int(row.get("trip_end_time"), "trip_end_time")
       if trip_start > 0 and trip_end > trip_start and trip_start <= anchor <= trip_end:
-        start = max(anchor - 20_000, trip_start)
-        end = min(anchor + 10_000, trip_end)
+        start = max(anchor - pre_buffer_ms, trip_start)
+        end = min(anchor + post_buffer_ms, trip_end)
       else:
-        start = anchor - 20_000
-        end = anchor + 10_000
+        start = anchor - pre_buffer_ms
+        end = anchor + post_buffer_ms
         warning = (
             f"ignored unusable trip bounds {trip_start}..{trip_end}; "
             "used anchor window")
@@ -144,7 +150,9 @@ def build_manifest(source: Path, sample_size: int, seed: str,
     cohort = str(row["cohort"])
     issue_id = str(row["issue_id"])
     trigger_group = "ManualTrigger" if cohort == "positive_manual" else "AutoTrigger"
-    scenario_name = f"{run_label}_{release}_{cohort}_{issue_id}"
+    window_token = f"pre{pre_buffer_ms}ms_post{post_buffer_ms}ms"
+    scenario_name = (
+        f"{run_label}_{window_token}_{release}_{cohort}_{issue_id}")
     scenario_labels = [
         run_label,
         f"{run_label}_{release}",
@@ -164,6 +172,8 @@ def build_manifest(source: Path, sample_size: int, seed: str,
   result["scenario_end_timestamp"] = ends
   result["scenario_duration_ms"] = result["scenario_end_timestamp"] - result[
       "scenario_start_timestamp"]
+  result["scenario_pre_buffer_ms"] = pre_buffer_ms
+  result["scenario_post_buffer_ms"] = post_buffer_ms
   result["scenario_name"] = names
   result["scenario_labels"] = labels
   result["validation_error"] = errors
@@ -203,7 +213,10 @@ def _upload_one(row: dict, username: str) -> tuple[bool, object]:
       warmup_s=3,
       description=(
           "RA road-to-sim reproduction sample; "
-          f"release={row['release']}; cohort={row['cohort']}; issue={row['issue_id']}"),
+          f"release={row['release']}; cohort={row['cohort']}; "
+          f"issue={row['issue_id']}; "
+          f"pre_buffer_ms={row['scenario_pre_buffer_ms']}; "
+          f"post_buffer_ms={row['scenario_post_buffer_ms']}"),
       extra_attrs=None,
   )
 
@@ -272,6 +285,12 @@ def parse_args() -> argparse.Namespace:
   parser.add_argument("--release", action="append", default=[])
   parser.add_argument("--cohort", action="append", default=[])
   parser.add_argument("--run-label", default="ra_repro_sample50_20260828")
+  parser.add_argument(
+      "--pre-buffer-ms", type=int, default=DEFAULT_PRE_BUFFER_MS,
+      help="Milliseconds before ra_start_timestamp (default: 60000).")
+  parser.add_argument(
+      "--post-buffer-ms", type=int, default=DEFAULT_POST_BUFFER_MS,
+      help="Milliseconds after ra_start_timestamp (default: 10000).")
   parser.add_argument("--username", default="jasperchen")
   parser.add_argument("--upload", action="store_true")
   parser.add_argument("--workers", type=int, default=8)
@@ -286,7 +305,8 @@ def main() -> None:
   args = parse_args()
   frame = build_manifest(
       Path(args.source), args.sample_size, args.seed, args.release or None,
-      args.cohort or None, args.run_label)
+      args.cohort or None, args.run_label, args.pre_buffer_ms,
+      args.post_buffer_ms)
   _log_summary(frame)
   if args.upload:
     frame = upload_manifest(

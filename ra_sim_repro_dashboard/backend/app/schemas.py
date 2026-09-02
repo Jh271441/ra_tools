@@ -31,6 +31,7 @@ class KpiSummary(BaseModel):
     label: str
     total_cases: int
     road_positive_cases: int
+    road_behavior_cases: int = 0
     sim_positive_cases: int
     reproduced_cases: int
     sim_repro_rate: float

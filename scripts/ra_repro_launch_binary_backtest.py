@@ -35,6 +35,7 @@ TEMPLATE_JOBS = {
 }
 COHORTS = ("positive_auto", "negative_auto", "positive_manual")
 INDEPENDENT_REPLAY_FLAG = "--planning_enable_sim_assist_stuck_independent_replay"
+STATE_RECOVERY_LEVEL4_FLAG = "--sim_state_recovery_level=4"
 MAX_BACKTEST_CONCURRENCY = 20
 
 
@@ -160,23 +161,49 @@ def select_manifest(manifest_path: Path, source_releases: Sequence[str],
 
 def _registry_key(target_release: str, source_releases: Sequence[str],
                   sample_per_cohort: int, seed: str,
-                  selected_hash: str, max_concurrency: int) -> str:
+                  selected_hash: str, max_concurrency: int,
+                  binary_id_override: int | None) -> str:
   sources = ",".join(source_releases)
   sim_config_hash = hashlib.sha256(
-      (f"{INDEPENDENT_REPLAY_FLAG}|simulator_cache=disabled|dpe=enabled|"
+      (f"{STATE_RECOVERY_LEVEL4_FLAG}|{INDEPENDENT_REPLAY_FLAG}|"
+       "simulator_cache=disabled|dpe=enabled|"
        f"max_concurrency={max_concurrency}").encode("utf-8")).hexdigest()[:12]
   return (f"target={target_release}|sources={sources}|sample="
           f"{sample_per_cohort}|seed={seed}|manifest={selected_hash[:16]}|"
+          f"binary_override={binary_id_override or 'template'}|"
           f"sim_config={sim_config_hash}")
 
 
 def _enable_independent_replay(task: Any) -> None:
+  """Enable Level-4 recovery while keeping RA logic independently replayed.
+
+  Level 4 restores upstream planner state.  Independent RA replay prevents the
+  restored road-test RA decision from becoming the answer under evaluation.
+  Both flags are required for a meaningful current-binary reproduction run.
+  """
   exec_args_key = "--sim-exec-args"
   exec_args = str(task.arguments.get(exec_args_key, ""))
   tokens = exec_args.split()
+  normalized_tokens = []
+  skip_next = False
+  for token in tokens:
+    if skip_next:
+      skip_next = False
+      continue
+    if token == "--sim_state_recovery_level":
+      skip_next = True
+      continue
+    if token.startswith("--sim_state_recovery_level="):
+      continue
+    normalized_tokens.append(token)
+  tokens = normalized_tokens
+  tokens.append(STATE_RECOVERY_LEVEL4_FLAG)
   if INDEPENDENT_REPLAY_FLAG not in tokens:
     tokens.append(INDEPENDENT_REPLAY_FLAG)
   task.arguments[exec_args_key] = " " + " ".join(tokens)
+  if task.arguments[exec_args_key].split().count(
+      STATE_RECOVERY_LEVEL4_FLAG) != 1:
+    raise RuntimeError("Failed to enforce Level-4 simulation state recovery")
   if INDEPENDENT_REPLAY_FLAG not in task.arguments[exec_args_key].split():
     raise RuntimeError("Failed to enable independent RA replay")
 
@@ -193,6 +220,7 @@ def build_and_maybe_launch(
     max_concurrency: int,
     execute: bool,
     token: str | None,
+    binary_id_override: int | None = None,
 ) -> dict[str, Any]:
   (JobAccessor, TaskAccessor, TaskArgKeys, clone_job, launch_job,
    get_auth_token, JobArgKeys, OrionTask, Regions,
@@ -201,7 +229,7 @@ def build_and_maybe_launch(
       manifest_path, source_releases, sample_per_cohort, seed)
   selected_hash = _manifest_hash(selected)
   key = _registry_key(target_release, source_releases, sample_per_cohort, seed,
-                      selected_hash, max_concurrency)
+                      selected_hash, max_concurrency, binary_id_override)
 
   registry: dict[str, Any] = {}
   if registry_path.exists():
@@ -238,6 +266,10 @@ def build_and_maybe_launch(
   )
   template = OrionTask()
   template.CopyFrom(orion_job.mapper_tasks[0])
+  template_binary_id = int(template.arguments[TaskArgKeys.BINARY_ID])
+  effective_binary_id = binary_id_override or template_binary_id
+  if effective_binary_id <= 0:
+    raise ValueError("Binary id must be positive")
   orion_job.ClearField("mapper_tasks")
   for scenario_id in selected["scenario_id"]:
     task = orion_job.mapper_tasks.add()
@@ -246,6 +278,7 @@ def build_and_maybe_launch(
     scenario_key = (TaskArgKeys.SCENARIO_ID if hasattr(
         TaskArgKeys, "SCENARIO_ID") else "--scenario-id")
     task.arguments[scenario_key] = str(scenario_id)
+    task.arguments[TaskArgKeys.BINARY_ID] = str(effective_binary_id)
     task.arguments[TaskArgKeys.SIMULATOR_CACHE] = "disabled"
     _enable_independent_replay(task)
 
@@ -257,6 +290,10 @@ def build_and_maybe_launch(
     if INDEPENDENT_REPLAY_FLAG not in str(
         task.arguments.get("--sim-exec-args", "")).split():
       raise RuntimeError("RA binary backtest requires independent replay")
+    if str(task.arguments.get("--sim-exec-args", "")).split().count(
+        STATE_RECOVERY_LEVEL4_FLAG) != 1:
+      raise RuntimeError(
+          "RA binary backtest requires Level-4 simulation state recovery")
 
   date_token = target_release.removeprefix("gen4-release-")
   source_token = "_".join(item.removeprefix("gen4-release-")
@@ -299,7 +336,9 @@ def build_and_maybe_launch(
       "registry_key": key,
       "target_release": target_release,
       "template_job_id": template_job_id,
-      "binary_id": int(template.arguments[TaskArgKeys.BINARY_ID]),
+      "template_binary_id": template_binary_id,
+      "binary_id": effective_binary_id,
+      "binary_overridden": binary_id_override is not None,
       "source_releases": list(source_releases),
       "sample_per_cohort": sample_per_cohort,
       "seed": seed,
@@ -321,7 +360,10 @@ def build_and_maybe_launch(
       "priority": metadata["priority"],
       "max_concurrency": max_concurrency,
       "simulator_cache": "disabled",
-      "required_sim_flag": INDEPENDENT_REPLAY_FLAG,
+      "required_sim_flags": [
+          STATE_RECOVERY_LEVEL4_FLAG,
+          INDEPENDENT_REPLAY_FLAG,
+      ],
       "execute": execute,
   }
   if not execute:
@@ -373,6 +415,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
       "--registry", type=Path,
       default=Path("reports/ra_binary_backtest_20260831_jobs.json"))
   parser.add_argument("--execute", action="store_true")
+  parser.add_argument(
+      "--binary-id", type=int, default=None,
+      help=(
+          "Optional patched binary id; defaults to the release template "
+          "binary."))
   parser.add_argument("--orion-token", default=os.environ.get("ORION_TOKEN"))
   return parser.parse_args(argv)
 
@@ -402,6 +449,7 @@ def main(argv: Sequence[str] | None = None) -> None:
       args.max_concurrency,
       args.execute,
       args.orion_token,
+      args.binary_id,
   ), ensure_ascii=False, indent=2))
 
 

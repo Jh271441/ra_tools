@@ -123,14 +123,14 @@ function optionalNumber(value: unknown) {
 }
 
 function maybePct(value: unknown) {
-  const numeric = numberValue(value);
-  return numeric ? pct(numeric) : '-';
+  const numeric = optionalNumber(value);
+  return numeric == null ? '-' : pct(numeric);
 }
 
 function firstNumber(...values: unknown[]) {
   for (const value of values) {
-    const numeric = numberValue(value);
-    if (Number.isFinite(numeric) && numeric !== 0) return numeric;
+    const numeric = optionalNumber(value);
+    if (numeric != null) return numeric;
   }
   return 0;
 }
@@ -249,6 +249,7 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
   });
   const [showTrendLabels, setShowTrendLabels] = useState(true);
   const [backtestWindowSize, setBacktestWindowSize] = useState(4);
+  const [prMode, setPrMode] = useState<'same-version' | 'rolling'>('same-version');
 
   if (!summary) {
     return (
@@ -282,6 +283,30 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
     fn: firstNumber(item.sim_estimate?.estimated_fn, item.sim_estimate?.fn, item.road_positive_cases - item.reproduced_cases),
     fp: firstNumber(item.sim_estimate?.estimated_fp, item.sim_estimate?.fp, item.sim_positive_cases - item.reproduced_cases),
   }));
+  const sameVersionTrend = comparison.map((item) => {
+    const projection = item.sim_estimate?.same_version_projection;
+    const metrics = projection && typeof projection === 'object'
+      ? projection as Record<string, unknown>
+      : {};
+    const available = metrics.available === true;
+    return {
+      version_key: item.version_key,
+      actualPrecision: optionalNumber(item.source_gt?.online_precision) != null
+        ? numberValue(item.source_gt?.online_precision) * 100 : undefined,
+      actualRecall: optionalNumber(item.source_gt?.online_recall) != null
+        ? numberValue(item.source_gt?.online_recall) * 100 : undefined,
+      simPrecision: available && optionalNumber(metrics.sim_precision) != null
+        ? numberValue(metrics.sim_precision) * 100 : undefined,
+      simRecall: available && optionalNumber(metrics.sim_business_recall) != null
+        ? numberValue(metrics.sim_business_recall) * 100 : undefined,
+      simAllCohortRecall: available && optionalNumber(metrics.sim_all_cohort_trigger_recall) != null
+        ? numberValue(metrics.sim_all_cohort_trigger_recall) * 100 : undefined,
+      populationCoverage: optionalNumber(metrics.population_coverage) != null
+        ? numberValue(metrics.population_coverage) * 100 : undefined,
+      projectionAvailable: available,
+      projectionReason: String(metrics.reason || ''),
+    };
+  });
   const backtestTrend = comparison.flatMap((item, index) => {
     if (index + 1 < backtestWindowSize) return [];
     const window = comparison.slice(index + 1 - backtestWindowSize, index + 1);
@@ -316,19 +341,25 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
       actualRecall: Math.round(sourceRecall * 1000) / 10,
       simPrecision: matrixComplete && projected.precisionTp + projected.precisionFp
         ? Math.round(projected.precisionTp / (projected.precisionTp + projected.precisionFp) * 1000) / 10 : undefined,
-      simRecall: matrixComplete && projected.recallTp + projected.recallFn
-        ? Math.round(projected.recallTp / (projected.recallTp + projected.recallFn) * 1000) / 10 : undefined,
+      simRecall: matrixComplete && projected.recallTp + projected.triggerReproFn
+        ? Math.round(projected.recallTp / (projected.recallTp + projected.triggerReproFn) * 1000) / 10 : undefined,
+      simBusinessRecall: matrixComplete && projected.recallTp + projected.businessRecallFn
+        ? Math.round(projected.recallTp / (projected.recallTp + projected.businessRecallFn) * 1000) / 10 : undefined,
+      positiveAutoNotTriggered: projected.positiveAutoNotTriggered,
+      positiveManualNotTriggered: projected.positiveManualNotTriggered,
+      negativeAutoNotTriggered: projected.negativeAutoNotTriggered,
     }];
   });
   const reproDomain = pctDomain(trend, ['repro']);
-  const prDomain = pctDomain(backtestTrend, ['actualPrecision', 'actualRecall', 'simPrecision', 'simRecall']);
+  const prTrend = prMode === 'same-version' ? sameVersionTrend : backtestTrend;
+  const prDomain = pctDomain(prTrend, ['actualPrecision', 'actualRecall', 'simPrecision', 'simRecall']);
   const reproControls: Array<{ key: ReproMetric; label: string; color: string }> = [
     { key: 'repro', label: t('simReproRate'), color: chartColors.repro },
     { key: 'tp', label: 'TP', color: chartColors.model },
     { key: 'fn', label: 'FN', color: chartColors.fn },
     { key: 'fp', label: 'FP', color: chartColors.fp },
   ];
-  const hasBinaryMatrix = backtestTrend.some((item) => item.simPrecision != null || item.simRecall != null);
+  const hasSimProjection = prTrend.some((item) => item.simPrecision != null || item.simRecall != null);
 
   function toggleReproMetric(key: ReproMetric) {
     setVisibleReproMetrics((current) => {
@@ -456,34 +487,52 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
         <Card>
           <CardHeader className="min-h-[86px] flex-row items-start justify-between gap-2 px-5 pb-2 pt-4">
             <div className="min-w-0">
-              <CardTitle>{t('binaryBacktestPr')}</CardTitle>
-              <p className="mt-0.5 text-[12px] leading-4 text-muted-foreground">{t('binaryBacktestPrSubtitle')}</p>
+              <CardTitle>{prMode === 'same-version' ? t('sameVersionPr') : t('binaryBacktestPr')}</CardTitle>
+              <p className="mt-0.5 text-[12px] leading-4 text-muted-foreground">
+                {prMode === 'same-version' ? t('sameVersionPrSubtitle') : t('binaryBacktestPrSubtitle')}
+              </p>
               <div className="mt-2 flex flex-wrap gap-3 text-[11px] font-semibold text-muted-foreground">
                 <span className="inline-flex items-center gap-1.5"><LegendDot color={chartColors.precision} />{t('actualPrecision')}</span>
                 <span className="inline-flex items-center gap-1.5"><LegendDot color={chartColors.recall} />{t('actualRecall')}</span>
-                {hasBinaryMatrix ? <span className="inline-flex items-center gap-1.5"><LegendDot color={chartColors.repro} />{t('simPR')}</span> : null}
+                {hasSimProjection ? <span className="inline-flex items-center gap-1.5"><LegendDot color={chartColors.repro} />{t('simPR')}</span> : null}
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <label className="text-xs font-medium text-muted-foreground" htmlFor="backtest-window-size">
-                {t('backtestWindow')}
+              <label className="text-xs font-medium text-muted-foreground" htmlFor="pr-mode">
+                {t('prMode')}
               </label>
               <select
-                id="backtest-window-size"
+                id="pr-mode"
                 className="h-8 rounded-md border border-border bg-background px-2 text-xs font-semibold text-foreground"
-                value={backtestWindowSize}
-                onChange={(event) => setBacktestWindowSize(Number(event.target.value))}
+                value={prMode}
+                onChange={(event) => setPrMode(event.target.value as 'same-version' | 'rolling')}
               >
-                {[2, 3, 4].map((value) => (
-                  <option key={value} value={value}>{value} {t('versionsUnit')}</option>
-                ))}
+                <option value="same-version">{t('sameVersionFull')}</option>
+                <option value="rolling">{t('rollingCanary')}</option>
               </select>
+              {prMode === 'rolling' ? (
+                <>
+                  <label className="text-xs font-medium text-muted-foreground" htmlFor="backtest-window-size">
+                    {t('backtestWindow')}
+                  </label>
+                  <select
+                    id="backtest-window-size"
+                    className="h-8 rounded-md border border-border bg-background px-2 text-xs font-semibold text-foreground"
+                    value={backtestWindowSize}
+                    onChange={(event) => setBacktestWindowSize(Number(event.target.value))}
+                  >
+                    {[2, 3, 4].map((value) => (
+                      <option key={value} value={value}>{value} {t('versionsUnit')}</option>
+                    ))}
+                  </select>
+                </>
+              ) : null}
               <Badge variant="secondary">{current.version_key}</Badge>
             </div>
           </CardHeader>
           <CardContent className="relative h-80 px-4 pb-4 pt-0">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={backtestTrend} margin={{ top: 18, right: 42, left: 0, bottom: 8 }}>
+              <LineChart data={prTrend} margin={{ top: 18, right: 42, left: 0, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.68)" vertical={false} />
                 <XAxis dataKey="version_key" scale="point" tickLine={false} axisLine={false} interval={0} minTickGap={0} height={40} tickMargin={10} padding={{ left: 44, right: 44 }} tick={<VersionTick />} />
                 <YAxis domain={prDomain} tickLine={false} axisLine={false} width={40} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
@@ -494,17 +543,17 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                 <Line type="linear" dataKey="actualRecall" name={t('actualRecall')} stroke={chartColors.recall} strokeWidth={2.2} dot={hollowDot(chartColors.recall)} activeDot={hollowDot(chartColors.recall, 5)} isAnimationActive={false}>
                   {showTrendLabels ? <LabelList dataKey="actualRecall" content={renderTrendLabel(chartColors.recall, -8, 12)} /> : null}
                 </Line>
-                {hasBinaryMatrix ? (
+                {hasSimProjection ? (
                   <>
                     <Line type="linear" dataKey="simPrecision" name={t('simPrecisionEstimate')} stroke={chartColors.fp} strokeDasharray="5 4" strokeWidth={2.2} dot={hollowDot(chartColors.fp)} activeDot={hollowDot(chartColors.fp, 5)} isAnimationActive={false} />
-                    <Line type="linear" dataKey="simRecall" name={t('simRecallEstimate')} stroke={chartColors.repro} strokeDasharray="5 4" strokeWidth={2.2} dot={hollowDot(chartColors.repro)} activeDot={hollowDot(chartColors.repro, 5)} isAnimationActive={false} />
+                    <Line type="linear" dataKey="simRecall" name={prMode === 'same-version' ? t('simBusinessRecallEstimate') : t('simRecallEstimate')} stroke={chartColors.repro} strokeDasharray="5 4" strokeWidth={2.2} dot={hollowDot(chartColors.repro)} activeDot={hollowDot(chartColors.repro, 5)} isAnimationActive={false} />
                   </>
                 ) : null}
               </LineChart>
             </ResponsiveContainer>
-            {!hasBinaryMatrix ? (
+            {!hasSimProjection ? (
               <div className="pointer-events-none absolute right-4 top-4 rounded-md border border-border/80 bg-card/90 px-3 py-2 text-xs text-muted-foreground shadow-sm">
-                {t('binaryMatrixPending')}
+                {prMode === 'same-version' ? t('sameVersionProjectionPending') : t('binaryMatrixPending')}
               </div>
             ) : null}
           </CardContent>
@@ -542,6 +591,11 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                   {aggregateRows.map((item) => {
                     const source = item.source_gt || {};
                     const sim = item.sim_estimate || {};
+                    const projectionValue = sim.same_version_projection;
+                    const projection = projectionValue && typeof projectionValue === 'object'
+                      ? projectionValue as Record<string, unknown>
+                      : {};
+                    const projectionAvailable = projection.available === true;
                     return (
                       <tr
                         key={item.version_key}
@@ -572,7 +626,18 @@ export function Overview({ summary, comparison, onOpenIssues }: OverviewProps) {
                           {maybePct(source.calculated_precision)} / {maybePct(source.calculated_recall)}
                         </td>
                         <td className="px-4 py-3 align-middle font-mono text-xs">
-                          {pct(item.precision)} / {pct(item.recall)}
+                          {projectionAvailable ? (
+                            <>
+                              <div>{maybePct(projection.sim_precision)} / {maybePct(projection.sim_business_recall)}</div>
+                              <div className="mt-1 text-[11px] text-muted-foreground">
+                                Gap {delta(optionalNumber(projection.precision_gap))} / {delta(optionalNumber(projection.business_recall_gap))}
+                              </div>
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground">
+                              {t('projectionUnavailable')} ({maybePct(projection.population_coverage)})
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3 align-middle font-mono text-xs">
                           {sim.job_id ? String(sim.job_id) : `${String(sim.pos_job_id || '-')} / ${String(sim.neg_job_id || '-')}`}

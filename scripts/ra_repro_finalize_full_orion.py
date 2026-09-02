@@ -14,11 +14,13 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.ra_repro_validate_orion import validate
 from ra_api.sim_result_api import SimResultClient
+from scripts.ra_repro_finalize_binary_backtest import inspect_job_configuration
+from scripts.ra_repro_validate_orion import validate
 
 
 _TRIGGER_METRIC = "dpe_assist_channel_triggered__group1"
+_MAX_FULL_REPRO_CONCURRENCY = 100
 
 
 def _ratio(numerator: int, denominator: int) -> float | None:
@@ -34,6 +36,12 @@ def _summary_row(release: str, job_id: int,
   audit = result["manifest_audit"]
   cohorts = result["cohorts"]
   truth = result["truth"]
+  road_behavior_evaluated = sum(
+      int(cohorts[cohort]["evaluated"])
+      for cohort in ("positive_auto", "negative_auto", "positive_manual"))
+  road_behavior_matches = sum(
+      int(cohorts[cohort]["road_behavior_matches"])
+      for cohort in ("positive_auto", "negative_auto", "positive_manual"))
   return {
       "release": release,
       "job_id": job_id,
@@ -54,6 +62,10 @@ def _summary_row(release: str, job_id: int,
           "road_behavior_reproduction"],
       "positive_manual_road_reproduction": cohorts["positive_manual"][
           "road_behavior_reproduction"],
+      "road_behavior_matches": road_behavior_matches,
+      "road_behavior_evaluated": road_behavior_evaluated,
+      "road_behavior_reproduction": _ratio(
+          road_behavior_matches, road_behavior_evaluated),
       "truth_tp": truth["tp"],
       "truth_fn": truth["fn"],
       "truth_fp": truth["fp"],
@@ -141,6 +153,19 @@ def _overall(results: dict[str, dict[str, Any]]) -> dict[str, Any]:
       "completed_dpe_coverage": _ratio(completed_dpe_covered, completed),
       "quality": quality,
       "cohorts": cohorts,
+      "road_behavior": {
+          "matches": sum(
+              int(cohort["road_behavior_matches"])
+              for cohort in cohorts.values()),
+          "evaluated": sum(
+              int(cohort["evaluated"])
+              for cohort in cohorts.values()),
+          "reproduction": _ratio(
+              sum(int(cohort["road_behavior_matches"])
+                  for cohort in cohorts.values()),
+              sum(int(cohort["evaluated"])
+                  for cohort in cohorts.values())),
+      },
       "truth": {
           "tp": tp,
           "fn": fn,
@@ -172,14 +197,15 @@ def _markdown(rows: list[dict[str, Any]], overall: dict[str, Any]) -> str:
       "`positive_auto` plus `positive_manual` as positive and `negative_auto` "
       "as negative.",
       "",
-      "| Release | Job | Done / submitted | DPE | Pos-auto road | Neg-auto road | Manual road | Precision | Recall | Specificity | Accuracy | Quality | Complete |",
-      "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|:---:|:---:|",
+      "| Release | Job | Done / submitted | DPE | Overall road | Pos-auto road | Neg-auto road | Manual road | Precision | Recall | Specificity | Accuracy | Quality | Complete |",
+      "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|:---:|:---:|",
   ]
   for row in rows:
     lines.append(
         f"| {row['release']} | {row['job_id']} | "
         f"{row['completed']} / {row['submitted_rows']} | "
         f"{row['completed_dpe_covered']} | "
+        f"{_pct(row['road_behavior_reproduction'])} | "
         f"{_pct(row['positive_auto_road_reproduction'])} | "
         f"{_pct(row['negative_auto_road_reproduction'])} | "
         f"{_pct(row['positive_manual_road_reproduction'])} | "
@@ -200,6 +226,10 @@ def _markdown(rows: list[dict[str, Any]], overall: dict[str, Any]) -> str:
       f"{_pct(cohorts['positive_auto']['road_behavior_reproduction'])}, "
       f"negative_auto {_pct(cohorts['negative_auto']['road_behavior_reproduction'])}, "
       f"positive_manual {_pct(cohorts['positive_manual']['road_behavior_reproduction'])}.",
+      f"Overall road-behavior reproduction: "
+      f"{_pct(overall['road_behavior']['reproduction'])} "
+      f"({overall['road_behavior']['matches']} / "
+      f"{overall['road_behavior']['evaluated']}).",
       f"Business truth: precision {_pct(truth['precision'])}, "
       f"recall {_pct(truth['recall'])}, specificity "
       f"{_pct(truth['specificity'])}, accuracy {_pct(truth['accuracy'])}.",
@@ -242,8 +272,19 @@ def finalize(registry_path: Path, manifest_template: str, token: str,
     version_date = release.rsplit("-", 1)[-1]
     manifest_path = Path(manifest_template.format(
         release=release, date=version_date))
+    job_configuration = inspect_job_configuration(
+        [int(registered["job_id"])],
+        int(registered["binary_id"]),
+        expected_max_concurrency=int(registered["max_concurrency"]),
+        max_allowed_concurrency=_MAX_FULL_REPRO_CONCURRENCY,
+    )
+    if not job_configuration["gate_passed"]:
+      raise RuntimeError(
+          "Full reproduction submission configuration gate failed; "
+          f"refusing to publish {release}: {job_configuration}")
     result = validate([int(registered["job_id"])], manifest_path, release,
                       token)
+    result["job_configuration"] = job_configuration
     results[release] = result
     rows.append(_summary_row(release, int(registered["job_id"]), result))
   overall = _overall(results)

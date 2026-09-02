@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from ra_repro_launch_binary_backtest import (
     INDEPENDENT_REPLAY_FLAG,
+    STATE_RECOVERY_LEVEL4_FLAG,
     _enable_independent_replay,
     _write_registry,
     select_manifest,
@@ -56,7 +57,9 @@ def test_select_manifest_is_stratified_and_deterministic(tmp_path):
 
 def test_enable_independent_replay_is_idempotent():
   class Task:
-    arguments = {"--sim-exec-args": " --sim_aligned_mode"}
+    arguments = {
+        "--sim-exec-args": " --sim_aligned_mode --sim_state_recovery_level=3"
+    }
 
   task = Task()
   _enable_independent_replay(task)
@@ -64,6 +67,26 @@ def test_enable_independent_replay_is_idempotent():
 
   assert task.arguments["--sim-exec-args"].split().count(
       INDEPENDENT_REPLAY_FLAG) == 1
+  assert task.arguments["--sim-exec-args"].split().count(
+      STATE_RECOVERY_LEVEL4_FLAG) == 1
+  assert "--sim_state_recovery_level=3" not in task.arguments[
+      "--sim-exec-args"].split()
+
+
+def test_enable_independent_replay_replaces_split_state_recovery_flag():
+  class Task:
+    arguments = {
+        "--sim-exec-args": "--sim_state_recovery_level 2 --sim_aligned_mode"
+    }
+
+  task = Task()
+  _enable_independent_replay(task)
+
+  assert task.arguments["--sim-exec-args"].split() == [
+      "--sim_aligned_mode",
+      STATE_RECOVERY_LEVEL4_FLAG,
+      INDEPENDENT_REPLAY_FLAG,
+  ]
 
 
 def test_write_registry_is_atomic(tmp_path):

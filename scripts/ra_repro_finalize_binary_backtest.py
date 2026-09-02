@@ -21,7 +21,20 @@ from scripts.ra_repro_validate_orion import validate
 
 COHORTS = ("positive_auto", "negative_auto", "positive_manual")
 INDEPENDENT_REPLAY_FLAG = "--planning_enable_sim_assist_stuck_independent_replay"
+STATE_RECOVERY_LEVEL4_FLAG = "--sim_state_recovery_level=4"
 MAX_BACKTEST_CONCURRENCY = 20
+
+
+def _state_recovery_levels(exec_args: Any) -> list[str]:
+  """Return every explicitly configured simulation state recovery level."""
+  tokens = str(exec_args or "").split()
+  levels = []
+  for index, token in enumerate(tokens):
+    if token.startswith("--sim_state_recovery_level="):
+      levels.append(token.partition("=")[2])
+    elif token == "--sim_state_recovery_level" and index + 1 < len(tokens):
+      levels.append(tokens[index + 1])
+  return levels
 
 
 def summarize_job_configuration(
@@ -29,6 +42,7 @@ def summarize_job_configuration(
     expected_binary_id: int,
     expected_scenario_ids: Sequence[int] | None = None,
     expected_max_concurrency: int | None = None,
+    max_allowed_concurrency: int = MAX_BACKTEST_CONCURRENCY,
 ) -> dict[str, Any]:
   """Summarize immutable submission-time gates for a set of Orion jobs."""
   total_tasks = sum(len(job["tasks"]) for job in jobs)
@@ -36,6 +50,7 @@ def summarize_job_configuration(
   cache_mismatches = 0
   dpe_disabled = 0
   independent_replay_missing = 0
+  state_recovery_level_mismatches = 0
   task_scenario_ids = []
   task_signature_parse_failures = 0
   per_job = []
@@ -59,6 +74,8 @@ def summarize_job_configuration(
       independent_replay_missing += int(
           INDEPENDENT_REPLAY_FLAG not in str(
               args.get("--sim-exec-args", "")).split())
+      state_recovery_level_mismatches += int(
+          _state_recovery_levels(args.get("--sim-exec-args")) != ["4"])
     per_job.append({
         "job_id": int(job["job_id"]),
         "task_count": len(tasks),
@@ -69,7 +86,7 @@ def summarize_job_configuration(
   cluster_mismatches = sum(
       item["cluster"] != "prod_gen4" for item in per_job)
   concurrency_mismatches = sum(
-      not 1 <= item["max_concurrency"] <= MAX_BACKTEST_CONCURRENCY or
+      not 1 <= item["max_concurrency"] <= max_allowed_concurrency or
       (expected_max_concurrency is not None and
        item["max_concurrency"] != expected_max_concurrency)
       for item in per_job)
@@ -90,6 +107,7 @@ def summarize_job_configuration(
       cache_mismatches,
       dpe_disabled,
       independent_replay_missing,
+      state_recovery_level_mismatches,
       cluster_mismatches,
       concurrency_mismatches,
       task_signature_parse_failures if expected_task_set is not None else 0,
@@ -101,12 +119,14 @@ def summarize_job_configuration(
   return {
       "expected_binary_id": expected_binary_id,
       "expected_max_concurrency": expected_max_concurrency,
+      "max_allowed_concurrency": max_allowed_concurrency,
       "job_count": len(jobs),
       "task_count": total_tasks,
       "binary_mismatches": binary_mismatches,
       "simulator_cache_mismatches": cache_mismatches,
       "dpe_disabled": dpe_disabled,
       "independent_replay_missing": independent_replay_missing,
+      "state_recovery_level_mismatches": state_recovery_level_mismatches,
       "cluster_mismatches": cluster_mismatches,
       "concurrency_mismatches": concurrency_mismatches,
       "task_set_checked": expected_task_set is not None,
@@ -124,11 +144,13 @@ def summarize_job_configuration(
   }
 
 
-def inspect_job_configuration(job_ids: Sequence[int],
-                              expected_binary_id: int,
-                              expected_scenario_ids: Sequence[int] | None = None,
-                              expected_max_concurrency: int | None = None,
-                              ) -> dict[str, Any]:
+def inspect_job_configuration(
+    job_ids: Sequence[int],
+    expected_binary_id: int,
+    expected_scenario_ids: Sequence[int] | None = None,
+    expected_max_concurrency: int | None = None,
+    max_allowed_concurrency: int = MAX_BACKTEST_CONCURRENCY,
+) -> dict[str, Any]:
   """Read task arguments and job placement settings from Orion storage."""
   try:
     from orion.db_accessor.job_accessor import JobAccessor
@@ -154,7 +176,7 @@ def inspect_job_configuration(job_ids: Sequence[int],
       })
   return summarize_job_configuration(
       jobs, expected_binary_id, expected_scenario_ids,
-      expected_max_concurrency)
+      expected_max_concurrency, max_allowed_concurrency)
 
 
 def summarize_sources(manifest: pd.DataFrame,
@@ -210,6 +232,18 @@ def summarize_sources(manifest: pd.DataFrame,
               cohort_triggered_count / cohort_evaluated_count
               if cohort_evaluated_count else None),
       }
+    positive_auto = cohort_metrics["positive_auto"]
+    positive_manual = cohort_metrics["positive_manual"]
+    negative_auto = cohort_metrics["negative_auto"]
+    positive_auto_not_triggered = int(positive_auto["not_triggered"])
+    positive_manual_not_triggered = int(positive_manual["not_triggered"])
+    negative_auto_not_triggered = int(negative_auto["not_triggered"])
+    road_behavior_matches = (
+        int(positive_auto["triggered"])
+        + int(negative_auto["triggered"])
+        + positive_manual_not_triggered
+    )
+    trigger_repro_fn = fn + negative_auto_not_triggered
     sources[str(release)] = {
         "expected": expected,
         "evaluated": evaluated_count,
@@ -222,6 +256,18 @@ def summarize_sources(manifest: pd.DataFrame,
         "estimated_fp": fp,
         "estimated_fn": fn,
         "estimated_tn": tn,
+        "positive_auto_not_triggered": positive_auto_not_triggered,
+        "positive_manual_not_triggered": positive_manual_not_triggered,
+        "negative_auto_not_triggered": negative_auto_not_triggered,
+        "business_recall_fn": fn,
+        "trigger_repro_fn": trigger_repro_fn,
+        "trigger_repro_recall": (
+            tp / (tp + trigger_repro_fn)
+            if tp + trigger_repro_fn else 0.0),
+        "road_behavior_matches": road_behavior_matches,
+        "road_behavior_reproduction": (
+            road_behavior_matches / evaluated_count
+            if evaluated_count else 0.0),
         "precision": tp / (tp + fp) if tp + fp else 0.0,
         "recall": tp / (tp + fn) if tp + fn else 0.0,
         "estimation_method": "cohort_poststratification",
