@@ -1390,7 +1390,7 @@ html[data-color-theme="light"] .review-control-shortcut {
 .shortcut-help-button { display: none; align-items: center; gap: 6px; }
 .shortcut-help-button kbd,
 .top-actions #refreshButton kbd,
-.intent-command-actions kbd,
+.intent-stepper kbd,
 .intent-media-open kbd,
 .shortcut-guide-dialog kbd {
   display: inline-flex; align-items: center; justify-content: center;
@@ -3653,6 +3653,9 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
     width: 100%; max-width: none; min-width: 0;
     flex: none;
   }
+  body:is([data-active-page="intent"], [data-active-page="intent-experiments"]) .intent-topbar-dataset {
+    grid-area: baselines; width: 100%; grid-template-columns: auto minmax(0, 1fr);
+  }
   .topbar-baselines-label { display: none; }
   .topbar-baselines .baseline-filter {
     min-width: 0; width: 100%; max-width: 100%; flex: 1 1 auto;
@@ -4779,11 +4782,17 @@ body:is([data-active-page="intent"], [data-active-page="intent-experiments"]) .h
 body:is([data-active-page="intent"], [data-active-page="intent-experiments"]) .gt-sync-control { display: none; }
 body:is([data-active-page="intent"], [data-active-page="intent-experiments"]) .brand { min-width: 0; flex: 0 1 auto; }
 body:is([data-active-page="intent"], [data-active-page="intent-experiments"]) .top-actions { min-width: 0; margin-left: auto; }
+.intent-topbar-dataset { display: none; }
+body:is([data-active-page="intent"], [data-active-page="intent-experiments"]) .intent-topbar-dataset {
+  min-width: 0; display: grid; grid-template-columns: auto minmax(170px, 230px); align-items: center; gap: 7px;
+  color: var(--faint); font-size: 10px; font-weight: 700;
+}
+.intent-topbar-dataset select { width: 100%; min-width: 0; height: 30px; padding-block: 3px; font-size: 11px; }
 
 .intent-labeling-page { width: 100%; max-width: 100%; min-width: 0; display: grid; gap: 10px; }
 .intent-commandbar {
   width: 100%; max-width: 100%; min-width: 0; display: grid;
-  grid-template-columns: 190px 220px minmax(240px, 1fr) 200px minmax(520px, 1.35fr);
+  grid-template-columns: minmax(250px, 1.15fr) 190px 190px minmax(310px, 1.2fr) minmax(290px, 1fr);
   align-items: end; gap: 10px; padding: 10px 14px; border: 1px solid var(--line);
   border-radius: 12px; background: var(--raised);
 }
@@ -4792,9 +4801,12 @@ body:is([data-active-page="intent"], [data-active-page="intent-experiments"]) .t
 .intent-case-field { grid-template-columns: minmax(0, 1fr) auto; }
 .intent-case-field > span { grid-column: 1 / -1; }
 .intent-field-heading { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.intent-command-actions { min-width: 0; max-width: 100%; display: grid; grid-template-columns: repeat(4, minmax(112px, 1fr)); gap: 7px; }
-.intent-command-actions .button { white-space: nowrap; }
-.intent-command-actions .button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+.intent-command-navigator { min-width: 0; display: grid; gap: 5px; color: var(--muted); font-size: 11px; }
+.intent-stepper { min-width: 0; display: grid; grid-template-columns: minmax(92px, 1fr) 46px auto minmax(92px, 1fr); align-items: center; gap: 5px; }
+.intent-stepper .button { min-width: 0; height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding-inline: 7px; white-space: nowrap; }
+.intent-stepper input { width: 46px; min-width: 0; height: 36px; padding-inline: 4px; text-align: center; font-variant-numeric: tabular-nums; }
+.intent-stepper-total { min-width: 34px; color: var(--faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.intent-stepper-total strong { color: var(--muted); }
 .intent-save-state { min-width: 0; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .intent-save-state[data-status="saved"] { color: var(--ok); }
 .intent-save-state[data-status="dirty"], .intent-save-state[data-status="saving"] { color: var(--warn); }
@@ -4899,9 +4911,6 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 }
 .intent-experiment-page { width: 100%; min-width: 0; display: grid; align-content: start; gap: 10px; }
 .intent-experiment-page.hidden { display: none; }
-.intent-experiment-commandbar { width: 100%; min-width: 0; display: grid; grid-template-columns: minmax(220px, 300px) auto; justify-content: start; align-items: end; gap: 8px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--raised); }
-.intent-experiment-commandbar label { min-width: 0; display: grid; gap: 5px; color: var(--muted); font-size: 10px; }
-.intent-experiment-commandbar select { width: 100%; height: 34px; }
 .intent-experiment-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--line-soft); }
 .intent-experiment-header > div { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 4px 9px; }
 .intent-experiment-header h3 { min-width: 0; margin: 0; color: var(--accent); font-size: 15px; }
@@ -4957,7 +4966,9 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .shortcut-guide-footer { margin: 12px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
 
 @media (max-width: 1600px) {
-  .intent-commandbar { grid-template-columns: 160px 190px minmax(210px, 1fr) 180px minmax(400px, 460px); }
+  .intent-commandbar { grid-template-columns: minmax(240px, 1.1fr) 180px 180px minmax(290px, 1.1fr) minmax(270px, 1fr); gap: 8px; }
+  .intent-stepper { grid-template-columns: minmax(82px, 1fr) 42px auto minmax(82px, 1fr); gap: 4px; }
+  .intent-stepper input { width: 42px; }
   .intent-workspace { grid-template-columns: minmax(0, 1fr) 280px; }
 }
 @media (min-width: 1251px) and (max-width: 1600px) {
@@ -4982,8 +4993,9 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
   .intent-label-rail .intent-comment-list { max-height: none; }
 }
 @media (max-width: 1400px) {
-  .intent-commandbar { grid-template-columns: 170px 200px minmax(220px, 1fr) 190px; }
-  .intent-command-actions { grid-column: 1 / -1; justify-self: end; width: min(100%, 660px); }
+  .intent-commandbar { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .intent-case-field, .intent-assignee-field, .intent-timepoint-field { grid-column: span 2; }
+  .intent-command-navigator { grid-column: span 3; }
 }
 @media (max-width: 1250px) {
   .intent-workspace { grid-template-columns: 1fr; }
@@ -4993,10 +5005,10 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 }
 @media (max-width: 800px) {
   .intent-commandbar { grid-template-columns: 1fr; }
-  .intent-command-actions { grid-column: auto; display: grid; grid-template-columns: repeat(2, 1fr); }
+  .intent-case-field, .intent-assignee-field, .intent-timepoint-field, .intent-command-navigator { grid-column: auto; }
+  body:is([data-active-page="intent"], [data-active-page="intent-experiments"]) .intent-topbar-dataset { grid-template-columns: auto minmax(120px, 1fr); }
   .intent-media-grid, .intent-label-rail { grid-template-columns: 1fr; }
   .intent-experiment-form-row, .intent-experiment-members > div { grid-template-columns: 1fr; }
-  .intent-experiment-commandbar { grid-template-columns: 1fr; }
 }
 
 html[data-color-theme="light"] .intent-media-panel,
@@ -5005,13 +5017,12 @@ html[data-color-theme="light"] .intent-card,
 html[data-color-theme="light"] .intent-experiment-create,
 html[data-color-theme="light"] .intent-experiment-history,
 html[data-color-theme="light"] .intent-experiment-panel,
-html[data-color-theme="light"] .intent-experiment-commandbar,
 html[data-color-theme="light"] .intent-commandbar { background: #fff; }
 html[data-color-theme="light"] .intent-label-grid button,
 html[data-color-theme="light"] .intent-timepoint { background: #f4f7fb; }
 html[data-color-theme="light"] .shortcut-help-button kbd,
 html[data-color-theme="light"] .top-actions #refreshButton kbd,
-html[data-color-theme="light"] .intent-command-actions kbd,
+html[data-color-theme="light"] .intent-stepper kbd,
 html[data-color-theme="light"] .intent-media-open kbd,
 html[data-color-theme="light"] .shortcut-guide-dialog kbd { color: #53657a; border-color: #c7d3df; background: #fff; }
 

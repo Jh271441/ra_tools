@@ -97,11 +97,11 @@ function intentLabelSummary(timepoint) {
   return `${routing} · ${laneChange}`;
 }
 
-function renderIntentDatasetPicker() {
-  const select = $("#intentDatasetSelect");
+function renderIntentTopbarDatasetPicker(selectedId = state.intentLabeling.datasetId) {
+  const select = $("#intentTopbarDatasetSelect");
   if (!select) return;
   select.innerHTML = state.intentLabeling.datasets.map((item) => (
-    `<option value="${escapeHtml(item.id)}"${item.id === state.intentLabeling.datasetId ? " selected" : ""}${item.available ? "" : " disabled"}>${escapeHtml(item.display_name)}</option>`
+    `<option value="${escapeHtml(item.id)}"${item.id === selectedId ? " selected" : ""}${item.available ? "" : " disabled"}>${escapeHtml(item.display_name)}</option>`
   )).join("");
 }
 
@@ -227,14 +227,6 @@ async function loadIntentExperiments({ force = false } = {}) {
   updateIntentExperimentEstimate();
 }
 
-function renderIntentExperimentDatasetPicker() {
-  const select = $("#intentExperimentDatasetSelect");
-  if (!select) return;
-  select.innerHTML = state.intentLabeling.datasets.map((item) => (
-    `<option value="${escapeHtml(item.id)}"${item.id === state.intentLabeling.experimentDatasetId ? " selected" : ""}${item.available ? "" : " disabled"}>${escapeHtml(item.display_name)}</option>`
-  )).join("");
-}
-
 async function loadIntentExperimentAdmin({ datasetId = "", force = false } = {}) {
   const intent = state.intentLabeling;
   if (!intent.datasets.length) {
@@ -246,7 +238,7 @@ async function loadIntentExperimentAdmin({ datasetId = "", force = false } = {})
     || intent.datasets.find((item) => item.available);
   if (!selected) throw new Error("没有可用于实验分配的数据集。");
   intent.experimentDatasetId = selected.id;
-  renderIntentExperimentDatasetPicker();
+  renderIntentTopbarDatasetPicker(selected.id);
   await loadIntentExperiments({ force });
   if (state.activePage === "intent-experiments") {
     history.replaceState(
@@ -356,6 +348,8 @@ function intentSetImage(kind, image, missing, descriptor, sequence) {
     return Promise.resolve();
   }
   const probe = new Image();
+  probe.decoding = "async";
+  probe.fetchPriority = "high";
   probe.src = descriptor.url;
   const ready = typeof probe.decode === "function"
     ? probe.decode().catch(() => undefined)
@@ -400,7 +394,7 @@ function activateIntentTimelineThumbnails(timeline = $("#intentTimeline")) {
         delete image.dataset.intentLazySrc;
         state.intentLabeling.thumbnailObserver?.unobserve(image);
       }
-    }, { root: timeline, rootMargin: "240px" });
+    }, { root: timeline, rootMargin: "48px" });
     timeline.querySelectorAll("img[data-intent-lazy-src]").forEach((image) => {
       state.intentLabeling.thumbnailObserver.observe(image);
     });
@@ -426,8 +420,8 @@ function renderIntentTimeline({ loadThumbnails = true } = {}) {
     return `<button class="intent-timepoint${selected ? " selected" : ""}${item.id === intent.activeTimepointId ? " active" : ""}" type="button" data-intent-timepoint="${escapeHtml(item.id)}" aria-label="切换到 ${escapeHtml(intentTimeLabel(item.offset_ms))}" aria-pressed="${selected ? "true" : "false"}">
       <strong>${escapeHtml(intentTimeLabel(item.offset_ms))}</strong>
       <span class="intent-thumb-stack">
-        ${camera ? `<img data-intent-lazy-src="${escapeHtml(camera)}" alt=""/>` : '<span class="intent-thumb-missing">Camera 缺失</span>'}
-        ${bev ? `<img data-intent-lazy-src="${escapeHtml(bev)}" alt=""/>` : '<span class="intent-thumb-missing">BEV 缺失</span>'}
+        ${camera ? `<img data-intent-lazy-src="${escapeHtml(camera)}" loading="lazy" decoding="async" alt=""/>` : '<span class="intent-thumb-missing">Camera 缺失</span>'}
+        ${bev ? `<img data-intent-lazy-src="${escapeHtml(bev)}" loading="lazy" decoding="async" alt=""/>` : '<span class="intent-thumb-missing">BEV 缺失</span>'}
       </span>
       <small class="${override ? "is-override" : ""}">${escapeHtml(intentLabelSummary(item))}</small>
     </button>`;
@@ -437,6 +431,53 @@ function renderIntentTimeline({ loadThumbnails = true } = {}) {
   });
   if (loadThumbnails) activateIntentTimelineThumbnails(timeline);
   timeline.querySelector(".intent-timepoint.active")?.scrollIntoView({ block: "nearest", inline: "center" });
+}
+
+function updateIntentTimelineState({ scroll = true } = {}) {
+  const intent = state.intentLabeling;
+  const selected = new Set(intent.selectedTimepointIds || []);
+  const byId = new Map((intent.caseData?.timepoints || []).map((item) => [item.id, item]));
+  $("#intentTimeline")?.querySelectorAll("[data-intent-timepoint]").forEach((button) => {
+    const timepointId = button.dataset.intentTimepoint;
+    const isSelected = selected.has(timepointId);
+    const isActive = timepointId === intent.activeTimepointId;
+    button.classList.toggle("selected", isSelected);
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-pressed", isSelected ? "true" : "false");
+    const summary = button.querySelector("small");
+    const timepoint = byId.get(timepointId);
+    if (summary && timepoint) {
+      summary.textContent = intentLabelSummary(timepoint);
+      summary.classList.toggle("is-override", Boolean(intentOverride(timepointId)));
+    }
+  });
+  if (scroll) {
+    $("#intentTimeline")?.querySelector(".intent-timepoint.active")
+      ?.scrollIntoView({ block: "nearest", inline: "center" });
+  }
+}
+
+function updateIntentFrameNavigation() {
+  const intent = state.intentLabeling;
+  const items = intent.caseData?.timepoints || [];
+  const index = items.findIndex((item) => item.id === intent.activeTimepointId);
+  const select = $("#intentTimepointSelect");
+  if (select) select.value = intent.activeTimepointId;
+  const ordinal = $("#intentFrameOrdinalInput");
+  if (ordinal) {
+    ordinal.value = index >= 0 ? String(index + 1) : "";
+    ordinal.max = String(Math.max(1, items.length));
+  }
+  if ($("#intentFrameCount")) $("#intentFrameCount").textContent = String(items.length || "—");
+  if ($("#intentPreviousFrame")) $("#intentPreviousFrame").disabled = index <= 0;
+  if ($("#intentNextFrame")) $("#intentNextFrame").disabled = index < 0 || index >= items.length - 1;
+}
+
+function renderIntentActiveFrame() {
+  updateIntentFrameNavigation();
+  renderIntentHero();
+  renderIntentLabels();
+  updateIntentTimelineState();
 }
 
 function renderIntentLabels() {
@@ -516,15 +557,22 @@ function openIntentComments() {
 function renderIntentCase({ deferTimelineThumbnails = false } = {}) {
   const intent = state.intentLabeling;
   const data = intent.caseData;
-  renderIntentDatasetPicker();
+  renderIntentTopbarDatasetPicker(intent.datasetId);
   if (!data) return;
   $("#intentCaseInput").value = data.issue_id;
   $("#intentPreviousCase").disabled = !data.previous_case_id;
   $("#intentNextCase").disabled = !data.next_case_id;
+  const caseOrdinal = $("#intentCaseOrdinalInput");
+  if (caseOrdinal) {
+    caseOrdinal.value = String(data.ordinal || "");
+    caseOrdinal.max = String(Math.max(1, data.case_count || 0));
+  }
+  if ($("#intentCaseCount")) $("#intentCaseCount").textContent = String(data.case_count || "—");
   const select = $("#intentTimepointSelect");
   select.innerHTML = data.timepoints.map((item, index) => (
     `<option value="${escapeHtml(item.id)}"${item.id === intent.activeTimepointId ? " selected" : ""}>${index + 1} / ${data.timepoints.length} · ${escapeHtml(intentTimeLabel(item.offset_ms))}</option>`
   )).join("");
+  updateIntentFrameNavigation();
   const heroReady = renderIntentHero();
   renderIntentTimeline({ loadThumbnails: !deferTimelineThumbnails });
   renderIntentLabels();
@@ -577,12 +625,13 @@ async function loadIntentLabeling({ datasetId = "", caseId = "", offsetMs = null
     || intent.datasets.find((item) => item.id === intent.datasetId && item.available)
     || intent.datasets.find((item) => item.available);
   if (!selectedDataset) {
-    renderIntentDatasetPicker();
+    renderIntentTopbarDatasetPicker("");
     intentSetSaveState("数据集媒体尚未挂载", "error");
     return;
   }
   const datasetChanged = intent.datasetId && intent.datasetId !== selectedDataset.id;
   intent.datasetId = selectedDataset.id;
+  renderIntentTopbarDatasetPicker(intent.datasetId);
   if (datasetChanged) {
     intent.selectedAssignees = [];
     intent.assigneeDatasetId = "";
@@ -696,7 +745,7 @@ async function intentFlushSave() {
     if (intent.editVersion === savedEditVersion) {
       intent.overrides = Object.fromEntries((payload.labels?.overrides || []).map((item) => [item.timepoint_id, { ...item }]));
       intentSetSaveState("已自动保存", "saved");
-      renderIntentTimeline();
+      updateIntentTimelineState({ scroll: false });
       renderIntentLabels();
     } else {
       intent.dirty = true;
@@ -727,7 +776,7 @@ function intentSetAggregate(axis, value) {
   });
   intentMarkDirty();
   renderIntentLabels();
-  renderIntentTimeline();
+  updateIntentTimelineState({ scroll: false });
 }
 
 function intentSetFrameLabel(axis, value) {
@@ -745,7 +794,7 @@ function intentSetFrameLabel(axis, value) {
   });
   intentMarkDirty();
   renderIntentLabels();
-  renderIntentTimeline();
+  updateIntentTimelineState({ scroll: false });
 }
 
 function intentRestoreBatchPrefill() {
@@ -756,12 +805,14 @@ function intentRestoreBatchPrefill() {
   selected.forEach((timepoint) => delete intent.overrides[timepoint.id]);
   intentMarkDirty();
   renderIntentLabels();
-  renderIntentTimeline();
+  updateIntentTimelineState({ scroll: false });
 }
 
 function intentSelectTimepoint(timepointId, { updateRoute = true, extendSelection = false } = {}) {
   const intent = state.intentLabeling;
   if (!(intent.caseData?.timepoints || []).some((item) => item.id === timepointId)) return;
+  if (!extendSelection && intent.activeTimepointId === timepointId
+      && intent.selectedTimepointIds?.length === 1 && intent.selectedTimepointIds[0] === timepointId) return;
   if (extendSelection) {
     const anchorId = intent.selectionAnchorId || intent.activeTimepointId || timepointId;
     intent.selectionAnchorId = anchorId;
@@ -771,7 +822,7 @@ function intentSelectTimepoint(timepointId, { updateRoute = true, extendSelectio
     intent.selectedTimepointIds = [timepointId];
   }
   intent.activeTimepointId = timepointId;
-  renderIntentCase();
+  renderIntentActiveFrame();
   if (updateRoute && state.activePage === "intent") {
     history.replaceState({ page: "intent", caseId: intent.caseId }, "", pageUrl("intent", intentRouteOptions()));
   }
@@ -793,6 +844,39 @@ async function intentNavigateCase(direction) {
   const caseId = direction < 0 ? data?.previous_case_id : data?.next_case_id;
   if (!caseId) return;
   await loadIntentLabeling({ datasetId: state.intentLabeling.datasetId, caseId, assignees: state.intentLabeling.selectedAssignees, historyMode: "push" });
+}
+
+async function intentJumpToCaseOrdinal(rawValue) {
+  const intent = state.intentLabeling;
+  const total = Number(intent.caseData?.case_count) || 0;
+  if (!total) return;
+  const ordinal = Math.max(1, Math.min(total, Math.trunc(Number(rawValue) || 1)));
+  if (ordinal === Number(intent.caseData?.ordinal)) {
+    $("#intentCaseOrdinalInput").value = String(ordinal);
+    return;
+  }
+  await intentFlushSave();
+  const params = intentAssigneeSearchParams();
+  params.set("status", "all");
+  params.set("page_size", "1");
+  params.set("page", String(ordinal));
+  const payload = await api(intentApiUrl(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases`, params));
+  const caseId = payload.items?.[0]?.case_id;
+  if (!caseId) throw new Error(`找不到第 ${ordinal} 个 Issue。`);
+  await loadIntentLabeling({
+    datasetId: intent.datasetId,
+    caseId,
+    assignees: intent.selectedAssignees,
+    historyMode: "push",
+  });
+}
+
+function intentJumpToFrameOrdinal(rawValue) {
+  const items = state.intentLabeling.caseData?.timepoints || [];
+  if (!items.length) return;
+  const ordinal = Math.max(1, Math.min(items.length, Math.trunc(Number(rawValue) || 1)));
+  $("#intentFrameOrdinalInput").value = String(ordinal);
+  intentSelectTimepoint(items[ordinal - 1].id);
 }
 
 function intentPreviewFrames(kind) {
@@ -885,17 +969,21 @@ function bindIntentLabelingEvents() {
     event.preventDefault();
     timeline.scrollLeft += event.deltaY;
   }, { passive: false });
-  $("#intentExperimentDatasetSelect")?.addEventListener("change", (event) => {
-    state.intentLabeling.experimentsDatasetId = "";
-    loadIntentExperimentAdmin({ datasetId: event.target.value, force: true })
-      .catch((error) => showToast(error.message, true));
+  $("#intentTopbarDatasetSelect")?.addEventListener("change", (event) => {
+    const datasetId = event.target.value;
+    if (state.activePage === "intent-experiments") {
+      state.intentLabeling.experimentsDatasetId = "";
+      loadIntentExperimentAdmin({ datasetId, force: true })
+        .catch((error) => showToast(error.message, true));
+      return;
+    }
+    (async () => {
+      await intentFlushSave();
+      await loadIntentLabeling({ datasetId, assignees: [], historyMode: "push" });
+    })().catch((error) => showToast(error.message, true));
   });
   $("#intentExperimentForm")?.addEventListener("submit", (event) => {
     createIntentExperiment(event).catch((error) => showToast(error.message, true));
-  });
-  $("#intentRefreshExperiments")?.addEventListener("click", () => {
-    state.intentLabeling.experimentsDatasetId = "";
-    loadIntentExperiments({ force: true }).catch((error) => showToast(error.message, true));
   });
   $("#intentExperimentMode")?.addEventListener("change", (event) => {
     const full = event.target.value === "full";
@@ -909,10 +997,6 @@ function bindIntentLabelingEvents() {
   });
   $("#intentExperimentCaseCount")?.addEventListener("input", updateIntentExperimentEstimate);
   $("#intentExperimentOverlap")?.addEventListener("change", updateIntentExperimentEstimate);
-  $("#intentDatasetSelect")?.addEventListener("change", async (event) => {
-    await intentFlushSave();
-    await loadIntentLabeling({ datasetId: event.target.value, assignees: [], historyMode: "push" });
-  });
   $("#intentLoadCaseButton")?.addEventListener("click", () => {
     (async () => {
       await intentFlushSave();
@@ -930,6 +1014,22 @@ function bindIntentLabelingEvents() {
     $("#intentLoadCaseButton")?.click();
   });
   $("#intentTimepointSelect")?.addEventListener("change", (event) => intentSelectTimepoint(event.target.value));
+  $("#intentCaseOrdinalInput")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    event.currentTarget.blur();
+  });
+  $("#intentCaseOrdinalInput")?.addEventListener("change", (event) => {
+    intentJumpToCaseOrdinal(event.currentTarget.value).catch((error) => showToast(error.message, true));
+  });
+  $("#intentFrameOrdinalInput")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    event.currentTarget.blur();
+  });
+  $("#intentFrameOrdinalInput")?.addEventListener("change", (event) => {
+    intentJumpToFrameOrdinal(event.currentTarget.value);
+  });
   $("#intentPreviousFrame")?.addEventListener("click", () => intentMoveFrame(-1));
   $("#intentNextFrame")?.addEventListener("click", () => intentMoveFrame(1));
   $("#intentPreviousCase")?.addEventListener("click", () => intentNavigateCase(-1).catch((error) => showToast(error.message, true)));

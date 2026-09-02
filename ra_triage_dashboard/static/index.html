@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-296`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-297`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -160,6 +160,10 @@
               <h1 id="pageTitle">Manual Triage Workbench</h1>
             </div>
           </div>
+          <label class="intent-topbar-dataset" for="intentTopbarDatasetSelect">
+            <span>数据集</span>
+            <select id="intentTopbarDatasetSelect" aria-label="意图数据集"></select>
+          </label>
           <div class="topbar-baselines" aria-label="数据集">
             <span class="topbar-baselines-label"><span class="ui-lang-zh">数据集</span><span class="ui-lang-en">Datasets</span></span>
             <div class="multi-filter baseline-filter" id="baselineFilter" data-empty-label="数据集"></div>
@@ -320,15 +324,26 @@
 
           <section class="app-page intent-labeling-page hidden" id="intentLabelingPage" data-page="intent">
             <section class="intent-commandbar" aria-label="意图标注导航">
-              <label><span>数据集</span><select id="intentDatasetSelect"></select></label>
-              <label><span>任务负责人</span><div class="multi-filter" id="intentAssigneeFilter" data-placeholder="全部负责人"></div></label>
               <label class="intent-case-field"><span>Issue</span><input id="intentCaseInput" autocomplete="off" spellcheck="false" placeholder="例如 cn28896325"/><button class="button button-quiet" id="intentLoadCaseButton" type="button">打开</button></label>
+              <label class="intent-assignee-field"><span>任务负责人</span><div class="multi-filter" id="intentAssigneeFilter" data-placeholder="全部负责人"></div></label>
               <label class="intent-timepoint-field"><span class="intent-field-heading"><span>媒体时间点</span><span class="intent-save-state" id="intentSaveState">尚未修改</span></span><select id="intentTimepointSelect"></select></label>
-              <div class="intent-command-actions">
-                <button class="button button-quiet" id="intentPreviousCase" type="button" aria-keyshortcuts="ArrowUp"><kbd>↑</kbd> 上一 Issue</button>
-                <button class="button button-quiet" id="intentPreviousFrame" type="button" aria-keyshortcuts="ArrowLeft"><kbd>←</kbd> 上一帧</button>
-                <button class="button button-quiet" id="intentNextFrame" type="button" aria-keyshortcuts="ArrowRight">下一帧 <kbd>→</kbd></button>
-                <button class="button button-quiet" id="intentNextCase" type="button" aria-keyshortcuts="ArrowDown">下一 Issue <kbd>↓</kbd></button>
+              <div class="intent-command-navigator intent-case-navigator">
+                <span>Issue 跳转</span>
+                <div class="intent-stepper">
+                  <button class="button button-quiet" id="intentPreviousCase" type="button" aria-keyshortcuts="ArrowUp"><kbd>↑</kbd> 上一 Issue</button>
+                  <input id="intentCaseOrdinalInput" type="number" min="1" step="1" inputmode="numeric" aria-label="跳转到第几个 Issue"/>
+                  <span class="intent-stepper-total">/ <strong id="intentCaseCount">—</strong></span>
+                  <button class="button button-quiet" id="intentNextCase" type="button" aria-keyshortcuts="ArrowDown">下一 Issue <kbd>↓</kbd></button>
+                </div>
+              </div>
+              <div class="intent-command-navigator intent-frame-navigator">
+                <span>帧跳转</span>
+                <div class="intent-stepper">
+                  <button class="button button-quiet" id="intentPreviousFrame" type="button" aria-keyshortcuts="ArrowLeft"><kbd>←</kbd> 上一帧</button>
+                  <input id="intentFrameOrdinalInput" type="number" min="1" step="1" inputmode="numeric" aria-label="跳转到第几帧"/>
+                  <span class="intent-stepper-total">/ <strong id="intentFrameCount">—</strong></span>
+                  <button class="button button-quiet" id="intentNextFrame" type="button" aria-keyshortcuts="ArrowRight">下一帧 <kbd>→</kbd></button>
+                </div>
               </div>
             </section>
             <div class="intent-workspace">
@@ -376,10 +391,6 @@
           </section>
 
           <section class="app-page intent-experiment-page hidden" id="intentExperimentsPage" data-page="intent-experiments">
-            <section class="intent-experiment-commandbar" aria-label="实验数据集切换">
-              <label><span>数据集</span><select id="intentExperimentDatasetSelect"></select></label>
-              <button class="button button-quiet" id="intentRefreshExperiments" type="button">刷新实验</button>
-            </section>
             <section class="intent-experiment-panel" aria-labelledby="intentExperimentTitle">
               <header class="intent-experiment-header">
                 <div><span class="intent-admin-badge">管理员</span><h3 id="intentExperimentTitle">多盲实验与任务分配</h3><p>创建独立实验并生成不可变分配快照；实验关闭后仍保留审计记录，不会清空标注。</p></div>
@@ -1739,7 +1750,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-296`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-297`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
