@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-295`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-296`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -321,6 +321,7 @@
           <section class="app-page intent-labeling-page hidden" id="intentLabelingPage" data-page="intent">
             <section class="intent-commandbar" aria-label="意图标注导航">
               <label><span>数据集</span><select id="intentDatasetSelect"></select></label>
+              <label><span>任务负责人</span><div class="multi-filter" id="intentAssigneeFilter" data-placeholder="全部负责人"></div></label>
               <label class="intent-case-field"><span>Issue</span><input id="intentCaseInput" autocomplete="off" spellcheck="false" placeholder="例如 cn28896325"/><button class="button button-quiet" id="intentLoadCaseButton" type="button">打开</button></label>
               <label class="intent-timepoint-field"><span class="intent-field-heading"><span>媒体时间点</span><span class="intent-save-state" id="intentSaveState">尚未修改</span></span><select id="intentTimepointSelect"></select></label>
               <div class="intent-command-actions">
@@ -353,10 +354,6 @@
                   <h4>变道意图</h4>
                   <div class="intent-label-grid" id="intentAggregateLane"><button type="button" data-intent-aggregate-axis="laneChange" data-value="no_lane_change" aria-keyshortcuts="Shift+6"><kbd>⇧6</kbd>非变道</button><button type="button" data-intent-aggregate-axis="laneChange" data-value="lane_change" aria-keyshortcuts="Shift+7"><kbd>⇧7</kbd>变道</button></div>
                   <p class="intent-coverage" id="intentCoverage">—</p>
-                  <section class="intent-collaboration" aria-labelledby="intentContributorsTitle">
-                    <div class="intent-collaboration-heading"><h4 id="intentContributorsTitle">盲标进度</h4><small id="intentRevealState">未进入实验</small></div>
-                    <div class="intent-contributor-list" id="intentContributorList"><p>尚无其他标注</p></div>
-                  </section>
                 </section>
                 <section class="intent-card intent-label-editor">
                   <h3><span id="intentFrameTitle">当前帧标签</span> <small id="intentFrameSource">来自批量预填</small></h3>
@@ -365,21 +362,27 @@
                   <h4>变道意图</h4>
                   <div class="intent-label-grid"><button type="button" data-intent-frame-axis="laneChange" data-value="no_lane_change" aria-keyshortcuts="6"><kbd>6</kbd>非变道</button><button type="button" data-intent-frame-axis="laneChange" data-value="lane_change" aria-keyshortcuts="7"><kbd>7</kbd>变道</button></div>
                   <button class="button button-quiet intent-restore-button" id="intentRestoreBatchPrefill" type="button" aria-keyshortcuts="0"><span id="intentRestoreBatchPrefillText">当前帧恢复批量预填</span> <kbd>0</kbd></button>
-                  <section class="intent-collaboration intent-comments" aria-labelledby="intentCommentsTitle">
-                    <div class="intent-collaboration-heading"><h4 id="intentCommentsTitle">讨论</h4><small id="intentCommentCount">0 条</small></div>
-                    <div class="intent-comment-list" id="intentCommentList"><p>还没有评论</p></div>
-                    <form class="intent-comment-form" id="intentCommentForm"><textarea id="intentCommentInput" maxlength="1000" rows="2" placeholder="记录疑问或标注规则；盲标答案不会自动带入评论"></textarea><button class="button button-primary" type="submit">发表</button></form>
-                  </section>
+                </section>
+                <section class="intent-card intent-collaboration-card intent-contributors-card" aria-labelledby="intentContributorsTitle">
+                  <h3><span id="intentContributorsTitle">已有标注</span><small id="intentRevealState">未进入实验</small></h3>
+                  <div class="intent-contributor-list" id="intentContributorList"><p>尚无其他标注</p></div>
+                </section>
+                <section class="intent-card intent-collaboration-card intent-discussion-card" aria-labelledby="intentCommentsTitle">
+                  <h3><span id="intentCommentsTitle">讨论</span><small id="intentCommentCount">0 条</small></h3>
+                  <button class="button button-quiet" id="intentOpenComments" type="button">打开讨论</button>
                 </section>
               </aside>
             </div>
           </section>
 
           <section class="app-page intent-experiment-page hidden" id="intentExperimentsPage" data-page="intent-experiments">
+            <section class="intent-experiment-commandbar" aria-label="实验数据集切换">
+              <label><span>数据集</span><select id="intentExperimentDatasetSelect"></select></label>
+              <button class="button button-quiet" id="intentRefreshExperiments" type="button">刷新实验</button>
+            </section>
             <section class="intent-experiment-panel" aria-labelledby="intentExperimentTitle">
               <header class="intent-experiment-header">
                 <div><span class="intent-admin-badge">管理员</span><h3 id="intentExperimentTitle">多盲实验与任务分配</h3><p>创建独立实验并生成不可变分配快照；实验关闭后仍保留审计记录，不会清空标注。</p></div>
-                <div class="intent-experiment-header-actions"><label><span>数据集</span><select id="intentExperimentDatasetSelect"></select></label><button class="button button-quiet" id="intentRefreshExperiments" type="button">刷新实验</button></div>
               </header>
               <div class="intent-experiment-layout">
                 <section class="intent-experiment-create" aria-labelledby="intentExperimentCreateTitle">
@@ -1251,6 +1254,24 @@
       </form>
     </dialog>
 
+    <dialog class="dialog comment-thread-dialog intent-comment-dialog" id="intentCommentDialog" aria-labelledby="intentCommentDialogTitle">
+      <form class="dialog-card" id="intentCommentForm">
+        <div class="dialog-heading">
+          <div>
+            <h2 id="intentCommentDialogTitle">意图标注讨论</h2>
+            <p class="dialog-copy" id="intentCommentDialogContext"></p>
+          </div>
+          <button class="icon-button" type="button" data-close="intentCommentDialog" aria-label="关闭">×</button>
+        </div>
+        <div class="intent-comment-list" id="intentCommentList" aria-live="polite"><p>还没有评论</p></div>
+        <label class="intent-comment-editor"><span>添加评论</span><textarea id="intentCommentInput" maxlength="1000" rows="4" placeholder="记录疑问或标注规则；盲标答案不会自动带入评论"></textarea></label>
+        <div class="dialog-actions">
+          <button class="button button-quiet" type="button" data-close="intentCommentDialog">关闭</button>
+          <button class="button button-primary" type="submit">发表评论</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog class="dialog comparison-reason-dialog" id="comparisonReasonDialog" aria-labelledby="comparisonReasonTitle">
       <div class="dialog-card">
         <div class="dialog-heading">
@@ -1718,7 +1739,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-295`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-296`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

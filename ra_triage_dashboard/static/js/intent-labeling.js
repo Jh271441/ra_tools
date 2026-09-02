@@ -31,7 +31,19 @@ function intentRouteOptions(overrides = {}) {
     datasetId: overrides.datasetId ?? intent.datasetId,
     caseId: overrides.caseId ?? intent.caseId,
     offsetMs: overrides.offsetMs ?? active?.offset_ms ?? null,
+    assignees: overrides.assignees ?? intent.selectedAssignees,
   };
+}
+
+function intentAssigneeSearchParams(assignees = state.intentLabeling.selectedAssignees) {
+  const params = new URLSearchParams();
+  (assignees || []).forEach((username) => params.append("assignee", username));
+  return params;
+}
+
+function intentApiUrl(path, params = new URLSearchParams()) {
+  const query = params.toString();
+  return `${path}${query ? `?${query}` : ""}`;
 }
 
 function intentTimeLabel(offsetMs) {
@@ -91,6 +103,43 @@ function renderIntentDatasetPicker() {
   select.innerHTML = state.intentLabeling.datasets.map((item) => (
     `<option value="${escapeHtml(item.id)}"${item.id === state.intentLabeling.datasetId ? " selected" : ""}${item.available ? "" : " disabled"}>${escapeHtml(item.display_name)}</option>`
   )).join("");
+}
+
+function renderIntentAssigneeFilter() {
+  const intent = state.intentLabeling;
+  renderMultiFilter($("#intentAssigneeFilter"), {
+    options: intent.assignees.map((item) => ({
+      value: item.username,
+      label: `${item.username} · ${item.case_count} Case`,
+    })),
+    selected: intent.selectedAssignees,
+    onChange: (values) => {
+      (async () => {
+        await intentFlushSave();
+        intent.selectedAssignees = values;
+        await loadIntentLabeling({
+          datasetId: intent.datasetId,
+          caseId: "",
+          assignees: values,
+          historyMode: "push",
+        });
+      })().catch((error) => showToast(error.message, true));
+    },
+  });
+}
+
+async function loadIntentAssignees(datasetId, requested = null) {
+  const intent = state.intentLabeling;
+  if (intent.assigneeDatasetId !== datasetId) {
+    const payload = await api(`/api/intent-assignees?dataset_id=${encodeURIComponent(datasetId)}`);
+    if (intent.datasetId !== datasetId) return;
+    intent.assignees = payload.items || [];
+    intent.assigneeDatasetId = datasetId;
+  }
+  const available = new Set(intent.assignees.map((item) => item.username));
+  const selected = requested == null ? intent.selectedAssignees : parseFilterList(requested);
+  intent.selectedAssignees = selected.filter((username) => available.has(username));
+  renderIntentAssigneeFilter();
 }
 
 function intentExperimentModeLabel(mode) {
@@ -298,20 +347,20 @@ function intentPrepareMediaZoom(kind, descriptor) {
 }
 
 function intentSetImage(kind, image, missing, descriptor, sequence) {
-  if (!image || !missing) return;
+  if (!image || !missing) return Promise.resolve();
   intentPrepareMediaZoom(kind, descriptor);
   if (!descriptor?.url) {
     image.removeAttribute("src");
     image.hidden = true;
     missing.hidden = false;
-    return;
+    return Promise.resolve();
   }
   const probe = new Image();
   probe.src = descriptor.url;
   const ready = typeof probe.decode === "function"
     ? probe.decode().catch(() => undefined)
     : Promise.resolve();
-  ready.then(() => {
+  return ready.then(() => {
     if (sequence !== state.intentLabeling.mediaSeq) return;
     if (!probe.naturalWidth) {
       image.removeAttribute("src");
@@ -333,13 +382,40 @@ function renderIntentHero() {
     ? ""
     : `Δ ${active.camera_delta_ms >= 0 ? "+" : ""}${active.camera_delta_ms} ms`;
   const sequence = ++intent.mediaSeq;
-  intentSetImage("camera", $("#intentCameraImage"), $("#intentCameraMissing"), active?.camera, sequence);
-  intentSetImage("bev", $("#intentBevImage"), $("#intentBevMissing"), active?.bev, sequence);
+  return Promise.all([
+    intentSetImage("camera", $("#intentCameraImage"), $("#intentCameraMissing"), active?.camera, sequence),
+    intentSetImage("bev", $("#intentBevImage"), $("#intentBevMissing"), active?.bev, sequence),
+  ]);
 }
 
-function renderIntentTimeline() {
+function activateIntentTimelineThumbnails(timeline = $("#intentTimeline")) {
+  if (!timeline) return;
+  state.intentLabeling.thumbnailObserver?.disconnect();
+  if ("IntersectionObserver" in window) {
+    state.intentLabeling.thumbnailObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const image = entry.target;
+        image.src = image.dataset.intentLazySrc;
+        delete image.dataset.intentLazySrc;
+        state.intentLabeling.thumbnailObserver?.unobserve(image);
+      }
+    }, { root: timeline, rootMargin: "240px" });
+    timeline.querySelectorAll("img[data-intent-lazy-src]").forEach((image) => {
+      state.intentLabeling.thumbnailObserver.observe(image);
+    });
+  } else {
+    timeline.querySelectorAll("img[data-intent-lazy-src]").forEach((image) => {
+      image.src = image.dataset.intentLazySrc;
+      delete image.dataset.intentLazySrc;
+    });
+  }
+}
+
+function renderIntentTimeline({ loadThumbnails = true } = {}) {
   const timeline = $("#intentTimeline");
   if (!timeline) return;
+  state.intentLabeling.thumbnailObserver?.disconnect();
   const intent = state.intentLabeling;
   const timepoints = intent.caseData?.timepoints || [];
   timeline.innerHTML = timepoints.map((item) => {
@@ -359,25 +435,7 @@ function renderIntentTimeline() {
   timeline.querySelectorAll("[data-intent-timepoint]").forEach((button) => {
     button.addEventListener("click", (event) => intentSelectTimepoint(button.dataset.intentTimepoint, { extendSelection: event.shiftKey }));
   });
-  state.intentLabeling.thumbnailObserver?.disconnect();
-  if ("IntersectionObserver" in window) {
-    state.intentLabeling.thumbnailObserver = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
-        const image = entry.target;
-        image.src = image.dataset.intentLazySrc;
-        delete image.dataset.intentLazySrc;
-        state.intentLabeling.thumbnailObserver?.unobserve(image);
-      }
-    }, { root: timeline, rootMargin: "240px" });
-    timeline.querySelectorAll("img[data-intent-lazy-src]").forEach((image) => {
-      state.intentLabeling.thumbnailObserver.observe(image);
-    });
-  } else {
-    timeline.querySelectorAll("img[data-intent-lazy-src]").forEach((image) => {
-      image.src = image.dataset.intentLazySrc;
-    });
-  }
+  if (loadThumbnails) activateIntentTimelineThumbnails(timeline);
   timeline.querySelector(".intent-timepoint.active")?.scrollIntoView({ block: "nearest", inline: "center" });
 }
 
@@ -447,7 +505,15 @@ function renderIntentCollaboration() {
   }
 }
 
-function renderIntentCase() {
+function openIntentComments() {
+  const intent = state.intentLabeling;
+  const context = $("#intentCommentDialogContext");
+  if (context) context.textContent = `${intent.datasetId} · ${intent.caseData?.issue_id || intent.caseId}`;
+  openDialog("intentCommentDialog");
+  window.setTimeout(() => $("#intentCommentInput")?.focus(), 0);
+}
+
+function renderIntentCase({ deferTimelineThumbnails = false } = {}) {
   const intent = state.intentLabeling;
   const data = intent.caseData;
   renderIntentDatasetPicker();
@@ -459,10 +525,18 @@ function renderIntentCase() {
   select.innerHTML = data.timepoints.map((item, index) => (
     `<option value="${escapeHtml(item.id)}"${item.id === intent.activeTimepointId ? " selected" : ""}>${index + 1} / ${data.timepoints.length} · ${escapeHtml(intentTimeLabel(item.offset_ms))}</option>`
   )).join("");
-  renderIntentHero();
-  renderIntentTimeline();
+  const heroReady = renderIntentHero();
+  renderIntentTimeline({ loadThumbnails: !deferTimelineThumbnails });
   renderIntentLabels();
   renderIntentCollaboration();
+  if (deferTimelineThumbnails) {
+    const renderedCase = data;
+    heroReady.finally(() => {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+        if (state.intentLabeling.caseData === renderedCase) activateIntentTimelineThumbnails();
+      }));
+    });
+  }
 }
 
 async function postIntentComment(event) {
@@ -491,7 +565,7 @@ async function postIntentComment(event) {
   }
 }
 
-async function loadIntentLabeling({ datasetId = "", caseId = "", offsetMs = null, historyMode = "replace" } = {}) {
+async function loadIntentLabeling({ datasetId = "", caseId = "", offsetMs = null, assignees = null, historyMode = "replace" } = {}) {
   const intent = state.intentLabeling;
   const requestSeq = ++intent.requestSeq;
   if (!intent.datasets.length) {
@@ -507,25 +581,42 @@ async function loadIntentLabeling({ datasetId = "", caseId = "", offsetMs = null
     intentSetSaveState("数据集媒体尚未挂载", "error");
     return;
   }
+  const datasetChanged = intent.datasetId && intent.datasetId !== selectedDataset.id;
   intent.datasetId = selectedDataset.id;
+  if (datasetChanged) {
+    intent.selectedAssignees = [];
+    intent.assigneeDatasetId = "";
+  }
+  await loadIntentAssignees(intent.datasetId, assignees);
+  if (requestSeq !== intent.requestSeq) return;
+  const assigneeParams = intentAssigneeSearchParams();
   let targetCaseId = caseId;
   if (targetCaseId && !/^cn[0-9]+_[0-9]+$/.test(targetCaseId)) {
     if (!/^cn[0-9]+$/.test(targetCaseId)) throw new Error("请输入完整的 Issue ID，例如 cn28896325。");
-    const matches = await api(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases?q=${encodeURIComponent(targetCaseId)}&page_size=200`);
+    const matchParams = intentAssigneeSearchParams();
+    matchParams.set("q", targetCaseId);
+    matchParams.set("page_size", "200");
+    const matches = await api(intentApiUrl(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases`, matchParams));
     if (requestSeq !== intent.requestSeq) return;
     const exact = (matches.items || []).filter((item) => item.issue_id === targetCaseId);
     if (exact.length !== 1) throw new Error(exact.length ? "该 Issue 对应多个 Episode，无法唯一打开。" : "该数据集中没有这个 Issue。");
     targetCaseId = exact[0].case_id;
   }
   if (!targetCaseId) {
-    const pending = await api(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases?status=unlabeled&page_size=1`);
+    const pendingParams = new URLSearchParams(assigneeParams);
+    pendingParams.set("status", "unlabeled");
+    pendingParams.set("page_size", "1");
+    const pending = await api(intentApiUrl(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases`, pendingParams));
+    const fallbackParams = new URLSearchParams(assigneeParams);
+    fallbackParams.set("status", "all");
+    fallbackParams.set("page_size", "1");
     const fallback = pending.items?.length
       ? pending
-      : await api(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases?status=all&page_size=1`);
+      : await api(intentApiUrl(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases`, fallbackParams));
     targetCaseId = fallback.items?.[0]?.case_id || "";
   }
   if (!targetCaseId) throw new Error("数据集中没有可标注 Case。");
-  const data = await api(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases/${encodeURIComponent(targetCaseId)}`);
+  const data = await api(intentApiUrl(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases/${encodeURIComponent(targetCaseId)}`, assigneeParams));
   if (requestSeq !== intent.requestSeq) return;
   intent.caseId = data.case_id;
   intent.caseData = data;
@@ -546,7 +637,7 @@ async function loadIntentLabeling({ datasetId = "", caseId = "", offsetMs = null
   )?.id || "";
   intent.selectedTimepointIds = intent.activeTimepointId ? [intent.activeTimepointId] : [];
   intent.selectionAnchorId = intent.activeTimepointId;
-  renderIntentCase();
+  renderIntentCase({ deferTimelineThumbnails: true });
   intentSetSaveState(intent.revisionId ? "已自动保存" : "尚未标注", intent.revisionId ? "saved" : "");
   if (state.activePage === "intent" && historyMode) {
     const route = pageUrl("intent", intentRouteOptions());
@@ -701,7 +792,7 @@ async function intentNavigateCase(direction) {
   const data = state.intentLabeling.caseData;
   const caseId = direction < 0 ? data?.previous_case_id : data?.next_case_id;
   if (!caseId) return;
-  await loadIntentLabeling({ datasetId: state.intentLabeling.datasetId, caseId, historyMode: "push" });
+  await loadIntentLabeling({ datasetId: state.intentLabeling.datasetId, caseId, assignees: state.intentLabeling.selectedAssignees, historyMode: "push" });
 }
 
 function intentPreviewFrames(kind) {
@@ -787,6 +878,7 @@ function bindIntentLabelingEvents() {
   $("#intentCommentForm")?.addEventListener("submit", (event) => {
     postIntentComment(event).catch((error) => showToast(error.message, true));
   });
+  $("#intentOpenComments")?.addEventListener("click", openIntentComments);
   $("#intentTimeline")?.addEventListener("wheel", (event) => {
     const timeline = event.currentTarget;
     if (event.ctrlKey || event.metaKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
@@ -819,7 +911,7 @@ function bindIntentLabelingEvents() {
   $("#intentExperimentOverlap")?.addEventListener("change", updateIntentExperimentEstimate);
   $("#intentDatasetSelect")?.addEventListener("change", async (event) => {
     await intentFlushSave();
-    await loadIntentLabeling({ datasetId: event.target.value, historyMode: "push" });
+    await loadIntentLabeling({ datasetId: event.target.value, assignees: [], historyMode: "push" });
   });
   $("#intentLoadCaseButton")?.addEventListener("click", () => {
     (async () => {
@@ -827,6 +919,7 @@ function bindIntentLabelingEvents() {
       await loadIntentLabeling({
         datasetId: state.intentLabeling.datasetId,
         caseId: $("#intentCaseInput")?.value.trim() || "",
+        assignees: state.intentLabeling.selectedAssignees,
         historyMode: "push",
       });
     })().catch((error) => showToast(error.message, true));

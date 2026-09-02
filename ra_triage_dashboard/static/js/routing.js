@@ -429,6 +429,7 @@ function parsePageRoute() {
     intentDatasetId: params.get("dataset") || "",
     intentCaseId: params.get("case") || "",
     intentOffsetMs: Number.parseInt(params.get("t") || "", 10),
+    intentAssignees: parseFilterList(params.get("assignee") || ""),
     // Issue / GT 上传已从页面移除；旧链接统一落到安全的模型结果导入区。
     importKind:
       params.get("import") === "model" ||
@@ -709,6 +710,7 @@ function pageUrl(page, options = {}) {
       : options;
     if (intent.datasetId) url.searchParams.set("dataset", intent.datasetId);
     if (intent.caseId) url.searchParams.set("case", intent.caseId);
+    if (intent.assignees?.length) url.searchParams.set("assignee", intent.assignees.join(","));
     if (intent.offsetMs !== null && intent.offsetMs !== "" && Number.isFinite(Number(intent.offsetMs))) {
       url.searchParams.set("t", String(Number(intent.offsetMs)));
     }
@@ -762,6 +764,7 @@ function showPage(
     intentDatasetId = "",
     intentCaseId = "",
     intentOffsetMs = null,
+    intentAssignees = [],
   } = {}
 ) {
   const target = PAGE_ROUTES[page] ? page : "review";
@@ -827,6 +830,7 @@ function showPage(
       datasetId: intentDatasetId,
       caseId: intentCaseId,
       offsetMs: intentOffsetMs,
+      assignees: intentAssignees,
     }).catch((error) => showToast(error.message, true));
   }
   if (target === "intent-experiments" && loadPageData && typeof loadIntentExperimentAdmin === "function") {
@@ -889,6 +893,7 @@ function showPage(
               datasetId: intentDatasetId,
               caseId: intentCaseId,
               offsetMs: intentOffsetMs,
+              assignees: intentAssignees,
             })
           : { issue, issues, source, importKind };
   const historyState = {

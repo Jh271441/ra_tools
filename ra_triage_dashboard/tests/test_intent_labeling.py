@@ -352,6 +352,46 @@ class IntentExperimentTest(unittest.TestCase):
             self.assertEqual(closed["status"], "closed")
             self.assertEqual(closed["assignment_count"], 4)
 
+    def test_active_assignment_owner_filter_uses_same_experiment_intersection(self) -> None:
+        assignments = [
+            {"case_id": "cn1_1", "username": "alice", "assignment_kind": "base", "ordinal": 1},
+            {"case_id": "cn2_2", "username": "alice", "assignment_kind": "base", "ordinal": 2},
+            {"case_id": "cn1_1", "username": "bob", "assignment_kind": "cross", "ordinal": 1},
+            {"case_id": "cn3_3", "username": "bob", "assignment_kind": "base", "ordinal": 2},
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database = Database(Path(temp_dir) / "test.sqlite3")
+            database.init()
+            database.create_intent_experiment(
+                experiment_id="experiment-filter",
+                dataset_id="test-v1",
+                name="交叉筛选",
+                annotation_mode="blind",
+                overlap_ratio=0.5,
+                case_count=3,
+                seed=9,
+                assignments=assignments,
+                created_by="admin",
+                created_by_source="test",
+                created_by_verified=True,
+            )
+            owners = database.list_intent_assignment_assignees("test-v1")
+            self.assertEqual(
+                [(item["username"], item["case_count"]) for item in owners],
+                [("alice", 2), ("bob", 2)],
+            )
+            self.assertEqual(
+                database.intent_assigned_case_ids("test-v1", ["alice"]),
+                ("cn1_1", "cn2_2"),
+            )
+            self.assertEqual(
+                database.intent_assigned_case_ids("test-v1", ["alice", "bob"]),
+                ("cn1_1",),
+            )
+            database.close_intent_experiment("experiment-filter", closed_by="admin")
+            self.assertEqual(database.list_intent_assignment_assignees("test-v1"), [])
+            self.assertEqual(database.intent_assigned_case_ids("test-v1", ["alice"]), ())
+
 
 if __name__ == "__main__":
     unittest.main()

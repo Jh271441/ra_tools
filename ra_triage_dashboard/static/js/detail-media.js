@@ -775,10 +775,12 @@ function applyTrailDetailMetadata(result, issueId, requestSeq) {
   const trailShouldExclude = result?.dashboard_should_exclude === true;
   state.selectedCase.trail_should_exclude = trailShouldExclude;
   const excludeInput = $("#reviewExcludeInput");
-  if (excludeInput && trailShouldExclude && !state.reviewFormDirty) {
+  const hasCurrentRunReview = reviewAnnotationsForCurrentRun(state.selectedCase).length > 0;
+  const hasLocalDraft = Boolean(reviewDraftForCase(state.selectedCase));
+  if (excludeInput && trailShouldExclude && !hasCurrentRunReview && !hasLocalDraft && !state.reviewFormDirty) {
     // Trail's namespaced info marker is read-only here.  Checking the local
-    // box makes the state visible immediately; it becomes a local Review
-    // annotation only after the reviewer explicitly saves the form.
+    // box is only a first-Review suggestion. An explicit Review value,
+    // including false, is authoritative for its selected Run.
     excludeInput.checked = true;
   }
   renderDetailExternalLinks(state.selectedCase);

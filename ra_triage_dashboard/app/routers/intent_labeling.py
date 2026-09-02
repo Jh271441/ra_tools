@@ -7,7 +7,7 @@ import secrets
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
 from ..db_parts.shared import IntentAnnotationConflictError
@@ -80,6 +80,19 @@ async def list_intent_datasets(request: Request) -> dict[str, Any]:
     identity = await asyncio.to_thread(_intent_identity, request)
     return {
         "items": await asyncio.to_thread(_dataset_payloads, identity.username)
+    }
+
+
+@router.get("/api/intent-assignees")
+async def list_intent_assignees(dataset_id: str) -> dict[str, Any]:
+    try:
+        intent_dataset_registry.dataset(dataset_id)
+    except KeyError as exc:
+        raise _detail(404, str(exc)) from exc
+    return {
+        "items": await asyncio.to_thread(
+            database.list_intent_assignment_assignees, dataset_id
+        )
     }
 
 
@@ -211,11 +224,15 @@ def _list_cases(
     page: int,
     page_size: int,
     username: str = "",
+    assignees: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     try:
         case_ids = intent_dataset_registry.case_ids(dataset_id)
     except KeyError as exc:
         raise _detail(404, str(exc)) from exc
+    if assignees:
+        assigned = set(database.intent_assigned_case_ids(dataset_id, assignees))
+        case_ids = tuple(case_id for case_id in case_ids if case_id in assigned)
     summaries = database.intent_label_summaries(dataset_id, username)
     normalized_search = search.strip().lower()
     items = []
@@ -253,6 +270,7 @@ async def list_intent_cases(
     q: str = "",
     page: int = 1,
     page_size: int = 100,
+    assignee: list[str] = Query(default=[]),
 ) -> dict[str, Any]:
     if status not in {"all", "unlabeled", "partial", "completed"}:
         raise _detail(400, "意图标注状态筛选不合法。")
@@ -267,14 +285,23 @@ async def list_intent_cases(
         page=page,
         page_size=page_size,
         username=identity.username,
+        assignees=tuple(assignee[:20]),
     )
 
 
-def _case_payload(dataset_id: str, case_id: str, username: str = "") -> dict[str, Any]:
+def _case_payload(
+    dataset_id: str,
+    case_id: str,
+    username: str = "",
+    assignees: tuple[str, ...] = (),
+) -> dict[str, Any]:
     try:
         case_ids = intent_dataset_registry.case_ids(dataset_id)
     except KeyError as exc:
         raise _detail(404, str(exc)) from exc
+    if assignees:
+        assigned = set(database.intent_assigned_case_ids(dataset_id, assignees))
+        case_ids = tuple(item for item in case_ids if item in assigned)
     try:
         ordinal_index = case_ids.index(case_id)
     except ValueError as exc:
@@ -353,11 +380,18 @@ def _case_payload(dataset_id: str, case_id: str, username: str = "") -> dict[str
 
 @router.get("/api/intent-datasets/{dataset_id}/cases/{case_id}")
 async def get_intent_case(
-    request: Request, dataset_id: str, case_id: str
+    request: Request,
+    dataset_id: str,
+    case_id: str,
+    assignee: list[str] = Query(default=[]),
 ) -> dict[str, Any]:
     identity = await asyncio.to_thread(_intent_identity, request)
     return await asyncio.to_thread(
-        _case_payload, dataset_id, case_id, identity.username
+        _case_payload,
+        dataset_id,
+        case_id,
+        identity.username,
+        tuple(assignee[:20]),
     )
 
 

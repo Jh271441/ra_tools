@@ -738,6 +738,7 @@ function bindEvents() {
         runId: route.runId,
         restoreRoute: true,
         intentDatasetId: route.intentDatasetId,
+        intentAssignees: route.intentAssignees,
         intentCaseId: route.intentCaseId,
         intentOffsetMs: route.intentOffsetMs,
       });
@@ -826,6 +827,7 @@ async function bootstrap() {
     intentDatasetId: initialRoute.intentDatasetId,
     intentCaseId: initialRoute.intentCaseId,
     intentOffsetMs: initialRoute.intentOffsetMs,
+    intentAssignees: initialRoute.intentAssignees,
   });
   const sessionRequest = resolveSessionInBackground();
   try {
@@ -924,6 +926,7 @@ async function bootstrap() {
         datasetId: initialRoute.intentDatasetId,
         caseId: initialRoute.intentCaseId,
         offsetMs: initialRoute.intentOffsetMs,
+        assignees: initialRoute.intentAssignees,
       }));
     } else if (initialRoute.page === "intent-experiments") {
       initialPageRequests.push(loadIntentExperimentAdmin({
@@ -971,6 +974,7 @@ async function bootstrap() {
       intentDatasetId: initialRoute.intentDatasetId,
       intentCaseId: initialRoute.intentCaseId,
       intentOffsetMs: initialRoute.intentOffsetMs,
+      intentAssignees: initialRoute.intentAssignees,
     });
     if (initialRoute.page === "trail-update") {
       // Do not hold the initial shell on the remote Trail read. The local

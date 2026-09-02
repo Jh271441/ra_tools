@@ -4783,7 +4783,7 @@ body:is([data-active-page="intent"], [data-active-page="intent-experiments"]) .t
 .intent-labeling-page { width: 100%; max-width: 100%; min-width: 0; display: grid; gap: 10px; }
 .intent-commandbar {
   width: 100%; max-width: 100%; min-width: 0; display: grid;
-  grid-template-columns: 220px minmax(280px, 420px) 220px minmax(560px, 1fr);
+  grid-template-columns: 190px 220px minmax(240px, 1fr) 200px minmax(520px, 1.35fr);
   align-items: end; gap: 10px; padding: 10px 14px; border: 1px solid var(--line);
   border-radius: 12px; background: var(--raised);
 }
@@ -4800,7 +4800,7 @@ body:is([data-active-page="intent"], [data-active-page="intent-experiments"]) .t
 .intent-save-state[data-status="dirty"], .intent-save-state[data-status="saving"] { color: var(--warn); }
 .intent-save-state[data-status="error"] { color: var(--fail); }
 
-.intent-workspace { width: 100%; max-width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 10px; min-width: 0; align-items: start; }
+.intent-workspace { width: 100%; max-width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 10px; min-width: 0; align-items: start; }
 html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms ease-out; }
 .intent-main-column { display: grid; gap: 10px; min-width: 0; }
 .intent-media-panel, .intent-timeline-panel, .intent-card {
@@ -4864,10 +4864,8 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-coverage { margin: 7px 0 0; color: var(--ok); font-size: 10px; }
 .intent-restore-button { width: 100%; min-height: 34px; margin-top: 7px; padding-block: 4px; }
 .intent-card p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
-.intent-collaboration { min-height: 0; margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--line-soft); }
-.intent-collaboration-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
-.intent-collaboration-heading h4 { margin: 0; color: var(--text); }
-.intent-collaboration-heading small { color: var(--faint); font-size: 8px; }
+.intent-collaboration-card { min-height: 0; }
+.intent-contributors-card { display: grid; grid-template-rows: auto minmax(0, 1fr); }
 .intent-contributor-list, .intent-comment-list { min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: 5px; }
 .intent-contributor-list > p, .intent-comment-list > p { color: var(--faint); font-size: 9px; }
 .intent-contributor { display: flex; align-items: center; justify-content: space-between; gap: 7px; padding: 5px 7px; border: 1px solid var(--line-soft); border-radius: 6px; background: var(--overlay); }
@@ -4877,29 +4875,37 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-contributor span { overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .intent-contributor > small { flex: 0 0 auto; color: var(--warn); font-size: 8px; }
 .intent-contributor > small.is-complete { color: var(--ok); }
-.intent-comments { display: grid; grid-template-rows: auto minmax(46px, 1fr) auto; }
+.intent-discussion-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.intent-discussion-card h3 { margin: 0; }
+.intent-discussion-card .button { min-height: 30px; padding: 4px 10px; font-size: 9px; }
 .intent-comment-list { max-height: 150px; }
 .intent-comment { padding: 5px 7px; border-radius: 6px; background: var(--overlay); }
 .intent-comment > div { display: flex; align-items: center; justify-content: space-between; gap: 7px; }
 .intent-comment strong { color: var(--accent); font-size: 9px; }
 .intent-comment time { color: var(--faint); font-size: 7px; }
 .intent-comment p { margin-top: 2px; color: var(--text); font-size: 9px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
-.intent-comment-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 5px; margin-top: 6px; }
-.intent-comment-form textarea { width: 100%; min-width: 0; min-height: 38px; max-height: 70px; resize: vertical; padding: 6px 7px; font-size: 9px; }
-.intent-comment-form .button { min-height: 34px; padding: 5px 8px; font-size: 9px; }
+.intent-comment-dialog .dialog-card { width: min(720px, calc(100vw - 30px)); }
+.intent-comment-dialog .intent-comment-list { min-height: 180px; max-height: 45dvh; padding: 8px; border: 1px solid var(--line-soft); border-radius: 8px; }
+.intent-comment-dialog .intent-comment { padding: 8px 10px; }
+.intent-comment-dialog .intent-comment strong { font-size: 11px; }
+.intent-comment-dialog .intent-comment time { font-size: 9px; }
+.intent-comment-dialog .intent-comment p { font-size: 11px; }
+.intent-comment-editor { display: grid; gap: 5px; color: var(--muted); font-size: 10px; }
+.intent-comment-editor textarea { width: 100%; min-height: 92px; resize: vertical; }
 
 .intent-experiment-panel {
   width: min(1440px, 100%); min-width: 0; margin-inline: auto; padding: 18px; border: 1px solid var(--line); border-radius: 12px;
   background: var(--raised);
 }
-.intent-experiment-page { width: 100%; min-width: 0; }
+.intent-experiment-page { width: 100%; min-width: 0; display: grid; align-content: start; gap: 10px; }
+.intent-experiment-page.hidden { display: none; }
+.intent-experiment-commandbar { width: 100%; min-width: 0; display: grid; grid-template-columns: minmax(220px, 300px) auto; justify-content: start; align-items: end; gap: 8px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--raised); }
+.intent-experiment-commandbar label { min-width: 0; display: grid; gap: 5px; color: var(--muted); font-size: 10px; }
+.intent-experiment-commandbar select { width: 100%; height: 34px; }
 .intent-experiment-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--line-soft); }
 .intent-experiment-header > div { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 4px 9px; }
 .intent-experiment-header h3 { min-width: 0; margin: 0; color: var(--accent); font-size: 15px; }
 .intent-experiment-header p { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 10px; }
-.intent-experiment-header-actions { flex: 0 0 auto; display: flex; align-items: end; gap: 8px; }
-.intent-experiment-header-actions label { display: grid; gap: 4px; color: var(--muted); font-size: 9px; }
-.intent-experiment-header-actions select { width: 220px; height: 34px; }
 .intent-admin-badge { padding: 2px 6px; border: 1px solid rgba(36, 211, 238, .38); border-radius: 999px; color: var(--accent); background: rgba(36, 211, 238, .08); font-size: 9px; }
 .intent-experiment-layout { min-width: 0; display: grid; grid-template-columns: minmax(470px, 1.05fr) minmax(420px, .95fr); gap: 14px; align-items: stretch; }
 .intent-experiment-create, .intent-experiment-history { min-width: 0; display: grid; align-content: start; gap: 10px; padding: 14px; border: 1px solid var(--line-soft); border-radius: 10px; background: rgba(22, 27, 38, .72); }
@@ -4951,12 +4957,12 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .shortcut-guide-footer { margin: 12px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
 
 @media (max-width: 1600px) {
-  .intent-commandbar { grid-template-columns: minmax(160px, 190px) minmax(220px, 1fr) minmax(180px, 200px) minmax(420px, 480px); }
-  .intent-workspace { grid-template-columns: minmax(0, 1fr) 300px; }
+  .intent-commandbar { grid-template-columns: 160px 190px minmax(210px, 1fr) 180px minmax(400px, 460px); }
+  .intent-workspace { grid-template-columns: minmax(0, 1fr) 280px; }
 }
 @media (min-width: 1251px) and (max-width: 1600px) {
   .app-shell.sidebar-collapsed .intent-workspace,
-  html[data-sidebar-pref="collapsed"] .intent-workspace { grid-template-columns: minmax(0, 1fr) 330px; }
+  html[data-sidebar-pref="collapsed"] .intent-workspace { grid-template-columns: minmax(0, 1fr) 270px; }
   .app-shell.sidebar-collapsed .intent-timepoint,
   html[data-sidebar-pref="collapsed"] .intent-timepoint { flex-basis: 148px; }
 }
@@ -4971,12 +4977,12 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
   .intent-timepoint { height: 100%; min-height: 0; grid-template-rows: auto minmax(0, 1fr) auto; }
   .intent-thumb-stack { height: 100%; min-height: 0; grid-template-rows: repeat(2, minmax(0, 1fr)); }
   .intent-thumb-stack img, .intent-thumb-missing { height: 100%; min-height: 0; }
-  .intent-label-rail { height: 100%; min-height: 0; grid-template-rows: repeat(2, minmax(0, 1fr)); }
-  .intent-label-rail .intent-card { height: 100%; min-height: 0; display: flex; flex-direction: column; }
-  .intent-label-rail .intent-collaboration { margin-top: auto; }
+  .intent-label-rail { height: 100%; min-height: 0; grid-template-rows: auto auto minmax(76px, 1fr) auto; }
+  .intent-label-rail .intent-card { min-height: 0; }
+  .intent-label-rail .intent-comment-list { max-height: none; }
 }
 @media (max-width: 1400px) {
-  .intent-commandbar { grid-template-columns: 180px minmax(220px, 1fr) 190px; }
+  .intent-commandbar { grid-template-columns: 170px 200px minmax(220px, 1fr) 190px; }
   .intent-command-actions { grid-column: 1 / -1; justify-self: end; width: min(100%, 660px); }
 }
 @media (max-width: 1250px) {
@@ -4990,8 +4996,7 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
   .intent-command-actions { grid-column: auto; display: grid; grid-template-columns: repeat(2, 1fr); }
   .intent-media-grid, .intent-label-rail { grid-template-columns: 1fr; }
   .intent-experiment-form-row, .intent-experiment-members > div { grid-template-columns: 1fr; }
-  .intent-experiment-header { align-items: stretch; flex-direction: column; }
-  .intent-experiment-header-actions, .intent-experiment-header-actions label, .intent-experiment-header-actions select { width: 100%; }
+  .intent-experiment-commandbar { grid-template-columns: 1fr; }
 }
 
 html[data-color-theme="light"] .intent-media-panel,
@@ -5000,6 +5005,7 @@ html[data-color-theme="light"] .intent-card,
 html[data-color-theme="light"] .intent-experiment-create,
 html[data-color-theme="light"] .intent-experiment-history,
 html[data-color-theme="light"] .intent-experiment-panel,
+html[data-color-theme="light"] .intent-experiment-commandbar,
 html[data-color-theme="light"] .intent-commandbar { background: #fff; }
 html[data-color-theme="light"] .intent-label-grid button,
 html[data-color-theme="light"] .intent-timepoint { background: #f4f7fb; }
