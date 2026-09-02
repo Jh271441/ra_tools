@@ -60,9 +60,10 @@ export ARES_CAPTURE_RA_ROOT="${ARES_CAPTURE_RA_ROOT:-${_MEDIA_LAYOUT}}"
 export ARES_CAPTURE_MANIFEST="${ARES_CAPTURE_MANIFEST:-${_MEDIA_LAYOUT}/manifest.jsonl}"
 export CAMERA_CACHE_ROOT="${CAMERA_CACHE_ROOT:-${_MEDIA_LAYOUT}/camera/102}"
 export ARES_CAPTURE_VIDEO_ROOT="${ARES_CAPTURE_VIDEO_ROOT:-${_MEDIA_LAYOUT}/video}"
-# Admin-only intent-labeling media is an independent immutable 0206/2804
-# registry. BEV stays read-only in the capture workspace; Camera41 is a
-# normalized, root-confined materialization outside the source checkout.
+# Admin-only intent-labeling media is partitioned by the immutable
+# 0206/1335, 0508/1071, 0522/100 and 0626/300 source-row manifests. BEV stays
+# read-only in the capture workspace; Camera41 is a normalized, root-confined
+# materialization outside the source checkout and is shared by those partitions.
 export DASHBOARD_INTENT_BEV_ROOT="${DASHBOARD_INTENT_BEV_ROOT:-/volume/home/workspace/ra_auto_triage/bags/ares_capture_bev/RA_stuck_planning_intention_BEV_v2}"
 export DASHBOARD_INTENT_CAMERA_ROOT="${DASHBOARD_INTENT_CAMERA_ROOT:-/volume/home/workspace/ra_triage_dashboard_intent_media/0206-full2804-v1/camera41_v1}"
 export DASHBOARD_INTENT_CAMERA_MANIFEST="${DASHBOARD_INTENT_CAMERA_MANIFEST:-$DASHBOARD_INTENT_CAMERA_ROOT/source_manifest.jsonl}"

@@ -128,7 +128,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-294", APP_ENTRY_JS)
+        self.assertIn("manual-triage-295", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -169,7 +169,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-294", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-295", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
         self.assertNotIn("async function bootstrap", APP_ENTRY_JS)
@@ -276,7 +276,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('styles.css?v=manual-triage-294', INDEX_HTML)
+        self.assertIn('styles.css?v=manual-triage-295', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -980,7 +980,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-294", APP_ENTRY_JS)
+        self.assertIn("manual-triage-295", APP_ENTRY_JS)
 
     def test_multi_issue_query_contract(self) -> None:
         self.assertIn('id="openIssueQueryButton"', INDEX_HTML)
@@ -993,10 +993,10 @@ class FrontendContractTest(unittest.TestCase):
 
     def test_intent_labeling_isolated_dynamic_timeline_contract(self) -> None:
         self.assertIn('id="intentLabelingNavButton" data-page-target="intent"', INDEX_HTML)
-        self.assertIn('title="意图标注（管理员内测）" hidden', INDEX_HTML)
-        self.assertIn("intentLabelingNav.hidden = !state.session.is_admin", APP_JS)
+        self.assertIn('title="意图标注" hidden', INDEX_HTML)
+        self.assertIn('intentLabelingNav.hidden = !["writer", "admin"].includes(state.session.access_role)', APP_JS)
         self.assertIn('["users", "intent", "intent-experiments"]', APP_JS)
-        self.assertIn("意图标注仅对管理员开放。", APP_JS)
+        self.assertIn("意图标注仅对已授权标注人开放。", APP_JS)
         self.assertIn('data-page="intent"', INDEX_HTML)
         self.assertIn('path: "/intent-labeling"', APP_JS)
         self.assertIn('"intent-labeling.js"', APP_ENTRY_JS)
@@ -1090,6 +1090,13 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("object-fit: cover", STYLES_CSS)
         self.assertIn("grid-template-rows: repeat(2, 76px)", STYLES_CSS)
         self.assertNotIn(".intent-media-stage img { width: 100%; height: 100%; display: block; object-fit: contain", STYLES_CSS)
+        self.assertIn('id="intentContributorList"', INDEX_HTML)
+        self.assertIn('id="intentCommentForm"', INDEX_HTML)
+        self.assertIn("function renderIntentCollaboration", APP_JS)
+        self.assertIn("function postIntentComment", APP_JS)
+        self.assertIn("答案已隐藏", APP_JS)
+        self.assertIn("timeline.scrollLeft += event.deltaY", APP_JS)
+        self.assertIn("滚轮横向浏览", INDEX_HTML)
 
     def test_reviewer_filter_survives_top_bar_and_collaboration_refresh(self) -> None:
         self.assertIn("function reviewerFilterSelection(page)", APP_JS)

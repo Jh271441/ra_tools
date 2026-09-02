@@ -74,7 +74,7 @@ function renderSession() {
   const userManagementNav = $("#userManagementNavButton");
   if (userManagementNav) userManagementNav.hidden = !state.session.is_admin;
   const intentLabelingNav = $("#intentLabelingNavButton");
-  if (intentLabelingNav) intentLabelingNav.hidden = !state.session.is_admin;
+  if (intentLabelingNav) intentLabelingNav.hidden = !["writer", "admin"].includes(state.session.access_role);
   const intentExperimentsNav = $("#intentExperimentsNavButton");
   if (intentExperimentsNav) intentExperimentsNav.hidden = !state.session.is_admin;
   const runComparisonNav = $("#runComparisonNavButton");

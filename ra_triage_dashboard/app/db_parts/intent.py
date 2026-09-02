@@ -191,18 +191,34 @@ class DatabaseIntentMixin:
             "overrides": overrides,
         }
 
-    def get_intent_labels(self, dataset_id: str, case_id: str) -> dict[str, Any] | None:
+    def get_intent_labels(
+        self, dataset_id: str, case_id: str, username: str = ""
+    ) -> dict[str, Any] | None:
         with self.connect() as conn:
-            row = conn.execute(
-                """
-                SELECT revision.*
-                FROM intent_label_heads head
-                JOIN intent_label_revisions revision
-                  ON revision.id = head.current_revision_id
-                WHERE head.dataset_id = ? AND head.case_id = ?
-                """,
-                (dataset_id, case_id),
-            ).fetchone()
+            normalized_username = str(username or "").strip().lower()
+            if normalized_username:
+                row = conn.execute(
+                    """
+                    SELECT revision.*
+                    FROM intent_user_label_heads head
+                    JOIN intent_label_revisions revision
+                      ON revision.id = head.current_revision_id
+                    WHERE head.dataset_id = ? AND head.case_id = ?
+                      AND head.username = ?
+                    """,
+                    (dataset_id, case_id, normalized_username),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """
+                    SELECT revision.*
+                    FROM intent_label_heads head
+                    JOIN intent_label_revisions revision
+                      ON revision.id = head.current_revision_id
+                    WHERE head.dataset_id = ? AND head.case_id = ?
+                    """,
+                    (dataset_id, case_id),
+                ).fetchone()
             if row is None:
                 return None
             override_rows = conn.execute(
@@ -237,19 +253,35 @@ class DatabaseIntentMixin:
             ).fetchall()
         return {str(row["case_id"]): int(row["current_revision_id"]) for row in rows}
 
-    def intent_label_summaries(self, dataset_id: str) -> dict[str, dict[str, Any]]:
+    def intent_label_summaries(
+        self, dataset_id: str, username: str = ""
+    ) -> dict[str, dict[str, Any]]:
         with self.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT head.case_id, head.current_revision_id,
-                       revision.routing_default, revision.lane_change_default
-                FROM intent_label_heads head
-                JOIN intent_label_revisions revision
-                  ON revision.id = head.current_revision_id
-                WHERE head.dataset_id = ?
-                """,
-                (dataset_id,),
-            ).fetchall()
+            normalized_username = str(username or "").strip().lower()
+            if normalized_username:
+                rows = conn.execute(
+                    """
+                    SELECT head.case_id, head.current_revision_id,
+                           revision.routing_default, revision.lane_change_default
+                    FROM intent_user_label_heads head
+                    JOIN intent_label_revisions revision
+                      ON revision.id = head.current_revision_id
+                    WHERE head.dataset_id = ? AND head.username = ?
+                    """,
+                    (dataset_id, normalized_username),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT head.case_id, head.current_revision_id,
+                           revision.routing_default, revision.lane_change_default
+                    FROM intent_label_heads head
+                    JOIN intent_label_revisions revision
+                      ON revision.id = head.current_revision_id
+                    WHERE head.dataset_id = ?
+                    """,
+                    (dataset_id,),
+                ).fetchall()
         return {
             str(row["case_id"]): {
                 "revision_id": int(row["current_revision_id"]),
@@ -313,13 +345,14 @@ class DatabaseIntentMixin:
             )
         normalized.sort(key=lambda item: (item["offset_ms"], item["timepoint_id"]))
         now = utc_now()
+        normalized_author = author.strip().lower() or "anonymous"
         with self._write_lock, self.connect() as conn:
             head = conn.execute(
                 """
-                SELECT current_revision_id FROM intent_label_heads
-                WHERE dataset_id = ? AND case_id = ?
+                SELECT current_revision_id FROM intent_user_label_heads
+                WHERE dataset_id = ? AND case_id = ? AND username = ?
                 """,
-                (dataset_id, case_id),
+                (dataset_id, case_id, normalized_author),
             ).fetchone()
             current_revision_id = int(head["current_revision_id"]) if head else None
             if current_revision_id != expected_revision_id:
@@ -341,7 +374,7 @@ class DatabaseIntentMixin:
                     case_id,
                     routing_default or None,
                     lane_change_default or None,
-                    author.strip(),
+                    normalized_author,
                     author_source.strip() or "legacy",
                     bool(author_verified),
                     current_revision_id,
@@ -371,6 +404,19 @@ class DatabaseIntentMixin:
                 )
             conn.execute(
                 """
+                INSERT INTO intent_user_label_heads (
+                    dataset_id, case_id, username, current_revision_id,
+                    version, updated_at
+                ) VALUES (?, ?, ?, ?, 1, ?)
+                ON CONFLICT(dataset_id, case_id, username) DO UPDATE SET
+                    current_revision_id = excluded.current_revision_id,
+                    version = intent_user_label_heads.version + 1,
+                    updated_at = excluded.updated_at
+                """,
+                (dataset_id, case_id, normalized_author, revision_id, now),
+            )
+            conn.execute(
+                """
                 INSERT INTO intent_label_heads (
                     dataset_id, case_id, current_revision_id, version, updated_at
                 ) VALUES (?, ?, ?, 1, ?)
@@ -386,3 +432,124 @@ class DatabaseIntentMixin:
                 (revision_id,),
             ).fetchone()
         return self._intent_revision_dict(row, normalized)
+
+    def list_intent_contributors(
+        self, dataset_id: str, case_id: str
+    ) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT head.username, head.version, head.updated_at, revision.*
+                FROM intent_user_label_heads head
+                JOIN intent_label_revisions revision
+                  ON revision.id = head.current_revision_id
+                WHERE head.dataset_id = ? AND head.case_id = ?
+                ORDER BY head.updated_at ASC, head.username ASC
+                """,
+                (dataset_id, case_id),
+            ).fetchall()
+        return [
+            {
+                "username": str(row["username"]),
+                "revision_id": int(row["id"]),
+                "version": int(row["version"]),
+                "routing_default": str(row["routing_default"] or ""),
+                "lane_change_default": str(row["lane_change_default"] or ""),
+                "updated_at": str(row["updated_at"] or ""),
+            }
+            for row in rows
+        ]
+
+    def intent_case_has_active_experiment(self, dataset_id: str, case_id: str) -> bool:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT 1
+                FROM intent_experiment_assignments assignment
+                JOIN intent_experiments experiment
+                  ON experiment.id = assignment.experiment_id
+                WHERE experiment.dataset_id = ? AND assignment.case_id = ?
+                  AND experiment.status = 'active'
+                LIMIT 1
+                """,
+                (dataset_id, case_id),
+            ).fetchone()
+        return row is not None
+
+    def list_intent_comments(
+        self, dataset_id: str, case_id: str, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        bounded_limit = max(1, min(int(limit), 200))
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM intent_case_comments
+                WHERE dataset_id = ? AND case_id = ?
+                ORDER BY id ASC
+                LIMIT ?
+                """,
+                (dataset_id, case_id, bounded_limit),
+            ).fetchall()
+        return [
+            {
+                "id": int(row["id"]),
+                "body": str(row["body"]),
+                "author": str(row["author"]),
+                "author_verified": bool(row["author_verified"]),
+                "created_at": str(row["created_at"]),
+            }
+            for row in rows
+        ]
+
+    def create_intent_comment(
+        self,
+        *,
+        dataset_id: str,
+        case_id: str,
+        body: str,
+        author: str,
+        author_source: str,
+        author_verified: bool,
+    ) -> dict[str, Any]:
+        normalized_body = str(body or "").strip()
+        if not normalized_body:
+            raise ValueError("评论内容不能为空。")
+        if len(normalized_body) > 1000:
+            raise ValueError("评论内容不能超过 1000 个字符。")
+        normalized_author = str(author or "").strip().lower()
+        if not normalized_author:
+            raise ValueError("评论人不能为空。")
+        now = utc_now()
+        sql = """
+            INSERT INTO intent_case_comments (
+                dataset_id, case_id, body, author, author_source,
+                author_verified, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """
+        if self.backend == "postgresql":
+            sql += " RETURNING id"
+        with self._write_lock, self.connect() as conn:
+            cursor = conn.execute(
+                sql,
+                (
+                    dataset_id,
+                    case_id,
+                    normalized_body,
+                    normalized_author,
+                    str(author_source or "legacy").strip() or "legacy",
+                    bool(author_verified),
+                    now,
+                ),
+            )
+            comment_id = (
+                int(cursor.fetchone()["id"])
+                if self.backend == "postgresql"
+                else int(cursor.lastrowid)
+            )
+        return {
+            "id": comment_id,
+            "body": normalized_body,
+            "author": normalized_author,
+            "author_verified": bool(author_verified),
+            "created_at": now,
+        }

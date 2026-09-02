@@ -25,11 +25,13 @@
 
 ### Routing / 自车变道意图标注
 
-`/intent-labeling` 是与三分类 Review 隔离的管理员内测人工标注页。页面路由、
-全部意图标注 API 以及 Camera/BEV 图片资产都由服务端要求已验证的 Dashboard
-管理员身份；侧边栏隐藏仅用于界面提示，不是权限边界。数据集由版本化的
-`config/intent_datasets.json` 注册，成员集合优先读取数据根目录中的固定
-membership 文件；API 只返回数据集内的 opaque 媒体 URL，不允许浏览器提交或
+`/intent-labeling` 是与三分类 Review 隔离的人工标注页。页面路由、标注 API
+以及 Camera/BEV 图片资产都由服务端要求已验证的 Dashboard writer/admin
+身份；实验创建、关闭和全量导出仍只限管理员。侧边栏隐藏仅用于界面提示，不是
+权限边界。数据集由版本化的 `config/intent_datasets.json` 注册，当前按
+`0206 · 1335`、`0508 · 1071`、`0522 · 100`、`0626 · 300` 四份固定 source-row
+manifest 切换；启动时会核对 manifest SHA、release、Case 数及目录成员。API
+只返回数据集内的 opaque 媒体 URL，不允许浏览器提交或
 读取任意服务器路径。页面在同一时间点并排展示 Camera 与 BEV，两者使用 16:9
 `cover` 视窗；时间轴从实际 BEV/Camera 文件构造，因此支持 9、41 或任意数量的
 时间点，单路媒体缺失会显式显示但不阻塞另一侧。
@@ -39,6 +41,10 @@ membership 文件；API 只返回数据集内的 opaque 媒体 URL，不允许�
 同时展示 Routing 和变道意图；批量预填会立即显示为全部时间点的最终标签，
 同时保留已人工逐帧修改，`0` 将当前选中帧的两种意图都恢复为批量预填。每次保存写入追加式
 revision snapshot，并使用 `expected_revision_id` 做乐观并发控制，冲突返回 `409`。
+每位标注人拥有独立的最新 revision head；活动实验只展示成员完成状态，不返回
+他人的具体答案，实验关闭后才解盲。每个数据集/Case 另有共享讨论区，但不会把
+隐藏答案自动带入评论。时间轴保持横向，并把普通鼠标滚轮转换为横向滚动；当前帧
+会自动居中。
 `1–7` 设置当前选中帧标签、`Shift+1–7` 批量预填；`←` / `→` 切帧，
 `Shift+←/→` 连续扩选，`Ctrl/⌘+←/→` 单选跳到边界，
 `Ctrl/⌘+Shift+←/→` 从锚点扩选到时间轴边界，`↑` / `↓` 切 Issue。

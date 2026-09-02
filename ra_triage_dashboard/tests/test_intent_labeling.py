@@ -12,6 +12,62 @@ from ra_triage_dashboard.app.intent_experiments import build_intent_experiment_a
 
 
 class IntentDatasetIndexTest(unittest.TestCase):
+    def test_repository_registry_declares_four_exact_dataset_partitions(self) -> None:
+        registry = json.loads(
+            (Path(__file__).resolve().parents[1] / "config" / "intent_datasets.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(
+            [(item["display_name"], item["expected_case_count"]) for item in registry["datasets"]],
+            [
+                ("0206 · 1335", 1335),
+                ("0508 · 1071", 1071),
+                ("0522 · 100", 100),
+                ("0626 · 300", 300),
+            ],
+        )
+        self.assertTrue(
+            all(item["membership_format"] == "source-rows-json-v1" for item in registry["datasets"])
+        )
+
+    def test_source_rows_membership_is_release_and_sha_bound(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            bev_root = root / "bev"
+            case_id = "cn12345_1770000000000"
+            (bev_root / case_id).mkdir(parents=True)
+            membership = bev_root / "source_rows.json"
+            membership.write_text(
+                json.dumps([
+                    {
+                        "issue_id": "cn12345",
+                        "capture_timestamp_ms": 1770000000000,
+                        "dataset_release": "0206",
+                    }
+                ]),
+                encoding="utf-8",
+            )
+            import hashlib
+            digest = hashlib.sha256(membership.read_bytes()).hexdigest()
+            config = root / "intent.json"
+            config.write_text(json.dumps({"datasets": [{
+                "id": "0206-1-v1",
+                "scene_set": "0206",
+                "expected_case_count": 1,
+                "bev_root": str(bev_root),
+                "membership_file": membership.name,
+                "membership_format": "source-rows-json-v1",
+                "membership_file_sha256": digest,
+            }]}), encoding="utf-8")
+            index = IntentDatasetIndex.from_file(config)
+            index.refresh()
+            self.assertEqual(index.case_ids("0206-1-v1"), (case_id,))
+            self.assertTrue(index.public_datasets()[0]["available"])
+            membership.write_text("[]", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "SHA256"):
+                index.refresh()
+
     def test_membership_file_cannot_escape_bev_root(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -201,6 +257,53 @@ class IntentLabelStorageTest(unittest.TestCase):
                     expected_revision_id=first["revision_id"],
                     author="stale",
                 )
+
+    def test_annotators_have_independent_heads_and_shared_comments(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database = Database(Path(temp_dir) / "test.sqlite3")
+            database.init()
+            case_id = "cn12345_1770000000000"
+            alice = database.save_intent_labels(
+                dataset_id="0206-1335-v1",
+                case_id=case_id,
+                routing_default="left_turn",
+                lane_change_default="no_lane_change",
+                overrides=[],
+                expected_revision_id=None,
+                author="Alice",
+            )
+            bob = database.save_intent_labels(
+                dataset_id="0206-1335-v1",
+                case_id=case_id,
+                routing_default="right_turn",
+                lane_change_default="lane_change",
+                overrides=[],
+                expected_revision_id=None,
+                author="Bob",
+            )
+            self.assertEqual(
+                database.get_intent_labels("0206-1335-v1", case_id, "alice")["revision_id"],
+                alice["revision_id"],
+            )
+            self.assertEqual(
+                database.get_intent_labels("0206-1335-v1", case_id, "bob")["revision_id"],
+                bob["revision_id"],
+            )
+            contributors = database.list_intent_contributors("0206-1335-v1", case_id)
+            self.assertEqual([item["username"] for item in contributors], ["alice", "bob"])
+            comment = database.create_intent_comment(
+                dataset_id="0206-1335-v1",
+                case_id=case_id,
+                body="需要确认掉头口径",
+                author="Alice",
+                author_source="sso",
+                author_verified=True,
+            )
+            self.assertEqual(comment["author"], "alice")
+            self.assertEqual(
+                database.list_intent_comments("0206-1335-v1", case_id)[0]["body"],
+                "需要确认掉头口径",
+            )
 
 
 class IntentExperimentTest(unittest.TestCase):

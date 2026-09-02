@@ -451,6 +451,19 @@ def _admin_identity(request: Request):
     return identity
 
 
+def _intent_identity(request: Request):
+    """Allow verified writers to label while retaining admin-only management."""
+
+    identity = request_identity(request, settings)
+    if not (
+        identity.verified
+        and identity.username
+        and database.access_role(identity.username) in {"writer", "admin"}
+    ):
+        raise _detail(403, "意图标注仅限已授权标注人。")
+    return identity
+
+
 def _review_tag_catalog() -> tuple[dict[str, Any], ...]:
     """Return built-in tags plus shared scene tags from the database.
 

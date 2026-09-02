@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-294`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-295`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -79,7 +79,7 @@
             </span>
             <span class="sidebar-label"><strong class="ui-lang-zh">判错复核</strong><strong class="ui-lang-en">Failure review</strong></span>
           </a>
-          <a class="sidebar-item" id="intentLabelingNavButton" data-page-target="intent" data-app-path="/intent-labeling" href="/intent-labeling" title="意图标注（管理员内测）" hidden>
+          <a class="sidebar-item" id="intentLabelingNavButton" data-page-target="intent" data-app-path="/intent-labeling" href="/intent-labeling" title="意图标注" hidden>
             <span class="sidebar-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="4" y="3.5" width="16" height="17" rx="3"/><path d="M8 8h8M8 12h5M8 16h8"/><path class="icon-emphasis" d="m14 13 2 2 4-5"/></svg>
             </span>
@@ -339,6 +339,7 @@
                   </div>
                 </section>
                 <section class="intent-timeline-panel" aria-label="Case 时间轴">
+                  <div class="intent-timeline-heading"><strong>帧时间轴</strong><span>滚轮横向浏览 · ← → 切帧 · Shift 连选</span></div>
                   <div class="intent-timeline" id="intentTimeline"></div>
                 </section>
               </div>
@@ -352,6 +353,10 @@
                   <h4>变道意图</h4>
                   <div class="intent-label-grid" id="intentAggregateLane"><button type="button" data-intent-aggregate-axis="laneChange" data-value="no_lane_change" aria-keyshortcuts="Shift+6"><kbd>⇧6</kbd>非变道</button><button type="button" data-intent-aggregate-axis="laneChange" data-value="lane_change" aria-keyshortcuts="Shift+7"><kbd>⇧7</kbd>变道</button></div>
                   <p class="intent-coverage" id="intentCoverage">—</p>
+                  <section class="intent-collaboration" aria-labelledby="intentContributorsTitle">
+                    <div class="intent-collaboration-heading"><h4 id="intentContributorsTitle">盲标进度</h4><small id="intentRevealState">未进入实验</small></div>
+                    <div class="intent-contributor-list" id="intentContributorList"><p>尚无其他标注</p></div>
+                  </section>
                 </section>
                 <section class="intent-card intent-label-editor">
                   <h3><span id="intentFrameTitle">当前帧标签</span> <small id="intentFrameSource">来自批量预填</small></h3>
@@ -360,6 +365,11 @@
                   <h4>变道意图</h4>
                   <div class="intent-label-grid"><button type="button" data-intent-frame-axis="laneChange" data-value="no_lane_change" aria-keyshortcuts="6"><kbd>6</kbd>非变道</button><button type="button" data-intent-frame-axis="laneChange" data-value="lane_change" aria-keyshortcuts="7"><kbd>7</kbd>变道</button></div>
                   <button class="button button-quiet intent-restore-button" id="intentRestoreBatchPrefill" type="button" aria-keyshortcuts="0"><span id="intentRestoreBatchPrefillText">当前帧恢复批量预填</span> <kbd>0</kbd></button>
+                  <section class="intent-collaboration intent-comments" aria-labelledby="intentCommentsTitle">
+                    <div class="intent-collaboration-heading"><h4 id="intentCommentsTitle">讨论</h4><small id="intentCommentCount">0 条</small></div>
+                    <div class="intent-comment-list" id="intentCommentList"><p>还没有评论</p></div>
+                    <form class="intent-comment-form" id="intentCommentForm"><textarea id="intentCommentInput" maxlength="1000" rows="2" placeholder="记录疑问或标注规则；盲标答案不会自动带入评论"></textarea><button class="button button-primary" type="submit">发表</button></form>
+                  </section>
                 </section>
               </aside>
             </div>
@@ -1708,7 +1718,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-294`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-295`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

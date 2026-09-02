@@ -791,9 +791,12 @@ function showPage(
     }
   }
   if (["intent", "intent-experiments"].includes(target)) {
-    if (!state.session.identity_pending && !state.session.is_admin) {
+    const allowed = target === "intent"
+      ? ["writer", "admin"].includes(state.session.access_role)
+      : state.session.is_admin;
+    if (!state.session.identity_pending && !allowed) {
       const message = target === "intent"
-        ? uiText("意图标注仅对管理员开放。", "Intent labeling is admin-only.")
+        ? uiText("意图标注仅对已授权标注人开放。", "Intent labeling requires writer access.")
         : uiText("实验分配仅对管理员开放。", "Experiment assignment is admin-only.");
       showToast(message, true);
       return showPage("review", { historyMode: historyMode || "replace" });

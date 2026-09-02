@@ -675,6 +675,7 @@ const state = {
     experimentMembers: [],
     experimentsDatasetId: "",
     experimentDatasetId: "",
+    postingComment: false,
   },
   // Short baseline ids from registry (e.g. ["0508"] or ["0508","0626"]).
   selectedBaselineIds: ["0508"],

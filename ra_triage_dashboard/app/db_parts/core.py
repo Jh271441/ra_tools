@@ -778,6 +778,49 @@ class DatabaseCoreMixin:
                     updated_at TEXT NOT NULL,
                     PRIMARY KEY (dataset_id, case_id)
                 );
+                UPDATE intent_label_revisions
+                SET dataset_id = '0206-1335-v1'
+                WHERE dataset_id = '0206-full2804-v1';
+                UPDATE intent_label_heads
+                SET dataset_id = '0206-1335-v1'
+                WHERE dataset_id = '0206-full2804-v1';
+
+                CREATE TABLE IF NOT EXISTS intent_user_label_heads (
+                    dataset_id TEXT NOT NULL,
+                    case_id TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    current_revision_id INTEGER NOT NULL
+                        REFERENCES intent_label_revisions(id),
+                    version INTEGER NOT NULL DEFAULT 1,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (dataset_id, case_id, username)
+                );
+                UPDATE intent_user_label_heads
+                SET dataset_id = '0206-1335-v1'
+                WHERE dataset_id = '0206-full2804-v1';
+                INSERT OR IGNORE INTO intent_user_label_heads (
+                    dataset_id, case_id, username, current_revision_id,
+                    version, updated_at
+                )
+                SELECT head.dataset_id, head.case_id,
+                       lower(CASE WHEN revision.author = '' THEN 'legacy' ELSE revision.author END),
+                       head.current_revision_id, head.version, head.updated_at
+                FROM intent_label_heads head
+                JOIN intent_label_revisions revision
+                  ON revision.id = head.current_revision_id;
+
+                CREATE TABLE IF NOT EXISTS intent_case_comments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    dataset_id TEXT NOT NULL,
+                    case_id TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    author TEXT NOT NULL,
+                    author_source TEXT NOT NULL DEFAULT 'legacy',
+                    author_verified INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_intent_case_comments_case
+                    ON intent_case_comments(dataset_id, case_id, id ASC);
 
                 CREATE TABLE IF NOT EXISTS intent_experiments (
                     id TEXT PRIMARY KEY,
@@ -799,6 +842,9 @@ class DatabaseCoreMixin:
                     closed_at TEXT,
                     UNIQUE(dataset_id, name)
                 );
+                UPDATE intent_experiments
+                SET dataset_id = '0206-1335-v1'
+                WHERE dataset_id = '0206-full2804-v1';
                 CREATE INDEX IF NOT EXISTS idx_intent_experiments_dataset
                     ON intent_experiments(dataset_id, created_at DESC);
 
@@ -854,6 +900,8 @@ class DatabaseCoreMixin:
                 "intent_label_revisions",
                 "intent_frame_overrides",
                 "intent_label_heads",
+                "intent_user_label_heads",
+                "intent_case_comments",
                 "intent_experiments",
                 "intent_experiment_assignments",
                 "trail_issue_exclusion_history",

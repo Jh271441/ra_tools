@@ -11,20 +11,27 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
 from ..db_parts.shared import IntentAnnotationConflictError
-from ..http_support import _action_actor, _admin_identity, _detail
+from ..http_support import _action_actor, _admin_identity, _detail, _intent_identity
 from ..intent_experiments import build_intent_experiment_assignments
 from ..runtime import database, intent_dataset_registry
 
 
+async def _require_intent_writer(request: Request) -> None:
+    """Protect labels and media with a verified writer boundary."""
+
+    await asyncio.to_thread(_intent_identity, request)
+
+
 async def _require_intent_admin(request: Request) -> None:
-    """Protect labels and media with the same verified-admin boundary."""
+    """Keep experiment management and export behind the administrator gate."""
 
     await asyncio.to_thread(_admin_identity, request)
 
 
-router = APIRouter(dependencies=[Depends(_require_intent_admin)])
+router = APIRouter(dependencies=[Depends(_require_intent_writer)])
 MAX_LABEL_REQUEST_BYTES = 512 * 1024
 MAX_EXPERIMENT_REQUEST_BYTES = 64 * 1024
+MAX_COMMENT_REQUEST_BYTES = 8 * 1024
 
 
 def _empty_labels(dataset_id: str, case_id: str) -> dict[str, Any]:
@@ -50,10 +57,10 @@ def _case_status(summary: dict[str, Any] | None) -> str:
     return "partial"
 
 
-def _dataset_payloads() -> list[dict[str, Any]]:
+def _dataset_payloads(username: str = "") -> list[dict[str, Any]]:
     result = []
     for item in intent_dataset_registry.public_datasets():
-        summaries = database.intent_label_summaries(str(item["id"]))
+        summaries = database.intent_label_summaries(str(item["id"]), username)
         completed = sum(_case_status(summary) == "completed" for summary in summaries.values())
         partial = sum(_case_status(summary) == "partial" for summary in summaries.values())
         total = int(item.get("case_count") or 0)
@@ -69,11 +76,16 @@ def _dataset_payloads() -> list[dict[str, Any]]:
 
 
 @router.get("/api/intent-datasets")
-async def list_intent_datasets() -> dict[str, Any]:
-    return {"items": await asyncio.to_thread(_dataset_payloads)}
+async def list_intent_datasets(request: Request) -> dict[str, Any]:
+    identity = await asyncio.to_thread(_intent_identity, request)
+    return {
+        "items": await asyncio.to_thread(_dataset_payloads, identity.username)
+    }
 
 
-@router.get("/api/intent-experiments")
+@router.get(
+    "/api/intent-experiments", dependencies=[Depends(_require_intent_admin)]
+)
 async def list_intent_experiments(dataset_id: str = "") -> dict[str, Any]:
     if dataset_id:
         try:
@@ -94,7 +106,9 @@ async def list_intent_experiments(dataset_id: str = "") -> dict[str, Any]:
     }
 
 
-@router.post("/api/intent-experiments")
+@router.post(
+    "/api/intent-experiments", dependencies=[Depends(_require_intent_admin)]
+)
 async def create_intent_experiment(request: Request) -> dict[str, Any]:
     raw = await request.body()
     if len(raw) > MAX_EXPERIMENT_REQUEST_BYTES:
@@ -170,7 +184,10 @@ async def create_intent_experiment(request: Request) -> dict[str, Any]:
     }
 
 
-@router.post("/api/intent-experiments/{experiment_id}/close")
+@router.post(
+    "/api/intent-experiments/{experiment_id}/close",
+    dependencies=[Depends(_require_intent_admin)],
+)
 async def close_intent_experiment(experiment_id: str, request: Request) -> dict[str, Any]:
     identity = await asyncio.to_thread(_admin_identity, request)
     experiment = await asyncio.to_thread(
@@ -193,12 +210,13 @@ def _list_cases(
     search: str,
     page: int,
     page_size: int,
+    username: str = "",
 ) -> dict[str, Any]:
     try:
         case_ids = intent_dataset_registry.case_ids(dataset_id)
     except KeyError as exc:
         raise _detail(404, str(exc)) from exc
-    summaries = database.intent_label_summaries(dataset_id)
+    summaries = database.intent_label_summaries(dataset_id, username)
     normalized_search = search.strip().lower()
     items = []
     for ordinal, case_id in enumerate(case_ids, 1):
@@ -229,6 +247,7 @@ def _list_cases(
 
 @router.get("/api/intent-datasets/{dataset_id}/cases")
 async def list_intent_cases(
+    request: Request,
     dataset_id: str,
     status: str = "all",
     q: str = "",
@@ -239,6 +258,7 @@ async def list_intent_cases(
         raise _detail(400, "意图标注状态筛选不合法。")
     page = max(1, int(page))
     page_size = max(1, min(int(page_size), 200))
+    identity = await asyncio.to_thread(_intent_identity, request)
     return await asyncio.to_thread(
         _list_cases,
         dataset_id,
@@ -246,10 +266,11 @@ async def list_intent_cases(
         search=q[:256],
         page=page,
         page_size=page_size,
+        username=identity.username,
     )
 
 
-def _case_payload(dataset_id: str, case_id: str) -> dict[str, Any]:
+def _case_payload(dataset_id: str, case_id: str, username: str = "") -> dict[str, Any]:
     try:
         case_ids = intent_dataset_registry.case_ids(dataset_id)
     except KeyError as exc:
@@ -262,9 +283,31 @@ def _case_payload(dataset_id: str, case_id: str) -> dict[str, Any]:
         timeline = intent_dataset_registry.timeline(dataset_id, case_id)
     except (KeyError, ValueError) as exc:
         raise _detail(404, str(exc)) from exc
-    labels = database.get_intent_labels(dataset_id, case_id) or _empty_labels(
+    labels = database.get_intent_labels(dataset_id, case_id, username) or _empty_labels(
         dataset_id, case_id
     )
+    contributors = database.list_intent_contributors(dataset_id, case_id)
+    answers_revealed = not database.intent_case_has_active_experiment(
+        dataset_id, case_id
+    )
+    public_contributors = []
+    for contributor in contributors:
+        is_current = contributor["username"] == username.lower()
+        item = {
+            "username": contributor["username"],
+            "version": contributor["version"],
+            "updated_at": contributor["updated_at"],
+            "completed": bool(
+                contributor["routing_default"]
+                and contributor["lane_change_default"]
+            ),
+            "is_current": is_current,
+            "revealed": is_current or answers_revealed,
+        }
+        if item["revealed"]:
+            item["routing_default"] = contributor["routing_default"]
+            item["lane_change_default"] = contributor["lane_change_default"]
+        public_contributors.append(item)
     overrides = {item["timepoint_id"]: item for item in labels["overrides"]}
     enriched = []
     for timepoint in timeline:
@@ -300,18 +343,72 @@ def _case_payload(dataset_id: str, case_id: str) -> dict[str, Any]:
             "prefills_human_labels": False,
             "routing_per_frame_available": False,
         },
+        "collaboration": {
+            "answers_revealed": answers_revealed,
+            "contributors": public_contributors,
+            "comments": database.list_intent_comments(dataset_id, case_id),
+        },
     }
 
 
 @router.get("/api/intent-datasets/{dataset_id}/cases/{case_id}")
-async def get_intent_case(dataset_id: str, case_id: str) -> dict[str, Any]:
-    return await asyncio.to_thread(_case_payload, dataset_id, case_id)
+async def get_intent_case(
+    request: Request, dataset_id: str, case_id: str
+) -> dict[str, Any]:
+    identity = await asyncio.to_thread(_intent_identity, request)
+    return await asyncio.to_thread(
+        _case_payload, dataset_id, case_id, identity.username
+    )
 
 
 @router.get("/api/intent-datasets/{dataset_id}/cases/{case_id}/timeline")
-async def get_intent_timeline(dataset_id: str, case_id: str) -> dict[str, Any]:
-    payload = await asyncio.to_thread(_case_payload, dataset_id, case_id)
+async def get_intent_timeline(
+    request: Request, dataset_id: str, case_id: str
+) -> dict[str, Any]:
+    identity = await asyncio.to_thread(_intent_identity, request)
+    payload = await asyncio.to_thread(
+        _case_payload, dataset_id, case_id, identity.username
+    )
     return {"items": payload["timepoints"], "count": len(payload["timepoints"])}
+
+
+@router.post("/api/intent-datasets/{dataset_id}/cases/{case_id}/comments")
+async def post_intent_comment(
+    request: Request, dataset_id: str, case_id: str
+) -> dict[str, Any]:
+    try:
+        if not intent_dataset_registry.has_case(dataset_id, case_id):
+            raise _detail(404, "Case 不在该意图标注数据集中。")
+    except KeyError as exc:
+        raise _detail(404, str(exc)) from exc
+    raw = await request.body()
+    if len(raw) > MAX_COMMENT_REQUEST_BYTES:
+        raise _detail(413, "评论请求过大。")
+    try:
+        body = json.loads(raw)
+    except (TypeError, ValueError, UnicodeDecodeError) as exc:
+        raise _detail(400, "评论请求必须是 JSON。") from exc
+    if not isinstance(body, dict):
+        raise _detail(400, "评论请求必须是 JSON 对象。")
+    actor, actor_source, actor_verified = await asyncio.to_thread(
+        _action_actor, request
+    )
+    try:
+        comment = await asyncio.to_thread(
+            database.create_intent_comment,
+            dataset_id=dataset_id,
+            case_id=case_id,
+            body=body.get("body") or "",
+            author=actor,
+            author_source=actor_source,
+            author_verified=actor_verified,
+        )
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    return {
+        "comment": comment,
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
 
 
 @router.get(
@@ -398,10 +495,12 @@ def _export_jsonl(dataset_id: str, view: str, include_incomplete: bool):
 
 @router.get("/api/intent-datasets/{dataset_id}/export")
 async def export_intent_labels(
+    request: Request,
     dataset_id: str,
     view: str = "compact",
     include_incomplete: bool = False,
 ) -> StreamingResponse:
+    await asyncio.to_thread(_admin_identity, request)
     if view not in {"compact", "expanded"}:
         raise _detail(400, "导出 view 仅支持 compact 或 expanded。")
     try:

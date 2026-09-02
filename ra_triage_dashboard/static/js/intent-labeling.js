@@ -419,6 +419,34 @@ function renderIntentLabels() {
   $("#intentCoverage").textContent = `${Math.max(0, total - overrideCount)} 帧使用批量预填 · ${overrideCount} 帧单独修改`;
 }
 
+function renderIntentCollaboration() {
+  const collaboration = state.intentLabeling.caseData?.collaboration || {};
+  const contributors = collaboration.contributors || [];
+  const contributorList = $("#intentContributorList");
+  const revealState = $("#intentRevealState");
+  if (revealState) revealState.textContent = collaboration.answers_revealed
+    ? "已解盲"
+    : "实验进行中 · 答案隐藏";
+  if (contributorList) {
+    contributorList.innerHTML = contributors.length ? contributors.map((item) => {
+      const status = item.completed ? "已完成" : "进行中";
+      const answer = item.revealed
+        ? `${INTENT_ROUTING_LABELS[item.routing_default] || "Routing 待填"} · ${INTENT_LANE_LABELS[item.lane_change_default] || "变道待填"}`
+        : "答案已隐藏";
+      return `<article class="intent-contributor${item.is_current ? " is-current" : ""}"><div><strong>${escapeHtml(item.username)}${item.is_current ? "（我）" : ""}</strong><span>${escapeHtml(answer)}</span></div><small class="${item.completed ? "is-complete" : ""}">${status}</small></article>`;
+    }).join("") : "<p>尚无标注记录</p>";
+  }
+  const comments = collaboration.comments || [];
+  const commentList = $("#intentCommentList");
+  if ($("#intentCommentCount")) $("#intentCommentCount").textContent = `${comments.length} 条`;
+  if (commentList) {
+    commentList.innerHTML = comments.length ? comments.map((item) => (
+      `<article class="intent-comment"><div><strong>${escapeHtml(item.author)}</strong><time>${escapeHtml(new Date(item.created_at).toLocaleString())}</time></div><p>${escapeHtml(item.body)}</p></article>`
+    )).join("") : "<p>还没有评论</p>";
+    commentList.scrollTop = commentList.scrollHeight;
+  }
+}
+
 function renderIntentCase() {
   const intent = state.intentLabeling;
   const data = intent.caseData;
@@ -434,6 +462,33 @@ function renderIntentCase() {
   renderIntentHero();
   renderIntentTimeline();
   renderIntentLabels();
+  renderIntentCollaboration();
+}
+
+async function postIntentComment(event) {
+  event.preventDefault();
+  const intent = state.intentLabeling;
+  const input = $("#intentCommentInput");
+  const body = input?.value.trim() || "";
+  if (!body || !intent.datasetId || !intent.caseId || intent.postingComment) return;
+  intent.postingComment = true;
+  const submit = event.currentTarget.querySelector('button[type="submit"]');
+  if (submit) submit.disabled = true;
+  try {
+    const result = await api(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases/${encodeURIComponent(intent.caseId)}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    });
+    intent.caseData.collaboration ||= { contributors: [], comments: [] };
+    intent.caseData.collaboration.comments ||= [];
+    intent.caseData.collaboration.comments.push(result.comment);
+    input.value = "";
+    renderIntentCollaboration();
+  } finally {
+    intent.postingComment = false;
+    if (submit) submit.disabled = false;
+  }
 }
 
 async function loadIntentLabeling({ datasetId = "", caseId = "", offsetMs = null, historyMode = "replace" } = {}) {
@@ -729,6 +784,15 @@ function handleIntentShortcut(event) {
 }
 
 function bindIntentLabelingEvents() {
+  $("#intentCommentForm")?.addEventListener("submit", (event) => {
+    postIntentComment(event).catch((error) => showToast(error.message, true));
+  });
+  $("#intentTimeline")?.addEventListener("wheel", (event) => {
+    const timeline = event.currentTarget;
+    if (event.ctrlKey || event.metaKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+    event.preventDefault();
+    timeline.scrollLeft += event.deltaY;
+  }, { passive: false });
   $("#intentExperimentDatasetSelect")?.addEventListener("change", (event) => {
     state.intentLabeling.experimentsDatasetId = "";
     loadIntentExperimentAdmin({ datasetId: event.target.value, force: true })

@@ -49,6 +49,8 @@ class IntentDatasetSpec:
     camera_manifest: Path | None
     camera_manifest_frame_subdir: str
     membership_file: Path | None
+    membership_format: str
+    membership_file_sha256: str
     camera_offsets_ms: tuple[int, ...]
     camera_subdir: str
     max_pair_delta_ms: int
@@ -116,6 +118,12 @@ class IntentDatasetIndex:
                         row.get("camera_manifest_frame_subdir") or "frames"
                     ).strip(),
                     membership_file=membership_file,
+                    membership_format=str(
+                        row.get("membership_format") or "sha256sum-v1"
+                    ).strip(),
+                    membership_file_sha256=str(
+                        row.get("membership_file_sha256") or ""
+                    ).strip().lower(),
                     camera_offsets_ms=tuple(sorted(camera_offsets)),
                     camera_subdir=str(row.get("camera_subdir") or "after_compress").strip(),
                     max_pair_delta_ms=max(0, int(row.get("max_pair_delta_ms") or 500)),
@@ -147,6 +155,9 @@ class IntentDatasetIndex:
         camera_manifest_frames: dict[
             str, dict[str, dict[int, tuple[Path, int | None]]]
         ] = {}
+        manifest_cache: dict[
+            tuple[Path, Path, str], dict[str, dict[int, tuple[Path, int | None]]]
+        ] = {}
         for dataset_id, spec in self._specs.items():
             case_ids = self._membership_cases(spec)
             cases[dataset_id] = tuple(case_ids)
@@ -161,7 +172,7 @@ class IntentDatasetIndex:
                 issue_id: tuple(sorted(names)) for issue_id, names in camera_map.items()
             }
             camera_manifest_frames[dataset_id] = self._load_camera_manifest(
-                spec, frozenset(case_ids)
+                spec, frozenset(case_ids), manifest_cache
             )
         with self._lock:
             self._cases = cases
@@ -170,7 +181,11 @@ class IntentDatasetIndex:
 
     @staticmethod
     def _load_camera_manifest(
-        spec: IntentDatasetSpec, case_ids: frozenset[str]
+        spec: IntentDatasetSpec,
+        case_ids: frozenset[str],
+        cache: dict[
+            tuple[Path, Path, str], dict[str, dict[int, tuple[Path, int | None]]]
+        ],
     ) -> dict[str, dict[int, tuple[Path, int | None]]]:
         manifest = spec.camera_manifest
         if (
@@ -188,6 +203,13 @@ class IntentDatasetIndex:
             raise ValueError(
                 f"{spec.dataset_id}: Camera manifest frame 子目录越界。"
             ) from exc
+        cache_key = (root, manifest.resolve(), spec.camera_manifest_frame_subdir)
+        if cache_key in cache:
+            return {
+                case_id: frames
+                for case_id, frames in cache[cache_key].items()
+                if case_id in case_ids
+            }
         result: dict[str, dict[int, tuple[Path, int | None]]] = {}
         with manifest.open(encoding="utf-8", errors="strict") as handle:
             for line_number, raw in enumerate(handle, 1):
@@ -214,8 +236,6 @@ class IntentDatasetIndex:
                         f"{spec.dataset_id}: Camera manifest 第 {line_number} 行 "
                         "schema 不合法。"
                     )
-                if case_id not in case_ids:
-                    continue
                 if source_suffix not in {".jpg", ".jpeg", ".png", ".webp"}:
                     raise ValueError(
                         f"{spec.dataset_id}: Camera manifest 第 {line_number} 行"
@@ -236,23 +256,73 @@ class IntentDatasetIndex:
                 raw_delta = row.get("selection_diff_ms")
                 delta_ms = int(raw_delta) if raw_delta is not None else None
                 by_offset[offset_ms] = (candidate, delta_ms)
-        return result
+        cache[cache_key] = result
+        return {
+            case_id: frames
+            for case_id, frames in result.items()
+            if case_id in case_ids
+        }
 
     def _membership_cases(self, spec: IntentDatasetSpec) -> list[str]:
         if not spec.bev_root.is_dir():
             return []
         case_ids: set[str] = set()
         membership = spec.membership_file
+        if membership is not None and not membership.is_file():
+            return []
         if membership and membership.is_file():
             root = spec.bev_root.resolve()
-            for raw in membership.read_text(encoding="utf-8", errors="replace").splitlines():
-                parts = raw.strip().split(maxsplit=1)
-                if len(parts) != 2:
-                    continue
-                relative = parts[1].lstrip("*./")
-                case_id = relative.split("/", 1)[0]
-                if CASE_ID_RE.fullmatch(case_id) and (root / case_id).is_dir():
+            raw_bytes = membership.read_bytes()
+            if spec.membership_file_sha256:
+                actual_sha256 = hashlib.sha256(raw_bytes).hexdigest()
+                if actual_sha256 != spec.membership_file_sha256:
+                    raise ValueError(
+                        f"{spec.dataset_id}: membership_file SHA256 不匹配。"
+                    )
+            if spec.membership_format == "source-rows-json-v1":
+                try:
+                    rows = json.loads(raw_bytes.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise ValueError(
+                        f"{spec.dataset_id}: source rows JSON 不合法。"
+                    ) from exc
+                if not isinstance(rows, list):
+                    raise ValueError(f"{spec.dataset_id}: source rows 必须是数组。")
+                for row in rows:
+                    if not isinstance(row, dict):
+                        raise ValueError(f"{spec.dataset_id}: source row 必须是对象。")
+                    if spec.scene_set and row.get("dataset_release") != spec.scene_set:
+                        raise ValueError(
+                            f"{spec.dataset_id}: source row 的 dataset_release 不匹配。"
+                        )
+                    issue_id = str(row.get("issue_id") or "").strip()
+                    timestamp_ms = row.get("capture_timestamp_ms")
+                    try:
+                        case_id = f"{issue_id}_{int(timestamp_ms)}"
+                    except (TypeError, ValueError) as exc:
+                        raise ValueError(
+                            f"{spec.dataset_id}: source row 缺少合法时间戳。"
+                        ) from exc
+                    if not CASE_ID_RE.fullmatch(case_id):
+                        raise ValueError(f"{spec.dataset_id}: source row Case ID 不合法。")
+                    if not (root / case_id).is_dir():
+                        raise ValueError(f"{spec.dataset_id}: source row 缺少 Case 目录。")
                     case_ids.add(case_id)
+                if len(case_ids) != len(rows):
+                    raise ValueError(f"{spec.dataset_id}: source rows 含重复 Case。")
+            elif spec.membership_format == "sha256sum-v1":
+                for raw in raw_bytes.decode("utf-8", errors="replace").splitlines():
+                    parts = raw.strip().split(maxsplit=1)
+                    if len(parts) != 2:
+                        continue
+                    relative = parts[1].lstrip("*./")
+                    case_id = relative.split("/", 1)[0]
+                    if CASE_ID_RE.fullmatch(case_id) and (root / case_id).is_dir():
+                        case_ids.add(case_id)
+            else:
+                raise ValueError(
+                    f"{spec.dataset_id}: membership_format 不受支持。"
+                )
         else:
             case_ids = {
                 path.name
@@ -275,6 +345,9 @@ class IntentDatasetIndex:
         for dataset_id, spec in self._specs.items():
             case_ids = indexed.get(dataset_id, ())
             camera_cases = manifest_frames.get(dataset_id, {})
+            coverage_ok = bool(case_ids) and (
+                not spec.expected_case_count or len(case_ids) == spec.expected_case_count
+            )
             items.append(
                 {
                     "id": dataset_id,
@@ -283,10 +356,8 @@ class IntentDatasetIndex:
                     "case_count": len(case_ids),
                     "expected_case_count": spec.expected_case_count,
                     "source_sha256": spec.source_sha256,
-                    "available": bool(case_ids),
-                    "coverage_ok": bool(case_ids) and (
-                        not spec.expected_case_count or len(case_ids) == spec.expected_case_count
-                    ),
+                    "available": coverage_ok,
+                    "coverage_ok": coverage_ok,
                     "camera_case_count": len(camera_cases),
                     "camera_frame_count": sum(len(items) for items in camera_cases.values()),
                 }

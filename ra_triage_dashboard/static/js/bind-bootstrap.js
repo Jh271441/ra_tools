@@ -833,9 +833,13 @@ async function bootstrap() {
     if (["users", "intent", "intent-experiments"].includes(initialRoute.page)) {
       await sessionRequest;
     }
-    if (["users", "intent", "intent-experiments"].includes(initialRoute.page) && !state.session.is_admin) {
+    if (["users", "intent-experiments"].includes(initialRoute.page) && !state.session.is_admin) {
       initialRoute.page = "review";
       showToast(t("toast.admin_only"), true);
+    }
+    if (initialRoute.page === "intent" && !["writer", "admin"].includes(state.session.access_role)) {
+      initialRoute.page = "review";
+      showToast("意图标注仅对已授权标注人开放。", true);
     }
     const defaultFailureOnly = Boolean(state.config?.default_failure_only);
     // An implicit team default is selected only after the Run API confirms it

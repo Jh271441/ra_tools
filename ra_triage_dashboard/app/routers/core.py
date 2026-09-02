@@ -18,6 +18,7 @@ from ..contracts import (
 from ..http_support import (
     _action_actor,
     _admin_identity,
+    _intent_identity,
     _as_text,
     _detail,
     _missing_evidence_catalog,
@@ -142,9 +143,9 @@ async def index() -> HTMLResponse:
 
 @router.get("/intent-labeling", include_in_schema=False)
 async def intent_labeling_page(request: Request) -> HTMLResponse:
-    """Serve the internal-beta intent workspace only to Dashboard admins."""
+    """Serve the intent workspace to verified writers and administrators."""
 
-    await asyncio.to_thread(_admin_identity, request)
+    await asyncio.to_thread(_intent_identity, request)
     return HTMLResponse(
         content=INDEX_HTML,
         headers={"Cache-Control": "no-store, max-age=0"},
