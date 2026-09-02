@@ -779,6 +779,43 @@ class DatabaseCoreMixin:
                     PRIMARY KEY (dataset_id, case_id)
                 );
 
+                CREATE TABLE IF NOT EXISTS intent_experiments (
+                    id TEXT PRIMARY KEY,
+                    dataset_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    annotation_mode TEXT NOT NULL
+                        CHECK(annotation_mode IN ('blind', 'full')),
+                    overlap_ratio REAL NOT NULL DEFAULT 0
+                        CHECK(overlap_ratio >= 0 AND overlap_ratio <= 1),
+                    case_count INTEGER NOT NULL DEFAULT 0 CHECK(case_count >= 0),
+                    status TEXT NOT NULL DEFAULT 'active'
+                        CHECK(status IN ('active', 'closed')),
+                    seed INTEGER NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    created_by_verified INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    closed_by TEXT NOT NULL DEFAULT '',
+                    closed_at TEXT,
+                    UNIQUE(dataset_id, name)
+                );
+                CREATE INDEX IF NOT EXISTS idx_intent_experiments_dataset
+                    ON intent_experiments(dataset_id, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS intent_experiment_assignments (
+                    experiment_id TEXT NOT NULL
+                        REFERENCES intent_experiments(id) ON DELETE RESTRICT,
+                    username TEXT NOT NULL,
+                    case_id TEXT NOT NULL,
+                    assignment_kind TEXT NOT NULL
+                        CHECK(assignment_kind IN ('base', 'cross', 'full')),
+                    ordinal INTEGER NOT NULL CHECK(ordinal > 0),
+                    assigned_at TEXT NOT NULL,
+                    PRIMARY KEY (experiment_id, username, case_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_intent_experiment_assignments_user
+                    ON intent_experiment_assignments(username, experiment_id, ordinal);
+
                 CREATE TABLE IF NOT EXISTS trail_issue_exclusion_history (
                     operation_id TEXT PRIMARY KEY,
                     created_at TEXT NOT NULL,
@@ -817,6 +854,8 @@ class DatabaseCoreMixin:
                 "intent_label_revisions",
                 "intent_frame_overrides",
                 "intent_label_heads",
+                "intent_experiments",
+                "intent_experiment_assignments",
                 "trail_issue_exclusion_history",
             )
             for table in revision_tables:

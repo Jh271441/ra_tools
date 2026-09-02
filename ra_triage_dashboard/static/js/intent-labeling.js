@@ -93,6 +93,126 @@ function renderIntentDatasetPicker() {
   )).join("");
 }
 
+function intentExperimentModeLabel(mode) {
+  return mode === "full" ? "全量盲标" : "交叉盲标";
+}
+
+function renderIntentExperimentMembers() {
+  const container = $("#intentExperimentMembers");
+  if (!container) return;
+  const members = state.intentLabeling.experimentMembers || [];
+  container.innerHTML = members.length ? members.map((item) => (
+    `<label class="intent-experiment-member"><input type="checkbox" value="${escapeHtml(item.username)}"/><span>${escapeHtml(item.username)}</span><small>${item.role === "admin" ? "管理员" : "标注人"}</small></label>`
+  )).join("") : '<div class="empty-note">请先在用户管理中添加具有写入权限的标注人。</div>';
+  container.querySelectorAll("input").forEach((input) => {
+    input.addEventListener("change", updateIntentExperimentEstimate);
+  });
+}
+
+function updateIntentExperimentEstimate() {
+  const output = $("#intentExperimentEstimate");
+  if (!output) return;
+  const members = Array.from(document.querySelectorAll("#intentExperimentMembers input:checked"));
+  const count = Math.max(0, Number($("#intentExperimentCaseCount")?.value) || 0);
+  const mode = $("#intentExperimentMode")?.value || "blind";
+  const overlap = Math.max(0, Number($("#intentExperimentOverlap")?.value) || 0);
+  if (members.length < 2) {
+    output.textContent = "至少选择 2 名成员。";
+    return;
+  }
+  const assignments = mode === "full" ? count * members.length : count + Math.round(count * overlap);
+  output.textContent = `${count} 个 Case · ${members.length} 人 · 共 ${assignments} 份独立任务`;
+}
+
+function renderIntentExperiments() {
+  const container = $("#intentExperimentList");
+  if (!container) return;
+  const experiments = state.intentLabeling.experiments || [];
+  container.innerHTML = experiments.length ? experiments.map((item) => {
+    const members = (item.members || []).map((member) => {
+      const detail = item.annotation_mode === "full"
+        ? `${member.total} 个 Case`
+        : `基础 ${member.base} · 交叉 ${member.cross}`;
+      return `<span title="${escapeHtml(member.username)}">${escapeHtml(member.username)} · ${detail}</span>`;
+    }).join("");
+    const overlap = item.annotation_mode === "blind" ? ` · 交叉 ${Math.round(item.overlap_ratio * 100)}%` : "";
+    return `<article class="intent-experiment-item${item.status === "closed" ? " is-closed" : ""}" data-intent-experiment="${escapeHtml(item.id)}">
+      <div><h4>${escapeHtml(item.name)}</h4><div class="intent-experiment-meta">${intentExperimentModeLabel(item.annotation_mode)}${overlap} · ${item.case_count} 个 Case · ${item.assignment_count} 份任务 · ${escapeHtml(item.created_by)}</div></div>
+      <span class="intent-experiment-status">${item.status === "closed" ? "已关闭" : "进行中"}</span>
+      <div class="intent-experiment-member-stats">${members}</div>
+      ${item.status === "active" ? '<div class="intent-experiment-actions"><button class="button button-quiet" type="button" data-close-intent-experiment>关闭实验</button></div>' : ""}
+    </article>`;
+  }).join("") : '<div class="empty-note">这个数据集尚未创建多盲实验。</div>';
+  container.querySelectorAll("[data-close-intent-experiment]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const experimentId = button.closest("[data-intent-experiment]")?.dataset.intentExperiment;
+      if (!experimentId) return;
+      closeIntentExperiment(experimentId).catch((error) => showToast(error.message, true));
+    });
+  });
+}
+
+async function loadIntentExperiments({ force = false } = {}) {
+  const intent = state.intentLabeling;
+  if (!intent.datasetId) return;
+  const requestedDatasetId = intent.datasetId;
+  if (!force && intent.experimentsDatasetId === intent.datasetId) {
+    renderIntentExperiments();
+    return;
+  }
+  const payload = await api(`/api/intent-experiments?dataset_id=${encodeURIComponent(requestedDatasetId)}`);
+  if (intent.datasetId !== requestedDatasetId) return;
+  intent.experiments = payload.items || [];
+  intent.experimentMembers = payload.eligible_members || [];
+  intent.experimentsDatasetId = requestedDatasetId;
+  const dataset = intent.datasets.find((item) => item.id === intent.datasetId);
+  const countInput = $("#intentExperimentCaseCount");
+  if (countInput) {
+    countInput.max = String(dataset?.case_count || 1);
+    countInput.value = String(dataset?.case_count || 1);
+  }
+  renderIntentExperimentMembers();
+  renderIntentExperiments();
+  updateIntentExperimentEstimate();
+}
+
+async function createIntentExperiment(event) {
+  event?.preventDefault();
+  const intent = state.intentLabeling;
+  const members = Array.from(document.querySelectorAll("#intentExperimentMembers input:checked"))
+    .map((input) => input.value);
+  const button = $("#intentCreateExperiment");
+  if (button) button.disabled = true;
+  try {
+    await api("/api/intent-experiments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dataset_id: intent.datasetId,
+        name: $("#intentExperimentName")?.value.trim() || "",
+        annotation_mode: $("#intentExperimentMode")?.value || "blind",
+        case_count: Number($("#intentExperimentCaseCount")?.value) || 0,
+        overlap_ratio: Number($("#intentExperimentOverlap")?.value) || 0,
+        members,
+      }),
+    });
+    $("#intentExperimentName").value = "";
+    intent.experimentsDatasetId = "";
+    await loadIntentExperiments({ force: true });
+    showToast("实验已创建，任务分配快照已保存。", false);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function closeIntentExperiment(experimentId) {
+  if (!window.confirm("关闭后仍会保留实验与分配记录。确认关闭这个实验？")) return;
+  await api(`/api/intent-experiments/${encodeURIComponent(experimentId)}/close`, { method: "POST" });
+  state.intentLabeling.experimentsDatasetId = "";
+  await loadIntentExperiments({ force: true });
+  showToast("实验已关闭，历史分配仍然保留。", false);
+}
+
 function intentSetSaveState(text, kind = "") {
   const element = $("#intentSaveState");
   if (!element) return;
@@ -301,6 +421,7 @@ async function loadIntentLabeling({ datasetId = "", caseId = "", offsetMs = null
     return;
   }
   intent.datasetId = selectedDataset.id;
+  loadIntentExperiments().catch((error) => showToast(error.message, true));
   let targetCaseId = caseId;
   if (targetCaseId && !/^cn[0-9]+_[0-9]+$/.test(targetCaseId)) {
     if (!/^cn[0-9]+$/.test(targetCaseId)) throw new Error("请输入完整的 Issue ID，例如 cn28896325。");
@@ -577,6 +698,25 @@ function handleIntentShortcut(event) {
 }
 
 function bindIntentLabelingEvents() {
+  $("#intentExperimentForm")?.addEventListener("submit", (event) => {
+    createIntentExperiment(event).catch((error) => showToast(error.message, true));
+  });
+  $("#intentRefreshExperiments")?.addEventListener("click", () => {
+    state.intentLabeling.experimentsDatasetId = "";
+    loadIntentExperiments({ force: true }).catch((error) => showToast(error.message, true));
+  });
+  $("#intentExperimentMode")?.addEventListener("change", (event) => {
+    const full = event.target.value === "full";
+    const overlap = $("#intentExperimentOverlap");
+    if (overlap) {
+      overlap.disabled = full;
+      if (full) overlap.value = "1";
+    }
+    $("#intentExperimentOverlapField")?.classList.toggle("is-disabled", full);
+    updateIntentExperimentEstimate();
+  });
+  $("#intentExperimentCaseCount")?.addEventListener("input", updateIntentExperimentEstimate);
+  $("#intentExperimentOverlap")?.addEventListener("change", updateIntentExperimentEstimate);
   $("#intentDatasetSelect")?.addEventListener("change", async (event) => {
     await intentFlushSave();
     await loadIntentLabeling({ datasetId: event.target.value, historyMode: "push" });

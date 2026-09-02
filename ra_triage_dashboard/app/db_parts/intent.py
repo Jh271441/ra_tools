@@ -10,6 +10,171 @@ LANE_CHANGE_INTENTS = ("lane_change", "no_lane_change")
 
 
 class DatabaseIntentMixin:
+    def list_intent_experiments(self, dataset_id: str = "") -> list[dict[str, Any]]:
+        parameters: tuple[Any, ...] = ()
+        where = ""
+        if dataset_id:
+            where = "WHERE experiment.dataset_id = ?"
+            parameters = (dataset_id,)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT experiment.*,
+                       COUNT(assignment.case_id) AS assignment_count,
+                       COUNT(DISTINCT assignment.username) AS member_count
+                FROM intent_experiments experiment
+                LEFT JOIN intent_experiment_assignments assignment
+                  ON assignment.experiment_id = experiment.id
+                {where}
+                GROUP BY experiment.id
+                ORDER BY experiment.created_at DESC, experiment.id DESC
+                """,
+                parameters,
+            ).fetchall()
+            assignment_rows = conn.execute(
+                """
+                SELECT experiment_id, username, assignment_kind, COUNT(*) AS case_count
+                FROM intent_experiment_assignments
+                GROUP BY experiment_id, username, assignment_kind
+                ORDER BY experiment_id, username, assignment_kind
+                """
+            ).fetchall()
+        members_by_experiment: dict[str, dict[str, dict[str, int]]] = {}
+        for item in assignment_rows:
+            experiment = members_by_experiment.setdefault(str(item["experiment_id"]), {})
+            member = experiment.setdefault(
+                str(item["username"]), {"base": 0, "cross": 0, "full": 0}
+            )
+            member[str(item["assignment_kind"])] = int(item["case_count"] or 0)
+        result = []
+        for row in rows:
+            experiment_id = str(row["id"])
+            member_stats = [
+                {
+                    "username": username,
+                    **counts,
+                    "total": sum(counts.values()),
+                }
+                for username, counts in sorted(
+                    members_by_experiment.get(experiment_id, {}).items()
+                )
+            ]
+            result.append(
+                {
+                    "id": experiment_id,
+                    "dataset_id": str(row["dataset_id"]),
+                    "name": str(row["name"]),
+                    "annotation_mode": str(row["annotation_mode"]),
+                    "overlap_ratio": float(row["overlap_ratio"] or 0),
+                    "case_count": int(row["case_count"] or 0),
+                    "status": str(row["status"]),
+                    "seed": int(row["seed"]),
+                    "created_by": str(row["created_by"]),
+                    "created_at": str(row["created_at"]),
+                    "closed_by": str(row["closed_by"] or ""),
+                    "closed_at": str(row["closed_at"] or ""),
+                    "assignment_count": int(row["assignment_count"] or 0),
+                    "member_count": int(row["member_count"] or 0),
+                    "members": member_stats,
+                }
+            )
+        return result
+
+    def create_intent_experiment(
+        self,
+        *,
+        experiment_id: str,
+        dataset_id: str,
+        name: str,
+        annotation_mode: str,
+        overlap_ratio: float,
+        case_count: int,
+        seed: int,
+        assignments: list[dict[str, Any]],
+        created_by: str,
+        created_by_source: str,
+        created_by_verified: bool,
+    ) -> dict[str, Any]:
+        now = utc_now()
+        with self._write_lock, self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO intent_experiments (
+                    id, dataset_id, name, annotation_mode, overlap_ratio,
+                    case_count, status, seed, created_by, created_by_source,
+                    created_by_verified, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
+                """,
+                (
+                    experiment_id,
+                    dataset_id,
+                    name,
+                    annotation_mode,
+                    overlap_ratio,
+                    case_count,
+                    seed,
+                    created_by,
+                    created_by_source,
+                    bool(created_by_verified),
+                    now,
+                ),
+            )
+            conn.executemany(
+                """
+                INSERT INTO intent_experiment_assignments (
+                    experiment_id, username, case_id, assignment_kind,
+                    ordinal, assigned_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        experiment_id,
+                        item["username"],
+                        item["case_id"],
+                        item["assignment_kind"],
+                        item["ordinal"],
+                        now,
+                    )
+                    for item in assignments
+                ],
+            )
+        return next(
+            item for item in self.list_intent_experiments(dataset_id)
+            if item["id"] == experiment_id
+        )
+
+    def close_intent_experiment(
+        self, experiment_id: str, *, closed_by: str
+    ) -> dict[str, Any] | None:
+        now = utc_now()
+        with self._write_lock, self.connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE intent_experiments
+                SET status = 'closed', closed_by = ?, closed_at = ?
+                WHERE id = ? AND status = 'active'
+                """,
+                (closed_by, now, experiment_id),
+            )
+            if cursor.rowcount <= 0:
+                row = conn.execute(
+                    "SELECT dataset_id FROM intent_experiments WHERE id = ?",
+                    (experiment_id,),
+                ).fetchone()
+                if row is None:
+                    return None
+                dataset_id = str(row["dataset_id"])
+            else:
+                row = conn.execute(
+                    "SELECT dataset_id FROM intent_experiments WHERE id = ?",
+                    (experiment_id,),
+                ).fetchone()
+                dataset_id = str(row["dataset_id"])
+        return next(
+            item for item in self.list_intent_experiments(dataset_id)
+            if item["id"] == experiment_id
+        )
+
     @staticmethod
     def _intent_revision_dict(row: Any, overrides: list[dict[str, Any]]) -> dict[str, Any]:
         return {

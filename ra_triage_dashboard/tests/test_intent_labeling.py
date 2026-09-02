@@ -8,6 +8,7 @@ from pathlib import Path
 from ra_triage_dashboard.app.db import Database
 from ra_triage_dashboard.app.db_parts.shared import IntentAnnotationConflictError
 from ra_triage_dashboard.app.intent_dataset_registry import IntentDatasetIndex
+from ra_triage_dashboard.app.intent_experiments import build_intent_experiment_assignments
 
 
 class IntentDatasetIndexTest(unittest.TestCase):
@@ -200,6 +201,53 @@ class IntentLabelStorageTest(unittest.TestCase):
                     expected_revision_id=first["revision_id"],
                     author="stale",
                 )
+
+
+class IntentExperimentTest(unittest.TestCase):
+    def test_blind_assignment_is_balanced_and_overlap_is_independent(self) -> None:
+        cases = [f"cn12345_{index}" for index in range(10)]
+        assignments = build_intent_experiment_assignments(
+            cases, ["alice", "bob", "charlie"], "blind", 0.3, 42
+        )
+        base = [item for item in assignments if item["assignment_kind"] == "base"]
+        cross = [item for item in assignments if item["assignment_kind"] == "cross"]
+        self.assertEqual(len(base), 10)
+        self.assertEqual(len(cross), 3)
+        base_owner = {item["case_id"]: item["username"] for item in base}
+        self.assertTrue(all(base_owner[item["case_id"]] != item["username"] for item in cross))
+        base_counts = {
+            member: sum(item["username"] == member for item in base)
+            for member in ("alice", "bob", "charlie")
+        }
+        self.assertLessEqual(max(base_counts.values()) - min(base_counts.values()), 1)
+
+    def test_full_assignment_and_storage_snapshot(self) -> None:
+        cases = ["cn1_1", "cn2_2"]
+        assignments = build_intent_experiment_assignments(cases, ["alice", "bob"], "full", 1, 7)
+        self.assertEqual(len(assignments), 4)
+        self.assertTrue(all(item["assignment_kind"] == "full" for item in assignments))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database = Database(Path(temp_dir) / "test.sqlite3")
+            database.init()
+            experiment = database.create_intent_experiment(
+                experiment_id="experiment-1",
+                dataset_id="test-v1",
+                name="双盲一轮",
+                annotation_mode="full",
+                overlap_ratio=1,
+                case_count=2,
+                seed=7,
+                assignments=assignments,
+                created_by="admin",
+                created_by_source="test",
+                created_by_verified=True,
+            )
+            self.assertEqual(experiment["member_count"], 2)
+            self.assertEqual(experiment["assignment_count"], 4)
+            self.assertEqual({item["total"] for item in experiment["members"]}, {2})
+            closed = database.close_intent_experiment("experiment-1", closed_by="admin")
+            self.assertEqual(closed["status"], "closed")
+            self.assertEqual(closed["assignment_count"], 4)
 
 
 if __name__ == "__main__":

@@ -4862,6 +4862,43 @@ body[data-active-page="intent"] .top-actions { min-width: 0; margin-left: auto; 
 .intent-restore-button { width: 100%; margin-top: 9px; }
 .intent-card p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
 
+.intent-experiment-panel {
+  min-width: 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--raised);
+}
+.intent-experiment-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.intent-experiment-header > div { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 4px 9px; }
+.intent-experiment-header h3 { min-width: 0; margin: 0; color: var(--accent); font-size: 15px; }
+.intent-experiment-header p { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 10px; }
+.intent-admin-badge { padding: 2px 6px; border: 1px solid rgba(36, 211, 238, .38); border-radius: 999px; color: var(--accent); background: rgba(36, 211, 238, .08); font-size: 9px; }
+.intent-experiment-layout { min-width: 0; display: grid; grid-template-columns: minmax(390px, .75fr) minmax(520px, 1.25fr); gap: 12px; align-items: stretch; }
+.intent-experiment-form { min-width: 0; display: grid; align-content: start; gap: 10px; padding: 12px; border: 1px solid var(--line-soft); border-radius: 9px; background: var(--overlay); }
+.intent-experiment-form label { min-width: 0; display: grid; gap: 5px; color: var(--muted); font-size: 10px; }
+.intent-experiment-form input, .intent-experiment-form select { width: 100%; min-width: 0; height: 34px; }
+.intent-experiment-form-row { min-width: 0; display: grid; grid-template-columns: 1fr .7fr .85fr; gap: 8px; }
+.intent-experiment-members { min-width: 0; margin: 0; padding: 9px 10px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.intent-experiment-members legend { padding: 0 5px; color: var(--text); font-size: 11px; }
+.intent-experiment-members legend small { margin-left: 6px; color: var(--faint); font-size: 9px; font-weight: 400; }
+.intent-experiment-members > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.intent-experiment-member { min-width: 0; display: flex !important; grid-template: none !important; flex-direction: row; align-items: center; gap: 6px !important; padding: 6px 7px; border: 1px solid var(--line-soft); border-radius: 6px; color: var(--text) !important; cursor: pointer; }
+.intent-experiment-member input { width: 14px; height: 14px; flex: 0 0 auto; }
+.intent-experiment-member span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.intent-experiment-member small { margin-left: auto; color: var(--faint); font-size: 8px; }
+.intent-experiment-form-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.intent-experiment-form-footer p { min-width: 0; margin: 0; color: var(--muted); font-size: 10px; }
+.intent-experiment-form-footer .button { flex: 0 0 auto; }
+.intent-experiment-list { min-width: 0; min-height: 218px; max-height: 310px; overflow-y: auto; display: grid; align-content: start; gap: 7px; }
+.intent-experiment-item { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: 9px; background: var(--overlay); }
+.intent-experiment-item.is-closed { opacity: .72; }
+.intent-experiment-item h4 { min-width: 0; margin: 0; overflow: hidden; color: var(--text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.intent-experiment-meta { color: var(--muted); font-size: 9px; }
+.intent-experiment-member-stats { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px; }
+.intent-experiment-member-stats span { padding: 3px 6px; border-radius: 5px; color: #cbd8e4; background: rgba(127, 151, 170, .1); font-size: 9px; }
+.intent-experiment-status { align-self: start; padding: 3px 7px; border-radius: 999px; color: var(--ok); background: rgba(48, 211, 143, .1); font-size: 9px; }
+.intent-experiment-item.is-closed .intent-experiment-status { color: var(--muted); background: rgba(127, 151, 170, .1); }
+.intent-experiment-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
+.intent-experiment-actions .button { min-height: 28px; padding: 4px 9px; font-size: 9px; }
+
 .shortcut-guide-dialog { width: min(660px, calc(100vw - 28px)); max-width: calc(100vw - 28px); box-sizing: border-box; overflow: hidden; }
 .shortcut-guide-dialog .dialog-card { width: auto; min-width: 0; max-width: 100%; max-height: calc(100dvh - 28px); box-sizing: border-box; overflow-y: auto; }
 .media-decision-summary[hidden] { display: none; }
@@ -4884,16 +4921,20 @@ body[data-active-page="intent"] .top-actions { min-width: 0; margin-left: auto; 
 @media (max-width: 1250px) {
   .intent-workspace { grid-template-columns: 1fr; }
   .intent-label-rail { grid-template-columns: 1fr; }
+  .intent-experiment-layout { grid-template-columns: 1fr; }
+  .intent-experiment-list { max-height: none; }
 }
 @media (max-width: 800px) {
   .intent-commandbar { grid-template-columns: 1fr; }
   .intent-command-actions { grid-column: auto; display: grid; grid-template-columns: repeat(2, 1fr); }
   .intent-media-grid, .intent-label-rail { grid-template-columns: 1fr; }
+  .intent-experiment-form-row, .intent-experiment-members > div { grid-template-columns: 1fr; }
 }
 
 html[data-color-theme="light"] .intent-media-panel,
 html[data-color-theme="light"] .intent-timeline-panel,
 html[data-color-theme="light"] .intent-card,
+html[data-color-theme="light"] .intent-experiment-panel,
 html[data-color-theme="light"] .intent-commandbar { background: #fff; }
 html[data-color-theme="light"] .intent-label-grid button,
 html[data-color-theme="light"] .intent-timepoint { background: #f4f7fb; }

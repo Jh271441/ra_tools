@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-288`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-289`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -357,6 +357,25 @@
                 </section>
               </aside>
             </div>
+            <section class="intent-experiment-panel" aria-labelledby="intentExperimentTitle">
+              <header class="intent-experiment-header">
+                <div><span class="intent-admin-badge">管理员</span><h3 id="intentExperimentTitle">多盲实验与任务分配</h3><p>分配快照由服务端保存；实验关闭后仍保留记录，不会清空标注。</p></div>
+                <button class="button button-quiet" id="intentRefreshExperiments" type="button">刷新实验</button>
+              </header>
+              <div class="intent-experiment-layout">
+                <form class="intent-experiment-form" id="intentExperimentForm">
+                  <label><span>实验名称</span><input id="intentExperimentName" maxlength="160" autocomplete="off" placeholder="例如 0206 Routing 双盲复核" required/></label>
+                  <div class="intent-experiment-form-row">
+                    <label><span>实验模式</span><select id="intentExperimentMode"><option value="blind">交叉盲标</option><option value="full">全量盲标</option></select></label>
+                    <label><span>Case 数量</span><input id="intentExperimentCaseCount" type="number" min="1" step="1" required/></label>
+                    <label id="intentExperimentOverlapField"><span>交叉复核比例</span><select id="intentExperimentOverlap"><option value="0">0%</option><option value="0.1">10%</option><option value="0.2" selected>20%</option><option value="0.3">30%</option><option value="0.5">50%</option><option value="1">100%</option></select></label>
+                  </div>
+                  <fieldset class="intent-experiment-members"><legend>标注成员 <small>至少 2 人，仅可选择已有写入权限的账号</small></legend><div id="intentExperimentMembers"></div></fieldset>
+                  <div class="intent-experiment-form-footer"><p id="intentExperimentEstimate">选择成员后显示预计任务量。</p><button class="button button-primary" id="intentCreateExperiment" type="submit">创建并分配</button></div>
+                </form>
+                <div class="intent-experiment-list" id="intentExperimentList"><div class="empty-note">尚未创建多盲实验。</div></div>
+              </div>
+            </section>
           </section>
 
           <section class="app-page tool-page analysis-page hidden" id="reviewAnalysisPage" data-page="analysis">
@@ -1674,7 +1693,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-288`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-289`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

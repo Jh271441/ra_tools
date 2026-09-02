@@ -24,6 +24,8 @@ class IntentLabelingAccessContractTest(unittest.TestCase):
             "router = APIRouter(dependencies=[Depends(_require_intent_admin)])",
             INTENT_ROUTER,
         )
+        self.assertIn('@router.post("/api/intent-experiments")', INTENT_ROUTER)
+        self.assertIn('@router.post("/api/intent-experiments/{experiment_id}/close")', INTENT_ROUTER)
 
 
 if __name__ == "__main__":

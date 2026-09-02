@@ -666,6 +666,9 @@ const state = {
       bev: { scale: 1, x: 0, y: 0, source: "" },
     },
     thumbnailObserver: null,
+    experiments: [],
+    experimentMembers: [],
+    experimentsDatasetId: "",
   },
   // Short baseline ids from registry (e.g. ["0508"] or ["0508","0626"]).
   selectedBaselineIds: ["0508"],
