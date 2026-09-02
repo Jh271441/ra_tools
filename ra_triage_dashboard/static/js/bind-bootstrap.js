@@ -604,14 +604,23 @@ function bindEvents() {
       }
       return;
     }
-    if (["ArrowLeft", "ArrowUp", "["].includes(event.key)) { event.preventDefault(); moveMedia(-1); }
-    if (["ArrowRight", "ArrowDown", "]"].includes(event.key)) { event.preventDefault(); moveMedia(1); }
-    if (event.key.toLowerCase() === "b") switchMediaKind("bev");
-    if (event.key.toLowerCase() === "c") switchMediaKind("camera");
-    if (event.key.toLowerCase() === "v") switchMediaKind("video");
-    if (event.key === " " && state.media.kind === "video") {
-      event.preventDefault();
-      $("#mediaVideoStage")?.querySelector("[data-video-play]")?.click();
+    const intentPreview = Boolean(state.media.snapshot?.intentPreview);
+    if (intentPreview) {
+      if (event.key === "ArrowLeft") { event.preventDefault(); moveMedia(-1); }
+      if (event.key === "ArrowRight") { event.preventDefault(); moveMedia(1); }
+      if (event.key === " " && !event.repeat) { event.preventDefault(); cycleIntentMediaKind(); }
+      if (event.key.toLowerCase() === "b") switchMediaKind("bev");
+      if (event.key.toLowerCase() === "c") switchMediaKind("camera");
+    } else {
+      if (["ArrowLeft", "ArrowUp", "["].includes(event.key)) { event.preventDefault(); moveMedia(-1); }
+      if (["ArrowRight", "ArrowDown", "]"].includes(event.key)) { event.preventDefault(); moveMedia(1); }
+      if (event.key.toLowerCase() === "b") switchMediaKind("bev");
+      if (event.key.toLowerCase() === "c") switchMediaKind("camera");
+      if (event.key.toLowerCase() === "v") switchMediaKind("video");
+      if (event.key === " " && state.media.kind === "video") {
+        event.preventDefault();
+        $("#mediaVideoStage")?.querySelector("[data-video-play]")?.click();
+      }
     }
     if (["+", "="].includes(event.key)) { event.preventDefault(); setMediaZoom(state.media.zoom + MEDIA_ZOOM_STEP); }
     if (["-", "_"].includes(event.key)) { event.preventDefault(); setMediaZoom(state.media.zoom - MEDIA_ZOOM_STEP); }

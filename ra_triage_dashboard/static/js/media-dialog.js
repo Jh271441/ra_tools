@@ -304,18 +304,36 @@ function switchMediaKind(kind) {
   const currentOffset = state.media.kind === "video"
     ? null
     : Number(mediaFrames(state.media.kind)[state.media.index]?.offset_ms);
-  state.media.kind = kind;
+  const currentTimepointId = state.media.kind === "video"
+    ? ""
+    : String(mediaFrames(state.media.kind)[state.media.index]?.timepoint_id || "");
   const nextFrames = kind === "video" ? [] : mediaFrames(kind);
-  state.media.index = Number.isFinite(currentOffset) && nextFrames.length
-    ? nextFrames.reduce((bestIndex, frame, index) => (
-      Math.abs(Number(frame.offset_ms) - currentOffset)
-        < Math.abs(Number(nextFrames[bestIndex]?.offset_ms) - currentOffset)
-        ? index
-        : bestIndex
-    ), 0)
-    : 0;
+  const exactTimepointIndex = currentTimepointId
+    ? nextFrames.findIndex((frame) => String(frame.timepoint_id || "") === currentTimepointId)
+    : -1;
+  if (state.media.snapshot?.intentPreview && currentTimepointId && exactTimepointIndex < 0) {
+    showToast(`当前时间点没有可用的 ${kind === "camera" ? "Camera" : "BEV"} 图片。`, true);
+    return;
+  }
+  state.media.kind = kind;
+  state.media.index = exactTimepointIndex >= 0
+    ? exactTimepointIndex
+    : Number.isFinite(currentOffset) && nextFrames.length
+      ? nextFrames.reduce((bestIndex, frame, index) => (
+        Math.abs(Number(frame.offset_ms) - currentOffset)
+          < Math.abs(Number(nextFrames[bestIndex]?.offset_ms) - currentOffset)
+          ? index
+          : bestIndex
+      ), 0)
+      : 0;
   state.media.zoom = 1;
   renderMediaDialog();
+}
+
+function cycleIntentMediaKind() {
+  if (!state.media.snapshot?.intentPreview) return;
+  const alternate = state.media.kind === "camera" ? "bev" : "camera";
+  if (mediaFrames(alternate).length) switchMediaKind(alternate);
 }
 
 function bindMediaPanViewport(viewport) {
@@ -469,7 +487,7 @@ function renderMediaDialog() {
     preloadMediaDialogImage(targetUrl, applyImage);
   }
   $("#mediaHelp").textContent = snapshot?.intentPreview
-    ? "[ / ] 或方向键切帧 · B/C 切媒体 · +/− 缩放 · 0 复位 · 放大后拖拽平移 · F 全屏 · Esc 退出"
+    ? "← / → 切帧 · Space 同帧轮换 Camera / BEV · B/C 直达媒体 · +/− 缩放 · 0 复位 · F 全屏 · Esc 退出"
     : "← / ↑ 上一帧 · → / ↓ 下一帧 · B/C/V 切媒体 · +/− 缩放 · 0 复位 · 放大后拖拽平移 · F 全屏 · Esc 退出";
   $("#mediaTimeline").innerHTML = mediaTimelineButtonsMarkup(frames, state.media.index, "media-frame");
   $("#mediaTimeline").querySelectorAll("[data-media-frame]").forEach((button) => {

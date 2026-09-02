@@ -649,6 +649,7 @@ const state = {
     caseId: "",
     caseData: null,
     activeTimepointId: "",
+    activeAxis: "routing",
     revisionId: null,
     aggregate: { routing: "", laneChange: "" },
     overrides: {},
