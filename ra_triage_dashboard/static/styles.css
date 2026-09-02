@@ -4788,17 +4788,19 @@ body:is([data-active-page="intent"], [data-active-page="intent-experiments"]) .i
   min-width: 0; display: grid; grid-template-columns: auto minmax(170px, 230px); align-items: center; gap: 7px;
   color: var(--faint); font-size: 10px; font-weight: 700;
 }
-.intent-topbar-dataset select { width: 100%; min-width: 0; height: 30px; padding-block: 3px; font-size: 11px; }
+.intent-topbar-dataset .ui-select { width: 100%; min-width: 0; }
+.intent-topbar-dataset .ui-select-trigger { height: 30px; padding-block: 3px; font-size: 11px; }
 
 .intent-labeling-page { width: 100%; max-width: 100%; min-width: 0; display: grid; gap: 10px; }
 .intent-commandbar {
   width: 100%; max-width: 100%; min-width: 0; display: grid;
-  grid-template-columns: minmax(235px, 1fr) 210px 66px minmax(310px, 1.2fr) minmax(290px, 1fr);
+  grid-template-columns: minmax(210px, .9fr) 185px 185px 60px minmax(285px, 1.15fr) minmax(265px, 1fr);
   align-items: end; gap: 10px; padding: 10px 14px; border: 1px solid var(--line);
   border-radius: 12px; background: var(--raised);
 }
 .intent-commandbar label, .intent-command-field { display: grid; gap: 5px; min-width: 0; color: var(--muted); font-size: 11px; }
 .intent-commandbar select, .intent-commandbar input { min-width: 0; height: 36px; }
+.intent-commandbar .ui-select-trigger, .intent-commandbar .multi-filter-trigger { height: 36px; }
 .intent-load-case-button { min-width: 0; height: 36px; align-self: end; padding-inline: 9px; }
 .intent-my-tasks { padding: 0; border: 0; color: var(--accent); background: transparent; cursor: pointer; font-size: 9px; }
 .intent-my-tasks:disabled { color: var(--faint); cursor: default; }
@@ -4806,7 +4808,7 @@ body:is([data-active-page="intent"], [data-active-page="intent-experiments"]) .i
 .intent-field-heading { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .intent-command-navigator { min-width: 0; display: grid; gap: 5px; color: var(--muted); font-size: 11px; }
 .intent-stepper { min-width: 0; display: grid; grid-template-columns: minmax(92px, 1fr) 46px auto minmax(92px, 1fr); align-items: center; gap: 5px; }
-.intent-stepper .button { min-width: 0; height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding-inline: 7px; white-space: nowrap; }
+.intent-stepper .button { min-width: 0; height: 36px; display: inline-flex; align-items: center; justify-content: center; padding-inline: 4px; white-space: nowrap; font-size: 10px; }
 .intent-stepper input { width: 46px; min-width: 0; height: 36px; padding-inline: 4px; text-align: center; font-variant-numeric: tabular-nums; }
 .intent-stepper input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
 .intent-stepper input[type="number"]::-webkit-inner-spin-button,
@@ -4888,13 +4890,12 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-contributors-card { display: grid; grid-template-rows: auto minmax(0, 1fr); }
 .intent-contributor-list, .intent-comment-list { min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: 5px; }
 .intent-contributor-list > p, .intent-comment-list > p { color: var(--faint); font-size: 9px; }
-.intent-contributor { display: flex; align-items: center; justify-content: space-between; gap: 7px; padding: 5px 7px; border: 1px solid var(--line-soft); border-radius: 6px; background: var(--overlay); }
+.intent-contributor { display: grid; grid-template-columns: minmax(72px, .8fr) repeat(2, minmax(72px, 1fr)); align-items: center; gap: 8px; padding: 7px 8px; border: 1px solid var(--line-soft); border-radius: 6px; background: var(--overlay); }
 .intent-contributor.is-current { border-color: rgba(36, 211, 238, .32); }
-.intent-contributor > div { min-width: 0; display: grid; gap: 1px; }
 .intent-contributor strong { overflow: hidden; color: var(--text); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-.intent-contributor span { overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
-.intent-contributor > small { flex: 0 0 auto; color: var(--warn); font-size: 8px; }
-.intent-contributor > small.is-complete { color: var(--ok); }
+.intent-contributor span { min-width: 0; display: grid; gap: 1px; }
+.intent-contributor span small { color: var(--faint); font-size: 7px; }
+.intent-contributor span b { overflow: hidden; color: var(--muted); font-size: 9px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .intent-discussion-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
 .intent-discussion-card h3 { margin: 0; }
 .intent-discussion-card .button { min-height: 30px; padding: 4px 10px; font-size: 9px; }
@@ -4977,7 +4978,7 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .shortcut-guide-footer { margin: 12px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
 
 @media (max-width: 1600px) {
-  .intent-commandbar { grid-template-columns: minmax(220px, 1fr) 180px 62px minmax(290px, 1.1fr) minmax(270px, 1fr); gap: 8px; }
+  .intent-commandbar { grid-template-columns: minmax(190px, .9fr) 165px 165px 56px minmax(270px, 1.1fr) minmax(250px, 1fr); gap: 8px; }
   .intent-stepper { grid-template-columns: minmax(82px, 1fr) 42px auto minmax(82px, 1fr); gap: 4px; }
   .intent-stepper input { width: 42px; }
   .intent-workspace { grid-template-columns: minmax(0, 1fr) 280px; }
@@ -5005,8 +5006,9 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 }
 @media (max-width: 1400px) {
   .intent-commandbar { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  .intent-case-field { grid-column: span 3; }
+  .intent-case-field { grid-column: span 2; }
   .intent-assignee-field { grid-column: span 2; }
+  .intent-experiment-filter-field { grid-column: span 1; }
   .intent-load-case-button { grid-column: span 1; }
   .intent-command-navigator { grid-column: span 3; }
 }
@@ -5018,7 +5020,7 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 }
 @media (max-width: 800px) {
   .intent-commandbar { grid-template-columns: 1fr; }
-  .intent-case-field, .intent-assignee-field, .intent-load-case-button, .intent-command-navigator { grid-column: auto; }
+  .intent-case-field, .intent-assignee-field, .intent-experiment-filter-field, .intent-load-case-button, .intent-command-navigator { grid-column: auto; }
   body:is([data-active-page="intent"], [data-active-page="intent-experiments"]) .intent-topbar-dataset { grid-template-columns: auto minmax(120px, 1fr); }
   .intent-media-grid, .intent-label-rail { grid-template-columns: 1fr; }
   .intent-experiment-form-row, .intent-experiment-members > div { grid-template-columns: 1fr; }

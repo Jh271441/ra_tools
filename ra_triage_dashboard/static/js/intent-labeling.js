@@ -32,12 +32,16 @@ function intentRouteOptions(overrides = {}) {
     caseId: overrides.caseId ?? intent.caseId,
     offsetMs: overrides.offsetMs ?? active?.offset_ms ?? null,
     assignees: overrides.assignees ?? intent.selectedAssignees,
+    experimentId: overrides.experimentId ?? intent.selectedExperimentId,
   };
 }
 
 function intentAssigneeSearchParams(assignees = state.intentLabeling.selectedAssignees) {
   const params = new URLSearchParams();
   (assignees || []).forEach((username) => params.append("assignee", username));
+  if (state.intentLabeling.selectedExperimentId) {
+    params.set("experiment_id", state.intentLabeling.selectedExperimentId);
+  }
   return params;
 }
 
@@ -98,11 +102,26 @@ function intentLabelSummary(timepoint) {
 }
 
 function renderIntentTopbarDatasetPicker(selectedId = state.intentLabeling.datasetId) {
-  const select = $("#intentTopbarDatasetSelect");
-  if (!select) return;
-  select.innerHTML = state.intentLabeling.datasets.map((item) => (
-    `<option value="${escapeHtml(item.id)}"${item.id === selectedId ? " selected" : ""}${item.available ? "" : " disabled"}>${escapeHtml(item.display_name)}</option>`
-  )).join("");
+  const picker = $("#intentTopbarDatasetPicker");
+  if (!picker) return;
+  populateUiSelect(picker, state.intentLabeling.datasets.map((item) => ({
+    value: item.id, label: item.display_name, disabled: !item.available,
+  })), selectedId);
+  bindUiSelect(picker, { maxHeight: 280, maxWidth: 320 });
+}
+
+function renderIntentAssignmentFilter() {
+  const intent = state.intentLabeling;
+  const picker = $("#intentAssignmentPicker");
+  if (!picker) return;
+  populateUiSelect(picker, [
+    { value: "", label: "全部实验" },
+    ...(intent.assignmentExperiments || []).map((item) => ({
+      value: item.id,
+      label: `${item.name} · ${item.case_count} Case`,
+    })),
+  ], intent.selectedExperimentId || "");
+  bindUiSelect(picker, { maxHeight: 280, maxWidth: 420 });
 }
 
 function renderIntentAssigneeFilter() {
@@ -136,28 +155,53 @@ function renderIntentAssigneeFilter() {
   }
 }
 
-async function loadIntentAssignees(datasetId, requested = null) {
+async function loadIntentAssignees(datasetId, requested = null, requestedExperimentId = null) {
   const intent = state.intentLabeling;
-  if (intent.assigneeDatasetId !== datasetId) {
-    const payload = await api(`/api/intent-assignees?dataset_id=${encodeURIComponent(datasetId)}`);
+  const nextExperimentId = requestedExperimentId == null
+    ? intent.selectedExperimentId
+    : String(requestedExperimentId || "");
+  const cacheKey = `${datasetId}:${nextExperimentId}`;
+  if (intent.assigneeDatasetId !== cacheKey) {
+    const params = new URLSearchParams({ dataset_id: datasetId });
+    if (nextExperimentId) params.set("experiment_id", nextExperimentId);
+    const payload = await api(`/api/intent-assignees?${params}`);
     if (intent.datasetId !== datasetId) return;
     intent.assignees = payload.items || [];
-    intent.assigneeDatasetId = datasetId;
+    intent.assignmentExperiments = payload.experiments || [];
+    const experimentIds = new Set(intent.assignmentExperiments.map((item) => item.id));
+    intent.selectedExperimentId = experimentIds.has(nextExperimentId) ? nextExperimentId : "";
+    intent.assigneeDatasetId = `${datasetId}:${intent.selectedExperimentId}`;
   }
   const available = new Set(intent.assignees.map((item) => item.username));
   const currentUsername = String(state.session.username || "").toLowerCase();
-  const firstSelectionForDataset = intent.assigneeSelectionDatasetId !== datasetId;
+  const selectionKey = `${datasetId}:${intent.selectedExperimentId}`;
+  const firstSelectionForDataset = intent.assigneeSelectionDatasetId !== selectionKey;
   let selected = requested == null ? intent.selectedAssignees : parseFilterList(requested);
   if (requested == null && firstSelectionForDataset && available.has(currentUsername)) {
     selected = [currentUsername];
   }
-  intent.assigneeSelectionDatasetId = datasetId;
+  intent.assigneeSelectionDatasetId = selectionKey;
   intent.selectedAssignees = selected.filter((username) => available.has(username));
+  renderIntentAssignmentFilter();
   renderIntentAssigneeFilter();
 }
 
 function intentExperimentModeLabel(mode) {
   return mode === "full" ? "全量盲标" : "交叉盲标";
+}
+
+function initializeIntentExperimentSelects() {
+  const mode = $("#intentExperimentModePicker");
+  populateUiSelect(mode, [
+    { value: "blind", label: "交叉盲标" },
+    { value: "full", label: "全量盲标" },
+  ], $("#intentExperimentMode")?.value || "blind");
+  bindUiSelect(mode, { maxHeight: 220, maxWidth: 280 });
+  const overlap = $("#intentExperimentOverlapPicker");
+  populateUiSelect(overlap, [0, 0.1, 0.2, 0.3, 0.5, 1].map((value) => ({
+    value: String(value), label: `${Math.round(value * 100)}%`,
+  })), $("#intentExperimentOverlap")?.value || "0.2");
+  bindUiSelect(overlap, { maxHeight: 260, maxWidth: 240 });
 }
 
 function renderIntentExperimentMembers() {
@@ -181,12 +225,12 @@ function updateIntentExperimentEstimate() {
   const overlap = Math.max(0, Number($("#intentExperimentOverlap")?.value) || 0);
   const reviewerInput = $("#intentExperimentReviewers");
   if (reviewerInput) {
-    reviewerInput.max = String(Math.max(2, members.length));
-    if (Number(reviewerInput.value) > members.length) reviewerInput.value = String(Math.max(2, members.length));
+    reviewerInput.max = String(Math.max(1, members.length));
+    if (Number(reviewerInput.value) > members.length) reviewerInput.value = String(Math.max(1, members.length));
   }
-  const reviewers = Math.max(2, Math.min(members.length, Number(reviewerInput?.value) || 2));
-  if (members.length < 2) {
-    output.textContent = "至少选择 2 名成员。";
+  const reviewers = Math.max(1, Math.min(members.length, Number(reviewerInput?.value) || 1));
+  if (members.length < 1) {
+    output.textContent = "至少选择 1 名成员。";
     return;
   }
   const overlapCases = Math.round(count * overlap);
@@ -289,7 +333,7 @@ async function createIntentExperiment(event) {
         annotation_mode: $("#intentExperimentMode")?.value || "blind",
         case_count: Number($("#intentExperimentCaseCount")?.value) || 0,
         overlap_ratio: Number($("#intentExperimentOverlap")?.value) || 0,
-        overlap_reviewers: Number($("#intentExperimentReviewers")?.value) || 2,
+        overlap_reviewers: Number($("#intentExperimentReviewers")?.value) || 1,
         members,
       }),
     });
@@ -559,11 +603,13 @@ function renderIntentCollaboration() {
   }
   if (contributorList) {
     contributorList.innerHTML = contributors.length ? contributors.map((item) => {
-      const status = item.completed ? "已完成" : "进行中";
-      const answer = item.revealed
-        ? `${INTENT_ROUTING_LABELS[item.routing_default] || "Routing 待填"} · ${INTENT_LANE_LABELS[item.lane_change_default] || "变道待填"}`
-        : "答案已隐藏";
-      return `<article class="intent-contributor${item.is_current ? " is-current" : ""}"><div><strong>${escapeHtml(item.username)}${item.is_current ? "（我）" : ""}</strong><span>${escapeHtml(answer)}</span></div><small class="${item.completed ? "is-complete" : ""}">${status}</small></article>`;
+      const routing = item.revealed ? (INTENT_ROUTING_LABELS[item.routing_default] || "None") : "—";
+      const laneChange = item.revealed ? (INTENT_LANE_LABELS[item.lane_change_default] || "None") : "—";
+      return `<article class="intent-contributor${item.is_current ? " is-current" : ""}">
+        <strong>${escapeHtml(item.username)}${item.is_current ? "（我）" : ""}</strong>
+        <span><small>Routing</small><b>${escapeHtml(routing)}</b></span>
+        <span><small>变道意图</small><b>${escapeHtml(laneChange)}</b></span>
+      </article>`;
     }).join("") : "<p>尚无标注记录</p>";
   }
   const comments = collaboration.comments || [];
@@ -658,7 +704,7 @@ async function postIntentComment(event) {
   }
 }
 
-async function loadIntentLabeling({ datasetId = "", caseId = "", offsetMs = null, assignees = null, historyMode = "replace" } = {}) {
+async function loadIntentLabeling({ datasetId = "", caseId = "", offsetMs = null, assignees = null, experimentId = null, historyMode = "replace" } = {}) {
   const intent = state.intentLabeling;
   const requestSeq = ++intent.requestSeq;
   if (!intent.datasets.length) {
@@ -680,8 +726,9 @@ async function loadIntentLabeling({ datasetId = "", caseId = "", offsetMs = null
   if (datasetChanged) {
     intent.selectedAssignees = [];
     intent.assigneeDatasetId = "";
+    intent.selectedExperimentId = "";
   }
-  await loadIntentAssignees(intent.datasetId, assignees);
+  await loadIntentAssignees(intent.datasetId, assignees, experimentId);
   if (requestSeq !== intent.requestSeq) return;
   const assigneeParams = intentAssigneeSearchParams();
   let targetCaseId = caseId;
@@ -1050,6 +1097,22 @@ function bindIntentLabelingEvents() {
   $("#intentExperimentForm")?.addEventListener("submit", (event) => {
     createIntentExperiment(event).catch((error) => showToast(error.message, true));
   });
+  initializeIntentExperimentSelects();
+  $("#intentAssignmentSelect")?.addEventListener("change", (event) => {
+    (async () => {
+      await intentFlushSave();
+      const experimentId = event.target.value || "";
+      state.intentLabeling.assigneeDatasetId = "";
+      state.intentLabeling.selectedAssignees = [];
+      await loadIntentLabeling({
+        datasetId: state.intentLabeling.datasetId,
+        caseId: "",
+        assignees: null,
+        experimentId,
+        historyMode: "push",
+      });
+    })().catch((error) => showToast(error.message, true));
+  });
   $("#intentExperimentMode")?.addEventListener("change", (event) => {
     const full = event.target.value === "full";
     const overlap = $("#intentExperimentOverlap");
@@ -1061,6 +1124,7 @@ function bindIntentLabelingEvents() {
     const reviewers = $("#intentExperimentReviewers");
     if (reviewers) reviewers.disabled = full;
     $("#intentExperimentReviewersField")?.classList.toggle("is-disabled", full);
+    initializeIntentExperimentSelects();
     updateIntentExperimentEstimate();
   });
   $("#intentExperimentCaseCount")?.addEventListener("input", updateIntentExperimentEstimate);

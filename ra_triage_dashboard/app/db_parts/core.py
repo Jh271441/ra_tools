@@ -831,7 +831,7 @@ class DatabaseCoreMixin:
                     overlap_ratio REAL NOT NULL DEFAULT 0
                         CHECK(overlap_ratio >= 0 AND overlap_ratio <= 1),
                     overlap_reviewers INTEGER NOT NULL DEFAULT 2
-                        CHECK(overlap_reviewers >= 2),
+                        CHECK(overlap_reviewers >= 1),
                     case_count INTEGER NOT NULL DEFAULT 0 CHECK(case_count >= 0),
                     status TEXT NOT NULL DEFAULT 'active'
                         CHECK(status IN ('active', 'closed')),

@@ -11,13 +11,15 @@ LANE_CHANGE_INTENTS = ("lane_change", "no_lane_change")
 
 class DatabaseIntentMixin:
     def list_intent_assignment_assignees(
-        self, dataset_id: str
+        self, dataset_id: str, experiment_id: str = ""
     ) -> list[dict[str, Any]]:
         """Return active experiment owners without exposing their answers."""
 
         with self.connect() as conn:
+            experiment_filter = " AND experiment.id = ?" if experiment_id else ""
+            parameters = (dataset_id, experiment_id) if experiment_id else (dataset_id,)
             rows = conn.execute(
-                """
+                f"""
                 SELECT assignment.username,
                        COUNT(DISTINCT assignment.case_id) AS case_count,
                        COUNT(DISTINCT assignment.experiment_id) AS experiment_count
@@ -25,10 +27,11 @@ class DatabaseIntentMixin:
                 JOIN intent_experiments experiment
                   ON experiment.id = assignment.experiment_id
                 WHERE experiment.dataset_id = ? AND experiment.status = 'active'
+                  {experiment_filter}
                 GROUP BY assignment.username
                 ORDER BY assignment.username ASC
                 """,
-                (dataset_id,),
+                parameters,
             ).fetchall()
         return [
             {
@@ -40,7 +43,10 @@ class DatabaseIntentMixin:
         ]
 
     def intent_assigned_case_ids(
-        self, dataset_id: str, usernames: list[str] | tuple[str, ...]
+        self,
+        dataset_id: str,
+        usernames: list[str] | tuple[str, ...],
+        experiment_id: str = "",
     ) -> tuple[str, ...]:
         """Return cases assigned to every selected owner in one active experiment."""
 
@@ -53,6 +59,11 @@ class DatabaseIntentMixin:
         if not normalized:
             return ()
         placeholders = ", ".join("?" for _ in normalized)
+        experiment_filter = " AND experiment.id = ?" if experiment_id else ""
+        parameters: tuple[Any, ...] = (dataset_id, *normalized)
+        if experiment_id:
+            parameters = (*parameters, experiment_id)
+        parameters = (*parameters, len(normalized))
         with self.connect() as conn:
             rows = conn.execute(
                 f"""
@@ -62,13 +73,37 @@ class DatabaseIntentMixin:
                   ON experiment.id = assignment.experiment_id
                 WHERE experiment.dataset_id = ? AND experiment.status = 'active'
                   AND assignment.username IN ({placeholders})
+                  {experiment_filter}
                 GROUP BY assignment.experiment_id, assignment.case_id
                 HAVING COUNT(DISTINCT assignment.username) = ?
                 ORDER BY MIN(assignment.ordinal) ASC, assignment.case_id ASC
                 """,
-                (dataset_id, *normalized, len(normalized)),
+                parameters,
             ).fetchall()
         return tuple(dict.fromkeys(str(row["case_id"]) for row in rows))
+
+    def intent_experiment_case_ids(
+        self, dataset_id: str, experiment_id: str
+    ) -> tuple[str, ...]:
+        """Return the immutable Case subset for one active assignment."""
+
+        if not experiment_id:
+            return ()
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT assignment.case_id
+                FROM intent_experiment_assignments assignment
+                JOIN intent_experiments experiment
+                  ON experiment.id = assignment.experiment_id
+                WHERE experiment.dataset_id = ? AND experiment.id = ?
+                  AND experiment.status = 'active'
+                GROUP BY assignment.case_id
+                ORDER BY MIN(assignment.ordinal) ASC, assignment.case_id ASC
+                """,
+                (dataset_id, experiment_id),
+            ).fetchall()
+        return tuple(str(row["case_id"]) for row in rows)
 
     def list_intent_experiments(self, dataset_id: str = "") -> list[dict[str, Any]]:
         parameters: tuple[Any, ...] = ()

@@ -47,7 +47,7 @@ def build_intent_experiment_assignments(
         )
     overlap_count = min(len(shuffled), round(len(shuffled) * overlap_ratio))
     cross_counts = {member: 0 for member in members}
-    extra_reviewers = max(1, min(len(members), reviewers_per_overlap_case) - 1)
+    extra_reviewers = max(0, min(len(members), reviewers_per_overlap_case) - 1)
     for index, case_id in enumerate(shuffled[:overlap_count]):
         eligible = [member for member in members if member != base_owner[case_id]]
         eligible.sort(

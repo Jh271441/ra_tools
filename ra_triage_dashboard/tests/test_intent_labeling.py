@@ -307,6 +307,15 @@ class IntentLabelStorageTest(unittest.TestCase):
 
 
 class IntentExperimentTest(unittest.TestCase):
+    def test_single_annotator_assignment_supports_a_case_subset(self) -> None:
+        cases = ["cn1_1", "cn2_2"]
+        assignments = build_intent_experiment_assignments(
+            cases, ["alice"], "blind", 1, 42, 1
+        )
+        self.assertEqual(len(assignments), 2)
+        self.assertEqual({item["username"] for item in assignments}, {"alice"})
+        self.assertEqual({item["assignment_kind"] for item in assignments}, {"base"})
+
     def test_blind_assignment_is_balanced_and_overlap_is_independent(self) -> None:
         cases = [f"cn12345_{index}" for index in range(10)]
         assignments = build_intent_experiment_assignments(
@@ -402,6 +411,16 @@ class IntentExperimentTest(unittest.TestCase):
             self.assertEqual(
                 database.intent_assigned_case_ids("test-v1", ["alice", "bob"]),
                 ("cn1_1",),
+            )
+            self.assertEqual(
+                database.intent_experiment_case_ids("test-v1", "experiment-filter"),
+                ("cn1_1", "cn2_2", "cn3_3"),
+            )
+            self.assertEqual(
+                database.list_intent_assignment_assignees(
+                    "test-v1", "experiment-filter"
+                ),
+                owners,
             )
             database.close_intent_experiment("experiment-filter", closed_by="admin")
             self.assertEqual(database.list_intent_assignment_assignees("test-v1"), [])

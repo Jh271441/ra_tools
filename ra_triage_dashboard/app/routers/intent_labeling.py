@@ -84,15 +84,34 @@ async def list_intent_datasets(request: Request) -> dict[str, Any]:
 
 
 @router.get("/api/intent-assignees")
-async def list_intent_assignees(dataset_id: str) -> dict[str, Any]:
+async def list_intent_assignees(
+    dataset_id: str, experiment_id: str = ""
+) -> dict[str, Any]:
     try:
         intent_dataset_registry.dataset(dataset_id)
     except KeyError as exc:
         raise _detail(404, str(exc)) from exc
+    experiments = [
+        item for item in await asyncio.to_thread(
+            database.list_intent_experiments, dataset_id
+        )
+        if item["status"] == "active"
+    ]
+    if experiment_id and not any(item["id"] == experiment_id for item in experiments):
+        raise _detail(404, "实验分配不存在、已关闭或不属于当前数据集。")
     return {
         "items": await asyncio.to_thread(
-            database.list_intent_assignment_assignees, dataset_id
-        )
+            database.list_intent_assignment_assignees, dataset_id, experiment_id
+        ),
+        "experiments": [
+            {
+                "id": item["id"],
+                "name": item["name"],
+                "case_count": item["case_count"],
+                "member_count": item["member_count"],
+            }
+            for item in experiments
+        ],
     }
 
 
@@ -146,7 +165,7 @@ async def create_intent_experiment(request: Request) -> dict[str, Any]:
     try:
         requested_count = int(body.get("case_count") or len(all_case_ids))
         overlap_ratio = float(body.get("overlap_ratio") or 0)
-        overlap_reviewers = int(body.get("overlap_reviewers") or 2)
+        overlap_reviewers = int(body.get("overlap_reviewers") or 1)
     except (TypeError, ValueError) as exc:
         raise _detail(400, "Case 数量、交叉比例或交叉人数不合法。") from exc
     if requested_count < 1 or requested_count > len(all_case_ids):
@@ -160,12 +179,12 @@ async def create_intent_experiment(request: Request) -> dict[str, Any]:
         raise _detail(400, "标注成员必须是数组。")
     members = list(dict.fromkeys(str(item or "").strip().lower() for item in raw_members))
     members = [item for item in members if item]
-    if len(members) < 2:
-        raise _detail(400, "多盲实验至少选择 2 名标注成员。")
+    if len(members) < 1:
+        raise _detail(400, "任务分配至少选择 1 名标注成员。")
     if mode == "full":
         overlap_reviewers = len(members)
-    elif not 2 <= overlap_reviewers <= len(members):
-        raise _detail(400, f"交叉标注人数必须在 2 到 {len(members)} 之间。")
+    elif not 1 <= overlap_reviewers <= len(members):
+        raise _detail(400, f"每个 Case 的标注人数必须在 1 到 {len(members)} 之间。")
     access_users = await asyncio.to_thread(database.list_access_users)
     eligible = {item["username"] for item in access_users if item["role"] in {"writer", "admin"}}
     unknown = [member for member in members if member not in eligible]
@@ -231,13 +250,17 @@ def _list_cases(
     page_size: int,
     username: str = "",
     assignees: tuple[str, ...] = (),
+    experiment_id: str = "",
 ) -> dict[str, Any]:
     try:
         case_ids = intent_dataset_registry.case_ids(dataset_id)
     except KeyError as exc:
         raise _detail(404, str(exc)) from exc
+    if experiment_id:
+        assigned = set(database.intent_experiment_case_ids(dataset_id, experiment_id))
+        case_ids = tuple(case_id for case_id in case_ids if case_id in assigned)
     if assignees:
-        assigned = set(database.intent_assigned_case_ids(dataset_id, assignees))
+        assigned = set(database.intent_assigned_case_ids(dataset_id, assignees, experiment_id))
         case_ids = tuple(case_id for case_id in case_ids if case_id in assigned)
     summaries = database.intent_label_summaries(dataset_id, username)
     normalized_search = search.strip().lower()
@@ -277,6 +300,7 @@ async def list_intent_cases(
     page: int = 1,
     page_size: int = 100,
     assignee: list[str] = Query(default=[]),
+    experiment_id: str = "",
 ) -> dict[str, Any]:
     if status not in {"all", "unlabeled", "partial", "completed"}:
         raise _detail(400, "意图标注状态筛选不合法。")
@@ -292,6 +316,7 @@ async def list_intent_cases(
         page_size=page_size,
         username=identity.username,
         assignees=tuple(assignee[:20]),
+        experiment_id=experiment_id,
     )
 
 
@@ -300,14 +325,18 @@ def _case_payload(
     case_id: str,
     username: str = "",
     assignees: tuple[str, ...] = (),
+    experiment_id: str = "",
     reveal_answers: bool = False,
 ) -> dict[str, Any]:
     try:
         case_ids = intent_dataset_registry.case_ids(dataset_id)
     except KeyError as exc:
         raise _detail(404, str(exc)) from exc
+    if experiment_id:
+        assigned = set(database.intent_experiment_case_ids(dataset_id, experiment_id))
+        case_ids = tuple(item for item in case_ids if item in assigned)
     if assignees:
-        assigned = set(database.intent_assigned_case_ids(dataset_id, assignees))
+        assigned = set(database.intent_assigned_case_ids(dataset_id, assignees, experiment_id))
         case_ids = tuple(item for item in case_ids if item in assigned)
     try:
         ordinal_index = case_ids.index(case_id)
@@ -394,6 +423,7 @@ async def get_intent_case(
     dataset_id: str,
     case_id: str,
     assignee: list[str] = Query(default=[]),
+    experiment_id: str = "",
     reveal_answers: bool = False,
 ) -> dict[str, Any]:
     identity = await asyncio.to_thread(_intent_identity, request)
@@ -405,6 +435,7 @@ async def get_intent_case(
         case_id,
         identity.username,
         tuple(assignee[:20]),
+        experiment_id,
         reveal_answers,
     )
 

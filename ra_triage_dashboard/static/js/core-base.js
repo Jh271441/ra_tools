@@ -651,6 +651,8 @@ const state = {
   intentLabeling: {
     datasets: [],
     assignees: [],
+    assignmentExperiments: [],
+    selectedExperimentId: "",
     selectedAssignees: [],
     assigneeDatasetId: "",
     assigneeSelectionDatasetId: "",
