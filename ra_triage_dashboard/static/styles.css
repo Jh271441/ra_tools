@@ -4935,6 +4935,19 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
   .app-shell.sidebar-collapsed .intent-timepoint,
   html[data-sidebar-pref="collapsed"] .intent-timepoint { flex-basis: 148px; }
 }
+@media (min-width: 1251px) and (min-height: 700px) {
+  body[data-active-page="intent"] .main { height: calc(100dvh - 44px); overflow: hidden; padding-bottom: 10px; }
+  .intent-labeling-page { height: 100%; min-height: 0; grid-template-rows: auto minmax(0, 1fr); }
+  .intent-workspace { height: 100%; min-height: 0; align-items: stretch; }
+  .intent-main-column { height: 100%; min-height: 0; grid-template-rows: auto minmax(0, 1fr); }
+  .intent-timeline-panel, .intent-timeline { height: 100%; min-height: 0; }
+  .intent-timeline-panel { overflow: hidden; }
+  .intent-timepoint { height: 100%; min-height: 0; grid-template-rows: auto minmax(0, 1fr) auto; }
+  .intent-thumb-stack { height: 100%; min-height: 0; grid-template-rows: repeat(2, minmax(0, 1fr)); }
+  .intent-thumb-stack img, .intent-thumb-missing { height: 100%; min-height: 0; }
+  .intent-label-rail { height: 100%; min-height: 0; grid-template-rows: repeat(2, minmax(0, 1fr)); }
+  .intent-label-rail .intent-card { height: 100%; min-height: 0; }
+}
 @media (max-width: 1400px) {
   .intent-commandbar { grid-template-columns: 180px minmax(220px, 1fr) 190px; }
   .intent-command-actions { grid-column: 1 / -1; justify-self: end; width: min(100%, 660px); }
