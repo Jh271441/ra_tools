@@ -305,6 +305,43 @@ class IntentLabelStorageTest(unittest.TestCase):
                 "需要确认掉头口径",
             )
 
+    def test_delete_removes_only_current_head_and_keeps_audit_history(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database = Database(Path(temp_dir) / "test.sqlite3")
+            database.init()
+            case_id = "cn12345_1770000000000"
+            alice = database.save_intent_labels(
+                dataset_id="test-v1", case_id=case_id,
+                routing_default="straight", lane_change_default="no_lane_change",
+                overrides=[], expected_revision_id=None, author="alice",
+            )
+            bob = database.save_intent_labels(
+                dataset_id="test-v1", case_id=case_id,
+                routing_default="left_turn", lane_change_default="lane_change",
+                overrides=[], expected_revision_id=None, author="bob",
+            )
+            deleted = database.delete_intent_labels(
+                dataset_id="test-v1", case_id=case_id, username="bob",
+                expected_revision_id=bob["revision_id"], deleted_by="bob",
+                deleted_by_source="sso", deleted_by_verified=True,
+            )
+            self.assertEqual(deleted["deleted_revision"]["revision_id"], bob["revision_id"])
+            self.assertIsNone(database.get_intent_labels("test-v1", case_id, "bob"))
+            self.assertEqual(
+                database.get_intent_labels("test-v1", case_id)["revision_id"],
+                alice["revision_id"],
+            )
+            with database.connect() as conn:
+                self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM intent_label_revisions").fetchone()["n"], 2)
+                audit = conn.execute("SELECT * FROM intent_label_deletions").fetchone()
+            self.assertEqual(audit["deleted_revision_id"], bob["revision_id"])
+            self.assertTrue(audit["deleted_by_verified"])
+            with self.assertRaises(IntentAnnotationConflictError):
+                database.delete_intent_labels(
+                    dataset_id="test-v1", case_id=case_id, username="alice",
+                    expected_revision_id=bob["revision_id"], deleted_by="alice",
+                )
+
 
 class IntentExperimentTest(unittest.TestCase):
     def test_single_annotator_assignment_supports_a_case_subset(self) -> None:

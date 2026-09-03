@@ -45,6 +45,25 @@ class IntentSummaryTest(unittest.TestCase):
         self.assertEqual(report["case_count"], 1)
         self.assertEqual(report["total"], 1)
 
+    def test_unlabeled_assignment_rows_are_hidden(self) -> None:
+        data = {"assignments": self.data["assignments"], "heads": []}
+        report = summarize_intent(data, ("c1", "c2"), username="alice", experiment_id="active")
+        self.assertEqual(report["case_count"], 1)
+        self.assertEqual(report["total"], 0)
+        self.assertEqual(report["items"], [])
+
+    def test_axis_filters_include_override_only_annotations(self) -> None:
+        data = {"assignments": [], "heads": [{
+            "case_id": "c1", "username": "alice", "routing_default": "",
+            "lane_change_default": "", "updated_at": "1",
+            "overrides": [{"offset_ms": 0, "routing_intent": "left_turn", "lane_change_intent": ""}],
+        }]}
+        routing = summarize_intent(data, ("c1",), username="alice", axis="routing", page_size=10)
+        lane = summarize_intent(data, ("c1",), username="alice", axis="lane_change", page_size=10)
+        self.assertEqual(routing["total"], 1)
+        self.assertEqual(routing["axis"], "routing")
+        self.assertEqual(lane["total"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -809,6 +809,21 @@ class DatabaseCoreMixin:
                 JOIN intent_label_revisions revision
                   ON revision.id = head.current_revision_id;
 
+                CREATE TABLE IF NOT EXISTS intent_label_deletions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    dataset_id TEXT NOT NULL,
+                    case_id TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    deleted_revision_id INTEGER NOT NULL
+                        REFERENCES intent_label_revisions(id),
+                    deleted_by TEXT NOT NULL,
+                    deleted_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    deleted_by_verified INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_intent_label_deletions_case
+                    ON intent_label_deletions(dataset_id, case_id, username, id DESC);
+
                 CREATE TABLE IF NOT EXISTS intent_case_comments (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     dataset_id TEXT NOT NULL,
@@ -903,6 +918,7 @@ class DatabaseCoreMixin:
                 "intent_frame_overrides",
                 "intent_label_heads",
                 "intent_user_label_heads",
+                "intent_label_deletions",
                 "intent_case_comments",
                 "intent_experiments",
                 "intent_experiment_assignments",

@@ -5,7 +5,8 @@ from typing import Any
 
 def summarize_intent(data: dict[str, Any], case_ids: tuple[str, ...], *, username: str,
                      experiment_id: str = "", assignees: tuple[str, ...] = (),
-                     reveal_answers: bool = False, page: int = 1, page_size: int = 20) -> dict[str, Any]:
+                     reveal_answers: bool = False, axis: str = "all",
+                     page: int = 1, page_size: int = 20) -> dict[str, Any]:
     allowed = set(case_ids)
     assignments = [row for row in data["assignments"] if row["case_id"] in allowed]
     # ANY active experiment protects a Case, even when viewing a closed experiment.
@@ -25,18 +26,28 @@ def summarize_intent(data: dict[str, Any], case_ids: tuple[str, ...], *, usernam
     heads = {(row["case_id"], row["username"]): row for row in data["heads"] if row["case_id"] in allowed}
     keys = set(heads)
     if experiment_id:
-        keys = {(row["case_id"], row["username"]) for row in scoped if row["case_id"] in allowed}
+        assigned = {(row["case_id"], row["username"]) for row in scoped if row["case_id"] in allowed}
+        keys &= assigned
     if assignees:
         keys = {key for key in keys if key[1] in assignees}
     keys = {key for key in keys if reveal_answers or key[0] not in blind_cases or key[1] == username.lower()}
     rows = []
     for case, author in sorted(keys):
-        head = heads.get((case, author), {})
+        head = heads[(case, author)]
+        overrides = head.get("overrides") or []
+        has_routing = bool(head.get("routing_default") or any(item.get("routing_intent") for item in overrides))
+        has_lane_change = bool(head.get("lane_change_default") or any(item.get("lane_change_intent") for item in overrides))
+        if not has_routing and not has_lane_change:
+            continue
+        if axis == "routing" and not has_routing:
+            continue
+        if axis == "lane_change" and not has_lane_change:
+            continue
         rows.append({
             "case_id": case, "username": author,
             "routing_default": head.get("routing_default") or "",
             "lane_change_default": head.get("lane_change_default") or "",
-            "overrides": head.get("overrides") or [], "updated_at": head.get("updated_at") or "",
+            "overrides": overrides, "updated_at": head.get("updated_at") or "",
         })
     distributions = {axis: dict(Counter(row[axis] or "None" for row in rows))
                      for axis in ("routing_default", "lane_change_default")}
@@ -56,6 +67,7 @@ def summarize_intent(data: dict[str, Any], case_ids: tuple[str, ...], *, usernam
     page = max(1, min(page, max(1, (len(rows) + page_size - 1) // page_size)))
     return {
         "case_count": len(allowed), "total": len(rows), "page": page, "page_size": page_size,
+        "axis": axis,
         "annotated_cases": len({row["case_id"] for row in rows if row["updated_at"]}),
         "complete_records": sum(bool(row["routing_default"] and row["lane_change_default"]) for row in rows),
         "blind_active": bool(blind_cases & allowed), "answers_revealed": reveal_answers,

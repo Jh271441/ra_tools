@@ -32,6 +32,8 @@ class IntentLabelingAccessContractTest(unittest.TestCase):
         )
         self.assertGreaterEqual(INTENT_ROUTER.count("Depends(_require_intent_manager)"), 2)
         self.assertIn("Depends(_require_intent_writer)", INTENT_ROUTER)
+        self.assertIn('@router.delete(', INTENT_ROUTER)
+        self.assertIn('expected_revision_id: int = Query(gt=0)', INTENT_ROUTER)
         self.assertIn('"/api/intent-experiments"', INTENT_ROUTER)
         self.assertIn('"/api/intent-experiments/{experiment_id}/close"', INTENT_ROUTER)
         self.assertIn('cases/{case_id}/comments"', INTENT_ROUTER)

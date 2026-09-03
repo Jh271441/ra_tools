@@ -694,6 +694,8 @@ const state = {
     summaryReveal: false,
     summaryPayload: null,
     summaryPage: 1,
+    summaryPageSize: 20,
+    summaryAxis: "all",
   },
   // Short baseline ids from registry (e.g. ["0508"] or ["0508","0626"]).
   selectedBaselineIds: ["0508"],

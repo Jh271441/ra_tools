@@ -623,6 +623,31 @@ async function refreshChangedData() {
     await Promise.all([loadPredictionBatches(), loadOverview()]);
     return;
   }
+  if (state.activePage === "intent") {
+    const intent = state.intentLabeling;
+    if (!intent.datasetId) return;
+    const selected = [...(intent.selectedAssignees || [])];
+    intent.assigneeDatasetId = "";
+    try {
+      await loadIntentAssignees(intent.datasetId, selected, intent.selectedExperimentId);
+    } catch (error) {
+      if (!intent.selectedExperimentId) throw error;
+      // A manager may have just closed the selected experiment in another tab.
+      // Fall back to all active assignments instead of leaving stale controls.
+      intent.assigneeDatasetId = "";
+      await loadIntentAssignees(intent.datasetId, selected, "");
+    }
+    return;
+  }
+  if (state.activePage === "intent-experiments") {
+    state.intentLabeling.experimentsDatasetId = "";
+    await loadIntentExperiments({ force: true });
+    return;
+  }
+  if (state.activePage === "intent-summary") {
+    await loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true });
+    return;
+  }
   if (state.activePage === "status") {
     await loadStatus();
   }

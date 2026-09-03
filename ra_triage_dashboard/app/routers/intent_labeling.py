@@ -45,7 +45,7 @@ MAX_COMMENT_REQUEST_BYTES = 8 * 1024
 
 def _intent_summary_payload(dataset_id: str, identity: Any, experiment_id: str,
                             assignees: tuple[str, ...], reveal_answers: bool,
-                            page: int, page_size: int) -> dict[str, Any]:
+                            axis: str, page: int, page_size: int) -> dict[str, Any]:
     try:
         case_ids = intent_dataset_registry.case_ids(dataset_id)
     except KeyError as exc:
@@ -56,7 +56,8 @@ def _intent_summary_payload(dataset_id: str, identity: Any, experiment_id: str,
     data = database.intent_report_rows(dataset_id)
     report = summarize_intent(data, case_ids, username=identity.username,
                               experiment_id=experiment_id, assignees=assignees,
-                              reveal_answers=reveal_answers, page=page, page_size=page_size)
+                              reveal_answers=reveal_answers, axis=axis,
+                              page=page, page_size=page_size)
     report["experiments"] = [{"id": item["id"], "name": item["name"]} for item in experiments]
     assignment_owners = {row["username"] for row in data["assignments"]
                          if not experiment_id or row["experiment_id"] == experiment_id}
@@ -68,13 +69,17 @@ def _intent_summary_payload(dataset_id: str, identity: Any, experiment_id: str,
 @router.get("/api/intent-summary")
 async def intent_summary(request: Request, dataset_id: str, experiment_id: str = "",
                          assignee: list[str] = Query(default=[]), reveal_answers: bool = False,
-                         page: int = 1, page_size: int = 20) -> dict[str, Any]:
+                         axis: str = "all", page: int = 1, page_size: int = 20) -> dict[str, Any]:
     identity = await asyncio.to_thread(_intent_identity, request)
     if reveal_answers:
         await asyncio.to_thread(_admin_identity, request)
+    if axis not in {"all", "routing", "lane_change"}:
+        raise _detail(400, "汇总维度仅支持 all、routing 或 lane_change。")
+    if page_size not in {10, 20, 50}:
+        raise _detail(400, "每页数量仅支持 10、20 或 50。")
     return await asyncio.to_thread(_intent_summary_payload, dataset_id, identity,
                                    experiment_id, tuple(assignee[:20]), reveal_answers,
-                                   page, page_size)
+                                   axis, page, page_size)
 
 
 def _empty_labels(dataset_id: str, case_id: str) -> dict[str, Any]:
@@ -723,5 +728,47 @@ async def put_intent_labels(
     return {
         "labels": labels,
         "status": _case_status(labels),
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
+@router.delete(
+    "/api/intent-datasets/{dataset_id}/cases/{case_id}/labels",
+    dependencies=[Depends(_require_intent_writer)],
+)
+async def delete_intent_labels(
+    dataset_id: str,
+    case_id: str,
+    request: Request,
+    expected_revision_id: int = Query(gt=0),
+) -> dict[str, Any]:
+    try:
+        if not intent_dataset_registry.has_case(dataset_id, case_id):
+            raise _detail(404, "Case 不在该意图标注数据集中。")
+    except KeyError as exc:
+        raise _detail(404, str(exc)) from exc
+    identity = await asyncio.to_thread(_intent_identity, request, "annotate")
+    actor, actor_source, actor_verified = await asyncio.to_thread(
+        _action_actor, request
+    )
+    try:
+        deleted = await asyncio.to_thread(
+            database.delete_intent_labels,
+            dataset_id=dataset_id,
+            case_id=case_id,
+            username=identity.username,
+            expected_revision_id=expected_revision_id,
+            deleted_by=actor or identity.username,
+            deleted_by_source=actor_source,
+            deleted_by_verified=actor_verified,
+        )
+    except IntentAnnotationConflictError as exc:
+        raise _detail(409, str(exc)) from exc
+    if deleted is None:
+        raise _detail(404, "当前账号在该 Case 没有可删除的标注。")
+    return {
+        "deleted": deleted,
+        "labels": _empty_labels(dataset_id, case_id),
+        "status": "unlabeled",
         "change_revision": await asyncio.to_thread(database.change_revision),
     }

@@ -531,6 +531,128 @@ class DatabaseIntentMixin:
             ).fetchone()
         return self._intent_revision_dict(row, normalized)
 
+    def delete_intent_labels(
+        self,
+        *,
+        dataset_id: str,
+        case_id: str,
+        username: str,
+        expected_revision_id: int,
+        deleted_by: str,
+        deleted_by_source: str = "legacy",
+        deleted_by_verified: bool = False,
+    ) -> dict[str, Any] | None:
+        """Remove one person's current head while retaining immutable history."""
+
+        normalized_username = str(username or "").strip().lower()
+        normalized_actor = str(deleted_by or "").strip().lower()
+        now = utc_now()
+        with self._write_lock, self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT revision.*
+                FROM intent_user_label_heads head
+                JOIN intent_label_revisions revision
+                  ON revision.id = head.current_revision_id
+                WHERE head.dataset_id = ? AND head.case_id = ?
+                  AND head.username = ?
+                """,
+                (dataset_id, case_id, normalized_username),
+            ).fetchone()
+            if row is None:
+                return None
+            current_revision_id = int(row["id"])
+            if current_revision_id != int(expected_revision_id):
+                raise IntentAnnotationConflictError(
+                    "该 Case 的当前标注已变化，请刷新后重新确认删除。"
+                )
+            override_rows = conn.execute(
+                """
+                SELECT timepoint_id, offset_ms, routing_intent, lane_change_intent
+                FROM intent_frame_overrides
+                WHERE revision_id = ?
+                ORDER BY offset_ms ASC, timepoint_id ASC
+                """,
+                (current_revision_id,),
+            ).fetchall()
+            audit_sql = """
+                INSERT INTO intent_label_deletions (
+                    dataset_id, case_id, username, deleted_revision_id,
+                    deleted_by, deleted_by_source, deleted_by_verified, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            if self.backend == "postgresql":
+                audit_sql += " RETURNING id"
+            cursor = conn.execute(
+                audit_sql,
+                (
+                    dataset_id,
+                    case_id,
+                    normalized_username,
+                    current_revision_id,
+                    normalized_actor,
+                    str(deleted_by_source or "legacy").strip() or "legacy",
+                    bool(deleted_by_verified),
+                    now,
+                ),
+            )
+            deletion_id = (
+                int(cursor.fetchone()["id"])
+                if self.backend == "postgresql"
+                else int(cursor.lastrowid)
+            )
+            conn.execute(
+                """
+                DELETE FROM intent_user_label_heads
+                WHERE dataset_id = ? AND case_id = ? AND username = ?
+                  AND current_revision_id = ?
+                """,
+                (dataset_id, case_id, normalized_username, current_revision_id),
+            )
+            replacement = conn.execute(
+                """
+                SELECT current_revision_id, updated_at
+                FROM intent_user_label_heads
+                WHERE dataset_id = ? AND case_id = ?
+                ORDER BY updated_at DESC, current_revision_id DESC
+                LIMIT 1
+                """,
+                (dataset_id, case_id),
+            ).fetchone()
+            if replacement is None:
+                conn.execute(
+                    "DELETE FROM intent_label_heads WHERE dataset_id = ? AND case_id = ?",
+                    (dataset_id, case_id),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE intent_label_heads
+                    SET current_revision_id = ?, version = version + 1, updated_at = ?
+                    WHERE dataset_id = ? AND case_id = ?
+                    """,
+                    (
+                        int(replacement["current_revision_id"]),
+                        str(replacement["updated_at"]),
+                        dataset_id,
+                        case_id,
+                    ),
+                )
+        overrides = [
+            {
+                "timepoint_id": str(item["timepoint_id"]),
+                "offset_ms": int(item["offset_ms"]),
+                "routing_intent": str(item["routing_intent"] or ""),
+                "lane_change_intent": str(item["lane_change_intent"] or ""),
+            }
+            for item in override_rows
+        ]
+        return {
+            "deletion_id": deletion_id,
+            "deleted_revision": self._intent_revision_dict(row, overrides),
+            "deleted_at": now,
+        }
+
     def list_intent_contributors(
         self, dataset_id: str, case_id: str
     ) -> list[dict[str, Any]]:

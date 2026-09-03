@@ -433,6 +433,9 @@ function parsePageRoute() {
     intentExperimentId: params.get("experiment") || "",
     intentSummaryOwners: params.getAll("owner").filter((value) => /^[A-Za-z0-9._@-]{1,128}$/.test(value)),
     intentSummaryPage: Math.max(1, Number.parseInt(params.get("page") || "1", 10) || 1),
+    intentSummaryPageSize: [10, 20, 50].includes(Number.parseInt(params.get("page_size") || "20", 10))
+      ? Number.parseInt(params.get("page_size") || "20", 10) : 20,
+    intentSummaryAxis: ["routing", "lane_change"].includes(params.get("axis")) ? params.get("axis") : "all",
     // Issue / GT 上传已从页面移除；旧链接统一落到安全的模型结果导入区。
     importKind:
       params.get("import") === "model" ||
