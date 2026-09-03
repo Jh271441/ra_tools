@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-305`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-306`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -373,7 +373,7 @@
               </div>
               <aside class="intent-label-rail">
                 <section class="intent-card intent-label-editor">
-                  <h3>批量预填 <small>一次选择会填入全部时间点；之后仍可单独修改任意帧</small></h3>
+                  <h3><span>批量预填</span><small>一次选择会填入全部时间点；之后仍可单独修改任意帧</small></h3>
                   <h4>Routing 意图</h4>
                   <div class="intent-label-grid intent-routing-grid" id="intentAggregateRouting">
                     <button type="button" data-intent-aggregate-axis="routing" data-value="left_turn" aria-keyshortcuts="Shift+1"><kbd>⇧1</kbd>左转</button><button type="button" data-intent-aggregate-axis="routing" data-value="right_turn" aria-keyshortcuts="Shift+2"><kbd>⇧2</kbd>右转</button><button type="button" data-intent-aggregate-axis="routing" data-value="straight" aria-keyshortcuts="Shift+3"><kbd>⇧3</kbd>直行</button><button type="button" data-intent-aggregate-axis="routing" data-value="u_turn" aria-keyshortcuts="Shift+4"><kbd>⇧4</kbd>掉头</button><button type="button" data-intent-aggregate-axis="routing" data-value="parking" aria-keyshortcuts="Shift+5"><kbd>⇧5</kbd>泊车</button>
@@ -1766,7 +1766,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-305`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-306`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

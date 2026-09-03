@@ -4927,7 +4927,10 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-experiment-form { min-width: 0; display: grid; align-content: start; gap: 12px; padding: 0; }
 .intent-experiment-form label { min-width: 0; display: grid; gap: 5px; color: var(--muted); font-size: 10px; }
 .intent-experiment-form input, .intent-experiment-form select { width: 100%; min-width: 0; height: 34px; }
-.intent-experiment-form-row { min-width: 0; display: grid; grid-template-columns: 1fr .7fr .85fr .9fr; gap: 8px; }
+.intent-experiment-form-row { min-width: 0; display: grid; grid-template-columns: minmax(150px, 1.15fr) minmax(155px, .9fr) minmax(150px, 1fr) minmax(150px, 1fr); gap: 8px; }
+.intent-experiment-form-row > label { box-sizing: border-box; }
+.intent-experiment-form-row > label > span { min-width: 0; display: flex; align-items: baseline; gap: 4px; line-height: 1.3; white-space: nowrap; }
+.intent-experiment-form-row > label > span small { flex: 0 0 auto; color: var(--faint); font-size: 9px; font-weight: 500; white-space: nowrap; }
 .intent-experiment-members { min-width: 0; margin: 0; padding: 9px 10px 10px; border: 1px solid var(--line); border-radius: 8px; }
 .intent-experiment-members legend { padding: 0 5px; color: var(--text); font-size: 11px; }
 .intent-experiment-members legend small { margin-left: 6px; color: var(--faint); font-size: 9px; font-weight: 400; }
@@ -5054,6 +5057,9 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-card h3 > span:first-child { min-width: 0; flex: 0 1 auto; }
 .intent-card h3 small { min-width: 0; flex: 1 1 120px; overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
 .intent-card-heading-actions { flex-wrap: wrap; }
+.intent-label-editor > h3 { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: start; gap: 8px; line-height: 1.35; }
+.intent-label-editor > h3 > span:first-child { min-width: 0; }
+.intent-label-editor > h3 > small { min-width: 0; text-align: right; }
 .intent-contributor { grid-template-columns: minmax(64px, .8fr) repeat(2, minmax(0, 1fr)); }
 .intent-contributor-counts { grid-column: 1 / -1; min-width: 0; color: var(--faint); font-size: 8px; line-height: 1.35; overflow-wrap: anywhere; }
 .intent-summary-result { min-width: 0; display: grid; gap: 2px; }
@@ -5061,6 +5067,8 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 @media (max-width: 800px) {
   .intent-card h3 { align-items: flex-start; }
   .intent-card h3 small { flex-basis: 100%; text-align: left; }
+  .intent-label-editor > h3 { grid-template-columns: 1fr; gap: 2px; }
+  .intent-label-editor > h3 > small { text-align: left; }
   .intent-card-heading-actions { width: 100%; justify-content: flex-start; }
   .intent-discussion-card { grid-template-columns: 1fr; align-items: start; }
   .intent-discussion-card .button { justify-self: start; }
