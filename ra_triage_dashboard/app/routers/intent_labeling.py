@@ -185,17 +185,35 @@ async def list_intent_assignees(
     }
 
 
+def _requested_experiment_dataset_ids(request: Request, body: dict[str, Any] | None = None) -> list[str]:
+    ids: list[str] = []
+    if body is not None:
+        raw_ids = body.get("dataset_ids")
+        if isinstance(raw_ids, list):
+            ids.extend(str(item or "").strip() for item in raw_ids)
+        single = str(body.get("dataset_id") or "").strip()
+        if single:
+            ids.append(single)
+    ids.extend(str(item or "").strip() for item in request.query_params.getlist("dataset_id"))
+    unique: list[str] = []
+    for item in ids:
+        if item and item not in unique:
+            unique.append(item)
+    return unique
+
+
 @router.get(
     "/api/intent-experiments"
 )
-async def list_intent_experiments(dataset_id: str = "") -> dict[str, Any]:
-    if dataset_id:
+async def list_intent_experiments(request: Request) -> dict[str, Any]:
+    dataset_ids = _requested_experiment_dataset_ids(request)
+    for dataset_id in dataset_ids:
         try:
             intent_dataset_registry.dataset(dataset_id)
         except KeyError as exc:
             raise _detail(404, str(exc)) from exc
     experiments, users = await asyncio.gather(
-        asyncio.to_thread(database.list_intent_experiments, dataset_id),
+        asyncio.to_thread(database.list_intent_experiments, dataset_ids),
         asyncio.to_thread(database.list_access_users),
     )
     return {
@@ -221,25 +239,33 @@ async def create_intent_experiment(request: Request) -> dict[str, Any]:
         raise _detail(400, "实验分配请求必须是 JSON。") from exc
     if not isinstance(body, dict):
         raise _detail(400, "实验分配请求必须是 JSON 对象。")
-    dataset_id = str(body.get("dataset_id") or "").strip()
+    dataset_ids = _requested_experiment_dataset_ids(request, body)
+    if not dataset_ids:
+        raise _detail(400, "请至少选择 1 个数据集。")
     name = " ".join(str(body.get("name") or "").split())
     mode = str(body.get("annotation_mode") or "blind").strip().lower()
     if not name or len(name) > 160:
         raise _detail(400, "实验名称不能为空且不能超过 160 个字符。")
     if mode not in {"blind", "full"}:
         raise _detail(400, "实验模式仅支持交叉盲标或全量盲标。")
+    dataset_cases: list[tuple[str, tuple[str, ...]]] = []
+    for dataset_id in dataset_ids:
+        try:
+            all_case_ids = intent_dataset_registry.case_ids(dataset_id)
+        except KeyError as exc:
+            raise _detail(404, str(exc)) from exc
+        if not all_case_ids:
+            raise _detail(400, f"{dataset_id} 没有可分配的 Case。")
+        dataset_cases.append((dataset_id, all_case_ids))
+    max_available = max(len(cases) for _, cases in dataset_cases)
     try:
-        all_case_ids = intent_dataset_registry.case_ids(dataset_id)
-    except KeyError as exc:
-        raise _detail(404, str(exc)) from exc
-    try:
-        requested_count = int(body.get("case_count") or len(all_case_ids))
+        requested_count = int(body.get("case_count") or max_available)
         overlap_ratio = float(body.get("overlap_ratio") or 0)
         overlap_reviewers = int(body.get("overlap_reviewers") or 1)
     except (TypeError, ValueError) as exc:
         raise _detail(400, "Case 数量、交叉比例或交叉人数不合法。") from exc
-    if requested_count < 1 or requested_count > len(all_case_ids):
-        raise _detail(400, f"Case 数量必须在 1 到 {len(all_case_ids)} 之间。")
+    if requested_count < 1:
+        raise _detail(400, "Case 数量必须至少为 1。")
     if not 0 <= overlap_ratio <= 1:
         raise _detail(400, "交叉比例必须在 0 到 1 之间。")
     if mode == "full":
@@ -260,34 +286,49 @@ async def create_intent_experiment(request: Request) -> dict[str, Any]:
     unknown = [member for member in members if member not in eligible]
     if unknown:
         raise _detail(400, f"以下成员没有 Dashboard 写入权限：{', '.join(unknown)}")
-    existing = await asyncio.to_thread(database.list_intent_experiments, dataset_id)
-    if any(item["name"].casefold() == name.casefold() for item in existing):
-        raise _detail(409, "该数据集已经存在同名实验。")
-    seed = secrets.randbelow(2_147_483_647)
-    selected_cases = list(all_case_ids)
-    random.Random(seed).shuffle(selected_cases)
-    selected_cases = selected_cases[:requested_count]
-    assignments = build_intent_experiment_assignments(
-        selected_cases, members, mode, overlap_ratio, seed, overlap_reviewers
-    )
+    existing = await asyncio.to_thread(database.list_intent_experiments, dataset_ids)
+    conflicts = [
+        dataset_id
+        for dataset_id in dataset_ids
+        if any(
+            item["dataset_id"] == dataset_id
+            and item["name"].casefold() == name.casefold()
+            for item in existing
+        )
+    ]
+    if conflicts:
+        raise _detail(409, f"以下数据集已经存在同名实验：{', '.join(conflicts)}")
     identity = await asyncio.to_thread(_intent_identity, request, "manage")
-    experiment = await asyncio.to_thread(
-        database.create_intent_experiment,
-        experiment_id=str(uuid.uuid4()),
-        dataset_id=dataset_id,
-        name=name,
-        annotation_mode=mode,
-        overlap_ratio=overlap_ratio,
-        overlap_reviewers=overlap_reviewers,
-        case_count=requested_count,
-        seed=seed,
-        assignments=assignments,
-        created_by=identity.username,
-        created_by_source=identity.source,
-        created_by_verified=identity.verified,
-    )
+    created: list[dict[str, Any]] = []
+    for dataset_id, all_case_ids in dataset_cases:
+        seed = secrets.randbelow(2_147_483_647)
+        case_count = min(requested_count, len(all_case_ids))
+        selected_cases = list(all_case_ids)
+        random.Random(seed).shuffle(selected_cases)
+        selected_cases = selected_cases[:case_count]
+        assignments = build_intent_experiment_assignments(
+            selected_cases, members, mode, overlap_ratio, seed, overlap_reviewers
+        )
+        created.append(
+            await asyncio.to_thread(
+                database.create_intent_experiment,
+                experiment_id=str(uuid.uuid4()),
+                dataset_id=dataset_id,
+                name=name,
+                annotation_mode=mode,
+                overlap_ratio=overlap_ratio,
+                overlap_reviewers=overlap_reviewers,
+                case_count=case_count,
+                seed=seed,
+                assignments=assignments,
+                created_by=identity.username,
+                created_by_source=identity.source,
+                created_by_verified=identity.verified,
+            )
+        )
     return {
-        "experiment": experiment,
+        "experiment": created[0],
+        "experiments": created,
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
 

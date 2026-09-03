@@ -427,6 +427,7 @@ function parsePageRoute() {
     trailUpdateFilters: normalizedTrailUpdateRouteFilters(params),
     comparisonFilters: normalizedRunComparisonRouteFilters(params),
     intentDatasetId: params.get("dataset") || "",
+    intentDatasetIds: params.getAll("dataset").map((value) => String(value || "").trim()).filter(Boolean),
     intentCaseId: params.get("case") || "",
     intentOffsetMs: Number.parseInt(params.get("t") || "", 10),
     intentAssignees: params.has("assignee") ? parseFilterList(params.get("assignee") || "") : null,
@@ -770,6 +771,7 @@ function showPage(
     restoreRoute = false,
     loadPageData = true,
     intentDatasetId = "",
+    intentDatasetIds = [],
     intentCaseId = "",
     intentOffsetMs = null,
     intentAssignees = null,
@@ -842,8 +844,10 @@ function showPage(
     }).catch((error) => showToast(error.message, true));
   }
   if (target === "intent-experiments" && loadPageData && typeof loadIntentExperimentAdmin === "function") {
-    loadIntentExperimentAdmin({ datasetId: intentDatasetId })
-      .catch((error) => showToast(error.message, true));
+    loadIntentExperimentAdmin({
+      datasetId: intentDatasetId,
+      datasetIds: intentDatasetIds.length ? intentDatasetIds : null,
+    }).catch((error) => showToast(error.message, true));
   }
   if (target === "intent-summary" && loadPageData && typeof loadIntentSummary === "function") {
     loadIntentSummary({ datasetId: intentDatasetId }).catch((error) => showToast(error.message, true));

@@ -397,6 +397,7 @@ function bindEvents() {
       if (state.activePage === "intent-experiments") {
         await loadIntentExperimentAdmin({
           datasetId: state.intentLabeling.experimentDatasetId,
+          datasetIds: state.intentLabeling.experimentDatasetIds,
           force: true,
         });
         showToast(t("toast.page_refreshed"));
@@ -825,6 +826,7 @@ function bindEvents() {
         runId: route.runId,
         restoreRoute: true,
         intentDatasetId: route.intentDatasetId,
+        intentDatasetIds: route.intentDatasetIds,
         intentAssignees: route.intentAssignees,
         intentExperimentId: route.intentExperimentId,
         intentCaseId: route.intentCaseId,
@@ -932,6 +934,7 @@ async function bootstrap() {
     restoreRoute: true,
     loadPageData: false,
     intentDatasetId: initialRoute.intentDatasetId,
+    intentDatasetIds: initialRoute.intentDatasetIds,
     intentCaseId: initialRoute.intentCaseId,
     intentOffsetMs: initialRoute.intentOffsetMs,
     intentAssignees: initialRoute.intentAssignees,
@@ -1044,6 +1047,9 @@ async function bootstrap() {
     } else if (initialRoute.page === "intent-experiments") {
       initialPageRequests.push(loadIntentExperimentAdmin({
         datasetId: initialRoute.intentDatasetId,
+        datasetIds: (initialRoute.intentDatasetIds || []).length
+          ? initialRoute.intentDatasetIds
+          : null,
       }));
     } else if (initialRoute.page === "intent-summary") {
       state.intentLabeling.summaryExperimentId = initialRoute.intentExperimentId || "";
@@ -1093,6 +1099,7 @@ async function bootstrap() {
       restoreRoute: true,
       loadPageData: false,
       intentDatasetId: initialRoute.intentDatasetId,
+      intentDatasetIds: initialRoute.intentDatasetIds,
       intentCaseId: initialRoute.intentCaseId,
       intentOffsetMs: initialRoute.intentOffsetMs,
       intentAssignees: initialRoute.intentAssignees,

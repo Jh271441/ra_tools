@@ -73,14 +73,24 @@ function renderSession() {
     : "write";
   const userManagementNav = $("#userManagementNavButton");
   if (userManagementNav) userManagementNav.hidden = !state.session.is_admin;
+  const canViewIntent = Boolean(state.session.can_view_intent);
+  try {
+    localStorage.setItem("ra-triage-can-view-intent", canViewIntent ? "true" : "false");
+  } catch (_error) {
+    // Hardened browsers may block storage; first-paint hint is best-effort.
+  }
+  if (canViewIntent) document.documentElement.dataset.canViewIntent = "true";
+  else delete document.documentElement.dataset.canViewIntent;
+  const intentGroupLabel = document.querySelector(".intent-group-label");
+  if (intentGroupLabel) intentGroupLabel.hidden = !canViewIntent;
   const intentLabelingNav = $("#intentLabelingNavButton");
-  if (intentLabelingNav) intentLabelingNav.hidden = !state.session.can_view_intent;
+  if (intentLabelingNav) intentLabelingNav.hidden = !canViewIntent;
   const intentExperimentsNav = $("#intentExperimentsNavButton");
-  if (intentExperimentsNav) intentExperimentsNav.hidden = !state.session.can_view_intent;
+  if (intentExperimentsNav) intentExperimentsNav.hidden = !canViewIntent;
   $("#intentExperimentForm")?.closest(".intent-experiment-create")?.classList.toggle("hidden", !state.session.can_manage_intent);
-  $("#intentExperimentsPage")?.classList.toggle("is-readonly", state.session.can_view_intent && !state.session.can_manage_intent);
+  $("#intentExperimentsPage")?.classList.toggle("is-readonly", canViewIntent && !state.session.can_manage_intent);
   const intentSummaryNav = $("#intentSummaryNavButton");
-  if (intentSummaryNav) intentSummaryNav.hidden = !state.session.can_view_intent;
+  if (intentSummaryNav) intentSummaryNav.hidden = !canViewIntent;
   document.querySelectorAll("[data-intent-frame-axis], [data-intent-aggregate-axis], #intentRestoreBatchPrefill").forEach((element) => {
     element.disabled = state.session.can_annotate_intent === false;
   });

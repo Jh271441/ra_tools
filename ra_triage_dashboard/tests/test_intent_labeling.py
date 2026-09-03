@@ -451,6 +451,38 @@ class IntentExperimentTest(unittest.TestCase):
             self.assertEqual(closed["status"], "closed")
             self.assertEqual(closed["assignment_count"], 4)
 
+    def test_experiment_list_filters_multiple_datasets_with_member_stats(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database = Database(Path(temp_dir) / "test.sqlite3")
+            database.init()
+            for index, dataset_id in enumerate(("dataset-a", "dataset-b", "dataset-c"), 1):
+                database.create_intent_experiment(
+                    experiment_id=f"experiment-{index}",
+                    dataset_id=dataset_id,
+                    name=f"实验 {index}",
+                    annotation_mode="blind",
+                    overlap_ratio=0,
+                    case_count=1,
+                    seed=index,
+                    assignments=[{
+                        "case_id": f"cn{index}_{index}",
+                        "username": "alice",
+                        "assignment_kind": "base",
+                        "ordinal": 1,
+                    }],
+                    created_by="admin",
+                    created_by_source="test",
+                    created_by_verified=True,
+                    overlap_reviewers=1,
+                )
+            experiments = database.list_intent_experiments(["dataset-a", "dataset-c"])
+            self.assertEqual(
+                {item["dataset_id"] for item in experiments},
+                {"dataset-a", "dataset-c"},
+            )
+            self.assertTrue(all(item["assignment_count"] == 1 for item in experiments))
+            self.assertTrue(all(item["members"][0]["username"] == "alice" for item in experiments))
+
     def test_active_assignment_owner_filter_uses_same_experiment_intersection(self) -> None:
         assignments = [
             {"case_id": "cn1_1", "username": "alice", "assignment_kind": "base", "ordinal": 1},

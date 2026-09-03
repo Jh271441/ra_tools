@@ -105,12 +105,20 @@ class DatabaseIntentMixin:
             ).fetchall()
         return tuple(str(row["case_id"]) for row in rows)
 
-    def list_intent_experiments(self, dataset_id: str = "") -> list[dict[str, Any]]:
-        parameters: tuple[Any, ...] = ()
+    def list_intent_experiments(
+        self, dataset_id: str | list[str] | tuple[str, ...] = ""
+    ) -> list[dict[str, Any]]:
+        if isinstance(dataset_id, (list, tuple)):
+            dataset_ids = [str(item).strip() for item in dataset_id if str(item).strip()]
+        elif dataset_id:
+            dataset_ids = [str(dataset_id).strip()]
+        else:
+            dataset_ids = []
+        parameters: tuple[Any, ...] = tuple(dataset_ids)
         where = ""
-        if dataset_id:
-            where = "WHERE experiment.dataset_id = ?"
-            parameters = (dataset_id,)
+        if dataset_ids:
+            placeholders = ", ".join("?" for _ in dataset_ids)
+            where = f"WHERE experiment.dataset_id IN ({placeholders})"
         with self.connect() as conn:
             rows = conn.execute(
                 f"""
@@ -127,12 +135,17 @@ class DatabaseIntentMixin:
                 parameters,
             ).fetchall()
             assignment_rows = conn.execute(
-                """
-                SELECT experiment_id, username, assignment_kind, COUNT(*) AS case_count
-                FROM intent_experiment_assignments
+                f"""
+                SELECT assignment.experiment_id, assignment.username,
+                       assignment.assignment_kind, COUNT(*) AS case_count
+                FROM intent_experiment_assignments assignment
+                JOIN intent_experiments experiment
+                  ON experiment.id = assignment.experiment_id
+                {where}
                 GROUP BY experiment_id, username, assignment_kind
                 ORDER BY experiment_id, username, assignment_kind
-                """
+                """,
+                parameters,
             ).fetchall()
         members_by_experiment: dict[str, dict[str, dict[str, int]]] = {}
         for item in assignment_rows:

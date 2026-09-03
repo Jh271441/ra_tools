@@ -15,6 +15,11 @@
           if (localStorage.getItem("ra-triage-sidebar-collapsed") === "true") {
             document.documentElement.dataset.sidebarPref = "collapsed";
           }
+          // Last known intent access: show the nav on first paint instead of
+          // waiting for /api/session. renderSession confirms or hides it.
+          if (localStorage.getItem("ra-triage-can-view-intent") === "true") {
+            document.documentElement.dataset.canViewIntent = "true";
+          }
         } catch (_error) {
           // Storage can be unavailable in hardened browser contexts; dark is safe.
         }
@@ -38,7 +43,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-309`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-310`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -80,7 +85,7 @@
             </span>
             <span class="sidebar-label"><strong class="ui-lang-zh">判错复核</strong><strong class="ui-lang-en">Failure review</strong></span>
           </a>
-          <div class="sidebar-group-label sidebar-label intent-group-label">意图标注</div>
+          <div class="sidebar-group-label sidebar-label intent-group-label" hidden>意图标注</div>
           <a class="sidebar-item" id="intentLabelingNavButton" data-page-target="intent" data-app-path="/intent-labeling" href="/intent-labeling" title="意图标注" hidden>
             <span class="sidebar-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="4" y="3.5" width="16" height="17" rx="3"/><path d="M8 8h8M8 12h5M8 16h8"/><path class="icon-emphasis" d="m14 13 2 2 4-5"/></svg>
@@ -169,11 +174,7 @@
           </div>
           <div class="intent-topbar-dataset">
             <span>数据集</span>
-            <div class="ui-select" id="intentTopbarDatasetPicker">
-              <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">选择数据集</span><span class="ui-select-caret" aria-hidden="true"></span></button>
-              <div class="ui-select-panel" role="listbox" hidden></div>
-              <select class="ui-select-native" id="intentTopbarDatasetSelect" aria-hidden="true" tabindex="-1"></select>
-            </div>
+            <div class="multi-filter" id="intentTopbarDatasetPicker" data-placeholder="选择数据集" data-empty-label="数据集"></div>
           </div>
           <div class="topbar-baselines" aria-label="数据集">
             <span class="topbar-baselines-label"><span class="ui-lang-zh">数据集</span><span class="ui-lang-en">Datasets</span></span>
@@ -360,7 +361,7 @@
             </section>
             <div class="intent-workspace">
               <div class="intent-main-column">
-                <section class="intent-media-panel">
+                <section class="intent-media-panel" aria-label="Camera 与 BEV">
                   <div class="intent-media-grid">
                     <figure class="intent-media-card"><figcaption><span class="intent-media-caption">Camera 102 <span id="intentCameraDelta"></span></span><span class="intent-media-tools"><span class="intent-media-zoom" data-intent-media-controls="camera"><button type="button" data-intent-media-zoom="out" aria-label="缩小 Camera">−</button><button type="button" data-intent-media-zoom="reset" id="intentCameraZoomLevel" aria-label="恢复 Camera 到 100%">100%</button><button type="button" data-intent-media-zoom="in" aria-label="放大 Camera">＋</button></span><button class="intent-media-open" type="button" data-intent-open-media="camera" aria-label="打开 Camera 大图">打开大图 <kbd>C</kbd></button></span></figcaption><div class="intent-media-stage" data-intent-media-stage="camera"><img id="intentCameraImage" alt="当前 Camera 帧" draggable="false"/><div class="intent-media-missing" id="intentCameraMissing">当前时间点无 Camera</div></div></figure>
                     <figure class="intent-media-card"><figcaption><span class="intent-media-caption">BEV</span><span class="intent-media-tools"><span class="intent-media-zoom" data-intent-media-controls="bev"><button type="button" data-intent-media-zoom="out" aria-label="缩小 BEV">−</button><button type="button" data-intent-media-zoom="reset" id="intentBevZoomLevel" aria-label="恢复 BEV 到 100%">100%</button><button type="button" data-intent-media-zoom="in" aria-label="放大 BEV">＋</button></span><button class="intent-media-open" type="button" data-intent-open-media="bev" aria-label="打开 BEV 大图">打开大图 <kbd>B</kbd></button></span></figcaption><div class="intent-media-stage" data-intent-media-stage="bev"><img id="intentBevImage" alt="当前 BEV 帧" draggable="false"/><div class="intent-media-missing" id="intentBevMissing">当前时间点无 BEV</div></div></figure>
@@ -409,7 +410,7 @@
               </header>
               <div class="intent-experiment-layout">
                 <section class="intent-experiment-create" aria-labelledby="intentExperimentCreateTitle">
-                  <div class="intent-experiment-section-heading"><div><span>NEW EXPERIMENT</span><h4 id="intentExperimentCreateTitle">创建实验</h4></div><p>设置盲标方式、样本范围和成员，创建后分配快照保持不变。</p></div>
+                  <div class="intent-experiment-section-heading"><div><span>NEW EXPERIMENT</span><h4 id="intentExperimentCreateTitle">创建实验</h4></div><p>顶栏可多选数据集；每个数据集各自生成一份分配快照，创建后不再改写。</p></div>
                   <form class="intent-experiment-form" id="intentExperimentForm">
                     <label><span>实验名称</span><input id="intentExperimentName" maxlength="160" autocomplete="off" placeholder="例如 0206 Routing 双盲复核" required/></label>
                     <div class="intent-experiment-form-row">
@@ -424,7 +425,7 @@
                 </section>
                 <section class="intent-experiment-history" aria-labelledby="intentExperimentHistoryTitle">
                   <div class="intent-experiment-section-heading"><div><span>EXPERIMENT HISTORY</span><h4 id="intentExperimentHistoryTitle">实验记录</h4></div><strong class="intent-experiment-count" id="intentExperimentCount">0</strong></div>
-                  <div class="intent-experiment-list" id="intentExperimentList"><div class="intent-experiment-empty"><span aria-hidden="true">◎</span><strong>尚未创建实验</strong><p>左侧完成配置后，实验与每位成员的任务量会显示在这里。</p></div></div>
+                  <div class="intent-experiment-list" id="intentExperimentList"><div class="intent-experiment-empty"><span aria-hidden="true">◎</span><strong>尚未创建实验</strong><p>上方完成配置后，实验与每位成员的任务量会显示在这里。</p></div></div>
                 </section>
               </div>
             </section>
@@ -1768,7 +1769,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-309`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-310`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
