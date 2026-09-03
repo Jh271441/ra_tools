@@ -775,6 +775,81 @@ class DatabaseIntentMixin:
             ).fetchone()
         return row is not None
 
+    def search_intent_comments(
+        self,
+        dataset_id: str,
+        query: str,
+        *,
+        username: str,
+        reveal_answers: bool,
+        experiment_id: str = "",
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Reveal-safe comment search. Blind Cases only expose the caller's rows."""
+
+        needle = str(query or "").strip()
+        if not needle:
+            return []
+        needle = needle[:80]
+        escaped = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        current = str(username or "").strip().lower()
+        bounded_limit = max(1, min(int(limit), 50))
+        experiment_clause = ""
+        parameters: list[Any] = [dataset_id, dataset_id, pattern]
+        if experiment_id:
+            experiment_clause = """
+                  AND comment.case_id IN (
+                    SELECT assignment.case_id
+                    FROM intent_experiment_assignments assignment
+                    WHERE assignment.experiment_id = ?
+                  )
+            """
+            parameters.append(experiment_id)
+        parameters.extend([int(bool(reveal_answers)), current, bounded_limit])
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT comment.id, comment.case_id, comment.body, comment.author,
+                       comment.created_at
+                FROM intent_case_comments comment
+                LEFT JOIN (
+                    SELECT DISTINCT assignment.case_id
+                    FROM intent_experiment_assignments assignment
+                    JOIN intent_experiments experiment
+                      ON experiment.id = assignment.experiment_id
+                    WHERE experiment.dataset_id = ? AND experiment.status = 'active'
+                ) blind ON blind.case_id = comment.case_id
+                WHERE comment.dataset_id = ?
+                  AND LOWER(comment.body) LIKE LOWER(?) ESCAPE '\\'
+                  {experiment_clause}
+                  AND (? = 1 OR blind.case_id IS NULL OR comment.author = ?)
+                ORDER BY comment.id DESC
+                LIMIT ?
+                """,
+                tuple(parameters),
+            ).fetchall()
+        hits = []
+        lowered = needle.lower()
+        for row in rows:
+            body = str(row["body"] or "")
+            index = body.lower().find(lowered)
+            start = max(0, index - 24) if index >= 0 else 0
+            snippet = body[start:start + 120]
+            if start > 0:
+                snippet = "…" + snippet
+            if start + 120 < len(body):
+                snippet = snippet + "…"
+            hits.append({
+                "id": int(row["id"]),
+                "case_id": str(row["case_id"]),
+                "author": str(row["author"]),
+                "body": body,
+                "snippet": snippet,
+                "created_at": str(row["created_at"] or ""),
+            })
+        return hits
+
     def list_intent_comments(
         self, dataset_id: str, case_id: str, limit: int = 100
     ) -> list[dict[str, Any]]:

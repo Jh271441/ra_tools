@@ -816,6 +816,7 @@ function bindEvents() {
         state.intentLabeling.summaryPage = route.intentSummaryPage || 1;
         state.intentLabeling.summaryPageSize = route.intentSummaryPageSize || 20;
         state.intentLabeling.summaryAxis = route.intentSummaryAxis || "all";
+        state.intentLabeling.summaryCommentQuery = route.intentSummaryCommentQuery || "";
       }
       showPage(route.page, {
         issues: route.issues,
@@ -1050,6 +1051,7 @@ async function bootstrap() {
       state.intentLabeling.summaryPage = initialRoute.intentSummaryPage || 1;
       state.intentLabeling.summaryPageSize = initialRoute.intentSummaryPageSize || 20;
       state.intentLabeling.summaryAxis = initialRoute.intentSummaryAxis || "all";
+      state.intentLabeling.summaryCommentQuery = initialRoute.intentSummaryCommentQuery || "";
       initialPageRequests.push(loadIntentSummary({ datasetId: initialRoute.intentDatasetId }));
     }
     if (initialRoute.page === "analysis") {

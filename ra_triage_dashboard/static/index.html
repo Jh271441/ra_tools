@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-308`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-309`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -373,7 +373,7 @@
               </div>
               <aside class="intent-label-rail">
                 <section class="intent-card intent-label-editor">
-                  <h3><span>批量预填</span><small>一次选择会填入全部时间点；之后仍可单独修改任意帧</small></h3>
+                  <h3><span>批量预填</span></h3>
                   <h4>Routing 意图</h4>
                   <div class="intent-label-grid intent-routing-grid" id="intentAggregateRouting">
                     <button type="button" data-intent-aggregate-axis="routing" data-value="left_turn" aria-keyshortcuts="Shift+1"><kbd>⇧1</kbd>左转</button><button type="button" data-intent-aggregate-axis="routing" data-value="right_turn" aria-keyshortcuts="Shift+2"><kbd>⇧2</kbd>右转</button><button type="button" data-intent-aggregate-axis="routing" data-value="straight" aria-keyshortcuts="Shift+3"><kbd>⇧3</kbd>直行</button><button type="button" data-intent-aggregate-axis="routing" data-value="u_turn" aria-keyshortcuts="Shift+4"><kbd>⇧4</kbd>掉头</button><button type="button" data-intent-aggregate-axis="routing" data-value="parking" aria-keyshortcuts="Shift+5"><kbd>⇧5</kbd>泊车</button>
@@ -391,7 +391,7 @@
                   <button class="button button-quiet intent-restore-button" id="intentRestoreBatchPrefill" type="button" aria-keyshortcuts="0"><span id="intentRestoreBatchPrefillText">当前帧恢复批量预填</span> <kbd>0</kbd></button>
                 </section>
                 <section class="intent-card intent-collaboration-card intent-contributors-card" aria-labelledby="intentContributorsTitle">
-                  <h3 class="intent-contributors-heading"><span id="intentContributorsTitle">已有标注</span><small id="intentRevealState">未进入实验</small><button class="button button-quiet" id="intentToggleReveal" type="button" hidden>管理员解盲</button></h3>
+                  <h3 class="intent-contributors-heading"><span id="intentContributorsTitle">已有标注</span><button class="button button-quiet" id="intentToggleReveal" type="button" hidden>管理员解盲</button></h3>
                   <div class="intent-contributor-list" id="intentContributorList"><p>尚无标注</p></div>
                 </section>
                 <section class="intent-card intent-collaboration-card intent-discussion-card" aria-labelledby="intentCommentsTitle">
@@ -436,10 +436,12 @@
               <div class="intent-command-field"><span>任务负责人</span><div class="multi-filter" id="intentSummaryAssignees" data-placeholder="全部负责人"></div></div>
               <div class="intent-command-field"><span>结果维度</span><div class="ui-select" id="intentSummaryAxisPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">Routing + 变道意图</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="intentSummaryAxis"><option value="all">Routing + 变道意图</option><option value="routing">仅 Routing</option><option value="lane_change">仅变道意图</option></select></div></div>
               <div class="intent-command-field"><span>每页数量</span><div class="ui-select" id="intentSummaryPageSizePicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">20 / 页</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="intentSummaryPageSize"><option value="10">10 / 页</option><option value="20" selected>20 / 页</option><option value="50">50 / 页</option></select></div></div>
+              <label class="intent-command-field intent-summary-comment-field"><span>搜索评论</span><input id="intentSummaryCommentQuery" maxlength="80" autocomplete="off" placeholder="按评论内容查找 Case"/></label>
               <button class="button button-quiet" id="intentSummaryRefresh" type="button">刷新汇总</button>
               <button class="button button-quiet" id="intentSummaryReveal" type="button" hidden>管理员解盲</button>
             </section>
             <section class="intent-summary-metrics" id="intentSummaryMetrics"></section>
+            <section class="page-card intent-summary-comments-card" id="intentSummaryCommentHits" hidden></section>
             <section class="page-card intent-summary-table-card"><header><div><h2>意图轨迹标注汇总</h2><p id="intentSummarySafety">进行中的盲标实验仅显示自己的答案。</p></div><div class="intent-summary-export-actions"><button class="button button-quiet" id="intentExportCompact" type="button" hidden>导出 Case JSONL</button><button class="button button-quiet" id="intentExportExpanded" type="button" hidden>导出帧级 JSONL</button></div></header><div class="table-scroll"><table><thead><tr><th>Issue / Case</th><th>标注人</th><th class="intent-summary-routing-column">Routing 帧分布</th><th class="intent-summary-lane-column">变道意图帧分布</th><th>更新时间</th></tr></thead><tbody id="intentSummaryRows"></tbody></table></div><footer class="intent-summary-pagination"><button class="button button-quiet" id="intentSummaryPrevious" type="button">上一页</button><span id="intentSummaryPageState">1 / 1</span><button class="button button-quiet" id="intentSummaryNext" type="button">下一页</button></footer></section>
           </section>
 
@@ -1766,7 +1768,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-308`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-309`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

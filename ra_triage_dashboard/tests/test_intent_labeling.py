@@ -327,6 +327,21 @@ class IntentLabelStorageTest(unittest.TestCase):
                 database.list_intent_comments("0206-1335-v1", case_id)[1]["reply_to_body"],
                 "需要确认掉头口径",
             )
+            hits = database.search_intent_comments(
+                "0206-1335-v1",
+                "掉头",
+                username="alice",
+                reveal_answers=True,
+            )
+            self.assertEqual([item["author"] for item in hits], ["alice"])
+            self.assertIn("掉头", hits[0]["snippet"])
+            peer = database.search_intent_comments(
+                "0206-1335-v1",
+                "轨迹",
+                username="alice",
+                reveal_answers=True,
+            )
+            self.assertEqual([item["author"] for item in peer], ["bob"])
 
     def test_delete_removes_only_current_head_and_keeps_audit_history(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -475,6 +490,26 @@ class IntentExperimentTest(unittest.TestCase):
             self.assertEqual(
                 database.intent_experiment_case_ids("test-v1", "experiment-filter"),
                 ("cn1_1", "cn2_2", "cn3_3"),
+            )
+            database.create_intent_comment(
+                dataset_id="test-v1", case_id="cn1_1", body="alice 可见评论",
+                author="alice", author_source="sso", author_verified=True,
+            )
+            database.create_intent_comment(
+                dataset_id="test-v1", case_id="cn1_1", body="bob 盲态隐藏",
+                author="bob", author_source="sso", author_verified=True,
+            )
+            self.assertEqual(
+                [item["author"] for item in database.search_intent_comments(
+                    "test-v1", "评论", username="alice", reveal_answers=False,
+                )],
+                ["alice"],
+            )
+            self.assertEqual(
+                {item["author"] for item in database.search_intent_comments(
+                    "test-v1", "盲态", username="alice", reveal_answers=True,
+                )},
+                {"bob"},
             )
             self.assertEqual(
                 database.list_intent_assignment_assignees(

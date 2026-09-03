@@ -430,9 +430,53 @@ function intentFrameCountText(counts, labels) {
     .join(" · ");
 }
 
+function intentSummaryChipClass(value) {
+  return ({
+    straight: "is-straight",
+    left_turn: "is-left",
+    right_turn: "is-right",
+    u_turn: "is-uturn",
+    parking: "is-parking",
+    no_lane_change: "is-no-lane",
+    lane_change: "is-lane",
+  })[value] || "";
+}
+
 function intentSummaryResultMarkup(counts, labels) {
-  const countText = intentFrameCountText(counts, labels);
-  return `<div class="intent-summary-result">${countText ? escapeHtml(countText) : "—"}</div>`;
+  const entries = Object.entries(counts || {})
+    .filter(([, count]) => Number(count) > 0)
+    .sort((a, b) => Number(b[1]) - Number(a[1]));
+  if (!entries.length) return '<div class="intent-summary-result is-empty">—</div>';
+  return `<div class="intent-summary-result">${entries.map(([value, count]) => (
+    `<b class="intent-summary-chip ${intentSummaryChipClass(value)}">${escapeHtml(labels[value] || value)} ${Number(count)}帧</b>`
+  )).join("")}</div>`;
+}
+
+function renderIntentSummaryCommentHits(payload) {
+  const card = $("#intentSummaryCommentHits");
+  if (!card) return;
+  const query = String(payload.comment_query || "").trim();
+  const hits = payload.comment_hits || [];
+  if (!query) {
+    card.hidden = true;
+    card.innerHTML = "";
+    return;
+  }
+  card.hidden = false;
+  const datasetId = state.intentLabeling.summaryDatasetId;
+  const rows = hits.length ? hits.map((item) => {
+    const href = `${withBase("/intent-labeling")}?dataset=${encodeURIComponent(datasetId)}&case=${encodeURIComponent(item.case_id)}&comments=1&comment=${encodeURIComponent(item.id)}`;
+    return `<article class="intent-summary-comment-hit">
+      <a class="intent-summary-case-link" href="${escapeHtml(href)}">${escapeHtml(item.case_id)}</a>
+      <strong>${escapeHtml(item.author)}${item.author === state.session.username ? "（我）" : ""}</strong>
+      <p>${escapeHtml(item.snippet || item.body || "")}</p>
+      <time>${escapeHtml(formatTime(item.created_at) || "")}</time>
+    </article>`;
+  }).join("") : `<p class="intent-summary-comment-empty">没有匹配“${escapeHtml(query)}”的评论。</p>`;
+  const blindNote = payload.blind_active && !payload.answers_revealed
+    ? "<small>盲标中仅搜索自己的评论。</small>"
+    : "";
+  card.innerHTML = `<header><h2>评论搜索</h2><p>${hits.length} 条${blindNote}</p></header><div class="intent-summary-comment-list">${rows}</div>`;
 }
 
 function renderIntentSummary(payload) {
@@ -442,11 +486,13 @@ function renderIntentSummary(payload) {
   document.querySelectorAll(".intent-summary-routing-column").forEach((element) => { element.hidden = !showRouting; });
   document.querySelectorAll(".intent-summary-lane-column").forEach((element) => { element.hidden = !showLaneChange; });
   const metrics = [
-    ["范围 Case", payload.case_count], ["已标注 Case", payload.annotated_cases],
-    ["完整标注记录", payload.complete_records],
-    ["多人一致性", payload.agreement.comparable_cases ? `${payload.agreement.matching_cases} / ${payload.agreement.comparable_cases}` : "—"],
+    ["范围 Case", payload.case_count, "is-scope"],
+    ["已标注 Case", payload.annotated_cases, "is-labeled"],
+    ["完整标注记录", payload.complete_records, "is-complete"],
+    ["多人一致性", payload.agreement.comparable_cases ? `${payload.agreement.matching_cases} / ${payload.agreement.comparable_cases}` : "—", "is-agree"],
   ];
-  $("#intentSummaryMetrics").innerHTML = metrics.map(([label, value]) => `<article class="intent-summary-metric"><small>${label}</small><strong>${escapeHtml(value)}</strong></article>`).join("");
+  $("#intentSummaryMetrics").innerHTML = metrics.map(([label, value, kind]) => `<article class="intent-summary-metric ${kind}"><small>${label}</small><strong>${escapeHtml(value)}</strong></article>`).join("");
+  renderIntentSummaryCommentHits(payload);
   const datasetId = state.intentLabeling.summaryDatasetId;
   const columnCount = 3 + Number(showRouting) + Number(showLaneChange);
   $("#intentSummaryRows").innerHTML = (payload.items || []).map((item) => {
@@ -479,6 +525,8 @@ async function loadIntentSummary({ datasetId = "", force = false } = {}) {
   params.set("axis", intent.summaryAxis || "all");
   params.set("page", String(intent.summaryPage || 1));
   params.set("page_size", String(intent.summaryPageSize || 20));
+  const commentQuery = String(intent.summaryCommentQuery || "").trim();
+  if (commentQuery) params.set("q", commentQuery);
   const payload = await api(`/api/intent-summary?${params}`);
   intent.summaryPayload = payload;
   const summaryExperimentOptions = (payload.experiments || []).map((item) => ({
@@ -515,6 +563,10 @@ async function loadIntentSummary({ datasetId = "", force = false } = {}) {
   bindUiSelect($("#intentSummaryAxisPicker"), { maxWidth: 260 });
   populateUiSelect($("#intentSummaryPageSizePicker"), [10, 20, 50].map((value) => ({ value: String(value), label: `${value} / 页` })), String(intent.summaryPageSize || 20));
   bindUiSelect($("#intentSummaryPageSizePicker"), { maxWidth: 180 });
+  const commentInput = $("#intentSummaryCommentQuery");
+  if (commentInput && commentInput.value !== (intent.summaryCommentQuery || "")) {
+    commentInput.value = intent.summaryCommentQuery || "";
+  }
   renderMultiFilter($("#intentSummaryAssignees"), { options: (payload.owners || []).map((value) => ({ value, label: value === state.session.username ? `${value}（我）` : value })), selected: intent.summaryAssignees || [], onlyThis: true, onChange: (values) => { intent.summaryAssignees = values; intent.summaryPage = 1; loadIntentSummary({ datasetId: selected.id, force: true }).catch((error) => showToast(error.message, true)); } });
   renderIntentSummary(payload);
   const routeParams = new URLSearchParams({ dataset: selected.id });
@@ -523,6 +575,7 @@ async function loadIntentSummary({ datasetId = "", force = false } = {}) {
   if ((intent.summaryPage || 1) > 1) routeParams.set("page", String(intent.summaryPage));
   if ((intent.summaryAxis || "all") !== "all") routeParams.set("axis", intent.summaryAxis);
   if ((intent.summaryPageSize || 20) !== 20) routeParams.set("page_size", String(intent.summaryPageSize));
+  if (commentQuery) routeParams.set("q", commentQuery);
   history.replaceState({ page: "intent-summary", datasetId: selected.id }, "", `${withBase("/intent-summary")}?${routeParams}`);
 }
 
@@ -795,12 +848,6 @@ function renderIntentCollaboration() {
     return String(left.username || "").localeCompare(String(right.username || ""));
   });
   const contributorList = $("#intentContributorList");
-  const revealState = $("#intentRevealState");
-  if (revealState) {
-    revealState.textContent = !collaboration.blind_active
-      ? "未进入实验"
-      : (collaboration.answers_revealed ? "已解盲" : "盲标中 · 仅显示自己的答案");
-  }
   const revealButton = $("#intentToggleReveal");
   const canReveal = Boolean(state.session.is_admin && collaboration.blind_active);
   if (revealButton) {
@@ -811,13 +858,9 @@ function renderIntentCollaboration() {
   if (contributorList) {
     contributorList.innerHTML = contributors.length ? contributors.map((item) => {
       const labeled = intentContributorIsLabeled(item);
-      const showStatus = !item.is_current || !labeled;
-      const head = `<div class="intent-contributor-head">
-        <strong>${escapeHtml(item.username)}${item.is_current ? "（我）" : ""}</strong>
-        ${showStatus ? `<span class="intent-contributor-status ${labeled ? "is-labeled" : "is-pending"}">${intentContributorStatus(item)}</span>` : ""}
-      </div>`;
+      const name = `<strong>${escapeHtml(item.username)}${item.is_current ? "（我）" : ""}</strong>`;
       if (!item.revealed || !labeled) {
-        return `<article class="intent-contributor${item.is_current ? " is-current" : ""}">${head}</article>`;
+        return `<article class="intent-contributor${item.is_current ? " is-current" : ""}">${name}<span class="intent-contributor-status ${labeled ? "is-labeled" : "is-pending"}">${intentContributorStatus(item)}</span></article>`;
       }
       const frameOverride = (item.overrides || []).find((entry) => entry.timepoint_id === active?.id) || {};
       const routingValue = frameOverride.routing_intent || item.routing_default;
@@ -828,13 +871,14 @@ function renderIntentCollaboration() {
         ? `<button class="button button-quiet intent-delete-label" type="button" data-intent-delete-mine title="移除自己的当前答案；历史版本与删除审计仍会保留">删除</button>`
         : "";
       return `<article class="intent-contributor is-revealed${item.is_current ? " is-current" : ""}">
-        ${head}
+        ${name}
         <div class="intent-contributor-labels">${
           intentChipMarkup(INTENT_ROUTING_LABELS[routingValue] || "Routing 待填", { pending: !routingValue })
         }${
           intentChipMarkup(INTENT_LANE_LABELS[laneChangeValue] || "变道待填", { pending: !laneChangeValue })
-        }${deleteButton}</div>
-        <small class="intent-contributor-counts">${escapeHtml([routingCountText, laneCountText].filter(Boolean).join(" · ") || "尚无帧级标注")}</small>
+        }</div>
+        <small class="intent-contributor-counts">${escapeHtml([routingCountText, laneCountText].filter(Boolean).join(" · ") || "")}</small>
+        ${deleteButton}
       </article>`;
     }).join("") : "<p>尚无标注记录</p>";
   }
@@ -1485,6 +1529,23 @@ function bindIntentLabelingEvents() {
   $("#intentSummaryNext")?.addEventListener("click", () => {
     state.intentLabeling.summaryPage += 1;
     loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true }).catch((error) => showToast(error.message, true));
+  });
+  const submitSummaryCommentQuery = () => {
+    const value = ($("#intentSummaryCommentQuery")?.value || "").trim().slice(0, 80);
+    if (value === (state.intentLabeling.summaryCommentQuery || "")) return;
+    state.intentLabeling.summaryCommentQuery = value;
+    state.intentLabeling.summaryPage = 1;
+    loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true }).catch((error) => showToast(error.message, true));
+  };
+  $("#intentSummaryCommentQuery")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    window.clearTimeout(state.intentLabeling.summaryCommentTimer);
+    submitSummaryCommentQuery();
+  });
+  $("#intentSummaryCommentQuery")?.addEventListener("input", () => {
+    window.clearTimeout(state.intentLabeling.summaryCommentTimer);
+    state.intentLabeling.summaryCommentTimer = window.setTimeout(submitSummaryCommentQuery, 350);
   });
   initializeIntentExperimentSelects();
   $("#intentExperimentMode")?.addEventListener("change", (event) => {

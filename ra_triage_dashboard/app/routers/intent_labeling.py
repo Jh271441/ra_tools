@@ -45,7 +45,8 @@ MAX_COMMENT_REQUEST_BYTES = 8 * 1024
 
 def _intent_summary_payload(dataset_id: str, identity: Any, experiment_id: str,
                             assignees: tuple[str, ...], reveal_answers: bool,
-                            axis: str, page: int, page_size: int) -> dict[str, Any]:
+                            axis: str, page: int, page_size: int,
+                            comment_query: str = "") -> dict[str, Any]:
     try:
         case_ids = intent_dataset_registry.case_ids(dataset_id)
     except KeyError as exc:
@@ -75,13 +76,22 @@ def _intent_summary_payload(dataset_id: str, identity: Any, experiment_id: str,
                          if not experiment_id or row["experiment_id"] == experiment_id}
     head_owners = {row["username"] for row in data["heads"]} if not experiment_id else set()
     report["owners"] = sorted(assignment_owners | head_owners)
+    report["comment_query"] = str(comment_query or "").strip()[:80]
+    report["comment_hits"] = database.search_intent_comments(
+        dataset_id,
+        comment_query,
+        username=identity.username,
+        reveal_answers=reveal_answers,
+        experiment_id=experiment_id,
+    ) if report["comment_query"] else []
     return report
 
 
 @router.get("/api/intent-summary")
 async def intent_summary(request: Request, dataset_id: str, experiment_id: str = "",
                          assignee: list[str] = Query(default=[]), reveal_answers: bool = False,
-                         axis: str = "all", page: int = 1, page_size: int = 20) -> dict[str, Any]:
+                         axis: str = "all", page: int = 1, page_size: int = 20,
+                         q: str = "") -> dict[str, Any]:
     identity = await asyncio.to_thread(_intent_identity, request)
     if reveal_answers:
         await asyncio.to_thread(_admin_identity, request)
@@ -91,7 +101,7 @@ async def intent_summary(request: Request, dataset_id: str, experiment_id: str =
         raise _detail(400, "每页数量仅支持 10、20 或 50。")
     return await asyncio.to_thread(_intent_summary_payload, dataset_id, identity,
                                    experiment_id, tuple(assignee[:20]), reveal_answers,
-                                   axis, page, page_size)
+                                   axis, page, page_size, q)
 
 
 def _empty_labels(dataset_id: str, case_id: str) -> dict[str, Any]:
