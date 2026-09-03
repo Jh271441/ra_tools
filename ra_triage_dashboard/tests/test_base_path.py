@@ -58,10 +58,11 @@ class BasePathTest(unittest.TestCase):
     def test_shell_injection_covers_assets_and_navigation(self) -> None:
         root_shell = render_index_html(INDEX_HTML, "")
         self.assertIn('content=""', root_shell)
-        self.assertIn('styles.href = `${activeBase}/static/styles.css', root_shell)
+        self.assertIn('const stylesheetPaths = [', root_shell)
+        self.assertIn('styles.href = `${activeBase}/static/${path}', root_shell)
         self.assertIn('html.ra-styles-loading body { visibility: hidden; }', root_shell)
-        self.assertIn('styles.addEventListener("load", revealShell', root_shell)
-        self.assertIn('styles.addEventListener("error", revealShell', root_shell)
+        self.assertIn('styles.addEventListener("load", settleStylesheet', root_shell)
+        self.assertIn('styles.addEventListener("error", settleStylesheet', root_shell)
         self.assertIn('window.setTimeout(revealShell, 5000)', root_shell)
         self.assertIn('data-app-path="/review"', root_shell)
         self.assertNotIn("{{RA_TRIAGE_BASE_PATH}}", root_shell)
@@ -70,8 +71,8 @@ class BasePathTest(unittest.TestCase):
         self.assertIn('content="/manual"', subpath_shell)
         self.assertIn('window.__RA_TRIAGE_BASE__ = activeBase', subpath_shell)
         self.assertIn('`${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`', subpath_shell)
-        self.assertIn('/static/styles.css?v=manual-triage-310', subpath_shell)
-        self.assertIn('/static/app.js?v=manual-triage-310', subpath_shell)
+        self.assertIn('/static/${path}?v=manual-triage-311', subpath_shell)
+        self.assertIn('/static/app.js?v=manual-triage-311', subpath_shell)
 
 
 if __name__ == "__main__":

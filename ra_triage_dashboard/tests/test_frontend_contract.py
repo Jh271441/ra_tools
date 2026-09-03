@@ -14,12 +14,40 @@ from frontend_js import (  # type: ignore  # unittest discover puts tests/ on sy
 
 APP_JS = load_app_js()
 APP_ENTRY_JS = load_app_entry_js()
-STYLES_CSS = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
+CSS_PATHS = (
+    "styles.css",
+    "css/base.css",
+    "css/layout-shared.css",
+    "css/trail-update.css",
+    "css/review-comment.css",
+    "css/analysis.css",
+    "css/intent-labeling.css",
+    "css/media-dialog.css",
+    "css/comparison.css",
+    "css/batch-gateway.css",
+    "css/runs.css",
+)
+STYLES_CSS = "\n".join(
+    (STATIC_DIR / path).read_text(encoding="utf-8") for path in CSS_PATHS
+)
 INDEX_HTML = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 RUN_COMPARISON_JS = (JS_DIR / "run-comparison.js").read_text(encoding="utf-8")
 
 
 class FrontendContractTest(unittest.TestCase):
+    def test_component_stylesheets_load_in_declared_order(self) -> None:
+        self.assertLessEqual(
+            len((STATIC_DIR / "styles.css").read_text(encoding="utf-8").splitlines()),
+            80,
+        )
+        positions = []
+        for path in CSS_PATHS:
+            self.assertTrue((STATIC_DIR / path).is_file(), path)
+            positions.append(INDEX_HTML.index(f'"{path}"'))
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn("pendingStyles = stylesheetPaths.length", INDEX_HTML)
+        self.assertIn("if (pendingStyles === 0) revealShell()", INDEX_HTML)
+
     def test_read_only_run_comparison_is_visible_shareable_and_review_linked(self) -> None:
         self.assertIn('id="runComparisonNavButton"', INDEX_HTML)
         self.assertIn('data-page="comparison"', INDEX_HTML)
@@ -128,7 +156,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-310", APP_ENTRY_JS)
+        self.assertIn("manual-triage-311", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -169,7 +197,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-310", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-311", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
         self.assertNotIn("async function bootstrap", APP_ENTRY_JS)
@@ -276,7 +304,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('styles.css?v=manual-triage-310', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-311`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -982,7 +1010,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-310", APP_ENTRY_JS)
+        self.assertIn("manual-triage-311", APP_ENTRY_JS)
 
     def test_multi_issue_query_contract(self) -> None:
         self.assertIn('id="openIssueQueryButton"', INDEX_HTML)
@@ -1125,7 +1153,10 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('<h3><span>批量预填</span></h3>', INDEX_HTML)
         self.assertNotIn('一次选择会填入全部时间点', INDEX_HTML)
         self.assertIn('.intent-experiment-form-row { min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));', STYLES_CSS)
-        self.assertIn('.intent-experiment-create { padding-bottom: 30px; border-bottom: 1px solid var(--line-soft); }', STYLES_CSS)
+        self.assertIn('.intent-experiment-create-body {', STYLES_CSS)
+        self.assertIn('grid-template-columns: minmax(230px, .38fr) minmax(0, 1fr)', STYLES_CSS)
+        self.assertIn('class="intent-experiment-guide"', INDEX_HTML)
+        self.assertIn('创建与分配实验', INDEX_HTML)
         self.assertIn('id="intentSummaryCommentQuery"', INDEX_HTML)
         self.assertIn('id="intentSummaryCommentHits"', INDEX_HTML)
         self.assertIn("function renderIntentSummaryCommentHits", APP_JS)

@@ -1,0 +1,69 @@
+/* Reset, typography, and native form-element defaults. */
+html, body { max-width: 100%; overflow-x: hidden; }
+html { overflow-y: scroll; scrollbar-gutter: stable; }
+body { margin: 0; color: var(--text); background: var(--bg); font-size: 14px; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .48; }
+h1, h2, h3, p { margin: 0; }
+h1 { font-size: 18px; letter-spacing: -.02em; }
+h2 { font-size: 16px; letter-spacing: -.015em; }
+h3 { font-size: 14px; letter-spacing: -.01em; }
+a { color: inherit; text-decoration: none; }
+a:hover { color: var(--accent); }
+.hidden { display: none !important; }
+.muted { color: var(--muted); }
+/* Dual-span / dual-block shell: CSS toggles locale without reflow thrash.
+ * Use display:unset so <span> stays inline and <p>/<h3> stay block. */
+.ui-lang-en { display: none; }
+html[data-ui-lang="en"] .ui-lang-zh { display: none; }
+html[data-ui-lang="en"] .ui-lang-en { display: unset; }
+label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; }
+input, select, textarea {
+  width: 100%; padding: 8px 9px; border: 1px solid var(--line); border-radius: 7px; outline: none;
+  color: var(--text); background: #0d1119; transition: border-color 160ms ease-out, background 160ms ease-out;
+}
+select {
+  appearance: none; -webkit-appearance: none; min-height: 32px; padding-right: 31px;
+  color: #eef4fa; border-color: #2b3546; background-color: #0d1119; font-weight: 560;
+  background-image: linear-gradient(45deg, transparent 50%, #8290a4 50%), linear-gradient(135deg, #8290a4 50%, transparent 50%);
+  background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+}
+select:hover:not(:disabled) { border-color: #46546a; background-color: #101722; }
+select:focus { border-color: var(--accent); background-color: #0f151f; }
+select:disabled { color: #aebdd0; -webkit-text-fill-color: #aebdd0; border-color: var(--line); background-color: #0d1119; opacity: 1; }
+select option { color: #eef4fa; background: #111a27; font-weight: 560; }
+input:focus, select:focus, textarea:focus { border-color: var(--accent); background-color: #0f151f; }
+textarea { min-height: 98px; resize: vertical; line-height: 1.55; }
+html[data-color-theme="light"] input,
+html[data-color-theme="light"] select,
+html[data-color-theme="light"] textarea {
+  color: var(--text);
+  -webkit-text-fill-color: var(--text);
+  border-color: #b8c5d4;
+  background-color: #f8fafc;
+}
+html[data-color-theme="light"] input::placeholder,
+html[data-color-theme="light"] textarea::placeholder {
+  color: #68778b;
+  -webkit-text-fill-color: #68778b;
+  opacity: 1;
+}
+html[data-color-theme="light"] select {
+  background-image: linear-gradient(45deg, transparent 50%, #65768b 50%), linear-gradient(135deg, #65768b 50%, transparent 50%);
+}
+html[data-color-theme="light"] select:hover:not(:disabled) { border-color: #8291a4; background-color: #f2f6fa; }
+html[data-color-theme="light"] input:focus,
+html[data-color-theme="light"] select:focus,
+html[data-color-theme="light"] textarea:focus { color: var(--text); background-color: #ffffff; }
+html[data-color-theme="light"] input:disabled,
+html[data-color-theme="light"] select:disabled,
+html[data-color-theme="light"] textarea:disabled {
+  color: #627086;
+  -webkit-text-fill-color: #627086;
+  border-color: #c8d2de;
+  background-color: #edf2f7;
+  opacity: 1;
+}
+html[data-color-theme="light"] select option { color: #0f172a; background: #ffffff; }
