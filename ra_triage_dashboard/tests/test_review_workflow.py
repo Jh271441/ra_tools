@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from starlette.requests import Request
 
 from ra_triage_dashboard.app.db import Database
-from ra_triage_dashboard.app.http_support import _create_annotation_record
+from ra_triage_dashboard.app.support.annotations import _create_annotation_record
 from ra_triage_dashboard.app.review_workflow import (
     derive_review_status,
     effective_expected_output,
@@ -207,7 +207,10 @@ class ReviewWorkflowTest(unittest.TestCase):
                 replace_gt=True,
             )
             with patch(
-                "ra_triage_dashboard.app.http_support.database",
+                "ra_triage_dashboard.app.support.annotations.database",
+                database,
+            ), patch(
+                "ra_triage_dashboard.app.support.catalogs.database",
                 database,
             ):
                 annotation = _create_annotation_record(
@@ -234,7 +237,10 @@ class ReviewWorkflowTest(unittest.TestCase):
                 replace_gt=True,
             )
             with patch(
-                "ra_triage_dashboard.app.http_support.database",
+                "ra_triage_dashboard.app.support.annotations.database",
+                database,
+            ), patch(
+                "ra_triage_dashboard.app.support.catalogs.database",
                 database,
             ), self.assertRaises(HTTPException) as context:
                 _create_annotation_record(

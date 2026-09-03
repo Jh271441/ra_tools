@@ -49,7 +49,8 @@ class ArchitectureHardeningTest(unittest.IsolatedAsyncioTestCase):
             APP_ROOT / "main.py",
             APP_ROOT / "runtime.py",
             APP_ROOT / "http_support.py",
-            *(APP_ROOT / "routers").glob("*.py"),
+            *(APP_ROOT / "routers").rglob("*.py"),
+            *(APP_ROOT / "support").glob("*.py"),
         ]
         wildcard_imports: list[str] = []
         dynamic_exports: list[str] = []
@@ -139,7 +140,7 @@ class ArchitectureHardeningTest(unittest.IsolatedAsyncioTestCase):
 
     def test_async_routes_do_not_call_sync_database_on_event_loop(self) -> None:
         violations: list[str] = []
-        for path in sorted((APP_ROOT / "routers").glob("*.py")):
+        for path in sorted((APP_ROOT / "routers").rglob("*.py")):
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for route in tree.body:
                 if not isinstance(route, ast.AsyncFunctionDef):
@@ -184,7 +185,7 @@ class ArchitectureHardeningTest(unittest.IsolatedAsyncioTestCase):
             "_review_tag_catalog",
         }
         violations: list[str] = []
-        for path in sorted((APP_ROOT / "routers").glob("*.py")):
+        for path in sorted((APP_ROOT / "routers").rglob("*.py")):
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for route in tree.body:
                 if not isinstance(route, ast.AsyncFunctionDef):
@@ -214,21 +215,43 @@ class ArchitectureHardeningTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(violations, [], "\n".join(violations))
 
     def test_router_split_has_one_owner_for_each_helper(self) -> None:
-        support_tree = ast.parse(
+        owners: dict[str, list[str]] = {}
+        for path in sorted((APP_ROOT / "support").glob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in tree.body:
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    owners.setdefault(node.name, []).append(path.name)
+        duplicates = {
+            name: paths for name, paths in owners.items() if len(paths) > 1
+        }
+        self.assertEqual(duplicates, {})
+        self.assertGreaterEqual(len(owners), 40)
+
+        compatibility_tree = ast.parse(
             (APP_ROOT / "http_support.py").read_text(encoding="utf-8")
         )
-        support_helpers = {
+        compatibility_helpers = {
             node.name
-            for node in support_tree.body
+            for node in compatibility_tree.body
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
+        self.assertEqual(compatibility_helpers, set())
+
+        forbidden_imports: list[str] = []
+        for path in [APP_ROOT / "main.py", *(APP_ROOT / "routers").rglob("*.py")]:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and node.module == "http_support":
+                    forbidden_imports.append(f"{path.name}:{node.lineno}")
+        self.assertEqual(forbidden_imports, [])
+
         duplicates: list[str] = []
-        for path in sorted((APP_ROOT / "routers").glob("*.py")):
+        for path in sorted((APP_ROOT / "routers").rglob("*.py")):
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in tree.body:
                 if (
                     isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-                    and node.name in support_helpers
+                    and node.name in owners
                 ):
                     duplicates.append(f"{path.name}:{node.lineno} {node.name}")
         self.assertEqual(duplicates, [], "\n".join(duplicates))

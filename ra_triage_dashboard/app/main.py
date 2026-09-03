@@ -14,10 +14,14 @@ from starlette.types import Scope
 
 from .auth import has_same_origin_mutation_marker, identity_header_candidates, request_identity
 from .contracts import MAX_BATCH_JSON_REQUEST_BYTES, MAX_REVIEW_MULTIPART_REQUEST_BYTES
-from .http_support import (
+from .support.baselines import (
     bootstrap_baseline,
     bootstrap_model_result,
+)
+from .support.gt_sync import (
     sync_authoritative_gt,
+)
+from .support.trail_models import (
     sync_trail_model_fields,
 )
 from .runtime import (
@@ -70,7 +74,7 @@ def _gt_sync_needs_remote_refresh() -> bool:
     Remote Trail is optional freshness, not a gate for serving GT.
     """
 
-    from .http_support import gt_sync_status
+    from .support.gt_sync import gt_sync_status
 
     status = gt_sync_status()
     if str(status.get("status") or "") != "ready":

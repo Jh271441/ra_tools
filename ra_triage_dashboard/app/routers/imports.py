@@ -8,17 +8,19 @@ from typing import Any
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from ..autotriage_source import AutoTriageSourceError, normalise_batch_id
 from ..contracts import MAX_UPLOAD_BYTES
-from ..http_support import (
-    _action_actor,
+from ..filenames import safe_filename as _safe_filename
+from ..support.autotriage import _fetch_autotriage_snapshot
+from ..support.baselines import enrich_model_run_baseline_hint
+from ..support.common import (
     _as_text,
-    _autotriage_record_url,
     _detail,
-    _fetch_autotriage_snapshot,
-    _safe_filename,
-    _store_model_source,
-    enrich_model_run_baseline_hint,
-    sync_trail_model_fields,
 )
+from ..support.external_links import _autotriage_record_url
+from ..support.identity import _action_actor
+from ..support.model_source import (
+    _store_model_source,
+)
+from ..support.trail_models import sync_trail_model_fields
 from ..import_parsing import normalize_issue_row, normalize_model_row, parse_source_bytes
 from ..runtime import database
 from ..upload_limits import UploadLimitExceeded, read_upload_limited

@@ -7,15 +7,17 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse
 
-from ..http_support import (
-    _action_actor,
-    _as_text,
-    _detail,
+from ..support.catalogs import (
     _missing_evidence_catalog,
     _review_tag_catalog,
     _review_tag_payload,
     _validate_review_tag_input,
 )
+from ..support.common import (
+    _as_text,
+    _detail,
+)
+from ..support.identity import _action_actor
 from ..runtime import REVIEW_TAG_MANAGED_GROUPS, database, settings
 
 router = APIRouter()

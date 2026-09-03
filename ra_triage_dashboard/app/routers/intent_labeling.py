@@ -11,7 +11,8 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
 from ..db_parts.shared import IntentAnnotationConflictError
-from ..http_support import _action_actor, _admin_identity, _detail, _intent_identity
+from ..support.common import _detail
+from ..support.identity import _action_actor, _admin_identity, _intent_identity
 from ..intent_experiments import build_intent_experiment_assignments
 from ..intent_summary import intent_frame_counts, public_intent_contributors, summarize_intent
 from ..runtime import database, intent_dataset_registry

@@ -8,7 +8,7 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 from ra_triage_dashboard.app.db import Database
-from ra_triage_dashboard.app.http_support import resolve_review_exclusion_filter
+from ra_triage_dashboard.app.support.catalogs import resolve_review_exclusion_filter
 from ra_triage_dashboard.app.review_analysis import (
     build_review_reason_analysis,
     classify_review_reason,

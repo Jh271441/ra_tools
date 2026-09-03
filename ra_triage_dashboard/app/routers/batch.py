@@ -8,13 +8,10 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from ..contracts import ISSUE_ID_RE
-from ..http_support import (
-    _action_actor,
-    _as_text,
-    _detail,
-    _public_batch_job,
-    _public_path,
-)
+from ..runtime import _public_path
+from ..support.common import _as_text, _detail
+from ..support.external_links import _public_batch_job
+from ..support.identity import _action_actor
 from ..model_catalog import ModelCatalogError
 from ..prompt_catalog import (
     INPUT_PRESETS,

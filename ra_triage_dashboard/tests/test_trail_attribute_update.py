@@ -12,6 +12,9 @@ from starlette.datastructures import UploadFile
 from starlette.requests import Request
 
 from ra_triage_dashboard.app.routers import trail_update
+from ra_triage_dashboard.app.routers.trail_update import imports as trail_imports
+from ra_triage_dashboard.app.routers.trail_update import preview as trail_preview
+from ra_triage_dashboard.app.routers.trail_update import routes as trail_routes
 from ra_triage_dashboard.app.routers.trail_update import (
     TRAIL_INFO_FIELD,
     TRAIL_ISSUE_EXCLUSION_COMMENT,
@@ -201,7 +204,7 @@ class TrailAttributeUpdateTest(unittest.TestCase):
             [{"issue_id": "cn00000001", "comment": "浏览器说明", "source": source}]
         )
         self.assertFalse(invalid)
-        with patch.object(trail_update, "issue_tag_sources", index):
+        with patch.object(trail_imports, "issue_tag_sources", index):
             resolved, source_invalid = trail_update._resolve_historical_exclusion_entries(entries)
         self.assertFalse(source_invalid)
         self.assertEqual(resolved[0]["comment"], candidate["comment"])
@@ -235,8 +238,8 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         expected = [{"issue_id": "cn00000001", "source": {"source_id": "spotcheck-0206"}}]
         source_index = SimpleNamespace(exclusion_candidates=lambda **kwargs: expected)
         with patch.object(
-            trail_update, "resolve_request_baseline_ids", return_value=["0206"]
-        ), patch.object(trail_update, "issue_tag_sources", source_index):
+            trail_routes, "resolve_request_baseline_ids", return_value=["0206"]
+        ), patch.object(trail_routes, "issue_tag_sources", source_index):
             payload = asyncio.run(
                 trail_update.trail_historical_exclusions(request, baselines="0206")
             )
@@ -289,7 +292,7 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         with patch.object(
             trail_update.database, "review_reason_rows", return_value=[row]
         ) as review_rows, patch.object(
-            trail_update, "read_trail_model_fields", return_value=sync
+            trail_preview, "read_trail_model_fields", return_value=sync
         ) as probe:
             payload = asyncio.run(
                 trail_update._build_preview(
@@ -339,7 +342,7 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         )
         trail_update._preview_capability_cache.clear()
         with patch.object(trail_update.database, "review_reason_rows", return_value=[row]), patch.object(
-            trail_update, "read_trail_model_fields", side_effect=[synced, pending]
+            trail_preview, "read_trail_model_fields", side_effect=[synced, pending]
         ) as probe:
             first = asyncio.run(trail_update._build_preview(request, selected_run_id="", baselines="0508"))
             cached = asyncio.run(trail_update._build_preview(request, selected_run_id="", baselines="0508"))
@@ -386,10 +389,10 @@ class TrailAttributeUpdateTest(unittest.TestCase):
             trail_attribute_review_write_enabled=True,
         )
         trail_update._preview_capability_cache.clear()
-        with patch.object(trail_update, "settings", test_settings), patch.object(
+        with patch.object(trail_preview, "settings", test_settings), patch.object(
             trail_update.database, "review_reason_rows", return_value=[row]
         ), patch.object(
-            trail_update, "read_trail_model_fields", return_value=sync
+            trail_preview, "read_trail_model_fields", return_value=sync
         ):
             payload = asyncio.run(
                 trail_update._build_preview(request, selected_run_id="", baselines="0508")
@@ -422,10 +425,10 @@ class TrailAttributeUpdateTest(unittest.TestCase):
             trail_attribute_write_enabled=True,
             trail_attribute_review_write_enabled=True,
         )
-        with patch.object(trail_update, "settings", test_settings), patch.object(
+        with patch.object(trail_preview, "settings", test_settings), patch.object(
             trail_update.database, "review_reason_rows", return_value=[row]
         ), patch.object(
-            trail_update, "read_trail_model_fields", side_effect=AssertionError("remote probe")
+            trail_preview, "read_trail_model_fields", side_effect=AssertionError("remote probe")
         ) as probe:
             payload = asyncio.run(
                 trail_update._build_preview(
@@ -459,7 +462,7 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         )
         trail_update._preview_capability_cache.clear()
         with patch.object(
-            trail_update, "read_trail_model_fields", return_value=sync
+            trail_preview, "read_trail_model_fields", return_value=sync
         ) as probe, patch.object(
             trail_update.database,
             "review_reason_rows",

@@ -20,7 +20,7 @@ from ra_triage_dashboard.app.dchat import (
     dchat_credentials_status,
     validate_dchat_base_url,
 )
-from ra_triage_dashboard.app.http_support import _create_annotation_record
+from ra_triage_dashboard.app.support.annotations import _create_annotation_record
 from ra_triage_dashboard.app.review_mentions import (
     extract_review_mentions,
     mentions_for_display,
@@ -60,11 +60,13 @@ class ReviewNotificationTest(unittest.TestCase):
                 replace_gt=True,
             )
             database.set_mention_user(username="alice", enabled=True, actor="alice")
-            with patch("ra_triage_dashboard.app.http_support.database", database), patch(
-                "ra_triage_dashboard.app.http_support._action_actor",
+            with patch("ra_triage_dashboard.app.support.annotations.database", database), patch(
+                "ra_triage_dashboard.app.support.catalogs.database", database
+            ), patch(
+                "ra_triage_dashboard.app.support.annotations._action_actor",
                 return_value=("alice", "kylin_ticket", True),
             ), patch(
-                "ra_triage_dashboard.app.http_support.settings",
+                "ra_triage_dashboard.app.support.annotations.settings",
                 SimpleNamespace(dchat_notifications_enabled=True),
             ):
                 annotation = _create_annotation_record(
@@ -112,11 +114,13 @@ class ReviewNotificationTest(unittest.TestCase):
             database.init()
             database.upsert_issues([{"issue_id": "cn1", "gt_label": "误触发"}], source="test", replace_gt=True)
             database.set_mention_user(username="bob", enabled=True, actor="alice")
-            with patch("ra_triage_dashboard.app.http_support.database", database), patch(
-                "ra_triage_dashboard.app.http_support._action_actor",
+            with patch("ra_triage_dashboard.app.support.annotations.database", database), patch(
+                "ra_triage_dashboard.app.support.catalogs.database", database
+            ), patch(
+                "ra_triage_dashboard.app.support.annotations._action_actor",
                 return_value=("alice", "kylin_ticket", True),
             ), patch(
-                "ra_triage_dashboard.app.http_support.settings",
+                "ra_triage_dashboard.app.support.annotations.settings",
                 SimpleNamespace(dchat_notifications_enabled=True),
             ):
                 annotation = _create_annotation_record(
@@ -136,11 +140,13 @@ class ReviewNotificationTest(unittest.TestCase):
                 source="test",
                 replace_gt=True,
             )
-            with patch("ra_triage_dashboard.app.http_support.database", database), patch(
-                "ra_triage_dashboard.app.http_support._action_actor",
+            with patch("ra_triage_dashboard.app.support.annotations.database", database), patch(
+                "ra_triage_dashboard.app.support.catalogs.database", database
+            ), patch(
+                "ra_triage_dashboard.app.support.annotations._action_actor",
                 return_value=("alice", "kylin_ticket", True),
             ), patch(
-                "ra_triage_dashboard.app.http_support.settings",
+                "ra_triage_dashboard.app.support.annotations.settings",
                 SimpleNamespace(dchat_notifications_enabled=True),
             ):
                 with self.assertRaisesRegex(HTTPException, "不在可 @"):

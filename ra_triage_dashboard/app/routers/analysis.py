@@ -11,14 +11,20 @@ from fastapi import APIRouter, Request
 from fastapi.responses import Response
 
 from ..db import LABELS
-from ..http_support import (
-    _as_text,
-    _detail,
-    _missing_evidence_catalog,
-    _review_reason_analysis_payload,
-    _review_tag_catalog,
+from ..support.baselines import (
     resolve_request_baseline_ids,
     resolve_request_baseline_scopes,
+)
+from ..support.catalogs import (
+    _missing_evidence_catalog,
+    _review_tag_catalog,
+)
+from ..support.common import (
+    _as_text,
+    _detail,
+)
+from ..support.review_payloads import (
+    _review_reason_analysis_payload,
 )
 
 router = APIRouter()

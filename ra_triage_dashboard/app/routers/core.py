@@ -15,23 +15,24 @@ from ..contracts import (
     MAX_REVIEW_ATTACHMENTS,
     MAX_REVIEW_ATTACHMENTS_TOTAL_BYTES,
 )
-from ..http_support import (
-    _action_actor,
-    _admin_identity,
-    _intent_identity,
-    _as_text,
-    _detail,
+from ..runtime import _public_path
+from ..support.baselines import (
+    resolve_request_baseline_ids,
+    resolve_request_baseline_scopes,
+)
+from ..support.catalogs import (
     _missing_evidence_catalog,
-    _public_batch_job,
-    _public_path,
     _review_tag_catalog,
+)
+from ..support.common import _as_text, _detail
+from ..support.external_links import _public_batch_job
+from ..support.gt_sync import (
     gt_sync_status,
     reserve_authoritative_gt_sync,
     resolve_gt_sync_baseline_ids,
-    resolve_request_baseline_ids,
-    resolve_request_baseline_scopes,
     sync_authoritative_gt,
 )
+from ..support.identity import _action_actor, _admin_identity, _intent_identity
 from ..model_catalog import MODEL_ID_RE
 from ..dchat import dchat_credentials_status
 from ..review_mentions import MAX_REVIEW_MENTIONS, normalize_mention_username

@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from fastapi import BackgroundTasks
 
-from ra_triage_dashboard.app import http_support as gt_http
+from ra_triage_dashboard.app.support import gt_sync as gt_http
 from ra_triage_dashboard.app.baseline_registry import BaselineEntry, BaselineRegistry
 from ra_triage_dashboard.app.db import Database
 from ra_triage_dashboard.app.gt_sync import (

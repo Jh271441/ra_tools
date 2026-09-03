@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
-from ..http_support import _detail
+from ..support.common import _detail
 from ..runtime import database
 
 router = APIRouter()

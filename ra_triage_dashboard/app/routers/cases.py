@@ -14,29 +14,33 @@ from PIL import Image, UnidentifiedImageError
 
 from ..case_media import empty_case_media, resolve_case_media
 from ..contracts import ISSUE_ID_RE
-from ..http_support import (
-    _admin_identity,
-    _action_actor,
-    _as_text,
-    _case_external_links,
-    _case_filter_kwargs,
-    _case_link_metadata_fallback,
-    _create_annotation_record,
-    _detail,
-    _public_batch_job,
+from ..runtime import _public_path
+from ..support.annotations import _create_annotation_record
+from ..support.attachments import (
     _public_comment_attachment,
-    _public_path,
     _public_review_attachment,
-    _render_case_thumbnail,
-    _review_tag_catalog,
-    _store_review_attachments,
     _store_comment_attachments,
-    _thumbnail_cache_path,
-    _voyager_issue_url,
+    _store_review_attachments,
+)
+from ..support.baselines import (
     media_for_issue,
     resolve_request_baseline_ids,
     resolve_request_baseline_scopes,
 )
+from ..support.catalogs import _review_tag_catalog
+from ..support.common import (
+    _as_text,
+    _detail,
+)
+from ..support.external_links import (
+    _case_external_links,
+    _case_link_metadata_fallback,
+    _public_batch_job,
+    _voyager_issue_url,
+)
+from ..support.filter_parsing import _case_filter_kwargs
+from ..support.identity import _action_actor, _admin_identity
+from ..support.thumbnails import _render_case_thumbnail, _thumbnail_cache_path
 from ..review_workflow import derive_review_status, effective_expected_output
 from ..review_mentions import extract_review_mentions, notification_recipients
 from ..runtime import (
