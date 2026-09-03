@@ -419,6 +419,7 @@ def _case_payload(
         if item["revealed"]:
             item["routing_default"] = contributor["routing_default"]
             item["lane_change_default"] = contributor["lane_change_default"]
+            item["overrides"] = contributor["overrides"]
         if item["revealed"]:
             public_contributors.append(item)
     overrides = {item["timepoint_id"]: item for item in labels["overrides"]}

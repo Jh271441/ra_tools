@@ -385,6 +385,8 @@ function renderIntentSummary(payload) {
   const reveal = $("#intentSummaryReveal");
   reveal.hidden = !(state.session.is_admin && payload.blind_active);
   reveal.textContent = payload.answers_revealed ? "恢复盲态" : "管理员解盲";
+  $("#intentExportCompact").hidden = !state.session.is_admin;
+  $("#intentExportExpanded").hidden = !state.session.is_admin;
   const pageCount = Math.max(1, Math.ceil(Number(payload.total || 0) / Number(payload.page_size || 20)));
   $("#intentSummaryPageState").textContent = `${payload.page} / ${pageCount}`;
   $("#intentSummaryPrevious").disabled = payload.page <= 1;
@@ -617,6 +619,7 @@ function renderIntentActiveFrame() {
   updateIntentFrameNavigation();
   renderIntentHero();
   renderIntentLabels();
+  renderIntentCollaboration();
   updateIntentTimelineState();
 }
 
@@ -659,6 +662,7 @@ function renderIntentLabels() {
 }
 
 function renderIntentCollaboration() {
+  const active = intentActiveTimepoint();
   const collaboration = state.intentLabeling.caseData?.collaboration || {};
   const contributors = (collaboration.contributors || []).filter(
     (item) => collaboration.answers_revealed || item.is_current
@@ -680,8 +684,11 @@ function renderIntentCollaboration() {
   }
   if (contributorList) {
     contributorList.innerHTML = contributors.length ? contributors.map((item) => {
-      const routing = item.revealed ? (INTENT_ROUTING_LABELS[item.routing_default] || "None") : "—";
-      const laneChange = item.revealed ? (INTENT_LANE_LABELS[item.lane_change_default] || "None") : "—";
+      const frameOverride = (item.overrides || []).find((entry) => entry.timepoint_id === active?.id) || {};
+      const routingValue = frameOverride.routing_intent || item.routing_default;
+      const laneChangeValue = frameOverride.lane_change_intent || item.lane_change_default;
+      const routing = item.revealed ? (INTENT_ROUTING_LABELS[routingValue] || "None") : "—";
+      const laneChange = item.revealed ? (INTENT_LANE_LABELS[laneChangeValue] || "None") : "—";
       return `<article class="intent-contributor${item.is_current ? " is-current" : ""}">
         <strong>${escapeHtml(item.username)}${item.is_current ? "（我）" : ""}</strong>
         <span><small>Routing</small><b>${escapeHtml(routing)}</b></span>
@@ -715,6 +722,7 @@ async function deleteMyIntentLabel() {
   intent.revisionId = null;
   intent.aggregate = { routing: "", laneChange: "" };
   intent.overrides = {};
+  intent.undoStack = [];
   intent.dirty = false;
   intent.editVersion = 0;
   if (intent.caseData) {
@@ -876,6 +884,7 @@ async function loadIntentLabeling({ datasetId = "", caseId = "", offsetMs = null
     laneChange: data.labels?.lane_change_default || "",
   };
   intent.overrides = Object.fromEntries((data.labels?.overrides || []).map((item) => [item.timepoint_id, { ...item }]));
+  intent.undoStack = [];
   intent.dirty = false;
   intent.editVersion = 0;
   const targetOffset = Number(offsetMs);
@@ -964,6 +973,7 @@ async function intentFlushSave() {
         completed: Boolean(payload.labels?.routing_default && payload.labels?.lane_change_default),
         routing_default: payload.labels?.routing_default || "",
         lane_change_default: payload.labels?.lane_change_default || "",
+        overrides: payload.labels?.overrides || [],
         updated_at: payload.labels?.created_at || "",
       });
       renderIntentCollaboration();
@@ -985,8 +995,54 @@ async function intentFlushSave() {
   return result;
 }
 
+function intentEditSnapshot() {
+  const intent = state.intentLabeling;
+  return {
+    aggregate: { ...intent.aggregate },
+    overrides: Object.fromEntries(
+      Object.entries(intent.overrides).map(([timepointId, override]) => [timepointId, { ...override }])
+    ),
+  };
+}
+
+function intentSnapshotKey(snapshot) {
+  return JSON.stringify({
+    aggregate: snapshot.aggregate,
+    overrides: Object.keys(snapshot.overrides).sort().map((key) => [key, snapshot.overrides[key]]),
+  });
+}
+
+function intentCommitEdit(previous) {
+  const intent = state.intentLabeling;
+  if (intentSnapshotKey(previous) === intentSnapshotKey(intentEditSnapshot())) return false;
+  intent.undoStack.push(previous);
+  if (intent.undoStack.length > 100) intent.undoStack.shift();
+  intentMarkDirty();
+  renderIntentLabels();
+  updateIntentTimelineState({ scroll: false });
+  return true;
+}
+
+function intentUndo() {
+  const intent = state.intentLabeling;
+  const previous = intent.undoStack.pop();
+  if (!previous) {
+    showToast("当前 Case 没有可撤销的标注操作。", false);
+    return;
+  }
+  intent.aggregate = { ...previous.aggregate };
+  intent.overrides = Object.fromEntries(
+    Object.entries(previous.overrides).map(([timepointId, override]) => [timepointId, { ...override }])
+  );
+  intentMarkDirty();
+  renderIntentLabels();
+  updateIntentTimelineState({ scroll: false });
+  showToast("已撤销上一次标注操作，正在自动保存。", false);
+}
+
 function intentSetAggregate(axis, value) {
   const intent = state.intentLabeling;
+  const previous = intentEditSnapshot();
   const key = axis === "routing" ? "routing_intent" : "lane_change_intent";
   if (axis === "routing") intent.aggregate.routing = value;
   else intent.aggregate.laneChange = value;
@@ -994,15 +1050,14 @@ function intentSetAggregate(axis, value) {
     if (override[key] === value) delete override[key];
     if (!override.routing_intent && !override.lane_change_intent) delete intent.overrides[timepointId];
   });
-  intentMarkDirty();
-  renderIntentLabels();
-  updateIntentTimelineState({ scroll: false });
+  intentCommitEdit(previous);
 }
 
 function intentSetFrameLabel(axis, value) {
   const intent = state.intentLabeling;
   const selected = intentSelectedTimepoints();
   if (!selected.length) return;
+  const previous = intentEditSnapshot();
   const aggregateValue = axis === "routing" ? intent.aggregate.routing : intent.aggregate.laneChange;
   const key = axis === "routing" ? "routing_intent" : "lane_change_intent";
   selected.forEach((timepoint) => {
@@ -1012,9 +1067,7 @@ function intentSetFrameLabel(axis, value) {
     if (!override.routing_intent && !override.lane_change_intent) delete intent.overrides[timepoint.id];
     else intent.overrides[timepoint.id] = override;
   });
-  intentMarkDirty();
-  renderIntentLabels();
-  updateIntentTimelineState({ scroll: false });
+  intentCommitEdit(previous);
 }
 
 function intentRestoreBatchPrefill() {
@@ -1022,10 +1075,9 @@ function intentRestoreBatchPrefill() {
   const selected = intentSelectedTimepoints();
   const changed = selected.some((timepoint) => Boolean(intent.overrides[timepoint.id]));
   if (!changed) return;
+  const previous = intentEditSnapshot();
   selected.forEach((timepoint) => delete intent.overrides[timepoint.id]);
-  intentMarkDirty();
-  renderIntentLabels();
-  updateIntentTimelineState({ scroll: false });
+  intentCommitEdit(previous);
 }
 
 function intentSelectTimepoint(timepointId, { updateRoute = true, extendSelection = false } = {}) {
@@ -1137,13 +1189,22 @@ function openIntentMedia(kind) {
 }
 
 function intentShortcutIsEditable(target) {
-  return Boolean(target?.closest?.("input, textarea, select, button, [contenteditable='true'], dialog[open]"));
+  return Boolean(
+    document.querySelector("dialog[open]") ||
+    target?.closest?.("input, textarea, select, [contenteditable='true'], [role='textbox']")
+  );
 }
 
 function handleIntentShortcut(event) {
   if (state.activePage !== "intent" || event.isComposing || event.repeat) return;
   if (event.altKey || intentShortcutIsEditable(event.target)) return;
   const boundaryModifier = event.ctrlKey || event.metaKey;
+  if (boundaryModifier && !event.shiftKey && event.code === "KeyZ") {
+    event.preventDefault();
+    event.stopPropagation();
+    intentUndo();
+    return;
+  }
   const digit = INTENT_DIGIT_LABELS[event.code];
   if (digit) {
     if (boundaryModifier) return;
@@ -1177,6 +1238,19 @@ function handleIntentShortcut(event) {
   event.preventDefault();
   event.stopPropagation();
   Promise.resolve(action()).catch((error) => showToast(error.message, true));
+}
+
+function downloadIntentExport(view) {
+  if (!state.session.is_admin) return;
+  const datasetId = state.intentLabeling.summaryDatasetId || state.intentLabeling.datasetId;
+  if (!datasetId) return;
+  const params = new URLSearchParams({ view, include_incomplete: "true" });
+  const link = document.createElement("a");
+  link.href = withBase(`/api/intent-datasets/${encodeURIComponent(datasetId)}/export?${params}`);
+  link.download = "";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }
 
 function bindIntentLabelingEvents() {
@@ -1231,6 +1305,8 @@ function bindIntentLabelingEvents() {
     loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true }).catch((error) => showToast(error.message, true));
   });
   $("#intentSummaryRefresh")?.addEventListener("click", () => loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true }).catch((error) => showToast(error.message, true)));
+  $("#intentExportCompact")?.addEventListener("click", () => downloadIntentExport("compact"));
+  $("#intentExportExpanded")?.addEventListener("click", () => downloadIntentExport("expanded"));
   $("#intentSummaryReveal")?.addEventListener("click", () => {
     state.intentLabeling.summaryReveal = !state.intentLabeling.summaryReveal;
     loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true }).catch((error) => showToast(error.message, true));

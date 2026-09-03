@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-302`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-303`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -391,7 +391,7 @@
                   <button class="button button-quiet intent-restore-button" id="intentRestoreBatchPrefill" type="button" aria-keyshortcuts="0"><span id="intentRestoreBatchPrefillText">当前帧恢复批量预填</span> <kbd>0</kbd></button>
                 </section>
                 <section class="intent-card intent-collaboration-card intent-contributors-card" aria-labelledby="intentContributorsTitle">
-                  <h3><span id="intentContributorsTitle">已有标注</span><span class="intent-card-heading-actions"><small id="intentRevealState">未进入实验</small><button class="button button-quiet intent-delete-label" id="intentDeleteMyLabel" type="button" hidden>删除我的</button><button class="button button-quiet" id="intentToggleReveal" type="button" hidden>管理员解盲</button></span></h3>
+                  <h3><span id="intentContributorsTitle">当前帧已有标注</span><span class="intent-card-heading-actions"><small id="intentRevealState">未进入实验</small><button class="button button-quiet intent-delete-label" id="intentDeleteMyLabel" type="button" hidden>删除我的</button><button class="button button-quiet" id="intentToggleReveal" type="button" hidden>管理员解盲</button></span></h3>
                   <div class="intent-contributor-list" id="intentContributorList"><p>尚无标注</p></div>
                 </section>
                 <section class="intent-card intent-collaboration-card intent-discussion-card" aria-labelledby="intentCommentsTitle">
@@ -440,7 +440,7 @@
               <button class="button button-quiet" id="intentSummaryReveal" type="button" hidden>管理员解盲</button>
             </section>
             <section class="intent-summary-metrics" id="intentSummaryMetrics"></section>
-            <section class="page-card intent-summary-table-card"><header><h2>意图轨迹标注汇总</h2><p id="intentSummarySafety">进行中的盲标实验仅显示自己的答案。</p></header><div class="table-scroll"><table><thead><tr><th>Issue / Case</th><th>标注人</th><th class="intent-summary-routing-column">Routing</th><th class="intent-summary-lane-column">变道意图</th><th>轨迹修改</th><th>更新时间</th></tr></thead><tbody id="intentSummaryRows"></tbody></table></div><footer class="intent-summary-pagination"><button class="button button-quiet" id="intentSummaryPrevious" type="button">上一页</button><span id="intentSummaryPageState">1 / 1</span><button class="button button-quiet" id="intentSummaryNext" type="button">下一页</button></footer></section>
+            <section class="page-card intent-summary-table-card"><header><div><h2>意图轨迹标注汇总</h2><p id="intentSummarySafety">进行中的盲标实验仅显示自己的答案。</p></div><div class="intent-summary-export-actions"><button class="button button-quiet" id="intentExportCompact" type="button" hidden>导出 Case JSONL</button><button class="button button-quiet" id="intentExportExpanded" type="button" hidden>导出帧级 JSONL</button></div></header><div class="table-scroll"><table><thead><tr><th>Issue / Case</th><th>标注人</th><th class="intent-summary-routing-column">Routing</th><th class="intent-summary-lane-column">变道意图</th><th>轨迹修改</th><th>更新时间</th></tr></thead><tbody id="intentSummaryRows"></tbody></table></div><footer class="intent-summary-pagination"><button class="button button-quiet" id="intentSummaryPrevious" type="button">上一页</button><span id="intentSummaryPageState">1 / 1</span><button class="button button-quiet" id="intentSummaryNext" type="button">下一页</button></footer></section>
           </section>
 
           <section class="app-page tool-page analysis-page hidden" id="reviewAnalysisPage" data-page="analysis">
@@ -1461,6 +1461,7 @@
           <div class="shortcut-guide-row" data-shortcut-search="1 2 3 4 5 6 7"><span><kbd>1</kbd>–<kbd>7</kbd></span><strong>设置当前帧标签</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="shift+1 shift+2 shift+3 shift+4 shift+5 shift+6 shift+7"><span><kbd>Shift</kbd> + <kbd>1</kbd>–<kbd>7</kbd></span><strong>批量预填全部时间点</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="0"><span><kbd>0</kbd></span><strong>当前帧恢复批量预填</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="mod+z"><span><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Z</kbd></span><strong>撤销上一次标注操作</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="d"><span><kbd>D</kbd></span><strong>打开讨论</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="backslash"><span><kbd>\</kbd></span><strong>展开 / 折叠左侧工具栏</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="r"><span><kbd>R</kbd></span><strong>刷新当前页</strong></div>
@@ -1783,7 +1784,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-302`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-303`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

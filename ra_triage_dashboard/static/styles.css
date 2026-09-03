@@ -4980,6 +4980,7 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-summary-metric strong { display: block; margin-top: 4px; color: var(--text); font-size: 22px; }
 .intent-summary-table-card { min-width: 0; padding: 14px; }
 .intent-summary-table-card header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.intent-summary-export-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .intent-summary-table-card h2 { margin: 0 0 10px; font-size: 16px; }
 .intent-summary-table-card p { margin: 0; color: var(--muted); font-size: 10px; }
 .intent-summary-table-card table { width: 100%; border-collapse: collapse; }

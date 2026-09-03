@@ -670,6 +670,7 @@ const state = {
     revisionId: null,
     aggregate: { routing: "", laneChange: "" },
     overrides: {},
+    undoStack: [],
     dirty: false,
     editVersion: 0,
     saving: false,

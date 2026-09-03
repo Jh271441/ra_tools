@@ -668,6 +668,27 @@ class DatabaseIntentMixin:
                 """,
                 (dataset_id, case_id),
             ).fetchall()
+            override_rows = conn.execute(
+                """
+                SELECT frame.*
+                FROM intent_frame_overrides frame
+                JOIN intent_user_label_heads head
+                  ON head.current_revision_id = frame.revision_id
+                WHERE head.dataset_id = ? AND head.case_id = ?
+                ORDER BY frame.revision_id, frame.offset_ms, frame.timepoint_id
+                """,
+                (dataset_id, case_id),
+            ).fetchall()
+        overrides_by_revision: dict[int, list[dict[str, Any]]] = {}
+        for item in override_rows:
+            overrides_by_revision.setdefault(int(item["revision_id"]), []).append(
+                {
+                    "timepoint_id": str(item["timepoint_id"]),
+                    "offset_ms": int(item["offset_ms"]),
+                    "routing_intent": str(item["routing_intent"] or ""),
+                    "lane_change_intent": str(item["lane_change_intent"] or ""),
+                }
+            )
         return [
             {
                 "username": str(row["username"]),
@@ -676,6 +697,7 @@ class DatabaseIntentMixin:
                 "routing_default": str(row["routing_default"] or ""),
                 "lane_change_default": str(row["lane_change_default"] or ""),
                 "updated_at": str(row["updated_at"] or ""),
+                "overrides": overrides_by_revision.get(int(row["id"]), []),
             }
             for row in rows
         ]

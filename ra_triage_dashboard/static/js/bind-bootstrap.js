@@ -129,7 +129,7 @@ function bindGlobalRefreshShortcut() {
     if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
     if (document.querySelector("dialog[open]")) return;
     const target = event.target instanceof Element ? event.target : null;
-    if (target?.closest("input, textarea, select, button, a, [contenteditable='true'], [role='textbox']")) return;
+    if (target?.closest("input, textarea, select, [contenteditable='true'], [role='textbox']")) return;
     const refreshButton = $("#refreshButton");
     if (!refreshButton || refreshButton.disabled) return;
     event.preventDefault();
@@ -144,7 +144,7 @@ function bindGlobalSidebarShortcut() {
     if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
     if (document.querySelector("dialog[open]")) return;
     const target = event.target instanceof Element ? event.target : null;
-    if (target?.closest("input, textarea, select, button, a, [contenteditable='true'], [role='textbox']")) return;
+    if (target?.closest("input, textarea, select, [contenteditable='true'], [role='textbox']")) return;
     event.preventDefault();
     event.stopPropagation();
     toggleSidebar();
@@ -668,7 +668,7 @@ function bindEvents() {
   document.addEventListener("keydown", (event) => {
     if (!$("#mediaDialog").open) {
       const target = event.target instanceof Element ? event.target : null;
-      const interactiveTarget = target?.closest("input, textarea, select, button, a, [contenteditable='true']");
+      const interactiveTarget = target?.closest("input, textarea, select, [contenteditable='true'], [role='textbox']");
       const detailMediaActive =
         state.activePage === "review" &&
         Boolean(state.selectedCase) &&

@@ -400,7 +400,7 @@ function syncReviewTagShortcutHints(root = document) {
 function reviewShortcutHasEditableTarget(target) {
   return Boolean(
     target?.closest(
-      "input, textarea, select, button, a, [contenteditable='true'], [role='textbox']"
+      "input, textarea, select, [contenteditable='true'], [role='textbox']"
     )
   );
 }

@@ -268,7 +268,12 @@ class IntentLabelStorageTest(unittest.TestCase):
                 case_id=case_id,
                 routing_default="left_turn",
                 lane_change_default="no_lane_change",
-                overrides=[],
+                overrides=[{
+                    "timepoint_id": "t:+1000",
+                    "offset_ms": 1000,
+                    "routing_intent": "straight",
+                    "lane_change_intent": "lane_change",
+                }],
                 expected_revision_id=None,
                 author="Alice",
             )
@@ -291,6 +296,9 @@ class IntentLabelStorageTest(unittest.TestCase):
             )
             contributors = database.list_intent_contributors("0206-1335-v1", case_id)
             self.assertEqual([item["username"] for item in contributors], ["alice", "bob"])
+            self.assertEqual(contributors[0]["overrides"][0]["timepoint_id"], "t:+1000")
+            self.assertEqual(contributors[0]["overrides"][0]["routing_intent"], "straight")
+            self.assertEqual(contributors[1]["overrides"], [])
             comment = database.create_intent_comment(
                 dataset_id="0206-1335-v1",
                 case_id=case_id,
