@@ -829,6 +829,25 @@ function bindEvents() {
         intentCaseId: route.intentCaseId,
         intentOffsetMs: route.intentOffsetMs,
       });
+      if (
+        route.page === "intent"
+        && route.openComments
+        && route.intentCaseId
+      ) {
+        (async () => {
+          if (state.intentLabeling.caseId !== route.intentCaseId) {
+            await loadIntentLabeling({
+              datasetId: route.intentDatasetId,
+              caseId: route.intentCaseId,
+              offsetMs: route.intentOffsetMs,
+              assignees: route.intentAssignees,
+              experimentId: route.intentExperimentId,
+              historyMode: "",
+            });
+          }
+          await openIntentComments({ focusCommentId: route.commentId || 0 });
+        })().catch((error) => showToast(error.message, true));
+      }
       return;
     }
     const nextRunId =
@@ -1077,6 +1096,14 @@ async function bootstrap() {
       intentAssignees: initialRoute.intentAssignees,
       intentExperimentId: initialRoute.intentExperimentId,
     });
+    if (
+      initialRoute.page === "intent"
+      && initialRoute.openComments
+      && initialRoute.intentCaseId
+      && state.intentLabeling.caseId === initialRoute.intentCaseId
+    ) {
+      await openIntentComments({ focusCommentId: initialRoute.commentId || 0 });
+    }
     if (initialRoute.page === "trail-update") {
       // Do not hold the initial shell on the remote Trail read. The local
       // exclusion aggregate paints after navigation; loadTrailAttributePreview

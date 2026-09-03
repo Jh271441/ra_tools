@@ -1,6 +1,47 @@
 """Reveal-safe aggregation of current per-person intent trajectories, no media I/O."""
+from __future__ import annotations
+
 from collections import Counter, defaultdict
 from typing import Any
+
+
+def intent_frame_counts(
+    timeline: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    *,
+    routing_default: str = "",
+    lane_change_default: str = "",
+    overrides: list[dict[str, Any]] | tuple[dict[str, Any], ...] = (),
+) -> dict[str, Any]:
+    """Return frame-level effective intent counts without touching media.
+
+    Intent labels are sparse: a frame override only replaces one axis while
+    the other axis continues to inherit the case default.  Keeping this
+    calculation in one place makes the detail rail and summary table agree
+    on the exact frame-level numbers.
+    """
+
+    by_id = {
+        str(item.get("timepoint_id")): item
+        for item in (overrides or ())
+        if item.get("timepoint_id")
+    }
+    routing = Counter()
+    lane_change = Counter()
+    for timepoint in timeline or ():
+        override = by_id.get(str(timepoint.get("id") or timepoint.get("timepoint_id")), {})
+        routing_value = str(override.get("routing_intent") or routing_default or "")
+        lane_value = str(override.get("lane_change_intent") or lane_change_default or "")
+        if routing_value:
+            routing[routing_value] += 1
+        if lane_value:
+            lane_change[lane_value] += 1
+    return {
+        "frame_count": len(timeline or ()),
+        "labeled_routing_frames": sum(routing.values()),
+        "labeled_lane_change_frames": sum(lane_change.values()),
+        "routing": dict(routing),
+        "lane_change": dict(lane_change),
+    }
 
 
 def summarize_intent(data: dict[str, Any], case_ids: tuple[str, ...], *, username: str,

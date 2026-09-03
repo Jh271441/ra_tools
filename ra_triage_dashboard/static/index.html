@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-303`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-305`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -337,7 +337,7 @@
             <section class="intent-commandbar" aria-label="意图标注导航">
               <label class="intent-case-field"><span>Issue</span><input id="intentCaseInput" autocomplete="off" spellcheck="false" placeholder="例如 cn28896325"/></label>
               <div class="intent-assignee-field intent-command-field"><span class="intent-field-heading"><span>任务负责人</span><button class="intent-my-tasks" id="intentMyTasks" type="button">我的任务</button></span><div class="multi-filter" id="intentAssigneeFilter" data-placeholder="全部负责人"></div></div>
-              <div class="intent-experiment-filter-field intent-command-field"><span>实验分配</span><div class="ui-select" id="intentAssignmentPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">全部实验</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="intentAssignmentSelect" aria-hidden="true" tabindex="-1"></select></div></div>
+              <div class="intent-experiment-filter-field intent-command-field"><span>实验分配</span><div class="multi-filter" id="intentAssignmentPicker" data-placeholder="未分配（全部 Issue）"></div><select class="ui-select-native" id="intentAssignmentSelect" aria-hidden="true" tabindex="-1"></select></div>
               <button class="button button-quiet intent-load-case-button" id="intentLoadCaseButton" type="button" aria-label="搜索并打开 Issue">打开</button>
               <div class="intent-command-navigator intent-case-navigator">
                 <span>Issue 跳转</span>
@@ -396,7 +396,7 @@
                 </section>
                 <section class="intent-card intent-collaboration-card intent-discussion-card" aria-labelledby="intentCommentsTitle">
                   <h3><span id="intentCommentsTitle">讨论</span><small id="intentCommentCount">0 条</small></h3>
-                  <button class="button button-quiet" id="intentOpenComments" type="button" aria-keyshortcuts="D">打开讨论 <kbd>D</kbd></button>
+                  <button class="button button-quiet" id="intentOpenComments" type="button" aria-keyshortcuts="D" data-intent-discussion>打开讨论 <kbd>D</kbd></button>
                 </section>
               </aside>
             </div>
@@ -432,7 +432,7 @@
 
           <section class="app-page intent-summary-page hidden" id="intentSummaryPage" data-page="intent-summary">
             <section class="intent-summary-filters page-card">
-              <div class="intent-command-field"><span>实验分配</span><div class="ui-select" id="intentSummaryExperimentPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">全部实验</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="intentSummaryExperiment"></select></div></div>
+              <div class="intent-command-field"><span>实验分配</span><div class="multi-filter" id="intentSummaryExperimentPicker" data-placeholder="全部实验"></div><select class="ui-select-native" id="intentSummaryExperiment" aria-hidden="true" tabindex="-1"></select></div>
               <div class="intent-command-field"><span>任务负责人</span><div class="multi-filter" id="intentSummaryAssignees" data-placeholder="全部负责人"></div></div>
               <div class="intent-command-field"><span>结果维度</span><div class="ui-select" id="intentSummaryAxisPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">Routing + 变道意图</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="intentSummaryAxis"><option value="all">Routing + 变道意图</option><option value="routing">仅 Routing</option><option value="lane_change">仅变道意图</option></select></div></div>
               <div class="intent-command-field"><span>每页数量</span><div class="ui-select" id="intentSummaryPageSizePicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">20 / 页</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="intentSummaryPageSize"><option value="10">10 / 页</option><option value="20" selected>20 / 页</option><option value="50">50 / 页</option></select></div></div>
@@ -1256,7 +1256,7 @@
       <form class="dialog-card" id="analysisDiscussionForm">
         <div class="dialog-heading">
           <div>
-            <h2><span class="ui-lang-zh">评论</span><span class="ui-lang-en">Comments</span></h2>
+            <h2 id="analysisDiscussionTitle"><span class="ui-lang-zh">评论</span><span class="ui-lang-en">Comments</span></h2>
             <p class="dialog-copy" id="analysisDiscussionContext"></p>
           </div>
           <button class="icon-button" type="button" data-close="analysisDiscussionDialog" aria-label="Close">×</button>
@@ -1288,24 +1288,6 @@
         <div class="dialog-actions">
           <button class="button button-quiet" type="button" data-close="analysisDiscussionDialog"><span class="ui-lang-zh">关闭</span><span class="ui-lang-en">Close</span></button>
           <button class="button button-primary" id="analysisDiscussionSubmit" type="submit"><span class="ui-lang-zh">发表评论</span><span class="ui-lang-en">Post comment</span></button>
-        </div>
-      </form>
-    </dialog>
-
-    <dialog class="dialog comment-thread-dialog intent-comment-dialog" id="intentCommentDialog" aria-labelledby="intentCommentDialogTitle">
-      <form class="dialog-card" id="intentCommentForm">
-        <div class="dialog-heading">
-          <div>
-            <h2 id="intentCommentDialogTitle">意图标注讨论</h2>
-            <p class="dialog-copy" id="intentCommentDialogContext"></p>
-          </div>
-          <button class="icon-button" type="button" data-close="intentCommentDialog" aria-label="关闭">×</button>
-        </div>
-        <div class="intent-comment-list" id="intentCommentList" aria-live="polite"><p>还没有评论</p></div>
-        <label class="intent-comment-editor"><span>添加评论</span><textarea id="intentCommentInput" maxlength="1000" rows="4" placeholder="记录疑问或标注规则；盲标答案不会自动带入评论"></textarea></label>
-        <div class="dialog-actions">
-          <button class="button button-quiet" type="button" data-close="intentCommentDialog">关闭</button>
-          <button class="button button-primary" type="submit">发表评论</button>
         </div>
       </form>
     </dialog>
@@ -1784,7 +1766,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-303`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-305`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

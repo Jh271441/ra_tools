@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from ..db_parts.shared import IntentAnnotationConflictError
 from ..http_support import _action_actor, _admin_identity, _detail, _intent_identity
 from ..intent_experiments import build_intent_experiment_assignments
-from ..intent_summary import summarize_intent
+from ..intent_summary import intent_frame_counts, summarize_intent
 from ..runtime import database, intent_dataset_registry
 
 
@@ -58,6 +58,18 @@ def _intent_summary_payload(dataset_id: str, identity: Any, experiment_id: str,
                               experiment_id=experiment_id, assignees=assignees,
                               reveal_answers=reveal_answers, axis=axis,
                               page=page, page_size=page_size)
+    timeline_cache: dict[str, list[dict[str, Any]]] = {}
+    for item in report.get("items", []):
+        case_id = str(item["case_id"])
+        timeline_cache.setdefault(
+            case_id, intent_dataset_registry.timeline(dataset_id, case_id)
+        )
+        item["frame_counts"] = intent_frame_counts(
+            timeline_cache[case_id],
+            routing_default=str(item.get("routing_default") or ""),
+            lane_change_default=str(item.get("lane_change_default") or ""),
+            overrides=item.get("overrides") or [],
+        )
     report["experiments"] = [{"id": item["id"], "name": item["name"]} for item in experiments]
     assignment_owners = {row["username"] for row in data["assignments"]
                          if not experiment_id or row["experiment_id"] == experiment_id}
@@ -397,6 +409,12 @@ def _case_payload(
     labels = database.get_intent_labels(dataset_id, case_id, username) or _empty_labels(
         dataset_id, case_id
     )
+    labels["frame_counts"] = intent_frame_counts(
+        timeline,
+        routing_default=str(labels.get("routing_default") or ""),
+        lane_change_default=str(labels.get("lane_change_default") or ""),
+        overrides=labels.get("overrides") or [],
+    )
     contributors = database.list_intent_contributors(dataset_id, case_id)
     blind_active = database.intent_case_has_active_experiment(
         dataset_id, case_id
@@ -409,6 +427,15 @@ def _case_payload(
             "username": contributor["username"],
             "version": contributor["version"],
             "updated_at": contributor["updated_at"],
+            # Frame-level distributions are answer data too.  Keep them
+            # private while an active blind experiment is in progress, just
+            # like the actual Routing / lane-change values below.
+            "frame_counts": intent_frame_counts(
+                timeline,
+                routing_default=str(contributor.get("routing_default") or ""),
+                lane_change_default=str(contributor.get("lane_change_default") or ""),
+                overrides=contributor.get("overrides") or [],
+            ) if is_current or answers_revealed else {},
             "completed": bool(
                 contributor["routing_default"]
                 and contributor["lane_change_default"]
@@ -500,6 +527,22 @@ async def get_intent_timeline(
     return {"items": payload["timepoints"], "count": len(payload["timepoints"])}
 
 
+@router.get("/api/intent-datasets/{dataset_id}/cases/{case_id}/comments")
+async def list_intent_comments(
+    request: Request, dataset_id: str, case_id: str
+) -> dict[str, Any]:
+    await asyncio.to_thread(_intent_identity, request)
+    try:
+        if not intent_dataset_registry.has_case(dataset_id, case_id):
+            raise _detail(404, "Case 不在该意图标注数据集中。")
+    except KeyError as exc:
+        raise _detail(404, str(exc)) from exc
+    comments = await asyncio.to_thread(
+        database.list_intent_comments, dataset_id, case_id
+    )
+    return {"comments": comments, "count": len(comments)}
+
+
 @router.post("/api/intent-datasets/{dataset_id}/cases/{case_id}/comments", dependencies=[Depends(_require_intent_writer)])
 async def post_intent_comment(
     request: Request, dataset_id: str, case_id: str
@@ -521,6 +564,15 @@ async def post_intent_comment(
     actor, actor_source, actor_verified = await asyncio.to_thread(
         _action_actor, request
     )
+    raw_reply_to_id = body.get("reply_to_id")
+    reply_to_id: int | None = None
+    if raw_reply_to_id not in (None, "", 0, "0"):
+        try:
+            reply_to_id = int(raw_reply_to_id)
+        except (TypeError, ValueError) as exc:
+            raise _detail(400, "reply_to_id 不合法。") from exc
+        if reply_to_id <= 0:
+            raise _detail(400, "reply_to_id 不合法。")
     try:
         comment = await asyncio.to_thread(
             database.create_intent_comment,
@@ -530,11 +582,17 @@ async def post_intent_comment(
             author=actor,
             author_source=actor_source,
             author_verified=actor_verified,
+            reply_to_id=reply_to_id,
         )
     except ValueError as exc:
         raise _detail(400, str(exc)) from exc
     return {
         "comment": comment,
+        "comment_count": len(
+            await asyncio.to_thread(
+                database.list_intent_comments, dataset_id, case_id
+            )
+        ),
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
 

@@ -764,9 +764,13 @@ class DatabaseIntentMixin:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT * FROM intent_case_comments
-                WHERE dataset_id = ? AND case_id = ?
-                ORDER BY id ASC
+                SELECT comment.*, parent.author AS reply_to_author,
+                       parent.body AS reply_to_body
+                FROM intent_case_comments comment
+                LEFT JOIN intent_case_comments parent
+                  ON parent.id = comment.reply_to_id
+                WHERE comment.dataset_id = ? AND comment.case_id = ?
+                ORDER BY comment.id ASC
                 LIMIT ?
                 """,
                 (dataset_id, case_id, bounded_limit),
@@ -777,6 +781,13 @@ class DatabaseIntentMixin:
                 "body": str(row["body"]),
                 "author": str(row["author"]),
                 "author_verified": bool(row["author_verified"]),
+                "reply_to_id": int(row["reply_to_id"]) if row["reply_to_id"] else None,
+                "reply_to_author": str(row["reply_to_author"] or "")
+                if "reply_to_author" in row.keys()
+                else "",
+                "reply_to_body": str(row["reply_to_body"] or "")
+                if "reply_to_body" in row.keys()
+                else "",
                 "created_at": str(row["created_at"]),
             }
             for row in rows
@@ -791,25 +802,41 @@ class DatabaseIntentMixin:
         author: str,
         author_source: str,
         author_verified: bool,
+        reply_to_id: int | None = None,
     ) -> dict[str, Any]:
         normalized_body = str(body or "").strip()
         if not normalized_body:
             raise ValueError("评论内容不能为空。")
-        if len(normalized_body) > 1000:
-            raise ValueError("评论内容不能超过 1000 个字符。")
+        if len(normalized_body) > 3500:
+            raise ValueError("评论内容不能超过 3500 个字符。")
         normalized_author = str(author or "").strip().lower()
         if not normalized_author:
             raise ValueError("评论人不能为空。")
+        normalized_reply_to_id = int(reply_to_id) if reply_to_id is not None else None
         now = utc_now()
         sql = """
             INSERT INTO intent_case_comments (
                 dataset_id, case_id, body, author, author_source,
-                author_verified, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                author_verified, reply_to_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """
         if self.backend == "postgresql":
             sql += " RETURNING id"
+        parent_author = ""
+        parent_body = ""
         with self._write_lock, self.connect() as conn:
+            if normalized_reply_to_id is not None:
+                parent = conn.execute(
+                    """
+                    SELECT id, author, body FROM intent_case_comments
+                    WHERE id = ? AND dataset_id = ? AND case_id = ?
+                    """,
+                    (normalized_reply_to_id, dataset_id, case_id),
+                ).fetchone()
+                if parent is None:
+                    raise ValueError("只能回复当前 Case 下的评论。")
+                parent_author = str(parent["author"] or "")
+                parent_body = str(parent["body"] or "")
             cursor = conn.execute(
                 sql,
                 (
@@ -819,6 +846,7 @@ class DatabaseIntentMixin:
                     normalized_author,
                     str(author_source or "legacy").strip() or "legacy",
                     bool(author_verified),
+                    normalized_reply_to_id,
                     now,
                 ),
             )
@@ -832,5 +860,8 @@ class DatabaseIntentMixin:
             "body": normalized_body,
             "author": normalized_author,
             "author_verified": bool(author_verified),
+            "reply_to_id": normalized_reply_to_id,
+            "reply_to_author": parent_author,
+            "reply_to_body": parent_body,
             "created_at": now,
         }

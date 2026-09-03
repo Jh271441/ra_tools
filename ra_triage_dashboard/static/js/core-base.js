@@ -676,6 +676,8 @@ const state = {
     saving: false,
     savePromise: null,
     saveTimer: null,
+    autoAdvanceOnSave: false,
+    autoAdvanceTimepointId: "",
     requestSeq: 0,
     mediaSeq: 0,
     mediaZoom: {

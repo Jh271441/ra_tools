@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from ra_triage_dashboard.app.intent_summary import summarize_intent
+from ra_triage_dashboard.app.intent_summary import intent_frame_counts, summarize_intent
 
 
 class IntentSummaryTest(unittest.TestCase):
@@ -63,6 +63,26 @@ class IntentSummaryTest(unittest.TestCase):
         self.assertEqual(routing["total"], 1)
         self.assertEqual(routing["axis"], "routing")
         self.assertEqual(lane["total"], 0)
+
+    def test_frame_counts_follow_sparse_overrides_and_case_defaults(self) -> None:
+        timeline = [
+            {"id": "t:-1000", "offset_ms": -1000},
+            {"id": "t:+0", "offset_ms": 0},
+            {"id": "t:+1000", "offset_ms": 1000},
+            {"id": "t:+2000", "offset_ms": 2000},
+        ]
+        counts = intent_frame_counts(
+            timeline,
+            routing_default="straight",
+            lane_change_default="no_lane_change",
+            overrides=[
+                {"timepoint_id": "t:+0", "routing_intent": "left_turn", "lane_change_intent": ""},
+                {"timepoint_id": "t:+1000", "routing_intent": "", "lane_change_intent": "lane_change"},
+            ],
+        )
+        self.assertEqual(counts["frame_count"], 4)
+        self.assertEqual(counts["routing"], {"straight": 3, "left_turn": 1})
+        self.assertEqual(counts["lane_change"], {"no_lane_change": 3, "lane_change": 1})
 
 
 if __name__ == "__main__":

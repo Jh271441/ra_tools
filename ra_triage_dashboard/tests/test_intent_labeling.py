@@ -312,6 +312,21 @@ class IntentLabelStorageTest(unittest.TestCase):
                 database.list_intent_comments("0206-1335-v1", case_id)[0]["body"],
                 "需要确认掉头口径",
             )
+            reply = database.create_intent_comment(
+                dataset_id="0206-1335-v1",
+                case_id=case_id,
+                body="已确认，按轨迹帧级别处理。",
+                author="Bob",
+                author_source="sso",
+                author_verified=True,
+                reply_to_id=comment["id"],
+            )
+            self.assertEqual(reply["reply_to_id"], comment["id"])
+            self.assertEqual(reply["reply_to_body"], "需要确认掉头口径")
+            self.assertEqual(
+                database.list_intent_comments("0206-1335-v1", case_id)[1]["reply_to_body"],
+                "需要确认掉头口径",
+            )
 
     def test_delete_removes_only_current_head_and_keeps_audit_history(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

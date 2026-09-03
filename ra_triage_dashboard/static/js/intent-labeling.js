@@ -114,14 +114,44 @@ function renderIntentAssignmentFilter() {
   const intent = state.intentLabeling;
   const picker = $("#intentAssignmentPicker");
   if (!picker) return;
-  populateUiSelect(picker, [
-    { value: "", label: "全部实验" },
-    ...(intent.assignmentExperiments || []).map((item) => ({
-      value: item.id,
-      label: `${item.name} · ${item.case_count} Case`,
-    })),
-  ], intent.selectedExperimentId || "");
-  bindUiSelect(picker, { maxHeight: 280, maxWidth: 420 });
+  const options = (intent.assignmentExperiments || []).map((item) => ({
+    value: item.id,
+    label: `${item.name} · ${item.case_count} Case`,
+  }));
+  const native = $("#intentAssignmentSelect");
+  if (native) {
+    native.innerHTML = [
+      '<option value="">未分配（全部 Issue）</option>',
+      ...options.map((item) => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`),
+    ].join("");
+    native.value = intent.selectedExperimentId || "";
+  }
+  renderMultiFilter(picker, {
+    options,
+    selected: intent.selectedExperimentId ? [intent.selectedExperimentId] : [],
+    onlyThis: true,
+    onChange: (values) => {
+      const experimentId = values[values.length - 1] || "";
+      if (experimentId === intent.selectedExperimentId && values.length <= 1) return;
+      setMultiFilterValues(picker, experimentId ? [experimentId] : []);
+      if (native) native.value = experimentId;
+      (async () => {
+        await intentFlushSave();
+        intent.assigneeDatasetId = "";
+        intent.selectedAssignees = [];
+        await loadIntentLabeling({
+          datasetId: intent.datasetId,
+          caseId: "",
+          // Changing the experiment is an explicit scope change.  Clear the
+          // owner filter as well so “未分配（全部 Issue）” really means the
+          // complete dataset instead of silently re-selecting the SSO user.
+          assignees: [],
+          experimentId,
+          historyMode: "push",
+        });
+      })().catch((error) => showToast(error.message, true));
+    },
+  });
 }
 
 function renderIntentAssigneeFilter() {
@@ -133,6 +163,7 @@ function renderIntentAssigneeFilter() {
       label: `${item.username}${item.username === currentUsername ? "（我）" : ""} · ${item.case_count} Case`,
     })),
     selected: intent.selectedAssignees,
+    onlyThis: true,
     onChange: (values) => {
       (async () => {
         await intentFlushSave();
@@ -177,7 +208,17 @@ async function loadIntentAssignees(datasetId, requested = null, requestedExperim
   const selectionKey = `${datasetId}:${intent.selectedExperimentId}`;
   const firstSelectionForDataset = intent.assigneeSelectionDatasetId !== selectionKey;
   let selected = requested == null ? intent.selectedAssignees : parseFilterList(requested);
-  if (requested == null && firstSelectionForDataset && available.has(currentUsername)) {
+  // An unselected experiment is the unassigned/all-Issue scope. Do not let
+  // the SSO convenience default silently narrow that scope to the current
+  // annotator; the explicit “我的任务” action remains available. When a
+  // concrete experiment is selected, keeping the current user selected is
+  // useful for blind work and still follows the assignment snapshot.
+  if (
+    requested == null
+    && firstSelectionForDataset
+    && intent.selectedExperimentId
+    && available.has(currentUsername)
+  ) {
     selected = [currentUsername];
   }
   intent.assigneeSelectionDatasetId = selectionKey;
@@ -363,6 +404,21 @@ function intentSetSaveState(text, kind = "") {
   element.dataset.status = kind;
 }
 
+function intentFrameCountText(counts, labels) {
+  const values = counts || {};
+  return Object.entries(values)
+    .filter(([, count]) => Number(count) > 0)
+    .sort((a, b) => Number(b[1]) - Number(a[1]))
+    .map(([value, count]) => `${labels[value] || value} ${Number(count)}帧`)
+    .join(" · ");
+}
+
+function intentSummaryResultMarkup(value, counts, labels) {
+  const label = labels[value] || "None";
+  const countText = intentFrameCountText(counts, labels);
+  return `<div class="intent-summary-result"><span>${escapeHtml(label)}</span>${countText ? `<small>${escapeHtml(countText)}</small>` : ""}</div>`;
+}
+
 function renderIntentSummary(payload) {
   const axis = payload.axis || "all";
   const showRouting = axis !== "lane_change";
@@ -379,7 +435,7 @@ function renderIntentSummary(payload) {
   const columnCount = 4 + Number(showRouting) + Number(showLaneChange);
   $("#intentSummaryRows").innerHTML = (payload.items || []).map((item) => {
     const href = `${withBase("/intent-labeling")}?dataset=${encodeURIComponent(datasetId)}&case=${encodeURIComponent(item.case_id)}`;
-    return `<tr><td><a class="intent-summary-case-link" href="${escapeHtml(href)}">${escapeHtml(item.case_id)}</a></td><td>${escapeHtml(item.username)}${item.username === state.session.username ? "（我）" : ""}</td><td class="intent-summary-routing-column"${showRouting ? "" : " hidden"}>${escapeHtml(INTENT_ROUTING_LABELS[item.routing_default] || "None")}</td><td class="intent-summary-lane-column"${showLaneChange ? "" : " hidden"}>${escapeHtml(INTENT_LANE_LABELS[item.lane_change_default] || "None")}</td><td>${item.overrides.length}</td><td>${escapeHtml(formatTime(item.updated_at) || "—")}</td></tr>`;
+    return `<tr><td><a class="intent-summary-case-link" href="${escapeHtml(href)}">${escapeHtml(item.case_id)}</a></td><td>${escapeHtml(item.username)}${item.username === state.session.username ? "（我）" : ""}</td><td class="intent-summary-routing-column"${showRouting ? "" : " hidden"}>${intentSummaryResultMarkup(item.routing_default, item.frame_counts?.routing, INTENT_ROUTING_LABELS)}</td><td class="intent-summary-lane-column"${showLaneChange ? "" : " hidden"}>${intentSummaryResultMarkup(item.lane_change_default, item.frame_counts?.lane_change, INTENT_LANE_LABELS)}</td><td>${item.overrides.length}</td><td>${escapeHtml(formatTime(item.updated_at) || "—")}</td></tr>`;
   }).join("") || `<tr><td colspan="${columnCount}">当前筛选下没有已标注结果。</td></tr>`;
   $("#intentSummarySafety").textContent = payload.blind_active && !payload.answers_revealed ? "进行中的盲标实验仅显示自己的答案。" : "汇总当前标注头；不会加载 Camera / BEV 图片。";
   const reveal = $("#intentSummaryReveal");
@@ -409,8 +465,32 @@ async function loadIntentSummary({ datasetId = "", force = false } = {}) {
   params.set("page_size", String(intent.summaryPageSize || 20));
   const payload = await api(`/api/intent-summary?${params}`);
   intent.summaryPayload = payload;
-  populateUiSelect($("#intentSummaryExperimentPicker"), [{ value: "", label: "全部实验" }, ...(payload.experiments || []).map((item) => ({ value: item.id, label: item.name }))], intent.summaryExperimentId || "");
-  bindUiSelect($("#intentSummaryExperimentPicker"), { maxWidth: 420 });
+  const summaryExperimentOptions = (payload.experiments || []).map((item) => ({
+    value: item.id,
+    label: item.name,
+  }));
+  const summaryExperimentNative = $("#intentSummaryExperiment");
+  if (summaryExperimentNative) {
+    summaryExperimentNative.innerHTML = [
+      '<option value="">全部实验</option>',
+      ...summaryExperimentOptions.map((item) => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`),
+    ].join("");
+    summaryExperimentNative.value = intent.summaryExperimentId || "";
+  }
+  renderMultiFilter($("#intentSummaryExperimentPicker"), {
+    options: summaryExperimentOptions,
+    selected: intent.summaryExperimentId ? [intent.summaryExperimentId] : [],
+    onlyThis: true,
+    onChange: (values) => {
+      const experimentId = values[values.length - 1] || "";
+      setMultiFilterValues($("#intentSummaryExperimentPicker"), experimentId ? [experimentId] : []);
+      if (summaryExperimentNative) summaryExperimentNative.value = experimentId;
+      intent.summaryExperimentId = experimentId;
+      intent.summaryAssignees = [];
+      intent.summaryPage = 1;
+      loadIntentSummary({ datasetId: selected.id, force: true }).catch((error) => showToast(error.message, true));
+    },
+  });
   populateUiSelect($("#intentSummaryAxisPicker"), [
     { value: "all", label: "Routing + 变道意图" },
     { value: "routing", label: "仅 Routing" },
@@ -419,7 +499,7 @@ async function loadIntentSummary({ datasetId = "", force = false } = {}) {
   bindUiSelect($("#intentSummaryAxisPicker"), { maxWidth: 260 });
   populateUiSelect($("#intentSummaryPageSizePicker"), [10, 20, 50].map((value) => ({ value: String(value), label: `${value} / 页` })), String(intent.summaryPageSize || 20));
   bindUiSelect($("#intentSummaryPageSizePicker"), { maxWidth: 180 });
-  renderMultiFilter($("#intentSummaryAssignees"), { options: (payload.owners || []).map((value) => ({ value, label: value === state.session.username ? `${value}（我）` : value })), selected: intent.summaryAssignees || [], onChange: (values) => { intent.summaryAssignees = values; intent.summaryPage = 1; loadIntentSummary({ datasetId: selected.id, force: true }).catch((error) => showToast(error.message, true)); } });
+  renderMultiFilter($("#intentSummaryAssignees"), { options: (payload.owners || []).map((value) => ({ value, label: value === state.session.username ? `${value}（我）` : value })), selected: intent.summaryAssignees || [], onlyThis: true, onChange: (values) => { intent.summaryAssignees = values; intent.summaryPage = 1; loadIntentSummary({ datasetId: selected.id, force: true }).catch((error) => showToast(error.message, true)); } });
   renderIntentSummary(payload);
   const routeParams = new URLSearchParams({ dataset: selected.id });
   if (intent.summaryExperimentId) routeParams.set("experiment", intent.summaryExperimentId);
@@ -664,6 +744,11 @@ function renderIntentLabels() {
 function renderIntentCollaboration() {
   const active = intentActiveTimepoint();
   const collaboration = state.intentLabeling.caseData?.collaboration || {};
+  const discussionButton = $("#intentOpenComments");
+  if (discussionButton) {
+    discussionButton.dataset.intentDatasetId = state.intentLabeling.datasetId || "";
+    discussionButton.dataset.intentCaseId = state.intentLabeling.caseId || "";
+  }
   const contributors = (collaboration.contributors || []).filter(
     (item) => collaboration.answers_revealed || item.is_current
   );
@@ -687,23 +772,24 @@ function renderIntentCollaboration() {
       const frameOverride = (item.overrides || []).find((entry) => entry.timepoint_id === active?.id) || {};
       const routingValue = frameOverride.routing_intent || item.routing_default;
       const laneChangeValue = frameOverride.lane_change_intent || item.lane_change_default;
-      const routing = item.revealed ? (INTENT_ROUTING_LABELS[routingValue] || "None") : "—";
-      const laneChange = item.revealed ? (INTENT_LANE_LABELS[laneChangeValue] || "None") : "—";
+      const routing = item.revealed ? (INTENT_ROUTING_LABELS[routingValue] || "None") : "None";
+      const laneChange = item.revealed ? (INTENT_LANE_LABELS[laneChangeValue] || "None") : "None";
+      const routingCountText = intentFrameCountText(item.frame_counts?.routing, INTENT_ROUTING_LABELS);
+      const laneCountText = intentFrameCountText(item.frame_counts?.lane_change, INTENT_LANE_LABELS);
       return `<article class="intent-contributor${item.is_current ? " is-current" : ""}">
         <strong>${escapeHtml(item.username)}${item.is_current ? "（我）" : ""}</strong>
         <span><small>Routing</small><b>${escapeHtml(routing)}</b></span>
         <span><small>变道意图</small><b>${escapeHtml(laneChange)}</b></span>
+        <small class="intent-contributor-counts">${escapeHtml([routingCountText, laneCountText].filter(Boolean).join(" · ") || "尚无帧级标注")}</small>
       </article>`;
     }).join("") : "<p>尚无标注记录</p>";
   }
   const comments = collaboration.comments || [];
-  const commentList = $("#intentCommentList");
   if ($("#intentCommentCount")) $("#intentCommentCount").textContent = `${comments.length} 条`;
-  if (commentList) {
-    commentList.innerHTML = comments.length ? comments.map((item) => (
-      `<article class="intent-comment"><div><strong>${escapeHtml(item.author)}</strong><time>${escapeHtml(new Date(item.created_at).toLocaleString())}</time></div><p>${escapeHtml(item.body)}</p></article>`
-    )).join("") : "<p>还没有评论</p>";
-    commentList.scrollTop = commentList.scrollHeight;
+  if (discussionButton) {
+    discussionButton.innerHTML = comments.length
+      ? `打开讨论 · ${comments.length} <kbd>D</kbd>`
+      : "打开讨论 <kbd>D</kbd>";
   }
 }
 
@@ -725,6 +811,8 @@ async function deleteMyIntentLabel() {
   intent.undoStack = [];
   intent.dirty = false;
   intent.editVersion = 0;
+  intent.autoAdvanceOnSave = false;
+  intent.autoAdvanceTimepointId = "";
   if (intent.caseData) {
     intent.caseData.labels = result.labels;
     intent.caseData.status = "unlabeled";
@@ -757,12 +845,21 @@ async function toggleIntentAnswerReveal() {
   }
 }
 
-function openIntentComments() {
+function openIntentComments({ focusCommentId = 0 } = {}) {
   const intent = state.intentLabeling;
-  const context = $("#intentCommentDialogContext");
-  if (context) context.textContent = `${intent.datasetId} · ${intent.caseData?.issue_id || intent.caseId}`;
-  openDialog("intentCommentDialog");
-  window.setTimeout(() => $("#intentCommentInput")?.focus(), 0);
+  const issueId = intent.caseData?.issue_id || intent.caseId;
+  if (!issueId || typeof openAnalysisDiscussion !== "function") return;
+  const discussionButton = $("#intentOpenComments");
+  if (discussionButton) {
+    discussionButton.dataset.intentDatasetId = intent.datasetId;
+    discussionButton.dataset.intentCaseId = intent.caseId;
+  }
+  return openAnalysisDiscussion(issueId, {
+    source: "intent",
+    intentDatasetId: intent.datasetId,
+    intentCaseId: intent.caseId,
+    focusCommentId,
+  });
 }
 
 function renderIntentCase({ deferTimelineThumbnails = false } = {}) {
@@ -791,32 +888,6 @@ function renderIntentCase({ deferTimelineThumbnails = false } = {}) {
         if (state.intentLabeling.caseData === renderedCase) activateIntentTimelineThumbnails();
       }));
     });
-  }
-}
-
-async function postIntentComment(event) {
-  event.preventDefault();
-  const intent = state.intentLabeling;
-  const input = $("#intentCommentInput");
-  const body = input?.value.trim() || "";
-  if (!body || !intent.datasetId || !intent.caseId || intent.postingComment) return;
-  intent.postingComment = true;
-  const submit = event.currentTarget.querySelector('button[type="submit"]');
-  if (submit) submit.disabled = true;
-  try {
-    const result = await api(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases/${encodeURIComponent(intent.caseId)}/comments`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body }),
-    });
-    intent.caseData.collaboration ||= { contributors: [], comments: [] };
-    intent.caseData.collaboration.comments ||= [];
-    intent.caseData.collaboration.comments.push(result.comment);
-    input.value = "";
-    renderIntentCollaboration();
-  } finally {
-    intent.postingComment = false;
-    if (submit) submit.disabled = false;
   }
 }
 
@@ -860,17 +931,11 @@ async function loadIntentLabeling({ datasetId = "", caseId = "", offsetMs = null
     targetCaseId = exact[0].case_id;
   }
   if (!targetCaseId) {
-    const pendingParams = new URLSearchParams(assigneeParams);
-    pendingParams.set("status", "unlabeled");
-    pendingParams.set("page_size", "1");
-    const pending = await api(intentApiUrl(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases`, pendingParams));
-    const fallbackParams = new URLSearchParams(assigneeParams);
-    fallbackParams.set("status", "all");
-    fallbackParams.set("page_size", "1");
-    const fallback = pending.items?.length
-      ? pending
-      : await api(intentApiUrl(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases`, fallbackParams));
-    targetCaseId = fallback.items?.[0]?.case_id || "";
+    const allParams = new URLSearchParams(assigneeParams);
+    allParams.set("status", "all");
+    allParams.set("page_size", "1");
+    const allCases = await api(intentApiUrl(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases`, allParams));
+    targetCaseId = allCases.items?.[0]?.case_id || "";
   }
   if (!targetCaseId) throw new Error("数据集中没有可标注 Case。");
   const data = await api(intentApiUrl(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases/${encodeURIComponent(targetCaseId)}`, assigneeParams));
@@ -954,6 +1019,13 @@ async function intentFlushSave() {
     acknowledgeLocalChange(payload);
     intent.revisionId = payload.labels?.revision_id || null;
     if (intent.editVersion === savedEditVersion) {
+      const shouldAutoAdvance = Boolean(
+        intent.autoAdvanceOnSave
+        && intent.autoAdvanceTimepointId
+        && intent.activeTimepointId === intent.autoAdvanceTimepointId
+      );
+      intent.autoAdvanceOnSave = false;
+      intent.autoAdvanceTimepointId = "";
       intent.overrides = Object.fromEntries((payload.labels?.overrides || []).map((item) => [item.timepoint_id, { ...item }]));
       intentSetSaveState("已自动保存", "saved");
       updateIntentTimelineState({ scroll: false });
@@ -977,6 +1049,9 @@ async function intentFlushSave() {
         updated_at: payload.labels?.created_at || "",
       });
       renderIntentCollaboration();
+      if (shouldAutoAdvance) {
+        intentMoveFrame(1);
+      }
     } else {
       intent.dirty = true;
       intentSetSaveState("等待自动保存…", "dirty");
@@ -1040,6 +1115,21 @@ function intentUndo() {
   showToast("已撤销上一次标注操作，正在自动保存。", false);
 }
 
+function intentQueueAutoAdvance(selectedCount = 0) {
+  const intent = state.intentLabeling;
+  const active = intentActiveTimepoint();
+  const effective = active ? intentEffective(active) : {};
+  if (
+    selectedCount === 1
+    && active
+    && effective.routing
+    && effective.laneChange
+  ) {
+    intent.autoAdvanceOnSave = true;
+    intent.autoAdvanceTimepointId = active.id;
+  }
+}
+
 function intentSetAggregate(axis, value) {
   const intent = state.intentLabeling;
   const previous = intentEditSnapshot();
@@ -1050,6 +1140,9 @@ function intentSetAggregate(axis, value) {
     if (override[key] === value) delete override[key];
     if (!override.routing_intent && !override.lane_change_intent) delete intent.overrides[timepointId];
   });
+  // Batch prefill changes the whole Case; auto-advance is reserved for a
+  // completed current-frame edit so a Shift+number action never jumps away
+  // from the frame the annotator is reviewing.
   intentCommitEdit(previous);
 }
 
@@ -1067,7 +1160,9 @@ function intentSetFrameLabel(axis, value) {
     if (!override.routing_intent && !override.lane_change_intent) delete intent.overrides[timepoint.id];
     else intent.overrides[timepoint.id] = override;
   });
-  intentCommitEdit(previous);
+  if (intentCommitEdit(previous)) {
+    intentQueueAutoAdvance(selected.length);
+  }
 }
 
 function intentRestoreBatchPrefill() {
@@ -1092,6 +1187,10 @@ function intentSelectTimepoint(timepointId, { updateRoute = true, extendSelectio
   } else {
     intent.selectionAnchorId = timepointId;
     intent.selectedTimepointIds = [timepointId];
+  }
+  if (intent.activeTimepointId !== timepointId) {
+    intent.autoAdvanceOnSave = false;
+    intent.autoAdvanceTimepointId = "";
   }
   intent.activeTimepointId = timepointId;
   renderIntentActiveFrame();
@@ -1254,10 +1353,9 @@ function downloadIntentExport(view) {
 }
 
 function bindIntentLabelingEvents() {
-  $("#intentCommentForm")?.addEventListener("submit", (event) => {
-    postIntentComment(event).catch((error) => showToast(error.message, true));
+  $("#intentOpenComments")?.addEventListener("click", () => {
+    Promise.resolve(openIntentComments()).catch((error) => showToast(error.message, true));
   });
-  $("#intentOpenComments")?.addEventListener("click", openIntentComments);
   $("#intentDeleteMyLabel")?.addEventListener("click", () => deleteMyIntentLabel().catch((error) => showToast(error.message, true)));
   $("#intentTimeline")?.addEventListener("wheel", (event) => {
     const timeline = event.currentTarget;
@@ -1282,17 +1380,11 @@ function bindIntentLabelingEvents() {
     }
     (async () => {
       await intentFlushSave();
-      await loadIntentLabeling({ datasetId, assignees: null, historyMode: "push" });
+      await loadIntentLabeling({ datasetId, assignees: [], historyMode: "push" });
     })().catch((error) => showToast(error.message, true));
   });
   $("#intentExperimentForm")?.addEventListener("submit", (event) => {
     createIntentExperiment(event).catch((error) => showToast(error.message, true));
-  });
-  $("#intentSummaryExperiment")?.addEventListener("change", (event) => {
-    state.intentLabeling.summaryExperimentId = event.target.value || "";
-    state.intentLabeling.summaryAssignees = [];
-    state.intentLabeling.summaryPage = 1;
-    loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true }).catch((error) => showToast(error.message, true));
   });
   $("#intentSummaryAxis")?.addEventListener("change", (event) => {
     state.intentLabeling.summaryAxis = event.target.value || "all";
@@ -1320,21 +1412,6 @@ function bindIntentLabelingEvents() {
     loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true }).catch((error) => showToast(error.message, true));
   });
   initializeIntentExperimentSelects();
-  $("#intentAssignmentSelect")?.addEventListener("change", (event) => {
-    (async () => {
-      await intentFlushSave();
-      const experimentId = event.target.value || "";
-      state.intentLabeling.assigneeDatasetId = "";
-      state.intentLabeling.selectedAssignees = [];
-      await loadIntentLabeling({
-        datasetId: state.intentLabeling.datasetId,
-        caseId: "",
-        assignees: null,
-        experimentId,
-        historyMode: "push",
-      });
-    })().catch((error) => showToast(error.message, true));
-  });
   $("#intentExperimentMode")?.addEventListener("change", (event) => {
     const full = event.target.value === "full";
     const overlap = $("#intentExperimentOverlap");

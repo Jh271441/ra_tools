@@ -764,39 +764,69 @@ async function openAnalysisDiscussion(
     runId = state.selectedRunId || "",
     source = "analysis",
     focusCommentId = 0,
+    intentDatasetId = "",
+    intentCaseId = "",
   } = {}
 ) {
+  const isIntentDiscussion = Boolean(intentDatasetId && intentCaseId);
   clearAnalysisDiscussionImages();
   const normalizedRunId = String(runId || "");
   state.analysisDiscussion = {
+    kind: isIntentDiscussion ? "intent" : "review",
     issueId,
     runId: normalizedRunId,
     source,
+    intentDatasetId: String(intentDatasetId || ""),
+    intentCaseId: String(intentCaseId || ""),
     replyTo: null,
     comments: [],
     pendingImages: [],
     preview: false,
   };
-  $("#analysisDiscussionContext").textContent = `${issueId} · ${runId || "未绑定 Run"}`;
+  const discussionTitle = $("#analysisDiscussionTitle");
+  const discussionTitleZh = discussionTitle?.querySelector(".ui-lang-zh");
+  const discussionTitleEn = discussionTitle?.querySelector(".ui-lang-en");
+  if (discussionTitleZh) discussionTitleZh.textContent = isIntentDiscussion ? "意图标注讨论" : "评论";
+  if (discussionTitleEn) discussionTitleEn.textContent = isIntentDiscussion ? "Intent discussion" : "Comments";
+  $("#analysisDiscussionContext").textContent = isIntentDiscussion
+    ? `${intentDatasetId} · ${issueId}`
+    : `${issueId} · ${runId || "未绑定 Run"}`;
   const textarea = $("#analysisDiscussionNote");
   textarea.value = "";
   textarea.hidden = false;
   $("#analysisDiscussionPreview").hidden = true;
   $("[data-comment-preview-toggle]").textContent = "预览";
   renderAnalysisDiscussionImages();
-  $("#analysisDiscussionComposer").hidden = Boolean(state.session?.read_only);
-  $("#analysisDiscussionSubmit").hidden = Boolean(state.session?.read_only);
+  const canWriteIntentDiscussion = !isIntentDiscussion || Boolean(state.session?.can_annotate_intent);
+  $("#analysisDiscussionComposer").hidden = Boolean(state.session?.read_only) || !canWriteIntentDiscussion;
+  $("#analysisDiscussionSubmit").hidden = Boolean(state.session?.read_only) || !canWriteIntentDiscussion;
+  document.querySelectorAll("[data-comment-image]").forEach((button) => {
+    button.hidden = isIntentDiscussion;
+  });
+  const imageInput = $("#analysisDiscussionImageInput");
+  if (imageInput) imageInput.disabled = isIntentDiscussion;
+  $("#analysisDiscussionImages").hidden = isIntentDiscussion;
   renderAnalysisDiscussionReplyContext();
   $("#analysisDiscussionThread").innerHTML =
     `<div class="comment-thread-empty">正在加载评论…</div>`;
   bindReviewMentionComposer(textarea, $("#analysisDiscussionMentionComposer"));
   updateReviewMentionComposer(textarea, $("#analysisDiscussionMentionComposer"));
   $("#analysisDiscussionDialog").showModal();
-  const result = await api(
-    `/api/cases/${encodeURIComponent(issueId)}/comments?model_run_id=${encodeURIComponent(normalizedRunId)}`
-  );
-  if (!state.analysisDiscussion || state.analysisDiscussion.issueId !== issueId) return;
+  const result = isIntentDiscussion
+    ? await api(`/api/intent-datasets/${encodeURIComponent(intentDatasetId)}/cases/${encodeURIComponent(intentCaseId)}/comments`)
+    : await api(`/api/cases/${encodeURIComponent(issueId)}/comments?model_run_id=${encodeURIComponent(normalizedRunId)}`);
+  if (
+    !state.analysisDiscussion
+    || state.analysisDiscussion.issueId !== issueId
+    || state.analysisDiscussion.intentCaseId !== String(intentCaseId || "")
+  ) return;
   state.analysisDiscussion.comments = result.comments || [];
+  if (isIntentDiscussion && state.intentLabeling?.caseId === String(intentCaseId)) {
+    state.intentLabeling.caseData ||= {};
+    state.intentLabeling.caseData.collaboration ||= {};
+    state.intentLabeling.caseData.collaboration.comments = state.analysisDiscussion.comments;
+    if (typeof renderIntentCollaboration === "function") renderIntentCollaboration();
+  }
   renderAnalysisDiscussionThread();
   updateAnalysisDiscussionCount(issueId, normalizedRunId, Number(result.count || 0));
   if (focusCommentId) {
@@ -806,7 +836,9 @@ async function openAnalysisDiscussion(
     focused?.classList.add("is-deep-linked");
     focused?.scrollIntoView({ block: "center" });
   }
-  textarea.focus();
+  // Keep the shared shortcut/focus behavior consistent for read-only intent
+  // viewers: only focus the composer when it is actually available.
+  if (!$("#analysisDiscussionComposer")?.hidden) textarea.focus();
 }
 
 function clearAnalysisDiscussionImages() {
@@ -851,6 +883,10 @@ function applyAnalysisDiscussionFormat(kind) {
 function addAnalysisDiscussionImages(files) {
   const context = state.analysisDiscussion;
   if (!context) return;
+  if (context.kind === "intent") {
+    showToast("意图标注讨论暂不支持图片附件，请使用 Markdown 文本。", true);
+    return;
+  }
   const limits = state.config?.review_attachment_limits || {};
   const maxCount = Number(limits.max_count || 4);
   const maxBytes = Number(limits.max_bytes_each || 8 * 1024 * 1024);
@@ -960,6 +996,14 @@ function bindAnalysisDiscussionEditor() {
 
 function analysisDiscussionShareUrl(commentId) {
   const context = state.analysisDiscussion;
+  if (context?.kind === "intent") {
+    const intentUrl = new URL(withBase(PAGE_ROUTES.intent.path), window.location.origin);
+    intentUrl.searchParams.set("dataset", String(context.intentDatasetId || ""));
+    intentUrl.searchParams.set("case", String(context.intentCaseId || ""));
+    intentUrl.searchParams.set("comments", "1");
+    intentUrl.searchParams.set("comment", String(Number(commentId)));
+    return intentUrl.href;
+  }
   const url = new URL(withBase(PAGE_ROUTES.review.path), window.location.origin);
   url.searchParams.set("issue", String(context?.issueId || ""));
   if (context?.runId) url.searchParams.set("run", String(context.runId));
@@ -994,7 +1038,19 @@ async function shareAnalysisDiscussionComment(commentId) {
 }
 
 function updateAnalysisDiscussionCount(issueId, runId, count) {
-  document.querySelectorAll("[data-analysis-discussion], [data-trail-update-discussion]").forEach((button) => {
+  document.querySelectorAll("[data-analysis-discussion], [data-trail-update-discussion], [data-intent-discussion]").forEach((button) => {
+    if (button.hasAttribute("data-intent-discussion")) {
+      const intent = state.analysisDiscussion;
+      if (
+        intent?.kind !== "intent"
+        || String(button.dataset.intentDatasetId || "") !== String(intent.intentDatasetId || "")
+        || String(button.dataset.intentCaseId || "") !== String(intent.intentCaseId || "")
+      ) return;
+      button.innerHTML = count > 0
+        ? `打开讨论 · ${count} <kbd>D</kbd>`
+        : "打开讨论 <kbd>D</kbd>";
+      return;
+    }
     const buttonIssue = button.dataset.analysisDiscussion || button.dataset.trailUpdateDiscussion;
     if (String(buttonIssue || "") !== String(issueId || "")) return;
     if (String(button.dataset.modelRunId || "") !== String(runId || "")) return;
@@ -1032,7 +1088,7 @@ function renderAnalysisDiscussionThread() {
       <div class="comment-thread-body">${reviewCommentBodyMarkup(comment.body || "", comment.attachments || [])}</div>
       <div class="comment-thread-actions">
         <button class="analysis-discussion-link" type="button" data-comment-share="${Number(comment.id)}">分享</button>
-        ${state.session?.read_only ? "" : `<button class="analysis-discussion-link" type="button" data-comment-reply="${Number(comment.id)}">回复</button>`}
+        ${state.session?.read_only || (context.kind === "intent" && !state.session?.can_annotate_intent) ? "" : `<button class="analysis-discussion-link" type="button" data-comment-reply="${Number(comment.id)}">回复</button>`}
       </div>
     </article>`;
   }).join("");
@@ -1098,7 +1154,18 @@ async function saveAnalysisDiscussion(event) {
       author,
     };
     let result;
-    if (context.pendingImages?.length) {
+    if (context.kind === "intent") {
+      result = await api(
+        `/api/intent-datasets/${encodeURIComponent(context.intentDatasetId)}/cases/${encodeURIComponent(context.intentCaseId)}/comments`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            body: discussion,
+            reply_to_id: context.replyTo?.id || null,
+          }),
+        }
+      );
+    } else if (context.pendingImages?.length) {
       const form = new FormData();
       payload.attachment_tokens = context.pendingImages.map((item) => item.token);
       form.append("payload", JSON.stringify(payload));
@@ -1118,6 +1185,12 @@ async function saveAnalysisDiscussion(event) {
     }
     acknowledgeLocalChange(result);
     context.comments.push(result.comment);
+    if (context.kind === "intent" && state.intentLabeling?.caseId === context.intentCaseId) {
+      state.intentLabeling.caseData ||= {};
+      state.intentLabeling.caseData.collaboration ||= {};
+      state.intentLabeling.caseData.collaboration.comments = context.comments;
+      if (typeof renderIntentCollaboration === "function") renderIntentCollaboration();
+    }
     context.replyTo = null;
     $("#analysisDiscussionNote").value = "";
     clearAnalysisDiscussionImages();

@@ -81,7 +81,7 @@ function renderSession() {
   $("#intentExperimentsPage")?.classList.toggle("is-readonly", state.session.can_view_intent && !state.session.can_manage_intent);
   const intentSummaryNav = $("#intentSummaryNavButton");
   if (intentSummaryNav) intentSummaryNav.hidden = !state.session.can_view_intent;
-  document.querySelectorAll("[data-intent-frame-axis], [data-intent-aggregate-axis], #intentRestoreBatchPrefill, #intentCommentForm textarea, #intentCommentForm button[type='submit']").forEach((element) => {
+  document.querySelectorAll("[data-intent-frame-axis], [data-intent-aggregate-axis], #intentRestoreBatchPrefill").forEach((element) => {
     element.disabled = state.session.can_annotate_intent === false;
   });
   const runComparisonNav = $("#runComparisonNavButton");
