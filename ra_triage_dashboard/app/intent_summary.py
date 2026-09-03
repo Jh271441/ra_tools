@@ -44,6 +44,77 @@ def intent_frame_counts(
     }
 
 
+def public_intent_contributors(
+    *,
+    username: str,
+    contributors: list[dict[str, Any]],
+    assignees: list[str] | tuple[str, ...] = (),
+    answers_revealed: bool,
+    timeline: list[dict[str, Any]] | tuple[dict[str, Any], ...] = (),
+) -> list[dict[str, Any]]:
+    """Reveal-safe contributor rows for the labeling rail.
+
+    Blind peers stay visible as labeled/pending status.  Routing / lane-change
+    values and frame distributions remain private until the Case is revealed.
+    """
+
+    current = str(username or "").strip().lower()
+    assignee_set = {
+        str(item).strip().lower()
+        for item in assignees
+        if str(item or "").strip()
+    }
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for contributor in contributors:
+        name = str(contributor.get("username") or "").strip().lower()
+        if not name:
+            continue
+        is_current = name == current
+        if not answers_revealed and not is_current and assignee_set and name not in assignee_set:
+            continue
+        revealed = is_current or answers_revealed
+        item = {
+            "username": name,
+            "version": int(contributor.get("version") or 0),
+            "updated_at": str(contributor.get("updated_at") or ""),
+            "labeled": True,
+            "completed": bool(
+                contributor.get("routing_default")
+                and contributor.get("lane_change_default")
+            ),
+            "is_current": is_current,
+            "revealed": revealed,
+            "frame_counts": intent_frame_counts(
+                timeline,
+                routing_default=str(contributor.get("routing_default") or ""),
+                lane_change_default=str(contributor.get("lane_change_default") or ""),
+                overrides=contributor.get("overrides") or [],
+            ) if revealed else {},
+        }
+        if revealed:
+            item["routing_default"] = contributor.get("routing_default") or ""
+            item["lane_change_default"] = contributor.get("lane_change_default") or ""
+            item["overrides"] = list(contributor.get("overrides") or [])
+        rows.append(item)
+        seen.add(name)
+    for name in sorted(assignee_set):
+        if name in seen:
+            continue
+        is_current = name == current
+        rows.append({
+            "username": name,
+            "version": 0,
+            "updated_at": "",
+            "labeled": False,
+            "completed": False,
+            "is_current": is_current,
+            "revealed": is_current or answers_revealed,
+            "frame_counts": {},
+        })
+    return rows
+
+
 def summarize_intent(data: dict[str, Any], case_ids: tuple[str, ...], *, username: str,
                      experiment_id: str = "", assignees: tuple[str, ...] = (),
                      reveal_answers: bool = False, axis: str = "all",

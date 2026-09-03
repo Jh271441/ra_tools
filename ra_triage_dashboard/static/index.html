@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-307`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-308`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -391,8 +391,7 @@
                   <button class="button button-quiet intent-restore-button" id="intentRestoreBatchPrefill" type="button" aria-keyshortcuts="0"><span id="intentRestoreBatchPrefillText">当前帧恢复批量预填</span> <kbd>0</kbd></button>
                 </section>
                 <section class="intent-card intent-collaboration-card intent-contributors-card" aria-labelledby="intentContributorsTitle">
-                  <h3 class="intent-contributors-heading"><span id="intentContributorsTitle">当前帧已有标注</span><small id="intentRevealState">未进入实验</small></h3>
-                  <div class="intent-card-heading-actions intent-contributor-actions" id="intentContributorActions" hidden><button class="button button-quiet intent-delete-label" id="intentDeleteMyLabel" type="button" hidden>删除我的</button><button class="button button-quiet" id="intentToggleReveal" type="button" hidden>管理员解盲</button></div>
+                  <h3 class="intent-contributors-heading"><span id="intentContributorsTitle">已有标注</span><small id="intentRevealState">未进入实验</small><button class="button button-quiet" id="intentToggleReveal" type="button" hidden>管理员解盲</button></h3>
                   <div class="intent-contributor-list" id="intentContributorList"><p>尚无标注</p></div>
                 </section>
                 <section class="intent-card intent-collaboration-card intent-discussion-card" aria-labelledby="intentCommentsTitle">
@@ -441,7 +440,7 @@
               <button class="button button-quiet" id="intentSummaryReveal" type="button" hidden>管理员解盲</button>
             </section>
             <section class="intent-summary-metrics" id="intentSummaryMetrics"></section>
-            <section class="page-card intent-summary-table-card"><header><div><h2>意图轨迹标注汇总</h2><p id="intentSummarySafety">进行中的盲标实验仅显示自己的答案。</p></div><div class="intent-summary-export-actions"><button class="button button-quiet" id="intentExportCompact" type="button" hidden>导出 Case JSONL</button><button class="button button-quiet" id="intentExportExpanded" type="button" hidden>导出帧级 JSONL</button></div></header><div class="table-scroll"><table><thead><tr><th>Issue / Case</th><th>标注人</th><th class="intent-summary-routing-column">Routing</th><th class="intent-summary-lane-column">变道意图</th><th>轨迹修改</th><th>更新时间</th></tr></thead><tbody id="intentSummaryRows"></tbody></table></div><footer class="intent-summary-pagination"><button class="button button-quiet" id="intentSummaryPrevious" type="button">上一页</button><span id="intentSummaryPageState">1 / 1</span><button class="button button-quiet" id="intentSummaryNext" type="button">下一页</button></footer></section>
+            <section class="page-card intent-summary-table-card"><header><div><h2>意图轨迹标注汇总</h2><p id="intentSummarySafety">进行中的盲标实验仅显示自己的答案。</p></div><div class="intent-summary-export-actions"><button class="button button-quiet" id="intentExportCompact" type="button" hidden>导出 Case JSONL</button><button class="button button-quiet" id="intentExportExpanded" type="button" hidden>导出帧级 JSONL</button></div></header><div class="table-scroll"><table><thead><tr><th>Issue / Case</th><th>标注人</th><th class="intent-summary-routing-column">Routing 帧分布</th><th class="intent-summary-lane-column">变道意图帧分布</th><th>更新时间</th></tr></thead><tbody id="intentSummaryRows"></tbody></table></div><footer class="intent-summary-pagination"><button class="button button-quiet" id="intentSummaryPrevious" type="button">上一页</button><span id="intentSummaryPageState">1 / 1</span><button class="button button-quiet" id="intentSummaryNext" type="button">下一页</button></footer></section>
           </section>
 
           <section class="app-page tool-page analysis-page hidden" id="reviewAnalysisPage" data-page="analysis">
@@ -1767,7 +1766,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-307`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-308`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from ra_triage_dashboard.app.intent_summary import intent_frame_counts, summarize_intent
+from ra_triage_dashboard.app.intent_summary import (
+    intent_frame_counts,
+    public_intent_contributors,
+    summarize_intent,
+)
 
 
 class IntentSummaryTest(unittest.TestCase):
@@ -83,6 +87,68 @@ class IntentSummaryTest(unittest.TestCase):
         self.assertEqual(counts["frame_count"], 4)
         self.assertEqual(counts["routing"], {"straight": 3, "left_turn": 1})
         self.assertEqual(counts["lane_change"], {"no_lane_change": 3, "lane_change": 1})
+
+    def test_blind_contributors_keep_peer_status_without_answers(self) -> None:
+        contributors = [
+            {
+                "username": "alice",
+                "version": 1,
+                "updated_at": "1",
+                "routing_default": "straight",
+                "lane_change_default": "no_lane_change",
+                "overrides": [],
+            },
+            {
+                "username": "bob",
+                "version": 2,
+                "updated_at": "2",
+                "routing_default": "left_turn",
+                "lane_change_default": "lane_change",
+                "overrides": [{"timepoint_id": "t:+0", "routing_intent": "u_turn"}],
+            },
+        ]
+        timeline = [{"id": "t:+0"}, {"id": "t:+1000"}]
+        rows = public_intent_contributors(
+            username="alice",
+            contributors=contributors,
+            assignees=("alice", "bob", "carol"),
+            answers_revealed=False,
+            timeline=timeline,
+        )
+        by_name = {row["username"]: row for row in rows}
+        self.assertEqual(set(by_name), {"alice", "bob", "carol"})
+        self.assertTrue(by_name["alice"]["revealed"])
+        self.assertEqual(by_name["alice"]["routing_default"], "straight")
+        self.assertEqual(by_name["alice"]["frame_counts"]["routing"], {"straight": 2})
+        self.assertFalse(by_name["bob"]["revealed"])
+        self.assertTrue(by_name["bob"]["labeled"])
+        self.assertNotIn("routing_default", by_name["bob"])
+        self.assertEqual(by_name["bob"]["frame_counts"], {})
+        self.assertFalse(by_name["carol"]["labeled"])
+        self.assertFalse(by_name["carol"]["revealed"])
+
+    def test_revealed_contributors_include_peer_answers(self) -> None:
+        rows = public_intent_contributors(
+            username="alice",
+            contributors=[{
+                "username": "bob",
+                "version": 1,
+                "updated_at": "2",
+                "routing_default": "left_turn",
+                "lane_change_default": "lane_change",
+                "overrides": [],
+            }],
+            assignees=("alice", "bob"),
+            answers_revealed=True,
+            timeline=[{"id": "t:+0"}],
+        )
+        bob = next(row for row in rows if row["username"] == "bob")
+        self.assertTrue(bob["revealed"])
+        self.assertEqual(bob["routing_default"], "left_turn")
+        self.assertEqual(bob["frame_counts"]["routing"], {"left_turn": 1})
+        alice = next(row for row in rows if row["username"] == "alice")
+        self.assertFalse(alice["labeled"])
+        self.assertTrue(alice["is_current"])
 
 
 if __name__ == "__main__":

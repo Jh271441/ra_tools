@@ -94,11 +94,28 @@ function intentEffective(timepoint = intentActiveTimepoint()) {
   };
 }
 
+function intentAxisLabel(axis, value) {
+  if (axis === "routing") return INTENT_ROUTING_LABELS[value] || "Routing 待填";
+  return INTENT_LANE_LABELS[value] || "变道待填";
+}
+
 function intentLabelSummary(timepoint) {
   const effective = intentEffective(timepoint);
-  const routing = INTENT_ROUTING_LABELS[effective.routing] || "Routing 待填";
-  const laneChange = INTENT_LANE_LABELS[effective.laneChange] || "变道待填";
-  return `${routing} · ${laneChange}`;
+  return `${intentAxisLabel("routing", effective.routing)} · ${intentAxisLabel("laneChange", effective.laneChange)}`;
+}
+
+function intentChipMarkup(label, { pending = false, override = false } = {}) {
+  return `<b class="intent-chip${pending ? " is-pending" : ""}${override ? " is-override" : ""}">${escapeHtml(label)}</b>`;
+}
+
+function intentTimepointLabelMarkup(timepoint) {
+  const effective = intentEffective(timepoint);
+  const override = timepoint ? intentOverride(timepoint.id) : null;
+  return `<span class="intent-timepoint-labels${override ? " is-override" : ""}">${
+    intentChipMarkup(intentAxisLabel("routing", effective.routing), { pending: !effective.routing, override: Boolean(override?.routing_intent) })
+  }${
+    intentChipMarkup(intentAxisLabel("laneChange", effective.laneChange), { pending: !effective.laneChange, override: Boolean(override?.lane_change_intent) })
+  }</span>`;
 }
 
 function renderIntentTopbarDatasetPicker(selectedId = state.intentLabeling.datasetId) {
@@ -413,10 +430,9 @@ function intentFrameCountText(counts, labels) {
     .join(" · ");
 }
 
-function intentSummaryResultMarkup(value, counts, labels) {
-  const label = labels[value] || "None";
+function intentSummaryResultMarkup(counts, labels) {
   const countText = intentFrameCountText(counts, labels);
-  return `<div class="intent-summary-result"><span>${escapeHtml(label)}</span>${countText ? `<small>${escapeHtml(countText)}</small>` : ""}</div>`;
+  return `<div class="intent-summary-result">${countText ? escapeHtml(countText) : "—"}</div>`;
 }
 
 function renderIntentSummary(payload) {
@@ -432,10 +448,10 @@ function renderIntentSummary(payload) {
   ];
   $("#intentSummaryMetrics").innerHTML = metrics.map(([label, value]) => `<article class="intent-summary-metric"><small>${label}</small><strong>${escapeHtml(value)}</strong></article>`).join("");
   const datasetId = state.intentLabeling.summaryDatasetId;
-  const columnCount = 4 + Number(showRouting) + Number(showLaneChange);
+  const columnCount = 3 + Number(showRouting) + Number(showLaneChange);
   $("#intentSummaryRows").innerHTML = (payload.items || []).map((item) => {
     const href = `${withBase("/intent-labeling")}?dataset=${encodeURIComponent(datasetId)}&case=${encodeURIComponent(item.case_id)}`;
-    return `<tr><td><a class="intent-summary-case-link" href="${escapeHtml(href)}">${escapeHtml(item.case_id)}</a></td><td>${escapeHtml(item.username)}${item.username === state.session.username ? "（我）" : ""}</td><td class="intent-summary-routing-column"${showRouting ? "" : " hidden"}>${intentSummaryResultMarkup(item.routing_default, item.frame_counts?.routing, INTENT_ROUTING_LABELS)}</td><td class="intent-summary-lane-column"${showLaneChange ? "" : " hidden"}>${intentSummaryResultMarkup(item.lane_change_default, item.frame_counts?.lane_change, INTENT_LANE_LABELS)}</td><td>${item.overrides.length}</td><td>${escapeHtml(formatTime(item.updated_at) || "—")}</td></tr>`;
+    return `<tr><td><a class="intent-summary-case-link" href="${escapeHtml(href)}">${escapeHtml(item.case_id)}</a></td><td>${escapeHtml(item.username)}${item.username === state.session.username ? "（我）" : ""}</td><td class="intent-summary-routing-column"${showRouting ? "" : " hidden"}>${intentSummaryResultMarkup(item.frame_counts?.routing, INTENT_ROUTING_LABELS)}</td><td class="intent-summary-lane-column"${showLaneChange ? "" : " hidden"}>${intentSummaryResultMarkup(item.frame_counts?.lane_change, INTENT_LANE_LABELS)}</td><td>${escapeHtml(formatTime(item.updated_at) || "—")}</td></tr>`;
   }).join("") || `<tr><td colspan="${columnCount}">当前筛选下没有已标注结果。</td></tr>`;
   $("#intentSummarySafety").textContent = payload.blind_active && !payload.answers_revealed ? "进行中的盲标实验仅显示自己的答案。" : "汇总当前标注头；不会加载 Camera / BEV 图片。";
   const reveal = $("#intentSummaryReveal");
@@ -630,7 +646,6 @@ function renderIntentTimeline({ loadThumbnails = true } = {}) {
   const intent = state.intentLabeling;
   const timepoints = intent.caseData?.timepoints || [];
   timeline.innerHTML = timepoints.map((item) => {
-    const override = intentOverride(item.id);
     const camera = item.camera?.thumbnail_url;
     const bev = item.bev?.thumbnail_url;
     const selected = (intent.selectedTimepointIds || []).includes(item.id);
@@ -640,7 +655,7 @@ function renderIntentTimeline({ loadThumbnails = true } = {}) {
         ${camera ? `<img data-intent-lazy-src="${escapeHtml(camera)}" loading="lazy" decoding="async" alt=""/>` : '<span class="intent-thumb-missing">Camera 缺失</span>'}
         ${bev ? `<img data-intent-lazy-src="${escapeHtml(bev)}" loading="lazy" decoding="async" alt=""/>` : '<span class="intent-thumb-missing">BEV 缺失</span>'}
       </span>
-      <small class="${override ? "is-override" : ""}">${escapeHtml(intentLabelSummary(item))}</small>
+      ${intentTimepointLabelMarkup(item)}
     </button>`;
   }).join("");
   timeline.querySelectorAll("[data-intent-timepoint]").forEach((button) => {
@@ -666,11 +681,10 @@ function updateIntentTimelineState({ scroll = true } = {}) {
     button.classList.toggle("selected", isSelected);
     button.classList.toggle("active", isActive);
     button.setAttribute("aria-pressed", isSelected ? "true" : "false");
-    const summary = button.querySelector("small");
+    const labels = button.querySelector(".intent-timepoint-labels");
     const timepoint = byId.get(timepointId);
-    if (summary && timepoint) {
-      summary.textContent = intentLabelSummary(timepoint);
-      summary.classList.toggle("is-override", Boolean(intentOverride(timepointId)));
+    if (labels && timepoint) {
+      labels.outerHTML = intentTimepointLabelMarkup(timepoint);
     }
   });
   if (scroll) {
@@ -741,6 +755,30 @@ function renderIntentLabels() {
   $("#intentCoverage").textContent = `${Math.max(0, total - overrideCount)} 帧使用批量预填 · ${overrideCount} 帧单独修改`;
 }
 
+function intentLocalFrameCounts() {
+  const routing = {};
+  const laneChange = {};
+  (state.intentLabeling.caseData?.timepoints || []).forEach((item) => {
+    const effective = intentEffective(item);
+    if (effective.routing) routing[effective.routing] = (routing[effective.routing] || 0) + 1;
+    if (effective.laneChange) laneChange[effective.laneChange] = (laneChange[effective.laneChange] || 0) + 1;
+  });
+  return { routing, lane_change: laneChange };
+}
+
+function intentContributorIsLabeled(item) {
+  return Boolean(
+    item.labeled
+    || item.routing_default
+    || item.lane_change_default
+    || (item.overrides || []).length
+  );
+}
+
+function intentContributorStatus(item) {
+  return intentContributorIsLabeled(item) ? "已标注" : "待标注";
+}
+
 function renderIntentCollaboration() {
   const active = intentActiveTimepoint();
   const collaboration = state.intentLabeling.caseData?.collaboration || {};
@@ -749,41 +787,53 @@ function renderIntentCollaboration() {
     discussionButton.dataset.intentDatasetId = state.intentLabeling.datasetId || "";
     discussionButton.dataset.intentCaseId = state.intentLabeling.caseId || "";
   }
-  const contributors = (collaboration.contributors || []).filter(
-    (item) => collaboration.answers_revealed || item.is_current
-  );
+  const contributors = [...(collaboration.contributors || [])].sort((left, right) => {
+    if (Boolean(left.is_current) !== Boolean(right.is_current)) return left.is_current ? -1 : 1;
+    const leftLabeled = intentContributorIsLabeled(left);
+    const rightLabeled = intentContributorIsLabeled(right);
+    if (leftLabeled !== rightLabeled) return leftLabeled ? -1 : 1;
+    return String(left.username || "").localeCompare(String(right.username || ""));
+  });
   const contributorList = $("#intentContributorList");
   const revealState = $("#intentRevealState");
-  if (revealState) revealState.textContent = collaboration.answers_revealed
-    ? "已解盲"
-    : "盲标中 · 仅显示自己";
+  if (revealState) {
+    revealState.textContent = !collaboration.blind_active
+      ? "未进入实验"
+      : (collaboration.answers_revealed ? "已解盲" : "盲标中 · 仅显示自己的答案");
+  }
   const revealButton = $("#intentToggleReveal");
-  const actions = $("#intentContributorActions");
   const canReveal = Boolean(state.session.is_admin && collaboration.blind_active);
   if (revealButton) {
     revealButton.hidden = !canReveal;
     revealButton.textContent = collaboration.answers_revealed ? "恢复盲态" : "管理员解盲";
   }
-  const deleteButton = $("#intentDeleteMyLabel");
   const canDelete = Boolean(state.session.can_annotate_intent && state.intentLabeling.revisionId);
-  if (deleteButton) {
-    deleteButton.hidden = !canDelete;
-    deleteButton.title = "移除自己的当前答案；历史版本与删除审计仍会保留";
-  }
-  if (actions) actions.hidden = !(canReveal || canDelete);
   if (contributorList) {
     contributorList.innerHTML = contributors.length ? contributors.map((item) => {
+      const labeled = intentContributorIsLabeled(item);
+      const showStatus = !item.is_current || !labeled;
+      const head = `<div class="intent-contributor-head">
+        <strong>${escapeHtml(item.username)}${item.is_current ? "（我）" : ""}</strong>
+        ${showStatus ? `<span class="intent-contributor-status ${labeled ? "is-labeled" : "is-pending"}">${intentContributorStatus(item)}</span>` : ""}
+      </div>`;
+      if (!item.revealed || !labeled) {
+        return `<article class="intent-contributor${item.is_current ? " is-current" : ""}">${head}</article>`;
+      }
       const frameOverride = (item.overrides || []).find((entry) => entry.timepoint_id === active?.id) || {};
       const routingValue = frameOverride.routing_intent || item.routing_default;
       const laneChangeValue = frameOverride.lane_change_intent || item.lane_change_default;
-      const routing = item.revealed ? (INTENT_ROUTING_LABELS[routingValue] || "None") : "None";
-      const laneChange = item.revealed ? (INTENT_LANE_LABELS[laneChangeValue] || "None") : "None";
       const routingCountText = intentFrameCountText(item.frame_counts?.routing, INTENT_ROUTING_LABELS);
       const laneCountText = intentFrameCountText(item.frame_counts?.lane_change, INTENT_LANE_LABELS);
-      return `<article class="intent-contributor${item.is_current ? " is-current" : ""}">
-        <strong>${escapeHtml(item.username)}${item.is_current ? "（我）" : ""}</strong>
-        <span><small>Routing</small><b>${escapeHtml(routing)}</b></span>
-        <span><small>变道意图</small><b>${escapeHtml(laneChange)}</b></span>
+      const deleteButton = item.is_current && canDelete
+        ? `<button class="button button-quiet intent-delete-label" type="button" data-intent-delete-mine title="移除自己的当前答案；历史版本与删除审计仍会保留">删除</button>`
+        : "";
+      return `<article class="intent-contributor is-revealed${item.is_current ? " is-current" : ""}">
+        ${head}
+        <div class="intent-contributor-labels">${
+          intentChipMarkup(INTENT_ROUTING_LABELS[routingValue] || "Routing 待填", { pending: !routingValue })
+        }${
+          intentChipMarkup(INTENT_LANE_LABELS[laneChangeValue] || "变道待填", { pending: !laneChangeValue })
+        }${deleteButton}</div>
         <small class="intent-contributor-counts">${escapeHtml([routingCountText, laneCountText].filter(Boolean).join(" · ") || "尚无帧级标注")}</small>
       </article>`;
     }).join("") : "<p>尚无标注记录</p>";
@@ -821,8 +871,24 @@ async function deleteMyIntentLabel() {
     intent.caseData.labels = result.labels;
     intent.caseData.status = "unlabeled";
     const username = String(state.session.username || "").toLowerCase();
-    intent.caseData.collaboration.contributors = (intent.caseData.collaboration.contributors || [])
-      .filter((item) => !(item.is_current || item.username === username));
+    intent.caseData.collaboration ||= { contributors: [], comments: [] };
+    const contributors = intent.caseData.collaboration.contributors ||= [];
+    const current = contributors.find((item) => item.is_current || item.username === username);
+    if (current) {
+      Object.assign(current, {
+        username,
+        is_current: true,
+        labeled: false,
+        completed: false,
+        revealed: true,
+        routing_default: "",
+        lane_change_default: "",
+        overrides: [],
+        frame_counts: {},
+        updated_at: "",
+        version: 0,
+      });
+    }
   }
   intentSetSaveState("尚未标注", "");
   updateIntentTimelineState({ scroll: false });
@@ -1046,10 +1112,12 @@ async function intentFlushSave() {
         username,
         is_current: true,
         revealed: true,
+        labeled: true,
         completed: Boolean(payload.labels?.routing_default && payload.labels?.lane_change_default),
         routing_default: payload.labels?.routing_default || "",
         lane_change_default: payload.labels?.lane_change_default || "",
         overrides: payload.labels?.overrides || [],
+        frame_counts: intentLocalFrameCounts(),
         updated_at: payload.labels?.created_at || "",
       });
       renderIntentCollaboration();
@@ -1360,7 +1428,10 @@ function bindIntentLabelingEvents() {
   $("#intentOpenComments")?.addEventListener("click", () => {
     Promise.resolve(openIntentComments()).catch((error) => showToast(error.message, true));
   });
-  $("#intentDeleteMyLabel")?.addEventListener("click", () => deleteMyIntentLabel().catch((error) => showToast(error.message, true)));
+  $("#intentContributorList")?.addEventListener("click", (event) => {
+    if (!event.target.closest("[data-intent-delete-mine]")) return;
+    deleteMyIntentLabel().catch((error) => showToast(error.message, true));
+  });
   $("#intentTimeline")?.addEventListener("wheel", (event) => {
     const timeline = event.currentTarget;
     if (event.ctrlKey || event.metaKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;

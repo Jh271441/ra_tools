@@ -482,9 +482,18 @@ class IntentExperimentTest(unittest.TestCase):
                 ),
                 owners,
             )
+            self.assertEqual(
+                database.list_intent_case_assignees("test-v1", "cn1_1"),
+                ["alice", "bob"],
+            )
+            self.assertEqual(
+                database.list_intent_case_assignees("test-v1", "cn2_2"),
+                ["alice"],
+            )
             database.close_intent_experiment("experiment-filter", closed_by="admin")
             self.assertEqual(database.list_intent_assignment_assignees("test-v1"), [])
             self.assertEqual(database.intent_assigned_case_ids("test-v1", ["alice"]), ())
+            self.assertEqual(database.list_intent_case_assignees("test-v1", "cn1_1"), [])
 
 
 if __name__ == "__main__":

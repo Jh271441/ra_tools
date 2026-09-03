@@ -741,6 +741,24 @@ class DatabaseIntentMixin:
             "assignments": [dict(row) for row in assignments],
         }
 
+    def list_intent_case_assignees(self, dataset_id: str, case_id: str) -> list[str]:
+        """Return active-experiment owners for one Case, without their answers."""
+
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT assignment.username
+                FROM intent_experiment_assignments assignment
+                JOIN intent_experiments experiment
+                  ON experiment.id = assignment.experiment_id
+                WHERE experiment.dataset_id = ? AND assignment.case_id = ?
+                  AND experiment.status = 'active'
+                ORDER BY assignment.username ASC
+                """,
+                (dataset_id, case_id),
+            ).fetchall()
+        return [str(row["username"]) for row in rows]
+
     def intent_case_has_active_experiment(self, dataset_id: str, case_id: str) -> bool:
         with self.connect() as conn:
             row = conn.execute(

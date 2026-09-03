@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from ..db_parts.shared import IntentAnnotationConflictError
 from ..http_support import _action_actor, _admin_identity, _detail, _intent_identity
 from ..intent_experiments import build_intent_experiment_assignments
-from ..intent_summary import intent_frame_counts, summarize_intent
+from ..intent_summary import intent_frame_counts, public_intent_contributors, summarize_intent
 from ..runtime import database, intent_dataset_registry
 
 
@@ -416,39 +416,16 @@ def _case_payload(
         overrides=labels.get("overrides") or [],
     )
     contributors = database.list_intent_contributors(dataset_id, case_id)
-    blind_active = database.intent_case_has_active_experiment(
-        dataset_id, case_id
-    )
+    assignees = database.list_intent_case_assignees(dataset_id, case_id)
+    blind_active = bool(assignees)
     answers_revealed = reveal_answers or not blind_active
-    public_contributors = []
-    for contributor in contributors:
-        is_current = contributor["username"] == username.lower()
-        item = {
-            "username": contributor["username"],
-            "version": contributor["version"],
-            "updated_at": contributor["updated_at"],
-            # Frame-level distributions are answer data too.  Keep them
-            # private while an active blind experiment is in progress, just
-            # like the actual Routing / lane-change values below.
-            "frame_counts": intent_frame_counts(
-                timeline,
-                routing_default=str(contributor.get("routing_default") or ""),
-                lane_change_default=str(contributor.get("lane_change_default") or ""),
-                overrides=contributor.get("overrides") or [],
-            ) if is_current or answers_revealed else {},
-            "completed": bool(
-                contributor["routing_default"]
-                and contributor["lane_change_default"]
-            ),
-            "is_current": is_current,
-            "revealed": is_current or answers_revealed,
-        }
-        if item["revealed"]:
-            item["routing_default"] = contributor["routing_default"]
-            item["lane_change_default"] = contributor["lane_change_default"]
-            item["overrides"] = contributor["overrides"]
-        if item["revealed"]:
-            public_contributors.append(item)
+    public_contributors = public_intent_contributors(
+        username=username,
+        contributors=contributors,
+        assignees=assignees,
+        answers_revealed=answers_revealed,
+        timeline=timeline,
+    )
     overrides = {item["timepoint_id"]: item for item in labels["overrides"]}
     enriched = []
     for timepoint in timeline:

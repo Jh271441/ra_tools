@@ -41,6 +41,9 @@ class IntentLabelingAccessContractTest(unittest.TestCase):
         self.assertIn('await asyncio.to_thread(_admin_identity, request)', INTENT_ROUTER)
         self.assertIn('cases/{case_id}/comments"', INTENT_ROUTER)
         self.assertIn('"answers_revealed": answers_revealed', INTENT_ROUTER)
+        self.assertIn("public_intent_contributors(", INTENT_ROUTER)
+        self.assertIn("list_intent_case_assignees", INTENT_ROUTER)
+        self.assertNotIn("if item[\"revealed\"]:", INTENT_ROUTER)
         self.assertIn("if reveal_answers:", INTENT_ROUTER)
         self.assertIn("await asyncio.to_thread(_admin_identity, request)", INTENT_ROUTER)
 
