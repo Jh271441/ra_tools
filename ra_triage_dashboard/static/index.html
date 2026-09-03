@@ -68,7 +68,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-311`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-312`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -426,19 +426,9 @@
           <section class="app-page intent-experiment-page hidden" id="intentExperimentsPage" data-page="intent-experiments">
             <section class="intent-experiment-panel" aria-label="多盲实验与任务分配">
               <div class="intent-experiment-layout">
-                <section class="intent-experiment-create" aria-labelledby="intentExperimentCreateTitle">
+                <section class="intent-experiment-create" aria-labelledby="intentExperimentTitle">
                   <div class="intent-experiment-section-heading"><div><span>NEW EXPERIMENT</span><h3 id="intentExperimentTitle">创建与分配实验</h3></div><p>顶栏可多选数据集 · 每个数据集独立生成不可变分配快照</p></div>
                   <div class="intent-experiment-create-body">
-                    <aside class="intent-experiment-guide" aria-labelledby="intentExperimentCreateTitle">
-                      <span class="intent-admin-badge">标注权限</span>
-                      <h4 id="intentExperimentCreateTitle">实验分配契约</h4>
-                      <p>具有“创建与分配”权限的人员可创建实验；所有意图成员均可查看实验记录。</p>
-                      <dl>
-                        <div><dt>数据范围</dt><dd>使用顶栏已选择的数据集</dd></div>
-                        <div><dt>任务生成</dt><dd>按成员与复核比例自动分配</dd></div>
-                        <div><dt>创建之后</dt><dd>快照冻结，不随数据集变化改写</dd></div>
-                      </dl>
-                    </aside>
                     <form class="intent-experiment-form" id="intentExperimentForm">
                       <label class="intent-experiment-name-field"><span>实验名称</span><input id="intentExperimentName" maxlength="160" autocomplete="off" placeholder="例如 0206 Routing 双盲复核" required/></label>
                       <div class="intent-experiment-form-row">
@@ -1798,7 +1788,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-311`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-312`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

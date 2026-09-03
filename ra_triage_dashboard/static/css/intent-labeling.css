@@ -566,7 +566,7 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-contributor-status { margin-left: auto; flex: 0 0 auto; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; }
 .intent-contributor-status.is-labeled { color: var(--ok); background: rgba(48, 211, 143, .14); }
 .intent-contributor-status.is-pending { color: var(--muted); background: rgba(127, 151, 170, .14); }
-.intent-contributor-labels { min-width: 0; display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; }
+.intent-contributor-labels { min-width: 0; display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; margin-left: auto; }
 .intent-contributor-labels .intent-chip { flex: 0 0 auto; min-height: 18px; padding: 0 6px; border-radius: 999px; font-size: 10px; }
 .intent-contributor-menu { position: relative; margin-left: auto; flex: 0 0 auto; }
 .intent-contributor-menu-trigger {
@@ -611,16 +611,8 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-experiment-section-heading p { max-width: 520px; margin: 0; color: var(--faint); font-size: 12px; line-height: 1.5; text-align: right; }
 .intent-experiment-count { min-width: 28px; padding: 4px 8px; border: 1px solid rgba(36, 211, 238, .3); border-radius: 999px; color: var(--accent); background: rgba(36, 211, 238, .08); font-size: 12px; text-align: center; }
 .intent-experiment-create-body {
-  min-width: 0; display: grid; grid-template-columns: minmax(230px, .38fr) minmax(0, 1fr);
-  gap: 22px; padding-top: 16px; border-top: 1px solid var(--line-soft);
+  min-width: 0; display: block; padding-top: 16px; border-top: 1px solid var(--line-soft);
 }
-.intent-experiment-guide { min-width: 0; padding: 4px 22px 4px 4px; border-right: 1px solid var(--line-soft); }
-.intent-experiment-guide h4 { margin: 13px 0 8px; color: var(--text); font-size: 15px; }
-.intent-experiment-guide > p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
-.intent-experiment-guide dl { display: grid; gap: 9px; margin: 18px 0 0; }
-.intent-experiment-guide dl > div { display: grid; grid-template-columns: 66px minmax(0, 1fr); gap: 8px; }
-.intent-experiment-guide dt { color: var(--faint); font-size: 11px; }
-.intent-experiment-guide dd { min-width: 0; margin: 0; color: var(--text); font-size: 12px; line-height: 1.45; }
 .intent-experiment-form {
   min-width: 0; display: grid; align-content: start; gap: 16px; padding: 2px 0;
   border: 0; background: transparent;
@@ -732,12 +724,6 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
   .intent-experiment-layout { grid-template-columns: 1fr; }
   .intent-experiment-list { max-height: none; }
 }
-@media (max-width: 1000px) {
-  .intent-experiment-create-body { grid-template-columns: 1fr; }
-  .intent-experiment-guide { padding: 0 0 16px; border-right: 0; border-bottom: 1px solid var(--line-soft); }
-  .intent-experiment-guide dl { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .intent-experiment-guide dl > div { grid-template-columns: 1fr; gap: 3px; }
-}
 @media (max-width: 800px) {
   .intent-commandbar { grid-template-columns: 1fr; }
   .intent-case-field, .intent-assignee-field, .intent-experiment-filter-field, .intent-load-case-button, .intent-command-navigator { grid-column: auto; }
@@ -747,7 +733,6 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
   .intent-experiment-create, .intent-experiment-history { padding: 15px; }
   .intent-experiment-section-heading { grid-template-columns: 1fr; }
   .intent-experiment-section-heading p { text-align: left; }
-  .intent-experiment-guide dl { grid-template-columns: 1fr; }
 }
 
 /* Keep the intent rail usable at narrow widths and with long SSO names.  The

@@ -787,6 +787,70 @@ function renderPendingReviewImages() {
   });
 }
 
+const CASE_DETAIL_PREFETCH_TTL_MS = 15000;
+const CASE_DETAIL_PREFETCH_LIMIT = 4;
+const TRAIL_DETAIL_DELAY_MS = 350;
+
+function caseCorePath(issueId) {
+  return `/api/cases/${encodeURIComponent(issueId)}?include_media=false`;
+}
+
+function prefetchCaseCore(issueId) {
+  const id = String(issueId || "");
+  if (!id || id === state.selectedId || state.caseDetailPrefetch.has(id)) return;
+  const entry = { createdAt: Date.now(), promise: null };
+  entry.promise = api(caseCorePath(id), { cache: "no-store" }).catch(() => {
+    if (state.caseDetailPrefetch.get(id) === entry) state.caseDetailPrefetch.delete(id);
+    return null;
+  });
+  state.caseDetailPrefetch.set(id, entry);
+  while (state.caseDetailPrefetch.size > CASE_DETAIL_PREFETCH_LIMIT) {
+    state.caseDetailPrefetch.delete(state.caseDetailPrefetch.keys().next().value);
+  }
+}
+
+async function loadCaseCore(issueId) {
+  const entry = state.caseDetailPrefetch.get(issueId);
+  state.caseDetailPrefetch.delete(issueId);
+  if (entry && Date.now() - entry.createdAt <= CASE_DETAIL_PREFETCH_TTL_MS) {
+    const prefetched = await entry.promise;
+    if (prefetched) return prefetched;
+  }
+  return api(caseCorePath(issueId), { cache: "no-store" });
+}
+
+function prefetchAdjacentCaseCores(issueId) {
+  const index = state.cases.findIndex((item) => item.issue_id === issueId);
+  if (index < 0) return;
+  [state.cases[index - 1], state.cases[index + 1]].forEach((item) => {
+    if (item?.issue_id) prefetchCaseCore(item.issue_id);
+  });
+}
+
+function cancelCaseHydration() {
+  state.caseMediaController?.abort();
+  state.caseMediaController = null;
+  state.trailMetadataController?.abort();
+  state.trailMetadataController = null;
+  if (state.trailMetadataTimer !== null) {
+    window.clearTimeout(state.trailMetadataTimer);
+    state.trailMetadataTimer = null;
+  }
+}
+
+function scheduleTrailDetailMetadata(issueId, requestSeq) {
+  state.trailMetadataTimer = window.setTimeout(() => {
+    state.trailMetadataTimer = null;
+    if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId) return;
+    const controller = new AbortController();
+    state.trailMetadataController = controller;
+    void startTrailDetailMetadata(issueId, requestSeq, controller.signal).then((result) => {
+      if (state.trailMetadataController === controller) state.trailMetadataController = null;
+      applyTrailDetailMetadata(result, issueId, requestSeq);
+    });
+  }, TRAIL_DETAIL_DELAY_MS);
+}
+
 async function selectCase(
   issueId,
   { updateRoute = true, historyMode = "push" } = {}
@@ -797,6 +861,7 @@ async function selectCase(
     state.galleryScrollY = window.scrollY;
   }
   if (state.selectedId && state.selectedId !== issueId) clearPendingReviewImages();
+  cancelCaseHydration();
   const hadDetail = Boolean(state.selectedCase);
   state.selectedId = issueId;
   state.selectedCase = null;
@@ -827,23 +892,23 @@ async function selectCase(
     setReviewView(issueId);
     window.scrollTo({ top: 0, behavior: "auto" });
   }
-  const trailMetadataPromise = startTrailDetailMetadata(issueId, requestSeq);
   try {
     // Review text and form state do not depend on filesystem media.  Ask for
     // the lightweight core record first; BEV/video/camera hydrate below.
-    const data = await api(`/api/cases/${encodeURIComponent(issueId)}?include_media=false`);
+    const data = await loadCaseCore(issueId);
     if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId) return;
     if (loadingTimer !== null) {
       window.clearTimeout(loadingTimer);
       loadingTimer = null;
     }
+    const caseSummary = state.cases.find((item) => item.issue_id === issueId);
+    data.preview_thumbnail_url = safeSameOriginAssetUrl(caseSummary?.thumbnail?.url);
     state.selectedCase = data;
     renderDetail(data);
     renderReview(data);
     void loadDeferredCaseMedia(issueId, requestSeq);
-    void trailMetadataPromise.then((result) => {
-      applyTrailDetailMetadata(result, issueId, requestSeq);
-    });
+    scheduleTrailDetailMetadata(issueId, requestSeq);
+    prefetchAdjacentCaseCores(issueId);
   } catch (error) {
     if (requestSeq !== state.caseRequestSeq || state.selectedId !== issueId) return;
     if (loadingTimer !== null) {
@@ -861,8 +926,13 @@ async function selectCase(
 }
 
 async function loadDeferredCaseMedia(issueId, requestSeq) {
+  const controller = new AbortController();
+  state.caseMediaController = controller;
   try {
-    const media = await api(`/api/cases/${encodeURIComponent(issueId)}/media`, { cache: "no-store" });
+    const media = await api(`/api/cases/${encodeURIComponent(issueId)}/media`, {
+      cache: "no-store",
+      signal: controller.signal,
+    });
     if (
       requestSeq !== state.caseRequestSeq ||
       state.selectedId !== issueId ||
@@ -882,6 +952,8 @@ async function loadDeferredCaseMedia(issueId, requestSeq) {
     ) return;
     state.selectedCase.media_status = "unavailable";
     renderDetail(state.selectedCase);
+  } finally {
+    if (state.caseMediaController === controller) state.caseMediaController = null;
   }
 }
 

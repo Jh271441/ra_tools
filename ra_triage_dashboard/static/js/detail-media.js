@@ -235,6 +235,7 @@ function heroMediaSection(caseData) {
   const frames = caseData?.assets?.frames || [];
   const video = caseData?.assets?.video;
   const camera = caseData?.camera?.frames || [];
+  const previewThumbnailUrl = safeSameOriginAssetUrl(caseData?.preview_thumbnail_url);
   if (!frames.length && !camera.length && !video?.url) {
     if (caseData?.media_status === "pending") {
       return `<section class="hero-media"><div class="no-asset hero-media-placeholder detail-media-pending"><span>${escapeHtml(uiText("正在加载 BEV、Camera 与视频…", "Loading BEV, camera, and video…"))}</span></div></section>`;
@@ -255,7 +256,8 @@ function heroMediaSection(caseData) {
         zoomable: false,
         compact: true,
       })
-    : `<button type="button" class="hero-media-button" data-detail-media-expand aria-label="展开${kind === "camera" ? " Camera" : " BEV"}媒体预览">
+    : `<button type="button" class="hero-media-button${previewThumbnailUrl ? " has-preview" : ""}" data-detail-media-expand aria-label="展开${kind === "camera" ? " Camera" : " BEV"}媒体预览">
+        ${previewThumbnailUrl ? `<img class="detail-media-preview" src="${escapeHtml(previewThumbnailUrl)}" alt="" aria-hidden="true" />` : ""}
         <img class="detail-media-image" src="${escapeHtml(frame?.url || "")}" alt="${kind === "camera" ? "Camera" : "Ares Capture BEV"} ${escapeHtml(frameLabel(frame || {}))}" />
         <span class="hero-media-overlay">${escapeHtml(frameLabel(frame || {}))} · ${t("media.click_expand")}</span>
       </button>`;
@@ -754,11 +756,12 @@ function renderDetailExternalLinks(caseData) {
   bindDetailExternalLinks(caseData);
 }
 
-function startTrailDetailMetadata(issueId, requestSeq) {
+function startTrailDetailMetadata(issueId, requestSeq, signal = null) {
   // Start this optional remote lookup independently from local media/DB
   // loading.  The caller applies it only after the matching detail DOM exists.
   return api(
-    "/api/cases/" + encodeURIComponent(issueId) + "/trail-metadata"
+    "/api/cases/" + encodeURIComponent(issueId) + "/trail-metadata",
+    signal ? { signal } : {}
   ).catch(() => null);
 }
 

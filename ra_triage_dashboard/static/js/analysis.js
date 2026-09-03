@@ -1412,6 +1412,7 @@ async function changeAnalysisPageSize(value) {
 }
 
 function clearDetail({ showGallery = true } = {}) {
+  if (typeof cancelCaseHydration === "function") cancelCaseHydration();
   state.selectedId = "";
   state.selectedCase = null;
   state.caseRequestSeq += 1;
