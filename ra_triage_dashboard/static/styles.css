@@ -5074,6 +5074,63 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
   .intent-discussion-card .button { justify-self: start; }
 }
 
+/* Keep the current-frame annotation controls independent from the heading.
+ * The narrow right rail must never squeeze blind-state text and destructive
+ * actions into one flex line.  The heading owns title/status; the action row
+ * wraps only its own buttons and can collapse to zero height when both are
+ * hidden. */
+.intent-contributors-card > .intent-contributors-heading {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+  align-items: start;
+  gap: 4px 8px;
+  margin-bottom: 5px;
+  white-space: normal;
+}
+.intent-contributors-heading > #intentContributorsTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.intent-contributors-heading > #intentRevealState {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.intent-contributors-card > .intent-contributor-actions {
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  margin: 0 0 5px;
+}
+.intent-contributor-actions .button { min-width: 0; }
+@media (max-width: 800px) {
+  .intent-contributors-card > .intent-contributors-heading {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .intent-contributors-heading > #intentRevealState {
+    text-align: left;
+    white-space: normal;
+  }
+  .intent-contributors-card > .intent-contributor-actions {
+    justify-content: flex-start;
+  }
+}
+
 html[data-color-theme="light"] .intent-media-panel,
 html[data-color-theme="light"] .intent-timeline-panel,
 html[data-color-theme="light"] .intent-card,

@@ -38,7 +38,7 @@
         window.__RA_TRIAGE_BASE__ = activeBase;
         const styles = document.createElement("link");
         styles.rel = "stylesheet";
-        styles.href = `${activeBase}/static/styles.css?v=manual-triage-306`;
+        styles.href = `${activeBase}/static/styles.css?v=manual-triage-307`;
         let stylesSettled = false;
         const revealShell = () => {
           if (stylesSettled) return;
@@ -391,7 +391,8 @@
                   <button class="button button-quiet intent-restore-button" id="intentRestoreBatchPrefill" type="button" aria-keyshortcuts="0"><span id="intentRestoreBatchPrefillText">当前帧恢复批量预填</span> <kbd>0</kbd></button>
                 </section>
                 <section class="intent-card intent-collaboration-card intent-contributors-card" aria-labelledby="intentContributorsTitle">
-                  <h3><span id="intentContributorsTitle">当前帧已有标注</span><span class="intent-card-heading-actions"><small id="intentRevealState">未进入实验</small><button class="button button-quiet intent-delete-label" id="intentDeleteMyLabel" type="button" hidden>删除我的</button><button class="button button-quiet" id="intentToggleReveal" type="button" hidden>管理员解盲</button></span></h3>
+                  <h3 class="intent-contributors-heading"><span id="intentContributorsTitle">当前帧已有标注</span><small id="intentRevealState">未进入实验</small></h3>
+                  <div class="intent-card-heading-actions intent-contributor-actions" id="intentContributorActions" hidden><button class="button button-quiet intent-delete-label" id="intentDeleteMyLabel" type="button" hidden>删除我的</button><button class="button button-quiet" id="intentToggleReveal" type="button" hidden>管理员解盲</button></div>
                   <div class="intent-contributor-list" id="intentContributorList"><p>尚无标注</p></div>
                 </section>
                 <section class="intent-card intent-collaboration-card intent-discussion-card" aria-labelledby="intentCommentsTitle">
@@ -1766,7 +1767,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-306`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-307`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

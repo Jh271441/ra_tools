@@ -758,15 +758,19 @@ function renderIntentCollaboration() {
     ? "已解盲"
     : "盲标中 · 仅显示自己";
   const revealButton = $("#intentToggleReveal");
+  const actions = $("#intentContributorActions");
+  const canReveal = Boolean(state.session.is_admin && collaboration.blind_active);
   if (revealButton) {
-    revealButton.hidden = !(state.session.is_admin && collaboration.blind_active);
+    revealButton.hidden = !canReveal;
     revealButton.textContent = collaboration.answers_revealed ? "恢复盲态" : "管理员解盲";
   }
   const deleteButton = $("#intentDeleteMyLabel");
+  const canDelete = Boolean(state.session.can_annotate_intent && state.intentLabeling.revisionId);
   if (deleteButton) {
-    deleteButton.hidden = !(state.session.can_annotate_intent && state.intentLabeling.revisionId);
+    deleteButton.hidden = !canDelete;
     deleteButton.title = "移除自己的当前答案；历史版本与删除审计仍会保留";
   }
+  if (actions) actions.hidden = !(canReveal || canDelete);
   if (contributorList) {
     contributorList.innerHTML = contributors.length ? contributors.map((item) => {
       const frameOverride = (item.overrides || []).find((entry) => entry.timepoint_id === active?.id) || {};
