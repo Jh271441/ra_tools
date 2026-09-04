@@ -25,6 +25,8 @@ import {
 // Missing direct geometry is handled by the companion Node Playground script
 // regional_path_sections_id_fallback.ts. It queries MapStore only for path
 // section IDs that do not already have a drawable extendedSections border.
+// That companion fallback is default-off and requires the boolean Ares global
+// variable assist_vlm_enable_regional_path_section_id_fallback=true.
 // ---------------------------------------------------------------------------
 
 export const inputs: string[] = ["/planning/planning_debug"];

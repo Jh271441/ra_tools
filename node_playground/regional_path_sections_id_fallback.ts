@@ -20,6 +20,11 @@ import {
 // - planner-created temporary section IDs may not exist in HD map at all.
 // In either case MapStore returns no geometry, which is preferable to drawing a
 // lane corridor under a misleading full-section visual semantic.
+//
+// This fallback is deliberately disabled by default. Enable it per layout by
+// setting the Ares global variable below to the boolean value true. Keeping the
+// switch here (rather than in regional_path_sections.ts) means direct
+// extendedSections geometry remains available without opting into MapStore.
 // ---------------------------------------------------------------------------
 
 export const inputs: string[] = ["/planning/planning_debug", "/pose"];
@@ -38,6 +43,13 @@ const SECTION_HEIGHT_M = 0.03;
 const SECTION_EDGE_WIDTH_M = 0.25;
 const Z_OFFSET_M = 0.18;
 const RENDER_ORDER = 449;
+const ENABLE_FALLBACK_GLOBAL_VARIABLE =
+  "assist_vlm_enable_regional_path_section_id_fallback";
+const DEFAULT_ENABLE_MAPSTORE_ID_FALLBACK = false;
+
+type RegionalPathFallbackGlobalVariables = GlobalVariables & {
+  assist_vlm_enable_regional_path_section_id_fallback?: boolean;
+};
 
 type PlanningInput = Input<"/planning/planning_debug">;
 type PoseInput = Input<"/pose">;
@@ -94,7 +106,7 @@ const hasDrawableBorder = (section: ExtendedSection): boolean =>
 
 const publisher = (
   messages: Record<string, PlanningInput | PoseInput>,
-  _globalVars: GlobalVariables,
+  globalVars: GlobalVariables,
 ): Messages.voyager_map_elements__PathArray | undefined => {
   const planningInput = messages["/planning/planning_debug"] as
     | PlanningInput
@@ -128,6 +140,16 @@ const publisher = (
       ns: "",
     },
   ];
+
+  const fallbackEnabled =
+    (globalVars as RegionalPathFallbackGlobalVariables)[
+      ENABLE_FALLBACK_GLOBAL_VARIABLE
+    ] ?? DEFAULT_ENABLE_MAPSTORE_ID_FALLBACK;
+  if (fallbackEnabled !== true) {
+    // Publish DELETE_ALL so disabling the flag also clears markers emitted
+    // while it was enabled; do not leave stale fallback geometry on screen.
+    return { markers } as unknown as Messages.voyager_map_elements__PathArray;
+  }
 
   const regionalMap = (planning as any)?.worldModelDebug?.regionalMapInfoDebug
     ?.regionalMap;
