@@ -498,13 +498,20 @@ function handleIntentShortcut(event) {
 
 function downloadIntentExport(view) {
   if (!state.session.is_admin) return;
-  const datasetIds = parseFilterList(
+  let datasetIds = parseFilterList(
     state.intentLabeling.summaryDatasetIds?.length
       ? state.intentLabeling.summaryDatasetIds
       : (state.intentLabeling.summaryDatasetId || state.intentLabeling.datasetId)
   );
   if (!datasetIds.length) return;
   const params = new URLSearchParams({ view, include_incomplete: "true" });
+  const experimentId = state.intentLabeling.summaryExperimentId || "";
+  if (experimentId) {
+    const experiment = (state.intentLabeling.summaryPayload?.experiments || [])
+      .find((item) => item.id === experimentId);
+    if (experiment?.dataset_id) datasetIds = [experiment.dataset_id];
+    params.set("experiment_id", experimentId);
+  }
   datasetIds.forEach((datasetId) => {
     const link = document.createElement("a");
     link.href = withBase(`/api/intent-datasets/${encodeURIComponent(datasetId)}/export?${params}`);

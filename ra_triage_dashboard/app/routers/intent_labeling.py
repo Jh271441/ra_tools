@@ -1155,16 +1155,71 @@ async def get_intent_asset(
     )
 
 
-def _export_jsonl(dataset_id: str, view: str, include_incomplete: bool):
+def _intent_export_scope(
+    dataset_id: str, experiment_id: str
+) -> tuple[tuple[str, ...], str]:
     case_ids = intent_dataset_registry.case_ids(dataset_id)
+    if not experiment_id:
+        return case_ids, "all"
+    experiment = next(
+        (
+            item
+            for item in database.list_intent_experiments(dataset_id)
+            if item["id"] == experiment_id
+        ),
+        None,
+    )
+    if experiment is None:
+        raise _detail(404, "实验不属于当前数据集。")
+    assignments = database.intent_report_rows(dataset_id)["assignments"]
+    assigned_cases = {
+        str(item["case_id"])
+        for item in assignments
+        if item["experiment_id"] == experiment_id
+    }
+    return (
+        tuple(case_id for case_id in case_ids if case_id in assigned_cases),
+        str(experiment.get("label_scope") or "all"),
+    )
+
+
+def _scoped_intent_overrides(
+    overrides: list[dict[str, Any]], label_scope: str
+) -> list[dict[str, Any]]:
+    scoped: list[dict[str, Any]] = []
+    for item in overrides:
+        projected = {
+            "timepoint_id": item["timepoint_id"],
+            "offset_ms": item["offset_ms"],
+        }
+        if label_scope != "lane_change":
+            projected["routing_intent"] = item.get("routing_intent") or ""
+        if label_scope != "routing":
+            projected["lane_change_intent"] = item.get("lane_change_intent") or ""
+        if any(projected.get(key) for key in ("routing_intent", "lane_change_intent")):
+            scoped.append(projected)
+    return scoped
+
+
+def _export_jsonl(
+    dataset_id: str,
+    view: str,
+    include_incomplete: bool,
+    *,
+    case_ids: tuple[str, ...] | None = None,
+    label_scope: str = "all",
+    experiment_id: str = "",
+):
+    if case_ids is None:
+        case_ids = intent_dataset_registry.case_ids(dataset_id)
     dataset = intent_dataset_registry.dataset(dataset_id)
     membership_sha256 = intent_dataset_registry.membership_sha256(dataset_id)
     for case_id in case_ids:
         labels = database.get_intent_labels(dataset_id, case_id)
-        complete = bool(
-            labels
-            and labels.get("routing_default")
-            and labels.get("lane_change_default")
+        complete = bool(labels) and intent_labels_complete(
+            str((labels or {}).get("routing_default") or ""),
+            str((labels or {}).get("lane_change_default") or ""),
+            label_scope=label_scope,
         )
         if not labels or (not include_incomplete and not complete):
             continue
@@ -1178,14 +1233,20 @@ def _export_jsonl(dataset_id: str, view: str, include_incomplete: bool):
             "author": labels["author"],
             "created_at": labels["created_at"],
             "complete": complete,
+            "experiment_id": experiment_id,
+            "label_scope": label_scope,
         }
         if view == "compact":
+            scoped = _scoped_intent_overrides(labels["overrides"], label_scope)
+            values: dict[str, Any] = {"overrides": scoped}
+            if label_scope != "lane_change":
+                values["routing_default"] = labels["routing_default"]
+            if label_scope != "routing":
+                values["lane_change_default"] = labels["lane_change_default"]
             yield json.dumps(
                 {
                     **common,
-                    "routing_default": labels["routing_default"],
-                    "lane_change_default": labels["lane_change_default"],
-                    "overrides": labels["overrides"],
+                    **values,
                 },
                 ensure_ascii=False,
                 sort_keys=True,
@@ -1194,15 +1255,23 @@ def _export_jsonl(dataset_id: str, view: str, include_incomplete: bool):
         overrides = {item["timepoint_id"]: item for item in labels["overrides"]}
         for timepoint in intent_dataset_registry.timeline(dataset_id, case_id):
             override = overrides.get(timepoint["id"], {})
+            values = {}
+            if label_scope != "lane_change":
+                values.update({
+                    "routing_intent": override.get("routing_intent") or labels["routing_default"],
+                    "routing_source": "override" if override.get("routing_intent") else "aggregate",
+                })
+            if label_scope != "routing":
+                values.update({
+                    "lane_change_intent": override.get("lane_change_intent") or labels["lane_change_default"],
+                    "lane_change_source": "override" if override.get("lane_change_intent") else "aggregate",
+                })
             yield json.dumps(
                 {
                     **common,
                     "timepoint_id": timepoint["id"],
                     "offset_ms": timepoint["offset_ms"],
-                    "routing_intent": override.get("routing_intent") or labels["routing_default"],
-                    "lane_change_intent": override.get("lane_change_intent") or labels["lane_change_default"],
-                    "routing_source": "override" if override.get("routing_intent") else "aggregate",
-                    "lane_change_source": "override" if override.get("lane_change_intent") else "aggregate",
+                    **values,
                     "camera_available": bool(timepoint.get("camera")),
                     "bev_available": bool(timepoint.get("bev")),
                     "camera_delta_ms": timepoint.get("camera_delta_ms"),
@@ -1218,6 +1287,7 @@ async def export_intent_labels(
     dataset_id: str,
     view: str = "compact",
     include_incomplete: bool = False,
+    experiment_id: str = "",
 ) -> StreamingResponse:
     await asyncio.to_thread(_admin_identity, request)
     if view not in {"compact", "expanded"}:
@@ -1226,8 +1296,18 @@ async def export_intent_labels(
         intent_dataset_registry.dataset(dataset_id)
     except KeyError as exc:
         raise _detail(404, str(exc)) from exc
+    case_ids, label_scope = await asyncio.to_thread(
+        _intent_export_scope, dataset_id, experiment_id
+    )
     return StreamingResponse(
-        _export_jsonl(dataset_id, view, include_incomplete),
+        _export_jsonl(
+            dataset_id,
+            view,
+            include_incomplete,
+            case_ids=case_ids,
+            label_scope=label_scope,
+            experiment_id=experiment_id,
+        ),
         media_type="application/x-ndjson; charset=utf-8",
         headers={
             "Content-Disposition": f'attachment; filename="{dataset_id}-{view}.jsonl"',

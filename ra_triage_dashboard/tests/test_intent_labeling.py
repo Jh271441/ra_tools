@@ -4,11 +4,14 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from ra_triage_dashboard.app.db import Database
 from ra_triage_dashboard.app.db_parts.shared import IntentAnnotationConflictError
 from ra_triage_dashboard.app.intent_dataset_registry import IntentDatasetIndex
 from ra_triage_dashboard.app.intent_experiments import build_intent_experiment_assignments
+from ra_triage_dashboard.app.routers import intent_labeling as intent_router
 
 
 class IntentDatasetIndexTest(unittest.TestCase):
@@ -141,6 +144,68 @@ class IntentDatasetIndexTest(unittest.TestCase):
             path, media_type = index.resolve_asset("test-v1", case_id, "camera_+0")
             self.assertEqual(path.name, "1.jpg")
             self.assertEqual(media_type, "image/jpeg")
+
+
+class IntentLabelExportTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.registry = SimpleNamespace(
+            case_ids=lambda dataset_id: ("c1", "c2"),
+            dataset=lambda dataset_id: SimpleNamespace(source_sha256="source-sha"),
+            membership_sha256=lambda dataset_id: "membership-sha",
+            timeline=lambda dataset_id, case_id: [
+                {"id": "t:+0", "offset_ms": 0, "camera": {}, "bev": {}, "camera_delta_ms": 0}
+            ],
+        )
+        self.labels = {
+            "revision_id": 7,
+            "author": "alice",
+            "created_at": "2026-09-04T00:00:00Z",
+            "routing_default": "straight",
+            "lane_change_default": "lane_change",
+            "overrides": [{
+                "timepoint_id": "t:+0",
+                "offset_ms": 0,
+                "routing_intent": "left_turn",
+                "lane_change_intent": "no_lane_change",
+            }],
+        }
+        self.database = SimpleNamespace(
+            get_intent_labels=lambda dataset_id, case_id: self.labels if case_id == "c2" else None,
+            list_intent_experiments=lambda dataset_id: [{
+                "id": "routing-exp", "label_scope": "routing", "status": "closed"
+            }],
+            intent_report_rows=lambda dataset_id: {"assignments": [{
+                "experiment_id": "routing-exp", "case_id": "c2"
+            }]},
+        )
+
+    def test_routing_experiment_export_omits_lane_change_fields(self) -> None:
+        with (
+            patch.object(intent_router, "intent_dataset_registry", self.registry),
+            patch.object(intent_router, "database", self.database),
+        ):
+            case_ids, label_scope = intent_router._intent_export_scope(
+                "dataset", "routing-exp"
+            )
+            self.assertEqual(case_ids, ("c2",))
+            self.assertEqual(label_scope, "routing")
+            compact = json.loads(next(intent_router._export_jsonl(
+                "dataset", "compact", False, case_ids=case_ids,
+                label_scope=label_scope, experiment_id="routing-exp",
+            )))
+            expanded = json.loads(next(intent_router._export_jsonl(
+                "dataset", "expanded", False, case_ids=case_ids,
+                label_scope=label_scope, experiment_id="routing-exp",
+            )))
+        self.assertEqual(compact["label_scope"], "routing")
+        self.assertEqual(compact["routing_default"], "straight")
+        self.assertNotIn("lane_change_default", compact)
+        self.assertEqual(compact["overrides"], [{
+            "timepoint_id": "t:+0", "offset_ms": 0, "routing_intent": "left_turn"
+        }])
+        self.assertEqual(expanded["routing_intent"], "left_turn")
+        self.assertNotIn("lane_change_intent", expanded)
+        self.assertNotIn("lane_change_source", expanded)
 
     def test_camera41_manifest_uses_exact_episode_offsets_and_confined_copy(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
