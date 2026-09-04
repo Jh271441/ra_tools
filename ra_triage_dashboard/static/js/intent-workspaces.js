@@ -365,14 +365,15 @@ function renderIntentAssignmentFilter() {
       (async () => {
         await intentFlushSave();
         intent.assigneeDatasetId = "";
+        intent.assigneeSelectionDatasetId = "";
         intent.selectedAssignees = [];
         await loadIntentLabeling({
           datasetId: intent.datasetId,
           caseId: "",
-          // Changing the experiment is an explicit scope change.  Clear the
-          // owner filter as well so “未分配（全部 Issue）” really means the
-          // complete dataset instead of silently re-selecting the SSO user.
-          assignees: [],
+          // A concrete experiment resumes the signed-in annotator's own
+          // immutable assignment when available. The unassigned scope still
+          // means all Issues and therefore keeps the owner filter empty.
+          assignees: experimentId ? null : [],
           experimentId,
           historyMode: "push",
         });
@@ -713,10 +714,36 @@ function renderIntentExperiments() {
     const width = (value) => total ? Math.max(0, Math.min(100, value * 100 / total)) : 0;
     return `<article class="intent-experiment-item${item.status === "closed" ? " is-closed" : ""}" data-intent-experiment="${escapeHtml(item.id)}">
       <div><h4>${escapeHtml(item.name)}</h4><div class="intent-experiment-meta">${escapeHtml(datasetName)} · ${intentExperimentScopeLabel(item.label_scope)} · ${intentExperimentModeLabel(item.annotation_mode)}${overlap} · ${item.case_count} 个 Case · ${item.assignment_count} 份任务 · ${escapeHtml(item.created_by)}${updateMeta}</div></div>
-      <div class="intent-experiment-controls"><span class="intent-experiment-status">${item.status === "closed" ? "已关闭" : "进行中"}</span>${item.status === "active" && state.session.can_manage_intent ? '<button class="button button-quiet" type="button" data-edit-intent-experiment>编辑实验</button><button class="button button-quiet" type="button" data-close-intent-experiment>关闭实验</button>' : ""}</div>
+      <div class="intent-experiment-controls"><span class="intent-experiment-status">${item.status === "closed" ? "已关闭" : "进行中"}</span>${item.status === "active" ? '<button class="button button-quiet" type="button" data-open-intent-experiment>继续标注</button>' : ""}${item.status === "active" && state.session.can_manage_intent ? '<button class="button button-quiet" type="button" data-edit-intent-experiment>编辑实验</button><button class="button button-quiet" type="button" data-close-intent-experiment>关闭实验</button>' : ""}</div>
       <div class="intent-experiment-detail-row"><div class="intent-experiment-member-stats">${members}</div><div class="intent-experiment-progress" title="完成 ${completed}，进行中 ${partial}，待标 ${pending}"><div class="intent-experiment-progress-track" role="img" aria-label="标注进度：完成 ${completed}，进行中 ${partial}，待标 ${pending}"><i class="is-complete" style="width:${width(completed)}%"></i><i class="is-partial" style="width:${width(partial)}%"></i><i class="is-pending" style="width:${width(pending)}%"></i></div><small>完成 ${completed} / ${total}${partial ? ` · 进行中 ${partial}` : ""}</small></div></div>
     </article>`;
   }).join("") : '<div class="intent-experiment-empty"><span aria-hidden="true">◎</span><strong>所选数据集尚未创建实验</strong><p>在上方完成配置后，实验与每位成员的任务量会显示在这里。</p></div>';
+  container.querySelectorAll("[data-open-intent-experiment]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const experimentId = button.closest("[data-intent-experiment]")?.dataset.intentExperiment;
+      const experiment = experiments.find((item) => item.id === experimentId);
+      if (!experiment) return;
+      const intent = state.intentLabeling;
+      intent.assigneeDatasetId = "";
+      intent.assigneeSelectionDatasetId = "";
+      intent.selectedAssignees = [];
+      navigatePage("intent", {
+        loadPageData: false,
+        intentDatasetId: experiment.dataset_id,
+        intentDatasetIds: [experiment.dataset_id],
+        intentExperimentId: experiment.id,
+      });
+      loadIntentLabeling({
+        datasetId: experiment.dataset_id,
+        datasetIds: [experiment.dataset_id],
+        caseId: "",
+        assignees: null,
+        experimentId: experiment.id,
+        resumeIncomplete: true,
+        historyMode: "replace",
+      }).catch((error) => showToast(error.message, true));
+    });
+  });
   container.querySelectorAll("[data-close-intent-experiment]").forEach((button) => {
     button.addEventListener("click", () => {
       const experimentId = button.closest("[data-intent-experiment]")?.dataset.intentExperiment;

@@ -1,4 +1,4 @@
-async function loadIntentLabeling({ datasetId = "", datasetIds = null, caseId = "", offsetMs = null, assignees = null, experimentId = null, historyMode = "replace" } = {}) {
+async function loadIntentLabeling({ datasetId = "", datasetIds = null, caseId = "", offsetMs = null, assignees = null, experimentId = null, historyMode = "replace", resumeIncomplete = null } = {}) {
   const intent = state.intentLabeling;
   restoreIntentWorkspacePreferences();
   const requestSeq = ++intent.requestSeq;
@@ -36,7 +36,10 @@ async function loadIntentLabeling({ datasetId = "", datasetIds = null, caseId = 
   const assigneeParams = intentAssigneeSearchParams();
   const queueParams = new URLSearchParams(assigneeParams);
   scopeIds.forEach((id) => queueParams.append("dataset_id", id));
-  queueParams.set("status", "all");
+  const shouldResumeIncomplete = resumeIncomplete == null
+    ? Boolean(intent.selectedExperimentId && !caseId)
+    : Boolean(resumeIncomplete);
+  queueParams.set("status", shouldResumeIncomplete ? "incomplete" : "all");
   queueParams.set("page_size", "200");
   let targetCaseId = caseId;
   if (targetCaseId && !/^cn[0-9]+(?:_[0-9]+)?$/.test(targetCaseId)) {
@@ -44,8 +47,15 @@ async function loadIntentLabeling({ datasetId = "", datasetIds = null, caseId = 
   }
   if (targetCaseId) queueParams.set("q", targetCaseId);
   else queueParams.set("page_size", "1");
-  const queue = await api(intentApiUrl("/api/intent-cases", queueParams));
+  let queue = await api(intentApiUrl("/api/intent-cases", queueParams));
   if (requestSeq !== intent.requestSeq) return;
+  let completedExperimentFallback = false;
+  if (shouldResumeIncomplete && !(queue.items || []).length) {
+    queueParams.set("status", "all");
+    queue = await api(intentApiUrl("/api/intent-cases", queueParams));
+    if (requestSeq !== intent.requestSeq) return;
+    completedExperimentFallback = Boolean((queue.items || []).length);
+  }
   let queueItem = null;
   if (/^cn[0-9]+_[0-9]+$/.test(targetCaseId)) {
     const exact = (queue.items || []).filter((item) => item.case_id === targetCaseId);
@@ -92,6 +102,7 @@ async function loadIntentLabeling({ datasetId = "", datasetIds = null, caseId = 
   persistIntentWorkspacePreferences();
   renderIntentCase({ deferTimelineThumbnails: true });
   intentSetSaveState(intent.revisionId ? "已自动保存" : "尚未标注", intent.revisionId ? "saved" : "");
+  if (completedExperimentFallback) showToast("该实验已全部标注，已打开队列中的第一个 Case。");
   if (state.activePage === "intent" && historyMode) {
     const route = pageUrl("intent", intentRouteOptions());
     const historyState = { page: "intent", datasetId: intent.datasetId, caseId: intent.caseId };

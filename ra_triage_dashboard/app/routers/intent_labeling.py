@@ -781,7 +781,7 @@ def _list_cases(
     items = []
     for ordinal, case_id in enumerate(case_ids, 1):
         item_status = _case_status(summaries.get(case_id), label_scope)
-        if status != "all" and item_status != status:
+        if not _intent_case_status_matches(item_status, status):
             continue
         if normalized_search and normalized_search not in case_id.lower():
             continue
@@ -846,7 +846,7 @@ def _list_cases_multi(
     normalized_search = search.strip().lower()
     filtered = [
         item for item in scoped
-        if (status == "all" or item["status"] == status)
+        if _intent_case_status_matches(item["status"], status)
         and (not normalized_search or normalized_search in item["case_id"].lower())
     ]
     total = len(filtered)
@@ -862,6 +862,14 @@ def _list_cases_multi(
     }
 
 
+def _intent_case_status_matches(item_status: str, requested_status: str) -> bool:
+    if requested_status == "all":
+        return True
+    if requested_status == "incomplete":
+        return item_status in {"unlabeled", "partial"}
+    return item_status == requested_status
+
+
 @router.get("/api/intent-cases")
 async def list_multi_dataset_intent_cases(
     request: Request,
@@ -873,7 +881,7 @@ async def list_multi_dataset_intent_cases(
     assignee: list[str] = Query(default=[]),
     experiment_id: str = "",
 ) -> dict[str, Any]:
-    if status not in {"all", "unlabeled", "partial", "completed"}:
+    if status not in {"all", "incomplete", "unlabeled", "partial", "completed"}:
         raise _detail(400, "意图标注状态筛选不合法。")
     dataset_ids = tuple(dict.fromkeys(str(item).strip() for item in dataset_id if str(item).strip()))
     if not dataset_ids or len(dataset_ids) > 8:
@@ -903,7 +911,7 @@ async def list_intent_cases(
     assignee: list[str] = Query(default=[]),
     experiment_id: str = "",
 ) -> dict[str, Any]:
-    if status not in {"all", "unlabeled", "partial", "completed"}:
+    if status not in {"all", "incomplete", "unlabeled", "partial", "completed"}:
         raise _detail(400, "意图标注状态筛选不合法。")
     page = max(1, int(page))
     page_size = max(1, min(int(page_size), 200))
