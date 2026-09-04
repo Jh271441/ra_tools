@@ -72,7 +72,7 @@ function renderIntentSummary(payload) {
     const datasetId = item.dataset_id || state.intentLabeling.summaryDatasetId;
     const href = intentSummaryLabelingHref(datasetId, item.case_id);
     const action = state.session.is_admin
-      ? `<td class="intent-summary-admin-column"><button class="button button-quiet intent-summary-delete" type="button" data-intent-summary-delete data-dataset-id="${escapeHtml(datasetId)}" data-case-id="${escapeHtml(item.case_id)}" data-username="${escapeHtml(item.username)}" data-revision-id="${Number(item.revision_id)}">删除标注</button></td>`
+      ? `<td class="intent-summary-admin-column"><div class="intent-summary-row-actions"><label class="intent-summary-select"><input type="checkbox" data-intent-summary-select data-dataset-id="${escapeHtml(datasetId)}" data-case-id="${escapeHtml(item.case_id)}" data-username="${escapeHtml(item.username)}" data-revision-id="${Number(item.revision_id)}" aria-label="选择 ${escapeHtml(item.case_id)} ${escapeHtml(item.username)} 的标注"/></label><button class="button button-quiet intent-summary-delete" type="button" data-intent-summary-delete data-dataset-id="${escapeHtml(datasetId)}" data-case-id="${escapeHtml(item.case_id)}" data-username="${escapeHtml(item.username)}" data-revision-id="${Number(item.revision_id)}">删除标注</button></div></td>`
       : "";
     return `<tr><td><a class="intent-summary-case-link" href="${escapeHtml(href)}">${escapeHtml(item.case_id)}</a>${(payload.dataset_ids || []).length > 1 ? `<small>${escapeHtml(datasetId)}</small>` : ""}</td><td>${escapeHtml(item.username)}${item.username === state.session.username ? "（我）" : ""}</td><td class="intent-summary-routing-column"${showRouting ? "" : " hidden"}>${intentSummaryResultMarkup(item.frame_counts?.routing, INTENT_ROUTING_LABELS)}</td><td class="intent-summary-lane-column"${showLaneChange ? "" : " hidden"}>${intentSummaryResultMarkup(item.frame_counts?.lane_change, INTENT_LANE_LABELS)}</td><td>${escapeHtml(formatTime(item.updated_at) || "—")}</td>${action}</tr>`;
   }).join("") || `<tr><td colspan="${columnCount}">当前筛选下没有已标注结果。</td></tr>`;
@@ -81,6 +81,27 @@ function renderIntentSummary(payload) {
       deleteIntentSummaryLabel(button).catch((error) => showToast(error.message, true));
     });
   });
+  const selectPage = $("#intentSummarySelectPage");
+  const bulkDelete = $("#intentSummaryBulkDelete");
+  if (selectPage) {
+    selectPage.hidden = !state.session.is_admin;
+    selectPage.checked = false;
+    selectPage.indeterminate = false;
+    selectPage.onchange = () => {
+      $("#intentSummaryRows").querySelectorAll("[data-intent-summary-select]").forEach((checkbox) => {
+        checkbox.checked = selectPage.checked;
+      });
+      updateIntentSummaryBulkSelection();
+    };
+  }
+  $("#intentSummaryRows").querySelectorAll("[data-intent-summary-select]").forEach((checkbox) => {
+    checkbox.addEventListener("change", updateIntentSummaryBulkSelection);
+  });
+  if (bulkDelete) {
+    bulkDelete.hidden = !state.session.is_admin;
+    bulkDelete.onclick = () => bulkDeleteIntentSummaryLabels().catch((error) => showToast(error.message, true));
+  }
+  updateIntentSummaryBulkSelection();
   $("#intentSummarySafety").textContent = payload.blind_active && !payload.answers_revealed ? "进行中的盲标实验仅显示自己的答案。" : "汇总当前标注头；不会加载 Camera / BEV 图片。";
   const reveal = $("#intentSummaryReveal");
   reveal.hidden = !(state.session.is_admin && payload.blind_active);
@@ -91,6 +112,51 @@ function renderIntentSummary(payload) {
   $("#intentSummaryPageState").textContent = `${payload.page} / ${pageCount}`;
   $("#intentSummaryPrevious").disabled = payload.page <= 1;
   $("#intentSummaryNext").disabled = payload.page >= pageCount;
+}
+
+function selectedIntentSummaryDeleteTargets() {
+  return [...$("#intentSummaryRows").querySelectorAll("[data-intent-summary-select]:checked")].map((checkbox) => ({
+    dataset_id: checkbox.dataset.datasetId || "",
+    case_id: checkbox.dataset.caseId || "",
+    username: checkbox.dataset.username || "",
+    expected_revision_id: Number(checkbox.dataset.revisionId) || 0,
+  })).filter((item) => item.dataset_id && item.case_id && item.username && item.expected_revision_id);
+}
+
+function updateIntentSummaryBulkSelection() {
+  const checkboxes = [...$("#intentSummaryRows").querySelectorAll("[data-intent-summary-select]")];
+  const selectedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+  const selectPage = $("#intentSummarySelectPage");
+  if (selectPage) {
+    selectPage.checked = Boolean(checkboxes.length) && selectedCount === checkboxes.length;
+    selectPage.indeterminate = selectedCount > 0 && selectedCount < checkboxes.length;
+  }
+  const button = $("#intentSummaryBulkDelete");
+  if (button) {
+    button.disabled = selectedCount === 0;
+    button.textContent = selectedCount ? `批量删除 (${selectedCount})` : "批量删除";
+  }
+}
+
+async function bulkDeleteIntentSummaryLabels() {
+  if (!state.session.is_admin) return;
+  const items = selectedIntentSummaryDeleteTargets();
+  if (!items.length) return;
+  if (!await confirmIntentLabelDeletion({ count: items.length })) return;
+  const button = $("#intentSummaryBulkDelete");
+  if (button) button.disabled = true;
+  try {
+    const result = await api("/api/intent-labels/bulk-delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items }),
+    });
+    acknowledgeLocalChange(result);
+    await loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true });
+    showToast(`已删除 ${Number(result.count) || items.length} 条标注，历史修订与审计记录已保留。`, false);
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 async function deleteIntentSummaryLabel(button) {

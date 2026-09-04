@@ -380,6 +380,48 @@ class IntentLabelStorageTest(unittest.TestCase):
                     expected_revision_id=bob["revision_id"], deleted_by="alice",
                 )
 
+    def test_bulk_delete_is_atomic_and_keeps_an_audit_for_every_head(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database = Database(Path(temp_dir) / "test.sqlite3")
+            database.init()
+            first = database.save_intent_labels(
+                dataset_id="test-v1", case_id="cn1_1",
+                routing_default="straight", lane_change_default="no_lane_change",
+                overrides=[], expected_revision_id=None, author="alice",
+            )
+            second = database.save_intent_labels(
+                dataset_id="test-v2", case_id="cn2_2",
+                routing_default="left_turn", lane_change_default="lane_change",
+                overrides=[], expected_revision_id=None, author="bob",
+            )
+            targets = [
+                {"dataset_id": "test-v1", "case_id": "cn1_1", "username": "alice", "expected_revision_id": first["revision_id"]},
+                {"dataset_id": "test-v2", "case_id": "cn2_2", "username": "bob", "expected_revision_id": second["revision_id"]},
+            ]
+            stale_targets = [dict(item) for item in targets]
+            stale_targets[1]["expected_revision_id"] += 99
+            with self.assertRaises(IntentAnnotationConflictError):
+                database.delete_intent_labels_bulk(
+                    targets=stale_targets, deleted_by="admin",
+                    deleted_by_source="sso", deleted_by_verified=True,
+                )
+            self.assertIsNotNone(database.get_intent_labels("test-v1", "cn1_1", "alice"))
+            self.assertIsNotNone(database.get_intent_labels("test-v2", "cn2_2", "bob"))
+
+            deleted = database.delete_intent_labels_bulk(
+                targets=targets, deleted_by="admin",
+                deleted_by_source="sso", deleted_by_verified=True,
+            )
+            self.assertEqual(len(deleted), 2)
+            self.assertIsNone(database.get_intent_labels("test-v1", "cn1_1", "alice"))
+            self.assertIsNone(database.get_intent_labels("test-v2", "cn2_2", "bob"))
+            with database.connect() as conn:
+                audits = conn.execute(
+                    "SELECT * FROM intent_label_deletions ORDER BY id"
+                ).fetchall()
+            self.assertEqual(len(audits), 2)
+            self.assertTrue(all(item["deleted_by_verified"] for item in audits))
+
 
 class IntentExperimentTest(unittest.TestCase):
     def test_single_annotator_assignment_supports_a_case_subset(self) -> None:

@@ -663,6 +663,10 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-summary-filters { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(150px, .7fr) minmax(100px, .4fr) minmax(180px, 1fr) auto auto; align-items: end; gap: 10px; padding: 14px; }
 .intent-summary-filters .button { height: 36px; }
 .intent-summary-delete { min-height: 28px; padding: 3px 8px; color: var(--fail); font-size: 11px; }
+.intent-summary-actions-column { width: 150px; }
+.intent-summary-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.intent-summary-select, .intent-summary-select-all { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; }
+.intent-summary-select input, .intent-summary-select-all input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 .intent-summary-comment-field input { width: 100%; min-width: 0; height: 36px; }
 .intent-summary-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .intent-summary-metric { padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--raised); }

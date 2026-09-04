@@ -666,6 +666,125 @@ class DatabaseIntentMixin:
             "deleted_at": now,
         }
 
+    def delete_intent_labels_bulk(
+        self,
+        *,
+        targets: list[dict[str, Any]],
+        deleted_by: str,
+        deleted_by_source: str = "legacy",
+        deleted_by_verified: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Atomically remove multiple current heads after validating every revision."""
+
+        normalized_actor = str(deleted_by or "").strip().lower()
+        normalized_source = str(deleted_by_source or "legacy").strip() or "legacy"
+        now = utc_now()
+        prepared: list[dict[str, Any]] = []
+        with self._write_lock, self.connect() as conn:
+            for target in targets:
+                dataset_id = str(target["dataset_id"])
+                case_id = str(target["case_id"])
+                username = str(target["username"]).strip().lower()
+                expected_revision_id = int(target["expected_revision_id"])
+                row = conn.execute(
+                    """
+                    SELECT revision.id
+                    FROM intent_user_label_heads head
+                    JOIN intent_label_revisions revision
+                      ON revision.id = head.current_revision_id
+                    WHERE head.dataset_id = ? AND head.case_id = ?
+                      AND head.username = ?
+                    """,
+                    (dataset_id, case_id, username),
+                ).fetchone()
+                if row is None or int(row["id"]) != expected_revision_id:
+                    raise IntentAnnotationConflictError(
+                        "部分标注已变化或不存在，未删除任何记录，请刷新后重试。"
+                    )
+                prepared.append({
+                    "dataset_id": dataset_id,
+                    "case_id": case_id,
+                    "username": username,
+                    "revision_id": expected_revision_id,
+                })
+
+            for target in prepared:
+                audit_sql = """
+                    INSERT INTO intent_label_deletions (
+                        dataset_id, case_id, username, deleted_revision_id,
+                        deleted_by, deleted_by_source, deleted_by_verified, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                if self.backend == "postgresql":
+                    audit_sql += " RETURNING id"
+                cursor = conn.execute(
+                    audit_sql,
+                    (
+                        target["dataset_id"],
+                        target["case_id"],
+                        target["username"],
+                        target["revision_id"],
+                        normalized_actor,
+                        normalized_source,
+                        bool(deleted_by_verified),
+                        now,
+                    ),
+                )
+                deletion_id = (
+                    int(cursor.fetchone()["id"])
+                    if self.backend == "postgresql"
+                    else int(cursor.lastrowid)
+                )
+                cursor = conn.execute(
+                    """
+                    DELETE FROM intent_user_label_heads
+                    WHERE dataset_id = ? AND case_id = ? AND username = ?
+                      AND current_revision_id = ?
+                    """,
+                    (
+                        target["dataset_id"],
+                        target["case_id"],
+                        target["username"],
+                        target["revision_id"],
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    raise IntentAnnotationConflictError(
+                        "部分标注已变化，未删除任何记录，请刷新后重试。"
+                    )
+                replacement = conn.execute(
+                    """
+                    SELECT current_revision_id, updated_at
+                    FROM intent_user_label_heads
+                    WHERE dataset_id = ? AND case_id = ?
+                    ORDER BY updated_at DESC, current_revision_id DESC
+                    LIMIT 1
+                    """,
+                    (target["dataset_id"], target["case_id"]),
+                ).fetchone()
+                if replacement is None:
+                    conn.execute(
+                        "DELETE FROM intent_label_heads WHERE dataset_id = ? AND case_id = ?",
+                        (target["dataset_id"], target["case_id"]),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        UPDATE intent_label_heads
+                        SET current_revision_id = ?, version = version + 1, updated_at = ?
+                        WHERE dataset_id = ? AND case_id = ?
+                        """,
+                        (
+                            int(replacement["current_revision_id"]),
+                            str(replacement["updated_at"]),
+                            target["dataset_id"],
+                            target["case_id"],
+                        ),
+                    )
+                target["deletion_id"] = deletion_id
+                target["deleted_at"] = now
+        return prepared
+
     def list_intent_contributors(
         self, dataset_id: str, case_id: str
     ) -> list[dict[str, Any]]:

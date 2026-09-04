@@ -49,6 +49,7 @@ router = APIRouter(dependencies=[Depends(_require_intent_viewer)])
 MAX_LABEL_REQUEST_BYTES = 512 * 1024
 MAX_EXPERIMENT_REQUEST_BYTES = 64 * 1024
 MAX_COMMENT_REQUEST_BYTES = 8 * 1024
+MAX_BULK_DELETE_REQUEST_BYTES = 64 * 1024
 
 
 def _intent_summary_payload(dataset_id: str, identity: Any, experiment_id: str,
@@ -576,6 +577,68 @@ async def admin_delete_intent_labels(
         raise _detail(404, "该标注人的当前标注不存在。")
     return {
         "deleted": deleted,
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
+@router.post(
+    "/api/intent-labels/bulk-delete",
+    dependencies=[Depends(_require_intent_admin)],
+)
+async def admin_bulk_delete_intent_labels(request: Request) -> dict[str, Any]:
+    raw = await request.body()
+    if len(raw) > MAX_BULK_DELETE_REQUEST_BYTES:
+        raise _detail(413, "批量删除请求过大。")
+    try:
+        body = json.loads(raw)
+    except (TypeError, ValueError, UnicodeDecodeError) as exc:
+        raise _detail(400, "批量删除请求必须是 JSON。") from exc
+    raw_items = body.get("items") if isinstance(body, dict) else None
+    if not isinstance(raw_items, list) or not 1 <= len(raw_items) <= 100:
+        raise _detail(400, "每次请选择 1 到 100 条标注。")
+    targets: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for item in raw_items:
+        if not isinstance(item, dict):
+            raise _detail(400, "批量删除条目格式非法。")
+        dataset_id = str(item.get("dataset_id") or "").strip()
+        case_id = str(item.get("case_id") or "").strip()
+        username = normalise_username(item.get("username"))
+        revision_id = item.get("expected_revision_id")
+        if not dataset_id or not case_id or not username:
+            raise _detail(400, "批量删除条目缺少数据集、Case 或标注人。")
+        if isinstance(revision_id, bool) or not isinstance(revision_id, int) or revision_id <= 0:
+            raise _detail(400, "批量删除条目的 revision id 非法。")
+        try:
+            if not intent_dataset_registry.has_case(dataset_id, case_id):
+                raise _detail(404, "Case 不在对应的意图标注数据集中。")
+        except KeyError as exc:
+            raise _detail(404, str(exc)) from exc
+        key = (dataset_id, case_id, username)
+        if key in seen:
+            raise _detail(400, "批量删除请求包含重复标注。")
+        seen.add(key)
+        targets.append({
+            "dataset_id": dataset_id,
+            "case_id": case_id,
+            "username": username,
+            "expected_revision_id": revision_id,
+        })
+    identity = await asyncio.to_thread(_admin_identity, request)
+    actor, actor_source, actor_verified = await asyncio.to_thread(_action_actor, request)
+    try:
+        deleted = await asyncio.to_thread(
+            database.delete_intent_labels_bulk,
+            targets=targets,
+            deleted_by=actor or identity.username,
+            deleted_by_source=actor_source,
+            deleted_by_verified=actor_verified,
+        )
+    except IntentAnnotationConflictError as exc:
+        raise _detail(409, str(exc)) from exc
+    return {
+        "deleted": deleted,
+        "count": len(deleted),
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
 

@@ -422,15 +422,21 @@ function renderIntentExperimentNameSuggestion(value, source = "rule", status = "
 
 let intentLabelDeleteConfirmPending = null;
 
-function confirmIntentLabelDeletion({ username = "", caseId = "", own = false } = {}) {
+function confirmIntentLabelDeletion({ username = "", caseId = "", own = false, count = 0 } = {}) {
   const dialog = $("#intentDeleteConfirmDialog");
   if (!dialog || intentLabelDeleteConfirmPending) return intentLabelDeleteConfirmPending || Promise.resolve(false);
   const context = $("#intentDeleteConfirmContext");
   if (context) {
-    context.textContent = own
+    context.textContent = count > 0
+      ? `确认批量删除选中的 ${count} 条当前标注？`
+      : own
       ? `确认删除自己在 ${caseId || "当前 Case"} 的当前标注？`
       : `确认删除 ${username} 在 ${caseId} 的当前标注？`;
   }
+  const title = $("#intentDeleteConfirmTitle");
+  if (title) title.textContent = count > 0 ? "批量删除当前标注" : "删除当前标注";
+  const submit = $("#intentDeleteConfirmSubmit");
+  if (submit) submit.textContent = count > 0 ? `确认删除 ${count} 条` : "确认删除";
   dialog.returnValue = "";
   const pending = new Promise((resolve) => {
     dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), { once: true });
