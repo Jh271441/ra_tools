@@ -1218,6 +1218,24 @@ async function saveAnalysisDiscussion(event) {
   }
 }
 
+function bindAnalysisDiscussionEnterSubmit() {
+  const textarea = $("#analysisDiscussionNote");
+  const form = $("#analysisDiscussionForm");
+  const submit = $("#analysisDiscussionSubmit");
+  if (!textarea || !form || textarea.dataset.enterSubmitBound === "1") return;
+  textarea.dataset.enterSubmitBound = "1";
+  textarea.addEventListener("keydown", (event) => {
+    if (
+      event.defaultPrevented
+      || event.isComposing
+      || event.key !== "Enter"
+      || event.shiftKey
+    ) return;
+    event.preventDefault();
+    if (!submit?.disabled) form.requestSubmit(submit);
+  });
+}
+
 function renderReviewReasonAnalysis(data, { animatePies = true } = {}) {
   const summary = data.summary || {};
   state.reviewAnalysis.page = Number(data.page || 1);

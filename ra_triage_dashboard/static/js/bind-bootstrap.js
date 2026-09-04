@@ -516,6 +516,7 @@ function bindEvents() {
     } catch (error) { showToast(error.message, true); }
   });
   bindAnalysisDiscussionEditor();
+  bindAnalysisDiscussionEnterSubmit();
   $("#analysisDiscussionDialog")?.addEventListener("close", clearAnalysisDiscussionImages);
   $("#analysisDiscussionForm")?.addEventListener("submit", saveAnalysisDiscussion);
   $("#predictFilteredButton").addEventListener("click", () => {
