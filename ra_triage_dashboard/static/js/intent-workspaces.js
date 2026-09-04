@@ -154,9 +154,6 @@ function applyIntentTopbarDatasetSelection(values) {
   const selected = parseFilterList(values);
   if (!selected.length) return;
   if (state.activePage === "intent-experiments") {
-    state.intentLabeling.experimentDatasetIds = selected;
-    state.intentLabeling.experimentDatasetId = selected[0] || "";
-    state.intentLabeling.experimentsDatasetId = "";
     loadIntentExperimentAdmin({ datasetIds: selected, force: true })
       .catch((error) => showToast(error.message, true));
     return;
@@ -572,7 +569,7 @@ function renderIntentExperiments() {
   });
 }
 
-async function loadIntentExperiments({ force = false } = {}) {
+async function loadIntentExperiments({ force = false, resetCaseCount = false } = {}) {
   const intent = state.intentLabeling;
   const requestedIds = [...(intent.experimentDatasetIds || [])];
   const cacheKey = requestedIds.slice().sort().join(",");
@@ -593,7 +590,10 @@ async function loadIntentExperiments({ force = false } = {}) {
   if (countInput) {
     const maxCount = Math.max(1, ...selectedDatasets.map((item) => Number(item.case_count) || 1));
     countInput.max = String(maxCount);
-    if (!countInput.value) countInput.value = String(maxCount);
+    const currentCount = Number(countInput.value) || 0;
+    if (resetCaseCount || currentCount < 1 || currentCount > maxCount) {
+      countInput.value = String(maxCount);
+    }
   }
   renderIntentExperimentMembers();
   renderIntentExperiments();
@@ -602,6 +602,7 @@ async function loadIntentExperiments({ force = false } = {}) {
 
 async function loadIntentExperimentAdmin({ datasetId = "", datasetIds = null, force = false } = {}) {
   const intent = state.intentLabeling;
+  const previousScope = [...(intent.experimentDatasetIds || [])].sort().join(",");
   if (!intent.datasets.length) {
     const payload = await api("/api/intent-datasets");
     intent.datasets = payload.items || [];
@@ -618,10 +619,11 @@ async function loadIntentExperimentAdmin({ datasetId = "", datasetIds = null, fo
     if (!selected.length && available[0]) selected = [available[0].id];
   }
   selected = selected.filter((id) => available.some((item) => item.id === id));
+  const nextScope = [...selected].sort().join(",");
   intent.experimentDatasetIds = selected;
   intent.experimentDatasetId = selected[0] || "";
   renderIntentTopbarDatasetPicker(selected);
-  await loadIntentExperiments({ force });
+  await loadIntentExperiments({ force, resetCaseCount: previousScope !== nextScope });
   if (state.activePage === "intent-experiments") {
     const params = new URLSearchParams();
     selected.forEach((id) => params.append("dataset", id));
