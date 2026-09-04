@@ -164,7 +164,8 @@ def suggest_intent_name_with_llm(
         f"每Case标注人数：{overlap_reviewers}\n成员数：{member_count}\n"
         f"用户当前草稿：{draft_name or '无'}\n"
         "如果用户提供了草稿，请在保留其核心含义的前提下优化；不要原样重复冗长或含糊的草稿。\n"
-        f"规则名称参考：{fallback}"
+        f"规则名称参考：{fallback}\n"
+        "请在保留所有关键信息的前提下优化措辞，不要与规则名称完全相同。"
     )
     body = json.dumps(
         {
@@ -194,7 +195,7 @@ def suggest_intent_name_with_llm(
         },
     )
     try:
-        with build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=12) as response:
+        with build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=20) as response:
             if response.status != 200:
                 raise IntentNameSuggestionError("模型名称推荐暂不可用。")
             raw = response.read(MAX_RESPONSE_BYTES + 1)

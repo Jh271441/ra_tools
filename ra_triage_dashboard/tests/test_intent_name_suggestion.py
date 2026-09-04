@@ -28,14 +28,14 @@ class _Response:
 
 class _Opener:
     def open(self, request, timeout):
-        assert timeout == 12
+        assert timeout == 20
         assert request.get_header("Apikey") == "secret"
         return _Response()
 
 
 class _TokenServiceOpener:
     def open(self, request, timeout):
-        assert timeout == 12
+        assert timeout == 20
         assert request.get_header("Authorization") == "Bearer secret"
         return _Response()
 
