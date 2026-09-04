@@ -73,24 +73,34 @@ function renderSession() {
     : "write";
   const userManagementNav = $("#userManagementNavButton");
   if (userManagementNav) userManagementNav.hidden = !state.session.is_admin;
-  const canViewIntent = Boolean(state.session.can_view_intent);
-  try {
-    localStorage.setItem("ra-triage-can-view-intent", canViewIntent ? "true" : "false");
-  } catch (_error) {
-    // Hardened browsers may block storage; first-paint hint is best-effort.
+  // The head script replays the last server-confirmed intent access before the
+  // first paint. Language/theme rendering runs before /api/session resolves,
+  // so an absent capability must not be coerced to false and briefly collapse
+  // the whole Intent nav group. Only a server-resolved boolean may replace the
+  // hint; route/API authorization remains server enforced.
+  const intentAccessResolved = typeof state.session.can_view_intent === "boolean";
+  const canViewIntent = intentAccessResolved
+    ? state.session.can_view_intent
+    : document.documentElement.dataset.canViewIntent === "true";
+  if (intentAccessResolved) {
+    try {
+      localStorage.setItem("ra-triage-can-view-intent", canViewIntent ? "true" : "false");
+    } catch (_error) {
+      // Hardened browsers may block storage; first-paint hint is best-effort.
+    }
+    if (canViewIntent) document.documentElement.dataset.canViewIntent = "true";
+    else delete document.documentElement.dataset.canViewIntent;
+    const intentGroupLabel = document.querySelector(".intent-group-label");
+    if (intentGroupLabel) intentGroupLabel.hidden = !canViewIntent;
+    const intentLabelingNav = $("#intentLabelingNavButton");
+    if (intentLabelingNav) intentLabelingNav.hidden = !canViewIntent;
+    const intentExperimentsNav = $("#intentExperimentsNavButton");
+    if (intentExperimentsNav) intentExperimentsNav.hidden = !canViewIntent;
+    $("#intentExperimentForm")?.closest(".intent-experiment-create")?.classList.toggle("hidden", !state.session.can_manage_intent);
+    $("#intentExperimentsPage")?.classList.toggle("is-readonly", canViewIntent && !state.session.can_manage_intent);
+    const intentSummaryNav = $("#intentSummaryNavButton");
+    if (intentSummaryNav) intentSummaryNav.hidden = !canViewIntent;
   }
-  if (canViewIntent) document.documentElement.dataset.canViewIntent = "true";
-  else delete document.documentElement.dataset.canViewIntent;
-  const intentGroupLabel = document.querySelector(".intent-group-label");
-  if (intentGroupLabel) intentGroupLabel.hidden = !canViewIntent;
-  const intentLabelingNav = $("#intentLabelingNavButton");
-  if (intentLabelingNav) intentLabelingNav.hidden = !canViewIntent;
-  const intentExperimentsNav = $("#intentExperimentsNavButton");
-  if (intentExperimentsNav) intentExperimentsNav.hidden = !canViewIntent;
-  $("#intentExperimentForm")?.closest(".intent-experiment-create")?.classList.toggle("hidden", !state.session.can_manage_intent);
-  $("#intentExperimentsPage")?.classList.toggle("is-readonly", canViewIntent && !state.session.can_manage_intent);
-  const intentSummaryNav = $("#intentSummaryNavButton");
-  if (intentSummaryNav) intentSummaryNav.hidden = !canViewIntent;
   document.querySelectorAll("[data-intent-frame-axis], [data-intent-aggregate-axis], #intentRestoreBatchPrefill").forEach((element) => {
     element.disabled = state.session.can_annotate_intent === false;
   });
@@ -559,6 +569,10 @@ function markSessionUnavailable() {
     verified: false,
     is_admin: false,
     access_role: "viewer",
+    intent_permission: "",
+    can_view_intent: false,
+    can_annotate_intent: false,
+    can_manage_intent: false,
     can_manage_team_default: false,
     can_write: false,
     read_only: true,
