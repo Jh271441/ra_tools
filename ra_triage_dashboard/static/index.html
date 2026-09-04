@@ -68,7 +68,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-319`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-320`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -192,9 +192,9 @@
               <h1 id="pageTitle">Manual Triage Workbench</h1>
             </div>
           </div>
-          <div class="intent-topbar-dataset">
+          <div class="topbar-baselines intent-topbar-dataset">
             <span>数据集</span>
-            <div class="multi-filter" id="intentTopbarDatasetPicker" data-placeholder="选择数据集" data-empty-label="数据集"></div>
+            <div class="multi-filter baseline-filter" id="intentTopbarDatasetPicker" data-placeholder="选择数据集" data-empty-label="数据集"></div>
           </div>
           <div class="topbar-baselines" aria-label="数据集">
             <span class="topbar-baselines-label"><span class="ui-lang-zh">数据集</span><span class="ui-lang-en">Datasets</span></span>
@@ -1273,6 +1273,23 @@
       </div>
     </div>
 
+    <dialog class="dialog intent-delete-confirm-dialog" id="intentDeleteConfirmDialog" aria-labelledby="intentDeleteConfirmTitle">
+      <form class="dialog-card" method="dialog">
+        <div class="dialog-heading">
+          <div>
+            <h2 id="intentDeleteConfirmTitle">删除当前标注</h2>
+            <p class="dialog-copy" id="intentDeleteConfirmContext"></p>
+          </div>
+          <button class="icon-button" type="submit" value="cancel" aria-label="关闭">×</button>
+        </div>
+        <p class="intent-delete-confirm-note">当前答案会从工作区移除；历史修订与删除审计仍会完整保留。</p>
+        <div class="dialog-actions">
+          <button class="button button-quiet" type="submit" value="cancel">取消</button>
+          <button class="button button-danger" id="intentDeleteConfirmSubmit" type="submit" value="confirm">确认删除</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog class="dialog comment-thread-dialog" id="analysisDiscussionDialog">
       <form class="dialog-card" id="analysisDiscussionForm">
         <div class="dialog-heading">
@@ -1787,7 +1804,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-319`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-320`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

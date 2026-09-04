@@ -124,7 +124,11 @@ function renderIntentCollaboration() {
 async function deleteMyIntentLabel() {
   const intent = state.intentLabeling;
   if (!state.session.can_annotate_intent || !intent.caseId || !intent.revisionId) return;
-  if (!window.confirm("确认删除自己在当前 Case 的标注？当前答案会被移除，但历史版本和删除审计会保留。")) return;
+  if (!await confirmIntentLabelDeletion({
+    username: state.session.username,
+    caseId: intent.caseId,
+    own: true,
+  })) return;
   await intentFlushSave();
   const revisionId = intent.revisionId;
   if (!revisionId) return;
@@ -234,4 +238,3 @@ function renderIntentCase({ deferTimelineThumbnails = false } = {}) {
     });
   }
 }
-

@@ -204,6 +204,7 @@ function renderIntentTopbarDatasetPicker(selectedIds = null) {
   renderMultiFilter(picker, {
     options: available.map((item) => ({ value: item.id, label: item.display_name })),
     selected,
+    onlyThis: multiple,
     onChange: (values) => {
       let next = parseFilterList(values);
       if (!multiple) {
@@ -401,6 +402,28 @@ function renderIntentExperimentNameSuggestion(value, source = "rule") {
   input.placeholder = suggestion
     ? `${source === "llm" ? "AI 推荐" : "推荐"}：${suggestion}（Tab 采纳）`
     : "例如 0206 Routing 双盲复核";
+}
+
+let intentLabelDeleteConfirmPending = null;
+
+function confirmIntentLabelDeletion({ username = "", caseId = "", own = false } = {}) {
+  const dialog = $("#intentDeleteConfirmDialog");
+  if (!dialog || intentLabelDeleteConfirmPending) return intentLabelDeleteConfirmPending || Promise.resolve(false);
+  const context = $("#intentDeleteConfirmContext");
+  if (context) {
+    context.textContent = own
+      ? `确认删除自己在 ${caseId || "当前 Case"} 的当前标注？`
+      : `确认删除 ${username} 在 ${caseId} 的当前标注？`;
+  }
+  dialog.returnValue = "";
+  const pending = new Promise((resolve) => {
+    dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), { once: true });
+  });
+  intentLabelDeleteConfirmPending = pending.finally(() => {
+    intentLabelDeleteConfirmPending = null;
+  });
+  dialog.showModal();
+  return intentLabelDeleteConfirmPending;
 }
 
 function updateIntentExperimentNameSuggestion() {

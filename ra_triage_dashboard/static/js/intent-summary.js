@@ -89,7 +89,7 @@ async function deleteIntentSummaryLabel(button) {
   const username = button.dataset.username || "";
   const revisionId = Number(button.dataset.revisionId) || 0;
   if (!caseId || !username || !revisionId) return;
-  if (!window.confirm(`确认删除 ${username} 在 ${caseId} 的当前标注？历史修订与审计记录仍会保留。`)) return;
+  if (!await confirmIntentLabelDeletion({ username, caseId })) return;
   button.disabled = true;
   try {
     const result = await api(`/api/intent-datasets/${encodeURIComponent(state.intentLabeling.summaryDatasetId)}/cases/${encodeURIComponent(caseId)}/labels/${encodeURIComponent(username)}?expected_revision_id=${revisionId}`, { method: "DELETE" });
