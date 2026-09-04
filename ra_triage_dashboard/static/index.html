@@ -68,7 +68,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-329`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-330`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1290,6 +1290,27 @@
       </form>
     </dialog>
 
+    <dialog class="dialog intent-experiment-edit-dialog" id="intentExperimentEditDialog" aria-labelledby="intentExperimentEditTitle">
+      <form class="dialog-card" id="intentExperimentEditForm">
+        <div class="dialog-heading">
+          <div>
+            <h2 id="intentExperimentEditTitle">编辑已分配实验</h2>
+            <p class="dialog-copy" id="intentExperimentEditContext"></p>
+          </div>
+          <button class="icon-button" type="button" data-close="intentExperimentEditDialog" aria-label="关闭">×</button>
+        </div>
+        <div class="intent-experiment-edit-fields">
+          <label><span>实验名称</span><input id="intentExperimentEditName" maxlength="160" autocomplete="off" required/></label>
+          <label><span>标注维度</span><div class="ui-select" id="intentExperimentEditScopePicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">Routing + 变道意图</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="intentExperimentEditScope" aria-hidden="true" tabindex="-1"><option value="all">Routing + 变道意图</option><option value="routing">仅 Routing 意图</option><option value="lane_change">仅变道意图</option></select></div></label>
+        </div>
+        <p class="intent-experiment-edit-note">Case 范围、标注成员、实验模式与交叉分配保持不变；本次修改会写入审计记录。</p>
+        <div class="dialog-actions">
+          <button class="button button-quiet" type="button" data-close="intentExperimentEditDialog">取消</button>
+          <button class="button button-primary" id="intentExperimentEditSubmit" type="submit">保存修改</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog class="dialog comment-thread-dialog" id="analysisDiscussionDialog">
       <form class="dialog-card" id="analysisDiscussionForm">
         <div class="dialog-heading">
@@ -1804,7 +1825,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-329`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-330`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

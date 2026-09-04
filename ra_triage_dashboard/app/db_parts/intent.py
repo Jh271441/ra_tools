@@ -147,6 +147,17 @@ class DatabaseIntentMixin:
                 """,
                 parameters,
             ).fetchall()
+            update_rows = conn.execute(
+                f"""
+                SELECT update_record.*
+                FROM intent_experiment_updates update_record
+                JOIN intent_experiments experiment
+                  ON experiment.id = update_record.experiment_id
+                {where}
+                ORDER BY update_record.id DESC
+                """,
+                parameters,
+            ).fetchall()
         members_by_experiment: dict[str, dict[str, dict[str, int]]] = {}
         for item in assignment_rows:
             experiment = members_by_experiment.setdefault(str(item["experiment_id"]), {})
@@ -154,6 +165,19 @@ class DatabaseIntentMixin:
                 str(item["username"]), {"base": 0, "cross": 0, "full": 0}
             )
             member[str(item["assignment_kind"])] = int(item["case_count"] or 0)
+        updates_by_experiment: dict[str, list[dict[str, Any]]] = {}
+        for item in update_rows:
+            updates_by_experiment.setdefault(str(item["experiment_id"]), []).append(
+                {
+                    "id": int(item["id"]),
+                    "old_name": str(item["old_name"]),
+                    "new_name": str(item["new_name"]),
+                    "old_label_scope": str(item["old_label_scope"]),
+                    "new_label_scope": str(item["new_label_scope"]),
+                    "updated_by": str(item["updated_by"]),
+                    "created_at": str(item["created_at"]),
+                }
+            )
         result = []
         for row in rows:
             experiment_id = str(row["id"])
@@ -186,6 +210,8 @@ class DatabaseIntentMixin:
                     "assignment_count": int(row["assignment_count"] or 0),
                     "member_count": int(row["member_count"] or 0),
                     "members": member_stats,
+                    "updates": updates_by_experiment.get(experiment_id, []),
+                    "update_count": len(updates_by_experiment.get(experiment_id, [])),
                 }
             )
         return result
@@ -252,6 +278,65 @@ class DatabaseIntentMixin:
                     for item in assignments
                 ],
             )
+        return next(
+            item for item in self.list_intent_experiments(dataset_id)
+            if item["id"] == experiment_id
+        )
+
+    def update_intent_experiment(
+        self,
+        experiment_id: str,
+        *,
+        name: str,
+        label_scope: str,
+        updated_by: str,
+        updated_by_source: str,
+        updated_by_verified: bool,
+    ) -> dict[str, Any] | None:
+        """Edit presentation/task scope without changing the allocation snapshot."""
+
+        now = utc_now()
+        with self._write_lock, self.connect() as conn:
+            current = conn.execute(
+                "SELECT * FROM intent_experiments WHERE id = ?",
+                (experiment_id,),
+            ).fetchone()
+            if current is None:
+                return None
+            if str(current["status"]) != "active":
+                raise ValueError("已关闭实验不能修改。")
+            old_name = str(current["name"])
+            old_label_scope = str(current["label_scope"] or "all")
+            dataset_id = str(current["dataset_id"])
+            if old_name != name or old_label_scope != label_scope:
+                conn.execute(
+                    """
+                    UPDATE intent_experiments
+                    SET name = ?, label_scope = ?
+                    WHERE id = ? AND status = 'active'
+                    """,
+                    (name, label_scope, experiment_id),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO intent_experiment_updates (
+                        experiment_id, old_name, new_name,
+                        old_label_scope, new_label_scope,
+                        updated_by, updated_by_source, updated_by_verified, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        experiment_id,
+                        old_name,
+                        name,
+                        old_label_scope,
+                        label_scope,
+                        updated_by,
+                        updated_by_source,
+                        bool(updated_by_verified),
+                        now,
+                    ),
+                )
         return next(
             item for item in self.list_intent_experiments(dataset_id)
             if item["id"] == experiment_id

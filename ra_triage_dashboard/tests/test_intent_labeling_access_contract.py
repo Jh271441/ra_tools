@@ -35,6 +35,7 @@ class IntentLabelingAccessContractTest(unittest.TestCase):
         self.assertIn('@router.delete(', INTENT_ROUTER)
         self.assertIn('expected_revision_id: int = Query(gt=0)', INTENT_ROUTER)
         self.assertIn('"/api/intent-experiments"', INTENT_ROUTER)
+        self.assertIn('"/api/intent-experiments/{experiment_id}"', INTENT_ROUTER)
         self.assertIn('"/api/intent-experiments/{experiment_id}/close"', INTENT_ROUTER)
         self.assertIn('"/api/intent-experiments/name-suggestion"', INTENT_ROUTER)
         self.assertIn('@router.get("/api/intent-cases")', INTENT_ROUTER)

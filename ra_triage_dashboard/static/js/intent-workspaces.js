@@ -390,6 +390,16 @@ function initializeIntentExperimentSelects() {
   bindUiSelect(overlap, { maxHeight: 260, maxWidth: 240 });
 }
 
+function initializeIntentExperimentEditSelect() {
+  const scope = $("#intentExperimentEditScopePicker");
+  populateUiSelect(scope, [
+    { value: "all", label: "Routing + 变道意图" },
+    { value: "routing", label: "仅 Routing 意图" },
+    { value: "lane_change", label: "仅变道意图" },
+  ], $("#intentExperimentEditScope")?.value || "all");
+  bindUiSelect(scope, { maxHeight: 220, maxWidth: 300 });
+}
+
 function renderIntentExperimentMembers() {
   const container = $("#intentExperimentMembers");
   if (!container) return;
@@ -588,10 +598,11 @@ function renderIntentExperiments() {
       return `<span title="${escapeHtml(member.username)}">${escapeHtml(member.username)} · ${detail}</span>`;
     }).join("");
     const overlap = item.annotation_mode === "blind" ? ` · 交叉 ${Math.round(item.overlap_ratio * 100)}% · 每 Case ${item.overlap_reviewers || 2} 人` : "";
+    const updateMeta = item.update_count ? ` · 已修改 ${item.update_count} 次` : "";
     const datasetName = (state.intentLabeling.datasets.find((dataset) => dataset.id === item.dataset_id) || {}).display_name || item.dataset_id || "";
     return `<article class="intent-experiment-item${item.status === "closed" ? " is-closed" : ""}" data-intent-experiment="${escapeHtml(item.id)}">
-      <div><h4>${escapeHtml(item.name)}</h4><div class="intent-experiment-meta">${escapeHtml(datasetName)} · ${intentExperimentScopeLabel(item.label_scope)} · ${intentExperimentModeLabel(item.annotation_mode)}${overlap} · ${item.case_count} 个 Case · ${item.assignment_count} 份任务 · ${escapeHtml(item.created_by)}</div></div>
-      <div class="intent-experiment-controls"><span class="intent-experiment-status">${item.status === "closed" ? "已关闭" : "进行中"}</span>${item.status === "active" && state.session.can_manage_intent ? '<button class="button button-quiet" type="button" data-close-intent-experiment>关闭实验</button>' : ""}</div>
+      <div><h4>${escapeHtml(item.name)}</h4><div class="intent-experiment-meta">${escapeHtml(datasetName)} · ${intentExperimentScopeLabel(item.label_scope)} · ${intentExperimentModeLabel(item.annotation_mode)}${overlap} · ${item.case_count} 个 Case · ${item.assignment_count} 份任务 · ${escapeHtml(item.created_by)}${updateMeta}</div></div>
+      <div class="intent-experiment-controls"><span class="intent-experiment-status">${item.status === "closed" ? "已关闭" : "进行中"}</span>${item.status === "active" && state.session.can_manage_intent ? '<button class="button button-quiet" type="button" data-edit-intent-experiment>编辑实验</button><button class="button button-quiet" type="button" data-close-intent-experiment>关闭实验</button>' : ""}</div>
       <div class="intent-experiment-member-stats">${members}</div>
     </article>`;
   }).join("") : '<div class="intent-experiment-empty"><span aria-hidden="true">◎</span><strong>所选数据集尚未创建实验</strong><p>在上方完成配置后，实验与每位成员的任务量会显示在这里。</p></div>';
@@ -600,6 +611,12 @@ function renderIntentExperiments() {
       const experimentId = button.closest("[data-intent-experiment]")?.dataset.intentExperiment;
       if (!experimentId) return;
       closeIntentExperiment(experimentId).catch((error) => showToast(error.message, true));
+    });
+  });
+  container.querySelectorAll("[data-edit-intent-experiment]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const experimentId = button.closest("[data-intent-experiment]")?.dataset.intentExperiment;
+      if (experimentId) openIntentExperimentEditor(experimentId);
     });
   });
 }
@@ -718,4 +735,50 @@ async function closeIntentExperiment(experimentId) {
   state.intentLabeling.experimentsDatasetId = "";
   await loadIntentExperiments({ force: true });
   showToast("实验已关闭，历史分配仍然保留。", false);
+}
+
+function openIntentExperimentEditor(experimentId) {
+  const experiment = (state.intentLabeling.experiments || []).find((item) => item.id === experimentId);
+  const dialog = $("#intentExperimentEditDialog");
+  if (!experiment || experiment.status !== "active" || !dialog) return;
+  dialog.dataset.experimentId = experiment.id;
+  const name = $("#intentExperimentEditName");
+  const scope = $("#intentExperimentEditScope");
+  if (name) name.value = experiment.name || "";
+  if (scope) scope.value = experiment.label_scope || "all";
+  const datasetName = (state.intentLabeling.datasets.find((item) => item.id === experiment.dataset_id) || {}).display_name || experiment.dataset_id;
+  const context = $("#intentExperimentEditContext");
+  if (context) context.textContent = `${datasetName} · ${experiment.case_count} 个 Case · ${experiment.member_count} 名成员`;
+  initializeIntentExperimentEditSelect();
+  dialog.showModal();
+  window.setTimeout(() => {
+    name?.focus();
+    name?.select();
+  }, 0);
+}
+
+async function updateIntentExperiment(event) {
+  event?.preventDefault();
+  const dialog = $("#intentExperimentEditDialog");
+  const experimentId = dialog?.dataset.experimentId || "";
+  if (!experimentId) return;
+  const button = $("#intentExperimentEditSubmit");
+  if (button) button.disabled = true;
+  try {
+    const result = await api(`/api/intent-experiments/${encodeURIComponent(experimentId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: $("#intentExperimentEditName")?.value.trim() || "",
+        label_scope: $("#intentExperimentEditScope")?.value || "all",
+      }),
+    });
+    acknowledgeLocalChange(result);
+    dialog.close();
+    state.intentLabeling.experimentsDatasetId = "";
+    await loadIntentExperiments({ force: true });
+    showToast("实验信息已更新，原任务分配保持不变。", false);
+  } finally {
+    if (button) button.disabled = false;
+  }
 }

@@ -493,9 +493,33 @@ class IntentExperimentTest(unittest.TestCase):
             self.assertEqual(experiment["overlap_reviewers"], 2)
             self.assertEqual(experiment["label_scope"], "routing")
             self.assertEqual({item["total"] for item in experiment["members"]}, {2})
+            updated = database.update_intent_experiment(
+                "experiment-1",
+                name="双盲二轮",
+                label_scope="lane_change",
+                updated_by="admin",
+                updated_by_source="test",
+                updated_by_verified=True,
+            )
+            self.assertEqual(updated["name"], "双盲二轮")
+            self.assertEqual(updated["label_scope"], "lane_change")
+            self.assertEqual(updated["assignment_count"], 4)
+            self.assertEqual(updated["update_count"], 1)
+            self.assertEqual(updated["updates"][0]["old_name"], "双盲一轮")
+            self.assertEqual(updated["updates"][0]["new_name"], "双盲二轮")
+            self.assertEqual(updated["updates"][0]["updated_by"], "admin")
             closed = database.close_intent_experiment("experiment-1", closed_by="admin")
             self.assertEqual(closed["status"], "closed")
             self.assertEqual(closed["assignment_count"], 4)
+            with self.assertRaisesRegex(ValueError, "已关闭实验不能修改"):
+                database.update_intent_experiment(
+                    "experiment-1",
+                    name="关闭后修改",
+                    label_scope="all",
+                    updated_by="admin",
+                    updated_by_source="test",
+                    updated_by_verified=True,
+                )
 
     def test_experiment_list_filters_multiple_datasets_with_member_stats(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

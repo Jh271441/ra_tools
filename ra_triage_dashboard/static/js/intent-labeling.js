@@ -560,6 +560,9 @@ function bindIntentLabelingEvents() {
   $("#intentExperimentForm")?.addEventListener("submit", (event) => {
     createIntentExperiment(event).catch((error) => showToast(error.message, true));
   });
+  $("#intentExperimentEditForm")?.addEventListener("submit", (event) => {
+    updateIntentExperiment(event).catch((error) => showToast(error.message, true));
+  });
   $("#intentSummaryAxis")?.addEventListener("change", (event) => {
     state.intentLabeling.summaryAxis = event.target.value || "all";
     state.intentLabeling.summaryPage = 1;

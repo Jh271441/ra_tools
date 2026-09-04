@@ -868,6 +868,22 @@ class DatabaseCoreMixin:
                 CREATE INDEX IF NOT EXISTS idx_intent_experiments_dataset
                     ON intent_experiments(dataset_id, created_at DESC);
 
+                CREATE TABLE IF NOT EXISTS intent_experiment_updates (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    experiment_id TEXT NOT NULL
+                        REFERENCES intent_experiments(id) ON DELETE RESTRICT,
+                    old_name TEXT NOT NULL,
+                    new_name TEXT NOT NULL,
+                    old_label_scope TEXT NOT NULL,
+                    new_label_scope TEXT NOT NULL,
+                    updated_by TEXT NOT NULL,
+                    updated_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    updated_by_verified INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_intent_experiment_updates_experiment
+                    ON intent_experiment_updates(experiment_id, id DESC);
+
                 CREATE TABLE IF NOT EXISTS intent_experiment_assignments (
                     experiment_id TEXT NOT NULL
                         REFERENCES intent_experiments(id) ON DELETE RESTRICT,
@@ -924,6 +940,7 @@ class DatabaseCoreMixin:
                 "intent_label_deletions",
                 "intent_case_comments",
                 "intent_experiments",
+                "intent_experiment_updates",
                 "intent_experiment_assignments",
                 "trail_issue_exclusion_history",
             )

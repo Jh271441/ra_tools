@@ -545,6 +545,64 @@ async def create_intent_experiment(request: Request) -> dict[str, Any]:
     }
 
 
+@router.patch(
+    "/api/intent-experiments/{experiment_id}",
+    dependencies=[Depends(_require_intent_manager)],
+)
+async def update_intent_experiment(experiment_id: str, request: Request) -> dict[str, Any]:
+    raw = await request.body()
+    if len(raw) > 8 * 1024:
+        raise _detail(413, "实验修改请求过大。")
+    try:
+        body = json.loads(raw)
+    except (TypeError, ValueError, UnicodeDecodeError) as exc:
+        raise _detail(400, "实验修改请求必须是 JSON。") from exc
+    if not isinstance(body, dict):
+        raise _detail(400, "实验修改请求必须是 JSON 对象。")
+    experiments = await asyncio.to_thread(database.list_intent_experiments)
+    current = next((item for item in experiments if item["id"] == experiment_id), None)
+    if current is None:
+        raise _detail(404, "实验不存在。")
+    if current["status"] != "active":
+        raise _detail(409, "已关闭实验不能修改。")
+    name = " ".join(str(body.get("name") or "").split())
+    label_scope = str(body.get("label_scope") or "").strip().lower()
+    if not name or len(name) > 160:
+        raise _detail(400, "实验名称不能为空且不能超过 160 个字符。")
+    if label_scope not in {"all", "routing", "lane_change"}:
+        raise _detail(400, "标注维度仅支持 Routing、变道意图或两者。")
+    conflict = next(
+        (
+            item for item in experiments
+            if item["id"] != experiment_id
+            and item["dataset_id"] == current["dataset_id"]
+            and item["name"].casefold() == name.casefold()
+        ),
+        None,
+    )
+    if conflict is not None:
+        raise _detail(409, "当前数据集已经存在同名实验。")
+    identity = await asyncio.to_thread(_intent_identity, request, "manage")
+    try:
+        experiment = await asyncio.to_thread(
+            database.update_intent_experiment,
+            experiment_id,
+            name=name,
+            label_scope=label_scope,
+            updated_by=identity.username,
+            updated_by_source=identity.source,
+            updated_by_verified=identity.verified,
+        )
+    except ValueError as exc:
+        raise _detail(409, str(exc)) from exc
+    if experiment is None:
+        raise _detail(404, "实验不存在。")
+    return {
+        "experiment": experiment,
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
 @router.post(
     "/api/intent-experiments/{experiment_id}/close",
     dependencies=[Depends(_require_intent_manager)],
