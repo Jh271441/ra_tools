@@ -34,12 +34,17 @@ def rule_based_intent_name(
     annotation_mode: str,
     case_count: int,
     overlap_ratio: float,
+    overlap_reviewers: int = 2,
+    member_count: int = 2,
 ) -> str:
     releases = [str(label or "").split("·", 1)[0].strip() for label in dataset_labels]
     scope = "+".join(item for item in releases if item) or "Routing"
     count_suffix = f" {max(1, int(case_count))} Case"
     if annotation_mode == "full":
         return f"{scope} Routing 全量盲标{count_suffix}"[:MAX_SUGGESTION_CHARS]
+    if member_count < 2 or overlap_reviewers < 2 or overlap_ratio <= 0:
+        mode = "单人盲标" if member_count == 1 else "分工盲标"
+        return f"{scope} Routing {mode}{count_suffix}"[:MAX_SUGGESTION_CHARS]
     ratio = max(0, min(100, round(float(overlap_ratio) * 100)))
     return f"{scope} Routing 交叉{ratio}%复核{count_suffix}"[:MAX_SUGGESTION_CHARS]
 
@@ -57,6 +62,34 @@ def _normalized_suggestion(value: Any) -> str:
     if not text or len(text) > MAX_SUGGESTION_CHARS or any(ord(char) < 32 for char in text):
         raise IntentNameSuggestionError("模型没有返回可用的实验名称。")
     return text
+
+
+def _validate_contextual_suggestion(
+    suggestion: str,
+    *,
+    dataset_labels: list[str],
+    annotation_mode: str,
+    case_count: int,
+    overlap_ratio: float,
+    overlap_reviewers: int,
+    member_count: int,
+) -> str:
+    releases = [str(label or "").split("·", 1)[0].strip() for label in dataset_labels]
+    required_releases = [release for release in releases if release]
+    has_chinese = bool(re.search(r"[\u4e00-\u9fff]", suggestion))
+    has_scope = all(release in suggestion for release in required_releases)
+    has_routing = "routing" in suggestion.lower()
+    has_count = str(max(1, int(case_count))) in suggestion
+    if annotation_mode == "full":
+        has_mode = "全量" in suggestion and "盲标" in suggestion
+    elif member_count > 1 and overlap_reviewers > 1 and overlap_ratio > 0:
+        ratio = str(max(0, min(100, round(float(overlap_ratio) * 100))))
+        has_mode = ratio in suggestion and ("交叉" in suggestion or "复核" in suggestion)
+    else:
+        has_mode = "盲标" in suggestion
+    if not (has_chinese and has_scope and has_routing and has_count and has_mode):
+        raise IntentNameSuggestionError("模型名称缺少实验关键信息。")
+    return suggestion
 
 
 def suggest_intent_name_with_llm(
@@ -122,4 +155,12 @@ def suggest_intent_name_with_llm(
         content = payload["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError, ValueError, UnicodeDecodeError) as exc:
         raise IntentNameSuggestionError("模型名称推荐响应格式非法。") from exc
-    return _normalized_suggestion(content)
+    return _validate_contextual_suggestion(
+        _normalized_suggestion(content),
+        dataset_labels=dataset_labels,
+        annotation_mode=annotation_mode,
+        case_count=case_count,
+        overlap_ratio=overlap_ratio,
+        overlap_reviewers=overlap_reviewers,
+        member_count=member_count,
+    )

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from ra_triage_dashboard.app.intent_name_suggestion import (
+    IntentNameSuggestionError,
     rule_based_intent_name,
     suggest_intent_name_with_llm,
 )
@@ -21,7 +22,7 @@ class _Response:
         return False
 
     def read(self, _size):
-        return json.dumps({"choices": [{"message": {"content": "推荐名称：0206 Routing 路口复核"}}]}).encode()
+        return json.dumps({"choices": [{"message": {"content": "推荐名称：0206 Routing 路口交叉20%复核 300 Case"}}]}).encode()
 
 
 class _Opener:
@@ -70,8 +71,49 @@ class IntentNameSuggestionTest(unittest.TestCase):
                 member_count=4,
                 draft_name="0206 复核第二轮",
             )
-        self.assertEqual(suggestion, "0206 Routing 路口复核")
+        self.assertEqual(suggestion, "0206 Routing 路口交叉20%复核 300 Case")
         self.assertEqual(catalog.provider_id, "kylin")
+
+    def test_rule_name_does_not_claim_cross_review_with_one_reviewer(self):
+        self.assertEqual(
+            rule_based_intent_name(
+                ["0206 · 1335"],
+                annotation_mode="blind",
+                case_count=1335,
+                overlap_ratio=0.2,
+                overlap_reviewers=1,
+                member_count=4,
+            ),
+            "0206 Routing 分工盲标 1335 Case",
+        )
+
+    def test_llm_name_rejects_missing_experiment_facts(self):
+        class _AbnormalResponse(_Response):
+            def read(self, _size):
+                return json.dumps({"choices": [{"message": {"content": "R0206-RI-300-BR20"}}]}).encode()
+
+        class _AbnormalOpener(_Opener):
+            def open(self, request, timeout):
+                return _AbnormalResponse()
+
+        settings = SimpleNamespace(ra_model_default_id="auto")
+        with (
+            patch("ra_triage_dashboard.app.intent_name_suggestion.read_provider_api_key", return_value="secret"),
+            patch("ra_triage_dashboard.app.intent_name_suggestion.model_gateway_chat_url", return_value="http://ra-model.intra.xiaojukeji.com/v1/chat/completions"),
+            patch("ra_triage_dashboard.app.intent_name_suggestion.build_opener", return_value=_AbnormalOpener()),
+        ):
+            with self.assertRaisesRegex(IntentNameSuggestionError, "缺少实验关键信息"):
+                suggest_intent_name_with_llm(
+                    settings,
+                    _Catalog(),
+                    fallback="0206 Routing 交叉20%复核 300 Case",
+                    dataset_labels=["0206 · 1335"],
+                    annotation_mode="blind",
+                    case_count=300,
+                    overlap_ratio=0.2,
+                    overlap_reviewers=2,
+                    member_count=4,
+                )
 
 
 if __name__ == "__main__":

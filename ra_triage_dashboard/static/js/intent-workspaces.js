@@ -387,9 +387,13 @@ function ruleBasedIntentExperimentName(context) {
   const scope = context.datasets.map((item) => (
     String(item.display_name || item.id || "").split("·", 1)[0].trim()
   )).filter(Boolean).join("+") || "Routing";
-  const mode = context.mode === "full"
-    ? "全量盲标"
-    : `交叉${Math.round(context.overlap * 100)}%复核`;
+  let mode = "全量盲标";
+  if (context.mode !== "full") {
+    const hasCrossReview = context.memberCount > 1 && context.reviewers > 1 && context.overlap > 0;
+    mode = hasCrossReview
+      ? `交叉${Math.round(context.overlap * 100)}%复核`
+      : (context.memberCount === 1 ? "单人盲标" : "分工盲标");
+  }
   return `${scope} Routing ${mode} ${context.requested} Case`.slice(0, 80);
 }
 

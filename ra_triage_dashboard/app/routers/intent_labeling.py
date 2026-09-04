@@ -279,6 +279,8 @@ async def suggest_intent_experiment_name(request: Request) -> dict[str, Any]:
         annotation_mode=mode,
         case_count=case_count,
         overlap_ratio=overlap_ratio,
+        overlap_reviewers=overlap_reviewers,
+        member_count=member_count,
     )
     name_suggestion_status = await asyncio.to_thread(model_catalog.status)
     if not name_suggestion_status.get("configured"):
