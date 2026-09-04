@@ -124,6 +124,7 @@ class IntentDatasetIndexTest(unittest.TestCase):
                                 "membership_file": "membership.txt",
                                 "camera_offsets_ms": [-2000, 0, 2000],
                                 "excluded_bev_offsets_ms": [-2000],
+                                "excluded_bev_offsets_by_case": {case_id: [-1000]},
                             }
                         ]
                     }
@@ -133,11 +134,10 @@ class IntentDatasetIndexTest(unittest.TestCase):
             index = IntentDatasetIndex.from_file(config, base_path="/manual")
             index.refresh()
             timeline = index.timeline("test-v1", case_id)
-            self.assertEqual([item["offset_ms"] for item in timeline], [-2000, -1000, 0, 1000, 2000])
+            self.assertEqual([item["offset_ms"] for item in timeline], [-2000, 0, 1000, 2000])
             self.assertIsNotNone(timeline[0]["camera"])
             self.assertIsNone(timeline[0]["bev"])
-            self.assertIsNone(timeline[1]["camera"])
-            self.assertIn("/manual/api/intent-datasets/", timeline[2]["bev"]["url"])
+            self.assertIn("/manual/api/intent-datasets/", timeline[1]["bev"]["url"])
             path, media_type = index.resolve_asset("test-v1", case_id, "camera_+0")
             self.assertEqual(path.name, "1.jpg")
             self.assertEqual(media_type, "image/jpeg")
@@ -479,6 +479,7 @@ class IntentExperimentTest(unittest.TestCase):
                 dataset_id="test-v1",
                 name="双盲一轮",
                 annotation_mode="full",
+                label_scope="routing",
                 overlap_ratio=1,
                 case_count=2,
                 seed=7,
@@ -490,6 +491,7 @@ class IntentExperimentTest(unittest.TestCase):
             self.assertEqual(experiment["member_count"], 2)
             self.assertEqual(experiment["assignment_count"], 4)
             self.assertEqual(experiment["overlap_reviewers"], 2)
+            self.assertEqual(experiment["label_scope"], "routing")
             self.assertEqual({item["total"] for item in experiment["members"]}, {2})
             closed = database.close_intent_experiment("experiment-1", closed_by="admin")
             self.assertEqual(closed["status"], "closed")

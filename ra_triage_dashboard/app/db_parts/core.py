@@ -844,6 +844,8 @@ class DatabaseCoreMixin:
                     name TEXT NOT NULL,
                     annotation_mode TEXT NOT NULL
                         CHECK(annotation_mode IN ('blind', 'full')),
+                    label_scope TEXT NOT NULL DEFAULT 'all'
+                        CHECK(label_scope IN ('all', 'routing', 'lane_change')),
                     overlap_ratio REAL NOT NULL DEFAULT 0
                         CHECK(overlap_ratio >= 0 AND overlap_ratio <= 1),
                     overlap_reviewers INTEGER NOT NULL DEFAULT 2
@@ -985,6 +987,12 @@ class DatabaseCoreMixin:
             )
             self._ensure_column(
                 conn, "inference_jobs", "requested_by_verified", "INTEGER NOT NULL DEFAULT 0"
+            )
+            self._ensure_column(
+                conn,
+                "intent_experiments",
+                "label_scope",
+                "TEXT NOT NULL DEFAULT 'all'",
             )
             self._ensure_column(
                 conn,

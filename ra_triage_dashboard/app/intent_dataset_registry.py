@@ -55,6 +55,7 @@ class IntentDatasetSpec:
     camera_subdir: str
     max_pair_delta_ms: int
     excluded_bev_offsets_ms: tuple[int, ...]
+    excluded_bev_offsets_by_case: dict[str, tuple[int, ...]]
 
 
 class IntentDatasetIndex:
@@ -131,6 +132,11 @@ class IntentDatasetIndex:
                     excluded_bev_offsets_ms=tuple(
                         sorted({int(value) for value in row.get("excluded_bev_offsets_ms") or []})
                     ),
+                    excluded_bev_offsets_by_case={
+                        str(case_id): tuple(sorted({int(value) for value in values}))
+                        for case_id, values in (row.get("excluded_bev_offsets_by_case") or {}).items()
+                        if isinstance(values, list)
+                    },
                 )
             )
         return cls(specs, base_path=base_path)
@@ -407,6 +413,8 @@ class IntentDatasetIndex:
             raise KeyError("Case 不在该意图标注数据集中。")
         bev_dir = spec.bev_root / case_id / "frames"
         bev_frames: dict[int, Path] = {}
+        excluded_bev_offsets = set(spec.excluded_bev_offsets_ms)
+        excluded_bev_offsets.update(spec.excluded_bev_offsets_by_case.get(case_id, ()))
         if bev_dir.is_dir():
             for path in bev_dir.iterdir():
                 match = BEV_FRAME_RE.fullmatch(path.name)
@@ -414,7 +422,7 @@ class IntentDatasetIndex:
                     continue
                 value = int(match.group("value"))
                 offset_ms = -value if match.group("sign") == "-" else value
-                if offset_ms in spec.excluded_bev_offsets_ms:
+                if offset_ms in excluded_bev_offsets:
                     continue
                 if offset_ms in bev_frames:
                     raise ValueError(f"{case_id}: BEV offset 重复: {offset_ms}")

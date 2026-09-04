@@ -68,7 +68,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-328`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-329`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -383,8 +383,8 @@
               <div class="intent-main-column">
                 <section class="intent-media-panel" aria-label="Camera 与 BEV">
                   <div class="intent-media-grid">
-                    <figure class="intent-media-card"><figcaption><span class="intent-media-caption">Camera 102 <span id="intentCameraDelta"></span></span><span class="intent-media-tools"><span class="intent-media-zoom" data-intent-media-controls="camera"><button type="button" data-intent-media-zoom="out" aria-label="缩小 Camera">−</button><button type="button" data-intent-media-zoom="reset" id="intentCameraZoomLevel" aria-label="恢复 Camera 到 100%">100%</button><button type="button" data-intent-media-zoom="in" aria-label="放大 Camera">＋</button></span><button class="intent-media-open" type="button" data-intent-open-media="camera" aria-label="打开 Camera 大图">打开大图 <kbd>C</kbd></button></span></figcaption><div class="intent-media-stage" data-intent-media-stage="camera"><img id="intentCameraImage" alt="当前 Camera 帧" draggable="false"/><div class="intent-media-missing" id="intentCameraMissing">当前时间点无 Camera</div></div></figure>
-                    <figure class="intent-media-card"><figcaption><span class="intent-media-caption">BEV</span><span class="intent-media-tools"><span class="intent-media-zoom" data-intent-media-controls="bev"><button type="button" data-intent-media-zoom="out" aria-label="缩小 BEV">−</button><button type="button" data-intent-media-zoom="reset" id="intentBevZoomLevel" aria-label="恢复 BEV 到 100%">100%</button><button type="button" data-intent-media-zoom="in" aria-label="放大 BEV">＋</button></span><button class="intent-media-open" type="button" data-intent-open-media="bev" aria-label="打开 BEV 大图">打开大图 <kbd>B</kbd></button></span></figcaption><div class="intent-media-stage" data-intent-media-stage="bev"><img id="intentBevImage" alt="当前 BEV 帧" draggable="false"/><div class="intent-media-missing" id="intentBevMissing">当前时间点无 BEV</div></div></figure>
+                    <figure class="intent-media-card"><figcaption><span class="intent-media-caption">Camera 102 <strong id="intentCameraFrameOffset"></strong> <span id="intentCameraDelta"></span></span><span class="intent-media-tools"><span class="intent-media-zoom" data-intent-media-controls="camera"><button type="button" data-intent-media-zoom="out" aria-label="缩小 Camera">−</button><button type="button" data-intent-media-zoom="reset" id="intentCameraZoomLevel" aria-label="恢复 Camera 到 100%">100%</button><button type="button" data-intent-media-zoom="in" aria-label="放大 Camera">＋</button></span><button class="intent-media-open" type="button" data-intent-open-media="camera" aria-label="打开 Camera 大图">打开大图 <kbd>C</kbd></button></span></figcaption><div class="intent-media-stage" data-intent-media-stage="camera"><img id="intentCameraImage" alt="当前 Camera 帧" draggable="false"/><div class="intent-media-missing" id="intentCameraMissing">当前时间点无 Camera</div></div></figure>
+                    <figure class="intent-media-card"><figcaption><span class="intent-media-caption">BEV <strong id="intentBevFrameOffset"></strong></span><span class="intent-media-tools"><span class="intent-media-zoom" data-intent-media-controls="bev"><button type="button" data-intent-media-zoom="out" aria-label="缩小 BEV">−</button><button type="button" data-intent-media-zoom="reset" id="intentBevZoomLevel" aria-label="恢复 BEV 到 100%">100%</button><button type="button" data-intent-media-zoom="in" aria-label="放大 BEV">＋</button></span><button class="intent-media-open" type="button" data-intent-open-media="bev" aria-label="打开 BEV 大图">打开大图 <kbd>B</kbd></button></span></figcaption><div class="intent-media-stage" data-intent-media-stage="bev"><img id="intentBevImage" alt="当前 BEV 帧" draggable="false"/><div class="intent-media-missing" id="intentBevMissing">当前时间点无 BEV</div></div></figure>
                   </div>
                 </section>
                 <section class="intent-timeline-panel" aria-label="Case 时间轴">
@@ -395,18 +395,18 @@
               <aside class="intent-label-rail">
                 <section class="intent-card intent-label-editor">
                   <h3><span>批量预填</span><small class="intent-heading-stat" id="intentCoverage">—</small></h3>
-                  <h4>Routing 意图</h4>
-                  <div class="intent-label-grid intent-routing-grid" id="intentAggregateRouting">
+                  <h4 data-intent-axis-section="routing">Routing 意图</h4>
+                  <div class="intent-label-grid intent-routing-grid" id="intentAggregateRouting" data-intent-axis-section="routing">
                     <button type="button" data-intent-aggregate-axis="routing" data-value="left_turn" aria-keyshortcuts="Shift+1"><kbd>⇧1</kbd>左转</button><button type="button" data-intent-aggregate-axis="routing" data-value="right_turn" aria-keyshortcuts="Shift+2"><kbd>⇧2</kbd>右转</button><button type="button" data-intent-aggregate-axis="routing" data-value="straight" aria-keyshortcuts="Shift+3"><kbd>⇧3</kbd>直行</button><button type="button" data-intent-aggregate-axis="routing" data-value="u_turn" aria-keyshortcuts="Shift+4"><kbd>⇧4</kbd>掉头</button><button type="button" data-intent-aggregate-axis="routing" data-value="parking" aria-keyshortcuts="Shift+5"><kbd>⇧5</kbd>泊车</button>
                   </div>
-                  <h4>变道意图</h4>
+                  <h4 data-intent-axis-section="lane_change">变道意图</h4>
                   <div class="intent-label-grid" id="intentAggregateLane"><button type="button" data-intent-aggregate-axis="laneChange" data-value="no_lane_change" aria-keyshortcuts="Shift+6"><kbd>⇧6</kbd>非变道</button><button type="button" data-intent-aggregate-axis="laneChange" data-value="lane_change" aria-keyshortcuts="Shift+7"><kbd>⇧7</kbd>变道</button></div>
                 </section>
                 <section class="intent-card intent-label-editor">
                   <h3><span id="intentFrameTitle">当前帧标签</span> <small id="intentFrameSource">来自批量预填</small></h3>
-                  <h4>Routing 意图</h4>
+                  <h4 data-intent-axis-section="routing">Routing 意图</h4>
                   <div class="intent-label-grid intent-routing-grid"><button type="button" data-intent-frame-axis="routing" data-value="left_turn" aria-keyshortcuts="1"><kbd>1</kbd>左转</button><button type="button" data-intent-frame-axis="routing" data-value="right_turn" aria-keyshortcuts="2"><kbd>2</kbd>右转</button><button type="button" data-intent-frame-axis="routing" data-value="straight" aria-keyshortcuts="3"><kbd>3</kbd>直行</button><button type="button" data-intent-frame-axis="routing" data-value="u_turn" aria-keyshortcuts="4"><kbd>4</kbd>掉头</button><button type="button" data-intent-frame-axis="routing" data-value="parking" aria-keyshortcuts="5"><kbd>5</kbd>泊车</button></div>
-                  <h4>变道意图</h4>
+                  <h4 data-intent-axis-section="lane_change">变道意图</h4>
                   <div class="intent-label-grid"><button type="button" data-intent-frame-axis="laneChange" data-value="no_lane_change" aria-keyshortcuts="6"><kbd>6</kbd>非变道</button><button type="button" data-intent-frame-axis="laneChange" data-value="lane_change" aria-keyshortcuts="7"><kbd>7</kbd>变道</button></div>
                   <button class="button button-quiet intent-restore-button" id="intentRestoreBatchPrefill" type="button" aria-keyshortcuts="0"><span id="intentRestoreBatchPrefillText">当前帧恢复批量预填</span> <kbd>0</kbd></button>
                 </section>
@@ -431,6 +431,7 @@
                     <form class="intent-experiment-form" id="intentExperimentForm">
                       <label class="intent-experiment-name-field"><span>实验名称</span><span class="intent-experiment-name-control"><input id="intentExperimentName" maxlength="160" autocomplete="off" placeholder="例如 0206 Routing 双盲复核" required/><small id="intentExperimentNameStatus" aria-live="polite"></small></span></label>
                       <div class="intent-experiment-form-row">
+                        <label><span>标注维度</span><div class="ui-select" id="intentExperimentScopePicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">Routing + 变道意图</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="intentExperimentScope" aria-hidden="true" tabindex="-1"><option value="all">Routing + 变道意图</option><option value="routing">仅 Routing 意图</option><option value="lane_change">仅变道意图</option></select></div></label>
                         <label><span>实验模式</span><div class="ui-select" id="intentExperimentModePicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">交叉盲标</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="intentExperimentMode" aria-hidden="true" tabindex="-1"><option value="blind">交叉盲标</option><option value="full">全量盲标</option></select></div></label>
                         <label><span>抽样 Case 数量 <small>可小于全量</small></span><input id="intentExperimentCaseCount" type="number" min="1" step="1" required/></label>
                         <label id="intentExperimentOverlapField"><span>交叉复核比例</span><div class="ui-select" id="intentExperimentOverlapPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">20%</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="intentExperimentOverlap" aria-hidden="true" tabindex="-1"><option value="0">0%</option><option value="0.1">10%</option><option value="0.2" selected>20%</option><option value="0.3">30%</option><option value="0.5">50%</option><option value="1">100%</option></select></div></label>
@@ -1803,7 +1804,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-328`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-329`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

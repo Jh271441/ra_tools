@@ -21,7 +21,12 @@ from ..intent_name_suggestion import (
     suggest_intent_name_with_llm,
 )
 from ..model_catalog import ModelCatalogError
-from ..intent_summary import intent_frame_counts, public_intent_contributors, summarize_intent
+from ..intent_summary import (
+    intent_frame_counts,
+    intent_labels_complete,
+    public_intent_contributors,
+    summarize_intent,
+)
 from ..runtime import database, intent_dataset_registry, model_catalog, settings
 
 
@@ -61,13 +66,15 @@ def _intent_summary_payload(dataset_id: str, identity: Any, experiment_id: str,
     except KeyError as exc:
         raise _detail(404, str(exc)) from exc
     experiments = database.list_intent_experiments(dataset_id)
-    if experiment_id and not any(item["id"] == experiment_id for item in experiments):
+    selected_experiment = next((item for item in experiments if item["id"] == experiment_id), None)
+    if experiment_id and not selected_experiment:
         raise _detail(404, "实验不属于当前数据集。")
     data = database.intent_report_rows(dataset_id)
     report = summarize_intent(data, case_ids, username=identity.username,
                               experiment_id=experiment_id, assignees=assignees,
                               reveal_answers=reveal_answers, axis=axis,
-                              page=page, page_size=page_size)
+                              page=page, page_size=page_size,
+                              label_scope=(selected_experiment or {}).get("label_scope", "all"))
     timeline_cache: dict[str, list[dict[str, Any]]] = {}
     for item in report.get("items", []):
         case_id = str(item["case_id"])
@@ -80,7 +87,8 @@ def _intent_summary_payload(dataset_id: str, identity: Any, experiment_id: str,
             lane_change_default=str(item.get("lane_change_default") or ""),
             overrides=item.get("overrides") or [],
         )
-    report["experiments"] = [{"id": item["id"], "name": item["name"]} for item in experiments]
+    report["experiments"] = [{"id": item["id"], "name": item["name"],
+                              "label_scope": item.get("label_scope", "all")} for item in experiments]
     assignment_owners = {row["username"] for row in data["assignments"]
                          if not experiment_id or row["experiment_id"] == experiment_id}
     head_owners = {row["username"] for row in data["heads"]} if not experiment_id else set()
@@ -146,6 +154,7 @@ def _intent_summary_payload_multi(dataset_ids: tuple[str, ...], identity: Any,
             )
     if experiment_id and not any(item["id"] == experiment_id for item in experiments):
         raise _detail(404, "实验不属于所选数据集。")
+    selected_experiment = next((item for item in experiments if item["id"] == experiment_id), None)
     report = summarize_intent(
         combined,
         tuple(keyed_case_ids),
@@ -156,6 +165,7 @@ def _intent_summary_payload_multi(dataset_ids: tuple[str, ...], identity: Any,
         axis=axis,
         page=page,
         page_size=page_size,
+        label_scope=(selected_experiment or {}).get("label_scope", "all"),
     )
     for item in report.get("items", []):
         dataset_id, case_id = str(item["case_id"]).split(separator, 1)
@@ -168,7 +178,8 @@ def _intent_summary_payload_multi(dataset_ids: tuple[str, ...], identity: Any,
             overrides=item.get("overrides") or [],
         )
     report["experiments"] = [
-        {"id": item["id"], "name": item["name"], "dataset_id": item["dataset_id"]}
+        {"id": item["id"], "name": item["name"], "dataset_id": item["dataset_id"],
+         "label_scope": item.get("label_scope", "all")}
         for item in experiments
     ]
     assignment_owners = {
@@ -222,10 +233,14 @@ def _empty_labels(dataset_id: str, case_id: str) -> dict[str, Any]:
     }
 
 
-def _case_status(summary: dict[str, Any] | None) -> str:
+def _case_status(summary: dict[str, Any] | None, label_scope: str = "all") -> str:
     if not summary:
         return "unlabeled"
-    if summary.get("routing_default") and summary.get("lane_change_default"):
+    if intent_labels_complete(
+        str(summary.get("routing_default") or ""),
+        str(summary.get("lane_change_default") or ""),
+        label_scope=label_scope,
+    ):
         return "completed"
     return "partial"
 
@@ -296,6 +311,7 @@ async def list_intent_assignees(
                 "case_count": item["case_count"],
                 "member_count": item["member_count"],
                 "dataset_id": item["dataset_id"],
+                "label_scope": item.get("label_scope", "all"),
             }
             for item in experiments
         ],
@@ -372,8 +388,11 @@ async def suggest_intent_experiment_name(request: Request) -> dict[str, Any]:
         except KeyError as exc:
             raise _detail(404, str(exc)) from exc
     mode = str(body.get("annotation_mode") or "blind").strip().lower()
+    label_scope = str(body.get("label_scope") or "all").strip().lower()
     if mode not in {"blind", "full"}:
         raise _detail(400, "实验模式仅支持交叉盲标或全量盲标。")
+    if label_scope not in {"all", "routing", "lane_change"}:
+        raise _detail(400, "标注维度仅支持 Routing、变道意图或两者。")
     try:
         case_count = max(1, min(100_000, int(body.get("case_count") or 1)))
         overlap_ratio = max(0.0, min(1.0, float(body.get("overlap_ratio") or 0)))
@@ -390,6 +409,7 @@ async def suggest_intent_experiment_name(request: Request) -> dict[str, Any]:
         overlap_ratio=overlap_ratio,
         overlap_reviewers=overlap_reviewers,
         member_count=member_count,
+        label_scope=label_scope,
     )
     name_suggestion_status = await asyncio.to_thread(model_catalog.status)
     if not name_suggestion_status.get("configured"):
@@ -407,6 +427,7 @@ async def suggest_intent_experiment_name(request: Request) -> dict[str, Any]:
             overlap_reviewers=overlap_reviewers,
             member_count=member_count,
             draft_name=draft_name,
+            label_scope=label_scope,
         )
     except (IntentNameSuggestionError, ModelCatalogError):
         return {"suggestion": fallback, "source": "rule"}
@@ -431,10 +452,13 @@ async def create_intent_experiment(request: Request) -> dict[str, Any]:
         raise _detail(400, "请至少选择 1 个数据集。")
     name = " ".join(str(body.get("name") or "").split())
     mode = str(body.get("annotation_mode") or "blind").strip().lower()
+    label_scope = str(body.get("label_scope") or "all").strip().lower()
     if not name or len(name) > 160:
         raise _detail(400, "实验名称不能为空且不能超过 160 个字符。")
     if mode not in {"blind", "full"}:
         raise _detail(400, "实验模式仅支持交叉盲标或全量盲标。")
+    if label_scope not in {"all", "routing", "lane_change"}:
+        raise _detail(400, "标注维度仅支持 Routing、变道意图或两者。")
     dataset_cases: list[tuple[str, tuple[str, ...]]] = []
     for dataset_id in dataset_ids:
         try:
@@ -503,6 +527,7 @@ async def create_intent_experiment(request: Request) -> dict[str, Any]:
                 dataset_id=dataset_id,
                 name=name,
                 annotation_mode=mode,
+                label_scope=label_scope,
                 overlap_ratio=overlap_ratio,
                 overlap_reviewers=overlap_reviewers,
                 case_count=case_count,
@@ -658,7 +683,14 @@ def _list_cases(
         case_ids = intent_dataset_registry.case_ids(dataset_id)
     except KeyError as exc:
         raise _detail(404, str(exc)) from exc
+    label_scope = "all"
     if experiment_id:
+        experiment = next(
+            (item for item in database.list_intent_experiments(dataset_id)
+             if item["id"] == experiment_id and item["status"] == "active"),
+            None,
+        )
+        label_scope = (experiment or {}).get("label_scope", "all")
         assigned = set(database.intent_experiment_case_ids(dataset_id, experiment_id))
         case_ids = tuple(case_id for case_id in case_ids if case_id in assigned)
     if assignees:
@@ -668,7 +700,7 @@ def _list_cases(
     normalized_search = search.strip().lower()
     items = []
     for ordinal, case_id in enumerate(case_ids, 1):
-        item_status = _case_status(summaries.get(case_id))
+        item_status = _case_status(summaries.get(case_id), label_scope)
         if status != "all" and item_status != status:
             continue
         if normalized_search and normalized_search not in case_id.lower():
@@ -821,7 +853,13 @@ def _case_payload(
         case_ids = intent_dataset_registry.case_ids(dataset_id)
     except KeyError as exc:
         raise _detail(404, str(exc)) from exc
+    experiment = None
     if experiment_id:
+        experiment = next(
+            (item for item in database.list_intent_experiments(dataset_id)
+             if item["id"] == experiment_id and item["status"] == "active"),
+            None,
+        )
         assigned = set(database.intent_experiment_case_ids(dataset_id, experiment_id))
         case_ids = tuple(item for item in case_ids if item in assigned)
     if assignees:
@@ -854,6 +892,7 @@ def _case_payload(
         assignees=assignees,
         answers_revealed=answers_revealed,
         timeline=timeline,
+        label_scope=(experiment or {}).get("label_scope", "all"),
     )
     overrides = {item["timepoint_id"]: item for item in labels["overrides"]}
     enriched = []
@@ -884,7 +923,15 @@ def _case_payload(
         "next_case_id": case_ids[ordinal_index + 1] if ordinal_index + 1 < len(case_ids) else "",
         "labels": labels,
         "timepoints": enriched,
-        "status": _case_status(labels if labels["revision_id"] else None),
+        "status": _case_status(
+            labels if labels["revision_id"] else None,
+            (experiment or {}).get("label_scope", "all"),
+        ),
+        "experiment": ({
+            "id": experiment["id"],
+            "name": experiment["name"],
+            "label_scope": experiment.get("label_scope", "all"),
+        } if experiment else None),
         "suggestion_contract": {
             "read_only": True,
             "prefills_human_labels": False,

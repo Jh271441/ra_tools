@@ -95,6 +95,21 @@ function intentEffective(timepoint = intentActiveTimepoint()) {
   };
 }
 
+function intentLabelScope() {
+  return state.intentLabeling.caseData?.experiment?.label_scope || "all";
+}
+
+function intentAxisEnabled(axis) {
+  const normalized = axis === "laneChange" ? "lane_change" : axis;
+  const scope = intentLabelScope();
+  return scope === "all" || scope === normalized;
+}
+
+function intentLabelsComplete(routing, laneChange) {
+  return (!intentAxisEnabled("routing") || Boolean(routing))
+    && (!intentAxisEnabled("laneChange") || Boolean(laneChange));
+}
+
 function intentAxisLabel(axis, value) {
   if (axis === "routing") return INTENT_ROUTING_LABELS[value] || "Routing 待填";
   return INTENT_LANE_LABELS[value] || "变道待填";
@@ -102,7 +117,10 @@ function intentAxisLabel(axis, value) {
 
 function intentLabelSummary(timepoint) {
   const effective = intentEffective(timepoint);
-  return `${intentAxisLabel("routing", effective.routing)} · ${intentAxisLabel("laneChange", effective.laneChange)}`;
+  return [
+    intentAxisEnabled("routing") ? intentAxisLabel("routing", effective.routing) : "",
+    intentAxisEnabled("laneChange") ? intentAxisLabel("laneChange", effective.laneChange) : "",
+  ].filter(Boolean).join(" · ");
 }
 
 function intentSummaryChipClass(value) {
@@ -131,19 +149,17 @@ function intentChipMarkup(label, { pending = false, override = false, value = ""
 function intentTimepointLabelMarkup(timepoint) {
   const effective = intentEffective(timepoint);
   const override = timepoint ? intentOverride(timepoint.id) : null;
-  return `<span class="intent-timepoint-labels${override ? " is-override" : ""}">${
-    intentChipMarkup(intentAxisLabel("routing", effective.routing), {
-      pending: !effective.routing,
-      override: Boolean(override?.routing_intent),
-      value: effective.routing,
-    })
-  }${
-    intentChipMarkup(intentAxisLabel("laneChange", effective.laneChange), {
-      pending: !effective.laneChange,
-      override: Boolean(override?.lane_change_intent),
-      value: effective.laneChange,
-    })
-  }</span>`;
+  const routingChip = intentAxisEnabled("routing") ? intentChipMarkup(intentAxisLabel("routing", effective.routing), {
+    pending: !effective.routing,
+    override: Boolean(override?.routing_intent),
+    value: effective.routing,
+  }) : "";
+  const laneChip = intentAxisEnabled("laneChange") ? intentChipMarkup(intentAxisLabel("laneChange", effective.laneChange), {
+    pending: !effective.laneChange,
+    override: Boolean(override?.lane_change_intent),
+    value: effective.laneChange,
+  }) : "";
+  return `<span class="intent-timepoint-labels${override ? " is-override" : ""}">${routingChip}${laneChip}</span>`;
 }
 
 function intentAvailableDatasets() {
@@ -227,7 +243,7 @@ function renderIntentAssignmentFilter() {
   if (!picker) return;
   const options = (intent.assignmentExperiments || []).map((item) => ({
     value: item.id,
-    label: `${(intent.selectedDatasetIds || []).length > 1 ? `${item.dataset_id} · ` : ""}${item.name} · ${item.case_count} Case`,
+    label: `${(intent.selectedDatasetIds || []).length > 1 ? `${item.dataset_id} · ` : ""}${item.name} · ${intentExperimentScopeLabel(item.label_scope)} · ${item.case_count} Case`,
   }));
   const native = $("#intentAssignmentSelect");
   if (native) {
@@ -345,7 +361,22 @@ function intentExperimentModeLabel(mode) {
   return mode === "full" ? "全量盲标" : "交叉盲标";
 }
 
+function intentExperimentScopeLabel(scope) {
+  return ({
+    routing: "仅 Routing 意图",
+    lane_change: "仅变道意图",
+    all: "Routing + 变道意图",
+  })[scope] || "Routing + 变道意图";
+}
+
 function initializeIntentExperimentSelects() {
+  const scope = $("#intentExperimentScopePicker");
+  populateUiSelect(scope, [
+    { value: "all", label: "Routing + 变道意图" },
+    { value: "routing", label: "仅 Routing 意图" },
+    { value: "lane_change", label: "仅变道意图" },
+  ], $("#intentExperimentScope")?.value || "all");
+  bindUiSelect(scope, { maxHeight: 220, maxWidth: 300 });
   const mode = $("#intentExperimentModePicker");
   populateUiSelect(mode, [
     { value: "blind", label: "交叉盲标" },
@@ -381,11 +412,12 @@ function intentExperimentSuggestionContext() {
     (state.intentLabeling.experimentDatasetIds || []).includes(item.id)
   ));
   const mode = $("#intentExperimentMode")?.value || "blind";
+  const labelScope = $("#intentExperimentScope")?.value || "all";
   const requested = Math.max(1, Number($("#intentExperimentCaseCount")?.value) || 1);
   const overlap = Math.max(0, Number($("#intentExperimentOverlap")?.value) || 0);
   const reviewers = Math.max(1, Number($("#intentExperimentReviewers")?.value) || 1);
   const memberCount = document.querySelectorAll("#intentExperimentMembers input:checked").length;
-  return { datasets, mode, requested, overlap, reviewers, memberCount };
+  return { datasets, mode, labelScope, requested, overlap, reviewers, memberCount };
 }
 
 function ruleBasedIntentExperimentName(context) {
@@ -399,7 +431,8 @@ function ruleBasedIntentExperimentName(context) {
       ? `交叉${Math.round(context.overlap * 100)}%复核`
       : (context.memberCount === 1 ? "单人盲标" : "分工盲标");
   }
-  return `${scope} Routing ${mode} ${context.requested} Case`.slice(0, 80);
+  const intentName = ({ routing: "Routing", lane_change: "变道意图", all: "Routing+变道意图" })[context.labelScope];
+  return `${scope} ${intentName} ${mode} ${context.requested} Case`.slice(0, 80);
 }
 
 function renderIntentExperimentNameSuggestion(value, source = "rule", status = "ready") {
@@ -462,6 +495,7 @@ function updateIntentExperimentNameSuggestion() {
   const fingerprint = JSON.stringify({
     dataset_ids: context.datasets.map((item) => item.id),
     annotation_mode: context.mode,
+    label_scope: context.labelScope,
     case_count: context.requested,
     overlap_ratio: context.overlap,
     overlap_reviewers: context.reviewers,
@@ -505,6 +539,7 @@ function updateIntentExperimentEstimate() {
   ));
   const requested = Math.max(0, Number($("#intentExperimentCaseCount")?.value) || 0);
   const mode = $("#intentExperimentMode")?.value || "blind";
+  const labelScope = $("#intentExperimentScope")?.value || "all";
   const overlap = Math.max(0, Number($("#intentExperimentOverlap")?.value) || 0);
   const reviewerInput = $("#intentExperimentReviewers");
   if (reviewerInput) {
@@ -534,8 +569,8 @@ function updateIntentExperimentEstimate() {
   });
   const datasetText = datasets.length > 1 ? `${datasets.length} 个数据集` : datasets[0].display_name;
   output.textContent = mode === "full"
-    ? `${datasetText} · ${totalCases} 个 Case · ${members.length} 人全量复核 · 共 ${totalAssignments} 份独立任务`
-    : `${datasetText} · ${totalCases} 个 Case · 交叉 ${Math.round(overlap * 100)}% · 共 ${totalAssignments} 份独立任务`;
+    ? `${datasetText} · ${intentExperimentScopeLabel(labelScope)} · ${totalCases} 个 Case · ${members.length} 人全量复核 · 共 ${totalAssignments} 份独立任务`
+    : `${datasetText} · ${intentExperimentScopeLabel(labelScope)} · ${totalCases} 个 Case · 交叉 ${Math.round(overlap * 100)}% · 共 ${totalAssignments} 份独立任务`;
   updateIntentExperimentNameSuggestion();
 }
 
@@ -555,7 +590,7 @@ function renderIntentExperiments() {
     const overlap = item.annotation_mode === "blind" ? ` · 交叉 ${Math.round(item.overlap_ratio * 100)}% · 每 Case ${item.overlap_reviewers || 2} 人` : "";
     const datasetName = (state.intentLabeling.datasets.find((dataset) => dataset.id === item.dataset_id) || {}).display_name || item.dataset_id || "";
     return `<article class="intent-experiment-item${item.status === "closed" ? " is-closed" : ""}" data-intent-experiment="${escapeHtml(item.id)}">
-      <div><h4>${escapeHtml(item.name)}</h4><div class="intent-experiment-meta">${escapeHtml(datasetName)} · ${intentExperimentModeLabel(item.annotation_mode)}${overlap} · ${item.case_count} 个 Case · ${item.assignment_count} 份任务 · ${escapeHtml(item.created_by)}</div></div>
+      <div><h4>${escapeHtml(item.name)}</h4><div class="intent-experiment-meta">${escapeHtml(datasetName)} · ${intentExperimentScopeLabel(item.label_scope)} · ${intentExperimentModeLabel(item.annotation_mode)}${overlap} · ${item.case_count} 个 Case · ${item.assignment_count} 份任务 · ${escapeHtml(item.created_by)}</div></div>
       <div class="intent-experiment-controls"><span class="intent-experiment-status">${item.status === "closed" ? "已关闭" : "进行中"}</span>${item.status === "active" && state.session.can_manage_intent ? '<button class="button button-quiet" type="button" data-close-intent-experiment>关闭实验</button>' : ""}</div>
       <div class="intent-experiment-member-stats">${members}</div>
     </article>`;
@@ -656,6 +691,7 @@ async function createIntentExperiment(event) {
         dataset_ids: datasetIds,
         name: $("#intentExperimentName")?.value.trim() || "",
         annotation_mode: $("#intentExperimentMode")?.value || "blind",
+        label_scope: $("#intentExperimentScope")?.value || "all",
         case_count: Number($("#intentExperimentCaseCount")?.value) || 0,
         overlap_ratio: Number($("#intentExperimentOverlap")?.value) || 0,
         overlap_reviewers: Number($("#intentExperimentReviewers")?.value) || 1,

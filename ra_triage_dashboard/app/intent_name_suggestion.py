@@ -36,17 +36,23 @@ def rule_based_intent_name(
     overlap_ratio: float,
     overlap_reviewers: int = 2,
     member_count: int = 2,
+    label_scope: str = "routing",
 ) -> str:
     releases = [str(label or "").split("·", 1)[0].strip() for label in dataset_labels]
     scope = "+".join(item for item in releases if item) or "Routing"
     count_suffix = f" {max(1, int(case_count))} Case"
+    intent_name = {
+        "routing": "Routing",
+        "lane_change": "变道意图",
+        "all": "Routing+变道意图",
+    }.get(label_scope, "Routing+变道意图")
     if annotation_mode == "full":
-        return f"{scope} Routing 全量盲标{count_suffix}"[:MAX_SUGGESTION_CHARS]
+        return f"{scope} {intent_name} 全量盲标{count_suffix}"[:MAX_SUGGESTION_CHARS]
     if member_count < 2 or overlap_reviewers < 2 or overlap_ratio <= 0:
         mode = "单人盲标" if member_count == 1 else "分工盲标"
-        return f"{scope} Routing {mode}{count_suffix}"[:MAX_SUGGESTION_CHARS]
+        return f"{scope} {intent_name} {mode}{count_suffix}"[:MAX_SUGGESTION_CHARS]
     ratio = max(0, min(100, round(float(overlap_ratio) * 100)))
-    return f"{scope} Routing 交叉{ratio}%复核{count_suffix}"[:MAX_SUGGESTION_CHARS]
+    return f"{scope} {intent_name} 交叉{ratio}%复核{count_suffix}"[:MAX_SUGGESTION_CHARS]
 
 
 def _normalized_suggestion(value: Any) -> str:
@@ -73,12 +79,17 @@ def _validate_contextual_suggestion(
     overlap_ratio: float,
     overlap_reviewers: int,
     member_count: int,
+    label_scope: str = "routing",
 ) -> str:
     releases = [str(label or "").split("·", 1)[0].strip() for label in dataset_labels]
     required_releases = [release for release in releases if release]
     has_chinese = bool(re.search(r"[\u4e00-\u9fff]", suggestion))
     has_scope = all(release in suggestion for release in required_releases)
-    has_routing = "routing" in suggestion.lower()
+    has_intent_scope = {
+        "routing": "routing" in suggestion.lower(),
+        "lane_change": "变道" in suggestion,
+        "all": "routing" in suggestion.lower() and "变道" in suggestion,
+    }.get(label_scope, False)
     has_count = str(max(1, int(case_count))) in suggestion
     if annotation_mode == "full":
         has_mode = "全量" in suggestion and "盲标" in suggestion
@@ -87,7 +98,7 @@ def _validate_contextual_suggestion(
         has_mode = ratio in suggestion and ("交叉" in suggestion or "复核" in suggestion)
     else:
         has_mode = "盲标" in suggestion
-    if not (has_chinese and has_scope and has_routing and has_count and has_mode):
+    if not (has_chinese and has_scope and has_intent_scope and has_count and has_mode):
         raise IntentNameSuggestionError("模型名称缺少实验关键信息。")
     return suggestion
 
@@ -104,6 +115,7 @@ def suggest_intent_name_with_llm(
     overlap_reviewers: int,
     member_count: int,
     draft_name: str = "",
+    label_scope: str = "routing",
 ) -> str:
     selected = model_catalog.resolve(settings.ra_model_default_id, provider_id="kylin")
     api_key = read_provider_api_key(settings, "kylin")
@@ -112,6 +124,7 @@ def suggest_intent_name_with_llm(
         "请为意图标注实验生成一个简洁、可检索的中文名称。只返回名称，不要解释，不超过40个字符。\n"
         f"数据集：{', '.join(dataset_labels)}\n"
         f"模式：{'全量盲标' if annotation_mode == 'full' else '交叉盲标'}\n"
+        f"标注维度：{ {'routing': 'Routing 意图', 'lane_change': '变道意图', 'all': 'Routing 与变道意图'}[label_scope] }\n"
         f"Case数量：{case_count}\n交叉比例：{round(overlap_ratio * 100)}%\n"
         f"每Case标注人数：{overlap_reviewers}\n成员数：{member_count}\n"
         f"用户当前草稿：{draft_name or '无'}\n"
@@ -163,4 +176,5 @@ def suggest_intent_name_with_llm(
         overlap_ratio=overlap_ratio,
         overlap_reviewers=overlap_reviewers,
         member_count=member_count,
+        label_scope=label_scope,
     )

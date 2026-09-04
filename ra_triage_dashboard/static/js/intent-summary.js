@@ -54,8 +54,9 @@ function renderIntentSummaryCommentHits(payload) {
 
 function renderIntentSummary(payload) {
   const axis = payload.axis || "all";
-  const showRouting = axis !== "lane_change";
-  const showLaneChange = axis !== "routing";
+  const labelScope = payload.label_scope || "all";
+  const showRouting = labelScope !== "lane_change" && axis !== "lane_change";
+  const showLaneChange = labelScope !== "routing" && axis !== "routing";
   document.querySelectorAll(".intent-summary-routing-column").forEach((element) => { element.hidden = !showRouting; });
   document.querySelectorAll(".intent-summary-lane-column").forEach((element) => { element.hidden = !showLaneChange; });
   document.querySelectorAll(".intent-summary-admin-column").forEach((element) => { element.hidden = !state.session.is_admin; });
@@ -245,16 +246,22 @@ async function loadIntentSummary({ datasetId = "", datasetIds = null, force = fa
       setMultiFilterValues($("#intentSummaryExperimentPicker"), experimentId ? [experimentId] : []);
       if (summaryExperimentNative) summaryExperimentNative.value = experimentId;
       intent.summaryExperimentId = experimentId;
+      const selectedExperiment = (payload.experiments || []).find((item) => item.id === experimentId);
+      if (selectedExperiment?.label_scope && selectedExperiment.label_scope !== "all") {
+        intent.summaryAxis = selectedExperiment.label_scope;
+      }
       intent.summaryAssignees = [];
       intent.summaryPage = 1;
       loadIntentSummary({ datasetIds: selectedIds, force: true }).catch((error) => showToast(error.message, true));
     },
   });
-  populateUiSelect($("#intentSummaryAxisPicker"), [
+  const summaryAxisOptions = [
     { value: "all", label: "Routing + 变道意图" },
     { value: "routing", label: "仅 Routing" },
     { value: "lane_change", label: "仅变道意图" },
-  ], intent.summaryAxis || "all");
+  ].filter((item) => payload.label_scope === "all" || item.value === payload.label_scope);
+  if (payload.label_scope !== "all") intent.summaryAxis = payload.label_scope;
+  populateUiSelect($("#intentSummaryAxisPicker"), summaryAxisOptions, intent.summaryAxis || "all");
   bindUiSelect($("#intentSummaryAxisPicker"), { maxWidth: 260 });
   const commentInput = $("#intentSummaryCommentQuery");
   if (commentInput && commentInput.value !== (intent.summaryCommentQuery || "")) {

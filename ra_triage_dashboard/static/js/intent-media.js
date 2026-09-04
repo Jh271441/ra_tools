@@ -77,6 +77,9 @@ function intentSetImage(kind, image, missing, descriptor, sequence) {
 function renderIntentHero() {
   const intent = state.intentLabeling;
   const active = intentActiveTimepoint();
+  const frameLabel = active ? intentTimeLabel(active.offset_ms) : "";
+  if ($("#intentCameraFrameOffset")) $("#intentCameraFrameOffset").textContent = frameLabel;
+  if ($("#intentBevFrameOffset")) $("#intentBevFrameOffset").textContent = frameLabel;
   $("#intentCameraDelta").textContent = active?.camera_delta_ms == null
     ? ""
     : `Δ ${active.camera_delta_ms >= 0 ? "+" : ""}${active.camera_delta_ms} ms`;
@@ -188,4 +191,3 @@ function renderIntentActiveFrame() {
   renderIntentCollaboration();
   updateIntentTimelineState();
 }
-

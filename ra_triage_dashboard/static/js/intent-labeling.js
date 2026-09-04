@@ -170,7 +170,10 @@ async function intentFlushSave() {
         is_current: true,
         revealed: true,
         labeled: true,
-        completed: Boolean(payload.labels?.routing_default && payload.labels?.lane_change_default),
+        completed: intentLabelsComplete(
+          payload.labels?.routing_default,
+          payload.labels?.lane_change_default,
+        ),
         routing_default: payload.labels?.routing_default || "",
         lane_change_default: payload.labels?.lane_change_default || "",
         overrides: payload.labels?.overrides || [],
@@ -251,8 +254,7 @@ function intentQueueAutoAdvance(selectedCount = 0) {
   if (
     selectedCount === 1
     && active
-    && effective.routing
-    && effective.laneChange
+    && intentLabelsComplete(effective.routing, effective.laneChange)
   ) {
     intent.autoAdvanceOnSave = true;
     intent.autoAdvanceTimepointId = active.id;
@@ -260,6 +262,7 @@ function intentQueueAutoAdvance(selectedCount = 0) {
 }
 
 function intentSetAggregate(axis, value) {
+  if (!intentAxisEnabled(axis)) return;
   const intent = state.intentLabeling;
   const previous = intentEditSnapshot();
   const key = axis === "routing" ? "routing_intent" : "lane_change_intent";
@@ -276,6 +279,7 @@ function intentSetAggregate(axis, value) {
 }
 
 function intentSetFrameLabel(axis, value) {
+  if (!intentAxisEnabled(axis)) return;
   const intent = state.intentLabeling;
   const selected = intentSelectedTimepoints();
   if (!selected.length) return;
@@ -297,10 +301,22 @@ function intentSetFrameLabel(axis, value) {
 function intentRestoreBatchPrefill() {
   const intent = state.intentLabeling;
   const selected = intentSelectedTimepoints();
-  const changed = selected.some((timepoint) => Boolean(intent.overrides[timepoint.id]));
+  const changed = selected.some((timepoint) => {
+    const override = intent.overrides[timepoint.id];
+    return Boolean(
+      (intentAxisEnabled("routing") && override?.routing_intent)
+      || (intentAxisEnabled("laneChange") && override?.lane_change_intent)
+    );
+  });
   if (!changed) return;
   const previous = intentEditSnapshot();
-  selected.forEach((timepoint) => delete intent.overrides[timepoint.id]);
+  selected.forEach((timepoint) => {
+    const override = intent.overrides[timepoint.id];
+    if (!override) return;
+    if (intentAxisEnabled("routing")) delete override.routing_intent;
+    if (intentAxisEnabled("laneChange")) delete override.lane_change_intent;
+    if (!override.routing_intent && !override.lane_change_intent) delete intent.overrides[timepoint.id];
+  });
   intentCommitEdit(previous);
 }
 
@@ -432,7 +448,7 @@ function intentShortcutIsEditable(target) {
 }
 
 function handleIntentShortcut(event) {
-  if (state.activePage !== "intent" || event.isComposing || event.repeat) return;
+  if (state.activePage !== "intent" || event.isComposing) return;
   if (event.altKey || intentShortcutIsEditable(event.target)) return;
   const boundaryModifier = event.ctrlKey || event.metaKey;
   if (boundaryModifier && !event.shiftKey && event.code === "KeyZ") {
@@ -443,6 +459,7 @@ function handleIntentShortcut(event) {
   }
   const digit = INTENT_DIGIT_LABELS[event.code];
   if (digit) {
+    if (event.repeat || !intentAxisEnabled(digit[0])) return;
     if (boundaryModifier) return;
     event.preventDefault();
     event.stopPropagation();
@@ -459,6 +476,7 @@ function handleIntentShortcut(event) {
     });
     return;
   }
+  if (event.repeat) return;
   if (event.shiftKey || boundaryModifier) return;
   const actions = {
     ArrowUp: () => intentNavigateCase(-1),
@@ -592,6 +610,10 @@ function bindIntentLabelingEvents() {
     state.intentLabeling.summaryCommentTimer = window.setTimeout(submitSummaryCommentQuery, 350);
   });
   initializeIntentExperimentSelects();
+  $("#intentExperimentScope")?.addEventListener("change", () => {
+    initializeIntentExperimentSelects();
+    updateIntentExperimentEstimate();
+  });
   $("#intentExperimentMode")?.addEventListener("change", (event) => {
     const full = event.target.value === "full";
     const overlap = $("#intentExperimentOverlap");

@@ -4,12 +4,18 @@ import unittest
 
 from ra_triage_dashboard.app.intent_summary import (
     intent_frame_counts,
+    intent_labels_complete,
     public_intent_contributors,
     summarize_intent,
 )
 
 
 class IntentSummaryTest(unittest.TestCase):
+    def test_completion_respects_experiment_label_scope(self) -> None:
+        self.assertTrue(intent_labels_complete("straight", "", label_scope="routing"))
+        self.assertTrue(intent_labels_complete("", "lane_change", label_scope="lane_change"))
+        self.assertFalse(intent_labels_complete("straight", "", label_scope="all"))
+
     def setUp(self) -> None:
         self.data = {
             "assignments": [
@@ -55,6 +61,18 @@ class IntentSummaryTest(unittest.TestCase):
         self.assertEqual(report["case_count"], 1)
         self.assertEqual(report["total"], 0)
         self.assertEqual(report["items"], [])
+
+    def test_single_axis_summary_counts_scope_complete_records(self) -> None:
+        data = {"assignments": [], "heads": [{
+            "case_id": "c1", "username": "alice", "routing_default": "straight",
+            "lane_change_default": "", "overrides": [], "updated_at": "1",
+        }]}
+        report = summarize_intent(
+            data, ("c1",), username="alice", label_scope="routing"
+        )
+        self.assertEqual(report["label_scope"], "routing")
+        self.assertEqual(report["complete_records"], 1)
+
 
     def test_axis_filters_include_override_only_annotations(self) -> None:
         data = {"assignments": [], "heads": [{
@@ -149,6 +167,18 @@ class IntentSummaryTest(unittest.TestCase):
         alice = next(row for row in rows if row["username"] == "alice")
         self.assertFalse(alice["labeled"])
         self.assertTrue(alice["is_current"])
+
+    def test_contributor_completion_respects_single_axis_scope(self) -> None:
+        rows = public_intent_contributors(
+            username="alice",
+            contributors=[{
+                "username": "alice", "version": 1, "updated_at": "1",
+                "routing_default": "straight", "lane_change_default": "", "overrides": [],
+            }],
+            answers_revealed=False,
+            label_scope="routing",
+        )
+        self.assertTrue(rows[0]["completed"])
 
 
 if __name__ == "__main__":

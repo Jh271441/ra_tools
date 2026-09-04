@@ -5,6 +5,18 @@ from collections import Counter, defaultdict
 from typing import Any
 
 
+def intent_labels_complete(
+    routing: str, lane_change: str, *, label_scope: str = "all"
+) -> bool:
+    """Return completion using the immutable experiment labeling dimension."""
+
+    if label_scope == "routing":
+        return bool(routing)
+    if label_scope == "lane_change":
+        return bool(lane_change)
+    return bool(routing and lane_change)
+
+
 def intent_frame_counts(
     timeline: list[dict[str, Any]] | tuple[dict[str, Any], ...],
     *,
@@ -51,6 +63,7 @@ def public_intent_contributors(
     assignees: list[str] | tuple[str, ...] = (),
     answers_revealed: bool,
     timeline: list[dict[str, Any]] | tuple[dict[str, Any], ...] = (),
+    label_scope: str = "all",
 ) -> list[dict[str, Any]]:
     """Reveal-safe contributor rows for the labeling rail.
 
@@ -79,9 +92,10 @@ def public_intent_contributors(
             "version": int(contributor.get("version") or 0),
             "updated_at": str(contributor.get("updated_at") or ""),
             "labeled": True,
-            "completed": bool(
-                contributor.get("routing_default")
-                and contributor.get("lane_change_default")
+            "completed": intent_labels_complete(
+                str(contributor.get("routing_default") or ""),
+                str(contributor.get("lane_change_default") or ""),
+                label_scope=label_scope,
             ),
             "is_current": is_current,
             "revealed": revealed,
@@ -118,7 +132,8 @@ def public_intent_contributors(
 def summarize_intent(data: dict[str, Any], case_ids: tuple[str, ...], *, username: str,
                      experiment_id: str = "", assignees: tuple[str, ...] = (),
                      reveal_answers: bool = False, axis: str = "all",
-                     page: int = 1, page_size: int = 20) -> dict[str, Any]:
+                     page: int = 1, page_size: int = 20,
+                     label_scope: str = "all") -> dict[str, Any]:
     allowed = set(case_ids)
     assignments = [row for row in data["assignments"] if row["case_id"] in allowed]
     # ANY active experiment protects a Case, even when viewing a closed experiment.
@@ -149,7 +164,11 @@ def summarize_intent(data: dict[str, Any], case_ids: tuple[str, ...], *, usernam
         overrides = head.get("overrides") or []
         has_routing = bool(head.get("routing_default") or any(item.get("routing_intent") for item in overrides))
         has_lane_change = bool(head.get("lane_change_default") or any(item.get("lane_change_intent") for item in overrides))
-        if not has_routing and not has_lane_change:
+        if label_scope == "routing" and not has_routing:
+            continue
+        if label_scope == "lane_change" and not has_lane_change:
+            continue
+        if label_scope == "all" and not has_routing and not has_lane_change:
             continue
         if axis == "routing" and not has_routing:
             continue
@@ -166,7 +185,9 @@ def summarize_intent(data: dict[str, Any], case_ids: tuple[str, ...], *, usernam
                      for axis in ("routing_default", "lane_change_default")}
     grouped: dict[str, list] = defaultdict(list)
     for row in rows:
-        if row["routing_default"] and row["lane_change_default"]:
+        if intent_labels_complete(
+            row["routing_default"], row["lane_change_default"], label_scope=label_scope
+        ):
             normalized = tuple((item["offset_ms"], item["routing_intent"] or row["routing_default"],
                                 item["lane_change_intent"] or row["lane_change_default"])
                                for item in row["overrides"]
@@ -180,9 +201,11 @@ def summarize_intent(data: dict[str, Any], case_ids: tuple[str, ...], *, usernam
     page = max(1, min(page, max(1, (len(rows) + page_size - 1) // page_size)))
     return {
         "case_count": len(allowed), "total": len(rows), "page": page, "page_size": page_size,
-        "axis": axis,
+        "axis": axis, "label_scope": label_scope,
         "annotated_cases": len({row["case_id"] for row in rows if row["updated_at"]}),
-        "complete_records": sum(bool(row["routing_default"] and row["lane_change_default"]) for row in rows),
+        "complete_records": sum(intent_labels_complete(
+            row["routing_default"], row["lane_change_default"], label_scope=label_scope
+        ) for row in rows),
         "blind_active": bool(blind_cases & allowed), "answers_revealed": reveal_answers,
         "distributions": distributions,
         "agreement": {"comparable_cases": len(comparable),

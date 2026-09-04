@@ -3,6 +3,13 @@ function renderIntentLabels() {
   const currentOverride = intentOverride();
   const effective = intentEffective();
   const selectedCount = intentSelectedTimepoints().length;
+  document.querySelectorAll("[data-intent-axis-section]").forEach((node) => {
+    node.hidden = !intentAxisEnabled(node.dataset.intentAxisSection);
+  });
+  document.querySelectorAll("[data-intent-aggregate-axis], [data-intent-frame-axis]").forEach((button) => {
+    const axis = button.dataset.intentAggregateAxis || button.dataset.intentFrameAxis;
+    button.closest(".intent-label-grid").hidden = !intentAxisEnabled(axis);
+  });
   $("#intentFrameTitle").textContent = selectedCount > 1 ? "多个帧标签" : "当前帧标签";
   document.querySelectorAll("[data-intent-aggregate-axis]").forEach((button) => {
     const value = button.dataset.value;
@@ -101,13 +108,15 @@ function renderIntentCollaboration() {
             </div>
           </div>`
         : "";
+      const routingChip = intentAxisEnabled("routing")
+        ? intentChipMarkup(INTENT_ROUTING_LABELS[routingValue] || "Routing 待填", { pending: !routingValue, value: routingValue })
+        : "";
+      const laneChip = intentAxisEnabled("laneChange")
+        ? intentChipMarkup(INTENT_LANE_LABELS[laneChangeValue] || "变道待填", { pending: !laneChangeValue, value: laneChangeValue })
+        : "";
       return `<article class="intent-contributor is-revealed${item.is_current ? " is-current" : ""}">
         ${name}
-        <div class="intent-contributor-labels">${
-          intentChipMarkup(INTENT_ROUTING_LABELS[routingValue] || "Routing 待填", { pending: !routingValue, value: routingValue })
-        }${
-          intentChipMarkup(INTENT_LANE_LABELS[laneChangeValue] || "变道待填", { pending: !laneChangeValue, value: laneChangeValue })
-        }</div>
+        <div class="intent-contributor-labels">${routingChip}${laneChip}</div>
         ${menu}
       </article>`;
     }).join("") : "<p>尚无标注记录</p>";

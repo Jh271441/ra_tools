@@ -173,6 +173,7 @@ class DatabaseIntentMixin:
                     "dataset_id": str(row["dataset_id"]),
                     "name": str(row["name"]),
                     "annotation_mode": str(row["annotation_mode"]),
+                    "label_scope": str(row["label_scope"] or "all"),
                     "overlap_ratio": float(row["overlap_ratio"] or 0),
                     "overlap_reviewers": int(row["overlap_reviewers"] or 2),
                     "case_count": int(row["case_count"] or 0),
@@ -204,22 +205,24 @@ class DatabaseIntentMixin:
         created_by_source: str,
         created_by_verified: bool,
         overlap_reviewers: int = 2,
+        label_scope: str = "all",
     ) -> dict[str, Any]:
         now = utc_now()
         with self._write_lock, self.connect() as conn:
             conn.execute(
                 """
                 INSERT INTO intent_experiments (
-                    id, dataset_id, name, annotation_mode, overlap_ratio, overlap_reviewers,
+                    id, dataset_id, name, annotation_mode, label_scope, overlap_ratio, overlap_reviewers,
                     case_count, status, seed, created_by, created_by_source,
                     created_by_verified, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
                 """,
                 (
                     experiment_id,
                     dataset_id,
                     name,
                     annotation_mode,
+                    label_scope,
                     overlap_ratio,
                     overlap_reviewers,
                     case_count,
