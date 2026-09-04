@@ -637,10 +637,10 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-experiment-empty > span { width: 38px; height: 38px; display: grid; place-items: center; border: 1px solid rgba(36, 211, 238, .28); border-radius: 50%; color: var(--accent); background: rgba(36, 211, 238, .06); font-size: 18px; }
 .intent-experiment-empty strong { color: var(--text); font-size: 15px; }
 .intent-experiment-empty p { max-width: 280px; margin: 0; color: var(--faint); font-size: 13px; line-height: 1.55; }
-.intent-experiment-item { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 7px 12px; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: 9px; background: var(--overlay); }
+.intent-experiment-item { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 11px 12px; padding: 13px 14px; border: 1px solid var(--line-soft); border-radius: 9px; background: var(--overlay); }
 .intent-experiment-item.is-closed { opacity: .72; }
 .intent-experiment-item h4 { min-width: 0; margin: 0; overflow: hidden; color: var(--text); font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
-.intent-experiment-meta { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.intent-experiment-meta { color: var(--muted); font-size: 12px; line-height: 1.55; }
 .intent-experiment-member-stats { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px; }
 .intent-experiment-member-stats span { padding: 3px 7px; border-radius: 6px; color: #cbd8e4; background: rgba(127, 151, 170, .1); font-size: 11px; }
 .intent-experiment-controls { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
