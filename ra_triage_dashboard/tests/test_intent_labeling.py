@@ -33,6 +33,16 @@ class IntentDatasetIndexTest(unittest.TestCase):
         self.assertTrue(
             all(item["membership_format"] == "source-rows-json-v1" for item in registry["datasets"])
         )
+        self.assertTrue(
+            all(not item.get("excluded_bev_offsets_ms") for item in registry["datasets"])
+        )
+        self.assertEqual(
+            registry["datasets"][0].get("excluded_bev_offsets_by_case"),
+            {
+                "cn28942371_1770968152259": [-20000],
+                "cn29373229_1772623918354": [-20000],
+            },
+        )
 
     def test_source_rows_membership_is_release_and_sha_bound(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

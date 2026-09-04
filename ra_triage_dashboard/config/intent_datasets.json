@@ -16,7 +16,10 @@
       "membership_file_sha256": "41404cc4cfb91d797b07f140a776203e30a6ccf05c6eb1f052c534c386d1d979",
       "camera_subdir": "after_compress",
       "camera_offsets_ms": [-19000, -15000, -10000, -5000, 0, 5000, 10000, 15000, 19000],
-      "excluded_bev_offsets_ms": [-20000],
+      "excluded_bev_offsets_by_case": {
+        "cn28942371_1770968152259": [-20000],
+        "cn29373229_1772623918354": [-20000]
+      },
       "max_pair_delta_ms": 500
     },
     {
@@ -34,7 +37,6 @@
       "membership_file_sha256": "e77b7e4b37a756c6d3a73d14b83ab7efb97160533eb378c1557facf6b2a9d32f",
       "camera_subdir": "after_compress",
       "camera_offsets_ms": [-19000, -15000, -10000, -5000, 0, 5000, 10000, 15000, 19000],
-      "excluded_bev_offsets_ms": [-20000],
       "max_pair_delta_ms": 500
     },
     {
@@ -52,7 +54,6 @@
       "membership_file_sha256": "5044ae9f74b42327becdc4d7d873a686e90fb411f6c095265ba3a4974368be13",
       "camera_subdir": "after_compress",
       "camera_offsets_ms": [-19000, -15000, -10000, -5000, 0, 5000, 10000, 15000, 19000],
-      "excluded_bev_offsets_ms": [-20000],
       "max_pair_delta_ms": 500
     },
     {
@@ -70,7 +71,6 @@
       "membership_file_sha256": "35659ae2a0fde41f078d5dab7e50f67e9dc014c93a5ddcc41ca67b178cbcef9f",
       "camera_subdir": "after_compress",
       "camera_offsets_ms": [-19000, -15000, -10000, -5000, 0, 5000, 10000, 15000, 19000],
-      "excluded_bev_offsets_ms": [-20000],
       "max_pair_delta_ms": 500
     }
   ]
