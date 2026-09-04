@@ -393,14 +393,14 @@ function ruleBasedIntentExperimentName(context) {
 }
 
 function renderIntentExperimentNameSuggestion(value, source = "rule") {
-  const output = $("#intentExperimentNameSuggestion");
-  if (!output) return;
+  const input = $("#intentExperimentName");
+  if (!input) return;
   const suggestion = String(value || "").trim();
-  output.dataset.suggestion = suggestion;
-  output.dataset.source = source;
-  output.textContent = suggestion
-    ? `${source === "llm" ? "AI 推荐" : "推荐"}：${suggestion} · Tab 采纳`
-    : "";
+  input.dataset.suggestion = suggestion;
+  input.dataset.suggestionSource = source;
+  input.placeholder = suggestion
+    ? `${source === "llm" ? "AI 推荐" : "推荐"}：${suggestion}（Tab 采纳）`
+    : "例如 0206 Routing 双盲复核";
 }
 
 function updateIntentExperimentNameSuggestion() {

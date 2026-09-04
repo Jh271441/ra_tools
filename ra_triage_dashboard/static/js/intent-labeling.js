@@ -570,7 +570,7 @@ function bindIntentLabelingEvents() {
   $("#intentExperimentReviewers")?.addEventListener("input", updateIntentExperimentEstimate);
   $("#intentExperimentName")?.addEventListener("keydown", (event) => {
     if (event.key !== "Tab" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
-    const suggestion = $("#intentExperimentNameSuggestion")?.dataset.suggestion || "";
+    const suggestion = event.currentTarget.dataset.suggestion || "";
     if (!suggestion) return;
     event.preventDefault();
     event.currentTarget.value = suggestion;
