@@ -617,19 +617,17 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-experiment-form input:not([type="checkbox"]), .intent-experiment-form select, .intent-experiment-form .ui-select-trigger { width: 100%; min-width: 0; height: 36px; font-size: 13px; }
 .intent-experiment-name-field { grid-column: span 2; }
 .intent-experiment-name-control { min-width: 0; display: block; position: relative; }
-.intent-experiment-name-control input { padding-right: 118px; }
+.intent-experiment-name-control input { padding-right: 34px; }
 .intent-experiment-name-control > small {
-  max-width: 108px; position: absolute; top: 50%; right: 10px; overflow: hidden;
-  color: var(--faint); font-size: 10px; font-weight: 600; line-height: 1;
-  text-overflow: ellipsis; white-space: nowrap; transform: translateY(-50%); pointer-events: none;
+  position: absolute; top: 50%; right: 12px; color: transparent; font-size: 0;
+  line-height: 0; transform: translateY(-50%); pointer-events: none;
 }
-.intent-experiment-name-control > small:empty { display: none; }
+.intent-experiment-name-control > small:not([data-status="loading"]) { display: none; }
 .intent-experiment-name-control > small[data-status="loading"]::before {
-  content: ""; width: 8px; height: 8px; display: inline-block; margin-right: 5px;
+  content: ""; width: 10px; height: 10px; display: block;
   border: 1px solid rgba(36, 211, 238, .28); border-top-color: var(--accent); border-radius: 50%;
-  vertical-align: -1px; animation: intent-name-spin .7s linear infinite;
+  animation: intent-name-spin .7s linear infinite;
 }
-.intent-experiment-name-control > small[data-status="ready"] { color: #8292a7; }
 @keyframes intent-name-spin { to { transform: rotate(360deg); } }
 #intentExperimentName::placeholder { color: var(--faint); opacity: 1; }
 .intent-experiment-form-row { min-width: 0; display: contents; }

@@ -568,14 +568,9 @@ function bindIntentLabelingEvents() {
   $("#intentExperimentCaseCount")?.addEventListener("input", updateIntentExperimentEstimate);
   $("#intentExperimentOverlap")?.addEventListener("change", updateIntentExperimentEstimate);
   $("#intentExperimentReviewers")?.addEventListener("input", updateIntentExperimentEstimate);
-  $("#intentExperimentName")?.addEventListener("input", updateIntentExperimentNameSuggestion);
-  $("#intentExperimentName")?.addEventListener("keydown", (event) => {
-    if (event.key !== "Tab" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
-    const suggestion = event.currentTarget.dataset.suggestion || "";
-    if (!suggestion) return;
-    event.preventDefault();
-    event.currentTarget.value = suggestion;
-    event.currentTarget.setSelectionRange(suggestion.length, suggestion.length);
+  $("#intentExperimentName")?.addEventListener("input", (event) => {
+    event.currentTarget.dataset.manualEdited = event.currentTarget.value.trim() ? "true" : "false";
+    updateIntentExperimentNameSuggestion();
   });
   $("#intentMyTasks")?.addEventListener("click", () => {
     const username = String(state.session.username || "").toLowerCase();

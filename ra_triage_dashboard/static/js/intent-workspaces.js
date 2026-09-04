@@ -400,19 +400,11 @@ function renderIntentExperimentNameSuggestion(value, source = "rule", status = "
   const suggestion = String(value || "").trim();
   input.dataset.suggestion = suggestion;
   input.dataset.suggestionSource = source;
-  input.placeholder = status === "loading"
-    ? "AI 推理中…"
-    : suggestion
-      ? `${source === "llm" ? "AI 推荐" : "推荐"}：${suggestion}（Tab 采纳）`
-    : "例如 0206 Routing 双盲复核";
+  input.placeholder = "例如 0206 Routing 双盲复核";
   if (statusNode) {
     statusNode.dataset.status = status;
-    statusNode.textContent = status === "loading"
-      ? "AI 推理中"
-      : suggestion
-        ? `${source === "llm" ? "AI 推荐就绪" : "规则推荐"} · Tab`
-        : "";
-    statusNode.title = status === "ready" && suggestion ? suggestion : "";
+    statusNode.textContent = status === "loading" ? "AI 推理中" : "";
+    statusNode.title = status === "loading" ? "AI 正在后台优化实验名称" : "";
   }
 }
 
@@ -442,10 +434,16 @@ function updateIntentExperimentNameSuggestion() {
   const intent = state.intentLabeling;
   const context = intentExperimentSuggestionContext();
   const fallback = ruleBasedIntentExperimentName(context);
+  const input = $("#intentExperimentName");
+  const hasManualDraft = input?.dataset.manualEdited === "true" && Boolean(input.value.trim());
+  if (input && !hasManualDraft) {
+    input.value = fallback;
+    input.dataset.manualEdited = "false";
+  }
   renderIntentExperimentNameSuggestion(fallback, "rule");
   window.clearTimeout(intent.experimentNameSuggestionTimer);
   if (!intent.experimentNameSuggestionAvailable || !state.session.can_manage_intent || !context.datasets.length) return;
-  const draftName = String($("#intentExperimentName")?.value || "").trim();
+  const draftName = hasManualDraft ? String(input?.value || "").trim() : "";
   const fingerprint = JSON.stringify({
     dataset_ids: context.datasets.map((item) => item.id),
     annotation_mode: context.mode,
@@ -467,9 +465,18 @@ function updateIntentExperimentNameSuggestion() {
         body: fingerprint,
       });
       if (requestSeq !== intent.experimentNameSuggestionSeq) return;
-      renderIntentExperimentNameSuggestion(payload.suggestion || fallback, payload.source || "rule");
+      const suggestion = String(payload.suggestion || "").trim();
+      if (payload.source === "llm" && suggestion && input) {
+        input.value = suggestion;
+        input.dataset.manualEdited = "false";
+        renderIntentExperimentNameSuggestion(suggestion, "llm");
+      } else {
+        renderIntentExperimentNameSuggestion(input?.value || fallback, "rule");
+      }
     } catch (_error) {
-      if (requestSeq === intent.experimentNameSuggestionSeq) renderIntentExperimentNameSuggestion(fallback, "rule");
+      if (requestSeq === intent.experimentNameSuggestionSeq) {
+        renderIntentExperimentNameSuggestion(input?.value || fallback, "rule");
+      }
     }
   }, 650);
 }
