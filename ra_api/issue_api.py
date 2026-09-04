@@ -15,8 +15,9 @@ logger = logging.getLogger(__name__)
 
 class TrailInterface:
     def __init__(self, base_url=None) -> None:
-        self.orion_token = 'Bearer 8ba193ea-123f-44c4-a98a-3f2cb21aa1fa'
-        self.token = 'd2570c086ea9c64219c81ab95dd1e31f'
+        # Token 配置从环境变量读取，避免硬编码敏感信息
+        self.orion_token = os.environ.get('TRAIL_ORION_TOKEN', 'Bearer YOUR_ORION_TOKEN_HERE')
+        self.token = os.environ.get('TRAIL_API_TOKEN', 'YOUR_API_TOKEN_HERE')
         self.default_timeout = 60
         base_url = (
             base_url
@@ -30,7 +31,7 @@ class TrailInterface:
 
     def _sign_for_json_string(self, json_data):
         """
-        根据token和data生成签名字符串
+        根据 token 和 data 生成签名字符串
         """
         text = "{data}&token={token}".format(data=json_data, token=self.token)
         return hashlib.md5(text.encode('utf8')).hexdigest()
@@ -41,8 +42,9 @@ class TrailInterface:
         data['appid'] = 6
         data['time'] = int(time.time())
 
+        # Token 应从环境变量读取
         payload = data.copy()
-        payload['token'] = '17475d2cbc65f4772125542ef93e90ed'
+        payload['token'] = os.environ.get('TRAIL_SIGN_TOKEN', 'YOUR_SIGN_TOKEN_HERE')
 
         values = ["%s=%s" % (k, payload[k]) for k in sorted(payload)]
         text = '&'.join(values)
@@ -136,7 +138,7 @@ class TrailInterface:
         """
        查询问题信息
        :param issue_id_list: 包含多个 issue_id 的列表
-       :param select_field_list： 要查询的字段
+       :param select_field_list：要查询的字段
        :return: requests.Response or None: 请求响应对象或者失败返回 None
        """
         # 构建请求体
@@ -168,7 +170,7 @@ class TrailInterface:
                          require_complete=False):
         """
         查询 issue 数据，自动补全缺失字段
-        :param view_id: 视图ID
+        :param view_id: 视图 ID
         :param query_attrs: 查询条件
         :param size: 每页数据数量
         :param require_complete: 是否要求分页行数严格等于首包 total
@@ -183,7 +185,7 @@ class TrailInterface:
             "size": page_size
         }
 
-        # 请求第一页,获得问题总数，方便得到分页数
+        # 请求第一页，获得问题总数，方便得到分页数
         try:
             response = self.send_request(self.query_issue_pool_url, query_json)
         except Exception as e:
@@ -253,10 +255,10 @@ class TrailInterface:
     def send_request(self, url, json_data, timeout=None):
         """
         发送请求，并在发送请求时进行异常处理和状态码检查
-        :param url: 请求的URL
-        :param json_data: 要发送的JSON数据
+        :param url: 请求的 URL
+        :param json_data: 要发送的 JSON 数据
         :param timeout : 请求超时时间，秒为单位
-        :return: requests.Response or None: 请求响应对象或者失败返回None
+        :return: requests.Response or None: 请求响应对象或者失败返回 None
         """
         if timeout is None:
             timeout = self.default_timeout
