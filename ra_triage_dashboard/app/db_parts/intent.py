@@ -515,6 +515,18 @@ class DatabaseIntentMixin:
                     """,
                     (dataset_id, normalized_username),
                 ).fetchall()
+                override_rows = conn.execute(
+                    """
+                    SELECT head.case_id, override.timepoint_id, override.offset_ms,
+                           override.routing_intent, override.lane_change_intent
+                    FROM intent_user_label_heads head
+                    JOIN intent_frame_overrides override
+                      ON override.revision_id = head.current_revision_id
+                    WHERE head.dataset_id = ? AND head.username = ?
+                    ORDER BY head.case_id, override.offset_ms, override.timepoint_id
+                    """,
+                    (dataset_id, normalized_username),
+                ).fetchall()
             else:
                 rows = conn.execute(
                     """
@@ -527,15 +539,38 @@ class DatabaseIntentMixin:
                     """,
                     (dataset_id,),
                 ).fetchall()
-        return {
+                override_rows = conn.execute(
+                    """
+                    SELECT head.case_id, override.timepoint_id, override.offset_ms,
+                           override.routing_intent, override.lane_change_intent
+                    FROM intent_label_heads head
+                    JOIN intent_frame_overrides override
+                      ON override.revision_id = head.current_revision_id
+                    WHERE head.dataset_id = ?
+                    ORDER BY head.case_id, override.offset_ms, override.timepoint_id
+                    """,
+                    (dataset_id,),
+                ).fetchall()
+        summaries = {
             str(row["case_id"]): {
                 "revision_id": int(row["current_revision_id"]),
                 "updated_at": str(row["updated_at"] or ""),
                 "routing_default": str(row["routing_default"] or ""),
                 "lane_change_default": str(row["lane_change_default"] or ""),
+                "overrides": [],
             }
             for row in rows
         }
+        for row in override_rows:
+            summary = summaries.get(str(row["case_id"]))
+            if summary is not None:
+                summary["overrides"].append({
+                    "timepoint_id": str(row["timepoint_id"]),
+                    "offset_ms": int(row["offset_ms"]),
+                    "routing_intent": str(row["routing_intent"] or ""),
+                    "lane_change_intent": str(row["lane_change_intent"] or ""),
+                })
+        return summaries
 
     def save_intent_labels(
         self,

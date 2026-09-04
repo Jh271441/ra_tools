@@ -92,7 +92,7 @@ function renderIntentSummary(payload) {
   $("#intentSummaryMetrics").innerHTML = metrics.map(([label, value]) => `<article class="intent-summary-metric"><small>${label}</small><strong>${escapeHtml(value)}</strong></article>`).join("");
   renderIntentSummaryDistributions(payload, showRouting, showLaneChange);
   renderIntentSummaryCommentHits(payload);
-  const columnCount = 4 + Number(showRouting) + Number(showLaneChange) + Number(state.session.is_admin);
+  const columnCount = 5 + Number(showRouting) + Number(showLaneChange) + Number(state.session.is_admin);
   $("#intentSummaryRows").innerHTML = (payload.items || []).map((item) => {
     const datasetId = item.dataset_id || state.intentLabeling.summaryDatasetId;
     const href = intentSummaryLabelingHref(datasetId, item.case_id);
@@ -101,7 +101,9 @@ function renderIntentSummary(payload) {
       : "";
     const comments = (item.comments || []).map((comment) => `<a href="${escapeHtml(intentSummaryLabelingHref(datasetId, item.case_id, { comments: 1, comment: comment.id }))}" title="${escapeHtml(comment.body)}"><b>${escapeHtml(comment.author)}：</b>${escapeHtml(comment.body)}</a>`).join("");
     const commentMarkup = comments ? `<div class="intent-summary-row-comments">${comments}${Number(item.comment_count || 0) > (item.comments || []).length ? `<small>共 ${Number(item.comment_count)} 条</small>` : ""}</div>` : '<span class="intent-summary-no-comment">—</span>';
-    return `<tr><td><a class="intent-summary-case-link" href="${escapeHtml(href)}">${escapeHtml(item.case_id)}</a>${(payload.dataset_ids || []).length > 1 ? `<small>${escapeHtml(datasetId)}</small>` : ""}</td><td>${escapeHtml(item.username)}${item.username === state.session.username ? "（我）" : ""}</td><td class="intent-summary-routing-column"${showRouting ? "" : " hidden"}>${intentSummaryResultMarkup(item.frame_counts?.routing, INTENT_ROUTING_LABELS)}</td><td class="intent-summary-lane-column"${showLaneChange ? "" : " hidden"}>${intentSummaryResultMarkup(item.frame_counts?.lane_change, INTENT_LANE_LABELS)}</td><td class="intent-summary-comments-column">${commentMarkup}</td><td>${escapeHtml(formatTime(item.updated_at) || "—")}</td>${action}</tr>`;
+    const completion = item.completion || {};
+    const statusMarkup = `<div class="intent-summary-completion ${completion.complete ? "is-complete" : "is-partial"}"><b>${completion.complete ? "完整" : "部分"}</b><small>${escapeHtml(completion.reason || "覆盖情况未知")}</small></div>`;
+    return `<tr><td><a class="intent-summary-case-link" href="${escapeHtml(href)}">${escapeHtml(item.case_id)}</a>${(payload.dataset_ids || []).length > 1 ? `<small>${escapeHtml(datasetId)}</small>` : ""}</td><td>${escapeHtml(item.username)}${item.username === state.session.username ? "（我）" : ""}</td><td>${statusMarkup}</td><td class="intent-summary-routing-column"${showRouting ? "" : " hidden"}>${intentSummaryResultMarkup(item.frame_counts?.routing, INTENT_ROUTING_LABELS)}</td><td class="intent-summary-lane-column"${showLaneChange ? "" : " hidden"}>${intentSummaryResultMarkup(item.frame_counts?.lane_change, INTENT_LANE_LABELS)}</td><td class="intent-summary-comments-column">${commentMarkup}</td><td>${escapeHtml(formatTime(item.updated_at) || "—")}</td>${action}</tr>`;
   }).join("") || `<tr><td colspan="${columnCount}">当前筛选下没有已标注结果。</td></tr>`;
   $("#intentSummaryRows").querySelectorAll("[data-intent-summary-delete]").forEach((button) => {
     button.addEventListener("click", () => {

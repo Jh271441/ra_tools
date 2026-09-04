@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from ra_triage_dashboard.app.intent_summary import (
+    intent_completion,
     intent_frame_counts,
     intent_labels_complete,
     public_intent_contributors,
@@ -11,6 +12,30 @@ from ra_triage_dashboard.app.intent_summary import (
 
 
 class IntentSummaryTest(unittest.TestCase):
+    def test_completion_accepts_full_frame_overrides_without_case_default(self) -> None:
+        timeline = [{"id": f"t:{offset}"} for offset in (-1, 0, 1)]
+        completion = intent_completion(
+            timeline,
+            overrides=[
+                {"timepoint_id": item["id"], "routing_intent": "straight"}
+                for item in timeline
+            ],
+            label_scope="routing",
+        )
+        self.assertTrue(completion["complete"])
+        self.assertEqual(completion["reason"], "Routing 3/3 帧")
+
+    def test_completion_explains_missing_required_frames(self) -> None:
+        timeline = [{"id": f"t:{offset}"} for offset in (-1, 0, 1)]
+        completion = intent_completion(
+            timeline,
+            overrides=[{"timepoint_id": "t:-1", "routing_intent": "straight"}],
+            label_scope="routing",
+        )
+        self.assertFalse(completion["complete"])
+        self.assertEqual(completion["missing_routing_frames"], 2)
+        self.assertEqual(completion["reason"], "Routing 缺 2 帧")
+
     def test_completion_respects_experiment_label_scope(self) -> None:
         self.assertTrue(intent_labels_complete("straight", "", label_scope="routing"))
         self.assertTrue(intent_labels_complete("", "lane_change", label_scope="lane_change"))
@@ -179,6 +204,25 @@ class IntentSummaryTest(unittest.TestCase):
             label_scope="routing",
         )
         self.assertTrue(rows[0]["completed"])
+
+    def test_contributor_completion_uses_effective_frame_coverage(self) -> None:
+        timeline = [{"id": "t:-1"}, {"id": "t:+0"}]
+        rows = public_intent_contributors(
+            username="alice",
+            contributors=[{
+                "username": "alice", "version": 1, "updated_at": "1",
+                "routing_default": "", "lane_change_default": "",
+                "overrides": [
+                    {"timepoint_id": item["id"], "routing_intent": "straight"}
+                    for item in timeline
+                ],
+            }],
+            answers_revealed=False,
+            timeline=timeline,
+            label_scope="routing",
+        )
+        self.assertTrue(rows[0]["completed"])
+        self.assertEqual(rows[0]["completion_reason"], "Routing 2/2 帧")
 
 
 if __name__ == "__main__":

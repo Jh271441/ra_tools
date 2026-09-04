@@ -56,6 +56,70 @@ def intent_frame_counts(
     }
 
 
+def intent_completion(
+    timeline: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    *,
+    routing_default: str = "",
+    lane_change_default: str = "",
+    overrides: list[dict[str, Any]] | tuple[dict[str, Any], ...] = (),
+    label_scope: str = "all",
+) -> dict[str, Any]:
+    """Explain whether every required frame has an effective label.
+
+    A Case may be labeled entirely through frame overrides and have no Case
+    default.  Completion therefore has to inspect effective frame values,
+    rather than treating a missing default as an incomplete annotation.
+    """
+
+    counts = intent_frame_counts(
+        timeline,
+        routing_default=routing_default,
+        lane_change_default=lane_change_default,
+        overrides=overrides,
+    )
+    frame_count = int(counts["frame_count"])
+    if not frame_count:
+        complete = intent_labels_complete(
+            routing_default, lane_change_default, label_scope=label_scope
+        )
+        return {
+            "complete": complete,
+            "status": "completed" if complete else "partial",
+            "reason": "Case 默认标签完整" if complete else "暂无可校验帧",
+            "frame_counts": counts,
+            "missing_routing_frames": 0,
+            "missing_lane_change_frames": 0,
+        }
+
+    need_routing = label_scope != "lane_change"
+    need_lane_change = label_scope != "routing"
+    missing_routing = max(0, frame_count - int(counts["labeled_routing_frames"])) if need_routing else 0
+    missing_lane_change = max(0, frame_count - int(counts["labeled_lane_change_frames"])) if need_lane_change else 0
+    complete = missing_routing == 0 and missing_lane_change == 0
+    if complete:
+        axes = []
+        if need_routing:
+            axes.append(f"Routing {frame_count}/{frame_count} 帧")
+        if need_lane_change:
+            axes.append(f"变道意图 {frame_count}/{frame_count} 帧")
+        reason = "、".join(axes)
+    else:
+        missing = []
+        if missing_routing:
+            missing.append(f"Routing 缺 {missing_routing} 帧")
+        if missing_lane_change:
+            missing.append(f"变道意图缺 {missing_lane_change} 帧")
+        reason = "、".join(missing)
+    return {
+        "complete": complete,
+        "status": "completed" if complete else "partial",
+        "reason": reason,
+        "frame_counts": counts,
+        "missing_routing_frames": missing_routing,
+        "missing_lane_change_frames": missing_lane_change,
+    }
+
+
 def public_intent_contributors(
     *,
     username: str,
@@ -87,24 +151,23 @@ def public_intent_contributors(
         if not answers_revealed and not is_current and assignee_set and name not in assignee_set:
             continue
         revealed = is_current or answers_revealed
+        completion = intent_completion(
+            timeline,
+            routing_default=str(contributor.get("routing_default") or ""),
+            lane_change_default=str(contributor.get("lane_change_default") or ""),
+            overrides=contributor.get("overrides") or [],
+            label_scope=label_scope,
+        )
         item = {
             "username": name,
             "version": int(contributor.get("version") or 0),
             "updated_at": str(contributor.get("updated_at") or ""),
             "labeled": True,
-            "completed": intent_labels_complete(
-                str(contributor.get("routing_default") or ""),
-                str(contributor.get("lane_change_default") or ""),
-                label_scope=label_scope,
-            ),
+            "completed": completion["complete"],
+            "completion_reason": completion["reason"] if revealed else "",
             "is_current": is_current,
             "revealed": revealed,
-            "frame_counts": intent_frame_counts(
-                timeline,
-                routing_default=str(contributor.get("routing_default") or ""),
-                lane_change_default=str(contributor.get("lane_change_default") or ""),
-                overrides=contributor.get("overrides") or [],
-            ) if revealed else {},
+            "frame_counts": completion["frame_counts"] if revealed else {},
         }
         if revealed:
             item["routing_default"] = contributor.get("routing_default") or ""
@@ -122,6 +185,7 @@ def public_intent_contributors(
             "updated_at": "",
             "labeled": False,
             "completed": False,
+            "completion_reason": "尚未开始",
             "is_current": is_current,
             "revealed": is_current or answers_revealed,
             "frame_counts": {},

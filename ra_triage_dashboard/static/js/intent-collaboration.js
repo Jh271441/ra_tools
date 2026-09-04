@@ -73,7 +73,8 @@ function intentContributorIsLabeled(item) {
 }
 
 function intentContributorStatus(item) {
-  return intentContributorIsLabeled(item) ? "已标注" : "待标注";
+  if (!intentContributorIsLabeled(item)) return "待标注";
+  return item.completed ? "完整" : "部分";
 }
 
 function renderIntentCollaboration() {
@@ -123,10 +124,13 @@ function renderIntentCollaboration() {
       const laneChip = intentAxisEnabled("laneChange")
         ? intentChipMarkup(INTENT_LANE_LABELS[laneChangeValue] || "变道待填", { pending: !laneChangeValue, value: laneChangeValue })
         : "";
+      const completionReason = String(item.completion_reason || "");
+      const completion = `<small class="intent-contributor-completion ${item.completed ? "is-complete" : "is-partial"}" title="${escapeHtml(completionReason)}">${item.completed ? "完整" : "部分"} · ${escapeHtml(completionReason || "覆盖情况未知")}</small>`;
       return `<article class="intent-contributor is-revealed${item.is_current ? " is-current" : ""}">
         ${name}
         <div class="intent-contributor-labels">${routingChip}${laneChip}</div>
         ${menu}
+        ${completion}
       </article>`;
     }).join("") : "<p>尚无标注记录</p>";
   }

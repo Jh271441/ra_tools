@@ -217,6 +217,28 @@ class IntentLabelExportTest(unittest.TestCase):
         self.assertNotIn("lane_change_intent", expanded)
         self.assertNotIn("lane_change_source", expanded)
 
+    def test_full_frame_override_routing_export_is_complete(self) -> None:
+        self.labels = {
+            **self.labels,
+            "routing_default": "",
+            "lane_change_default": "",
+            "overrides": [{
+                "timepoint_id": "t:+0",
+                "offset_ms": 0,
+                "routing_intent": "right_turn",
+                "lane_change_intent": "",
+            }],
+        }
+        with (
+            patch.object(intent_router, "intent_dataset_registry", self.registry),
+            patch.object(intent_router, "database", self.database),
+        ):
+            exported = json.loads(next(intent_router._export_jsonl(
+                "dataset", "compact", False, case_ids=("c2",),
+                label_scope="routing", experiment_id="routing-exp",
+            )))
+        self.assertTrue(exported["complete"])
+
     def test_camera41_manifest_uses_exact_episode_offsets_and_confined_copy(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -313,6 +335,8 @@ class IntentLabelStorageTest(unittest.TestCase):
             ])
             restored = database.get_intent_labels("test-v1", "cn12345_1770000000000")
             self.assertEqual(restored, first)
+            summary = database.intent_label_summaries("test-v1")["cn12345_1770000000000"]
+            self.assertEqual(summary["overrides"], first["overrides"])
             second = database.save_intent_labels(
                 dataset_id="test-v1",
                 case_id="cn12345_1770000000000",

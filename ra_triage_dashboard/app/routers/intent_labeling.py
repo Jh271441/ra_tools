@@ -23,8 +23,8 @@ from ..intent_name_suggestion import (
 )
 from ..model_catalog import ModelCatalogError
 from ..intent_summary import (
+    intent_completion,
     intent_frame_counts,
-    intent_labels_complete,
     public_intent_contributors,
     summarize_intent,
 )
@@ -65,19 +65,31 @@ def _attach_intent_frame_distributions(
     lane_change: Counter[str] = Counter()
     all_items = report.pop("_all_items", report.get("items", []))
     for item in all_items:
-        frame_counts = intent_frame_counts(
+        completion = intent_completion(
             timeline_for_item(item),
             routing_default=str(item.get("routing_default") or ""),
             lane_change_default=str(item.get("lane_change_default") or ""),
             overrides=item.get("overrides") or [],
+            label_scope=str(report.get("label_scope") or "all"),
         )
+        frame_counts = completion["frame_counts"]
         item["frame_counts"] = frame_counts
+        item["completion"] = {
+            key: completion[key]
+            for key in (
+                "complete", "status", "reason",
+                "missing_routing_frames", "missing_lane_change_frames",
+            )
+        }
         routing.update(frame_counts.get("routing") or {})
         lane_change.update(frame_counts.get("lane_change") or {})
     report["frame_distributions"] = {
         "routing": dict(routing),
         "lane_change": dict(lane_change),
     }
+    report["complete_records"] = sum(
+        bool(item.get("completion", {}).get("complete")) for item in all_items
+    )
 
 
 def _intent_summary_payload(dataset_id: str, identity: Any, experiment_id: str,
@@ -255,24 +267,46 @@ def _empty_labels(dataset_id: str, case_id: str) -> dict[str, Any]:
     }
 
 
-def _case_status(summary: dict[str, Any] | None, label_scope: str = "all") -> str:
+def _case_completion(
+    summary: dict[str, Any] | None,
+    label_scope: str = "all",
+    *,
+    timeline: list[dict[str, Any]] | tuple[dict[str, Any], ...] = (),
+) -> dict[str, Any] | None:
     if not summary:
-        return "unlabeled"
-    if intent_labels_complete(
-        str(summary.get("routing_default") or ""),
-        str(summary.get("lane_change_default") or ""),
+        return None
+    return intent_completion(
+        timeline,
+        routing_default=str(summary.get("routing_default") or ""),
+        lane_change_default=str(summary.get("lane_change_default") or ""),
+        overrides=summary.get("overrides") or [],
         label_scope=label_scope,
-    ):
-        return "completed"
-    return "partial"
+    )
+
+
+def _case_status(
+    summary: dict[str, Any] | None,
+    label_scope: str = "all",
+    *,
+    timeline: list[dict[str, Any]] | tuple[dict[str, Any], ...] = (),
+) -> str:
+    completion = _case_completion(summary, label_scope, timeline=timeline)
+    return str((completion or {}).get("status") or "unlabeled")
 
 
 def _dataset_payloads(username: str = "") -> list[dict[str, Any]]:
     result = []
     for item in intent_dataset_registry.public_datasets():
         summaries = database.intent_label_summaries(str(item["id"]), username)
-        completed = sum(_case_status(summary) == "completed" for summary in summaries.values())
-        partial = sum(_case_status(summary) == "partial" for summary in summaries.values())
+        completions = [
+            _case_status(
+                summary,
+                timeline=intent_dataset_registry.timeline(str(item["id"]), case_id),
+            )
+            for case_id, summary in summaries.items()
+        ]
+        completed = sum(status == "completed" for status in completions)
+        partial = sum(status == "partial" for status in completions)
         total = int(item.get("case_count") or 0)
         result.append(
             {
@@ -357,6 +391,51 @@ def _requested_experiment_dataset_ids(request: Request, body: dict[str, Any] | N
     return unique
 
 
+def _attach_accurate_experiment_progress(experiments: list[dict[str, Any]]) -> None:
+    """Replace default-only SQL progress with effective frame coverage."""
+
+    timeline_cache: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    summaries_cache: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
+    for experiment in experiments:
+        dataset_id = str(experiment.get("dataset_id") or "")
+        experiment_id = str(experiment.get("id") or "")
+        label_scope = str(experiment.get("label_scope") or "all")
+        total = started = completed = 0
+        for member in experiment.get("members") or []:
+            username = str(member.get("username") or "")
+            case_ids = database.intent_assigned_case_ids(
+                dataset_id, (username,), experiment_id
+            )
+            summary_key = (dataset_id, username)
+            if summary_key not in summaries_cache:
+                summaries_cache[summary_key] = database.intent_label_summaries(
+                    dataset_id, username
+                )
+            summaries = summaries_cache[summary_key]
+            total += len(case_ids)
+            for case_id in case_ids:
+                summary = summaries.get(case_id)
+                if not summary:
+                    continue
+                started += 1
+                timeline_key = (dataset_id, case_id)
+                if timeline_key not in timeline_cache:
+                    timeline_cache[timeline_key] = intent_dataset_registry.timeline(
+                        dataset_id, case_id
+                    )
+                timeline = timeline_cache[timeline_key]
+                if _case_status(summary, label_scope, timeline=timeline) == "completed":
+                    completed += 1
+        experiment["progress"] = {
+            "total": total,
+            "started": started,
+            "completed": completed,
+            "partial": max(0, started - completed),
+            "pending": max(0, total - started),
+            "percent": round(completed * 100 / total, 1) if total else 0.0,
+        }
+
+
 @router.get(
     "/api/intent-experiments"
 )
@@ -372,6 +451,7 @@ async def list_intent_experiments(request: Request) -> dict[str, Any]:
         asyncio.to_thread(database.list_access_users),
         asyncio.to_thread(model_catalog.status),
     )
+    await asyncio.to_thread(_attach_accurate_experiment_progress, experiments)
     return {
         "items": experiments,
         "name_suggestion": {
@@ -777,7 +857,13 @@ def _list_cases(
     normalized_search = search.strip().lower()
     items = []
     for ordinal, case_id in enumerate(case_ids, 1):
-        item_status = _case_status(summaries.get(case_id), label_scope)
+        summary = summaries.get(case_id)
+        completion = _case_completion(
+            summary,
+            label_scope,
+            timeline=intent_dataset_registry.timeline(dataset_id, case_id) if summary else (),
+        )
+        item_status = str((completion or {}).get("status") or "unlabeled")
         if not _intent_case_status_matches(item_status, status):
             continue
         if normalized_search and normalized_search not in case_id.lower():
@@ -788,6 +874,7 @@ def _list_cases(
                 "issue_id": case_id.rsplit("_", 1)[0],
                 "ordinal": ordinal,
                 "status": item_status,
+                "status_reason": str((completion or {}).get("reason") or "尚未开始"),
                 "revision_id": (summaries.get(case_id) or {}).get("revision_id"),
                 "updated_at": (summaries.get(case_id) or {}).get("updated_at", ""),
             }
@@ -1039,7 +1126,15 @@ def _case_payload(
         "status": _case_status(
             labels if labels["revision_id"] else None,
             (experiment or {}).get("label_scope", "all"),
+            timeline=timeline,
         ),
+        "status_reason": str((
+            _case_completion(
+                labels if labels["revision_id"] else None,
+                (experiment or {}).get("label_scope", "all"),
+                timeline=timeline,
+            ) or {}
+        ).get("reason") or "尚未开始"),
         "experiment": ({
             "id": experiment["id"],
             "name": experiment["name"],
@@ -1249,11 +1344,14 @@ def _export_jsonl(
     membership_sha256 = intent_dataset_registry.membership_sha256(dataset_id)
     for case_id in case_ids:
         labels = database.get_intent_labels(dataset_id, case_id)
-        complete = bool(labels) and intent_labels_complete(
-            str((labels or {}).get("routing_default") or ""),
-            str((labels or {}).get("lane_change_default") or ""),
+        completion = intent_completion(
+            intent_dataset_registry.timeline(dataset_id, case_id),
+            routing_default=str((labels or {}).get("routing_default") or ""),
+            lane_change_default=str((labels or {}).get("lane_change_default") or ""),
+            overrides=(labels or {}).get("overrides") or [],
             label_scope=label_scope,
-        )
+        ) if labels else None
+        complete = bool((completion or {}).get("complete"))
         if not labels or (not include_incomplete and not complete):
             continue
         common = {
