@@ -637,16 +637,16 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-experiment-empty > span { width: 38px; height: 38px; display: grid; place-items: center; border: 1px solid rgba(36, 211, 238, .28); border-radius: 50%; color: var(--accent); background: rgba(36, 211, 238, .06); font-size: 18px; }
 .intent-experiment-empty strong { color: var(--text); font-size: 15px; }
 .intent-experiment-empty p { max-width: 280px; margin: 0; color: var(--faint); font-size: 13px; line-height: 1.55; }
-.intent-experiment-item { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; padding: 12px 14px; border: 1px solid var(--line-soft); border-radius: 9px; background: var(--overlay); }
+.intent-experiment-item { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 7px 12px; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: 9px; background: var(--overlay); }
 .intent-experiment-item.is-closed { opacity: .72; }
 .intent-experiment-item h4 { min-width: 0; margin: 0; overflow: hidden; color: var(--text); font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
 .intent-experiment-meta { color: var(--muted); font-size: 12px; line-height: 1.45; }
-.intent-experiment-member-stats { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
-.intent-experiment-member-stats span { padding: 4px 8px; border-radius: 6px; color: #cbd8e4; background: rgba(127, 151, 170, .1); font-size: 12px; }
-.intent-experiment-status { align-self: start; padding: 4px 8px; border-radius: 999px; color: var(--ok); background: rgba(48, 211, 143, .1); font-size: 12px; }
+.intent-experiment-member-stats { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px; }
+.intent-experiment-member-stats span { padding: 3px 7px; border-radius: 6px; color: #cbd8e4; background: rgba(127, 151, 170, .1); font-size: 11px; }
+.intent-experiment-controls { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
+.intent-experiment-status { flex: 0 0 auto; padding: 3px 8px; border-radius: 999px; color: var(--ok); background: rgba(48, 211, 143, .1); font-size: 11px; }
 .intent-experiment-item.is-closed .intent-experiment-status { color: var(--muted); background: rgba(127, 151, 170, .1); }
-.intent-experiment-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
-.intent-experiment-actions .button { min-height: 32px; padding: 5px 12px; font-size: 12px; }
+.intent-experiment-controls .button { min-height: 28px; padding: 3px 9px; font-size: 11px; }
 .intent-summary-page { display: grid; align-content: start; gap: 12px; }
 .intent-summary-page.hidden { display: none; }
 .intent-summary-filters { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(150px, .7fr) minmax(100px, .4fr) minmax(180px, 1fr) auto auto; align-items: end; gap: 10px; padding: 14px; }

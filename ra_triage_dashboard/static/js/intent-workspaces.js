@@ -427,9 +427,8 @@ function renderIntentExperiments() {
     const datasetName = (state.intentLabeling.datasets.find((dataset) => dataset.id === item.dataset_id) || {}).display_name || item.dataset_id || "";
     return `<article class="intent-experiment-item${item.status === "closed" ? " is-closed" : ""}" data-intent-experiment="${escapeHtml(item.id)}">
       <div><h4>${escapeHtml(item.name)}</h4><div class="intent-experiment-meta">${escapeHtml(datasetName)} · ${intentExperimentModeLabel(item.annotation_mode)}${overlap} · ${item.case_count} 个 Case · ${item.assignment_count} 份任务 · ${escapeHtml(item.created_by)}</div></div>
-      <span class="intent-experiment-status">${item.status === "closed" ? "已关闭" : "进行中"}</span>
+      <div class="intent-experiment-controls"><span class="intent-experiment-status">${item.status === "closed" ? "已关闭" : "进行中"}</span>${item.status === "active" && state.session.can_manage_intent ? '<button class="button button-quiet" type="button" data-close-intent-experiment>关闭实验</button>' : ""}</div>
       <div class="intent-experiment-member-stats">${members}</div>
-      ${item.status === "active" && state.session.can_manage_intent ? '<div class="intent-experiment-actions"><button class="button button-quiet" type="button" data-close-intent-experiment>关闭实验</button></div>' : ""}
     </article>`;
   }).join("") : '<div class="intent-experiment-empty"><span aria-hidden="true">◎</span><strong>所选数据集尚未创建实验</strong><p>在上方完成配置后，实验与每位成员的任务量会显示在这里。</p></div>';
   container.querySelectorAll("[data-close-intent-experiment]").forEach((button) => {
