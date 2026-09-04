@@ -204,7 +204,6 @@ function renderIntentTopbarDatasetPicker(selectedIds = null) {
   renderMultiFilter(picker, {
     options: available.map((item) => ({ value: item.id, label: item.display_name })),
     selected,
-    onlyThis: true,
     onChange: (values) => {
       let next = parseFilterList(values);
       if (!multiple) {
@@ -358,11 +357,16 @@ function renderIntentExperimentMembers() {
   const container = $("#intentExperimentMembers");
   if (!container) return;
   const members = state.intentLabeling.experimentMembers || [];
-  container.innerHTML = members.length ? members.map((item) => (
-    `<label class="intent-experiment-member"><input type="checkbox" value="${escapeHtml(item.username)}"/><span>${escapeHtml(item.username)}</span><small>${item.role === "admin" ? "管理员" : "标注人"}</small></label>`
-  )).join("") : '<div class="empty-note">请先在用户管理中添加具有写入权限的标注人。</div>';
-  container.querySelectorAll("input").forEach((input) => {
-    input.addEventListener("change", updateIntentExperimentEstimate);
+  const selected = getMultiFilterValues(container).filter((username) => (
+    members.some((item) => item.username === username)
+  ));
+  renderMultiFilter(container, {
+    options: members.map((item) => ({
+      value: item.username,
+      label: `${item.username} · ${item.role === "admin" ? "管理员" : "标注人"}`,
+    })),
+    selected,
+    onChange: () => updateIntentExperimentEstimate(),
   });
 }
 
@@ -545,4 +549,3 @@ async function closeIntentExperiment(experimentId) {
   await loadIntentExperiments({ force: true });
   showToast("实验已关闭，历史分配仍然保留。", false);
 }
-

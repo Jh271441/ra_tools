@@ -558,8 +558,8 @@ const PAGE_ROUTES = {
   },
   "intent-summary": {
     path: "/intent-summary",
-    titleZh: "意图轨迹标注汇总",
-    titleEn: "Intent Trajectory Summary",
+    titleZh: "标注汇总",
+    titleEn: "Labeling Summary",
   },
   analysis: {
     path: "/review-analysis",
