@@ -367,20 +367,15 @@ async def list_intent_experiments(request: Request) -> dict[str, Any]:
             intent_dataset_registry.dataset(dataset_id)
         except KeyError as exc:
             raise _detail(404, str(exc)) from exc
-    experiments, users, name_suggestion_status, provider_catalog = await asyncio.gather(
+    experiments, users, name_suggestion_status = await asyncio.gather(
         asyncio.to_thread(database.list_intent_experiments, dataset_ids),
         asyncio.to_thread(database.list_access_users),
         asyncio.to_thread(model_catalog.status),
-        asyncio.to_thread(model_catalog.provider_catalog),
-    )
-    llm_available = bool(name_suggestion_status.get("configured")) or any(
-        bool(item.get("enabled"))
-        for item in provider_catalog.get("providers", [])
     )
     return {
         "items": experiments,
         "name_suggestion": {
-            "llm_available": llm_available,
+            "llm_available": bool(name_suggestion_status.get("configured")),
             "credential_source": "server",
         },
         "eligible_members": [

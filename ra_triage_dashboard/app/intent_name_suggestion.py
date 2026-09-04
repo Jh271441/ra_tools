@@ -8,7 +8,6 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_ope
 
 from .model_catalog import (
     ModelCatalog,
-    ModelCatalogError,
     model_gateway_chat_url,
     read_provider_api_key,
 )
@@ -17,11 +16,7 @@ from .settings import Settings
 
 MAX_RESPONSE_BYTES = 64 * 1024
 MAX_SUGGESTION_CHARS = 80
-TOKEN_SERVICE_NAME_MODEL_PREFERENCE = (
-    "aliyun/Qwen3.6-Flash",
-    "aliyun/Qwen3.5-Plus",
-    "aliyun/Qwen3-Next-80B-A3B-Instruct",
-)
+INTENT_NAME_MODEL_ID = "Qwen3.8-27B/Qwen3.8-27B"
 
 
 class IntentNameSuggestionError(RuntimeError):
@@ -113,7 +108,7 @@ def _validate_contextual_suggestion(
 
 def suggest_intent_name_with_llm(
     settings: Settings,
-    model_catalog: ModelCatalog,
+    _model_catalog: ModelCatalog,
     *,
     fallback: str,
     dataset_labels: list[str],
@@ -126,25 +121,6 @@ def suggest_intent_name_with_llm(
     label_scope: str = "routing",
 ) -> str:
     provider_id = "kylin"
-    try:
-        selected = model_catalog.resolve(settings.ra_model_default_id, provider_id=provider_id)
-    except ModelCatalogError:
-        provider_id = "tokenservice"
-        try:
-            snapshot = model_catalog.list_models(
-                allow_stale=True,
-                provider_id=provider_id,
-            )
-            model_ids = {str(item.get("id") or "") for item in snapshot.get("models", [])}
-            requested_model = next(
-                (item for item in TOKEN_SERVICE_NAME_MODEL_PREFERENCE if item in model_ids),
-                str(snapshot.get("default_model_id") or ""),
-            )
-            if not requested_model:
-                raise ModelCatalogError(503, "TokenService 当前没有可用的名称生成模型。")
-            selected = model_catalog.resolve(requested_model, provider_id=provider_id)
-        except ModelCatalogError as tokenservice_error:
-            raise IntentNameSuggestionError("模型名称推荐暂不可用。") from tokenservice_error
     api_key = read_provider_api_key(settings, provider_id)
     chat_url = model_gateway_chat_url(settings, provider_id)
     if annotation_mode == "full":
@@ -169,7 +145,7 @@ def suggest_intent_name_with_llm(
     )
     body = json.dumps(
         {
-            "model": selected["resolved_model_id"],
+            "model": INTENT_NAME_MODEL_ID,
             "messages": [
                 {"role": "system", "content": "你负责为内部数据标注实验命名。"},
                 {"role": "user", "content": prompt},
@@ -195,7 +171,7 @@ def suggest_intent_name_with_llm(
         },
     )
     try:
-        with build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=20) as response:
+        with build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=8) as response:
             if response.status != 200:
                 raise IntentNameSuggestionError("模型名称推荐暂不可用。")
             raw = response.read(MAX_RESPONSE_BYTES + 1)
