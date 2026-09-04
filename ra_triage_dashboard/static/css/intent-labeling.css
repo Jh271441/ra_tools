@@ -660,7 +660,7 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-experiment-controls .button { min-height: 28px; padding: 3px 9px; font-size: 11px; }
 .intent-summary-page { display: grid; align-content: start; gap: 12px; }
 .intent-summary-page.hidden { display: none; }
-.intent-summary-filters { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(150px, .7fr) minmax(100px, .4fr) minmax(180px, 1fr) auto auto; align-items: end; gap: 10px; padding: 14px; }
+.intent-summary-filters { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(150px, .7fr) minmax(180px, 1fr) auto auto; align-items: end; gap: 10px; padding: 14px; }
 .intent-summary-filters .button { height: 36px; }
 .intent-summary-delete { min-height: 28px; padding: 3px 8px; color: var(--fail); font-size: 11px; }
 .intent-summary-actions-column { width: 150px; }
@@ -694,7 +694,7 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-summary-table-card th[hidden], .intent-summary-table-card td[hidden] { display: none; }
 .intent-summary-case-link { color: var(--accent); text-decoration: none; }
 .intent-summary-case-link:hover { text-decoration: underline; }
-.intent-summary-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding-top: 10px; color: var(--muted); }
+.intent-summary-pagination { margin: 10px -14px -14px; color: var(--muted); }
 @media (max-width: 900px) { .intent-summary-filters, .intent-summary-metrics { grid-template-columns: 1fr; } .intent-summary-comment-hit { grid-template-columns: 1fr; } }
 @media (min-width: 901px) and (max-width: 1400px) { .intent-summary-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 

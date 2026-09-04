@@ -547,9 +547,16 @@ function bindIntentLabelingEvents() {
     loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
   });
   $("#intentSummaryPageSize")?.addEventListener("change", (event) => {
-    state.intentLabeling.summaryPageSize = Number(event.target.value) || 20;
+    const nextSize = Number(event.target.value);
+    state.intentLabeling.summaryPageSize = [10, 20, 50, 100].includes(nextSize) ? nextSize : 20;
     state.intentLabeling.summaryPage = 1;
     loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
+  });
+  $("#intentSummaryPageJumpButton")?.addEventListener("click", jumpIntentSummaryPage);
+  $("#intentSummaryPageJump")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    jumpIntentSummaryPage();
   });
   $("#intentSummaryRefresh")?.addEventListener("click", () => loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true)));
   $("#intentExportCompact")?.addEventListener("click", () => downloadIntentExport("compact"));

@@ -68,7 +68,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-324`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-325`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -454,14 +454,13 @@
               <div class="intent-command-field"><span>实验分配</span><div class="multi-filter" id="intentSummaryExperimentPicker" data-placeholder="全部实验"></div><select class="ui-select-native" id="intentSummaryExperiment" aria-hidden="true" tabindex="-1"></select></div>
               <div class="intent-command-field"><span>任务负责人</span><div class="multi-filter" id="intentSummaryAssignees" data-placeholder="全部负责人"></div></div>
               <div class="intent-command-field"><span>结果维度</span><div class="ui-select" id="intentSummaryAxisPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">Routing + 变道意图</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="intentSummaryAxis"><option value="all">Routing + 变道意图</option><option value="routing">仅 Routing</option><option value="lane_change">仅变道意图</option></select></div></div>
-              <div class="intent-command-field"><span>每页数量</span><div class="ui-select" id="intentSummaryPageSizePicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">20 / 页</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="intentSummaryPageSize"><option value="10">10 / 页</option><option value="20" selected>20 / 页</option><option value="50">50 / 页</option></select></div></div>
               <label class="intent-command-field intent-summary-comment-field"><span>搜索评论</span><input id="intentSummaryCommentQuery" maxlength="80" autocomplete="off" placeholder="按评论内容查找 Case"/></label>
               <button class="button button-quiet" id="intentSummaryRefresh" type="button">刷新汇总</button>
               <button class="button button-quiet" id="intentSummaryReveal" type="button" hidden>管理员解盲</button>
             </section>
             <section class="intent-summary-metrics" id="intentSummaryMetrics"></section>
             <section class="page-card intent-summary-comments-card" id="intentSummaryCommentHits" hidden></section>
-            <section class="page-card intent-summary-table-card"><header><div><h2>标注汇总</h2><p id="intentSummarySafety">进行中的盲标实验仅显示自己的答案。</p></div><div class="intent-summary-export-actions"><button class="button button-danger" id="intentSummaryBulkDelete" type="button" hidden disabled>批量删除</button><button class="button button-quiet" id="intentExportCompact" type="button" hidden>导出 Case JSONL</button><button class="button button-quiet" id="intentExportExpanded" type="button" hidden>导出帧级 JSONL</button></div></header><div class="table-scroll"><table><thead><tr><th>Issue / Case</th><th>标注人</th><th class="intent-summary-routing-column">Routing 帧分布</th><th class="intent-summary-lane-column">变道意图帧分布</th><th>更新时间</th><th class="intent-summary-admin-column intent-summary-actions-column" hidden><label class="intent-summary-select-all"><input id="intentSummarySelectPage" type="checkbox"/> 全选本页</label></th></tr></thead><tbody id="intentSummaryRows"></tbody></table></div><footer class="intent-summary-pagination"><button class="button button-quiet" id="intentSummaryPrevious" type="button">上一页</button><span id="intentSummaryPageState">1 / 1</span><button class="button button-quiet" id="intentSummaryNext" type="button">下一页</button></footer></section>
+            <section class="page-card intent-summary-table-card"><header><div><h2>标注汇总</h2><p id="intentSummarySafety">进行中的盲标实验仅显示自己的答案。</p></div><div class="intent-summary-export-actions"><button class="button button-danger" id="intentSummaryBulkDelete" type="button" hidden disabled>批量删除</button><button class="button button-quiet" id="intentExportCompact" type="button" hidden>导出 Case JSONL</button><button class="button button-quiet" id="intentExportExpanded" type="button" hidden>导出帧级 JSONL</button></div></header><div class="table-scroll"><table><thead><tr><th>Issue / Case</th><th>标注人</th><th class="intent-summary-routing-column">Routing 帧分布</th><th class="intent-summary-lane-column">变道意图帧分布</th><th>更新时间</th><th class="intent-summary-admin-column intent-summary-actions-column" hidden><label class="intent-summary-select-all"><input id="intentSummarySelectPage" type="checkbox"/> 全选本页</label></th></tr></thead><tbody id="intentSummaryRows"></tbody></table></div><nav class="case-pagination gallery-pagination intent-summary-pagination" aria-label="标注汇总分页"><div class="case-pagination-main"><button class="button button-quiet" id="intentSummaryPrevious" type="button">上一页</button><span id="intentSummaryPageState">1 / 1</span><button class="button button-quiet" id="intentSummaryNext" type="button">下一页</button><span class="page-jump-control"><label for="intentSummaryPageJump">跳至</label><input id="intentSummaryPageJump" type="number" min="1" step="1" inputmode="numeric" aria-label="跳至汇总页"/><span>页</span><button class="button button-quiet" id="intentSummaryPageJumpButton" type="button">跳转</button></span></div><label class="case-page-size" for="intentSummaryPageSize"><span>每页</span><select id="intentSummaryPageSize" aria-label="每页数量"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option><option value="100">100</option></select><span>条</span></label></nav></section>
           </section>
 
           <section class="app-page tool-page analysis-page hidden" id="reviewAnalysisPage" data-page="analysis">
@@ -1804,7 +1803,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-324`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-325`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

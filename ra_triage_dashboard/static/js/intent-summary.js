@@ -112,6 +112,27 @@ function renderIntentSummary(payload) {
   $("#intentSummaryPageState").textContent = `${payload.page} / ${pageCount}`;
   $("#intentSummaryPrevious").disabled = payload.page <= 1;
   $("#intentSummaryNext").disabled = payload.page >= pageCount;
+  const pageJump = $("#intentSummaryPageJump");
+  if (pageJump) {
+    pageJump.max = String(pageCount);
+    pageJump.value = String(payload.page);
+  }
+  const pageSize = $("#intentSummaryPageSize");
+  if (pageSize) pageSize.value = String(payload.page_size || 20);
+}
+
+function jumpIntentSummaryPage() {
+  const input = $("#intentSummaryPageJump");
+  const pageCount = Math.max(1, Math.ceil(
+    Number(state.intentLabeling.summaryPayload?.total || 0)
+      / Number(state.intentLabeling.summaryPayload?.page_size || 20)
+  ));
+  const page = Math.min(pageCount, Math.max(1, Number.parseInt(input?.value || "1", 10) || 1));
+  if (input) input.value = String(page);
+  if (page === state.intentLabeling.summaryPage) return;
+  state.intentLabeling.summaryPage = page;
+  loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true })
+    .catch((error) => showToast(error.message, true));
 }
 
 function selectedIntentSummaryDeleteTargets() {
@@ -235,8 +256,6 @@ async function loadIntentSummary({ datasetId = "", datasetIds = null, force = fa
     { value: "lane_change", label: "仅变道意图" },
   ], intent.summaryAxis || "all");
   bindUiSelect($("#intentSummaryAxisPicker"), { maxWidth: 260 });
-  populateUiSelect($("#intentSummaryPageSizePicker"), [10, 20, 50].map((value) => ({ value: String(value), label: `${value} / 页` })), String(intent.summaryPageSize || 20));
-  bindUiSelect($("#intentSummaryPageSizePicker"), { maxWidth: 180 });
   const commentInput = $("#intentSummaryCommentQuery");
   if (commentInput && commentInput.value !== (intent.summaryCommentQuery || "")) {
     commentInput.value = intent.summaryCommentQuery || "";

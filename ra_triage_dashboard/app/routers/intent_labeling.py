@@ -197,8 +197,8 @@ async def intent_summary(request: Request, dataset_id: list[str] = Query(default
         await asyncio.to_thread(_admin_identity, request)
     if axis not in {"all", "routing", "lane_change"}:
         raise _detail(400, "汇总维度仅支持 all、routing 或 lane_change。")
-    if page_size not in {10, 20, 50}:
-        raise _detail(400, "每页数量仅支持 10、20 或 50。")
+    if page_size not in {10, 20, 50, 100}:
+        raise _detail(400, "每页数量仅支持 10、20、50 或 100。")
     dataset_ids = tuple(dict.fromkeys(str(item).strip() for item in dataset_id if str(item).strip()))
     if not dataset_ids or len(dataset_ids) > 8:
         raise _detail(400, "请选择 1 到 8 个意图数据集。")

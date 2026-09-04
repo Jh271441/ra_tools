@@ -434,7 +434,7 @@ function parsePageRoute() {
     intentExperimentId: params.get("experiment") || "",
     intentSummaryOwners: params.getAll("owner").filter((value) => /^[A-Za-z0-9._@-]{1,128}$/.test(value)),
     intentSummaryPage: Math.max(1, Number.parseInt(params.get("page") || "1", 10) || 1),
-    intentSummaryPageSize: [10, 20, 50].includes(Number.parseInt(params.get("page_size") || "20", 10))
+    intentSummaryPageSize: [10, 20, 50, 100].includes(Number.parseInt(params.get("page_size") || "20", 10))
       ? Number.parseInt(params.get("page_size") || "20", 10) : 20,
     intentSummaryAxis: ["routing", "lane_change"].includes(params.get("axis")) ? params.get("axis") : "all",
     intentSummaryCommentQuery: (params.get("q") || "").trim().slice(0, 80),

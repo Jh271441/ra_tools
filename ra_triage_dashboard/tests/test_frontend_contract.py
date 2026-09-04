@@ -156,7 +156,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-324", APP_ENTRY_JS)
+        self.assertIn("manual-triage-325", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -197,7 +197,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-324", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-325", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
         self.assertNotIn("async function bootstrap", APP_ENTRY_JS)
@@ -304,7 +304,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-324`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-325`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -357,7 +357,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertNotIn('casePageJump?.addEventListener("change", commitCasePageJump)', APP_JS)
         # Review, analysis, Trail exclusion candidates, and admin Run
         # comparison all expose the shared jump-to-page control.
-        self.assertEqual(INDEX_HTML.count('class="page-jump-control"'), 4)
+        self.assertEqual(INDEX_HTML.count('class="page-jump-control"'), 5)
         self.assertIn("const requestedPage = state.reviewAnalysis.page", APP_JS)
         self.assertIn("state.reviewAnalysis.page = requestedPage", APP_JS)
         self.assertIn("page_count", APP_JS)
@@ -1018,7 +1018,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-324", APP_ENTRY_JS)
+        self.assertIn("manual-triage-325", APP_ENTRY_JS)
 
     def test_multi_issue_query_contract(self) -> None:
         self.assertIn('id="openIssueQueryButton"', INDEX_HTML)
@@ -1228,6 +1228,11 @@ class FrontendContractTest(unittest.TestCase):
         self.assertNotIn('id="intentContributorActions"', INDEX_HTML)
         self.assertIn('id="intentSummaryAxis"', INDEX_HTML)
         self.assertIn('id="intentSummaryPageSize"', INDEX_HTML)
+        self.assertIn('id="intentSummaryPageJump"', INDEX_HTML)
+        self.assertIn('id="intentSummaryPageJumpButton"', INDEX_HTML)
+        self.assertIn('<option value="100">100</option>', INDEX_HTML)
+        self.assertIn("function jumpIntentSummaryPage()", APP_JS)
+        self.assertNotIn('id="intentSummaryPageSizePicker"', INDEX_HTML)
         self.assertIn("async function deleteMyIntentLabel", APP_JS)
         self.assertIn('method: "DELETE"', APP_JS)
         self.assertIn('params.set("axis", intent.summaryAxis || "all")', APP_JS)
