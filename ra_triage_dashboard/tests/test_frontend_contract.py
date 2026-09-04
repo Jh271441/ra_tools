@@ -1168,6 +1168,8 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('data-intent-axis-section="lane_change"', INDEX_HTML)
         self.assertIn("function intentAxisEnabled(axis)", APP_JS)
         self.assertIn("button.closest(\".intent-label-grid\").hidden", APP_JS)
+        self.assertIn('ratios.push(`Routing：${ratioText', APP_JS)
+        self.assertIn('ratios.push(`变道：${ratioText', APP_JS)
         self.assertIn("if (event.repeat || !intentAxisEnabled(digit[0])) return", APP_JS)
         self.assertIn('event.code === "ArrowLeft" || event.code === "ArrowRight"', APP_JS)
         self.assertIn('class="topbar-baselines intent-topbar-dataset"', INDEX_HTML)

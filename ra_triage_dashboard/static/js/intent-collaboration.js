@@ -39,8 +39,17 @@ function renderIntentLabels() {
     ? `选中 ${selectedCount} 帧恢复批量预填`
     : "当前帧恢复批量预填";
   const total = intent.caseData?.timepoints?.length || 0;
-  const overrideCount = Object.keys(intent.overrides).length;
-  $("#intentCoverage").textContent = `${Math.max(0, total - overrideCount)} 帧使用批量预填 · ${overrideCount} 帧单独修改`;
+  const counts = intentLocalFrameCounts();
+  const ratioText = (values, labels) => Object.entries(values || {})
+    .filter(([, count]) => count > 0)
+    .sort((left, right) => right[1] - left[1])
+    .map(([value, count]) => `${labels[value] || value} ${Math.round((count / Math.max(1, total)) * 100)}%`)
+    .join(" / ");
+  const ratios = [];
+  if (intentAxisEnabled("routing")) ratios.push(`Routing：${ratioText(counts.routing, INTENT_ROUTING_LABELS) || "待填"}`);
+  if (intentAxisEnabled("laneChange")) ratios.push(`变道：${ratioText(counts.lane_change, INTENT_LANE_LABELS) || "待填"}`);
+  $("#intentCoverage").textContent = ratios.join(" · ");
+  $("#intentCoverage").title = ratios.join(" · ");
 }
 
 function intentLocalFrameCounts() {
