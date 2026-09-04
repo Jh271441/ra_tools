@@ -38,6 +38,8 @@ from .runtime import (
 from .routers import (
     analysis,
     batch,
+    case_annotations,
+    case_comments,
     cases,
     core,
     imports,
@@ -380,6 +382,8 @@ app.mount(
 
 app.include_router(core.router)
 app.include_router(cases.router)
+app.include_router(case_comments.router)
+app.include_router(case_annotations.router)
 app.include_router(reviews.router)
 app.include_router(runs.router)
 app.include_router(analysis.router)

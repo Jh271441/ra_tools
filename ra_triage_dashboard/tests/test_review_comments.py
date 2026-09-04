@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 from starlette.requests import Request
 
 from ra_triage_dashboard.app.db import Database
-from ra_triage_dashboard.app.routers.cases import (
+from ra_triage_dashboard.app.routers.case_comments import (
     create_review_comment,
     create_review_comment_with_attachments,
 )
@@ -138,15 +138,15 @@ class ReviewCommentsTest(unittest.TestCase):
             )
             dispatcher = Mock()
             with patch(
-                "ra_triage_dashboard.app.routers.cases.database", database
+                "ra_triage_dashboard.app.routers.case_comments.database", database
             ), patch(
-                "ra_triage_dashboard.app.routers.cases._action_actor",
+                "ra_triage_dashboard.app.routers.case_comments._action_actor",
                 return_value=("bob", "kylin_ticket", True),
             ), patch(
-                "ra_triage_dashboard.app.routers.cases.settings",
+                "ra_triage_dashboard.app.routers.case_comments.settings",
                 SimpleNamespace(dchat_notifications_enabled=True),
             ), patch(
-                "ra_triage_dashboard.app.routers.cases.review_notification_dispatcher",
+                "ra_triage_dashboard.app.routers.case_comments.review_notification_dispatcher",
                 dispatcher,
             ):
                 result = asyncio.run(
@@ -239,18 +239,18 @@ class ReviewCommentsTest(unittest.TestCase):
             }
             request = json_request({})
             with patch(
-                "ra_triage_dashboard.app.routers.cases.database", database
+                "ra_triage_dashboard.app.routers.case_comments.database", database
             ), patch(
-                "ra_triage_dashboard.app.routers.cases._action_actor",
+                "ra_triage_dashboard.app.routers.case_comments._action_actor",
                 return_value=("alice", "kylin_ticket", True),
             ), patch(
-                "ra_triage_dashboard.app.routers.cases.settings",
+                "ra_triage_dashboard.app.routers.case_comments.settings",
                 SimpleNamespace(dchat_notifications_enabled=False),
             ), patch(
-                "ra_triage_dashboard.app.routers.cases.review_notification_dispatcher",
+                "ra_triage_dashboard.app.routers.case_comments.review_notification_dispatcher",
                 dispatcher,
             ), patch(
-                "ra_triage_dashboard.app.routers.cases._store_comment_attachments",
+                "ra_triage_dashboard.app.routers.case_comments._store_comment_attachments",
                 return_value=([stored], [Path(directory) / "image-1.png"]),
             ):
                 result = asyncio.run(
