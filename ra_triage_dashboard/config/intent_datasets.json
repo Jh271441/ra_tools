@@ -35,9 +35,6 @@
       "camera_subdir": "after_compress",
       "camera_offsets_ms": [-19000, -15000, -10000, -5000, 0, 5000, 10000, 15000, 19000],
       "excluded_bev_offsets_ms": [-20000],
-      "excluded_bev_offsets_by_case": {
-        "cn31954883_1778747581012": [-19000, -18000, -17000, -16000, -15000, -14000, -13000, -12000, -11000, -10000, -9000]
-      },
       "max_pair_delta_ms": 500
     },
     {
