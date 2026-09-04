@@ -68,6 +68,7 @@ class IntentNameSuggestionTest(unittest.TestCase):
                 overlap_ratio=0.2,
                 overlap_reviewers=2,
                 member_count=4,
+                draft_name="0206 复核第二轮",
             )
         self.assertEqual(suggestion, "0206 Routing 路口复核")
         self.assertEqual(catalog.provider_id, "kylin")

@@ -393,15 +393,27 @@ function ruleBasedIntentExperimentName(context) {
   return `${scope} Routing ${mode} ${context.requested} Case`.slice(0, 80);
 }
 
-function renderIntentExperimentNameSuggestion(value, source = "rule") {
+function renderIntentExperimentNameSuggestion(value, source = "rule", status = "ready") {
   const input = $("#intentExperimentName");
   if (!input) return;
+  const statusNode = $("#intentExperimentNameStatus");
   const suggestion = String(value || "").trim();
   input.dataset.suggestion = suggestion;
   input.dataset.suggestionSource = source;
-  input.placeholder = suggestion
-    ? `${source === "llm" ? "AI 推荐" : "推荐"}：${suggestion}（Tab 采纳）`
+  input.placeholder = status === "loading"
+    ? "AI 推理中…"
+    : suggestion
+      ? `${source === "llm" ? "AI 推荐" : "推荐"}：${suggestion}（Tab 采纳）`
     : "例如 0206 Routing 双盲复核";
+  if (statusNode) {
+    statusNode.dataset.status = status;
+    statusNode.textContent = status === "loading"
+      ? "AI 推理中"
+      : suggestion
+        ? `${source === "llm" ? "AI 推荐就绪" : "规则推荐"} · Tab`
+        : "";
+    statusNode.title = status === "ready" && suggestion ? suggestion : "";
+  }
 }
 
 let intentLabelDeleteConfirmPending = null;
@@ -433,6 +445,7 @@ function updateIntentExperimentNameSuggestion() {
   renderIntentExperimentNameSuggestion(fallback, "rule");
   window.clearTimeout(intent.experimentNameSuggestionTimer);
   if (!intent.experimentNameSuggestionAvailable || !state.session.can_manage_intent || !context.datasets.length) return;
+  const draftName = String($("#intentExperimentName")?.value || "").trim();
   const fingerprint = JSON.stringify({
     dataset_ids: context.datasets.map((item) => item.id),
     annotation_mode: context.mode,
@@ -440,10 +453,12 @@ function updateIntentExperimentNameSuggestion() {
     overlap_ratio: context.overlap,
     overlap_reviewers: context.reviewers,
     member_count: context.memberCount,
+    draft_name: draftName,
   });
   if (fingerprint === intent.experimentNameSuggestionFingerprint) return;
+  const requestSeq = ++intent.experimentNameSuggestionSeq;
+  renderIntentExperimentNameSuggestion(fallback, "rule", "loading");
   intent.experimentNameSuggestionTimer = window.setTimeout(async () => {
-    const requestSeq = ++intent.experimentNameSuggestionSeq;
     intent.experimentNameSuggestionFingerprint = fingerprint;
     try {
       const payload = await api("/api/intent-experiments/name-suggestion", {
@@ -456,7 +471,7 @@ function updateIntentExperimentNameSuggestion() {
     } catch (_error) {
       if (requestSeq === intent.experimentNameSuggestionSeq) renderIntentExperimentNameSuggestion(fallback, "rule");
     }
-  }, 500);
+  }, 650);
 }
 
 function updateIntentExperimentEstimate() {

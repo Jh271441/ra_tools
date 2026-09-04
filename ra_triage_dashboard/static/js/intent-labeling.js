@@ -568,6 +568,7 @@ function bindIntentLabelingEvents() {
   $("#intentExperimentCaseCount")?.addEventListener("input", updateIntentExperimentEstimate);
   $("#intentExperimentOverlap")?.addEventListener("change", updateIntentExperimentEstimate);
   $("#intentExperimentReviewers")?.addEventListener("input", updateIntentExperimentEstimate);
+  $("#intentExperimentName")?.addEventListener("input", updateIntentExperimentNameSuggestion);
   $("#intentExperimentName")?.addEventListener("keydown", (event) => {
     if (event.key !== "Tab" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
     const suggestion = event.currentTarget.dataset.suggestion || "";

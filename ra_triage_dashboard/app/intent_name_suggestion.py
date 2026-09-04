@@ -70,6 +70,7 @@ def suggest_intent_name_with_llm(
     overlap_ratio: float,
     overlap_reviewers: int,
     member_count: int,
+    draft_name: str = "",
 ) -> str:
     selected = model_catalog.resolve(settings.ra_model_default_id, provider_id="kylin")
     api_key = read_provider_api_key(settings, "kylin")
@@ -80,6 +81,8 @@ def suggest_intent_name_with_llm(
         f"模式：{'全量盲标' if annotation_mode == 'full' else '交叉盲标'}\n"
         f"Case数量：{case_count}\n交叉比例：{round(overlap_ratio * 100)}%\n"
         f"每Case标注人数：{overlap_reviewers}\n成员数：{member_count}\n"
+        f"用户当前草稿：{draft_name or '无'}\n"
+        "如果用户提供了草稿，请在保留其核心含义的前提下优化；不要原样重复冗长或含糊的草稿。\n"
         f"规则名称参考：{fallback}"
     )
     body = json.dumps(

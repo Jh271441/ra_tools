@@ -273,6 +273,7 @@ async def suggest_intent_experiment_name(request: Request) -> dict[str, Any]:
     except (TypeError, ValueError) as exc:
         raise _detail(400, "实验名称推荐参数不合法。") from exc
     labels = [str(item.display_name or item.dataset_id) for item in datasets]
+    draft_name = " ".join(str(body.get("draft_name") or "").replace("\u0000", "").split())[:160]
     fallback = rule_based_intent_name(
         labels,
         annotation_mode=mode,
@@ -294,6 +295,7 @@ async def suggest_intent_experiment_name(request: Request) -> dict[str, Any]:
             overlap_ratio=overlap_ratio,
             overlap_reviewers=overlap_reviewers,
             member_count=member_count,
+            draft_name=draft_name,
         )
     except (IntentNameSuggestionError, ModelCatalogError):
         return {"suggestion": fallback, "source": "rule"}

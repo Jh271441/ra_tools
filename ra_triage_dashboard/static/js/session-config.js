@@ -297,6 +297,7 @@ function renderMultiFilter(
       if (!value) return;
       setMultiFilterValues(root, [value]);
       emitChange();
+      closeAllMultiFilters();
     });
   });
   root.querySelectorAll('input[data-multi-value]').forEach((input) => {
