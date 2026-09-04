@@ -15,6 +15,16 @@ function intentSummaryResultMarkup(counts, labels) {
   )).join("")}</div>`;
 }
 
+function intentSummaryLabelingHref(datasetId, caseId, extra = {}) {
+  const selected = parseFilterList(state.intentLabeling.summaryDatasetIds);
+  const ordered = [datasetId, ...selected.filter((id) => id !== datasetId)];
+  const params = new URLSearchParams();
+  ordered.forEach((id) => params.append("dataset", id));
+  params.set("case", caseId);
+  Object.entries(extra).forEach(([key, value]) => params.set(key, String(value)));
+  return `${withBase("/intent-labeling")}?${params}`;
+}
+
 function renderIntentSummaryCommentHits(payload) {
   const card = $("#intentSummaryCommentHits");
   if (!card) return;
@@ -26,9 +36,9 @@ function renderIntentSummaryCommentHits(payload) {
     return;
   }
   card.hidden = false;
-  const datasetId = state.intentLabeling.summaryDatasetId;
   const rows = hits.length ? hits.map((item) => {
-    const href = `${withBase("/intent-labeling")}?dataset=${encodeURIComponent(datasetId)}&case=${encodeURIComponent(item.case_id)}&comments=1&comment=${encodeURIComponent(item.id)}`;
+    const datasetId = item.dataset_id || state.intentLabeling.summaryDatasetId;
+    const href = intentSummaryLabelingHref(datasetId, item.case_id, { comments: 1, comment: item.id });
     return `<article class="intent-summary-comment-hit">
       <a class="intent-summary-case-link" href="${escapeHtml(href)}">${escapeHtml(item.case_id)}</a>
       <strong>${escapeHtml(item.author)}${item.author === state.session.username ? "（我）" : ""}</strong>
@@ -57,14 +67,14 @@ function renderIntentSummary(payload) {
   ];
   $("#intentSummaryMetrics").innerHTML = metrics.map(([label, value]) => `<article class="intent-summary-metric"><small>${label}</small><strong>${escapeHtml(value)}</strong></article>`).join("");
   renderIntentSummaryCommentHits(payload);
-  const datasetId = state.intentLabeling.summaryDatasetId;
   const columnCount = 3 + Number(showRouting) + Number(showLaneChange) + Number(state.session.is_admin);
   $("#intentSummaryRows").innerHTML = (payload.items || []).map((item) => {
-    const href = `${withBase("/intent-labeling")}?dataset=${encodeURIComponent(datasetId)}&case=${encodeURIComponent(item.case_id)}`;
+    const datasetId = item.dataset_id || state.intentLabeling.summaryDatasetId;
+    const href = intentSummaryLabelingHref(datasetId, item.case_id);
     const action = state.session.is_admin
-      ? `<td class="intent-summary-admin-column"><button class="button button-quiet intent-summary-delete" type="button" data-intent-summary-delete data-case-id="${escapeHtml(item.case_id)}" data-username="${escapeHtml(item.username)}" data-revision-id="${Number(item.revision_id)}">删除标注</button></td>`
+      ? `<td class="intent-summary-admin-column"><button class="button button-quiet intent-summary-delete" type="button" data-intent-summary-delete data-dataset-id="${escapeHtml(datasetId)}" data-case-id="${escapeHtml(item.case_id)}" data-username="${escapeHtml(item.username)}" data-revision-id="${Number(item.revision_id)}">删除标注</button></td>`
       : "";
-    return `<tr><td><a class="intent-summary-case-link" href="${escapeHtml(href)}">${escapeHtml(item.case_id)}</a></td><td>${escapeHtml(item.username)}${item.username === state.session.username ? "（我）" : ""}</td><td class="intent-summary-routing-column"${showRouting ? "" : " hidden"}>${intentSummaryResultMarkup(item.frame_counts?.routing, INTENT_ROUTING_LABELS)}</td><td class="intent-summary-lane-column"${showLaneChange ? "" : " hidden"}>${intentSummaryResultMarkup(item.frame_counts?.lane_change, INTENT_LANE_LABELS)}</td><td>${escapeHtml(formatTime(item.updated_at) || "—")}</td>${action}</tr>`;
+    return `<tr><td><a class="intent-summary-case-link" href="${escapeHtml(href)}">${escapeHtml(item.case_id)}</a>${(payload.dataset_ids || []).length > 1 ? `<small>${escapeHtml(datasetId)}</small>` : ""}</td><td>${escapeHtml(item.username)}${item.username === state.session.username ? "（我）" : ""}</td><td class="intent-summary-routing-column"${showRouting ? "" : " hidden"}>${intentSummaryResultMarkup(item.frame_counts?.routing, INTENT_ROUTING_LABELS)}</td><td class="intent-summary-lane-column"${showLaneChange ? "" : " hidden"}>${intentSummaryResultMarkup(item.frame_counts?.lane_change, INTENT_LANE_LABELS)}</td><td>${escapeHtml(formatTime(item.updated_at) || "—")}</td>${action}</tr>`;
   }).join("") || `<tr><td colspan="${columnCount}">当前筛选下没有已标注结果。</td></tr>`;
   $("#intentSummaryRows").querySelectorAll("[data-intent-summary-delete]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -88,27 +98,35 @@ async function deleteIntentSummaryLabel(button) {
   const caseId = button.dataset.caseId || "";
   const username = button.dataset.username || "";
   const revisionId = Number(button.dataset.revisionId) || 0;
+  const datasetId = button.dataset.datasetId || state.intentLabeling.summaryDatasetId;
   if (!caseId || !username || !revisionId) return;
   if (!await confirmIntentLabelDeletion({ username, caseId })) return;
   button.disabled = true;
   try {
-    const result = await api(`/api/intent-datasets/${encodeURIComponent(state.intentLabeling.summaryDatasetId)}/cases/${encodeURIComponent(caseId)}/labels/${encodeURIComponent(username)}?expected_revision_id=${revisionId}`, { method: "DELETE" });
+    const result = await api(`/api/intent-datasets/${encodeURIComponent(datasetId)}/cases/${encodeURIComponent(caseId)}/labels/${encodeURIComponent(username)}?expected_revision_id=${revisionId}`, { method: "DELETE" });
     acknowledgeLocalChange(result);
-    await loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true });
+    await loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true });
     showToast("标注已删除，历史修订与审计记录已保留。", false);
   } finally {
     button.disabled = false;
   }
 }
 
-async function loadIntentSummary({ datasetId = "", force = false } = {}) {
+async function loadIntentSummary({ datasetId = "", datasetIds = null, force = false } = {}) {
   const intent = state.intentLabeling;
   if (!intent.datasets.length) intent.datasets = (await api("/api/intent-datasets")).items || [];
-  const selected = intent.datasets.find((item) => item.id === datasetId && item.available) || intent.datasets.find((item) => item.id === intent.summaryDatasetId && item.available) || intent.datasets.find((item) => item.available);
-  if (!selected) throw new Error("没有可汇总的数据集。");
-  intent.summaryDatasetId = selected.id;
-  renderIntentTopbarDatasetPicker(selected.id);
-  const params = new URLSearchParams({ dataset_id: selected.id });
+  const available = intent.datasets.filter((item) => item.available);
+  let selectedIds = parseFilterList(datasetIds == null ? intent.summaryDatasetIds : datasetIds)
+    .filter((id) => available.some((item) => item.id === id));
+  if (!selectedIds.length && datasetId && available.some((item) => item.id === datasetId)) selectedIds = [datasetId];
+  if (!selectedIds.length && intent.summaryDatasetId && available.some((item) => item.id === intent.summaryDatasetId)) selectedIds = [intent.summaryDatasetId];
+  if (!selectedIds.length && available[0]) selectedIds = [available[0].id];
+  if (!selectedIds.length) throw new Error("没有可汇总的数据集。");
+  intent.summaryDatasetIds = selectedIds;
+  intent.summaryDatasetId = selectedIds[0];
+  renderIntentTopbarDatasetPicker(selectedIds);
+  const params = new URLSearchParams();
+  selectedIds.forEach((id) => params.append("dataset_id", id));
   if (intent.summaryExperimentId) params.set("experiment_id", intent.summaryExperimentId);
   (intent.summaryAssignees || []).forEach((value) => params.append("assignee", value));
   if (intent.summaryReveal) params.set("reveal_answers", "true");
@@ -121,7 +139,7 @@ async function loadIntentSummary({ datasetId = "", force = false } = {}) {
   intent.summaryPayload = payload;
   const summaryExperimentOptions = (payload.experiments || []).map((item) => ({
     value: item.id,
-    label: item.name,
+    label: selectedIds.length > 1 ? `${item.dataset_id} · ${item.name}` : item.name,
   }));
   const summaryExperimentNative = $("#intentSummaryExperiment");
   if (summaryExperimentNative) {
@@ -142,7 +160,7 @@ async function loadIntentSummary({ datasetId = "", force = false } = {}) {
       intent.summaryExperimentId = experimentId;
       intent.summaryAssignees = [];
       intent.summaryPage = 1;
-      loadIntentSummary({ datasetId: selected.id, force: true }).catch((error) => showToast(error.message, true));
+      loadIntentSummary({ datasetIds: selectedIds, force: true }).catch((error) => showToast(error.message, true));
     },
   });
   populateUiSelect($("#intentSummaryAxisPicker"), [
@@ -157,14 +175,15 @@ async function loadIntentSummary({ datasetId = "", force = false } = {}) {
   if (commentInput && commentInput.value !== (intent.summaryCommentQuery || "")) {
     commentInput.value = intent.summaryCommentQuery || "";
   }
-  renderMultiFilter($("#intentSummaryAssignees"), { options: (payload.owners || []).map((value) => ({ value, label: value === state.session.username ? `${value}（我）` : value })), selected: intent.summaryAssignees || [], onlyThis: true, onChange: (values) => { intent.summaryAssignees = values; intent.summaryPage = 1; loadIntentSummary({ datasetId: selected.id, force: true }).catch((error) => showToast(error.message, true)); } });
+  renderMultiFilter($("#intentSummaryAssignees"), { options: (payload.owners || []).map((value) => ({ value, label: value === state.session.username ? `${value}（我）` : value })), selected: intent.summaryAssignees || [], onlyThis: true, onChange: (values) => { intent.summaryAssignees = values; intent.summaryPage = 1; loadIntentSummary({ datasetIds: selectedIds, force: true }).catch((error) => showToast(error.message, true)); } });
   renderIntentSummary(payload);
-  const routeParams = new URLSearchParams({ dataset: selected.id });
+  const routeParams = new URLSearchParams();
+  selectedIds.forEach((id) => routeParams.append("dataset", id));
   if (intent.summaryExperimentId) routeParams.set("experiment", intent.summaryExperimentId);
   (intent.summaryAssignees || []).forEach((value) => routeParams.append("owner", value));
   if ((intent.summaryPage || 1) > 1) routeParams.set("page", String(intent.summaryPage));
   if ((intent.summaryAxis || "all") !== "all") routeParams.set("axis", intent.summaryAxis);
   if ((intent.summaryPageSize || 20) !== 20) routeParams.set("page_size", String(intent.summaryPageSize));
   if (commentQuery) routeParams.set("q", commentQuery);
-  history.replaceState({ page: "intent-summary", datasetId: selected.id }, "", `${withBase("/intent-summary")}?${routeParams}`);
+  history.replaceState({ page: "intent-summary", datasetId: selectedIds[0], datasetIds: selectedIds }, "", `${withBase("/intent-summary")}?${routeParams}`);
 }

@@ -213,11 +213,11 @@ function openIntentComments({ focusCommentId = 0 } = {}) {
 function renderIntentCase({ deferTimelineThumbnails = false } = {}) {
   const intent = state.intentLabeling;
   const data = intent.caseData;
-  renderIntentTopbarDatasetPicker(intent.datasetId);
+  renderIntentTopbarDatasetPicker(intent.selectedDatasetIds);
   if (!data) return;
   $("#intentCaseInput").value = data.issue_id;
-  $("#intentPreviousCase").disabled = !data.previous_case_id;
-  $("#intentNextCase").disabled = !data.next_case_id;
+  $("#intentPreviousCase").disabled = !(data.previous_case?.case_id || data.previous_case_id);
+  $("#intentNextCase").disabled = !(data.next_case?.case_id || data.next_case_id);
   const caseOrdinal = $("#intentCaseOrdinalInput");
   if (caseOrdinal) {
     caseOrdinal.value = String(data.ordinal || "");

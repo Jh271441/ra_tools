@@ -37,6 +37,8 @@ class IntentLabelingAccessContractTest(unittest.TestCase):
         self.assertIn('"/api/intent-experiments"', INTENT_ROUTER)
         self.assertIn('"/api/intent-experiments/{experiment_id}/close"', INTENT_ROUTER)
         self.assertIn('"/api/intent-experiments/name-suggestion"', INTENT_ROUTER)
+        self.assertIn('@router.get("/api/intent-cases")', INTENT_ROUTER)
+        self.assertIn("_intent_summary_payload_multi", INTENT_ROUTER)
         self.assertIn('"/api/intent-datasets/{dataset_id}/cases/{case_id}/labels/{username}"', INTENT_ROUTER)
         self.assertIn("Depends(_require_intent_admin)", INTENT_ROUTER)
         self.assertGreaterEqual(INTENT_ROUTER.count("await asyncio.to_thread(_admin_identity, request)"), 2)

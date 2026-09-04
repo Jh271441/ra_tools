@@ -1,4 +1,4 @@
-async function loadIntentLabeling({ datasetId = "", caseId = "", offsetMs = null, assignees = null, experimentId = null, historyMode = "replace" } = {}) {
+async function loadIntentLabeling({ datasetId = "", datasetIds = null, caseId = "", offsetMs = null, assignees = null, experimentId = null, historyMode = "replace" } = {}) {
   const intent = state.intentLabeling;
   const requestSeq = ++intent.requestSeq;
   if (!intent.datasets.length) {
@@ -6,47 +6,66 @@ async function loadIntentLabeling({ datasetId = "", caseId = "", offsetMs = null
     if (requestSeq !== intent.requestSeq) return;
     intent.datasets = payload.items || [];
   }
-  const selectedDataset = intent.datasets.find((item) => item.id === datasetId && item.available)
-    || intent.datasets.find((item) => item.id === intent.datasetId && item.available)
-    || intent.datasets.find((item) => item.available);
+  const available = intent.datasets.filter((item) => item.available);
+  let scopeIds = parseFilterList(datasetIds == null ? intent.selectedDatasetIds : datasetIds)
+    .filter((id) => available.some((item) => item.id === id));
+  if (!scopeIds.length && datasetId && available.some((item) => item.id === datasetId)) scopeIds = [datasetId];
+  if (!scopeIds.length && intent.datasetId && available.some((item) => item.id === intent.datasetId)) scopeIds = [intent.datasetId];
+  if (!scopeIds.length && available[0]) scopeIds = [available[0].id];
+  let selectedDataset = available.find((item) => item.id === datasetId && scopeIds.includes(item.id))
+    || available.find((item) => item.id === intent.datasetId && scopeIds.includes(item.id))
+    || available.find((item) => scopeIds.includes(item.id));
   if (!selectedDataset) {
     renderIntentTopbarDatasetPicker("");
     intentSetSaveState("数据集媒体尚未挂载", "error");
     return;
   }
-  const datasetChanged = intent.datasetId && intent.datasetId !== selectedDataset.id;
+  const previousScopeKey = (intent.selectedDatasetIds || []).join(",");
+  const scopeChanged = previousScopeKey && previousScopeKey !== scopeIds.join(",");
   intent.datasetId = selectedDataset.id;
-  renderIntentTopbarDatasetPicker(intent.datasetId);
-  if (datasetChanged) {
+  intent.selectedDatasetIds = scopeIds;
+  renderIntentTopbarDatasetPicker(scopeIds);
+  if (scopeChanged) {
     intent.selectedAssignees = [];
     intent.assigneeDatasetId = "";
     intent.selectedExperimentId = "";
   }
-  await loadIntentAssignees(intent.datasetId, assignees, experimentId);
+  await loadIntentAssignees(scopeIds, assignees, experimentId);
   if (requestSeq !== intent.requestSeq) return;
   const assigneeParams = intentAssigneeSearchParams();
+  const queueParams = new URLSearchParams(assigneeParams);
+  scopeIds.forEach((id) => queueParams.append("dataset_id", id));
+  queueParams.set("status", "all");
+  queueParams.set("page_size", "200");
   let targetCaseId = caseId;
-  if (targetCaseId && !/^cn[0-9]+_[0-9]+$/.test(targetCaseId)) {
-    if (!/^cn[0-9]+$/.test(targetCaseId)) throw new Error("请输入完整的 Issue ID，例如 cn28896325。");
-    const matchParams = intentAssigneeSearchParams();
-    matchParams.set("q", targetCaseId);
-    matchParams.set("page_size", "200");
-    const matches = await api(intentApiUrl(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases`, matchParams));
-    if (requestSeq !== intent.requestSeq) return;
-    const exact = (matches.items || []).filter((item) => item.issue_id === targetCaseId);
-    if (exact.length !== 1) throw new Error(exact.length ? "该 Issue 对应多个 Episode，无法唯一打开。" : "该数据集中没有这个 Issue。");
-    targetCaseId = exact[0].case_id;
+  if (targetCaseId && !/^cn[0-9]+(?:_[0-9]+)?$/.test(targetCaseId)) {
+    throw new Error("请输入完整的 Issue ID，例如 cn28896325。");
   }
-  if (!targetCaseId) {
-    const allParams = new URLSearchParams(assigneeParams);
-    allParams.set("status", "all");
-    allParams.set("page_size", "1");
-    const allCases = await api(intentApiUrl(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases`, allParams));
-    targetCaseId = allCases.items?.[0]?.case_id || "";
+  if (targetCaseId) queueParams.set("q", targetCaseId);
+  else queueParams.set("page_size", "1");
+  const queue = await api(intentApiUrl("/api/intent-cases", queueParams));
+  if (requestSeq !== intent.requestSeq) return;
+  let queueItem = null;
+  if (/^cn[0-9]+_[0-9]+$/.test(targetCaseId)) {
+    const exact = (queue.items || []).filter((item) => item.case_id === targetCaseId);
+    queueItem = exact.find((item) => item.dataset_id === selectedDataset.id) || exact[0] || null;
+  } else if (targetCaseId) {
+    const exact = (queue.items || []).filter((item) => item.issue_id === targetCaseId);
+    if (exact.length !== 1) throw new Error(exact.length ? "该 Issue 对应多个数据集或 Episode，无法唯一打开。" : "所选数据集中没有这个 Issue。");
+    queueItem = exact[0];
+  } else {
+    queueItem = queue.items?.[0] || null;
   }
+  targetCaseId = queueItem?.case_id || "";
   if (!targetCaseId) throw new Error("数据集中没有可标注 Case。");
+  selectedDataset = available.find((item) => item.id === queueItem.dataset_id) || selectedDataset;
+  intent.datasetId = selectedDataset.id;
   const data = await api(intentApiUrl(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases/${encodeURIComponent(targetCaseId)}`, assigneeParams));
   if (requestSeq !== intent.requestSeq) return;
+  data.ordinal = queueItem.ordinal;
+  data.case_count = queue.scope_total;
+  data.previous_case = queueItem.previous;
+  data.next_case = queueItem.next;
   intent.caseId = data.case_id;
   intent.caseData = data;
   intent.adminRevealAnswers = false;
@@ -321,9 +340,15 @@ function intentMoveFrame(delta, { extendSelection = false, toBoundary = false } 
 async function intentNavigateCase(direction) {
   await intentFlushSave();
   const data = state.intentLabeling.caseData;
-  const caseId = direction < 0 ? data?.previous_case_id : data?.next_case_id;
-  if (!caseId) return;
-  await loadIntentLabeling({ datasetId: state.intentLabeling.datasetId, caseId, assignees: state.intentLabeling.selectedAssignees, historyMode: "push" });
+  const target = direction < 0 ? data?.previous_case : data?.next_case;
+  if (!target?.case_id) return;
+  await loadIntentLabeling({
+    datasetId: target.dataset_id,
+    datasetIds: state.intentLabeling.selectedDatasetIds,
+    caseId: target.case_id,
+    assignees: state.intentLabeling.selectedAssignees,
+    historyMode: "push",
+  });
 }
 
 async function intentJumpToCaseOrdinal(rawValue) {
@@ -337,15 +362,17 @@ async function intentJumpToCaseOrdinal(rawValue) {
   }
   await intentFlushSave();
   const params = intentAssigneeSearchParams();
+  (intent.selectedDatasetIds || []).forEach((id) => params.append("dataset_id", id));
   params.set("status", "all");
   params.set("page_size", "1");
   params.set("page", String(ordinal));
-  const payload = await api(intentApiUrl(`/api/intent-datasets/${encodeURIComponent(intent.datasetId)}/cases`, params));
-  const caseId = payload.items?.[0]?.case_id;
-  if (!caseId) throw new Error(`找不到第 ${ordinal} 个 Issue。`);
+  const payload = await api(intentApiUrl("/api/intent-cases", params));
+  const target = payload.items?.[0];
+  if (!target?.case_id) throw new Error(`找不到第 ${ordinal} 个 Issue。`);
   await loadIntentLabeling({
-    datasetId: intent.datasetId,
-    caseId,
+    datasetId: target.dataset_id,
+    datasetIds: intent.selectedDatasetIds,
+    caseId: target.case_id,
     assignees: intent.selectedAssignees,
     historyMode: "push",
   });
@@ -450,15 +477,21 @@ function handleIntentShortcut(event) {
 
 function downloadIntentExport(view) {
   if (!state.session.is_admin) return;
-  const datasetId = state.intentLabeling.summaryDatasetId || state.intentLabeling.datasetId;
-  if (!datasetId) return;
+  const datasetIds = parseFilterList(
+    state.intentLabeling.summaryDatasetIds?.length
+      ? state.intentLabeling.summaryDatasetIds
+      : (state.intentLabeling.summaryDatasetId || state.intentLabeling.datasetId)
+  );
+  if (!datasetIds.length) return;
   const params = new URLSearchParams({ view, include_incomplete: "true" });
-  const link = document.createElement("a");
-  link.href = withBase(`/api/intent-datasets/${encodeURIComponent(datasetId)}/export?${params}`);
-  link.download = "";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
+  datasetIds.forEach((datasetId) => {
+    const link = document.createElement("a");
+    link.href = withBase(`/api/intent-datasets/${encodeURIComponent(datasetId)}/export?${params}`);
+    link.download = "";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  });
 }
 
 function closeIntentContributorMenus() {
@@ -511,34 +544,34 @@ function bindIntentLabelingEvents() {
   $("#intentSummaryAxis")?.addEventListener("change", (event) => {
     state.intentLabeling.summaryAxis = event.target.value || "all";
     state.intentLabeling.summaryPage = 1;
-    loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true }).catch((error) => showToast(error.message, true));
+    loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
   });
   $("#intentSummaryPageSize")?.addEventListener("change", (event) => {
     state.intentLabeling.summaryPageSize = Number(event.target.value) || 20;
     state.intentLabeling.summaryPage = 1;
-    loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true }).catch((error) => showToast(error.message, true));
+    loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
   });
-  $("#intentSummaryRefresh")?.addEventListener("click", () => loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true }).catch((error) => showToast(error.message, true)));
+  $("#intentSummaryRefresh")?.addEventListener("click", () => loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true)));
   $("#intentExportCompact")?.addEventListener("click", () => downloadIntentExport("compact"));
   $("#intentExportExpanded")?.addEventListener("click", () => downloadIntentExport("expanded"));
   $("#intentSummaryReveal")?.addEventListener("click", () => {
     state.intentLabeling.summaryReveal = !state.intentLabeling.summaryReveal;
-    loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true }).catch((error) => showToast(error.message, true));
+    loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
   });
   $("#intentSummaryPrevious")?.addEventListener("click", () => {
     state.intentLabeling.summaryPage = Math.max(1, state.intentLabeling.summaryPage - 1);
-    loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true }).catch((error) => showToast(error.message, true));
+    loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
   });
   $("#intentSummaryNext")?.addEventListener("click", () => {
     state.intentLabeling.summaryPage += 1;
-    loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true }).catch((error) => showToast(error.message, true));
+    loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
   });
   const submitSummaryCommentQuery = () => {
     const value = ($("#intentSummaryCommentQuery")?.value || "").trim().slice(0, 80);
     if (value === (state.intentLabeling.summaryCommentQuery || "")) return;
     state.intentLabeling.summaryCommentQuery = value;
     state.intentLabeling.summaryPage = 1;
-    loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true }).catch((error) => showToast(error.message, true));
+    loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
   };
   $("#intentSummaryCommentQuery")?.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;

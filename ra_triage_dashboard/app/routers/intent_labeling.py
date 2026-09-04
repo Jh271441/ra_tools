@@ -95,8 +95,99 @@ def _intent_summary_payload(dataset_id: str, identity: Any, experiment_id: str,
     return report
 
 
+def _intent_summary_payload_multi(dataset_ids: tuple[str, ...], identity: Any,
+                                  experiment_id: str, assignees: tuple[str, ...],
+                                  reveal_answers: bool, axis: str, page: int,
+                                  page_size: int, comment_query: str = "") -> dict[str, Any]:
+    if len(dataset_ids) == 1:
+        report = _intent_summary_payload(
+            dataset_ids[0], identity, experiment_id, assignees, reveal_answers,
+            axis, page, page_size, comment_query,
+        )
+        for collection in ("items", "comment_hits", "experiments"):
+            for item in report.get(collection, []):
+                item["dataset_id"] = dataset_ids[0]
+        report["dataset_ids"] = list(dataset_ids)
+        return report
+
+    separator = "\x1f"
+    combined: dict[str, list[dict[str, Any]]] = {"heads": [], "assignments": []}
+    experiments: list[dict[str, Any]] = []
+    keyed_case_ids: list[str] = []
+    comments: list[dict[str, Any]] = []
+    for dataset_id in dataset_ids:
+        try:
+            case_ids = intent_dataset_registry.case_ids(dataset_id)
+        except KeyError as exc:
+            raise _detail(404, str(exc)) from exc
+        keyed_case_ids.extend(f"{dataset_id}{separator}{case_id}" for case_id in case_ids)
+        dataset_experiments = database.list_intent_experiments(dataset_id)
+        experiments.extend({**item, "dataset_id": dataset_id} for item in dataset_experiments)
+        data = database.intent_report_rows(dataset_id)
+        combined["heads"].extend(
+            {**row, "case_id": f"{dataset_id}{separator}{row['case_id']}"}
+            for row in data["heads"]
+        )
+        combined["assignments"].extend(
+            {**row, "case_id": f"{dataset_id}{separator}{row['case_id']}"}
+            for row in data["assignments"]
+        )
+        if comment_query:
+            comments.extend(
+                {**item, "dataset_id": dataset_id}
+                for item in database.search_intent_comments(
+                    dataset_id,
+                    comment_query,
+                    username=identity.username,
+                    reveal_answers=reveal_answers,
+                    experiment_id=experiment_id,
+                )
+            )
+    if experiment_id and not any(item["id"] == experiment_id for item in experiments):
+        raise _detail(404, "实验不属于所选数据集。")
+    report = summarize_intent(
+        combined,
+        tuple(keyed_case_ids),
+        username=identity.username,
+        experiment_id=experiment_id,
+        assignees=assignees,
+        reveal_answers=reveal_answers,
+        axis=axis,
+        page=page,
+        page_size=page_size,
+    )
+    for item in report.get("items", []):
+        dataset_id, case_id = str(item["case_id"]).split(separator, 1)
+        item["dataset_id"] = dataset_id
+        item["case_id"] = case_id
+        item["frame_counts"] = intent_frame_counts(
+            intent_dataset_registry.timeline(dataset_id, case_id),
+            routing_default=str(item.get("routing_default") or ""),
+            lane_change_default=str(item.get("lane_change_default") or ""),
+            overrides=item.get("overrides") or [],
+        )
+    report["experiments"] = [
+        {"id": item["id"], "name": item["name"], "dataset_id": item["dataset_id"]}
+        for item in experiments
+    ]
+    assignment_owners = {
+        row["username"] for row in combined["assignments"]
+        if not experiment_id or row["experiment_id"] == experiment_id
+    }
+    head_owners = {row["username"] for row in combined["heads"]} if not experiment_id else set()
+    report["owners"] = sorted(assignment_owners | head_owners)
+    report["comment_query"] = str(comment_query or "").strip()[:80]
+    report["comment_hits"] = sorted(
+        comments,
+        key=lambda item: (str(item.get("created_at") or ""), int(item.get("id") or 0)),
+        reverse=True,
+    )
+    report["dataset_ids"] = list(dataset_ids)
+    return report
+
+
 @router.get("/api/intent-summary")
-async def intent_summary(request: Request, dataset_id: str, experiment_id: str = "",
+async def intent_summary(request: Request, dataset_id: list[str] = Query(default=[]), experiment_id: str = "",
                          assignee: list[str] = Query(default=[]), reveal_answers: bool = False,
                          axis: str = "all", page: int = 1, page_size: int = 20,
                          q: str = "") -> dict[str, Any]:
@@ -107,7 +198,10 @@ async def intent_summary(request: Request, dataset_id: str, experiment_id: str =
         raise _detail(400, "汇总维度仅支持 all、routing 或 lane_change。")
     if page_size not in {10, 20, 50}:
         raise _detail(400, "每页数量仅支持 10、20 或 50。")
-    return await asyncio.to_thread(_intent_summary_payload, dataset_id, identity,
+    dataset_ids = tuple(dict.fromkeys(str(item).strip() for item in dataset_id if str(item).strip()))
+    if not dataset_ids or len(dataset_ids) > 8:
+        raise _detail(400, "请选择 1 到 8 个意图数据集。")
+    return await asyncio.to_thread(_intent_summary_payload_multi, dataset_ids, identity,
                                    experiment_id, tuple(assignee[:20]), reveal_answers,
                                    axis, page, page_size, q)
 
@@ -163,30 +257,44 @@ async def list_intent_datasets(request: Request) -> dict[str, Any]:
 
 @router.get("/api/intent-assignees")
 async def list_intent_assignees(
-    dataset_id: str, experiment_id: str = ""
+    dataset_id: list[str] = Query(default=[]), experiment_id: str = ""
 ) -> dict[str, Any]:
-    try:
-        intent_dataset_registry.dataset(dataset_id)
-    except KeyError as exc:
-        raise _detail(404, str(exc)) from exc
-    experiments = [
-        item for item in await asyncio.to_thread(
-            database.list_intent_experiments, dataset_id
+    dataset_ids = tuple(dict.fromkeys(str(item).strip() for item in dataset_id if str(item).strip()))
+    if not dataset_ids or len(dataset_ids) > 8:
+        raise _detail(400, "请选择 1 到 8 个意图数据集。")
+    experiments: list[dict[str, Any]] = []
+    for selected_id in dataset_ids:
+        try:
+            intent_dataset_registry.dataset(selected_id)
+        except KeyError as exc:
+            raise _detail(404, str(exc)) from exc
+        experiments.extend(
+            {**item, "dataset_id": selected_id}
+            for item in await asyncio.to_thread(database.list_intent_experiments, selected_id)
+            if item["status"] == "active"
         )
-        if item["status"] == "active"
-    ]
     if experiment_id and not any(item["id"] == experiment_id for item in experiments):
         raise _detail(404, "实验分配不存在、已关闭或不属于当前数据集。")
+    assignees: dict[str, dict[str, Any]] = {}
+    for selected_id in dataset_ids:
+        for item in await asyncio.to_thread(
+            database.list_intent_assignment_assignees, selected_id, experiment_id
+        ):
+            username = str(item["username"])
+            aggregate = assignees.setdefault(
+                username, {"username": username, "case_count": 0, "experiment_count": 0}
+            )
+            aggregate["case_count"] += int(item.get("case_count") or 0)
+            aggregate["experiment_count"] += int(item.get("experiment_count") or 0)
     return {
-        "items": await asyncio.to_thread(
-            database.list_intent_assignment_assignees, dataset_id, experiment_id
-        ),
+        "items": [assignees[name] for name in sorted(assignees)],
         "experiments": [
             {
                 "id": item["id"],
                 "name": item["name"],
                 "case_count": item["case_count"],
                 "member_count": item["member_count"],
+                "dataset_id": item["dataset_id"],
             }
             for item in experiments
         ],
@@ -520,6 +628,93 @@ def _list_cases(
         "page_size": page_size,
         "page_count": max(1, (total + page_size - 1) // page_size),
     }
+
+
+def _list_cases_multi(
+    dataset_ids: tuple[str, ...],
+    *,
+    status: str,
+    search: str,
+    page: int,
+    page_size: int,
+    username: str = "",
+    assignees: tuple[str, ...] = (),
+    experiment_id: str = "",
+) -> dict[str, Any]:
+    scoped: list[dict[str, Any]] = []
+    for dataset_id in dataset_ids:
+        try:
+            count = len(intent_dataset_registry.case_ids(dataset_id))
+        except KeyError as exc:
+            raise _detail(404, str(exc)) from exc
+        payload = _list_cases(
+            dataset_id,
+            status="all",
+            search="",
+            page=1,
+            page_size=max(1, count),
+            username=username,
+            assignees=assignees,
+            experiment_id=experiment_id,
+        )
+        scoped.extend({**item, "dataset_id": dataset_id} for item in payload["items"])
+    for index, item in enumerate(scoped):
+        item["ordinal"] = index + 1
+        item["previous"] = (
+            {"dataset_id": scoped[index - 1]["dataset_id"], "case_id": scoped[index - 1]["case_id"]}
+            if index > 0 else None
+        )
+        item["next"] = (
+            {"dataset_id": scoped[index + 1]["dataset_id"], "case_id": scoped[index + 1]["case_id"]}
+            if index + 1 < len(scoped) else None
+        )
+    normalized_search = search.strip().lower()
+    filtered = [
+        item for item in scoped
+        if (status == "all" or item["status"] == status)
+        and (not normalized_search or normalized_search in item["case_id"].lower())
+    ]
+    total = len(filtered)
+    start = (page - 1) * page_size
+    return {
+        "items": filtered[start:start + page_size],
+        "total": total,
+        "scope_total": len(scoped),
+        "page": page,
+        "page_size": page_size,
+        "page_count": max(1, (total + page_size - 1) // page_size),
+        "dataset_ids": list(dataset_ids),
+    }
+
+
+@router.get("/api/intent-cases")
+async def list_multi_dataset_intent_cases(
+    request: Request,
+    dataset_id: list[str] = Query(default=[]),
+    status: str = "all",
+    q: str = "",
+    page: int = 1,
+    page_size: int = 100,
+    assignee: list[str] = Query(default=[]),
+    experiment_id: str = "",
+) -> dict[str, Any]:
+    if status not in {"all", "unlabeled", "partial", "completed"}:
+        raise _detail(400, "意图标注状态筛选不合法。")
+    dataset_ids = tuple(dict.fromkeys(str(item).strip() for item in dataset_id if str(item).strip()))
+    if not dataset_ids or len(dataset_ids) > 8:
+        raise _detail(400, "请选择 1 到 8 个意图数据集。")
+    identity = await asyncio.to_thread(_intent_identity, request)
+    return await asyncio.to_thread(
+        _list_cases_multi,
+        dataset_ids,
+        status=status,
+        search=q[:256],
+        page=max(1, int(page)),
+        page_size=max(1, min(int(page_size), 200)),
+        username=identity.username,
+        assignees=tuple(assignee[:20]),
+        experiment_id=experiment_id,
+    )
 
 
 @router.get("/api/intent-datasets/{dataset_id}/cases")

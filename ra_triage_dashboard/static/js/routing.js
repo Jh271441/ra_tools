@@ -716,7 +716,8 @@ function pageUrl(page, options = {}) {
     const intent = typeof intentRouteOptions === "function"
       ? intentRouteOptions(options)
       : options;
-    if (intent.datasetId) url.searchParams.set("dataset", intent.datasetId);
+    const intentDatasetIds = parseFilterList(intent.datasetIds || intent.datasetId);
+    intentDatasetIds.forEach((datasetId) => url.searchParams.append("dataset", datasetId));
     if (intent.caseId) url.searchParams.set("case", intent.caseId);
     if (intent.assignees?.length) url.searchParams.set("assignee", intent.assignees.join(","));
     if (intent.experimentId) url.searchParams.set("experiment", intent.experimentId);
@@ -837,6 +838,7 @@ function showPage(
   if (target === "intent" && loadPageData && typeof loadIntentLabeling === "function") {
     loadIntentLabeling({
       datasetId: intentDatasetId,
+      datasetIds: intentDatasetIds.length ? intentDatasetIds : null,
       caseId: intentCaseId,
       offsetMs: intentOffsetMs,
       assignees: intentAssignees,
@@ -850,7 +852,10 @@ function showPage(
     }).catch((error) => showToast(error.message, true));
   }
   if (target === "intent-summary" && loadPageData && typeof loadIntentSummary === "function") {
-    loadIntentSummary({ datasetId: intentDatasetId }).catch((error) => showToast(error.message, true));
+    loadIntentSummary({
+      datasetId: intentDatasetId,
+      datasetIds: intentDatasetIds.length ? intentDatasetIds : null,
+    }).catch((error) => showToast(error.message, true));
   }
   if (target === "analysis") renderAnalysisRunFilter();
   if (target === "trail-update") {

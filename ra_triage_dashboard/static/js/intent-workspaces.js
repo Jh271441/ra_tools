@@ -29,6 +29,7 @@ function intentRouteOptions(overrides = {}) {
   );
   return {
     datasetId: overrides.datasetId ?? intent.datasetId,
+    datasetIds: overrides.datasetIds ?? intent.selectedDatasetIds,
     caseId: overrides.caseId ?? intent.caseId,
     offsetMs: overrides.offsetMs ?? active?.offset_ms ?? null,
     assignees: overrides.assignees ?? intent.selectedAssignees,
@@ -149,12 +150,9 @@ function intentAvailableDatasets() {
   return (state.intentLabeling.datasets || []).filter((item) => item.available);
 }
 
-function intentTopbarAllowsMultipleDatasets() {
-  return state.activePage === "intent-experiments";
-}
-
 function applyIntentTopbarDatasetSelection(values) {
   const selected = parseFilterList(values);
+  if (!selected.length) return;
   if (state.activePage === "intent-experiments") {
     state.intentLabeling.experimentDatasetIds = selected;
     state.intentLabeling.experimentDatasetId = selected[0] || "";
@@ -163,18 +161,22 @@ function applyIntentTopbarDatasetSelection(values) {
       .catch((error) => showToast(error.message, true));
     return;
   }
-  const datasetId = selected[selected.length - 1] || selected[0] || "";
+  const datasetId = selected.includes(state.intentLabeling.datasetId)
+    ? state.intentLabeling.datasetId
+    : selected[0];
   if (!datasetId) return;
   if (state.activePage === "intent-summary") {
+    state.intentLabeling.summaryDatasetIds = selected;
+    state.intentLabeling.summaryDatasetId = selected[0];
     state.intentLabeling.summaryExperimentId = "";
     state.intentLabeling.summaryAssignees = [];
     state.intentLabeling.summaryPage = 1;
-    loadIntentSummary({ datasetId, force: true }).catch((error) => showToast(error.message, true));
+    loadIntentSummary({ datasetIds: selected, force: true }).catch((error) => showToast(error.message, true));
     return;
   }
   (async () => {
     await intentFlushSave();
-    await loadIntentLabeling({ datasetId, assignees: [], historyMode: "push" });
+    await loadIntentLabeling({ datasetId, datasetIds: selected, assignees: [], historyMode: "push" });
   })().catch((error) => showToast(error.message, true));
 }
 
@@ -182,21 +184,27 @@ function renderIntentTopbarDatasetPicker(selectedIds = null) {
   const picker = $("#intentTopbarDatasetPicker");
   if (!picker) return;
   const available = intentAvailableDatasets();
-  const multiple = intentTopbarAllowsMultipleDatasets();
+  const multiple = true;
   let selected = parseFilterList(selectedIds);
   if (!selected.length) {
-    if (multiple) {
+    if (state.activePage === "intent-experiments") {
       selected = (state.intentLabeling.experimentDatasetIds || []).filter((id) => (
         available.some((item) => item.id === id)
       ));
       if (!selected.length) selected = available.map((item) => item.id);
     } else {
-      const current = state.activePage === "intent-summary"
-        ? state.intentLabeling.summaryDatasetId
-        : state.intentLabeling.datasetId;
-      selected = current && available.some((item) => item.id === current)
-        ? [current]
-        : (available[0] ? [available[0].id] : []);
+      const stored = state.activePage === "intent-summary"
+        ? state.intentLabeling.summaryDatasetIds
+        : state.intentLabeling.selectedDatasetIds;
+      selected = (stored || []).filter((id) => available.some((item) => item.id === id));
+      if (!selected.length) {
+        const current = state.activePage === "intent-summary"
+          ? state.intentLabeling.summaryDatasetId
+          : state.intentLabeling.datasetId;
+        selected = current && available.some((item) => item.id === current)
+          ? [current]
+          : (available[0] ? [available[0].id] : []);
+      }
     }
   }
   selected = selected.filter((id) => available.some((item) => item.id === id));
@@ -207,11 +215,8 @@ function renderIntentTopbarDatasetPicker(selectedIds = null) {
     onlyThis: multiple,
     onChange: (values) => {
       let next = parseFilterList(values);
-      if (!multiple) {
-        const nextSingle = next.find((id) => id !== singleSelection)
-          || next[0]
-          || singleSelection;
-        next = nextSingle ? [nextSingle] : [];
+      if (!next.length && singleSelection) {
+        next = [singleSelection];
         setMultiFilterValues(picker, next);
       }
       applyIntentTopbarDatasetSelection(next);
@@ -225,7 +230,7 @@ function renderIntentAssignmentFilter() {
   if (!picker) return;
   const options = (intent.assignmentExperiments || []).map((item) => ({
     value: item.id,
-    label: `${item.name} · ${item.case_count} Case`,
+    label: `${(intent.selectedDatasetIds || []).length > 1 ? `${item.dataset_id} · ` : ""}${item.name} · ${item.case_count} Case`,
   }));
   const native = $("#intentAssignmentSelect");
   if (native) {
@@ -295,26 +300,29 @@ function renderIntentAssigneeFilter() {
   }
 }
 
-async function loadIntentAssignees(datasetId, requested = null, requestedExperimentId = null) {
+async function loadIntentAssignees(datasetIds, requested = null, requestedExperimentId = null) {
   const intent = state.intentLabeling;
+  const scopeIds = parseFilterList(datasetIds);
   const nextExperimentId = requestedExperimentId == null
     ? intent.selectedExperimentId
     : String(requestedExperimentId || "");
-  const cacheKey = `${datasetId}:${nextExperimentId}`;
+  const scopeKey = scopeIds.join(",");
+  const cacheKey = `${scopeKey}:${nextExperimentId}`;
   if (intent.assigneeDatasetId !== cacheKey) {
-    const params = new URLSearchParams({ dataset_id: datasetId });
+    const params = new URLSearchParams();
+    scopeIds.forEach((datasetId) => params.append("dataset_id", datasetId));
     if (nextExperimentId) params.set("experiment_id", nextExperimentId);
     const payload = await api(`/api/intent-assignees?${params}`);
-    if (intent.datasetId !== datasetId) return;
+    if ((intent.selectedDatasetIds || []).join(",") !== scopeKey) return;
     intent.assignees = payload.items || [];
     intent.assignmentExperiments = payload.experiments || [];
     const experimentIds = new Set(intent.assignmentExperiments.map((item) => item.id));
     intent.selectedExperimentId = experimentIds.has(nextExperimentId) ? nextExperimentId : "";
-    intent.assigneeDatasetId = `${datasetId}:${intent.selectedExperimentId}`;
+    intent.assigneeDatasetId = `${scopeKey}:${intent.selectedExperimentId}`;
   }
   const available = new Set(intent.assignees.map((item) => item.username));
   const currentUsername = String(state.session.username || "").toLowerCase();
-  const selectionKey = `${datasetId}:${intent.selectedExperimentId}`;
+  const selectionKey = `${scopeKey}:${intent.selectedExperimentId}`;
   const firstSelectionForDataset = intent.assigneeSelectionDatasetId !== selectionKey;
   let selected = requested == null ? intent.selectedAssignees : parseFilterList(requested);
   // An unselected experiment is the unassigned/all-Issue scope. Do not let

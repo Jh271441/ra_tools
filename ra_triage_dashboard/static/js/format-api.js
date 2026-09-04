@@ -629,13 +629,13 @@ async function refreshChangedData() {
     const selected = [...(intent.selectedAssignees || [])];
     intent.assigneeDatasetId = "";
     try {
-      await loadIntentAssignees(intent.datasetId, selected, intent.selectedExperimentId);
+      await loadIntentAssignees(intent.selectedDatasetIds, selected, intent.selectedExperimentId);
     } catch (error) {
       if (!intent.selectedExperimentId) throw error;
       // A manager may have just closed the selected experiment in another tab.
       // Fall back to all active assignments instead of leaving stale controls.
       intent.assigneeDatasetId = "";
-      await loadIntentAssignees(intent.datasetId, selected, "");
+      await loadIntentAssignees(intent.selectedDatasetIds, selected, "");
     }
     return;
   }
@@ -645,7 +645,7 @@ async function refreshChangedData() {
     return;
   }
   if (state.activePage === "intent-summary") {
-    await loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true });
+    await loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true });
     return;
   }
   if (state.activePage === "status") {

@@ -388,6 +388,7 @@ function bindEvents() {
         await intentFlushSave();
         await loadIntentLabeling({
           datasetId: state.intentLabeling.datasetId,
+          datasetIds: state.intentLabeling.selectedDatasetIds,
           caseId: state.intentLabeling.caseId,
           offsetMs: intentActiveTimepoint()?.offset_ms,
         });
@@ -406,6 +407,7 @@ function bindEvents() {
       if (state.activePage === "intent-summary") {
         await loadIntentSummary({
           datasetId: state.intentLabeling.summaryDatasetId,
+          datasetIds: state.intentLabeling.summaryDatasetIds,
           force: true,
         });
         showToast(t("toast.page_refreshed"));
@@ -1039,6 +1041,7 @@ async function bootstrap() {
     } else if (initialRoute.page === "intent") {
       initialPageRequests.push(loadIntentLabeling({
         datasetId: initialRoute.intentDatasetId,
+        datasetIds: (initialRoute.intentDatasetIds || []).length ? initialRoute.intentDatasetIds : null,
         caseId: initialRoute.intentCaseId,
         offsetMs: initialRoute.intentOffsetMs,
         assignees: initialRoute.intentAssignees,
@@ -1058,7 +1061,10 @@ async function bootstrap() {
       state.intentLabeling.summaryPageSize = initialRoute.intentSummaryPageSize || 20;
       state.intentLabeling.summaryAxis = initialRoute.intentSummaryAxis || "all";
       state.intentLabeling.summaryCommentQuery = initialRoute.intentSummaryCommentQuery || "";
-      initialPageRequests.push(loadIntentSummary({ datasetId: initialRoute.intentDatasetId }));
+      initialPageRequests.push(loadIntentSummary({
+        datasetId: initialRoute.intentDatasetId,
+        datasetIds: (initialRoute.intentDatasetIds || []).length ? initialRoute.intentDatasetIds : null,
+      }));
     }
     if (initialRoute.page === "analysis") {
       initialPageRequests.push(loadReviewReasonAnalysis());
