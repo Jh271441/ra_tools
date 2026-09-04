@@ -370,6 +370,72 @@ function renderIntentExperimentMembers() {
   });
 }
 
+function intentExperimentSuggestionContext() {
+  const datasets = intentAvailableDatasets().filter((item) => (
+    (state.intentLabeling.experimentDatasetIds || []).includes(item.id)
+  ));
+  const mode = $("#intentExperimentMode")?.value || "blind";
+  const requested = Math.max(1, Number($("#intentExperimentCaseCount")?.value) || 1);
+  const overlap = Math.max(0, Number($("#intentExperimentOverlap")?.value) || 0);
+  const reviewers = Math.max(1, Number($("#intentExperimentReviewers")?.value) || 1);
+  const memberCount = document.querySelectorAll("#intentExperimentMembers input:checked").length;
+  return { datasets, mode, requested, overlap, reviewers, memberCount };
+}
+
+function ruleBasedIntentExperimentName(context) {
+  const scope = context.datasets.map((item) => (
+    String(item.display_name || item.id || "").split("·", 1)[0].trim()
+  )).filter(Boolean).join("+") || "Routing";
+  const mode = context.mode === "full"
+    ? "全量盲标"
+    : `交叉${Math.round(context.overlap * 100)}%复核`;
+  return `${scope} Routing ${mode} ${context.requested} Case`.slice(0, 80);
+}
+
+function renderIntentExperimentNameSuggestion(value, source = "rule") {
+  const output = $("#intentExperimentNameSuggestion");
+  if (!output) return;
+  const suggestion = String(value || "").trim();
+  output.dataset.suggestion = suggestion;
+  output.dataset.source = source;
+  output.textContent = suggestion
+    ? `${source === "llm" ? "AI 推荐" : "推荐"}：${suggestion} · Tab 采纳`
+    : "";
+}
+
+function updateIntentExperimentNameSuggestion() {
+  const intent = state.intentLabeling;
+  const context = intentExperimentSuggestionContext();
+  const fallback = ruleBasedIntentExperimentName(context);
+  renderIntentExperimentNameSuggestion(fallback, "rule");
+  window.clearTimeout(intent.experimentNameSuggestionTimer);
+  if (!intent.experimentNameSuggestionAvailable || !state.session.can_manage_intent || !context.datasets.length) return;
+  const fingerprint = JSON.stringify({
+    dataset_ids: context.datasets.map((item) => item.id),
+    annotation_mode: context.mode,
+    case_count: context.requested,
+    overlap_ratio: context.overlap,
+    overlap_reviewers: context.reviewers,
+    member_count: context.memberCount,
+  });
+  if (fingerprint === intent.experimentNameSuggestionFingerprint) return;
+  intent.experimentNameSuggestionTimer = window.setTimeout(async () => {
+    const requestSeq = ++intent.experimentNameSuggestionSeq;
+    intent.experimentNameSuggestionFingerprint = fingerprint;
+    try {
+      const payload = await api("/api/intent-experiments/name-suggestion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: fingerprint,
+      });
+      if (requestSeq !== intent.experimentNameSuggestionSeq) return;
+      renderIntentExperimentNameSuggestion(payload.suggestion || fallback, payload.source || "rule");
+    } catch (_error) {
+      if (requestSeq === intent.experimentNameSuggestionSeq) renderIntentExperimentNameSuggestion(fallback, "rule");
+    }
+  }, 500);
+}
+
 function updateIntentExperimentEstimate() {
   const output = $("#intentExperimentEstimate");
   if (!output) return;
@@ -388,10 +454,12 @@ function updateIntentExperimentEstimate() {
   const reviewers = Math.max(1, Math.min(members.length, Number(reviewerInput?.value) || 1));
   if (!datasets.length) {
     output.textContent = "请在顶栏至少选择 1 个数据集。";
+    updateIntentExperimentNameSuggestion();
     return;
   }
   if (members.length < 1) {
     output.textContent = "至少选择 1 名成员。";
+    updateIntentExperimentNameSuggestion();
     return;
   }
   let totalCases = 0;
@@ -408,6 +476,7 @@ function updateIntentExperimentEstimate() {
   output.textContent = mode === "full"
     ? `${datasetText} · ${totalCases} 个 Case · ${members.length} 人全量复核 · 共 ${totalAssignments} 份独立任务`
     : `${datasetText} · ${totalCases} 个 Case · 交叉 ${Math.round(overlap * 100)}% · 共 ${totalAssignments} 份独立任务`;
+  updateIntentExperimentNameSuggestion();
 }
 
 function renderIntentExperiments() {
@@ -454,6 +523,7 @@ async function loadIntentExperiments({ force = false } = {}) {
   if ((intent.experimentDatasetIds || []).join(",") !== requestedIds.join(",")) return;
   intent.experiments = payload.items || [];
   intent.experimentMembers = payload.eligible_members || [];
+  intent.experimentNameSuggestionAvailable = Boolean(payload.name_suggestion?.llm_available);
   intent.experimentsDatasetId = cacheKey;
   const selectedDatasets = intentAvailableDatasets().filter((item) => requestedIds.includes(item.id));
   const countInput = $("#intentExperimentCaseCount");

@@ -48,6 +48,7 @@ function renderIntentSummary(payload) {
   const showLaneChange = axis !== "routing";
   document.querySelectorAll(".intent-summary-routing-column").forEach((element) => { element.hidden = !showRouting; });
   document.querySelectorAll(".intent-summary-lane-column").forEach((element) => { element.hidden = !showLaneChange; });
+  document.querySelectorAll(".intent-summary-admin-column").forEach((element) => { element.hidden = !state.session.is_admin; });
   const metrics = [
     ["范围 Case", payload.case_count],
     ["已标注 Case", payload.annotated_cases],
@@ -57,11 +58,19 @@ function renderIntentSummary(payload) {
   $("#intentSummaryMetrics").innerHTML = metrics.map(([label, value]) => `<article class="intent-summary-metric"><small>${label}</small><strong>${escapeHtml(value)}</strong></article>`).join("");
   renderIntentSummaryCommentHits(payload);
   const datasetId = state.intentLabeling.summaryDatasetId;
-  const columnCount = 3 + Number(showRouting) + Number(showLaneChange);
+  const columnCount = 3 + Number(showRouting) + Number(showLaneChange) + Number(state.session.is_admin);
   $("#intentSummaryRows").innerHTML = (payload.items || []).map((item) => {
     const href = `${withBase("/intent-labeling")}?dataset=${encodeURIComponent(datasetId)}&case=${encodeURIComponent(item.case_id)}`;
-    return `<tr><td><a class="intent-summary-case-link" href="${escapeHtml(href)}">${escapeHtml(item.case_id)}</a></td><td>${escapeHtml(item.username)}${item.username === state.session.username ? "（我）" : ""}</td><td class="intent-summary-routing-column"${showRouting ? "" : " hidden"}>${intentSummaryResultMarkup(item.frame_counts?.routing, INTENT_ROUTING_LABELS)}</td><td class="intent-summary-lane-column"${showLaneChange ? "" : " hidden"}>${intentSummaryResultMarkup(item.frame_counts?.lane_change, INTENT_LANE_LABELS)}</td><td>${escapeHtml(formatTime(item.updated_at) || "—")}</td></tr>`;
+    const action = state.session.is_admin
+      ? `<td class="intent-summary-admin-column"><button class="button button-quiet intent-summary-delete" type="button" data-intent-summary-delete data-case-id="${escapeHtml(item.case_id)}" data-username="${escapeHtml(item.username)}" data-revision-id="${Number(item.revision_id)}">删除标注</button></td>`
+      : "";
+    return `<tr><td><a class="intent-summary-case-link" href="${escapeHtml(href)}">${escapeHtml(item.case_id)}</a></td><td>${escapeHtml(item.username)}${item.username === state.session.username ? "（我）" : ""}</td><td class="intent-summary-routing-column"${showRouting ? "" : " hidden"}>${intentSummaryResultMarkup(item.frame_counts?.routing, INTENT_ROUTING_LABELS)}</td><td class="intent-summary-lane-column"${showLaneChange ? "" : " hidden"}>${intentSummaryResultMarkup(item.frame_counts?.lane_change, INTENT_LANE_LABELS)}</td><td>${escapeHtml(formatTime(item.updated_at) || "—")}</td>${action}</tr>`;
   }).join("") || `<tr><td colspan="${columnCount}">当前筛选下没有已标注结果。</td></tr>`;
+  $("#intentSummaryRows").querySelectorAll("[data-intent-summary-delete]").forEach((button) => {
+    button.addEventListener("click", () => {
+      deleteIntentSummaryLabel(button).catch((error) => showToast(error.message, true));
+    });
+  });
   $("#intentSummarySafety").textContent = payload.blind_active && !payload.answers_revealed ? "进行中的盲标实验仅显示自己的答案。" : "汇总当前标注头；不会加载 Camera / BEV 图片。";
   const reveal = $("#intentSummaryReveal");
   reveal.hidden = !(state.session.is_admin && payload.blind_active);
@@ -72,6 +81,24 @@ function renderIntentSummary(payload) {
   $("#intentSummaryPageState").textContent = `${payload.page} / ${pageCount}`;
   $("#intentSummaryPrevious").disabled = payload.page <= 1;
   $("#intentSummaryNext").disabled = payload.page >= pageCount;
+}
+
+async function deleteIntentSummaryLabel(button) {
+  if (!state.session.is_admin) return;
+  const caseId = button.dataset.caseId || "";
+  const username = button.dataset.username || "";
+  const revisionId = Number(button.dataset.revisionId) || 0;
+  if (!caseId || !username || !revisionId) return;
+  if (!window.confirm(`确认删除 ${username} 在 ${caseId} 的当前标注？历史修订与审计记录仍会保留。`)) return;
+  button.disabled = true;
+  try {
+    const result = await api(`/api/intent-datasets/${encodeURIComponent(state.intentLabeling.summaryDatasetId)}/cases/${encodeURIComponent(caseId)}/labels/${encodeURIComponent(username)}?expected_revision_id=${revisionId}`, { method: "DELETE" });
+    acknowledgeLocalChange(result);
+    await loadIntentSummary({ datasetId: state.intentLabeling.summaryDatasetId, force: true });
+    showToast("标注已删除，历史修订与审计记录已保留。", false);
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function loadIntentSummary({ datasetId = "", force = false } = {}) {
@@ -141,4 +168,3 @@ async function loadIntentSummary({ datasetId = "", force = false } = {}) {
   if (commentQuery) routeParams.set("q", commentQuery);
   history.replaceState({ page: "intent-summary", datasetId: selected.id }, "", `${withBase("/intent-summary")}?${routeParams}`);
 }
-

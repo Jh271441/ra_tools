@@ -10,12 +10,19 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
+from ..auth import normalise_username
 from ..db_parts.shared import IntentAnnotationConflictError
 from ..support.common import _detail
 from ..support.identity import _action_actor, _admin_identity, _intent_identity
 from ..intent_experiments import build_intent_experiment_assignments
+from ..intent_name_suggestion import (
+    IntentNameSuggestionError,
+    rule_based_intent_name,
+    suggest_intent_name_with_llm,
+)
+from ..model_catalog import ModelCatalogError
 from ..intent_summary import intent_frame_counts, public_intent_contributors, summarize_intent
-from ..runtime import database, intent_dataset_registry
+from ..runtime import database, intent_dataset_registry, model_catalog, settings
 
 
 async def _require_intent_writer(request: Request) -> None:
@@ -213,18 +220,84 @@ async def list_intent_experiments(request: Request) -> dict[str, Any]:
             intent_dataset_registry.dataset(dataset_id)
         except KeyError as exc:
             raise _detail(404, str(exc)) from exc
-    experiments, users = await asyncio.gather(
+    experiments, users, name_suggestion_status = await asyncio.gather(
         asyncio.to_thread(database.list_intent_experiments, dataset_ids),
         asyncio.to_thread(database.list_access_users),
+        asyncio.to_thread(model_catalog.status),
     )
     return {
         "items": experiments,
+        "name_suggestion": {
+            "llm_available": bool(name_suggestion_status.get("configured")),
+            "credential_source": "server",
+        },
         "eligible_members": [
             {"username": item["username"], "role": item["role"]}
             for item in users
             if item["intent_permission"] in {"manage", "annotate"}
         ],
     }
+
+
+@router.post(
+    "/api/intent-experiments/name-suggestion",
+    dependencies=[Depends(_require_intent_manager)],
+)
+async def suggest_intent_experiment_name(request: Request) -> dict[str, Any]:
+    raw = await request.body()
+    if len(raw) > 8 * 1024:
+        raise _detail(413, "实验名称推荐请求过大。")
+    try:
+        body = json.loads(raw)
+    except (TypeError, ValueError, UnicodeDecodeError) as exc:
+        raise _detail(400, "实验名称推荐请求必须是 JSON。") from exc
+    if not isinstance(body, dict):
+        raise _detail(400, "实验名称推荐请求必须是 JSON 对象。")
+    dataset_ids = _requested_experiment_dataset_ids(request, body)
+    if not dataset_ids or len(dataset_ids) > 8:
+        raise _detail(400, "请为名称推荐选择 1 到 8 个数据集。")
+    datasets: list[dict[str, Any]] = []
+    for dataset_id in dataset_ids:
+        try:
+            datasets.append(intent_dataset_registry.dataset(dataset_id))
+        except KeyError as exc:
+            raise _detail(404, str(exc)) from exc
+    mode = str(body.get("annotation_mode") or "blind").strip().lower()
+    if mode not in {"blind", "full"}:
+        raise _detail(400, "实验模式仅支持交叉盲标或全量盲标。")
+    try:
+        case_count = max(1, min(100_000, int(body.get("case_count") or 1)))
+        overlap_ratio = max(0.0, min(1.0, float(body.get("overlap_ratio") or 0)))
+        overlap_reviewers = max(1, min(100, int(body.get("overlap_reviewers") or 1)))
+        member_count = max(0, min(100, int(body.get("member_count") or 0)))
+    except (TypeError, ValueError) as exc:
+        raise _detail(400, "实验名称推荐参数不合法。") from exc
+    labels = [str(item.display_name or item.dataset_id) for item in datasets]
+    fallback = rule_based_intent_name(
+        labels,
+        annotation_mode=mode,
+        case_count=case_count,
+        overlap_ratio=overlap_ratio,
+    )
+    name_suggestion_status = await asyncio.to_thread(model_catalog.status)
+    if not name_suggestion_status.get("configured"):
+        return {"suggestion": fallback, "source": "rule"}
+    try:
+        suggestion = await asyncio.to_thread(
+            suggest_intent_name_with_llm,
+            settings,
+            model_catalog,
+            fallback=fallback,
+            dataset_labels=labels,
+            annotation_mode=mode,
+            case_count=case_count,
+            overlap_ratio=overlap_ratio,
+            overlap_reviewers=overlap_reviewers,
+            member_count=member_count,
+        )
+    except (IntentNameSuggestionError, ModelCatalogError):
+        return {"suggestion": fallback, "source": "rule"}
+    return {"suggestion": suggestion, "source": "llm"}
 
 
 @router.post(
@@ -349,6 +422,48 @@ async def close_intent_experiment(experiment_id: str, request: Request) -> dict[
         raise _detail(404, "实验不存在。")
     return {
         "experiment": experiment,
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
+@router.delete(
+    "/api/intent-datasets/{dataset_id}/cases/{case_id}/labels/{username}",
+    dependencies=[Depends(_require_intent_admin)],
+)
+async def admin_delete_intent_labels(
+    dataset_id: str,
+    case_id: str,
+    username: str,
+    request: Request,
+    expected_revision_id: int = Query(gt=0),
+) -> dict[str, Any]:
+    normalized_username = normalise_username(username)
+    if not normalized_username:
+        raise _detail(400, "标注人账号格式非法。")
+    try:
+        if not intent_dataset_registry.has_case(dataset_id, case_id):
+            raise _detail(404, "Case 不在该意图标注数据集中。")
+    except KeyError as exc:
+        raise _detail(404, str(exc)) from exc
+    identity = await asyncio.to_thread(_admin_identity, request)
+    actor, actor_source, actor_verified = await asyncio.to_thread(_action_actor, request)
+    try:
+        deleted = await asyncio.to_thread(
+            database.delete_intent_labels,
+            dataset_id=dataset_id,
+            case_id=case_id,
+            username=normalized_username,
+            expected_revision_id=expected_revision_id,
+            deleted_by=actor or identity.username,
+            deleted_by_source=actor_source,
+            deleted_by_verified=actor_verified,
+        )
+    except IntentAnnotationConflictError as exc:
+        raise _detail(409, str(exc)) from exc
+    if deleted is None:
+        raise _detail(404, "该标注人的当前标注不存在。")
+    return {
+        "deleted": deleted,
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
 

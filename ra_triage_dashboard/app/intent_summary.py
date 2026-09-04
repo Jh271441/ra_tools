@@ -157,6 +157,7 @@ def summarize_intent(data: dict[str, Any], case_ids: tuple[str, ...], *, usernam
             continue
         rows.append({
             "case_id": case, "username": author,
+            "revision_id": int(head.get("revision_id") or 0),
             "routing_default": head.get("routing_default") or "",
             "lane_change_default": head.get("lane_change_default") or "",
             "overrides": overrides, "updated_at": head.get("updated_at") or "",

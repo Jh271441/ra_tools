@@ -568,6 +568,14 @@ function bindIntentLabelingEvents() {
   $("#intentExperimentCaseCount")?.addEventListener("input", updateIntentExperimentEstimate);
   $("#intentExperimentOverlap")?.addEventListener("change", updateIntentExperimentEstimate);
   $("#intentExperimentReviewers")?.addEventListener("input", updateIntentExperimentEstimate);
+  $("#intentExperimentName")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Tab" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+    const suggestion = $("#intentExperimentNameSuggestion")?.dataset.suggestion || "";
+    if (!suggestion) return;
+    event.preventDefault();
+    event.currentTarget.value = suggestion;
+    event.currentTarget.setSelectionRange(suggestion.length, suggestion.length);
+  });
   $("#intentMyTasks")?.addEventListener("click", () => {
     const username = String(state.session.username || "").toLowerCase();
     if (!state.intentLabeling.assignees.some((item) => item.username === username)) return;
