@@ -11,6 +11,10 @@ session-config.js
 system-status.js
 runs.js
 run-comparison.js
+intent-workspaces.js
+intent-summary.js
+intent-media.js
+intent-collaboration.js
 intent-labeling.js
 review-gallery.js
 work-split.js
@@ -27,5 +31,8 @@ batch-config.js
 batch.js
 import-refresh.js
 trail-update-state.js
+trail-update-preview.js
+trail-update-import.js
+trail-update-commit.js
 trail-update.js
 bind-bootstrap.js

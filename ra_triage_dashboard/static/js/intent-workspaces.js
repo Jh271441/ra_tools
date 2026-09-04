@@ -1,0 +1,548 @@
+/* Routing / ego lane-change labeling. This state is intentionally isolated
+ * from the three-class Review form and its media dialog. */
+
+const INTENT_ROUTING_LABELS = {
+  left_turn: "左转",
+  right_turn: "右转",
+  straight: "直行",
+  u_turn: "掉头",
+  parking: "泊车",
+};
+const INTENT_LANE_LABELS = {
+  no_lane_change: "非变道",
+  lane_change: "变道",
+};
+const INTENT_DIGIT_LABELS = {
+  Digit1: ["routing", "left_turn"],
+  Digit2: ["routing", "right_turn"],
+  Digit3: ["routing", "straight"],
+  Digit4: ["routing", "u_turn"],
+  Digit5: ["routing", "parking"],
+  Digit6: ["laneChange", "no_lane_change"],
+  Digit7: ["laneChange", "lane_change"],
+};
+
+function intentRouteOptions(overrides = {}) {
+  const intent = state.intentLabeling;
+  const active = (intent.caseData?.timepoints || []).find(
+    (item) => item.id === intent.activeTimepointId
+  );
+  return {
+    datasetId: overrides.datasetId ?? intent.datasetId,
+    caseId: overrides.caseId ?? intent.caseId,
+    offsetMs: overrides.offsetMs ?? active?.offset_ms ?? null,
+    assignees: overrides.assignees ?? intent.selectedAssignees,
+    experimentId: overrides.experimentId ?? intent.selectedExperimentId,
+  };
+}
+
+function intentAssigneeSearchParams(assignees = state.intentLabeling.selectedAssignees) {
+  const params = new URLSearchParams();
+  (assignees || []).forEach((username) => params.append("assignee", username));
+  if (state.intentLabeling.selectedExperimentId) {
+    params.set("experiment_id", state.intentLabeling.selectedExperimentId);
+  }
+  return params;
+}
+
+function intentApiUrl(path, params = new URLSearchParams()) {
+  const query = params.toString();
+  return `${path}${query ? `?${query}` : ""}`;
+}
+
+function intentTimeLabel(offsetMs) {
+  const value = Number(offsetMs) || 0;
+  if (value % 1000 === 0) return `${value >= 0 ? "+" : ""}${value / 1000}s`;
+  return `${value >= 0 ? "+" : ""}${value}ms`;
+}
+
+function intentActiveTimepoint() {
+  return (state.intentLabeling.caseData?.timepoints || []).find(
+    (item) => item.id === state.intentLabeling.activeTimepointId
+  ) || null;
+}
+
+function intentSelectedTimepoints() {
+  const intent = state.intentLabeling;
+  const selected = new Set(intent.selectedTimepointIds || []);
+  const items = (intent.caseData?.timepoints || []).filter((item) => selected.has(item.id));
+  if (items.length) return items;
+  const active = intentActiveTimepoint();
+  return active ? [active] : [];
+}
+
+function intentSelectionRange(anchorId, focusId) {
+  const items = state.intentLabeling.caseData?.timepoints || [];
+  const anchorIndex = items.findIndex((item) => item.id === anchorId);
+  const focusIndex = items.findIndex((item) => item.id === focusId);
+  if (anchorIndex < 0 || focusIndex < 0) return focusId ? [focusId] : [];
+  const start = Math.min(anchorIndex, focusIndex);
+  const end = Math.max(anchorIndex, focusIndex);
+  return items.slice(start, end + 1).map((item) => item.id);
+}
+
+function intentOverride(timepointId = state.intentLabeling.activeTimepointId) {
+  return state.intentLabeling.overrides[timepointId] || null;
+}
+
+function intentEffective(timepoint = intentActiveTimepoint()) {
+  const intent = state.intentLabeling;
+  const override = timepoint ? intentOverride(timepoint.id) : null;
+  return {
+    routing: override?.routing_intent || intent.aggregate.routing || "",
+    laneChange: override?.lane_change_intent || intent.aggregate.laneChange || "",
+  };
+}
+
+function intentAxisLabel(axis, value) {
+  if (axis === "routing") return INTENT_ROUTING_LABELS[value] || "Routing 待填";
+  return INTENT_LANE_LABELS[value] || "变道待填";
+}
+
+function intentLabelSummary(timepoint) {
+  const effective = intentEffective(timepoint);
+  return `${intentAxisLabel("routing", effective.routing)} · ${intentAxisLabel("laneChange", effective.laneChange)}`;
+}
+
+function intentSummaryChipClass(value) {
+  return ({
+    straight: "is-straight",
+    left_turn: "is-left",
+    right_turn: "is-right",
+    u_turn: "is-uturn",
+    parking: "is-parking",
+    no_lane_change: "is-no-lane",
+    lane_change: "is-lane",
+  })[value] || "";
+}
+
+function intentChipMarkup(label, { pending = false, override = false, value = "" } = {}) {
+  const classes = ["intent-chip"];
+  if (pending) classes.push("is-pending");
+  else {
+    const tone = intentSummaryChipClass(value);
+    if (tone) classes.push(tone);
+    if (override) classes.push("is-override");
+  }
+  return `<b class="${classes.join(" ")}">${escapeHtml(label)}</b>`;
+}
+
+function intentTimepointLabelMarkup(timepoint) {
+  const effective = intentEffective(timepoint);
+  const override = timepoint ? intentOverride(timepoint.id) : null;
+  return `<span class="intent-timepoint-labels${override ? " is-override" : ""}">${
+    intentChipMarkup(intentAxisLabel("routing", effective.routing), {
+      pending: !effective.routing,
+      override: Boolean(override?.routing_intent),
+      value: effective.routing,
+    })
+  }${
+    intentChipMarkup(intentAxisLabel("laneChange", effective.laneChange), {
+      pending: !effective.laneChange,
+      override: Boolean(override?.lane_change_intent),
+      value: effective.laneChange,
+    })
+  }</span>`;
+}
+
+function intentAvailableDatasets() {
+  return (state.intentLabeling.datasets || []).filter((item) => item.available);
+}
+
+function intentTopbarAllowsMultipleDatasets() {
+  return state.activePage === "intent-experiments";
+}
+
+function applyIntentTopbarDatasetSelection(values) {
+  const selected = parseFilterList(values);
+  if (state.activePage === "intent-experiments") {
+    state.intentLabeling.experimentDatasetIds = selected;
+    state.intentLabeling.experimentDatasetId = selected[0] || "";
+    state.intentLabeling.experimentsDatasetId = "";
+    loadIntentExperimentAdmin({ datasetIds: selected, force: true })
+      .catch((error) => showToast(error.message, true));
+    return;
+  }
+  const datasetId = selected[selected.length - 1] || selected[0] || "";
+  if (!datasetId) return;
+  if (state.activePage === "intent-summary") {
+    state.intentLabeling.summaryExperimentId = "";
+    state.intentLabeling.summaryAssignees = [];
+    state.intentLabeling.summaryPage = 1;
+    loadIntentSummary({ datasetId, force: true }).catch((error) => showToast(error.message, true));
+    return;
+  }
+  (async () => {
+    await intentFlushSave();
+    await loadIntentLabeling({ datasetId, assignees: [], historyMode: "push" });
+  })().catch((error) => showToast(error.message, true));
+}
+
+function renderIntentTopbarDatasetPicker(selectedIds = null) {
+  const picker = $("#intentTopbarDatasetPicker");
+  if (!picker) return;
+  const available = intentAvailableDatasets();
+  const multiple = intentTopbarAllowsMultipleDatasets();
+  let selected = parseFilterList(selectedIds);
+  if (!selected.length) {
+    if (multiple) {
+      selected = (state.intentLabeling.experimentDatasetIds || []).filter((id) => (
+        available.some((item) => item.id === id)
+      ));
+      if (!selected.length) selected = available.map((item) => item.id);
+    } else {
+      const current = state.activePage === "intent-summary"
+        ? state.intentLabeling.summaryDatasetId
+        : state.intentLabeling.datasetId;
+      selected = current && available.some((item) => item.id === current)
+        ? [current]
+        : (available[0] ? [available[0].id] : []);
+    }
+  }
+  selected = selected.filter((id) => available.some((item) => item.id === id));
+  const singleSelection = selected[0] || available[0]?.id || "";
+  renderMultiFilter(picker, {
+    options: available.map((item) => ({ value: item.id, label: item.display_name })),
+    selected,
+    onlyThis: true,
+    onChange: (values) => {
+      let next = parseFilterList(values);
+      if (!multiple) {
+        const nextSingle = next.find((id) => id !== singleSelection)
+          || next[0]
+          || singleSelection;
+        next = nextSingle ? [nextSingle] : [];
+        setMultiFilterValues(picker, next);
+      }
+      applyIntentTopbarDatasetSelection(next);
+    },
+  });
+}
+
+function renderIntentAssignmentFilter() {
+  const intent = state.intentLabeling;
+  const picker = $("#intentAssignmentPicker");
+  if (!picker) return;
+  const options = (intent.assignmentExperiments || []).map((item) => ({
+    value: item.id,
+    label: `${item.name} · ${item.case_count} Case`,
+  }));
+  const native = $("#intentAssignmentSelect");
+  if (native) {
+    native.innerHTML = [
+      '<option value="">未分配（全部 Issue）</option>',
+      ...options.map((item) => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`),
+    ].join("");
+    native.value = intent.selectedExperimentId || "";
+  }
+  renderMultiFilter(picker, {
+    options,
+    selected: intent.selectedExperimentId ? [intent.selectedExperimentId] : [],
+    onlyThis: true,
+    onChange: (values) => {
+      const experimentId = values[values.length - 1] || "";
+      if (experimentId === intent.selectedExperimentId && values.length <= 1) return;
+      setMultiFilterValues(picker, experimentId ? [experimentId] : []);
+      if (native) native.value = experimentId;
+      (async () => {
+        await intentFlushSave();
+        intent.assigneeDatasetId = "";
+        intent.selectedAssignees = [];
+        await loadIntentLabeling({
+          datasetId: intent.datasetId,
+          caseId: "",
+          // Changing the experiment is an explicit scope change.  Clear the
+          // owner filter as well so “未分配（全部 Issue）” really means the
+          // complete dataset instead of silently re-selecting the SSO user.
+          assignees: [],
+          experimentId,
+          historyMode: "push",
+        });
+      })().catch((error) => showToast(error.message, true));
+    },
+  });
+}
+
+function renderIntentAssigneeFilter() {
+  const intent = state.intentLabeling;
+  const currentUsername = String(state.session.username || "").toLowerCase();
+  renderMultiFilter($("#intentAssigneeFilter"), {
+    options: intent.assignees.map((item) => ({
+      value: item.username,
+      label: `${item.username}${item.username === currentUsername ? "（我）" : ""} · ${item.case_count} Case`,
+    })),
+    selected: intent.selectedAssignees,
+    onlyThis: true,
+    onChange: (values) => {
+      (async () => {
+        await intentFlushSave();
+        intent.selectedAssignees = values;
+        await loadIntentLabeling({
+          datasetId: intent.datasetId,
+          caseId: "",
+          assignees: values,
+          historyMode: "push",
+        });
+      })().catch((error) => showToast(error.message, true));
+    },
+  });
+  const myTasks = $("#intentMyTasks");
+  const assignedToMe = intent.assignees.some((item) => item.username === currentUsername);
+  if (myTasks) {
+    myTasks.disabled = !assignedToMe;
+    myTasks.classList.toggle("is-active", intent.selectedAssignees.length === 1 && intent.selectedAssignees[0] === currentUsername);
+    myTasks.title = assignedToMe ? "只看实验分配给我的 Case" : "当前数据集没有分配给我的任务";
+  }
+}
+
+async function loadIntentAssignees(datasetId, requested = null, requestedExperimentId = null) {
+  const intent = state.intentLabeling;
+  const nextExperimentId = requestedExperimentId == null
+    ? intent.selectedExperimentId
+    : String(requestedExperimentId || "");
+  const cacheKey = `${datasetId}:${nextExperimentId}`;
+  if (intent.assigneeDatasetId !== cacheKey) {
+    const params = new URLSearchParams({ dataset_id: datasetId });
+    if (nextExperimentId) params.set("experiment_id", nextExperimentId);
+    const payload = await api(`/api/intent-assignees?${params}`);
+    if (intent.datasetId !== datasetId) return;
+    intent.assignees = payload.items || [];
+    intent.assignmentExperiments = payload.experiments || [];
+    const experimentIds = new Set(intent.assignmentExperiments.map((item) => item.id));
+    intent.selectedExperimentId = experimentIds.has(nextExperimentId) ? nextExperimentId : "";
+    intent.assigneeDatasetId = `${datasetId}:${intent.selectedExperimentId}`;
+  }
+  const available = new Set(intent.assignees.map((item) => item.username));
+  const currentUsername = String(state.session.username || "").toLowerCase();
+  const selectionKey = `${datasetId}:${intent.selectedExperimentId}`;
+  const firstSelectionForDataset = intent.assigneeSelectionDatasetId !== selectionKey;
+  let selected = requested == null ? intent.selectedAssignees : parseFilterList(requested);
+  // An unselected experiment is the unassigned/all-Issue scope. Do not let
+  // the SSO convenience default silently narrow that scope to the current
+  // annotator; the explicit “我的任务” action remains available. When a
+  // concrete experiment is selected, keeping the current user selected is
+  // useful for blind work and still follows the assignment snapshot.
+  if (
+    requested == null
+    && firstSelectionForDataset
+    && intent.selectedExperimentId
+    && available.has(currentUsername)
+  ) {
+    selected = [currentUsername];
+  }
+  intent.assigneeSelectionDatasetId = selectionKey;
+  intent.selectedAssignees = selected.filter((username) => available.has(username));
+  renderIntentAssignmentFilter();
+  renderIntentAssigneeFilter();
+}
+
+function intentExperimentModeLabel(mode) {
+  return mode === "full" ? "全量盲标" : "交叉盲标";
+}
+
+function initializeIntentExperimentSelects() {
+  const mode = $("#intentExperimentModePicker");
+  populateUiSelect(mode, [
+    { value: "blind", label: "交叉盲标" },
+    { value: "full", label: "全量盲标" },
+  ], $("#intentExperimentMode")?.value || "blind");
+  bindUiSelect(mode, { maxHeight: 220, maxWidth: 280 });
+  const overlap = $("#intentExperimentOverlapPicker");
+  populateUiSelect(overlap, [0, 0.1, 0.2, 0.3, 0.5, 1].map((value) => ({
+    value: String(value), label: `${Math.round(value * 100)}%`,
+  })), $("#intentExperimentOverlap")?.value || "0.2");
+  bindUiSelect(overlap, { maxHeight: 260, maxWidth: 240 });
+}
+
+function renderIntentExperimentMembers() {
+  const container = $("#intentExperimentMembers");
+  if (!container) return;
+  const members = state.intentLabeling.experimentMembers || [];
+  container.innerHTML = members.length ? members.map((item) => (
+    `<label class="intent-experiment-member"><input type="checkbox" value="${escapeHtml(item.username)}"/><span>${escapeHtml(item.username)}</span><small>${item.role === "admin" ? "管理员" : "标注人"}</small></label>`
+  )).join("") : '<div class="empty-note">请先在用户管理中添加具有写入权限的标注人。</div>';
+  container.querySelectorAll("input").forEach((input) => {
+    input.addEventListener("change", updateIntentExperimentEstimate);
+  });
+}
+
+function updateIntentExperimentEstimate() {
+  const output = $("#intentExperimentEstimate");
+  if (!output) return;
+  const members = Array.from(document.querySelectorAll("#intentExperimentMembers input:checked"));
+  const datasets = intentAvailableDatasets().filter((item) => (
+    (state.intentLabeling.experimentDatasetIds || []).includes(item.id)
+  ));
+  const requested = Math.max(0, Number($("#intentExperimentCaseCount")?.value) || 0);
+  const mode = $("#intentExperimentMode")?.value || "blind";
+  const overlap = Math.max(0, Number($("#intentExperimentOverlap")?.value) || 0);
+  const reviewerInput = $("#intentExperimentReviewers");
+  if (reviewerInput) {
+    reviewerInput.max = String(Math.max(1, members.length));
+    if (Number(reviewerInput.value) > members.length) reviewerInput.value = String(Math.max(1, members.length));
+  }
+  const reviewers = Math.max(1, Math.min(members.length, Number(reviewerInput?.value) || 1));
+  if (!datasets.length) {
+    output.textContent = "请在顶栏至少选择 1 个数据集。";
+    return;
+  }
+  if (members.length < 1) {
+    output.textContent = "至少选择 1 名成员。";
+    return;
+  }
+  let totalCases = 0;
+  let totalAssignments = 0;
+  datasets.forEach((item) => {
+    const count = Math.min(requested || item.case_count || 0, item.case_count || 0);
+    totalCases += count;
+    const overlapCases = Math.round(count * overlap);
+    totalAssignments += mode === "full"
+      ? count * members.length
+      : count + overlapCases * (reviewers - 1);
+  });
+  const datasetText = datasets.length > 1 ? `${datasets.length} 个数据集` : datasets[0].display_name;
+  output.textContent = mode === "full"
+    ? `${datasetText} · ${totalCases} 个 Case · ${members.length} 人全量复核 · 共 ${totalAssignments} 份独立任务`
+    : `${datasetText} · ${totalCases} 个 Case · 交叉 ${Math.round(overlap * 100)}% · 共 ${totalAssignments} 份独立任务`;
+}
+
+function renderIntentExperiments() {
+  const container = $("#intentExperimentList");
+  if (!container) return;
+  const experiments = state.intentLabeling.experiments || [];
+  const count = $("#intentExperimentCount");
+  if (count) count.textContent = String(experiments.length);
+  container.innerHTML = experiments.length ? experiments.map((item) => {
+    const members = (item.members || []).map((member) => {
+      const detail = item.annotation_mode === "full"
+        ? `${member.total} 个 Case`
+        : `基础 ${member.base} · 交叉 ${member.cross}`;
+      return `<span title="${escapeHtml(member.username)}">${escapeHtml(member.username)} · ${detail}</span>`;
+    }).join("");
+    const overlap = item.annotation_mode === "blind" ? ` · 交叉 ${Math.round(item.overlap_ratio * 100)}% · 每 Case ${item.overlap_reviewers || 2} 人` : "";
+    const datasetName = (state.intentLabeling.datasets.find((dataset) => dataset.id === item.dataset_id) || {}).display_name || item.dataset_id || "";
+    return `<article class="intent-experiment-item${item.status === "closed" ? " is-closed" : ""}" data-intent-experiment="${escapeHtml(item.id)}">
+      <div><h4>${escapeHtml(item.name)}</h4><div class="intent-experiment-meta">${escapeHtml(datasetName)} · ${intentExperimentModeLabel(item.annotation_mode)}${overlap} · ${item.case_count} 个 Case · ${item.assignment_count} 份任务 · ${escapeHtml(item.created_by)}</div></div>
+      <span class="intent-experiment-status">${item.status === "closed" ? "已关闭" : "进行中"}</span>
+      <div class="intent-experiment-member-stats">${members}</div>
+      ${item.status === "active" && state.session.can_manage_intent ? '<div class="intent-experiment-actions"><button class="button button-quiet" type="button" data-close-intent-experiment>关闭实验</button></div>' : ""}
+    </article>`;
+  }).join("") : '<div class="intent-experiment-empty"><span aria-hidden="true">◎</span><strong>所选数据集尚未创建实验</strong><p>在上方完成配置后，实验与每位成员的任务量会显示在这里。</p></div>';
+  container.querySelectorAll("[data-close-intent-experiment]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const experimentId = button.closest("[data-intent-experiment]")?.dataset.intentExperiment;
+      if (!experimentId) return;
+      closeIntentExperiment(experimentId).catch((error) => showToast(error.message, true));
+    });
+  });
+}
+
+async function loadIntentExperiments({ force = false } = {}) {
+  const intent = state.intentLabeling;
+  const requestedIds = [...(intent.experimentDatasetIds || [])];
+  const cacheKey = requestedIds.slice().sort().join(",");
+  if (!force && intent.experimentsDatasetId === cacheKey) {
+    renderIntentExperiments();
+    return;
+  }
+  const params = new URLSearchParams();
+  requestedIds.forEach((id) => params.append("dataset_id", id));
+  const payload = await api(`/api/intent-experiments${params.toString() ? `?${params}` : ""}`);
+  if ((intent.experimentDatasetIds || []).join(",") !== requestedIds.join(",")) return;
+  intent.experiments = payload.items || [];
+  intent.experimentMembers = payload.eligible_members || [];
+  intent.experimentsDatasetId = cacheKey;
+  const selectedDatasets = intentAvailableDatasets().filter((item) => requestedIds.includes(item.id));
+  const countInput = $("#intentExperimentCaseCount");
+  if (countInput) {
+    const maxCount = Math.max(1, ...selectedDatasets.map((item) => Number(item.case_count) || 1));
+    countInput.max = String(maxCount);
+    if (!countInput.value) countInput.value = String(maxCount);
+  }
+  renderIntentExperimentMembers();
+  renderIntentExperiments();
+  updateIntentExperimentEstimate();
+}
+
+async function loadIntentExperimentAdmin({ datasetId = "", datasetIds = null, force = false } = {}) {
+  const intent = state.intentLabeling;
+  if (!intent.datasets.length) {
+    const payload = await api("/api/intent-datasets");
+    intent.datasets = payload.items || [];
+  }
+  const available = intentAvailableDatasets();
+  if (!available.length) throw new Error("没有可用于实验分配的数据集。");
+  let selected;
+  if (datasetIds != null) {
+    selected = parseFilterList(datasetIds);
+  } else if (datasetId) {
+    selected = [datasetId];
+  } else {
+    selected = [...(intent.experimentDatasetIds || [])];
+    if (!selected.length && available[0]) selected = [available[0].id];
+  }
+  selected = selected.filter((id) => available.some((item) => item.id === id));
+  intent.experimentDatasetIds = selected;
+  intent.experimentDatasetId = selected[0] || "";
+  renderIntentTopbarDatasetPicker(selected);
+  await loadIntentExperiments({ force });
+  if (state.activePage === "intent-experiments") {
+    const params = new URLSearchParams();
+    selected.forEach((id) => params.append("dataset", id));
+    history.replaceState(
+      { page: "intent-experiments", datasetId: selected[0] || "", datasetIds: selected },
+      "",
+      `${withBase("/intent-experiments")}${params.toString() ? `?${params}` : ""}`
+    );
+  }
+}
+
+async function createIntentExperiment(event) {
+  event?.preventDefault();
+  const intent = state.intentLabeling;
+  const members = Array.from(document.querySelectorAll("#intentExperimentMembers input:checked"))
+    .map((input) => input.value);
+  const datasetIds = [...(intent.experimentDatasetIds || [])];
+  if (!datasetIds.length) {
+    showToast("请在顶栏至少选择 1 个数据集。", true);
+    return;
+  }
+  const button = $("#intentCreateExperiment");
+  if (button) button.disabled = true;
+  try {
+    const result = await api("/api/intent-experiments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dataset_id: datasetIds[0],
+        dataset_ids: datasetIds,
+        name: $("#intentExperimentName")?.value.trim() || "",
+        annotation_mode: $("#intentExperimentMode")?.value || "blind",
+        case_count: Number($("#intentExperimentCaseCount")?.value) || 0,
+        overlap_ratio: Number($("#intentExperimentOverlap")?.value) || 0,
+        overlap_reviewers: Number($("#intentExperimentReviewers")?.value) || 1,
+        members,
+      }),
+    });
+    acknowledgeLocalChange(result);
+    $("#intentExperimentName").value = "";
+    intent.experimentsDatasetId = "";
+    await loadIntentExperiments({ force: true });
+    const created = result.experiments || (result.experiment ? [result.experiment] : []);
+    showToast(created.length > 1
+      ? `已在 ${created.length} 个数据集创建实验，任务分配快照已保存。`
+      : "实验已创建，任务分配快照已保存。", false);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function closeIntentExperiment(experimentId) {
+  if (!window.confirm("关闭后仍会保留实验与分配记录。确认关闭这个实验？")) return;
+  const result = await api(`/api/intent-experiments/${encodeURIComponent(experimentId)}/close`, { method: "POST" });
+  acknowledgeLocalChange(result);
+  state.intentLabeling.experimentsDatasetId = "";
+  await loadIntentExperiments({ force: true });
+  showToast("实验已关闭，历史分配仍然保留。", false);
+}
+

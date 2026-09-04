@@ -152,22 +152,29 @@ def _case_result_with_status_filter(
 
     tag_catalog = _review_tag_catalog()
     if review_statuses:
-        raw = database.list_cases(**filters, page=1, page_size=5000)
-        allowed = set(review_statuses)
-        items = [
-            normalized
-            for item in raw.get("items", [])
-            if (
-                normalized := _with_effective_case_review_status(
-                    item, tag_catalog
-                )
-            )["annotation"]["review_status"]
-            in allowed
-        ]
+        matching_ids = _case_review_status_issue_ids(
+            filters=filters,
+            review_statuses=review_statuses,
+            tag_catalog=tag_catalog,
+        )
         start = (page - 1) * page_size
+        page_ids = matching_ids[start : start + page_size]
+        if page_ids:
+            page_filters = {**filters, "issue_ids": page_ids}
+            raw = database.list_cases(
+                **page_filters,
+                page=1,
+                page_size=len(page_ids),
+            )
+            items = [
+                _with_effective_case_review_status(item, tag_catalog)
+                for item in raw.get("items", [])
+            ]
+        else:
+            items = []
         return {
-            "items": items[start : start + page_size],
-            "total": len(items),
+            "items": items,
+            "total": len(matching_ids),
             "page": page,
             "page_size": page_size,
         }
@@ -184,6 +191,25 @@ def _case_result_with_status_filter(
     return result
 
 
+def _case_review_status_issue_ids(
+    *,
+    filters: dict[str, Any],
+    review_statuses: tuple[str, ...],
+    tag_catalog: tuple[dict[str, Any], ...] | None = None,
+) -> list[str]:
+    allowed = set(review_statuses)
+    catalog = tag_catalog if tag_catalog is not None else _review_tag_catalog()
+    candidates = database.list_case_review_candidates(**filters, limit=5000)
+    return [
+        str(item.get("issue_id") or "")
+        for item in candidates
+        if _with_effective_case_review_status(item, catalog)["annotation"][
+            "review_status"
+        ]
+        in allowed
+    ]
+
+
 def _case_issue_ids_with_status_filter(
     *,
     filters: dict[str, Any],
@@ -191,13 +217,10 @@ def _case_issue_ids_with_status_filter(
 ) -> list[str]:
     if not review_statuses:
         return database.list_case_issue_ids(**filters, limit=5000)
-    result = _case_result_with_status_filter(
+    return _case_review_status_issue_ids(
         filters=filters,
         review_statuses=review_statuses,
-        page=1,
-        page_size=5000,
     )
-    return [str(item.get("issue_id") or "") for item in result["items"]]
 
 
 def _public_case_items(

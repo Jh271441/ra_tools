@@ -179,8 +179,11 @@ class ReviewWorkflowTest(unittest.TestCase):
             ]
         }
         with patch(
+            "ra_triage_dashboard.app.routers.cases.database.list_case_review_candidates",
+            return_value=raw["items"],
+        ), patch(
             "ra_triage_dashboard.app.routers.cases.database.list_cases",
-            return_value=raw,
+            return_value={"items": [raw["items"][3]], "total": 1},
         ), patch(
             "ra_triage_dashboard.app.routers.cases._review_tag_catalog",
             return_value=tuple(TAG_CATALOG),

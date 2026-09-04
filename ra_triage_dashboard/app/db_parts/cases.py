@@ -495,6 +495,50 @@ class DatabaseCasesMixin:
             ).fetchall()
         return [str(row["issue_id"] if hasattr(row, "keys") else row[0]) for row in rows]
 
+    def list_case_review_candidates(
+        self,
+        *,
+        limit: int = 5000,
+        **filters: Any,
+    ) -> list[dict[str, Any]]:
+        """Return the minimal projection needed for derived Review status.
+
+        Historical Reviews can omit ``label`` and rely on structured Tags, so
+        their effective status still needs Python inference.  Avoid loading the
+        full Case/prediction summary for every matching Issue just to derive
+        that status; the public route fetches full rows only for the requested
+        page after this bounded projection is filtered.
+        """
+
+        condition, params, model_args, common = self._case_list_filters(**filters)
+        limit = min(max(1, int(limit)), 5000)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT DISTINCT i.issue_id, i.gt_label,
+                       ann.id AS annotation_id,
+                       ann.label AS annotation_label,
+                       ann.tags_json AS annotation_tags_json
+                {common}
+                {condition}
+                ORDER BY i.issue_id ASC
+                LIMIT ?
+                """,
+                (*model_args, *params, limit),
+            ).fetchall()
+        return [
+            {
+                "issue_id": str(row["issue_id"] or ""),
+                "gt_label": str(row["gt_label"] or ""),
+                "annotation": {
+                    "id": row["annotation_id"],
+                    "label": str(row["annotation_label"] or ""),
+                    "tags": _json_load(row["annotation_tags_json"], []),
+                },
+            }
+            for row in rows
+        ]
+
     def get_case(self, issue_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             issue = conn.execute("SELECT * FROM issues WHERE issue_id = ?", (issue_id,)).fetchone()
