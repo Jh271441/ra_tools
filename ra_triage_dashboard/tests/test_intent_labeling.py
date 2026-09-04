@@ -493,6 +493,22 @@ class IntentExperimentTest(unittest.TestCase):
             self.assertEqual(experiment["overlap_reviewers"], 2)
             self.assertEqual(experiment["label_scope"], "routing")
             self.assertEqual({item["total"] for item in experiment["members"]}, {2})
+            database.save_intent_labels(
+                dataset_id="test-v1", case_id="cn1_1",
+                routing_default="straight", lane_change_default="",
+                overrides=[], expected_revision_id=None, author="alice",
+            )
+            database.save_intent_labels(
+                dataset_id="test-v1", case_id="cn2_2",
+                routing_default="", lane_change_default="",
+                overrides=[], expected_revision_id=None, author="bob",
+            )
+            progress = database.list_intent_experiments("test-v1")[0]["progress"]
+            self.assertEqual(
+                {key: progress[key] for key in ("total", "completed", "partial", "pending")},
+                {"total": 4, "completed": 1, "partial": 1, "pending": 2},
+            )
+            self.assertEqual(progress["percent"], 25.0)
             updated = database.update_intent_experiment(
                 "experiment-1",
                 name="双盲二轮",

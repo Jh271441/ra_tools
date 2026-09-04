@@ -158,6 +158,35 @@ class DatabaseIntentMixin:
                 """,
                 parameters,
             ).fetchall()
+            progress_rows = conn.execute(
+                f"""
+                SELECT experiment.id AS experiment_id,
+                       COUNT(assignment.case_id) AS total_count,
+                       SUM(CASE WHEN head.current_revision_id IS NOT NULL THEN 1 ELSE 0 END)
+                           AS started_count,
+                       SUM(CASE WHEN head.current_revision_id IS NOT NULL AND (
+                           (experiment.label_scope = 'routing'
+                            AND COALESCE(revision.routing_default, '') <> '')
+                           OR (experiment.label_scope = 'lane_change'
+                               AND COALESCE(revision.lane_change_default, '') <> '')
+                           OR (experiment.label_scope = 'all'
+                               AND COALESCE(revision.routing_default, '') <> ''
+                               AND COALESCE(revision.lane_change_default, '') <> '')
+                       ) THEN 1 ELSE 0 END) AS completed_count
+                FROM intent_experiments experiment
+                LEFT JOIN intent_experiment_assignments assignment
+                  ON assignment.experiment_id = experiment.id
+                LEFT JOIN intent_user_label_heads head
+                  ON head.dataset_id = experiment.dataset_id
+                 AND head.case_id = assignment.case_id
+                 AND head.username = assignment.username
+                LEFT JOIN intent_label_revisions revision
+                  ON revision.id = head.current_revision_id
+                {where}
+                GROUP BY experiment.id
+                """,
+                parameters,
+            ).fetchall()
         members_by_experiment: dict[str, dict[str, dict[str, int]]] = {}
         for item in assignment_rows:
             experiment = members_by_experiment.setdefault(str(item["experiment_id"]), {})
@@ -178,9 +207,25 @@ class DatabaseIntentMixin:
                     "created_at": str(item["created_at"]),
                 }
             )
+        progress_by_experiment = {
+            str(item["experiment_id"]): {
+                "total": int(item["total_count"] or 0),
+                "started": int(item["started_count"] or 0),
+                "completed": int(item["completed_count"] or 0),
+            }
+            for item in progress_rows
+        }
         result = []
         for row in rows:
             experiment_id = str(row["id"])
+            progress = progress_by_experiment.get(
+                experiment_id, {"total": 0, "started": 0, "completed": 0}
+            )
+            progress["partial"] = max(0, progress["started"] - progress["completed"])
+            progress["pending"] = max(0, progress["total"] - progress["started"])
+            progress["percent"] = round(
+                progress["completed"] * 100 / progress["total"], 1
+            ) if progress["total"] else 0.0
             member_stats = [
                 {
                     "username": username,
@@ -212,6 +257,7 @@ class DatabaseIntentMixin:
                     "members": member_stats,
                     "updates": updates_by_experiment.get(experiment_id, []),
                     "update_count": len(updates_by_experiment.get(experiment_id, [])),
+                    "progress": progress,
                 }
             )
         return result
@@ -948,6 +994,20 @@ class DatabaseIntentMixin:
                    WHERE experiment.dataset_id = ?""",
                 (dataset_id,),
             ).fetchall()
+            comments = conn.execute(
+                """SELECT id, case_id, body, author, reply_to_id, created_at
+                   FROM (
+                       SELECT comment.*,
+                              ROW_NUMBER() OVER (
+                                  PARTITION BY comment.case_id ORDER BY comment.id DESC
+                              ) AS comment_rank
+                       FROM intent_case_comments comment
+                       WHERE comment.dataset_id = ?
+                   ) recent
+                   WHERE comment_rank <= 3
+                   ORDER BY case_id, id ASC""",
+                (dataset_id,),
+            ).fetchall()
         by_revision: dict[int, list[dict[str, Any]]] = {}
         for row in overrides:
             by_revision.setdefault(int(row["revision_id"]), []).append({
@@ -959,6 +1019,17 @@ class DatabaseIntentMixin:
             "heads": [{**dict(row), "updated_at": str(row["updated_at"]),
                        "overrides": by_revision.get(int(row["revision_id"]), [])} for row in heads],
             "assignments": [dict(row) for row in assignments],
+            "comments": [
+                {
+                    "id": int(row["id"]),
+                    "case_id": str(row["case_id"]),
+                    "body": str(row["body"]),
+                    "author": str(row["author"]),
+                    "reply_to_id": int(row["reply_to_id"]) if row["reply_to_id"] else None,
+                    "created_at": str(row["created_at"]),
+                }
+                for row in comments
+            ],
         }
 
     def list_intent_case_assignees(self, dataset_id: str, case_id: str) -> list[str]:

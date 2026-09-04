@@ -382,15 +382,18 @@ function bindEvents() {
   $("#casePageSize").addEventListener("change", (event) => {
     changeCasePageSize(event.target.value).catch((error) => showToast(error.message, true));
   });
-  $("#refreshButton").addEventListener("click", async () => {
+  $("#refreshButton").addEventListener("click", async (event) => {
     try {
+      if (event.shiftKey && ["intent", "intent-experiments", "intent-summary"].includes(state.activePage)) {
+        resetIntentWorkspacePreferences(state.activePage);
+      }
       if (state.activePage === "intent") {
         await intentFlushSave();
         await loadIntentLabeling({
           datasetId: state.intentLabeling.datasetId,
           datasetIds: state.intentLabeling.selectedDatasetIds,
-          caseId: state.intentLabeling.caseId,
-          offsetMs: intentActiveTimepoint()?.offset_ms,
+          caseId: event.shiftKey ? "" : state.intentLabeling.caseId,
+          offsetMs: event.shiftKey ? null : intentActiveTimepoint()?.offset_ms,
         });
         showToast(t("toast.page_refreshed"));
         return;

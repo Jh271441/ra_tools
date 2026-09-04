@@ -68,7 +68,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-330`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-331`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -220,7 +220,7 @@
             <button class="button button-quiet shortcut-help-button" id="shortcutHelpButton" type="button" aria-haspopup="dialog" aria-controls="shortcutGuideDialog" title="快捷键指南（H）"><span class="ui-lang-zh">快捷键</span><span class="ui-lang-en">Shortcuts</span><kbd aria-hidden="true">H</kbd></button>
             <button class="button button-quiet theme-toggle" id="themeToggleButton" type="button" aria-label="切换到浅色模式" title="切换到浅色模式">☀</button>
             <button class="button button-quiet language-toggle" id="languageToggleButton" type="button" aria-label="切换到 English">EN</button>
-            <button class="button button-quiet" id="refreshButton" type="button" aria-keyshortcuts="R" title="刷新当前页（R）"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span><kbd aria-hidden="true">R</kbd></button>
+            <button class="button button-quiet" id="refreshButton" type="button" aria-keyshortcuts="R" title="刷新当前页（R）；Shift 点击强制刷新并清除本页默认选项"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span><kbd aria-hidden="true">R</kbd></button>
           </div>
         </header>
 
@@ -460,8 +460,9 @@
               <button class="button button-quiet" id="intentSummaryReveal" type="button" hidden>管理员解盲</button>
             </section>
             <section class="intent-summary-metrics" id="intentSummaryMetrics"></section>
+            <section class="intent-summary-distributions" id="intentSummaryDistributions" hidden></section>
             <section class="page-card intent-summary-comments-card" id="intentSummaryCommentHits" hidden></section>
-            <section class="page-card intent-summary-table-card"><header><div><h2>标注汇总</h2><p id="intentSummarySafety">进行中的盲标实验仅显示自己的答案。</p></div><div class="intent-summary-export-actions"><button class="button button-danger" id="intentSummaryBulkDelete" type="button" hidden disabled>批量删除</button><button class="button button-quiet" id="intentExportCompact" type="button" hidden>导出 Case JSONL</button><button class="button button-quiet" id="intentExportExpanded" type="button" hidden>导出帧级 JSONL</button></div></header><div class="table-scroll"><table><thead><tr><th>Issue / Case</th><th>标注人</th><th class="intent-summary-routing-column">Routing 帧分布</th><th class="intent-summary-lane-column">变道意图帧分布</th><th>更新时间</th><th class="intent-summary-admin-column intent-summary-actions-column" hidden><label class="intent-summary-select-all"><input id="intentSummarySelectPage" type="checkbox"/> 全选本页</label></th></tr></thead><tbody id="intentSummaryRows"></tbody></table></div><nav class="case-pagination gallery-pagination intent-summary-pagination" aria-label="标注汇总分页"><div class="case-pagination-main"><button class="button button-quiet" id="intentSummaryPrevious" type="button">上一页</button><span id="intentSummaryPageState">1 / 1</span><button class="button button-quiet" id="intentSummaryNext" type="button">下一页</button><span class="page-jump-control"><label for="intentSummaryPageJump">跳至</label><input id="intentSummaryPageJump" type="number" min="1" step="1" inputmode="numeric" aria-label="跳至汇总页"/><span>页</span><button class="button button-quiet" id="intentSummaryPageJumpButton" type="button">跳转</button></span></div><label class="case-page-size" for="intentSummaryPageSize"><span>每页</span><select id="intentSummaryPageSize" aria-label="每页数量"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option><option value="100">100</option></select><span>条</span></label></nav></section>
+            <section class="page-card intent-summary-table-card"><header><div><h2>标注汇总</h2><p id="intentSummarySafety">进行中的盲标实验仅显示自己的答案。</p></div><div class="intent-summary-export-actions"><button class="button button-danger" id="intentSummaryBulkDelete" type="button" hidden disabled>批量删除</button><button class="button button-quiet" id="intentExportCompact" type="button" hidden>导出 Case JSONL</button><button class="button button-quiet" id="intentExportExpanded" type="button" hidden>导出帧级 JSONL</button></div></header><div class="table-scroll"><table><thead><tr><th>Issue / Case</th><th>标注人</th><th class="intent-summary-routing-column">Routing 帧分布</th><th class="intent-summary-lane-column">变道意图帧分布</th><th class="intent-summary-comments-column">评论</th><th>更新时间</th><th class="intent-summary-admin-column intent-summary-actions-column" hidden><label class="intent-summary-select-all"><input id="intentSummarySelectPage" type="checkbox"/> 全选本页</label></th></tr></thead><tbody id="intentSummaryRows"></tbody></table></div><nav class="case-pagination gallery-pagination intent-summary-pagination" aria-label="标注汇总分页"><div class="case-pagination-main"><button class="button button-quiet" id="intentSummaryPrevious" type="button">上一页</button><span id="intentSummaryPageState">1 / 1</span><button class="button button-quiet" id="intentSummaryNext" type="button">下一页</button><span class="page-jump-control"><label for="intentSummaryPageJump">跳至</label><input id="intentSummaryPageJump" type="number" min="1" step="1" inputmode="numeric" aria-label="跳至汇总页"/><span>页</span><button class="button button-quiet" id="intentSummaryPageJumpButton" type="button">跳转</button></span></div><label class="case-page-size" for="intentSummaryPageSize"><span>每页</span><select id="intentSummaryPageSize" aria-label="每页数量"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option><option value="100">100</option></select><span>条</span></label></nav></section>
           </section>
 
           <section class="app-page tool-page analysis-page hidden" id="reviewAnalysisPage" data-page="analysis">
@@ -1825,7 +1826,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-330`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-331`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

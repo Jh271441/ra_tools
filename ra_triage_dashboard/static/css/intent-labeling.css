@@ -658,8 +658,16 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-experiment-item.is-closed { opacity: .72; }
 .intent-experiment-item h4 { min-width: 0; margin: 0; overflow: hidden; color: var(--text); font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
 .intent-experiment-meta { color: var(--muted); font-size: 12px; line-height: 1.55; }
-.intent-experiment-member-stats { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px; }
+.intent-experiment-detail-row { grid-column: 1 / -1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, .55fr); align-items: center; gap: 10px 18px; }
+.intent-experiment-member-stats { min-width: 0; display: flex; flex-wrap: wrap; gap: 5px; }
 .intent-experiment-member-stats span { padding: 3px 7px; border-radius: 6px; color: #cbd8e4; background: rgba(127, 151, 170, .1); font-size: 11px; }
+.intent-experiment-progress { min-width: 0; display: grid; grid-template-columns: minmax(120px, 1fr) auto; align-items: center; gap: 8px; }
+.intent-experiment-progress-track { height: 10px; display: flex; overflow: hidden; border: 1px solid rgba(127, 151, 170, .22); border-radius: 999px; background: rgba(127, 151, 170, .1); }
+.intent-experiment-progress-track i { min-width: 0; height: 100%; }
+.intent-experiment-progress-track .is-complete { background: #30d38f; }
+.intent-experiment-progress-track .is-partial { background: #24d3ee; }
+.intent-experiment-progress-track .is-pending { background: rgba(248, 113, 113, .72); }
+.intent-experiment-progress small { color: var(--muted); font-size: 10px; white-space: nowrap; }
 .intent-experiment-controls { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
 .intent-experiment-status { flex: 0 0 auto; padding: 3px 8px; border-radius: 999px; color: var(--ok); background: rgba(48, 211, 143, .1); font-size: 11px; }
 .intent-experiment-item.is-closed .intent-experiment-status { color: var(--muted); background: rgba(127, 151, 170, .1); }
@@ -678,6 +686,24 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-summary-metric { padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--raised); }
 .intent-summary-metric small { display: block; color: var(--muted); }
 .intent-summary-metric strong { display: block; margin-top: 4px; color: var(--text); font-size: 22px; }
+.intent-summary-distributions { min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.intent-summary-distributions[hidden] { display: none; }
+.intent-summary-distribution { min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--raised); }
+.intent-summary-distribution header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.intent-summary-distribution header strong { color: var(--text); font-size: 13px; }
+.intent-summary-distribution header small { color: var(--muted); font-size: 10px; }
+.intent-summary-distribution-track { height: 12px; display: flex; overflow: hidden; margin-top: 9px; border-radius: 999px; background: rgba(127, 151, 170, .1); }
+.intent-summary-distribution-track i { height: 100%; }
+.intent-summary-distribution-track .is-straight, .intent-summary-distribution-legend .is-straight { background: #24d3ee; }
+.intent-summary-distribution-track .is-left, .intent-summary-distribution-legend .is-left { background: #a78bfa; }
+.intent-summary-distribution-track .is-right, .intent-summary-distribution-legend .is-right { background: #818cf8; }
+.intent-summary-distribution-track .is-uturn, .intent-summary-distribution-legend .is-uturn { background: #f87171; }
+.intent-summary-distribution-track .is-parking, .intent-summary-distribution-legend .is-parking { background: #fbbf24; }
+.intent-summary-distribution-track .is-no-lane, .intent-summary-distribution-legend .is-no-lane { background: #30d38f; }
+.intent-summary-distribution-track .is-lane, .intent-summary-distribution-legend .is-lane { background: #fb923c; }
+.intent-summary-distribution-legend { display: flex; flex-wrap: wrap; gap: 5px 12px; margin-top: 8px; color: var(--muted); font-size: 10px; }
+.intent-summary-distribution-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.intent-summary-distribution-legend b { width: 7px; height: 7px; border-radius: 50%; }
 .intent-summary-comments-card { min-width: 0; padding: 14px; border-color: rgba(36, 211, 238, .22); }
 .intent-summary-comments-card header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .intent-summary-comments-card h2 { margin: 0; font-size: 15px; color: var(--accent); }
@@ -700,8 +726,14 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-summary-table-card th[hidden], .intent-summary-table-card td[hidden] { display: none; }
 .intent-summary-case-link { color: var(--accent); text-decoration: none; }
 .intent-summary-case-link:hover { text-decoration: underline; }
+.intent-summary-comments-column { min-width: 210px; max-width: 320px; }
+.intent-summary-row-comments { display: grid; gap: 3px; }
+.intent-summary-row-comments a { display: block; overflow: hidden; color: var(--muted); font-size: 11px; line-height: 1.35; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+.intent-summary-row-comments a:hover { color: var(--accent); }
+.intent-summary-row-comments b { color: #9ee7f2; }
+.intent-summary-row-comments small, .intent-summary-no-comment { color: var(--faint); font-size: 10px; }
 .intent-summary-pagination { margin: 10px -14px -14px; color: var(--muted); }
-@media (max-width: 900px) { .intent-summary-filters, .intent-summary-metrics { grid-template-columns: 1fr; } .intent-summary-comment-hit { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .intent-summary-filters, .intent-summary-metrics, .intent-summary-distributions, .intent-experiment-detail-row { grid-template-columns: 1fr; } .intent-summary-comment-hit { grid-template-columns: 1fr; } }
 @media (min-width: 901px) and (max-width: 1400px) { .intent-summary-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 @media (max-width: 1600px) {

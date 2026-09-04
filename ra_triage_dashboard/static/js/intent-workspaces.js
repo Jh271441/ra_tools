@@ -21,6 +21,106 @@ const INTENT_DIGIT_LABELS = {
   Digit6: ["laneChange", "no_lane_change"],
   Digit7: ["laneChange", "lane_change"],
 };
+const INTENT_WORKSPACE_PREFERENCES_KEY = "ra-triage-intent-workspaces-v1";
+
+function intentWorkspacePreferenceOwner() {
+  return String(state.session.username || "").trim().toLowerCase();
+}
+
+function restoreIntentWorkspacePreferences() {
+  const intent = state.intentLabeling;
+  const owner = intentWorkspacePreferenceOwner();
+  if (!owner || intent.preferenceOwner === owner) return;
+  intent.preferenceOwner = owner;
+  try {
+    const saved = JSON.parse(localStorage.getItem(INTENT_WORKSPACE_PREFERENCES_KEY) || "null");
+    if (!saved || saved.owner !== owner || Number(saved.version) !== 1) return;
+    const labeling = saved.labeling || {};
+    intent.selectedDatasetIds = parseFilterList(labeling.datasetIds);
+    intent.datasetId = String(labeling.datasetId || intent.selectedDatasetIds[0] || "");
+    intent.selectedExperimentId = String(labeling.experimentId || "");
+    intent.selectedAssignees = parseFilterList(labeling.assignees);
+    intent.assigneeSelectionDatasetId = `${intent.selectedDatasetIds.join(",")}:${intent.selectedExperimentId}`;
+    const experiments = saved.experiments || {};
+    intent.experimentDatasetIds = parseFilterList(experiments.datasetIds);
+    intent.experimentDatasetId = intent.experimentDatasetIds[0] || "";
+    intent.experimentDraftMembers = parseFilterList(experiments.members);
+    const draftValues = {
+      intentExperimentScope: experiments.labelScope || "all",
+      intentExperimentMode: experiments.mode || "blind",
+      intentExperimentCaseCount: experiments.caseCount || "",
+      intentExperimentOverlap: experiments.overlap ?? "0.2",
+      intentExperimentReviewers: experiments.reviewers || "2",
+    };
+    Object.entries(draftValues).forEach(([id, value]) => {
+      const element = document.getElementById(id);
+      if (element && value !== "") element.value = String(value);
+    });
+    const summary = saved.summary || {};
+    intent.summaryDatasetIds = parseFilterList(summary.datasetIds);
+    intent.summaryDatasetId = intent.summaryDatasetIds[0] || "";
+    intent.summaryExperimentId = String(summary.experimentId || "");
+    intent.summaryAssignees = parseFilterList(summary.assignees);
+    intent.summaryAxis = ["all", "routing", "lane_change"].includes(summary.axis) ? summary.axis : "all";
+    intent.summaryPageSize = [10, 20, 50, 100].includes(Number(summary.pageSize)) ? Number(summary.pageSize) : 20;
+  } catch (_) {
+    localStorage.removeItem(INTENT_WORKSPACE_PREFERENCES_KEY);
+  }
+}
+
+function persistIntentWorkspacePreferences() {
+  const intent = state.intentLabeling;
+  const owner = intentWorkspacePreferenceOwner();
+  if (!owner) return;
+  const memberPicker = $("#intentExperimentMembers");
+  if (memberPicker?.querySelector("input")) {
+    intent.experimentDraftMembers = getMultiFilterValues(memberPicker);
+  }
+  const payload = {
+    version: 1,
+    owner,
+    labeling: {
+      datasetIds: intent.selectedDatasetIds || [], datasetId: intent.datasetId || "",
+      experimentId: intent.selectedExperimentId || "", assignees: intent.selectedAssignees || [],
+    },
+    experiments: {
+      datasetIds: intent.experimentDatasetIds || [], members: intent.experimentDraftMembers || [],
+      labelScope: $("#intentExperimentScope")?.value || "all",
+      mode: $("#intentExperimentMode")?.value || "blind",
+      caseCount: $("#intentExperimentCaseCount")?.value || "",
+      overlap: $("#intentExperimentOverlap")?.value || "0.2",
+      reviewers: $("#intentExperimentReviewers")?.value || "2",
+    },
+    summary: {
+      datasetIds: intent.summaryDatasetIds || [], experimentId: intent.summaryExperimentId || "",
+      assignees: intent.summaryAssignees || [], axis: intent.summaryAxis || "all",
+      pageSize: intent.summaryPageSize || 20,
+    },
+  };
+  try { localStorage.setItem(INTENT_WORKSPACE_PREFERENCES_KEY, JSON.stringify(payload)); } catch (_) { /* private mode */ }
+}
+
+function clearIntentWorkspacePreferences() {
+  try { localStorage.removeItem(INTENT_WORKSPACE_PREFERENCES_KEY); } catch (_) { /* private mode */ }
+  state.intentLabeling.preferenceOwner = intentWorkspacePreferenceOwner();
+}
+
+function resetIntentWorkspacePreferences(page = state.activePage) {
+  const intent = state.intentLabeling;
+  clearIntentWorkspacePreferences();
+  if (page === "intent") {
+    intent.datasetId = ""; intent.selectedDatasetIds = []; intent.selectedExperimentId = "";
+    intent.selectedAssignees = []; intent.assigneeDatasetId = ""; intent.assigneeSelectionDatasetId = "";
+  } else if (page === "intent-experiments") {
+    intent.experimentDatasetId = ""; intent.experimentDatasetIds = []; intent.experimentDraftMembers = [];
+    intent.experimentsDatasetId = "";
+    const defaults = { intentExperimentScope: "all", intentExperimentMode: "blind", intentExperimentCaseCount: "", intentExperimentOverlap: "0.2", intentExperimentReviewers: "2" };
+    Object.entries(defaults).forEach(([id, value]) => { const element = document.getElementById(id); if (element) element.value = value; });
+  } else if (page === "intent-summary") {
+    intent.summaryDatasetId = ""; intent.summaryDatasetIds = []; intent.summaryExperimentId = "";
+    intent.summaryAssignees = []; intent.summaryAxis = "all"; intent.summaryPage = 1; intent.summaryPageSize = 20;
+  }
+}
 
 function intentRouteOptions(overrides = {}) {
   const intent = state.intentLabeling;
@@ -404,7 +504,8 @@ function renderIntentExperimentMembers() {
   const container = $("#intentExperimentMembers");
   if (!container) return;
   const members = state.intentLabeling.experimentMembers || [];
-  const selected = getMultiFilterValues(container).filter((username) => (
+  const current = getMultiFilterValues(container);
+  const selected = (current.length ? current : state.intentLabeling.experimentDraftMembers || []).filter((username) => (
     members.some((item) => item.username === username)
   ));
   renderMultiFilter(container, {
@@ -413,7 +514,11 @@ function renderIntentExperimentMembers() {
       label: `${item.username} · ${item.role === "admin" ? "管理员" : "标注人"}`,
     })),
     selected,
-    onChange: () => updateIntentExperimentEstimate(),
+    onChange: (values) => {
+      state.intentLabeling.experimentDraftMembers = values;
+      persistIntentWorkspacePreferences();
+      updateIntentExperimentEstimate();
+    },
   });
 }
 
@@ -600,10 +705,16 @@ function renderIntentExperiments() {
     const overlap = item.annotation_mode === "blind" ? ` · 交叉 ${Math.round(item.overlap_ratio * 100)}% · 每 Case ${item.overlap_reviewers || 2} 人` : "";
     const updateMeta = item.update_count ? ` · 已修改 ${item.update_count} 次` : "";
     const datasetName = (state.intentLabeling.datasets.find((dataset) => dataset.id === item.dataset_id) || {}).display_name || item.dataset_id || "";
+    const progress = item.progress || {};
+    const total = Math.max(0, Number(progress.total) || 0);
+    const completed = Math.max(0, Number(progress.completed) || 0);
+    const partial = Math.max(0, Number(progress.partial) || 0);
+    const pending = Math.max(0, Number(progress.pending) || 0);
+    const width = (value) => total ? Math.max(0, Math.min(100, value * 100 / total)) : 0;
     return `<article class="intent-experiment-item${item.status === "closed" ? " is-closed" : ""}" data-intent-experiment="${escapeHtml(item.id)}">
       <div><h4>${escapeHtml(item.name)}</h4><div class="intent-experiment-meta">${escapeHtml(datasetName)} · ${intentExperimentScopeLabel(item.label_scope)} · ${intentExperimentModeLabel(item.annotation_mode)}${overlap} · ${item.case_count} 个 Case · ${item.assignment_count} 份任务 · ${escapeHtml(item.created_by)}${updateMeta}</div></div>
       <div class="intent-experiment-controls"><span class="intent-experiment-status">${item.status === "closed" ? "已关闭" : "进行中"}</span>${item.status === "active" && state.session.can_manage_intent ? '<button class="button button-quiet" type="button" data-edit-intent-experiment>编辑实验</button><button class="button button-quiet" type="button" data-close-intent-experiment>关闭实验</button>' : ""}</div>
-      <div class="intent-experiment-member-stats">${members}</div>
+      <div class="intent-experiment-detail-row"><div class="intent-experiment-member-stats">${members}</div><div class="intent-experiment-progress" title="完成 ${completed}，进行中 ${partial}，待标 ${pending}"><div class="intent-experiment-progress-track" role="img" aria-label="标注进度：完成 ${completed}，进行中 ${partial}，待标 ${pending}"><i class="is-complete" style="width:${width(completed)}%"></i><i class="is-partial" style="width:${width(partial)}%"></i><i class="is-pending" style="width:${width(pending)}%"></i></div><small>完成 ${completed} / ${total}${partial ? ` · 进行中 ${partial}` : ""}</small></div></div>
     </article>`;
   }).join("") : '<div class="intent-experiment-empty"><span aria-hidden="true">◎</span><strong>所选数据集尚未创建实验</strong><p>在上方完成配置后，实验与每位成员的任务量会显示在这里。</p></div>';
   container.querySelectorAll("[data-close-intent-experiment]").forEach((button) => {
@@ -654,6 +765,7 @@ async function loadIntentExperiments({ force = false, resetCaseCount = false } =
 
 async function loadIntentExperimentAdmin({ datasetId = "", datasetIds = null, force = false } = {}) {
   const intent = state.intentLabeling;
+  restoreIntentWorkspacePreferences();
   const previousScope = [...(intent.experimentDatasetIds || [])].sort().join(",");
   if (!intent.datasets.length) {
     const payload = await api("/api/intent-datasets");
@@ -676,6 +788,7 @@ async function loadIntentExperimentAdmin({ datasetId = "", datasetIds = null, fo
   intent.experimentDatasetId = selected[0] || "";
   renderIntentTopbarDatasetPicker(selected);
   await loadIntentExperiments({ force, resetCaseCount: previousScope !== nextScope });
+  persistIntentWorkspacePreferences();
   if (state.activePage === "intent-experiments") {
     const params = new URLSearchParams();
     selected.forEach((id) => params.append("dataset", id));

@@ -1,5 +1,6 @@
 async function loadIntentLabeling({ datasetId = "", datasetIds = null, caseId = "", offsetMs = null, assignees = null, experimentId = null, historyMode = "replace" } = {}) {
   const intent = state.intentLabeling;
+  restoreIntentWorkspacePreferences();
   const requestSeq = ++intent.requestSeq;
   if (!intent.datasets.length) {
     const payload = await api("/api/intent-datasets");
@@ -88,6 +89,7 @@ async function loadIntentLabeling({ datasetId = "", datasetIds = null, caseId = 
   )?.id || "";
   intent.selectedTimepointIds = intent.activeTimepointId ? [intent.activeTimepointId] : [];
   intent.selectionAnchorId = intent.activeTimepointId;
+  persistIntentWorkspacePreferences();
   renderIntentCase({ deferTimelineThumbnails: true });
   intentSetSaveState(intent.revisionId ? "已自动保存" : "尚未标注", intent.revisionId ? "saved" : "");
   if (state.activePage === "intent" && historyMode) {
@@ -566,12 +568,14 @@ function bindIntentLabelingEvents() {
   $("#intentSummaryAxis")?.addEventListener("change", (event) => {
     state.intentLabeling.summaryAxis = event.target.value || "all";
     state.intentLabeling.summaryPage = 1;
+    persistIntentWorkspacePreferences();
     loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
   });
   $("#intentSummaryPageSize")?.addEventListener("change", (event) => {
     const nextSize = Number(event.target.value);
     state.intentLabeling.summaryPageSize = [10, 20, 50, 100].includes(nextSize) ? nextSize : 20;
     state.intentLabeling.summaryPage = 1;
+    persistIntentWorkspacePreferences();
     loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true }).catch((error) => showToast(error.message, true));
   });
   $("#intentSummaryPageJumpButton")?.addEventListener("click", jumpIntentSummaryPage);
@@ -616,6 +620,7 @@ function bindIntentLabelingEvents() {
   $("#intentExperimentScope")?.addEventListener("change", () => {
     initializeIntentExperimentSelects();
     updateIntentExperimentEstimate();
+    persistIntentWorkspacePreferences();
   });
   $("#intentExperimentMode")?.addEventListener("change", (event) => {
     const full = event.target.value === "full";
@@ -630,10 +635,11 @@ function bindIntentLabelingEvents() {
     $("#intentExperimentReviewersField")?.classList.toggle("is-disabled", full);
     initializeIntentExperimentSelects();
     updateIntentExperimentEstimate();
+    persistIntentWorkspacePreferences();
   });
-  $("#intentExperimentCaseCount")?.addEventListener("input", updateIntentExperimentEstimate);
-  $("#intentExperimentOverlap")?.addEventListener("change", updateIntentExperimentEstimate);
-  $("#intentExperimentReviewers")?.addEventListener("input", updateIntentExperimentEstimate);
+  $("#intentExperimentCaseCount")?.addEventListener("input", () => { updateIntentExperimentEstimate(); persistIntentWorkspacePreferences(); });
+  $("#intentExperimentOverlap")?.addEventListener("change", () => { updateIntentExperimentEstimate(); persistIntentWorkspacePreferences(); });
+  $("#intentExperimentReviewers")?.addEventListener("input", () => { updateIntentExperimentEstimate(); persistIntentWorkspacePreferences(); });
   $("#intentExperimentName")?.addEventListener("input", (event) => {
     event.currentTarget.dataset.manualEdited = event.currentTarget.value.trim() ? "true" : "false";
     updateIntentExperimentNameSuggestion();

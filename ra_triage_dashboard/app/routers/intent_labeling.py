@@ -5,6 +5,7 @@ import json
 import random
 import secrets
 import uuid
+from collections import Counter
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -57,6 +58,28 @@ MAX_COMMENT_REQUEST_BYTES = 8 * 1024
 MAX_BULK_DELETE_REQUEST_BYTES = 64 * 1024
 
 
+def _attach_intent_frame_distributions(
+    report: dict[str, Any], timeline_for_item: Any
+) -> None:
+    routing: Counter[str] = Counter()
+    lane_change: Counter[str] = Counter()
+    all_items = report.pop("_all_items", report.get("items", []))
+    for item in all_items:
+        frame_counts = intent_frame_counts(
+            timeline_for_item(item),
+            routing_default=str(item.get("routing_default") or ""),
+            lane_change_default=str(item.get("lane_change_default") or ""),
+            overrides=item.get("overrides") or [],
+        )
+        item["frame_counts"] = frame_counts
+        routing.update(frame_counts.get("routing") or {})
+        lane_change.update(frame_counts.get("lane_change") or {})
+    report["frame_distributions"] = {
+        "routing": dict(routing),
+        "lane_change": dict(lane_change),
+    }
+
+
 def _intent_summary_payload(dataset_id: str, identity: Any, experiment_id: str,
                             assignees: tuple[str, ...], reveal_answers: bool,
                             axis: str, page: int, page_size: int,
@@ -76,17 +99,13 @@ def _intent_summary_payload(dataset_id: str, identity: Any, experiment_id: str,
                               page=page, page_size=page_size,
                               label_scope=(selected_experiment or {}).get("label_scope", "all"))
     timeline_cache: dict[str, list[dict[str, Any]]] = {}
-    for item in report.get("items", []):
-        case_id = str(item["case_id"])
-        timeline_cache.setdefault(
-            case_id, intent_dataset_registry.timeline(dataset_id, case_id)
-        )
-        item["frame_counts"] = intent_frame_counts(
-            timeline_cache[case_id],
-            routing_default=str(item.get("routing_default") or ""),
-            lane_change_default=str(item.get("lane_change_default") or ""),
-            overrides=item.get("overrides") or [],
-        )
+    _attach_intent_frame_distributions(
+        report,
+        lambda item: timeline_cache.setdefault(
+            str(item["case_id"]),
+            intent_dataset_registry.timeline(dataset_id, str(item["case_id"])),
+        ),
+    )
     report["experiments"] = [{"id": item["id"], "name": item["name"],
                               "label_scope": item.get("label_scope", "all")} for item in experiments]
     assignment_owners = {row["username"] for row in data["assignments"]
@@ -120,7 +139,9 @@ def _intent_summary_payload_multi(dataset_ids: tuple[str, ...], identity: Any,
         return report
 
     separator = "\x1f"
-    combined: dict[str, list[dict[str, Any]]] = {"heads": [], "assignments": []}
+    combined: dict[str, list[dict[str, Any]]] = {
+        "heads": [], "assignments": [], "comments": []
+    }
     experiments: list[dict[str, Any]] = []
     keyed_case_ids: list[str] = []
     comments: list[dict[str, Any]] = []
@@ -140,6 +161,10 @@ def _intent_summary_payload_multi(dataset_ids: tuple[str, ...], identity: Any,
         combined["assignments"].extend(
             {**row, "case_id": f"{dataset_id}{separator}{row['case_id']}"}
             for row in data["assignments"]
+        )
+        combined["comments"].extend(
+            {**row, "case_id": f"{dataset_id}{separator}{row['case_id']}"}
+            for row in data.get("comments", [])
         )
         if comment_query:
             comments.extend(
@@ -167,16 +192,13 @@ def _intent_summary_payload_multi(dataset_ids: tuple[str, ...], identity: Any,
         page_size=page_size,
         label_scope=(selected_experiment or {}).get("label_scope", "all"),
     )
-    for item in report.get("items", []):
+    def multi_timeline(item: dict[str, Any]) -> list[dict[str, Any]]:
         dataset_id, case_id = str(item["case_id"]).split(separator, 1)
         item["dataset_id"] = dataset_id
         item["case_id"] = case_id
-        item["frame_counts"] = intent_frame_counts(
-            intent_dataset_registry.timeline(dataset_id, case_id),
-            routing_default=str(item.get("routing_default") or ""),
-            lane_change_default=str(item.get("lane_change_default") or ""),
-            overrides=item.get("overrides") or [],
-        )
+        return intent_dataset_registry.timeline(dataset_id, case_id)
+
+    _attach_intent_frame_distributions(report, multi_timeline)
     report["experiments"] = [
         {"id": item["id"], "name": item["name"], "dataset_id": item["dataset_id"],
          "label_scope": item.get("label_scope", "all")}

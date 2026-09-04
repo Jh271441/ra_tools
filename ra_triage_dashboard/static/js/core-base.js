@@ -695,6 +695,8 @@ const state = {
     experimentsDatasetId: "",
     experimentDatasetId: "",
     experimentDatasetIds: [],
+    experimentDraftMembers: [],
+    preferenceOwner: "",
     experimentNameSuggestionAvailable: false,
     experimentNameSuggestionTimer: null,
     experimentNameSuggestionSeq: 0,

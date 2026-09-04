@@ -102,6 +102,14 @@ class IntentMultiDatasetTest(unittest.TestCase):
                         "overrides": [],
                     }],
                     "assignments": [],
+                    "comments": [{
+                        "id": 9,
+                        "case_id": case_id,
+                        "body": f"{dataset_id} comment",
+                        "author": "annotator",
+                        "reply_to_id": None,
+                        "created_at": "2026-09-04T00:01:00Z",
+                    }],
                 }
 
             @staticmethod
@@ -128,6 +136,9 @@ class IntentMultiDatasetTest(unittest.TestCase):
             [(item["dataset_id"], item["case_id"]) for item in payload["items"]],
             [("0206", "cn1_1"), ("0508", "cn3_3")],
         )
+        self.assertEqual(payload["items"][0]["comments"][0]["body"], "0206 comment")
+        self.assertEqual(payload["frame_distributions"]["routing"], {"straight": 2})
+        self.assertEqual(payload["frame_distributions"]["lane_change"], {"no_lane_change": 2})
 
 
 if __name__ == "__main__":

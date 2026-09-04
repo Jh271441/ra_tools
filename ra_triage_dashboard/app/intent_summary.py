@@ -158,6 +158,16 @@ def summarize_intent(data: dict[str, Any], case_ids: tuple[str, ...], *, usernam
     if assignees:
         keys = {key for key in keys if key[1] in assignees}
     keys = {key for key in keys if reveal_answers or key[0] not in blind_cases or key[1] == username.lower()}
+    current_username = username.lower()
+    visible_comments: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for comment in data.get("comments", []):
+        case_id = str(comment.get("case_id") or "")
+        author = str(comment.get("author") or "").lower()
+        if case_id not in allowed:
+            continue
+        if not reveal_answers and case_id in blind_cases and author != current_username:
+            continue
+        visible_comments[case_id].append(comment)
     rows = []
     for case, author in sorted(keys):
         head = heads[(case, author)]
@@ -174,12 +184,15 @@ def summarize_intent(data: dict[str, Any], case_ids: tuple[str, ...], *, usernam
             continue
         if axis == "lane_change" and not has_lane_change:
             continue
+        case_comments = visible_comments.get(case, [])
         rows.append({
             "case_id": case, "username": author,
             "revision_id": int(head.get("revision_id") or 0),
             "routing_default": head.get("routing_default") or "",
             "lane_change_default": head.get("lane_change_default") or "",
             "overrides": overrides, "updated_at": head.get("updated_at") or "",
+            "comments": list(reversed(case_comments[-3:])),
+            "comment_count": len(case_comments),
         })
     distributions = {axis: dict(Counter(row[axis] or "None" for row in rows))
                      for axis in ("routing_default", "lane_change_default")}
@@ -210,5 +223,6 @@ def summarize_intent(data: dict[str, Any], case_ids: tuple[str, ...], *, usernam
         "distributions": distributions,
         "agreement": {"comparable_cases": len(comparable),
                       "matching_cases": sum(len(set(values)) == 1 for values in comparable)},
+        "_all_items": rows,
         "items": rows[(page - 1) * page_size:page * page_size],
     }
