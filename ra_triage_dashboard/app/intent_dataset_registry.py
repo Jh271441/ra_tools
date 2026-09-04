@@ -54,6 +54,7 @@ class IntentDatasetSpec:
     camera_offsets_ms: tuple[int, ...]
     camera_subdir: str
     max_pair_delta_ms: int
+    excluded_bev_offsets_ms: tuple[int, ...]
 
 
 class IntentDatasetIndex:
@@ -127,6 +128,9 @@ class IntentDatasetIndex:
                     camera_offsets_ms=tuple(sorted(camera_offsets)),
                     camera_subdir=str(row.get("camera_subdir") or "after_compress").strip(),
                     max_pair_delta_ms=max(0, int(row.get("max_pair_delta_ms") or 500)),
+                    excluded_bev_offsets_ms=tuple(
+                        sorted({int(value) for value in row.get("excluded_bev_offsets_ms") or []})
+                    ),
                 )
             )
         return cls(specs, base_path=base_path)
@@ -410,6 +414,8 @@ class IntentDatasetIndex:
                     continue
                 value = int(match.group("value"))
                 offset_ms = -value if match.group("sign") == "-" else value
+                if offset_ms in spec.excluded_bev_offsets_ms:
+                    continue
                 if offset_ms in bev_frames:
                     raise ValueError(f"{case_id}: BEV offset 重复: {offset_ms}")
                 bev_frames[offset_ms] = path

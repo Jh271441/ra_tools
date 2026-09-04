@@ -123,6 +123,7 @@ class IntentDatasetIndexTest(unittest.TestCase):
                                 "camera_root": str(camera_root),
                                 "membership_file": "membership.txt",
                                 "camera_offsets_ms": [-2000, 0, 2000],
+                                "excluded_bev_offsets_ms": [-2000],
                             }
                         ]
                     }
@@ -134,6 +135,7 @@ class IntentDatasetIndexTest(unittest.TestCase):
             timeline = index.timeline("test-v1", case_id)
             self.assertEqual([item["offset_ms"] for item in timeline], [-2000, -1000, 0, 1000, 2000])
             self.assertIsNotNone(timeline[0]["camera"])
+            self.assertIsNone(timeline[0]["bev"])
             self.assertIsNone(timeline[1]["camera"])
             self.assertIn("/manual/api/intent-datasets/", timeline[2]["bev"]["url"])
             path, media_type = index.resolve_asset("test-v1", case_id, "camera_+0")

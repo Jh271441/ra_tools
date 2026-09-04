@@ -78,12 +78,13 @@ async function loadIntentLabeling({ datasetId = "", datasetIds = null, caseId = 
   intent.undoStack = [];
   intent.dirty = false;
   intent.editVersion = 0;
+  const hasTargetOffset = offsetMs !== null && offsetMs !== undefined && offsetMs !== "";
   const targetOffset = Number(offsetMs);
-  const active = Number.isFinite(targetOffset)
+  const active = hasTargetOffset && Number.isFinite(targetOffset)
     ? data.timepoints.find((item) => item.offset_ms === targetOffset)
     : null;
   intent.activeTimepointId = (active
-    || data.timepoints.reduce((best, item) => !best || Math.abs(item.offset_ms) < Math.abs(best.offset_ms) ? item : best, null)
+    || data.timepoints[0]
   )?.id || "";
   intent.selectedTimepointIds = intent.activeTimepointId ? [intent.activeTimepointId] : [];
   intent.selectionAnchorId = intent.activeTimepointId;
