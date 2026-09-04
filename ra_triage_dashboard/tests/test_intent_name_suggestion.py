@@ -10,6 +10,7 @@ from ra_triage_dashboard.app.intent_name_suggestion import (
     rule_based_intent_name,
     suggest_intent_name_with_llm,
 )
+from ra_triage_dashboard.app.model_catalog import ModelCatalogError
 
 
 class _Response:
@@ -29,6 +30,13 @@ class _Opener:
     def open(self, request, timeout):
         assert timeout == 12
         assert request.get_header("Apikey") == "secret"
+        return _Response()
+
+
+class _TokenServiceOpener:
+    def open(self, request, timeout):
+        assert timeout == 12
+        assert request.get_header("Authorization") == "Bearer secret"
         return _Response()
 
 
@@ -114,6 +122,47 @@ class IntentNameSuggestionTest(unittest.TestCase):
                     overlap_reviewers=2,
                     member_count=4,
                 )
+
+    def test_llm_name_falls_back_to_fast_tokenservice_model(self):
+        class FallbackCatalog:
+            def resolve(self, requested, provider_id):
+                if provider_id == "kylin":
+                    raise ModelCatalogError(503, "offline")
+                self.requested = requested
+                self.provider_id = provider_id
+                return {"resolved_model_id": requested}
+
+            @staticmethod
+            def list_models(**_kwargs):
+                return {
+                    "default_model_id": "aliyun/Qwen3-Max",
+                    "models": [
+                        {"id": "aliyun/Qwen3-Max"},
+                        {"id": "aliyun/Qwen3.6-Flash"},
+                    ],
+                }
+
+        settings = SimpleNamespace(ra_model_default_id="auto")
+        catalog = FallbackCatalog()
+        with (
+            patch("ra_triage_dashboard.app.intent_name_suggestion.read_provider_api_key", return_value="secret"),
+            patch("ra_triage_dashboard.app.intent_name_suggestion.model_gateway_chat_url", return_value="https://tokenservice-gateway-ys.intra.xiaojukeji.com/v1/chat/completions"),
+            patch("ra_triage_dashboard.app.intent_name_suggestion.build_opener", return_value=_TokenServiceOpener()),
+        ):
+            suggestion = suggest_intent_name_with_llm(
+                settings,
+                catalog,
+                fallback="0206 Routing 交叉20%复核 300 Case",
+                dataset_labels=["0206 · 1335"],
+                annotation_mode="blind",
+                case_count=300,
+                overlap_ratio=0.2,
+                overlap_reviewers=2,
+                member_count=4,
+            )
+        self.assertEqual(suggestion, "0206 Routing 路口交叉20%复核 300 Case")
+        self.assertEqual(catalog.provider_id, "tokenservice")
+        self.assertEqual(catalog.requested, "aliyun/Qwen3.6-Flash")
 
 
 if __name__ == "__main__":

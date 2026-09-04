@@ -258,7 +258,7 @@ function renderMultiFilter(
       trigger.setAttribute("aria-expanded", "true");
       const triggerWidth = trigger.getBoundingClientRect().width;
       const preferredWidth = onlyThis
-        ? Math.max(triggerWidth, 360)
+        ? Math.max(triggerWidth, 320)
         : Math.max(triggerWidth, 160);
       openAnchoredPanel(panel, trigger, {
         maxHeight: 280,

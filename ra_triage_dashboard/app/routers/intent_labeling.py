@@ -367,15 +367,20 @@ async def list_intent_experiments(request: Request) -> dict[str, Any]:
             intent_dataset_registry.dataset(dataset_id)
         except KeyError as exc:
             raise _detail(404, str(exc)) from exc
-    experiments, users, name_suggestion_status = await asyncio.gather(
+    experiments, users, name_suggestion_status, provider_catalog = await asyncio.gather(
         asyncio.to_thread(database.list_intent_experiments, dataset_ids),
         asyncio.to_thread(database.list_access_users),
         asyncio.to_thread(model_catalog.status),
+        asyncio.to_thread(model_catalog.provider_catalog),
+    )
+    llm_available = bool(name_suggestion_status.get("configured")) or any(
+        bool(item.get("enabled"))
+        for item in provider_catalog.get("providers", [])
     )
     return {
         "items": experiments,
         "name_suggestion": {
-            "llm_available": bool(name_suggestion_status.get("configured")),
+            "llm_available": llm_available,
             "credential_source": "server",
         },
         "eligible_members": [
@@ -433,9 +438,6 @@ async def suggest_intent_experiment_name(request: Request) -> dict[str, Any]:
         member_count=member_count,
         label_scope=label_scope,
     )
-    name_suggestion_status = await asyncio.to_thread(model_catalog.status)
-    if not name_suggestion_status.get("configured"):
-        return {"suggestion": fallback, "source": "rule"}
     try:
         suggestion = await asyncio.to_thread(
             suggest_intent_name_with_llm,
@@ -792,6 +794,7 @@ def _list_cases(
                 "ordinal": ordinal,
                 "status": item_status,
                 "revision_id": (summaries.get(case_id) or {}).get("revision_id"),
+                "updated_at": (summaries.get(case_id) or {}).get("updated_at", ""),
             }
         )
     total = len(items)
@@ -815,6 +818,7 @@ def _list_cases_multi(
     username: str = "",
     assignees: tuple[str, ...] = (),
     experiment_id: str = "",
+    resume: bool = False,
 ) -> dict[str, Any]:
     scoped: list[dict[str, Any]] = []
     for dataset_id in dataset_ids:
@@ -849,6 +853,9 @@ def _list_cases_multi(
         if _intent_case_status_matches(item["status"], status)
         and (not normalized_search or normalized_search in item["case_id"].lower())
     ]
+    if resume and not normalized_search:
+        resume_item = _intent_resume_item(scoped)
+        filtered = [resume_item] if resume_item is not None else []
     total = len(filtered)
     start = (page - 1) * page_size
     return {
@@ -870,6 +877,27 @@ def _intent_case_status_matches(item_status: str, requested_status: str) -> bool
     return item_status == requested_status
 
 
+def _intent_resume_item(scoped: list[dict[str, Any]]) -> dict[str, Any] | None:
+    incomplete = [item for item in scoped if item.get("status") in {"unlabeled", "partial"}]
+    if not incomplete:
+        return None
+    annotated = [item for item in scoped if str(item.get("updated_at") or "")]
+    if not annotated:
+        return incomplete[0]
+    recent = max(
+        annotated,
+        key=lambda item: (str(item.get("updated_at") or ""), int(item.get("ordinal") or 0)),
+    )
+    if recent.get("status") == "partial":
+        return recent
+    recent_index = scoped.index(recent)
+    for step in range(1, len(scoped) + 1):
+        candidate = scoped[(recent_index + step) % len(scoped)]
+        if candidate.get("status") in {"unlabeled", "partial"}:
+            return candidate
+    return incomplete[0]
+
+
 @router.get("/api/intent-cases")
 async def list_multi_dataset_intent_cases(
     request: Request,
@@ -880,6 +908,7 @@ async def list_multi_dataset_intent_cases(
     page_size: int = 100,
     assignee: list[str] = Query(default=[]),
     experiment_id: str = "",
+    resume: bool = False,
 ) -> dict[str, Any]:
     if status not in {"all", "incomplete", "unlabeled", "partial", "completed"}:
         raise _detail(400, "意图标注状态筛选不合法。")
@@ -897,6 +926,7 @@ async def list_multi_dataset_intent_cases(
         username=identity.username,
         assignees=tuple(assignee[:20]),
         experiment_id=experiment_id,
+        resume=resume,
     )
 
 

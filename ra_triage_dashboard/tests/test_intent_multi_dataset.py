@@ -109,6 +109,60 @@ class IntentMultiDatasetTest(unittest.TestCase):
         self.assertEqual(payload["items"][0]["previous"], {"dataset_id": "0206", "case_id": "cn1_1"})
         self.assertEqual(payload["items"][0]["next"], {"dataset_id": "0508", "case_id": "cn3_3"})
 
+    def test_resume_continues_after_most_recent_completed_case(self) -> None:
+        scoped = [
+            {"case_id": "cn1_1", "ordinal": 1, "status": "completed", "updated_at": "2026-09-04T10:00:00Z"},
+            {"case_id": "cn2_2", "ordinal": 2, "status": "unlabeled", "updated_at": ""},
+            {"case_id": "cn3_3", "ordinal": 3, "status": "completed", "updated_at": "2026-09-04T09:00:00Z"},
+        ]
+        self.assertEqual(intent_labeling._intent_resume_item(scoped)["case_id"], "cn2_2")
+
+    def test_resume_reopens_most_recent_partial_case(self) -> None:
+        scoped = [
+            {"case_id": "cn1_1", "ordinal": 1, "status": "completed", "updated_at": "2026-09-04T10:00:00Z"},
+            {"case_id": "cn2_2", "ordinal": 2, "status": "partial", "updated_at": "2026-09-04T11:00:00Z"},
+            {"case_id": "cn3_3", "ordinal": 3, "status": "unlabeled", "updated_at": ""},
+        ]
+        self.assertEqual(intent_labeling._intent_resume_item(scoped)["case_id"], "cn2_2")
+
+    def test_combined_queue_resume_returns_one_case_with_full_navigation(self) -> None:
+        statuses = {
+            "cn1_1": ("completed", "2026-09-04T10:00:00Z"),
+            "cn2_2": ("unlabeled", ""),
+            "cn3_3": ("completed", "2026-09-04T09:00:00Z"),
+        }
+
+        def fake_list(dataset_id: str, **_kwargs):
+            return {"items": [
+                {
+                    "case_id": case_id,
+                    "issue_id": case_id.rsplit("_", 1)[0],
+                    "ordinal": index,
+                    "status": statuses[case_id][0],
+                    "updated_at": statuses[case_id][1],
+                    "revision_id": None,
+                }
+                for index, case_id in enumerate(_Registry.case_ids(dataset_id), 1)
+            ]}
+
+        with (
+            patch.object(intent_labeling, "intent_dataset_registry", _Registry()),
+            patch.object(intent_labeling, "_list_cases", side_effect=fake_list),
+        ):
+            payload = intent_labeling._list_cases_multi(
+                ("0206", "0508"),
+                status="incomplete",
+                search="",
+                page=1,
+                page_size=1,
+                resume=True,
+            )
+        self.assertEqual(payload["total"], 1)
+        self.assertEqual(payload["scope_total"], 3)
+        self.assertEqual(payload["items"][0]["case_id"], "cn2_2")
+        self.assertEqual(payload["items"][0]["previous"]["case_id"], "cn1_1")
+        self.assertEqual(payload["items"][0]["next"]["case_id"], "cn3_3")
+
     def test_combined_summary_keeps_dataset_identity(self) -> None:
         class SummaryRegistry(_Registry):
             @staticmethod

@@ -506,7 +506,7 @@ class DatabaseIntentMixin:
             if normalized_username:
                 rows = conn.execute(
                     """
-                    SELECT head.case_id, head.current_revision_id,
+                    SELECT head.case_id, head.current_revision_id, head.updated_at,
                            revision.routing_default, revision.lane_change_default
                     FROM intent_user_label_heads head
                     JOIN intent_label_revisions revision
@@ -518,7 +518,7 @@ class DatabaseIntentMixin:
             else:
                 rows = conn.execute(
                     """
-                    SELECT head.case_id, head.current_revision_id,
+                    SELECT head.case_id, head.current_revision_id, head.updated_at,
                            revision.routing_default, revision.lane_change_default
                     FROM intent_label_heads head
                     JOIN intent_label_revisions revision
@@ -530,6 +530,7 @@ class DatabaseIntentMixin:
         return {
             str(row["case_id"]): {
                 "revision_id": int(row["current_revision_id"]),
+                "updated_at": str(row["updated_at"] or ""),
                 "routing_default": str(row["routing_default"] or ""),
                 "lane_change_default": str(row["lane_change_default"] or ""),
             }

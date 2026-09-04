@@ -451,7 +451,7 @@ body:is([data-active-page="intent"], [data-active-page="intent-experiments"], [d
 .intent-commandbar label, .intent-command-field { display: grid; gap: 5px; min-width: 0; color: var(--muted); font-size: 11px; }
 .intent-commandbar select, .intent-commandbar input:not([type="checkbox"]) { min-width: 0; height: 36px; }
 .intent-commandbar .ui-select-trigger, .intent-commandbar .multi-filter-trigger { height: 36px; }
-.intent-commandbar .multi-filter-option input { width: 13px; height: 13px; }
+.intent-commandbar .multi-filter-option input { width: 15px; height: 15px; }
 .intent-load-case-button { min-width: 0; height: 36px; align-self: end; padding-inline: 9px; }
 .intent-my-tasks { padding: 0; border: 0; color: var(--accent); background: transparent; cursor: pointer; font-size: 9px; }
 .intent-my-tasks:disabled { color: var(--faint); cursor: default; }
@@ -687,6 +687,7 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 .intent-summary-metric small { display: block; color: var(--muted); }
 .intent-summary-metric strong { display: block; margin-top: 4px; color: var(--text); font-size: 22px; }
 .intent-summary-distributions { min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.intent-summary-distributions.is-single-axis { grid-template-columns: minmax(0, 1fr); }
 .intent-summary-distributions[hidden] { display: none; }
 .intent-summary-distribution { min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--raised); }
 .intent-summary-distribution header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }

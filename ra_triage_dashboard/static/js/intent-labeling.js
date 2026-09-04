@@ -40,6 +40,7 @@ async function loadIntentLabeling({ datasetId = "", datasetIds = null, caseId = 
     ? Boolean(intent.selectedExperimentId && !caseId)
     : Boolean(resumeIncomplete);
   queueParams.set("status", shouldResumeIncomplete ? "incomplete" : "all");
+  if (shouldResumeIncomplete) queueParams.set("resume", "true");
   queueParams.set("page_size", "200");
   let targetCaseId = caseId;
   if (targetCaseId && !/^cn[0-9]+(?:_[0-9]+)?$/.test(targetCaseId)) {
@@ -52,6 +53,7 @@ async function loadIntentLabeling({ datasetId = "", datasetIds = null, caseId = 
   let completedExperimentFallback = false;
   if (shouldResumeIncomplete && !(queue.items || []).length) {
     queueParams.set("status", "all");
+    queueParams.delete("resume");
     queue = await api(intentApiUrl("/api/intent-cases", queueParams));
     if (requestSeq !== intent.requestSeq) return;
     completedExperimentFallback = Boolean((queue.items || []).length);

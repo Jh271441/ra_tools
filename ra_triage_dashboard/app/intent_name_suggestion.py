@@ -17,6 +17,11 @@ from .settings import Settings
 
 MAX_RESPONSE_BYTES = 64 * 1024
 MAX_SUGGESTION_CHARS = 80
+TOKEN_SERVICE_NAME_MODEL_PREFERENCE = (
+    "aliyun/Qwen3.6-Flash",
+    "aliyun/Qwen3.5-Plus",
+    "aliyun/Qwen3-Next-80B-A3B-Instruct",
+)
 
 
 class IntentNameSuggestionError(RuntimeError):
@@ -85,10 +90,11 @@ def _validate_contextual_suggestion(
     required_releases = [release for release in releases if release]
     has_chinese = bool(re.search(r"[\u4e00-\u9fff]", suggestion))
     has_scope = all(release in suggestion for release in required_releases)
+    has_routing = "routing" in suggestion.lower() or "路由" in suggestion
     has_intent_scope = {
-        "routing": "routing" in suggestion.lower(),
+        "routing": has_routing,
         "lane_change": "变道" in suggestion,
-        "all": "routing" in suggestion.lower() and "变道" in suggestion,
+        "all": has_routing and "变道" in suggestion,
     }.get(label_scope, False)
     has_count = str(max(1, int(case_count))) in suggestion
     if annotation_mode == "full":
@@ -96,8 +102,10 @@ def _validate_contextual_suggestion(
     elif member_count > 1 and overlap_reviewers > 1 and overlap_ratio > 0:
         ratio = str(max(0, min(100, round(float(overlap_ratio) * 100))))
         has_mode = ratio in suggestion and ("交叉" in suggestion or "复核" in suggestion)
+    elif member_count == 1:
+        has_mode = "单人" in suggestion and "盲标" in suggestion and "交叉" not in suggestion
     else:
-        has_mode = "盲标" in suggestion
+        has_mode = "分工" in suggestion and "盲标" in suggestion and "交叉" not in suggestion
     if not (has_chinese and has_scope and has_intent_scope and has_count and has_mode):
         raise IntentNameSuggestionError("模型名称缺少实验关键信息。")
     return suggestion
@@ -117,13 +125,40 @@ def suggest_intent_name_with_llm(
     draft_name: str = "",
     label_scope: str = "routing",
 ) -> str:
-    selected = model_catalog.resolve(settings.ra_model_default_id, provider_id="kylin")
-    api_key = read_provider_api_key(settings, "kylin")
-    chat_url = model_gateway_chat_url(settings, "kylin")
+    provider_id = "kylin"
+    try:
+        selected = model_catalog.resolve(settings.ra_model_default_id, provider_id=provider_id)
+    except ModelCatalogError:
+        provider_id = "tokenservice"
+        try:
+            snapshot = model_catalog.list_models(
+                allow_stale=True,
+                provider_id=provider_id,
+            )
+            model_ids = {str(item.get("id") or "") for item in snapshot.get("models", [])}
+            requested_model = next(
+                (item for item in TOKEN_SERVICE_NAME_MODEL_PREFERENCE if item in model_ids),
+                str(snapshot.get("default_model_id") or ""),
+            )
+            if not requested_model:
+                raise ModelCatalogError(503, "TokenService 当前没有可用的名称生成模型。")
+            selected = model_catalog.resolve(requested_model, provider_id=provider_id)
+        except ModelCatalogError as tokenservice_error:
+            raise IntentNameSuggestionError("模型名称推荐暂不可用。") from tokenservice_error
+    api_key = read_provider_api_key(settings, provider_id)
+    chat_url = model_gateway_chat_url(settings, provider_id)
+    if annotation_mode == "full":
+        mode_label = "全量盲标"
+    elif member_count > 1 and overlap_reviewers > 1 and overlap_ratio > 0:
+        mode_label = f"交叉{round(overlap_ratio * 100)}%复核"
+    elif member_count == 1:
+        mode_label = "单人盲标"
+    else:
+        mode_label = "分工盲标"
     prompt = (
         "请为意图标注实验生成一个简洁、可检索的中文名称。只返回名称，不要解释，不超过40个字符。\n"
         f"数据集：{', '.join(dataset_labels)}\n"
-        f"模式：{'全量盲标' if annotation_mode == 'full' else '交叉盲标'}\n"
+        f"模式：{mode_label}\n"
         f"标注维度：{ {'routing': 'Routing 意图', 'lane_change': '变道意图', 'all': 'Routing 与变道意图'}[label_scope] }\n"
         f"Case数量：{case_count}\n交叉比例：{round(overlap_ratio * 100)}%\n"
         f"每Case标注人数：{overlap_reviewers}\n成员数：{member_count}\n"
@@ -151,7 +186,11 @@ def suggest_intent_name_with_llm(
         headers={
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "apikey": api_key,
+            **(
+                {"Authorization": f"Bearer {api_key}"}
+                if provider_id == "tokenservice"
+                else {"apikey": api_key}
+            ),
         },
     )
     try:

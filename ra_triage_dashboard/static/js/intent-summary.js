@@ -71,6 +71,7 @@ function renderIntentSummaryDistributions(payload, showRouting, showLaneChange) 
     showRouting ? intentSummaryDistributionMarkup("Routing 标签比例", distributions.routing, INTENT_ROUTING_LABELS) : "",
     showLaneChange ? intentSummaryDistributionMarkup("变道意图标签比例", distributions.lane_change, INTENT_LANE_LABELS) : "",
   ].filter(Boolean).join("");
+  container.classList.toggle("is-single-axis", Number(showRouting) + Number(showLaneChange) === 1);
   container.hidden = !container.innerHTML;
 }
 
