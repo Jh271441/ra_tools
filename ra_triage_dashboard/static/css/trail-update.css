@@ -115,7 +115,7 @@
   align-items: end; gap: 7px; padding-top: 2px;
 }
 .trail-update-filters > label { min-width: 0; display: grid; gap: 3px; color: var(--faint); font-size: 10px; }
-.trail-update-filters input { width: 100%; min-width: 0; height: 34px; box-sizing: border-box; padding: 5px 9px; font-size: 11px; }
+.trail-update-filters input:not([type="checkbox"]) { width: 100%; min-width: 0; height: 34px; box-sizing: border-box; padding: 5px 9px; font-size: 11px; }
 .trail-update-filters .multi-filter .multi-filter-trigger { min-height: 34px; font-size: 11px; }
 .trail-update-filter-actions { display: flex; align-items: center; gap: 5px; min-height: 34px; }
 .trail-update-filter-actions .button { min-width: 0; min-height: 34px; padding: 5px 8px; font-size: 11px; white-space: nowrap; }

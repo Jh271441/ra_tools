@@ -581,7 +581,8 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .multi-filter-option input:disabled + span { color: #d8e3ee; }
 .multi-filter-option span { min-width: 0; overflow: hidden; color: #f2f6fb; text-overflow: ellipsis; white-space: nowrap; }
 .multi-filter-option input {
-  width: 15px; height: 15px; margin: 0; display: grid; place-content: center;
+  width: 15px; min-width: 15px; max-width: 15px; height: 15px; margin: 0; padding: 0;
+  display: grid; place-content: center; box-sizing: border-box;
   appearance: none; -webkit-appearance: none; border: 1px solid #657286; border-radius: 4px;
   background: #0c121b; cursor: pointer;
 }

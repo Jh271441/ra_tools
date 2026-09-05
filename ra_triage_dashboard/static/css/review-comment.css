@@ -19,7 +19,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.review-filters input, .review-filters select { min-width: 0; height: 32px; padding: 5px 29px 5px 7px; font-size: 12px; }
+.review-filters input:not([type="checkbox"]), .review-filters select { min-width: 0; height: 32px; padding: 5px 29px 5px 7px; font-size: 12px; }
 .issue-query-control { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: 5px; }
 .issue-query-control input { width: 100%; }
 .issue-query-button { min-width: 68px; height: 32px; padding: 5px 8px; white-space: nowrap; }
@@ -890,7 +890,7 @@ html[data-color-theme="light"] .header-metrics strong,
 html[data-color-theme="light"] .system-status-row strong,
 html[data-color-theme="light"] .system-status-build code,
 html[data-color-theme="light"] .review-filters label { color: #526278; }
-html[data-color-theme="light"] .review-filters input,
+html[data-color-theme="light"] .review-filters input:not([type="checkbox"]),
 html[data-color-theme="light"] .review-filters select {
   color: #172033;
   border-color: #b8c5d4;

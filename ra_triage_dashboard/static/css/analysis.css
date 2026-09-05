@@ -27,7 +27,7 @@
   display: grid; grid-template-columns: repeat(8, minmax(100px, 1fr)); align-items: end; gap: 6px;
 }
 .analysis-filters label { min-width: 0; display: grid; gap: 3px; color: var(--faint); font-size: 11px; }
-.analysis-filters input, .analysis-filters select { height: 34px; min-width: 0; padding: 5px 29px 5px 8px; font-size: 12px; }
+.analysis-filters input:not([type="checkbox"]), .analysis-filters select { height: 34px; min-width: 0; padding: 5px 29px 5px 8px; font-size: 12px; }
 .analysis-run-filter { grid-column: span 2; grid-row: 1; }
 .analysis-evidence-filter { grid-column: 1; grid-row: 2; }
 .analysis-tag-filter { grid-column: 2; grid-row: 2; }
@@ -452,7 +452,7 @@ html[data-color-theme="light"] .analysis-chip.theme-chip { color: #08758d; }
 
 /* Analysis multi-filter + pie charts (light) — match review filter / card tokens */
 html[data-color-theme="light"] .analysis-filters label { color: #526278; }
-html[data-color-theme="light"] .analysis-filters input,
+html[data-color-theme="light"] .analysis-filters input:not([type="checkbox"]),
 html[data-color-theme="light"] .analysis-filters select {
   color: #172033;
   border-color: #b8c5d4;
