@@ -68,7 +68,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-337`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-338`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1510,6 +1510,8 @@
         </div>
         <div class="shortcut-guide-panel" data-shortcut-guide-page="review" hidden>
           <div class="shortcut-guide-row" data-shortcut-search="bracketleft bracketright"><span><kbd>[</kbd><kbd>]</kbd></span><strong>上一 Issue / 下一 Issue</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="e escape"><span><kbd>E</kbd><kbd>Esc</kbd></span><strong>聚焦 / 退出 Review 评论框</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="enter shift+enter"><span><kbd>Enter</kbd><kbd>Shift</kbd> + <kbd>Enter</kbd></span><strong>保存 Review / 评论换行</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="q w a s z x"><span><kbd>Q</kbd><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>Z</kbd><kbd>X</kbd></span><strong>打开对应标签组</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="0 1 2 3 4 5 6 7 8 9 minus equal"><span><kbd>1</kbd>–<kbd>0</kbd><kbd>-</kbd><kbd>=</kbd></span><strong>切换已打开标签组中的选项</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="b c v"><span><kbd>B</kbd><kbd>C</kbd><kbd>V</kbd></span><strong>切换 BEV / Camera / 视频</strong></div>
@@ -1826,7 +1828,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-337`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-338`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

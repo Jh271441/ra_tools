@@ -482,7 +482,7 @@ function renderReview(caseData) {
         </div>
         <label class="review-reason">
           <span><span class="ui-lang-zh">模型为什么判错？</span><span class="ui-lang-en">Why was the model wrong?</span></span>
-          <textarea id="annotationNote" rows="2" placeholder="说明关键证据；输入 @ 可通知同事。">${escapeHtml(previous.note || "")}</textarea>
+          <textarea id="annotationNote" rows="2" aria-keyshortcuts="E Escape Enter Shift+Enter" placeholder="说明关键证据；输入 @ 可通知同事。">${escapeHtml(previous.note || "")}</textarea>
         </label>
         <div class="review-mention-composer" id="reviewMentionComposer" aria-live="polite"></div>
         <details class="evidence-dropdown review-dropdown review-tag-dropdown">
@@ -540,6 +540,7 @@ function renderReview(caseData) {
   updateTagSummary();
   syncReviewTagShortcutHints($("#reviewPane"));
   bindReviewKeyboardShortcuts();
+  bindReviewComposerShortcuts();
   $("#reviewPane").querySelectorAll(".review-dropdown").forEach((dropdown) => {
     if (dropdown.dataset.reviewDropdownToggleBound === "1") return;
     dropdown.dataset.reviewDropdownToggleBound = "1";
@@ -976,6 +977,50 @@ async function navigateAdjacentCase(delta) {
   if (target) await selectCase(target.issue_id, { historyMode: "replace" });
 }
 
+function bindReviewComposerShortcuts() {
+  if (document.documentElement.dataset.reviewComposerShortcutsBound === "1") return;
+  document.documentElement.dataset.reviewComposerShortcutsBound = "1";
+  document.addEventListener("keydown", (event) => {
+    if (
+      event.defaultPrevented ||
+      event.isComposing ||
+      event.repeat ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      state.activePage !== "review" ||
+      !state.selectedCase ||
+      document.querySelector("dialog[open]")
+    ) {
+      return;
+    }
+    const note = $("#annotationNote");
+    const form = $("#annotationForm");
+    if (!note || !form) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target === note) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        note.blur();
+        return;
+      }
+      if (event.key === "Enter" && !event.shiftKey && !state.savingAnnotation) {
+        event.preventDefault();
+        event.stopPropagation();
+        form.requestSubmit($("#reviewSaveButton") || undefined);
+      }
+      return;
+    }
+    if (String(event.key || "").toLowerCase() !== "e" || event.shiftKey) return;
+    if (target?.closest("input, textarea, select, button, a, [contenteditable='true'], [role='textbox']")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    note.focus({ preventScroll: false });
+    note.setSelectionRange(note.value.length, note.value.length);
+  });
+}
+
 async function saveAnnotation(event) {
   event.preventDefault();
   if (!state.selectedId || state.savingAnnotation) return;
@@ -1058,6 +1103,7 @@ async function saveAnnotation(event) {
     showToast(
       `已保存新的 review 版本${screenshotCount ? `和 ${screenshotCount} 张截图` : ""}${queuedCount ? `；DChat 通知已排队 ${queuedCount} 人` : ""}。`
     );
+    $("#annotationNote")?.blur();
     refreshReviewDerivedData();
   } catch (error) {
     showToast(error.message, true);
