@@ -777,6 +777,13 @@ html[data-color-theme="light"] .detail-queue-index-input {
   font-size: 12px; font-weight: 650;
 }
 .review-section-heading .review-heading-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.model-error-section > .review-section-heading h2 { white-space: nowrap; }
+.model-error-section .review-heading-actions .history-inline-button {
+  min-height: 30px; padding: 5px 8px; gap: 4px; font-size: 11px;
+}
+.model-error-section .review-heading-actions .review-control-shortcut {
+  min-width: 17px; height: 17px; padding: 0 3px; font-size: 8px;
+}
 .annotation-history { display: grid; gap: 8px; margin-top: 15px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
 .history-empty { font-size: 11px; }
 .history-row { display: grid; gap: 5px; padding: 7px; border-left: 2px solid var(--line); background: #0e131c; }
