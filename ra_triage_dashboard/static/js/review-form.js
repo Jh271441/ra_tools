@@ -183,7 +183,7 @@ function renderDetail(caseData) {
     : `<span class="detail-id">${issueId}</span>`;
   ensureDetailMediaState(caseData);
   const predCount = (caseData.predictions || []).length;
-  const modelHistoryButton = `<button class="history-inline-button" type="button" data-open-history="model"><span class="ui-lang-zh">评测 Run 历史 · ${predCount} 条</span><span class="ui-lang-en">Run history · ${predCount}</span></button>`;
+  const modelHistoryButton = `<button class="history-inline-button" id="modelHistoryLaunchButton" type="button" data-open-history="model" aria-keyshortcuts="M" title="打开模型预测历史（M）"><span class="ui-lang-zh">评测 Run 历史 · ${predCount} 条</span><span class="ui-lang-en">Run history · ${predCount}</span><kbd class="review-control-shortcut" aria-hidden="true">M</kbd></button>`;
   const predictionComparable = MODEL_LABELS.includes(primary?.model_label);
   const predictionMatches = modelLabelMatchesGt(primary?.model_label, caseData.gt_label);
   const compareText = !predictionComparable
@@ -437,9 +437,10 @@ function renderReview(caseData) {
             <button class="history-inline-button" type="button" data-review-comments>
               <span class="ui-lang-zh">评论</span><span class="ui-lang-en">Comments</span>
             </button>
-            <button class="history-inline-button" type="button" data-open-history="review" id="reviewHistoryLaunchButton">
+            <button class="history-inline-button" type="button" data-open-history="review" id="reviewHistoryLaunchButton" aria-keyshortcuts="J" title="打开 Review 历史（J）">
               <span class="ui-lang-zh">Review 历史 · ${allAnnotations.length} 条</span>
               <span class="ui-lang-en">Review history · ${allAnnotations.length}</span>
+              <kbd class="review-control-shortcut" aria-hidden="true">J</kbd>
             </button>
           </div>
         </div>
@@ -541,6 +542,7 @@ function renderReview(caseData) {
   syncReviewTagShortcutHints($("#reviewPane"));
   bindReviewKeyboardShortcuts();
   bindReviewComposerShortcuts();
+  bindReviewHistoryShortcuts();
   $("#reviewPane").querySelectorAll(".review-dropdown").forEach((dropdown) => {
     if (dropdown.dataset.reviewDropdownToggleBound === "1") return;
     dropdown.dataset.reviewDropdownToggleBound = "1";
@@ -1018,6 +1020,34 @@ function bindReviewComposerShortcuts() {
     event.stopPropagation();
     note.focus({ preventScroll: false });
     note.setSelectionRange(note.value.length, note.value.length);
+  });
+}
+
+function bindReviewHistoryShortcuts() {
+  if (document.documentElement.dataset.reviewHistoryShortcutsBound === "1") return;
+  document.documentElement.dataset.reviewHistoryShortcutsBound = "1";
+  document.addEventListener("keydown", (event) => {
+    if (
+      event.defaultPrevented ||
+      event.isComposing ||
+      event.repeat ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      event.shiftKey ||
+      state.activePage !== "review" ||
+      !state.selectedCase ||
+      document.querySelector("dialog[open]")
+    ) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (reviewShortcutHasEditableTarget(target)) return;
+    const key = String(event.key || "").toLowerCase();
+    const kind = key === "j" ? "review" : key === "m" ? "model" : "";
+    if (!kind) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeAllReviewDropdowns();
+    openHistoryDialog(kind, state.selectedCase);
   });
 }
 
