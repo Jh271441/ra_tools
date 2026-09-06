@@ -291,12 +291,22 @@ html[data-color-theme="light"] .detail-queue-index-input {
   color: #c4cfdf; border-color: var(--line); background: var(--overlay);
   line-height: normal; letter-spacing: normal;
 }
-.detail-context-row { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 7px 10px; margin-top: 6px; }
-.detail-context-actions { margin-left: auto; display: flex; align-items: center; justify-content: flex-end; flex: 0 0 auto; flex-wrap: wrap; gap: 7px; }
-.detail-context-row .detail-actions { flex: 0 0 auto; }
+.detail-context-row { min-width: 0; display: flex; align-items: center; flex-wrap: nowrap; gap: 6px; margin-top: 6px; }
+.detail-context-row > .comparison-summary,
+.detail-context-row > .detail-back-button { flex: 0 0 auto; }
+.detail-context-actions {
+  min-width: 0; margin-left: 0; display: flex; align-items: center; justify-content: flex-end;
+  flex: 1 1 auto; flex-wrap: nowrap; gap: 5px;
+}
+.detail-context-row .detail-actions { flex: 0 0 auto; flex-wrap: nowrap; gap: 5px; }
+.detail-context-actions .history-inline-button { padding-inline: 6px; }
 .detail-summary {
-  min-width: 180px; max-width: 720px; flex: 1; display: -webkit-box; overflow: hidden; color: var(--muted); font-size: 11px; line-height: 1.45;
+  min-width: 80px; max-width: 720px; flex: 1 1 80px; display: -webkit-box; overflow: hidden; color: var(--muted); font-size: 11px; line-height: 1.45;
   -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+@media (min-width: 640px) and (max-width: 1180px) {
+  .detail-context-row { flex-wrap: wrap; }
+  .detail-context-actions { width: 100%; flex-basis: 100%; justify-content: flex-start; }
 }
 .review-note-details { margin-top: 6px; color: var(--faint); font-size: 10px; }
 .review-note-details > summary { cursor: pointer; }
