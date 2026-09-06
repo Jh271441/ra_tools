@@ -214,6 +214,7 @@
   .hero-media-heading-actions { flex-wrap: wrap; justify-content: flex-start; }
   .bev-video-controls, .bev-video-progress-row { grid-template-columns: minmax(0, 1fr); }
   .review-section-heading { align-items: flex-start; flex-wrap: wrap; }
+  .expected-output-rule-popover { width: min(360px, calc(100vw - 48px)); }
   .review-section-heading .review-heading-actions { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .review-section-heading .review-heading-actions .history-inline-button { width: 100%; min-height: 44px; }
   .review-tag-groups, .label-buttons { grid-template-columns: minmax(0, 1fr) !important; }

@@ -60,6 +60,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn(".intent-media-stage:not(.is-zoomed) { touch-action: pan-y pinch-zoom; }", mobile_css)
         self.assertIn(".trail-update-table-wrap", mobile_css)
         self.assertIn("overflow-x: auto", mobile_css)
+        self.assertIn(".expected-output-rule-popover { width: min(360px, calc(100vw - 48px)); }", mobile_css)
 
     def test_read_only_run_comparison_is_visible_shareable_and_review_linked(self) -> None:
         self.assertIn('id="runComparisonNavButton"', INDEX_HTML)
@@ -169,7 +170,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-343", APP_ENTRY_JS)
+        self.assertIn("manual-triage-344", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -210,7 +211,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-343", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-344", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
         self.assertNotIn("async function bootstrap", APP_ENTRY_JS)
@@ -317,7 +318,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-343`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-344`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -1068,7 +1069,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-343", APP_ENTRY_JS)
+        self.assertIn("manual-triage-344", APP_ENTRY_JS)
 
     def test_multi_issue_query_contract(self) -> None:
         self.assertIn('id="openIssueQueryButton"', INDEX_HTML)
