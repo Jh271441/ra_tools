@@ -240,7 +240,7 @@ function heroMediaSection(caseData) {
     if (caseData?.media_status === "pending") {
       return `<section class="hero-media"><div class="no-asset hero-media-placeholder detail-media-pending"><span>${escapeHtml(uiText("正在加载 BEV、Camera 与视频…", "Loading BEV, camera, and video…"))}</span></div></section>`;
     }
-    return '<section class="hero-media"><div class="no-asset hero-media-placeholder"><span>${escapeHtml(t("media.no_assets"))}</span></div></section>';
+    return `<section class="hero-media"><div class="no-asset hero-media-placeholder"><span>${escapeHtml(t("media.no_assets"))}</span></div></section>`;
   }
   ensureDetailMediaState(caseData);
   const kind = state.detailMedia.kind;
