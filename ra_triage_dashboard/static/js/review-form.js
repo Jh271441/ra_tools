@@ -178,9 +178,11 @@ function renderDetail(caseData) {
   const primary = (caseData.predictions || []).find((item) => item.model_run_id === state.selectedRunId) || caseData.predictions?.[0];
   const issueUrl = safeUrl(caseData.voyager_issue_url || caseData.trail_url);
   const issueId = escapeHtml(caseData.issue_id);
-  const issueIdMarkup = issueUrl
+  const issueIdValue = String(caseData.issue_id || "");
+  const issueIdLink = issueUrl
     ? `<a class="detail-id detail-id-link" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" title="打开 Voyager Issue">${issueId}</a>`
     : `<span class="detail-id">${issueId}</span>`;
+  const issueIdMarkup = `<span class="detail-issue-id-group">${issueIdLink}<button class="detail-copy-id-button" type="button" data-copy-issue-id aria-label="复制 Issue ID ${issueId}" title="复制 Issue ID"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="6" width="9" height="10" rx="2"></rect><path d="M13 6V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></span>`;
   ensureDetailMediaState(caseData);
   const predCount = (caseData.predictions || []).length;
   const modelHistoryButton = `<button class="history-inline-button" id="modelHistoryLaunchButton" type="button" data-open-history="model" aria-keyshortcuts="M" title="打开模型预测历史（M）"><span class="ui-lang-zh">评测 Run 历史 · ${predCount} 条</span><span class="ui-lang-en">Run history · ${predCount}</span><kbd class="review-control-shortcut" aria-hidden="true">M</kbd></button>`;
@@ -234,6 +236,9 @@ function renderDetail(caseData) {
   });
   $("#detailPane").querySelector("[data-open-history='model']")?.addEventListener("click", () => {
     openHistoryDialog("model", caseData);
+  });
+  $("#detailPane").querySelector("[data-copy-issue-id]")?.addEventListener("click", (event) => {
+    copyReviewIssueId(issueIdValue, event.currentTarget);
   });
   bindDetailExternalLinks(caseData);
   $("#detailPane").querySelector("#backToGalleryButton")?.addEventListener("click", returnToReviewGallery);
@@ -434,8 +439,9 @@ function renderReview(caseData) {
             </h2>
           </div>
           <div class="review-heading-actions">
-            <button class="history-inline-button" type="button" data-review-comments>
+            <button class="history-inline-button" id="reviewCommentsButton" type="button" data-review-comments aria-keyshortcuts="D" title="打开评论（D）">
               <span class="ui-lang-zh">评论</span><span class="ui-lang-en">Comments</span>
+              <kbd class="review-control-shortcut" aria-hidden="true">D</kbd>
             </button>
             <button class="history-inline-button" type="button" data-open-history="review" id="reviewHistoryLaunchButton" aria-keyshortcuts="J" title="打开 Review 历史（J）">
               <span class="ui-lang-zh">Review 历史 · ${allAnnotations.length} 条</span>
@@ -515,10 +521,7 @@ function renderReview(caseData) {
     </form>`;
   bindSelectedReviewTagControls($("#reviewPane"));
   $("#reviewPane").querySelector("[data-review-comments]")?.addEventListener("click", () => {
-    openAnalysisDiscussion(state.selectedId, {
-      runId: state.selectedRunId || "",
-      source: "review",
-    }).catch((error) => showToast(error.message, true));
+    openCurrentReviewDiscussion(caseData);
   });
   const expectedOutputInput = $("#expectedOutputInput");
   if (expectedOutputInput) {
@@ -542,7 +545,7 @@ function renderReview(caseData) {
   syncReviewTagShortcutHints($("#reviewPane"));
   bindReviewKeyboardShortcuts();
   bindReviewComposerShortcuts();
-  bindReviewHistoryShortcuts();
+  bindReviewDetailActionShortcuts();
   $("#reviewPane").querySelectorAll(".review-dropdown").forEach((dropdown) => {
     if (dropdown.dataset.reviewDropdownToggleBound === "1") return;
     dropdown.dataset.reviewDropdownToggleBound = "1";
@@ -1023,9 +1026,18 @@ function bindReviewComposerShortcuts() {
   });
 }
 
-function bindReviewHistoryShortcuts() {
-  if (document.documentElement.dataset.reviewHistoryShortcutsBound === "1") return;
-  document.documentElement.dataset.reviewHistoryShortcutsBound = "1";
+function openCurrentReviewDiscussion(caseData = state.selectedCase) {
+  const issueId = String(caseData?.issue_id || state.selectedId || "").trim();
+  if (!issueId) return;
+  openAnalysisDiscussion(issueId, {
+    runId: state.selectedRunId || "",
+    source: "review",
+  }).catch((error) => showToast(error.message, true));
+}
+
+function bindReviewDetailActionShortcuts() {
+  if (document.documentElement.dataset.reviewDetailActionShortcutsBound === "1") return;
+  document.documentElement.dataset.reviewDetailActionShortcutsBound = "1";
   document.addEventListener("keydown", (event) => {
     if (
       event.defaultPrevented ||
@@ -1042,6 +1054,13 @@ function bindReviewHistoryShortcuts() {
     const target = event.target instanceof Element ? event.target : null;
     if (reviewShortcutHasEditableTarget(target)) return;
     const key = String(event.key || "").toLowerCase();
+    if (key === "d") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeAllReviewDropdowns();
+      openCurrentReviewDiscussion(state.selectedCase);
+      return;
+    }
     const kind = key === "j" ? "review" : key === "m" ? "model" : "";
     if (!kind) return;
     event.preventDefault();
@@ -1049,6 +1068,32 @@ function bindReviewHistoryShortcuts() {
     closeAllReviewDropdowns();
     openHistoryDialog(kind, state.selectedCase);
   });
+}
+
+async function copyReviewIssueId(issueId, button = null) {
+  const value = String(issueId || "").trim();
+  if (!value) return;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+    } else {
+      const input = document.createElement("textarea");
+      input.value = value;
+      input.setAttribute("readonly", "");
+      input.style.position = "fixed";
+      input.style.opacity = "0";
+      document.body.append(input);
+      input.select();
+      const copied = document.execCommand("copy");
+      input.remove();
+      if (!copied) throw new Error("copy unavailable");
+    }
+    button?.classList.add("is-copied");
+    window.setTimeout(() => button?.classList.remove("is-copied"), 900);
+    showToast(`已复制 Issue ID：${value}`);
+  } catch (_) {
+    showToast("复制失败，请检查浏览器剪贴板权限。", true);
+  }
 }
 
 async function saveAnnotation(event) {

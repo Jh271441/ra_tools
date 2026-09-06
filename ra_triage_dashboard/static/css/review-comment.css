@@ -267,9 +267,17 @@ html[data-color-theme="light"] .detail-queue-index-input {
 .detail-external-links { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 5px 9px; }
 .detail-external-status { color: var(--faint); font-size: 10px; }
 .detail-id { color: var(--accent); font: 11px "SFMono-Regular", Consolas, monospace; }
+.detail-issue-id-group { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
 .detail-id-link { border-bottom: 1px solid rgba(34,211,238,.32); }
 .detail-id-link:hover { color: #b9f5fb; border-bottom-color: var(--accent); }
 .detail-id-link:focus-visible { outline: 2px solid rgba(34,211,238,.65); outline-offset: 3px; border-radius: 2px; }
+.detail-copy-id-button {
+  width: 24px; height: 24px; display: inline-grid; flex: 0 0 auto; place-items: center; padding: 0;
+  border: 1px solid transparent; border-radius: 5px; color: var(--faint); background: transparent; cursor: pointer;
+}
+.detail-copy-id-button:hover, .detail-copy-id-button:focus-visible { border-color: rgba(34,211,238,.4); color: var(--accent); background: rgba(34,211,238,.07); outline: none; }
+.detail-copy-id-button.is-copied { color: #6ee7b7; border-color: rgba(52,211,153,.38); background: rgba(52,211,153,.08); }
+.detail-copy-id-button svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .detail-inline-button { margin: 0; padding: 0; border: 0; border-radius: 0; color: var(--accent); background: transparent; font: inherit; cursor: pointer; }
 .detail-ares-link { margin-left: 5px; }
 .detail-actions {
