@@ -189,6 +189,40 @@ def load_spotcheck_zh_baseline(path: Path) -> BaselineLoad:
     return BaselineLoad(rows, source_rows, skipped_rows, message)
 
 
+def load_capture_workset(path: Path) -> BaselineLoad:
+    """Load an immutable capture workset, retaining members without three-class GT."""
+    import json
+    import re
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or payload.get("schema_version") != "capture-workset-v1":
+        raise ValueError("invalid capture workset schema")
+    source = payload.get("rows")
+    if not isinstance(source, list) or len(source) != payload.get("expected_count"):
+        raise ValueError("capture workset count mismatch")
+    rows = []
+    seen = set()
+    for item in source:
+        if not isinstance(item, dict):
+            raise ValueError("invalid capture workset row")
+        issue_id = str(item.get("issue_id") or "").strip()
+        if not re.fullmatch(r"(?:cn|us)[0-9]+", issue_id) or issue_id in seen:
+            raise ValueError("invalid or duplicate capture workset issue")
+        seen.add(issue_id)
+        label = str(item.get("gt_label") or "").strip()
+        if label and label not in LABELS:
+            raise ValueError("capture workset GT must be canonical or empty")
+        rows.append({
+            "issue_id": issue_id,
+            "trip_id": str(item.get("trip_id") or ""),
+            "gt_label": label,
+            "gt_source": str(item.get("gt_source") or ""),
+            "summary": str(item.get("summary") or ""),
+            "extra": {"baseline": item.get("source", {}), "loader": "capture_workset"},
+        })
+    return BaselineLoad(rows, len(source), 0, f"已读取采集数据集 {len(rows)} 条（保留未标注成员）")
+
+
 def load_baseline_entry(
     *,
     loader: str,
@@ -199,6 +233,8 @@ def load_baseline_entry(
         if not dataset:
             return BaselineLoad([], 0, 0, "trail_label_baseline 需要 dataset。")
         return load_label_baseline(path, dataset)
+    if loader == "capture_workset":
+        return load_capture_workset(path)
     if loader == "spotcheck_zh":
         return load_spotcheck_zh_baseline(path)
     return BaselineLoad([], 0, 0, f"未知 baseline loader: {loader}")

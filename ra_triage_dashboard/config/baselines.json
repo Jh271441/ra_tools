@@ -37,5 +37,29 @@
       "layout_id": "release0626_300_spotcheck_20260807",
       "camera_root": "${RA_AUTO_TRIAGE_ROOT}/bags/camera"
     }
+  },
+  {
+    "id": "0522",
+    "label": "0522 抽检",
+    "scope": "release0522_100_20260908",
+    "loader": "capture_workset",
+    "xlsx": "${RA_AUTO_TRIAGE_ROOT}/data/manual_worksets_20260908/workset_0522.json",
+    "default_selected": false,
+    "media": {
+      "provider": "product_layout",
+      "layout_id": "release0522_100_planning_2k_20260908"
+    }
+  },
+  {
+    "id": "0821",
+    "label": "0821",
+    "scope": "release0821_1242_20260908",
+    "loader": "capture_workset",
+    "xlsx": "${RA_AUTO_TRIAGE_ROOT}/data/manual_worksets_20260908/workset_0821.json",
+    "default_selected": false,
+    "media": {
+      "provider": "product_layout",
+      "layout_id": "release0821_1242_planning_2k_20260908"
+    }
   }
 ]

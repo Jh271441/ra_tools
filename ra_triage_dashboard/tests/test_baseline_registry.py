@@ -104,7 +104,7 @@ class BaselineRegistryTests(unittest.TestCase):
             env={"RA_AUTO_TRIAGE_ROOT": "/tmp/ra_auto_triage"},
         )
         self.assertEqual(
-            [entry.id for entry in registry.entries], ["0508", "0206", "0626"]
+            [entry.id for entry in registry.entries], ["0508", "0206", "0626", "0522", "0821"]
         )
         self.assertEqual(registry.default_ids(), ["0508"])
         entry = registry.by_id("0206")

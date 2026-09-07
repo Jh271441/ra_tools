@@ -225,7 +225,7 @@ def _parse_entry(raw: Mapping[str, Any], *, env: Mapping[str, str] | None) -> Ba
     if not scope:
         raise ValueError(f"baseline {baseline_id} missing scope")
     loader = str(raw.get("loader") or "").strip()
-    if loader not in {"trail_label_baseline", "spotcheck_zh"}:
+    if loader not in {"trail_label_baseline", "spotcheck_zh", "capture_workset"}:
         raise ValueError(f"baseline {baseline_id} has unsupported loader {loader!r}")
     xlsx_raw = str(raw.get("xlsx") or "").strip()
     if not xlsx_raw:
