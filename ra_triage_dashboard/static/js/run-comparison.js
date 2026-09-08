@@ -274,6 +274,10 @@ function openComparisonReasonDialog(issueId) {
   renderComparisonReasonSide("Baseline", item.baseline, payload?.baseline_run);
   renderComparisonReasonSide("Candidate", item.candidate, payload?.candidate_run);
   dialog.dataset.issueId = String(issueId);
+  const preview = $('#comparisonCaseBevImage');
+  preview.hidden = false;
+  preview.parentElement.classList.remove('is-missing');
+  preview.src = withBase(`/api/case-thumbnails/${encodeURIComponent(issueId)}`);
   selectComparisonCaseTab('output');
   if (dialog && !dialog.open) dialog.showModal();
   loadComparisonCaseInputs(issueId, payload);
@@ -289,7 +293,7 @@ function renderRunComparisonCases(payload) {
     );
     return `<tr class="transition-${escapeHtml(String(item.transition || "").toLowerCase())}" data-comparison-row data-issue-id="${escapeHtml(item.issue_id)}" tabindex="0" aria-label="${escapeHtml(rowLabel)}">
       <td><a class="comparison-issue-link" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, candidateRunId))}">${escapeHtml(item.issue_id)}</a><div class="comparison-issue-meta"><span class="comparison-gt-summary"><span>GT</span><strong>${escapeHtml(item.gt_label || "—")}</strong></span><small>${escapeHtml(item.baseline_scope || "")}</small></div></td>
-      <td><button type="button" class="comparison-bev" data-comparison-media="${escapeHtml(item.issue_id)}" aria-label="打开 ${escapeHtml(item.issue_id)} 参考媒体"><img loading="lazy" src="${escapeHtml(withBase(`/api/case-thumbnails/${encodeURIComponent(item.issue_id)}`))}" alt="BEV 预览"><span>暂无 BEV</span></button><small>参考媒体</small><button class="button button-quiet" type="button" data-comparison-media="${escapeHtml(item.issue_id)}">媒体预览</button></td>
+      <td><button type="button" class="comparison-bev" data-comparison-media="${escapeHtml(item.issue_id)}" aria-label="打开 ${escapeHtml(item.issue_id)} 参考媒体"><img loading="lazy" src="${escapeHtml(withBase(`/api/case-thumbnails/${encodeURIComponent(item.issue_id)}`))}" alt="BEV 预览"><span>暂无 BEV</span></button></td>
       <td>${comparisonPredictionHtml(item.baseline)}</td>
       <td>${comparisonPredictionHtml(item.candidate)}</td>
       <td><div class="comparison-transition-cell"><span class="comparison-transition-badge ${escapeHtml(String(item.transition || "").toLowerCase())}">${escapeHtml(comparisonTransitionText(item.transition))}</span><small>${uiText("点击整行打开 Case 对比", "Click row to compare reasons")}</small></div></td>
@@ -397,12 +401,13 @@ async function jumpToRunComparisonPage(rawPage) {
 }
 
 function bindRunComparisonEvents() {
+  $('#comparisonCaseBev')?.addEventListener('click', () => openCaseMediaPreview($('#comparisonReasonDialog').dataset.issueId, null, true).catch(error => showToast(error.message,true)));
+  $('#comparisonCaseBevImage')?.addEventListener('error', event => { event.target.hidden = true; event.target.parentElement.classList.add('is-missing'); });
   $('#comparisonReasonDialog')?.addEventListener('close', () => { comparisonCaseRequest++; });
-  $('#comparisonCaseMedia')?.addEventListener('click', event => openCaseMediaPreview($('#comparisonReasonDialog').dataset.issueId, event.currentTarget).catch(error => showToast(error.message,true)));
   document.querySelectorAll('[data-case-tab]').forEach(button => button.addEventListener('click', () => selectComparisonCaseTab(button.dataset.caseTab)));
   $('#comparisonCaseRows')?.addEventListener('click', event => {
     const button=event.target.closest('[data-comparison-media]');
-    if(button) openCaseMediaPreview(button.dataset.comparisonMedia).catch(error => showToast(error.message,true));
+    if(button) openCaseMediaPreview(button.dataset.comparisonMedia, null, true).catch(error => showToast(error.message,true));
   });
   $("#comparisonCaseRows")?.addEventListener("click", (event) => {
     const row = event.target.closest("[data-comparison-row]");
@@ -607,7 +612,7 @@ async function loadComparisonCaseInputs(issueId,payload) {
     const data=await api(`/api/model-run-comparison/cases/${encodeURIComponent(issueId)}/inputs?${params}`);
     if(seq!==comparisonCaseRequest || !$('#comparisonReasonDialog').open) return;
     const a=data.baseline,b=data.candidate;
-    target.innerHTML=`<section data-case-content="prompt"><div class="comparison-original"><p>${comparisonPromptMeta(a.prompt)}</p><p>${comparisonPromptMeta(b.prompt)}</p></div><div data-case-prompt></div><details><summary>Run 模板／示例参考（不是该 Case 实际输入）</summary><div class="comparison-original"><p>${comparisonPromptMeta(a.run_reference.prompt)}</p><p>${comparisonPromptMeta(b.run_reference.prompt)}</p></div><div data-case-reference></div></details></section><section data-case-content="config" hidden><p>逐 Case 配置：基线 ${a.input.available ? '实际输入' : '未保存'} · 新 Run ${b.input.available ? '实际输入' : '未保存'}</p><div data-case-config></div><h4>已记录媒体 · 顺序与时间点</h4><p>${escapeHtml(a.media.notice)}</p><div data-case-media></div><details><summary>Run 输入配置参考</summary><div data-case-config-reference></div></details></section>`;
+    target.innerHTML=`<section data-case-content="prompt"><h3>Prompt 对比</h3><div class="comparison-original"><p>${comparisonPromptMeta(a.prompt)}</p><p>${comparisonPromptMeta(b.prompt)}</p></div><div data-case-prompt></div><details><summary>Run 模板／示例参考（不是该 Case 实际输入）</summary><div class="comparison-original"><p>${comparisonPromptMeta(a.run_reference.prompt)}</p><p>${comparisonPromptMeta(b.run_reference.prompt)}</p></div><div data-case-reference></div></details></section><section data-case-content="config" hidden><p>逐 Case 配置：基线 ${a.input.available ? '实际输入' : '未保存'} · 新 Run ${b.input.available ? '实际输入' : '未保存'}</p><div data-case-config></div><h4>已记录媒体 · 顺序与时间点</h4><p>${escapeHtml(a.media.notice)}</p><div data-case-media></div><details><summary>Run 输入配置参考</summary><div data-case-config-reference></div></details></section>`;
     mountComparisonDiff(target.querySelector('[data-case-prompt]'),a.prompt.text,b.prompt.text);
     mountComparisonDiff(target.querySelector('[data-case-reference]'),a.run_reference.prompt.template,b.run_reference.prompt.template);
     mountComparisonDiff(target.querySelector('[data-case-config]'),a.input.available ? comparisonConfigText(a.input.config) : '',b.input.available ? comparisonConfigText(b.input.config) : '');
@@ -619,7 +624,8 @@ async function loadComparisonCaseInputs(issueId,payload) {
 function selectComparisonCaseTab(tab) {
   const dialog=$('#comparisonReasonDialog'); dialog.dataset.tab=tab;
   dialog.querySelector('.comparison-reason-grid').hidden=tab!=='output';
-  $('#comparisonCaseInputs').hidden=tab==='output';
-  dialog.querySelectorAll('[data-case-content]').forEach(el => el.hidden=el.dataset.caseContent!==tab);
+  $('#comparisonCaseInputs').hidden=false;
+  $('#comparisonCaseEvidence').classList.toggle('config-only', tab==='config');
+  dialog.querySelectorAll('[data-case-content]').forEach(el => el.hidden=el.dataset.caseContent!==(tab==='output' ? 'prompt' : tab));
   dialog.querySelectorAll('[data-case-tab]').forEach(el=>el.setAttribute('aria-selected',String(el.dataset.caseTab===tab)));
 }

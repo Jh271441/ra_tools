@@ -28,6 +28,8 @@ paired modification lines with inline highlighting, collapsed equal blocks,
 side-by-side/unified views and full text fallback. Config objects are recursively
 key-sorted; arrays retain order. Text is HTML-escaped. The table lazy-loads only
 current-page cached BEV thumbnails and opens full media only on user action.
+The column contains only the clickable image (or 暂无 BEV fallback); reference
+media provenance is shown in the media dialog title and thumbnail accessible label.
 Case input and media requests independently ignore stale responses. Opening or
 closing either dialog does not reload the list or change its route/scroll state.
 
@@ -52,3 +54,7 @@ They do not record per-image byte digests or timestamps in those entries. Timing
 offsets are present in the separately labelled Run config and rendered Prompt.
 Both explicitly record `reason_generated=false`, with forced-choice class-token
 readout: Reason absence is in the source, not an import/display omission.
+
+The Case overview shows reference BEV and saved Prompt diff above the two output
+cards, so input context is visible immediately. Dedicated Prompt/config tabs
+remain available. The list column has no duplicate media-preview button.

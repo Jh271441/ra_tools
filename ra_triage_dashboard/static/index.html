@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-347`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-348`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1354,12 +1354,14 @@
           <button class="icon-button" type="button" data-close="comparisonReasonDialog" aria-label="Close">×</button>
         </div>
         <div class="comparison-case-tabs" role="tablist" aria-label="Case 对比">
-          <button type="button" role="tab" data-case-tab="output">输出</button>
+          <button type="button" role="tab" data-case-tab="output">总览</button>
           <button type="button" role="tab" data-case-tab="prompt">Prompt</button>
           <button type="button" role="tab" data-case-tab="config">输入配置</button>
-          <button type="button" id="comparisonCaseMedia">参考媒体</button>
         </div>
-        <div id="comparisonCaseInputs" hidden></div>
+        <div class="comparison-case-evidence" id="comparisonCaseEvidence">
+          <aside class="comparison-case-bev"><h3>参考媒体</h3><button type="button" id="comparisonCaseBev" class="comparison-bev" aria-label="打开参考 BEV 媒体"><img id="comparisonCaseBevImage" alt="BEV 预览"><span>暂无 BEV</span></button><small>点击图片查看 BEV、Camera 或视频</small></aside>
+          <div id="comparisonCaseInputs"></div>
+        </div>
         <div class="comparison-reason-grid">
           <section class="comparison-reason-panel" id="comparisonReasonBaselinePanel">
             <header>
@@ -1829,7 +1831,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-347`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-348`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
