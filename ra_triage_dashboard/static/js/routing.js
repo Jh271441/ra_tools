@@ -381,6 +381,7 @@ function normalizedRunComparisonRouteFilters(params) {
     baselineLabel: ["ALL", ...MODEL_LABELS, "NONE"].includes(baselineLabel) ? baselineLabel : "ALL",
     candidateLabel: ["ALL", ...MODEL_LABELS, "NONE"].includes(candidateLabel) ? candidateLabel : "ALL",
     labelChange: ["ALL", "CHANGED", "UNCHANGED"].includes(labelChange) ? labelChange : "ALL",
+    inputFilter: String(params.get("input_filter") || ""),
     search: String(params.get("q") || "").slice(0, 128),
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
     pageSize: CASE_PAGE_SIZES.includes(rawPageSize) ? rawPageSize : 10,
@@ -707,6 +708,9 @@ function pageUrl(page, options = {}) {
       url.searchParams.set("label_change", comparison.labelChange);
     }
     if (comparison.search) url.searchParams.set("q", comparison.search);
+    if (comparison.inputFilter?.conditions?.length) {
+      url.searchParams.set("input_filter", JSON.stringify(comparison.inputFilter));
+    }
     if (Number(comparison.page) > 1) url.searchParams.set("page", String(comparison.page));
     if (Number(comparison.pageSize) !== 10) {
       url.searchParams.set("page_size", String(comparison.pageSize));

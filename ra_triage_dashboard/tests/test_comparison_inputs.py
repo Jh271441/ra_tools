@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from ra_triage_dashboard.app.comparison_inputs import case_input_projection
+from ra_triage_dashboard.app.comparison_inputs import (
+    case_input_projection,
+    extra_input_matches,
+    extra_input_summary,
+    normalize_extra_input_filter,
+)
 from ra_triage_dashboard.app.db import Database
 
 
@@ -31,6 +36,36 @@ def test_missing_does_not_reconstruct():
     assert result['prompt']['source_type'] == 'not_saved'
     assert result['input']['source_type'] == 'not_saved'
     assert result['media']['count'] is None
+
+
+def test_structured_extra_inputs_and_prompt_fallback():
+    structured = extra_input_summary({}, {
+        'routing_intents': ['straight'] * 7 + ['left_turn'] * 2,
+        'lane_change_intents': {'no_lane_change': 6, 'lane_change': 3},
+    })
+    assert structured['axes']['routing']['counts'] == {'直行': 7, '左转': 2}
+    assert structured['axes']['lane_change']['frame_count'] == 9
+    prompt = extra_input_summary({}, {
+        'prompt_text': 'Routing 意图：直行 7帧 左转 2帧\n自车变道意图：非变道 6帧 变道 3帧',
+    })
+    assert prompt['axes']['routing']['counts'] == {'直行': 7, '左转': 2}
+    assert prompt['axes']['lane_change']['counts'] == {'非变道': 6, '变道': 3}
+
+
+def test_extra_input_filter_requires_one_run_to_satisfy_complete_expression():
+    summary = extra_input_summary({}, {
+        'routing_intents': ['straight', 'u_turn'],
+        'lane_change_intents': ['lane_change'],
+    })
+    filter_value = normalize_extra_input_filter({
+        'version': 1, 'run': 'candidate', 'relation': 'all',
+        'conditions': [
+            {'axis': 'routing', 'operator': 'any', 'values': ['直行', '掉头']},
+            {'axis': 'lane_change', 'operator': 'any', 'values': ['变道']},
+        ],
+    })
+    assert extra_input_matches(summary, filter_value)
+    assert not extra_input_matches({'available': False, 'axes': {}}, filter_value)
 
 
 def test_case_membership_and_run_reference(tmp_path):

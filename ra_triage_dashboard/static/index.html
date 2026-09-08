@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-358`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-363`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -997,11 +997,23 @@
                   <label><span>基线输出</span><select id="comparisonBaselineLabelFilter"><option value="ALL">全部输出</option><option value="误触发">误触发</option><option value="正确触发">正确触发</option><option value="无需协助">无需协助</option><option value="真实卡住">真实卡住</option><option value="NONE">NONE / 无输出</option></select></label>
                   <label><span>新 Run 输出</span><select id="comparisonCandidateLabelFilter"><option value="ALL">全部输出</option><option value="误触发">误触发</option><option value="正确触发">正确触发</option><option value="无需协助">无需协助</option><option value="真实卡住">真实卡住</option><option value="NONE">NONE / 无输出</option></select></label>
                   <label><span>标签变化</span><select id="comparisonLabelChangeFilter"><option value="ALL">全部</option><option value="CHANGED">输出有变化</option><option value="UNCHANGED">输出未变化</option></select></label>
+                  <details class="comparison-input-filter" id="comparisonInputFilter">
+                    <summary class="button button-quiet"><span id="comparisonInputFilterSummary">额外输入</span><b id="comparisonInputFilterCount" hidden>0</b></summary>
+                    <div class="comparison-input-filter-panel">
+                      <div class="comparison-input-filter-settings">
+                        <label><span>筛选 Run</span><select id="comparisonInputFilterRun"><option value="candidate">新 Run</option><option value="baseline">基线</option><option value="either">任一 Run</option></select></label>
+                        <label><span>维度关系</span><select id="comparisonInputFilterRelation"><option value="all">全部满足</option><option value="any">任一满足</option></select></label>
+                      </div>
+                      <fieldset data-input-filter-axis="routing"><legend>Routing</legend><select data-input-filter-operator><option value="any">包含任一</option><option value="all">包含全部</option><option value="none">不包含</option></select><div class="comparison-input-filter-values"><label><input type="checkbox" value="泊车">泊车</label><label><input type="checkbox" value="直行">直行</label><label><input type="checkbox" value="左转">左转</label><label><input type="checkbox" value="右转">右转</label><label><input type="checkbox" value="掉头">掉头</label></div></fieldset>
+                      <fieldset data-input-filter-axis="lane_change"><legend>自车变道</legend><select data-input-filter-operator><option value="any">包含任一</option><option value="all">包含全部</option><option value="none">不包含</option></select><div class="comparison-input-filter-values"><label><input type="checkbox" value="非变道">非变道</label><label><input type="checkbox" value="变道">变道</label></div></fieldset>
+                      <div class="comparison-input-filter-actions"><button class="button button-quiet" id="comparisonInputFilterClear" type="button">清空</button><button class="button button-primary" id="comparisonInputFilterApply" type="button">应用</button></div>
+                    </div>
+                  </details>
                   <button class="button button-quiet" id="comparisonResetFilters" type="button">重置筛选</button>
                 </div>
                 <div class="comparison-table-wrap">
                   <table class="comparison-case-table">
-                    <thead><tr><th>Issue / GT</th><th>BEV 预览</th><th><span class="ui-lang-zh">基线输出</span><span class="ui-lang-en">Baseline</span></th><th><span class="ui-lang-zh">新 Run 输出</span><span class="ui-lang-en">Candidate</span></th><th><span class="ui-lang-zh">变化</span><span class="ui-lang-en">Change</span></th><th><span class="ui-lang-zh">复核</span><span class="ui-lang-en">Review</span></th></tr></thead>
+                    <thead><tr><th>Issue / GT</th><th>BEV 预览</th><th><span class="ui-lang-zh">基线输出</span><span class="ui-lang-en">Baseline</span></th><th><span class="ui-lang-zh">新 Run 输出</span><span class="ui-lang-en">Candidate</span></th><th><span class="ui-lang-zh">变化</span><span class="ui-lang-en">Change</span></th><th><span class="ui-lang-zh">额外输入</span><span class="ui-lang-en">Extra inputs</span></th></tr></thead>
                     <tbody id="comparisonCaseRows"></tbody>
                   </table>
                 </div>
@@ -1344,6 +1356,7 @@
             <h2 id="comparisonReasonTitle"><span class="ui-lang-zh">Case 对比</span><span class="ui-lang-en">Case comparison</span></h2>
             <p class="dialog-copy" id="comparisonReasonContext"></p>
           </div>
+        <div class="comparison-dialog-extra-inputs" id="comparisonDialogExtraInputs" hidden></div>
         <div class="comparison-case-tabs" role="tablist" aria-label="Case 对比">
           <button type="button" role="tab" data-case-tab="output">总览</button>
           <button type="button" role="tab" data-case-tab="prompt">Prompt</button>
@@ -1353,7 +1366,7 @@
         </div>
         <div class="comparison-case-scroll" id="comparisonCaseScroll">
         <div class="comparison-case-evidence" id="comparisonCaseEvidence">
-          <aside class="comparison-case-bev"><h3>参考媒体</h3><small id="comparisonCaseBevTime">BEV · t = 0s</small><button type="button" id="comparisonCaseBev" class="comparison-bev" aria-label="打开参考 BEV 媒体"><img id="comparisonCaseBevImage" alt="BEV 预览"><span>暂无 BEV</span></button><small id="comparisonCaseCameraTime">Camera</small><button type="button" id="comparisonCaseCamera" class="comparison-bev is-missing" aria-label="打开参考 Camera 媒体"><img id="comparisonCaseCameraImage" alt="Camera 预览" hidden><span>暂无 Camera</span></button></aside>
+          <aside class="comparison-case-bev"><h3>参考媒体</h3><div class="comparison-bev-meta"><small id="comparisonCaseBevTime">BEV · t = 0s</small><div id="comparisonDialogSceneTags" class="comparison-scene-tags" hidden></div></div><button type="button" id="comparisonCaseBev" class="comparison-bev" aria-label="打开参考 BEV 媒体"><img id="comparisonCaseBevImage" alt="BEV 预览"><span>暂无 BEV</span></button><small id="comparisonCaseCameraTime">Camera</small><button type="button" id="comparisonCaseCamera" class="comparison-bev is-missing" aria-label="打开参考 Camera 媒体"><img id="comparisonCaseCameraImage" alt="Camera 预览" hidden><span>暂无 Camera</span></button></aside>
         <div class="comparison-reason-grid">
           <section class="comparison-reason-panel" id="comparisonReasonBaselinePanel">
             <header>
@@ -1827,7 +1840,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-358`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-363`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

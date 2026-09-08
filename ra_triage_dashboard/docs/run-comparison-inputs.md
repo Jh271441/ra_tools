@@ -23,6 +23,22 @@ serving a path. The current API exposes no inferred actual asset URL. Unverified
 references show the asset/identity limitation, and the media dialog continues to
 use indexed dashboard **参考媒体**. Credentials and server paths are redacted.
 
+The comparison list also projects bounded auxiliary-input summaries from each
+prediction's explicitly saved structured fields, falling back only to recognized
+Routing / lane-change lines in the saved actual Case Prompt. It never infers use
+from a Run name or template. Counts represent saved intent timepoints; missing
+values remain missing. The list and Case dialog merge equal summaries and label
+different summaries by Run. The `input_filter` query parameter is a versioned
+JSON object with a Run scope (`candidate`, `baseline`, `either`), an axis relation
+(`all`, `any`), and per-axis `any` / `all` / `none` label conditions. For `either`,
+one Run must satisfy the complete expression.
+
+Scene Tags use the same compatibility projection as reason analysis: the new Run's
+latest Review wins, followed by the latest unbound Review, then the latest Review
+from another Run. The selected annotation is returned with author, time, Run and
+fallback source; revisions are never merged or rebound. An existing selected
+Review with an empty Tag list stays empty.
+
 Prompt diff uses bounded line LCS (1,000,000 cells and 200,000 combined characters),
 paired modification lines with inline highlighting, collapsed equal blocks,
 side-by-side/unified views and full text fallback. Config objects are recursively

@@ -70,6 +70,10 @@ class RunComparisonDatabaseTest(unittest.TestCase):
                     "issue_id": "cn-f2p",
                     "model_label": "正确触发",
                     "model_reason": "candidate correct",
+                    "raw": {"model_extra": {
+                        "routing_intents": ["straight", "u_turn"],
+                        "lane_change_intents": ["lane_change", "no_lane_change"],
+                    }},
                 },
                 {
                     "issue_id": "cn-p2p",
@@ -173,6 +177,33 @@ class RunComparisonDatabaseTest(unittest.TestCase):
         self.assertEqual(
             [item["issue_id"] for item in reason["items"]], ["cn-p2p"]
         )
+
+    def test_extra_input_filter_and_review_fallback_order(self) -> None:
+        filtered = self.compare(input_filter={
+            "version": 1, "run": "candidate", "relation": "all",
+            "conditions": [
+                {"axis": "routing", "operator": "any", "values": ["直行", "掉头"]},
+                {"axis": "lane_change", "operator": "any", "values": ["变道"]},
+            ],
+        })
+        self.assertEqual([item["issue_id"] for item in filtered["items"]], ["cn-f2p"])
+        self.assertEqual(filtered["items"][0]["extra_inputs"]["candidate"]["axes"]["routing"]["frame_count"], 2)
+
+        def annotate(run_id, tag, author):
+            self.database.create_annotation(
+                issue_id="cn-f2p", model_run_id=run_id, label="正确触发",
+                review_status="reviewed", tags=[tag], missing_evidence=[],
+                note="", author=author,
+            )
+
+        annotate(self.baseline["id"], "other", "baseline-author")
+        self.assertEqual(self.compare()["items"][2]["scene_review"]["source"], "other_run")
+        annotate("", "legacy", "legacy-author")
+        self.assertEqual(self.compare()["items"][2]["scene_review"]["source"], "unbound")
+        annotate(self.candidate["id"], "candidate", "candidate-author")
+        review = self.compare()["items"][2]["scene_review"]
+        self.assertEqual(review["source"], "candidate")
+        self.assertEqual(review["tags"], ["candidate"])
 
     def test_defaults_to_ten_cases_per_page_and_rejects_unknown_filters(self) -> None:
         payload = self.compare()

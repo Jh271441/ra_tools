@@ -109,6 +109,7 @@ function runComparisonRouteOptions(overrides = {}) {
     baselineLabel: state.runComparison.baselineLabel,
     candidateLabel: state.runComparison.candidateLabel,
     labelChange: state.runComparison.labelChange,
+    inputFilter: state.runComparison.inputFilter,
     search: state.runComparison.search,
     page: state.runComparison.page,
     pageSize: state.runComparison.pageSize,
@@ -134,6 +135,14 @@ function applyRunComparisonRoute(filters = {}) {
   state.runComparison.labelChange = ["ALL", "CHANGED", "UNCHANGED"].includes(String(filters.labelChange || "").toUpperCase())
     ? String(filters.labelChange).toUpperCase()
     : "ALL";
+  try {
+    const parsed = typeof filters.inputFilter === "string" ? JSON.parse(filters.inputFilter || "{}") : filters.inputFilter;
+    state.runComparison.inputFilter = parsed?.version === 1
+      ? parsed
+      : { version: 1, run: "candidate", relation: "all", conditions: [] };
+  } catch (_) {
+    state.runComparison.inputFilter = { version: 1, run: "candidate", relation: "all", conditions: [] };
+  }
   state.runComparison.search = String(filters.search || "").trim().slice(0, 128);
   state.runComparison.page = Math.max(1, Number(filters.page) || 1);
   state.runComparison.pageSize = CASE_PAGE_SIZES.includes(Number(filters.pageSize))
@@ -145,6 +154,7 @@ function applyRunComparisonRoute(filters = {}) {
   if ($("#comparisonBaselineLabelFilter")) $("#comparisonBaselineLabelFilter").value = state.runComparison.baselineLabel;
   if ($("#comparisonCandidateLabelFilter")) $("#comparisonCandidateLabelFilter").value = state.runComparison.candidateLabel;
   if ($("#comparisonLabelChangeFilter")) $("#comparisonLabelChangeFilter").value = state.runComparison.labelChange;
+  populateComparisonInputFilter();
   renderRunComparisonSelectors();
   renderRunComparisonTransitionFilter();
 }
@@ -177,6 +187,107 @@ function renderRunComparisonTransitionFilter() {
     button.dataset.baseLabel = baseLabel;
     button.textContent = value === "ALL" || count == null ? baseLabel : `${baseLabel} ${count}`;
   });
+}
+
+function comparisonSceneReviewTitle(review) {
+  if (!review) return "";
+  const source = {candidate: "新 Run Review", unbound: "未绑定 Run 的历史 Review", other_run: "其他 Run 的最新 Review"}[review.source] || "Review";
+  return [source, review.author, typeof formatTime === "function" ? formatTime(review.created_at) : review.created_at].filter(Boolean).join(" · ");
+}
+
+function comparisonSceneTagsHtml(review) {
+  const tags = Array.isArray(review?.tags) ? review.tags : [];
+  if (!tags.length) return "";
+  const full = `${tags.map(tagLabel).join(" · ")}\n${comparisonSceneReviewTitle(review)}`;
+  return `<div class="comparison-scene-tags-line" tabindex="0" title="${escapeHtml(full)}">${tags.map((key) => {
+    const item = reviewTagCatalogItem(key) || {};
+    return `<span class="comparison-scene-tag" data-tag-section="${escapeHtml(item.section || "")}" data-tag-group="${escapeHtml(item.group || "")}">${escapeHtml(tagLabel(key))}</span>`;
+  }).join("")}</div>`;
+}
+
+function comparisonExtraInputsEqual(left, right) {
+  const comparable = (summary) => Object.fromEntries(Object.entries(summary?.axes || {}).sort().map(([axis, value]) => [
+    axis,
+    { status: value.status, counts: Object.fromEntries(Object.entries(value.counts || {}).sort()) },
+  ]));
+  return JSON.stringify(comparable(left)) === JSON.stringify(comparable(right));
+}
+
+function comparisonExtraAxisHtml(axis, compact = false) {
+  if (!axis) return "";
+  const chips = Object.entries(axis.counts || {}).filter(([, count]) => Number(count) > 0)
+    .map(([label, count]) => `<span class="comparison-extra-chip">${escapeHtml(label)} ${Number(count)}帧</span>`).join("");
+  return chips ? `<div class="comparison-extra-axis"><small>${escapeHtml(axis.label || "")}</small><div>${chips}</div></div>`
+    : compact ? "" : `<div class="comparison-extra-axis"><small>${escapeHtml(axis.label || "")}</small><span class="muted">部分输入未保存</span></div>`;
+}
+
+function comparisonExtraSummaryHtml(summary, compact = false) {
+  return Object.values(summary?.axes || {}).map((axis) => comparisonExtraAxisHtml(axis, compact)).join("");
+}
+
+function comparisonExtraInputsHtml(extraInputs, { dialog = false } = {}) {
+  const baseline = extraInputs?.baseline || {};
+  const candidate = extraInputs?.candidate || {};
+  if (!baseline.available && !candidate.available) return "";
+  if (baseline.available && candidate.available && comparisonExtraInputsEqual(baseline, candidate)) {
+    return `<div class="comparison-extra-side">${comparisonExtraSummaryHtml(candidate, dialog)}</div>`;
+  }
+  return [
+    baseline.available ? `<div class="comparison-extra-side"><b>基线</b>${comparisonExtraSummaryHtml(baseline, dialog)}</div>` : "",
+    candidate.available ? `<div class="comparison-extra-side"><b>新 Run</b>${comparisonExtraSummaryHtml(candidate, dialog)}</div>` : "",
+  ].join("");
+}
+
+function renderComparisonInputFilterSummary() {
+  const filter = state.runComparison.inputFilter || {};
+  const count = (filter.conditions || []).reduce((sum, item) => sum + (item.values || []).length, 0);
+  const badge = $("#comparisonInputFilterCount");
+  if (badge) { badge.hidden = !count; badge.textContent = String(count); }
+  if ($("#comparisonInputFilterSummary")) $("#comparisonInputFilterSummary").textContent = count ? `额外输入 · ${count} 项` : "额外输入";
+}
+
+function populateComparisonInputFilter(filter = state.runComparison.inputFilter) {
+  $("#comparisonInputFilterRun").value = filter?.run || "candidate";
+  $("#comparisonInputFilterRelation").value = filter?.relation || "all";
+  document.querySelectorAll("[data-input-filter-axis]").forEach((field) => {
+    const condition = (filter?.conditions || []).find((item) => item.axis === field.dataset.inputFilterAxis);
+    field.querySelector("[data-input-filter-operator]").value = condition?.operator || "any";
+    field.querySelectorAll('input[type="checkbox"]').forEach((input) => { input.checked = Boolean(condition?.values?.includes(input.value)); });
+  });
+  renderComparisonInputFilterSummary();
+}
+
+function readComparisonInputFilterDraft() {
+  const conditions = [...document.querySelectorAll("[data-input-filter-axis]")].map((field) => ({
+    axis: field.dataset.inputFilterAxis,
+    operator: field.querySelector("[data-input-filter-operator]").value,
+    values: [...field.querySelectorAll('input[type="checkbox"]:checked')].map((input) => input.value),
+  })).filter((item) => item.values.length);
+  return { version: 1, run: $("#comparisonInputFilterRun").value, relation: $("#comparisonInputFilterRelation").value, conditions };
+}
+
+function positionComparisonInputFilter() {
+  const details = $("#comparisonInputFilter");
+  const panel = details?.querySelector(".comparison-input-filter-panel");
+  const trigger = details?.querySelector("summary");
+  if (!details?.open || !panel || !trigger) return;
+  const margin = 12;
+  const gap = 6;
+  const triggerRect = trigger.getBoundingClientRect();
+  const width = Math.min(460, window.innerWidth - margin * 2);
+  const measuredHeight = Math.min(panel.scrollHeight, window.innerHeight - margin * 2);
+  const below = window.innerHeight - triggerRect.bottom - gap - margin;
+  const above = triggerRect.top - gap - margin;
+  const openAbove = below < Math.min(measuredHeight, 300) && above > below;
+  const available = Math.max(120, openAbove ? above : below);
+  const top = openAbove
+    ? Math.max(margin, triggerRect.top - gap - Math.min(measuredHeight, available))
+    : Math.min(window.innerHeight - margin, triggerRect.bottom + gap);
+  const left = Math.max(margin, Math.min(triggerRect.right - width, window.innerWidth - width - margin));
+  panel.style.setProperty("--comparison-filter-width", `${width}px`);
+  panel.style.setProperty("--comparison-filter-left", `${left}px`);
+  panel.style.setProperty("--comparison-filter-top", `${top}px`);
+  panel.style.setProperty("--comparison-filter-max-height", `${available}px`);
 }
 
 function comparisonMetricCard(labelZh, labelEn, value, note = "", className = "") {
@@ -241,7 +352,7 @@ function comparisonSnapshotHtml(run) {
     ${inputJson ? `<pre>${escapeHtml(inputJson)}</pre>` : `<p class="muted">${uiText("该 Run 没有保存输入配置快照。", "No input snapshot was saved for this Run.")}</p>`}`;
 }
 
-function comparisonPredictionHtml(prediction) {
+function comparisonPredictionHtml(prediction, reviewUrl = "", reviewLabel = "") {
   const label = prediction?.model_label || "NONE";
   const confidence = prediction?.model_confidence;
   const verdict = prediction?.correct ? uiText("匹配 GT", "Matches GT") : uiText("不匹配 GT", "Differs from GT");
@@ -249,6 +360,7 @@ function comparisonPredictionHtml(prediction) {
   return `<div class="comparison-prediction ${prediction?.correct ? "is-correct" : "is-error"}">
     <div class="comparison-prediction-output"><strong class="comparison-output-label">${escapeHtml(label)}</strong>${confidence == null ? "" : `<span class="comparison-prediction-confidence">${Number(confidence).toFixed(3)}</span>`}<small class="comparison-prediction-verdict comparison-chip ${prediction?.correct ? "comparison-match" : "comparison-mismatch"}">${escapeHtml(verdict)}</small></div>
     <span class="comparison-prediction-reason" title="${escapeHtml(reason)}" aria-label="${escapeHtml(reason)}">${escapeHtml(reason)}</span>
+    ${reviewUrl ? `<a class="button button-quiet comparison-inline-review" href="${escapeHtml(reviewUrl)}">${escapeHtml(reviewLabel)}</a>` : ""}
   </div>`;
 }
 
@@ -273,6 +385,12 @@ function openComparisonReasonDialog(issueId, { preserveTab = false } = {}) {
   const selectedTab = preserveTab ? dialog.dataset.tab || "output" : "output";
   $("#comparisonReasonTitle").textContent = `${item.issue_id} · ${uiText("Case 对比", "Case comparison")}`;
   $("#comparisonReasonContext").innerHTML = `<span class="comparison-context-gt"><small>GT</small><strong data-triage-label="${escapeHtml(item.gt_label || "")}">${escapeHtml(item.gt_label || "未保存")}</strong></span><span class="comparison-context-transition">${escapeHtml(comparisonTransitionText(item.transition))}</span>`;
+  const extraTarget = $("#comparisonDialogExtraInputs");
+  extraTarget.innerHTML = comparisonExtraInputsHtml(item.extra_inputs, { dialog: true });
+  extraTarget.hidden = !extraTarget.innerHTML;
+  const tagTarget = $("#comparisonDialogSceneTags");
+  tagTarget.innerHTML = comparisonSceneTagsHtml(item.scene_review);
+  tagTarget.hidden = !tagTarget.innerHTML;
   $("#comparisonCaseScroll").scrollTop = 0;
   renderComparisonReasonSide("Baseline", item.baseline, payload?.baseline_run);
   renderComparisonReasonSide("Candidate", item.candidate, payload?.candidate_run);
@@ -332,12 +450,12 @@ function renderRunComparisonCases(payload) {
       `Open the two-Run reason comparison for ${item.issue_id}`,
     );
     return `<tr class="transition-${escapeHtml(String(item.transition || "").toLowerCase())}" data-comparison-row data-issue-id="${escapeHtml(item.issue_id)}" tabindex="0" aria-label="${escapeHtml(rowLabel)}">
-      <td><a class="comparison-issue-link" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, candidateRunId))}">${escapeHtml(item.issue_id)}</a><div class="comparison-issue-meta"><span class="comparison-gt-summary"><span>GT</span><strong>${escapeHtml(item.gt_label || "—")}</strong></span><small>${escapeHtml(item.baseline_scope || "")}</small></div></td>
+      <td><a class="comparison-issue-link" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, candidateRunId))}">${escapeHtml(item.issue_id)}</a><div class="comparison-issue-meta"><span class="comparison-gt-summary"><span>GT</span><strong>${escapeHtml(item.gt_label || "—")}</strong></span><small>${escapeHtml(item.baseline_scope || "")}</small></div>${comparisonSceneTagsHtml(item.scene_review)}</td>
       <td><button type="button" class="comparison-bev" data-comparison-media="${escapeHtml(item.issue_id)}" aria-label="打开 ${escapeHtml(item.issue_id)} 参考媒体"><img loading="lazy" src="${escapeHtml(withBase(`/api/case-thumbnails/${encodeURIComponent(item.issue_id)}`))}" alt="BEV 预览"><span>暂无 BEV</span></button></td>
-      <td>${comparisonPredictionHtml(item.baseline)}</td>
-      <td>${comparisonPredictionHtml(item.candidate)}</td>
-      <td><div class="comparison-transition-cell"><span class="comparison-transition-badge ${escapeHtml(String(item.transition || "").toLowerCase())}">${escapeHtml(comparisonTransitionText(item.transition))}</span><small>${uiText("点击整行打开 Case 对比", "Click row to compare reasons")}</small></div></td>
-      <td><div class="comparison-review-links"><a class="button button-quiet" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, baselineRunId))}">${uiText("基线复核", "Baseline review")}</a><a class="button button-quiet" href="${escapeHtml(runComparisonReviewUrl(item.issue_id, candidateRunId))}">${uiText("新 Run 复核", "Candidate review")}</a></div></td>
+      <td>${comparisonPredictionHtml(item.baseline, runComparisonReviewUrl(item.issue_id, baselineRunId), uiText("基线复核", "Baseline review"))}</td>
+      <td>${comparisonPredictionHtml(item.candidate, runComparisonReviewUrl(item.issue_id, candidateRunId), uiText("新 Run 复核", "Candidate review"))}</td>
+      <td><div class="comparison-transition-cell"><span class="comparison-transition-badge ${escapeHtml(String(item.transition || "").toLowerCase())}">${escapeHtml(comparisonTransitionText(item.transition))}</span></div></td>
+      <td><div class="comparison-extra-inputs">${comparisonExtraInputsHtml(item.extra_inputs) || `<span class="muted">未保存</span>`}</div></td>
     </tr>`;
   }).join("");
   $("#comparisonCaseRows").innerHTML = rows || `<tr><td colspan="6" class="comparison-no-rows">${uiText("当前条件下没有 Case。", "No cases match the current filters.")}</td></tr>`;
@@ -400,6 +518,7 @@ async function loadRunComparison({ historyMode = "replace" } = {}) {
     baseline_label: state.runComparison.baselineLabel,
     candidate_label: state.runComparison.candidateLabel,
     label_change: state.runComparison.labelChange,
+    input_filter: JSON.stringify(state.runComparison.inputFilter || {}),
     q: state.runComparison.search,
     page: String(state.runComparison.page),
     page_size: String(state.runComparison.pageSize),
@@ -447,6 +566,30 @@ function bindRunComparisonEvents() {
   $('#comparisonCaseCameraImage')?.addEventListener('error', event => { event.target.hidden=true; event.target.parentElement.classList.add('is-missing'); });
   $('#comparisonCaseBevImage')?.addEventListener('error', event => { event.target.hidden = true; event.target.parentElement.classList.add('is-missing'); });
   $('#comparisonReasonDialog')?.addEventListener('close', () => { comparisonCaseRequest++; });
+  $('#comparisonInputFilter')?.addEventListener('toggle', (event) => {
+    if (event.target.open) {
+      populateComparisonInputFilter();
+      window.requestAnimationFrame(positionComparisonInputFilter);
+    }
+  });
+  window.addEventListener('resize', positionComparisonInputFilter);
+  window.addEventListener('scroll', positionComparisonInputFilter, true);
+  $('#comparisonInputFilterApply')?.addEventListener('click', () => {
+    state.runComparison.inputFilter = readComparisonInputFilterDraft();
+    state.runComparison.page = 1;
+    $('#comparisonInputFilter').open = false;
+    renderComparisonInputFilterSummary();
+    loadRunComparison({ historyMode: "push" }).catch((error) => showToast(error.message, true));
+  });
+  $('#comparisonInputFilterClear')?.addEventListener('click', () => populateComparisonInputFilter({ version: 1, run: "candidate", relation: "all", conditions: [] }));
+  document.addEventListener('click', (event) => {
+    const details = $('#comparisonInputFilter');
+    if (details?.open && !details.contains(event.target)) details.open = false;
+  });
+  document.addEventListener('keydown', (event) => {
+    const details = $('#comparisonInputFilter');
+    if (event.key === 'Escape' && details?.open) { details.open = false; details.querySelector('summary')?.focus(); }
+  });
   document.querySelectorAll('[data-case-tab]').forEach(button => button.addEventListener('click', () => selectComparisonCaseTab(button.dataset.caseTab)));
   $('#comparisonCaseRows')?.addEventListener('click', event => {
     const button=event.target.closest('[data-comparison-media]');
@@ -517,6 +660,7 @@ function bindRunComparisonEvents() {
     state.runComparison.candidateLabel = "ALL";
     state.runComparison.labelChange = "ALL";
     state.runComparison.search = "";
+    state.runComparison.inputFilter = { version: 1, run: "candidate", relation: "all", conditions: [] };
     state.runComparison.page = 1;
     if ($("#comparisonSearchInput")) $("#comparisonSearchInput").value = "";
     if ($("#comparisonGtFilter")) $("#comparisonGtFilter").value = "ALL";
@@ -524,6 +668,7 @@ function bindRunComparisonEvents() {
     if ($("#comparisonCandidateLabelFilter")) $("#comparisonCandidateLabelFilter").value = "ALL";
     if ($("#comparisonLabelChangeFilter")) $("#comparisonLabelChangeFilter").value = "ALL";
     renderRunComparisonTransitionFilter();
+    populateComparisonInputFilter();
     loadRunComparison({ historyMode: "push" }).catch((error) => showToast(error.message, true));
   });
   let searchTimer = null;
@@ -657,6 +802,12 @@ async function loadComparisonCaseInputs(issueId,payload) {
     const data=await api(`/api/model-run-comparison/cases/${encodeURIComponent(issueId)}/inputs?${params}`);
     if(seq!==comparisonCaseRequest || !$('#comparisonReasonDialog').open) return;
     const a=data.baseline,b=data.candidate;
+    const extraTarget = $('#comparisonDialogExtraInputs');
+    extraTarget.innerHTML = comparisonExtraInputsHtml({baseline:a.extra_inputs,candidate:b.extra_inputs}, {dialog:true});
+    extraTarget.hidden = !extraTarget.innerHTML;
+    const sceneTarget = $('#comparisonDialogSceneTags');
+    sceneTarget.innerHTML = comparisonSceneTagsHtml(data.scene_review);
+    sceneTarget.hidden = !sceneTarget.innerHTML;
     target.innerHTML=`<section data-case-content="prompt"><h3>Prompt 对比</h3><div class="comparison-original"><div class="prompt-meta">${comparisonPromptMeta(a.prompt)}</div><div class="prompt-meta">${comparisonPromptMeta(b.prompt)}</div></div><div data-case-prompt></div><details><summary>Run 模板／示例参考（不是该 Case 实际输入）</summary><div class="comparison-original"><div class="prompt-meta">${comparisonPromptMeta(a.run_reference.prompt)}</div><div class="prompt-meta">${comparisonPromptMeta(b.run_reference.prompt)}</div></div><div data-case-reference></div></details></section><section data-case-content="config" hidden><p>逐 Case 配置：基线 ${a.input.available ? '实际输入' : '未保存'} · 新 Run ${b.input.available ? '实际输入' : '未保存'}</p><div data-case-config></div><h4>已记录媒体 · 顺序与时间点</h4><p>${escapeHtml(a.media.notice)}</p><div data-case-media></div><details><summary>Run 输入配置参考</summary><div data-case-config-reference></div></details></section>`;
     mountComparisonDiff(target.querySelector('[data-case-prompt]'),a.prompt.text,b.prompt.text);
     mountComparisonDiff(target.querySelector('[data-case-reference]'),a.run_reference.prompt.template,b.run_reference.prompt.template);

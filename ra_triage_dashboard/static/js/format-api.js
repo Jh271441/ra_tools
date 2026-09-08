@@ -398,6 +398,10 @@ function tagLabel(key) {
     (item) => String(item.key) === value
   );
   if (catalogItem?.label) return catalogItem.label;
+  const historicalLabels = {
+    straight_road: "直行",
+  };
+  if (historicalLabels[value]) return historicalLabels[value];
   if (value.startsWith("custom:")) return value.slice("custom:".length) || value;
   return value;
 }

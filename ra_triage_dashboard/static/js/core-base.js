@@ -650,6 +650,7 @@ const state = {
     baselineLabel: "ALL",
     candidateLabel: "ALL",
     labelChange: "ALL",
+    inputFilter: { version: 1, run: "candidate", relation: "all", conditions: [] },
     search: "",
     page: 1,
     pageSize: 10,

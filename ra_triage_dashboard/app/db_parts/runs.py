@@ -6,7 +6,13 @@ import uuid
 from typing import Any, Iterable, Sequence
 
 from ..sanitization import redact_sensitive_fields
-from ..comparison_inputs import case_input_projection, public_input
+from ..comparison_inputs import (
+    case_input_projection,
+    extra_input_matches,
+    extra_input_summary,
+    normalize_extra_input_filter,
+    public_input,
+)
 from .shared import (
     LABELS,
     MODEL_LABELS,
@@ -294,6 +300,7 @@ class DatabaseRunsMixin:
         baseline_label: str = "all",
         candidate_label: str = "all",
         label_change: str = "all",
+        input_filter: Any = None,
         search: str = "",
         page: int = 1,
         page_size: int = 10,
@@ -344,6 +351,7 @@ class DatabaseRunsMixin:
         if normalized_label_change not in {"ALL", "CHANGED", "UNCHANGED"}:
             raise ValueError("不支持的标签变化筛选。")
         normalized_search = str(search or "").strip().lower()[:128]
+        normalized_input_filter = normalize_extra_input_filter(input_filter)
         page_size = min(max(int(page_size), 1), 100)
         page = max(int(page), 1)
 
@@ -363,16 +371,34 @@ class DatabaseRunsMixin:
                 """,
                 run_ids,
             ).fetchall()
+            annotation_join = self._latest_annotation_join(
+                candidate_run_id,
+                include_unbound_fallback=True,
+                include_bound_history_fallback=True,
+            )
+            annotation_params = self._latest_annotation_join_params(
+                candidate_run_id,
+                include_unbound_fallback=True,
+                include_bound_history_fallback=True,
+            )
             rows = conn.execute(
                 f"""
                 SELECT i.issue_id, i.gt_label, i.baseline_scope,
+                       ann.id AS annotation_id, ann.tags_json AS annotation_tags_json,
+                       ann.author AS annotation_author, ann.created_at AS annotation_created_at,
+                       ann.model_run_id AS annotation_model_run_id,
                        base.model_label AS baseline_model_label,
                        base.model_reason AS baseline_model_reason,
                        base.model_confidence AS baseline_model_confidence,
+                       base.raw_json AS baseline_raw_json,
+                       base.model_extra_json AS baseline_model_extra_json,
                        candidate.model_label AS candidate_model_label,
                        candidate.model_reason AS candidate_model_reason,
-                       candidate.model_confidence AS candidate_model_confidence
+                       candidate.model_confidence AS candidate_model_confidence,
+                       candidate.raw_json AS candidate_raw_json,
+                       candidate.model_extra_json AS candidate_model_extra_json
                 FROM issues i
+                {annotation_join}
                 LEFT JOIN model_predictions base
                   ON base.issue_id = i.issue_id
                  AND base.model_run_id = ?
@@ -384,6 +410,7 @@ class DatabaseRunsMixin:
                 ORDER BY i.issue_id ASC
                 """,
                 (
+                    *annotation_params,
                     baseline_run_id,
                     candidate_run_id,
                     *scope_params,
@@ -435,6 +462,30 @@ class DatabaseRunsMixin:
             matrices["baseline"][gt_label][baseline_bucket] += 1
             matrices["candidate"][gt_label][candidate_bucket] += 1
             transition_counts[transition_key] += 1
+            baseline_extra_inputs = extra_input_summary(
+                _json_load(row["baseline_raw_json"], {}),
+                _json_load(row["baseline_model_extra_json"], {}),
+            )
+            candidate_extra_inputs = extra_input_summary(
+                _json_load(row["candidate_raw_json"], {}),
+                _json_load(row["candidate_model_extra_json"], {}),
+            )
+            annotation_id = row["annotation_id"]
+            scene_review = None
+            if annotation_id is not None:
+                annotation_run_id = str(row["annotation_model_run_id"] or "")
+                scene_review = {
+                    "id": int(annotation_id),
+                    "tags": _json_load(row["annotation_tags_json"], []),
+                    "author": str(row["annotation_author"] or ""),
+                    "created_at": str(row["annotation_created_at"] or ""),
+                    "model_run_id": annotation_run_id,
+                    "source": (
+                        "candidate" if annotation_run_id == candidate_run_id
+                        else "unbound" if not annotation_run_id
+                        else "other_run"
+                    ),
+                }
             comparison_rows.append(
                 {
                     "issue_id": str(row["issue_id"]),
@@ -452,6 +503,11 @@ class DatabaseRunsMixin:
                         "model_confidence": row["candidate_model_confidence"],
                         "correct": candidate_correct,
                     },
+                    "extra_inputs": {
+                        "baseline": baseline_extra_inputs,
+                        "candidate": candidate_extra_inputs,
+                    },
+                    "scene_review": scene_review,
                     "transition": transition_key,
                     "label_changed": baseline_bucket != candidate_bucket,
                 }
@@ -493,6 +549,18 @@ class DatabaseRunsMixin:
 
         baseline_matrix = matrix_payload("baseline")
         candidate_matrix = matrix_payload("candidate")
+
+        def matches_input_filter(item: dict[str, Any]) -> bool:
+            scope = normalized_input_filter["run"]
+            if scope == "baseline":
+                return extra_input_matches(item["extra_inputs"]["baseline"], normalized_input_filter)
+            if scope == "candidate":
+                return extra_input_matches(item["extra_inputs"]["candidate"], normalized_input_filter)
+            return any(
+                extra_input_matches(item["extra_inputs"][side], normalized_input_filter)
+                for side in ("baseline", "candidate")
+            )
+
         filtered_rows = [
             item
             for item in comparison_rows
@@ -525,6 +593,7 @@ class DatabaseRunsMixin:
                 or normalized_search
                 in str(item["candidate"]["model_reason"] or "").lower()
             )
+            and matches_input_filter(item)
         ]
         # Keep the case list predictable across filter changes. Transition counts
         # remain available as filters, but never override the canonical Issue ID
@@ -566,6 +635,7 @@ class DatabaseRunsMixin:
                 "candidate_label": normalized_candidate_label,
                 "label_change": normalized_label_change,
                 "search": normalized_search,
+                "input_filter": normalized_input_filter,
             },
             "items": filtered_rows[offset : offset + page_size],
             "total": total_filtered,
@@ -592,7 +662,28 @@ class DatabaseRunsMixin:
                 detail.update(run_id=run_id, prediction_available=row is not None,
                               run_reference=self._comparison_run_snapshot(run, self._batch_job_dict(job) if job else None))
                 result.append(detail)
-        return {"issue_id": issue_id, "baseline": result[0], "candidate": result[1]}
+            annotation_params = self._latest_annotation_join_params(
+                str(run_ids[1]), include_unbound_fallback=True,
+                include_bound_history_fallback=True,
+            )
+            annotation = conn.execute(
+                f"""SELECT ann.id, ann.tags_json, ann.author, ann.created_at, ann.model_run_id
+                    FROM issues i
+                    {self._latest_annotation_join(str(run_ids[1]), include_unbound_fallback=True, include_bound_history_fallback=True)}
+                    WHERE i.issue_id = ?""",
+                (*annotation_params, issue_id),
+            ).fetchone()
+        scene_review = None
+        if annotation is not None and annotation["id"] is not None:
+            annotation_run_id = str(annotation["model_run_id"] or "")
+            scene_review = {
+                "id": int(annotation["id"]), "tags": _json_load(annotation["tags_json"], []),
+                "author": str(annotation["author"] or ""),
+                "created_at": str(annotation["created_at"] or ""),
+                "model_run_id": annotation_run_id,
+                "source": "candidate" if annotation_run_id == str(run_ids[1]) else "unbound" if not annotation_run_id else "other_run",
+            }
+        return {"issue_id": issue_id, "baseline": result[0], "candidate": result[1], "scene_review": scene_review}
 
     @staticmethod
     def _comparison_run_snapshot(
