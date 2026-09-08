@@ -257,6 +257,7 @@ function renderComparisonReasonSide(prefix, prediction, run) {
   const verdict = prediction?.correct ? uiText("匹配 GT", "Matches GT") : uiText("不匹配 GT", "Differs from GT");
   $(`#comparisonReason${prefix}Run`).textContent = run?.name || run?.id || "—";
   $(`#comparisonReason${prefix}ModelLabel`).textContent = prediction?.model_label || "NONE";
+  $(`#comparisonReason${prefix}ModelLabel`).dataset.triageLabel = prediction?.model_label || "NONE";
   $(`#comparisonReason${prefix}Confidence`).textContent = confidence == null ? "—" : Number(confidence).toFixed(3);
   const verdictElement = $(`#comparisonReason${prefix}Verdict`);
   verdictElement.textContent = verdict;
@@ -270,7 +271,7 @@ function openComparisonReasonDialog(issueId) {
   if (!item) return;
   const dialog = $("#comparisonReasonDialog");
   $("#comparisonReasonTitle").textContent = `${item.issue_id} · ${uiText("Case 对比", "Case comparison")}`;
-  $("#comparisonReasonContext").innerHTML = `<span class="comparison-context-gt"><small>GT</small><strong>${escapeHtml(item.gt_label || "未保存")}</strong></span><span class="comparison-context-transition">${escapeHtml(comparisonTransitionText(item.transition))}</span>`;
+  $("#comparisonReasonContext").innerHTML = `<span class="comparison-context-gt"><small>GT</small><strong data-triage-label="${escapeHtml(item.gt_label || "")}">${escapeHtml(item.gt_label || "未保存")}</strong></span><span class="comparison-context-transition">${escapeHtml(comparisonTransitionText(item.transition))}</span>`;
   $("#comparisonCaseScroll").scrollTop = 0;
   renderComparisonReasonSide("Baseline", item.baseline, payload?.baseline_run);
   renderComparisonReasonSide("Candidate", item.candidate, payload?.candidate_run);

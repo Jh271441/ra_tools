@@ -873,3 +873,23 @@ html[data-color-theme="light"] .analysis-confusion-table .confusion-mismatch { c
 #comparisonReasonDialog .comparison-case-tabs button[aria-selected="true"] { color:var(--accent); background:var(--accent-soft); border-color:color-mix(in srgb,var(--accent) 25%,transparent); }
 #comparisonReasonDialog .comparison-case-tabs button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
 @media(max-width:640px) { #comparisonReasonDialog .comparison-case-tabs button { flex:1; } }
+
+#comparisonReasonDialog .dialog-heading > div:first-child { display:flex; align-items:center; gap:14px; min-width:0; }
+#comparisonReasonContext { margin:0; flex-wrap:nowrap; white-space:nowrap; }
+#comparisonReasonTitle { white-space:nowrap; }
+#comparisonReasonDialog [data-triage-label="误触发"] { color:#fca5a5; }
+#comparisonReasonDialog [data-triage-label="正确触发"] { color:#6ee7b7; }
+#comparisonReasonDialog [data-triage-label="无需协助"] { color:#fcd34d; }
+html[data-color-theme="light"] #comparisonReasonDialog [data-triage-label="误触发"] { color:#b91c1c; }
+html[data-color-theme="light"] #comparisonReasonDialog [data-triage-label="正确触发"] { color:#047857; }
+html[data-color-theme="light"] #comparisonReasonDialog [data-triage-label="无需协助"] { color:#a16207; }
+@media(max-width:900px) {
+  #comparisonReasonDialog .dialog-heading { gap:8px; }
+  #comparisonReasonDialog .dialog-heading > div:first-child { gap:8px; flex-shrink:1; }
+  #comparisonReasonTitle { font-size:14px; }
+  .comparison-context-gt { padding:3px 6px; }
+  .comparison-context-gt strong { font-size:14px; }
+  .comparison-context-transition { font-size:10px; }
+}
+
+@media(max-width:640px) { #comparisonReasonDialog .dialog-heading > div:first-child { flex-wrap:wrap; } }
