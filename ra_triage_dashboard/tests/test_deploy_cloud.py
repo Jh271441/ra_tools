@@ -38,7 +38,7 @@ class DeployTests(unittest.TestCase):
         self.assertEqual(d.capture_env(env), env)
 
     def test_health_rejects_wrong_version_backend_and_writers(self):
-        health = dict(ok=True, build_commit="a"*40, storage="sqlite", trail_attribute_write_enabled=False,
+        health = dict(ok=True, build_commit="a"*40, storage="sqlite-mvp", trail_attribute_write_enabled=False,
                       trail_attribute_review_write_enabled=False, batch_prediction_enabled=False, autotriage_push_enabled=False)
         d.check_health(health, "a"*40, "sqlite")
         for changes in ({"build_commit": "b"*40}, {"storage": "postgresql"}, {"batch_prediction_enabled": True}, {"ok": False}):

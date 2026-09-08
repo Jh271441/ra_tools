@@ -105,7 +105,8 @@ def gray_env(env, candidate, data, sha):
 def check_health(health, sha, storage):
     require(health.get("ok") is True, "Health is not OK")
     require(health.get("build_commit") == sha, "Running SHA differs from target")
-    require(health.get("storage") == storage, "Unexpected database backend")
+    backend = {"sqlite-mvp": "sqlite"}.get(health.get("storage"), health.get("storage"))
+    require(backend == storage, "Unexpected database backend")
     if storage == "sqlite":
         for key in ("trail_attribute_write_enabled", "trail_attribute_review_write_enabled",
                     "batch_prediction_enabled", "autotriage_push_enabled"):
