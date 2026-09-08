@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-344`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-347`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -985,16 +985,7 @@
                 </article>
               </section>
 
-              <section class="comparison-snapshot-grid">
-                <details class="page-card comparison-snapshot" id="comparisonBaselineSnapshot">
-                  <summary><span class="ui-lang-zh">基线 Prompt / 输入快照</span><span class="ui-lang-en">Baseline Prompt / input snapshot</span></summary>
-                  <div class="comparison-snapshot-body"></div>
-                </details>
-                <details class="page-card comparison-snapshot" id="comparisonCandidateSnapshot">
-                  <summary><span class="ui-lang-zh">新 Run Prompt / 输入快照</span><span class="ui-lang-en">Candidate Prompt / input snapshot</span></summary>
-                  <div class="comparison-snapshot-body"></div>
-                </details>
-              </section>
+              <details class="page-card comparison-snapshot"><summary>Run Prompt / 输入配置对比</summary><div id="comparisonRunDiff"></div></details>
 
               <section class="page-card comparison-cases-card">
                 <div class="comparison-cases-heading">
@@ -1017,7 +1008,7 @@
                 </div>
                 <div class="comparison-table-wrap">
                   <table class="comparison-case-table">
-                    <thead><tr><th>Issue / GT</th><th><span class="ui-lang-zh">基线输出</span><span class="ui-lang-en">Baseline</span></th><th><span class="ui-lang-zh">新 Run 输出</span><span class="ui-lang-en">Candidate</span></th><th><span class="ui-lang-zh">变化</span><span class="ui-lang-en">Change</span></th><th><span class="ui-lang-zh">复核</span><span class="ui-lang-en">Review</span></th></tr></thead>
+                    <thead><tr><th>Issue / GT</th><th>BEV 预览</th><th><span class="ui-lang-zh">基线输出</span><span class="ui-lang-en">Baseline</span></th><th><span class="ui-lang-zh">新 Run 输出</span><span class="ui-lang-en">Candidate</span></th><th><span class="ui-lang-zh">变化</span><span class="ui-lang-en">Change</span></th><th><span class="ui-lang-zh">复核</span><span class="ui-lang-en">Review</span></th></tr></thead>
                     <tbody id="comparisonCaseRows"></tbody>
                   </table>
                 </div>
@@ -1357,11 +1348,18 @@
       <div class="dialog-card">
         <div class="dialog-heading">
           <div>
-            <h2 id="comparisonReasonTitle"><span class="ui-lang-zh">Reason 对比</span><span class="ui-lang-en">Reason comparison</span></h2>
+            <h2 id="comparisonReasonTitle"><span class="ui-lang-zh">Case 对比</span><span class="ui-lang-en">Case comparison</span></h2>
             <p class="dialog-copy" id="comparisonReasonContext"></p>
           </div>
           <button class="icon-button" type="button" data-close="comparisonReasonDialog" aria-label="Close">×</button>
         </div>
+        <div class="comparison-case-tabs" role="tablist" aria-label="Case 对比">
+          <button type="button" role="tab" data-case-tab="output">输出</button>
+          <button type="button" role="tab" data-case-tab="prompt">Prompt</button>
+          <button type="button" role="tab" data-case-tab="config">输入配置</button>
+          <button type="button" id="comparisonCaseMedia">参考媒体</button>
+        </div>
+        <div id="comparisonCaseInputs" hidden></div>
         <div class="comparison-reason-grid">
           <section class="comparison-reason-panel" id="comparisonReasonBaselinePanel">
             <header>
@@ -1831,7 +1829,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-344`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-347`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
