@@ -5,10 +5,6 @@
   line-height: 1.45;
 }
 
-.run-comparison-lead strong {
-  color: var(--accent, #27cee8);
-}
-
 .run-comparison-controls {
   padding: 10px;
 }
