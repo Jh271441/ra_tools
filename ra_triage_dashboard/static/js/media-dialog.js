@@ -445,7 +445,7 @@ function renderMediaDialog() {
   const predictionMatches = modelLabelMatchesGt(modelLabel, gtLabel);
   const comparisonText = predictionComparable ? (predictionMatches ? "一致" : "不一致") : "未输出";
   const comparisonClass = predictionComparable && !predictionMatches ? "comparison-fail" : "comparison-neutral";
-  $("#mediaDecisionSummary").hidden = Boolean(snapshot?.intentPreview);
+  $("#mediaDecisionSummary").hidden = Boolean(snapshot?.intentPreview || snapshot?.referenceMedia);
   $("#mediaDecisionSummary").innerHTML = `
     <span class="comparison-side-label comparison-side-gt">GT</span>${labelBadge(gtLabel, "缺失")}
     <b aria-hidden="true">→</b>
