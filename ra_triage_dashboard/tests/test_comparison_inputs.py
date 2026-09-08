@@ -51,6 +51,13 @@ def test_structured_extra_inputs_and_prompt_fallback():
     assert prompt['axes']['routing']['counts'] == {'直行': 7, '左转': 2}
     assert prompt['axes']['lane_change']['counts'] == {'非变道': 6, '变道': 3}
 
+    probabilities = extra_input_summary({}, {'prompt_text': '\n'.join([
+        't=-5.0s | 变道概率：保持车道=0.9674, 变更车道=0.0326 | Routing 概率：直行=0.9812, 左转=0.0057, 右转=0.0096, 掉头=0.0035',
+        't=+5.0s | 变道概率：保持车道=0.0708, 变更车道=0.9292 | Routing 概率：直行=0.0719, 左转=0.0080, 右转=0.9157, 掉头=0.0044',
+    ])})
+    assert probabilities['axes']['routing']['counts'] == {'直行': 1, '右转': 1}
+    assert probabilities['axes']['lane_change']['counts'] == {'非变道': 1, '变道': 1}
+
 
 def test_extra_input_filter_requires_one_run_to_satisfy_complete_expression():
     summary = extra_input_summary({}, {

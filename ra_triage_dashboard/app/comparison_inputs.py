@@ -26,9 +26,10 @@ EXTRA_INPUT_AXES = {
         'keys': ('lane_change_intent_frames', 'lane_change_intents', 'lane_change_intent'),
         'values': {
             'lane_change': '变道', 'no_lane_change': '非变道',
+            '变更车道': '变道', '保持车道': '非变道',
             '变道': '变道', '非变道': '非变道',
         },
-        'prompt_markers': ('lane_change', '变道意图', '自车变道'),
+        'prompt_markers': ('lane_change', '变道意图', '自车变道', '变道概率'),
     },
 }
 
@@ -70,6 +71,15 @@ def _count_axis_value(value: Any, aliases: dict[str, str]) -> Counter[str]:
     return counts
 
 
+def _probability_winner(value: str, aliases: dict[str, str]) -> str:
+    candidates: list[tuple[float, str]] = []
+    for raw in sorted(aliases, key=len, reverse=True):
+        match = re.search(rf'{re.escape(raw)}\s*=\s*(0(?:\.\d+)?|1(?:\.0+)?)', value, re.I)
+        if match:
+            candidates.append((float(match.group(1)), aliases[raw]))
+    return max(candidates, default=(0.0, ''))[1]
+
+
 def extra_input_summary(raw: dict, extra: dict) -> dict[str, Any]:
     """Project only explicitly saved per-Case auxiliary model inputs."""
     raw = raw if isinstance(raw, dict) else {}
@@ -105,7 +115,13 @@ def extra_input_summary(raw: dict, extra: dict) -> dict[str, Any]:
                 for line in prompt.splitlines():
                     folded = line.casefold()
                     if any(marker.casefold() in folded for marker in spec['prompt_markers']):
-                        parsed = _count_axis_value(line, spec['values'])
+                        segment = line
+                        if axis == 'routing' and re.search(r'routing\s*概率', line, re.I):
+                            segment = re.split(r'routing\s*概率\s*[：:]', line, flags=re.I)[-1]
+                        elif axis == 'lane_change' and '变道概率' in line:
+                            segment = line.split('变道概率', 1)[-1].split('| Routing', 1)[0]
+                        winner = _probability_winner(segment, spec['values'])
+                        parsed = Counter({winner: 1}) if winner else _count_axis_value(segment, spec['values'])
                         if parsed:
                             counts.update(parsed)
                             source = 'actual_prompt'
