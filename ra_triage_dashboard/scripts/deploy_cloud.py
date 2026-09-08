@@ -279,7 +279,7 @@ def deploy(sha, check_only=False):
             test_env = gray_env(env, candidate, data, sha)
             print("Running complete cloud test suite", flush=True)
             with (folder / "tests.log").open("w") as log:
-                run(PYTHON, "-m", "pytest", "ra_triage_dashboard/tests", "-q", cwd=candidate, env=test_env, stdout=log, stderr=subprocess.STDOUT, timeout=600)
+                run(PYTHON, "-m", "pytest", "ra_triage_dashboard/tests", "-q", cwd=candidate, env=dict(test_env, DASHBOARD_BASE_PATH=""), stdout=log, stderr=subprocess.STDOUT, timeout=600)
             with (folder / "gray.log").open("w") as log:
                 gray = subprocess.Popen([str(PYTHON), "-m", "uvicorn", "app.main:app", "--app-dir", str(candidate / "ra_triage_dashboard"), "--host", "127.0.0.1", "--port", "8786"], cwd=candidate, env=test_env, stdout=log, stderr=subprocess.STDOUT)
             smoke(8786, sha, "sqlite")
