@@ -90,6 +90,14 @@ class DeployTests(unittest.TestCase):
                 d.cleanup(state,folder)
             run.assert_not_called()
 
+    def test_zombie_process_counts_as_stopped(self):
+        with patch.object(d.Path,"read_text",return_value="27205 (python3) Z 17766 27205"):
+            self.assertFalse(d.process_alive(27205))
+        with patch.object(d.Path,"read_text",return_value="27205 (python3) S 17766 27205"):
+            self.assertTrue(d.process_alive(27205))
+        with patch.object(d.Path,"read_text",side_effect=FileNotFoundError):
+            self.assertFalse(d.process_alive(27205))
+
     def test_stop_refuses_changed_process(self):
         with patch.object(d,"git_pane_pid",return_value=456),patch.object(d.os,"kill") as kill:
             with self.assertRaises(d.DeployError): d.stop_production(123)
@@ -119,6 +127,7 @@ class DeployTests(unittest.TestCase):
             stack.enter_context(patch.object(d,"run",side_effect=run))
             stack.enter_context(patch.object(d.subprocess,"Popen"))
             stack.enter_context(patch.object(d,"stop_child"))
+            stack.enter_context(patch.object(d,"process_alive",return_value=False))
             stop=stack.enter_context(patch.object(d,"stop_production"))
             start=stack.enter_context(patch.object(d,"start_production"))
             stack.enter_context(patch.object(d,"git_pane_pid",return_value=22))

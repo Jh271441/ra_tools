@@ -179,13 +179,22 @@ def start_production(record_dir, app, env, sha, name):
     command += " >> " + shlex.quote(str(record_dir / (name + ".log"))) + " 2>&1"
     run("tmux", "new-session", "-d", "-s", SESSION, command)
 
+def process_alive(pid):
+    try:
+        status = Path(f"/proc/{pid}/stat").read_text()
+        # Container init may leave exited uvicorn children unreaped indefinitely.
+        return status.rsplit(") ", 1)[1].split()[0] not in {"Z", "X"}
+    except FileNotFoundError:
+        return False
+
+
 def stop_production(pid):
     require(git_pane_pid() == pid, "Production process changed during validation")
     os.kill(pid, signal.SIGTERM)
     end = time.monotonic() + 30
-    while Path(f"/proc/{pid}").exists() and time.monotonic() < end:
+    while process_alive(pid) and time.monotonic() < end:
         time.sleep(0.2)
-    require(not Path(f"/proc/{pid}").exists(), "Production did not stop gracefully")
+    require(not process_alive(pid), "Production did not stop gracefully")
     # tmux normally removes the empty session automatically.
     if subprocess.run(["tmux", "has-session", "-t", "=" + SESSION], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
         raise DeployError("Dashboard tmux session did not exit")
@@ -289,9 +298,10 @@ def deploy(sha, check_only=False):
             now_pid, now_env = read_live()
             require(now_pid == pid and now_env == env, "Runtime changed during gray")
             print("Gray passed; promoting exact SHA", flush=True)
+            save(folder / "production-before.json", {"app": str(REPO / "ra_triage_dashboard"), "env": env, "sha": old})
             run("git", "merge", "--ff-only", sha)
-            stop_production(pid)
             switched = True
+            stop_production(pid)
             start_production(folder, REPO / "ra_triage_dashboard", env, sha, "production")
             replacement_pid = git_pane_pid()
             after = smoke(8785, sha, "postgresql")
@@ -307,7 +317,7 @@ def deploy(sha, check_only=False):
         except BaseException as exc:
             stop_child(gray)
             result.update(status="failed", error_type=type(exc).__name__)
-            if switched:
+            if switched and not process_alive(pid):
                 try:
                     if replacement_pid is not None:
                         stop_production(replacement_pid)
