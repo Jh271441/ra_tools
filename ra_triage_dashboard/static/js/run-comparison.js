@@ -270,7 +270,8 @@ function openComparisonReasonDialog(issueId) {
   if (!item) return;
   const dialog = $("#comparisonReasonDialog");
   $("#comparisonReasonTitle").textContent = `${item.issue_id} · ${uiText("Case 对比", "Case comparison")}`;
-  $("#comparisonReasonContext").textContent = `${uiText("GT", "GT")} ${item.gt_label || "—"} · ${comparisonTransitionText(item.transition)}`;
+  $("#comparisonReasonContext").innerHTML = `<span class="comparison-context-gt"><small>GT</small><strong>${escapeHtml(item.gt_label || "未保存")}</strong></span><span class="comparison-context-transition">${escapeHtml(comparisonTransitionText(item.transition))}</span>`;
+  $("#comparisonCaseScroll").scrollTop = 0;
   renderComparisonReasonSide("Baseline", item.baseline, payload?.baseline_run);
   renderComparisonReasonSide("Candidate", item.candidate, payload?.candidate_run);
   dialog.dataset.issueId = String(issueId);

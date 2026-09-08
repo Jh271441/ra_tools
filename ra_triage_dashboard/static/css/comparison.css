@@ -857,3 +857,19 @@ html[data-color-theme="light"] .analysis-confusion-table .confusion-mismatch { c
 
 .comparison-bev:hover { border-color:color-mix(in srgb,var(--accent) 50%,var(--line)); }
 .comparison-bev:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+
+/* Header owns its row; only the content below it scrolls. */
+#comparisonReasonDialog .dialog-card { overflow:hidden; gap:0; }
+#comparisonReasonDialog .dialog-heading { position:relative; top:auto; z-index:auto; background:transparent; padding-bottom:14px; border-bottom:1px solid var(--line); }
+#comparisonReasonDialog .comparison-case-scroll { flex:1 1 auto; min-height:0; overflow:auto; padding-top:16px; padding-right:6px; scrollbar-color:var(--line) transparent; }
+#comparisonReasonDialog .dialog-actions { padding-top:12px; }
+#comparisonReasonContext { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-top:8px; }
+.comparison-context-gt { display:inline-flex; align-items:center; gap:8px; padding:5px 10px; border:1px solid var(--line); border-radius:6px; background:var(--overlay); }
+.comparison-context-gt small { color:var(--muted); font-size:11px; }
+.comparison-context-gt strong { color:var(--text); font-size:16px; font-weight:750; }
+.comparison-context-transition { color:var(--muted); font-size:12px; }
+#comparisonReasonDialog .dialog-heading .comparison-case-tabs { gap:3px; padding:4px; background:var(--bg); border:1px solid var(--line); border-radius:8px; }
+#comparisonReasonDialog .comparison-case-tabs button { border:1px solid transparent; background:transparent; border-radius:5px; padding:7px 14px; color:var(--muted); font-size:12px; }
+#comparisonReasonDialog .comparison-case-tabs button[aria-selected="true"] { color:var(--accent); background:var(--accent-soft); border-color:color-mix(in srgb,var(--accent) 25%,transparent); }
+#comparisonReasonDialog .comparison-case-tabs button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+@media(max-width:640px) { #comparisonReasonDialog .comparison-case-tabs button { flex:1; } }

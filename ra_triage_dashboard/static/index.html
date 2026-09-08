@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-353`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-354`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1358,6 +1358,7 @@
         </div>
           <button class="icon-button" type="button" data-close="comparisonReasonDialog" aria-label="Close">×</button>
         </div>
+        <div class="comparison-case-scroll" id="comparisonCaseScroll">
         <div class="comparison-case-evidence" id="comparisonCaseEvidence">
           <aside class="comparison-case-bev"><h3>参考媒体</h3><small id="comparisonCaseBevTime">BEV · t = 0s</small><button type="button" id="comparisonCaseBev" class="comparison-bev" aria-label="打开参考 BEV 媒体"><img id="comparisonCaseBevImage" alt="BEV 预览"><span>暂无 BEV</span></button><small id="comparisonCaseCameraTime">Camera</small><button type="button" id="comparisonCaseCamera" class="comparison-bev is-missing" aria-label="打开参考 Camera 媒体"><img id="comparisonCaseCameraImage" alt="Camera 预览" hidden><span>暂无 Camera</span></button></aside>
         <div class="comparison-reason-grid">
@@ -1394,6 +1395,7 @@
         </div>
         </div>
         <div id="comparisonCaseInputs"></div>
+        </div>
         <div class="dialog-actions">
           <button class="button button-primary" type="button" data-close="comparisonReasonDialog"><span class="ui-lang-zh">关闭</span><span class="ui-lang-en">Close</span></button>
         </div>
@@ -1831,7 +1833,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-353`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-354`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
