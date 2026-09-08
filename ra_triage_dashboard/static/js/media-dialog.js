@@ -445,21 +445,22 @@ function renderMediaDialog() {
   const predictionMatches = modelLabelMatchesGt(modelLabel, gtLabel);
   const comparisonText = predictionComparable ? (predictionMatches ? "一致" : "不一致") : "未输出";
   const comparisonClass = predictionComparable && !predictionMatches ? "comparison-fail" : "comparison-neutral";
-  $("#mediaDecisionSummary").hidden = Boolean(snapshot?.intentPreview || snapshot?.referenceMedia);
+  $("#mediaDecisionSummary").hidden = Boolean(snapshot?.intentPreview);
   $("#mediaDecisionSummary").innerHTML = `
     <span class="comparison-side-label comparison-side-gt">GT</span>${labelBadge(gtLabel, "缺失")}
     <b aria-hidden="true">→</b>
     <span class="comparison-side-label comparison-side-model">模型</span>${labelBadge(modelLabel, "未输出")}
     <strong class="${comparisonClass}">${comparisonText}</strong>`;
+  if (snapshot?.referenceMedia) $('#mediaDecisionSummary').innerHTML = `<span class="comparison-side-label comparison-side-gt">GT</span>${labelBadge(gtLabel, "未保存")}`;
   const imageStage = $("#mediaImageStage");
   const videoStage = $("#mediaVideoStage");
   imageStage.hidden = videoMode;
   videoStage.hidden = !videoMode;
   $("#mediaTimeline").hidden = videoMode;
   $("#mediaModeTabs").innerHTML = `
-    <button type="button" class="media-mode ${state.media.kind === "bev" ? "active" : ""}" data-media-mode="bev" ${bev.length ? "" : "disabled"}>BEV 图片 <span>${bev.length}</span></button>
-    <button type="button" class="media-mode ${state.media.kind === "camera" ? "active" : ""}" data-media-mode="camera" ${camera.length ? "" : "disabled"}>Camera 图片 <span>${camera.length}</span></button>
-    <button type="button" class="media-mode ${videoMode ? "active" : ""}" data-media-mode="video" ${video ? "" : "disabled"}>Ares Studio 视频 <span>${video ? "1" : "0"}</span></button>`;
+    <button type="button" class="media-mode ${state.media.kind === "bev" ? "active" : ""}" data-media-mode="bev" ${bev.length ? "" : "disabled"}>BEV 图片 <kbd>B</kbd> <span>${bev.length}</span></button>
+    <button type="button" class="media-mode ${state.media.kind === "camera" ? "active" : ""}" data-media-mode="camera" ${camera.length ? "" : "disabled"}>Camera 图片 <kbd>C</kbd> <span>${camera.length}</span></button>
+    <button type="button" class="media-mode ${videoMode ? "active" : ""}" data-media-mode="video" ${video ? "" : "disabled"}>Ares Studio 视频 <kbd>V</kbd> <span>${video ? "1" : "0"}</span></button>`;
   $("#mediaModeTabs").querySelectorAll("[data-media-mode]").forEach((button) => {
     button.addEventListener("click", () => switchMediaKind(button.dataset.mediaMode));
   });
@@ -479,7 +480,7 @@ function renderMediaDialog() {
     }
     $("#mediaTitle").textContent = `${snapshot?.issueId || ""} · Ares Studio 视频${snapshot?.referenceMedia ? " · 参考媒体" : ""}`;
     $("#mediaTimeline").innerHTML = "";
-    $("#mediaHelp").textContent = "← / → 按所选步长跳转 · 空格播放/暂停 · B/C/V 切媒体 · +/− 缩放 · 0 适配 · 放大后拖拽平移 · F 全屏 · Esc 退出";
+    $("#mediaHelp").textContent = "↑ / ↓ 切 Case · ← / → 按所选步长跳转 · 空格播放/暂停 · B/C/V 切媒体 · +/− 缩放 · 0 适配 · 放大后拖拽平移 · F 全屏 · Esc 退出";
     setMediaZoom(state.media.zoom, { resetScroll: state.media.zoom === 1 });
     return;
   }
@@ -514,7 +515,7 @@ function renderMediaDialog() {
   }
   $("#mediaHelp").textContent = snapshot?.intentPreview
     ? "← / → 切帧 · Space 同帧轮换 Camera / BEV · B/C 直达媒体 · +/− 缩放 · 0 复位 · F 全屏 · Esc 退出"
-    : "← / ↑ 上一帧 · → / ↓ 下一帧 · B/C/V 切媒体 · +/− 缩放 · 0 复位 · 放大后拖拽平移 · F 全屏 · Esc 退出";
+    : "↑ / ↓ 切 Case · ← / → 切帧 · B/C/V 切媒体 · +/− 缩放 · 0 复位 · 放大后拖拽平移 · F 全屏 · Esc 退出";
   $("#mediaTimeline").innerHTML = mediaTimelineButtonsMarkup(frames, state.media.index, "media-frame");
   $("#mediaTimeline").querySelectorAll("[data-media-frame]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -560,4 +561,41 @@ function moveMedia(delta) {
   if (!frames.length) return;
   state.media.index = (state.media.index + delta + frames.length) % frames.length;
   renderMediaDialog();
+}
+
+let comparisonMediaNavigating = false;
+async function navigateComparisonMediaCase(delta) {
+  if (state.activePage === 'review' && state.selectedId) {
+    const kind = state.media.kind;
+    await navigateAdjacentCase(delta);
+    if (state.selectedCase) openMedia(kind,heroFrameIndex(kind === 'camera' ? state.selectedCase.camera?.frames || [] : state.selectedCase.assets?.frames || []),{caseData:state.selectedCase});
+    return;
+  }
+  if (!state.media.snapshot?.referenceMedia || state.activePage !== 'comparison') {
+    showToast('请在 Run 对比中打开媒体后使用 ↑ / ↓ 切 Case。'); return;
+  }
+  if (comparisonMediaNavigating) return;
+  const payload = state.runComparison.data;
+  const index = (payload?.items || []).findIndex(item => item.issue_id === state.media.snapshot.issueId);
+  if (index < 0) return;
+  comparisonMediaNavigating = true;
+  try {
+    let next = payload.items[index + delta];
+    if (!next) {
+      const page = Number(payload.page) + delta;
+      if (page < 1 || page > Number(payload.page_count)) { showToast(delta < 0 ? '已经是第一个 Case' : '已经是最后一个 Case'); return; }
+      state.runComparison.page = page;
+      await loadRunComparison({historyMode:'replace'});
+      const rows = state.runComparison.data.items;
+      next = delta > 0 ? rows[0] : rows[rows.length - 1];
+    }
+    if (!next) return;
+    const kind = state.media.kind;
+    if ($('#comparisonReasonDialog').open) openComparisonReasonDialog(next.issue_id);
+    if (kind === 'video') {
+      const seq = ++state.media.requestSeq;
+      const data = await api(`/api/cases/${encodeURIComponent(next.issue_id)}/media`);
+      if (seq === state.media.requestSeq) openMedia('video',0,{caseData:{...data,reference_media:true}});
+    } else await openComparisonMedia(next.issue_id,kind);
+  } finally { comparisonMediaNavigating=false; }
 }

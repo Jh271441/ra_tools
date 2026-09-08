@@ -712,6 +712,11 @@ function bindEvents() {
       }
       return;
     }
+    if (!state.media.snapshot?.intentPreview && !event.target?.closest?.("input, textarea, select, [contenteditable=true], [role=textbox]") && !event.ctrlKey && !event.metaKey && !event.altKey && ["ArrowUp", "ArrowDown"].includes(event.key)) {
+      event.preventDefault();
+      navigateComparisonMediaCase(event.key === 'ArrowUp' ? -1 : 1).catch(error => showToast(error.message,true));
+      return;
+    }
     const intentPreview = Boolean(state.media.snapshot?.intentPreview);
     if (intentPreview) {
       if (event.key === "ArrowLeft") { event.preventDefault(); moveMedia(-1); }
@@ -720,8 +725,8 @@ function bindEvents() {
       if (event.key.toLowerCase() === "b") switchMediaKind("bev");
       if (event.key.toLowerCase() === "c") switchMediaKind("camera");
     } else {
-      if (["ArrowLeft", "ArrowUp", "["].includes(event.key)) { event.preventDefault(); moveMedia(-1); }
-      if (["ArrowRight", "ArrowDown", "]"].includes(event.key)) { event.preventDefault(); moveMedia(1); }
+      if (["ArrowLeft", "["].includes(event.key)) { event.preventDefault(); moveMedia(-1); }
+      if (["ArrowRight", "]"].includes(event.key)) { event.preventDefault(); moveMedia(1); }
       if (event.key.toLowerCase() === "b") switchMediaKind("bev");
       if (event.key.toLowerCase() === "c") switchMediaKind("camera");
       if (event.key.toLowerCase() === "v") switchMediaKind("video");
