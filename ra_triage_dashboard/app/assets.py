@@ -349,6 +349,20 @@ class CameraIndex:
             if child.is_file() and match:
                 numbered.append((int(match.group("index")), child.resolve()))
         numbered.sort(key=lambda item: item[0])
+        offsets = self._default_offsets
+        metadata_path = folder / "camera_meta.json"
+        if metadata_path.is_file():
+            # New captures carry explicit offsets. Never relabel them using the
+            # historical nine-frame recipe if their metadata is malformed.
+            offsets = (None,) * len(numbered)
+            try:
+                raw_offsets = json.loads(metadata_path.read_text(encoding="utf-8")).get("offsets_ms")
+                if (isinstance(raw_offsets, list) and len(raw_offsets) == len(numbered)
+                        and all(isinstance(value, (int, float)) and not isinstance(value, bool)
+                                and abs(value) <= 30000 for value in raw_offsets)):
+                    offsets = tuple(value / 1000 for value in raw_offsets)
+            except (OSError, ValueError, AttributeError):
+                pass
         assets: dict[str, Path] = {}
         frames: list[dict[str, Any]] = []
         for position, (frame_number, path) in enumerate(numbered):
@@ -356,7 +370,7 @@ class CameraIndex:
                 continue
             asset_id = f"camera-{position}"
             assets[asset_id] = path
-            offset = self._default_offsets[position] if position < len(self._default_offsets) else None
+            offset = offsets[position] if position < len(offsets) else None
             frames.append(
                 {
                     "id": asset_id,
