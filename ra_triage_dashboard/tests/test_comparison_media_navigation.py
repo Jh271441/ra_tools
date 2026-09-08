@@ -18,3 +18,33 @@ loadRunComparison=async()=>{state.runComparison.data={page:2,page_count:2,items:
 })();
 '''
     subprocess.run(['node','-e',script],check=True,capture_output=True)
+
+
+def test_comparison_case_dialog_shortcuts_queue_and_cross_pages():
+    script = Path('ra_triage_dashboard/static/js/run-comparison.js').read_text() + '''
+const assert=require('node:assert/strict');
+const dialog={open:true,dataset:{issueId:'a',tab:'prompt'}};
+const state={activePage:'comparison',runComparison:{page:1,data:{page:1,page_count:2,items:[{issue_id:'a'},{issue_id:'b'},{issue_id:'c'}]}}};
+const $=(selector)=>selector==='#comparisonReasonDialog' ? dialog : null;
+let opened=[];let notices=[];let pageLoads=0;
+showToast=(message)=>notices.push(message);
+uiText=(zh)=>zh;
+openComparisonReasonDialog=(id,options)=>{opened.push([id,options]);dialog.dataset.issueId=id;};
+loadRunComparison=async()=>{pageLoads++;state.runComparison.data=state.runComparison.page===2 ? {page:2,page_count:2,items:[{issue_id:'d'},{issue_id:'e'}]} : {page:1,page_count:2,items:[{issue_id:'a'},{issue_id:'b'},{issue_id:'c'}]};};
+(async()=>{
+ await Promise.all([navigateComparisonCaseDialog(1),navigateComparisonCaseDialog(1)]);
+ assert.deepEqual(opened,[['b',{preserveTab:true}],['c',{preserveTab:true}]]);
+ await navigateComparisonCaseDialog(1);
+ assert.equal(pageLoads,1);assert.equal(state.runComparison.page,2);
+ assert.deepEqual(opened[2],['d',{preserveTab:true}]);
+ await navigateComparisonCaseDialog(-1);
+ assert.deepEqual(opened[3],['c',{preserveTab:true}]);
+ await navigateComparisonCaseDialog(-1);
+ assert.deepEqual(opened[4],['b',{preserveTab:true}]);
+ await navigateComparisonCaseDialog(-1);
+ assert.deepEqual(opened[5],['a',{preserveTab:true}]);
+ await navigateComparisonCaseDialog(-1);
+ assert.ok(notices.length);
+})();
+'''
+    subprocess.run(['node', '-e', script], check=True, capture_output=True)

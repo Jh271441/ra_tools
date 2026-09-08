@@ -676,6 +676,19 @@ function bindEvents() {
     if (!$("#mediaDialog").open) {
       const target = event.target instanceof Element ? event.target : null;
       const interactiveTarget = target?.closest("input, textarea, select, [contenteditable='true'], [role='textbox']");
+      const comparisonCaseActive = state.activePage === "comparison" && Boolean($("#comparisonReasonDialog")?.open);
+      if (
+        comparisonCaseActive &&
+        !interactiveTarget &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        ["ArrowUp", "ArrowDown"].includes(event.key)
+      ) {
+        event.preventDefault();
+        navigateComparisonCaseDialog(event.key === "ArrowUp" ? -1 : 1).catch((error) => showToast(error.message, true));
+        return;
+      }
       const detailMediaActive =
         state.activePage === "review" &&
         Boolean(state.selectedCase) &&

@@ -265,11 +265,12 @@ function renderComparisonReasonSide(prefix, prediction, run) {
   $(`#comparisonReason${prefix}Body`).textContent = prediction?.model_reason || uiText("未保存／未生成 Reason", "Reason not saved / generated");
 }
 
-function openComparisonReasonDialog(issueId) {
+function openComparisonReasonDialog(issueId, { preserveTab = false } = {}) {
   const payload = state.runComparison.data;
   const item = (payload?.items || []).find((entry) => String(entry.issue_id) === String(issueId));
   if (!item) return;
   const dialog = $("#comparisonReasonDialog");
+  const selectedTab = preserveTab ? dialog.dataset.tab || "output" : "output";
   $("#comparisonReasonTitle").textContent = `${item.issue_id} · ${uiText("Case 对比", "Case comparison")}`;
   $("#comparisonReasonContext").innerHTML = `<span class="comparison-context-gt"><small>GT</small><strong data-triage-label="${escapeHtml(item.gt_label || "")}">${escapeHtml(item.gt_label || "未保存")}</strong></span><span class="comparison-context-transition">${escapeHtml(comparisonTransitionText(item.transition))}</span>`;
   $("#comparisonCaseScroll").scrollTop = 0;
@@ -281,9 +282,45 @@ function openComparisonReasonDialog(issueId) {
   preview.parentElement.classList.remove('is-missing');
   preview.src = withBase(`/api/case-thumbnails/${encodeURIComponent(issueId)}`);
   loadComparisonImagePreviews(issueId);
-  selectComparisonCaseTab('output');
+  selectComparisonCaseTab(selectedTab);
   if (dialog && !dialog.open) dialog.showModal();
   loadComparisonCaseInputs(issueId, payload);
+}
+
+async function stepComparisonCaseDialog(delta) {
+  const dialog = $("#comparisonReasonDialog");
+  if (!dialog?.open || state.activePage !== "comparison") return;
+  let payload = state.runComparison.data;
+  let items = payload?.items || [];
+  const index = items.findIndex((item) => String(item.issue_id) === String(dialog.dataset.issueId));
+  if (index < 0) return;
+  let next = items[index + delta];
+  if (!next) {
+    const page = Number(payload.page) + delta;
+    if (page < 1 || page > Number(payload.page_count)) {
+      showToast(
+        delta < 0
+          ? uiText("已经是第一个 Case", "Already at the first Case")
+          : uiText("已经是最后一个 Case", "Already at the last Case")
+      );
+      return;
+    }
+    state.runComparison.page = page;
+    await loadRunComparison({ historyMode: "replace" });
+    if (!dialog.open) return;
+    payload = state.runComparison.data;
+    items = payload?.items || [];
+    next = delta > 0 ? items[0] : items[items.length - 1];
+  }
+  if (next) openComparisonReasonDialog(next.issue_id, { preserveTab: true });
+}
+
+let comparisonCaseNavigationTail = Promise.resolve();
+function navigateComparisonCaseDialog(delta) {
+  const direction = delta < 0 ? -1 : 1;
+  const task = comparisonCaseNavigationTail.then(() => stepComparisonCaseDialog(direction));
+  comparisonCaseNavigationTail = task.catch(() => {});
+  return task;
 }
 
 function renderRunComparisonCases(payload) {

@@ -859,6 +859,9 @@ html[data-color-theme="light"] .analysis-confusion-table .confusion-mismatch { c
 #comparisonReasonDialog .dialog-heading { position:relative; top:auto; z-index:auto; background:transparent; padding-bottom:14px; border-bottom:1px solid var(--line); }
 #comparisonReasonDialog .comparison-case-scroll { flex:1 1 auto; min-height:0; overflow:auto; padding-top:16px; padding-right:6px; scrollbar-color:var(--line) transparent; }
 #comparisonReasonDialog .dialog-actions { padding-top:12px; }
+.comparison-case-shortcuts { margin-right:auto; display:flex; align-items:center; gap:5px; color:var(--muted); font-size:10px; }
+.comparison-case-shortcuts kbd { min-width:20px; padding:2px 5px; border:1px solid var(--line); border-radius:4px; background:var(--raised); color:var(--text); text-align:center; }
+@media(max-width:640px) { .comparison-case-shortcuts { width:100%; } }
 #comparisonReasonContext { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-top:8px; }
 .comparison-context-gt { display:inline-flex; align-items:center; gap:8px; padding:5px 10px; border:1px solid var(--line); border-radius:6px; background:var(--overlay); }
 .comparison-context-gt small { color:var(--muted); font-size:11px; }

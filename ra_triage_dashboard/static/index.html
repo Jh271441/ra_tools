@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-357`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-358`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1337,7 +1337,7 @@
       </form>
     </dialog>
 
-    <dialog class="dialog comparison-reason-dialog" id="comparisonReasonDialog" aria-labelledby="comparisonReasonTitle">
+    <dialog class="dialog comparison-reason-dialog" id="comparisonReasonDialog" aria-labelledby="comparisonReasonTitle" aria-keyshortcuts="ArrowUp ArrowDown">
       <div class="dialog-card">
         <div class="dialog-heading">
           <div>
@@ -1390,6 +1390,7 @@
         <div id="comparisonCaseInputs"></div>
         </div>
         <div class="dialog-actions">
+          <small class="comparison-case-shortcuts"><kbd>↑</kbd><kbd>↓</kbd> <span class="ui-lang-zh">上一个 / 下一个 Case</span><span class="ui-lang-en">Previous / next Case</span></small>
           <button class="button button-primary" type="button" data-close="comparisonReasonDialog"><span class="ui-lang-zh">关闭</span><span class="ui-lang-en">Close</span></button>
         </div>
       </div>
@@ -1826,7 +1827,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-357`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-358`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
