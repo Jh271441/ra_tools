@@ -2,6 +2,8 @@
 
 一个独立于 `ra_auto_triage` 的 issue triage / 标注 / 模型结果对比看板。
 
+部署入口与保留规则见 [统一发布流程](docs/deployment.md)。
+
 ## 当前产品快照
 
 - 默认工作集成员固定为 `trail_label_baseline_20260729.xlsx` 中 `dataset=0508` 的 **1071 条**。同一只读快照还注册了 `dataset=0206` 的 **1326 条**，另有 0626 抽检 **300 条**；三者可在顶栏独立或组合选择，默认仍仅选择 0508。运行时通过固定只读 Trail view 1000 的 `ra_merge_result` 完整校验并覆盖有效 GT。模型导入、Trail 模型字段快照和 AutoTriage 结果仍不能修改 GT。
