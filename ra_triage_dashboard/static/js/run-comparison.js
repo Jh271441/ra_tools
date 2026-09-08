@@ -563,7 +563,7 @@ function comparisonInline(a, b) {
 function mountComparisonDiff(target, left, right) {
   left = String(left || ''); right = String(right || '');
   const rows = comparisonDiffLines(left, right);
-  target.innerHTML = `<div class="comparison-diff-controls"><label><input type="checkbox" data-diff-full> 完整原文（默认仅看差异）</label><label><input type="checkbox" data-diff-unified> 统一视图（默认并排）</label></div><div class="comparison-diff-body"></div>`;
+  target.innerHTML = `<div class="comparison-diff-controls"><label><input type="checkbox" data-diff-full> 完整原文</label><label><input type="checkbox" data-diff-unified> 统一视图</label></div><div class="comparison-diff-body"></div>`;
   const draw = () => {
     const full = target.querySelector('[data-diff-full]').checked;
     const unified = target.querySelector('[data-diff-unified]').checked;
@@ -576,7 +576,7 @@ function mountComparisonDiff(target, left, right) {
     const renderRow = r => {
       const [a,b] = r.kind === 'change' ? comparisonInline(r.a,r.b) : [escapeHtml(r.a || ''),escapeHtml(r.b || '')];
       if (unified) return r.kind === 'same' ? `<div class="diff-line same"><small>${r.i} / ${r.j}</small><code> ${a}</code></div>` : `${r.a == null ? '' : `<div class="diff-line delete"><small>${r.i}</small><code>− ${a}</code></div>`}${r.b == null ? '' : `<div class="diff-line add"><small>${r.j}</small><code>+ ${b}</code></div>`}`;
-      return `<div class="diff-pair"><div class="diff-line ${r.kind === 'same' ? 'same' : 'delete'}"><small>${r.i || ''}</small><code>${a}</code></div><div class="diff-line ${r.kind === 'same' ? 'same' : 'add'}"><small>${r.j || ''}</small><code>${b}</code></div></div>`;
+      return `<div class="diff-pair"><div class="diff-line ${r.a == null ? 'empty' : r.kind === 'same' ? 'same' : 'delete'}"><small>${r.i || ''}</small><code>${a}</code></div><div class="diff-line ${r.b == null ? 'empty' : r.kind === 'same' ? 'same' : 'add'}"><small>${r.j || ''}</small><code>${b}</code></div></div>`;
     };
     let html = '';
     for (let n=0;n<rows.length;) {
@@ -585,7 +585,7 @@ function mountComparisonDiff(target, left, right) {
       const group = rows.slice(start,n);
       html += group.length > 8 ? group.slice(0,3).map(renderRow).join('') + `<details class="diff-fold"><summary>展开 ${group.length-6} 行相同内容</summary>${group.slice(3,-3).map(renderRow).join('')}</details>` + group.slice(-3).map(renderRow).join('') : group.map(renderRow).join('');
     }
-    body.innerHTML = `<p>${escapeHtml(notice)}</p><div class="diff-head"><span>基线</span><span>新 Run</span></div>${html}`;
+    body.innerHTML = `${notice ? `<p class="diff-notice">${escapeHtml(notice)}</p>` : ""}<div class="diff-head"><span>基线</span><span>新 Run</span></div>${html}`;
   };
   target.querySelectorAll('input').forEach(input => input.addEventListener('change',draw)); draw();
 }
@@ -598,12 +598,14 @@ function comparisonCanonical(value) {
 function comparisonConfigText(value) { return value == null ? '' : JSON.stringify(comparisonCanonical(value),null,2); }
 function comparisonPromptMeta(prompt) {
   const types = {actual_input:'实际输入',run_example:'Run 示例',run_template:'Run 模板',not_saved:'未保存'};
-  return [types[prompt?.source_type] || '未保存',prompt?.source,prompt?.version,prompt?.stage,prompt?.sha256 || prompt?.computed_sha256, prompt?.hash_matches === false ? "保存哈希与文本不一致" : "", prompt?.example_case_id ? `示例 Case: ${prompt.example_case_id}` : '',prompt?.redacted ? '展示内容已脱敏' : ''].filter(Boolean).map(escapeHtml).join(' · ');
+  const hash = String(prompt?.sha256 || prompt?.computed_sha256 || '');
+  const details = [prompt?.source, prompt?.version, prompt?.stage, hash, prompt?.hash_matches === false ? '保存哈希与文本不一致' : '', prompt?.redacted ? '展示内容已脱敏' : ''].filter(Boolean).map(escapeHtml).join('<br>');
+  return `<span class="prompt-source-badge">${escapeHtml(types[prompt?.source_type] || '未保存')}</span>${prompt?.example_case_id ? `<span class="prompt-example">示例 Case: ${escapeHtml(prompt.example_case_id)}</span>` : ''}<details class="prompt-provenance"><summary>${hash ? `SHA ${escapeHtml(hash.slice(0,12))}` : '来源信息'}</summary><div>${details || '未保存'}</div></details>`;
 }
 function renderComparisonRunDiff(payload) {
   const target = $('#comparisonRunDiff');
   const a=payload.baseline_run, b=payload.candidate_run;
-  target.innerHTML = `<div class="comparison-original"><p>${escapeHtml(a.name)}<br>${comparisonPromptMeta(a.prompt)}</p><p>${escapeHtml(b.name)}<br>${comparisonPromptMeta(b.prompt)}</p></div><h4>Prompt</h4><div data-run-prompt></div><h4>输入配置 · Run 参考</h4><div data-run-config></div>`;
+  target.innerHTML = `<div class="comparison-original"><div class="prompt-meta"><strong>${escapeHtml(a.name)}</strong><br>${comparisonPromptMeta(a.prompt)}</div><div class="prompt-meta"><strong>${escapeHtml(b.name)}</strong><br>${comparisonPromptMeta(b.prompt)}</div></div><h4>Prompt</h4><div data-run-prompt></div><h4>输入配置 · Run 参考</h4><div data-run-config></div>`;
   mountComparisonDiff(target.querySelector('[data-run-prompt]'),a.prompt?.template,b.prompt?.template);
   mountComparisonDiff(target.querySelector('[data-run-config]'),a.input?.available ? comparisonConfigText(a.input.config) : '', b.input?.available ? comparisonConfigText(b.input.config) : '');
 }
@@ -616,7 +618,7 @@ async function loadComparisonCaseInputs(issueId,payload) {
     const data=await api(`/api/model-run-comparison/cases/${encodeURIComponent(issueId)}/inputs?${params}`);
     if(seq!==comparisonCaseRequest || !$('#comparisonReasonDialog').open) return;
     const a=data.baseline,b=data.candidate;
-    target.innerHTML=`<section data-case-content="prompt"><h3>Prompt 对比</h3><div class="comparison-original"><p>${comparisonPromptMeta(a.prompt)}</p><p>${comparisonPromptMeta(b.prompt)}</p></div><div data-case-prompt></div><details><summary>Run 模板／示例参考（不是该 Case 实际输入）</summary><div class="comparison-original"><p>${comparisonPromptMeta(a.run_reference.prompt)}</p><p>${comparisonPromptMeta(b.run_reference.prompt)}</p></div><div data-case-reference></div></details></section><section data-case-content="config" hidden><p>逐 Case 配置：基线 ${a.input.available ? '实际输入' : '未保存'} · 新 Run ${b.input.available ? '实际输入' : '未保存'}</p><div data-case-config></div><h4>已记录媒体 · 顺序与时间点</h4><p>${escapeHtml(a.media.notice)}</p><div data-case-media></div><details><summary>Run 输入配置参考</summary><div data-case-config-reference></div></details></section>`;
+    target.innerHTML=`<section data-case-content="prompt"><h3>Prompt 对比</h3><div class="comparison-original"><div class="prompt-meta">${comparisonPromptMeta(a.prompt)}</div><div class="prompt-meta">${comparisonPromptMeta(b.prompt)}</div></div><div data-case-prompt></div><details><summary>Run 模板／示例参考（不是该 Case 实际输入）</summary><div class="comparison-original"><div class="prompt-meta">${comparisonPromptMeta(a.run_reference.prompt)}</div><div class="prompt-meta">${comparisonPromptMeta(b.run_reference.prompt)}</div></div><div data-case-reference></div></details></section><section data-case-content="config" hidden><p>逐 Case 配置：基线 ${a.input.available ? '实际输入' : '未保存'} · 新 Run ${b.input.available ? '实际输入' : '未保存'}</p><div data-case-config></div><h4>已记录媒体 · 顺序与时间点</h4><p>${escapeHtml(a.media.notice)}</p><div data-case-media></div><details><summary>Run 输入配置参考</summary><div data-case-config-reference></div></details></section>`;
     mountComparisonDiff(target.querySelector('[data-case-prompt]'),a.prompt.text,b.prompt.text);
     mountComparisonDiff(target.querySelector('[data-case-reference]'),a.run_reference.prompt.template,b.run_reference.prompt.template);
     mountComparisonDiff(target.querySelector('[data-case-config]'),a.input.available ? comparisonConfigText(a.input.config) : '',b.input.available ? comparisonConfigText(b.input.config) : '');
@@ -629,7 +631,7 @@ function selectComparisonCaseTab(tab) {
   const dialog=$('#comparisonReasonDialog'); dialog.dataset.tab=tab;
   dialog.querySelector('.comparison-reason-grid').hidden=tab!=='output';
   $('#comparisonCaseInputs').hidden=false;
-  $('#comparisonCaseEvidence').classList.toggle('config-only', tab==='config');
+  $('#comparisonCaseEvidence').hidden=tab!=='output';
   dialog.querySelectorAll('[data-case-content]').forEach(el => el.hidden=el.dataset.caseContent!==(tab==='output' ? 'prompt' : tab));
   dialog.querySelectorAll('[data-case-tab]').forEach(el=>el.setAttribute('aria-selected',String(el.dataset.caseTab===tab)));
 }

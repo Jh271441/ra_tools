@@ -67,3 +67,10 @@ these read the lightweight Issue identity, not full predictions/Reviews. A bound
 30-Case/30-second browser cache reuses image descriptors. Other media modes are
 completed after the clicked image opens, with stale-response checks. Full image
 transfer/decode is still subject to asset size and network latency.
+
+Case overview layout: the top row pairs reference media on the left with both
+Run output/Reason cards on the right; Prompt is full-width below. The dedicated
+Prompt tab hides the top row for focused reading. Diff surfaces use theme tokens,
+subtle added/deleted backgrounds and stronger inline marks. Alignment gaps remain
+neutral, not falsely coloured as deletions. Provenance details remain expandable
+with complete hashes while the default summary is compact.
