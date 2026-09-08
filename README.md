@@ -1,19 +1,21 @@
 # ra_tools
 
-一些围绕 RA issue、scenario 和结果分析的 Python 脚本集合。
+围绕 RA issue 复核、模型结果对比、scenario 复现和模型发布的工具与服务。
 
 ## 项目说明
 
-这个仓库主要包含三类内容：
+主要模块：
 
+- `ra_triage_dashboard/`：RA Triage Workbench，包含 Review、Runs、意图标注和 Batch
+- `ra_sim_repro_dashboard/`：仿真复现看板
 - `ra_api/`：对 issue、scenario 相关内部接口的简单封装
 - `utils/`：一些通用的数据处理和分析脚本
-- `stuck/`、`swag/`：按具体问题域拆分的脚本
+- `swag/`：SWAG / waypoint-assist 相关分析脚本
 - `model_release_pipeline/`：scenario dnn 模型导出、IFX 转换和 Voyager handoff 工具
 - `check_sim/`：scenario 路测 bag 下载、EzSim 复现和 road/sim 模型差异分析
 - `auto_triage_bot/`：DChat Auto Triage 只读问答 Bot（看板上下文 + 内部大模型）
 
-从当前代码结构看，这个仓库更偏向“脚本工具箱”，而不是一个完整打包发布的 Python 包。
+各模块按自己的 README 安装依赖和运行；仓库没有统一的 Python 包安装入口。
 
 ## 目录结构
 
@@ -29,11 +31,25 @@ ra_tools/
 ├── model_release_pipeline/
 ├── ra_api/                     # issue/scenario API + export_issues
 ├── ra_sim_repro_dashboard/     # 仿真复现看板（含 stats 脚本）
+├── ra_triage_dashboard/        # Issue 复核、模型结果对比与意图标注
+├── ops/                        # 网关和 CPA 运维配置
 ├── scripts/                    # 兼容入口（实现已迁到 check_sim 等）
 ├── swag/
 ├── utils/
 └── vlm/                        # VLM prompt 与 multimodal 客户端
 ```
+
+## 按任务选择入口
+
+| 任务 | 文档 |
+|---|---|
+| Issue 复核、模型结果对比、意图标注 | [RA Triage Workbench](ra_triage_dashboard/README.md) |
+| Scenario / bag 下载与路测仿真比对 | [check_sim](check_sim/README.md) |
+| 仿真复现看板 | [RA Sim Repro Dashboard](ra_sim_repro_dashboard/README.md) |
+| 模型导出、转换与发布 | [Model Release Pipeline](model_release_pipeline/README.md) |
+| DChat 只读问答 Bot | [Auto Triage Bot](auto_triage_bot/README.md) |
+| Ares 登录态与截图 | [Ares Playwright](ares_playwright/README.md) |
+| 网关与 CPA | [Gateway](ops/gateway/README.md)、[CPA](ops/cpa/README.md) |
 
 ## 环境要求
 
@@ -71,6 +87,10 @@ python -m model_release_pipeline.cli print-config
 ```
 
 ## 核心模块
+
+### `ra_triage_dashboard/`
+
+独立的 RA Triage Workbench，提供 Issue 复核、不可变 Model Runs 对比、Routing / 变道意图标注以及批次推理。安装、配置、运行与验证见 [模块 README](ra_triage_dashboard/README.md)。运行数据、媒体和凭据独立于代码仓库保存。
 
 ### `auto_triage_bot/`
 
