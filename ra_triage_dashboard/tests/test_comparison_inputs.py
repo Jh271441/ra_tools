@@ -66,4 +66,4 @@ assert.notEqual(comparisonConfigText([1,2]),comparisonConfigText([2,1]));
 
 def test_nearest_trigger_frame_selection():
     js=Path('ra_triage_dashboard/static/js/detail-media.js').read_text()
-    subprocess.run(['node','-e',js+"\nconst assert=require('node:assert/strict'); assert.equal(heroFrameIndex([{offset_ms:-9000},{offset_ms:0},{offset_ms:1000}]),1); assert.equal(heroFrameIndex([{offset_ms:-9000},{offset_ms:-5000},{offset_ms:1000}]),2); assert.equal(heroFrameIndex([{offset_sec:-2},{offset_sec:0}]),1);"],check=True,capture_output=True)
+    subprocess.run(['node','-e',js+"\nconst assert=require('node:assert/strict'); assert.equal(heroFrameIndex([{offset_ms:-9000},{offset_ms:0},{offset_ms:1000}]),1); assert.equal(heroFrameIndex([{offset_ms:-9000},{offset_ms:-5000},{offset_ms:1000}]),2); assert.equal(heroFrameIndex([{offset_sec:-2},{offset_sec:0}]),1); assert.equal(heroFrameIndex([{offset_ms:null,offset_sec:null},{offset_ms:1000}]),1); assert.ok(Number.isNaN(mediaFrameOffsetMs({offset_ms:null,offset_sec:null}))); "],check=True,capture_output=True)

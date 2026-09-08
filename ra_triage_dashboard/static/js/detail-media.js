@@ -4,12 +4,17 @@
  * ES modules without auditing cross-file function/state dependencies.
  */
 
+function mediaFrameOffsetMs(frame) {
+  if (frame?.offset_ms != null) return Number(frame.offset_ms);
+  if (frame?.offset_sec != null) return Number(frame.offset_sec) * 1000;
+  return NaN;
+}
 function heroFrameIndex(frames) {
-  const exact = frames.findIndex((frame) => Number(frame.offset_ms ?? frame.offset_sec * 1000) === 0);
+  const exact = frames.findIndex((frame) => mediaFrameOffsetMs(frame) === 0);
   if (exact >= 0) return exact;
   let best = -1, distance = Infinity;
   frames.forEach((frame, index) => {
-    const offset = Number(frame.offset_ms ?? frame.offset_sec * 1000);
+    const offset = mediaFrameOffsetMs(frame);
     if (Number.isFinite(offset) && Math.abs(offset) < distance) { best = index; distance = Math.abs(offset); }
   });
   return best >= 0 ? best : Math.floor(frames.length / 2);

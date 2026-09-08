@@ -648,7 +648,7 @@ async function loadComparisonImagePreviews(issueId) {
       const frame = frames[heroFrameIndex(frames)];
       const label = $(`#comparisonCase${prefix}Time`);
       if (!frame) {label.textContent = `${prefix === 'Bev' ? 'BEV' : 'Camera'} · 未保存`;continue;}
-      const ms = Number(frame.offset_ms ?? frame.offset_sec * 1000);
+      const ms = mediaFrameOffsetMs(frame);
       label.textContent = `${prefix === 'Bev' ? 'BEV' : 'Camera'} · ${Number.isFinite(ms) ? `t = ${ms/1000}s${ms === 0 ? '' : '（最近帧）'}` : '时间未保存'}`;
       if (prefix === 'Camera') {
         const url = safeSameOriginAssetUrl(frame.url);
