@@ -10,6 +10,20 @@ from ra_triage_dashboard.app.routers import cases as cases_router
 
 
 class DeferredCaseMediaTest(unittest.IsolatedAsyncioTestCase):
+    async def test_image_only_routes_never_scan_video_or_full_case(self):
+        provider = MagicMock()
+        provider.get_assets.return_value = {"frames": [{"offset_ms": 0}], "capture": {"timestamp_ms": 123}, "video": {"url": "unused"}}
+        provider.get_camera_assets.return_value = {"frames": [{"offset_ms": 0}]}
+        with patch.object(cases_router.database, "get_issue", return_value={"baseline_scope": "scope", "gt_label": "误触发"}), patch.object(cases_router.database, "get_case") as full_case, patch.object(cases_router, "media_for_issue", return_value=provider):
+            bev = await cases_router.get_case_media("cn1", kind="bev")
+            provider.get_camera_assets.assert_not_called()
+            self.assertNotIn("video", bev["assets"])
+            images = await cases_router.get_case_media("cn1", kind="images")
+            self.assertEqual(images["camera"]["frames"][0]["offset_ms"], 0)
+            provider.get_camera_assets.assert_called_once_with("cn1", 123)
+            provider.get_video.assert_not_called()
+            full_case.assert_not_called()
+
     async def test_resolver_starts_bev_and_video_before_camera(self) -> None:
         """The independent BEV/video scans must overlap on a cold volume."""
 

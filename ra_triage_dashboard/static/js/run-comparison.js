@@ -278,6 +278,7 @@ function openComparisonReasonDialog(issueId) {
   preview.hidden = false;
   preview.parentElement.classList.remove('is-missing');
   preview.src = withBase(`/api/case-thumbnails/${encodeURIComponent(issueId)}`);
+  loadComparisonImagePreviews(issueId);
   selectComparisonCaseTab('output');
   if (dialog && !dialog.open) dialog.showModal();
   loadComparisonCaseInputs(issueId, payload);
@@ -401,13 +402,16 @@ async function jumpToRunComparisonPage(rawPage) {
 }
 
 function bindRunComparisonEvents() {
-  $('#comparisonCaseBev')?.addEventListener('click', () => openCaseMediaPreview($('#comparisonReasonDialog').dataset.issueId, null, true).catch(error => showToast(error.message,true)));
+  $('#comparisonCaseCamera')?.addEventListener('click', () => openComparisonMedia($('#comparisonReasonDialog').dataset.issueId, 'camera').catch(error => showToast(error.message,true)));
+
+  $('#comparisonCaseBev')?.addEventListener('click', () => openComparisonMedia($('#comparisonReasonDialog').dataset.issueId, 'bev').catch(error => showToast(error.message,true)));
+  $('#comparisonCaseCameraImage')?.addEventListener('error', event => { event.target.hidden=true; event.target.parentElement.classList.add('is-missing'); });
   $('#comparisonCaseBevImage')?.addEventListener('error', event => { event.target.hidden = true; event.target.parentElement.classList.add('is-missing'); });
   $('#comparisonReasonDialog')?.addEventListener('close', () => { comparisonCaseRequest++; });
   document.querySelectorAll('[data-case-tab]').forEach(button => button.addEventListener('click', () => selectComparisonCaseTab(button.dataset.caseTab)));
   $('#comparisonCaseRows')?.addEventListener('click', event => {
     const button=event.target.closest('[data-comparison-media]');
-    if(button) openCaseMediaPreview(button.dataset.comparisonMedia, null, true).catch(error => showToast(error.message,true));
+    if(button) openComparisonMedia(button.dataset.comparisonMedia, 'bev').catch(error => showToast(error.message,true));
   });
   $("#comparisonCaseRows")?.addEventListener("click", (event) => {
     const row = event.target.closest("[data-comparison-row]");
@@ -628,4 +632,28 @@ function selectComparisonCaseTab(tab) {
   $('#comparisonCaseEvidence').classList.toggle('config-only', tab==='config');
   dialog.querySelectorAll('[data-case-content]').forEach(el => el.hidden=el.dataset.caseContent!==(tab==='output' ? 'prompt' : tab));
   dialog.querySelectorAll('[data-case-tab]').forEach(el=>el.setAttribute('aria-selected',String(el.dataset.caseTab===tab)));
+}
+
+let comparisonPreviewSeq = 0;
+async function loadComparisonImagePreviews(issueId) {
+  const seq = ++comparisonPreviewSeq;
+  const camera = $('#comparisonCaseCameraImage'); camera.removeAttribute('src'); camera.hidden = true;
+  camera.parentElement.classList.add('is-missing');
+  $('#comparisonCaseCameraTime').textContent = 'Camera · 加载中…';
+  $('#comparisonCaseBevTime').textContent = 'BEV · 时间读取中…';
+  try {
+    const data = await comparisonImageMedia(issueId);
+    if (seq !== comparisonPreviewSeq || $('#comparisonReasonDialog').dataset.issueId !== issueId) return;
+    for (const [prefix, frames] of [['Bev',data.assets?.frames || []],['Camera',data.camera?.frames || []]]) {
+      const frame = frames[heroFrameIndex(frames)];
+      const label = $(`#comparisonCase${prefix}Time`);
+      if (!frame) {label.textContent = `${prefix === 'Bev' ? 'BEV' : 'Camera'} · 未保存`;continue;}
+      const ms = Number(frame.offset_ms ?? frame.offset_sec * 1000);
+      label.textContent = `${prefix === 'Bev' ? 'BEV' : 'Camera'} · ${Number.isFinite(ms) ? `t = ${ms/1000}s${ms === 0 ? '' : '（最近帧）'}` : '时间未保存'}`;
+      if (prefix === 'Camera') {
+        const url = safeSameOriginAssetUrl(frame.url);
+        if (url) {camera.src=url;camera.hidden=false;camera.parentElement.classList.remove('is-missing');}
+      }
+    }
+  } catch (_) { if (seq === comparisonPreviewSeq) $('#comparisonCaseCameraTime').textContent = 'Camera · 加载失败'; }
 }

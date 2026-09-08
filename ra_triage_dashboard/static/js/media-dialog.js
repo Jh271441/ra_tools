@@ -20,6 +20,32 @@ function preferredMediaKind(caseData) {
   return "";
 }
 
+const comparisonMediaCache = new Map();
+async function comparisonImageMedia(issueId, kind = 'images') {
+  const cached = comparisonMediaCache.get(issueId);
+  if (cached && Date.now() - cached.time < 30000 && (kind === 'bev' || cached.images)) return cached.data;
+  const data = await api(`/api/cases/${encodeURIComponent(issueId)}/media?kind=${kind}`);
+  comparisonMediaCache.set(issueId, {data, time:Date.now(), images:kind==='images'});
+  if (comparisonMediaCache.size > 30) comparisonMediaCache.delete(comparisonMediaCache.keys().next().value);
+  return data;
+}
+async function openComparisonMedia(issueId, kind = 'bev') {
+  const seq = ++state.media.requestSeq;
+  const data = await comparisonImageMedia(issueId, kind === 'bev' ? 'bev' : 'images');
+  if (seq !== state.media.requestSeq) return;
+  const frames = kind === 'bev' ? data.assets?.frames || [] : data.camera?.frames || [];
+  if (!frames.length) { showToast(`${issueId} 暂无 ${kind === 'bev' ? 'BEV' : 'Camera'}，请使用另一张预览。`, true); return; }
+  openMedia(kind, heroFrameIndex(frames), {caseData:{...data, reference_media:true}});
+  // Complete other modes after the clicked image is visible; never gate it on video scanning.
+  api(`/api/cases/${encodeURIComponent(issueId)}/media`).then(full => {
+    if (seq !== state.media.requestSeq || !$('#mediaDialog').open || state.media.snapshot?.issueId !== issueId) return;
+    state.media.snapshot.bev = full.assets?.frames || [];
+    state.media.snapshot.camera = full.camera?.frames || [];
+    state.media.snapshot.video = full.assets?.video || null;
+    renderMediaDialog();
+  }).catch(() => {});
+}
+
 async function openCaseMediaPreview(issueId, button = null, referenceMedia = false) {
   if (!issueId) return;
   const requestSeq = ++state.media.requestSeq;

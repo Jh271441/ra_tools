@@ -811,3 +811,10 @@ html[data-color-theme="light"] .analysis-confusion-table .confusion-mismatch { c
 }
 
 #comparisonReasonDialog[data-tab="output"] .comparison-diff-body { max-height:24vh; }
+#comparisonReasonDialog .dialog-heading { display:flex; align-items:center; gap:20px; }
+#comparisonReasonDialog .dialog-heading > div:first-child { flex-shrink:0; }
+#comparisonReasonDialog .dialog-heading .comparison-case-tabs { margin-left:auto; padding:0; }
+@media(max-width:640px) {
+  #comparisonReasonDialog .dialog-heading { flex-wrap:wrap; gap:10px; }
+  #comparisonReasonDialog .dialog-heading .comparison-case-tabs { order:3; margin:0; width:100%; }
+}

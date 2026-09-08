@@ -7,7 +7,12 @@
 function heroFrameIndex(frames) {
   const exact = frames.findIndex((frame) => Number(frame.offset_ms ?? frame.offset_sec * 1000) === 0);
   if (exact >= 0) return exact;
-  return Math.floor(frames.length / 2);
+  let best = -1, distance = Infinity;
+  frames.forEach((frame, index) => {
+    const offset = Number(frame.offset_ms ?? frame.offset_sec * 1000);
+    if (Number.isFinite(offset) && Math.abs(offset) < distance) { best = index; distance = Math.abs(offset); }
+  });
+  return best >= 0 ? best : Math.floor(frames.length / 2);
 }
 
 function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {

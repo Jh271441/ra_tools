@@ -58,3 +58,12 @@ readout: Reason absence is in the source, not an import/display omission.
 The Case overview shows reference BEV and saved Prompt diff above the two output
 cards, so input context is visible immediately. Dedicated Prompt/config tabs
 remain available. The list column has no duplicate media-preview button.
+
+The compact header places tabs beside Case identity. Reference media stacks BEV
+and Camera at t=0 (nearest recorded offset when exact zero is absent), with time
+labels. Clicking each thumbnail opens that image mode, never video-first.
+`/api/cases/{id}/media?kind=bev` skips camera/video and `kind=images` skips video;
+these read the lightweight Issue identity, not full predictions/Reviews. A bounded
+30-Case/30-second browser cache reuses image descriptors. Other media modes are
+completed after the clicked image opens, with stale-response checks. Full image
+transfer/decode is still subject to asset size and network latency.

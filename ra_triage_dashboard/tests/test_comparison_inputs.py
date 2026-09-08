@@ -62,3 +62,8 @@ assert.equal(comparisonConfigText({b:1,a:{d:2,c:3}}),comparisonConfigText({a:{c:
 assert.notEqual(comparisonConfigText([1,2]),comparisonConfigText([2,1]));
 '''
     subprocess.run(['node','-e',script],check=True,capture_output=True)
+
+
+def test_nearest_trigger_frame_selection():
+    js=Path('ra_triage_dashboard/static/js/detail-media.js').read_text()
+    subprocess.run(['node','-e',js+"\nconst assert=require('node:assert/strict'); assert.equal(heroFrameIndex([{offset_ms:-9000},{offset_ms:0},{offset_ms:1000}]),1); assert.equal(heroFrameIndex([{offset_ms:-9000},{offset_ms:-5000},{offset_ms:1000}]),2); assert.equal(heroFrameIndex([{offset_sec:-2},{offset_sec:0}]),1);"],check=True,capture_output=True)

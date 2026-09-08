@@ -657,7 +657,7 @@ async def get_case_trail_metadata(issue_id: str) -> dict[str, Any]:
 
 
 @router.get("/api/cases/{issue_id}/media")
-async def get_case_media(issue_id: str) -> dict[str, Any]:
+async def get_case_media(issue_id: str, kind: str = "all") -> dict[str, Any]:
     """Resolve deferred filesystem media for an already-loaded Issue detail.
 
     This intentionally contains no Trail metadata or Review DB projection.  A
@@ -665,6 +665,8 @@ async def get_case_media(issue_id: str) -> dict[str, Any]:
     then attach video/BEV/camera when their indexes finish scanning.
     """
 
+    if kind not in {"all", "images", "bev"}:
+        raise _detail(400, "不支持的媒体模式。")
     case = await asyncio.to_thread(database.get_issue, issue_id)
     if case is None:
         raise _detail(404, "Issue 不存在。")
@@ -672,11 +674,19 @@ async def get_case_media(issue_id: str) -> dict[str, Any]:
     if provider is None:
         assets, camera = empty_case_media(issue_id)
         status = "unavailable"
+    elif kind != "all":
+        assets = await asyncio.to_thread(provider.get_assets, issue_id)
+        assets = {k: v for k, v in assets.items() if k != "video"}
+        camera = {"frames": [], "available": False}
+        if kind == "images":
+            camera = await asyncio.to_thread(provider.get_camera_assets, issue_id, (assets.get("capture") or {}).get("timestamp_ms"))
+        status = "ready"
     else:
         assets, camera = await resolve_case_media(provider, issue_id)
         status = "ready"
     return {
         "issue_id": issue_id,
+        "gt_label": case.get("gt_label", ""),
         "assets": assets,
         "camera": camera,
         "media_status": status,

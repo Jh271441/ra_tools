@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-348`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-349`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1351,15 +1351,15 @@
             <h2 id="comparisonReasonTitle"><span class="ui-lang-zh">Case 对比</span><span class="ui-lang-en">Case comparison</span></h2>
             <p class="dialog-copy" id="comparisonReasonContext"></p>
           </div>
-          <button class="icon-button" type="button" data-close="comparisonReasonDialog" aria-label="Close">×</button>
-        </div>
         <div class="comparison-case-tabs" role="tablist" aria-label="Case 对比">
           <button type="button" role="tab" data-case-tab="output">总览</button>
           <button type="button" role="tab" data-case-tab="prompt">Prompt</button>
           <button type="button" role="tab" data-case-tab="config">输入配置</button>
         </div>
+          <button class="icon-button" type="button" data-close="comparisonReasonDialog" aria-label="Close">×</button>
+        </div>
         <div class="comparison-case-evidence" id="comparisonCaseEvidence">
-          <aside class="comparison-case-bev"><h3>参考媒体</h3><button type="button" id="comparisonCaseBev" class="comparison-bev" aria-label="打开参考 BEV 媒体"><img id="comparisonCaseBevImage" alt="BEV 预览"><span>暂无 BEV</span></button><small>点击图片查看 BEV、Camera 或视频</small></aside>
+          <aside class="comparison-case-bev"><h3>参考媒体</h3><small id="comparisonCaseBevTime">BEV · t = 0s</small><button type="button" id="comparisonCaseBev" class="comparison-bev" aria-label="打开参考 BEV 媒体"><img id="comparisonCaseBevImage" alt="BEV 预览"><span>暂无 BEV</span></button><small id="comparisonCaseCameraTime">Camera</small><button type="button" id="comparisonCaseCamera" class="comparison-bev is-missing" aria-label="打开参考 Camera 媒体"><img id="comparisonCaseCameraImage" alt="Camera 预览" hidden><span>暂无 Camera</span></button></aside>
           <div id="comparisonCaseInputs"></div>
         </div>
         <div class="comparison-reason-grid">
@@ -1831,7 +1831,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-348`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-349`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
