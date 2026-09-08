@@ -20,7 +20,7 @@ function preferredMediaKind(caseData) {
   return "";
 }
 
-async function openCaseMediaPreview(issueId, button = null) {
+async function openCaseMediaPreview(issueId, button = null, referenceMedia = false) {
   if (!issueId) return;
   const requestSeq = ++state.media.requestSeq;
   const previousLabel = button?.textContent || "媒体预览";
@@ -37,7 +37,7 @@ async function openCaseMediaPreview(issueId, button = null) {
       return;
     }
     const index = kind === "bev" ? heroFrameIndex(caseData.assets?.frames || []) : 0;
-    openMedia(kind, index, { caseData });
+    openMedia(kind, index, { caseData: { ...caseData, reference_media: referenceMedia } });
   } finally {
     if (button?.isConnected) {
       button.disabled = false;
@@ -451,7 +451,7 @@ function renderMediaDialog() {
         setMediaZoom(state.media.zoom, { resetScroll: true });
       });
     }
-    $("#mediaTitle").textContent = `${snapshot?.issueId || ""} · Ares Studio 视频`;
+    $("#mediaTitle").textContent = `${snapshot?.issueId || ""} · Ares Studio 视频${snapshot?.referenceMedia ? " · 参考媒体" : ""}`;
     $("#mediaTimeline").innerHTML = "";
     $("#mediaHelp").textContent = "← / → 按所选步长跳转 · 空格播放/暂停 · B/C/V 切媒体 · +/− 缩放 · 0 适配 · 放大后拖拽平移 · F 全屏 · Esc 退出";
     setMediaZoom(state.media.zoom, { resetScroll: state.media.zoom === 1 });
@@ -462,7 +462,7 @@ function renderMediaDialog() {
   state.media.index = Math.max(0, Math.min(state.media.index, Math.max(frames.length - 1, 0)));
   const current = frames[state.media.index];
   if (!current) return;
-  $("#mediaTitle").textContent = `${snapshot?.issueId || ""} · ${frameLabel(current)} · ${state.media.index + 1}/${frames.length}`;
+  $("#mediaTitle").textContent = `${snapshot?.issueId || ""} · ${frameLabel(current)} · ${state.media.index + 1}/${frames.length}${snapshot?.referenceMedia ? " · 参考媒体" : ""}`;
   const previewImage = $("#mediaPreviewImage");
   const targetUrl = String(current.url || "");
   const targetKind = state.media.kind;
@@ -507,6 +507,7 @@ function openMedia(kind, index, { caseData = state.selectedCase } = {}) {
     gtLabel: String(caseData?.gt_label || ""),
     modelLabel: String(selectedPrediction?.model_label || ""),
     intentPreview: Boolean(caseData?.intent_preview),
+    referenceMedia: Boolean(caseData?.reference_media),
     bev: [...(caseData?.assets?.frames || [])],
     camera: [...(caseData?.camera?.frames || [])],
     video: caseData?.assets?.video?.url ? { ...caseData.assets.video } : null,

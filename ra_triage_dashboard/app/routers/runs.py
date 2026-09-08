@@ -73,6 +73,17 @@ async def compare_model_runs(
     )
     return payload
 
+@router.get("/api/model-run-comparison/cases/{issue_id}/inputs")
+async def comparison_case_inputs(request: Request, issue_id: str, baseline_run_id: str,
+                                 candidate_run_id: str, baselines: str = "") -> dict[str, Any]:
+    scopes = resolve_request_baseline_scopes(baselines, request=request)
+    try:
+        return await asyncio.to_thread(database.comparison_case_inputs, issue_id,
+                                       (baseline_run_id, candidate_run_id), scopes)
+    except ValueError as exc:
+        raise _detail(404, str(exc))
+
+
 @router.get("/api/model-runs")
 async def model_runs(request: Request, baselines: str = "") -> dict[str, Any]:
     scopes = resolve_request_baseline_scopes(baselines, request=request)

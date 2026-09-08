@@ -6,6 +6,7 @@ import uuid
 from typing import Any, Iterable, Sequence
 
 from ..sanitization import redact_sensitive_fields
+from ..comparison_inputs import case_input_projection, public_input
 from .shared import (
     LABELS,
     MODEL_LABELS,
@@ -573,6 +574,26 @@ class DatabaseRunsMixin:
             "page_count": page_count,
         }
 
+    def comparison_case_inputs(self, issue_id: str, run_ids: Sequence[str], baseline_scopes: Sequence[str]) -> dict[str, Any]:
+        clause, params = self._scope_in_sql(baseline_scopes, "i.baseline_scope")
+        with self.connect() as conn:
+            case = conn.execute(f"SELECT i.issue_id FROM issues i WHERE i.issue_id = ? AND {clause}", (issue_id, *params)).fetchone()
+            if case is None:
+                raise ValueError("Case 不在所选数据集中。")
+            result = []
+            for run_id in run_ids:
+                run_row = conn.execute("SELECT * FROM model_runs WHERE id = ?", (run_id,)).fetchone()
+                if run_row is None:
+                    raise ValueError("模型 Run 不存在。")
+                run = self._run_dict(run_row)
+                row = conn.execute("SELECT raw_json, model_extra_json FROM model_predictions WHERE model_run_id = ? AND issue_id = ?", (run_id, issue_id)).fetchone()
+                job = conn.execute("SELECT * FROM batch_prediction_jobs WHERE model_run_id = ? ORDER BY created_at DESC LIMIT 1", (run_id,)).fetchone()
+                detail = case_input_projection(_json_load(row["raw_json"], {}) if row else {}, _json_load(row["model_extra_json"], {}) if row else {}, run.get("source_sha256", ""))
+                detail.update(run_id=run_id, prediction_available=row is not None,
+                              run_reference=self._comparison_run_snapshot(run, self._batch_job_dict(job) if job else None))
+                result.append(detail)
+        return {"issue_id": issue_id, "baseline": result[0], "candidate": result[1]}
+
     @staticmethod
     def _comparison_run_snapshot(
         run: dict[str, Any], batch_job: dict[str, Any] | None
@@ -651,7 +672,10 @@ class DatabaseRunsMixin:
                     or experiment.get("prompt_template_sha256")
                     or ""
                 ),
-                "template": prompt_template,
+                "template": public_input(prompt_template),
+                "source_type": ("run_example" if "example" in str(metadata.get("prompt_mode") or "") or input_config.get("run_prompt_is_rendered_example_for_issue") else "run_template") if prompt_template else "not_saved",
+                "source": "batch_snapshot" if job.get("prompt_template") else "run_metadata",
+                "example_case_id": str(input_config.get("run_prompt_is_rendered_example_for_issue") or ""),
             },
             "input": {
                 "available": bool(
@@ -666,7 +690,7 @@ class DatabaseRunsMixin:
                     or experiment.get("input_profile")
                     or ""
                 ),
-                "config": input_config,
+                "config": public_input(input_config),
             },
         }
 
