@@ -799,7 +799,7 @@ html[data-color-theme="light"] .analysis-confusion-table .confusion-mismatch { c
 #comparisonReasonDialog .comparison-case-tabs { position:relative; z-index:2; }
 
 .comparison-case-evidence { display:grid; grid-template-columns:200px minmax(0,1fr); gap:16px; }
-.comparison-case-bev { display:grid; align-content:start; gap:12px; padding-top:16px; }
+.comparison-case-bev { display:grid; align-content:start; gap:8px; padding-top:0; }
 .comparison-case-bev .comparison-bev { width:100%; height:auto; aspect-ratio:16/9; }
 .comparison-case-bev small { font-size:11px; color:var(--muted); }
 
@@ -820,7 +820,7 @@ html[data-color-theme="light"] .analysis-confusion-table .confusion-mismatch { c
 }
 
 #comparisonCaseInputs { padding:8px 0; width:100%; }
-.comparison-case-evidence .comparison-reason-content { max-height:280px; }
+.comparison-case-evidence .comparison-reason-content { max-height:none; align-self:stretch; }
 
 /* Theme-aligned diff: preserve contrast without bright slabs or colored gaps. */
 .comparison-diff-body { border:1px solid var(--line); border-radius:9px; background:var(--bg); scrollbar-color:var(--line) transparent; }
