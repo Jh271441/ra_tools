@@ -195,9 +195,12 @@ def stop_production(pid):
     while process_alive(pid) and time.monotonic() < end:
         time.sleep(0.2)
     require(not process_alive(pid), "Production did not stop gracefully")
-    # tmux normally removes the empty session automatically.
-    if subprocess.run(["tmux", "has-session", "-t", "=" + SESSION], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
-        raise DeployError("Dashboard tmux session did not exit")
+    # Process exit precedes tmux removing its wrapper/session; allow that bounded lag.
+    session_deadline = time.monotonic() + 5
+    while subprocess.run(["tmux", "has-session", "-t", "=" + SESSION], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+        if time.monotonic() >= session_deadline:
+            raise DeployError("Dashboard tmux session did not exit")
+        time.sleep(0.1)
 
 def in_use(path):
     for proc in Path("/proc").glob("[0-9]*"):

@@ -98,6 +98,11 @@ class DeployTests(unittest.TestCase):
         with patch.object(d.Path,"read_text",side_effect=FileNotFoundError):
             self.assertFalse(d.process_alive(27205))
 
+    def test_stop_waits_for_tmux_session_cleanup(self):
+        with patch.object(d,"git_pane_pid",return_value=123), patch.object(d.os,"kill"), patch.object(d,"process_alive",return_value=False), patch.object(d.subprocess,"run",side_effect=[type("R",(),{"returncode":0})(),type("R",(),{"returncode":1})()]), patch.object(d.time,"sleep") as sleep:
+            d.stop_production(123)
+            sleep.assert_called_once_with(0.1)
+
     def test_stop_refuses_changed_process(self):
         with patch.object(d,"git_pane_pid",return_value=456),patch.object(d.os,"kill") as kill:
             with self.assertRaises(d.DeployError): d.stop_production(123)
