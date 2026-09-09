@@ -11,6 +11,7 @@ const REVIEW_TAG_GROUP_SHORTCUTS = Object.freeze({
   z: "ra",
   x: "no_assist",
 });
+const REVIEW_MISSING_EVIDENCE_SHORTCUT = "i";
 // Follow the physical number row so large groups remain one-keystroke actions:
 // items 1-9 use 1-9, item 10 uses 0, then items 11-12 use - and =.
 const REVIEW_TAG_OPTION_SHORTCUTS = Object.freeze([
@@ -455,18 +456,15 @@ function submitReviewFromDropdown(event, target) {
   return true;
 }
 
-function reviewTagGroupShortcutAllowed(target) {
+function reviewDropdownShortcutAllowed(target) {
   if (!reviewShortcutHasEditableTarget(target)) return true;
   return Boolean(
     target?.matches?.('input[type="checkbox"]') &&
-    target.closest(".review-tag-dropdown[open][data-tag-dropdown-group]")
+    target.closest(".review-dropdown[open]")
   );
 }
 
-function openReviewTagShortcutGroup(groupKey) {
-  const dropdown = document.querySelector(
-    `.review-tag-dropdown[data-tag-dropdown-group="${CSS.escape(groupKey)}"]`
-  );
+function toggleReviewShortcutDropdown(dropdown) {
   if (!dropdown) return false;
   const wasOpen = dropdown.open;
   closeAllReviewDropdowns(dropdown);
@@ -479,6 +477,18 @@ function openReviewTagShortcutGroup(groupKey) {
   }
   dropdown.querySelector(":scope > summary")?.focus({ preventScroll: true });
   return true;
+}
+
+function openReviewTagShortcutGroup(groupKey) {
+  return toggleReviewShortcutDropdown(document.querySelector(
+    `.review-tag-dropdown[data-tag-dropdown-group="${CSS.escape(groupKey)}"]`
+  ));
+}
+
+function openReviewMissingEvidenceShortcut() {
+  return toggleReviewShortcutDropdown(document.querySelector(
+    "#reviewPane .review-dropdown[data-missing-evidence-dropdown]"
+  ));
 }
 
 function bindReviewKeyboardShortcuts() {
@@ -505,8 +515,16 @@ function bindReviewKeyboardShortcuts() {
     const groupKey = REVIEW_TAG_GROUP_SHORTCUTS[key];
     if (
       groupKey &&
-      reviewTagGroupShortcutAllowed(target) &&
+      reviewDropdownShortcutAllowed(target) &&
       openReviewTagShortcutGroup(groupKey)
+    ) {
+      event.preventDefault();
+      return;
+    }
+    if (
+      key === REVIEW_MISSING_EVIDENCE_SHORTCUT &&
+      reviewDropdownShortcutAllowed(target) &&
+      openReviewMissingEvidenceShortcut()
     ) {
       event.preventDefault();
       return;

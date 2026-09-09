@@ -26,6 +26,26 @@ assert.equal(dropdown.open,true);
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
 
 
+def test_missing_evidence_shortcut_toggles_open_state() -> None:
+    script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+const assert=require('node:assert/strict');
+const summary={focused:false,focus(){this.focused=true;}};
+const dropdown={open:false,querySelector:()=>summary};
+document={querySelector:(selector)=>selector.includes('data-missing-evidence-dropdown') ? dropdown : null};
+closeAllReviewDropdowns=()=>{};
+reviewDropdownPanel=()=>({});
+resetReviewDropdownPanel=()=>{};
+prepareReviewDropdownPanelForMeasure=()=>{};
+assert.equal(REVIEW_MISSING_EVIDENCE_SHORTCUT,'i');
+assert.equal(openReviewMissingEvidenceShortcut(),true);
+assert.equal(dropdown.open,true);
+assert.equal(summary.focused,true);
+assert.equal(openReviewMissingEvidenceShortcut(),true);
+assert.equal(dropdown.open,false);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
 def test_open_review_dropdown_uses_arrows_for_navigation_and_enter_for_save() -> None:
     script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
 const assert=require('node:assert/strict');
@@ -72,22 +92,28 @@ assert.equal(inputs[0].lastEvent.type,'change');
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
 
 
-def test_arrow_focused_tag_option_keeps_group_shortcuts_available() -> None:
+def test_arrow_focused_option_keeps_all_dropdown_shortcuts_available() -> None:
     script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
 const assert=require('node:assert/strict');
-const dropdown={};
+const tagDropdown={};
+const evidenceDropdown={};
 const tagCheckbox={
   matches:(selector)=>selector==='input[type="checkbox"]',
-  closest:(selector)=>selector.includes('.review-tag-dropdown') ? dropdown : {},
+  closest:(selector)=>selector==='.review-dropdown[open]' ? tagDropdown : null,
+};
+const evidenceCheckbox={
+  matches:(selector)=>selector==='input[type="checkbox"]',
+  closest:(selector)=>selector==='.review-dropdown[open]' ? evidenceDropdown : null,
 };
 const textarea={
   matches:()=>false,
   closest:(selector)=>selector.includes('input, textarea') ? {} : null,
 };
-reviewShortcutHasEditableTarget=(target)=>target===tagCheckbox || target===textarea;
-assert.equal(reviewTagGroupShortcutAllowed(tagCheckbox),true);
-assert.equal(reviewTagGroupShortcutAllowed(textarea),false);
-assert.equal(reviewTagGroupShortcutAllowed(null),true);
+reviewShortcutHasEditableTarget=(target)=>target===tagCheckbox || target===evidenceCheckbox || target===textarea;
+assert.equal(reviewDropdownShortcutAllowed(tagCheckbox),true);
+assert.equal(reviewDropdownShortcutAllowed(evidenceCheckbox),true);
+assert.equal(reviewDropdownShortcutAllowed(textarea),false);
+assert.equal(reviewDropdownShortcutAllowed(null),true);
 '''
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
 

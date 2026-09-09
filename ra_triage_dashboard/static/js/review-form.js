@@ -498,9 +498,10 @@ function renderReview(caseData) {
           <textarea id="annotationNote" rows="2" aria-keyshortcuts="E Escape Enter Shift+Enter" placeholder="说明关键证据；输入 @ 可通知同事。">${escapeHtml(previous.note || "")}</textarea>
         </label>
         <div class="review-mention-composer" id="reviewMentionComposer" aria-live="polite"></div>
-        <details class="evidence-dropdown review-dropdown review-tag-dropdown">
-          <summary>
+        <details class="evidence-dropdown review-dropdown review-tag-dropdown" data-missing-evidence-dropdown>
+          <summary aria-keyshortcuts="I">
             <span class="tag-group-label"><span class="ui-lang-zh">缺失信息（多选）</span><span class="ui-lang-en">Missing evidence</span></span>
+            <kbd class="review-control-shortcut tag-group-shortcut" aria-hidden="true" title="${escapeHtml(uiText("按 I 展开或收起缺失信息", "Press I to toggle missing evidence"))}">I</kbd>
             <span class="tag-group-trailing">
               <button class="tag-catalog-add-button" type="button" data-open-missing-evidence-creator aria-label="新增缺失信息" title="新增缺失信息">＋</button>
               <span class="evidence-summary-count tag-group-summary" id="evidenceSummaryCount">已选 ${chosenEvidence.size} 项</span>
