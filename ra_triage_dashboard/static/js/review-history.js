@@ -11,6 +11,10 @@ function annotationHistory(annotations) {
     .map(
       (annotation) => {
         const expectedOutput = annotationExpectedOutput(annotation);
+        const currentUser = String(state.session?.username || "").trim().toLowerCase();
+        const canDelete = !annotation.work_split_id || state.session?.is_admin || (
+          currentUser && String(annotation.author || "").trim().toLowerCase() === currentUser
+        );
         return `<article class="history-row">
         <div class="history-head">
           <span class="history-expected-output" title="期望输出">期望 ${labelBadge(expectedOutput, "待补充")}</span>
@@ -18,7 +22,7 @@ function annotationHistory(annotations) {
           ${annotation.is_excluded ? '<span class="tag exclusion-tag">已排除</span>' : ""}
           <span class="history-reviewer" title="${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}` : "复核人：历史记录未填写")}">${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO" : " · 未验证"}` : "复核人：未记录")}</span>
           <span class="history-run" title="Review 绑定的 Model Run">Run · ${escapeHtml(reviewRunLabel(annotation.model_run_id))}</span>
-          <span class="history-actions"><span class="history-time">${formatTime(annotation.created_at)}</span><button class="history-delete-button" type="button" data-delete-annotation="${escapeHtml(annotation.id)}" title="删除这条 Review 版本" aria-label="删除 ${escapeHtml(formatTime(annotation.created_at))} 的 Review 版本"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h12M8 3h4l1 2H7zM6 6l.7 11h6.6L14 6M8.5 9v5m3-5v5"/></svg></button></span>
+          <span class="history-actions"><span class="history-time">${formatTime(annotation.created_at)}</span>${canDelete ? `<button class="history-delete-button" type="button" data-delete-annotation="${escapeHtml(annotation.id)}" title="删除这条 Review 版本" aria-label="删除 ${escapeHtml(formatTime(annotation.created_at))} 的 Review 版本"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h12M8 3h4l1 2H7zM6 6l.7 11h6.6L14 6M8.5 9v5m3-5v5"/></svg></button>` : ""}</span>
         </div>
         ${annotation.missing_evidence?.length ? `<div class="tags">${annotation.missing_evidence.map((key) => `<span class="tag evidence-tag">${escapeHtml(evidenceLabel(key))}</span>`).join("")}</div>` : ""}
         ${annotation.tags?.length ? `<div class="tags">${annotation.tags.map((tag) => `<span class="tag">${escapeHtml(tagLabel(tag))}</span>`).join("")}</div>` : ""}
@@ -46,6 +50,11 @@ function updateReviewHistory(caseData) {
   const launch = $("#reviewHistoryLaunchButton");
   if (launch) {
     launch.innerHTML = `<span class="ui-lang-zh">Review 历史 · ${annotations.length} 条</span><span class="ui-lang-en">Review history · ${annotations.length}</span><kbd class="review-control-shortcut" aria-hidden="true">J</kbd>`;
+    launch.title = uiText("展开或收起 Review 历史（J）", "Toggle Review history (J)");
+  }
+  const blindStatus = $("#reviewBlindTaskStatus");
+  if (blindStatus && caseData.review_assignment?.blind_active) {
+    blindStatus.textContent = `${caseData.review_assignment.peer_reviews_visible ? "你的 Review 已提交 · 可展开 Review 历史查看其他复核人原因" : "提交前仅显示你的 Review"} · 当前 ${Number(caseData.review_assignment.submitted_count || 0)}/${Number(caseData.review_assignment.assigned_count || 0)} 人已提交`;
   }
   const dialog = $("#historyDialog");
   const dialogContent = $("#historyDialogContent");

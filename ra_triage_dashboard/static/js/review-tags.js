@@ -71,7 +71,7 @@ function renderReviewTagGroups(tagCatalog, chosenTags, tagOption) {
           return `<details class="review-tag-dropdown review-dropdown" data-tag-dropdown-group="${escapeHtml(group.key)}" data-tag-dropdown-shortcut="${escapeHtml(group.shortcut)}">
             <summary>
               <span class="tag-group-label">${escapeHtml(group.label)}</span>
-              <kbd class="review-control-shortcut tag-group-shortcut" aria-hidden="true" title="${escapeHtml(uiText(`按 ${group.shortcut} 打开`, `Press ${group.shortcut} to open`))}">${escapeHtml(group.shortcut)}</kbd>
+              <kbd class="review-control-shortcut tag-group-shortcut" aria-hidden="true" title="${escapeHtml(uiText(`按 ${group.shortcut} 展开或收起`, `Press ${group.shortcut} to toggle`))}">${escapeHtml(group.shortcut)}</kbd>
               <span class="tag-group-trailing">
                 ${creatorAction}
                 <span class="tag-group-summary" data-tag-summary="${escapeHtml(group.key)}">${escapeHtml(t("detail.count_n", { n: selectedCount }))}</span>
@@ -410,12 +410,14 @@ function openReviewTagShortcutGroup(groupKey) {
     `.review-tag-dropdown[data-tag-dropdown-group="${CSS.escape(groupKey)}"]`
   );
   if (!dropdown) return false;
+  const wasOpen = dropdown.open;
   closeAllReviewDropdowns(dropdown);
-  if (!dropdown.open) {
+  if (wasOpen) {
+    dropdown.open = false;
+    resetReviewDropdownPanel(reviewDropdownPanel(dropdown));
+  } else {
     prepareReviewDropdownPanelForMeasure(reviewDropdownPanel(dropdown));
     dropdown.open = true;
-  } else {
-    positionReviewDropdownPanel(dropdown);
   }
   dropdown.querySelector(":scope > summary")?.focus({ preventScroll: true });
   return true;

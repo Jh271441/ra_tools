@@ -185,7 +185,7 @@ function renderDetail(caseData) {
   const issueIdMarkup = `<span class="detail-issue-id-group">${issueIdLink}<button class="detail-copy-id-button" type="button" data-copy-issue-id aria-label="复制 Issue ID ${issueId}" title="复制 Issue ID"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="6" width="9" height="10" rx="2"></rect><path d="M13 6V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></span>`;
   ensureDetailMediaState(caseData);
   const predCount = (caseData.predictions || []).length;
-  const modelHistoryButton = `<button class="history-inline-button" id="modelHistoryLaunchButton" type="button" data-open-history="model" aria-keyshortcuts="M" title="打开模型预测历史（M）"><span class="ui-lang-zh">评测 Run 历史 · ${predCount} 条</span><span class="ui-lang-en">Run history · ${predCount}</span><kbd class="review-control-shortcut" aria-hidden="true">M</kbd></button>`;
+  const modelHistoryButton = `<button class="history-inline-button" id="modelHistoryLaunchButton" type="button" data-open-history="model" aria-keyshortcuts="M" title="展开或收起模型预测历史（M）"><span class="ui-lang-zh">评测 Run 历史 · ${predCount} 条</span><span class="ui-lang-en">Run history · ${predCount}</span><kbd class="review-control-shortcut" aria-hidden="true">M</kbd></button>`;
   const predictionComparable = MODEL_LABELS.includes(primary?.model_label);
   const predictionMatches = modelLabelMatchesGt(primary?.model_label, caseData.gt_label);
   const compareText = !predictionComparable
@@ -235,7 +235,7 @@ function renderDetail(caseData) {
     openBatchDraft([caseData.issue_id], "single");
   });
   $("#detailPane").querySelector("[data-open-history='model']")?.addEventListener("click", () => {
-    openHistoryDialog("model", caseData);
+    toggleHistoryDialog("model", caseData);
   });
   $("#detailPane").querySelector("[data-copy-issue-id]")?.addEventListener("click", (event) => {
     copyReviewIssueId(issueIdValue, event.currentTarget);
@@ -424,8 +424,9 @@ function renderReview(caseData) {
   const issueTagGroups = renderReviewTagGroups(tagCatalog, chosenTags, tagOption);
   const sourceSuggestionMarkup = issueTagSourceSuggestionMarkup(sourceSuggestion);
   const blindTask = caseData.review_assignment?.blind_active;
+  const peerReviewsVisible = Boolean(caseData.review_assignment?.peer_reviews_visible);
   const taskBanner = blindTask
-    ? `<div class="review-blind-task-banner"><strong>多人盲标任务</strong><span>仅显示你的 Review · 当前 ${Number(caseData.review_assignment.submitted_count || 0)}/${Number(caseData.review_assignment.assigned_count || 0)} 人已提交</span></div>`
+    ? `<div class="review-blind-task-banner"><strong>多人盲标任务</strong><span id="reviewBlindTaskStatus">${peerReviewsVisible ? "你的 Review 已提交 · 可展开 Review 历史查看其他复核人原因" : "提交前仅显示你的 Review"} · 当前 ${Number(caseData.review_assignment.submitted_count || 0)}/${Number(caseData.review_assignment.assigned_count || 0)} 人已提交</span></div>`
     : "";
   $("#reviewPane").innerHTML = `
     <form class="review-form" id="annotationForm">
@@ -444,11 +445,11 @@ function renderReview(caseData) {
             </h2>
           </div>
           <div class="review-heading-actions">
-            ${blindTask ? "" : `<button class="history-inline-button" id="reviewCommentsButton" type="button" data-review-comments aria-keyshortcuts="D" title="打开评论（D）">
+            ${blindTask ? "" : `<button class="history-inline-button" id="reviewCommentsButton" type="button" data-review-comments aria-keyshortcuts="D" title="展开或收起评论（D）">
               <span class="ui-lang-zh">评论</span><span class="ui-lang-en">Comments</span>
               <kbd class="review-control-shortcut" aria-hidden="true">D</kbd>
             </button>`}
-            <button class="history-inline-button" type="button" data-open-history="review" id="reviewHistoryLaunchButton" aria-keyshortcuts="J" title="打开 Review 历史（J）">
+            <button class="history-inline-button" type="button" data-open-history="review" id="reviewHistoryLaunchButton" aria-keyshortcuts="J" title="展开或收起 Review 历史（J）">
               <span class="ui-lang-zh">Review 历史 · ${allAnnotations.length} 条</span>
               <span class="ui-lang-en">Review history · ${allAnnotations.length}</span>
               <kbd class="review-control-shortcut" aria-hidden="true">J</kbd>
@@ -594,7 +595,7 @@ function renderReview(caseData) {
     });
   });
   $("#reviewPane").querySelector("[data-open-history='review']")?.addEventListener("click", () => {
-    openHistoryDialog("review", caseData);
+    toggleHistoryDialog("review", caseData);
   });
   const pasteZone = $("#screenshotPasteZone");
   const screenshotInput = $("#reviewScreenshotInput");
@@ -1030,6 +1031,7 @@ function bindReviewComposerShortcuts() {
     if (target?.closest("input, textarea, select, button, a, [contenteditable='true'], [role='textbox']")) return;
     event.preventDefault();
     event.stopPropagation();
+    closeAllReviewDropdowns();
     note.focus({ preventScroll: false });
     note.setSelectionRange(note.value.length, note.value.length);
   });
@@ -1061,12 +1063,31 @@ function bindReviewDetailActionShortcuts() {
       event.altKey ||
       event.shiftKey ||
       state.activePage !== "review" ||
-      !state.selectedCase ||
-      document.querySelector("dialog[open]")
+      !state.selectedCase
     ) return;
     const target = event.target instanceof Element ? event.target : null;
     if (reviewShortcutHasEditableTarget(target)) return;
     const key = String(event.key || "").toLowerCase();
+    const historyKind = key === "j" ? "review" : key === "m" ? "model" : "";
+    const historyDialog = $("#historyDialog");
+    if (historyKind && historyDialog?.open) {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleHistoryDialog(historyKind, state.selectedCase);
+      return;
+    }
+    const discussionDialog = $("#analysisDiscussionDialog");
+    if (
+      key === "d" &&
+      discussionDialog?.open &&
+      state.analysisDiscussion?.source === "review"
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeDialog("analysisDiscussionDialog");
+      return;
+    }
+    if (document.querySelector("dialog[open]")) return;
     if (key === "d") {
       if (state.selectedCase?.review_assignment?.blind_active) return;
       event.preventDefault();
@@ -1080,7 +1101,7 @@ function bindReviewDetailActionShortcuts() {
     event.preventDefault();
     event.stopPropagation();
     closeAllReviewDropdowns();
-    openHistoryDialog(kind, state.selectedCase);
+    toggleHistoryDialog(kind, state.selectedCase);
   });
 }
 
@@ -1191,6 +1212,20 @@ async function saveAnnotation(event) {
         ),
       ];
       updateReviewHistory(state.selectedCase);
+    }
+    if (
+      payload.work_split_id &&
+      result?.annotation &&
+      state.selectedCase?.issue_id === state.selectedId
+    ) {
+      const refreshed = await api(
+        `/api/cases/${encodeURIComponent(state.selectedId)}?include_media=false&model_run_id=${encodeURIComponent(payload.model_run_id || "")}`
+      );
+      if (state.selectedCase?.issue_id === refreshed?.issue_id) {
+        state.selectedCase.annotations = refreshed.annotations || state.selectedCase.annotations;
+        state.selectedCase.review_assignment = refreshed.review_assignment || state.selectedCase.review_assignment;
+        updateReviewHistory(state.selectedCase);
+      }
     }
     const queuedCount = result?.annotation?.notification?.queued?.length || 0;
     showToast(

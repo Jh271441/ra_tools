@@ -58,6 +58,45 @@ _thumbnail_dest_cache: dict[str, tuple[str, int, int, Path]] = {}
 _thumbnail_encode_gate = threading.Semaphore(8)
 
 
+def _visible_case_annotations(
+    annotations: list[dict[str, Any]],
+    assignment: dict[str, Any] | None,
+    *,
+    username: str = "",
+    identity_verified: bool = False,
+    admin_reveal: bool = False,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Keep blind answers private until the current assignee has submitted."""
+
+    if not assignment or assignment.get("mode") != "blind":
+        return [item for item in annotations if not item.get("work_split_id")], False
+    split_id = str(assignment["split_id"])
+    own_assignment = assignment.get("own_assignment") or {}
+    peer_reviews_visible = bool(
+        admin_reveal
+        or (
+            assignment.get("assigned")
+            and identity_verified
+            and own_assignment.get("submitted")
+        )
+    )
+    if peer_reviews_visible:
+        return [
+            item
+            for item in annotations
+            if str(item.get("work_split_id") or "") == split_id
+        ], True
+    if assignment.get("assigned") and identity_verified:
+        current = str(username or "").lower()
+        return [
+            item
+            for item in annotations
+            if str(item.get("work_split_id") or "") == split_id
+            and str(item.get("author") or "").lower() == current
+        ], False
+    return [item for item in annotations if not item.get("work_split_id")], False
+
+
 def _resolve_thumbnail_file(issue_id: str) -> Path | None:
     """Resolve/build a gallery JPEG entirely outside the event loop.
 
@@ -738,31 +777,19 @@ async def get_case(
         and identity.username
         and await asyncio.to_thread(database.access_role, identity.username) == "admin"
     )
-    annotations = list(case.get("annotations", []))
-    if assignment and assignment.get("mode") == "blind":
-        split_id = str(assignment["split_id"])
-        if answers_revealed:
-            annotations = [
-                item for item in annotations
-                if str(item.get("work_split_id") or "") == split_id
-            ]
-        elif assignment.get("assigned") and identity.verified:
-            annotations = [
-                item for item in annotations
-                if str(item.get("work_split_id") or "") == split_id
-                and str(item.get("author") or "").lower() == identity.username.lower()
-            ]
-        else:
-            annotations = [
-                item for item in annotations if not item.get("work_split_id")
-            ]
-    else:
-        annotations = [item for item in annotations if not item.get("work_split_id")]
+    annotations, peer_reviews_visible = _visible_case_annotations(
+        list(case.get("annotations", [])),
+        assignment,
+        username=identity.username,
+        identity_verified=identity.verified,
+        admin_reveal=answers_revealed,
+    )
     case["annotations"] = annotations
     if assignment:
         public_assignment = dict(assignment)
         public_assignment["blind_active"] = assignment.get("mode") == "blind"
         public_assignment["answers_revealed"] = answers_revealed
+        public_assignment["peer_reviews_visible"] = peer_reviews_visible
         if assignment.get("mode") == "blind" and not answers_revealed:
             public_assignment["members"] = [
                 {

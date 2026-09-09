@@ -638,6 +638,8 @@ function currentRunOutputMarkup(_caseData, prediction) {
 function openHistoryDialog(kind, caseData) {
   if (!caseData) return;
   const isModel = kind === "model";
+  const dialog = $("#historyDialog");
+  if (dialog) dialog.dataset.historyKind = isModel ? "model" : "review";
   const predictions = caseData.predictions || [];
   const annotations = isModel
     ? []
@@ -666,6 +668,17 @@ function openHistoryDialog(kind, caseData) {
     : annotationHistory(annotations);
   if (!isModel) bindAnnotationHistory($("#historyDialogContent"), caseData);
   openDialog("historyDialog");
+}
+
+function toggleHistoryDialog(kind, caseData) {
+  const dialog = $("#historyDialog");
+  if (dialog?.open && dialog.dataset.historyKind === kind) {
+    closeDialog("historyDialog");
+    return false;
+  }
+  if (dialog?.open) closeDialog("historyDialog");
+  openHistoryDialog(kind, caseData);
+  return true;
 }
 
 function formatRaEventTimestamp(value) {

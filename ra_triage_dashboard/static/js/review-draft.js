@@ -25,9 +25,15 @@ function currentReviewRunId(caseData) {
 function reviewAnnotationsForCurrentRun(caseData) {
   const runId = currentReviewRunId(caseData);
   const annotations = caseData?.annotations || [];
-  const bound = annotations.filter(
+  let bound = annotations.filter(
     (annotation) => String(annotation.model_run_id || "").trim() === runId
   );
+  if (caseData?.review_assignment?.blind_active) {
+    const currentUser = String(state.session?.username || "").trim().toLowerCase();
+    bound = bound.filter(
+      (annotation) => String(annotation.author || "").trim().toLowerCase() === currentUser
+    );
+  }
   // A selected Run is an explicit Review namespace.  Do not fall back to a
   // legacy unbound annotation when that Run has not been reviewed yet; doing
   // so makes another person's/Run's Review look like it belongs here.
