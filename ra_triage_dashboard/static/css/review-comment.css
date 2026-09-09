@@ -745,14 +745,15 @@ html[data-color-theme="light"] .detail-queue-index-input {
   padding: 9px 11px; border: 1px solid var(--line-soft); border-radius: 8px;
   background: rgba(34, 211, 238, .035);
 }
-.work-split-mode-row input { width: 110px; height: 32px; padding: 5px 8px; }
+.work-split-reviewer-count-picker { width: 110px; }
+.work-split-reviewer-count-picker .ui-select-trigger { height: 34px; padding: 6px 9px; }
 .work-split-estimate { color: var(--muted); font-size: 12px; text-align: right; }
 .work-split-person-row {
   display: grid; grid-template-columns: minmax(0, 1fr) 110px 34px; gap: 8px; align-items: center;
 }
-.work-split-person-row input,
-.work-split-person-row select { min-width: 0; height: 34px; padding: 6px 9px; font-size: 12px; }
-.work-split-person-row input:disabled { opacity: .72; cursor: not-allowed; }
+.work-split-person-picker { min-width: 0; }
+.work-split-person-picker .ui-select-trigger,
+.work-split-person-row input { min-width: 0; height: 34px; padding: 6px 9px; font-size: 12px; }
 .work-split-remove-person { width: 34px; min-width: 34px; min-height: 34px; padding: 0; }
 .work-split-toolbar {
   display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 10px;

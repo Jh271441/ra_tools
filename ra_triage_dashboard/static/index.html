@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-367`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-369`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -503,12 +503,19 @@
                 </label>
                 <label id="analysisWorkAgreementField" hidden>
                   <span>多人复核结果</span>
-                  <select id="analysisWorkAgreementFilter">
-                    <option value="all">全部</option>
-                    <option value="pending">未完成</option>
-                    <option value="agreed">一致</option>
-                    <option value="conflict">冲突</option>
-                  </select>
+                  <div class="ui-select" id="analysisWorkAgreementPicker">
+                    <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                      <span class="ui-select-summary">全部</span>
+                      <span class="ui-select-caret" aria-hidden="true"></span>
+                    </button>
+                    <div class="ui-select-panel" role="listbox" hidden></div>
+                    <select class="ui-select-native" id="analysisWorkAgreementFilter" aria-hidden="true" tabindex="-1">
+                      <option value="all">全部</option>
+                      <option value="pending">未完成</option>
+                      <option value="agreed">一致</option>
+                      <option value="conflict">冲突</option>
+                    </select>
+                  </div>
                 </label>
                 <label>
                   <span>GT</span>
@@ -956,12 +963,26 @@
               <div class="run-comparison-picker-grid">
                 <label>
                   <span><span class="ui-lang-zh">基线 Run</span><span class="ui-lang-en">Baseline Run</span></span>
-                  <select id="comparisonBaselineRun"></select>
+                  <div class="ui-select comparison-run-picker" id="comparisonBaselineRunPicker">
+                    <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                      <span class="ui-select-summary">请选择 Run</span>
+                      <span class="ui-select-caret" aria-hidden="true"></span>
+                    </button>
+                    <div class="ui-select-panel" role="listbox" hidden></div>
+                    <select class="ui-select-native" id="comparisonBaselineRun" aria-hidden="true" tabindex="-1"></select>
+                  </div>
                 </label>
                 <button class="button button-quiet comparison-swap" id="comparisonSwapButton" type="button" aria-label="交换两个 Run" title="交换两个 Run">⇄</button>
                 <label>
                   <span><span class="ui-lang-zh">新 Run</span><span class="ui-lang-en">Candidate Run</span></span>
-                  <select id="comparisonCandidateRun"></select>
+                  <div class="ui-select comparison-run-picker" id="comparisonCandidateRunPicker">
+                    <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                      <span class="ui-select-summary">请选择 Run</span>
+                      <span class="ui-select-caret" aria-hidden="true"></span>
+                    </button>
+                    <div class="ui-select-panel" role="listbox" hidden></div>
+                    <select class="ui-select-native" id="comparisonCandidateRun" aria-hidden="true" tabindex="-1"></select>
+                  </div>
                 </label>
                 <button class="button button-primary" id="comparisonLoadButton" type="button"><span class="ui-lang-zh">开始对比</span><span class="ui-lang-en">Compare</span></button>
               </div>
@@ -1610,7 +1631,16 @@
         <div class="work-split-mode-row">
           <label class="work-split-seed">
             <span>每个 Issue 复核人数</span>
-            <input id="workSplitReviewersPerIssue" type="number" min="1" step="1" value="1" inputmode="numeric" />
+            <div class="ui-select work-split-reviewer-count-picker" id="workSplitReviewersPerIssuePicker">
+              <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                <span class="ui-select-summary">1 人</span>
+                <span class="ui-select-caret" aria-hidden="true"></span>
+              </button>
+              <div class="ui-select-panel" role="listbox" hidden></div>
+              <select class="ui-select-native" id="workSplitReviewersPerIssue" aria-hidden="true" tabindex="-1">
+                <option value="1">1 人</option>
+              </select>
+            </div>
           </label>
           <div class="work-split-estimate" id="workSplitEstimate">单人均分</div>
         </div>
@@ -1856,7 +1886,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-367`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-369`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

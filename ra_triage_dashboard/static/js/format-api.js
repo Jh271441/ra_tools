@@ -270,6 +270,7 @@ async function setBaselineScopes(
       await loadTrailAttributePreview(true);
     } else if (state.activePage === "comparison") {
       state.runComparison.page = 1;
+      renderRunComparisonSelectors({ repairCoverage: true });
       await loadRunComparison();
     }
   } catch (error) {

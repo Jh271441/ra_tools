@@ -62,24 +62,55 @@ function currentReviewFilterPayload() {
 
 function workSplitPersonRow(name = "", count = "") {
   const users = Array.isArray(state.accessUsers) ? state.accessUsers : [];
-  const options = [
-    `<option value="">${escapeHtml(t("work.pick_person"))}</option>`,
-    ...users.map(
-      (item) =>
-        `<option value="${escapeHtml(item.username)}"${
-          item.username === name ? " selected" : ""
-        }>${escapeHtml(item.username)}${
-          item.role === "admin" ? t("work.admin_suffix") : ""
-        }</option>`
-    ),
-  ].join("");
+  const selectedUser = users.find((item) => item.username === name);
+  const selectedLabel = selectedUser
+    ? `${selectedUser.username}${selectedUser.role === "admin" ? t("work.admin_suffix") : ""}`
+    : t("work.pick_person");
   return `<div class="work-split-person-row">
-    <select class="work-split-person-name" aria-label="复核人">${options}</select>
+    <div class="ui-select work-split-person-picker" data-work-split-selected="${escapeHtml(name)}">
+      <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="复核人">
+        <span class="ui-select-summary">${escapeHtml(selectedLabel)}</span>
+        <span class="ui-select-caret" aria-hidden="true"></span>
+      </button>
+      <div class="ui-select-panel" role="listbox" hidden></div>
+      <select class="ui-select-native work-split-person-name" aria-hidden="true" tabindex="-1"></select>
+    </div>
     <input class="work-split-person-count" type="number" min="0" step="1" placeholder="${escapeHtml(t("work.even_split"))}" value="${escapeHtml(
       count
     )}" title="留空=参与剩余均分；填数字=固定领取数量" />
     <button class="button button-quiet work-split-remove-person" type="button" aria-label="移除">×</button>
   </div>`;
+}
+
+function renderWorkSplitPersonPickers() {
+  const pickers = [...document.querySelectorAll("#workSplitPeople .work-split-person-picker")];
+  const selectedByPicker = new Map(
+    pickers.map((picker) => {
+      const select = picker.querySelector(".work-split-person-name");
+      return [picker, select?.value || picker.dataset.workSplitSelected || ""];
+    })
+  );
+  pickers.forEach((picker) => {
+    const selected = selectedByPicker.get(picker) || "";
+    const selectedElsewhere = new Set(
+      [...selectedByPicker.entries()]
+        .filter(([other]) => other !== picker)
+        .map(([, value]) => value)
+        .filter(Boolean)
+    );
+    const options = [
+      { value: "", label: t("work.pick_person") },
+      ...(state.accessUsers || []).map((item) => ({
+        value: item.username,
+        label: `${item.username}${item.role === "admin" ? t("work.admin_suffix") : ""}`,
+        disabled: selectedElsewhere.has(item.username),
+      })),
+    ];
+    populateUiSelect(picker, options, selected);
+    bindUiSelect(picker, { maxHeight: 320, maxWidth: 520 });
+    picker.dataset.workSplitSelected =
+      picker.querySelector(".work-split-person-name")?.value || "";
+  });
 }
 
 function ensureWorkSplitPeople(minRows = 2) {
@@ -109,13 +140,32 @@ function workSplitReviewersPerIssue() {
   return Number.isFinite(value) ? Math.max(1, value) : 1;
 }
 
+function renderWorkSplitReviewersPerIssuePicker(selected = null) {
+  const picker = $("#workSplitReviewersPerIssuePicker");
+  const memberCount = readWorkSplitAssignees().length;
+  const maximum = Math.max(1, memberCount);
+  const requested = selected === null
+    ? workSplitReviewersPerIssue()
+    : Number.parseInt(String(selected), 10);
+  const value = Math.min(Math.max(1, Number.isFinite(requested) ? requested : 1), maximum);
+  populateUiSelect(
+    picker,
+    Array.from({ length: maximum }, (_, index) => ({
+      value: String(index + 1),
+      label: `${index + 1} 人`,
+    })),
+    String(value),
+  );
+  bindUiSelect(picker, { maxHeight: 260, maxWidth: 180 });
+  return value;
+}
+
 function updateWorkSplitEstimate() {
   const reviewers = workSplitReviewersPerIssue();
   const people = readWorkSplitAssignees();
   const total = Number(state.caseTotal || 0);
   const target = $("#workSplitEstimate");
   document.querySelectorAll(".work-split-person-count").forEach((input) => {
-    input.disabled = reviewers > 1;
     input.placeholder = reviewers > 1 ? "自动均衡" : t("work.even_split");
   });
   if (!target) return;
@@ -124,11 +174,34 @@ function updateWorkSplitEstimate() {
     return;
   }
   const assignmentCount = total * reviewers;
+  const fixedTotal = people.reduce(
+    (sum, person) => sum + (person.count === null ? 0 : Number(person.count || 0)),
+    0,
+  );
+  const automaticPeople = people.filter((person) => person.count === null).length;
+  if (people.some((person) => person.count !== null && person.count > total)) {
+    target.textContent = `个人数量不能超过 ${total}，同一人不能重复领取同一个 Issue`;
+    return;
+  }
+  if (fixedTotal > assignmentCount) {
+    target.textContent = `已指定 ${fixedTotal} 条，超过任务总数 ${assignmentCount}`;
+    return;
+  }
+  if (!automaticPeople && fixedTotal !== assignmentCount) {
+    target.textContent = `已指定 ${fixedTotal} 条，需合计 ${assignmentCount} 条`;
+    return;
+  }
+  if (automaticPeople && assignmentCount - fixedTotal > automaticPeople * total) {
+    target.textContent = "剩余任务超过自动均衡人员可领取上限，请降低固定数量或增加人员";
+    return;
+  }
   const low = people.length ? Math.floor(assignmentCount / people.length) : 0;
   const high = people.length ? Math.ceil(assignmentCount / people.length) : 0;
   target.textContent = reviewers === 1
     ? `单人均分 · ${total} 条任务`
-    : `${total} × ${reviewers} = ${assignmentCount} 条盲标任务 · 每人约 ${low}${high !== low ? `～${high}` : ""} 条`;
+    : `${total} × ${reviewers} = ${assignmentCount} 条盲标任务 · ${
+        fixedTotal ? `已指定 ${fixedTotal} 条，其余自动均衡` : `每人约 ${low}${high !== low ? `～${high}` : ""} 条`
+      }`;
 }
 
 function workAssigneeOptionsWithSelected(options, selected) {
@@ -233,7 +306,9 @@ async function openWorkSplitDialog() {
       showToast(t("work.no_writers"), true);
     }
   }
+  renderWorkSplitPersonPickers();
   if ($("#workSplitReviewersPerIssue")) $("#workSplitReviewersPerIssue").value = "1";
+  renderWorkSplitReviewersPerIssuePicker(1);
   updateWorkSplitEstimate();
   openDialog("workSplitDialog");
 }
@@ -289,15 +364,12 @@ async function generateWorkSplit() {
     showToast(t("work.split_admin_only"), true);
     return;
   }
-  let assignees = readWorkSplitAssignees();
+  const assignees = readWorkSplitAssignees();
   if (!assignees.length) {
     showToast(t("work.need_reviewer"), true);
     return;
   }
   const reviewersPerIssue = workSplitReviewersPerIssue();
-  if (reviewersPerIssue > 1) {
-    assignees = assignees.map((item) => ({ ...item, count: null }));
-  }
   const seedRaw = $("#workSplitSeed")?.value.trim() || "";
   const body = {
     filters: currentReviewFilterPayload(),
@@ -401,6 +473,8 @@ function bindWorkSplitControls() {
   });
   $("#workSplitAddPerson")?.addEventListener("click", () => {
     $("#workSplitPeople")?.insertAdjacentHTML("beforeend", workSplitPersonRow());
+    renderWorkSplitPersonPickers();
+    renderWorkSplitReviewersPerIssuePicker();
     updateWorkSplitEstimate();
   });
   $("#workSplitPeople")?.addEventListener("click", (event) => {
@@ -411,10 +485,23 @@ function bindWorkSplitControls() {
     if (!row || !root) return;
     row.remove();
     ensureWorkSplitPeople(1);
+    renderWorkSplitPersonPickers();
+    renderWorkSplitReviewersPerIssuePicker();
     updateWorkSplitEstimate();
   });
-  $("#workSplitPeople")?.addEventListener("change", updateWorkSplitEstimate);
-  $("#workSplitReviewersPerIssue")?.addEventListener("input", updateWorkSplitEstimate);
+  $("#workSplitPeople")?.addEventListener("change", (event) => {
+    if (event.target.matches(".work-split-person-name")) {
+      event.target.closest(".work-split-person-picker").dataset.workSplitSelected =
+        event.target.value || "";
+      renderWorkSplitPersonPickers();
+      renderWorkSplitReviewersPerIssuePicker();
+    }
+    updateWorkSplitEstimate();
+  });
+  $("#workSplitPeople")?.addEventListener("input", (event) => {
+    if (event.target.matches(".work-split-person-count")) updateWorkSplitEstimate();
+  });
+  $("#workSplitReviewersPerIssue")?.addEventListener("change", updateWorkSplitEstimate);
   $("#workSplitGenerate")?.addEventListener("click", () => {
     generateWorkSplit().catch((error) => showToast(error.message, true));
   });

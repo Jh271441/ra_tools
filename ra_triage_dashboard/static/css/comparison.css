@@ -28,12 +28,13 @@
   font-weight: 560;
 }
 
-.run-comparison-picker-grid select {
+.run-comparison-picker-grid .ui-select-trigger {
   height: 34px;
   min-width: 0;
-  padding-block: 5px;
+  padding: 5px 9px;
   font-size: 12px;
 }
+.comparison-run-picker { min-width: 0; }
 
 .run-comparison-picker-grid .button {
   height: 34px;

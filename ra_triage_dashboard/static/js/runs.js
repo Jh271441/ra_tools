@@ -378,6 +378,9 @@ async function loadRuns({
   if (typeof renderTrailAttributeRunPicker === "function") {
     renderTrailAttributeRunPicker();
   }
+  if (typeof renderRunComparisonSelectors === "function") {
+    renderRunComparisonSelectors();
+  }
 }
 
 const RUN_SOURCE_META = Object.freeze({

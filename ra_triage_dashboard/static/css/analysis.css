@@ -24,19 +24,20 @@
 .analysis-page { width: min(1480px, 100%); gap: 6px; }
 .analysis-filter-card { display: grid; gap: 7px; padding: 8px 10px; }
 .analysis-filters {
-  display: grid; grid-template-columns: repeat(8, minmax(100px, 1fr)); align-items: end; gap: 6px;
+  display: grid; grid-template-columns: repeat(9, minmax(90px, 1fr)); align-items: end; gap: 6px;
 }
 .analysis-filters label { min-width: 0; display: grid; gap: 3px; color: var(--faint); font-size: 11px; }
-.analysis-filters input:not([type="checkbox"]), .analysis-filters select { height: 34px; min-width: 0; padding: 5px 29px 5px 8px; font-size: 12px; }
+.analysis-filters input:not([type="checkbox"]), .analysis-filters select, .analysis-filters .ui-select-trigger { height: 34px; min-width: 0; padding: 5px 29px 5px 8px; font-size: 12px; }
 .analysis-run-filter { grid-column: span 2; grid-row: 1; }
-.analysis-evidence-filter { grid-column: 1; grid-row: 2; }
-.analysis-tag-filter { grid-column: 2; grid-row: 2; }
-.analysis-trigger-filter { grid-column: 3; grid-row: 2; }
-.analysis-egress-filter { grid-column: 4; grid-row: 2; }
-.analysis-search-actions { min-width: 0; display: grid; grid-column: 5 / -1; grid-row: 2; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 6px; }
+.analysis-exclusion-filter { grid-column: 1; grid-row: 2; }
+.analysis-evidence-filter { grid-column: 2; grid-row: 2; }
+.analysis-tag-filter { grid-column: 3; grid-row: 2; }
+.analysis-trigger-filter { grid-column: 4; grid-row: 2; }
+.analysis-egress-filter { grid-column: 5; grid-row: 2; }
+.analysis-search-actions { min-width: 0; display: grid; grid-column: 6 / -1; grid-row: 2; grid-template-columns: minmax(160px, 1fr) auto; align-items: end; gap: 6px; }
 .analysis-search-actions .analysis-search-filter { grid-column: auto; }
 .analysis-comparison-filter { min-width: 0; display: grid; grid-column: span 1; gap: 3px; }
-.analysis-exclusion-filter { min-width: 0; display: grid; grid-column: span 1; gap: 3px; }
+.analysis-exclusion-filter { min-width: 0; display: grid; gap: 3px; }
 .analysis-filter-actions { display: flex; justify-content: flex-end; gap: 6px; width: 100%; }
 .analysis-search-actions .analysis-filter-actions { width: auto; }
 .analysis-filter-actions .button { height: 34px; padding: 5px 10px; font-size: 12px; }

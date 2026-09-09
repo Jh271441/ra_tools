@@ -275,6 +275,7 @@ function bindEvents() {
       $("#analysisWorkAgreementFilter").value = "all";
     }
     state.reviewAnalysis.workAgreement = "all";
+    renderAnalysisWorkAgreementPicker?.("all");
     // See resetReviewFilters: clear the durable route state as well as the
     // widget state, otherwise an analysis reset would restore reviewer=… on
     // the next async facet refresh.

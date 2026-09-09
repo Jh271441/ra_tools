@@ -17,12 +17,11 @@ function comparisonRunOptionLabel(run) {
   ].filter(Boolean).join(" · ");
 }
 
-function comparisonRunOptionHtml(run) {
-  return `<option value="${escapeHtml(String(run.id || ""))}">${escapeHtml(comparisonRunOptionLabel(run))}</option>`;
-}
-
-function normalizeComparisonRunSelection() {
+function normalizeComparisonRunSelection({ repairCoverage = false } = {}) {
   const available = (state.modelRuns || []).filter((run) => run?.id);
+  // Route restoration can run before the async Run registry is available.
+  // Preserve those IDs until there is a real option set to validate against.
+  if (!available.length) return;
   const covered = available.filter((run) => Number(run.baseline_prediction_count || 0) > 0);
   const ids = new Set(available.map((run) => String(run.id)));
   if (!ids.has(String(state.runComparison.baselineRunId || ""))) {
@@ -50,7 +49,7 @@ function normalizeComparisonRunSelection() {
   // Dataset switches can leave two valid Run IDs in the URL even though both
   // belong to another workset. Prefer a useful pair for the current dataset;
   // a covered + zero-coverage pair remains valid for union/NONE comparison.
-  if (selectedCoverage <= 0 && covered.length) {
+  if (repairCoverage && selectedCoverage <= 0 && covered.length) {
     state.runComparison.candidateRunId = String(covered[0].id);
     state.runComparison.baselineRunId = String(
       covered[1]?.id
@@ -60,20 +59,28 @@ function normalizeComparisonRunSelection() {
   }
 }
 
-function renderRunComparisonSelectors() {
-  normalizeComparisonRunSelection();
-  const options = (state.modelRuns || []).map(comparisonRunOptionHtml).join("");
-  const empty = `<option value="">${uiText("请选择 Run", "Choose a Run")}</option>`;
-  const baseline = $("#comparisonBaselineRun");
-  const candidate = $("#comparisonCandidateRun");
-  if (baseline) {
-    baseline.innerHTML = empty + options;
-    baseline.value = state.runComparison.baselineRunId || "";
-  }
-  if (candidate) {
-    candidate.innerHTML = empty + options;
-    candidate.value = state.runComparison.candidateRunId || "";
-  }
+function renderRunComparisonSelectors({ repairCoverage = false } = {}) {
+  normalizeComparisonRunSelection({ repairCoverage });
+  const runOptions = (disabledId = "") => [
+    { value: "", label: uiText("请选择 Run", "Choose a Run") },
+    ...(state.modelRuns || []).map((run) => ({
+      value: String(run.id || ""),
+      label: comparisonRunOptionLabel(run),
+      disabled: Boolean(disabledId && String(run.id) === String(disabledId)),
+    })),
+  ];
+  populateUiSelect(
+    $("#comparisonBaselineRunPicker"),
+    runOptions(state.runComparison.candidateRunId),
+    state.runComparison.baselineRunId || "",
+  );
+  populateUiSelect(
+    $("#comparisonCandidateRunPicker"),
+    runOptions(state.runComparison.baselineRunId),
+    state.runComparison.candidateRunId || "",
+  );
+  bindUiSelect($("#comparisonBaselineRunPicker"), { maxHeight: 380, maxWidth: 920 });
+  bindUiSelect($("#comparisonCandidateRunPicker"), { maxHeight: 380, maxWidth: 920 });
   const valid = Boolean(
     state.runComparison.baselineRunId &&
     state.runComparison.candidateRunId &&
@@ -155,7 +162,7 @@ function applyRunComparisonRoute(filters = {}) {
   if ($("#comparisonCandidateLabelFilter")) $("#comparisonCandidateLabelFilter").value = state.runComparison.candidateLabel;
   if ($("#comparisonLabelChangeFilter")) $("#comparisonLabelChangeFilter").value = state.runComparison.labelChange;
   populateComparisonInputFilter();
-  renderRunComparisonSelectors();
+  renderRunComparisonSelectors({ repairCoverage: true });
   renderRunComparisonTransitionFilter();
 }
 

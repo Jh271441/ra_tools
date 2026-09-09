@@ -65,6 +65,55 @@ class WorkSplitTest(unittest.TestCase):
         self.assertEqual(len(owners), 200)
         self.assertTrue(all(len(names) == 2 for names in owners.values()))
 
+    def test_double_blind_supports_fixed_and_automatic_member_quotas(self) -> None:
+        result = distribute_issue_ids(
+            [f"id{i}" for i in range(200)],
+            [
+                {"name": "alice", "count": 120},
+                {"name": "bob"},
+                {"name": "carol"},
+                {"name": "dora"},
+                {"name": "erin"},
+            ],
+            seed=42,
+            reviewers_per_issue=2,
+        )
+        by_name = {item["name"]: item["count"] for item in result}
+        self.assertEqual(
+            by_name,
+            {"alice": 120, "bob": 70, "carol": 70, "dora": 70, "erin": 70},
+        )
+        owners: dict[str, set[str]] = {}
+        for item in result:
+            for issue_id in item["issue_ids"]:
+                owners.setdefault(issue_id, set()).add(item["name"])
+        self.assertEqual(len(owners), 200)
+        self.assertTrue(all(len(names) == 2 for names in owners.values()))
+
+    def test_double_blind_rejects_impossible_member_quota(self) -> None:
+        with self.assertRaisesRegex(ValueError, "不能超过 Issue 数"):
+            distribute_issue_ids(
+                [f"id{i}" for i in range(10)],
+                [
+                    {"name": "alice", "count": 11},
+                    {"name": "bob"},
+                    {"name": "carol"},
+                ],
+                seed=42,
+                reviewers_per_issue=2,
+            )
+        with self.assertRaisesRegex(ValueError, "必须是整数"):
+            distribute_issue_ids(
+                [f"id{i}" for i in range(10)],
+                [
+                    {"name": "alice", "count": 4.5},
+                    {"name": "bob"},
+                    {"name": "carol"},
+                ],
+                seed=42,
+                reviewers_per_issue=2,
+            )
+
     def test_apply_work_split_persists_filterable_assignee(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "work-split.sqlite")

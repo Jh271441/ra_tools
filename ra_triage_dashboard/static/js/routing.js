@@ -547,9 +547,7 @@ function applyAnalysisRouteControls(route) {
   const filters = route?.analysisFilters || route || {};
   if ($("#analysisSearchInput")) $("#analysisSearchInput").value = filters.search || "";
   state.reviewAnalysis.workAgreement = filters.workAgreement || "all";
-  if ($("#analysisWorkAgreementFilter")) {
-    $("#analysisWorkAgreementFilter").value = state.reviewAnalysis.workAgreement;
-  }
+  renderAnalysisWorkAgreementPicker?.(state.reviewAnalysis.workAgreement);
   setMultiFilterValues($("#analysisGtFilter"), filters.gtLabel);
   setMultiFilterValues($("#analysisModelLabelFilter"), filters.modelLabel);
   setMultiFilterValues($("#analysisStatusFilter"), filters.reviewStatus);

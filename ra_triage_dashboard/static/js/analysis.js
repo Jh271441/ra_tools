@@ -19,6 +19,22 @@ function analysisExclusionLabel(value) {
   }[value] || uiText("全部（含问题排除）", "All (including shielded)");
 }
 
+function renderAnalysisWorkAgreementPicker(selected = "") {
+  const picker = $("#analysisWorkAgreementPicker");
+  const value = selected || $("#analysisWorkAgreementFilter")?.value || "all";
+  populateUiSelect(
+    picker,
+    [
+      { value: "all", label: uiText("全部", "All") },
+      { value: "pending", label: uiText("未完成", "Pending") },
+      { value: "agreed", label: uiText("一致", "Agreed") },
+      { value: "conflict", label: uiText("冲突", "Conflict") },
+    ],
+    value,
+  );
+  bindUiSelect(picker, { maxHeight: 240, maxWidth: 260 });
+}
+
 async function loadClusters() {
   const params = new URLSearchParams();
   if (state.selectedRunId) params.set("model_run_id", state.selectedRunId);
