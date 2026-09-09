@@ -1,16 +1,56 @@
 from __future__ import annotations
 
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from starlette.requests import Request
+
 from ra_triage_dashboard.app.db import AnnotationConflictError, Database
+from ra_triage_dashboard.app.routers import cases as cases_router
 from ra_triage_dashboard.app.support import review_payloads
 from ra_triage_dashboard.app.work_split import distribute_issue_ids
 
 
 class WorkSplitTest(unittest.TestCase):
+    def test_reviewer_endpoint_separates_admin_analysis_facet(self) -> None:
+        request = Request(
+            {"type": "http", "method": "GET", "path": "/api/reviewers", "headers": []}
+        )
+        ordinary = [{"name": "legacy", "review_count": 1}]
+        analysis = [{"name": "alice", "review_count": 1}]
+        with patch.object(
+            cases_router, "resolve_request_baseline_scopes", return_value=["scope"]
+        ), patch.object(
+            cases_router, "_is_dashboard_admin", return_value=True
+        ), patch.object(
+            cases_router.database, "list_reviewers", return_value=ordinary
+        ), patch.object(
+            cases_router.database, "list_analysis_reviewers", return_value=analysis
+        ):
+            result = asyncio.run(
+                cases_router.reviewers(request, model_run_id="run", baselines="0821")
+            )
+        self.assertEqual(result["items"], ordinary)
+        self.assertEqual(result["analysis_items"], analysis)
+
+        with patch.object(
+            cases_router, "resolve_request_baseline_scopes", return_value=["scope"]
+        ), patch.object(
+            cases_router, "_is_dashboard_admin", return_value=False
+        ), patch.object(
+            cases_router.database, "list_reviewers", return_value=ordinary
+        ), patch.object(
+            cases_router.database, "list_analysis_reviewers"
+        ) as blind_facet:
+            result = asyncio.run(
+                cases_router.reviewers(request, model_run_id="run", baselines="0821")
+            )
+        self.assertEqual(result["analysis_items"], ordinary)
+        blind_facet.assert_not_called()
+
     def test_even_share_when_no_fixed_counts(self) -> None:
         result = distribute_issue_ids(
             [f"id{i}" for i in range(10)],
@@ -324,6 +364,29 @@ class WorkSplitTest(unittest.TestCase):
             self.assertEqual(item["multi_review"]["assigned_count"], 2)
             self.assertEqual(
                 result["evidence_clusters"][0]["key"], "routing_direction"
+            )
+            self.assertEqual(
+                [
+                    item["name"]
+                    for item in db.list_reviewers(
+                        baseline_scopes=[scope], model_run_id=run["id"]
+                    )
+                ],
+                ["legacy"],
+            )
+            self.assertEqual(
+                db.list_analysis_reviewers(
+                    baseline_scopes=[scope], model_run_id=run["id"]
+                ),
+                [
+                    {
+                        "name": "alice",
+                        "verified": False,
+                        "verified_count": 0,
+                        "unverified_count": 1,
+                        "review_count": 1,
+                    }
+                ],
             )
             # The explicit pending task view still includes untouched cn2;
             # only the default result view suppresses zero-submission tasks.

@@ -78,7 +78,7 @@ async function loadReviewers(selections = reviewerFilterSelections()) {
   const query = params.toString() ? `?${params.toString()}` : "";
   const data = await api(`/api/reviewers${query}`);
   state.reviewers = data.items || [];
-  const reviewerOptions = state.reviewers.map((item) => {
+  const reviewerOptionsFor = (items) => (items || []).map((item) => {
     const trust =
       item.verified_count > 0 && item.unverified_count > 0
         ? t("runs.mixed_identity")
@@ -90,6 +90,10 @@ async function loadReviewers(selections = reviewerFilterSelections()) {
       label: `${item.name} · ${t("runs.count_n", { n: item.review_count })}${trust}`,
     };
   });
+  const reviewerOptions = reviewerOptionsFor(state.reviewers);
+  const analysisReviewerOptions = reviewerOptionsFor(
+    Array.isArray(data.analysis_items) ? data.analysis_items : state.reviewers
+  );
   const reviewSelect = $("#reviewerFilter");
   if (reviewSelect) {
     renderMultiFilter(reviewSelect, {
@@ -107,7 +111,7 @@ async function loadReviewers(selections = reviewerFilterSelections()) {
   const analysisReviewer = $("#analysisReviewerFilter");
   if (analysisReviewer) {
     renderMultiFilter(analysisReviewer, {
-      options: reviewerOptionsWithSelected(reviewerOptions, analysisSelection),
+      options: reviewerOptionsWithSelected(analysisReviewerOptions, analysisSelection),
       selected: analysisSelection,
       onChange: (values) => {
         persistReviewerFilterRoute("analysis", values);

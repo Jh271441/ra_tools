@@ -26,6 +26,40 @@ assert.equal(dropdown.open,true);
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
 
 
+def test_open_review_dropdown_supports_arrow_and_enter_selection() -> None:
+    script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+const assert=require('node:assert/strict');
+class MockElement {}
+Element=MockElement;
+Event=class {constructor(type,options){this.type=type;this.bubbles=options?.bubbles;}};
+const labels=[];
+const inputs=[0,1,2].map(()=>{
+  const label={scrollIntoView:()=>{}}; labels.push(label);
+  return Object.assign(new MockElement(),{
+    disabled:false,checked:false,focused:false,
+    focus(){this.focused=true;},
+    closest(selector){return selector==='label' ? label : null;},
+    matches(selector){return selector==='input[type="checkbox"]';},
+    dispatchEvent(event){this.lastEvent=event;},
+  });
+});
+const dropdown=Object.assign(new MockElement(),{open:true,querySelectorAll:()=>inputs});
+const summary=Object.assign(new MockElement(),{
+  closest(selector){return selector==='.review-dropdown[open]' ? dropdown : null;},
+  matches(){return false;},
+});
+const arrow={target:summary,key:'ArrowDown',ctrlKey:false,metaKey:false,altKey:false,preventDefault(){this.prevented=true;},stopPropagation(){this.stopped=true;}};
+assert.equal(handleReviewDropdownKeyboard(arrow),true);
+assert.equal(inputs[0].focused,true);
+inputs[0].closest=(selector)=>selector==='.review-dropdown[open]' ? dropdown : selector==='label' ? labels[0] : null;
+const enter={target:inputs[0],key:'Enter',ctrlKey:false,metaKey:false,altKey:false,preventDefault(){},stopPropagation(){}};
+assert.equal(handleReviewDropdownKeyboard(enter),true);
+assert.equal(inputs[0].checked,true);
+assert.equal(inputs[0].lastEvent.type,'change');
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
 def test_review_history_shortcut_toggle_closes_matching_dialog() -> None:
     script = (ROOT / "static" / "js" / "detail-media.js").read_text() + r'''
 const assert=require('node:assert/strict');

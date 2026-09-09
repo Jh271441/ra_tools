@@ -707,7 +707,17 @@ function bindEvents() {
         Boolean(state.selectedCase) &&
         Boolean($("#detailHeroMedia")) &&
         !document.querySelector("dialog[open]");
-      if (!detailMediaActive || interactiveTarget || event.ctrlKey || event.metaKey || event.altKey) return;
+      const reviewDropdownActive = Boolean(
+        document.querySelector("#reviewPane .review-dropdown[open]")
+      );
+      if (
+        !detailMediaActive ||
+        reviewDropdownActive ||
+        interactiveTarget ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey
+      ) return;
       const activate = (control) => {
         if (!control || control.disabled) return false;
         event.preventDefault();
@@ -735,6 +745,22 @@ function bindEvents() {
         activate(control);
       } else if (key === "f") {
         if (!event.repeat) activate($("#detailMediaExpandButton"));
+      } else if (key === "0") {
+        if (state.detailMedia.kind === "video") {
+          activate($("#detailHeroMedia")?.querySelector("[data-video-t0]"));
+        } else {
+          const frames = state.detailMedia.kind === "camera"
+            ? state.selectedCase?.camera?.frames || []
+            : state.selectedCase?.assets?.frames || [];
+          const t0Index = heroFrameIndex(frames);
+          if (t0Index >= 0) {
+            activate(
+              $("#detailHeroMedia")?.querySelector(
+                `[data-detail-media-frame="${t0Index}"]`
+              )
+            );
+          }
+        }
       }
       return;
     }

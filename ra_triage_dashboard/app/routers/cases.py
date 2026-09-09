@@ -33,7 +33,7 @@ from ..support.external_links import (
     _voyager_issue_url,
 )
 from ..support.filter_parsing import _case_filter_kwargs
-from ..support.identity import _admin_identity
+from ..support.identity import _admin_identity, _is_dashboard_admin
 from ..support.thumbnails import _render_case_thumbnail, _thumbnail_cache_path
 from ..review_workflow import derive_review_status, effective_expected_output
 from ..auth import SessionIdentity, request_identity
@@ -603,13 +603,22 @@ async def reviewers(
     baselines: str = "",
 ) -> dict[str, Any]:
     scopes = resolve_request_baseline_scopes(baselines, request=request)
-    return {
-        "items": await asyncio.to_thread(
+    items, is_admin = await asyncio.gather(
+        asyncio.to_thread(
             database.list_reviewers,
             baseline_scopes=scopes,
             model_run_id=model_run_id,
+        ),
+        asyncio.to_thread(_is_dashboard_admin, request),
+    )
+    analysis_items = items
+    if is_admin:
+        analysis_items = await asyncio.to_thread(
+            database.list_analysis_reviewers,
+            baseline_scopes=scopes,
+            model_run_id=model_run_id,
         )
-    }
+    return {"items": items, "analysis_items": analysis_items}
 
 
 

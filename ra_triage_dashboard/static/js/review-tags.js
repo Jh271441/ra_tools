@@ -405,6 +405,44 @@ function reviewShortcutHasEditableTarget(target) {
   );
 }
 
+function reviewDropdownKeyboardInputs(dropdown) {
+  if (!dropdown?.open) return [];
+  return [...dropdown.querySelectorAll('input[type="checkbox"]')].filter(
+    (input) => !input.disabled
+  );
+}
+
+function handleReviewDropdownKeyboard(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  const dropdown = target?.closest(".review-dropdown[open]") || null;
+  if (!dropdown || event.ctrlKey || event.metaKey || event.altKey) return false;
+  const inputs = reviewDropdownKeyboardInputs(dropdown);
+  if (!inputs.length) return false;
+  const currentInput = target?.matches?.('input[type="checkbox"]')
+    ? target
+    : target?.closest("label")?.querySelector('input[type="checkbox"]');
+  const currentIndex = inputs.indexOf(currentInput);
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    event.stopPropagation();
+    const delta = event.key === "ArrowDown" ? 1 : -1;
+    const nextIndex = currentIndex < 0
+      ? (delta > 0 ? 0 : inputs.length - 1)
+      : (currentIndex + delta + inputs.length) % inputs.length;
+    inputs[nextIndex].focus({ preventScroll: true });
+    inputs[nextIndex].closest("label")?.scrollIntoView({ block: "nearest" });
+    return true;
+  }
+  if ((event.key === "Enter" || event.key === " ") && currentIndex >= 0) {
+    event.preventDefault();
+    event.stopPropagation();
+    currentInput.checked = !currentInput.checked;
+    currentInput.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  }
+  return false;
+}
+
 function openReviewTagShortcutGroup(groupKey) {
   const dropdown = document.querySelector(
     `.review-tag-dropdown[data-tag-dropdown-group="${CSS.escape(groupKey)}"]`
@@ -441,6 +479,7 @@ function bindReviewKeyboardShortcuts() {
       return;
     }
     const target = event.target instanceof Element ? event.target : null;
+    if (handleReviewDropdownKeyboard(event)) return;
     if (reviewShortcutHasEditableTarget(target)) return;
 
     const key = String(event.key || "").toLowerCase();

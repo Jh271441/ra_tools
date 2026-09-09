@@ -600,6 +600,11 @@ html[data-color-theme="light"] .detail-queue-index-input {
   min-width: 0; flex: 1 1 auto; display: inline-flex; align-items: center; gap: 5px;
   color: #f2f6fb; cursor: pointer;
 }
+.review-tag-dropdown .tag-option:has(input:focus-visible),
+.evidence-dropdown .tag-option:has(input:focus-visible) {
+  border-color: rgba(34,211,238,.7); background: var(--accent-soft);
+  outline: 2px solid rgba(34,211,238,.24); outline-offset: 1px;
+}
 .tag-option-check .tag-option-shortcut,
 .review-tag-options > .tag-option .tag-option-shortcut {
   margin-left: auto;

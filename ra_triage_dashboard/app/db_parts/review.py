@@ -547,6 +547,80 @@ class DatabaseReviewMixin:
             for row in rows
         ]
 
+    def list_analysis_reviewers(
+        self,
+        baseline_scope: str | Sequence[str] = "",
+        model_run_id: str = "",
+        *,
+        baseline_scopes: Sequence[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return the admin analysis facet, including submitted blind Reviews.
+
+        Active blind-task results own their Issue in reason analysis. Count
+        every submitted member as a selectable reviewer, while removing the
+        ordinary/fallback projection for the same Issue so facet counts follow
+        the result rows instead of double-counting historical evidence.
+        """
+
+        scopes = self._normalize_baseline_scopes(
+            baseline_scopes,
+            baseline_scope=baseline_scope if isinstance(baseline_scope, str) else "",
+        )
+        if not scopes and isinstance(baseline_scope, (list, tuple)):
+            scopes = self._normalize_baseline_scopes(baseline_scope)
+        if not scopes:
+            return []
+        ordinary_rows = self.review_reason_rows(
+            baseline_scopes=scopes,
+            model_run_id=model_run_id,
+            include_unbound_fallback=True,
+            include_bound_history_fallback=True,
+        )
+        blind_rows = self.review_multi_rows(
+            baseline_scopes=scopes,
+            model_run_id=model_run_id,
+        )
+        submitted_blind_rows = [
+            row for row in blind_rows if row.get("annotation")
+        ]
+        blind_issue_ids = {
+            str(row.get("issue_id") or "") for row in submitted_blind_rows
+        }
+        source_rows = [
+            row
+            for row in ordinary_rows
+            if str(row.get("issue_id") or "") not in blind_issue_ids
+        ]
+        source_rows.extend(submitted_blind_rows)
+
+        counts: dict[str, dict[str, Any]] = {}
+        seen: set[tuple[str, str]] = set()
+        for row in source_rows:
+            annotation = row.get("annotation") or {}
+            author = str(annotation.get("author") or "").strip()
+            issue_id = str(row.get("issue_id") or "")
+            if not author or not issue_id or (issue_id, author) in seen:
+                continue
+            seen.add((issue_id, author))
+            item = counts.setdefault(
+                author,
+                {
+                    "name": author,
+                    "verified_count": 0,
+                    "unverified_count": 0,
+                    "review_count": 0,
+                },
+            )
+            verified = bool(annotation.get("author_verified"))
+            item["verified_count" if verified else "unverified_count"] += 1
+            item["review_count"] += 1
+        result = list(counts.values())
+        for item in result:
+            item["verified"] = bool(item["verified_count"]) and not bool(
+                item["unverified_count"]
+            )
+        return sorted(result, key=lambda item: (-item["review_count"], item["name"]))
+
     @staticmethod
     def _latest_annotation_join_params(
         model_run_id: str = "",

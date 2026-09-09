@@ -423,7 +423,6 @@ function renderReview(caseData) {
     .join("");
   const issueTagGroups = renderReviewTagGroups(tagCatalog, chosenTags, tagOption);
   const sourceSuggestionMarkup = issueTagSourceSuggestionMarkup(sourceSuggestion);
-  const blindTask = caseData.review_assignment?.blind_active;
   $("#reviewPane").innerHTML = `
     <form class="review-form" id="annotationForm">
       <section class="review-section issue-tag-section">
@@ -440,10 +439,10 @@ function renderReview(caseData) {
             </h2>
           </div>
           <div class="review-heading-actions">
-            ${blindTask ? "" : `<button class="history-inline-button" id="reviewCommentsButton" type="button" data-review-comments aria-keyshortcuts="D" title="展开或收起评论（D）">
-              <span class="ui-lang-zh">评论</span><span class="ui-lang-en">Comments</span>
+            <button class="history-inline-button" id="reviewCommentsButton" type="button" data-review-comments aria-keyshortcuts="D" title="展开或收起讨论（D）">
+              <span class="ui-lang-zh">讨论</span><span class="ui-lang-en">Discussion</span>
               <kbd class="review-control-shortcut" aria-hidden="true">D</kbd>
-            </button>`}
+            </button>
             <button class="history-inline-button" type="button" data-open-history="review" id="reviewHistoryLaunchButton" aria-keyshortcuts="J" title="展开或收起 Review 历史（J）">
               <span class="ui-lang-zh">Review 历史 · ${allAnnotations.length} 条</span>
               <span class="ui-lang-en">Review history · ${allAnnotations.length}</span>
@@ -1039,10 +1038,6 @@ function bindReviewComposerShortcuts() {
 }
 
 function openCurrentReviewDiscussion(caseData = state.selectedCase) {
-  if (caseData?.review_assignment?.blind_active) {
-    showToast("多人盲标进行中，评论将在解盲后恢复。", true);
-    return;
-  }
   const issueId = String(caseData?.issue_id || state.selectedId || "").trim();
   if (!issueId) return;
   openAnalysisDiscussion(issueId, {
@@ -1090,7 +1085,6 @@ function bindReviewDetailActionShortcuts() {
     }
     if (document.querySelector("dialog[open]")) return;
     if (key === "d") {
-      if (state.selectedCase?.review_assignment?.blind_active) return;
       event.preventDefault();
       event.stopPropagation();
       closeAllReviewDropdowns();

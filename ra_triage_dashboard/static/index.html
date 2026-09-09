@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-376`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-377`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1557,7 +1557,7 @@
           <div class="shortcut-guide-row" data-shortcut-search="q w a s z x"><span><kbd>Q</kbd><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>Z</kbd><kbd>X</kbd></span><strong>展开 / 收起对应标签组</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="0 1 2 3 4 5 6 7 8 9 minus equal"><span><kbd>1</kbd>–<kbd>0</kbd><kbd>-</kbd><kbd>=</kbd></span><strong>切换已打开标签组中的选项</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="b c v"><span><kbd>B</kbd><kbd>C</kbd><kbd>V</kbd></span><strong>切换 BEV / Camera / 视频</strong></div>
-          <div class="shortcut-guide-row" data-shortcut-search="arrowleft arrowright f"><span><kbd>←</kbd><kbd>→</kbd><kbd>F</kbd></span><strong>切换媒体帧 / 打开大图</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="arrowleft arrowright 0 f"><span><kbd>←</kbd><kbd>→</kbd><kbd>0</kbd><kbd>F</kbd></span><strong>切换媒体帧 / 回到 t0 / 打开大图</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="plus minus 0"><span><kbd>+</kbd><kbd>-</kbd><kbd>0</kbd></span><strong>大图缩放 / 复位</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="backslash"><span><kbd>\</kbd></span><strong>展开 / 折叠左侧工具栏</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="r"><span><kbd>R</kbd></span><strong>刷新当前页</strong></div>
@@ -1886,7 +1886,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-376`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-377`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

@@ -282,7 +282,7 @@ function heroMediaSection(caseData) {
       <button class="button button-quiet" id="detailMediaNextButton" type="button" aria-label="${escapeHtml(t("media.next_frame"))}">${escapeHtml(t("media.next_frame"))}</button>
     </div>`;
   return `
-      <section class="hero-media detail-hero-media" id="detailHeroMedia" tabindex="0" aria-label="Issue 媒体">
+      <section class="hero-media detail-hero-media" id="detailHeroMedia" tabindex="0" aria-label="Issue 媒体" aria-keyshortcuts="0">
       <div class="detail-media-content">${content}</div>
       ${frameControls}
       <p class="detail-media-help">${escapeHtml(kind === "video" ? t("media.help_video") : t("media.help_image"))}</p>

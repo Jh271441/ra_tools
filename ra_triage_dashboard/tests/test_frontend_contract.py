@@ -205,7 +205,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-376", APP_ENTRY_JS)
+        self.assertIn("manual-triage-377", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -246,7 +246,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-376", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-377", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
         self.assertNotIn("async function bootstrap", APP_ENTRY_JS)
@@ -353,7 +353,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-376`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-377`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -797,6 +797,9 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('z: "ra"', APP_JS)
         self.assertIn('x: "no_assist"', APP_JS)
         self.assertIn('function bindReviewKeyboardShortcuts()', APP_JS)
+        self.assertIn("function handleReviewDropdownKeyboard(event)", APP_JS)
+        self.assertIn('event.key === "ArrowDown" || event.key === "ArrowUp"', APP_JS)
+        self.assertIn('(event.key === "Enter" || event.key === " ")', APP_JS)
         self.assertIn('data-review-tag-option-shortcut=', APP_JS)
         self.assertIn('"9", "0", "-", "="', APP_JS)
         self.assertIn("REVIEW_TAG_OPTION_SHORTCUTS.includes(key)", APP_JS)
@@ -901,6 +904,9 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('id="modelHistoryLaunchButton"', APP_JS)
         self.assertIn('aria-keyshortcuts="M"', APP_JS)
         self.assertIn('id="reviewCommentsButton"', APP_JS)
+        self.assertIn('<span class="ui-lang-zh">讨论</span><span class="ui-lang-en">Discussion</span>', APP_JS)
+        self.assertNotIn("多人盲标进行中，评论将在解盲后恢复。", APP_JS)
+        self.assertNotIn('if (state.selectedCase?.review_assignment?.blind_active) return;', APP_JS)
         self.assertIn('aria-keyshortcuts="D"', APP_JS)
         self.assertIn("function bindReviewDetailActionShortcuts", APP_JS)
         self.assertIn('if (key === "d")', APP_JS)
@@ -1009,6 +1015,11 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('mediaTimelineMarkup(activeFrames, index, "detail-media-frame")', APP_JS)
         self.assertIn('mediaTimelineButtonsMarkup(frames, state.media.index, "media-frame")', APP_JS)
         self.assertIn(".detail-media-timeline", STYLES_CSS)
+        self.assertIn('aria-label="Issue 媒体" aria-keyshortcuts="0"', APP_JS)
+        self.assertIn('} else if (key === "0") {', APP_JS)
+        self.assertIn('querySelector("[data-video-t0]")', APP_JS)
+        self.assertIn("const t0Index = heroFrameIndex(frames);", APP_JS)
+        self.assertIn("#reviewPane .review-dropdown[open]", APP_JS)
 
     def test_review_save_updates_history_without_reselecting_the_case(self) -> None:
         save_start = APP_JS.index("async function saveAnnotation(event)")
@@ -1142,7 +1153,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-376", APP_ENTRY_JS)
+        self.assertIn("manual-triage-377", APP_ENTRY_JS)
 
     def test_multi_issue_query_contract(self) -> None:
         self.assertIn('id="openIssueQueryButton"', INDEX_HTML)
@@ -1481,6 +1492,8 @@ class FrontendContractTest(unittest.TestCase):
         # must not silently switch to the default Run and replace its reviewer
         # facet with a different set of names.
         self.assertIn("await loadRuns({ preserveEmpty: !state.selectedRunId });", APP_JS)
+        self.assertIn("const analysisReviewerOptions = reviewerOptionsFor(", APP_JS)
+        self.assertIn("Array.isArray(data.analysis_items)", APP_JS)
 
     def test_work_assignee_filter_survives_custom_facet_rebuild(self) -> None:
         self.assertIn("function workAssigneeRouteSelection()", APP_JS)
