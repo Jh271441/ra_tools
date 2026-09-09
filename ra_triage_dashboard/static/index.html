@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-379`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-380`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1600,7 +1600,7 @@
           <div class="media-video-stage" id="mediaVideoStage" hidden></div>
         </div>
         <div class="media-timeline" id="mediaTimeline"></div>
-        <p class="media-help" id="mediaHelp">← / ↑ 上一帧 · → / ↓ 下一帧 · B/C/V 切媒体 · +/− 缩放 · 0 复位 · 放大后拖拽平移 · F 全屏 · Esc 退出</p>
+        <p class="media-help" id="mediaHelp">← / ↑ 上一帧 · → / ↓ 下一帧 · B/C/V 切媒体 · +/− 缩放 · 0 视频回 t0 / 图片复位 · 放大后拖拽平移 · F 全屏 · Esc 退出</p>
       </div>
     </dialog>
 
@@ -1887,7 +1887,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-379`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-380`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

@@ -791,7 +791,11 @@ function bindEvents() {
     if (["-", "_"].includes(event.key)) { event.preventDefault(); setMediaZoom(state.media.zoom - MEDIA_ZOOM_STEP); }
     if (event.key === "0") {
       event.preventDefault();
-      setMediaZoom(1, { resetScroll: true });
+      if (state.media.kind === "video") {
+        $("#mediaVideoStage")?.querySelector("[data-video-t0]")?.click();
+      } else {
+        setMediaZoom(1, { resetScroll: true });
+      }
     }
     if (event.key.toLowerCase() === "f") { event.preventDefault(); toggleMediaFullscreen(); }
   });
