@@ -85,6 +85,7 @@ function analysisRequestOptions() {
     runId,
     comparisonStatus: runId ? checkedAnalysisComparisonStatus() : "all",
     exclusion: selectedAnalysisExclusionFilter(),
+    workAgreement: $("#analysisWorkAgreementFilter")?.value || "all",
   });
 }
 
@@ -113,6 +114,9 @@ function buildAnalysisQueryParams({ format = "", includePagination = true } = {}
   ];
   if (options.exclusion && options.exclusion !== "all") {
     params.set("exclusion", options.exclusion);
+  }
+  if (options.workAgreement && options.workAgreement !== "all") {
+    params.set("work_agreement", options.workAgreement);
   }
   for (const [key, value] of fields) {
     if (value) params.set(key, value);
@@ -661,6 +665,23 @@ function renderAnalysisCases(data) {
               comparisonStatus === "none" ? t("analysis.no_pred") : ""
             }</span>`
           : "";
+        const multi = item.multi_review || null;
+        const multiLabel = multi
+          ? ({ pending: "未完成", agreed: "一致", conflict: "冲突" }[multi.agreement] || "多人复核")
+          : "";
+        const multiBadge = multi
+          ? `<span class="analysis-comparison-badge comparison-${multi.agreement === "conflict" ? "mismatch" : multi.agreement === "agreed" ? "match" : "none"}">${escapeHtml(multiLabel)} · ${Number(multi.completed_count || 0)}/${Number(multi.assigned_count || 0)}</span>`
+          : "";
+        const multiDistribution = multi
+          ? Object.entries(multi.output_counts || {})
+              .map(([label, count]) => `${label} ${count}`)
+              .join(" · ")
+          : "";
+        const multiReviewerLines = multi
+          ? (multi.reviews || [])
+              .map((review) => `${review.username}：${review.expected_output || "待补充"}`)
+              .join(" · ")
+          : "";
         const confidence =
           prediction.confidence === null || prediction.confidence === undefined
             ? ""
@@ -686,6 +707,7 @@ function renderAnalysisCases(data) {
           </div>
           <div class="analysis-case-labels">
             ${comparisonBadge}
+            ${multiBadge}
             <span title="${escapeHtml(`${baselineLabelForScope(item.baseline_scope)} GT`)}">GT ${labelBadge(item.gt_label)}</span>
             <span title="人工 Review 期望输出"><span class="ui-lang-zh">期望</span><span class="ui-lang-en">Expected</span> ${labelBadge(expectedOutput, uiText("待补充", "Pending"))}</span>
             <button class="analysis-model-history-button" type="button"
@@ -698,6 +720,8 @@ function renderAnalysisCases(data) {
           <div class="analysis-case-reason">
             <strong class="${annotation.note ? "" : "reason-empty"}">${escapeHtml(annotation.note || t("analysis.empty_reason"))}</strong>
             ${prediction.reason ? `<p>${escapeHtml(t("analysis.model_note", { note: prediction.reason }))}</p>` : ""}
+            ${multiDistribution ? `<p>多人结论：${escapeHtml(multiDistribution)}</p>` : ""}
+            ${multiReviewerLines ? `<p>复核人：${escapeHtml(multiReviewerLines)}</p>` : ""}
             <div class="analysis-chip-list">${tagChips}${evidenceChips}</div>
           </div>
           <div class="analysis-case-meta">

@@ -423,8 +423,13 @@ function renderReview(caseData) {
     .join("");
   const issueTagGroups = renderReviewTagGroups(tagCatalog, chosenTags, tagOption);
   const sourceSuggestionMarkup = issueTagSourceSuggestionMarkup(sourceSuggestion);
+  const blindTask = caseData.review_assignment?.blind_active;
+  const taskBanner = blindTask
+    ? `<div class="review-blind-task-banner"><strong>多人盲标任务</strong><span>仅显示你的 Review · 当前 ${Number(caseData.review_assignment.submitted_count || 0)}/${Number(caseData.review_assignment.assigned_count || 0)} 人已提交</span></div>`
+    : "";
   $("#reviewPane").innerHTML = `
     <form class="review-form" id="annotationForm">
+      ${taskBanner}
       <section class="review-section issue-tag-section">
         <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span></h2>${sourceSuggestionMarkup}</div><span class="evidence-summary-count" id="tagSummaryCount">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
         <div class="review-tag-groups-shell">${issueTagGroups}${customTagOptions ? `<div class="review-tag-legacy"><span class="ui-lang-zh">历史标签</span><span class="ui-lang-en">Legacy tags</span><div class="review-tag-options">${customTagOptions}</div></div>` : ""}</div>
@@ -439,10 +444,10 @@ function renderReview(caseData) {
             </h2>
           </div>
           <div class="review-heading-actions">
-            <button class="history-inline-button" id="reviewCommentsButton" type="button" data-review-comments aria-keyshortcuts="D" title="打开评论（D）">
+            ${blindTask ? "" : `<button class="history-inline-button" id="reviewCommentsButton" type="button" data-review-comments aria-keyshortcuts="D" title="打开评论（D）">
               <span class="ui-lang-zh">评论</span><span class="ui-lang-en">Comments</span>
               <kbd class="review-control-shortcut" aria-hidden="true">D</kbd>
-            </button>
+            </button>`}
             <button class="history-inline-button" type="button" data-open-history="review" id="reviewHistoryLaunchButton" aria-keyshortcuts="J" title="打开 Review 历史（J）">
               <span class="ui-lang-zh">Review 历史 · ${allAnnotations.length} 条</span>
               <span class="ui-lang-en">Review history · ${allAnnotations.length}</span>
@@ -798,7 +803,11 @@ const CASE_DETAIL_PREFETCH_LIMIT = 4;
 const TRAIL_DETAIL_DELAY_MS = 350;
 
 function caseCorePath(issueId) {
-  return `/api/cases/${encodeURIComponent(issueId)}?include_media=false`;
+  let path = `/api/cases/${encodeURIComponent(issueId)}?include_media=false`;
+  if (state.selectedRunId) {
+    path += `&model_run_id=${encodeURIComponent(state.selectedRunId)}`;
+  }
+  return path;
 }
 
 function prefetchCaseCore(issueId) {
@@ -1027,6 +1036,10 @@ function bindReviewComposerShortcuts() {
 }
 
 function openCurrentReviewDiscussion(caseData = state.selectedCase) {
+  if (caseData?.review_assignment?.blind_active) {
+    showToast("多人盲标进行中，评论将在解盲后恢复。", true);
+    return;
+  }
   const issueId = String(caseData?.issue_id || state.selectedId || "").trim();
   if (!issueId) return;
   openAnalysisDiscussion(issueId, {
@@ -1055,6 +1068,7 @@ function bindReviewDetailActionShortcuts() {
     if (reviewShortcutHasEditableTarget(target)) return;
     const key = String(event.key || "").toLowerCase();
     if (key === "d") {
+      if (state.selectedCase?.review_assignment?.blind_active) return;
       event.preventDefault();
       event.stopPropagation();
       closeAllReviewDropdowns();
@@ -1119,6 +1133,10 @@ async function saveAnnotation(event) {
   }
   const payload = {
     model_run_id: state.reviewEditRunId || currentReviewRunId(state.selectedCase),
+    work_split_id:
+      state.selectedCase?.review_assignment?.mode === "blind"
+        ? state.selectedCase.review_assignment.split_id || ""
+        : "",
     expected_previous_annotation_id: state.reviewEditBaseAnnotationId || null,
     expected_output: $("#expectedOutputInput")?.value || "",
     is_excluded: Boolean($("#reviewExcludeInput")?.checked),
@@ -1160,7 +1178,7 @@ async function saveAnnotation(event) {
       state.reviewEditRunId = result.annotation.model_run_id || state.reviewEditRunId;
       state.reviewEditBaseAnnotationId = result.annotation.id || null;
     }
-    clearReviewDraft(state.selectedId, payload.model_run_id);
+    clearReviewDraft(state.selectedId, payload.model_run_id, payload.work_split_id);
     const screenshotCount = state.pendingReviewImages.length;
     state.reviewFormDirty = false;
     state.deferredDetailRefresh = false;

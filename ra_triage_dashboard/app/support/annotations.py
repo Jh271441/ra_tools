@@ -56,6 +56,7 @@ def _create_annotation_record(
         case.get("gt_label"),
     )
     model_run_id = _as_text(body.get("model_run_id"))
+    work_split_id = _as_text(body.get("work_split_id"))
     has_expected_previous = "expected_previous_annotation_id" in body
     expected_previous_annotation_id: int | None = None
     if has_expected_previous:
@@ -70,6 +71,19 @@ def _create_annotation_record(
             if expected_previous_annotation_id <= 0:
                 raise _detail(400, "expected_previous_annotation_id 不合法。")
     author, author_source, author_verified = _action_actor(request, body.get("author"))
+    if work_split_id:
+        assignment = database.review_assignment_context(
+            issue_id,
+            model_run_id=model_run_id,
+            username=author,
+        )
+        if (
+            not author_verified
+            or assignment is None
+            or assignment.get("split_id") != work_split_id
+            or not assignment.get("assigned")
+        ):
+            raise _detail(403, "当前账号不在该盲标任务中，不能提交 Review。")
     note = _as_text(body.get("note"))
     try:
         mentions = extract_review_mentions(note)
@@ -94,6 +108,7 @@ def _create_annotation_record(
     annotation_kwargs: dict[str, Any] = {
         "issue_id": issue_id,
         "model_run_id": model_run_id,
+        "work_split_id": work_split_id,
         # ``annotations.label`` is the existing compatible storage column for
         # the newly named expected output.  Keep it populated so older readers,
         # filters and history remain valid without a schema rewrite.

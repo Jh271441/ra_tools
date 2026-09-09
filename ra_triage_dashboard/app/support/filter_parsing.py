@@ -36,9 +36,12 @@ def _case_filter_kwargs(
     baselines: str = "",
     request: Request | None = None,
 ) -> dict[str, Any]:
+    raw_comparison_values = _csv_filter_values(comparison)
+    if any(value not in COMPARISON_STATUSES for value in raw_comparison_values):
+        raise _detail(400, "comparison 不在支持范围内。")
     comparison_values = [
         value
-        for value in _csv_filter_values(comparison)
+        for value in raw_comparison_values
         if value in COMPARISON_STATUSES and value != "all"
     ]
     if failure_only and comparison_values and comparison_values != ["mismatch"]:

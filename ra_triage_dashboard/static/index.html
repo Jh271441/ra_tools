@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-365`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-366`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -500,6 +500,15 @@
                 <label class="filter-review-status">
                   <span class="ui-lang-zh" title="Issue GT Review状态">GT 复核状态</span><span class="ui-lang-en" title="Issue GT review status">GT Review status</span>
                   <div class="multi-filter" id="analysisStatusFilter" data-placeholder="全部状态" data-placeholder-en="All statuses" data-i18n-placeholder="analysis.all_statuses"></div>
+                </label>
+                <label id="analysisWorkAgreementField" hidden>
+                  <span>多人复核结果</span>
+                  <select id="analysisWorkAgreementFilter">
+                    <option value="all">全部</option>
+                    <option value="pending">未完成</option>
+                    <option value="agreed">一致</option>
+                    <option value="conflict">冲突</option>
+                  </select>
                 </label>
                 <label>
                   <span>GT</span>
@@ -1598,6 +1607,13 @@
           <button class="icon-button" type="button" data-close="workSplitDialog" aria-label="关闭">×</button>
         </div>
         <div class="work-split-summary" id="workSplitSummary">当前筛选：—</div>
+        <div class="work-split-mode-row">
+          <label class="work-split-seed">
+            <span>每个 Issue 复核人数</span>
+            <input id="workSplitReviewersPerIssue" type="number" min="1" step="1" value="1" inputmode="numeric" />
+          </label>
+          <div class="work-split-estimate" id="workSplitEstimate">单人均分</div>
+        </div>
         <div class="work-split-people" id="workSplitPeople" aria-label="复核人列表"></div>
         <div class="work-split-toolbar">
           <button class="button button-quiet" id="workSplitAddPerson" type="button"><span class="ui-lang-zh">添加人员</span><span class="ui-lang-en">Add person</span></button>
@@ -1840,7 +1856,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-365`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-366`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

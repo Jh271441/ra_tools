@@ -408,6 +408,7 @@ class DatabaseCoreMixin:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE CASCADE,
                     model_run_id TEXT NOT NULL DEFAULT '',
+                    work_split_id TEXT NOT NULL DEFAULT '',
                     label TEXT,
                     review_status TEXT NOT NULL DEFAULT 'pending',
                     is_excluded INTEGER NOT NULL DEFAULT 0,
@@ -719,6 +720,22 @@ class DatabaseCoreMixin:
                     assignees_json TEXT NOT NULL DEFAULT '[]'
                 );
 
+                CREATE TABLE IF NOT EXISTS review_work_assignments (
+                    split_id TEXT NOT NULL REFERENCES issue_work_splits(id) ON DELETE RESTRICT,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE CASCADE,
+                    assignee TEXT NOT NULL,
+                    assignment_kind TEXT NOT NULL DEFAULT 'base'
+                        CHECK(assignment_kind IN ('base', 'cross', 'full')),
+                    ordinal INTEGER NOT NULL DEFAULT 1 CHECK(ordinal > 0),
+                    assigned_by TEXT NOT NULL DEFAULT '',
+                    assigned_at TEXT NOT NULL,
+                    PRIMARY KEY(split_id, issue_id, assignee)
+                );
+                CREATE INDEX IF NOT EXISTS idx_review_work_assignments_assignee
+                    ON review_work_assignments(assignee, ordinal);
+                CREATE INDEX IF NOT EXISTS idx_review_work_assignments_issue
+                    ON review_work_assignments(issue_id, split_id);
+
                 CREATE TABLE IF NOT EXISTS issue_work_assignments (
                     issue_id TEXT PRIMARY KEY REFERENCES issues(issue_id) ON DELETE CASCADE,
                     assignee TEXT NOT NULL DEFAULT '',
@@ -933,6 +950,7 @@ class DatabaseCoreMixin:
                 "comment_attachments",
                 "issue_work_splits",
                 "issue_work_assignments",
+                "review_work_assignments",
                 "intent_label_revisions",
                 "intent_frame_overrides",
                 "intent_label_heads",
@@ -966,6 +984,11 @@ class DatabaseCoreMixin:
             self._ensure_column(conn, "issues", "baseline_scope", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "annotations", "review_status", "TEXT NOT NULL DEFAULT 'pending'")
             self._ensure_column(conn, "annotations", "model_run_id", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "annotations", "work_split_id", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "issue_work_splits", "mode", "TEXT NOT NULL DEFAULT 'single'")
+            self._ensure_column(conn, "issue_work_splits", "reviewers_per_issue", "INTEGER NOT NULL DEFAULT 1")
+            self._ensure_column(conn, "issue_work_splits", "model_run_id", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "issue_work_splits", "assignment_count", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(
                 conn, "intent_experiments", "overlap_reviewers",
                 "INTEGER NOT NULL DEFAULT 2",
@@ -985,6 +1008,23 @@ class DatabaseCoreMixin:
                 "CREATE INDEX IF NOT EXISTS idx_annotations_issue_run_id "
                 "ON annotations(issue_id, model_run_id, id DESC)"
             )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_annotations_work_split_author "
+                "ON annotations(issue_id, model_run_id, work_split_id, author, id DESC)"
+            )
+            if self.backend == "sqlite":
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO review_work_assignments (
+                        split_id, issue_id, assignee, assignment_kind, ordinal,
+                        assigned_by, assigned_at
+                    )
+                    SELECT split_id, issue_id, assignee, 'base', 1,
+                           assigned_by, assigned_at
+                    FROM issue_work_assignments
+                    WHERE split_id <> '' AND assignee <> ''
+                    """
+                )
             self._ensure_column(conn, "missing_evidence_catalog", "active", "INTEGER NOT NULL DEFAULT 1")
             self._ensure_column(conn, "review_tag_catalog", "hint", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "review_tag_catalog", "section", "TEXT NOT NULL DEFAULT 'scene'")

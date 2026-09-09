@@ -23,6 +23,7 @@ from ..support.common import (
     _as_text,
     _detail,
 )
+from ..support.identity import _admin_identity
 from ..support.review_payloads import (
     _review_reason_analysis_payload,
 )
@@ -51,7 +52,10 @@ async def review_reason_analysis(
     page: int = 1,
     page_size: int = 20,
     baselines: str = "",
+    work_agreement: str = "all",
 ) -> dict[str, Any]:
+    if work_agreement.strip().lower() not in {"", "all"}:
+        await asyncio.to_thread(_admin_identity, request)
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     payload = await asyncio.to_thread(
         _review_reason_analysis_payload,
@@ -75,6 +79,7 @@ async def review_reason_analysis(
         page_size=page_size,
         baselines=baselines,
         baseline_scopes=scopes,
+        work_agreement=work_agreement,
     )
     payload["baselines"] = resolve_request_baseline_ids(baselines, request=request)
     payload["baseline_scopes"] = scopes
@@ -271,10 +276,15 @@ async def export_review_reason_analysis(
     search: str = "",
     exclusion: str = "all",
     baselines: str = "",
+    work_agreement: str = "all",
 ) -> Response:
+    if work_agreement.strip().lower() not in {"", "all"}:
+        await asyncio.to_thread(_admin_identity, request)
     export_format = _as_text(format).strip().lower()
     if export_format not in {"csv", "xlsx", "trail_xlsx"}:
         raise _detail(400, "format 仅支持 csv、xlsx 或 trail_xlsx。")
+    if export_format == "trail_xlsx" and work_agreement.strip().lower() not in {"", "all"}:
+        raise _detail(400, "多人盲标结果需先仲裁，不能直接导出 GT 更新表。")
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     result = await asyncio.to_thread(
         _review_reason_analysis_payload,
@@ -297,6 +307,7 @@ async def export_review_reason_analysis(
         unbounded=True,
         baselines=baselines,
         baseline_scopes=scopes,
+        work_agreement=work_agreement,
     )
     result["baselines"] = resolve_request_baseline_ids(baselines, request=request)
     return await asyncio.to_thread(

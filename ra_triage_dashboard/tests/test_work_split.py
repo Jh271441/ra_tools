@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ra_triage_dashboard.app.db import Database
+from ra_triage_dashboard.app.db import AnnotationConflictError, Database
 from ra_triage_dashboard.app.work_split import distribute_issue_ids
 
 
@@ -48,6 +48,22 @@ class WorkSplitTest(unittest.TestCase):
                 [{"name": "x", "count": 2}, {"name": "y", "count": 2}],
                 seed=1,
             )
+
+    def test_double_blind_reuses_balanced_assignment_shape(self) -> None:
+        result = distribute_issue_ids(
+            [f"id{i}" for i in range(200)],
+            [{"name": name} for name in ("alice", "bob", "carol", "dora")],
+            seed=42,
+            reviewers_per_issue=2,
+        )
+        self.assertEqual(sum(item["count"] for item in result), 400)
+        self.assertEqual({item["count"] for item in result}, {100})
+        owners: dict[str, set[str]] = {}
+        for item in result:
+            for issue_id in item["issue_ids"]:
+                owners.setdefault(issue_id, set()).add(item["name"])
+        self.assertEqual(len(owners), 200)
+        self.assertTrue(all(len(names) == 2 for names in owners.values()))
 
     def test_apply_work_split_persists_filterable_assignee(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -114,6 +130,73 @@ class WorkSplitTest(unittest.TestCase):
             )
             self.assertEqual(sum(item["issue_count"] for item in scoped), 4)
             self.assertEqual(db.list_work_assignees(issue_ids=[]), [])
+
+    def test_multi_assignment_and_reviews_are_scoped_per_reviewer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "blind.sqlite")
+            db.init()
+            now = "2026-09-09T00:00:00+00:00"
+            with db._write_lock, db.connect() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO issues (
+                        issue_id, trip_id, title, scenario, summary, review_note,
+                        trail_url, gt_label, gt_source, source, baseline_scope,
+                        extra_json, created_at, updated_at
+                    ) VALUES ('cn1', '', '', '', '', '', '', '误触发', 'test',
+                              'test', 'scope', '{}', ?, ?)
+                    """,
+                    (now, now),
+                )
+            assignments = distribute_issue_ids(
+                ["cn1"],
+                [{"name": "alice"}, {"name": "bob"}],
+                seed=1,
+                reviewers_per_issue=2,
+            )
+            saved = db.apply_work_split(
+                assignments=assignments,
+                created_by="admin",
+                reviewers_per_issue=2,
+            )
+            context = db.review_assignment_context("cn1", username="alice")
+            self.assertEqual(context["assigned_count"], 2)
+            self.assertTrue(context["assigned"])
+            alice = db.create_annotation(
+                issue_id="cn1", model_run_id="", work_split_id=saved["split_id"],
+                label="误触发", review_status="reviewed", tags=[],
+                missing_evidence=[], note="alice", author="alice",
+                expected_previous_annotation_id=None,
+            )
+            bob = db.create_annotation(
+                issue_id="cn1", model_run_id="", work_split_id=saved["split_id"],
+                label="正确触发", review_status="needs_gt_review", tags=[],
+                missing_evidence=[], note="bob", author="bob",
+                expected_previous_annotation_id=None,
+            )
+            self.assertNotEqual(alice["id"], bob["id"])
+            with self.assertRaises(AnnotationConflictError):
+                db.create_annotation(
+                    issue_id="cn1", model_run_id="", work_split_id=saved["split_id"],
+                    label="误触发", review_status="reviewed", tags=[],
+                    missing_evidence=[], note="stale", author="alice",
+                    expected_previous_annotation_id=None,
+                )
+            self.assertIsNone(
+                db.list_cases(baseline_scope="scope", page_size=10)["items"][0]["annotation"]["id"]
+            )
+            self.assertEqual(len(db.review_multi_rows(baseline_scopes=["scope"])), 2)
+
+    def test_case_comparison_filter_accepts_multiple_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "comparison.sqlite")
+            db.init()
+            result = db.list_cases(
+                comparison_status="mismatch,match",
+                model_run_id="run-placeholder",
+                page_size=10,
+            )
+            self.assertEqual(result["total"], 0)
 
 
 if __name__ == "__main__":

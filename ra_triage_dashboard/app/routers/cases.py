@@ -36,6 +36,7 @@ from ..support.filter_parsing import _case_filter_kwargs
 from ..support.identity import _admin_identity
 from ..support.thumbnails import _render_case_thumbnail, _thumbnail_cache_path
 from ..review_workflow import derive_review_status, effective_expected_output
+from ..auth import SessionIdentity, request_identity
 from ..runtime import (
     asset_index,
     baseline_registry,
@@ -427,6 +428,7 @@ async def work_assignees(
         "items": await asyncio.to_thread(
             database.list_work_assignees,
             issue_ids=filtered_issue_ids,
+            model_run_id=filters["model_run_id"],
         ),
         "total": len(filtered_issue_ids),
         "filters": {
@@ -491,12 +493,23 @@ async def split_case_work(request: Request) -> dict[str, Any]:
         except (TypeError, ValueError):
             raise _detail(400, "seed 必须是整数。")
     try:
-        assignments = distribute_issue_ids(issue_ids, assignees, seed=seed)
+        reviewers_per_issue = int(body.get("reviewers_per_issue") or 1)
+    except (TypeError, ValueError):
+        raise _detail(400, "reviewers_per_issue 必须是整数。")
+    try:
+        assignments = distribute_issue_ids(
+            issue_ids,
+            assignees,
+            seed=seed,
+            reviewers_per_issue=reviewers_per_issue,
+        )
         saved = await asyncio.to_thread(
             database.apply_work_split,
             assignments=assignments,
             created_by=identity.username,
             seed=seed,
+            reviewers_per_issue=reviewers_per_issue,
+            model_run_id=filters["model_run_id"],
             filter_snapshot={
                 "model_run_id": filters["model_run_id"],
                 "comparison_status": filters["comparison_status"],
@@ -526,9 +539,12 @@ async def split_case_work(request: Request) -> dict[str, Any]:
         "created_by": saved["created_by"],
         "created_at": saved["created_at"],
         "assignments": assignments,
+        "assignment_count": saved["assignment_count"],
+        "reviewers_per_issue": saved["reviewers_per_issue"],
         "work_assignees": await asyncio.to_thread(
             database.list_work_assignees,
             issue_ids=issue_ids,
+            model_run_id=filters["model_run_id"],
         ),
         "change_revision": await asyncio.to_thread(database.change_revision),
         "filters": {
@@ -683,10 +699,88 @@ async def get_case_media(issue_id: str, kind: str = "all") -> dict[str, Any]:
 
 
 @router.get("/api/cases/{issue_id}")
-async def get_case(issue_id: str, include_media: bool = True) -> dict[str, Any]:
+async def get_case(
+    issue_id: str,
+    request: Request = None,
+    include_media: bool = True,
+    model_run_id: str = "",
+    reveal_answers: bool = False,
+) -> dict[str, Any]:
     case = await asyncio.to_thread(database.get_case, issue_id)
     if case is None:
         raise _detail(404, "Issue 不存在。")
+    assignment = (
+        await asyncio.to_thread(
+            database.review_assignment_context,
+            issue_id,
+            model_run_id=model_run_id,
+            username="",
+        )
+        if request is not None
+        else None
+    )
+    identity = SessionIdentity()
+    if request is not None and assignment and assignment.get("mode") == "blind":
+        identity = await asyncio.to_thread(request_identity, request, settings)
+        current_username = identity.username.lower() if identity.verified else ""
+        own_assignment = next(
+            (
+                item for item in assignment.get("members", [])
+                if item["username"].lower() == current_username
+            ),
+            None,
+        )
+        assignment["assigned"] = own_assignment is not None
+        assignment["own_assignment"] = own_assignment
+    answers_revealed = bool(
+        reveal_answers
+        and identity.verified
+        and identity.username
+        and await asyncio.to_thread(database.access_role, identity.username) == "admin"
+    )
+    annotations = list(case.get("annotations", []))
+    if assignment and assignment.get("mode") == "blind":
+        split_id = str(assignment["split_id"])
+        if answers_revealed:
+            annotations = [
+                item for item in annotations
+                if str(item.get("work_split_id") or "") == split_id
+            ]
+        elif assignment.get("assigned") and identity.verified:
+            annotations = [
+                item for item in annotations
+                if str(item.get("work_split_id") or "") == split_id
+                and str(item.get("author") or "").lower() == identity.username.lower()
+            ]
+        else:
+            annotations = [
+                item for item in annotations if not item.get("work_split_id")
+            ]
+    else:
+        annotations = [item for item in annotations if not item.get("work_split_id")]
+    case["annotations"] = annotations
+    if assignment:
+        public_assignment = dict(assignment)
+        public_assignment["blind_active"] = assignment.get("mode") == "blind"
+        public_assignment["answers_revealed"] = answers_revealed
+        if assignment.get("mode") == "blind" and not answers_revealed:
+            public_assignment["members"] = [
+                {
+                    "username": (
+                        item["username"]
+                        if identity.verified
+                        and item["username"].lower() == identity.username.lower()
+                        else ""
+                    ),
+                    "submitted": bool(item["submitted"]),
+                    "assignment_kind": item["assignment_kind"],
+                    "ordinal": item["ordinal"],
+                }
+                for item in assignment.get("members", [])
+            ]
+        case["review_assignment"] = public_assignment
+    else:
+        case["review_assignment"] = None
     for annotation in case.get("annotations", []):
         annotation["attachments"] = [
             _public_review_attachment(attachment)

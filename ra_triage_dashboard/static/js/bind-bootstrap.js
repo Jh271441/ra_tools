@@ -271,6 +271,10 @@ function bindEvents() {
       "#analysisTriggerFilter",
       "#analysisEgressFilter",
     ].forEach((selector) => setMultiFilterValues($(selector), []));
+    if ($("#analysisWorkAgreementFilter")) {
+      $("#analysisWorkAgreementFilter").value = "all";
+    }
+    state.reviewAnalysis.workAgreement = "all";
     // See resetReviewFilters: clear the durable route state as well as the
     // widget state, otherwise an analysis reset would restore reviewer=… on
     // the next async facet refresh.
@@ -284,6 +288,10 @@ function bindEvents() {
     }
   });
   $("#exportReviewAnalysisCsvButton").addEventListener("click", () => downloadReviewAnalysis("csv"));
+  $("#analysisWorkAgreementFilter")?.addEventListener("change", () => {
+    state.reviewAnalysis.workAgreement = $("#analysisWorkAgreementFilter").value || "all";
+    scheduleAnalysisFilterReload(0);
+  });
   $("#exportReviewAnalysisXlsxButton").addEventListener("click", () => downloadReviewAnalysis("xlsx"));
   $("#exportTrailExpectedOutputButton").addEventListener("click", () => downloadReviewAnalysis("trail_xlsx"));
   $("#analysisPagePrevious").addEventListener("click", () => {

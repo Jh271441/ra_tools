@@ -104,6 +104,33 @@ function readWorkSplitAssignees() {
     .filter((item) => item.name);
 }
 
+function workSplitReviewersPerIssue() {
+  const value = Number.parseInt($("#workSplitReviewersPerIssue")?.value || "1", 10);
+  return Number.isFinite(value) ? Math.max(1, value) : 1;
+}
+
+function updateWorkSplitEstimate() {
+  const reviewers = workSplitReviewersPerIssue();
+  const people = readWorkSplitAssignees();
+  const total = Number(state.caseTotal || 0);
+  const target = $("#workSplitEstimate");
+  document.querySelectorAll(".work-split-person-count").forEach((input) => {
+    input.disabled = reviewers > 1;
+    input.placeholder = reviewers > 1 ? "自动均衡" : t("work.even_split");
+  });
+  if (!target) return;
+  if (reviewers > people.length && people.length) {
+    target.textContent = `每个 Issue 的人数不能超过已选 ${people.length} 人`;
+    return;
+  }
+  const assignmentCount = total * reviewers;
+  const low = people.length ? Math.floor(assignmentCount / people.length) : 0;
+  const high = people.length ? Math.ceil(assignmentCount / people.length) : 0;
+  target.textContent = reviewers === 1
+    ? `单人均分 · ${total} 条任务`
+    : `${total} × ${reviewers} = ${assignmentCount} 条盲标任务 · 每人约 ${low}${high !== low ? `～${high}` : ""} 条`;
+}
+
 function workAssigneeOptionsWithSelected(options, selected) {
   const known = new Set(options.map((item) => String(item.value || "")));
   const retained = parseFilterList(selected)
@@ -160,8 +187,10 @@ async function loadWorkAssignees() {
 
 function updateWorkSplitAdminVisibility() {
   const button = $("#splitFilteredButton");
-  if (!button) return;
   const isAdmin = Boolean(state.session?.is_admin);
+  const analysisField = $("#analysisWorkAgreementField");
+  if (analysisField) analysisField.hidden = !isAdmin;
+  if (!button) return;
   button.hidden = !isAdmin;
   if (!isAdmin) button.disabled = true;
 }
@@ -204,6 +233,8 @@ async function openWorkSplitDialog() {
       showToast(t("work.no_writers"), true);
     }
   }
+  if ($("#workSplitReviewersPerIssue")) $("#workSplitReviewersPerIssue").value = "1";
+  updateWorkSplitEstimate();
   openDialog("workSplitDialog");
 }
 
@@ -222,6 +253,8 @@ function renderWorkSplitResults(payload) {
       const mode =
         item.mode === "fixed"
           ? t("work.fixed_n", { n: item.requested_count ?? "—" })
+          : item.mode === "blind"
+            ? `${Number(payload.reviewers_per_issue || 2)} 人盲标`
           : t("work.even_rest");
       return `<article class="work-split-card" data-work-split-index="${index}">
         <header>
@@ -244,7 +277,7 @@ function renderWorkSplitResults(payload) {
   root.innerHTML = `
     <div class="work-split-results-heading">
       <strong>${escapeHtml(t("work.result_title"))}</strong>
-      <span>${escapeHtml(t("work.result_meta", { n: Number(payload.total || 0), seed: payload.split_id || "" }))}${payload.truncated ? escapeHtml(t("work.truncated")) : ""}</span>
+      <span>${escapeHtml(t("work.result_meta", { n: Number(payload.total || 0), seed: payload.split_id || "" }))} · ${Number(payload.assignment_count || payload.total || 0)} 条任务${payload.truncated ? escapeHtml(t("work.truncated")) : ""}</span>
     </div>
     <div class="work-split-card-grid">${cards}</div>
   `;
@@ -256,16 +289,25 @@ async function generateWorkSplit() {
     showToast(t("work.split_admin_only"), true);
     return;
   }
-  const assignees = readWorkSplitAssignees();
+  let assignees = readWorkSplitAssignees();
   if (!assignees.length) {
     showToast(t("work.need_reviewer"), true);
     return;
+  }
+  const reviewersPerIssue = workSplitReviewersPerIssue();
+  if (reviewersPerIssue > 1) {
+    assignees = assignees.map((item) => ({ ...item, count: null }));
   }
   const seedRaw = $("#workSplitSeed")?.value.trim() || "";
   const body = {
     filters: currentReviewFilterPayload(),
     assignees,
+    reviewers_per_issue: reviewersPerIssue,
   };
+  if (body.reviewers_per_issue > assignees.length) {
+    showToast("每个 Issue 的复核人数不能超过已选成员数。", true);
+    return;
+  }
   if (seedRaw !== "") {
     const seed = Number(seedRaw);
     if (!Number.isFinite(seed)) {
@@ -359,6 +401,7 @@ function bindWorkSplitControls() {
   });
   $("#workSplitAddPerson")?.addEventListener("click", () => {
     $("#workSplitPeople")?.insertAdjacentHTML("beforeend", workSplitPersonRow());
+    updateWorkSplitEstimate();
   });
   $("#workSplitPeople")?.addEventListener("click", (event) => {
     const remove = event.target.closest(".work-split-remove-person");
@@ -368,7 +411,10 @@ function bindWorkSplitControls() {
     if (!row || !root) return;
     row.remove();
     ensureWorkSplitPeople(1);
+    updateWorkSplitEstimate();
   });
+  $("#workSplitPeople")?.addEventListener("change", updateWorkSplitEstimate);
+  $("#workSplitReviewersPerIssue")?.addEventListener("input", updateWorkSplitEstimate);
   $("#workSplitGenerate")?.addEventListener("click", () => {
     generateWorkSplit().catch((error) => showToast(error.message, true));
   });

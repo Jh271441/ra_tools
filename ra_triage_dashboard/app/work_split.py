@@ -5,12 +5,15 @@ from __future__ import annotations
 import random
 from typing import Any
 
+from .assignment_planner import build_balanced_assignments
+
 
 def distribute_issue_ids(
     issue_ids: list[str],
     assignees: list[dict[str, Any]],
     *,
     seed: int | None = None,
+    reviewers_per_issue: int = 1,
 ) -> list[dict[str, Any]]:
     """Assign issue IDs to people.
 
@@ -53,6 +56,46 @@ def distribute_issue_ids(
         if fixed < 0:
             raise ValueError(f"{name} 的数量不能为负数。")
         people.append({"name": name, "fixed": fixed})
+
+    reviewer_count = int(reviewers_per_issue or 1)
+    if reviewer_count < 1:
+        raise ValueError("每个 Issue 的复核人数至少为 1。")
+    if reviewer_count > len(people):
+        raise ValueError("每个 Issue 的复核人数不能超过已选成员数。")
+    if reviewer_count > 1:
+        if any(person["fixed"] is not None for person in people):
+            raise ValueError("多人盲标使用自动均衡分配，不支持个人固定数量。")
+        resolved_seed = seed if seed is not None else random.SystemRandom().randrange(2**63)
+        rows = build_balanced_assignments(
+            cleaned_ids,
+            [person["name"] for person in people],
+            "blind",
+            1.0,
+            resolved_seed,
+            reviewer_count,
+        )
+        by_person: dict[str, list[dict[str, Any]]] = {
+            person["name"]: [] for person in people
+        }
+        for row in rows:
+            by_person[row["username"]].append(
+                {
+                    "issue_id": row["item_id"],
+                    "assignment_kind": row["assignment_kind"],
+                    "ordinal": row["ordinal"],
+                }
+            )
+        return [
+            {
+                "name": person["name"],
+                "count": len(by_person[person["name"]]),
+                "requested_count": None,
+                "mode": "blind",
+                "issue_ids": [item["issue_id"] for item in by_person[person["name"]]],
+                "items": by_person[person["name"]],
+            }
+            for person in people
+        ]
 
     fixed_people = [person for person in people if person["fixed"] is not None]
     share_people = [person for person in people if person["fixed"] is None]

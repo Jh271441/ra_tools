@@ -730,6 +730,7 @@ const state = {
     filterTimer: null,
     data: null,
     comparisonStatus: "mismatch",
+    workAgreement: "all",
   },
   analysisDiscussion: null,
   trailUpdate: {

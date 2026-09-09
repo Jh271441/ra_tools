@@ -216,13 +216,6 @@ class DatabaseCasesMixin:
         work_assignee: str = "",
         is_excluded: bool | None = None,
     ) -> tuple[str, list[Any], list[Any], str]:
-        comparison_status = str(comparison_status or "all").strip().lower()
-        if failure_only:
-            comparison_status = "mismatch"
-        if comparison_status not in COMPARISON_STATUSES:
-            raise ValueError("unsupported comparison_status")
-        if comparison_status != "all" and not model_run_id:
-            raise ValueError("comparison_status requires model_run_id")
         where: list[str] = []
         params: list[Any] = []
         scopes = self._normalize_baseline_scopes(baseline_scopes, baseline_scope=baseline_scope)
@@ -251,6 +244,20 @@ class DatabaseCasesMixin:
                 else:
                     values.append(text)
             return tuple(dict.fromkeys(values))
+
+        comparison_status = str(comparison_status or "all").strip().lower()
+        if failure_only:
+            comparison_status = "mismatch"
+        raw_comparison_statuses = _multi_values(comparison_status)
+        if not raw_comparison_statuses:
+            raw_comparison_statuses = ("all",)
+        if any(value not in COMPARISON_STATUSES for value in raw_comparison_statuses):
+            raise ValueError("unsupported comparison_status")
+        comparison_statuses = tuple(
+            value for value in raw_comparison_statuses if value != "all"
+        )
+        if comparison_statuses and not model_run_id:
+            raise ValueError("comparison_status requires model_run_id")
 
         if search.strip():
             term = f"%{search.strip()}%"
@@ -306,7 +313,12 @@ class DatabaseCasesMixin:
             if any(
                 value in {"__none__", "none", "未分配"} for value in assignees
             ):
-                assignee_clauses.append("(wa.assignee IS NULL OR wa.assignee = '')")
+                assignee_clauses.append(
+                    "NOT EXISTS (SELECT 1 FROM review_work_assignments wa_none "
+                    "JOIN issue_work_splits ws_none ON ws_none.id = wa_none.split_id "
+                    "WHERE wa_none.issue_id = i.issue_id AND ws_none.model_run_id = ?)"
+                )
+                params.append(model_run_id)
             named = [
                 value
                 for value in assignees
@@ -314,15 +326,14 @@ class DatabaseCasesMixin:
             ]
             if named:
                 assignee_clauses.append(
-                    f"wa.assignee IN ({', '.join('?' for _ in named)})"
+                    "EXISTS (SELECT 1 FROM review_work_assignments wa_named "
+                    "JOIN issue_work_splits ws_named ON ws_named.id = wa_named.split_id "
+                    f"WHERE wa_named.issue_id = i.issue_id AND ws_named.model_run_id = ? "
+                    f"AND wa_named.assignee IN "
+                    f"({', '.join('?' for _ in named)}))"
                 )
-                params.extend(named)
+                params.extend((model_run_id, *named))
             where.append(f"({' OR '.join(assignee_clauses)})")
-        comparison_statuses = tuple(
-            value
-            for value in _multi_values(comparison_status)
-            if value in {"match", "mismatch", "none"}
-        )
         if comparison_statuses and set(comparison_statuses) != {
             "match",
             "mismatch",
@@ -362,8 +373,6 @@ class DatabaseCasesMixin:
             LEFT JOIN model_predictions mp
               ON mp.issue_id = i.issue_id
              AND mp.model_run_id = ?
-            LEFT JOIN issue_work_assignments wa
-              ON wa.issue_id = i.issue_id
         """
         # The correlated annotation lookup appears before the prediction JOIN
         # in the SQL, so its bind values must precede the prediction Run id.
@@ -428,8 +437,14 @@ class DatabaseCasesMixin:
                        ann.created_at AS annotation_created_at,
                        ann.model_run_id AS annotation_model_run_id,
                        mp.model_label, mp.model_reason, mp.model_confidence, mp.model_run_id,
-                       COALESCE(wa.assignee, '') AS work_assignee,
-                       COALESCE(wa.split_id, '') AS work_split_id
+                       COALESCE((
+                           SELECT MIN(wa.assignee) FROM review_work_assignments wa
+                           WHERE wa.issue_id = i.issue_id
+                       ), '') AS work_assignee,
+                       COALESCE((
+                           SELECT MIN(wa.split_id) FROM review_work_assignments wa
+                           WHERE wa.issue_id = i.issue_id
+                       ), '') AS work_split_id
                 {common}
                 {condition}
                 ORDER BY i.issue_id ASC
@@ -850,7 +865,7 @@ class DatabaseCasesMixin:
         return data
 
     def list_work_assignees(
-        self, *, issue_ids: Sequence[str] | None = None
+        self, *, issue_ids: Sequence[str] | None = None, model_run_id: str = ""
     ) -> list[dict[str, Any]]:
         """Distinct assignees, optionally scoped to an exact Review queue."""
 
@@ -884,19 +899,20 @@ class DatabaseCasesMixin:
                 params: list[Any] = []
                 if batch is not None:
                     issue_clause = (
-                        f"AND issue_id IN ({', '.join('?' for _ in batch)})"
+                        f"AND assignment.issue_id IN ({', '.join('?' for _ in batch)})"
                     )
                     params.extend(batch)
                 rows = conn.execute(
                     f"""
-                    SELECT assignee, COUNT(*) AS issue_count
-                    FROM issue_work_assignments
-                    WHERE assignee <> ''
+                    SELECT assignment.assignee, COUNT(*) AS issue_count
+                    FROM review_work_assignments assignment
+                    JOIN issue_work_splits split ON split.id = assignment.split_id
+                    WHERE assignment.assignee <> '' AND split.model_run_id = ?
                     {issue_clause}
-                    GROUP BY assignee
-                    ORDER BY assignee ASC
+                    GROUP BY assignment.assignee
+                    ORDER BY assignment.assignee ASC
                     """,
-                    params,
+                    (str(model_run_id or "").strip(), *params),
                 ).fetchall()
                 for row in rows:
                     username = str(row["assignee"] or "").strip()
@@ -909,6 +925,166 @@ class DatabaseCasesMixin:
             for username in sorted(counts)
         ]
 
+    def review_assignment_context(
+        self,
+        issue_id: str,
+        *,
+        model_run_id: str = "",
+        username: str = "",
+    ) -> dict[str, Any] | None:
+        """Return the current assignment snapshot for one Issue/Run."""
+
+        with self.connect() as conn:
+            split = conn.execute(
+                """
+                SELECT split.*
+                FROM review_work_assignments assignment
+                JOIN issue_work_splits split ON split.id = assignment.split_id
+                WHERE assignment.issue_id = ? AND split.model_run_id = ?
+                ORDER BY split.created_at DESC, split.id DESC
+                LIMIT 1
+                """,
+                (str(issue_id or "").strip(), str(model_run_id or "").strip()),
+            ).fetchone()
+            if split is None:
+                return None
+            rows = conn.execute(
+                """
+                SELECT assignment.assignee, assignment.assignment_kind,
+                       assignment.ordinal,
+                       (
+                           SELECT annotation.id FROM annotations annotation
+                           WHERE annotation.issue_id = assignment.issue_id
+                             AND annotation.model_run_id = ?
+                             AND annotation.work_split_id = assignment.split_id
+                             AND annotation.author = assignment.assignee
+                           ORDER BY annotation.id DESC LIMIT 1
+                       ) AS annotation_id
+                FROM review_work_assignments assignment
+                WHERE assignment.issue_id = ? AND assignment.split_id = ?
+                ORDER BY assignment.assignee ASC
+                """,
+                (str(model_run_id or "").strip(), issue_id, split["id"]),
+            ).fetchall()
+        current = str(username or "").strip().lower()
+        members = [
+            {
+                "username": str(row["assignee"]),
+                "assignment_kind": str(row["assignment_kind"]),
+                "ordinal": int(row["ordinal"]),
+                "submitted": row["annotation_id"] is not None,
+            }
+            for row in rows
+        ]
+        own = next(
+            (item for item in members if item["username"].lower() == current),
+            None,
+        )
+        return {
+            "split_id": str(split["id"]),
+            "mode": str(split["mode"] or "single"),
+            "model_run_id": str(split["model_run_id"] or ""),
+            "reviewers_per_issue": int(split["reviewers_per_issue"] or 1),
+            "assigned_count": len(members),
+            "submitted_count": sum(bool(item["submitted"]) for item in members),
+            "assigned": own is not None,
+            "own_assignment": own,
+            "members": members,
+        }
+
+    def review_multi_rows(
+        self,
+        *,
+        baseline_scopes: Sequence[str],
+        model_run_id: str = "",
+    ) -> list[dict[str, Any]]:
+        """Return one row per current blind assignment member for aggregation."""
+
+        scopes = self._normalize_baseline_scopes(baseline_scopes)
+        if not scopes:
+            return []
+        scope_clause, scope_params = self._scope_in_sql(scopes)
+        query = f"""
+            SELECT i.issue_id, i.title, i.scenario, i.summary, i.gt_label,
+                   i.baseline_scope, assignment.split_id, assignment.assignee,
+                   annotation.id AS annotation_id,
+                   annotation.label AS annotation_label,
+                   annotation.review_status AS annotation_review_status,
+                   annotation.is_excluded AS annotation_is_excluded,
+                   annotation.tags_json AS annotation_tags_json,
+                   annotation.missing_evidence_json AS annotation_missing_evidence_json,
+                   annotation.note AS annotation_note,
+                   annotation.author AS annotation_author,
+                   annotation.author_source AS annotation_author_source,
+                   annotation.author_verified AS annotation_author_verified,
+                   annotation.created_at AS annotation_created_at,
+                   prediction.model_run_id, prediction.model_label,
+                   prediction.model_reason, prediction.model_confidence
+            FROM review_work_assignments assignment
+            JOIN issue_work_splits split ON split.id = assignment.split_id
+            JOIN issues i ON i.issue_id = assignment.issue_id
+            LEFT JOIN annotations annotation ON annotation.id = (
+                SELECT candidate.id FROM annotations candidate
+                WHERE candidate.issue_id = assignment.issue_id
+                  AND candidate.model_run_id = split.model_run_id
+                  AND candidate.work_split_id = assignment.split_id
+                  AND candidate.author = assignment.assignee
+                ORDER BY candidate.id DESC LIMIT 1
+            )
+            LEFT JOIN model_predictions prediction
+              ON prediction.issue_id = i.issue_id
+             AND prediction.model_run_id = split.model_run_id
+            WHERE split.mode = 'blind' AND split.model_run_id = ?
+              AND {scope_clause}
+            ORDER BY i.issue_id ASC, assignment.assignee ASC
+        """
+        with self.connect() as conn:
+            rows = conn.execute(
+                query,
+                (str(model_run_id or "").strip(), *scope_params),
+            ).fetchall()
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            annotation = None
+            if row["annotation_id"] is not None:
+                annotation = {
+                    "id": int(row["annotation_id"]),
+                    "model_run_id": str(model_run_id or ""),
+                    "work_split_id": str(row["split_id"]),
+                    "label": str(row["annotation_label"] or ""),
+                    "review_status": str(row["annotation_review_status"] or "pending"),
+                    "is_excluded": bool(row["annotation_is_excluded"]),
+                    "tags": _json_load(row["annotation_tags_json"], []),
+                    "missing_evidence": _json_load(
+                        row["annotation_missing_evidence_json"], []
+                    ),
+                    "note": str(row["annotation_note"] or ""),
+                    "author": str(row["annotation_author"] or row["assignee"]),
+                    "author_source": str(row["annotation_author_source"] or "legacy"),
+                    "author_verified": bool(row["annotation_author_verified"]),
+                    "created_at": str(row["annotation_created_at"] or ""),
+                }
+            results.append(
+                {
+                    "issue_id": str(row["issue_id"]),
+                    "baseline_scope": str(row["baseline_scope"] or ""),
+                    "title": str(row["title"] or ""),
+                    "scenario": str(row["scenario"] or ""),
+                    "summary": str(row["summary"] or ""),
+                    "gt_label": str(row["gt_label"] or ""),
+                    "split_id": str(row["split_id"]),
+                    "assignee": str(row["assignee"]),
+                    "annotation": annotation,
+                    "prediction": {
+                        "model_run_id": str(row["model_run_id"] or ""),
+                        "label": str(row["model_label"] or ""),
+                        "reason": str(row["model_reason"] or ""),
+                        "confidence": row["model_confidence"],
+                    },
+                }
+            )
+        return results
+
     def apply_work_split(
         self,
         *,
@@ -916,6 +1092,8 @@ class DatabaseCasesMixin:
         created_by: str,
         seed: int | None = None,
         filter_snapshot: dict[str, Any] | None = None,
+        reviewers_per_issue: int = 1,
+        model_run_id: str = "",
     ) -> dict[str, Any]:
         """Persist a work-split batch and overwrite assignments for its issues."""
 
@@ -926,54 +1104,84 @@ class DatabaseCasesMixin:
             raise ValueError("分配结果为空。")
         split_id = f"split-{uuid.uuid4().hex}"
         now = utc_now()
-        rows: list[tuple[str, str, str, str, str]] = []
+        rows: list[tuple[str, str, str, int, str, str]] = []
         for item in assignments:
             name = str(item.get("name") or "").strip()
             if not name:
                 continue
-            for issue_id in item.get("issue_ids") or []:
-                cleaned = str(issue_id or "").strip()
+            assignment_items = item.get("items") or [
+                {
+                    "issue_id": issue_id,
+                    "assignment_kind": "base",
+                    "ordinal": ordinal,
+                }
+                for ordinal, issue_id in enumerate(item.get("issue_ids") or [], 1)
+            ]
+            for assignment in assignment_items:
+                cleaned = str(assignment.get("issue_id") or "").strip()
                 if not cleaned:
                     continue
-                rows.append((cleaned, name, split_id, actor, now))
+                rows.append(
+                    (
+                        cleaned,
+                        name,
+                        str(assignment.get("assignment_kind") or "base"),
+                        int(assignment.get("ordinal") or 1),
+                        actor,
+                        now,
+                    )
+                )
         if not rows:
             raise ValueError("没有可写入的 Issue 分配。")
         with self._write_lock, self.connect() as conn:
             conn.execute(
                 """
                 INSERT INTO issue_work_splits (
-                    id, created_by, created_at, seed, total_count, filter_json, assignees_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    id, created_by, created_at, seed, total_count, filter_json,
+                    assignees_json, mode, reviewers_per_issue, model_run_id,
+                    assignment_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     split_id,
                     actor,
                     now,
                     seed,
-                    len(rows),
+                    len({row[0] for row in rows}),
                     json.dumps(filter_snapshot or {}, ensure_ascii=False),
                     json.dumps(assignments, ensure_ascii=False),
+                    "blind" if reviewers_per_issue > 1 else "single",
+                    reviewers_per_issue,
+                    str(model_run_id or "").strip(),
+                    len(rows),
                 ),
             )
-            for issue_id, assignee, sid, assigned_by, assigned_at in rows:
+            issue_ids = sorted({row[0] for row in rows})
+            for offset in range(0, len(issue_ids), 500):
+                batch = issue_ids[offset : offset + 500]
+                conn.execute(
+                    "DELETE FROM review_work_assignments WHERE split_id IN "
+                    "(SELECT id FROM issue_work_splits WHERE model_run_id = ?) "
+                    f"AND issue_id IN ({', '.join('?' for _ in batch)})",
+                    (str(model_run_id or "").strip(), *batch),
+                )
+            for issue_id, assignee, kind, ordinal, assigned_by, assigned_at in rows:
                 conn.execute(
                     """
-                    INSERT INTO issue_work_assignments (
-                        issue_id, assignee, split_id, assigned_by, assigned_at
-                    ) VALUES (?, ?, ?, ?, ?)
-                    ON CONFLICT(issue_id) DO UPDATE SET
-                        assignee = excluded.assignee,
-                        split_id = excluded.split_id,
-                        assigned_by = excluded.assigned_by,
-                        assigned_at = excluded.assigned_at
+                    INSERT INTO review_work_assignments (
+                        split_id, issue_id, assignee, assignment_kind, ordinal,
+                        assigned_by, assigned_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (issue_id, assignee, sid, assigned_by, assigned_at),
+                    (split_id, issue_id, assignee, kind, ordinal, assigned_by, assigned_at),
                 )
         return {
             "split_id": split_id,
             "created_by": actor,
             "created_at": now,
             "seed": seed,
-            "total": len(rows),
+            "total": len({row[0] for row in rows}),
+            "assignment_count": len(rows),
+            "reviewers_per_issue": reviewers_per_issue,
             "assignments": assignments,
         }

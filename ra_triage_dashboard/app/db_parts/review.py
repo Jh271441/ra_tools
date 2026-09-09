@@ -595,6 +595,7 @@ class DatabaseReviewMixin:
                               SELECT a.id FROM annotations a
                               WHERE a.issue_id = i.issue_id
                                 AND a.model_run_id = ''
+                                AND a.work_split_id = ''
                               ORDER BY a.id DESC LIMIT 1
                           )
                         """
@@ -606,6 +607,7 @@ class DatabaseReviewMixin:
                               SELECT a.id FROM annotations a
                               WHERE a.issue_id = i.issue_id
                                 AND a.model_run_id NOT IN (?, '')
+                                AND a.work_split_id = ''
                               ORDER BY a.id DESC LIMIT 1
                           )
                         """
@@ -617,6 +619,7 @@ class DatabaseReviewMixin:
                               SELECT a.id FROM annotations a
                               WHERE a.issue_id = i.issue_id
                                 AND a.model_run_id = ?
+                                AND a.work_split_id = ''
                               ORDER BY a.id DESC LIMIT 1
                           ),
                           {fallbacks}
@@ -630,6 +633,7 @@ class DatabaseReviewMixin:
               ON ann.id = (
                   SELECT a.id FROM annotations a
                   WHERE a.issue_id = i.issue_id
+                    AND a.work_split_id = ''
                   {run_clause}
                   ORDER BY a.id DESC LIMIT 1
               )
@@ -640,6 +644,7 @@ class DatabaseReviewMixin:
         *,
         issue_id: str,
         model_run_id: str = "",
+        work_split_id: str = "",
         label: str,
         review_status: str,
         tags: list[str],
@@ -661,6 +666,7 @@ class DatabaseReviewMixin:
         if not author.strip():
             raise ValueError("复核人不能为空。")
         model_run_id = str(model_run_id or "").strip()
+        work_split_id = str(work_split_id or "").strip()
         tags = sorted({str(tag).strip() for tag in tags if str(tag).strip()})
         missing_evidence = sorted(
             {str(item).strip() for item in missing_evidence if str(item).strip()}
@@ -688,14 +694,25 @@ class DatabaseReviewMixin:
                 ).fetchone()
                 if model_run is None:
                     raise ValueError("模型 Run 不存在。")
-            previous = conn.execute(
-                """
-                SELECT id FROM annotations
-                WHERE issue_id = ? AND model_run_id = ?
-                ORDER BY id DESC LIMIT 1
-                """,
-                (issue_id, model_run_id),
-            ).fetchone()
+            if work_split_id:
+                previous = conn.execute(
+                    """
+                    SELECT id FROM annotations
+                    WHERE issue_id = ? AND model_run_id = ?
+                      AND work_split_id = ? AND author = ?
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (issue_id, model_run_id, work_split_id, author.strip()),
+                ).fetchone()
+            else:
+                previous = conn.execute(
+                    """
+                    SELECT id FROM annotations
+                    WHERE issue_id = ? AND model_run_id = ? AND work_split_id = ''
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (issue_id, model_run_id),
+                ).fetchone()
             if expected_previous_annotation_id is not _EXPECTED_ANNOTATION_UNSET:
                 expected_id = expected_previous_annotation_id
                 if expected_id in (None, "", 0, "0"):
@@ -718,10 +735,10 @@ class DatabaseReviewMixin:
                     )
             annotation_sql = """
                 INSERT INTO annotations (
-                    issue_id, model_run_id, label, review_status, is_excluded,
+                    issue_id, model_run_id, work_split_id, label, review_status, is_excluded,
                     tags_json, missing_evidence_json, mentions_json, note, author, author_source,
                     author_verified, supersedes_id, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             if self.backend == "postgresql":
                 annotation_sql += " RETURNING id"
@@ -730,6 +747,7 @@ class DatabaseReviewMixin:
                 (
                     issue_id,
                     model_run_id,
+                    work_split_id,
                     label or None,
                     review_status,
                     bool(is_excluded),
@@ -853,6 +871,11 @@ class DatabaseReviewMixin:
             "model_run_id": (
                 str(row["model_run_id"] or "")
                 if "model_run_id" in row.keys()
+                else ""
+            ),
+            "work_split_id": (
+                str(row["work_split_id"] or "")
+                if "work_split_id" in row.keys()
                 else ""
             ),
             # ``label`` is retained as the storage/backward-compatible API

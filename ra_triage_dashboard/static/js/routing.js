@@ -341,6 +341,9 @@ function normalizedAnalysisRouteFilters(params) {
     exclusion,
     legacyTag: params.get("tag") || "",
     comparisonStatus: routeAnalysisComparisonStatus(params),
+    workAgreement: ["pending", "agreed", "conflict"].includes(params.get("work_agreement"))
+      ? params.get("work_agreement")
+      : "all",
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
     pageSize: CASE_PAGE_SIZES.includes(rawPageSize) ? rawPageSize : DEFAULT_CASE_PAGE_SIZE,
   };
@@ -533,6 +536,7 @@ function currentAnalysisRouteOptions(overrides = {}) {
       typeof selectedAnalysisExclusionFilter === "function"
         ? selectedAnalysisExclusionFilter()
         : "all",
+    workAgreement: $("#analysisWorkAgreementFilter")?.value || state.reviewAnalysis.workAgreement || "all",
     page: state.reviewAnalysis.page,
     pageSize: state.reviewAnalysis.pageSize,
     ...overrides,
@@ -542,6 +546,10 @@ function currentAnalysisRouteOptions(overrides = {}) {
 function applyAnalysisRouteControls(route) {
   const filters = route?.analysisFilters || route || {};
   if ($("#analysisSearchInput")) $("#analysisSearchInput").value = filters.search || "";
+  state.reviewAnalysis.workAgreement = filters.workAgreement || "all";
+  if ($("#analysisWorkAgreementFilter")) {
+    $("#analysisWorkAgreementFilter").value = state.reviewAnalysis.workAgreement;
+  }
   setMultiFilterValues($("#analysisGtFilter"), filters.gtLabel);
   setMultiFilterValues($("#analysisModelLabelFilter"), filters.modelLabel);
   setMultiFilterValues($("#analysisStatusFilter"), filters.reviewStatus);
@@ -648,6 +656,9 @@ function pageUrl(page, options = {}) {
     if (egressTag) url.searchParams.set("egress_tag", egressTag);
     if (analysis.exclusion && analysis.exclusion !== "all") {
       url.searchParams.set("exclusion", analysis.exclusion);
+    }
+    if (analysis.workAgreement && analysis.workAgreement !== "all") {
+      url.searchParams.set("work_agreement", analysis.workAgreement);
     }
     if (Number(analysis.page) > 1) url.searchParams.set("page", String(analysis.page));
     if (Number(analysis.pageSize) !== DEFAULT_CASE_PAGE_SIZE) {

@@ -6,7 +6,8 @@ from typing import Any
 from urllib.parse import quote
 
 from ..db import LABELS, MODEL_LABELS, REVIEW_STATUSES
-from ..model_labels import canonical_model_label
+from ..model_labels import canonical_model_label, model_label_matches_gt
+from ..review_workflow import derive_review_status, effective_expected_output
 from ..review_analysis import COMPARISON_STATUSES, build_review_reason_analysis
 from ..runtime import _public_path, database, settings
 from .baselines import resolve_request_baseline_scopes
@@ -43,6 +44,7 @@ def _review_reason_analysis_payload(
     unbounded: bool = False,
     baselines: str = "",
     baseline_scopes: list[str] | None = None,
+    work_agreement: str = "all",
 ) -> dict[str, Any]:
     exclusion, is_excluded = resolve_review_exclusion_filter(exclusion)
     missing_evidence_catalog = _missing_evidence_catalog()
@@ -206,6 +208,142 @@ def _review_reason_analysis_payload(
             search="" if search_statuses else normalized_search,
             search_aliases=() if search_statuses else search_aliases,
         )
+    normalized_work_agreement = _as_text(work_agreement).lower() or "all"
+    if normalized_work_agreement not in {"all", "pending", "agreed", "conflict"}:
+        raise _detail(400, "work_agreement 不在支持范围内。")
+    multi_by_issue: dict[str, dict[str, Any]] = {}
+    if normalized_work_agreement != "all":
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for row in database.review_multi_rows(
+            baseline_scopes=scopes,
+            model_run_id=model_run_id,
+        ):
+            grouped.setdefault(str(row["issue_id"]), []).append(row)
+        multi_rows: list[dict[str, Any]] = []
+        for issue_id, members in grouped.items():
+            reviews: list[dict[str, Any]] = []
+            for member in members:
+                annotation = dict(member.get("annotation") or {})
+                if annotation:
+                    output, source = effective_expected_output(annotation, tag_catalog)
+                    annotation["expected_output"] = output
+                    annotation["label"] = output
+                    annotation["expected_output_source"] = source
+                    annotation["review_status"] = derive_review_status(
+                        output,
+                        member.get("gt_label"),
+                    )
+                reviews.append(
+                    {
+                        "username": member["assignee"],
+                        "submitted": bool(annotation),
+                        "expected_output": str(annotation.get("expected_output") or ""),
+                        "annotation": annotation,
+                    }
+                )
+            valid_outputs = [
+                item["expected_output"] for item in reviews
+                if item["expected_output"] in LABELS
+            ]
+            if len(valid_outputs) < len(reviews):
+                agreement = "pending"
+            elif len(set(valid_outputs)) == 1:
+                agreement = "agreed"
+            else:
+                agreement = "conflict"
+            if agreement != normalized_work_agreement:
+                continue
+            first = members[0]
+            prediction = first.get("prediction") or {}
+            if gt_labels and str(first.get("gt_label") or "") not in gt_labels:
+                continue
+            if model_labels and str(prediction.get("label") or "") not in model_labels:
+                continue
+            if comparison_values:
+                prediction_label = str(prediction.get("label") or "")
+                gt_value = str(first.get("gt_label") or "")
+                comparison_value = (
+                    "none"
+                    if prediction_label not in MODEL_LABELS
+                    else "match"
+                    if model_label_matches_gt(prediction_label, gt_value)
+                    else "mismatch"
+                )
+                if comparison_value not in comparison_values:
+                    continue
+            if authors and not any(item["username"] in authors for item in reviews):
+                continue
+            annotations = [item["annotation"] for item in reviews if item["annotation"]]
+            if effective_statuses and not any(
+                annotation.get("review_status") in effective_statuses
+                for annotation in annotations
+            ):
+                continue
+            if annotation_labels and not any(
+                annotation.get("expected_output") in annotation_labels
+                for annotation in annotations
+            ):
+                continue
+            if evidence_keys and not any(
+                set(annotation.get("missing_evidence") or []).intersection(evidence_keys)
+                for annotation in annotations
+            ):
+                continue
+            tag_groups = (legacy_tags, scene_tags, trigger_tags, egress_tags)
+            if any(
+                selected and not any(
+                    set(annotation.get("tags") or []).intersection(selected)
+                    for annotation in annotations
+                )
+                for selected in tag_groups
+            ):
+                continue
+            if normalized_search:
+                haystack = " ".join(
+                    str(value or "")
+                    for item in reviews
+                    for value in (
+                        item["username"],
+                        item["expected_output"],
+                        item["annotation"].get("note"),
+                        " ".join(item["annotation"].get("tags") or []),
+                        " ".join(item["annotation"].get("missing_evidence") or []),
+                    )
+                ).casefold()
+                if folded_search not in haystack:
+                    continue
+            representative = next(
+                (item["annotation"] for item in reviews if item["annotation"]),
+                {
+                    "id": None,
+                    "model_run_id": model_run_id,
+                    "label": "",
+                    "review_status": "pending",
+                    "is_excluded": False,
+                    "tags": [],
+                    "missing_evidence": [],
+                    "note": "",
+                    "author": "多人复核",
+                    "author_source": "assignment",
+                    "author_verified": True,
+                    "created_at": "",
+                },
+            )
+            source = {**first, "annotation": representative}
+            source.pop("assignee", None)
+            source.pop("split_id", None)
+            multi_rows.append(source)
+            multi_by_issue[issue_id] = {
+                "split_id": str(first["split_id"]),
+                "agreement": agreement,
+                "assigned_count": len(reviews),
+                "completed_count": len(valid_outputs),
+                "output_counts": {
+                    label: valid_outputs.count(label) for label in sorted(set(valid_outputs))
+                },
+                "reviews": reviews,
+            }
+        rows = multi_rows
     tag_catalog_for_analysis = {
         str(item["key"]): {
             "label": str(item["label"]),
@@ -223,8 +361,8 @@ def _review_reason_analysis_payload(
         has_model_run=bool(model_run_id),
         include_reason_themes=False,
         is_excluded=is_excluded,
-        review_statuses=effective_statuses,
-        annotation_labels=annotation_labels,
+        review_statuses=() if normalized_work_agreement != "all" else effective_statuses,
+        annotation_labels=() if normalized_work_agreement != "all" else annotation_labels,
         page=page,
         page_size=max(len(rows), 1) if unbounded else page_size,
         page_size_limit=None if unbounded else 200,
@@ -238,6 +376,8 @@ def _review_reason_analysis_payload(
             review_params.append("failure=1")
         item["voyager_issue_url"] = _voyager_issue_url(issue_id)
         item["review_url"] = _public_path(f"/review?{'&'.join(review_params)}")
+        if issue_id in multi_by_issue:
+            item["multi_review"] = multi_by_issue[issue_id]
     result["scope"] = {
         "baseline_scope": settings.baseline_scope,
         "model_run": (
@@ -278,5 +418,11 @@ def _review_reason_analysis_payload(
         "trigger_tag": list(trigger_tags),
         "egress_tag": list(egress_tags),
         "search": normalized_search,
+        "work_agreement": normalized_work_agreement,
+    }
+    result["multi_review_summary"] = {
+        "pending": sum(item["agreement"] == "pending" for item in multi_by_issue.values()),
+        "agreed": sum(item["agreement"] == "agreed" for item in multi_by_issue.values()),
+        "conflict": sum(item["agreement"] == "conflict" for item in multi_by_issue.values()),
     }
     return result

@@ -97,13 +97,14 @@ function initialReviewTagsForCurrentRun(caseData, annotation, draft) {
 
 const REVIEW_DRAFT_STORAGE_PREFIX = "ra-triage-review-draft:v1:";
 const REVIEW_DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
-function reviewDraftStorageKey(issueId, runId = "") {
-  return `${REVIEW_DRAFT_STORAGE_PREFIX}${encodeURIComponent(String(issueId || ""))}:${encodeURIComponent(String(runId || "legacy"))}`;
+function reviewDraftStorageKey(issueId, runId = "", workSplitId = "") {
+  const base = `${REVIEW_DRAFT_STORAGE_PREFIX}${encodeURIComponent(String(issueId || ""))}:${encodeURIComponent(String(runId || "legacy"))}`;
+  return workSplitId ? `${base}:${encodeURIComponent(String(workSplitId))}` : base;
 }
 
-function readReviewDraft(issueId, runId = "") {
+function readReviewDraft(issueId, runId = "", workSplitId = "") {
   if (!issueId || typeof window === "undefined" || !window.localStorage) return null;
-  const key = reviewDraftStorageKey(issueId, runId);
+  const key = reviewDraftStorageKey(issueId, runId, workSplitId);
   try {
     const raw = window.localStorage.getItem(key);
     if (!raw) return null;
@@ -119,10 +120,10 @@ function readReviewDraft(issueId, runId = "") {
   }
 }
 
-function clearReviewDraft(issueId, runId = "") {
+function clearReviewDraft(issueId, runId = "", workSplitId = "") {
   if (!issueId || typeof window === "undefined" || !window.localStorage) return;
   try {
-    window.localStorage.removeItem(reviewDraftStorageKey(issueId, runId));
+    window.localStorage.removeItem(reviewDraftStorageKey(issueId, runId, workSplitId));
   } catch {
     // Storage can be unavailable in private browsing; the Review itself still works.
   }
@@ -136,11 +137,14 @@ function annotationTimestamp(annotation) {
 
 function reviewDraftForCase(caseData) {
   const runId = currentReviewRunId(caseData);
-  const draft = readReviewDraft(caseData?.issue_id, runId);
+  const workSplitId = caseData?.review_assignment?.mode === "blind"
+    ? caseData.review_assignment.split_id || ""
+    : "";
+  const draft = readReviewDraft(caseData?.issue_id, runId, workSplitId);
   if (!draft) return null;
   const serverAnnotation = reviewAnnotationsForCurrentRun(caseData)[0];
   if (serverAnnotation && Number(draft.saved_at) <= annotationTimestamp(serverAnnotation)) {
-    clearReviewDraft(caseData.issue_id, runId);
+    clearReviewDraft(caseData.issue_id, runId, workSplitId);
     return null;
   }
   return draft;
@@ -172,7 +176,10 @@ function persistReviewDraft(caseData) {
     author: $("#annotationAuthor")?.value || "",
   };
   try {
-    window.localStorage.setItem(reviewDraftStorageKey(caseData.issue_id, runId), JSON.stringify(draft));
+    const workSplitId = caseData?.review_assignment?.mode === "blind"
+      ? caseData.review_assignment.split_id || ""
+      : "";
+    window.localStorage.setItem(reviewDraftStorageKey(caseData.issue_id, runId, workSplitId), JSON.stringify(draft));
   } catch {
     // Draft persistence is best effort and must never block Review input.
   }
