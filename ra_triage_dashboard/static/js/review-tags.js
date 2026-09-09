@@ -443,6 +443,14 @@ function handleReviewDropdownKeyboard(event) {
   return false;
 }
 
+function reviewTagGroupShortcutAllowed(target) {
+  if (!reviewShortcutHasEditableTarget(target)) return true;
+  return Boolean(
+    target?.matches?.('input[type="checkbox"]') &&
+    target.closest(".review-tag-dropdown[open][data-tag-dropdown-group]")
+  );
+}
+
 function openReviewTagShortcutGroup(groupKey) {
   const dropdown = document.querySelector(
     `.review-tag-dropdown[data-tag-dropdown-group="${CSS.escape(groupKey)}"]`
@@ -480,14 +488,17 @@ function bindReviewKeyboardShortcuts() {
     }
     const target = event.target instanceof Element ? event.target : null;
     if (handleReviewDropdownKeyboard(event)) return;
-    if (reviewShortcutHasEditableTarget(target)) return;
-
     const key = String(event.key || "").toLowerCase();
     const groupKey = REVIEW_TAG_GROUP_SHORTCUTS[key];
-    if (groupKey && openReviewTagShortcutGroup(groupKey)) {
+    if (
+      groupKey &&
+      reviewTagGroupShortcutAllowed(target) &&
+      openReviewTagShortcutGroup(groupKey)
+    ) {
       event.preventDefault();
       return;
     }
+    if (reviewShortcutHasEditableTarget(target)) return;
 
     if (key === "[" || key === "]") {
       const direction = key === "[" ? -1 : 1;

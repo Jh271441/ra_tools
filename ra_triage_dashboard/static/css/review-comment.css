@@ -541,6 +541,14 @@ html[data-color-theme="light"] .detail-queue-index-input {
   mask: var(--ui-chevron-mask) center / 14px 14px no-repeat;
 }
 .review-tag-dropdown > summary:hover .tag-group-chevron { color: var(--accent); }
+.review-tag-dropdown > summary:focus,
+.review-tag-dropdown > summary:focus-visible {
+  outline: none;
+}
+.review-tag-dropdown > summary:focus-visible .tag-group-shortcut {
+  border-color: rgba(34,211,238,.62); color: var(--accent);
+  background: rgba(34,211,238,.11);
+}
 .review-tag-dropdown[open] .tag-group-chevron { transform: rotate(180deg); color: var(--accent); }
 /* Keep the add control in the familiar compact summary order:
  * ＋ → selected count → chevron.  Its summary click is explicitly

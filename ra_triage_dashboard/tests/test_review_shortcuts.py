@@ -60,6 +60,26 @@ assert.equal(inputs[0].lastEvent.type,'change');
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
 
 
+def test_arrow_focused_tag_option_keeps_group_shortcuts_available() -> None:
+    script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+const assert=require('node:assert/strict');
+const dropdown={};
+const tagCheckbox={
+  matches:(selector)=>selector==='input[type="checkbox"]',
+  closest:(selector)=>selector.includes('.review-tag-dropdown') ? dropdown : {},
+};
+const textarea={
+  matches:()=>false,
+  closest:(selector)=>selector.includes('input, textarea') ? {} : null,
+};
+reviewShortcutHasEditableTarget=(target)=>target===tagCheckbox || target===textarea;
+assert.equal(reviewTagGroupShortcutAllowed(tagCheckbox),true);
+assert.equal(reviewTagGroupShortcutAllowed(textarea),false);
+assert.equal(reviewTagGroupShortcutAllowed(null),true);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
 def test_video_t0_shortcut_targets_twenty_second_player_position() -> None:
     script = (ROOT / "static" / "js" / "detail-media.js").read_text() + r'''
 const assert=require('node:assert/strict');
