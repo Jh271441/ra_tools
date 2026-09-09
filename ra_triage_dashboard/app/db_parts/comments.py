@@ -44,6 +44,41 @@ class DatabaseCommentsMixin:
             ).fetchone()
         return int(row["count"] if row else 0)
 
+    def review_comment_issue_ids(
+        self,
+        *,
+        issue_ids: list[str],
+        model_run_id: str = "",
+        search: str = "",
+    ) -> set[str]:
+        """Return bounded Issue ids with a matching comment in one Run."""
+
+        cleaned = list(dict.fromkeys(
+            str(issue_id or "").strip() for issue_id in issue_ids
+            if str(issue_id or "").strip()
+        ))[:5000]
+        if not cleaned:
+            return set()
+        result: set[str] = set()
+        query = str(search or "").strip()[:256]
+        with self.connect() as conn:
+            for offset in range(0, len(cleaned), 500):
+                batch = cleaned[offset : offset + 500]
+                where = [
+                    f"issue_id IN ({', '.join('?' for _ in batch)})",
+                    "model_run_id = ?",
+                ]
+                params: list[Any] = [*batch, str(model_run_id or "").strip()]
+                if query:
+                    where.append("body LIKE ?")
+                    params.append(f"%{query}%")
+                rows = conn.execute(
+                    f"SELECT DISTINCT issue_id FROM review_comments WHERE {' AND '.join(where)}",
+                    params,
+                ).fetchall()
+                result.update(str(row["issue_id"] or "") for row in rows)
+        return result
+
     def get_review_comment(self, comment_id: int) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute(

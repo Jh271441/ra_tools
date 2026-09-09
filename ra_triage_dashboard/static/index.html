@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-381`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-382`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -544,6 +544,18 @@
                 <label class="analysis-egress-filter">
                   <span class="ui-lang-zh">如何脱困</span><span class="ui-lang-en">Egress</span>
                   <div class="multi-filter" id="analysisEgressFilter" data-placeholder="全部脱困方式" data-placeholder-en="All egress" data-i18n-placeholder="analysis.all_egress"></div>
+                </label>
+                <label class="analysis-comment-state-filter">
+                  <span class="ui-lang-zh">评论状态</span><span class="ui-lang-en">Comment status</span>
+                  <div class="ui-select" id="analysisCommentStatePicker">
+                    <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">全部评论</span><span class="ui-select-caret" aria-hidden="true"></span></button>
+                    <div class="ui-select-panel" role="listbox" hidden></div>
+                    <select class="ui-select-native" id="analysisCommentStateFilter" aria-hidden="true" tabindex="-1"><option value="all">全部评论</option><option value="with">有评论</option><option value="without">无评论</option></select>
+                  </div>
+                </label>
+                <label class="analysis-comment-search-filter">
+                  <span class="ui-lang-zh">评论内容</span><span class="ui-lang-en">Comment content</span>
+                  <input id="analysisCommentSearchInput" placeholder="搜索当前 Run 的评论内容" data-placeholder-zh="搜索当前 Run 的评论内容" data-placeholder-en="Search comments in this Run" autocomplete="off" />
                 </label>
                 <div class="analysis-search-actions">
                   <label class="analysis-search-filter">
@@ -1887,7 +1899,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-381`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-382`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

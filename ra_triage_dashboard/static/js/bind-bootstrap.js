@@ -238,6 +238,8 @@ function bindEvents() {
   $("#analysisSearchInput")?.addEventListener("input", () => {
     scheduleAnalysisFilterReload(220);
   });
+  $("#analysisCommentSearchInput")?.addEventListener("input", () => scheduleAnalysisFilterReload(220));
+  $("#analysisCommentStateFilter")?.addEventListener("change", () => scheduleAnalysisFilterReload(0));
   document.addEventListener("click", () => closeAllMultiFilters());
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
@@ -285,6 +287,9 @@ function bindEvents() {
     // the next async facet refresh.
     persistReviewerFilterRoute?.("analysis", []);
     $("#analysisSearchInput").value = "";
+    if ($("#analysisCommentSearchInput")) $("#analysisCommentSearchInput").value = "";
+    if ($("#analysisCommentStateFilter")) $("#analysisCommentStateFilter").value = "all";
+    renderAnalysisCommentStatePicker?.("all");
     state.reviewAnalysis.page = 1;
     try {
       await reloadReviewAnalysis();

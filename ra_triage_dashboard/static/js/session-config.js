@@ -343,6 +343,7 @@ function renderConfig() {
 function renderAnalysisCatalogFilters() {
   const onChange = () => scheduleAnalysisFilterReload();
   renderAnalysisWorkAgreementPicker(state.reviewAnalysis.workAgreement || "all");
+  renderAnalysisCommentStatePicker();
   renderMultiFilter($("#analysisStatusFilter"), {
     options: [
       { value: "pending", label: t("status.pending") },

@@ -35,6 +35,17 @@ function renderAnalysisWorkAgreementPicker(selected = "") {
   bindUiSelect(picker, { maxHeight: 240, maxWidth: 260 });
 }
 
+function renderAnalysisCommentStatePicker(selected = "") {
+  const picker = $("#analysisCommentStatePicker");
+  const value = selected || $("#analysisCommentStateFilter")?.value || "all";
+  populateUiSelect(picker, [
+    { value: "all", label: uiText("全部评论", "All comments") },
+    { value: "with", label: uiText("有评论", "With comments") },
+    { value: "without", label: uiText("无评论", "Without comments") },
+  ], value);
+  bindUiSelect(picker, { maxHeight: 220, maxWidth: 240 });
+}
+
 async function loadClusters() {
   const params = new URLSearchParams();
   if (state.selectedRunId) params.set("model_run_id", state.selectedRunId);
@@ -127,6 +138,8 @@ function buildAnalysisQueryParams({ format = "", includePagination = true } = {}
     ["trigger_tag", joinFilterList(options.triggerTag)],
     ["egress_tag", joinFilterList(options.egressTag)],
     ["search", options.search || ""],
+    ["comment_state", options.commentState === "all" ? "" : options.commentState],
+    ["comment_search", options.commentSearch || ""],
   ];
   if (options.exclusion && options.exclusion !== "all") {
     params.set("exclusion", options.exclusion);

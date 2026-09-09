@@ -292,6 +292,8 @@ function normalizedReviewRouteFilters(params) {
     : "all";
   return {
     search: params.get("q") || "",
+    commentState: ["with", "without"].includes(params.get("comment_state")) ? params.get("comment_state") : "all",
+    commentSearch: params.get("comment_search") || "",
     gtLabel: parseFilterList(params.get("gt") || gtLabel).filter((value) =>
       LABELS.includes(value)
     ),
@@ -536,6 +538,8 @@ function currentAnalysisRouteOptions(overrides = {}) {
     runId: state.selectedRunId,
     comparisonStatus: state.reviewAnalysis.comparisonStatus,
     search: $("#analysisSearchInput")?.value.trim() || "",
+    commentState: $("#analysisCommentStateFilter")?.value || "all",
+    commentSearch: $("#analysisCommentSearchInput")?.value.trim() || "",
     gtLabel: getMultiFilterValues($("#analysisGtFilter")),
     modelLabel: getMultiFilterValues($("#analysisModelLabelFilter")),
     annotationAuthor:
@@ -561,6 +565,9 @@ function currentAnalysisRouteOptions(overrides = {}) {
 function applyAnalysisRouteControls(route) {
   const filters = route?.analysisFilters || route || {};
   if ($("#analysisSearchInput")) $("#analysisSearchInput").value = filters.search || "";
+  if ($("#analysisCommentSearchInput")) $("#analysisCommentSearchInput").value = filters.commentSearch || "";
+  if ($("#analysisCommentStateFilter")) $("#analysisCommentStateFilter").value = filters.commentState || "all";
+  renderAnalysisCommentStatePicker?.(filters.commentState || "all");
   state.reviewAnalysis.workAgreement = filters.workAgreement || "all";
   renderAnalysisWorkAgreementPicker?.(state.reviewAnalysis.workAgreement);
   setMultiFilterValues($("#analysisGtFilter"), filters.gtLabel);
@@ -651,6 +658,8 @@ function pageUrl(page, options = {}) {
         : "all"
     );
     if (analysis.search) url.searchParams.set("q", analysis.search);
+    if (analysis.commentState && analysis.commentState !== "all") url.searchParams.set("comment_state", analysis.commentState);
+    if (analysis.commentSearch) url.searchParams.set("comment_search", analysis.commentSearch);
     const gt = joinFilterList(analysis.gtLabel);
     const modelLabel = joinFilterList(analysis.modelLabel);
     const reviewer = joinFilterList(analysis.annotationAuthor);

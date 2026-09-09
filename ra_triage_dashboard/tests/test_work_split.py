@@ -310,6 +310,12 @@ class WorkSplitTest(unittest.TestCase):
                 missing_evidence=["routing_direction"], note="alice result",
                 author="alice", expected_previous_annotation_id=None,
             )
+            db.create_review_comment(
+                issue_id="cn1",
+                model_run_id=run["id"],
+                body="这里讨论绕行空间",
+                author="alice",
+            )
             with patch.object(review_payloads, "database", db), patch(
                 "ra_triage_dashboard.app.support.catalogs.database", db
             ):
@@ -331,6 +337,27 @@ class WorkSplitTest(unittest.TestCase):
                     comparison="all",
                     baseline_scopes=[scope],
                     work_agreement="pending",
+                )
+                with_comments = review_payloads._review_reason_analysis_payload(
+                    model_run_id=run["id"],
+                    comparison="all",
+                    baseline_scopes=[scope],
+                    include_multi_reviews=True,
+                    comment_state="with",
+                )
+                matching_comment = review_payloads._review_reason_analysis_payload(
+                    model_run_id=run["id"],
+                    comparison="all",
+                    baseline_scopes=[scope],
+                    include_multi_reviews=True,
+                    comment_search="绕行空间",
+                )
+                missing_comment = review_payloads._review_reason_analysis_payload(
+                    model_run_id=run["id"],
+                    comparison="all",
+                    baseline_scopes=[scope],
+                    include_multi_reviews=True,
+                    comment_search="不存在的评论",
                 )
 
             self.assertEqual(ordinary_only["total"], 1)
@@ -406,6 +433,9 @@ class WorkSplitTest(unittest.TestCase):
             # The explicit pending task view still includes untouched cn2;
             # only the default result view suppresses zero-submission tasks.
             self.assertEqual(pending["total"], 2)
+            self.assertEqual(with_comments["total"], 1)
+            self.assertEqual(matching_comment["total"], 1)
+            self.assertEqual(missing_comment["total"], 0)
 
     def test_case_comparison_filter_accepts_multiple_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -38,6 +38,8 @@ def _review_reason_analysis_payload(
     trigger_tag: str = "",
     egress_tag: str = "",
     search: str = "",
+    comment_state: str = "all",
+    comment_search: str = "",
     exclusion: str = "all",
     page: int = 1,
     page_size: int = 20,
@@ -134,6 +136,10 @@ def _review_reason_analysis_payload(
             raise _detail(404, "Model Run 不存在。")
 
     normalized_search = _as_text(search)[:256]
+    normalized_comment_state = _as_text(comment_state).strip().lower() or "all"
+    if normalized_comment_state not in {"all", "with", "without"}:
+        raise _detail(400, "comment_state 仅支持 all、with 或 without。")
+    normalized_comment_search = _as_text(comment_search).strip()[:256]
     folded_search = normalized_search.casefold()
     search_aliases = tuple(
         str(item["key"])
@@ -387,6 +393,32 @@ def _review_reason_analysis_payload(
         rows.sort(key=lambda row: str(row.get("issue_id") or ""))
     else:
         rows = multi_rows
+    if rows and (normalized_comment_state != "all" or normalized_comment_search):
+        row_issue_ids = [str(row.get("issue_id") or "") for row in rows]
+        comment_issue_ids = database.review_comment_issue_ids(
+            issue_ids=row_issue_ids,
+            model_run_id=model_run_id,
+        )
+        matching_comment_issue_ids = (
+            database.review_comment_issue_ids(
+                issue_ids=row_issue_ids,
+                model_run_id=model_run_id,
+                search=normalized_comment_search,
+            )
+            if normalized_comment_search
+            else comment_issue_ids
+        )
+        rows = [
+            row for row in rows
+            if (
+                (not normalized_comment_search or str(row.get("issue_id") or "") in matching_comment_issue_ids)
+                and (
+                    normalized_comment_state == "all"
+                    or (normalized_comment_state == "with" and str(row.get("issue_id") or "") in comment_issue_ids)
+                    or (normalized_comment_state == "without" and str(row.get("issue_id") or "") not in comment_issue_ids)
+                )
+            )
+        ]
     tag_catalog_for_analysis = {
         str(item["key"]): {
             "label": str(item["label"]),
@@ -461,6 +493,8 @@ def _review_reason_analysis_payload(
         "trigger_tag": list(trigger_tags),
         "egress_tag": list(egress_tags),
         "search": normalized_search,
+        "comment_state": normalized_comment_state,
+        "comment_search": normalized_comment_search,
         "work_agreement": normalized_work_agreement,
     }
     result["multi_review_summary"] = {
