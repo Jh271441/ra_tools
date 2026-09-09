@@ -521,10 +521,12 @@
   font-weight: 520;
   line-height: 1.4;
   text-align: center;
-  cursor: help;
+  cursor: default;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
 }
+
+.comparison-prediction-reason.is-empty { color: var(--muted); }
 
 .comparison-reason-dialog { width: min(1080px, calc(100vw - 30px)); max-height: min(86dvh, 820px); overflow: hidden; }
 .comparison-reason-dialog .dialog-card { min-height: 0; max-height: min(86dvh, 820px); grid-template-rows: auto minmax(0, 1fr) auto; }

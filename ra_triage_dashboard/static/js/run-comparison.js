@@ -107,6 +107,20 @@ function renderRunComparisonSelectors({ repairCoverage = false } = {}) {
   }
 }
 
+async function selectRunComparisonRun(side, runId) {
+  const stateKey = side === "baseline" ? "baselineRunId" : "candidateRunId";
+  state.runComparison[stateKey] = String(runId || "");
+  state.runComparison.page = 1;
+  renderRunComparisonSelectors();
+  const run = (state.modelRuns || []).find(
+    (item) => String(item.id) === state.runComparison[stateKey]
+  );
+  if (!run) return false;
+  // Reuse the immutable-scope inference used by Review and Analysis.
+  // The last Run explicitly selected by the user owns the dataset switch.
+  return applyInferredBaselinesFromRun(run, { reason: "run" });
+}
+
 function runComparisonRouteOptions(overrides = {}) {
   return {
     baselineRunId: state.runComparison.baselineRunId,
@@ -363,10 +377,14 @@ function comparisonPredictionHtml(prediction, reviewUrl = "", reviewLabel = "") 
   const label = prediction?.model_label || "NONE";
   const confidence = prediction?.model_confidence;
   const verdict = prediction?.correct ? uiText("匹配 GT", "Matches GT") : uiText("不匹配 GT", "Differs from GT");
-  const reason = prediction?.model_reason || uiText("未保存／未生成 Reason", "Reason not saved / generated");
+  const savedReason = String(prediction?.model_reason || "").trim();
+  const reason = savedReason || uiText("未保存／未生成 Reason", "Reason not saved / generated");
+  const reasonTooltip = savedReason
+    ? ` title="${escapeHtml(savedReason)}" aria-label="${escapeHtml(savedReason)}"`
+    : ` aria-label="${escapeHtml(reason)}"`;
   return `<div class="comparison-prediction ${prediction?.correct ? "is-correct" : "is-error"}">
     <div class="comparison-prediction-output"><strong class="comparison-output-label">${escapeHtml(label)}</strong>${confidence == null ? "" : `<span class="comparison-prediction-confidence">${Number(confidence).toFixed(3)}</span>`}<small class="comparison-prediction-verdict comparison-chip ${prediction?.correct ? "comparison-match" : "comparison-mismatch"}">${escapeHtml(verdict)}</small></div>
-    <span class="comparison-prediction-reason" title="${escapeHtml(reason)}" aria-label="${escapeHtml(reason)}">${escapeHtml(reason)}</span>
+    <span class="comparison-prediction-reason${savedReason ? " has-saved-reason" : " is-empty"}"${reasonTooltip}>${escapeHtml(reason)}</span>
     ${reviewUrl ? `<a class="button button-quiet comparison-inline-review" href="${escapeHtml(reviewUrl)}">${escapeHtml(reviewLabel)}</a>` : ""}
   </div>`;
 }
@@ -617,14 +635,14 @@ function bindRunComparisonEvents() {
     if (event.target === event.currentTarget) event.currentTarget.close();
   });
   $("#comparisonBaselineRun")?.addEventListener("change", (event) => {
-    state.runComparison.baselineRunId = event.target.value;
-    state.runComparison.page = 1;
-    renderRunComparisonSelectors();
+    selectRunComparisonRun("baseline", event.target.value).catch((error) =>
+      showToast(error.message || String(error), true)
+    );
   });
   $("#comparisonCandidateRun")?.addEventListener("change", (event) => {
-    state.runComparison.candidateRunId = event.target.value;
-    state.runComparison.page = 1;
-    renderRunComparisonSelectors();
+    selectRunComparisonRun("candidate", event.target.value).catch((error) =>
+      showToast(error.message || String(error), true)
+    );
   });
   $("#comparisonSwapButton")?.addEventListener("click", () => {
     [state.runComparison.baselineRunId, state.runComparison.candidateRunId] = [

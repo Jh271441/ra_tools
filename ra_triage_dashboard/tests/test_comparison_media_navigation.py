@@ -48,3 +48,40 @@ loadRunComparison=async()=>{pageLoads++;state.runComparison.data=state.runCompar
 })();
 '''
     subprocess.run(['node', '-e', script], check=True, capture_output=True)
+
+
+def test_comparison_run_selection_applies_inferred_dataset():
+    script = Path('ra_triage_dashboard/static/js/run-comparison.js').read_text() + '''
+const assert=require('node:assert/strict');
+const state={modelRuns:[
+  {id:'run-0508',inferred_baseline_ids:['0508']},
+  {id:'run-0821',inferred_baseline_ids:['0821']},
+],runComparison:{baselineRunId:'run-0508',candidateRunId:'run-0508',page:9}};
+let renders=0;let applied=[];
+renderRunComparisonSelectors=()=>{renders++;};
+applyInferredBaselinesFromRun=async(run,options)=>{applied.push([run.id,options]);return true;};
+(async()=>{
+ const switched=await selectRunComparisonRun('candidate','run-0821');
+ assert.equal(switched,true);
+ assert.equal(state.runComparison.candidateRunId,'run-0821');
+ assert.equal(state.runComparison.page,1);
+ assert.equal(renders,1);
+ assert.deepEqual(applied,[['run-0821',{reason:'run'}]]);
+})();
+'''
+    subprocess.run(['node', '-e', script], check=True, capture_output=True)
+
+
+def test_comparison_reason_tooltip_only_exists_for_saved_reason():
+    script = Path('ra_triage_dashboard/static/js/run-comparison.js').read_text() + '''
+const assert=require('node:assert/strict');
+escapeHtml=(value)=>String(value);
+uiText=(zh)=>zh;
+const missing=comparisonPredictionHtml({model_label:'误触发',correct:false});
+assert.match(missing,/comparison-prediction-reason is-empty/);
+assert.doesNotMatch(missing,/ title=/);
+const saved=comparisonPredictionHtml({model_label:'误触发',model_reason:'完整原因',correct:false});
+assert.match(saved,/comparison-prediction-reason has-saved-reason/);
+assert.match(saved,/title="完整原因"/);
+'''
+    subprocess.run(['node', '-e', script], check=True, capture_output=True)
