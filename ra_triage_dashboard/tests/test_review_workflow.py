@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import tempfile
 import unittest
@@ -22,6 +23,7 @@ from ra_triage_dashboard.app.routers.analysis import (
     _review_analysis_export_response,
     _trail_expected_output_rows,
 )
+from ra_triage_dashboard.app.routers import analysis as analysis_router
 from ra_triage_dashboard.app.routers.cases import (
     _case_result_with_status_filter,
     _with_effective_case_review_status,
@@ -49,6 +51,46 @@ def make_request() -> Request:
 
 
 class ReviewWorkflowTest(unittest.TestCase):
+    def test_gt_update_export_never_includes_partial_blind_reviews(self) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_payload(**kwargs):
+            captured.update(kwargs)
+            return {"items": []}
+
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/review-reason-analysis/export",
+                "headers": [],
+            }
+        )
+        with patch.object(
+            analysis_router, "_is_dashboard_admin", return_value=True
+        ), patch.object(
+            analysis_router,
+            "resolve_request_baseline_scopes",
+            return_value=["scope"],
+        ), patch.object(
+            analysis_router,
+            "resolve_request_baseline_ids",
+            return_value=["test"],
+        ), patch.object(
+            analysis_router,
+            "_review_reason_analysis_payload",
+            side_effect=fake_payload,
+        ):
+            response = asyncio.run(
+                analysis_router.export_review_reason_analysis(
+                    request,
+                    format="trail_xlsx",
+                )
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(captured["include_multi_reviews"])
+
     def test_tags_infer_the_three_canonical_outputs(self) -> None:
         self.assertEqual(
             infer_expected_output_from_tags(["queue", "road"], TAG_CATALOG),

@@ -22,13 +22,16 @@ def _action_actor(request: Request, submitted_name: Any = "") -> tuple[str, str,
         return username, "client_claim_unverified", False
     return "", "anonymous", False
 
-def _can_manage_team_default(request: Request) -> bool:
+def _is_dashboard_admin(request: Request) -> bool:
     identity = request_identity(request, settings)
     return bool(
         identity.verified
         and identity.username
         and database.access_role(identity.username) == "admin"
     )
+
+def _can_manage_team_default(request: Request) -> bool:
+    return _is_dashboard_admin(request)
 
 def _admin_identity(request: Request):
     identity = request_identity(request, settings)

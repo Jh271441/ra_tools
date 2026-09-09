@@ -23,7 +23,7 @@ from ..support.common import (
     _as_text,
     _detail,
 )
-from ..support.identity import _admin_identity
+from ..support.identity import _admin_identity, _is_dashboard_admin
 from ..support.review_payloads import (
     _review_reason_analysis_payload,
 )
@@ -54,8 +54,12 @@ async def review_reason_analysis(
     baselines: str = "",
     work_agreement: str = "all",
 ) -> dict[str, Any]:
-    if work_agreement.strip().lower() not in {"", "all"}:
+    explicit_multi_review = work_agreement.strip().lower() not in {"", "all"}
+    if explicit_multi_review:
         await asyncio.to_thread(_admin_identity, request)
+        include_multi_reviews = True
+    else:
+        include_multi_reviews = await asyncio.to_thread(_is_dashboard_admin, request)
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     payload = await asyncio.to_thread(
         _review_reason_analysis_payload,
@@ -80,6 +84,7 @@ async def review_reason_analysis(
         baselines=baselines,
         baseline_scopes=scopes,
         work_agreement=work_agreement,
+        include_multi_reviews=include_multi_reviews,
     )
     payload["baselines"] = resolve_request_baseline_ids(baselines, request=request)
     payload["baseline_scopes"] = scopes
@@ -278,8 +283,12 @@ async def export_review_reason_analysis(
     baselines: str = "",
     work_agreement: str = "all",
 ) -> Response:
-    if work_agreement.strip().lower() not in {"", "all"}:
+    explicit_multi_review = work_agreement.strip().lower() not in {"", "all"}
+    if explicit_multi_review:
         await asyncio.to_thread(_admin_identity, request)
+        include_multi_reviews = True
+    else:
+        include_multi_reviews = await asyncio.to_thread(_is_dashboard_admin, request)
     export_format = _as_text(format).strip().lower()
     if export_format not in {"csv", "xlsx", "trail_xlsx"}:
         raise _detail(400, "format 仅支持 csv、xlsx 或 trail_xlsx。")
@@ -308,6 +317,11 @@ async def export_review_reason_analysis(
         baselines=baselines,
         baseline_scopes=scopes,
         work_agreement=work_agreement,
+        # A partial blind Review is useful in read-only CSV/XLSX analysis but
+        # is not an adjudicated result and must never enter a GT update sheet.
+        include_multi_reviews=(
+            include_multi_reviews and export_format != "trail_xlsx"
+        ),
     )
     result["baselines"] = resolve_request_baseline_ids(baselines, request=request)
     return await asyncio.to_thread(

@@ -177,6 +177,7 @@ class ArchitectureHardeningTest(unittest.IsolatedAsyncioTestCase):
             "_action_actor",
             "_admin_identity",
             "_can_manage_team_default",
+            "_is_dashboard_admin",
             "_ensure_case_thumbnail",
             "_filesystem_availability",
             "_load_case_media",

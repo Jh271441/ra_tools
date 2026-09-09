@@ -45,6 +45,7 @@ def _review_reason_analysis_payload(
     baselines: str = "",
     baseline_scopes: list[str] | None = None,
     work_agreement: str = "all",
+    include_multi_reviews: bool = False,
 ) -> dict[str, Any]:
     exclusion, is_excluded = resolve_review_exclusion_filter(exclusion)
     missing_evidence_catalog = _missing_evidence_catalog()
@@ -213,139 +214,178 @@ def _review_reason_analysis_payload(
     if normalized_work_agreement not in {"all", "pending", "agreed", "conflict"}:
         raise _detail(400, "work_agreement 不在支持范围内。")
     multi_by_issue: dict[str, dict[str, Any]] = {}
-    if normalized_work_agreement != "all":
-        grouped: dict[str, list[dict[str, Any]]] = {}
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    if include_multi_reviews or normalized_work_agreement != "all":
         for row in database.review_multi_rows(
             baseline_scopes=scopes,
             model_run_id=model_run_id,
         ):
             grouped.setdefault(str(row["issue_id"]), []).append(row)
-        multi_rows: list[dict[str, Any]] = []
-        for issue_id, members in grouped.items():
-            reviews: list[dict[str, Any]] = []
-            for member in members:
-                annotation = dict(member.get("annotation") or {})
-                if annotation:
-                    output, source = effective_expected_output(annotation, tag_catalog)
-                    annotation["expected_output"] = output
-                    annotation["label"] = output
-                    annotation["expected_output_source"] = source
-                    annotation["review_status"] = derive_review_status(
-                        output,
-                        member.get("gt_label"),
-                    )
-                reviews.append(
-                    {
-                        "username": member["assignee"],
-                        "submitted": bool(annotation),
-                        "expected_output": str(annotation.get("expected_output") or ""),
-                        "annotation": annotation,
-                    }
+    multi_rows: list[dict[str, Any]] = []
+    for issue_id, members in grouped.items():
+        reviews: list[dict[str, Any]] = []
+        for member in members:
+            annotation = dict(member.get("annotation") or {})
+            if annotation:
+                output, source = effective_expected_output(annotation, tag_catalog)
+                annotation["expected_output"] = output
+                annotation["label"] = output
+                annotation["expected_output_source"] = source
+                annotation["review_status"] = derive_review_status(
+                    output,
+                    member.get("gt_label"),
                 )
-            valid_outputs = [
-                item["expected_output"] for item in reviews
-                if item["expected_output"] in LABELS
-            ]
-            if len(valid_outputs) < len(reviews):
-                agreement = "pending"
-            elif len(set(valid_outputs)) == 1:
-                agreement = "agreed"
-            else:
-                agreement = "conflict"
-            if agreement != normalized_work_agreement:
-                continue
-            first = members[0]
-            prediction = first.get("prediction") or {}
-            if gt_labels and str(first.get("gt_label") or "") not in gt_labels:
-                continue
-            if model_labels and str(prediction.get("label") or "") not in model_labels:
-                continue
-            if comparison_values:
-                prediction_label = str(prediction.get("label") or "")
-                gt_value = str(first.get("gt_label") or "")
-                comparison_value = (
-                    "none"
-                    if prediction_label not in MODEL_LABELS
-                    else "no_gt"
-                    if gt_value not in LABELS
-                    else "match"
-                    if model_label_matches_gt(prediction_label, gt_value)
-                    else "mismatch"
-                )
-                if comparison_value not in comparison_values:
-                    continue
-            if authors and not any(item["username"] in authors for item in reviews):
-                continue
-            annotations = [item["annotation"] for item in reviews if item["annotation"]]
-            if effective_statuses and not any(
-                annotation.get("review_status") in effective_statuses
-                for annotation in annotations
-            ):
-                continue
-            if annotation_labels and not any(
-                annotation.get("expected_output") in annotation_labels
-                for annotation in annotations
-            ):
-                continue
-            if evidence_keys and not any(
-                set(annotation.get("missing_evidence") or []).intersection(evidence_keys)
-                for annotation in annotations
-            ):
-                continue
-            tag_groups = (legacy_tags, scene_tags, trigger_tags, egress_tags)
-            if any(
-                selected and not any(
-                    set(annotation.get("tags") or []).intersection(selected)
-                    for annotation in annotations
-                )
-                for selected in tag_groups
-            ):
-                continue
-            if normalized_search:
-                haystack = " ".join(
-                    str(value or "")
-                    for item in reviews
-                    for value in (
-                        item["username"],
-                        item["expected_output"],
-                        item["annotation"].get("note"),
-                        " ".join(item["annotation"].get("tags") or []),
-                        " ".join(item["annotation"].get("missing_evidence") or []),
-                    )
-                ).casefold()
-                if folded_search not in haystack:
-                    continue
-            representative = next(
-                (item["annotation"] for item in reviews if item["annotation"]),
+            reviews.append(
                 {
-                    "id": None,
-                    "model_run_id": model_run_id,
-                    "label": "",
-                    "review_status": "pending",
-                    "is_excluded": False,
-                    "tags": [],
-                    "missing_evidence": [],
-                    "note": "",
-                    "author": "多人复核",
-                    "author_source": "assignment",
-                    "author_verified": True,
-                    "created_at": "",
-                },
+                    "username": member["assignee"],
+                    "submitted": bool(annotation),
+                    "expected_output": str(annotation.get("expected_output") or ""),
+                    "annotation": annotation,
+                }
             )
-            source = {**first, "annotation": representative}
-            source.pop("assignee", None)
-            source.pop("split_id", None)
-            multi_rows.append(source)
-            multi_by_issue[issue_id] = {
-                "split_id": str(first["split_id"]),
-                "agreement": agreement,
-                "assigned_count": len(reviews),
-                "completed_count": len(valid_outputs),
-                "output_counts": {
-                    label: valid_outputs.count(label) for label in sorted(set(valid_outputs))
-                },
-                "reviews": reviews,
-            }
+        submitted_reviews = [item for item in reviews if item["annotation"]]
+        annotations = [item["annotation"] for item in submitted_reviews]
+        valid_outputs = [
+            item["expected_output"] for item in reviews
+            if item["expected_output"] in LABELS
+        ]
+        if len(valid_outputs) < len(reviews):
+            agreement = "pending"
+        elif len(set(valid_outputs)) == 1:
+            agreement = "agreed"
+        else:
+            agreement = "conflict"
+        if normalized_work_agreement == "all":
+            # “All” is a result view: include a blind task as soon as at least
+            # one assigned reviewer has submitted, but do not turn untouched
+            # assignments into synthetic Review results.
+            if not submitted_reviews:
+                continue
+        elif agreement != normalized_work_agreement:
+            continue
+        first = members[0]
+        prediction = first.get("prediction") or {}
+        if gt_labels and str(first.get("gt_label") or "") not in gt_labels:
+            continue
+        if model_labels and str(prediction.get("label") or "") not in model_labels:
+            continue
+        if comparison_values:
+            prediction_label = str(prediction.get("label") or "")
+            gt_value = str(first.get("gt_label") or "")
+            comparison_value = (
+                "none"
+                if prediction_label not in MODEL_LABELS
+                else "no_gt"
+                if gt_value not in LABELS
+                else "match"
+                if model_label_matches_gt(prediction_label, gt_value)
+                else "mismatch"
+            )
+            if comparison_value not in comparison_values:
+                continue
+        if authors:
+            matching_reviews = [
+                item for item in reviews if item["username"] in authors
+            ]
+            if normalized_work_agreement == "all":
+                if not any(item["annotation"] for item in matching_reviews):
+                    continue
+            elif not matching_reviews:
+                continue
+        if effective_statuses and not any(
+            annotation.get("review_status") in effective_statuses
+            for annotation in annotations
+        ):
+            continue
+        if annotation_labels and not any(
+            annotation.get("expected_output") in annotation_labels
+            for annotation in annotations
+        ):
+            continue
+        if evidence_keys and not any(
+            set(annotation.get("missing_evidence") or []).intersection(evidence_keys)
+            for annotation in annotations
+        ):
+            continue
+        tag_groups = (legacy_tags, scene_tags, trigger_tags, egress_tags)
+        if any(
+            selected and not any(
+                set(annotation.get("tags") or []).intersection(selected)
+                for annotation in annotations
+            )
+            for selected in tag_groups
+        ):
+            continue
+        if normalized_search:
+            haystack = " ".join(
+                str(value or "")
+                for item in reviews
+                for value in (
+                    item["username"],
+                    item["expected_output"],
+                    item["annotation"].get("note"),
+                    " ".join(item["annotation"].get("tags") or []),
+                    " ".join(item["annotation"].get("missing_evidence") or []),
+                )
+            ).casefold()
+            if folded_search not in haystack:
+                continue
+        representative_review = next(
+            (
+                item for item in submitted_reviews
+                if not authors or item["username"] in authors
+            ),
+            submitted_reviews[0] if submitted_reviews else None,
+        )
+        representative = dict(representative_review["annotation"]) if representative_review else {
+            "id": None,
+            "model_run_id": model_run_id,
+            "label": "",
+            "review_status": "pending",
+            "is_excluded": False,
+            "tags": [],
+            "missing_evidence": [],
+            "note": "",
+            "author": "多人复核",
+            "author_source": "assignment",
+            "author_verified": True,
+            "created_at": "",
+        }
+        # Cluster each Issue once while retaining every submitted review's
+        # structured evidence. Individual outputs and authors remain available
+        # in ``multi_review.reviews`` for the detail card.
+        representative["tags"] = list(dict.fromkeys(
+            key for annotation in annotations for key in annotation.get("tags") or []
+        ))
+        representative["missing_evidence"] = list(dict.fromkeys(
+            key
+            for annotation in annotations
+            for key in annotation.get("missing_evidence") or []
+        ))
+        source = {**first, "annotation": representative}
+        source.pop("assignee", None)
+        source.pop("split_id", None)
+        multi_rows.append(source)
+        multi_by_issue[issue_id] = {
+            "split_id": str(first["split_id"]),
+            "agreement": agreement,
+            "assigned_count": len(reviews),
+            "completed_count": len(valid_outputs),
+            "output_counts": {
+                label: valid_outputs.count(label) for label in sorted(set(valid_outputs))
+            },
+            "reviews": reviews,
+        }
+    if normalized_work_agreement == "all":
+        # The active blind-task projection owns an Issue once it has a result;
+        # do not duplicate a legacy/ordinary Review row for the same Issue.
+        multi_issue_ids = {str(row["issue_id"]) for row in multi_rows}
+        rows = [
+            row for row in rows if str(row.get("issue_id") or "") not in multi_issue_ids
+        ]
+        rows.extend(multi_rows)
+        rows.sort(key=lambda row: str(row.get("issue_id") or ""))
+    else:
         rows = multi_rows
     tag_catalog_for_analysis = {
         str(item["key"]): {

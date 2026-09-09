@@ -3,8 +3,10 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from ra_triage_dashboard.app.db import AnnotationConflictError, Database
+from ra_triage_dashboard.app.support import review_payloads
 from ra_triage_dashboard.app.work_split import distribute_issue_ids
 
 
@@ -235,6 +237,97 @@ class WorkSplitTest(unittest.TestCase):
                 db.list_cases(baseline_scope="scope", page_size=10)["items"][0]["annotation"]["id"]
             )
             self.assertEqual(len(db.review_multi_rows(baseline_scopes=["scope"])), 2)
+
+    def test_default_analysis_includes_submitted_partial_blind_review(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "blind-analysis.sqlite")
+            db.init()
+            scope = "scope"
+            db.upsert_issues(
+                [
+                    {"issue_id": "cn1", "gt_label": "误触发"},
+                    {"issue_id": "cn2", "gt_label": "误触发"},
+                ],
+                source="test",
+                replace_gt=True,
+                baseline_scope=scope,
+            )
+            run, _ = db.import_model_run(
+                name="blind-run",
+                source_name="blind.json",
+                source_sha256="7" * 64,
+                metadata={},
+                rows=[
+                    {"issue_id": "cn1", "model_label": "正确触发"},
+                    {"issue_id": "cn2", "model_label": "正确触发"},
+                ],
+            )
+            assignments = distribute_issue_ids(
+                ["cn1", "cn2"],
+                [{"name": "alice"}, {"name": "bob"}],
+                seed=1,
+                reviewers_per_issue=2,
+            )
+            saved = db.apply_work_split(
+                assignments=assignments,
+                created_by="admin",
+                reviewers_per_issue=2,
+                model_run_id=run["id"],
+            )
+            # An ordinary Review for the same Issue must not duplicate the
+            # active blind-task result in the default analysis projection.
+            db.create_annotation(
+                issue_id="cn1", model_run_id=run["id"],
+                label="无需协助", review_status="needs_gt_review", tags=[],
+                missing_evidence=[], note="ordinary", author="legacy",
+            )
+            db.create_annotation(
+                issue_id="cn1", model_run_id=run["id"],
+                work_split_id=saved["split_id"], label="误触发",
+                review_status="reviewed", tags=["queue"],
+                missing_evidence=["routing_direction"], note="alice result",
+                author="alice", expected_previous_annotation_id=None,
+            )
+            with patch.object(review_payloads, "database", db), patch(
+                "ra_triage_dashboard.app.support.catalogs.database", db
+            ):
+                ordinary_only = review_payloads._review_reason_analysis_payload(
+                    model_run_id=run["id"],
+                    comparison="all",
+                    baseline_scopes=[scope],
+                    work_agreement="all",
+                )
+                result = review_payloads._review_reason_analysis_payload(
+                    model_run_id=run["id"],
+                    comparison="all",
+                    baseline_scopes=[scope],
+                    work_agreement="all",
+                    include_multi_reviews=True,
+                )
+                pending = review_payloads._review_reason_analysis_payload(
+                    model_run_id=run["id"],
+                    comparison="all",
+                    baseline_scopes=[scope],
+                    work_agreement="pending",
+                )
+
+            self.assertEqual(ordinary_only["total"], 1)
+            self.assertEqual(ordinary_only["items"][0]["annotation"]["author"], "legacy")
+            self.assertNotIn("multi_review", ordinary_only["items"][0])
+            self.assertEqual(result["total"], 1)
+            item = result["items"][0]
+            self.assertEqual(item["issue_id"], "cn1")
+            self.assertEqual(item["annotation"]["author"], "alice")
+            self.assertEqual(item["annotation"]["note"], "alice result")
+            self.assertEqual(item["multi_review"]["agreement"], "pending")
+            self.assertEqual(item["multi_review"]["completed_count"], 1)
+            self.assertEqual(item["multi_review"]["assigned_count"], 2)
+            self.assertEqual(
+                result["evidence_clusters"][0]["key"], "routing_direction"
+            )
+            # The explicit pending task view still includes untouched cn2;
+            # only the default result view suppresses zero-submission tasks.
+            self.assertEqual(pending["total"], 2)
 
     def test_case_comparison_filter_accepts_multiple_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
