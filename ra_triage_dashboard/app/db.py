@@ -21,6 +21,7 @@ from .db_parts.shared import (
     redact_sensitive_fields,
     utc_now,
     model_label_matches_gt,
+    model_prediction_no_gt_sql,
 )
 
 from .db_parts.access import DatabaseAccessMixin

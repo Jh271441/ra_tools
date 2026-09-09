@@ -15,7 +15,7 @@ function modelLabelMatchesGt(modelLabel, gtLabel) {
 }
 const CASE_PAGE_SIZES = [10, 20, 50, 100];
 const DEFAULT_CASE_PAGE_SIZE = 20;
-const ANALYSIS_COMPARISON_STATUSES = ["all", "mismatch", "match", "none"];
+const ANALYSIS_COMPARISON_STATUSES = ["all", "mismatch", "match", "no_gt", "none"];
 /** Locale-aware comparison option meta (GT taxonomy stays Chinese elsewhere). */
 function comparisonStatusMeta(status) {
   const key = String(status || "all");
@@ -23,6 +23,7 @@ function comparisonStatusMeta(status) {
     all: { label: () => t("common.all"), description: () => t("comparison.desc_all") },
     mismatch: { label: () => "MISMATCH", description: () => t("comparison.desc_mismatch") },
     match: { label: () => "MATCH", description: () => t("comparison.desc_match") },
+    no_gt: { label: () => "NO GT", description: () => t("comparison.desc_no_gt") },
     none: { label: () => "NONE", description: () => t("comparison.desc_none") },
   };
   const entry = table[key] || table.all;
@@ -32,7 +33,7 @@ const ANALYSIS_COMPARISON_META = new Proxy(
   {},
   {
     get(_target, prop) {
-      if (prop === "all" || prop === "mismatch" || prop === "match" || prop === "none") {
+      if (["all", "mismatch", "match", "no_gt", "none"].includes(prop)) {
         return comparisonStatusMeta(prop);
       }
       return undefined;

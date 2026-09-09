@@ -71,6 +71,7 @@ def _review_reason_analysis_payload(
     if comparison_values and set(comparison_values) == {
         "match",
         "mismatch",
+        "no_gt",
         "none",
     }:
         comparison_values = []
@@ -265,6 +266,8 @@ def _review_reason_analysis_payload(
                 comparison_value = (
                     "none"
                     if prediction_label not in MODEL_LABELS
+                    else "no_gt"
+                    if gt_value not in LABELS
                     else "match"
                     if model_label_matches_gt(prediction_label, gt_value)
                     else "mismatch"

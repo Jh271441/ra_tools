@@ -694,6 +694,7 @@
 .comparison-chip.comparison-mismatch { border-color: rgba(248,113,113,.42); color: #f5a1a1; background: rgba(248,113,113,.1); }
 .comparison-chip.comparison-match { border-color: rgba(52,211,153,.4); color: #8edcbc; background: rgba(52,211,153,.09); }
 .comparison-chip.comparison-none { border-color: rgba(148,163,184,.38); color: #aab6c7; background: rgba(148,163,184,.08); }
+.comparison-chip.comparison-no_gt { border-color: rgba(245,158,11,.42); color: #fbbf24; background: rgba(245,158,11,.09); }
 .comparison-summary,
 .media-decision-summary {
   width: fit-content; max-width: 100%; display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin: 0;
@@ -727,8 +728,10 @@
 .analysis-comparison-badge.comparison-mismatch { border-color: rgba(248,113,113,.42); color: #f5a1a1; background: rgba(248,113,113,.08); }
 .analysis-comparison-badge.comparison-match { border-color: rgba(52,211,153,.4); color: #8edcbc; background: rgba(52,211,153,.08); }
 .analysis-comparison-badge.comparison-none { border-color: rgba(148,163,184,.38); color: #aab6c7; background: rgba(148,163,184,.07); }
+.analysis-comparison-badge.comparison-no_gt { border-color: rgba(245,158,11,.42); color: #fbbf24; background: rgba(245,158,11,.08); }
 html[data-color-theme="light"] .issue-thumbnail .issue-thumbnail-status.comparison-mismatch { color: #f5a1a1; }
 html[data-color-theme="light"] .issue-thumbnail .issue-thumbnail-status.comparison-match { color: #8edcbc; }
+html[data-color-theme="light"] .issue-thumbnail .issue-thumbnail-status.comparison-no_gt { color: #fbbf24; }
 html[data-color-theme="light"] .issue-thumbnail .issue-thumbnail-status.comparison-none { color: #aab6c7; }
 
 html[data-color-theme="light"] .comparison-summary,

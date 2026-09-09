@@ -184,6 +184,10 @@ function analysisComparisonMultiOptions() {
       label: t("comparison.match"),
     },
     {
+      value: "no_gt",
+      label: t("comparison.no_gt"),
+    },
+    {
       value: "none",
       label: t("comparison.none"),
     },

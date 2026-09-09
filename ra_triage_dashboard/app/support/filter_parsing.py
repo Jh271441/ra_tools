@@ -52,6 +52,7 @@ def _case_filter_kwargs(
     if comparison_values and set(comparison_values) == {
         "match",
         "mismatch",
+        "no_gt",
         "none",
     }:
         comparison_values = []

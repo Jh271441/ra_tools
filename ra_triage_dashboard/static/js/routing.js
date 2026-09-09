@@ -190,11 +190,11 @@ function normalizedReviewComparisonStatus(value, fallback = "all") {
 
 function parseComparisonStatuses(value, fallback = []) {
   const values = parseFilterList(value).filter((item) =>
-    ["match", "mismatch", "none"].includes(item)
+    ["match", "mismatch", "no_gt", "none"].includes(item)
   );
   if (values.length) return values;
   if (Array.isArray(fallback)) return fallback.filter((item) =>
-    ["match", "mismatch", "none"].includes(item)
+    ["match", "mismatch", "no_gt", "none"].includes(item)
   );
   const single = normalizedReviewComparisonStatus(fallback, "");
   return single && single !== "all" ? [single] : [];
@@ -202,7 +202,7 @@ function parseComparisonStatuses(value, fallback = []) {
 
 function comparisonStatusParam(values) {
   const list = parseComparisonStatuses(values);
-  if (!list.length || list.length === 3) return "all";
+  if (!list.length || list.length === 4) return "all";
   return list.join(",");
 }
 

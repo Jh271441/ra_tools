@@ -18,6 +18,7 @@ from .shared import (
     model_label_matches_gt,
     model_prediction_match_sql,
     model_prediction_mismatch_sql,
+    model_prediction_no_gt_sql,
     model_prediction_none_sql,
     utc_now,
 )
@@ -1428,11 +1429,12 @@ class DatabaseCoreMixin:
         comparison_statuses = tuple(
             value
             for value in _multi_values(comparison_status)
-            if value in {"match", "mismatch", "none"}
+            if value in {"match", "mismatch", "no_gt", "none"}
         )
         if comparison_statuses and set(comparison_statuses) == {
             "match",
             "mismatch",
+            "no_gt",
             "none",
         }:
             comparison_statuses = ()
@@ -1467,16 +1469,22 @@ class DatabaseCoreMixin:
             # boolean literal and SQLite continues to coerce it to 0/1.
             params.append(bool(is_excluded))
         if comparison_statuses:
-            where.append("i.gt_label IN (?, ?, ?)")
-            params.extend(LABELS)
             status_clauses: list[str] = []
             for status in comparison_statuses:
-                if status == "none":
+                if status == "no_gt":
+                    clause, clause_params = model_prediction_no_gt_sql()
+                elif status == "none":
                     clause, clause_params = model_prediction_none_sql()
+                    clause = f"(i.gt_label IN (?, ?, ?) AND {clause})"
+                    clause_params = (*LABELS, *clause_params)
                 elif status == "match":
                     clause, clause_params = model_prediction_match_sql()
+                    clause = f"(i.gt_label IN (?, ?, ?) AND {clause})"
+                    clause_params = (*LABELS, *clause_params)
                 else:
                     clause, clause_params = model_prediction_mismatch_sql()
+                    clause = f"(i.gt_label IN (?, ?, ?) AND {clause})"
+                    clause_params = (*LABELS, *clause_params)
                 status_clauses.append(clause)
                 params.extend(clause_params)
             where.append(f"({' OR '.join(status_clauses)})")

@@ -20,6 +20,99 @@ from ra_triage_dashboard.app.routers.cases import (
 
 
 class ReviewReasonAnalysisTest(unittest.TestCase):
+    def test_no_gt_is_distinct_from_no_prediction_and_completes_output_scope(self) -> None:
+        rows = [
+            {
+                "issue_id": "cn-no-gt",
+                "gt_label": "",
+                "annotation": {"label": "误触发"},
+                "prediction": {"label": "误触发"},
+            },
+            {
+                "issue_id": "cn-no-pred",
+                "gt_label": "误触发",
+                "annotation": {"label": "误触发"},
+                "prediction": {"label": ""},
+            },
+        ]
+        result = build_review_reason_analysis(
+            rows, has_model_run=True, include_reason_themes=False
+        )
+        self.assertEqual(
+            [item["comparison_status"] for item in result["items"]],
+            ["no_gt", "none"],
+        )
+        self.assertEqual(result["summary"]["missing_gt_predictions"], 1)
+        self.assertEqual(result["summary"]["missing_predictions"], 1)
+
+    def test_database_no_gt_filter_keeps_all_supported_model_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Database(Path(directory) / "triage.sqlite3")
+            database.init()
+            scope = "no-gt-scope"
+            database.upsert_issues(
+                [
+                    {"issue_id": "cn-no-gt", "gt_label": ""},
+                    {"issue_id": "cn-match", "gt_label": "误触发"},
+                    {"issue_id": "cn-mismatch", "gt_label": "正确触发"},
+                    {"issue_id": "cn-none", "gt_label": "误触发"},
+                ],
+                source="test",
+                replace_gt=True,
+                baseline_scope=scope,
+            )
+            run, _ = database.import_model_run(
+                name="no-gt",
+                source_name="no-gt.json",
+                source_sha256="9" * 64,
+                metadata={},
+                rows=[
+                    {"issue_id": "cn-no-gt", "model_label": "误触发"},
+                    {"issue_id": "cn-match", "model_label": "误触发"},
+                    {"issue_id": "cn-mismatch", "model_label": "误触发"},
+                ],
+            )
+            for issue_id in ("cn-no-gt", "cn-match", "cn-mismatch", "cn-none"):
+                database.create_annotation(
+                    issue_id=issue_id,
+                    model_run_id=run["id"],
+                    label="误触发",
+                    review_status="reviewed",
+                    tags=[],
+                    missing_evidence=[],
+                    note="test",
+                    author="tester",
+                )
+            no_gt = database.list_cases(
+                baseline_scope=scope,
+                model_run_id=run["id"],
+                comparison_status="no_gt",
+                page_size=20,
+            )
+            predicted = database.list_cases(
+                baseline_scope=scope,
+                model_run_id=run["id"],
+                comparison_status="mismatch,match,no_gt",
+                page_size=20,
+            )
+            none = database.list_cases(
+                baseline_scope=scope,
+                model_run_id=run["id"],
+                comparison_status="none",
+                page_size=20,
+            )
+            analysis_no_gt = database.review_reason_rows(
+                baseline_scope=scope,
+                model_run_id=run["id"],
+                comparison_status="no_gt",
+            )
+            self.assertEqual([item["issue_id"] for item in no_gt["items"]], ["cn-no-gt"])
+            self.assertEqual(predicted["total"], 3)
+            self.assertEqual([item["issue_id"] for item in none["items"]], ["cn-none"])
+            self.assertEqual(
+                [item["issue_id"] for item in analysis_no_gt], ["cn-no-gt"]
+            )
+
     def test_stage1_true_stuck_matches_both_true_stuck_gt_outcomes(self) -> None:
         rows = [
             {

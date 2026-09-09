@@ -8,14 +8,18 @@ function reviewComparisonStatusForItem(item) {
   const prediction = item?.prediction || {};
   if (!prediction.model_run_id) return "none";
   if (!MODEL_LABELS.includes(prediction.label)) return "none";
+  if (!LABELS.includes(item?.gt_label)) return "no_gt";
   return prediction.mismatch ? "mismatch" : "match";
 }
 
-function issueCardReviewFlag(annotation) {
+function issueCardReviewFlag(annotation, comparisonStatus = "") {
   if (annotation?.is_excluded) {
     return `<span class="issue-card-flag issue-card-flag-excluded" data-card-review-flag="excluded"><span class="ui-lang-zh">应该排除</span><span class="ui-lang-en">Exclude</span></span>`;
   }
   if (annotation?.review_status === "needs_gt_review") {
+    return `<span class="issue-card-flag issue-card-flag-needs-gt" data-card-review-flag="needs_gt_review"><span class="ui-lang-zh">GT 待复核</span><span class="ui-lang-en">Review GT</span></span>`;
+  }
+  if (comparisonStatus === "no_gt") {
     return `<span class="issue-card-flag issue-card-flag-needs-gt" data-card-review-flag="needs_gt_review"><span class="ui-lang-zh">GT 待复核</span><span class="ui-lang-en">Review GT</span></span>`;
   }
   return "";
@@ -45,7 +49,7 @@ function issueCard(item) {
   const historicalReview = Boolean(
     state.selectedRunId && annotationRunId && annotationRunId !== state.selectedRunId
   );
-  const reviewFlag = issueCardReviewFlag(item.annotation);
+  const reviewFlag = issueCardReviewFlag(item.annotation, comparisonStatus);
   return `
     <article class="issue-card ${isSelected ? "selected" : ""}" data-issue-id="${escapeHtml(item.issue_id)}">
       <button class="issue-card-open" type="button" data-open-issue="${escapeHtml(item.issue_id)}" aria-label="打开 ${escapeHtml(item.issue_id)} Review"></button>

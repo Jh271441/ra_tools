@@ -23,7 +23,7 @@ from ..sanitization import redact_sensitive_fields
 
 
 LABELS = TRIAGE_LABELS
-COMPARISON_STATUSES = ("all", "mismatch", "match", "none")
+COMPARISON_STATUSES = ("all", "mismatch", "match", "no_gt", "none")
 REVIEW_STATUSES = ("pending", "reviewed", "needs_gt_review")
 BATCH_JOB_STATUSES = ("queued", "running", "succeeded", "partial", "failed")
 BATCH_PUBLISH_STATUSES = (
@@ -43,6 +43,19 @@ def model_prediction_none_sql(
     return (
         f"({model_column} IS NULL OR {model_column} NOT IN ({placeholders}))",
         MODEL_LABELS,
+    )
+
+
+def model_prediction_no_gt_sql(
+    model_column: str = "mp.model_label",
+    gt_column: str = "i.gt_label",
+) -> tuple[str, tuple[str, ...]]:
+    supported = ", ".join("?" for _ in MODEL_LABELS)
+    canonical_gt = ", ".join("?" for _ in LABELS)
+    return (
+        f"({model_column} IN ({supported}) AND "
+        f"({gt_column} IS NULL OR {gt_column} NOT IN ({canonical_gt})))",
+        (*MODEL_LABELS, *LABELS),
     )
 
 

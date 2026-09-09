@@ -13,7 +13,7 @@ from .model_labels import (
 from .review_workflow import derive_review_status, effective_expected_output
 
 
-COMPARISON_STATUSES = ("all", "mismatch", "match", "none")
+COMPARISON_STATUSES = ("all", "mismatch", "match", "no_gt", "none")
 NONE_PREDICTION_LABEL = "NONE"
 
 # Legacy compatibility vocabulary for callers that still import the original
@@ -397,9 +397,11 @@ def build_review_reason_analysis(
         model_label = str(prediction.get("label") or "")
         comparison_status = ""
         if has_model_run:
-            if model_label not in MODEL_LABELS:
+            if gt_label not in TRIAGE_LABELS:
+                comparison_status = "no_gt" if model_label in MODEL_LABELS else ""
+            elif model_label not in MODEL_LABELS:
                 comparison_status = "none"
-            elif gt_label in TRIAGE_LABELS:
+            else:
                 comparison_status = (
                     "match"
                     if model_label_matches_gt(model_label, gt_label)
@@ -456,6 +458,7 @@ def build_review_reason_analysis(
     matches = 0
     mismatches = 0
     missing_predictions = 0
+    missing_gt_predictions = 0
     manual_gt_disagreements = 0
     review_status_counts = {
         "pending": 0,
@@ -525,6 +528,8 @@ def build_review_reason_analysis(
         ):
             missing_predictions += 1
             none_counts[gt_label] += 1
+        elif has_model_run and model_label in MODEL_LABELS:
+            missing_gt_predictions += 1
 
     reason_catalog = {
         str(item["key"]): item for item in REASON_THEME_CATALOG
@@ -594,6 +599,7 @@ def build_review_reason_analysis(
             "model_matches": matches,
             "model_mismatches": mismatches,
             "missing_predictions": missing_predictions,
+            "missing_gt_predictions": missing_gt_predictions,
             "manual_gt_disagreements": manual_gt_disagreements,
             "review_status_counts": review_status_counts,
         },
