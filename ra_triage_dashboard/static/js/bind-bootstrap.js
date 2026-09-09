@@ -153,11 +153,15 @@ function bindGlobalSidebarShortcut() {
 
 function scheduleReviewFilterReload(delay = 0) {
   if (reviewSearchTimer) window.clearTimeout(reviewSearchTimer);
+  // Serialize the current controls before waiting for the debounced API
+  // request. A browser refresh during that gap must reopen the exact same
+  // filtered Gallery instead of restoring the previous URL state.
+  state.reviewIssueIds = [];
+  if (typeof updateIssueQueryButton === "function") updateIssueQueryButton();
+  state.casePage = 1;
+  persistCurrentReviewRoute({ issue: "", issueIds: [], casePage: 1 });
   reviewSearchTimer = window.setTimeout(() => {
     reviewSearchTimer = null;
-    state.reviewIssueIds = [];
-    if (typeof updateIssueQueryButton === "function") updateIssueQueryButton();
-    state.casePage = 1;
     reloadReviewGallery({ includeOverview: false, historyMode: "replace" }).catch(
       (error) => showToast(error.message, true)
     );

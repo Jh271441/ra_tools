@@ -485,6 +485,21 @@ function currentReviewRouteOptions(overrides = {}) {
   };
 }
 
+function persistCurrentReviewRoute(overrides = {}) {
+  if (state.activePage !== "review") return;
+  const nextUrl = pageUrl(
+    "review",
+    currentReviewRouteOptions(overrides)
+  );
+  const currentUrl = `${window.location.pathname}${window.location.search}`;
+  if (nextUrl === currentUrl) return;
+  window.history.replaceState(
+    { ...(window.history.state || {}), page: "review" },
+    "",
+    nextUrl
+  );
+}
+
 function applyReviewRouteControls(route) {
   if (!route) return;
   if ($("#searchInput")) $("#searchInput").value = route.search || "";
@@ -793,6 +808,7 @@ function showPage(
   } = {}
 ) {
   const target = PAGE_ROUTES[page] ? page : "review";
+  const previousPage = state.activePage;
   if (target !== "review") $("#detailHeroMedia")?.querySelector("video")?.pause();
   state.activePage = target;
   document.body.dataset.activePage = target;
@@ -870,7 +886,13 @@ function showPage(
       datasetIds: intentDatasetIds.length ? intentDatasetIds : null,
     }).catch((error) => showToast(error.message, true));
   }
-  if (target === "analysis") renderAnalysisRunFilter();
+  if (target === "analysis" && (previousPage !== "analysis" || restoreRoute)) {
+    // A same-page filter reload must not rebuild the Run picker and its
+    // comparison multi-filter. Rebuilding destroys the open panel after every
+    // checkbox change; keep it open for consecutive selections until the user
+    // presses Escape, clicks outside, or toggles the trigger.
+    renderAnalysisRunFilter();
+  }
   if (target === "trail-update") {
     const trailPage = $("#trailAttributeUpdatePage");
     if (runId) state.trailUpdate.runId = runId;

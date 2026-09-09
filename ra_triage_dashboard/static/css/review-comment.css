@@ -408,8 +408,16 @@ html[data-color-theme="light"] .detail-queue-index-input {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   cursor: pointer;
   touch-action: manipulation;
+}
+.review-save-shortcut {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 38px; height: 20px; padding: 0 6px; border: 1px solid rgba(5, 35, 42, .3);
+  border-radius: 5px; color: #07343c; background: rgba(255, 255, 255, .24);
+  box-shadow: inset 0 -1px 0 rgba(5, 35, 42, .12);
+  font: 700 9px/1 "SFMono-Regular", Consolas, monospace;
 }
 .review-status-field { display: grid; gap: 3px; }
 .review-status-field > span { color: var(--muted); font-size: 12px; }
@@ -688,7 +696,21 @@ html[data-color-theme="light"] .detail-queue-index-input {
 .review-reason {
   gap: 4px; padding: 0; border: 0; border-radius: 0; background: transparent;
 }
-.review-reason > span { color: #d7edf0; font-size: 12px; font-weight: 700; }
+.review-reason-heading {
+  min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  color: #d7edf0; font-size: 12px; font-weight: 700;
+}
+.review-reason-heading > span:first-child { min-width: 0; }
+.review-reason-shortcuts {
+  flex: 0 0 auto; display: inline-flex; align-items: center; color: var(--faint);
+  font-size: 9px; font-weight: 500; white-space: nowrap;
+}
+.review-reason-shortcuts kbd {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 17px;
+  margin: 0 2px; padding: 0 4px; border: 1px solid #334155; border-radius: 4px;
+  color: #a9bbce; background: #111824; box-shadow: inset 0 -1px 0 rgba(255,255,255,.04);
+  font: 600 8px/1 "SFMono-Regular", Consolas, monospace;
+}
 .review-reason textarea { min-height: 54px; height: 54px; padding: 7px 8px; border-color: rgba(34,211,238,.24); background: #0b1119; font-size: 11px; line-height: 1.45; }
 .review-reason textarea:focus { border-color: var(--accent); box-shadow: none; }
 .evidence-dropdown { position: relative; container-type: inline-size; border: 1px solid var(--line); border-radius: 8px; background: #0e131c; }
@@ -958,6 +980,10 @@ html[data-color-theme="light"] .comment-thread-body pre code {
   background: transparent;
 }
 html[data-color-theme="light"] .review-expected-output-hint.is-conflict { color: #9a4b08; }
+html[data-color-theme="light"] .review-reason-shortcuts kbd {
+  color: #53657a; border-color: #c7d3df; background: #ffffff;
+  box-shadow: inset 0 -1px 0 rgba(15,23,42,.05);
+}
 html[data-color-theme="light"] .row-evidence span { color: #276b74; }
 html[data-color-theme="light"] .tag-option:has(input:checked) {
   border-color: rgba(8,117,141,.42); color: #075f75; background: rgba(8,117,141,.1); font-weight: 650;
