@@ -433,14 +433,6 @@ function handleReviewDropdownKeyboard(event) {
     inputs[nextIndex].closest("label")?.scrollIntoView({ block: "nearest" });
     return true;
   }
-  if (event.key === "Enter" && currentIndex >= 0) {
-    event.preventDefault();
-    event.stopPropagation();
-    if (!state.savingAnnotation) {
-      $("#annotationForm")?.requestSubmit($("#reviewSaveButton") || undefined);
-    }
-    return true;
-  }
   if (event.key === " " && currentIndex >= 0) {
     event.preventDefault();
     event.stopPropagation();
@@ -449,6 +441,18 @@ function handleReviewDropdownKeyboard(event) {
     return true;
   }
   return false;
+}
+
+function submitReviewFromDropdown(event, target) {
+  if (event.key !== "Enter" || !target?.closest?.(".review-dropdown")) {
+    return false;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  if (!state.savingAnnotation) {
+    $("#annotationForm")?.requestSubmit($("#reviewSaveButton") || undefined);
+  }
+  return true;
 }
 
 function reviewTagGroupShortcutAllowed(target) {
@@ -495,6 +499,7 @@ function bindReviewKeyboardShortcuts() {
       return;
     }
     const target = event.target instanceof Element ? event.target : null;
+    if (submitReviewFromDropdown(event, target)) return;
     if (handleReviewDropdownKeyboard(event)) return;
     const key = String(event.key || "").toLowerCase();
     const groupKey = REVIEW_TAG_GROUP_SHORTCUTS[key];
@@ -925,7 +930,12 @@ function bindReviewDropdownDismiss() {
   document.addEventListener(
     "keydown",
     (event) => {
-      if (event.key === "Escape") closeAllReviewDropdowns();
+      if (event.key !== "Escape") return;
+      const active = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+      closeAllReviewDropdowns();
+      if (active?.closest(".review-dropdown")) active.blur();
     },
     true
   );

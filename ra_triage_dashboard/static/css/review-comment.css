@@ -545,11 +545,11 @@ html[data-color-theme="light"] .detail-queue-index-input {
 .review-tag-dropdown > summary:focus-visible {
   outline: none;
 }
-.review-tag-dropdown > summary:focus-visible {
+.review-tag-dropdown[open] > summary {
   border-radius: 7px; background: rgba(34,211,238,.035);
   box-shadow: inset 0 0 0 1px rgba(34,211,238,.42);
 }
-.review-tag-dropdown > summary:focus-visible .tag-group-shortcut {
+.review-tag-dropdown[open] > summary .tag-group-shortcut {
   border-color: rgba(34,211,238,.62); color: var(--accent);
   background: rgba(34,211,238,.11);
 }

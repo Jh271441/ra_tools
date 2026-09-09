@@ -26,7 +26,7 @@ assert.equal(dropdown.open,true);
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
 
 
-def test_open_review_dropdown_supports_arrow_and_enter_selection() -> None:
+def test_open_review_dropdown_uses_arrows_for_navigation_and_enter_for_save() -> None:
     script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
 const assert=require('node:assert/strict');
 class MockElement {}
@@ -49,16 +49,20 @@ const saveButton={id:'reviewSaveButton'};
 state={savingAnnotation:false};
 $=(selector)=>selector==='#annotationForm' ? form : selector==='#reviewSaveButton' ? saveButton : null;
 const summary=Object.assign(new MockElement(),{
-  closest(selector){return selector==='.review-dropdown[open]' ? dropdown : null;},
+  closest(selector){return selector.includes('.review-dropdown') ? dropdown : null;},
   matches(){return false;},
 });
 const arrow={target:summary,key:'ArrowDown',ctrlKey:false,metaKey:false,altKey:false,preventDefault(){this.prevented=true;},stopPropagation(){this.stopped=true;}};
 assert.equal(handleReviewDropdownKeyboard(arrow),true);
 assert.equal(inputs[0].focused,true);
-inputs[0].closest=(selector)=>selector==='.review-dropdown[open]' ? dropdown : selector==='label' ? labels[0] : null;
+inputs[0].closest=(selector)=>selector.includes('.review-dropdown') ? dropdown : selector==='label' ? labels[0] : null;
 const enter={target:inputs[0],key:'Enter',ctrlKey:false,metaKey:false,altKey:false,preventDefault(){},stopPropagation(){}};
-assert.equal(handleReviewDropdownKeyboard(enter),true);
+assert.equal(submitReviewFromDropdown(enter,inputs[0]),true);
 assert.equal(inputs[0].checked,false);
+assert.equal(form.submittedWith,saveButton);
+form.submittedWith=null;
+const summaryEnter={target:summary,key:'Enter',ctrlKey:false,metaKey:false,altKey:false,preventDefault(){},stopPropagation(){}};
+assert.equal(submitReviewFromDropdown(summaryEnter,summary),true);
 assert.equal(form.submittedWith,saveButton);
 const space={target:inputs[0],key:' ',ctrlKey:false,metaKey:false,altKey:false,preventDefault(){},stopPropagation(){}};
 assert.equal(handleReviewDropdownKeyboard(space),true);
