@@ -279,6 +279,11 @@ html[data-color-theme="light"] .detail-queue-index-input {
 .detail-copy-id-button.is-copied { color: #6ee7b7; border-color: rgba(52,211,153,.38); background: rgba(52,211,153,.08); }
 .detail-copy-id-button svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .detail-inline-button { margin: 0; padding: 0; border: 0; border-radius: 0; color: var(--accent); background: transparent; font: inherit; cursor: pointer; }
+.detail-external-shortcut {
+  min-width: 16px; height: 16px; margin-left: 2px; padding: 0 3px;
+  border-color: rgba(34,211,238,.32); color: #9ce7ed; background: rgba(34,211,238,.08);
+  font-size: 8px; vertical-align: middle;
+}
 .detail-ares-link { margin-left: 5px; }
 .detail-actions {
   display: flex; align-items: center; flex-wrap: wrap; gap: 7px;

@@ -1083,7 +1083,25 @@ function bindReviewDetailActionShortcuts() {
       closeDialog("analysisDiscussionDialog");
       return;
     }
+    const raEventDialog = $("#raEventDialog");
+    if (key === "t" && raEventDialog?.open) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeDialog("raEventDialog");
+      return;
+    }
     if (document.querySelector("dialog[open]")) return;
+    if (key === "t") {
+      const raEventButton = $("#detailExternalLinks")?.querySelector(
+        "[data-open-ra-event]"
+      );
+      if (!raEventButton) return;
+      event.preventDefault();
+      event.stopPropagation();
+      closeAllReviewDropdowns();
+      raEventButton.click();
+      return;
+    }
     if (key === "d") {
       event.preventDefault();
       event.stopPropagation();

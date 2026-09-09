@@ -754,7 +754,7 @@ function detailExternalLinksMarkup(caseData) {
     ? "<a class=\"detail-id detail-id-link detail-external-link\" href=\"" + escapeHtml(raRecordingUrl) + "\" target=\"_blank\" rel=\"noreferrer\" title=\"打开 RA 录屏" + (externalLinks.ra_task_id ? "：" + escapeHtml(externalLinks.ra_task_id) : "") + "\">RA 录屏 ↗</a>"
     : "";
   const raEventLinkMarkup = raEvents.length
-    ? "<button class=\"detail-id detail-id-link detail-external-link detail-inline-button\" type=\"button\" data-open-ra-event title=\"查看 RA Event（" + raEvents.length + " 条）\">RA Event · " + raEvents.length + "</button>"
+    ? "<button class=\"detail-id detail-id-link detail-external-link detail-inline-button\" type=\"button\" data-open-ra-event aria-keyshortcuts=\"T\" title=\"查看 RA Event（" + raEvents.length + " 条，快捷键 T）\">RA Event · " + raEvents.length + " <kbd class=\"review-control-shortcut detail-external-shortcut\" aria-hidden=\"true\">T</kbd></button>"
     : raEventUrl
       ? "<a class=\"detail-id detail-id-link detail-external-link\" href=\"" + escapeHtml(raEventUrl) + "\" target=\"_blank\" rel=\"noreferrer\" title=\"在 Trail Issue 中查看 RA Event（" + Number(externalLinks.ra_event_count || 0) + " 条）\">RA Event ↗</a>"
       : "";
