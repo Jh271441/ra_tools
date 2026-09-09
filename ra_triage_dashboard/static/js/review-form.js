@@ -424,13 +424,8 @@ function renderReview(caseData) {
   const issueTagGroups = renderReviewTagGroups(tagCatalog, chosenTags, tagOption);
   const sourceSuggestionMarkup = issueTagSourceSuggestionMarkup(sourceSuggestion);
   const blindTask = caseData.review_assignment?.blind_active;
-  const peerReviewsVisible = Boolean(caseData.review_assignment?.peer_reviews_visible);
-  const taskBanner = blindTask
-    ? `<div class="review-blind-task-banner"><strong>多人盲标任务</strong><span id="reviewBlindTaskStatus">${peerReviewsVisible ? "你的 Review 已提交 · 可展开 Review 历史查看其他复核人原因" : "提交前仅显示你的 Review"} · 当前 ${Number(caseData.review_assignment.submitted_count || 0)}/${Number(caseData.review_assignment.assigned_count || 0)} 人已提交</span></div>`
-    : "";
   $("#reviewPane").innerHTML = `
     <form class="review-form" id="annotationForm">
-      ${taskBanner}
       <section class="review-section issue-tag-section">
         <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span></h2>${sourceSuggestionMarkup}</div><span class="evidence-summary-count" id="tagSummaryCount">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
         <div class="review-tag-groups-shell">${issueTagGroups}${customTagOptions ? `<div class="review-tag-legacy"><span class="ui-lang-zh">历史标签</span><span class="ui-lang-en">Legacy tags</span><div class="review-tag-options">${customTagOptions}</div></div>` : ""}</div>

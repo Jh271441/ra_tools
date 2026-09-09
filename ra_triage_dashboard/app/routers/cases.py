@@ -66,18 +66,16 @@ def _visible_case_annotations(
     identity_verified: bool = False,
     admin_reveal: bool = False,
 ) -> tuple[list[dict[str, Any]], bool]:
-    """Keep blind answers private until the current assignee has submitted."""
+    """Expose same-split history to assigned reviewers without widening scope."""
 
     if not assignment or assignment.get("mode") != "blind":
         return [item for item in annotations if not item.get("work_split_id")], False
     split_id = str(assignment["split_id"])
-    own_assignment = assignment.get("own_assignment") or {}
     peer_reviews_visible = bool(
         admin_reveal
         or (
             assignment.get("assigned")
             and identity_verified
-            and own_assignment.get("submitted")
         )
     )
     if peer_reviews_visible:

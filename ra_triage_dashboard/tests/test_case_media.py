@@ -10,7 +10,7 @@ from ra_triage_dashboard.app.routers import cases as cases_router
 
 
 class DeferredCaseMediaTest(unittest.IsolatedAsyncioTestCase):
-    def test_blind_review_history_reveals_peers_only_after_own_submission(self) -> None:
+    def test_blind_review_history_is_visible_to_assignee_before_submission(self) -> None:
         annotations = [
             {"id": 1, "author": "legacy", "work_split_id": ""},
             {"id": 2, "author": "alice", "work_split_id": "split-1"},
@@ -29,8 +29,8 @@ class DeferredCaseMediaTest(unittest.IsolatedAsyncioTestCase):
             username="ALICE",
             identity_verified=True,
         )
-        self.assertEqual([item["id"] for item in visible], [2])
-        self.assertFalse(peers_visible)
+        self.assertEqual([item["id"] for item in visible], [2, 3])
+        self.assertTrue(peers_visible)
 
         assignment["own_assignment"]["submitted"] = True
         visible, peers_visible = cases_router._visible_case_annotations(

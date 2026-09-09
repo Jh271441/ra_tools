@@ -52,10 +52,6 @@ function updateReviewHistory(caseData) {
     launch.innerHTML = `<span class="ui-lang-zh">Review 历史 · ${annotations.length} 条</span><span class="ui-lang-en">Review history · ${annotations.length}</span><kbd class="review-control-shortcut" aria-hidden="true">J</kbd>`;
     launch.title = uiText("展开或收起 Review 历史（J）", "Toggle Review history (J)");
   }
-  const blindStatus = $("#reviewBlindTaskStatus");
-  if (blindStatus && caseData.review_assignment?.blind_active) {
-    blindStatus.textContent = `${caseData.review_assignment.peer_reviews_visible ? "你的 Review 已提交 · 可展开 Review 历史查看其他复核人原因" : "提交前仅显示你的 Review"} · 当前 ${Number(caseData.review_assignment.submitted_count || 0)}/${Number(caseData.review_assignment.assigned_count || 0)} 人已提交`;
-  }
   const dialog = $("#historyDialog");
   const dialogContent = $("#historyDialogContent");
   const title = $("#historyDialogTitle")?.textContent || "";
