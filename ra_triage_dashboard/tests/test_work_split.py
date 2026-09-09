@@ -15,41 +15,21 @@ from ra_triage_dashboard.app.work_split import distribute_issue_ids
 
 
 class WorkSplitTest(unittest.TestCase):
-    def test_reviewer_endpoint_separates_admin_analysis_facet(self) -> None:
+    def test_reviewer_endpoint_keeps_cross_review_additive_to_existing_facet(self) -> None:
         request = Request(
             {"type": "http", "method": "GET", "path": "/api/reviewers", "headers": []}
         )
-        ordinary = [{"name": "legacy", "review_count": 1}]
         analysis = [{"name": "alice", "review_count": 1}]
         with patch.object(
             cases_router, "resolve_request_baseline_scopes", return_value=["scope"]
-        ), patch.object(
-            cases_router, "_is_dashboard_admin", return_value=True
-        ), patch.object(
-            cases_router.database, "list_reviewers", return_value=ordinary
         ), patch.object(
             cases_router.database, "list_analysis_reviewers", return_value=analysis
         ):
             result = asyncio.run(
                 cases_router.reviewers(request, model_run_id="run", baselines="0821")
             )
-        self.assertEqual(result["items"], ordinary)
+        self.assertEqual(result["items"], analysis)
         self.assertEqual(result["analysis_items"], analysis)
-
-        with patch.object(
-            cases_router, "resolve_request_baseline_scopes", return_value=["scope"]
-        ), patch.object(
-            cases_router, "_is_dashboard_admin", return_value=False
-        ), patch.object(
-            cases_router.database, "list_reviewers", return_value=ordinary
-        ), patch.object(
-            cases_router.database, "list_analysis_reviewers"
-        ) as blind_facet:
-            result = asyncio.run(
-                cases_router.reviewers(request, model_run_id="run", baselines="0821")
-            )
-        self.assertEqual(result["analysis_items"], ordinary)
-        blind_facet.assert_not_called()
 
     def test_even_share_when_no_fixed_counts(self) -> None:
         result = distribute_issue_ids(
@@ -273,9 +253,11 @@ class WorkSplitTest(unittest.TestCase):
                     missing_evidence=[], note="stale", author="alice",
                     expected_previous_annotation_id=None,
                 )
-            self.assertIsNone(
-                db.list_cases(baseline_scope="scope", page_size=10)["items"][0]["annotation"]["id"]
-            )
+            projected = db.list_cases(
+                baseline_scope="scope", page_size=10
+            )["items"][0]["annotation"]
+            self.assertEqual(projected["id"], alice["id"])
+            self.assertEqual(projected["author"], "alice")
             self.assertEqual(len(db.review_multi_rows(baseline_scopes=["scope"])), 2)
 
     def test_default_analysis_includes_submitted_partial_blind_review(self) -> None:
@@ -323,8 +305,8 @@ class WorkSplitTest(unittest.TestCase):
             )
             db.create_annotation(
                 issue_id="cn1", model_run_id=run["id"],
-                work_split_id=saved["split_id"], label="误触发",
-                review_status="reviewed", tags=["queue"],
+                work_split_id=saved["split_id"], label="正确触发",
+                review_status="needs_gt_review", tags=[],
                 missing_evidence=["routing_direction"], note="alice result",
                 author="alice", expected_previous_annotation_id=None,
             )
@@ -387,6 +369,39 @@ class WorkSplitTest(unittest.TestCase):
                         "review_count": 1,
                     }
                 ],
+            )
+            alice_cases = db.list_cases(
+                baseline_scopes=[scope],
+                model_run_id=run["id"],
+                work_assignee="alice",
+                page_size=20,
+            )
+            self.assertEqual(alice_cases["total"], 2)
+            self.assertEqual(
+                alice_cases["items"][0]["annotation"]["author"], "alice"
+            )
+            self.assertIsNone(alice_cases["items"][1]["annotation"]["id"])
+            with patch.object(cases_router, "database", db), patch.object(
+                cases_router, "_review_tag_catalog", return_value=()
+            ):
+                needs_gt = cases_router._case_result_with_status_filter(
+                    filters={
+                        "baseline_scopes": [scope],
+                        "model_run_id": run["id"],
+                        "comparison_status": "all",
+                        "work_assignee": "alice",
+                    },
+                    review_statuses=("needs_gt_review",),
+                    page=1,
+                    page_size=20,
+                )
+            self.assertEqual(needs_gt["total"], 1)
+            self.assertEqual(needs_gt["items"][0]["issue_id"], "cn1")
+            self.assertEqual(
+                db.overview(
+                    baseline_scopes=[scope], model_run_id=run["id"]
+                )["labelled"],
+                1,
             )
             # The explicit pending task view still includes untouched cn2;
             # only the default result view suppresses zero-submission tasks.

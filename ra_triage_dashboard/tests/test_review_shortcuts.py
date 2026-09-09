@@ -60,6 +60,19 @@ assert.equal(inputs[0].lastEvent.type,'change');
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
 
 
+def test_video_t0_shortcut_targets_twenty_second_player_position() -> None:
+    script = (ROOT / "static" / "js" / "detail-media.js").read_text() + r'''
+const assert=require('node:assert/strict');
+escapeHtml=(value)=>String(value);
+t=(key)=>key;
+const markup=videoPlayerMarkup({url:'video.mp4',start_offset_sec:-20,duration_ms:40000});
+assert.match(markup,/data-start-offset-sec="-20"/);
+assert.match(markup,/data-event-time-sec="20"/);
+assert.match(markup,/data-video-t0/);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
 def test_review_history_shortcut_toggle_closes_matching_dialog() -> None:
     script = (ROOT / "static" / "js" / "detail-media.js").read_text() + r'''
 const assert=require('node:assert/strict');

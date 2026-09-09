@@ -199,6 +199,121 @@ class DatabaseCasesMixin:
                 updated += 1
         return {"inserted": inserted, "updated": updated, "skipped": skipped}
 
+    def _gallery_annotation_join(
+        self,
+        model_run_id: str,
+        *,
+        projection_authors: Sequence[str] = (),
+    ) -> tuple[str, list[Any]]:
+        """Project the primary assignment Review without hiding old behavior.
+
+        Multi-review is additive cross-validation. When an Issue has an active
+        assignment for the selected Run, the Gallery projects the explicitly
+        requested reviewer/assignee, or the base assignee by default. A blind
+        member reads their split-scoped annotation; a legacy single assignment
+        keeps using its ordinary annotation. Issues without an assignment keep
+        the established selected-Run/unbound/history fallback.
+        """
+
+        run_id = str(model_run_id or "").strip()
+        authors = tuple(
+            dict.fromkeys(str(value or "").strip() for value in projection_authors)
+        )
+        authors = tuple(value for value in authors if value)
+        author_clause = ""
+        author_params: list[Any] = []
+        if authors:
+            author_clause = (
+                f"AND wa.assignee IN ({', '.join('?' for _ in authors)})"
+            )
+            author_params.extend(authors)
+
+        assignment_exists = f"""
+            EXISTS (
+                SELECT 1
+                FROM review_work_assignments wa
+                JOIN issue_work_splits ws ON ws.id = wa.split_id
+                WHERE wa.issue_id = i.issue_id
+                  AND ws.model_run_id = ?
+                  {author_clause}
+            )
+        """
+        assignment_annotation = f"""
+            (
+                SELECT a.id
+                FROM review_work_assignments wa
+                JOIN issue_work_splits ws ON ws.id = wa.split_id
+                LEFT JOIN annotations a
+                  ON a.issue_id = wa.issue_id
+                 AND a.model_run_id = ws.model_run_id
+                 AND a.author = wa.assignee
+                 AND (
+                      (ws.mode = 'blind' AND a.work_split_id = ws.id)
+                      OR (ws.mode != 'blind' AND a.work_split_id = '')
+                 )
+                WHERE wa.issue_id = i.issue_id
+                  AND ws.model_run_id = ?
+                  {author_clause}
+                ORDER BY
+                  CASE WHEN a.id IS NULL THEN 1 ELSE 0 END,
+                  CASE WHEN wa.assignment_kind = 'base' THEN 0 ELSE 1 END,
+                  a.id DESC
+                LIMIT 1
+            )
+        """
+        if run_id:
+            ordinary_annotation = """
+                COALESCE(
+                    (
+                        SELECT a.id FROM annotations a
+                        WHERE a.issue_id = i.issue_id
+                          AND a.model_run_id = ?
+                          AND a.work_split_id = ''
+                        ORDER BY a.id DESC LIMIT 1
+                    ),
+                    (
+                        SELECT a.id FROM annotations a
+                        WHERE a.issue_id = i.issue_id
+                          AND a.model_run_id = ''
+                          AND a.work_split_id = ''
+                        ORDER BY a.id DESC LIMIT 1
+                    ),
+                    (
+                        SELECT a.id FROM annotations a
+                        WHERE a.issue_id = i.issue_id
+                          AND a.model_run_id NOT IN (?, '')
+                          AND a.work_split_id = ''
+                        ORDER BY a.id DESC LIMIT 1
+                    )
+                )
+            """
+            ordinary_params: list[Any] = [run_id, run_id]
+        else:
+            ordinary_annotation = """
+                (
+                    SELECT a.id FROM annotations a
+                    WHERE a.issue_id = i.issue_id
+                      AND a.work_split_id = ''
+                    ORDER BY a.id DESC LIMIT 1
+                )
+            """
+            ordinary_params = []
+        join = f"""
+            LEFT JOIN annotations ann
+              ON ann.id = CASE
+                  WHEN {assignment_exists} THEN {assignment_annotation}
+                  ELSE {ordinary_annotation}
+              END
+        """
+        params = [
+            run_id,
+            *author_params,
+            run_id,
+            *author_params,
+            *ordinary_params,
+        ]
+        return join, params
+
     def _case_list_filters(
         self,
         *,
@@ -309,6 +424,7 @@ class DatabaseCasesMixin:
             where.append(f"i.issue_id IN ({placeholders})")
             params.extend(cleaned_ids)
         assignees = _multi_values(work_assignee)
+        named: list[str] = []
         if assignees:
             assignee_clauses: list[str] = []
             if any(
@@ -366,18 +482,13 @@ class DatabaseCasesMixin:
         # for the selected Run; see ``_latest_annotation_join`` for its
         # selected-Run precedence rule.  This deliberately differs from the
         # strict Trail-writing aggregate.
-        annotation_params = self._latest_annotation_join_params(
+        annotation_join, annotation_params = self._gallery_annotation_join(
             model_run_id,
-            include_unbound_fallback=True,
-            include_bound_history_fallback=True,
+            projection_authors=authors or tuple(named),
         )
         common = f"""
             FROM issues i
-            {self._latest_annotation_join(
-                model_run_id,
-                include_unbound_fallback=True,
-                include_bound_history_fallback=True,
-            )}
+            {annotation_join}
             LEFT JOIN model_predictions mp
               ON mp.issue_id = i.issue_id
              AND mp.model_run_id = ?
@@ -731,20 +842,14 @@ class DatabaseCasesMixin:
             total = conn.execute(
                 f"SELECT COUNT(*) FROM issues i {base_where}", tuple(scope_params)
             ).fetchone()[0]
-            annotation_params = self._latest_annotation_join_params(
-                model_run_id,
-                include_unbound_fallback=True,
-                include_bound_history_fallback=True,
+            annotation_join, annotation_params = self._gallery_annotation_join(
+                model_run_id
             )
             labelled = conn.execute(
                 f"""
                 SELECT COUNT(*)
                 FROM issues i
-                {self._latest_annotation_join(
-                    model_run_id,
-                    include_unbound_fallback=True,
-                    include_bound_history_fallback=True,
-                )}
+                {annotation_join}
                 {base_where} AND ann.id IS NOT NULL
                 """,
                 (*annotation_params, *scope_params),
@@ -753,11 +858,7 @@ class DatabaseCasesMixin:
             if model_run_id:
                 common = f"""
                     FROM issues i
-                    {self._latest_annotation_join(
-                        model_run_id,
-                        include_unbound_fallback=True,
-                        include_bound_history_fallback=True,
-                    )}
+                    {annotation_join}
                     LEFT JOIN model_predictions mp
                       ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
                     WHERE {scope_clause}
