@@ -433,7 +433,15 @@ function handleReviewDropdownKeyboard(event) {
     inputs[nextIndex].closest("label")?.scrollIntoView({ block: "nearest" });
     return true;
   }
-  if ((event.key === "Enter" || event.key === " ") && currentIndex >= 0) {
+  if (event.key === "Enter" && currentIndex >= 0) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!state.savingAnnotation) {
+      $("#annotationForm")?.requestSubmit($("#reviewSaveButton") || undefined);
+    }
+    return true;
+  }
+  if (event.key === " " && currentIndex >= 0) {
     event.preventDefault();
     event.stopPropagation();
     currentInput.checked = !currentInput.checked;

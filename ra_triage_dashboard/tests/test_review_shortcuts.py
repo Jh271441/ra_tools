@@ -44,6 +44,10 @@ const inputs=[0,1,2].map(()=>{
   });
 });
 const dropdown=Object.assign(new MockElement(),{open:true,querySelectorAll:()=>inputs});
+const form={requestSubmit:(button)=>{form.submittedWith=button;}};
+const saveButton={id:'reviewSaveButton'};
+state={savingAnnotation:false};
+$=(selector)=>selector==='#annotationForm' ? form : selector==='#reviewSaveButton' ? saveButton : null;
 const summary=Object.assign(new MockElement(),{
   closest(selector){return selector==='.review-dropdown[open]' ? dropdown : null;},
   matches(){return false;},
@@ -54,6 +58,10 @@ assert.equal(inputs[0].focused,true);
 inputs[0].closest=(selector)=>selector==='.review-dropdown[open]' ? dropdown : selector==='label' ? labels[0] : null;
 const enter={target:inputs[0],key:'Enter',ctrlKey:false,metaKey:false,altKey:false,preventDefault(){},stopPropagation(){}};
 assert.equal(handleReviewDropdownKeyboard(enter),true);
+assert.equal(inputs[0].checked,false);
+assert.equal(form.submittedWith,saveButton);
+const space={target:inputs[0],key:' ',ctrlKey:false,metaKey:false,altKey:false,preventDefault(){},stopPropagation(){}};
+assert.equal(handleReviewDropdownKeyboard(space),true);
 assert.equal(inputs[0].checked,true);
 assert.equal(inputs[0].lastEvent.type,'change');
 '''
