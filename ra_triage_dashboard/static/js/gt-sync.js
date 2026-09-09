@@ -104,6 +104,8 @@ function renderGtSyncTooltip(tooltip, items, current) {
 
     const checkedTime = gtSyncTime(item.last_checked_at);
     const checkedRows = Number(item.source_row_count || 0);
+    const targetRows = Number(item.target_row_count || checkedRows || 0);
+    const unmappedRows = Math.max(0, targetRows - checkedRows);
     const changedRows = Number(item.last_check_change_count || 0);
     const sourceTime = gtSyncTime(item.source_updated_at);
     const sourceActor = String(item.source_updated_by || "").trim();
@@ -116,7 +118,12 @@ function renderGtSyncTooltip(tooltip, items, current) {
     appendGtSyncTooltipRow(
       section,
       uiText("本次结果", "Result"),
-      uiText(`校验 ${checkedRows} 条 · 更新 ${changedRows} 条`, `${checkedRows} checked · ${changedRows} changed`)
+      item.gt_mode === "sparse"
+        ? uiText(
+            `有效 GT ${checkedRows}/${targetRows} · 未标注 ${unmappedRows} · 更新 ${changedRows} 条`,
+            `Valid GT ${checkedRows}/${targetRows} · ${unmappedRows} unlabeled · ${changedRows} changed`
+          )
+        : uiText(`校验 ${checkedRows} 条 · 更新 ${changedRows} 条`, `${checkedRows} checked · ${changedRows} changed`)
     );
     appendGtSyncTooltipRow(section, uiText("触发方式", "Triggered by"), gtSyncTriggerText(item));
     appendGtSyncTooltipRow(

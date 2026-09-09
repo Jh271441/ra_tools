@@ -123,6 +123,8 @@ class DatabaseGtSyncMixin:
         requested_by: str,
         requested_by_source: str,
         requested_by_verified: bool,
+        expected_issue_ids: Iterable[str] | None = None,
+        allow_sparse: bool = False,
     ) -> dict[str, Any]:
         normalized_scope = str(scope or "").strip()
         if not normalized_scope:
@@ -145,18 +147,6 @@ class DatabaseGtSyncMixin:
             }
 
         checked_at = utc_now()
-        digest_payload = [
-            [issue_id, materialized[issue_id]["gt_label"]]
-            for issue_id in sorted(materialized)
-        ]
-        source_hash = hashlib.sha256(
-            json.dumps(
-                digest_payload,
-                ensure_ascii=False,
-                separators=(",", ":"),
-            ).encode("utf-8")
-        ).hexdigest()
-
         with self._write_lock, self.connect() as conn:
             current_rows = conn.execute(
                 """
@@ -173,7 +163,19 @@ class DatabaseGtSyncMixin:
             }
             expected_ids = set(current)
             returned_ids = set(materialized)
-            if expected_ids != returned_ids:
+            requested_ids = {
+                str(issue_id or "").strip()
+                for issue_id in (expected_issue_ids or ())
+                if str(issue_id or "").strip()
+            }
+            if requested_ids and requested_ids != expected_ids:
+                raise ValueError(
+                    "GT 同步成员集合与当前 baseline 不一致；"
+                    f"当前 {len(expected_ids)} 条，请求 {len(requested_ids)} 条。"
+                )
+            if (not allow_sparse and expected_ids != returned_ids) or (
+                allow_sparse and not returned_ids.issubset(expected_ids)
+            ):
                 missing = sorted(expected_ids - returned_ids)
                 extra = sorted(returned_ids - expected_ids)
                 raise ValueError(
@@ -181,6 +183,22 @@ class DatabaseGtSyncMixin:
                     f"当前 {len(expected_ids)} 条，返回 {len(returned_ids)} 条，"
                     f"缺失 {len(missing)} 条，额外 {len(extra)} 条。"
                 )
+
+            target_labels = {
+                issue_id: materialized.get(issue_id, {}).get("gt_label", "")
+                for issue_id in expected_ids
+            }
+            digest_payload = [
+                [issue_id, target_labels[issue_id]]
+                for issue_id in sorted(target_labels)
+            ]
+            source_hash = hashlib.sha256(
+                json.dumps(
+                    digest_payload,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
 
             previous_row = conn.execute(
                 "SELECT * FROM gt_sync_state WHERE baseline_scope = ?",
@@ -201,8 +219,8 @@ class DatabaseGtSyncMixin:
             )
             changed = [
                 issue_id
-                for issue_id in sorted(materialized)
-                if current.get(issue_id) != materialized[issue_id]["gt_label"]
+                for issue_id in sorted(target_labels)
+                if current.get(issue_id) != target_labels[issue_id]
             ]
             snapshot_changed = previous["source_sha256"] != source_hash
             if snapshot_changed:
@@ -239,7 +257,7 @@ class DatabaseGtSyncMixin:
                     WHERE issue_id = ? AND baseline_scope = ?
                     """,
                     (
-                        materialized[issue_id]["gt_label"],
+                        target_labels[issue_id] or None,
                         gt_source,
                         checked_at,
                         issue_id,
@@ -251,14 +269,16 @@ class DatabaseGtSyncMixin:
                 {
                     materialized[issue_id]["source_updated_at"]
                     for issue_id in changed
-                    if materialized[issue_id]["source_updated_at"]
+                    if issue_id in materialized
+                    and materialized[issue_id]["source_updated_at"]
                 }
             )
             changed_source_users = sorted(
                 {
                     materialized[issue_id]["source_updated_by"]
                     for issue_id in changed
-                    if materialized[issue_id]["source_updated_by"]
+                    if issue_id in materialized
+                    and materialized[issue_id]["source_updated_by"]
                 }
             )
             source_updated_at = (
@@ -281,10 +301,18 @@ class DatabaseGtSyncMixin:
                 if snapshot_changed or changed
                 else previous["last_applied_change_count"]
             )
-            message = (
-                f"已从 {source_name} view {source_view_id} 完整校验 "
-                f"{len(materialized)} 条 GT，本次更新 {len(changed)} 条。"
-            )
+            if allow_sparse:
+                message = (
+                    f"已从 {source_name} view {source_view_id} 完整校验 "
+                    f"{len(expected_ids)} 条 OPS 标注；有效 GT {len(materialized)} 条，"
+                    f"未标注 {len(expected_ids) - len(materialized)} 条，"
+                    f"本次更新 {len(changed)} 条。"
+                )
+            else:
+                message = (
+                    f"已从 {source_name} view {source_view_id} 完整校验 "
+                    f"{len(materialized)} 条 GT，本次更新 {len(changed)} 条。"
+                )
             values = (
                 normalized_scope,
                 "ready",

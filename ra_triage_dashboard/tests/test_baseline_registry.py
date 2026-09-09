@@ -124,6 +124,8 @@ class BaselineRegistryTests(unittest.TestCase):
         self.assertEqual(len(entry_0522.members_sha256), 64)
         self.assertTrue(entry_0522.media.extra["strict_isolation"])
         self.assertTrue(entry_0821.media.extra["lifecycle"])
+        self.assertEqual(entry_0522.gt_mode, "strict")
+        self.assertEqual(entry_0821.gt_mode, "sparse")
 
     def test_normalize_baseline_ids_defaults_and_filters(self) -> None:
         allowed = {"0508", "0626"}

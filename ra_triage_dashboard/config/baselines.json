@@ -62,6 +62,7 @@
     "xlsx": "${RA_AUTO_TRIAGE_ROOT}/data/manual_worksets_20260908/workset_0821.json",
     "expected_count": 1242,
     "members_sha256": "fcef3283d52e0dc4ba23c9a47dd2bde87d25825dba261193293afead7e01190d",
+    "gt_mode": "sparse",
     "default_selected": false,
     "media": {
       "provider": "product_layout",

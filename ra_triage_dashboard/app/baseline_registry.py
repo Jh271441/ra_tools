@@ -39,6 +39,7 @@ class BaselineEntry:
     dataset: str = ""
     expected_count: int | None = None
     members_sha256: str = ""
+    gt_mode: str = "strict"
     default_selected: bool = False
     media: BaselineMediaConfig = field(
         default_factory=lambda: BaselineMediaConfig(provider="product_layout")
@@ -95,6 +96,7 @@ class BaselineRegistry:
                 "dataset": entry.dataset,
                 "expected_count": entry.expected_count,
                 "members_sha256": entry.members_sha256,
+                "gt_mode": entry.gt_mode,
                 "default_selected": entry.default_selected,
                 "media_provider": entry.media.provider,
             }
@@ -250,6 +252,9 @@ def _parse_entry(raw: Mapping[str, Any], *, env: Mapping[str, str] | None) -> Ba
     members_sha256 = str(raw.get("members_sha256") or "").strip().lower()
     if members_sha256 and not re.fullmatch(r"[0-9a-f]{64}", members_sha256):
         raise ValueError(f"baseline {baseline_id} has invalid members_sha256")
+    gt_mode = str(raw.get("gt_mode") or "strict").strip().lower()
+    if gt_mode not in {"strict", "sparse"}:
+        raise ValueError(f"baseline {baseline_id} has invalid gt_mode {gt_mode!r}")
     default_selected = bool(raw.get("default_selected"))
     media = _parse_media(raw.get("media") if isinstance(raw.get("media"), dict) else {}, env=env)
     return BaselineEntry(
@@ -261,6 +266,7 @@ def _parse_entry(raw: Mapping[str, Any], *, env: Mapping[str, str] | None) -> Ba
         dataset=dataset,
         expected_count=expected_count,
         members_sha256=members_sha256,
+        gt_mode=gt_mode,
         default_selected=default_selected,
         media=media,
         raw=dict(raw),

@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import math
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,6 +26,8 @@ class TrailGtSyncResult:
     view_id: int
     complete: bool
     message: str
+    unmapped_issues: int = 0
+    unmapped_values: tuple[tuple[str, int], ...] = ()
 
 
 def _chunks(values: list[str], size: int) -> Iterable[list[str]]:
@@ -65,6 +68,7 @@ def read_trail_gt_labels(
     issue_ids: Iterable[str],
     view_id: int,
     chunk_size: int,
+    allow_unmapped: bool = False,
 ) -> TrailGtSyncResult:
     """Read the fixed authoritative Trail GT field for an exact workset."""
 
@@ -100,6 +104,8 @@ def read_trail_gt_labels(
 
     requested = set(ids)
     output: dict[str, dict[str, str]] = {}
+    seen: set[str] = set()
+    unmapped: Counter[str] = Counter()
     visible: set[str] = set()
     for chunk in _chunks(ids, max(1, int(chunk_size))):
         condition = [{"attr_id": "issue_id", "val": chunk, "operator": "like"}]
@@ -113,7 +119,7 @@ def read_trail_gt_labels(
             return TrailGtSyncResult(
                 rows=list(output.values()),
                 queried_issues=len(ids),
-                returned_issues=len(output),
+                returned_issues=len(seen),
                 fields_visible=tuple(sorted(visible)),
                 view_id=view_id,
                 complete=False,
@@ -138,22 +144,27 @@ def read_trail_gt_labels(
             issue_id = str(raw.get(issue_column) or "").strip()
             if issue_id not in requested:
                 continue
-            if issue_id in output:
+            if issue_id in seen:
                 return TrailGtSyncResult(
                     rows=list(output.values()),
                     queried_issues=len(ids),
-                    returned_issues=len(output),
+                    returned_issues=len(seen),
                     fields_visible=tuple(sorted(visible)),
                     view_id=view_id,
                     complete=False,
                     message=f"Trail GT 查询返回重复 issue: {issue_id}",
                 )
+            seen.add(issue_id)
             label = normalize_gt_label(raw.get(label_column))
             if not label:
+                raw_label = str(raw.get(label_column) or "").strip() or "<空>"
+                if allow_unmapped:
+                    unmapped[raw_label] += 1
+                    continue
                 return TrailGtSyncResult(
                     rows=list(output.values()),
                     queried_issues=len(ids),
-                    returned_issues=len(output),
+                    returned_issues=len(seen),
                     fields_visible=tuple(sorted(visible)),
                     view_id=view_id,
                     complete=False,
@@ -173,16 +184,20 @@ def read_trail_gt_labels(
                 ).strip(),
             }
 
-    returned = len(output)
+    returned = len(seen)
     complete = returned == len(ids) and TRAIL_GT_FIELD in visible
-    message = (
-        f"Trail view {view_id} 已完整读取 {returned}/{len(ids)} 条 {TRAIL_GT_FIELD}。"
-        if complete
-        else (
-            f"Trail view {view_id} 仅返回 {returned}/{len(ids)} 条完整 GT；"
+    if complete and allow_unmapped:
+        message = (
+            f"Trail view {view_id} 已完整读取 {returned}/{len(ids)} 条 "
+            f"{TRAIL_GT_FIELD}；有效 GT {len(output)} 条，未标注 {sum(unmapped.values())} 条。"
+        )
+    elif complete:
+        message = f"Trail view {view_id} 已完整读取 {returned}/{len(ids)} 条 {TRAIL_GT_FIELD}。"
+    else:
+        message = (
+            f"Trail view {view_id} 仅返回 {returned}/{len(ids)} 条记录；"
             "为避免部分快照，本次不会更新。"
         )
-    )
     return TrailGtSyncResult(
         rows=[output[issue_id] for issue_id in sorted(output)],
         queried_issues=len(ids),
@@ -191,4 +206,6 @@ def read_trail_gt_labels(
         view_id=view_id,
         complete=complete,
         message=message,
+        unmapped_issues=sum(unmapped.values()),
+        unmapped_values=tuple(sorted(unmapped.items())),
     )

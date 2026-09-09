@@ -75,6 +75,12 @@ def _gt_sync_item(baseline_id: str) -> dict[str, Any]:
         "interval_seconds": settings.gt_sync_interval_seconds,
         "source_view_id": settings.gt_sync_view_id,
         "source_field": TRAIL_GT_FIELD,
+        "gt_mode": entry.gt_mode,
+        "target_row_count": (
+            len(database.baseline_issue_ids(scope=entry.scope))
+            if entry.gt_mode == "sparse"
+            else int(persisted.get("source_row_count") or 0)
+        ),
     }
 
 def gt_sync_status(baseline_ids: Any = None) -> dict[str, Any]:
@@ -193,11 +199,13 @@ def sync_authoritative_gt(
                 continue
             try:
                 issue_ids = database.baseline_issue_ids(scope=entry.scope)
+                allow_sparse = entry.gt_mode == "sparse"
                 result = read_trail_gt_labels(
                     ra_root=settings.ra_auto_triage_root,
                     issue_ids=issue_ids,
                     view_id=settings.gt_sync_view_id,
                     chunk_size=settings.gt_sync_chunk_size,
+                    allow_unmapped=allow_sparse,
                 )
                 if (
                     not result.complete
@@ -226,6 +234,8 @@ def sync_authoritative_gt(
                         requested_by=requested_by,
                         requested_by_source=identity_source,
                         requested_by_verified=identity_verified,
+                        expected_issue_ids=issue_ids,
+                        allow_sparse=allow_sparse,
                     )
             except Exception as exc:
                 logger.exception(

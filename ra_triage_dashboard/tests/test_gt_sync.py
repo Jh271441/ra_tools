@@ -174,6 +174,123 @@ class AuthoritativeGtSyncTest(unittest.TestCase):
             "2026-08-10T11:11:07+00:00",
         )
 
+    def test_sparse_snapshot_updates_valid_ops_gt_and_clears_unmapped(self) -> None:
+        result = self.db.apply_gt_sync_snapshot(
+            scope=self.scope,
+            rows=[
+                {"issue_id": "cn1", "gt_label": "正确触发"},
+                {"issue_id": "cn2", "gt_label": "误触发"},
+            ],
+            source_name="Trail",
+            source_view_id=1000,
+            source_field="ra_merge_result",
+            trigger="test",
+            requested_by="tester",
+            requested_by_source="test",
+            requested_by_verified=True,
+            expected_issue_ids=["cn1", "cn2", "cn3"],
+            allow_sparse=True,
+        )
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["source_row_count"], 2)
+        self.assertIn("有效 GT 2 条，未标注 1 条", result["message"])
+        self.assertEqual(
+            self._labels(),
+            {"cn1": "正确触发", "cn2": "误触发", "cn3": ""},
+        )
+        self.assertEqual(set(self.db.gt_sync_overlay(self.scope)), {"cn1", "cn2"})
+
+    def test_sparse_trail_reader_keeps_full_coverage_and_skips_business_states(self) -> None:
+        rows = [
+            {"issue_id": "cn1", "ra_merge_result": "成功"},
+            {"issue_id": "cn2", "ra_merge_result": "out_of_scope"},
+            {"issue_id": "cn3", "ra_merge_result": "未接起"},
+        ]
+
+        def get_self_issue(*_args, **_kwargs):
+            return _FakeFrame(rows)
+
+        package = types.ModuleType("utils")
+        package.__path__ = []  # type: ignore[attr-defined]
+        module = types.ModuleType("utils.get_ra_issue_utils")
+        module.get_self_issue = get_self_issue  # type: ignore[attr-defined]
+        with patch.dict(
+            "sys.modules",
+            {"utils": package, "utils.get_ra_issue_utils": module},
+        ):
+            result = read_trail_gt_labels(
+                ra_root=Path(self.temp.name),
+                issue_ids=["cn1", "cn2", "cn3"],
+                view_id=1000,
+                chunk_size=10,
+                allow_unmapped=True,
+            )
+        self.assertTrue(result.complete)
+        self.assertEqual(result.returned_issues, 3)
+        self.assertEqual(result.rows, [{
+            "issue_id": "cn1",
+            "gt_label": "正确触发",
+            "source_updated_at": "",
+            "source_updated_by": "",
+        }])
+        self.assertEqual(result.unmapped_issues, 2)
+        self.assertEqual(
+            dict(result.unmapped_values), {"out_of_scope": 1, "未接起": 1}
+        )
+
+    def test_sparse_baseline_sync_applies_valid_subset_after_full_query(self) -> None:
+        registry = BaselineRegistry(entries=(BaselineEntry(
+            id="0821",
+            label="0821",
+            scope=self.scope,
+            loader="capture_workset",
+            xlsx=Path(self.temp.name) / "workset.json",
+            gt_mode="sparse",
+        ),))
+        fake_settings = SimpleNamespace(
+            gt_sync_baseline_ids=("*",),
+            gt_sync_enabled=True,
+            gt_sync_interval_seconds=1800,
+            gt_sync_view_id=1000,
+            gt_sync_chunk_size=160,
+            ra_auto_triage_root=Path(self.temp.name),
+        )
+
+        def fake_read(**_kwargs):
+            return TrailGtSyncResult(
+                rows=[
+                    {"issue_id": "cn1", "gt_label": "正确触发"},
+                    {"issue_id": "cn2", "gt_label": "误触发"},
+                ],
+                queried_issues=3,
+                returned_issues=3,
+                fields_visible=("ra_merge_result",),
+                view_id=1000,
+                complete=True,
+                message="complete sparse",
+                unmapped_issues=1,
+                unmapped_values=(("未接起", 1),),
+            )
+
+        with patch.multiple(
+            gt_http,
+            settings=fake_settings,
+            baseline_registry=registry,
+            database=self.db,
+            runtime_state={"gt_sync": {}},
+            gt_sync_lock=threading.Lock(),
+            read_trail_gt_labels=fake_read,
+        ):
+            result = gt_http.sync_authoritative_gt(trigger="test")
+
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["source_row_count"], 2)
+        self.assertEqual(result["target_row_count"], 3)
+        self.assertEqual(
+            self._labels(),
+            {"cn1": "正确触发", "cn2": "误触发", "cn3": ""},
+        )
+
     def test_settings_default_to_all_baselines_every_thirty_minutes(self) -> None:
         with patch.dict("os.environ", {}, clear=True):
             settings = Settings.from_env()
