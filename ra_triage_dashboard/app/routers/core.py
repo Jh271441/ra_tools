@@ -17,6 +17,7 @@ from ..contracts import (
 )
 from ..runtime import _public_path
 from ..support.baselines import (
+    enrich_baseline_lifecycle,
     resolve_request_baseline_ids,
     resolve_request_baseline_scopes,
 )
@@ -355,10 +356,7 @@ async def list_baselines() -> dict[str, Any]:
     for summary in runtime_state.get("baselines") or []:
         baseline_id = str(summary.get("id") or "")
         items.append(
-            {
-                **summary,
-                "media_ready": media.get(baseline_id, {}),
-            }
+            enrich_baseline_lifecycle(summary, media.get(baseline_id, {}))
         )
     if not items:
         items = baseline_registry.public_summaries()
@@ -585,10 +583,9 @@ async def status(response: Response) -> dict[str, Any]:
     )
     baseline_state = runtime_state["baseline"]
     baseline_states = [
-        {
-            **item,
-            "media_ready": media_ready.get(str(item.get("id") or ""), {}),
-        }
+        enrich_baseline_lifecycle(
+            item, media_ready.get(str(item.get("id") or ""), {})
+        )
         for item in (runtime_state.get("baselines") or [])
     ]
     overall = overall_status(

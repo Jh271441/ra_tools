@@ -314,6 +314,45 @@ class CameraIndex:
             ttl_seconds=30,
             max_entries=4_000,
         )
+        self._count_cache: tuple[float, int] = (0.0, 0)
+
+    def indexed_issue_count(self) -> int:
+        """Count issues with a complete nine-frame Camera capture.
+
+        This is used by the asynchronous status endpoints, never by health or
+        Gallery hot paths. Cache briefly because incremental capture creates
+        new directories while the service remains online.
+        """
+
+        now = time.monotonic()
+        with self._lock:
+            expires_at, cached = self._count_cache
+            if now < expires_at:
+                return cached
+        issues: set[str] = set()
+        if self.camera_root.is_dir():
+            for folder in self.camera_root.iterdir():
+                if not folder.is_dir():
+                    continue
+                source = folder / "after_compress"
+                if not source.is_dir():
+                    source = folder / "before_compress"
+                if not source.is_dir():
+                    continue
+                frame_count = sum(
+                    1
+                    for child in source.iterdir()
+                    if child.is_file() and self._numbered_image.match(child.name)
+                )
+                if frame_count != 9:
+                    continue
+                match = re.match(r"^(?P<issue>(?:cn|us)\d+)(?:_|$)", folder.name)
+                if match:
+                    issues.add(match.group("issue"))
+        count = len(issues)
+        with self._lock:
+            self._count_cache = (now + 30.0, count)
+        return count
 
     def get_assets(self, issue_id: str, timestamp_ms: Any = None) -> dict[str, Any]:
         cache_key = f"{issue_id}:{str(timestamp_ms or '').strip()}"

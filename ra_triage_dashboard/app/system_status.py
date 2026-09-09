@@ -120,7 +120,9 @@ def overall_status(
         problems.append("database_not_persistent")
     registered_baselines = list(baselines) if baselines is not None else [baseline]
     if not registered_baselines or any(
-        item.get("status") != "ready" or int(item.get("count") or 0) <= 0
+        item.get("registration_status", item.get("status"))
+        not in {"registered", "ready"}
+        or int(item.get("count") or 0) <= 0
         for item in registered_baselines
     ):
         problems.append("baseline_unavailable")

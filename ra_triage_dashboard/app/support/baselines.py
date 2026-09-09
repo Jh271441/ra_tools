@@ -69,10 +69,33 @@ def bootstrap_all_baselines() -> dict[str, Any]:
             "count": len(loaded.rows),
             "skipped_rows": loaded.skipped_rows,
             "message": loaded.message,
-            "status": "ready" if loaded.rows else "unavailable",
+            "status": "registered" if loaded.rows else "blocked",
+            "registration_status": "registered" if loaded.rows else "blocked",
             "default_selected": entry.default_selected,
             "media_provider": entry.media.provider,
         }
+        if loaded.rows:
+            actual_sha256 = (
+                hashlib.sha256(entry.xlsx.read_bytes()).hexdigest()
+                if entry.members_sha256
+                else ""
+            )
+            expected_count = entry.expected_count or len(loaded.rows)
+            count_matches = len(loaded.rows) == expected_count
+            sha_matches = not entry.members_sha256 or actual_sha256 == entry.members_sha256
+            item["membership"] = {
+                "status": "registered" if count_matches and sha_matches else "blocked",
+                "registered_count": len(loaded.rows),
+                "expected_count": expected_count,
+                "sha256": actual_sha256,
+                "configured_sha256": entry.members_sha256,
+                "count_matches": count_matches,
+                "sha_matches": sha_matches,
+                "frozen": bool(entry.members_sha256 and count_matches and sha_matches),
+            }
+            if not count_matches or not sha_matches:
+                item["status"] = "blocked"
+                item["registration_status"] = "blocked"
         if loaded.rows:
             # Overlap detection vs already-accepted memberships.
             proposed = [str(row.get("issue_id") or "").strip() for row in loaded.rows]
@@ -131,6 +154,60 @@ def bootstrap_all_baselines() -> dict[str, Any]:
     )
     runtime_state["baseline"] = primary
     return primary
+
+
+def enrich_baseline_lifecycle(
+    summary: dict[str, Any], media_ready: dict[str, Any]
+) -> dict[str, Any]:
+    """Keep frozen membership and incremental media lifecycle independent."""
+
+    item = {**summary, "media_ready": media_ready}
+    membership = dict(item.get("membership") or {})
+    member_count = int(membership.get("registered_count") or item.get("count") or 0)
+    expected = int(membership.get("expected_count") or member_count or 0)
+    if item.get("registration_status") != "registered":
+        item["status"] = "blocked"
+        item["media_status"] = "blocked"
+        return item
+
+    if not bool(media_ready.get("lifecycle_enabled")):
+        # Compatibility for established datasets while callers migrate from
+        # the historical member-only ``ready`` status.
+        item["status"] = "ready"
+        item["media_status"] = "complete" if (
+            expected > 0
+            and int(media_ready.get("bev_indexed_issues") or 0) >= expected
+        ) else "partial"
+        return item
+
+    published = int(media_ready.get("published_issues") or 0)
+    verified = int(media_ready.get("verified_issues") or 0)
+    camera = int(media_ready.get("camera_indexed_issues") or 0)
+    declared = str(media_ready.get("declared_status") or "").strip().lower()
+    errors = int(media_ready.get("failure_count") or 0)
+    if declared == "blocked":
+        state = "blocked"
+    elif (
+        declared == "complete"
+        and expected > 0
+        and published >= expected
+        and verified >= expected
+        and camera >= expected
+        and errors == 0
+    ):
+        state = "complete"
+    elif expected > 0 and published >= expected:
+        state = "verifying"
+    elif declared in {"capturing", "collecting"}:
+        state = "collecting"
+    elif published > 0:
+        state = "partial"
+    else:
+        state = "registered"
+    item["status"] = state
+    item["media_status"] = state
+    item["remaining_media"] = max(0, expected - published)
+    return item
 
 def resolve_request_baseline_ids(
     raw: Any = None,

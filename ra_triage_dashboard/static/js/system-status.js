@@ -45,6 +45,19 @@ function systemStatusCard({ title, chip, tone = "ok", rows, extra = "" }) {
   </article>`;
 }
 
+function baselineLifecycleLabel(status) {
+  const labels = {
+    registered: uiText("已注册", "Registered"),
+    collecting: uiText("采集中", "Collecting"),
+    partial: uiText("部分可用", "Partial"),
+    verifying: uiText("校验中", "Verifying"),
+    complete: uiText("完整", "Complete"),
+    blocked: uiText("阻塞", "Blocked"),
+    ready: uiText("就绪", "Ready"),
+  };
+  return labels[String(status || "")] || String(status || "—");
+}
+
 function renderSystemStatus() {
   const hero = $("#systemStatusHero");
   const grid = $("#systemStatusGrid");
@@ -95,10 +108,11 @@ function renderSystemStatus() {
   );
   const databaseReady = Boolean(database.ok && (database.backend !== "postgresql" || database.persistent_data));
   const baselineReady = baselines.length > 0 && baselines.every(
-    (item) => item.status === "ready" && Number(item.count || 0) > 0
+    (item) => ["registered", "ready"].includes(item.registration_status || item.status)
+      && Number(item.count || 0) > 0
   );
   const baselineMediaReady = baselines.length > 0 && baselines.every(
-    (item) => Number(item.media_ready?.bev_indexed_issues || 0) >= Number(item.count || 0)
+    (item) => ["complete", "ready"].includes(item.media_status || item.status)
   );
   const assetsReady = Boolean(
     data.ra_auto_triage_root_available && data.ares_manifest_available && data.camera_cache_root_available
@@ -106,14 +120,25 @@ function renderSystemStatus() {
   const gatewayReady = Boolean(gateway.configured);
   const usedPercent = Math.max(0, Math.min(100, Number(volume.used_percent) || 0));
   const baselineRows = baselines.map((item) => {
-    const count = Number(item.count || 0);
-    const indexed = Number(item.media_ready?.bev_indexed_issues || 0);
-    const media = item.media_ready
-      ? ` · BEV ${indexed} / ${count || "—"}`
-      : " · BEV —";
+    const membership = item.membership || {};
+    const count = Number(membership.registered_count ?? item.count ?? 0);
+    const expected = Number(membership.expected_count ?? count ?? 0);
+    const media = item.media_ready || {};
+    const bev = Number(media.bev_indexed_issues || 0);
+    const video = Number(media.video_indexed_issues || 0);
+    const camera = Number(media.camera_indexed_issues || 0);
+    const remaining = Number(item.remaining_media || 0);
+    const remainingLabel = remaining > 0
+      ? ` · ${uiText("剩余", "Remaining")} ${remaining}`
+      : "";
     return [
       item.label || item.id || t("system.baseline"),
-      `${count} · ${item.status || "—"}${media}`,
+      `${uiText("成员", "Members")} ${count}/${expected || "—"}`
+        + ` · BEV ${bev}/${expected || "—"}`
+        + ` · ${uiText("视频", "Video")} ${video}/${expected || "—"}`
+        + ` · Camera ${camera}/${expected || "—"}`
+        + ` · ${uiText("状态", "Status")}：${baselineLifecycleLabel(item.media_status || item.status)}`
+        + remainingLabel,
     ];
   });
   const conflictCount = Array.isArray(data.baseline_conflicts)

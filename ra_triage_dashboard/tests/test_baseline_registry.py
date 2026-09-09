@@ -116,6 +116,14 @@ class BaselineRegistryTests(unittest.TestCase):
             entry.media.layout_id,
             "release0206_1326_planning_2k_20260813",
         )
+        entry_0522 = registry.by_id("0522")
+        entry_0821 = registry.by_id("0821")
+        assert entry_0522 is not None and entry_0821 is not None
+        self.assertEqual(entry_0522.expected_count, 100)
+        self.assertEqual(entry_0821.expected_count, 1242)
+        self.assertEqual(len(entry_0522.members_sha256), 64)
+        self.assertTrue(entry_0522.media.extra["strict_isolation"])
+        self.assertTrue(entry_0821.media.extra["lifecycle"])
 
     def test_normalize_baseline_ids_defaults_and_filters(self) -> None:
         allowed = {"0508", "0626"}

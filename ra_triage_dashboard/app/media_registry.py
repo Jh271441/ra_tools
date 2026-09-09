@@ -47,11 +47,15 @@ class ProductLayoutProvider:
         camera_index: CameraIndex,
         video_index: VideoIndex,
         label: str = "product_layout",
+        layout_root: Path | None = None,
+        lifecycle_enabled: bool = False,
     ):
         self.asset_index = asset_index
         self.camera_index = camera_index
         self.video_index = video_index
         self.label = label
+        self.layout_root = layout_root.resolve() if layout_root else None
+        self.lifecycle_enabled = lifecycle_enabled
 
     def has_issue(self, issue_id: str) -> bool:
         return self.asset_index.has_issue(issue_id)
@@ -81,13 +85,54 @@ class ProductLayoutProvider:
 
     def media_ready_summary(self) -> dict[str, Any]:
         indexed = self.asset_index.refresh()
-        return {
+        result: dict[str, Any] = {
             "provider": "product_layout",
             "label": self.label,
             "bev_indexed_issues": indexed,
+            "video_indexed_issues": indexed,
+            "camera_indexed_issues": self.camera_index.indexed_issue_count(),
             "camera_root_available": self.camera_index.camera_root.is_dir(),
             "video_root_available": self.video_index.video_root.is_dir(),
+            "lifecycle_enabled": self.lifecycle_enabled,
         }
+        if self.layout_root is None:
+            return result
+        layout = self._read_status_json("layout.json")
+        capture = self._read_status_json("capture_status.json")
+        errors = capture.get("errors") if isinstance(capture.get("errors"), list) else []
+
+        def count(value: Any, fallback: int = 0) -> int:
+            try:
+                return max(0, int(value))
+            except (TypeError, ValueError):
+                return fallback
+
+        result.update(
+            {
+                "declared_status": str(layout.get("status") or ""),
+                "expected_issues": count(
+                    capture.get("expected") or layout.get("expected_count")
+                ),
+                "published_issues": count(capture.get("published"), indexed),
+                "verified_issues": count(layout.get("verified_count")),
+                "failure_count": len(errors),
+                # Reasons are public diagnostics; never expose arbitrary paths
+                # or the raw capture payload.
+                "failures": [str(item)[:240] for item in errors[:100]],
+            }
+        )
+        return result
+
+    def _read_status_json(self, name: str) -> dict[str, Any]:
+        if self.layout_root is None:
+            return {}
+        path = (self.layout_root / name).resolve()
+        try:
+            path.relative_to(self.layout_root)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            return {}
+        return payload if isinstance(payload, dict) else {}
 
 
 class BagsAresAnimationProvider:
@@ -437,9 +482,9 @@ class MediaRegistry:
         self, issue_id: str, *, baseline_scope: str = ""
     ) -> MediaProvider | None:
         if baseline_scope:
-            provider = self.for_scope(baseline_scope)
-            if provider is not None:
-                return provider
+            # A scoped Issue must never borrow media from the default dataset.
+            # Missing/empty layouts intentionally return no media.
+            return self.for_scope(baseline_scope)
         return self._default
 
     def media_ready_by_id(self) -> dict[str, dict[str, Any]]:
@@ -527,7 +572,8 @@ def _materialized_product_provider(
         return fallback
     manifest_path = layout_root / "manifest.jsonl"
     if not manifest_path.is_file():
-        return fallback
+        if not bool(entry.media.extra.get("strict_isolation")):
+            return fallback
     camera_root = entry.media.camera_root or (layout_root / "camera" / "102")
     # 0508 product layouts keep MP4s under video/; 0626 merged layouts may keep
     # issues/ at the layout root. Prefer an explicit video/ subtree when present.
@@ -545,4 +591,6 @@ def _materialized_product_provider(
         camera_index=CameraIndex(camera_root, base_path=base_path),
         video_index=VideoIndex(video_root, base_path=base_path),
         label=f"product_layout:{layout_id}",
+        layout_root=layout_root,
+        lifecycle_enabled=bool(entry.media.extra.get("lifecycle")),
     )

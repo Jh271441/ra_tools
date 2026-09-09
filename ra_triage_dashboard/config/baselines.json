@@ -44,10 +44,14 @@
     "scope": "release0522_100_20260908",
     "loader": "capture_workset",
     "xlsx": "${RA_AUTO_TRIAGE_ROOT}/data/manual_worksets_20260908/workset_0522.json",
+    "expected_count": 100,
+    "members_sha256": "90884d5c20477f0f046d70614703e0e121435880524655fb9077540fa8f9d775",
     "default_selected": false,
     "media": {
       "provider": "product_layout",
-      "layout_id": "release0522_100_planning_2k_20260908"
+      "layout_id": "release0522_100_planning_2k_20260908",
+      "lifecycle": true,
+      "strict_isolation": true
     }
   },
   {
@@ -56,10 +60,14 @@
     "scope": "release0821_1242_20260908",
     "loader": "capture_workset",
     "xlsx": "${RA_AUTO_TRIAGE_ROOT}/data/manual_worksets_20260908/workset_0821.json",
+    "expected_count": 1242,
+    "members_sha256": "fcef3283d52e0dc4ba23c9a47dd2bde87d25825dba261193293afead7e01190d",
     "default_selected": false,
     "media": {
       "provider": "product_layout",
-      "layout_id": "release0821_1242_planning_2k_20260908"
+      "layout_id": "release0821_1242_planning_2k_20260908",
+      "lifecycle": true,
+      "strict_isolation": true
     }
   }
 ]

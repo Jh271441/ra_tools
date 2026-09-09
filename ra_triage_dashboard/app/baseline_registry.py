@@ -37,6 +37,8 @@ class BaselineEntry:
     loader: str
     xlsx: Path
     dataset: str = ""
+    expected_count: int | None = None
+    members_sha256: str = ""
     default_selected: bool = False
     media: BaselineMediaConfig = field(
         default_factory=lambda: BaselineMediaConfig(provider="product_layout")
@@ -91,6 +93,8 @@ class BaselineRegistry:
                 "scope": entry.scope,
                 "loader": entry.loader,
                 "dataset": entry.dataset,
+                "expected_count": entry.expected_count,
+                "members_sha256": entry.members_sha256,
                 "default_selected": entry.default_selected,
                 "media_provider": entry.media.provider,
             }
@@ -232,6 +236,20 @@ def _parse_entry(raw: Mapping[str, Any], *, env: Mapping[str, str] | None) -> Ba
         raise ValueError(f"baseline {baseline_id} missing xlsx")
     xlsx = resolve_path(xlsx_raw, env=env)
     dataset = str(raw.get("dataset") or "").strip()
+    expected_count_raw = raw.get("expected_count")
+    expected_count = None
+    if expected_count_raw not in (None, ""):
+        try:
+            expected_count = int(expected_count_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"baseline {baseline_id} has invalid expected_count"
+            ) from exc
+        if expected_count <= 0:
+            raise ValueError(f"baseline {baseline_id} expected_count must be positive")
+    members_sha256 = str(raw.get("members_sha256") or "").strip().lower()
+    if members_sha256 and not re.fullmatch(r"[0-9a-f]{64}", members_sha256):
+        raise ValueError(f"baseline {baseline_id} has invalid members_sha256")
     default_selected = bool(raw.get("default_selected"))
     media = _parse_media(raw.get("media") if isinstance(raw.get("media"), dict) else {}, env=env)
     return BaselineEntry(
@@ -241,6 +259,8 @@ def _parse_entry(raw: Mapping[str, Any], *, env: Mapping[str, str] | None) -> Ba
         loader=loader,
         xlsx=xlsx,
         dataset=dataset,
+        expected_count=expected_count,
+        members_sha256=members_sha256,
         default_selected=default_selected,
         media=media,
         raw=dict(raw),

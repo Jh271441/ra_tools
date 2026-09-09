@@ -81,22 +81,11 @@ def _resolve_thumbnail_file(issue_id: str) -> Path | None:
             ):
                 return dest
 
-    info = None
-    provider = media_for_issue(issue_id, "")
-    if provider is not None:
-        info = provider.get_thumbnail_source(issue_id)
-    if not info:
-        info = asset_index.get_thumbnail_source(issue_id)
-    if not info or not isinstance(info.get("path"), Path):
-        # Fall back to case baseline only when default media misses (e.g. 0626).
-        case = database.get_case(issue_id)
-        if case is None:
-            return None
-        provider = media_for_issue(
-            issue_id, str(case.get("baseline_scope") or "")
-        )
-        if provider is not None:
-            info = provider.get_thumbnail_source(issue_id)
+    case = database.get_issue(issue_id)
+    if case is None:
+        return None
+    provider = media_for_issue(issue_id, str(case.get("baseline_scope") or ""))
+    info = provider.get_thumbnail_source(issue_id) if provider is not None else None
     if not info or not isinstance(info.get("path"), Path):
         return None
     source = info["path"]
@@ -741,7 +730,7 @@ async def get_asset(issue_id: str, asset_id: str) -> FileResponse:
         if provider
         else None
     )
-    if path is None:
+    if path is None and not scope:
         path = await asyncio.to_thread(
             lambda: (
                 asset_index.get_asset_path(issue_id, asset_id)
