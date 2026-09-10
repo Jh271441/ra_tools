@@ -549,7 +549,7 @@ function renderReview(caseData) {
     input.addEventListener("change", updateTagSummary);
   });
   updateTagSummary();
-  syncReviewTagShortcutHints($("#reviewPane"));
+  syncReviewDropdownShortcutHints($("#reviewPane"));
   bindReviewKeyboardShortcuts();
   bindReviewComposerShortcuts();
   bindReviewDetailActionShortcuts();

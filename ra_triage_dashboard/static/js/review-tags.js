@@ -158,6 +158,7 @@ function markDeletedMissingEvidenceOption(item) {
     row.remove();
   }
   updateEvidenceSummary();
+  syncReviewDropdownShortcutHints($("#reviewPane") || document);
 }
 
 function openMissingEvidenceEditorDialog({
@@ -225,6 +226,7 @@ function appendMissingEvidenceOption(item) {
   option?.querySelector("input")?.addEventListener("change", updateEvidenceSummary);
   bindMissingEvidenceCatalogControls(option || list);
   bindReviewTagCatalogControls(option || list);
+  syncReviewDropdownShortcutHints($("#reviewPane") || document);
 }
 
 function bindMissingEvidenceCatalogControls(root = document) {
@@ -374,17 +376,25 @@ function updateTagSummary() {
   }
 }
 
-function syncReviewTagShortcutHints(root = document) {
-  root.querySelectorAll(".review-tag-dropdown[data-tag-dropdown-group]").forEach((dropdown) => {
-    const groupShortcut = String(dropdown.dataset.tagDropdownShortcut || "").toUpperCase();
-    const inputs = [...dropdown.querySelectorAll('input[name="reviewTags"]')];
+function syncReviewDropdownShortcutHints(root = document) {
+  root.querySelectorAll(".review-dropdown").forEach((dropdown) => {
+    const groupShortcut = String(
+      dropdown.dataset.tagDropdownShortcut ||
+      (dropdown.hasAttribute("data-missing-evidence-dropdown")
+        ? REVIEW_MISSING_EVIDENCE_SHORTCUT
+        : "")
+    ).toUpperCase();
+    if (!groupShortcut) return;
+    const inputs = [...dropdown.querySelectorAll(
+      'input[name="reviewTags"], input[name="missingEvidence"]'
+    )];
     inputs.forEach((input, index) => {
       const label = input.closest("label");
       label?.querySelector(".tag-option-shortcut")?.remove();
-      delete input.dataset.reviewTagOptionShortcut;
+      delete input.dataset.reviewDropdownOptionShortcut;
       const shortcut = REVIEW_TAG_OPTION_SHORTCUTS[index] || "";
       if (!label || !shortcut) return;
-      input.dataset.reviewTagOptionShortcut = shortcut;
+      input.dataset.reviewDropdownOptionShortcut = shortcut;
       const hint = document.createElement("kbd");
       hint.className = "review-control-shortcut tag-option-shortcut";
       hint.setAttribute("aria-hidden", "true");
@@ -396,6 +406,20 @@ function syncReviewTagShortcutHints(root = document) {
       label.appendChild(hint);
     });
   });
+}
+
+function toggleOpenReviewDropdownOption(shortcut) {
+  if (!REVIEW_TAG_OPTION_SHORTCUTS.includes(shortcut)) return false;
+  const openDropdown = document.querySelector(
+    "#reviewPane .review-dropdown[open]"
+  );
+  const input = openDropdown?.querySelector(
+    `input[data-review-dropdown-option-shortcut="${CSS.escape(shortcut)}"]`
+  );
+  if (!input || input.disabled) return false;
+  input.checked = !input.checked;
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  return true;
 }
 
 function reviewShortcutHasEditableTarget(target) {
@@ -541,17 +565,7 @@ function bindReviewKeyboardShortcuts() {
       return;
     }
 
-    if (!REVIEW_TAG_OPTION_SHORTCUTS.includes(key)) return;
-    const openDropdown = document.querySelector(
-      "#reviewPane .review-tag-dropdown[open][data-tag-dropdown-group]"
-    );
-    const input = openDropdown?.querySelector(
-      `input[name="reviewTags"][data-review-tag-option-shortcut="${key}"]`
-    );
-    if (!input || input.disabled) return;
-    event.preventDefault();
-    input.checked = !input.checked;
-    input.dispatchEvent(new Event("change", { bubbles: true }));
+    if (toggleOpenReviewDropdownOption(key)) event.preventDefault();
   });
 }
 
@@ -616,7 +630,7 @@ function markDeletedReviewTagOption(item) {
     row.remove();
   }
   updateTagSummary();
-  syncReviewTagShortcutHints($("#reviewPane") || document);
+  syncReviewDropdownShortcutHints($("#reviewPane") || document);
 }
 
 function reviewTagGroupLabel(group = "environment") {
@@ -699,7 +713,7 @@ function appendReviewTagOptionToGroup(item, group) {
   list.appendChild(option);
   option?.querySelector('input[name="reviewTags"]')?.addEventListener("change", updateTagSummary);
   bindReviewTagCatalogControls(option || list);
-  syncReviewTagShortcutHints($("#reviewPane") || document);
+  syncReviewDropdownShortcutHints($("#reviewPane") || document);
 }
 
 function resetTagOptionMenuPanel(panel) {

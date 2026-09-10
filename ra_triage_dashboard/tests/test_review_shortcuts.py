@@ -46,6 +46,24 @@ assert.equal(dropdown.open,false);
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
 
 
+def test_missing_evidence_numeric_shortcut_toggles_option() -> None:
+    script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+const assert=require('node:assert/strict');
+Event=class {constructor(type,options){this.type=type;this.bubbles=options?.bubbles;}};
+const input={disabled:false,checked:false,dispatchEvent(event){this.lastEvent=event;}};
+const dropdown={querySelector:(selector)=>selector.includes('data-review-dropdown-option-shortcut="1"') ? input : null};
+document={querySelector:(selector)=>selector==='#reviewPane .review-dropdown[open]' ? dropdown : null};
+CSS={escape:(value)=>value};
+assert.equal(toggleOpenReviewDropdownOption('1'),true);
+assert.equal(input.checked,true);
+assert.equal(input.lastEvent.type,'change');
+assert.equal(toggleOpenReviewDropdownOption('1'),true);
+assert.equal(input.checked,false);
+assert.equal(toggleOpenReviewDropdownOption('q'),false);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
 def test_open_review_dropdown_uses_arrows_for_navigation_and_enter_for_save() -> None:
     script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
 const assert=require('node:assert/strict');
