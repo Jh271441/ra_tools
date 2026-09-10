@@ -206,7 +206,7 @@ html[data-color-theme="light"] .detail-queue-index-input {
   color: #0f172a; border-color: #b8c5d4; background: #f8fafc;
 }
 .review-detail-workspace {
-  display: grid; grid-template-columns: minmax(0, 1fr) clamp(320px, 29cqw, 350px); align-items: start; gap: 8px;
+  display: grid; grid-template-columns: minmax(0, 1fr) clamp(304px, 28cqw, 350px); align-items: start; gap: 8px;
 }
 .review-detail-workspace > .detail-pane,
 .review-detail-workspace > .review-pane { min-height: calc(100dvh - 75px); }
