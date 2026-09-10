@@ -335,7 +335,7 @@
 
 @container (max-width: 1199px) {
   .issue-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .review-detail-workspace { grid-template-columns: minmax(0, 1fr) 320px; }
+  .review-detail-workspace { grid-template-columns: minmax(0, 1fr) clamp(300px, 27cqw, 320px); }
   .review-commandbar { grid-template-columns: minmax(0, 1fr); }
   .review-filters {
     grid-template-columns:

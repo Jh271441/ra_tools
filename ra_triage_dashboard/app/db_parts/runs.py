@@ -352,6 +352,7 @@ class DatabaseRunsMixin:
             raise ValueError("不支持的标签变化筛选。")
         normalized_search = str(search or "").strip().lower()[:128]
         normalized_input_filter = normalize_extra_input_filter(input_filter)
+        needs_extra_input_filter = bool(normalized_input_filter["conditions"])
         page_size = min(max(int(page_size), 1), 100)
         page = max(int(page), 1)
 
@@ -381,6 +382,15 @@ class DatabaseRunsMixin:
                 include_unbound_fallback=True,
                 include_bound_history_fallback=True,
             )
+            extra_input_columns = (
+                """,
+                       base.raw_json AS baseline_raw_json,
+                       base.model_extra_json AS baseline_model_extra_json,
+                       candidate.raw_json AS candidate_raw_json,
+                       candidate.model_extra_json AS candidate_model_extra_json"""
+                if needs_extra_input_filter
+                else ""
+            )
             rows = conn.execute(
                 f"""
                 SELECT i.issue_id, i.gt_label, i.baseline_scope,
@@ -390,13 +400,10 @@ class DatabaseRunsMixin:
                        base.model_label AS baseline_model_label,
                        base.model_reason AS baseline_model_reason,
                        base.model_confidence AS baseline_model_confidence,
-                       base.raw_json AS baseline_raw_json,
-                       base.model_extra_json AS baseline_model_extra_json,
                        candidate.model_label AS candidate_model_label,
                        candidate.model_reason AS candidate_model_reason,
-                       candidate.model_confidence AS candidate_model_confidence,
-                       candidate.raw_json AS candidate_raw_json,
-                       candidate.model_extra_json AS candidate_model_extra_json
+                       candidate.model_confidence AS candidate_model_confidence
+                       {extra_input_columns}
                 FROM issues i
                 {annotation_join}
                 LEFT JOIN model_predictions base
@@ -462,13 +469,21 @@ class DatabaseRunsMixin:
             matrices["baseline"][gt_label][baseline_bucket] += 1
             matrices["candidate"][gt_label][candidate_bucket] += 1
             transition_counts[transition_key] += 1
-            baseline_extra_inputs = extra_input_summary(
-                _json_load(row["baseline_raw_json"], {}),
-                _json_load(row["baseline_model_extra_json"], {}),
+            baseline_extra_inputs = (
+                extra_input_summary(
+                    _json_load(row["baseline_raw_json"], {}),
+                    _json_load(row["baseline_model_extra_json"], {}),
+                )
+                if needs_extra_input_filter
+                else {"available": False, "axes": {}}
             )
-            candidate_extra_inputs = extra_input_summary(
-                _json_load(row["candidate_raw_json"], {}),
-                _json_load(row["candidate_model_extra_json"], {}),
+            candidate_extra_inputs = (
+                extra_input_summary(
+                    _json_load(row["candidate_raw_json"], {}),
+                    _json_load(row["candidate_model_extra_json"], {}),
+                )
+                if needs_extra_input_filter
+                else {"available": False, "axes": {}}
             )
             annotation_id = row["annotation_id"]
             scene_review = None
@@ -603,6 +618,38 @@ class DatabaseRunsMixin:
         page_count = max(1, math.ceil(total_filtered / page_size))
         page = min(page, page_count)
         offset = (page - 1) * page_size
+        page_items = filtered_rows[offset : offset + page_size]
+        if page_items and not needs_extra_input_filter:
+            issue_ids = [str(item["issue_id"]) for item in page_items]
+            issue_placeholders = ", ".join("?" for _ in issue_ids)
+            with self.connect() as conn:
+                input_rows = conn.execute(
+                    f"""
+                    SELECT issue_id, model_run_id, raw_json, model_extra_json
+                    FROM model_predictions
+                    WHERE model_run_id IN (?, ?)
+                      AND issue_id IN ({issue_placeholders})
+                    """,
+                    (baseline_run_id, candidate_run_id, *issue_ids),
+                ).fetchall()
+            inputs_by_key = {
+                (str(row["issue_id"]), str(row["model_run_id"])): extra_input_summary(
+                    _json_load(row["raw_json"], {}),
+                    _json_load(row["model_extra_json"], {}),
+                )
+                for row in input_rows
+            }
+            empty_inputs = {"available": False, "axes": {}}
+            for item in page_items:
+                issue_id = str(item["issue_id"])
+                item["extra_inputs"] = {
+                    "baseline": inputs_by_key.get(
+                        (issue_id, baseline_run_id), empty_inputs
+                    ),
+                    "candidate": inputs_by_key.get(
+                        (issue_id, candidate_run_id), empty_inputs
+                    ),
+                }
 
         return {
             "baseline_run": self._comparison_run_snapshot(
@@ -637,7 +684,7 @@ class DatabaseRunsMixin:
                 "search": normalized_search,
                 "input_filter": normalized_input_filter,
             },
-            "items": filtered_rows[offset : offset + page_size],
+            "items": page_items,
             "total": total_filtered,
             "page": page,
             "page_size": page_size,
