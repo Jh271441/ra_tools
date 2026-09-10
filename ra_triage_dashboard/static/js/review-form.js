@@ -770,6 +770,97 @@ function addPendingReviewImages(files) {
   if (rejected) showToast(rejected, true);
 }
 
+function reviewUploadTaskKey(issueId, payload) {
+  return [
+    String(issueId || ""),
+    String(payload?.model_run_id || ""),
+    String(payload?.work_split_id || ""),
+  ].join("|");
+}
+
+function restoreFailedReviewUploadImages(issueId) {
+  const prefix = `${String(issueId || "")}|`;
+  const failed = [...state.backgroundReviewUploads.entries()].find(
+    ([key, task]) => key.startsWith(prefix) && task?.failed
+  );
+  if (!failed || state.pendingReviewImages.length) return;
+  const [key, task] = failed;
+  state.backgroundReviewUploads.delete(key);
+  task.files.forEach((file) => {
+    state.pendingReviewImages.push({
+      id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+      file,
+      previewUrl: URL.createObjectURL(file),
+    });
+  });
+  state.reviewFormDirty = true;
+  renderPendingReviewImages();
+}
+
+function enqueueBackgroundReviewUpload(task) {
+  const run = async () => {
+    try {
+      const form = new FormData();
+      form.append("payload", JSON.stringify(task.payload));
+      task.files.forEach((file, index) => {
+        form.append("attachments", file, file.name || `clipboard-${index + 1}.png`);
+      });
+      const result = await api(
+        `/api/cases/${encodeURIComponent(task.issueId)}/annotations-with-attachments`,
+        {
+          method: "POST",
+          body: form,
+          headers: { "X-RA-Triage-Request": "review-v1" },
+        }
+      );
+      state.backgroundReviewUploads.delete(task.key);
+      const draft = readReviewDraft(
+        task.issueId,
+        task.payload.model_run_id,
+        task.payload.work_split_id
+      );
+      const draftChangedAfterQueue = Boolean(
+        draft && Number(draft.saved_at || 0) > Number(task.queuedAt || 0)
+      );
+      if (!draftChangedAfterQueue) {
+        clearReviewDraft(task.issueId, task.payload.model_run_id, task.payload.work_split_id);
+      }
+      if (state.selectedId === task.issueId && result?.annotation) {
+        state.reviewEditRunId = result.annotation.model_run_id || state.reviewEditRunId;
+        state.reviewEditBaseAnnotationId = result.annotation.id || null;
+        if (state.selectedCase?.issue_id === task.issueId) {
+          state.selectedCase.annotations = [
+            result.annotation,
+            ...(state.selectedCase.annotations || []).filter(
+              (item) => String(item.id) !== String(result.annotation.id)
+            ),
+          ];
+          if (!draftChangedAfterQueue) state.reviewFormDirty = false;
+          updateReviewHistory(state.selectedCase);
+        }
+      }
+      refreshReviewDerivedData();
+    } catch (error) {
+      task.failed = true;
+      if (state.selectedId === task.issueId) {
+        restoreFailedReviewUploadImages(task.issueId);
+      }
+      showToast(`Issue ${task.issueId} 的截图后台上传失败，请重新按 Enter 重试。`, true);
+    }
+  };
+  state.reviewUploadTail = state.reviewUploadTail
+    .catch(() => {})
+    .then(run);
+}
+
+function releaseReviewSubmitLock(submitButton) {
+  state.savingAnnotation = false;
+  if (submitButton?.isConnected) {
+    submitButton.disabled = Boolean(expectedOutputSelectionState().conflictKind);
+    submitButton.removeAttribute("aria-busy");
+  }
+}
+
 function renderPendingReviewImages() {
   const target = $("#pendingScreenshotList");
   if (!target) return;
@@ -930,6 +1021,7 @@ async function selectCase(
     state.selectedCase = data;
     renderDetail(data);
     renderReview(data);
+    restoreFailedReviewUploadImages(issueId);
     if (preservedScrollY !== null) {
       window.requestAnimationFrame(() => {
         window.scrollTo({ top: preservedScrollY, behavior: "auto" });
@@ -970,9 +1062,9 @@ async function loadDeferredCaseMedia(issueId, requestSeq) {
     state.selectedCase.assets = media?.assets || state.selectedCase.assets;
     state.selectedCase.camera = media?.camera || state.selectedCase.camera;
     state.selectedCase.media_status = media?.media_status || "ready";
-    // Only replace the media/detail pane.  The Review form remains mounted so
-    // a reviewer can start typing before a cold media index completes.
-    renderDetail(state.selectedCase);
+    // Hydrate only the media controls/surface. Rebuilding the complete detail
+    // header a second time causes visible jank during rapid Case navigation.
+    hydrateDetailMedia(state.selectedCase);
   } catch (_error) {
     if (
       requestSeq !== state.caseRequestSeq ||
@@ -1166,6 +1258,7 @@ async function copyReviewIssueId(issueId, button = null) {
 async function saveAnnotation(event) {
   event.preventDefault();
   if (!state.selectedId || state.savingAnnotation) return;
+  const issueId = String(state.selectedId);
   const expectedOutputState = expectedOutputSelectionState();
   if (expectedOutputState.conflictKind === "tags") {
     showToast("Tags 指向多个期望输出，请先消除冲突。", true);
@@ -1200,43 +1293,48 @@ async function saveAnnotation(event) {
     note: $("#annotationNote").value,
     author: $("#annotationAuthor").value,
   };
+  const screenshotFiles = state.pendingReviewImages.map((item) => item.file);
+  const uploadKey = reviewUploadTaskKey(issueId, payload);
+  const activeBackgroundUpload = state.backgroundReviewUploads.get(uploadKey);
+  if (activeBackgroundUpload && !activeBackgroundUpload.failed) {
+    releaseReviewSubmitLock(submitButton);
+    showToast("该 Issue 的截图正在后台上传，请稍候。", true);
+    return;
+  }
+  if (screenshotFiles.length) {
+    const task = {
+      key: uploadKey,
+      issueId,
+      payload,
+      files: screenshotFiles,
+      queuedAt: Date.now(),
+      failed: false,
+    };
+    state.backgroundReviewUploads.set(uploadKey, task);
+    clearPendingReviewImages();
+    state.reviewFormDirty = false;
+    state.deferredDetailRefresh = false;
+    $("#annotationNote")?.blur();
+    enqueueBackgroundReviewUpload(task);
+    releaseReviewSubmitLock(submitButton);
+    return;
+  }
   try {
-    let result;
-    if (state.pendingReviewImages.length) {
-      const form = new FormData();
-      form.append("payload", JSON.stringify(payload));
-      state.pendingReviewImages.forEach((item, index) => {
-        form.append(
-          "attachments",
-          item.file,
-          item.file.name || `clipboard-${index + 1}.png`
-        );
-      });
-      result = await api(
-        `/api/cases/${encodeURIComponent(state.selectedId)}/annotations-with-attachments`,
-        {
-          method: "POST",
-          body: form,
-          headers: { "X-RA-Triage-Request": "review-v1" },
-        }
-      );
-    } else {
-      result = await api(`/api/cases/${encodeURIComponent(state.selectedId)}/annotations`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-    }
+    const result = await api(`/api/cases/${encodeURIComponent(issueId)}/annotations`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
     acknowledgeLocalChange(result);
     if (result?.annotation) {
       state.reviewEditRunId = result.annotation.model_run_id || state.reviewEditRunId;
       state.reviewEditBaseAnnotationId = result.annotation.id || null;
     }
-    clearReviewDraft(state.selectedId, payload.model_run_id, payload.work_split_id);
-    const screenshotCount = state.pendingReviewImages.length;
+    clearReviewDraft(issueId, payload.model_run_id, payload.work_split_id);
+    const screenshotCount = 0;
     state.reviewFormDirty = false;
     state.deferredDetailRefresh = false;
     clearPendingReviewImages();
-    if (result?.annotation && state.selectedCase?.issue_id === state.selectedId) {
+    if (result?.annotation && state.selectedCase?.issue_id === issueId) {
       state.selectedCase.annotations = [
         result.annotation,
         ...(state.selectedCase.annotations || []).filter(
@@ -1248,10 +1346,10 @@ async function saveAnnotation(event) {
     if (
       payload.work_split_id &&
       result?.annotation &&
-      state.selectedCase?.issue_id === state.selectedId
+      state.selectedCase?.issue_id === issueId
     ) {
       const refreshed = await api(
-        `/api/cases/${encodeURIComponent(state.selectedId)}?include_media=false&model_run_id=${encodeURIComponent(payload.model_run_id || "")}`
+        `/api/cases/${encodeURIComponent(issueId)}?include_media=false&model_run_id=${encodeURIComponent(payload.model_run_id || "")}`
       );
       if (state.selectedCase?.issue_id === refreshed?.issue_id) {
         state.selectedCase.annotations = refreshed.annotations || state.selectedCase.annotations;
@@ -1268,10 +1366,6 @@ async function saveAnnotation(event) {
   } catch (error) {
     showToast(error.message, true);
   } finally {
-    state.savingAnnotation = false;
-    if (submitButton?.isConnected) {
-      submitButton.disabled = Boolean(expectedOutputSelectionState().conflictKind);
-      submitButton.removeAttribute("aria-busy");
-    }
+    releaseReviewSubmitLock(submitButton);
   }
 }

@@ -814,6 +814,8 @@ const state = {
   mentionUsers: [],
   trailInspection: null,
   pendingReviewImages: [],
+  backgroundReviewUploads: new Map(),
+  reviewUploadTail: Promise.resolve(),
   savingAnnotation: false,
 };
 

@@ -101,19 +101,27 @@ function bindBevVideoPlayers(root) {
     const configuredDuration = Number(player.dataset.durationSec || 0);
     let seekRequest = 0;
     let cancelPendingSeek = null;
+    let queuedSeekTarget = null;
+    let queuedSeekTimer = null;
     const duration = () => Number.isFinite(video.duration) ? video.duration : configuredDuration;
-    const update = () => {
+    const update = (previewTime = null) => {
       const total = Math.max(0, duration());
+      const currentTime = previewTime !== null && Number.isFinite(Number(previewTime))
+        ? Number(previewTime)
+        : video.currentTime || 0;
       seek.max = String(total || configuredDuration || 40);
-      seek.value = String(Math.min(Number(seek.max), Math.max(0, video.currentTime || 0)));
+      seek.value = String(Math.min(Number(seek.max), Math.max(0, currentTime)));
       startLabel.textContent = formatSignedSeconds(startOffsetSec);
-      timeLabel.textContent = `${formatSignedSeconds(startOffsetSec + (video.currentTime || 0))} / ${formatSignedSeconds(startOffsetSec + total)}`;
+      timeLabel.textContent = `${formatSignedSeconds(startOffsetSec + currentTime)} / ${formatSignedSeconds(startOffsetSec + total)}`;
       playButton.textContent = video.paused ? t("media.play") : t("media.pause");
     };
     const focusPlayer = () => {
       player.focus({ preventScroll: true });
     };
     const seekTo = (target) => {
+      if (queuedSeekTimer !== null) window.clearTimeout(queuedSeekTimer);
+      queuedSeekTimer = null;
+      queuedSeekTarget = null;
       const request = ++seekRequest;
       cancelPendingSeek?.();
       let settled = false;
@@ -155,16 +163,34 @@ function bindBevVideoPlayers(root) {
       // is fetched. Keep controls responsive and reconcile once it arrives.
       fallbackTimer = window.setTimeout(settle, 800);
     };
+    const queueSeek = (target, delay = 75) => {
+      const total = Math.max(0, duration());
+      queuedSeekTarget = Math.min(total, Math.max(0, Number(target) || 0));
+      video.pause();
+      update(queuedSeekTarget);
+      if (queuedSeekTimer !== null) window.clearTimeout(queuedSeekTimer);
+      queuedSeekTimer = window.setTimeout(() => {
+        const latest = queuedSeekTarget;
+        queuedSeekTimer = null;
+        if (latest !== null) seekTo(latest);
+      }, Math.max(0, delay));
+    };
     const jump = (direction) => {
       const step = Math.max(0.01, Number(stepSelect.value || 1));
-      const currentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+      const currentTime = queuedSeekTarget !== null
+        ? queuedSeekTarget
+        : Number.isFinite(video.currentTime) ? video.currentTime : 0;
       const target = Math.min(
         Math.max(0, duration()),
         Math.max(0, currentTime + direction * step)
       );
-      seekTo(target);
+      queueSeek(target);
     };
     const togglePlayback = () => {
+      if (queuedSeekTarget !== null) {
+        const target = queuedSeekTarget;
+        seekTo(target);
+      }
       if (video.paused) {
         video.play().catch((error) => showToast(t("media.play_fail", { msg: error.message }), true));
       } else {
@@ -180,7 +206,7 @@ function bindBevVideoPlayers(root) {
       const target = configuredT0PlayerSec > 0
         ? configuredT0PlayerSec
         : videoT0PlayerPosition(0, duration());
-      seekTo(Math.min(Math.max(0, duration()), Math.max(0, target)));
+      queueSeek(Math.min(Math.max(0, duration()), Math.max(0, target)), 0);
     });
     stepSelect.addEventListener("change", () => {
       const step = Number(stepSelect.value || 1);
@@ -262,7 +288,7 @@ function heroMediaSection(caseData) {
   const previewThumbnailUrl = safeSameOriginAssetUrl(caseData?.preview_thumbnail_url);
   if (!frames.length && !camera.length && !video?.url) {
     if (caseData?.media_status === "pending") {
-      return `<section class="hero-media"><div class="no-asset hero-media-placeholder detail-media-pending"><span>${escapeHtml(uiText("正在加载 BEV、Camera 与视频…", "Loading BEV, camera, and video…"))}</span></div></section>`;
+      return `<section class="hero-media detail-hero-media" id="detailHeroMedia" tabindex="0"><div class="no-asset hero-media-placeholder detail-media-pending"><span>${escapeHtml(uiText("正在加载 BEV、Camera 与视频…", "Loading BEV, camera, and video…"))}</span></div></section>`;
     }
     return `<section class="hero-media"><div class="no-asset hero-media-placeholder"><span>${escapeHtml(t("media.no_assets"))}</span></div></section>`;
   }
@@ -301,6 +327,23 @@ function heroMediaSection(caseData) {
       ${frameControls}
       <p class="detail-media-help">${escapeHtml(kind === "video" ? t("media.help_video") : t("media.help_image"))}</p>
     </section>`;
+}
+
+function hydrateDetailMedia(caseData) {
+  const issueId = String(caseData?.issue_id || "");
+  if (!issueId || issueId !== state.selectedId) return false;
+  const scrollY = window.scrollY;
+  const hero = $("#detailHeroMedia");
+  if (hero) hero.outerHTML = heroMediaSection(caseData);
+  const command = $("#detailPane")?.querySelector(".detail-media-command");
+  if (command) command.outerHTML = detailMediaCommandMarkup(caseData);
+  bindDetailMedia(caseData);
+  window.requestAnimationFrame(() => {
+    if (state.selectedId === issueId) {
+      window.scrollTo({ top: scrollY, behavior: "auto" });
+    }
+  });
+  return true;
 }
 
 function mediaTimelineMarkup(frames, activeIndex, dataName, className = "detail-media-timeline media-timeline") {
