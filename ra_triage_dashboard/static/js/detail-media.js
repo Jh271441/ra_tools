@@ -20,10 +20,21 @@ function heroFrameIndex(frames) {
   return best >= 0 ? best : Math.floor(frames.length / 2);
 }
 
+function videoT0PlayerPosition(configuredDuration, decodedDuration = 0) {
+  const configured = Number(configuredDuration);
+  const decoded = Number(decodedDuration);
+  const total = configured > 0 && Number.isFinite(configured)
+    ? configured
+    : decoded > 0 && Number.isFinite(decoded)
+      ? decoded
+      : 0;
+  return total / 2;
+}
+
 function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {
   const durationSec = Math.max(0, Number(video?.duration_ms || 0) / 1000);
   const startOffsetSec = Number(video?.start_offset_sec ?? 0);
-  const eventTimeSec = Number(video?.event_time_sec ?? Math.max(0, -startOffsetSec));
+  const t0PlayerSec = videoT0PlayerPosition(durationSec);
   const frameStepSec = Math.max(0.01, Number(video?.frame_step_ms || 100) / 1000);
   const stepOptions = [...new Set([frameStepSec, 0.5, 1, 5])]
     .sort((left, right) => left - right)
@@ -37,7 +48,7 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {
     : `<div class="hero-media-button hero-media-video">${videoMarkup}</div>`;
   return `<div class="hero-video-player ${compact ? "is-compact" : ""}" data-bev-video-player
       data-start-offset-sec="${escapeHtml(startOffsetSec)}"
-      data-event-time-sec="${escapeHtml(eventTimeSec)}"
+      data-t0-player-sec="${escapeHtml(t0PlayerSec)}"
       data-duration-sec="${escapeHtml(durationSec)}"
       data-frame-step-sec="${escapeHtml(frameStepSec)}">
     ${mediaMarkup}
@@ -86,7 +97,7 @@ function bindBevVideoPlayers(root) {
     const timeLabel = player.querySelector("[data-video-time]");
     const startLabel = player.querySelector("[data-video-relative-start]");
     const startOffsetSec = Number(player.dataset.startOffsetSec || 0);
-    const eventTimeSec = Number(player.dataset.eventTimeSec || 0);
+    const configuredT0PlayerSec = Number(player.dataset.t0PlayerSec || 0);
     const configuredDuration = Number(player.dataset.durationSec || 0);
     let seekRequest = 0;
     let cancelPendingSeek = null;
@@ -166,7 +177,10 @@ function bindBevVideoPlayers(root) {
       button.addEventListener("click", () => jump(Number(button.dataset.videoJump)));
     });
     player.querySelector("[data-video-t0]").addEventListener("click", () => {
-      seekTo(Math.min(Math.max(0, duration()), Math.max(0, eventTimeSec)));
+      const target = configuredT0PlayerSec > 0
+        ? configuredT0PlayerSec
+        : videoT0PlayerPosition(0, duration());
+      seekTo(Math.min(Math.max(0, duration()), Math.max(0, target)));
     });
     stepSelect.addEventListener("change", () => {
       const step = Number(stepSelect.value || 1);

@@ -119,13 +119,19 @@ assert.equal(reviewDropdownShortcutAllowed(null),true);
 
 
 def test_video_t0_shortcut_targets_twenty_second_player_position() -> None:
-    script = (ROOT / "static" / "js" / "detail-media.js").read_text() + r'''
+    source = (ROOT / "static" / "js" / "detail-media.js").read_text()
+    assert 'player.querySelector("[data-video-t0]").addEventListener("click"' in source
+    assert "videoT0PlayerPosition(0, duration())" in source
+    script = source + r'''
 const assert=require('node:assert/strict');
 escapeHtml=(value)=>String(value);
 t=(key)=>key;
-const markup=videoPlayerMarkup({url:'video.mp4',start_offset_sec:-20,duration_ms:40000});
+const markup=videoPlayerMarkup({url:'video.mp4',start_offset_sec:-20,event_time_sec:0,duration_ms:40000});
 assert.match(markup,/data-start-offset-sec="-20"/);
-assert.match(markup,/data-event-time-sec="20"/);
+assert.match(markup,/data-t0-player-sec="20"/);
+assert.doesNotMatch(markup,/data-event-time-sec/);
+assert.equal(videoT0PlayerPosition(40,39),20);
+assert.equal(videoT0PlayerPosition(0,40),20);
 assert.match(markup,/data-video-t0/);
 '''
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
