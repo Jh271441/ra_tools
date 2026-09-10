@@ -870,9 +870,12 @@ function scheduleTrailDetailMetadata(issueId, requestSeq) {
 
 async function selectCase(
   issueId,
-  { updateRoute = true, historyMode = "push" } = {}
+  { updateRoute = true, historyMode = "push", preserveScrollY = null } = {}
 ) {
   if (!issueId) return;
+  const preservedScrollY = Number.isFinite(Number(preserveScrollY))
+    ? Math.max(0, Number(preserveScrollY))
+    : null;
   const gallery = $("#reviewGalleryView");
   if (gallery && !gallery.classList.contains("hidden")) {
     state.galleryScrollY = window.scrollY;
@@ -901,7 +904,11 @@ async function selectCase(
   if (updateRoute && state.activePage === "review") {
     const nextUrl = pageUrl("review", { issue: issueId });
     if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
-      showPage("review", { historyMode, issue: issueId });
+      showPage("review", {
+        historyMode,
+        issue: issueId,
+        preserveScroll: preservedScrollY !== null,
+      });
     } else {
       setReviewView(issueId);
     }
@@ -923,6 +930,11 @@ async function selectCase(
     state.selectedCase = data;
     renderDetail(data);
     renderReview(data);
+    if (preservedScrollY !== null) {
+      window.requestAnimationFrame(() => {
+        window.scrollTo({ top: preservedScrollY, behavior: "auto" });
+      });
+    }
     void loadDeferredCaseMedia(issueId, requestSeq);
     scheduleTrailDetailMetadata(issueId, requestSeq);
     prefetchAdjacentCaseCores(issueId);
@@ -976,6 +988,7 @@ async function loadDeferredCaseMedia(issueId, requestSeq) {
 
 async function navigateAdjacentCase(delta) {
   if (!state.selectedId || ![-1, 1].includes(delta)) return;
+  const preserveScrollY = window.scrollY;
   let index = state.cases.findIndex((item) => item.issue_id === state.selectedId);
   if (index < 0) return;
   let targetIndex = index + delta;
@@ -990,7 +1003,12 @@ async function navigateAdjacentCase(delta) {
     targetIndex = 0;
   }
   const target = state.cases[targetIndex];
-  if (target) await selectCase(target.issue_id, { historyMode: "replace" });
+  if (target) {
+    await selectCase(target.issue_id, {
+      historyMode: "replace",
+      preserveScrollY,
+    });
+  }
 }
 
 function bindReviewComposerShortcuts() {

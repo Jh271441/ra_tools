@@ -827,6 +827,7 @@ function showPage(
     runSourceTab = "",
     restoreRoute = false,
     loadPageData = true,
+    preserveScroll = false,
     intentDatasetId = "",
     intentDatasetIds = [],
     intentCaseId = "",
@@ -995,7 +996,7 @@ function showPage(
     history.replaceState(historyState, "", pageUrl(target, routeOptions));
   }
   // Instant scroll keeps tab switches snappy; avoid smooth-scroll lag between pages.
-  if (target !== "review" || issue) {
+  if (!preserveScroll && (target !== "review" || issue)) {
     window.scrollTo({ top: 0, behavior: "auto" });
   }
 }
