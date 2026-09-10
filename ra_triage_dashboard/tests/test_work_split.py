@@ -332,6 +332,13 @@ class WorkSplitTest(unittest.TestCase):
                     work_agreement="all",
                     include_multi_reviews=True,
                 )
+                no_overlay = review_payloads._review_reason_analysis_payload(
+                    model_run_id="",
+                    comparison="all",
+                    baseline_scopes=[scope],
+                    work_agreement="all",
+                    include_multi_reviews=True,
+                )
                 pending = review_payloads._review_reason_analysis_payload(
                     model_run_id=run["id"],
                     comparison="all",
@@ -371,6 +378,14 @@ class WorkSplitTest(unittest.TestCase):
             self.assertEqual(item["multi_review"]["agreement"], "pending")
             self.assertEqual(item["multi_review"]["completed_count"], 1)
             self.assertEqual(item["multi_review"]["assigned_count"], 2)
+            self.assertEqual(no_overlay["total"], 1)
+            self.assertEqual(no_overlay["items"][0]["issue_id"], "cn1")
+            self.assertEqual(no_overlay["items"][0]["annotation"]["author"], "alice")
+            self.assertEqual(
+                no_overlay["items"][0]["annotation"]["model_run_id"], run["id"]
+            )
+            self.assertEqual(no_overlay["items"][0]["prediction"]["model_run_id"], "")
+            self.assertEqual(no_overlay["scope"]["model_run"], None)
             self.assertEqual(
                 result["evidence_clusters"][0]["key"], "routing_direction"
             )

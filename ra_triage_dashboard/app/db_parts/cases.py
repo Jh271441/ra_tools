@@ -1113,9 +1113,36 @@ class DatabaseCasesMixin:
         if not scopes:
             return []
         scope_clause, scope_params = self._scope_in_sql(scopes)
+        selected_run_id = str(model_run_id or "").strip()
+        if selected_run_id:
+            split_filter = "split.model_run_id = ?"
+            split_params: list[Any] = [selected_run_id]
+            prediction_run_id = selected_run_id
+        else:
+            # No model overlay is a global human-Review view, not the legacy
+            # empty-Run namespace. Pick the newest blind split for each Issue
+            # across Runs so current cross-validation evidence remains visible
+            # without duplicating an Issue from historical assignments.
+            split_filter = """
+                split.id = (
+                    SELECT latest_split.id
+                    FROM issue_work_splits latest_split
+                    JOIN review_work_assignments latest_assignment
+                      ON latest_assignment.split_id = latest_split.id
+                    WHERE latest_assignment.issue_id = assignment.issue_id
+                      AND latest_split.mode = 'blind'
+                    ORDER BY latest_split.created_at DESC, latest_split.id DESC
+                    LIMIT 1
+                )
+            """
+            split_params = []
+            # A no-overlay response must not silently attach the split's model
+            # prediction. The Review retains its own immutable Run binding.
+            prediction_run_id = ""
         query = f"""
             SELECT i.issue_id, i.title, i.scenario, i.summary, i.gt_label,
                    i.baseline_scope, assignment.split_id, assignment.assignee,
+                   split.model_run_id AS split_model_run_id,
                    annotation.id AS annotation_id,
                    annotation.label AS annotation_label,
                    annotation.review_status AS annotation_review_status,
@@ -1142,15 +1169,15 @@ class DatabaseCasesMixin:
             )
             LEFT JOIN model_predictions prediction
               ON prediction.issue_id = i.issue_id
-             AND prediction.model_run_id = split.model_run_id
-            WHERE split.mode = 'blind' AND split.model_run_id = ?
+             AND prediction.model_run_id = ?
+            WHERE split.mode = 'blind' AND {split_filter}
               AND {scope_clause}
             ORDER BY i.issue_id ASC, assignment.assignee ASC
         """
         with self.connect() as conn:
             rows = conn.execute(
                 query,
-                (str(model_run_id or "").strip(), *scope_params),
+                (prediction_run_id, *split_params, *scope_params),
             ).fetchall()
         results: list[dict[str, Any]] = []
         for row in rows:
@@ -1158,7 +1185,7 @@ class DatabaseCasesMixin:
             if row["annotation_id"] is not None:
                 annotation = {
                     "id": int(row["annotation_id"]),
-                    "model_run_id": str(model_run_id or ""),
+                    "model_run_id": str(row["split_model_run_id"] or ""),
                     "work_split_id": str(row["split_id"]),
                     "label": str(row["annotation_label"] or ""),
                     "review_status": str(row["annotation_review_status"] or "pending"),

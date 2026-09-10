@@ -332,6 +332,10 @@ function normalizedAnalysisRouteFilters(params) {
     : "all";
   return {
     search: params.get("q") || "",
+    commentState: ["with", "without"].includes(params.get("comment_state"))
+      ? params.get("comment_state")
+      : "all",
+    commentSearch: params.get("comment_search") || "",
     gtLabel: gtLabels,
     modelLabel: modelLabels,
     annotationAuthor: parseFilterList(params.get("reviewer")),
@@ -560,6 +564,21 @@ function currentAnalysisRouteOptions(overrides = {}) {
     pageSize: state.reviewAnalysis.pageSize,
     ...overrides,
   };
+}
+
+function persistCurrentAnalysisRoute(overrides = {}) {
+  if (state.activePage !== "analysis") return;
+  const nextUrl = pageUrl(
+    "analysis",
+    currentAnalysisRouteOptions(overrides)
+  );
+  const currentUrl = `${window.location.pathname}${window.location.search}`;
+  if (nextUrl === currentUrl) return;
+  window.history.replaceState(
+    { ...(window.history.state || {}), page: "analysis" },
+    "",
+    nextUrl
+  );
 }
 
 function applyAnalysisRouteControls(route) {

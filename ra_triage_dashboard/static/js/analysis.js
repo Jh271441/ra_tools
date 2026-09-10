@@ -1412,9 +1412,15 @@ function scheduleAnalysisFilterReload(delay = 0) {
   if (state.reviewAnalysis.filterTimer) {
     window.clearTimeout(state.reviewAnalysis.filterTimer);
   }
+  // Persist controls before the debounce. Refreshing while typing or directly
+  // after a checkbox change must restore the exact analysis view.
+  state.reviewAnalysis.page = 1;
+  persistCurrentAnalysisRoute({
+    ...analysisRequestOptions(),
+    page: 1,
+  });
   state.reviewAnalysis.filterTimer = window.setTimeout(() => {
     state.reviewAnalysis.filterTimer = null;
-    state.reviewAnalysis.page = 1;
     reloadReviewAnalysis({ historyMode: "replace" }).catch((error) => {
       showToast(error.message, true);
     });
