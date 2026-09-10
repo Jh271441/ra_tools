@@ -209,7 +209,7 @@ html[data-color-theme="light"] .detail-queue-index-input {
   display: grid; grid-template-columns: minmax(0, 1fr) clamp(320px, 29cqw, 350px); align-items: start; gap: 8px;
 }
 .review-detail-workspace > .detail-pane,
-.review-detail-workspace > .review-pane { min-height: calc(100dvh - 105px); }
+.review-detail-workspace > .review-pane { min-height: calc(100dvh - 75px); }
 .review-detail-workspace > .review-pane { grid-column: auto; }
 .detail-loading-state { min-height: 440px; }
 .issue-pane, .detail-pane, .review-pane {

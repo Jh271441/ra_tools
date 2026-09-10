@@ -1235,6 +1235,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('"detail-pane-video"', APP_JS)
         self.assertIn('root?.dataset.detailMediaKind === "video"', APP_JS)
         self.assertIn("clamp(320px, 29cqw, 350px)", STYLES_CSS)
+        self.assertIn(".review-detail-workspace > .review-pane { min-height: calc(100dvh - 75px); }", STYLES_CSS)
         self.assertIn("height: calc(100dvh - 75px); min-height: calc(100dvh - 75px)", STYLES_CSS)
         self.assertIn('.detail-pane.detail-pane-video > .detail-hero-media[data-detail-media-kind="video"]', STYLES_CSS)
         self.assertIn('.detail-hero-media[data-detail-media-kind="video"] .hero-media-video', STYLES_CSS)
