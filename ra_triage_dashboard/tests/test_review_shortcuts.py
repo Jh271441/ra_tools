@@ -64,6 +64,21 @@ assert.equal(toggleOpenReviewDropdownOption('q'),false);
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
 
 
+def test_exclude_shortcut_toggles_checkbox() -> None:
+    script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+const assert=require('node:assert/strict');
+Event=class {constructor(type,options){this.type=type;this.bubbles=options?.bubbles;}};
+const input={disabled:false,checked:false,dispatchEvent(event){this.lastEvent=event;}};
+$=(selector)=>selector==='#reviewExcludeInput' ? input : null;
+assert.equal(toggleReviewExcludeShortcut(),true);
+assert.equal(input.checked,true);
+assert.equal(input.lastEvent.type,'change');
+assert.equal(toggleReviewExcludeShortcut(),true);
+assert.equal(input.checked,false);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
 def test_open_review_dropdown_uses_arrows_for_navigation_and_enter_for_save() -> None:
     script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
 const assert=require('node:assert/strict');

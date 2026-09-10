@@ -488,6 +488,14 @@ function reviewDropdownShortcutAllowed(target) {
   );
 }
 
+function toggleReviewExcludeShortcut() {
+  const input = $("#reviewExcludeInput");
+  if (!input || input.disabled) return false;
+  input.checked = !input.checked;
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  return true;
+}
+
 function toggleReviewShortcutDropdown(dropdown) {
   if (!dropdown) return false;
   const wasOpen = dropdown.open;
@@ -536,6 +544,15 @@ function bindReviewKeyboardShortcuts() {
     if (submitReviewFromDropdown(event, target)) return;
     if (handleReviewDropdownKeyboard(event)) return;
     const key = String(event.key || "").toLowerCase();
+    if (
+      key === "k" &&
+      (!reviewShortcutHasEditableTarget(target) ||
+        Boolean(target?.matches?.('input[type="checkbox"]'))) &&
+      toggleReviewExcludeShortcut()
+    ) {
+      event.preventDefault();
+      return;
+    }
     const groupKey = REVIEW_TAG_GROUP_SHORTCUTS[key];
     if (
       groupKey &&
