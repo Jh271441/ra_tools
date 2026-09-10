@@ -372,6 +372,12 @@ html[data-color-theme="light"] .detail-queue-index-input {
   .detail-pane.detail-pane-video > .detail-hero-media[data-detail-media-kind="video"] {
     min-height: 0; flex: 1 1 auto;
   }
+  .app-shell.sidebar-collapsed .detail-pane.detail-pane-video {
+    height: auto; overflow: visible;
+  }
+  .app-shell.sidebar-collapsed .detail-pane.detail-pane-video > .detail-hero-media[data-detail-media-kind="video"] {
+    flex: 0 0 auto;
+  }
 }
 .review-form { display: grid; gap: 8px; }
 .review-mention-composer {

@@ -79,6 +79,17 @@
   .detail-hero-media[data-detail-media-kind="video"] .hero-media-video {
     height: 100%; min-height: 0; aspect-ratio: auto;
   }
+  .app-shell.sidebar-collapsed .detail-hero-media[data-detail-media-kind="video"],
+  .app-shell.sidebar-collapsed .detail-hero-media[data-detail-media-kind="video"] > .detail-media-content,
+  .app-shell.sidebar-collapsed .detail-hero-media[data-detail-media-kind="video"] .hero-video-player.is-compact {
+    height: auto;
+  }
+  .app-shell.sidebar-collapsed .detail-hero-media[data-detail-media-kind="video"] .hero-video-player.is-compact {
+    grid-template-rows: auto auto;
+  }
+  .app-shell.sidebar-collapsed .detail-hero-media[data-detail-media-kind="video"] .hero-media-video {
+    height: auto; aspect-ratio: 16 / 9;
+  }
 }
 /* Shared custom single-select chrome (Run / comparison / review-status / media). */
 .ui-select,
