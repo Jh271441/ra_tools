@@ -125,6 +125,26 @@ assert.equal(inputs[0].lastEvent.type,'change');
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
 
 
+def test_enter_submits_review_from_general_detail_focus() -> None:
+    script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
+const assert=require('node:assert/strict');
+const form={requestSubmit:(button)=>{form.submittedWith=button;}};
+const saveButton={id:'reviewSaveButton'};
+state={savingAnnotation:false};
+$=(selector)=>selector==='#annotationForm' ? form : selector==='#reviewSaveButton' ? saveButton : null;
+const surface={closest:()=>null};
+const enter={key:'Enter',shiftKey:false,isComposing:false,preventDefault(){this.prevented=true;},stopPropagation(){this.stopped=true;}};
+assert.equal(submitReviewFromKeyboard(enter,surface),true);
+assert.equal(enter.prevented,true);
+assert.equal(form.submittedWith,saveButton);
+const shiftEnter={key:'Enter',shiftKey:true,isComposing:false,preventDefault(){},stopPropagation(){}};
+assert.equal(submitReviewFromKeyboard(shiftEnter,surface),false);
+const button={closest:(selector)=>selector.includes('button') ? {} : null};
+assert.equal(submitReviewFromKeyboard({...enter,preventDefault(){},stopPropagation(){}},button),false);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
 def test_arrow_focused_option_keeps_all_dropdown_shortcuts_available() -> None:
     script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
 const assert=require('node:assert/strict');

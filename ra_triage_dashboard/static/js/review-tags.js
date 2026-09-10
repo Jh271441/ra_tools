@@ -480,6 +480,25 @@ function submitReviewFromDropdown(event, target) {
   return true;
 }
 
+function submitReviewFromKeyboard(event, target) {
+  if (
+    event.key !== "Enter" ||
+    event.shiftKey ||
+    event.isComposing ||
+    target?.closest?.(
+      "button, a, select, [role='option'], [role='listbox'], [contenteditable='true']"
+    )
+  ) {
+    return false;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  if (!state.savingAnnotation) {
+    $("#annotationForm")?.requestSubmit($("#reviewSaveButton") || undefined);
+  }
+  return true;
+}
+
 function reviewDropdownShortcutAllowed(target) {
   if (!reviewShortcutHasEditableTarget(target)) return true;
   return Boolean(
@@ -542,6 +561,7 @@ function bindReviewKeyboardShortcuts() {
     }
     const target = event.target instanceof Element ? event.target : null;
     if (submitReviewFromDropdown(event, target)) return;
+    if (submitReviewFromKeyboard(event, target)) return;
     if (handleReviewDropdownKeyboard(event)) return;
     const key = String(event.key || "").toLowerCase();
     if (
