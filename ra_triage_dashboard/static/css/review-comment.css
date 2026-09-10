@@ -206,7 +206,7 @@ html[data-color-theme="light"] .detail-queue-index-input {
   color: #0f172a; border-color: #b8c5d4; background: #f8fafc;
 }
 .review-detail-workspace {
-  display: grid; grid-template-columns: minmax(0, 1fr) 350px; align-items: stretch; gap: 8px;
+  display: grid; grid-template-columns: minmax(0, 1fr) clamp(320px, 29cqw, 350px); align-items: start; gap: 8px;
 }
 .review-detail-workspace > .detail-pane,
 .review-detail-workspace > .review-pane { min-height: calc(100dvh - 105px); }
@@ -354,6 +354,18 @@ html[data-color-theme="light"] .detail-queue-index-input {
 .review-history-content { display: grid; gap: 8px; max-height: 300px; overflow: auto; padding: 8px; border-top: 1px solid var(--line-soft); }
 
 .review-pane { max-height: none; overflow: visible; position: static; padding: 11px; }
+
+@media (min-width: 1025px) {
+  .detail-pane.detail-pane-video {
+    height: calc(100dvh - 75px); min-height: calc(100dvh - 75px);
+    display: flex; flex-direction: column; align-self: start;
+  }
+  .detail-pane.detail-pane-video > .detail-header,
+  .detail-pane.detail-pane-video > .current-run-output { flex: 0 0 auto; }
+  .detail-pane.detail-pane-video > .detail-hero-media[data-detail-media-kind="video"] {
+    min-height: 0; flex: 1 1 auto;
+  }
+}
 .review-form { display: grid; gap: 8px; }
 .review-mention-composer {
   position: relative; z-index: 70; width: 100%; min-height: 0; margin-top: -4px;

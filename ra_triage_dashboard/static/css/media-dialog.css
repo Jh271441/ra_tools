@@ -64,6 +64,22 @@
 .hero-media-meta .history-inline-button { margin-left: auto; }
 .no-asset { padding: 16px; border: 1px dashed #354051; border-radius: 7px; color: var(--faint); background: #0e131c; font-size: 11px; line-height: 1.55; text-align: center; }
 .model-history-details[open] > .model-list, .model-history-details[open] > .no-asset { margin-top: 2px; }
+
+@media (min-width: 1025px) {
+  .detail-hero-media[data-detail-media-kind="video"] {
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .detail-hero-media[data-detail-media-kind="video"] > .detail-media-content,
+  .detail-hero-media[data-detail-media-kind="video"] .hero-video-player.is-compact {
+    min-height: 0; height: 100%;
+  }
+  .detail-hero-media[data-detail-media-kind="video"] .hero-video-player.is-compact {
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .detail-hero-media[data-detail-media-kind="video"] .hero-media-video {
+    height: 100%; min-height: 0; aspect-ratio: auto;
+  }
+}
 /* Shared custom single-select chrome (Run / comparison / review-status / media). */
 .ui-select,
 .review-status-picker,

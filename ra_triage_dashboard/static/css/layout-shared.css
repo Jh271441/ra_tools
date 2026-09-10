@@ -9,6 +9,7 @@ button > * { pointer-events: none; }
 /* No margin transition on first paint — CSS load would animate 0→240 and feel like LTR wipe. */
 .app-frame { min-width: 0; margin-left: 240px; container-type: inline-size; }
 html.ra-ui-ready .app-frame { transition: margin-left 200ms ease-out; }
+html.ra-ui-ready .app-sidebar { transition: width 200ms ease-out; }
 .app-shell.sidebar-collapsed .app-frame,
 html[data-sidebar-pref="collapsed"] .app-frame { margin-left: 64px; }
 .app-sidebar {

@@ -205,7 +205,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-394", APP_ENTRY_JS)
+        self.assertIn("manual-triage-396", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -246,7 +246,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-394", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-396", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
         self.assertNotIn("async function bootstrap", APP_ENTRY_JS)
@@ -353,7 +353,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-394`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-396`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -1221,7 +1221,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-394", APP_ENTRY_JS)
+        self.assertIn("manual-triage-396", APP_ENTRY_JS)
 
     def test_adjacent_review_navigation_preserves_scroll_position(self) -> None:
         self.assertIn("const preserveScrollY = window.scrollY;", APP_JS)
@@ -1229,6 +1229,21 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("preserveScroll: preservedScrollY !== null", APP_JS)
         self.assertIn('if (!preserveScroll && (target !== "review" || issue))', APP_JS)
         self.assertIn('window.scrollTo({ top: preservedScrollY, behavior: "auto" })', APP_JS)
+
+    def test_desktop_review_video_fills_viewport_without_squeezing_review_rail(self) -> None:
+        self.assertIn('data-detail-media-kind="${escapeHtml(kind)}"', APP_JS)
+        self.assertIn('"detail-pane-video"', APP_JS)
+        self.assertIn('root?.dataset.detailMediaKind === "video"', APP_JS)
+        self.assertIn("clamp(320px, 29cqw, 350px)", STYLES_CSS)
+        self.assertIn("height: calc(100dvh - 75px); min-height: calc(100dvh - 75px)", STYLES_CSS)
+        self.assertIn('.detail-pane.detail-pane-video > .detail-hero-media[data-detail-media-kind="video"]', STYLES_CSS)
+        self.assertIn('.detail-hero-media[data-detail-media-kind="video"] .hero-media-video', STYLES_CSS)
+        self.assertIn("height: 100%; min-height: 0; aspect-ratio: auto", STYLES_CSS)
+        self.assertIn("html.ra-ui-ready .app-sidebar { transition: width 200ms ease-out; }", STYLES_CSS)
+        self.assertNotIn("clamp(320px, 24cqw, 380px)", STYLES_CSS)
+        self.assertNotIn("clamp(300px, 27cqw, 320px)", STYLES_CSS)
+        mobile_css = (STATIC_DIR / "css/mobile.css").read_text(encoding="utf-8")
+        self.assertIn(".hero-media-button, .hero-media-placeholder { min-height: 0; aspect-ratio: 16 / 9; }", mobile_css)
 
     def test_multi_issue_query_contract(self) -> None:
         self.assertIn('id="openIssueQueryButton"', INDEX_HTML)
