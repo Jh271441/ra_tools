@@ -354,6 +354,13 @@ html[data-color-theme="light"] .detail-queue-index-input {
 .review-history-content { display: grid; gap: 8px; max-height: 300px; overflow: auto; padding: 8px; border-top: 1px solid var(--line-soft); }
 
 .review-pane { max-height: none; overflow: visible; position: static; padding: 11px; }
+.review-form > *,
+.review-section,
+.review-tag-groups-shell,
+.review-tag-axis,
+.review-tag-groups { min-width: 0; max-width: 100%; }
+.review-section-heading,
+.review-section-heading .review-heading-actions { min-width: 0; flex-wrap: wrap; }
 
 @media (min-width: 1025px) {
   .detail-pane.detail-pane-video {
