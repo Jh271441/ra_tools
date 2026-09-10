@@ -19,10 +19,8 @@ class RunComparisonRouteContractTest(unittest.TestCase):
         api_start = RUNS_ROUTER.index('@router.get("/api/model-run-comparison"')
         api_block = RUNS_ROUTER[api_start : api_start + 1400]
         self.assertNotIn("_admin_identity", api_block)
-        self.assertIn("_cached_model_run_comparison", api_block)
+        self.assertIn("database.compare_model_runs", api_block)
         self.assertIn("resolve_request_baseline_scopes", api_block)
-        self.assertIn("TimedSingleFlightCache", RUNS_ROUTER)
-        self.assertIn("database.change_revision()", RUNS_ROUTER)
 
 
 if __name__ == "__main__":

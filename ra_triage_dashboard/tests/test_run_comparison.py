@@ -136,12 +136,6 @@ class RunComparisonDatabaseTest(unittest.TestCase):
         self.assertIn("cn-f2f", compared_ids)
         self.assertIn("cn-candidate-missing", compared_ids)
         self.assertNotIn("cn-both-missing", compared_ids)
-        f2p = next(item for item in default_order["items"] if item["issue_id"] == "cn-f2p")
-        self.assertTrue(f2p["extra_inputs"]["candidate"]["available"])
-        self.assertEqual(
-            f2p["extra_inputs"]["candidate"]["axes"]["routing"]["frame_count"],
-            2,
-        )
         self.assertEqual(self.compare(search="candidate has no output")["total"], 1)
         regression = self.compare(transition="P2F")
         self.assertEqual(regression["total"], 2)

@@ -29,36 +29,8 @@ from ..support.model_source import (
 )
 from ..import_parsing import parse_source_bytes
 from ..runtime import database, settings
-from ..timed_cache import TimedSingleFlightCache
 
 router = APIRouter()
-
-_model_run_comparison_cache = TimedSingleFlightCache[
-    tuple[Any, ...], dict[str, Any]
-](ttl_seconds=30, max_entries=64)
-
-
-def _cached_model_run_comparison(**kwargs: Any) -> dict[str, Any]:
-    input_filter = kwargs.get("input_filter", "")
-    cache_key = (
-        database.change_revision(),
-        kwargs.get("baseline_run_id", ""),
-        kwargs.get("candidate_run_id", ""),
-        tuple(kwargs.get("baseline_scopes") or ()),
-        kwargs.get("transition", ""),
-        kwargs.get("gt_label", ""),
-        kwargs.get("baseline_label", ""),
-        kwargs.get("candidate_label", ""),
-        kwargs.get("label_change", ""),
-        str(input_filter),
-        kwargs.get("search", ""),
-        kwargs.get("page", 1),
-        kwargs.get("page_size", 10),
-    )
-    return _model_run_comparison_cache.get_or_load(
-        cache_key,
-        lambda: database.compare_model_runs(**kwargs),
-    )
 
 
 @router.get("/api/model-run-comparison")
@@ -82,7 +54,7 @@ async def compare_model_runs(
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     try:
         payload = await asyncio.to_thread(
-            _cached_model_run_comparison,
+            database.compare_model_runs,
             baseline_run_id=baseline_run_id,
             candidate_run_id=candidate_run_id,
             baseline_scopes=scopes,
