@@ -210,7 +210,7 @@ html[data-color-theme="light"] .review-status-picker-panel,
 html[data-color-theme="light"] .detail-media-picker-panel {
   border-color: #b8c5d4; background: #ffffff; box-shadow: 0 12px 28px rgba(38, 52, 69, .16);
 }
-html[data-color-theme="light"] .ra-event-table td:nth-child(4),
+html[data-color-theme="light"] .ra-event-table td:nth-child(5),
 html[data-color-theme="light"] .media-control { color: #4e6075; }
 
 html[data-color-theme="light"] .sidebar-item:hover:not(:disabled) .sidebar-icon,

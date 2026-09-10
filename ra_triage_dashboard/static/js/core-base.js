@@ -790,7 +790,7 @@ const state = {
     indexes: { bev: 0, camera: 0 },
     loadSeq: 0,
   },
-  raEventDialog: { issueId: "", events: [], trailUrl: "" },
+  raEventDialog: { issueId: "", events: [], trailUrl: "", t0TimestampMs: NaN },
   sourcePreview: { runId: "", page: 1, pageSize: 100, pageCount: 1 },
   session: {
     username: "",

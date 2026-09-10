@@ -190,6 +190,29 @@ assert.match(markup,/data-video-t0/);
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
 
 
+def test_ra_event_relative_time_uses_review_media_t0() -> None:
+    script = (
+        (ROOT / "static" / "js" / "format-api.js").read_text()
+        + (ROOT / "static" / "js" / "detail-media.js").read_text()
+        + r'''
+const assert=require('node:assert/strict');
+state={raEventDialog:{t0TimestampMs:0}};
+const caseData={
+  assets:{capture:{timestamp_ms:200000}},
+  camera:{capture:{timestamp_ms:300000}},
+  external_links:{ares_timestamp_ms:400000},
+};
+assert.equal(reviewCaseT0TimestampMs(caseData),200000);
+assert.equal(reviewCaseT0TimestampMs({external_links:{ares_timestamp_ms:400000}}),400000);
+assert.equal(formatRaEventRelativeTime(200000,200000),'t0');
+assert.equal(formatRaEventRelativeTime(81895,200000),'t−118.105s');
+assert.equal(formatRaEventRelativeTime(201401,200000),'t+1.401s');
+assert.equal(formatRaEventRelativeTime(null,200000),'—');
+'''
+    )
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
 def test_review_history_shortcut_toggle_closes_matching_dialog() -> None:
     script = (ROOT / "static" / "js" / "detail-media.js").read_text() + r'''
 const assert=require('node:assert/strict');

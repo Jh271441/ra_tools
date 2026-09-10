@@ -490,7 +490,8 @@ code { color: #b8edf2; font: 10px "SFMono-Regular", Consolas, monospace; }
 .ra-event-table td { color: var(--muted); }
 .ra-event-table td:first-child { color: var(--text); font-weight: 650; }
 .ra-event-table td:nth-child(3) { color: var(--accent); font-family: "SFMono-Regular", Consolas, monospace; }
-.ra-event-table td:nth-child(4) { color: #aab8c8; white-space: nowrap; }
+.ra-event-table td:nth-child(4) { color: var(--accent); font-family: "SFMono-Regular", Consolas, monospace; white-space: nowrap; }
+.ra-event-table td:nth-child(5) { color: #aab8c8; white-space: nowrap; }
 .ra-event-table tr:last-child td { border-bottom: 0; }
 .ra-event-empty { padding: 30px 12px; color: var(--faint); font-size: 11px; text-align: center; }
 .ra-event-dialog-actions { padding-top: 1px; }

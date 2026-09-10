@@ -287,6 +287,19 @@ function safeUrl(url) {
   }
 }
 
+function reviewCaseT0TimestampMs(caseData) {
+  const externalLinks = caseData?.external_links || {};
+  const candidates = [
+    caseData?.assets?.capture?.timestamp_ms,
+    caseData?.camera?.capture?.timestamp_ms,
+    externalLinks.ares_timestamp_ms,
+  ];
+  const value = candidates
+    .map(Number)
+    .find((item) => Number.isFinite(item) && item > 0);
+  return value ?? NaN;
+}
+
 function aresStudioUrl(caseData, issueUrl) {
   const externalLinks = caseData?.external_links || {};
   const tripId = String(
@@ -296,11 +309,7 @@ function aresStudioUrl(caseData, issueUrl) {
     ""
   ).trim();
   const issueId = String(caseData?.issue_id || "").trim();
-  const timestampMs = Number(
-    caseData?.assets?.capture?.timestamp_ms ||
-    caseData?.camera?.capture?.timestamp_ms ||
-    externalLinks.ares_timestamp_ms
-  );
+  const timestampMs = reviewCaseT0TimestampMs(caseData);
   if (!issueUrl || !issueId || !tripId || !Number.isFinite(timestampMs) || timestampMs <= 0) return "";
   try {
     const url = new URL("/static/ares-studio/", issueUrl);

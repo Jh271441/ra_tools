@@ -705,7 +705,27 @@ function formatRaEventTimestamp(value) {
     : date.toLocaleString("zh-CN", { hour12: false });
 }
 
-function renderRaEventRows(events, query = "") {
+function formatRaEventRelativeTime(value, t0TimestampMs) {
+  const timestamp = Number(value);
+  const reference = Number(t0TimestampMs);
+  if (
+    !Number.isFinite(timestamp) || timestamp <= 0 ||
+    !Number.isFinite(reference) || reference <= 0
+  ) return "—";
+  const deltaSeconds = (timestamp - reference) / 1000;
+  if (Math.abs(deltaSeconds) < 0.0005) return "t0";
+  const magnitude = Math.abs(deltaSeconds)
+    .toFixed(3)
+    .replace(/\.0+$/, "")
+    .replace(/(\.\d*?)0+$/, "$1");
+  return `t${deltaSeconds < 0 ? "−" : "+"}${magnitude}s`;
+}
+
+function renderRaEventRows(
+  events,
+  query = "",
+  t0TimestampMs = state.raEventDialog.t0TimestampMs
+) {
   const normalizedQuery = String(query || "").trim().toLowerCase();
   const rows = (Array.isArray(events) ? events : []).filter((item) => {
     if (!normalizedQuery) return true;
@@ -722,6 +742,7 @@ function renderRaEventRows(events, query = "") {
           <td>${escapeHtml(item?.event || "—")}</td>
           <td>${escapeHtml(item?.value ?? "—")}</td>
           <td class="ra-event-timestamp">${escapeHtml(timestamp ?? "—")}</td>
+          <td class="ra-event-relative-time">${escapeHtml(formatRaEventRelativeTime(timestamp, t0TimestampMs))}</td>
           <td>${escapeHtml(formatRaEventTimestamp(timestamp))}</td>
         </tr>`;
       })
@@ -740,6 +761,7 @@ function openRaEventDialog(caseData) {
     issueId: String(caseData.issue_id || ""),
     events,
     trailUrl: safeUrl(externalLinks.ra_event_url),
+    t0TimestampMs: reviewCaseT0TimestampMs(caseData),
   };
   const input = $("#raEventSearchInput");
   if (input) input.value = "";
@@ -750,7 +772,7 @@ function openRaEventDialog(caseData) {
     trailLink.hidden = !state.raEventDialog.trailUrl;
     trailLink.href = state.raEventDialog.trailUrl || "#";
   }
-  renderRaEventRows(events);
+  renderRaEventRows(events, "", state.raEventDialog.t0TimestampMs);
   openDialog("raEventDialog");
 }
 

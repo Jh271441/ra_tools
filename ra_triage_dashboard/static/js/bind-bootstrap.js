@@ -644,11 +644,15 @@ function bindEvents() {
   document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => closeDialog(button.dataset.close)));
   $("#mediaDialog").addEventListener("close", cleanupMediaDialog);
   $("#raEventSearchInput").addEventListener("input", (event) => {
-    renderRaEventRows(state.raEventDialog.events, event.target.value);
+    renderRaEventRows(
+      state.raEventDialog.events,
+      event.target.value,
+      state.raEventDialog.t0TimestampMs
+    );
   });
   $("#raEventSearchButton").addEventListener("click", () => $("#raEventSearchInput")?.focus());
   $("#raEventDialog").addEventListener("close", () => {
-    state.raEventDialog = { issueId: "", events: [], trailUrl: "" };
+    state.raEventDialog = { issueId: "", events: [], trailUrl: "", t0TimestampMs: NaN };
   });
   $("#importFile").addEventListener("change", () => {
     const filename = $("#importFileName");
