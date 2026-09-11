@@ -702,6 +702,7 @@ function renderReview(caseData) {
       screenshotInput.value = "";
     });
   }
+  restoreFailedReviewUploadImages(caseData.issue_id);
   renderPendingReviewImages();
   bindReviewMentionComposer($("#annotationNote"));
   const annotationForm = $("#annotationForm");
@@ -786,19 +787,35 @@ function restoreFailedReviewUploadImages(issueId) {
   if (!failed || state.pendingReviewImages.length) return;
   const [key, task] = failed;
   state.backgroundReviewUploads.delete(key);
-  task.files.forEach((file) => {
-    state.pendingReviewImages.push({
-      id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
-      file,
-      previewUrl: URL.createObjectURL(file),
-    });
-  });
+  const previewItems = Array.isArray(task.previewItems) && task.previewItems.length
+    ? task.previewItems
+    : task.files.map((file) => ({
+        id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+        file,
+        previewUrl: URL.createObjectURL(file),
+      }));
+  state.pendingReviewImages.push(...previewItems);
+  task.previewItems = [];
   state.reviewFormDirty = true;
   renderPendingReviewImages();
 }
 
+function activeReviewUploadForIssue(issueId = state.selectedId) {
+  const prefix = `${String(issueId || "")}|`;
+  return [...state.backgroundReviewUploads.entries()].find(
+    ([key, task]) => key.startsWith(prefix) && task && !task.failed
+  )?.[1] || null;
+}
+
+function releaseReviewUploadPreviews(task) {
+  (task?.previewItems || []).forEach((item) => releasePreviewUrlLater(item.previewUrl));
+  if (task) task.previewItems = [];
+}
+
 function enqueueBackgroundReviewUpload(task) {
   const run = async () => {
+    task.status = "uploading";
+    if (state.selectedId === task.issueId) renderPendingReviewImages();
     try {
       const form = new FormData();
       form.append("payload", JSON.stringify(task.payload));
@@ -813,6 +830,7 @@ function enqueueBackgroundReviewUpload(task) {
           headers: { "X-RA-Triage-Request": "review-v1" },
         }
       );
+      acknowledgeLocalChange(result);
       state.backgroundReviewUploads.delete(task.key);
       const draft = readReviewDraft(
         task.issueId,
@@ -839,13 +857,22 @@ function enqueueBackgroundReviewUpload(task) {
           updateReviewHistory(state.selectedCase);
         }
       }
+      releaseReviewUploadPreviews(task);
+      if (state.selectedId === task.issueId) renderPendingReviewImages();
+      showToast(uiText(
+        `Issue ${task.issueId} 已保存 Review 和 ${task.files.length} 张截图。`,
+        `Issue ${task.issueId}: Review and ${task.files.length} screenshot(s) saved.`,
+      ));
       refreshReviewDerivedData();
     } catch (error) {
       task.failed = true;
       if (state.selectedId === task.issueId) {
         restoreFailedReviewUploadImages(task.issueId);
       }
-      showToast(`Issue ${task.issueId} 的截图后台上传失败，请重新按 Enter 重试。`, true);
+      showToast(uiText(
+        `Issue ${task.issueId} 的截图后台上传失败，请重新按 Enter 重试。`,
+        `Issue ${task.issueId}: background screenshot upload failed. Press Enter to retry.`,
+      ), true);
     }
   };
   state.reviewUploadTail = state.reviewUploadTail
@@ -864,11 +891,24 @@ function releaseReviewSubmitLock(submitButton) {
 function renderPendingReviewImages() {
   const target = $("#pendingScreenshotList");
   if (!target) return;
-  if (!state.pendingReviewImages.length) {
+  const activeUpload = activeReviewUploadForIssue();
+  if (!state.pendingReviewImages.length && !activeUpload) {
     target.innerHTML = "";
     return;
   }
-  target.innerHTML = state.pendingReviewImages
+  const uploadStatus = activeUpload?.status === "uploading"
+    ? uiText(`正在后台保存 Review 和 ${activeUpload.files.length} 张截图`, `Saving Review and ${activeUpload.files.length} screenshot(s) in background`)
+    : uiText(`等待后台保存 Review 和 ${activeUpload?.files.length || 0} 张截图`, `Waiting to save Review and ${activeUpload?.files.length || 0} screenshot(s)`);
+  const uploadMarkup = activeUpload
+    ? `<section class="review-upload-progress" role="status" aria-live="polite">
+        <div class="review-upload-progress-copy">
+          <span class="review-upload-spinner" aria-hidden="true"></span>
+          <span><strong>${escapeHtml(uploadStatus)}</strong><small>${escapeHtml(uiText("可以继续切换 Issue；完成后截图会自动进入 Review 历史。", "You can switch Issues; screenshots will appear in Review history when saved."))}</small></span>
+        </div>
+        <div class="review-upload-thumbnails">${(activeUpload.previewItems || []).map((item) => `<div class="pending-screenshot is-uploading"><img src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.file.name || uiText("正在上传的截图", "Screenshot uploading"))}" /><span>${escapeHtml(uiText("上传中", "Uploading"))}</span></div>`).join("")}</div>
+      </section>`
+    : "";
+  const pendingMarkup = state.pendingReviewImages
     .map(
       (item) => `<div class="pending-screenshot">
         <img src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.file.name || "待上传截图")}" />
@@ -876,6 +916,7 @@ function renderPendingReviewImages() {
       </div>`
     )
     .join("");
+  target.innerHTML = uploadMarkup + pendingMarkup;
   target.querySelectorAll("[data-remove-screenshot]").forEach((button) => {
     button.addEventListener("click", () => {
       const index = state.pendingReviewImages.findIndex(
@@ -1293,7 +1334,8 @@ async function saveAnnotation(event) {
     note: $("#annotationNote").value,
     author: $("#annotationAuthor").value,
   };
-  const screenshotFiles = state.pendingReviewImages.map((item) => item.file);
+  const screenshotItems = [...state.pendingReviewImages];
+  const screenshotFiles = screenshotItems.map((item) => item.file);
   const uploadKey = reviewUploadTaskKey(issueId, payload);
   const activeBackgroundUpload = state.backgroundReviewUploads.get(uploadKey);
   if (activeBackgroundUpload && !activeBackgroundUpload.failed) {
@@ -1307,15 +1349,22 @@ async function saveAnnotation(event) {
       issueId,
       payload,
       files: screenshotFiles,
+      previewItems: screenshotItems,
       queuedAt: Date.now(),
       failed: false,
+      status: "queued",
     };
     state.backgroundReviewUploads.set(uploadKey, task);
-    clearPendingReviewImages();
+    state.pendingReviewImages = [];
+    renderPendingReviewImages();
     state.reviewFormDirty = false;
     state.deferredDetailRefresh = false;
     $("#annotationNote")?.blur();
     enqueueBackgroundReviewUpload(task);
+    showToast(uiText(
+      `Review 和 ${screenshotFiles.length} 张截图已进入后台保存，可继续切换 Issue。`,
+      `Review and ${screenshotFiles.length} screenshot(s) are saving in background; you can switch Issues.`,
+    ));
     releaseReviewSubmitLock(submitButton);
     return;
   }

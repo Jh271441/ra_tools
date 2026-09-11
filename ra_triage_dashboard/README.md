@@ -185,7 +185,7 @@ records 链接只用于提取数字 Batch ID，后端不会跟随其中的 hostn
 
 当前网关对外契约是内网 HTTP；2026-07-30 实测 HTTPS 入口的证书已过期，无法在保持证书校验的前提下切换。因此 key 的网络传输目前依赖受控内网边界，仍是已知运营风险。证书续期后应把 catalog / chat URL 一并切换到 HTTPS；代码会继续校验固定 hostname、禁用代理和重定向，不能用关闭证书校验替代修复。
 
-Review 截图绑定到单条追加式 annotation：前端粘贴后先本地预览，保存时才上传；后端在受限后台线程中解码并重新编码为 PNG/JPEG/WebP，去除原始元数据。每次最多 4 张、单张 8 MB、总计 24 MB，单图不超过 4000 万像素；HTTP 请求上限为 26 MB，缺少 `Content-Length` 或固定同源请求标记会在 multipart 解析前拒绝，应用级截图配额为 20 GB，并保留至少 256 MB 磁盘空间。API 只返回附件 ID、尺寸、类型和不含服务器路径的读取 URL。备份 SQLite 时必须同时备份 `review_attachments/`，否则历史记录仍在但图片文件无法恢复。
+Review 截图绑定到单条追加式 annotation：前端粘贴后先本地预览，保存时才上传；进入后台保存后继续显示原缩略图、等待/上传状态和可切换 Issue 的说明，服务端确认后显示成功提示并将图片放入 Review 历史。失败时同一批预览自动恢复到草稿，返回此前切走的 Issue 时也会恢复并允许重试。后端在受限后台线程中解码并重新编码为 PNG/JPEG/WebP，去除原始元数据。每次最多 4 张、单张 8 MB、总计 24 MB，单图不超过 4000 万像素；HTTP 请求上限为 26 MB，缺少 `Content-Length` 或固定同源请求标记会在 multipart 解析前拒绝，应用级截图配额为 20 GB，并保留至少 256 MB 磁盘空间。API 只返回附件 ID、尺寸、类型和不含服务器路径的读取 URL。备份 SQLite 时必须同时备份 `review_attachments/`，否则历史记录仍在但图片文件无法恢复。
 
 Issue 标签可以不选，前端按三层语义分组：`场景` 包括 `environment`（环境，含施工/变更区域、道闸、园区出入口、掉头、其他）和 `self_intent`（自车意图，含 `intent_straight`、`intent_left_turn`、`intent_right_turn`、`intent_u_turn`）；`触发判定` 保留 `误触发`（`traffic_light`、`queue`、`yielding`、`u_turn`、`park_in`、`park_out`、`scene_false_other`）和 `应该触发`（`obstacle_not_avoided`、`close_distance`、`perception_fp`、`true_eol`、`true_map_change`、`true_traffic_light_unavailable`、`true_unnecessary_lane_change`、`scene_true_other`）；`如何驶离` 的正确触发组另含 `egress_takeover`，并和无需协助共同保留为两组。场景和缺失信息使用共享的固定目录，以绝对定位弹出多选，不因选项展开而撑高 Review 面板；当前 Review UI 不提供新建、编辑或删除标签的入口，历史自定义 key 仍可读。缺失信息默认不选中，`is_excluded` 与 Review 版本一起追加保存。
 

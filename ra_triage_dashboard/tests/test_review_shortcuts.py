@@ -79,6 +79,57 @@ assert.equal(input.checked,false);
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
 
 
+def test_background_review_upload_keeps_preview_and_restores_it_on_failure() -> None:
+    source = (ROOT / "static" / "js" / "review-form.js").read_text()
+    start = source.index("function restoreFailedReviewUploadImages")
+    end = source.index("const CASE_DETAIL_PREFETCH_TTL_MS", start)
+    script = source[start:end] + r'''
+const assert=require('node:assert/strict');
+const target={innerHTML:'',querySelectorAll:()=>[]};
+const file={name:'evidence.png'};
+const preview={id:'preview-1',file,previewUrl:'blob:evidence'};
+const task={issueId:'cn1',files:[file],previewItems:[preview],status:'uploading',failed:false};
+state={selectedId:'cn1',pendingReviewImages:[],backgroundReviewUploads:new Map([['cn1||',task]])};
+$=(selector)=>selector==='#pendingScreenshotList' ? target : null;
+escapeHtml=(value)=>String(value);
+uiText=(zh)=>zh;
+releasePreviewUrlLater=()=>{};
+renderPendingReviewImages();
+assert.match(target.innerHTML,/正在后台保存 Review 和 1 张截图/);
+assert.match(target.innerHTML,/blob:evidence/);
+assert.match(target.innerHTML,/上传中/);
+task.failed=true;
+restoreFailedReviewUploadImages('cn1');
+assert.equal(state.backgroundReviewUploads.size,0);
+assert.equal(state.pendingReviewImages.length,1);
+assert.equal(state.pendingReviewImages[0],preview);
+assert.doesNotMatch(target.innerHTML,/正在后台保存/);
+assert.match(target.innerHTML,/data-remove-screenshot/);
+(async()=>{
+  let toast='';
+  const successPreview={id:'preview-2',file,previewUrl:'blob:success'};
+  const successTask={key:'cn2||',issueId:'cn2',payload:{model_run_id:'',work_split_id:''},files:[file],previewItems:[successPreview],queuedAt:1,failed:false,status:'queued'};
+  state={selectedId:'cn2',selectedCase:{issue_id:'cn2',annotations:[]},reviewEditRunId:'',reviewEditBaseAnnotationId:null,reviewFormDirty:true,backgroundReviewUploads:new Map([[successTask.key,successTask]]),pendingReviewImages:[],reviewUploadTail:Promise.resolve()};
+  FormData=class {append(){}};
+  api=async()=>({change_revision:2,annotation:{id:7,model_run_id:'',notification:{queued:[]}}});
+  acknowledgeLocalChange=()=>{};
+  readReviewDraft=()=>null;
+  clearReviewDraft=()=>{};
+  updateReviewHistory=()=>{};
+  refreshReviewDerivedData=()=>{};
+  showToast=(message)=>{toast=message;};
+  enqueueBackgroundReviewUpload(successTask);
+  renderPendingReviewImages();
+  assert.match(target.innerHTML,/等待后台保存|正在后台保存/);
+  await state.reviewUploadTail;
+  assert.equal(state.backgroundReviewUploads.size,0);
+  assert.match(toast,/已保存 Review 和 1 张截图/);
+  assert.equal(target.innerHTML,'');
+})().catch((error)=>{console.error(error);process.exitCode=1;});
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
 def test_open_review_dropdown_uses_arrows_for_navigation_and_enter_for_save() -> None:
     script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
 const assert=require('node:assert/strict');

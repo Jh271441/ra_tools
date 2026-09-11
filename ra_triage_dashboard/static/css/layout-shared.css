@@ -450,6 +450,44 @@ html[data-ui-lang="en"] .expected-output-rule-popover ul.ui-lang-en { display: g
   font-size: 15px; line-height: 17px;
 }
 .pending-screenshot button:hover { border-color: rgba(248,113,113,.75); color: #fecaca; }
+.review-upload-progress {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--line));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--overlay));
+}
+.review-upload-progress-copy { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.review-upload-progress-copy > span:last-child { display: grid; gap: 2px; min-width: 0; }
+.review-upload-progress-copy strong { color: var(--text); font-size: 11px; }
+.review-upload-progress-copy small { color: var(--muted); font-size: 9px; line-height: 1.35; }
+.review-upload-spinner {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  border: 2px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: review-upload-spin 800ms linear infinite;
+}
+.review-upload-thumbnails { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+.pending-screenshot.is-uploading::after { content: ""; position: absolute; inset: 0; background: rgba(3, 7, 12, .38); }
+.pending-screenshot.is-uploading > span {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: #fff;
+  background: rgba(3, 7, 12, .78);
+  font-size: 9px;
+  white-space: nowrap;
+}
+@keyframes review-upload-spin { to { transform: rotate(360deg); } }
 .tags { display: flex; flex-wrap: wrap; gap: 3px; }
 .tag { padding: 2px 4px; border-radius: 3px; color: #c0ccdc; background: #1c2534; font-size: 9px; }
 .dialog { width: min(640px, calc(100vw - 30px)); }
