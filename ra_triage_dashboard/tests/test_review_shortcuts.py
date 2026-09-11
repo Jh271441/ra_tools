@@ -80,10 +80,8 @@ assert.equal(input.checked,false);
 
 
 def test_background_review_upload_keeps_preview_and_restores_it_on_failure() -> None:
-    source = (ROOT / "static" / "js" / "review-form.js").read_text()
-    start = source.index("function restoreFailedReviewUploadImages")
-    end = source.index("const CASE_DETAIL_PREFETCH_TTL_MS", start)
-    script = source[start:end] + r'''
+    source = (ROOT / "static" / "js" / "review-attachments.js").read_text()
+    script = source + r'''
 const assert=require('node:assert/strict');
 const target={innerHTML:'',querySelectorAll:()=>[]};
 const file={name:'evidence.png'};
@@ -117,6 +115,7 @@ assert.match(target.innerHTML,/data-remove-screenshot/);
   clearReviewDraft=()=>{};
   updateReviewHistory=()=>{};
   refreshReviewDerivedData=()=>{};
+  refreshReviewAfterSave=async()=>{};
   showToast=(message)=>{toast=message;};
   enqueueBackgroundReviewUpload(successTask);
   renderPendingReviewImages();
@@ -133,7 +132,7 @@ assert.match(target.innerHTML,/data-remove-screenshot/);
 def test_successful_review_save_advances_when_current_leaves_filter() -> None:
     source = (ROOT / "static" / "js" / "review-form.js").read_text()
     start = source.index("function reviewSaveNavigationContext")
-    end = source.index("function enqueueBackgroundReviewUpload", start)
+    end = source.index("const CASE_DETAIL_PREFETCH_TTL_MS", start)
     script = source[start:end] + r'''
 const assert=require('node:assert/strict');
 window={scrollY:321};
