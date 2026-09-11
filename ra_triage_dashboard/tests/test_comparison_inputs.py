@@ -86,6 +86,9 @@ def test_case_membership_and_run_reference(tmp_path):
     assert d['baseline']['prompt']['text'] == 'actual'
     assert d['baseline']['run_reference']['prompt']['source_type'] == 'run_example'
     assert d['baseline']['run_reference']['prompt']['example_case_id'] == 'cn2'
+    single = db.comparison_case_inputs('cn1', ['', run['id']], ['scope'])
+    assert single['baseline'] is None
+    assert single['candidate']['prompt']['text'] == 'actual'
     with pytest.raises(ValueError): db.comparison_case_inputs('cn1',[run['id'],run['id']],['other'])
     with pytest.raises(ValueError): db.comparison_case_inputs('cn1',[run['id'],'missing'],['scope'])
 

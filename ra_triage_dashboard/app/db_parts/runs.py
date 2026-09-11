@@ -305,7 +305,7 @@ class DatabaseRunsMixin:
         page: int = 1,
         page_size: int = 10,
     ) -> dict[str, Any]:
-        """Compare two immutable Runs over the same baseline workset.
+        """Inspect one or compare two immutable Runs over one baseline workset.
 
         P/F describes correctness against immutable GT, not a particular model
         label: P2F is a regression and F2P is an improvement. Compare the union
@@ -316,10 +316,12 @@ class DatabaseRunsMixin:
 
         baseline_run_id = str(baseline_run_id or "").strip()
         candidate_run_id = str(candidate_run_id or "").strip()
-        if not baseline_run_id or not candidate_run_id:
-            raise ValueError("请选择两个模型 Run。")
-        if baseline_run_id == candidate_run_id:
+        if not baseline_run_id and not candidate_run_id:
+            raise ValueError("请至少选择一个模型 Run。")
+        if baseline_run_id and baseline_run_id == candidate_run_id:
             raise ValueError("基线 Run 与新 Run 不能相同。")
+        view_mode = "comparison" if baseline_run_id and candidate_run_id else "single"
+        active_run_id = candidate_run_id or baseline_run_id
         scopes = self._normalize_baseline_scopes(baseline_scopes)
         if not scopes:
             raise ValueError("至少选择一个有效 GT 数据集。")
@@ -355,7 +357,9 @@ class DatabaseRunsMixin:
         page_size = min(max(int(page_size), 1), 100)
         page = max(int(page), 1)
 
-        run_ids = (baseline_run_id, candidate_run_id)
+        run_ids = tuple(
+            run_id for run_id in (baseline_run_id, candidate_run_id) if run_id
+        )
         run_placeholders = ", ".join("?" for _ in run_ids)
         scope_clause, scope_params = self._scope_in_sql(scopes, "i.baseline_scope")
         with self.connect() as conn:
@@ -372,12 +376,12 @@ class DatabaseRunsMixin:
                 run_ids,
             ).fetchall()
             annotation_join = self._latest_annotation_join(
-                candidate_run_id,
+                active_run_id,
                 include_unbound_fallback=True,
                 include_bound_history_fallback=True,
             )
             annotation_params = self._latest_annotation_join_params(
-                candidate_run_id,
+                active_run_id,
                 include_unbound_fallback=True,
                 include_bound_history_fallback=True,
             )
@@ -419,7 +423,7 @@ class DatabaseRunsMixin:
             ).fetchall()
 
         runs = {str(row["id"]): self._run_dict(row) for row in run_rows}
-        if baseline_run_id not in runs or candidate_run_id not in runs:
+        if any(run_id not in runs for run_id in run_ids):
             raise ValueError("模型 Run 不存在或已被删除。")
         jobs: dict[str, dict[str, Any]] = {}
         for row in job_rows:
@@ -458,10 +462,13 @@ class DatabaseRunsMixin:
                 ("P" if baseline_correct else "F")
                 + "2"
                 + ("P" if candidate_correct else "F")
+                if view_mode == "comparison"
+                else ""
             )
             matrices["baseline"][gt_label][baseline_bucket] += 1
             matrices["candidate"][gt_label][candidate_bucket] += 1
-            transition_counts[transition_key] += 1
+            if transition_key:
+                transition_counts[transition_key] += 1
             baseline_extra_inputs = extra_input_summary(
                 _json_load(row["baseline_raw_json"], {}),
                 _json_load(row["baseline_model_extra_json"], {}),
@@ -481,7 +488,7 @@ class DatabaseRunsMixin:
                     "created_at": str(row["annotation_created_at"] or ""),
                     "model_run_id": annotation_run_id,
                     "source": (
-                        "candidate" if annotation_run_id == candidate_run_id
+                        "candidate" if annotation_run_id == active_run_id
                         else "unbound" if not annotation_run_id
                         else "other_run"
                     ),
@@ -552,6 +559,8 @@ class DatabaseRunsMixin:
 
         def matches_input_filter(item: dict[str, Any]) -> bool:
             scope = normalized_input_filter["run"]
+            if view_mode == "single":
+                scope = "candidate" if candidate_run_id else "baseline"
             if scope == "baseline":
                 return extra_input_matches(item["extra_inputs"]["baseline"], normalized_input_filter)
             if scope == "candidate":
@@ -565,7 +574,8 @@ class DatabaseRunsMixin:
             item
             for item in comparison_rows
             if (
-                normalized_transition == "ALL"
+                view_mode == "single"
+                or normalized_transition == "ALL"
                 or item["transition"] == normalized_transition
             )
             and (
@@ -573,15 +583,18 @@ class DatabaseRunsMixin:
                 or item["gt_label"] == normalized_gt_label
             )
             and (
-                normalized_baseline_label == "ALL"
+                not baseline_run_id
+                or normalized_baseline_label == "ALL"
                 or item["baseline"]["model_label"] == normalized_baseline_label
             )
             and (
-                normalized_candidate_label == "ALL"
+                not candidate_run_id
+                or normalized_candidate_label == "ALL"
                 or item["candidate"]["model_label"] == normalized_candidate_label
             )
             and (
-                normalized_label_change == "ALL"
+                view_mode == "single"
+                or normalized_label_change == "ALL"
                 or item["label_changed"]
                 == (normalized_label_change == "CHANGED")
             )
@@ -605,11 +618,20 @@ class DatabaseRunsMixin:
         offset = (page - 1) * page_size
 
         return {
-            "baseline_run": self._comparison_run_snapshot(
-                runs[baseline_run_id], jobs.get(baseline_run_id)
+            "view_mode": view_mode,
+            "baseline_run": (
+                self._comparison_run_snapshot(
+                    runs[baseline_run_id], jobs.get(baseline_run_id)
+                )
+                if baseline_run_id
+                else None
             ),
-            "candidate_run": self._comparison_run_snapshot(
-                runs[candidate_run_id], jobs.get(candidate_run_id)
+            "candidate_run": (
+                self._comparison_run_snapshot(
+                    runs[candidate_run_id], jobs.get(candidate_run_id)
+                )
+                if candidate_run_id
+                else None
             ),
             "baseline_scopes": scopes,
             "summary": {
@@ -622,11 +644,11 @@ class DatabaseRunsMixin:
                 "candidate": candidate_matrix,
                 "accuracy_delta": (
                     candidate_matrix["accuracy"] - baseline_matrix["accuracy"]
-                ),
+                ) if view_mode == "comparison" else None,
                 "prediction_delta": (
                     candidate_matrix["prediction_count"]
                     - baseline_matrix["prediction_count"]
-                ),
+                ) if view_mode == "comparison" else None,
             },
             "filters": {
                 "transition": normalized_transition,
@@ -645,13 +667,21 @@ class DatabaseRunsMixin:
         }
 
     def comparison_case_inputs(self, issue_id: str, run_ids: Sequence[str], baseline_scopes: Sequence[str]) -> dict[str, Any]:
+        selected_run_ids = [str(run_id or "").strip() for run_id in run_ids]
+        if len(selected_run_ids) != 2 or not any(selected_run_ids):
+            raise ValueError("请至少选择一个模型 Run。")
         clause, params = self._scope_in_sql(baseline_scopes, "i.baseline_scope")
         with self.connect() as conn:
             case = conn.execute(f"SELECT i.issue_id FROM issues i WHERE i.issue_id = ? AND {clause}", (issue_id, *params)).fetchone()
             if case is None:
                 raise ValueError("Case 不在所选数据集中。")
-            result = []
-            for run_id in run_ids:
+            result: dict[str, dict[str, Any] | None] = {
+                "baseline": None,
+                "candidate": None,
+            }
+            for side, run_id in zip(("baseline", "candidate"), selected_run_ids):
+                if not run_id:
+                    continue
                 run_row = conn.execute("SELECT * FROM model_runs WHERE id = ?", (run_id,)).fetchone()
                 if run_row is None:
                     raise ValueError("模型 Run 不存在。")
@@ -661,15 +691,16 @@ class DatabaseRunsMixin:
                 detail = case_input_projection(_json_load(row["raw_json"], {}) if row else {}, _json_load(row["model_extra_json"], {}) if row else {}, run.get("source_sha256", ""))
                 detail.update(run_id=run_id, prediction_available=row is not None,
                               run_reference=self._comparison_run_snapshot(run, self._batch_job_dict(job) if job else None))
-                result.append(detail)
+                result[side] = detail
+            active_run_id = selected_run_ids[1] or selected_run_ids[0]
             annotation_params = self._latest_annotation_join_params(
-                str(run_ids[1]), include_unbound_fallback=True,
+                active_run_id, include_unbound_fallback=True,
                 include_bound_history_fallback=True,
             )
             annotation = conn.execute(
                 f"""SELECT ann.id, ann.tags_json, ann.author, ann.created_at, ann.model_run_id
                     FROM issues i
-                    {self._latest_annotation_join(str(run_ids[1]), include_unbound_fallback=True, include_bound_history_fallback=True)}
+                    {self._latest_annotation_join(active_run_id, include_unbound_fallback=True, include_bound_history_fallback=True)}
                     WHERE i.issue_id = ?""",
                 (*annotation_params, issue_id),
             ).fetchone()
@@ -681,9 +712,9 @@ class DatabaseRunsMixin:
                 "author": str(annotation["author"] or ""),
                 "created_at": str(annotation["created_at"] or ""),
                 "model_run_id": annotation_run_id,
-                "source": "candidate" if annotation_run_id == str(run_ids[1]) else "unbound" if not annotation_run_id else "other_run",
+                "source": "candidate" if annotation_run_id == active_run_id else "unbound" if not annotation_run_id else "other_run",
             }
-        return {"issue_id": issue_id, "baseline": result[0], "candidate": result[1], "scene_review": scene_review}
+        return {"issue_id": issue_id, **result, "scene_review": scene_review}
 
     @staticmethod
     def _comparison_run_snapshot(

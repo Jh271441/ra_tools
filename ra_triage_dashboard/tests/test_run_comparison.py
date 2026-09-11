@@ -240,7 +240,25 @@ class RunComparisonDatabaseTest(unittest.TestCase):
         self.assertEqual(snapshot["input"]["profile"], "ares-bev-v2")
         self.assertNotEqual(snapshot["input"]["config"]["api_key"], "must-not-leak")
 
-    def test_requires_two_existing_distinct_runs(self) -> None:
+    def test_supports_single_run_on_either_side(self) -> None:
+        baseline_only = self.compare(candidate_run_id="")
+        self.assertEqual(baseline_only["view_mode"], "single")
+        self.assertIsNone(baseline_only["candidate_run"])
+        self.assertEqual(baseline_only["baseline_run"]["id"], self.baseline["id"])
+        self.assertEqual(baseline_only["summary"]["total_count"], 4)
+        self.assertEqual(baseline_only["summary"]["baseline"]["prediction_count"], 4)
+        self.assertIsNone(baseline_only["summary"]["accuracy_delta"])
+
+        candidate_only = self.compare(baseline_run_id="")
+        self.assertEqual(candidate_only["view_mode"], "single")
+        self.assertIsNone(candidate_only["baseline_run"])
+        self.assertEqual(candidate_only["candidate_run"]["id"], self.candidate["id"])
+        self.assertEqual(candidate_only["summary"]["total_count"], 4)
+        self.assertEqual(candidate_only["summary"]["candidate"]["prediction_count"], 4)
+
+    def test_requires_one_existing_run_and_rejects_duplicate_pair(self) -> None:
+        with self.assertRaises(ValueError):
+            self.compare(baseline_run_id="", candidate_run_id="")
         with self.assertRaises(ValueError):
             self.compare(candidate_run_id=self.baseline["id"])
         with self.assertRaises(ValueError):

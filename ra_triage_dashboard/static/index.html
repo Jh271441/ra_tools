@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-400`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-403`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -996,13 +996,13 @@
                     <select class="ui-select-native" id="comparisonCandidateRun" aria-hidden="true" tabindex="-1"></select>
                   </div>
                 </label>
-                <button class="button button-primary" id="comparisonLoadButton" type="button"><span class="ui-lang-zh">开始对比</span><span class="ui-lang-en">Compare</span></button>
+                <button class="button button-primary" id="comparisonLoadButton" type="button"><span class="ui-lang-zh">查看结果</span><span class="ui-lang-en">View results</span></button>
               </div>
               <p class="muted comparison-selection-note" id="comparisonSelectionNote"><span class="ui-lang-zh">请选择两个不同的 Run。</span><span class="ui-lang-en">Choose two different Runs.</span></p>
             </section>
 
             <section class="comparison-empty page-card" id="comparisonEmptyState">
-              <strong><span class="ui-lang-zh">选择两个 Run 开始对比</span><span class="ui-lang-en">Select two Runs to compare</span></strong>
+              <strong><span class="ui-lang-zh">至少选择一个 Run</span><span class="ui-lang-en">Select at least one Run</span></strong>
               <p class="muted"><span class="ui-lang-zh">结果不会修改 Review、GT、Run 或 Trail。</span><span class="ui-lang-en">Comparison does not change Reviews, GT, Runs, or Trail.</span></p>
             </section>
 
@@ -1010,21 +1010,21 @@
               <section class="comparison-summary-grid" id="comparisonSummary"></section>
 
               <section class="comparison-matrix-grid">
-                <article class="page-card comparison-matrix-card">
+                <article class="page-card comparison-matrix-card" id="comparisonBaselineMatrixCard">
                   <div class="comparison-card-heading"><h3><span class="ui-lang-zh">基线混淆矩阵</span><span class="ui-lang-en">Baseline matrix</span></h3><span id="comparisonBaselineMatrixMeta"></span></div>
                   <div class="comparison-matrix-wrap" id="comparisonBaselineMatrix"></div>
                 </article>
-                <article class="page-card comparison-matrix-card">
+                <article class="page-card comparison-matrix-card" id="comparisonCandidateMatrixCard">
                   <div class="comparison-card-heading"><h3><span class="ui-lang-zh">新 Run 混淆矩阵</span><span class="ui-lang-en">Candidate matrix</span></h3><span id="comparisonCandidateMatrixMeta"></span></div>
                   <div class="comparison-matrix-wrap" id="comparisonCandidateMatrix"></div>
                 </article>
               </section>
 
-              <details class="page-card comparison-snapshot"><summary>Run Prompt / 输入配置对比</summary><div id="comparisonRunDiff"></div></details>
+              <details class="page-card comparison-snapshot"><summary>Run Prompt / 输入配置</summary><div id="comparisonRunDiff"></div></details>
 
               <section class="page-card comparison-cases-card">
                 <div class="comparison-cases-heading">
-                  <div><h3><span class="ui-lang-zh">Case 变化明细</span><span class="ui-lang-en">Case transitions</span></h3><p class="muted" id="comparisonCaseCount"></p></div>
+                  <div><h3 id="comparisonCasesTitle"><span class="ui-lang-zh">Case 变化明细</span><span class="ui-lang-en">Case transitions</span></h3><p class="muted" id="comparisonCaseCount"></p></div>
                   <div class="comparison-transition-filter" id="comparisonTransitionFilter" role="group" aria-label="变化类型">
                     <button class="button button-quiet active" type="button" data-comparison-transition="ALL">全部</button>
                     <button class="button button-quiet transition-regression" type="button" data-comparison-transition="P2F">P2F 退化</button>
@@ -1055,7 +1055,7 @@
                 </div>
                 <div class="comparison-table-wrap">
                   <table class="comparison-case-table">
-                    <thead><tr><th>Issue / GT</th><th>BEV 预览</th><th><span class="ui-lang-zh">基线输出</span><span class="ui-lang-en">Baseline</span></th><th><span class="ui-lang-zh">新 Run 输出</span><span class="ui-lang-en">Candidate</span></th><th><span class="ui-lang-zh">变化</span><span class="ui-lang-en">Change</span></th><th><span class="ui-lang-zh">额外输入</span><span class="ui-lang-en">Extra inputs</span></th></tr></thead>
+                    <thead><tr><th>Issue / GT</th><th>BEV 预览</th><th id="comparisonBaselineOutputHeading"><span class="ui-lang-zh">基线输出</span><span class="ui-lang-en">Baseline</span></th><th id="comparisonCandidateOutputHeading"><span class="ui-lang-zh">新 Run 输出</span><span class="ui-lang-en">Candidate</span></th><th id="comparisonTransitionHeading"><span class="ui-lang-zh">变化</span><span class="ui-lang-en">Change</span></th><th><span class="ui-lang-zh">额外输入</span><span class="ui-lang-en">Extra inputs</span></th></tr></thead>
                     <tbody id="comparisonCaseRows"></tbody>
                   </table>
                 </div>
@@ -1901,7 +1901,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-400`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-403`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

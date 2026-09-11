@@ -49,7 +49,7 @@ async def compare_model_runs(
     page_size: int = 10,
     baselines: str = "",
 ) -> dict[str, Any]:
-    """Return an immutable, read-only comparison of two Model Runs."""
+    """Return a read-only view of one Run or comparison of two immutable Runs."""
 
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     try:
@@ -76,8 +76,8 @@ async def compare_model_runs(
     return payload
 
 @router.get("/api/model-run-comparison/cases/{issue_id}/inputs")
-async def comparison_case_inputs(request: Request, issue_id: str, baseline_run_id: str,
-                                 candidate_run_id: str, baselines: str = "") -> dict[str, Any]:
+async def comparison_case_inputs(request: Request, issue_id: str, baseline_run_id: str = "",
+                                 candidate_run_id: str = "", baselines: str = "") -> dict[str, Any]:
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     try:
         return await asyncio.to_thread(database.comparison_case_inputs, issue_id,
