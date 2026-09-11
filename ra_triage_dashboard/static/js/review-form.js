@@ -444,8 +444,8 @@ function renderReview(caseData) {
               <kbd class="review-control-shortcut" aria-hidden="true">D</kbd>
             </button>
             <button class="history-inline-button" type="button" data-open-history="review" id="reviewHistoryLaunchButton" aria-keyshortcuts="J" title="展开或收起 Review 历史（J）">
-              <span class="ui-lang-zh">Review 历史 · ${allAnnotations.length} 条</span>
-              <span class="ui-lang-en">Review history · ${allAnnotations.length}</span>
+              <span class="ui-lang-zh">历史 · ${allAnnotations.length}</span>
+              <span class="ui-lang-en">History · ${allAnnotations.length}</span>
               <kbd class="review-control-shortcut" aria-hidden="true">J</kbd>
             </button>
           </div>

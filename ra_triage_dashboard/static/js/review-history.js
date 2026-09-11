@@ -49,7 +49,7 @@ function updateReviewHistory(caseData) {
   const annotations = reviewAnnotationsForAllRuns(caseData);
   const launch = $("#reviewHistoryLaunchButton");
   if (launch) {
-    launch.innerHTML = `<span class="ui-lang-zh">Review 历史 · ${annotations.length} 条</span><span class="ui-lang-en">Review history · ${annotations.length}</span><kbd class="review-control-shortcut" aria-hidden="true">J</kbd>`;
+    launch.innerHTML = `<span class="ui-lang-zh">历史 · ${annotations.length}</span><span class="ui-lang-en">History · ${annotations.length}</span><kbd class="review-control-shortcut" aria-hidden="true">J</kbd>`;
     launch.title = uiText("展开或收起 Review 历史（J）", "Toggle Review history (J)");
   }
   const dialog = $("#historyDialog");

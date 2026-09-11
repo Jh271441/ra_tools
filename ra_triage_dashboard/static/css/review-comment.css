@@ -866,6 +866,17 @@ html[data-color-theme="light"] .detail-queue-index-input {
   font-size: 12px; font-weight: 650;
 }
 .review-section-heading .review-heading-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.model-error-section > .review-section-heading {
+  flex-wrap: nowrap;
+}
+.model-error-section > .review-section-heading > div:first-child {
+  flex: 0 0 auto;
+}
+.model-error-section > .review-section-heading .review-heading-actions {
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  margin-left: auto;
+}
 .model-error-section > .review-section-heading h2 { white-space: nowrap; }
 .model-error-section .review-heading-actions .history-inline-button {
   min-height: 30px; padding: 5px 8px; gap: 4px; font-size: 11px;
