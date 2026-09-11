@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-407`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-408`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1588,6 +1588,7 @@
           <div class="media-heading-main">
             <h2 id="mediaTitle">媒体预览</h2>
             <div class="media-decision-summary" id="mediaDecisionSummary" aria-label="GT 与模型预测"></div>
+            <div class="media-comparison-extra-inputs" id="mediaComparisonExtraInputs" aria-label="当前帧额外输入" hidden></div>
           </div>
           <button class="icon-button" type="button" data-close="mediaDialog" aria-label="关闭">×</button>
         </div>
@@ -1901,7 +1902,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-407`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-408`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

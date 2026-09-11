@@ -29,13 +29,18 @@ async function comparisonImageMedia(issueId, kind = 'images') {
   if (comparisonMediaCache.size > 30) comparisonMediaCache.delete(comparisonMediaCache.keys().next().value);
   return data;
 }
+function comparisonMediaExtraInputs(issueId) {
+  return (state.runComparison?.data?.items || []).find(
+    (item) => String(item.issue_id) === String(issueId)
+  )?.extra_inputs || null;
+}
 async function openComparisonMedia(issueId, kind = 'bev') {
   const seq = ++state.media.requestSeq;
   const data = await comparisonImageMedia(issueId, kind === 'bev' ? 'bev' : 'images');
   if (seq !== state.media.requestSeq) return;
   const frames = kind === 'bev' ? data.assets?.frames || [] : data.camera?.frames || [];
   if (!frames.length) { showToast(`${issueId} 暂无 ${kind === 'bev' ? 'BEV' : 'Camera'}，请使用另一张预览。`, true); return; }
-  openMedia(kind, heroFrameIndex(frames), {caseData:{...data, reference_media:true}});
+  openMedia(kind, heroFrameIndex(frames), {caseData:{...data, reference_media:true, comparison_extra_inputs:comparisonMediaExtraInputs(issueId)}});
   // Complete other modes after the clicked image is visible; never gate it on video scanning.
   api(`/api/cases/${encodeURIComponent(issueId)}/media`).then(full => {
     if (seq !== state.media.requestSeq || !$('#mediaDialog').open || state.media.snapshot?.issueId !== issueId) return;
@@ -452,6 +457,15 @@ function renderMediaDialog() {
     <span class="comparison-side-label comparison-side-model">模型</span>${labelBadge(modelLabel, "未输出")}
     <strong class="${comparisonClass}">${comparisonText}</strong>`;
   if (snapshot?.referenceMedia) $('#mediaDecisionSummary').innerHTML = `<span class="comparison-side-label comparison-side-gt">GT</span>${labelBadge(gtLabel, "未保存")}`;
+  const extraInputTarget = $("#mediaComparisonExtraInputs");
+  const renderFrameExtraInputs = (frame = null) => {
+    const offsetMs = frame ? mediaFrameOffsetMs(frame) : NaN;
+    const html = snapshot?.referenceMedia && typeof comparisonExtraInputFrameHtml === "function"
+      ? comparisonExtraInputFrameHtml(snapshot.comparisonExtraInputs, offsetMs)
+      : "";
+    extraInputTarget.innerHTML = html;
+    extraInputTarget.hidden = !html;
+  };
   const imageStage = $("#mediaImageStage");
   const videoStage = $("#mediaVideoStage");
   imageStage.hidden = videoMode;
@@ -466,6 +480,7 @@ function renderMediaDialog() {
   });
 
   if (videoMode && video) {
+    renderFrameExtraInputs();
     state.media.imageRequestSeq += 1;
     if (videoStage.dataset.videoUrl !== video.url) {
       videoStage.dataset.videoUrl = video.url;
@@ -488,7 +503,11 @@ function renderMediaDialog() {
   const frames = mediaFrames(state.media.kind);
   state.media.index = Math.max(0, Math.min(state.media.index, Math.max(frames.length - 1, 0)));
   const current = frames[state.media.index];
-  if (!current) return;
+  if (!current) {
+    renderFrameExtraInputs();
+    return;
+  }
+  renderFrameExtraInputs(current);
   $("#mediaTitle").textContent = `${snapshot?.issueId || ""} · ${frameLabel(current)} · ${state.media.index + 1}/${frames.length}${snapshot?.referenceMedia ? " · 参考媒体" : ""}`;
   const previewImage = $("#mediaPreviewImage");
   const targetUrl = String(current.url || "");
@@ -535,6 +554,7 @@ function openMedia(kind, index, { caseData = state.selectedCase } = {}) {
     modelLabel: String(selectedPrediction?.model_label || ""),
     intentPreview: Boolean(caseData?.intent_preview),
     referenceMedia: Boolean(caseData?.reference_media),
+    comparisonExtraInputs: caseData?.comparison_extra_inputs || null,
     bev: [...(caseData?.assets?.frames || [])],
     camera: [...(caseData?.camera?.frames || [])],
     video: caseData?.assets?.video?.url ? { ...caseData.assets.video } : null,
@@ -595,7 +615,7 @@ async function navigateComparisonMediaCase(delta) {
     if (kind === 'video') {
       const seq = ++state.media.requestSeq;
       const data = await api(`/api/cases/${encodeURIComponent(next.issue_id)}/media`);
-      if (seq === state.media.requestSeq) openMedia('video',0,{caseData:{...data,reference_media:true}});
+      if (seq === state.media.requestSeq) openMedia('video',0,{caseData:{...data,reference_media:true,comparison_extra_inputs:next.extra_inputs || null}});
     } else await openComparisonMedia(next.issue_id,kind);
   } finally { comparisonMediaNavigating=false; }
 }

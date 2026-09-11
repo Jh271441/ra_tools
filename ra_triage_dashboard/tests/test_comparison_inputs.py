@@ -57,6 +57,25 @@ def test_structured_extra_inputs_and_prompt_fallback():
     ])})
     assert probabilities['axes']['routing']['counts'] == {'直行': 1, '右转': 1}
     assert probabilities['axes']['lane_change']['counts'] == {'非变道': 1, '变道': 1}
+    assert probabilities['frames'] == [
+        {'offset_ms': -5000, 'axes': {
+            'routing': {'label': 'Routing', 'value': '直行', 'source': 'actual_prompt'},
+            'lane_change': {'label': '自车变道', 'value': '非变道', 'source': 'actual_prompt'},
+        }},
+        {'offset_ms': 5000, 'axes': {
+            'routing': {'label': 'Routing', 'value': '右转', 'source': 'actual_prompt'},
+            'lane_change': {'label': '自车变道', 'value': '变道', 'source': 'actual_prompt'},
+        }},
+    ]
+
+    structured_frames = extra_input_summary({}, {
+        'routing_intents': ['straight', 'left_turn'],
+        'lane_change_intents': ['no_lane_change', 'lane_change'],
+        'image_inputs': [{'offset_sec': -5}, {'offset_sec': 0}],
+    })
+    assert structured_frames['frames'][0]['offset_ms'] == -5000
+    assert structured_frames['frames'][0]['axes']['routing']['value'] == '直行'
+    assert structured_frames['frames'][1]['axes']['lane_change']['value'] == '变道'
 
 
 def test_extra_input_filter_requires_one_run_to_satisfy_complete_expression():
@@ -125,6 +144,23 @@ globalThis.bindUiSelect=()=>{};
 renderRunComparisonSelectors();
 assert.equal(elements.comparisonLoadButton.disabled,false);
 assert.match(elements.comparisonSelectionNote.textContent,/暂无输出/);
+'''
+    subprocess.run(['node', '-e', script], check=True, capture_output=True)
+
+
+def test_comparison_media_extra_input_uses_exact_frame_offset():
+    js = Path('ra_triage_dashboard/static/js/run-comparison.js').read_text()
+    script = js + '''
+const assert=require('node:assert/strict');
+globalThis.escapeHtml=(value)=>String(value);
+const extra={candidate:{frames:[
+  {offset_ms:-5000,axes:{routing:{label:'Routing',value:'左转'},lane_change:{label:'自车变道',value:'非变道'}}},
+  {offset_ms:0,axes:{routing:{label:'Routing',value:'直行'},lane_change:{label:'自车变道',value:'变道'}}},
+]}};
+const exact=comparisonExtraInputFrameHtml(extra,0);
+assert.match(exact,/Routing/);assert.match(exact,/直行/);assert.match(exact,/自车变道/);assert.match(exact,/变道/);
+assert.doesNotMatch(exact,/左转/);
+assert.equal(comparisonExtraInputFrameHtml(extra,-1000),'');
 '''
     subprocess.run(['node', '-e', script], check=True, capture_output=True)
 

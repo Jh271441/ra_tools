@@ -1005,6 +1005,40 @@ html[data-color-theme="light"] #comparisonReasonDialog [data-triage-label="æ— éœ
   justify-content: center;
 }
 .comparison-extra-chip { padding:2px 6px; border-radius:999px; background:color-mix(in srgb,var(--accent) 18%,var(--raised)); color:#c7f9ff; white-space:nowrap; font-size:9px; }
+.media-comparison-extra-inputs {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+}
+.media-comparison-extra-inputs[hidden] { display: none !important; }
+.media-comparison-extra-inputs .media-extra-side {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--overlay);
+}
+.media-comparison-extra-inputs .media-extra-side > b { color: var(--muted); font-size: 9px; }
+.media-comparison-extra-inputs .media-extra-axis {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.media-comparison-extra-inputs .media-extra-axis small { color: var(--muted); font-size: 9px; }
+.media-comparison-extra-inputs .media-extra-axis strong {
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: #c7f9ff;
+  background: color-mix(in srgb, var(--accent) 18%, var(--raised));
+  font-size: 9px;
+}
 .comparison-dialog-extra-inputs { display:flex; flex:1 1 auto; justify-content:center; gap:10px; min-width:180px; max-width:520px; }
 .comparison-dialog-extra-inputs .comparison-extra-side { padding:5px 8px; border:1px solid var(--line-soft); border-radius:7px; }
 .comparison-dialog-extra-inputs .comparison-extra-axis { grid-template-columns:auto 1fr; }

@@ -33,6 +33,14 @@ JSON object with a Run scope (`candidate`, `baseline`, `either`), an axis relati
 (`all`, `any`), and per-axis `any` / `all` / `none` label conditions. For `either`,
 one Run must satisfy the complete expression.
 
+The same projection retains exact per-frame values when the saved input has an
+explicit offset mapping. Structured intent arrays align only to same-length
+`image_inputs` offsets or saved input-config offsets. Saved Prompt probability
+rows must contain their own `t=...s`; each axis uses that row's maximum saved
+probability. The Run-comparison BEV/Camera dialog matches the current media
+offset exactly and shows those values beside GT. It does not use nearest-frame
+fallback or expand aggregate counts into invented frame labels.
+
 Scene Tags use the same compatibility projection as reason analysis: the new Run's
 latest Review wins, followed by the latest unbound Review, then the latest Review
 from another Run. The selected annotation is returned with author, time, Run and

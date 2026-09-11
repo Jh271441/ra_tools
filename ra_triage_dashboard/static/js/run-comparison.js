@@ -289,6 +289,30 @@ function comparisonExtraInputsHtml(extraInputs, { dialog = false } = {}) {
   ].join("");
 }
 
+function comparisonExtraInputFrameHtml(extraInputs, offsetMs) {
+  if (!Number.isFinite(Number(offsetMs))) return "";
+  const sideFrame = (summary) => (summary?.frames || []).find(
+    (frame) => Number(frame?.offset_ms) === Number(offsetMs)
+  );
+  const baseline = sideFrame(extraInputs?.baseline);
+  const candidate = sideFrame(extraInputs?.candidate);
+  if (!baseline && !candidate) return "";
+  const axesKey = (frame) => JSON.stringify(Object.fromEntries(
+    Object.entries(frame?.axes || {}).sort().map(([axis, value]) => [axis, value?.value || ""])
+  ));
+  const frameHtml = (frame, side = "") => {
+    if (!frame) return "";
+    const axes = Object.values(frame.axes || {}).map((axis) =>
+      `<span class="media-extra-axis"><small>${escapeHtml(axis.label || "")}</small><strong>${escapeHtml(axis.value || "")}</strong></span>`
+    ).join("");
+    return axes ? `<span class="media-extra-side">${side ? `<b>${escapeHtml(side)}</b>` : ""}${axes}</span>` : "";
+  };
+  if (baseline && candidate && axesKey(baseline) === axesKey(candidate)) {
+    return frameHtml(candidate);
+  }
+  return [frameHtml(baseline, "基线"), frameHtml(candidate, "新 Run")].join("");
+}
+
 function renderComparisonInputFilterSummary() {
   const filter = state.runComparison.inputFilter || {};
   const count = (filter.conditions || []).reduce((sum, item) => sum + (item.values || []).length, 0);

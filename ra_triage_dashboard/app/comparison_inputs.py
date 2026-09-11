@@ -80,6 +80,79 @@ def _probability_winner(value: str, aliases: dict[str, str]) -> str:
     return max(candidates, default=(0.0, ''))[1]
 
 
+def _offset_ms(value: Any) -> int | None:
+    if not isinstance(value, dict):
+        return None
+    raw = value.get('offset_ms')
+    multiplier = 1
+    if raw is None:
+        raw = value.get('offset_sec')
+        multiplier = 1000
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return None
+    return round(float(raw) * multiplier)
+
+
+def _saved_frame_offsets(containers: list[dict], count: int) -> list[int] | None:
+    for container in containers:
+        images = container.get('image_inputs')
+        if isinstance(images, list) and len(images) == count:
+            offsets = [_offset_ms(item) for item in images]
+            if all(offset is not None for offset in offsets):
+                return [int(offset) for offset in offsets]
+        config = container.get('input_config')
+        if not isinstance(config, dict):
+            continue
+        for key, multiplier in (('frame_offsets_ms', 1), ('camera_offsets_sec', 1000)):
+            raw_offsets = config.get(key)
+            if (
+                isinstance(raw_offsets, list)
+                and len(raw_offsets) == count
+                and all(not isinstance(item, bool) and isinstance(item, (int, float)) for item in raw_offsets)
+            ):
+                return [round(float(item) * multiplier) for item in raw_offsets]
+    return None
+
+
+def _structured_axis_frames(value: Any, aliases: dict[str, str], containers: list[dict]) -> dict[int, str]:
+    if not isinstance(value, list) or not value:
+        return {}
+    explicit_offsets = [_offset_ms(item) for item in value]
+    offsets = (
+        [int(offset) for offset in explicit_offsets]
+        if all(offset is not None for offset in explicit_offsets)
+        else _saved_frame_offsets(containers, len(value))
+    )
+    if offsets is None:
+        return {}
+    result: dict[int, str] = {}
+    for offset, item in zip(offsets, value):
+        counts = _count_axis_value(item, aliases)
+        if len(counts) == 1:
+            result[offset] = next(iter(counts))
+    return result
+
+
+def _prompt_axis_frames(prompt: str, spec: dict[str, Any], axis: str) -> dict[int, str]:
+    result: dict[int, str] = {}
+    for line in prompt.splitlines():
+        match = re.search(r'(?<![\w])t\s*=\s*([+-]?\d+(?:\.\d+)?)\s*s', line, re.I)
+        if not match:
+            continue
+        folded = line.casefold()
+        if not any(marker.casefold() in folded for marker in spec['prompt_markers']):
+            continue
+        segment = line
+        if axis == 'routing' and re.search(r'routing\s*概率', line, re.I):
+            segment = re.split(r'routing\s*概率\s*[：:]', line, flags=re.I)[-1]
+        elif axis == 'lane_change' and '变道概率' in line:
+            segment = line.split('变道概率', 1)[-1].split('| Routing', 1)[0]
+        winner = _probability_winner(segment, spec['values'])
+        if winner:
+            result[round(float(match.group(1)) * 1000)] = winner
+    return result
+
+
 def extra_input_summary(raw: dict, extra: dict) -> dict[str, Any]:
     """Project only explicitly saved per-Case auxiliary model inputs."""
     raw = raw if isinstance(raw, dict) else {}
@@ -87,6 +160,12 @@ def extra_input_summary(raw: dict, extra: dict) -> dict[str, Any]:
     containers = [extra, raw.get('model_extra', {}), raw]
     containers = [item for item in containers if isinstance(item, dict)]
     axes: dict[str, Any] = {}
+    frame_axes: dict[int, dict[str, Any]] = {}
+    prompt = ''
+    for container in containers:
+        prompt = container.get('prompt_text') or container.get('actual_prompt') or ''
+        if isinstance(prompt, str) and prompt:
+            break
     for axis, spec in EXTRA_INPUT_AXES.items():
         value = None
         source = ''
@@ -105,12 +184,9 @@ def extra_input_summary(raw: dict, extra: dict) -> dict[str, Any]:
             if source:
                 break
         counts = _count_axis_value(value, spec['values']) if source else Counter()
+        axis_frames = _structured_axis_frames(value, spec['values'], containers) if source else {}
+        frame_source = source if axis_frames else ''
         if not source:
-            prompt = ''
-            for container in containers:
-                prompt = container.get('prompt_text') or container.get('actual_prompt') or ''
-                if isinstance(prompt, str) and prompt:
-                    break
             if prompt:
                 for line in prompt.splitlines():
                     folded = line.casefold()
@@ -125,6 +201,16 @@ def extra_input_summary(raw: dict, extra: dict) -> dict[str, Any]:
                         if parsed:
                             counts.update(parsed)
                             source = 'actual_prompt'
+        if not axis_frames and prompt:
+            axis_frames = _prompt_axis_frames(prompt, spec, axis)
+            if axis_frames:
+                frame_source = 'actual_prompt'
+        for offset_ms, label in axis_frames.items():
+            frame_axes.setdefault(offset_ms, {})[axis] = {
+                'label': spec['label'],
+                'value': label,
+                'source': frame_source,
+            }
         if source:
             axes[axis] = {
                 'label': spec['label'],
@@ -133,7 +219,11 @@ def extra_input_summary(raw: dict, extra: dict) -> dict[str, Any]:
                 'counts': dict(counts),
                 'source': source,
             }
-    return {'available': bool(axes), 'axes': axes}
+    frames = [
+        {'offset_ms': offset_ms, 'axes': frame_axes[offset_ms]}
+        for offset_ms in sorted(frame_axes)
+    ]
+    return {'available': bool(axes), 'axes': axes, 'frames': frames}
 
 
 def normalize_extra_input_filter(value: Any) -> dict[str, Any]:
