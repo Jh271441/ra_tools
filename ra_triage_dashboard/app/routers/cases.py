@@ -61,38 +61,11 @@ _thumbnail_encode_gate = threading.Semaphore(8)
 def _visible_case_annotations(
     annotations: list[dict[str, Any]],
     assignment: dict[str, Any] | None,
-    *,
-    username: str = "",
-    identity_verified: bool = False,
-    admin_reveal: bool = False,
 ) -> tuple[list[dict[str, Any]], bool]:
-    """Expose same-split history to assigned reviewers without widening scope."""
+    """Return the complete Issue audit trail; blind mode only isolates writes."""
 
-    if not assignment or assignment.get("mode") != "blind":
-        return [item for item in annotations if not item.get("work_split_id")], False
-    split_id = str(assignment["split_id"])
-    peer_reviews_visible = bool(
-        admin_reveal
-        or (
-            assignment.get("assigned")
-            and identity_verified
-        )
-    )
-    if peer_reviews_visible:
-        return [
-            item
-            for item in annotations
-            if str(item.get("work_split_id") or "") == split_id
-        ], True
-    if assignment.get("assigned") and identity_verified:
-        current = str(username or "").lower()
-        return [
-            item
-            for item in annotations
-            if str(item.get("work_split_id") or "") == split_id
-            and str(item.get("author") or "").lower() == current
-        ], False
-    return [item for item in annotations if not item.get("work_split_id")], False
+    blind_active = bool(assignment and assignment.get("mode") == "blind")
+    return list(annotations), blind_active
 
 
 def _resolve_thumbnail_file(issue_id: str) -> Path | None:
@@ -777,9 +750,6 @@ async def get_case(
     annotations, peer_reviews_visible = _visible_case_annotations(
         list(case.get("annotations", [])),
         assignment,
-        username=identity.username,
-        identity_verified=identity.verified,
-        admin_reveal=answers_revealed,
     )
     case["annotations"] = annotations
     if assignment:

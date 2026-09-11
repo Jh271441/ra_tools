@@ -258,8 +258,10 @@ assert.equal(reviewDropdownShortcutAllowed(null),true);
 
 def test_video_t0_shortcut_targets_twenty_second_player_position() -> None:
     source = (ROOT / "static" / "js" / "detail-media.js").read_text()
-    assert 'player.querySelector("[data-video-t0]").addEventListener("click"' in source
+    assert 'player.querySelector("[data-video-t0]").addEventListener("click", seekToT0)' in source
     assert "videoT0PlayerPosition(0, duration())" in source
+    assert "if (configuredT0PlayerSec > 0) {\n      seekToT0();" in source
+    assert 'video.addEventListener("loadedmetadata", seekToT0, { once: true })' in source
     script = source + r'''
 const assert=require('node:assert/strict');
 escapeHtml=(value)=>String(value);

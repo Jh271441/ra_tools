@@ -10,7 +10,7 @@ from ra_triage_dashboard.app.routers import cases as cases_router
 
 
 class DeferredCaseMediaTest(unittest.IsolatedAsyncioTestCase):
-    def test_blind_review_history_is_visible_to_assignee_before_submission(self) -> None:
+    def test_review_history_is_never_hidden_by_blind_assignment(self) -> None:
         annotations = [
             {"id": 1, "author": "legacy", "work_split_id": ""},
             {"id": 2, "author": "alice", "work_split_id": "split-1"},
@@ -26,20 +26,16 @@ class DeferredCaseMediaTest(unittest.IsolatedAsyncioTestCase):
         visible, peers_visible = cases_router._visible_case_annotations(
             annotations,
             assignment,
-            username="ALICE",
-            identity_verified=True,
         )
-        self.assertEqual([item["id"] for item in visible], [2, 3])
+        self.assertEqual([item["id"] for item in visible], [1, 2, 3, 4])
         self.assertTrue(peers_visible)
 
         assignment["own_assignment"]["submitted"] = True
         visible, peers_visible = cases_router._visible_case_annotations(
             annotations,
             assignment,
-            username="alice",
-            identity_verified=True,
         )
-        self.assertEqual([item["id"] for item in visible], [2, 3])
+        self.assertEqual([item["id"] for item in visible], [1, 2, 3, 4])
         self.assertTrue(peers_visible)
 
         assignment["assigned"] = False
@@ -47,21 +43,16 @@ class DeferredCaseMediaTest(unittest.IsolatedAsyncioTestCase):
         visible, peers_visible = cases_router._visible_case_annotations(
             annotations,
             assignment,
-            username="outsider",
-            identity_verified=True,
         )
-        self.assertEqual([item["id"] for item in visible], [1])
-        self.assertFalse(peers_visible)
+        self.assertEqual([item["id"] for item in visible], [1, 2, 3, 4])
+        self.assertTrue(peers_visible)
 
         visible, peers_visible = cases_router._visible_case_annotations(
             annotations,
-            assignment,
-            username="admin",
-            identity_verified=True,
-            admin_reveal=True,
+            None,
         )
-        self.assertEqual([item["id"] for item in visible], [2, 3])
-        self.assertTrue(peers_visible)
+        self.assertEqual([item["id"] for item in visible], [1, 2, 3, 4])
+        self.assertFalse(peers_visible)
 
     async def test_image_only_routes_never_scan_video_or_full_case(self):
         provider = MagicMock()

@@ -197,17 +197,18 @@ function bindBevVideoPlayers(root) {
         video.pause();
       }
     };
+    const seekToT0 = () => {
+      const target = configuredT0PlayerSec > 0
+        ? configuredT0PlayerSec
+        : videoT0PlayerPosition(0, duration());
+      queueSeek(Math.min(Math.max(0, duration()), Math.max(0, target)), 0);
+    };
     playButton.addEventListener("click", togglePlayback);
     video.addEventListener("click", togglePlayback);
     player.querySelectorAll("[data-video-jump]").forEach((button) => {
       button.addEventListener("click", () => jump(Number(button.dataset.videoJump)));
     });
-    player.querySelector("[data-video-t0]").addEventListener("click", () => {
-      const target = configuredT0PlayerSec > 0
-        ? configuredT0PlayerSec
-        : videoT0PlayerPosition(0, duration());
-      queueSeek(Math.min(Math.max(0, duration()), Math.max(0, target)), 0);
-    });
+    player.querySelector("[data-video-t0]").addEventListener("click", seekToT0);
     stepSelect.addEventListener("change", () => {
       const step = Number(stepSelect.value || 1);
       player.querySelectorAll("[data-video-jump]").forEach((button) => {
@@ -256,6 +257,11 @@ function bindBevVideoPlayers(root) {
     });
     player.tabIndex = 0;
     update();
+    if (configuredT0PlayerSec > 0) {
+      seekToT0();
+    } else {
+      video.addEventListener("loadedmetadata", seekToT0, { once: true });
+    }
   });
 }
 
