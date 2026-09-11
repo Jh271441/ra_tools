@@ -109,6 +109,26 @@ assert.notEqual(comparisonConfigText([1,2]),comparisonConfigText([2,1]));
     subprocess.run(['node','-e',script],check=True,capture_output=True)
 
 
+def test_single_run_selector_stays_actionable_without_coverage():
+    js = Path('ra_triage_dashboard/static/js/run-comparison.js').read_text()
+    script = js + '''
+const assert=require('node:assert/strict');
+const elements={
+  comparisonLoadButton:{disabled:true}, comparisonSelectionNote:{textContent:''},
+  comparisonBaselineRunPicker:{}, comparisonCandidateRunPicker:{},
+};
+globalThis.state={modelRuns:[{id:'run-a',baseline_prediction_count:0}],runComparison:{baselineRunId:'',candidateRunId:'run-a',loading:false}};
+globalThis.$=(selector)=>elements[selector.slice(1)] || null;
+globalThis.uiText=(zh)=>zh;
+globalThis.populateUiSelect=()=>{};
+globalThis.bindUiSelect=()=>{};
+renderRunComparisonSelectors();
+assert.equal(elements.comparisonLoadButton.disabled,false);
+assert.match(elements.comparisonSelectionNote.textContent,/暂无输出/);
+'''
+    subprocess.run(['node', '-e', script], check=True, capture_output=True)
+
+
 def test_nearest_trigger_frame_selection():
     js=Path('ra_triage_dashboard/static/js/detail-media.js').read_text()
     subprocess.run(['node','-e',js+"\nconst assert=require('node:assert/strict'); assert.equal(heroFrameIndex([{offset_ms:-9000},{offset_ms:0},{offset_ms:1000}]),1); assert.equal(heroFrameIndex([{offset_ms:-9000},{offset_ms:-5000},{offset_ms:1000}]),2); assert.equal(heroFrameIndex([{offset_sec:-2},{offset_sec:0}]),1); assert.equal(heroFrameIndex([{offset_ms:null,offset_sec:null},{offset_ms:1000}]),1); assert.ok(Number.isNaN(mediaFrameOffsetMs({offset_ms:null,offset_sec:null}))); "],check=True,capture_output=True)

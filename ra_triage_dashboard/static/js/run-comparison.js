@@ -100,29 +100,33 @@ function renderRunComparisonSelectors({ repairCoverage = false } = {}) {
     state.runComparison.baselineRunId,
     state.runComparison.candidateRunId,
   ].filter(Boolean);
+  const selectedRuns = selectedRunIds
+    .map((runId) => (state.modelRuns || []).find((run) => String(run.id) === String(runId)))
+    .filter(Boolean);
   const valid = Boolean(
     selectedRunIds.length &&
     new Set(selectedRunIds).size === selectedRunIds.length &&
-    selectedRunIds
-      .map((runId) => (state.modelRuns || []).find((run) => String(run.id) === String(runId)))
-      .some((run) => Number(run?.baseline_prediction_count || 0) > 0)
+    selectedRuns.length === selectedRunIds.length
   );
   if ($("#comparisonLoadButton")) $("#comparisonLoadButton").disabled = !valid || state.runComparison.loading;
   if ($("#comparisonSelectionNote")) {
-    const selectedRuns = [state.runComparison.baselineRunId, state.runComparison.candidateRunId]
-      .map((runId) => (state.modelRuns || []).find((run) => String(run.id) === String(runId)))
-      .filter(Boolean);
     const singleRun = selectedRunIds.length === 1;
+    const selectedCoverage = selectedRuns.reduce(
+      (sum, run) => sum + Number(run?.baseline_prediction_count || 0),
+      0,
+    );
     const oneSideMissing = selectedRuns.length === 2 && selectedRuns.some(
       (run) => Number(run.baseline_prediction_count || 0) <= 0
     );
     $("#comparisonSelectionNote").textContent = valid
         ? singleRun
-          ? uiText("单 Run 查看；另一侧的对比内容已收起。", "Single Run view; comparison-only content is hidden.")
+          ? selectedCoverage > 0
+            ? uiText("单 Run 查看；另一侧的对比内容已收起。", "Single Run view; comparison-only content is hidden.")
+            : uiText("单 Run 查看；当前数据集暂无输出。", "Single Run view; no outputs in the current dataset.")
           : oneSideMissing
           ? uiText("按并集比较；无当前数据集输出的一侧将显示为 NONE。", "Union comparison; the uncovered side is shown as NONE.")
           : uiText("比较只读，不会修改任何 Review 或 Run。", "Comparison is read-only.")
-        : uiText("请至少选择一个覆盖当前数据集的 Run。", "Choose at least one Run with coverage in the current dataset.");
+        : uiText("请至少选择一个有效 Run。", "Choose at least one valid Run.");
   }
 }
 
