@@ -812,6 +812,80 @@ function releaseReviewUploadPreviews(task) {
   if (task) task.previewItems = [];
 }
 
+function reviewSaveNavigationContext(issueId) {
+  const index = state.cases.findIndex(
+    (item) => String(item.issue_id) === String(issueId)
+  );
+  return {
+    issueId: String(issueId || ""),
+    page: Number(state.casePage || 1),
+    index,
+    hadNext: index >= 0 && (
+      index < state.cases.length - 1 ||
+      state.casePage * state.casePageSize < state.caseTotal
+    ),
+    scrollY: window.scrollY,
+  };
+}
+
+async function reconcileReviewQueueAfterSave(context) {
+  if (!context?.issueId || context.index < 0) return false;
+  if (state.activePage !== "review" || String(state.selectedId || "") !== context.issueId) {
+    return false;
+  }
+  await loadCases({ keepSelection: true, page: context.page });
+  if (String(state.selectedId || "") !== context.issueId) return false;
+  if (state.cases.some((item) => String(item.issue_id) === context.issueId)) {
+    renderCaseNavigation();
+    return false;
+  }
+  if (!state.cases.length) {
+    clearDetail({ showGallery: true });
+    showPage("review", { historyMode: "replace", issue: "" });
+    showToast(uiText("已保存；当前筛选已没有更多 Issue。", "Saved; no Issues remain in this filter."));
+    return true;
+  }
+  const targetIndex = context.hadNext
+    ? Math.min(context.index, state.cases.length - 1)
+    : Math.max(0, Math.min(context.index - 1, state.cases.length - 1));
+  const target = state.cases[targetIndex];
+  if (!target) return false;
+  await selectCase(target.issue_id, {
+    historyMode: "replace",
+    preserveScrollY: context.scrollY,
+  });
+  showToast(uiText(
+    context.hadNext ? "已保存，已跳到下一个筛选结果。" : "已保存，已回到上一个筛选结果。",
+    context.hadNext ? "Saved; moved to the next filtered Issue." : "Saved; returned to the previous filtered Issue.",
+  ));
+  return true;
+}
+
+async function refreshReviewAfterSave(context) {
+  const stillOnSavedIssue = Boolean(
+    state.activePage === "review" &&
+    String(state.selectedId || "") === String(context?.issueId || "")
+  );
+  try {
+    if (stillOnSavedIssue) {
+      await reconcileReviewQueueAfterSave(context);
+    }
+    if (state.activePage === "review" && !stillOnSavedIssue) {
+      refreshReviewDerivedData({ includeCases: true });
+    } else {
+      if (state.activePage !== "review") state.reviewQueueStale = true;
+      refreshReviewDerivedData({ includeCases: false });
+    }
+  } catch (_error) {
+    state.reviewQueueStale = true;
+    refreshReviewDerivedData({ includeCases: false });
+    showToast(uiText(
+      "Review 已保存，但筛选队列刷新失败；请刷新页面继续。",
+      "Review saved, but the filtered queue could not refresh. Refresh the page to continue.",
+    ), true);
+  }
+}
+
 function enqueueBackgroundReviewUpload(task) {
   const run = async () => {
     task.status = "uploading";
@@ -863,7 +937,7 @@ function enqueueBackgroundReviewUpload(task) {
         `Issue ${task.issueId} 已保存 Review 和 ${task.files.length} 张截图。`,
         `Issue ${task.issueId}: Review and ${task.files.length} screenshot(s) saved.`,
       ));
-      refreshReviewDerivedData();
+      await refreshReviewAfterSave(task.navigationContext);
     } catch (error) {
       task.failed = true;
       if (state.selectedId === task.issueId) {
@@ -1336,6 +1410,7 @@ async function saveAnnotation(event) {
   };
   const screenshotItems = [...state.pendingReviewImages];
   const screenshotFiles = screenshotItems.map((item) => item.file);
+  const navigationContext = reviewSaveNavigationContext(issueId);
   const uploadKey = reviewUploadTaskKey(issueId, payload);
   const activeBackgroundUpload = state.backgroundReviewUploads.get(uploadKey);
   if (activeBackgroundUpload && !activeBackgroundUpload.failed) {
@@ -1350,6 +1425,7 @@ async function saveAnnotation(event) {
       payload,
       files: screenshotFiles,
       previewItems: screenshotItems,
+      navigationContext,
       queuedAt: Date.now(),
       failed: false,
       status: "queued",
@@ -1411,7 +1487,7 @@ async function saveAnnotation(event) {
       `已保存新的 review 版本${screenshotCount ? `和 ${screenshotCount} 张截图` : ""}${queuedCount ? `；DChat 通知已排队 ${queuedCount} 人` : ""}。`
     );
     $("#annotationNote")?.blur();
-    refreshReviewDerivedData();
+    await refreshReviewAfterSave(navigationContext);
   } catch (error) {
     showToast(error.message, true);
   } finally {

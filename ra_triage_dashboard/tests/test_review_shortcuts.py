@@ -130,6 +130,41 @@ assert.match(target.innerHTML,/data-remove-screenshot/);
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
 
 
+def test_successful_review_save_advances_when_current_leaves_filter() -> None:
+    source = (ROOT / "static" / "js" / "review-form.js").read_text()
+    start = source.index("function reviewSaveNavigationContext")
+    end = source.index("function enqueueBackgroundReviewUpload", start)
+    script = source[start:end] + r'''
+const assert=require('node:assert/strict');
+window={scrollY:321};
+let selected=[];let loads=0;let notices=[];
+state={activePage:'review',selectedId:'b',cases:[{issue_id:'a'},{issue_id:'b'},{issue_id:'c'}],casePage:1,casePageSize:20,caseTotal:3};
+loadCases=async()=>{loads++;state.cases=[{issue_id:'a'},{issue_id:'c'}];state.caseTotal=2;};
+selectCase=async(id,options)=>{selected.push([id,options]);state.selectedId=id;};
+renderCaseNavigation=()=>{};clearDetail=()=>{};showPage=()=>{};
+uiIn=0;
+uiText=(zh)=>zh;showToast=(message)=>notices.push(message);
+const context=reviewSaveNavigationContext('b');
+(async()=>{
+  assert.equal(context.index,1);assert.equal(context.hadNext,true);
+  assert.equal(await reconcileReviewQueueAfterSave(context),true);
+  assert.equal(loads,1);assert.equal(selected[0][0],'c');
+  assert.equal(selected[0][1].historyMode,'replace');assert.equal(selected[0][1].preserveScrollY,321);
+  assert.match(notices[0],/下一个筛选结果/);
+  state.selectedId='user-chosen';loads=0;
+  assert.equal(await reconcileReviewQueueAfterSave(context),false);
+  assert.equal(loads,0);
+  state.selectedId='b';state.reviewQueueStale=false;notices=[];
+  loadCases=async()=>{throw new Error('queue failed');};
+  refreshReviewDerivedData=()=>{};
+  await refreshReviewAfterSave(context);
+  assert.equal(state.reviewQueueStale,true);
+  assert.match(notices[0],/Review 已保存，但筛选队列刷新失败/);
+})().catch((error)=>{console.error(error);process.exitCode=1;});
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
 def test_open_review_dropdown_uses_arrows_for_navigation_and_enter_for_save() -> None:
     script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
 const assert=require('node:assert/strict');

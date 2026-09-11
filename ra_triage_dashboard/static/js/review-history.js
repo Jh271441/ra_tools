@@ -74,13 +74,10 @@ function updateReviewHistory(caseData) {
   }
 }
 
-function refreshReviewDerivedData() {
-  void Promise.allSettled([
-    loadOverview(),
-    loadClusters(),
-    loadCases(),
-    loadReviewers(),
-  ]);
+function refreshReviewDerivedData({ includeCases = true } = {}) {
+  const requests = [loadOverview(), loadClusters(), loadReviewers()];
+  if (includeCases) requests.push(loadCases());
+  void Promise.allSettled(requests);
 }
 
 async function deleteAnnotationVersion(caseData, annotationId, button) {

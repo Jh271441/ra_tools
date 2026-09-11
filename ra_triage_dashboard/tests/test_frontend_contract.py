@@ -225,7 +225,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-408", APP_ENTRY_JS)
+        self.assertIn("manual-triage-409", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -266,7 +266,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-408", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-409", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
         self.assertNotIn("async function bootstrap", APP_ENTRY_JS)
@@ -373,7 +373,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-408`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-409`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -1092,12 +1092,12 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("const t0Index = heroFrameIndex(frames);", APP_JS)
         self.assertIn("#reviewPane .review-dropdown[open]", APP_JS)
 
-    def test_review_save_updates_history_without_reselecting_the_case(self) -> None:
+    def test_review_save_updates_history_and_reconciles_filtered_queue(self) -> None:
         save_start = APP_JS.index("async function saveAnnotation(event)")
         save_end = APP_JS.index("\nfunction mediaFrames", save_start)
         save_body = APP_JS[save_start:save_end]
         self.assertIn("updateReviewHistory(state.selectedCase)", save_body)
-        self.assertIn("refreshReviewDerivedData()", save_body)
+        self.assertIn("await refreshReviewAfterSave(navigationContext)", save_body)
         self.assertNotIn("selectCase(", save_body)
 
     def test_native_buttons_keep_their_entire_surface_clickable(self) -> None:
@@ -1190,6 +1190,15 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function hydrateDetailMedia(caseData)", APP_JS)
         self.assertIn("hydrateDetailMedia(state.selectedCase)", APP_JS)
         self.assertIn("function releaseReviewSubmitLock(submitButton)", APP_JS)
+        self.assertIn("function reviewSaveNavigationContext(issueId)", APP_JS)
+        self.assertIn("async function reconcileReviewQueueAfterSave(context)", APP_JS)
+        self.assertIn("async function refreshReviewAfterSave(context)", APP_JS)
+        self.assertIn('await loadCases({ keepSelection: true, page: context.page })', APP_JS)
+        self.assertIn('context.hadNext ? "已保存，已跳到下一个筛选结果。"', APP_JS)
+        self.assertIn("Review 已保存，但筛选队列刷新失败；请刷新页面继续。", APP_JS)
+        self.assertIn("state.reviewQueueStale = true", APP_JS)
+        self.assertIn("await refreshReviewAfterSave(task.navigationContext)", APP_JS)
+        self.assertIn("await refreshReviewAfterSave(navigationContext)", APP_JS)
         self.assertIn("const screenshotItems = [...state.pendingReviewImages];", APP_JS)
         self.assertIn("const screenshotFiles = screenshotItems.map((item) => item.file);", APP_JS)
         self.assertIn("enqueueBackgroundReviewUpload(task);", APP_JS)
@@ -1256,7 +1265,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-408", APP_ENTRY_JS)
+        self.assertIn("manual-triage-409", APP_ENTRY_JS)
 
     def test_adjacent_review_navigation_preserves_scroll_position(self) -> None:
         self.assertIn("const preserveScrollY = window.scrollY;", APP_JS)
