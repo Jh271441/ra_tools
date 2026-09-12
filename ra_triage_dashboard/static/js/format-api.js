@@ -480,7 +480,14 @@ function normalizeApiPayloadUrls(value) {
   );
 }
 
-async function api(path, options = {}) {
+const API_GET_IN_FLIGHT = new Map();
+
+/**
+ * Execute one HTTP request.  ``api`` below adds a small single-flight layer
+ * for concurrent, signal-less GETs; callers that own an AbortController keep
+ * their independent request and cancellation semantics.
+ */
+async function apiRequest(path, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
   const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
   // Some POST endpoints are semantically read-only previews (for example a
@@ -555,6 +562,26 @@ async function api(path, options = {}) {
   throw lastError || new Error("请求失败，请稍后重试。");
 }
 
+function api(path, options = {}) {
+  const method = String(options.method || "GET").toUpperCase();
+  const canShare = method === "GET" && !options.signal;
+  if (!canShare) return apiRequest(path, options);
+
+  // The full path is the cache key intentionally: query parameters encode the
+  // active dataset, Run, filters and revision-sensitive view.  This is an
+  // in-flight-only map, so it never serves stale data after a request settles.
+  const key = withBase(path);
+  const active = API_GET_IN_FLIGHT.get(key);
+  if (active) return active;
+
+  const request = apiRequest(path, options);
+  const shared = request.finally(() => {
+    if (API_GET_IN_FLIGHT.get(key) === shared) API_GET_IN_FLIGHT.delete(key);
+  });
+  API_GET_IN_FLIGHT.set(key, shared);
+  return shared;
+}
+
 function showToast(message, isError = false) {
   const toast = $("#toast");
   toast.textContent = message;
@@ -573,7 +600,7 @@ function acknowledgeLocalChange(payload) {
   state.deferredDetailRefresh = false;
 }
 
-async function refreshChangedData() {
+async function refreshChangedDataNow() {
   const reviewerSelections = typeof reviewerFilterSelections === "function"
     ? reviewerFilterSelections()
     : undefined;
@@ -665,6 +692,35 @@ async function refreshChangedData() {
   if (state.activePage === "status") {
     await loadStatus();
   }
+}
+
+function refreshChangedData() {
+  const contextKey = [
+    state.activePage,
+    state.selectedId,
+    state.selectedRunId,
+    typeof selectedBaselineQueryValue === "function"
+      ? selectedBaselineQueryValue()
+      : "",
+    window.location.pathname,
+    window.location.search,
+  ].join("|");
+  if (
+    state.refreshChangedDataPromise &&
+    state.refreshChangedDataKey === contextKey
+  ) {
+    return state.refreshChangedDataPromise;
+  }
+  const request = refreshChangedDataNow();
+  const shared = request.finally(() => {
+    if (state.refreshChangedDataPromise === shared) {
+      state.refreshChangedDataPromise = null;
+      state.refreshChangedDataKey = "";
+    }
+  });
+  state.refreshChangedDataKey = contextKey;
+  state.refreshChangedDataPromise = shared;
+  return shared;
 }
 
 function scheduleChangePoll(delay = 5000) {

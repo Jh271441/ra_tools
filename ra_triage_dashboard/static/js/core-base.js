@@ -771,6 +771,8 @@ const state = {
   changePollEpoch: 0,
   changePollTimer: null,
   changePollInFlight: false,
+  refreshChangedDataPromise: null,
+  refreshChangedDataKey: "",
   reviewFormDirty: false,
   deferredDetailRefresh: false,
   reviewEditRunId: "",

@@ -111,12 +111,18 @@ def _intent_summary_payload(dataset_id: str, identity: Any, experiment_id: str,
                               page=page, page_size=page_size,
                               label_scope=(selected_experiment or {}).get("label_scope", "all"))
     timeline_cache: dict[str, list[dict[str, Any]]] = {}
+
+    def timeline_for_item(item: dict[str, Any]) -> list[dict[str, Any]]:
+        case_id = str(item["case_id"])
+        if case_id not in timeline_cache:
+            timeline_cache[case_id] = intent_dataset_registry.timeline(
+                dataset_id, case_id
+            )
+        return timeline_cache[case_id]
+
     _attach_intent_frame_distributions(
         report,
-        lambda item: timeline_cache.setdefault(
-            str(item["case_id"]),
-            intent_dataset_registry.timeline(dataset_id, str(item["case_id"])),
-        ),
+        timeline_for_item,
     )
     report["experiments"] = [{"id": item["id"], "name": item["name"],
                               "label_scope": item.get("label_scope", "all")} for item in experiments]
@@ -861,7 +867,11 @@ def _list_cases(
         completion = _case_completion(
             summary,
             label_scope,
-            timeline=intent_dataset_registry.timeline(dataset_id, case_id) if summary else (),
+            timeline=(
+                intent_dataset_registry.timeline(dataset_id, case_id)
+                if summary
+                else ()
+            ),
         )
         item_status = str((completion or {}).get("status") or "unlabeled")
         if not _intent_case_status_matches(item_status, status):
@@ -875,8 +885,8 @@ def _list_cases(
                 "ordinal": ordinal,
                 "status": item_status,
                 "status_reason": str((completion or {}).get("reason") or "尚未开始"),
-                "revision_id": (summaries.get(case_id) or {}).get("revision_id"),
-                "updated_at": (summaries.get(case_id) or {}).get("updated_at", ""),
+                "revision_id": (summary or {}).get("revision_id"),
+                "updated_at": (summary or {}).get("updated_at", ""),
             }
         )
     total = len(items)

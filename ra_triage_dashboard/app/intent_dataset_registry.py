@@ -66,6 +66,7 @@ class IntentDatasetIndex:
         self._base_path = base_path.rstrip("/")
         self._lock = threading.RLock()
         self._cases: dict[str, tuple[str, ...]] = {}
+        self._case_sets: dict[str, frozenset[str]] = {}
         self._camera_by_issue: dict[str, dict[str, tuple[str, ...]]] = {}
         self._camera_manifest_frames: dict[
             str, dict[str, dict[int, tuple[Path, int | None]]]
@@ -186,6 +187,10 @@ class IntentDatasetIndex:
             )
         with self._lock:
             self._cases = cases
+            self._case_sets = {
+                dataset_id: frozenset(case_ids)
+                for dataset_id, case_ids in cases.items()
+            }
             self._camera_by_issue = camera_by_issue
             self._camera_manifest_frames = camera_manifest_frames
 
@@ -380,7 +385,9 @@ class IntentDatasetIndex:
             return self._cases.get(dataset_id, ())
 
     def has_case(self, dataset_id: str, case_id: str) -> bool:
-        return case_id in set(self.case_ids(dataset_id))
+        self.dataset(dataset_id)
+        with self._lock:
+            return case_id in self._case_sets.get(dataset_id, frozenset())
 
     def membership_sha256(self, dataset_id: str) -> str:
         return _sha256_lines(self.case_ids(dataset_id))

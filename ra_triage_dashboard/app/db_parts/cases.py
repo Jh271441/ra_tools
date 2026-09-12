@@ -543,6 +543,16 @@ class DatabaseCasesMixin:
             total = conn.execute(
                 f"SELECT COUNT(DISTINCT i.issue_id) {common} {condition}", (*model_args, *params)
             ).fetchone()[0]
+            assignment_summary_join = """
+                LEFT JOIN (
+                    SELECT issue_id,
+                           MIN(assignee) AS work_assignee,
+                           MIN(split_id) AS work_split_id
+                    FROM review_work_assignments
+                    GROUP BY issue_id
+                ) work_summary
+                  ON work_summary.issue_id = i.issue_id
+            """
             rows = conn.execute(
                 f"""
                 SELECT i.*, ann.id AS annotation_id,
@@ -556,15 +566,10 @@ class DatabaseCasesMixin:
                        ann.created_at AS annotation_created_at,
                        ann.model_run_id AS annotation_model_run_id,
                        mp.model_label, mp.model_reason, mp.model_confidence, mp.model_run_id,
-                       COALESCE((
-                           SELECT MIN(wa.assignee) FROM review_work_assignments wa
-                           WHERE wa.issue_id = i.issue_id
-                       ), '') AS work_assignee,
-                       COALESCE((
-                           SELECT MIN(wa.split_id) FROM review_work_assignments wa
-                           WHERE wa.issue_id = i.issue_id
-                       ), '') AS work_split_id
+                       COALESCE(work_summary.work_assignee, '') AS work_assignee,
+                       COALESCE(work_summary.work_split_id, '') AS work_split_id
                 {common}
+                {assignment_summary_join}
                 {condition}
                 ORDER BY i.issue_id ASC
                 LIMIT ? OFFSET ?
