@@ -850,11 +850,33 @@ class DatabaseCoreMixin:
                     author TEXT NOT NULL,
                     author_source TEXT NOT NULL DEFAULT 'legacy',
                     author_verified INTEGER NOT NULL DEFAULT 0,
+                    mentions_json TEXT NOT NULL DEFAULT '[]',
                     reply_to_id INTEGER REFERENCES intent_case_comments(id),
                     created_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_intent_case_comments_case
                     ON intent_case_comments(dataset_id, case_id, id ASC);
+
+                CREATE TABLE IF NOT EXISTS intent_comment_notifications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    comment_id INTEGER NOT NULL REFERENCES intent_case_comments(id) ON DELETE CASCADE,
+                    dataset_id TEXT NOT NULL,
+                    case_id TEXT NOT NULL,
+                    recipient TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending'
+                        CHECK(status IN ('pending', 'sending', 'retry', 'sent', 'failed')),
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    next_attempt_at TEXT NOT NULL,
+                    last_error TEXT NOT NULL DEFAULT '',
+                    trace_id TEXT NOT NULL DEFAULT '',
+                    message_unique_id TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    sent_at TEXT,
+                    UNIQUE(comment_id, recipient)
+                );
+                CREATE INDEX IF NOT EXISTS idx_intent_comment_notifications_dispatch
+                    ON intent_comment_notifications(status, next_attempt_at, id);
 
                 CREATE TABLE IF NOT EXISTS intent_experiments (
                     id TEXT PRIMARY KEY,
@@ -1000,6 +1022,7 @@ class DatabaseCoreMixin:
             self._ensure_column(conn, "annotations", "author_verified", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "annotations", "mentions_json", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_column(conn, "mention_users", "display_name", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "intent_case_comments", "mentions_json", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_column(conn, "access_users", "intent_permission", "TEXT NOT NULL DEFAULT 'manage'")
             self._ensure_column(
                 conn, "intent_case_comments", "reply_to_id",

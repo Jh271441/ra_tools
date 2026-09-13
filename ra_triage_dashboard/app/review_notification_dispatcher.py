@@ -9,6 +9,8 @@ from .dchat import (
     DChatClient,
     DChatLoopbackClient,
     DChatSendError,
+    build_intent_comment_notification_text,
+    build_intent_comment_url,
     build_review_notification_text,
     build_comment_notification_text,
     build_review_url,
@@ -32,6 +34,7 @@ class ReviewNotificationDispatcher:
     async def run(self) -> None:
         await asyncio.to_thread(self.database.recover_review_notifications)
         await asyncio.to_thread(self.database.recover_comment_notifications)
+        await asyncio.to_thread(self.database.recover_intent_comment_notifications)
         while True:
             handled = await asyncio.to_thread(self._dispatch_one)
             if handled:
@@ -52,6 +55,9 @@ class ReviewNotificationDispatcher:
         item = self.database.claim_comment_notification(now=timestamp)
         notification_kind = "comment"
         if item is None:
+            item = self.database.claim_intent_comment_notification(now=timestamp)
+            notification_kind = "intent_comment"
+        if item is None:
             item = self.database.claim_review_notification(now=timestamp)
             notification_kind = "review"
         if item is None:
@@ -67,17 +73,25 @@ class ReviewNotificationDispatcher:
                     timeout_seconds=self.settings.dchat_timeout_seconds,
                 )
             )
-            review_url = build_review_url(
-                self.settings.kylin_sso_return_url,
-                issue_id=str(item["issue_id"]),
-                model_run_id=str(item.get("model_run_id") or ""),
-                open_comments=notification_kind == "comment",
-                comment_id=(
-                    int(item["comment_id"])
-                    if notification_kind == "comment" and item.get("comment_id")
-                    else None
-                ),
-            )
+            if notification_kind == "intent_comment":
+                review_url = build_intent_comment_url(
+                    self.settings.kylin_sso_return_url,
+                    dataset_id=str(item["dataset_id"]),
+                    case_id=str(item["case_id"]),
+                    comment_id=int(item["comment_id"]),
+                )
+            else:
+                review_url = build_review_url(
+                    self.settings.kylin_sso_return_url,
+                    issue_id=str(item["issue_id"]),
+                    model_run_id=str(item.get("model_run_id") or ""),
+                    open_comments=notification_kind == "comment",
+                    comment_id=(
+                        int(item["comment_id"])
+                        if notification_kind == "comment" and item.get("comment_id")
+                        else None
+                    ),
+                )
             if notification_kind == "comment":
                 display_names = self.database.mention_display_names(
                     [
@@ -102,11 +116,43 @@ class ReviewNotificationDispatcher:
                         == str(item.get("reply_to_author") or "").lower()
                     ),
                 )
+            elif notification_kind == "intent_comment":
+                display_names = self.database.mention_display_names(
+                    [
+                        *_json_load(item.get("mentions_json"), []),
+                        str(item.get("author") or ""),
+                        str(item.get("reply_to_author") or ""),
+                    ]
+                )
+                text = build_intent_comment_notification_text(
+                    dataset_id=str(item["dataset_id"]),
+                    case_id=str(item["case_id"]),
+                    author=display_names.get(
+                        str(item.get("author") or "").lower(),
+                        str(item.get("author") or ""),
+                    ),
+                    body=mentions_for_display(item.get("body") or "", display_names),
+                    review_url=review_url,
+                    is_reply=(
+                        bool(item.get("reply_to_id"))
+                        and str(item.get("recipient") or "").lower()
+                        == str(item.get("reply_to_author") or "").lower()
+                    ),
+                )
             else:
+                display_names = self.database.mention_display_names(
+                    [
+                        *_json_load(item.get("mentions_json"), []),
+                        str(item.get("author") or ""),
+                    ]
+                )
                 text = build_review_notification_text(
                     issue_id=str(item["issue_id"]),
-                    author=str(item.get("author") or ""),
-                    note=str(item.get("note") or ""),
+                    author=display_names.get(
+                        str(item.get("author") or "").lower(),
+                        str(item.get("author") or ""),
+                    ),
+                    note=mentions_for_display(item.get("note") or "", display_names),
                     review_url=review_url,
                 )
             result = client.send_to_username(str(item["recipient"]), text)
@@ -117,6 +163,8 @@ class ReviewNotificationDispatcher:
             defer = (
                 self.database.defer_comment_notification
                 if notification_kind == "comment"
+                else self.database.defer_intent_comment_notification
+                if notification_kind == "intent_comment"
                 else self.database.defer_review_notification
             )
             defer(
@@ -142,6 +190,8 @@ class ReviewNotificationDispatcher:
             defer = (
                 self.database.defer_comment_notification
                 if notification_kind == "comment"
+                else self.database.defer_intent_comment_notification
+                if notification_kind == "intent_comment"
                 else self.database.defer_review_notification
             )
             defer(
@@ -156,6 +206,8 @@ class ReviewNotificationDispatcher:
         complete = (
             self.database.complete_comment_notification
             if notification_kind == "comment"
+            else self.database.complete_intent_comment_notification
+            if notification_kind == "intent_comment"
             else self.database.complete_review_notification
         )
         complete(

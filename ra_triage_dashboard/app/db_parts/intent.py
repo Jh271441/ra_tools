@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .shared import IntentAnnotationConflictError, utc_now
+from .shared import IntentAnnotationConflictError, _json, _json_load, utc_now
 
 
 ROUTING_INTENTS = ("left_turn", "right_turn", "straight", "u_turn", "parking")
@@ -1195,23 +1195,25 @@ class DatabaseIntentMixin:
                 """,
                 (dataset_id, case_id, bounded_limit),
             ).fetchall()
-        return [
-            {
-                "id": int(row["id"]),
-                "body": str(row["body"]),
-                "author": str(row["author"]),
-                "author_verified": bool(row["author_verified"]),
-                "reply_to_id": int(row["reply_to_id"]) if row["reply_to_id"] else None,
-                "reply_to_author": str(row["reply_to_author"] or "")
-                if "reply_to_author" in row.keys()
-                else "",
-                "reply_to_body": str(row["reply_to_body"] or "")
-                if "reply_to_body" in row.keys()
-                else "",
-                "created_at": str(row["created_at"]),
-            }
-            for row in rows
-        ]
+        return [self._intent_comment_dict(row) for row in rows]
+
+    def get_intent_comment(
+        self, dataset_id: str, case_id: str, comment_id: int
+    ) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT comment.*, parent.author AS reply_to_author,
+                       parent.body AS reply_to_body
+                FROM intent_case_comments comment
+                LEFT JOIN intent_case_comments parent
+                  ON parent.id = comment.reply_to_id
+                WHERE comment.dataset_id = ? AND comment.case_id = ?
+                  AND comment.id = ?
+                """,
+                (dataset_id, case_id, int(comment_id)),
+            ).fetchone()
+        return self._intent_comment_dict(row) if row else None
 
     def create_intent_comment(
         self,
@@ -1222,6 +1224,8 @@ class DatabaseIntentMixin:
         author: str,
         author_source: str,
         author_verified: bool,
+        mentions: list[str] | None = None,
+        notification_recipients: list[str] | None = None,
         reply_to_id: int | None = None,
     ) -> dict[str, Any]:
         normalized_body = str(body or "").strip()
@@ -1232,13 +1236,27 @@ class DatabaseIntentMixin:
         normalized_author = str(author or "").strip().lower()
         if not normalized_author:
             raise ValueError("评论人不能为空。")
+        normalized_mentions = list(
+            dict.fromkeys(
+                str(item).strip().lower()
+                for item in (mentions or [])
+                if str(item).strip()
+            )
+        )
+        recipients = list(
+            dict.fromkeys(
+                str(item).strip().lower()
+                for item in (notification_recipients or [])
+                if str(item).strip()
+            )
+        )
         normalized_reply_to_id = int(reply_to_id) if reply_to_id is not None else None
         now = utc_now()
         sql = """
             INSERT INTO intent_case_comments (
                 dataset_id, case_id, body, author, author_source,
-                author_verified, reply_to_id, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                author_verified, mentions_json, reply_to_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         if self.backend == "postgresql":
             sql += " RETURNING id"
@@ -1266,6 +1284,7 @@ class DatabaseIntentMixin:
                     normalized_author,
                     str(author_source or "legacy").strip() or "legacy",
                     bool(author_verified),
+                    _json(normalized_mentions),
                     normalized_reply_to_id,
                     now,
                 ),
@@ -1275,13 +1294,46 @@ class DatabaseIntentMixin:
                 if self.backend == "postgresql"
                 else int(cursor.lastrowid)
             )
+            for recipient in recipients:
+                conn.execute(
+                    """
+                    INSERT INTO intent_comment_notifications (
+                        comment_id, dataset_id, case_id, recipient, status,
+                        attempt_count, next_attempt_at, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, 'pending', 0, ?, ?, ?)
+                    ON CONFLICT(comment_id, recipient) DO NOTHING
+                    """,
+                    (comment_id, dataset_id, case_id, recipient, now, now, now),
+                )
         return {
             "id": comment_id,
             "body": normalized_body,
             "author": normalized_author,
             "author_verified": bool(author_verified),
+            "mentions": normalized_mentions,
             "reply_to_id": normalized_reply_to_id,
             "reply_to_author": parent_author,
             "reply_to_body": parent_body,
             "created_at": now,
+        }
+
+    @staticmethod
+    def _intent_comment_dict(row: Any) -> dict[str, Any]:
+        return {
+            "id": int(row["id"]),
+            "body": str(row["body"]),
+            "author": str(row["author"]),
+            "author_verified": bool(row["author_verified"]),
+            "mentions": _json_load(
+                row["mentions_json"] if "mentions_json" in row.keys() else "[]",
+                [],
+            ),
+            "reply_to_id": int(row["reply_to_id"]) if row["reply_to_id"] else None,
+            "reply_to_author": str(row["reply_to_author"] or "")
+            if "reply_to_author" in row.keys()
+            else "",
+            "reply_to_body": str(row["reply_to_body"] or "")
+            if "reply_to_body" in row.keys()
+            else "",
+            "created_at": str(row["created_at"]),
         }

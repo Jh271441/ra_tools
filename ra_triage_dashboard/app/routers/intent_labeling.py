@@ -22,13 +22,20 @@ from ..intent_name_suggestion import (
     suggest_intent_name_with_llm,
 )
 from ..model_catalog import ModelCatalogError
+from ..review_mentions import extract_review_mentions, notification_recipients
 from ..intent_summary import (
     intent_completion,
     intent_frame_counts,
     public_intent_contributors,
     summarize_intent,
 )
-from ..runtime import database, intent_dataset_registry, model_catalog, settings
+from ..runtime import (
+    database,
+    intent_dataset_registry,
+    model_catalog,
+    review_notification_dispatcher,
+    settings,
+)
 
 
 async def _require_intent_writer(request: Request) -> None:
@@ -1244,19 +1251,52 @@ async def post_intent_comment(
             raise _detail(400, "reply_to_id 不合法。") from exc
         if reply_to_id <= 0:
             raise _detail(400, "reply_to_id 不合法。")
+    text = str(body.get("body") or "")
+    try:
+        mentions = extract_review_mentions(text)
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    requested_recipients = list(mentions)
+    if reply_to_id is not None:
+        parent = await asyncio.to_thread(
+            database.get_intent_comment, dataset_id, case_id, reply_to_id
+        )
+        if parent and parent.get("author"):
+            requested_recipients.append(str(parent["author"]).strip().lower())
+    requested_recipients = list(dict.fromkeys(requested_recipients))
+    enabled_recipients = await asyncio.to_thread(
+        database.enabled_mention_recipients, requested_recipients
+    )
+    unsupported_mentions = [
+        username for username in mentions if username not in enabled_recipients
+    ]
+    if unsupported_mentions:
+        raise _detail(
+            400,
+            "以下用户不在可 @ / DChat 通知人员目录中："
+            + "、".join(f"@{item}" for item in unsupported_mentions),
+        )
+    recipients = notification_recipients(enabled_recipients, author=actor)
+    queued_recipients = (
+        recipients if settings.dchat_notifications_enabled and actor_verified else []
+    )
     try:
         comment = await asyncio.to_thread(
             database.create_intent_comment,
             dataset_id=dataset_id,
             case_id=case_id,
-            body=body.get("body") or "",
+            body=text,
             author=actor,
             author_source=actor_source,
             author_verified=actor_verified,
+            mentions=mentions,
+            notification_recipients=queued_recipients,
             reply_to_id=reply_to_id,
         )
     except ValueError as exc:
         raise _detail(400, str(exc)) from exc
+    if queued_recipients:
+        review_notification_dispatcher.wake()
     return {
         "comment": comment,
         "comment_count": len(
@@ -1264,6 +1304,19 @@ async def post_intent_comment(
                 database.list_intent_comments, dataset_id, case_id
             )
         ),
+        "notification": {
+            "mentions": mentions,
+            "queued": queued_recipients,
+            "status": (
+                "no_recipients"
+                if not recipients
+                else "queued"
+                if queued_recipients
+                else "disabled"
+                if not settings.dchat_notifications_enabled
+                else "unverified_identity"
+            ),
+        },
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
 

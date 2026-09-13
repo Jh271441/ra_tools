@@ -233,6 +233,9 @@ async def health() -> dict[str, Any]:
             "comment_outbox": await asyncio.to_thread(
                 database.comment_notification_status
             ),
+            "intent_comment_outbox": await asyncio.to_thread(
+                database.intent_comment_notification_status
+            ),
         },
         "model_gateway": model_catalog.status(),
         "change_revision": await asyncio.to_thread(database.change_revision),
@@ -640,6 +643,9 @@ async def status(response: Response) -> dict[str, Any]:
             "outbox": await asyncio.to_thread(database.review_notification_status),
             "comment_outbox": await asyncio.to_thread(
                 database.comment_notification_status
+            ),
+            "intent_comment_outbox": await asyncio.to_thread(
+                database.intent_comment_notification_status
             ),
         },
         "model_gateway": model_catalog.status(),

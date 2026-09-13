@@ -6,20 +6,24 @@ flowchart LR
   F --> R[Failure review]
   F --> A[Reason cluster comments]
   F --> T[Issue exclusion note]
+  F --> I[Intent discussion]
   D[(mention_users)] --> C[Shared mention composer]
   D --> V[Server-side recipient validation]
   C --> R
   C --> A
   C --> T
+  C --> I
   R --> V
   A --> V
   T --> V
   V -->|unsupported / disabled| X[400; no mutation]
   V -->|comment| CDB[(review_comments + comment_notifications)]
+  V -->|intent comment| IDB[(intent_case_comments + intent_comment_notifications)]
   V -->|Review / exclusion note| N[(annotations + review_notifications)]
   T -->|validate before mutation| W[Trail info write + readback]
   W -->|verified| N
   CDB --> Q[Async outbox dispatcher]
+  IDB --> Q
   N --> Q
   Q --> O[DChat OpenAPI]
   O --> P[LDAP recipient]
@@ -48,6 +52,13 @@ the authoritative thread key is `issue_id + model_run_id`. Comments are
 append-only rows in `review_comments`; they do not append an annotation and
 cannot change the Review conclusion, tags, evidence, or exclusion flag.
 
+Intent discussion uses the same composer and server-side directory validation,
+but remains scoped to `dataset_id + case_id` in `intent_case_comments`. Its
+notifications use a separate `intent_comment_notifications` outbox so intent
+comments are not forced into the Issue/Model Run Review tables. Replies notify
+the enabled parent author, and DChat links open the intent-labeling Case with
+the exact comment selected.
+
 The composer uses a deliberately small Markdown surface instead of a general
 rich-text/HTML editor. Text, headings, lists, quotes, links, inline/fenced code,
 emphasis, and strikethrough are rendered after escaping source HTML. Images may
@@ -66,9 +77,11 @@ an explicitly mentioned recipient is absent or disabled. Comment and
 delivery is asynchronous, so a temporary DChat failure cannot roll back a
 saved comment or Review.
 
-DChat comment messages link to `/review?issue=...&run=...&comments=1&comment=...`.
-After the Issue and Run load, the Dashboard automatically opens the shared
-thread and focuses the notified comment. The same thread entry is available in
+DChat Review comment messages link to `/review?issue=...&run=...&comments=1&comment=...`;
+intent discussion messages link to
+`/intent-labeling?dataset=...&case=...&comments=1&comment=...`.
+After the relevant Issue/Run or dataset/Case loads, the Dashboard automatically
+opens the shared thread and focuses the notified comment. The same thread entry is available in
 failure review, reason analysis, and Review exclusion candidates. LDAP remains
 the authoritative token stored in comment text; the directory's `display_name`
 is used in suggestions, rendered comments, reply context, and DChat copy.

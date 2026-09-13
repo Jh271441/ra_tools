@@ -217,11 +217,11 @@ export DASHBOARD_DEPLOYMENT_MODE=production
 
 AutoTriage 推送默认关闭（`DASHBOARD_AUTOTRIAGE_PUSH_ENABLED=false`），即使打开开关也必须通过后端验证的 SSO 身份；自定义请求头和浏览器提交姓名只用于请求完整性/展示，不能授权生产写入。套好内网域名、清除客户端伪造 header 并由 ingress 注入可信身份后，再显式打开该开关。Batch 预测本身不依赖此开关。
 
-### Review @mention 与 DChat
+### Review / Intent @mention 与 DChat
 
 完整的数据流和权限边界见 [`docs/dchat-mention-architecture.md`](docs/dchat-mention-architecture.md)。
 
-需要在 DChat 开放平台创建一个应用，申请 `message:send` 权限，并为应用配置 BotUser。服务端按官方契约调用国内地址的 `POST /v3/message.create`，使用 Basic Auth、`X-Bot-Type: bot_user`、`X-Bot-Id`，并以 `receive_id_type=2` 向 LDAP 用户发送 Markdown。运行下面的交互脚本即可在项目根目录生成已被 Git 忽略的凭据文件，Secret 输入不会回显：
+需要在 DChat 开放平台创建一个应用，申请 `message:send` 权限，并为应用配置 BotUser。服务端按官方契约调用国内地址的 `POST /v3/message.create`，使用 Basic Auth、`X-Bot-Type: bot_user`、`X-Bot-Id`，并以 `receive_id_type=2` 向 LDAP 用户发送 Markdown。Review、原因分析、问题排除和意图标注讨论共用目录校验与异步投递；意图讨论使用独立的 `intent_comment_notifications` outbox，并生成 `/intent-labeling` 精确评论深链。运行下面的交互脚本即可在项目根目录生成已被 Git 忽略的凭据文件，Secret 输入不会回显：
 
 ```bash
 cd ra_triage_dashboard
@@ -240,11 +240,11 @@ export DASHBOARD_DCHAT_NOTIFICATIONS_ENABLED=true
 export DASHBOARD_DCHAT_CREDENTIALS_FILE="$PWD/dchat_credentials.json"
 ```
 
-默认开关为 `false`。启用前必须先在灰度实例用测试账号验证应用权限、BotUser 身份、Review 深链和失败重试；本地/CI 测试只 mock DChat，不发送真实消息。允许的 API host 固定为国内 `oapi-dichat.intra.xiaojukeji.com` 或备用 Kylin 路径，客户端禁用代理与重定向。`/health`、`/api/status` 只暴露开关、凭据是否就绪和 outbox 计数，不返回凭据内容或路径。
+默认开关为 `false`。启用前必须先在灰度实例用测试账号验证应用权限、BotUser 身份、Review/Intent 深链和失败重试；本地/CI 测试只 mock DChat，不发送真实消息。允许的 API host 固定为国内 `oapi-dichat.intra.xiaojukeji.com` 或备用 Kylin 路径，客户端禁用代理与重定向。`/health`、`/api/status` 只暴露开关、凭据是否就绪和 outbox 计数，不返回凭据内容或路径。
 
 可 @ 人员与应用写权限是两个独立维度，但由同一个 `/users` 管理页维护：`access_users` 决定 viewer/writer/admin，`mention_users` 只决定能否出现在 @ 候选中并接收 DChat，不会因为加入通知目录而获得看板写权限。管理员可以新增、停用或移除通知人员；新增 writer/admin 时会自动补入通知目录，但移除写权限不会删除其通知资格。普通已验证 SSO 用户只能读取启用人员的用户名，不能看到停用项或管理审计字段。
 
-灰度可设置 `DASHBOARD_DCHAT_DELIVERY_MODE=loopback`，完整执行 Review、可信身份、outbox 与 dispatcher，但不建立 DChat 网络连接。该模式仅允许 `development`，production 配置会拒绝启动；正式发送必须使用默认 `openapi`。
+灰度可设置 `DASHBOARD_DCHAT_DELIVERY_MODE=loopback`，完整执行 Review/Intent、可信身份、outbox 与 dispatcher，但不建立 DChat 网络连接。该模式仅允许 `development`，production 配置会拒绝启动；正式发送必须使用默认 `openapi`。
 
 当前数据和 Review 截图都属于看板团队共享内容：任何能访问域名或直接 IP 的用户仍可读取，不能在截图中粘贴超出该协作范围的敏感信息。正式多人使用应通过 HTTPS + SSO ingress 限制域名访问，并在 ingress 配置请求体大小、速率和审计策略；若还要求裸 IP 完全不可读，需要另加网络 ACL，应用的 production flag 只保证裸 IP 不可写。
 
@@ -522,6 +522,7 @@ ssh -L 8785:127.0.0.1:8785 cloud_server
 22. `023_mention_display_names.sql`：为通知目录增加中文显示姓名；LDAP 仍是存储、校验和 DChat 投递的稳定标识。
 23. `024_comment_markdown_attachments.sql`：增加评论图片附件元数据与变更版本触发器，并补充梁祥辉的中文显示姓名；图片文件继续由服务端受控目录保存。
 24. `035_review_multi_blind.sql`：增加 Review 多人任务成员表、split 配置和 `annotations.work_split_id`；盲标版本按 Issue、Run、split、复核人隔离，未仲裁结果不进入普通 Review/Trail 查询。
+25. `036_intent_comment_dchat_notifications.sql`：为意图讨论保存 `mentions_json`，增加独立的 DChat 通知 outbox，并支持意图评论深链与回复作者通知。
 
 `003_identity_attribution.sql` 对旧行使用 `legacy` / `verified=false`，不会把历史自由填写姓名升级成可信 SSO。所有人工标注、模型结果、任务记录与附件元数据都保留历史行；附件二进制仍留在同一受限 `review_attachments/` 目录，PostgreSQL 保存其元数据。
 

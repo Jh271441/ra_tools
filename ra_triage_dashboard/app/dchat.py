@@ -175,6 +175,31 @@ def build_comment_notification_text(
     return "\n".join(lines)[:_MAX_DCHAT_TEXT_LENGTH]
 
 
+def build_intent_comment_notification_text(
+    *,
+    dataset_id: str,
+    case_id: str,
+    author: str,
+    body: str,
+    review_url: str,
+    is_reply: bool = False,
+) -> str:
+    excerpt = str(body or "").strip()
+    if len(excerpt) > 1200:
+        excerpt = excerpt[:1199] + "…"
+    action = "回复了你的评论" if is_reply else "在意图标注讨论中提到了你"
+    lines = [
+        "**【RA Triage】意图标注评论通知**",
+        "",
+        f"{_markdown_plaintext(author or '一位同事')} 在意图 Case `"
+        f"{_markdown_plaintext(dataset_id)}/{_markdown_plaintext(case_id)}` 中{action}：",
+    ]
+    if excerpt:
+        lines.extend(["", f"> {_markdown_plaintext(excerpt).replace(chr(10), chr(10) + '> ')}"])
+    lines.extend(["", f"[查看意图讨论]({review_url})"])
+    return "\n".join(lines)[:_MAX_DCHAT_TEXT_LENGTH]
+
+
 def build_review_url(
     return_url: str,
     *,
@@ -192,6 +217,29 @@ def build_review_url(
     if comment_id is not None:
         query["comment"] = str(int(comment_id))
     return urlunparse(parsed._replace(query=urlencode(query), fragment=""))
+
+
+def build_intent_comment_url(
+    return_url: str,
+    *,
+    dataset_id: str,
+    case_id: str,
+    comment_id: int | None = None,
+) -> str:
+    parsed = urlparse(return_url)
+    path = parsed.path.rstrip("/")
+    if path.endswith("/review"):
+        path = f"{path[:-len('/review')]}/intent-labeling"
+    elif not path.endswith("/intent-labeling"):
+        path = f"{path}/intent-labeling"
+    query = {
+        "dataset": dataset_id,
+        "case": case_id,
+        "comments": "1",
+    }
+    if comment_id is not None:
+        query["comment"] = str(int(comment_id))
+    return urlunparse(parsed._replace(path=path, query=urlencode(query), fragment=""))
 
 
 class DChatClient:
