@@ -26,6 +26,32 @@ BASE_KEYS = {"PATH", "HOME", "LANG", "LC_ALL", "TZ", "NO_PROXY", "no_proxy"}
 OFF = ("DASHBOARD_SYNC_TRAIL_ON_START", "DASHBOARD_BATCH_PREDICTION_ENABLED",
        "DASHBOARD_AUTOTRIAGE_PUSH_ENABLED", "DASHBOARD_DCHAT_NOTIFICATIONS_ENABLED",
        "DASHBOARD_TRAIL_ATTRIBUTE_WRITE_ENABLED", "DASHBOARD_TRAIL_ATTRIBUTE_REVIEW_WRITE_ENABLED")
+SENSITIVE_PATHS = (
+    "ra_triage_dashboard/migrations",
+    "ra_triage_dashboard/requirements.txt",
+    "ra_triage_dashboard/requirements-runtime.txt",
+    "ra_triage_dashboard/scripts/bootstrap_cloud_postgres.sh",
+    "ra_triage_dashboard/scripts/migrate_cloud_postgres_data.sh",
+)
+POSTGRES_MIGRATION_PREFIX = "ra_triage_dashboard/migrations/postgres/"
+MIGRATION_APPLY_CODE = """
+from app.db import Database
+from app.settings import Settings
+
+settings = Settings.from_env()
+database = Database(
+    settings.database_url,
+    postgres_migrations_dir=settings.postgres_migrations_dir,
+    pool_size=2,
+)
+database.init()
+with database.connect() as connection:
+    row = connection.execute(
+        "SELECT COUNT(*) AS count FROM dashboard_schema_migrations"
+    ).fetchone()
+print(int(row["count"]))
+database.close()
+"""
 
 class DeployError(RuntimeError):
     pass
@@ -39,6 +65,42 @@ def run(*args, cwd=REPO, **kw):
 
 def git(*args, cwd=REPO):
     return run("git", *args, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.decode().strip()
+
+def validate_additive_migration_sql(path, content):
+    statements = [
+        statement.strip()
+        for statement in re.sub(r"--[^\n]*", "", content).split(";")
+        if statement.strip()
+    ]
+    require(statements and statements[0].upper() == "BEGIN", f"Migration must start with BEGIN: {path}")
+    require(statements[-1].upper() == "COMMIT", f"Migration must end with COMMIT: {path}")
+    for statement in statements[1:-1]:
+        normalized = " ".join(statement.split()).upper()
+        allowed = (
+            normalized.startswith("ALTER TABLE ")
+            and " ADD COLUMN IF NOT EXISTS " in f" {normalized} "
+        ) or normalized.startswith("CREATE TABLE IF NOT EXISTS ") \
+            or normalized.startswith("CREATE INDEX IF NOT EXISTS ")
+        require(allowed, f"Migration is not strictly additive: {path}")
+
+def migration_changes(old, sha, *, allow_additive=False):
+    sensitive = git("diff", "--name-only", old, sha, "--", *SENSITIVE_PATHS).splitlines()
+    if not sensitive:
+        return []
+    require(allow_additive, "Migration/runtime dependency changes require a separately planned deployment")
+    require(
+        all(path.startswith(POSTGRES_MIGRATION_PREFIX) and path.endswith(".sql") for path in sensitive),
+        "Additive migration mode only permits PostgreSQL migration files",
+    )
+    statuses = git("diff", "--name-status", old, sha, "--", *sensitive).splitlines()
+    require(
+        len(statuses) == len(sensitive)
+        and all(line.startswith("A\t") for line in statuses),
+        "Additive migration mode only permits newly added migration files",
+    )
+    for path in sensitive:
+        validate_additive_migration_sql(path, git("show", f"{sha}:{path}"))
+    return sensitive
 
 def save(path, obj):
     path = Path(path)
@@ -101,6 +163,50 @@ def gray_env(env, candidate, data, sha):
                   DASHBOARD_TRUSTED_INGRESS_TOKEN_FILE="", DASHBOARD_DEPLOYMENT_MODE="production",
                   DASHBOARD_TRUST_PROXY_IDENTITY_HEADERS="false")
     return result
+
+def apply_additive_migrations(candidate, env, migrations, record_dir, expected_count):
+    migration_env = rebase_env(env, REPO, candidate)
+    backup_script = candidate / "ra_triage_dashboard/scripts/backup_cloud_postgres.sh"
+    verify_script = candidate / "ra_triage_dashboard/scripts/verify_cloud_postgres_backup.sh"
+    backup_result = run(
+        "bash", backup_script,
+        cwd=candidate,
+        env=migration_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=600,
+    )
+    backup_lines = backup_result.stdout.decode().strip().splitlines()
+    require(backup_lines, "PostgreSQL backup did not return a path")
+    backup = Path(backup_lines[-1]).resolve()
+    backup_root = (Path(env["DASHBOARD_DATA_DIR"]) / "postgres_backups").resolve()
+    require(backup.parent == backup_root and backup.is_file(), "Backup path is outside the configured backup directory")
+    with (record_dir / "backup-verify.log").open("w") as log:
+        run(
+            "bash", verify_script, backup,
+            cwd=candidate,
+            env=migration_env,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            timeout=600,
+        )
+    with (record_dir / "migration.log").open("w") as log:
+        migrated = run(
+            PYTHON, "-c", MIGRATION_APPLY_CODE,
+            cwd=candidate / "ra_triage_dashboard",
+            env=migration_env,
+            stdout=subprocess.PIPE,
+            stderr=log,
+            timeout=120,
+        )
+    output = migrated.stdout.decode().strip().splitlines()
+    require(output and output[-1].isdigit(), "Migration count verification failed")
+    migration_count = int(output[-1])
+    require(
+        migration_count == expected_count + len(migrations),
+        "Unexpected PostgreSQL migration count after apply",
+    )
+    return str(backup), migration_count
 
 def check_health(health, sha, storage):
     require(health.get("ok") is True, "Health is not OK")
@@ -249,7 +355,7 @@ def cleanup(state, current):
         # Small result records and logs remain for diagnosis.
     return removed
 
-def deploy(sha, check_only=False):
+def deploy(sha, check_only=False, allow_additive_migrations=False):
     require(sys.platform == "linux" and REPO.is_dir() and PYTHON.is_file(), "Run on the configured cloud_server")
     require(re.fullmatch(r"[0-9a-f]{40}", sha), "Supply a full 40-character pushed commit SHA")
     with deployment_lock(STATE):
@@ -263,25 +369,47 @@ def deploy(sha, check_only=False):
         old = before.get("build_commit", "")
         require(re.fullmatch(r"[0-9a-f]{40}", old), "Live build SHA is unavailable")
         check_health(before, old, "postgresql")
-        sensitive = git("diff", "--name-only", old, sha, "--", "ra_triage_dashboard/migrations", "ra_triage_dashboard/requirements.txt", "ra_triage_dashboard/requirements-runtime.txt", "ra_triage_dashboard/scripts/bootstrap_cloud_postgres.sh", "ra_triage_dashboard/scripts/migrate_cloud_postgres_data.sh")
-        require(not sensitive, "Migration/runtime dependency changes require a separately planned deployment")
+        migrations = migration_changes(
+            old, sha, allow_additive=allow_additive_migrations
+        )
+        migration_count_before = None
+        if migrations:
+            status = get_json(8785, "api/status")
+            migration_count_before = status.get("database", {}).get("migration_count")
+            require(
+                isinstance(migration_count_before, int),
+                "Production migration count is unavailable",
+            )
         with socket.socket() as sock:
             try:
                 sock.bind(("127.0.0.1", 8786))
             except OSError:
                 raise DeployError("8786 is occupied; preserve the existing gray session") from None
         if check_only:
-            print(json.dumps({"preflight": "ok", "target": sha, "live": old}))
+            print(json.dumps({
+                "preflight": "ok",
+                "target": sha,
+                "live": old,
+                "additive_migrations": migrations,
+            }))
             return
         stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "-" + sha[:12]
         folder = STATE / "releases" / stamp
         folder.mkdir(parents=True, mode=0o700)
         candidate, rollback, data = folder / "candidate", folder / "rollback", folder / "gray-data"
-        result = {"status": "running", "target": sha, "previous": old, "candidate": str(candidate), "rollback": str(rollback)}
+        result = {
+            "status": "running",
+            "target": sha,
+            "previous": old,
+            "candidate": str(candidate),
+            "rollback": str(rollback),
+            "additive_migrations": migrations,
+        }
         save(folder / "result.json", result)
         gray = None
         switched = False
         replacement_pid = None
+        production_stop_attempted = False
         try:
             run("git", "worktree", "add", "--detach", candidate, sha)
             run("git", "worktree", "add", "--detach", rollback, old)
@@ -302,9 +430,27 @@ def deploy(sha, check_only=False):
             require(now_pid == pid and now_env == env, "Runtime changed during gray")
             print("Gray passed; promoting exact SHA", flush=True)
             save(folder / "production-before.json", {"app": str(REPO / "ra_triage_dashboard"), "env": env, "sha": old})
+            if migrations:
+                production_stop_attempted = True
+                stop_production(pid)
+                backup, migration_count = apply_additive_migrations(
+                    candidate,
+                    env,
+                    migrations,
+                    folder,
+                    migration_count_before,
+                )
+                result.update(
+                    backup=backup,
+                    migration_count_before=migration_count_before,
+                    migration_count_after=migration_count,
+                )
+                save(folder / "result.json", result)
             run("git", "merge", "--ff-only", sha)
             switched = True
-            stop_production(pid)
+            if not migrations:
+                production_stop_attempted = True
+                stop_production(pid)
             start_production(folder, REPO / "ra_triage_dashboard", env, sha, "production")
             replacement_pid = git_pane_pid()
             after = smoke(8785, sha, "postgresql")
@@ -320,7 +466,7 @@ def deploy(sha, check_only=False):
         except BaseException as exc:
             stop_child(gray)
             result.update(status="failed", error_type=type(exc).__name__)
-            if switched and not process_alive(pid):
+            if production_stop_attempted and not process_alive(pid):
                 try:
                     if replacement_pid is not None:
                         stop_production(replacement_pid)
@@ -340,13 +486,18 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sha")
     parser.add_argument("--check", action="store_true", help="preflight only, without service/worktree changes")
+    parser.add_argument(
+        "--allow-additive-migrations",
+        action="store_true",
+        help="permit new strictly additive PostgreSQL migrations with backup verification",
+    )
     parser.add_argument("--serve", help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.serve:
         serve(args.serve)
     else:
         require(args.sha, "--sha is required")
-        deploy(args.sha, args.check)
+        deploy(args.sha, args.check, args.allow_additive_migrations)
 
 if __name__ == "__main__":
     try:

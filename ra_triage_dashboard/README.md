@@ -524,6 +524,11 @@ ssh -L 8785:127.0.0.1:8785 cloud_server
 24. `035_review_multi_blind.sql`：增加 Review 多人任务成员表、split 配置和 `annotations.work_split_id`；盲标版本按 Issue、Run、split、复核人隔离，未仲裁结果不进入普通 Review/Trail 查询。
 25. `036_intent_comment_dchat_notifications.sql`：为意图讨论保存 `mentions_json`，增加独立的 DChat 通知 outbox，并支持意图评论深链与回复作者通知。
 
+发布器默认拒绝数据库变更；经单独确认的纯增量 migration 可使用
+`deploy_cloud.py --allow-additive-migrations`，它会在生产切换前强制执行新鲜备份、
+可恢复校验和 migration 数量核对。该模式不接受修改旧 migration、依赖变更或删除、
+更新、重命名等非增量 SQL。
+
 `003_identity_attribution.sql` 对旧行使用 `legacy` / `verified=false`，不会把历史自由填写姓名升级成可信 SSO。所有人工标注、模型结果、任务记录与附件元数据都保留历史行；附件二进制仍留在同一受限 `review_attachments/` 目录，PostgreSQL 保存其元数据。
 
 cloud_server 的一次性切换流程：

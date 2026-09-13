@@ -31,11 +31,19 @@ python3 /tmp/ra-dashboard-deploy.py --sha <完整40位提交SHA>
 运行配置以同用户 0600 文件保存；凭据仅保留文件路径，不复制凭据值。
 不支持从环境传入明文数据库 URL、API key 或 token。
 
+纯增量 PostgreSQL migration 可以显式使用 `--allow-additive-migrations`。
+默认模式仍拒绝任何 migration；该显式模式也只接受新增加的 `.sql` 文件，
+且语句限于事务包裹的 `ADD COLUMN IF NOT EXISTS`、`CREATE TABLE IF NOT EXISTS`
+和 `CREATE INDEX IF NOT EXISTS`。完整测试与隔离灰度通过后，发布器停止生产写入，
+创建新鲜逻辑备份，执行 checksum/archive/disposable restore/全表计数校验，再应用
+migration 并核对 migration 数量，最后才快进和启动新版本。应用启动失败时会恢复旧
+应用版本；由于只允许向后兼容的增量 schema，不执行自动数据库回滚。
+
 ## 失败与范围
 
 测试或灰度失败不会切换生产，现场保留供检查。生产切换后验证失败时，尝试从原运行 SHA 的独立目录恢复并记录回退结果；不会重置 master 或修改 Git 历史。回退后先核对服务和记录，将生产主目录与实际运行版本重新协调，再进行下一次发布。
 
-数据库迁移、依赖文件和 PostgreSQL 引导/迁移脚本变更会在预检时停止，需要单独规划兼容性、环境更新和恢复。不会自动改数据库或升级共享 Python 环境。
+依赖文件、PostgreSQL 引导/迁移脚本和非增量数据库变更会在预检时停止，需要单独规划兼容性、环境更新和恢复。不会自动升级共享 Python 环境。
 
 纯文档变更只需同步 Git，无需调用部署器。界面行为变化仍应补充相应浏览器验证；通用 API 冒烟不替代页面交互测试。
 

@@ -14,6 +14,79 @@ d = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(d)
 
 class DeployTests(unittest.TestCase):
+    def test_additive_migration_guard_accepts_only_new_safe_sql(self):
+        path = "ra_triage_dashboard/migrations/postgres/036_safe.sql"
+        safe = """BEGIN;
+ALTER TABLE intent_case_comments
+    ADD COLUMN IF NOT EXISTS mentions_json jsonb NOT NULL DEFAULT '[]'::jsonb;
+CREATE TABLE IF NOT EXISTS intent_comment_notifications (id bigserial PRIMARY KEY);
+CREATE INDEX IF NOT EXISTS idx_intent_comment_notifications
+    ON intent_comment_notifications(id);
+COMMIT;
+"""
+        d.validate_additive_migration_sql(path, safe)
+        for unsafe in (
+            "BEGIN; DROP TABLE intent_case_comments; COMMIT;",
+            "BEGIN; ALTER TABLE intent_case_comments RENAME TO old_comments; COMMIT;",
+            "BEGIN; UPDATE intent_case_comments SET body = ''; COMMIT;",
+        ):
+            with self.assertRaises(d.DeployError):
+                d.validate_additive_migration_sql(path, unsafe)
+
+        def git(*args, **_kwargs):
+            if args[:2] == ("diff", "--name-only"):
+                return path
+            if args[:2] == ("diff", "--name-status"):
+                return f"A\t{path}"
+            if args[0] == "show":
+                return safe
+            raise AssertionError(args)
+
+        with patch.object(d, "git", side_effect=git):
+            with self.assertRaises(d.DeployError):
+                d.migration_changes("old", "new")
+            self.assertEqual(
+                d.migration_changes("old", "new", allow_additive=True),
+                [path],
+            )
+
+    def test_additive_migration_runs_verified_backup_before_apply(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            candidate = root / "candidate"
+            scripts = candidate / "ra_triage_dashboard/scripts"
+            scripts.mkdir(parents=True)
+            record = root / "record"
+            record.mkdir()
+            data = root / "data"
+            backup_root = data / "postgres_backups"
+            backup_root.mkdir(parents=True)
+            backup = backup_root / "ra_triage_dashboard-20260913T120000Z.dump"
+            backup.touch()
+            calls = []
+
+            def run(*args, **kwargs):
+                calls.append(args)
+                if args[0] == "bash" and Path(args[1]).name == "backup_cloud_postgres.sh":
+                    return MagicMock(stdout=f"{backup}\n".encode())
+                if args[0] == d.PYTHON:
+                    return MagicMock(stdout=b"36\n")
+                return MagicMock(stdout=b"")
+
+            with patch.object(d, "run", side_effect=run):
+                result = d.apply_additive_migrations(
+                    candidate,
+                    {"DASHBOARD_DATA_DIR": str(data)},
+                    ["ra_triage_dashboard/migrations/postgres/036_safe.sql"],
+                    record,
+                    35,
+                )
+
+            self.assertEqual(result, (str(backup.resolve()), 36))
+            self.assertEqual(Path(calls[0][1]).name, "backup_cloud_postgres.sh")
+            self.assertEqual(Path(calls[1][1]).name, "verify_cloud_postgres_backup.sh")
+            self.assertEqual(calls[2][0], d.PYTHON)
+
     def test_gray_isolates_database_and_all_writers(self):
         env = {k: "true" for k in d.OFF}
         env.update(DASHBOARD_DATA_DIR="/production", DASHBOARD_DATABASE_URL_FILE="/production/postgres_url",
