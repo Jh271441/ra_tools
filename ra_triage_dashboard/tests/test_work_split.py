@@ -564,6 +564,84 @@ class WorkSplitTest(unittest.TestCase):
             self.assertEqual(exported[0]["tags"], "bob-tag")
             self.assertEqual(exported[0]["missing_evidence"], "bob-evidence")
 
+    def test_agreed_analysis_display_uses_latest_reviewer_head(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "blind-agreed-analysis.sqlite")
+            db.init()
+            scope = "scope"
+            db.upsert_issues(
+                [{"issue_id": "cn1", "gt_label": "正确触发"}],
+                source="test",
+                replace_gt=True,
+                baseline_scope=scope,
+            )
+            run, _ = db.import_model_run(
+                name="blind-run",
+                source_name="blind.json",
+                source_sha256="9" * 64,
+                metadata={},
+                rows=[{"issue_id": "cn1", "model_label": "正确触发"}],
+            )
+            assignments = distribute_issue_ids(
+                ["cn1"],
+                [{"name": "alice"}, {"name": "bob"}],
+                seed=1,
+                reviewers_per_issue=2,
+            )
+            saved = db.apply_work_split(
+                assignments=assignments,
+                created_by="admin",
+                reviewers_per_issue=2,
+                model_run_id=run["id"],
+            )
+            alice = db.create_annotation(
+                issue_id="cn1",
+                model_run_id=run["id"],
+                work_split_id=saved["split_id"],
+                label="误触发",
+                review_status="needs_gt_review",
+                tags=["alice-tag"],
+                missing_evidence=["alice-evidence"],
+                note="alice older",
+                author="alice",
+                expected_previous_annotation_id=None,
+            )
+            bob = db.create_annotation(
+                issue_id="cn1",
+                model_run_id=run["id"],
+                work_split_id=saved["split_id"],
+                label="误触发",
+                review_status="needs_gt_review",
+                tags=["bob-tag"],
+                missing_evidence=["bob-evidence"],
+                note="bob latest",
+                author="bob",
+                expected_previous_annotation_id=None,
+            )
+            self.assertGreater(bob["id"], alice["id"])
+
+            with patch.object(review_payloads, "database", db), patch(
+                "ra_triage_dashboard.app.support.catalogs.database", db
+            ):
+                result = review_payloads._review_reason_analysis_payload(
+                    model_run_id=run["id"],
+                    comparison="all",
+                    baseline_scopes=[scope],
+                    work_agreement="all",
+                    include_multi_reviews=True,
+                )
+
+            self.assertEqual(result["total"], 1)
+            item = result["items"][0]
+            self.assertEqual(item["multi_review"]["agreement"], "agreed")
+            self.assertEqual(item["annotation"]["id"], bob["id"])
+            self.assertEqual(item["annotation"]["author"], "bob")
+            self.assertEqual(item["annotation"]["note"], "bob latest")
+            self.assertEqual(item["annotation"]["tags"], ["bob-tag"])
+            self.assertEqual(
+                item["annotation"]["missing_evidence"], ["bob-evidence"]
+            )
+
     def test_case_comparison_filter_accepts_multiple_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "comparison.sqlite")
