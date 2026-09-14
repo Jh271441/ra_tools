@@ -336,13 +336,28 @@ def _review_reason_analysis_payload(
             ).casefold()
             if folded_search not in haystack:
                 continue
-        representative_review = next(
-            (
-                item for item in submitted_reviews
+        if agreement == "conflict" and submitted_reviews:
+            # Each member row already contains that reviewer's latest version.
+            # A conflict still needs one primary row for the shared display and
+            # export schema, so choose the last appended version across those
+            # reviewer heads instead of the first username in query order. A
+            # reviewer filter selects Issues involving that person; it must not
+            # make the same conflict export a different primary version.
+            representative_review = max(
+                submitted_reviews,
+                key=lambda item: int(item["annotation"].get("id") or -1),
+            )
+        else:
+            representative_candidates = [
+                item
+                for item in submitted_reviews
                 if not authors or item["username"] in authors
-            ),
-            submitted_reviews[0] if submitted_reviews else None,
-        )
+            ]
+            if not representative_candidates:
+                representative_candidates = submitted_reviews
+            representative_review = (
+                representative_candidates[0] if representative_candidates else None
+            )
         representative = dict(representative_review["annotation"]) if representative_review else {
             "id": None,
             "model_run_id": model_run_id,
@@ -357,17 +372,18 @@ def _review_reason_analysis_payload(
             "author_verified": True,
             "created_at": "",
         }
-        # Cluster each Issue once while retaining every submitted review's
-        # structured evidence. Individual outputs and authors remain available
-        # in ``multi_review.reviews`` for the detail card.
-        representative["tags"] = list(dict.fromkeys(
-            key for annotation in annotations for key in annotation.get("tags") or []
-        ))
-        representative["missing_evidence"] = list(dict.fromkeys(
-            key
-            for annotation in annotations
-            for key in annotation.get("missing_evidence") or []
-        ))
+        # Partial/agreed tasks keep Issue-level union clustering. For conflicts,
+        # display, filtering and every export field must describe one coherent
+        # latest version rather than mixing its output/reason with peer tags.
+        if agreement != "conflict":
+            representative["tags"] = list(dict.fromkeys(
+                key for annotation in annotations for key in annotation.get("tags") or []
+            ))
+            representative["missing_evidence"] = list(dict.fromkeys(
+                key
+                for annotation in annotations
+                for key in annotation.get("missing_evidence") or []
+            ))
         source = {**first, "annotation": representative}
         source.pop("assignee", None)
         source.pop("split_id", None)

@@ -9,6 +9,7 @@ from unittest.mock import patch
 from starlette.requests import Request
 
 from ra_triage_dashboard.app.db import AnnotationConflictError, Database
+from ra_triage_dashboard.app.routers import analysis as analysis_router
 from ra_triage_dashboard.app.routers import cases as cases_router
 from ra_triage_dashboard.app.support import review_payloads
 from ra_triage_dashboard.app.work_split import distribute_issue_ids
@@ -246,6 +247,12 @@ class WorkSplitTest(unittest.TestCase):
                 expected_previous_annotation_id=None,
             )
             self.assertNotEqual(alice["id"], bob["id"])
+            alice_latest = db.create_annotation(
+                issue_id="cn1", model_run_id="", work_split_id=saved["split_id"],
+                label="无需协助", review_status="needs_gt_review", tags=[],
+                missing_evidence=[], note="alice latest", author="alice",
+                expected_previous_annotation_id=alice["id"],
+            )
             with self.assertRaises(AnnotationConflictError):
                 db.create_annotation(
                     issue_id="cn1", model_run_id="", work_split_id=saved["split_id"],
@@ -256,8 +263,23 @@ class WorkSplitTest(unittest.TestCase):
             projected = db.list_cases(
                 baseline_scope="scope", page_size=10
             )["items"][0]["annotation"]
-            self.assertEqual(projected["id"], alice["id"])
+            self.assertEqual(projected["id"], alice_latest["id"])
             self.assertEqual(projected["author"], "alice")
+            own_projected = db.list_cases(
+                baseline_scope="scope",
+                preferred_annotation_author="bob",
+                page_size=10,
+            )["items"][0]["annotation"]
+            self.assertEqual(own_projected["id"], bob["id"])
+            self.assertEqual(own_projected["author"], "bob")
+            explicitly_filtered = db.list_cases(
+                baseline_scope="scope",
+                annotation_author="alice",
+                preferred_annotation_author="bob",
+                page_size=10,
+            )["items"][0]["annotation"]
+            self.assertEqual(explicitly_filtered["id"], alice_latest["id"])
+            self.assertEqual(explicitly_filtered["author"], "alice")
             self.assertEqual(len(db.review_multi_rows(baseline_scopes=["scope"])), 2)
 
     def test_default_analysis_includes_submitted_partial_blind_review(self) -> None:
@@ -451,6 +473,92 @@ class WorkSplitTest(unittest.TestCase):
             self.assertEqual(with_comments["total"], 1)
             self.assertEqual(matching_comment["total"], 1)
             self.assertEqual(missing_comment["total"], 0)
+
+    def test_conflict_analysis_display_and_export_use_latest_reviewer_head(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "blind-conflict-analysis.sqlite")
+            db.init()
+            scope = "scope"
+            db.upsert_issues(
+                [{"issue_id": "cn1", "gt_label": "正确触发"}],
+                source="test",
+                replace_gt=True,
+                baseline_scope=scope,
+            )
+            run, _ = db.import_model_run(
+                name="blind-run",
+                source_name="blind.json",
+                source_sha256="8" * 64,
+                metadata={},
+                rows=[{"issue_id": "cn1", "model_label": "正确触发"}],
+            )
+            assignments = distribute_issue_ids(
+                ["cn1"],
+                [{"name": "alice"}, {"name": "bob"}],
+                seed=1,
+                reviewers_per_issue=2,
+            )
+            saved = db.apply_work_split(
+                assignments=assignments,
+                created_by="admin",
+                reviewers_per_issue=2,
+                model_run_id=run["id"],
+            )
+            alice = db.create_annotation(
+                issue_id="cn1",
+                model_run_id=run["id"],
+                work_split_id=saved["split_id"],
+                label="正确触发",
+                review_status="reviewed",
+                tags=["alice-tag"],
+                missing_evidence=["alice-evidence"],
+                note="alice older",
+                author="alice",
+                expected_previous_annotation_id=None,
+            )
+            bob = db.create_annotation(
+                issue_id="cn1",
+                model_run_id=run["id"],
+                work_split_id=saved["split_id"],
+                label="误触发",
+                review_status="needs_gt_review",
+                tags=["bob-tag"],
+                missing_evidence=["bob-evidence"],
+                note="bob latest",
+                author="bob",
+                expected_previous_annotation_id=None,
+            )
+            self.assertGreater(bob["id"], alice["id"])
+
+            with patch.object(review_payloads, "database", db), patch(
+                "ra_triage_dashboard.app.support.catalogs.database", db
+            ):
+                result = review_payloads._review_reason_analysis_payload(
+                    model_run_id=run["id"],
+                    comparison="all",
+                    baseline_scopes=[scope],
+                    work_agreement="conflict",
+                    annotation_author="alice",
+                )
+
+            self.assertEqual(result["total"], 1)
+            annotation = result["items"][0]["annotation"]
+            self.assertEqual(annotation["id"], bob["id"])
+            self.assertEqual(annotation["author"], "bob")
+            self.assertEqual(annotation["label"], "误触发")
+            self.assertEqual(annotation["note"], "bob latest")
+            self.assertEqual(annotation["tags"], ["bob-tag"])
+            self.assertEqual(annotation["missing_evidence"], ["bob-evidence"])
+
+            with patch.object(analysis_router, "_review_tag_catalog", return_value=[]), patch.object(
+                analysis_router, "_missing_evidence_catalog", return_value=[]
+            ):
+                exported = analysis_router._review_analysis_export_rows(result)
+            self.assertEqual(exported[0]["expected_output"], "误触发")
+            self.assertEqual(exported[0]["review_reason"], "bob latest")
+            self.assertEqual(exported[0]["reviewer"], "bob")
+            self.assertEqual(exported[0]["tags"], "bob-tag")
+            self.assertEqual(exported[0]["missing_evidence"], "bob-evidence")
 
     def test_case_comparison_filter_accepts_multiple_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

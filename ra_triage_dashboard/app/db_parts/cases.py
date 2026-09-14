@@ -204,6 +204,7 @@ class DatabaseCasesMixin:
         model_run_id: str,
         *,
         projection_authors: Sequence[str] = (),
+        preferred_annotation_author: str = "",
     ) -> tuple[str, list[Any]]:
         """Project the primary assignment Review without hiding old behavior.
 
@@ -220,6 +221,12 @@ class DatabaseCasesMixin:
             dict.fromkeys(str(value or "").strip() for value in projection_authors)
         )
         authors = tuple(value for value in authors if value)
+        preferred_author = str(preferred_annotation_author or "").strip()
+        # An explicit reviewer/assignee filter owns the projection. The signed-
+        # in user's Review is only the default preference when no such filter
+        # was requested.
+        if authors:
+            preferred_author = ""
         author_clause = ""
         author_params: list[Any] = []
         if authors:
@@ -227,6 +234,11 @@ class DatabaseCasesMixin:
                 f"AND wa.assignee IN ({', '.join('?' for _ in authors)})"
             )
             author_params.extend(authors)
+        preferred_order = (
+            "CASE WHEN a.author = ? THEN 0 ELSE 1 END,"
+            if preferred_author
+            else ""
+        )
 
         assignment_exists = f"""
             EXISTS (
@@ -256,6 +268,7 @@ class DatabaseCasesMixin:
                   {author_clause}
                 ORDER BY
                   CASE WHEN a.id IS NULL THEN 1 ELSE 0 END,
+                  {preferred_order}
                   CASE WHEN wa.assignment_kind = 'base' THEN 0 ELSE 1 END,
                   a.id DESC
                 LIMIT 1
@@ -310,6 +323,7 @@ class DatabaseCasesMixin:
             *author_params,
             run_id,
             *author_params,
+            *([preferred_author] if preferred_author else []),
             *ordinary_params,
         ]
         return join, params
@@ -330,6 +344,7 @@ class DatabaseCasesMixin:
         missing_evidence: str = "",
         issue_ids: list[str] | None = None,
         work_assignee: str = "",
+        preferred_annotation_author: str = "",
         is_excluded: bool | None = None,
     ) -> tuple[str, list[Any], list[Any], str]:
         where: list[str] = []
@@ -485,6 +500,7 @@ class DatabaseCasesMixin:
         annotation_join, annotation_params = self._gallery_annotation_join(
             model_run_id,
             projection_authors=authors or tuple(named),
+            preferred_annotation_author=preferred_annotation_author,
         )
         common = f"""
             FROM issues i
@@ -514,6 +530,7 @@ class DatabaseCasesMixin:
         missing_evidence: str = "",
         issue_ids: list[str] | None = None,
         work_assignee: str = "",
+        preferred_annotation_author: str = "",
         is_excluded: bool | None = None,
         page: int = 1,
         page_size: int = 100,
@@ -537,6 +554,7 @@ class DatabaseCasesMixin:
             missing_evidence=missing_evidence,
             issue_ids=issue_ids,
             work_assignee=work_assignee,
+            preferred_annotation_author=preferred_annotation_author,
             is_excluded=is_excluded,
         )
         with self.connect() as conn:
@@ -599,6 +617,7 @@ class DatabaseCasesMixin:
         missing_evidence: str = "",
         issue_ids: list[str] | None = None,
         work_assignee: str = "",
+        preferred_annotation_author: str = "",
         is_excluded: bool | None = None,
         limit: int = 5000,
     ) -> list[str]:
@@ -618,6 +637,7 @@ class DatabaseCasesMixin:
             missing_evidence=missing_evidence,
             issue_ids=issue_ids,
             work_assignee=work_assignee,
+            preferred_annotation_author=preferred_annotation_author,
             is_excluded=is_excluded,
         )
         limit = min(max(1, int(limit)), 5000)

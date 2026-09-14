@@ -302,6 +302,10 @@ async def list_cases(
     )
     review_statuses = tuple(filters.pop("review_statuses", ()))
     exclusion_filter = str(filters.pop("exclusion", "all"))
+    identity = await asyncio.to_thread(request_identity, request, settings)
+    filters["preferred_annotation_author"] = (
+        identity.username if identity.verified and identity.username else ""
+    )
     comparison_status = filters["comparison_status"]
     safe_page = max(1, int(page))
     safe_page_size = min(max(1, int(page_size)), 100)
@@ -371,6 +375,10 @@ async def list_case_issue_ids(
     )
     review_statuses = tuple(filters.pop("review_statuses", ()))
     exclusion_filter = str(filters.pop("exclusion", "all"))
+    identity = await asyncio.to_thread(request_identity, request, settings)
+    filters["preferred_annotation_author"] = (
+        identity.username if identity.verified and identity.username else ""
+    )
     ids = await asyncio.to_thread(
         _case_issue_ids_with_status_filter,
         filters=filters,
