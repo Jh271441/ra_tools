@@ -574,9 +574,30 @@ function bindEvents() {
       showToast(error.message, true);
     }
   });
-  $("#runPersonFilter").addEventListener("change", renderRunManager);
-  $("#runKindFilter").addEventListener("change", renderRunManager);
-  $("#runSearchInput").addEventListener("input", renderRunManager);
+  $("#runPersonFilter").addEventListener("change", resetRunManagerPageAndRender);
+  $("#runKindFilter").addEventListener("change", resetRunManagerPageAndRender);
+  $("#runSearchInput").addEventListener("input", resetRunManagerPageAndRender);
+  $("#runPagePrevious")?.addEventListener("click", () => changeRunManagerPage(-1));
+  $("#runPageNext")?.addEventListener("click", () => changeRunManagerPage(1));
+  const runPageJump = $("#runPageJump");
+  const commitRunPageJump = () => jumpToRunManagerPage(runPageJump?.value);
+  $("#runPageJumpButton")?.addEventListener("click", commitRunPageJump);
+  runPageJump?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitRunPageJump();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      renderRunManager();
+      runPageJump.blur();
+    }
+  });
+  runPageJump?.addEventListener("focus", () => {
+    window.requestAnimationFrame(() => runPageJump.select());
+  });
+  $("#runPageSize")?.addEventListener("change", (event) => {
+    changeRunManagerPageSize(event.target.value);
+  });
   $("#batchRequesterFilter").addEventListener("change", () => {
     loadPredictionBatches().catch((error) => showToast(error.message, true));
   });
@@ -1039,6 +1060,12 @@ async function bootstrap() {
       showToast("意图标注仅对已授权标注人开放。", true);
     }
     const defaultFailureOnly = Boolean(state.config?.default_failure_only);
+    if (initialRoute.page === "runs" && initialRoute.runsFilters) {
+      state.runPage = Math.max(1, Number(initialRoute.runsFilters.page) || 1);
+      state.runPageSize = CASE_PAGE_SIZES.includes(Number(initialRoute.runsFilters.pageSize))
+        ? Number(initialRoute.runsFilters.pageSize)
+        : DEFAULT_CASE_PAGE_SIZE;
+    }
     // An implicit team default is selected only after the Run API confirms it
     // has coverage in the active dataset. Explicit route selections are kept.
     state.selectedRunId =

@@ -486,6 +486,116 @@ function runBatchName(run) {
   );
 }
 
+function currentRunsRouteOptions(overrides = {}) {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    page: state.runPage,
+    pageSize: state.runPageSize,
+    importKind: params.has("import") || params.has("kind") ? "model" : "",
+    ...overrides,
+  };
+}
+
+function persistRunsRoute(overrides = {}) {
+  if (state.activePage !== "runs") return;
+  const nextUrl = pageUrl("runs", currentRunsRouteOptions(overrides));
+  const currentUrl = `${window.location.pathname}${window.location.search}`;
+  if (nextUrl === currentUrl) return;
+  window.history.replaceState(
+    { ...(window.history.state || {}), page: "runs" },
+    "",
+    nextUrl
+  );
+}
+
+function runManagerPageCount(total) {
+  return Math.max(1, Math.ceil(Number(total || 0) / Math.max(1, Number(state.runPageSize) || DEFAULT_CASE_PAGE_SIZE)));
+}
+
+function filteredModelRuns() {
+  const search = ($("#runSearchInput")?.value || "").trim().toLowerCase();
+  const personValue = $("#runPersonFilter")?.value || "";
+  const person = personValue === "__me__" ? state.session.username : personValue;
+  const kind = $("#runKindFilter")?.value || "";
+  return state.modelRuns.filter((run) => {
+    const personMatch = !person || runOwner(run) === person;
+    const searchText = [
+      run.name,
+      runBatchName(run),
+      run.source_name,
+      run.created_by,
+      run.declared_author,
+      run.metadata?.model_name,
+      run.metadata?.prompt_version,
+      run.metadata?.external_username,
+    ].join(" ").toLowerCase();
+    return personMatch && (!kind || run.kind === kind) && (!search || searchText.includes(search));
+  });
+}
+
+function renderRunManagerPagination(total, pageCount) {
+  const pagination = $("#runManagerPagination");
+  if (!pagination) return;
+  const hasRows = Number(total || 0) > 0;
+  pagination.hidden = !hasRows;
+  const page = Math.max(1, Math.min(Number(state.runPage) || 1, pageCount));
+  const previous = $("#runPagePrevious");
+  const next = $("#runPageNext");
+  const summary = $("#runPageSummary");
+  const jump = $("#runPageJump");
+  const size = $("#runPageSize");
+  if (previous) previous.disabled = !hasRows || page <= 1;
+  if (next) next.disabled = !hasRows || page >= pageCount;
+  if (summary) summary.textContent = hasRows ? `${page} / ${pageCount}` : "— / —";
+  if (jump) {
+    jump.max = String(pageCount);
+    jump.value = hasRows ? String(page) : "";
+    jump.disabled = !hasRows || pageCount <= 1;
+  }
+  if (size) {
+    size.value = String(state.runPageSize || DEFAULT_CASE_PAGE_SIZE);
+    size.disabled = !hasRows;
+  }
+}
+
+function resetRunManagerPageAndRender() {
+  state.runPage = 1;
+  persistRunsRoute({ page: 1 });
+  renderRunManager();
+}
+
+function changeRunManagerPage(delta) {
+  const filteredCount = filteredModelRuns().length;
+  const pageCount = runManagerPageCount(filteredCount);
+  const nextPage = Math.max(1, Math.min(pageCount, (Number(state.runPage) || 1) + Number(delta || 0)));
+  if (nextPage === state.runPage) return;
+  state.runPage = nextPage;
+  persistRunsRoute({ page: nextPage });
+  renderRunManager();
+}
+
+function jumpToRunManagerPage(value) {
+  const page = Number.parseInt(value, 10);
+  if (!Number.isFinite(page) || page < 1) {
+    renderRunManager();
+    return;
+  }
+  const filteredCount = filteredModelRuns().length;
+  const pageCount = runManagerPageCount(filteredCount);
+  state.runPage = Math.max(1, Math.min(pageCount, page));
+  persistRunsRoute({ page: state.runPage });
+  renderRunManager();
+}
+
+function changeRunManagerPageSize(value) {
+  const pageSize = Number.parseInt(value, 10);
+  if (!CASE_PAGE_SIZES.includes(pageSize)) return;
+  state.runPageSize = pageSize;
+  state.runPage = 1;
+  persistRunsRoute({ page: 1, pageSize });
+  renderRunManager();
+}
+
 function renderRunFilters() {
   const select = $("#runPersonFilter");
   if (!select) return;
@@ -542,40 +652,28 @@ function renderActiveRun(overview = null) {
 function renderRunManager() {
   const list = $("#modelRunList");
   if (!list) return;
-  const search = ($("#runSearchInput")?.value || "").trim().toLowerCase();
-  const personValue = $("#runPersonFilter")?.value || "";
-  const person = personValue === "__me__" ? state.session.username : personValue;
-  const kind = $("#runKindFilter")?.value || "";
-  const filteredRuns = state.modelRuns.filter((run) => {
-    const personMatch = !person || runOwner(run) === person;
-    const searchText = [
-      run.name,
-      runBatchName(run),
-      run.source_name,
-      run.created_by,
-      run.declared_author,
-      run.metadata?.model_name,
-      run.metadata?.prompt_version,
-      run.metadata?.external_username,
-    ]
-      .join(" ")
-      .toLowerCase();
-    return personMatch && (!kind || run.kind === kind) && (!search || searchText.includes(search));
-  });
+  const filteredRuns = filteredModelRuns();
   const totalCoverage = filteredRuns.reduce(
     (sum, run) => sum + Number(run.baseline_prediction_count || 0),
     0
   );
+  const pageCount = runManagerPageCount(filteredRuns.length);
+  const previousPage = Number(state.runPage) || 1;
+  state.runPage = Math.max(1, Math.min(pageCount, previousPage));
+  if (state.runPage !== previousPage) persistRunsRoute({ page: state.runPage });
   $("#runManagerSummary").textContent =
-    `${filteredRuns.length} / ${state.modelRuns.length} 个 Run · ${totalCoverage} 条预测`;
+    `${filteredRuns.length} / ${state.modelRuns.length} 个 Run · ${totalCoverage} 条预测 · 第 ${state.runPage} / ${pageCount} 页`;
+  renderRunManagerPagination(filteredRuns.length, pageCount);
   if (!filteredRuns.length) {
     list.innerHTML = '<div class="no-asset">当前筛选下没有 Run。</div>';
     return;
   }
+  const pageStart = (state.runPage - 1) * state.runPageSize;
+  const visibleRuns = filteredRuns.slice(pageStart, pageStart + state.runPageSize);
   // Denominator must follow the topbar dataset multi-select (union), not the
   // legacy primary-only config.baseline (always 0508 / 1071).
   const baselineCount = currentWorksetIssueCount();
-  list.innerHTML = filteredRuns
+  list.innerHTML = visibleRuns
     .map(
       (run) => {
         const coverage = Number(run.baseline_prediction_count || 0);

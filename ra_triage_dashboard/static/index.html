@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-416`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-417`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -972,6 +972,29 @@
                 </div>
                 <div class="run-manager-summary" id="runManagerSummary" data-i18n="runs.loading">正在加载 Runs…</div>
                 <div class="run-manager-list" id="modelRunList"></div>
+                <nav class="case-pagination gallery-pagination run-manager-pagination" id="runManagerPagination" aria-label="Run pagination" hidden>
+                  <div class="case-pagination-main">
+                    <button class="button button-quiet" id="runPagePrevious" type="button"><span class="ui-lang-zh">上一页</span><span class="ui-lang-en">Previous</span></button>
+                    <span id="runPageSummary">— / —</span>
+                    <button class="button button-quiet" id="runPageNext" type="button"><span class="ui-lang-zh">下一页</span><span class="ui-lang-en">Next</span></button>
+                    <span class="page-jump-control">
+                      <label for="runPageJump"><span class="ui-lang-zh">跳至</span><span class="ui-lang-en">Go to</span></label>
+                      <input id="runPageJump" type="number" min="1" step="1" inputmode="numeric" aria-label="Jump to Run page" />
+                      <span class="ui-lang-zh">页</span><span class="ui-lang-en">page</span>
+                      <button class="button button-quiet" id="runPageJumpButton" type="button"><span class="ui-lang-zh">跳转</span><span class="ui-lang-en">Go</span></button>
+                    </span>
+                  </div>
+                  <label class="case-page-size" for="runPageSize">
+                    <span class="ui-lang-zh">每页</span><span class="ui-lang-en">Per page</span>
+                    <select id="runPageSize" aria-label="Run page size">
+                      <option value="10">10</option>
+                      <option value="20" selected>20</option>
+                      <option value="50">50</option>
+                      <option value="100">100</option>
+                    </select>
+                    <span class="ui-lang-zh">条</span><span class="ui-lang-en">items</span>
+                  </label>
+                </nav>
             </section>
           </section>
 
@@ -1925,7 +1948,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-416`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-417`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

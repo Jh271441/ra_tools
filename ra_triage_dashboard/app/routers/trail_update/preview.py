@@ -66,13 +66,66 @@ def _review_exclusion_candidate_rows(
     cache_key = (selected_run_id, tuple(sorted(baseline_scopes)))
     return _review_exclusion_candidate_cache.get_or_load(
         cache_key,
-        lambda: database.review_reason_rows(
+        lambda: _load_review_exclusion_candidate_rows(
+            selected_run_id=selected_run_id,
             baseline_scopes=baseline_scopes,
-            model_run_id=selected_run_id,
-            comparison_status="all",
-            is_excluded=True,
         ),
     )
+
+
+def _load_review_exclusion_candidate_rows(
+    *,
+    selected_run_id: str,
+    baseline_scopes: list[str],
+) -> list[dict[str, Any]]:
+    """Merge ordinary and blind Review exclusions into one Issue projection.
+
+    The Trail page is a write-preview surface and therefore must use the same
+    strict Run binding as the selected model Run.  ``review_reason_rows`` only
+    projects ordinary annotations (``work_split_id=''``), while active blind
+    tasks are returned by ``review_multi_rows``.  Pick the last-appended
+    submitted blind head per Issue as the coherent primary record, then let it
+    own that Issue over any older ordinary Review.  This mirrors the Review
+    analysis projection and avoids duplicate Trail writes when two reviewers
+    disagree on the exclusion flag.
+    """
+
+    ordinary_rows = database.review_reason_rows(
+        baseline_scopes=baseline_scopes,
+        model_run_id=selected_run_id,
+        comparison_status="all",
+        is_excluded=True,
+    )
+    blind_by_issue: dict[str, dict[str, Any]] = {}
+    for row in database.review_multi_rows(
+        baseline_scopes=baseline_scopes,
+        model_run_id=selected_run_id,
+    ):
+        annotation = row.get("annotation") or {}
+        issue_id = _as_text(row.get("issue_id"))
+        if not issue_id or not annotation:
+            continue
+        current = blind_by_issue.get(issue_id)
+        if current is None or int(annotation.get("id") or -1) > int(
+            (current.get("annotation") or {}).get("id") or -1
+        ):
+            blind_by_issue[issue_id] = row
+
+    # An active blind projection owns an Issue even when its latest head is no
+    # longer excluded; do not fall back to an older ordinary exclusion.
+    ordinary_rows = [
+        row
+        for row in ordinary_rows
+        if _as_text(row.get("issue_id")) not in blind_by_issue
+    ]
+    blind_rows = [
+        row
+        for row in blind_by_issue.values()
+        if bool((row.get("annotation") or {}).get("is_excluded"))
+    ]
+    merged = [*ordinary_rows, *blind_rows]
+    merged.sort(key=lambda row: _as_text(row.get("issue_id")))
+    return merged
 
 def _capability_not_checked(result_field: str, info_field: str) -> dict[str, Any]:
     return {

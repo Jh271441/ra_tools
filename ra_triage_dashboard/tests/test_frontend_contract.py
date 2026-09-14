@@ -212,6 +212,20 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('gtLabel === "正确触发" || gtLabel === "无需协助"', APP_JS)
         self.assertIn('modelLabelMatchesGt(cell.model_label, row.gt_label)', APP_JS)
 
+    def test_model_runs_registry_has_url_restorable_pagination(self) -> None:
+        self.assertIn('id="runManagerPagination"', INDEX_HTML)
+        self.assertIn('id="runPagePrevious"', INDEX_HTML)
+        self.assertIn('id="runPageNext"', INDEX_HTML)
+        self.assertIn('id="runPageJump"', INDEX_HTML)
+        self.assertIn('id="runPageSize"', INDEX_HTML)
+        self.assertIn("function currentRunsRouteOptions", APP_JS)
+        self.assertIn("function changeRunManagerPage", APP_JS)
+        self.assertIn("function jumpToRunManagerPage", APP_JS)
+        self.assertIn("function changeRunManagerPageSize", APP_JS)
+        self.assertIn("state.runPage", APP_JS)
+        self.assertIn("runsFilters: normalizedRunsRouteFilters(params)", APP_JS)
+        self.assertIn('if (Number(runs.page) > 1)', APP_JS)
+
     def test_frontend_modules_load_in_manifest_order_from_thin_entry(self) -> None:
         names = [
             line.strip()
@@ -225,7 +239,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-416", APP_ENTRY_JS)
+        self.assertIn("manual-triage-417", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -266,7 +280,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-416", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-417", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
         self.assertNotIn("async function bootstrap", APP_ENTRY_JS)
@@ -373,7 +387,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-416`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-417`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -453,7 +467,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertNotIn('casePageJump?.addEventListener("change", commitCasePageJump)', APP_JS)
         # Review, analysis, Trail exclusion candidates, and admin Run
         # comparison all expose the shared jump-to-page control.
-        self.assertEqual(INDEX_HTML.count('class="page-jump-control"'), 5)
+        self.assertEqual(INDEX_HTML.count('class="page-jump-control"'), 6)
         self.assertIn("const requestedPage = state.reviewAnalysis.page", APP_JS)
         self.assertIn("state.reviewAnalysis.page = requestedPage", APP_JS)
         self.assertIn("page_count", APP_JS)
@@ -1280,7 +1294,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-416", APP_ENTRY_JS)
+        self.assertIn("manual-triage-417", APP_ENTRY_JS)
 
     def test_adjacent_review_navigation_preserves_scroll_position(self) -> None:
         self.assertIn("const preserveScrollY = window.scrollY;", APP_JS)

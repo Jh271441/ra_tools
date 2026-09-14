@@ -428,6 +428,8 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         with patch.object(trail_preview, "settings", test_settings), patch.object(
             trail_update.database, "review_reason_rows", return_value=[row]
         ), patch.object(
+            trail_preview.database, "review_multi_rows", return_value=[]
+        ), patch.object(
             trail_preview, "read_trail_model_fields", side_effect=AssertionError("remote probe")
         ) as probe:
             payload = asyncio.run(
@@ -442,6 +444,53 @@ class TrailAttributeUpdateTest(unittest.TestCase):
         self.assertEqual(payload["trail_capability"]["status"], "not_checked")
         self.assertFalse(payload["write_ready"])
         probe.assert_not_called()
+
+    def test_review_exclusion_candidates_include_latest_blind_heads(self) -> None:
+        ordinary = {
+            "issue_id": "cn-ordinary",
+            "annotation": {"id": 10, "is_excluded": True},
+        }
+        ordinary_shadowed = {
+            "issue_id": "cn-blind-not-excluded",
+            "annotation": {"id": 11, "is_excluded": True},
+        }
+        blind_rows = [
+            {
+                "issue_id": "cn-blind-excluded",
+                "split_id": "split-1",
+                "annotation": {"id": 20, "is_excluded": False},
+            },
+            {
+                "issue_id": "cn-blind-excluded",
+                "split_id": "split-1",
+                "annotation": {"id": 21, "is_excluded": True},
+            },
+            {
+                "issue_id": "cn-blind-not-excluded",
+                "split_id": "split-1",
+                "annotation": {"id": 22, "is_excluded": False},
+            },
+            {
+                "issue_id": "cn-unsubmitted",
+                "split_id": "split-1",
+                "annotation": None,
+            },
+        ]
+        trail_preview._review_exclusion_candidate_cache.clear()
+        with patch.object(
+            trail_preview.database, "review_reason_rows", return_value=[ordinary, ordinary_shadowed]
+        ), patch.object(
+            trail_preview.database, "review_multi_rows", return_value=blind_rows
+        ):
+            rows = trail_preview._review_exclusion_candidate_rows(
+                selected_run_id="run-1",
+                baseline_scopes=["scope-1"],
+            )
+        self.assertEqual(
+            [row["issue_id"] for row in rows],
+            ["cn-blind-excluded", "cn-ordinary"],
+        )
+        self.assertEqual(rows[0]["annotation"]["id"], 21)
 
     def test_compact_status_endpoint_skips_review_aggregation(self) -> None:
         sync = SimpleNamespace(

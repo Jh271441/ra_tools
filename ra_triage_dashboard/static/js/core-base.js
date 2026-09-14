@@ -620,6 +620,8 @@ const state = {
   selectedId: "",
   selectedCase: null,
   modelRuns: [],
+  runPage: 1,
+  runPageSize: DEFAULT_CASE_PAGE_SIZE,
   reviewers: [],
   predictionBatches: [],
   predictionBatchTotal: 0,

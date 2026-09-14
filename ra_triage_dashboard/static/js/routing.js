@@ -377,6 +377,17 @@ function normalizedTrailUpdateRouteFilters(params) {
   };
 }
 
+function normalizedRunsRouteFilters(params) {
+  const rawPage = Number.parseInt(params.get("page") || "1", 10);
+  const rawPageSize = Number.parseInt(params.get("page_size") || "", 10);
+  return {
+    page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
+    pageSize: CASE_PAGE_SIZES.includes(rawPageSize)
+      ? rawPageSize
+      : DEFAULT_CASE_PAGE_SIZE,
+  };
+}
+
 function normalizedRunComparisonRouteFilters(params) {
   const transition = String(params.get("transition") || "ALL").toUpperCase();
   const gtLabel = String(params.get("gt") || "ALL");
@@ -438,6 +449,7 @@ function parsePageRoute() {
     ...reviewFilters,
     analysisFilters: normalizedAnalysisRouteFilters(params),
     trailUpdateFilters: normalizedTrailUpdateRouteFilters(params),
+    runsFilters: normalizedRunsRouteFilters(params),
     comparisonFilters: normalizedRunComparisonRouteFilters(params),
     intentDatasetId: params.get("dataset") || "",
     intentDatasetIds: params.getAll("dataset").map((value) => String(value || "").trim()).filter(Boolean),
@@ -746,8 +758,15 @@ function pageUrl(page, options = {}) {
     });
     if (options.source) url.searchParams.set("source", options.source);
   }
-  if (page === "runs" && options.importKind) {
-    url.searchParams.set("import", "model");
+  if (page === "runs") {
+    const runs = typeof currentRunsRouteOptions === "function"
+      ? currentRunsRouteOptions(options)
+      : options;
+    if (runs.importKind) url.searchParams.set("import", "model");
+    if (Number(runs.page) > 1) url.searchParams.set("page", String(runs.page));
+    if (Number(runs.pageSize) !== DEFAULT_CASE_PAGE_SIZE) {
+      url.searchParams.set("page_size", String(runs.pageSize));
+    }
   }
   if (page === "comparison") {
     const comparison = typeof runComparisonRouteOptions === "function"
