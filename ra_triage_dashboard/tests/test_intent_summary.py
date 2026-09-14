@@ -124,12 +124,12 @@ class IntentSummaryTest(unittest.TestCase):
             lane_change_default="no_lane_change",
             overrides=[
                 {"timepoint_id": "t:+0", "routing_intent": "left_turn", "lane_change_intent": ""},
-                {"timepoint_id": "t:+1000", "routing_intent": "", "lane_change_intent": "lane_change"},
+                {"timepoint_id": "t:+1000", "routing_intent": "", "lane_change_intent": "right_lane_change"},
             ],
         )
         self.assertEqual(counts["frame_count"], 4)
         self.assertEqual(counts["routing"], {"straight": 3, "left_turn": 1})
-        self.assertEqual(counts["lane_change"], {"no_lane_change": 3, "lane_change": 1})
+        self.assertEqual(counts["lane_change"], {"no_lane_change": 3, "right_lane_change": 1})
 
     def test_blind_contributors_keep_peer_status_without_answers(self) -> None:
         contributors = [

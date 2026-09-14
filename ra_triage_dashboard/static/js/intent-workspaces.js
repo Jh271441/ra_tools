@@ -10,7 +10,9 @@ const INTENT_ROUTING_LABELS = {
 };
 const INTENT_LANE_LABELS = {
   no_lane_change: "非变道",
-  lane_change: "变道",
+  left_lane_change: "左变道",
+  right_lane_change: "右变道",
+  lane_change: "变道（旧）",
 };
 const INTENT_DIGIT_LABELS = {
   Digit1: ["routing", "left_turn"],
@@ -19,7 +21,8 @@ const INTENT_DIGIT_LABELS = {
   Digit4: ["routing", "u_turn"],
   Digit5: ["routing", "parking"],
   Digit6: ["laneChange", "no_lane_change"],
-  Digit7: ["laneChange", "lane_change"],
+  Digit7: ["laneChange", "left_lane_change"],
+  Digit8: ["laneChange", "right_lane_change"],
 };
 const INTENT_WORKSPACE_PREFERENCES_KEY = "ra-triage-intent-workspaces-v1";
 
@@ -233,7 +236,9 @@ function intentSummaryChipClass(value) {
     u_turn: "is-uturn",
     parking: "is-parking",
     no_lane_change: "is-no-lane",
-    lane_change: "is-lane",
+    left_lane_change: "is-left-lane",
+    right_lane_change: "is-right-lane",
+    lane_change: "is-legacy-lane",
   })[value] || "";
 }
 

@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-413`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-414`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -401,14 +401,14 @@
                     <button type="button" data-intent-aggregate-axis="routing" data-value="left_turn" aria-keyshortcuts="Shift+1"><kbd>⇧1</kbd>左转</button><button type="button" data-intent-aggregate-axis="routing" data-value="right_turn" aria-keyshortcuts="Shift+2"><kbd>⇧2</kbd>右转</button><button type="button" data-intent-aggregate-axis="routing" data-value="straight" aria-keyshortcuts="Shift+3"><kbd>⇧3</kbd>直行</button><button type="button" data-intent-aggregate-axis="routing" data-value="u_turn" aria-keyshortcuts="Shift+4"><kbd>⇧4</kbd>掉头</button><button type="button" data-intent-aggregate-axis="routing" data-value="parking" aria-keyshortcuts="Shift+5"><kbd>⇧5</kbd>泊车</button>
                   </div>
                   <h4 data-intent-axis-section="lane_change">变道意图</h4>
-                  <div class="intent-label-grid" id="intentAggregateLane"><button type="button" data-intent-aggregate-axis="laneChange" data-value="no_lane_change" aria-keyshortcuts="Shift+6"><kbd>⇧6</kbd>非变道</button><button type="button" data-intent-aggregate-axis="laneChange" data-value="lane_change" aria-keyshortcuts="Shift+7"><kbd>⇧7</kbd>变道</button></div>
+                  <div class="intent-label-grid intent-lane-grid" id="intentAggregateLane"><button type="button" data-intent-aggregate-axis="laneChange" data-value="no_lane_change" aria-keyshortcuts="Shift+6"><kbd>⇧6</kbd>非变道</button><button type="button" data-intent-aggregate-axis="laneChange" data-value="left_lane_change" aria-keyshortcuts="Shift+7"><kbd>⇧7</kbd>左变道</button><button type="button" data-intent-aggregate-axis="laneChange" data-value="right_lane_change" aria-keyshortcuts="Shift+8"><kbd>⇧8</kbd>右变道</button></div>
                 </section>
                 <section class="intent-card intent-label-editor">
                   <h3><span id="intentFrameTitle">当前帧标签</span> <small id="intentFrameSource">来自批量预填</small></h3>
                   <h4 data-intent-axis-section="routing">Routing 意图</h4>
                   <div class="intent-label-grid intent-routing-grid"><button type="button" data-intent-frame-axis="routing" data-value="left_turn" aria-keyshortcuts="1"><kbd>1</kbd>左转</button><button type="button" data-intent-frame-axis="routing" data-value="right_turn" aria-keyshortcuts="2"><kbd>2</kbd>右转</button><button type="button" data-intent-frame-axis="routing" data-value="straight" aria-keyshortcuts="3"><kbd>3</kbd>直行</button><button type="button" data-intent-frame-axis="routing" data-value="u_turn" aria-keyshortcuts="4"><kbd>4</kbd>掉头</button><button type="button" data-intent-frame-axis="routing" data-value="parking" aria-keyshortcuts="5"><kbd>5</kbd>泊车</button></div>
                   <h4 data-intent-axis-section="lane_change">变道意图</h4>
-                  <div class="intent-label-grid"><button type="button" data-intent-frame-axis="laneChange" data-value="no_lane_change" aria-keyshortcuts="6"><kbd>6</kbd>非变道</button><button type="button" data-intent-frame-axis="laneChange" data-value="lane_change" aria-keyshortcuts="7"><kbd>7</kbd>变道</button></div>
+                  <div class="intent-label-grid intent-lane-grid"><button type="button" data-intent-frame-axis="laneChange" data-value="no_lane_change" aria-keyshortcuts="6"><kbd>6</kbd>非变道</button><button type="button" data-intent-frame-axis="laneChange" data-value="left_lane_change" aria-keyshortcuts="7"><kbd>7</kbd>左变道</button><button type="button" data-intent-frame-axis="laneChange" data-value="right_lane_change" aria-keyshortcuts="8"><kbd>8</kbd>右变道</button></div>
                   <button class="button button-quiet intent-restore-button" id="intentRestoreBatchPrefill" type="button" aria-keyshortcuts="0"><span id="intentRestoreBatchPrefillText">当前帧恢复批量预填</span> <kbd>0</kbd></button>
                 </section>
                 <section class="intent-card intent-collaboration-card intent-contributors-card" aria-labelledby="intentContributorsTitle">
@@ -1553,8 +1553,8 @@
           <div class="shortcut-guide-row" data-shortcut-search="mod+shift+arrowleft mod+shift+arrowright"><span><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>←</kbd><kbd>→</kbd></span><strong>从锚点扩选到最左 / 最右</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="arrowup arrowdown"><span><kbd>↑</kbd><kbd>↓</kbd></span><strong>上一 Issue / 下一 Issue</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="space b c"><span><kbd>Space</kbd><kbd>B</kbd><kbd>C</kbd></span><strong>打开大图；同帧轮换 / 直达 BEV / Camera</strong></div>
-          <div class="shortcut-guide-row" data-shortcut-search="1 2 3 4 5 6 7"><span><kbd>1</kbd>–<kbd>7</kbd></span><strong>设置当前帧标签</strong></div>
-          <div class="shortcut-guide-row" data-shortcut-search="shift+1 shift+2 shift+3 shift+4 shift+5 shift+6 shift+7"><span><kbd>Shift</kbd> + <kbd>1</kbd>–<kbd>7</kbd></span><strong>批量预填全部时间点</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="1 2 3 4 5 6 7 8"><span><kbd>1</kbd>–<kbd>8</kbd></span><strong>设置当前帧标签</strong></div>
+          <div class="shortcut-guide-row" data-shortcut-search="shift+1 shift+2 shift+3 shift+4 shift+5 shift+6 shift+7 shift+8"><span><kbd>Shift</kbd> + <kbd>1</kbd>–<kbd>8</kbd></span><strong>批量预填全部时间点</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="0"><span><kbd>0</kbd></span><strong>当前帧恢复批量预填</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="mod+z"><span><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Z</kbd></span><strong>撤销上一次标注操作</strong></div>
           <div class="shortcut-guide-row" data-shortcut-search="d"><span><kbd>D</kbd></span><strong>打开讨论</strong></div>
@@ -1903,7 +1903,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-413`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-414`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

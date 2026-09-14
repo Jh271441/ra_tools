@@ -83,11 +83,39 @@ def validate_additive_migration_sql(path, content):
             or normalized.startswith("CREATE INDEX IF NOT EXISTS ")
         require(allowed, f"Migration is not strictly additive: {path}")
 
-def migration_changes(old, sha, *, allow_additive=False):
+
+def validate_schema_migration_sql(path, content):
+    """Allow only the reviewed intent-label constraint expansion migration."""
+
+    statements = [
+        statement.strip()
+        for statement in re.sub(r"--[^\n]*", "", content).split(";")
+        if statement.strip()
+    ]
+    require(statements and statements[0].upper() == "BEGIN", f"Migration must start with BEGIN: {path}")
+    require(statements[-1].upper() == "COMMIT", f"Migration must end with COMMIT: {path}")
+    allowed_constraints = {
+        "INTENT_LABEL_REVISIONS_LANE_CHANGE_DEFAULT_CHECK",
+        "INTENT_FRAME_OVERRIDES_LANE_CHANGE_INTENT_CHECK",
+    }
+    for statement in statements[1:-1]:
+        normalized = " ".join(statement.split()).upper()
+        is_drop = " DROP CONSTRAINT IF EXISTS " in f" {normalized} "
+        is_add = " ADD CONSTRAINT " in f" {normalized} " and " CHECK (" in f" {normalized} "
+        require(is_drop or is_add, f"Migration is not an approved schema change: {path}")
+        require(
+            any(name in normalized for name in allowed_constraints),
+            f"Migration targets an unapproved constraint: {path}",
+        )
+
+def migration_changes(old, sha, *, allow_additive=False, allow_schema=False):
     sensitive = git("diff", "--name-only", old, sha, "--", *SENSITIVE_PATHS).splitlines()
     if not sensitive:
         return []
-    require(allow_additive, "Migration/runtime dependency changes require a separately planned deployment")
+    require(
+        allow_additive or allow_schema,
+        "Migration/runtime dependency changes require a separately planned deployment",
+    )
     require(
         all(path.startswith(POSTGRES_MIGRATION_PREFIX) and path.endswith(".sql") for path in sensitive),
         "Additive migration mode only permits PostgreSQL migration files",
@@ -99,7 +127,15 @@ def migration_changes(old, sha, *, allow_additive=False):
         "Additive migration mode only permits newly added migration files",
     )
     for path in sensitive:
-        validate_additive_migration_sql(path, git("show", f"{sha}:{path}"))
+        content = git("show", f"{sha}:{path}")
+        if allow_additive:
+            try:
+                validate_additive_migration_sql(path, content)
+                continue
+            except DeployError:
+                pass
+        require(allow_schema, f"Migration is not additive: {path}")
+        validate_schema_migration_sql(path, content)
     return sensitive
 
 def save(path, obj):
@@ -355,7 +391,12 @@ def cleanup(state, current):
         # Small result records and logs remain for diagnosis.
     return removed
 
-def deploy(sha, check_only=False, allow_additive_migrations=False):
+def deploy(
+    sha,
+    check_only=False,
+    allow_additive_migrations=False,
+    allow_schema_migrations=False,
+):
     require(sys.platform == "linux" and REPO.is_dir() and PYTHON.is_file(), "Run on the configured cloud_server")
     require(re.fullmatch(r"[0-9a-f]{40}", sha), "Supply a full 40-character pushed commit SHA")
     with deployment_lock(STATE):
@@ -370,7 +411,10 @@ def deploy(sha, check_only=False, allow_additive_migrations=False):
         require(re.fullmatch(r"[0-9a-f]{40}", old), "Live build SHA is unavailable")
         check_health(before, old, "postgresql")
         migrations = migration_changes(
-            old, sha, allow_additive=allow_additive_migrations
+            old,
+            sha,
+            allow_additive=allow_additive_migrations,
+            allow_schema=allow_schema_migrations,
         )
         migration_count_before = None
         if migrations:
@@ -491,13 +535,23 @@ def main():
         action="store_true",
         help="permit new strictly additive PostgreSQL migrations with backup verification",
     )
+    parser.add_argument(
+        "--allow-schema-migrations",
+        action="store_true",
+        help="permit the reviewed intent lane-change constraint migration with backup verification",
+    )
     parser.add_argument("--serve", help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.serve:
         serve(args.serve)
     else:
         require(args.sha, "--sha is required")
-        deploy(args.sha, args.check, args.allow_additive_migrations)
+        deploy(
+            args.sha,
+            args.check,
+            args.allow_additive_migrations,
+            args.allow_schema_migrations,
+        )
 
 if __name__ == "__main__":
     try:

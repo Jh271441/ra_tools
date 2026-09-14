@@ -757,7 +757,8 @@ class DatabaseCoreMixin:
                         )),
                     lane_change_default TEXT
                         CHECK(lane_change_default IS NULL OR lane_change_default IN (
-                            'lane_change', 'no_lane_change'
+                            'lane_change', 'no_lane_change',
+                            'left_lane_change', 'right_lane_change'
                         )),
                     author TEXT NOT NULL DEFAULT '',
                     author_source TEXT NOT NULL DEFAULT 'legacy',
@@ -779,7 +780,8 @@ class DatabaseCoreMixin:
                         )),
                     lane_change_intent TEXT
                         CHECK(lane_change_intent IS NULL OR lane_change_intent IN (
-                            'lane_change', 'no_lane_change'
+                            'lane_change', 'no_lane_change',
+                            'left_lane_change', 'right_lane_change'
                         )),
                     PRIMARY KEY (revision_id, timepoint_id),
                     CHECK(routing_intent IS NOT NULL OR lane_change_intent IS NOT NULL)

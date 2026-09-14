@@ -304,6 +304,27 @@ class IntentLabelExportTest(unittest.TestCase):
 
 
 class IntentLabelStorageTest(unittest.TestCase):
+    def test_directional_lane_change_labels_are_saved_and_loaded(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database = Database(Path(temp_dir) / "test.sqlite3")
+            database.init()
+            saved = database.save_intent_labels(
+                dataset_id="test-v1",
+                case_id="cn12345_1770000000000",
+                routing_default="",
+                lane_change_default="left_lane_change",
+                overrides=[{
+                    "timepoint_id": "t:+1000",
+                    "offset_ms": 1000,
+                    "routing_intent": "",
+                    "lane_change_intent": "right_lane_change",
+                }],
+                expected_revision_id=None,
+                author="tester",
+            )
+            self.assertEqual(saved["lane_change_default"], "left_lane_change")
+            self.assertEqual(saved["overrides"][0]["lane_change_intent"], "right_lane_change")
+
     def test_case_defaults_sparse_override_and_optimistic_lock(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             database = Database(Path(temp_dir) / "test.sqlite3")

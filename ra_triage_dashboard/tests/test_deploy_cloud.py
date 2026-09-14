@@ -50,6 +50,25 @@ COMMIT;
                 [path],
             )
 
+    def test_schema_migration_guard_accepts_only_reviewed_intent_constraints(self):
+        path = "ra_triage_dashboard/migrations/postgres/038_intent_lane_change_taxonomy.sql"
+        safe = """BEGIN;
+ALTER TABLE intent_label_revisions
+    DROP CONSTRAINT IF EXISTS intent_label_revisions_lane_change_default_check;
+ALTER TABLE intent_label_revisions
+    ADD CONSTRAINT intent_label_revisions_lane_change_default_check
+    CHECK (lane_change_default IS NULL OR lane_change_default IN ('lane_change'));
+COMMIT;
+"""
+        d.validate_schema_migration_sql(path, safe)
+        for unsafe in (
+            "BEGIN; ALTER TABLE intent_label_revisions DROP COLUMN lane_change_default; COMMIT;",
+            "BEGIN; ALTER TABLE other_table DROP CONSTRAINT IF EXISTS other_check; COMMIT;",
+            "BEGIN; DELETE FROM intent_label_revisions; COMMIT;",
+        ):
+            with self.assertRaises(d.DeployError):
+                d.validate_schema_migration_sql(path, unsafe)
+
     def test_additive_migration_runs_verified_backup_before_apply(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

@@ -6,7 +6,15 @@ from .shared import IntentAnnotationConflictError, _json, _json_load, utc_now
 
 
 ROUTING_INTENTS = ("left_turn", "right_turn", "straight", "u_turn", "parking")
-LANE_CHANGE_INTENTS = ("lane_change", "no_lane_change")
+# ``lane_change`` is retained as a read/write legacy value so historical
+# binary annotations can still be opened and resaved without inventing a
+# left/right direction. New UI writes use the three directional values.
+LANE_CHANGE_INTENTS = (
+    "no_lane_change",
+    "left_lane_change",
+    "right_lane_change",
+    "lane_change",
+)
 
 
 class DatabaseIntentMixin:

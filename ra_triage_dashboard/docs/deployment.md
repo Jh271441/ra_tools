@@ -39,6 +39,11 @@ python3 /tmp/ra-dashboard-deploy.py --sha <完整40位提交SHA>
 migration 并核对 migration 数量，最后才快进和启动新版本。应用启动失败时会恢复旧
 应用版本；由于只允许向后兼容的增量 schema，不执行自动数据库回滚。
 
+本次意图变道三分类使用约束扩展而不是纯增量列，必须显式使用
+`--allow-schema-migrations`。该模式只接受新增 migration 文件，且发布器只放行
+已审阅的两个 Intent 变道约束名；同样执行新鲜逻辑备份、checksum、临时恢复和全表
+计数校验。默认发布和 `--allow-additive-migrations` 都不会放行此类 migration。
+
 ## 失败与范围
 
 测试或灰度失败不会切换生产，现场保留供检查。生产切换后验证失败时，尝试从原运行 SHA 的独立目录恢复并记录回退结果；不会重置 master 或修改 Git 历史。回退后先核对服务和记录，将生产主目录与实际运行版本重新协调，再进行下一次发布。
