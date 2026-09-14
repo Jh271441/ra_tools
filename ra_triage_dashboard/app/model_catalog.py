@@ -706,22 +706,56 @@ class ModelCatalog:
             )
             available_ids.add(model_id)
             represented_online_ids.add(model_id)
-        default_model_id = str(
+        configured_default_model_id = str(
             profile.get("default_model_id")
             or self.settings.ra_model_default_id
             or ""
         ).strip()
-        if not available or default_model_id not in {
-            item["id"] for item in available
-        }:
+        if not MODEL_ID_RE.fullmatch(configured_default_model_id):
             raise ModelCatalogError(
                 503,
                 "默认 RA 模型当前不在线或尚未通过兼容性 Profile。",
             )
+        default_model_id = configured_default_model_id
+        default_model_fallback = False
+        available_ids = {item["id"] for item in available}
+        if default_model_id not in available_ids:
+            fallback = next(
+                (
+                    item
+                    for item in available
+                    if item["validation_status"] == "experimental"
+                ),
+                None,
+            )
+            if fallback is None and available:
+                fallback = available[0]
+            if fallback is None:
+                raise ModelCatalogError(
+                    503,
+                    "默认 RA 模型当前不在线或尚未通过兼容性 Profile。",
+                )
+            default_model_id = fallback["id"]
+            default_model_fallback = True
+        default_model_validation_status = next(
+            (
+                item["validation_status"]
+                for item in available
+                if item["id"] == default_model_id
+            ),
+            "",
+        )
+        fallback_label = (
+            "在线实验性 Qwen3"
+            if default_model_fallback
+            and default_model_validation_status == "experimental"
+            else "在线兼容模型"
+        )
         fingerprint = {
             "profile_version": schema_version,
             "online_ids": sorted(online),
             "models": available,
+            "configured_default_model_id": configured_default_model_id,
             "default_model_id": default_model_id,
         }
         catalog_sha256 = hashlib.sha256(
@@ -742,12 +776,20 @@ class ModelCatalog:
             "status": "ready",
             "stale": False,
             "message": (
-                "模型目录已刷新；"
-                f"已验证 {validated_count} 个可选项，"
-                f"实验性在线 Qwen3 {experimental_count} 个。"
+                (
+                    "默认 RA 模型当前不在线；"
+                    f"已回退到{fallback_label}「{default_model_id}」，"
+                    "创建 Batch 前需确认。"
+                    if default_model_fallback
+                    else "模型目录已刷新；"
+                    f"已验证 {validated_count} 个可选项，"
+                    f"实验性在线 Qwen3 {experimental_count} 个。"
+                )
             ),
             "catalog_label": "ra-model.intra.xiaojukeji.com/v1/models",
+            "configured_default_model_id": configured_default_model_id,
             "default_model_id": default_model_id,
+            "default_model_fallback": default_model_fallback,
             "models": available,
             "online_count": len(online),
             "available_count": len(available),

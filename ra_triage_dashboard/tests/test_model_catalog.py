@@ -172,6 +172,41 @@ class ModelCatalogTest(unittest.TestCase):
                     catalog.resolve(model_id)
                 self.assertEqual(context.exception.status_code, 400)
 
+    def test_offline_default_keeps_online_experimental_qwen3_catalog_usable(
+        self,
+    ) -> None:
+        rows = [
+            {"id": "RA-Disc"},
+            {"id": "Qwen3.8-27B/Qwen3.8-27B"},
+        ]
+        catalog = ModelCatalog(_settings())
+
+        with (
+            patch(
+                "ra_triage_dashboard.app.model_catalog.build_opener",
+                return_value=_GatewayOpener(rows),
+            ),
+            patch(
+                "ra_triage_dashboard.app.model_catalog.read_model_gateway_api_key",
+                return_value="server-owned-secret",
+            ),
+            patch.object(catalog, "_load_profiles", return_value=_profile()),
+        ):
+            snapshot = catalog.list_models(allow_stale=False)
+            selected = catalog.resolve("")
+
+        self.assertEqual(snapshot["status"], "ready")
+        self.assertEqual(snapshot["configured_default_model_id"], "auto")
+        self.assertEqual(snapshot["default_model_id"], "Qwen3.8-27B/Qwen3.8-27B")
+        self.assertTrue(snapshot["default_model_fallback"])
+        self.assertEqual(
+            [item["id"] for item in snapshot["models"]],
+            ["Qwen3.8-27B/Qwen3.8-27B"],
+        )
+        self.assertIn("默认 RA 模型当前不在线", snapshot["message"])
+        self.assertEqual(selected["requested_model_id"], "Qwen3.8-27B/Qwen3.8-27B")
+        self.assertEqual(selected["validation_status"], "experimental")
+
     def test_tokenservice_provider_keeps_qwen3_catalog_usable(self) -> None:
         rows = [
             {"id": "aliyun/Qwen3-VL-Plus"},
