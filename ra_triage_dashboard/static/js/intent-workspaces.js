@@ -48,6 +48,7 @@ function restoreIntentWorkspacePreferences() {
     const draftValues = {
       intentExperimentScope: experiments.labelScope || "all",
       intentExperimentMode: experiments.mode || "blind",
+      intentExperimentAnnotationStatus: experiments.annotationStatus || "all",
       intentExperimentCaseCount: experiments.caseCount || "",
       intentExperimentOverlap: experiments.overlap ?? "0.2",
       intentExperimentReviewers: experiments.reviewers || "2",
@@ -87,6 +88,7 @@ function persistIntentWorkspacePreferences() {
       datasetIds: intent.experimentDatasetIds || [], members: intent.experimentDraftMembers || [],
       labelScope: $("#intentExperimentScope")?.value || "all",
       mode: $("#intentExperimentMode")?.value || "blind",
+      annotationStatus: $("#intentExperimentAnnotationStatus")?.value || "all",
       caseCount: $("#intentExperimentCaseCount")?.value || "",
       overlap: $("#intentExperimentOverlap")?.value || "0.2",
       reviewers: $("#intentExperimentReviewers")?.value || "2",
@@ -114,7 +116,7 @@ function resetIntentWorkspacePreferences(page = state.activePage) {
   } else if (page === "intent-experiments") {
     intent.experimentDatasetId = ""; intent.experimentDatasetIds = []; intent.experimentDraftMembers = [];
     intent.experimentsDatasetId = "";
-    const defaults = { intentExperimentScope: "all", intentExperimentMode: "blind", intentExperimentCaseCount: "", intentExperimentOverlap: "0.2", intentExperimentReviewers: "2" };
+    const defaults = { intentExperimentScope: "all", intentExperimentMode: "blind", intentExperimentAnnotationStatus: "all", intentExperimentCaseCount: "", intentExperimentOverlap: "0.2", intentExperimentReviewers: "2" };
     Object.entries(defaults).forEach(([id, value]) => { const element = document.getElementById(id); if (element) element.value = value; });
   } else if (page === "intent-summary") {
     intent.summaryDatasetId = ""; intent.summaryDatasetIds = []; intent.summaryExperimentId = "";
@@ -470,6 +472,14 @@ function intentExperimentScopeLabel(scope) {
   })[scope] || "Routing + 变道意图";
 }
 
+function intentExperimentAnnotationStatusLabel(status) {
+  return ({
+    labeled: "已有人标注",
+    unlabeled: "尚无人标注",
+    all: "全部 Case",
+  })[status] || "全部 Case";
+}
+
 function initializeIntentExperimentSelects() {
   const scope = $("#intentExperimentScopePicker");
   populateUiSelect(scope, [
@@ -484,6 +494,13 @@ function initializeIntentExperimentSelects() {
     { value: "full", label: "全量盲标" },
   ], $("#intentExperimentMode")?.value || "blind");
   bindUiSelect(mode, { maxHeight: 220, maxWidth: 280 });
+  const annotationStatus = $("#intentExperimentAnnotationStatusPicker");
+  populateUiSelect(annotationStatus, [
+    { value: "all", label: "全部 Case" },
+    { value: "labeled", label: "已有人标注" },
+    { value: "unlabeled", label: "尚无人标注" },
+  ], $("#intentExperimentAnnotationStatus")?.value || "all");
+  bindUiSelect(annotationStatus, { maxHeight: 220, maxWidth: 260 });
   const overlap = $("#intentExperimentOverlapPicker");
   populateUiSelect(overlap, [0, 0.1, 0.2, 0.3, 0.5, 1].map((value) => ({
     value: String(value), label: `${Math.round(value * 100)}%`,
@@ -529,11 +546,12 @@ function intentExperimentSuggestionContext() {
   ));
   const mode = $("#intentExperimentMode")?.value || "blind";
   const labelScope = $("#intentExperimentScope")?.value || "all";
+  const annotationStatus = $("#intentExperimentAnnotationStatus")?.value || "all";
   const requested = Math.max(1, Number($("#intentExperimentCaseCount")?.value) || 1);
   const overlap = Math.max(0, Number($("#intentExperimentOverlap")?.value) || 0);
   const reviewers = Math.max(1, Number($("#intentExperimentReviewers")?.value) || 1);
   const memberCount = document.querySelectorAll("#intentExperimentMembers input:checked").length;
-  return { datasets, mode, labelScope, requested, overlap, reviewers, memberCount };
+  return { datasets, mode, labelScope, annotationStatus, requested, overlap, reviewers, memberCount };
 }
 
 function ruleBasedIntentExperimentName(context) {
@@ -612,6 +630,7 @@ function updateIntentExperimentNameSuggestion() {
     dataset_ids: context.datasets.map((item) => item.id),
     annotation_mode: context.mode,
     label_scope: context.labelScope,
+    annotation_status_filter: context.annotationStatus,
     case_count: context.requested,
     overlap_ratio: context.overlap,
     overlap_reviewers: context.reviewers,
@@ -656,6 +675,7 @@ function updateIntentExperimentEstimate() {
   const requested = Math.max(0, Number($("#intentExperimentCaseCount")?.value) || 0);
   const mode = $("#intentExperimentMode")?.value || "blind";
   const labelScope = $("#intentExperimentScope")?.value || "all";
+  const annotationStatus = $("#intentExperimentAnnotationStatus")?.value || "all";
   const overlap = Math.max(0, Number($("#intentExperimentOverlap")?.value) || 0);
   const reviewerInput = $("#intentExperimentReviewers");
   if (reviewerInput) {
@@ -668,6 +688,15 @@ function updateIntentExperimentEstimate() {
     updateIntentExperimentNameSuggestion();
     return;
   }
+  const emptyDataset = datasets.find((item) => {
+    const counts = state.intentLabeling.experimentAnnotationStatusCounts?.[item.id] || {};
+    return Number(counts[annotationStatus] ?? item.case_count) <= 0;
+  });
+  if (emptyDataset) {
+    output.textContent = `${emptyDataset.display_name} 没有符合“${intentExperimentAnnotationStatusLabel(annotationStatus)}”的 Case。`;
+    updateIntentExperimentNameSuggestion();
+    return;
+  }
   if (members.length < 1) {
     output.textContent = "至少选择 1 名成员。";
     updateIntentExperimentNameSuggestion();
@@ -676,7 +705,9 @@ function updateIntentExperimentEstimate() {
   let totalCases = 0;
   let totalAssignments = 0;
   datasets.forEach((item) => {
-    const count = Math.min(requested || item.case_count || 0, item.case_count || 0);
+    const counts = state.intentLabeling.experimentAnnotationStatusCounts?.[item.id] || {};
+    const available = Math.max(0, Number(counts[annotationStatus] ?? item.case_count) || 0);
+    const count = Math.min(requested || available, available);
     totalCases += count;
     const overlapCases = Math.round(count * overlap);
     totalAssignments += mode === "full"
@@ -684,10 +715,30 @@ function updateIntentExperimentEstimate() {
       : count + overlapCases * (reviewers - 1);
   });
   const datasetText = datasets.length > 1 ? `${datasets.length} 个数据集` : datasets[0].display_name;
+  const annotationText = intentExperimentAnnotationStatusLabel(annotationStatus);
   output.textContent = mode === "full"
-    ? `${datasetText} · ${intentExperimentScopeLabel(labelScope)} · ${totalCases} 个 Case · ${members.length} 人全量复核 · 共 ${totalAssignments} 份独立任务`
-    : `${datasetText} · ${intentExperimentScopeLabel(labelScope)} · ${totalCases} 个 Case · 交叉 ${Math.round(overlap * 100)}% · 共 ${totalAssignments} 份独立任务`;
+    ? `${datasetText} · ${annotationText} · ${intentExperimentScopeLabel(labelScope)} · ${totalCases} 个 Case · ${members.length} 人全量复核 · 共 ${totalAssignments} 份独立任务`
+    : `${datasetText} · ${annotationText} · ${intentExperimentScopeLabel(labelScope)} · ${totalCases} 个 Case · 交叉 ${Math.round(overlap * 100)}% · 共 ${totalAssignments} 份独立任务`;
   updateIntentExperimentNameSuggestion();
+}
+
+function updateIntentExperimentCaseCountLimit({ reset = false } = {}) {
+  const intent = state.intentLabeling;
+  const selectedDatasets = intentAvailableDatasets().filter((item) => (
+    (intent.experimentDatasetIds || []).includes(item.id)
+  ));
+  const annotationStatus = $("#intentExperimentAnnotationStatus")?.value || "all";
+  const availableCounts = selectedDatasets.map((item) => (
+    Math.max(0, Number(intent.experimentAnnotationStatusCounts?.[item.id]?.[annotationStatus]) || 0)
+  ));
+  const maxCount = Math.max(1, ...availableCounts);
+  const countInput = $("#intentExperimentCaseCount");
+  if (!countInput) return;
+  countInput.max = String(maxCount);
+  const currentCount = Number(countInput.value) || 0;
+  if (reset || currentCount < 1 || currentCount > maxCount) {
+    countInput.value = String(maxCount);
+  }
 }
 
 function renderIntentExperiments() {
@@ -704,6 +755,8 @@ function renderIntentExperiments() {
       return `<span title="${escapeHtml(member.username)}">${escapeHtml(member.username)} · ${detail}</span>`;
     }).join("");
     const overlap = item.annotation_mode === "blind" ? ` · 交叉 ${Math.round(item.overlap_ratio * 100)}% · 每 Case ${item.overlap_reviewers || 2} 人` : "";
+    const annotationFilter = item.annotation_status_filter && item.annotation_status_filter !== "all"
+      ? ` · ${intentExperimentAnnotationStatusLabel(item.annotation_status_filter)}` : "";
     const updateMeta = item.update_count ? ` · 已修改 ${item.update_count} 次` : "";
     const datasetName = (state.intentLabeling.datasets.find((dataset) => dataset.id === item.dataset_id) || {}).display_name || item.dataset_id || "";
     const progress = item.progress || {};
@@ -713,7 +766,7 @@ function renderIntentExperiments() {
     const pending = Math.max(0, Number(progress.pending) || 0);
     const width = (value) => total ? Math.max(0, Math.min(100, value * 100 / total)) : 0;
     return `<article class="intent-experiment-item${item.status === "closed" ? " is-closed" : ""}" data-intent-experiment="${escapeHtml(item.id)}">
-      <div><h4>${escapeHtml(item.name)}</h4><div class="intent-experiment-meta">${escapeHtml(datasetName)} · ${intentExperimentScopeLabel(item.label_scope)} · ${intentExperimentModeLabel(item.annotation_mode)}${overlap} · ${item.case_count} 个 Case · ${item.assignment_count} 份任务 · ${escapeHtml(item.created_by)}${updateMeta}</div></div>
+      <div><h4>${escapeHtml(item.name)}</h4><div class="intent-experiment-meta">${escapeHtml(datasetName)} · ${intentExperimentScopeLabel(item.label_scope)} · ${intentExperimentModeLabel(item.annotation_mode)}${annotationFilter}${overlap} · ${item.case_count} 个 Case · ${item.assignment_count} 份任务 · ${escapeHtml(item.created_by)}${updateMeta}</div></div>
       <div class="intent-experiment-controls"><span class="intent-experiment-status">${item.status === "closed" ? "已关闭" : "进行中"}</span>${item.status === "active" ? '<button class="button button-quiet" type="button" data-open-intent-experiment>继续标注</button>' : ""}${item.status === "active" && state.session.can_manage_intent ? '<button class="button button-quiet" type="button" data-edit-intent-experiment>编辑实验</button><button class="button button-quiet" type="button" data-close-intent-experiment>关闭实验</button>' : ""}</div>
       <div class="intent-experiment-detail-row"><div class="intent-experiment-member-stats">${members}</div><div class="intent-experiment-progress" title="完成 ${completed}，进行中 ${partial}，待标 ${pending}"><div class="intent-experiment-progress-track" role="img" aria-label="标注进度：完成 ${completed}，进行中 ${partial}，待标 ${pending}"><i class="is-complete" style="width:${width(completed)}%"></i><i class="is-partial" style="width:${width(partial)}%"></i><i class="is-pending" style="width:${width(pending)}%"></i></div><small>完成 ${completed} / ${total}${partial ? ` · 进行中 ${partial}` : ""}</small></div></div>
     </article>`;
@@ -773,18 +826,10 @@ async function loadIntentExperiments({ force = false, resetCaseCount = false } =
   if ((intent.experimentDatasetIds || []).join(",") !== requestedIds.join(",")) return;
   intent.experiments = payload.items || [];
   intent.experimentMembers = payload.eligible_members || [];
+  intent.experimentAnnotationStatusCounts = payload.annotation_status_counts || {};
   intent.experimentNameSuggestionAvailable = Boolean(payload.name_suggestion?.llm_available);
   intent.experimentsDatasetId = cacheKey;
-  const selectedDatasets = intentAvailableDatasets().filter((item) => requestedIds.includes(item.id));
-  const countInput = $("#intentExperimentCaseCount");
-  if (countInput) {
-    const maxCount = Math.max(1, ...selectedDatasets.map((item) => Number(item.case_count) || 1));
-    countInput.max = String(maxCount);
-    const currentCount = Number(countInput.value) || 0;
-    if (resetCaseCount || currentCount < 1 || currentCount > maxCount) {
-      countInput.value = String(maxCount);
-    }
-  }
+  updateIntentExperimentCaseCountLimit({ reset: resetCaseCount });
   renderIntentExperimentMembers();
   renderIntentExperiments();
   updateIntentExperimentEstimate();
@@ -849,6 +894,7 @@ async function createIntentExperiment(event) {
         name: $("#intentExperimentName")?.value.trim() || "",
         annotation_mode: $("#intentExperimentMode")?.value || "blind",
         label_scope: $("#intentExperimentScope")?.value || "all",
+        annotation_status_filter: $("#intentExperimentAnnotationStatus")?.value || "all",
         case_count: Number($("#intentExperimentCaseCount")?.value) || 0,
         overlap_ratio: Number($("#intentExperimentOverlap")?.value) || 0,
         overlap_reviewers: Number($("#intentExperimentReviewers")?.value) || 1,

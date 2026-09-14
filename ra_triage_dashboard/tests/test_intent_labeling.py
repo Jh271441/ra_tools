@@ -466,6 +466,7 @@ class IntentLabelStorageTest(unittest.TestCase):
             )
             self.assertEqual(deleted["deleted_revision"]["revision_id"], bob["revision_id"])
             self.assertIsNone(database.get_intent_labels("test-v1", case_id, "bob"))
+            self.assertEqual(database.intent_annotated_case_ids("test-v1"), (case_id,))
             self.assertEqual(
                 database.get_intent_labels("test-v1", case_id)["revision_id"],
                 alice["revision_id"],
@@ -579,6 +580,7 @@ class IntentExperimentTest(unittest.TestCase):
                 name="双盲一轮",
                 annotation_mode="full",
                 label_scope="routing",
+                annotation_status_filter="unlabeled",
                 overlap_ratio=1,
                 case_count=2,
                 seed=7,
@@ -591,6 +593,7 @@ class IntentExperimentTest(unittest.TestCase):
             self.assertEqual(experiment["assignment_count"], 4)
             self.assertEqual(experiment["overlap_reviewers"], 2)
             self.assertEqual(experiment["label_scope"], "routing")
+            self.assertEqual(experiment["annotation_status_filter"], "unlabeled")
             self.assertEqual({item["total"] for item in experiment["members"]}, {2})
             database.save_intent_labels(
                 dataset_id="test-v1", case_id="cn1_1",
@@ -635,6 +638,22 @@ class IntentExperimentTest(unittest.TestCase):
                     updated_by_source="test",
                     updated_by_verified=True,
                 )
+
+    def test_experiment_case_filter_uses_any_users_historical_revision(self) -> None:
+        cases = ("case-1", "case-2", "case-3")
+        labeled = {"case-2", "outside-dataset-registry"}
+        self.assertEqual(
+            intent_router._filter_intent_experiment_case_ids(cases, labeled, "all"),
+            cases,
+        )
+        self.assertEqual(
+            intent_router._filter_intent_experiment_case_ids(cases, labeled, "labeled"),
+            ("case-2",),
+        )
+        self.assertEqual(
+            intent_router._filter_intent_experiment_case_ids(cases, labeled, "unlabeled"),
+            ("case-1", "case-3"),
+        )
 
     def test_experiment_list_filters_multiple_datasets_with_member_stats(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

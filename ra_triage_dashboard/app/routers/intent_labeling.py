@@ -449,6 +449,35 @@ def _attach_accurate_experiment_progress(experiments: list[dict[str, Any]]) -> N
         }
 
 
+def _intent_experiment_annotation_counts(
+    dataset_ids: list[str],
+) -> dict[str, dict[str, int]]:
+    counts: dict[str, dict[str, int]] = {}
+    for dataset_id in dataset_ids:
+        all_case_ids = set(intent_dataset_registry.case_ids(dataset_id))
+        labeled_case_ids = all_case_ids.intersection(
+            database.intent_annotated_case_ids(dataset_id)
+        )
+        counts[dataset_id] = {
+            "all": len(all_case_ids),
+            "labeled": len(labeled_case_ids),
+            "unlabeled": len(all_case_ids - labeled_case_ids),
+        }
+    return counts
+
+
+def _filter_intent_experiment_case_ids(
+    all_case_ids: tuple[str, ...],
+    labeled_case_ids: set[str],
+    annotation_status_filter: str,
+) -> tuple[str, ...]:
+    if annotation_status_filter == "labeled":
+        return tuple(case_id for case_id in all_case_ids if case_id in labeled_case_ids)
+    if annotation_status_filter == "unlabeled":
+        return tuple(case_id for case_id in all_case_ids if case_id not in labeled_case_ids)
+    return all_case_ids
+
+
 @router.get(
     "/api/intent-experiments"
 )
@@ -459,10 +488,16 @@ async def list_intent_experiments(request: Request) -> dict[str, Any]:
             intent_dataset_registry.dataset(dataset_id)
         except KeyError as exc:
             raise _detail(404, str(exc)) from exc
-    experiments, users, name_suggestion_status = await asyncio.gather(
+    (
+        experiments,
+        users,
+        name_suggestion_status,
+        annotation_status_counts,
+    ) = await asyncio.gather(
         asyncio.to_thread(database.list_intent_experiments, dataset_ids),
         asyncio.to_thread(database.list_access_users),
         asyncio.to_thread(model_catalog.status),
+        asyncio.to_thread(_intent_experiment_annotation_counts, dataset_ids),
     )
     await asyncio.to_thread(_attach_accurate_experiment_progress, experiments)
     return {
@@ -471,6 +506,7 @@ async def list_intent_experiments(request: Request) -> dict[str, Any]:
             "llm_available": bool(name_suggestion_status.get("configured")),
             "credential_source": "server",
         },
+        "annotation_status_counts": annotation_status_counts,
         "eligible_members": [
             {"username": item["username"], "role": item["role"]}
             for item in users
@@ -504,10 +540,15 @@ async def suggest_intent_experiment_name(request: Request) -> dict[str, Any]:
             raise _detail(404, str(exc)) from exc
     mode = str(body.get("annotation_mode") or "blind").strip().lower()
     label_scope = str(body.get("label_scope") or "all").strip().lower()
+    annotation_status_filter = str(
+        body.get("annotation_status_filter") or "all"
+    ).strip().lower()
     if mode not in {"blind", "full"}:
         raise _detail(400, "实验模式仅支持交叉盲标或全量盲标。")
     if label_scope not in {"all", "routing", "lane_change"}:
         raise _detail(400, "标注维度仅支持 Routing、变道意图或两者。")
+    if annotation_status_filter not in {"all", "labeled", "unlabeled"}:
+        raise _detail(400, "已有标注筛选仅支持全部、已标注或未标注。")
     try:
         case_count = max(1, min(100_000, int(body.get("case_count") or 1)))
         overlap_ratio = max(0.0, min(1.0, float(body.get("overlap_ratio") or 0)))
@@ -565,21 +606,37 @@ async def create_intent_experiment(request: Request) -> dict[str, Any]:
     name = " ".join(str(body.get("name") or "").split())
     mode = str(body.get("annotation_mode") or "blind").strip().lower()
     label_scope = str(body.get("label_scope") or "all").strip().lower()
+    annotation_status_filter = str(
+        body.get("annotation_status_filter") or "all"
+    ).strip().lower()
     if not name or len(name) > 160:
         raise _detail(400, "实验名称不能为空且不能超过 160 个字符。")
     if mode not in {"blind", "full"}:
         raise _detail(400, "实验模式仅支持交叉盲标或全量盲标。")
     if label_scope not in {"all", "routing", "lane_change"}:
         raise _detail(400, "标注维度仅支持 Routing、变道意图或两者。")
+    if annotation_status_filter not in {"all", "labeled", "unlabeled"}:
+        raise _detail(400, "已有标注筛选仅支持全部、已标注或未标注。")
     dataset_cases: list[tuple[str, tuple[str, ...]]] = []
     for dataset_id in dataset_ids:
         try:
             all_case_ids = intent_dataset_registry.case_ids(dataset_id)
         except KeyError as exc:
             raise _detail(404, str(exc)) from exc
-        if not all_case_ids:
-            raise _detail(400, f"{dataset_id} 没有可分配的 Case。")
-        dataset_cases.append((dataset_id, all_case_ids))
+        labeled_case_ids = set(
+            await asyncio.to_thread(database.intent_annotated_case_ids, dataset_id)
+        )
+        eligible_case_ids = _filter_intent_experiment_case_ids(
+            all_case_ids, labeled_case_ids, annotation_status_filter
+        )
+        if not eligible_case_ids:
+            status_label = {
+                "all": "可分配",
+                "labeled": "已标注",
+                "unlabeled": "未标注",
+            }[annotation_status_filter]
+            raise _detail(400, f"{dataset_id} 没有{status_label}的 Case。")
+        dataset_cases.append((dataset_id, eligible_case_ids))
     max_available = max(len(cases) for _, cases in dataset_cases)
     try:
         requested_count = int(body.get("case_count") or max_available)
@@ -640,6 +697,7 @@ async def create_intent_experiment(request: Request) -> dict[str, Any]:
                 name=name,
                 annotation_mode=mode,
                 label_scope=label_scope,
+                annotation_status_filter=annotation_status_filter,
                 overlap_ratio=overlap_ratio,
                 overlap_reviewers=overlap_reviewers,
                 case_count=case_count,

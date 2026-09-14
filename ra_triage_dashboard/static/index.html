@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-412`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-413`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -434,6 +434,7 @@
                       <div class="intent-experiment-form-row">
                         <label><span>标注维度</span><div class="ui-select" id="intentExperimentScopePicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">Routing + 变道意图</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="intentExperimentScope" aria-hidden="true" tabindex="-1"><option value="all">Routing + 变道意图</option><option value="routing">仅 Routing 意图</option><option value="lane_change">仅变道意图</option></select></div></label>
                         <label><span>实验模式</span><div class="ui-select" id="intentExperimentModePicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">交叉盲标</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="intentExperimentMode" aria-hidden="true" tabindex="-1"><option value="blind">交叉盲标</option><option value="full">全量盲标</option></select></div></label>
+                        <label title="按该数据集中是否存在任意用户的历史标注记录判断，不限定当前实验或标注人员"><span>已有标注筛选</span><div class="ui-select" id="intentExperimentAnnotationStatusPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">全部 Case</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="intentExperimentAnnotationStatus" aria-hidden="true" tabindex="-1"><option value="all">全部 Case</option><option value="labeled">已有人标注</option><option value="unlabeled">尚无人标注</option></select></div></label>
                         <label><span>抽样 Case 数量 <small>可小于全量</small></span><input id="intentExperimentCaseCount" type="number" min="1" step="1" required/></label>
                         <label id="intentExperimentOverlapField"><span>交叉复核比例</span><div class="ui-select" id="intentExperimentOverlapPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">20%</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="intentExperimentOverlap" aria-hidden="true" tabindex="-1"><option value="0">0%</option><option value="0.1">10%</option><option value="0.2" selected>20%</option><option value="0.3">30%</option><option value="0.5">50%</option><option value="1">100%</option></select></div></label>
                         <label id="intentExperimentReviewersField"><span>每个 Case 标注人数</span><input id="intentExperimentReviewers" type="number" min="1" step="1" value="2" required/></label>
@@ -1902,7 +1903,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-412`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-413`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

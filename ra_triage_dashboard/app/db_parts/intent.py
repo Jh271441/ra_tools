@@ -10,6 +10,21 @@ LANE_CHANGE_INTENTS = ("lane_change", "no_lane_change")
 
 
 class DatabaseIntentMixin:
+    def intent_annotated_case_ids(self, dataset_id: str) -> tuple[str, ...]:
+        """Return Cases that have ever had a label revision from any user."""
+
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT case_id
+                FROM intent_label_revisions
+                WHERE dataset_id = ?
+                ORDER BY case_id ASC
+                """,
+                (dataset_id,),
+            ).fetchall()
+        return tuple(str(row["case_id"]) for row in rows)
+
     def list_intent_assignment_assignees(
         self, dataset_id: str, experiment_id: str = ""
     ) -> list[dict[str, Any]]:
@@ -243,6 +258,9 @@ class DatabaseIntentMixin:
                     "name": str(row["name"]),
                     "annotation_mode": str(row["annotation_mode"]),
                     "label_scope": str(row["label_scope"] or "all"),
+                    "annotation_status_filter": str(
+                        row["annotation_status_filter"] or "all"
+                    ),
                     "overlap_ratio": float(row["overlap_ratio"] or 0),
                     "overlap_reviewers": int(row["overlap_reviewers"] or 2),
                     "case_count": int(row["case_count"] or 0),
@@ -278,16 +296,18 @@ class DatabaseIntentMixin:
         created_by_verified: bool,
         overlap_reviewers: int = 2,
         label_scope: str = "all",
+        annotation_status_filter: str = "all",
     ) -> dict[str, Any]:
         now = utc_now()
         with self._write_lock, self.connect() as conn:
             conn.execute(
                 """
                 INSERT INTO intent_experiments (
-                    id, dataset_id, name, annotation_mode, label_scope, overlap_ratio, overlap_reviewers,
+                    id, dataset_id, name, annotation_mode, label_scope,
+                    annotation_status_filter, overlap_ratio, overlap_reviewers,
                     case_count, status, seed, created_by, created_by_source,
                     created_by_verified, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
                 """,
                 (
                     experiment_id,
@@ -295,6 +315,7 @@ class DatabaseIntentMixin:
                     name,
                     annotation_mode,
                     label_scope,
+                    annotation_status_filter,
                     overlap_ratio,
                     overlap_reviewers,
                     case_count,

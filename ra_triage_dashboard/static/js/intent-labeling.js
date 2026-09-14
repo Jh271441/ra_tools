@@ -657,6 +657,12 @@ function bindIntentLabelingEvents() {
     updateIntentExperimentEstimate();
     persistIntentWorkspacePreferences();
   });
+  $("#intentExperimentAnnotationStatus")?.addEventListener("change", () => {
+    initializeIntentExperimentSelects();
+    updateIntentExperimentCaseCountLimit({ reset: true });
+    updateIntentExperimentEstimate();
+    persistIntentWorkspacePreferences();
+  });
   $("#intentExperimentCaseCount")?.addEventListener("input", () => { updateIntentExperimentEstimate(); persistIntentWorkspacePreferences(); });
   $("#intentExperimentOverlap")?.addEventListener("change", () => { updateIntentExperimentEstimate(); persistIntentWorkspacePreferences(); });
   $("#intentExperimentReviewers")?.addEventListener("input", () => { updateIntentExperimentEstimate(); persistIntentWorkspacePreferences(); });

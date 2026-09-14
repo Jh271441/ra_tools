@@ -614,7 +614,7 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
   min-width: 0; display: block; padding-top: 16px; border-top: 1px solid var(--line-soft);
 }
 .intent-experiment-form {
-  min-width: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); align-items: end; gap: 12px 14px; padding: 2px 0;
+  min-width: 0; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); align-items: end; gap: 12px 14px; padding: 2px 0;
   border: 0; background: transparent;
 }
 .intent-experiment-form label { min-width: 0; display: grid; gap: 6px; color: var(--muted); font-size: 13px; }
@@ -773,6 +773,7 @@ html.ra-ui-ready .intent-workspace { transition: grid-template-columns 200ms eas
 }
 @media (max-width: 1400px) {
   .intent-commandbar { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .intent-experiment-form { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .intent-case-field { grid-column: span 2; }
   .intent-assignee-field { grid-column: span 2; }
   .intent-experiment-filter-field { grid-column: span 1; }
