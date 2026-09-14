@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-417`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-418`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -506,7 +506,7 @@
                   <span class="ui-lang-zh" title="Issue GT Review状态">GT 复核状态</span><span class="ui-lang-en" title="Issue GT review status">GT Review status</span>
                   <div class="multi-filter" id="analysisStatusFilter" data-placeholder="全部状态" data-placeholder-en="All statuses" data-i18n-placeholder="analysis.all_statuses"></div>
                 </label>
-                <label id="analysisWorkAgreementField" hidden>
+                <label id="analysisWorkAgreementField">
                   <span>多人复核结果</span>
                   <div class="ui-select" id="analysisWorkAgreementPicker">
                     <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
@@ -1948,7 +1948,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-417`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-418`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

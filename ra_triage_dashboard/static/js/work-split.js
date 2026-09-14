@@ -305,7 +305,9 @@ function updateWorkSplitAdminVisibility() {
   const button = $("#splitFilteredButton");
   const isAdmin = Boolean(state.session?.is_admin);
   const analysisField = $("#analysisWorkAgreementField");
-  if (analysisField) analysisField.hidden = !isAdmin;
+  // Agreement is a read-only analysis filter and is available to every
+  // viewer.  Only assignment/redistribution remains administrator-only.
+  if (analysisField) analysisField.hidden = false;
   if (!button) return;
   button.hidden = !isAdmin;
   if (!isAdmin) button.disabled = true;

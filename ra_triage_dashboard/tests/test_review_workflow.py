@@ -147,8 +147,6 @@ class ReviewWorkflowTest(unittest.TestCase):
             }
         )
         with patch.object(
-            analysis_router, "_is_dashboard_admin", return_value=True
-        ), patch.object(
             analysis_router,
             "resolve_request_baseline_scopes",
             return_value=["scope"],
@@ -172,6 +170,48 @@ class ReviewWorkflowTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(captured["include_multi_reviews"])
         self.assertEqual(captured["issue_ids"], "cn1,cn2")
+
+    def test_review_analysis_exposes_blind_projection_to_every_viewer(self) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_payload(**kwargs):
+            captured.update(kwargs)
+            return {"items": []}
+
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/review-reason-analysis",
+                "headers": [],
+            }
+        )
+        with patch.object(
+            analysis_router,
+            "resolve_request_baseline_scopes",
+            return_value=["scope"],
+        ), patch.object(
+            analysis_router,
+            "resolve_request_baseline_ids",
+            return_value=["test"],
+        ), patch.object(
+            analysis_router,
+            "_review_reason_analysis_payload",
+            side_effect=fake_payload,
+        ):
+            result = asyncio.run(
+                analysis_router.review_reason_analysis(
+                    request,
+                    model_run_id="run-1",
+                    work_agreement="conflict",
+                    search="冲突",
+                )
+            )
+
+        self.assertEqual(result["baselines"], ["test"])
+        self.assertTrue(captured["include_multi_reviews"])
+        self.assertEqual(captured["work_agreement"], "conflict")
+        self.assertEqual(captured["search"], "冲突")
 
     def test_tags_infer_the_three_canonical_outputs(self) -> None:
         self.assertEqual(

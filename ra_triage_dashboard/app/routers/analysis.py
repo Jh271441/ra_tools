@@ -23,7 +23,6 @@ from ..support.common import (
     _as_text,
     _detail,
 )
-from ..support.identity import _admin_identity, _is_dashboard_admin
 from ..support.review_payloads import (
     _review_reason_analysis_payload,
 )
@@ -57,12 +56,11 @@ async def review_reason_analysis(
     baselines: str = "",
     work_agreement: str = "all",
 ) -> dict[str, Any]:
-    explicit_multi_review = work_agreement.strip().lower() not in {"", "all"}
-    if explicit_multi_review:
-        await asyncio.to_thread(_admin_identity, request)
-        include_multi_reviews = True
-    else:
-        include_multi_reviews = await asyncio.to_thread(_is_dashboard_admin, request)
+    # Multi-review analysis is read-only.  Blind mode isolates each user's
+    # writes, but does not restrict submitted Review history or aggregate
+    # filters to administrators; every Dashboard visitor should see the same
+    # conflict/agreement projection for a shared dataset.
+    include_multi_reviews = True
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     payload = await asyncio.to_thread(
         _review_reason_analysis_payload,
@@ -368,12 +366,10 @@ async def export_review_reason_analysis(
     baselines: str = "",
     work_agreement: str = "all",
 ) -> Response:
-    explicit_multi_review = work_agreement.strip().lower() not in {"", "all"}
-    if explicit_multi_review:
-        await asyncio.to_thread(_admin_identity, request)
-        include_multi_reviews = True
-    else:
-        include_multi_reviews = await asyncio.to_thread(_is_dashboard_admin, request)
+    # CSV/XLSX are read-only projections too, so keep their blind-review scope
+    # identical for admins and ordinary viewers.  ``trail_xlsx`` below still
+    # disables multi-review rows because GT update requires adjudication.
+    include_multi_reviews = True
     export_format = _as_text(format).strip().lower()
     if export_format not in {"csv", "xlsx", "trail_xlsx"}:
         raise _detail(400, "format 仅支持 csv、xlsx 或 trail_xlsx。")

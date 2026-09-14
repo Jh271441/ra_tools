@@ -554,7 +554,7 @@ class DatabaseReviewMixin:
         *,
         baseline_scopes: Sequence[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """Return the admin analysis facet, including submitted blind Reviews.
+        """Return the shared analysis facet, including submitted blind Reviews.
 
         Active blind-task results own their Issue in reason analysis. Count
         every submitted member as a selectable reviewer, while removing the
