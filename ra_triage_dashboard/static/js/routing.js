@@ -331,6 +331,9 @@ function normalizedAnalysisRouteFilters(params) {
     ? exclusionValue
     : "all";
   return {
+    issueIds: parseFilterList(params.get("issue_ids")).filter((value) =>
+      ISSUE_QUERY_ID_RE.test(value)
+    ),
     search: params.get("q") || "",
     commentState: ["with", "without"].includes(params.get("comment_state"))
       ? params.get("comment_state")
@@ -541,6 +544,7 @@ function currentAnalysisRouteOptions(overrides = {}) {
   return {
     runId: state.selectedRunId,
     comparisonStatus: state.reviewAnalysis.comparisonStatus,
+    issueIds: parseIssueIdsInput($("#analysisIssueInput")?.value || "").ids,
     search: $("#analysisSearchInput")?.value.trim() || "",
     commentState: $("#analysisCommentStateFilter")?.value || "all",
     commentSearch: $("#analysisCommentSearchInput")?.value.trim() || "",
@@ -583,6 +587,9 @@ function persistCurrentAnalysisRoute(overrides = {}) {
 
 function applyAnalysisRouteControls(route) {
   const filters = route?.analysisFilters || route || {};
+  if ($("#analysisIssueInput")) {
+    $("#analysisIssueInput").value = parseFilterList(filters.issueIds).join(", ");
+  }
   if ($("#analysisSearchInput")) $("#analysisSearchInput").value = filters.search || "";
   if ($("#analysisCommentSearchInput")) $("#analysisCommentSearchInput").value = filters.commentSearch || "";
   if ($("#analysisCommentStateFilter")) $("#analysisCommentStateFilter").value = filters.commentState || "all";
@@ -677,6 +684,10 @@ function pageUrl(page, options = {}) {
         : "all"
     );
     if (analysis.search) url.searchParams.set("q", analysis.search);
+    const issueIds = (analysis.issueIds || []).filter((value) =>
+      ISSUE_QUERY_ID_RE.test(String(value))
+    );
+    if (issueIds.length) url.searchParams.set("issue_ids", issueIds.join(","));
     if (analysis.commentState && analysis.commentState !== "all") url.searchParams.set("comment_state", analysis.commentState);
     if (analysis.commentSearch) url.searchParams.set("comment_search", analysis.commentSearch);
     const gt = joinFilterList(analysis.gtLabel);

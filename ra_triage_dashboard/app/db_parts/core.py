@@ -1420,6 +1420,7 @@ class DatabaseCoreMixin:
         scene_tags: tuple[str, ...] = (),
         trigger_tags: tuple[str, ...] = (),
         egress_tags: tuple[str, ...] = (),
+        issue_ids: Sequence[str] | None = None,
         search: str = "",
         search_aliases: tuple[str, ...] = (),
         is_excluded: bool | None = None,
@@ -1558,6 +1559,18 @@ class DatabaseCoreMixin:
                 f"mp.model_label IN ({', '.join('?' for _ in model_labels)})"
             )
             params.extend(model_labels)
+        selected_issue_ids = tuple(
+            dict.fromkeys(
+                str(issue_id or "").strip()
+                for issue_id in (issue_ids or ())
+                if str(issue_id or "").strip()
+            )
+        )
+        if selected_issue_ids:
+            where.append(
+                f"i.issue_id IN ({', '.join('?' for _ in selected_issue_ids)})"
+            )
+            params.extend(selected_issue_ids)
         evidence_keys = _multi_values(missing_evidence)
         if evidence_keys:
             evidence_clauses = [

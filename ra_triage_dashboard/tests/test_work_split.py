@@ -446,6 +446,13 @@ class WorkSplitTest(unittest.TestCase):
                     include_multi_reviews=True,
                     comment_search="不存在的评论",
                 )
+                issue_filtered_out = review_payloads._review_reason_analysis_payload(
+                    model_run_id="",
+                    comparison="all",
+                    baseline_scopes=[scope],
+                    include_multi_reviews=True,
+                    issue_ids="cn404",
+                )
 
             self.assertEqual(ordinary_only["total"], 1)
             self.assertEqual(ordinary_only["items"][0]["annotation"]["author"], "legacy")
@@ -535,6 +542,8 @@ class WorkSplitTest(unittest.TestCase):
             self.assertEqual(with_comments["total"], 1)
             self.assertEqual(matching_comment["total"], 1)
             self.assertEqual(missing_comment["total"], 0)
+            self.assertEqual(issue_filtered_out["total"], 0)
+            self.assertEqual(issue_filtered_out["filters"]["issue_ids"], ["cn404"])
 
     def test_conflict_analysis_display_and_export_use_latest_reviewer_head(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

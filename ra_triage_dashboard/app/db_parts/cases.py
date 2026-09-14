@@ -1138,6 +1138,7 @@ class DatabaseCasesMixin:
         *,
         baseline_scopes: Sequence[str],
         model_run_id: str = "",
+        issue_ids: Sequence[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Return one row per current blind assignment member for aggregation."""
 
@@ -1145,6 +1146,21 @@ class DatabaseCasesMixin:
         if not scopes:
             return []
         scope_clause, scope_params = self._scope_in_sql(scopes)
+        selected_issue_ids = tuple(
+            dict.fromkeys(
+                str(issue_id or "").strip()
+                for issue_id in (issue_ids or ())
+                if str(issue_id or "").strip()
+            )
+        )
+        issue_clause = ""
+        issue_params: list[Any] = []
+        if selected_issue_ids:
+            issue_clause = (
+                f"AND assignment.issue_id IN "
+                f"({', '.join('?' for _ in selected_issue_ids)})"
+            )
+            issue_params.extend(selected_issue_ids)
         selected_run_id = str(model_run_id or "").strip()
         if selected_run_id:
             split_filter = "split.model_run_id = ?"
@@ -1204,12 +1220,13 @@ class DatabaseCasesMixin:
              AND prediction.model_run_id = ?
             WHERE split.mode = 'blind' AND {split_filter}
               AND {scope_clause}
+              {issue_clause}
             ORDER BY i.issue_id ASC, assignment.assignee ASC
         """
         with self.connect() as conn:
             rows = conn.execute(
                 query,
-                (prediction_run_id, *split_params, *scope_params),
+                (prediction_run_id, *split_params, *scope_params, *issue_params),
             ).fetchall()
         results: list[dict[str, Any]] = []
         for row in rows:

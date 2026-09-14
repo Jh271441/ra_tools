@@ -85,11 +85,13 @@ class ReviewWorkflowTest(unittest.TestCase):
                 analysis_router.export_review_reason_analysis(
                     request,
                     format="trail_xlsx",
+                    issue_ids="cn1,cn2",
                 )
             )
 
         self.assertEqual(response.status_code, 200)
         self.assertFalse(captured["include_multi_reviews"])
+        self.assertEqual(captured["issue_ids"], "cn1,cn2")
 
     def test_tags_infer_the_three_canonical_outputs(self) -> None:
         self.assertEqual(

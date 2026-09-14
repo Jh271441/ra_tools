@@ -129,6 +129,7 @@ function buildAnalysisQueryParams({ format = "", includePagination = true } = {}
       : "all"
   );
   const fields = [
+    ["issue_ids", joinFilterList(options.issueIds)],
     ["annotation_author", joinFilterList(options.annotationAuthor)],
     ["review_status", joinFilterList(options.reviewStatus)],
     ["gt_label", joinFilterList(options.gtLabel)],

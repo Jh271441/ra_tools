@@ -14,6 +14,7 @@ from .baselines import resolve_request_baseline_scopes
 from .catalogs import (
     _csv_filter_values,
     _missing_evidence_catalog,
+    _parse_issue_id_filter,
     _review_tag_catalog,
     resolve_review_exclusion_filter,
 )
@@ -37,6 +38,7 @@ def _review_reason_analysis_payload(
     scene_tag: str = "",
     trigger_tag: str = "",
     egress_tag: str = "",
+    issue_ids: str = "",
     search: str = "",
     comment_state: str = "all",
     comment_search: str = "",
@@ -110,6 +112,9 @@ def _review_reason_analysis_payload(
     trigger_tags = _csv_filter_values(trigger_tag)
     egress_tags = _csv_filter_values(egress_tag)
     legacy_tags = _csv_filter_values(tag)
+    selected_issue_ids = _parse_issue_id_filter(issue_ids)
+    if _as_text(issue_ids).strip() and not selected_issue_ids:
+        raise _detail(400, "issue_ids 未包含有效的 Issue ID。")
     for requested_tag in (*legacy_tags, *scene_tags, *trigger_tags, *egress_tags):
         if requested_tag not in tag_by_key:
             raise _detail(400, "场景 Tags 不在共享目录中。")
@@ -211,6 +216,7 @@ def _review_reason_analysis_payload(
             scene_tags=scene_tags,
             trigger_tags=trigger_tags,
             egress_tags=egress_tags,
+            issue_ids=selected_issue_ids,
             # Exact automatic-status searches are evaluated from the same
             # derived value as the dedicated filter instead of stale storage.
             search="" if search_statuses else normalized_search,
@@ -225,6 +231,7 @@ def _review_reason_analysis_payload(
         for row in database.review_multi_rows(
             baseline_scopes=scopes,
             model_run_id=model_run_id,
+            issue_ids=selected_issue_ids,
         ):
             grouped.setdefault(str(row["issue_id"]), []).append(row)
     multi_rows: list[dict[str, Any]] = []
@@ -505,6 +512,7 @@ def _review_reason_analysis_payload(
         "scene_tag": list(scene_tags),
         "trigger_tag": list(trigger_tags),
         "egress_tag": list(egress_tags),
+        "issue_ids": selected_issue_ids,
         "search": normalized_search,
         "comment_state": normalized_comment_state,
         "comment_search": normalized_comment_search,

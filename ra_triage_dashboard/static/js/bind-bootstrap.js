@@ -238,6 +238,9 @@ function bindEvents() {
   $("#analysisSearchInput")?.addEventListener("input", () => {
     scheduleAnalysisFilterReload(220);
   });
+  $("#analysisIssueInput")?.addEventListener("input", () => {
+    scheduleAnalysisFilterReload(220);
+  });
   $("#analysisCommentSearchInput")?.addEventListener("input", () => scheduleAnalysisFilterReload(220));
   $("#analysisCommentStateFilter")?.addEventListener("change", () => scheduleAnalysisFilterReload(0));
   document.addEventListener("click", () => closeAllMultiFilters());
@@ -286,6 +289,7 @@ function bindEvents() {
     // widget state, otherwise an analysis reset would restore reviewer=… on
     // the next async facet refresh.
     persistReviewerFilterRoute?.("analysis", []);
+    if ($("#analysisIssueInput")) $("#analysisIssueInput").value = "";
     $("#analysisSearchInput").value = "";
     if ($("#analysisCommentSearchInput")) $("#analysisCommentSearchInput").value = "";
     if ($("#analysisCommentStateFilter")) $("#analysisCommentStateFilter").value = "all";

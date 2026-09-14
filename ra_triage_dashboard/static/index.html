@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-415`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-416`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -489,6 +489,10 @@
                       <option value="" data-i18n="filter.no_overlay_run">不叠加模型输出</option>
                     </select>
                   </div>
+                </label>
+                <label class="analysis-issue-filter">
+                  <span class="ui-lang-zh">Issue</span><span class="ui-lang-en">Issue</span>
+                  <textarea class="analysis-issue-input" id="analysisIssueInput" rows="1" maxlength="4096" placeholder="Issue ID，支持多个" data-placeholder-zh="Issue ID，支持多个" data-placeholder-en="Issue IDs, multiple supported" autocomplete="off"></textarea>
                 </label>
                 <label class="analysis-comparison-filter">
                   <span class="ui-lang-zh">模型判断结果</span><span class="ui-lang-en">Model comparison</span>
@@ -1921,7 +1925,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-415`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-416`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

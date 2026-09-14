@@ -789,6 +789,14 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
                 [item["issue_id"] for item in review_rows],
                 ["cn20001", "cn20002", "cn20003"],
             )
+            issue_scoped = database.review_reason_rows(
+                baseline_scope=scope,
+                issue_ids=["cn20002"],
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in issue_scoped],
+                ["cn20002"],
+            )
 
             tagged = database.review_reason_rows(
                 baseline_scope=scope,
