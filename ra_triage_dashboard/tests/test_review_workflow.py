@@ -51,6 +51,86 @@ def make_request() -> Request:
 
 
 class ReviewWorkflowTest(unittest.TestCase):
+    def test_review_analysis_export_keeps_exclusion_and_detailed_tags(self) -> None:
+        result = {
+            "items": [
+                {
+                    "issue_id": "cn-excluded",
+                    "title": "示例 Issue",
+                    "gt_label": "正确触发",
+                    "comparison_status": "mismatch",
+                    "prediction": {
+                        "label": "误触发",
+                        "reason": "test reason",
+                        "confidence": 0.8,
+                    },
+                    "annotation": {
+                        "model_run_id": "run-1",
+                        "work_split_id": "split-1",
+                        "expected_output": "误触发",
+                        "review_status": "needs_gt_review",
+                        "is_excluded": True,
+                        "note": "应排除并保留标签细节",
+                        "tags": ["road", "queue", "waypoint", "legacy_tag"],
+                        "missing_evidence": ["routing_direction", "custom:missing"],
+                        "author": "tester",
+                        "created_at": "2026-09-14T00:00:00+00:00",
+                    },
+                    "review_url": "/review?issue=cn-excluded",
+                    "voyager_issue_url": "https://voyager.example/issue/cn-excluded",
+                }
+            ]
+        }
+        tag_catalog = [
+            {
+                "key": "road",
+                "label": "一般直行道路",
+                "section": "scene",
+                "group": "environment",
+            },
+            {
+                "key": "queue",
+                "label": "排队",
+                "section": "interaction_decision",
+                "group": "false_trigger",
+            },
+            {
+                "key": "waypoint",
+                "label": "Waypoint",
+                "section": "egress",
+                "group": "ra",
+            },
+        ]
+        evidence_catalog = [
+            {"key": "routing_direction", "label": "Routing 方向"},
+        ]
+        with patch.object(analysis_router, "_review_tag_catalog", return_value=tag_catalog), patch.object(
+            analysis_router, "_missing_evidence_catalog", return_value=evidence_catalog
+        ):
+            exported = analysis_router._review_analysis_export_rows(result)
+            response = analysis_router._review_analysis_export_response(result, "csv")
+
+        row = exported[0]
+        self.assertEqual(row["is_excluded"], "是")
+        self.assertEqual(row["tags"], "一般直行道路、排队、Waypoint、legacy_tag")
+        self.assertEqual(row["scene_tags"], "一般直行道路")
+        self.assertEqual(row["trigger_tags"], "排队")
+        self.assertEqual(row["egress_tags"], "Waypoint")
+        self.assertEqual(row["other_tags"], "legacy_tag")
+        self.assertEqual(
+            row["tag_details"],
+            "场景/环境=一般直行道路；触发判定/误触发=排队；脱困方式/正确触发=Waypoint；其他=legacy_tag",
+        )
+        self.assertEqual(row["tag_keys"], "road、queue、waypoint、legacy_tag")
+        self.assertEqual(row["missing_evidence"], "Routing 方向、custom:missing")
+        self.assertEqual(row["missing_evidence_keys"], "routing_direction、custom:missing")
+        self.assertEqual(row["review_model_run_id"], "run-1")
+        self.assertEqual(row["review_work_split_id"], "split-1")
+        csv_text = response.body.decode("utf-8-sig")
+        self.assertIn("应该排除", csv_text.splitlines()[0])
+        self.assertIn("一般直行道路", csv_text)
+        self.assertIn(",是,", csv_text)
+
     def test_gt_update_export_never_includes_partial_blind_reviews(self) -> None:
         captured: dict[str, object] = {}
 

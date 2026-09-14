@@ -107,11 +107,21 @@ REVIEW_ANALYSIS_EXPORT_COLUMNS: tuple[tuple[str, str], ...] = (
     ("model_confidence", "模型置信度"),
     ("expected_output", "期望输出"),
     ("review_status", "Issue GT Review状态"),
+    ("is_excluded", "应该排除"),
     ("review_reason", "人工 Review 原因"),
     ("tags", "场景 Tags"),
+    ("scene_tags", "场景 Tags（环境/意图）"),
+    ("trigger_tags", "触发判定 Tags"),
+    ("egress_tags", "脱困方式 Tags"),
+    ("other_tags", "其他 Tags"),
+    ("tag_details", "Tags 详细归类"),
+    ("tag_keys", "Tags 原始 key"),
     ("missing_evidence", "缺失信息"),
+    ("missing_evidence_keys", "缺失信息原始 key"),
     ("reviewer", "复核人"),
     ("reviewed_at", "Review 时间"),
+    ("review_model_run_id", "Review Model Run"),
+    ("review_work_split_id", "Review 盲标 Split"),
     ("review_url", "Workbench 链接"),
     ("voyager_issue_url", "Voyager Issue 链接"),
 )
@@ -128,15 +138,75 @@ def _spreadsheet_safe(value: Any) -> Any:
 
 
 def _review_analysis_export_rows(result: dict[str, Any]) -> list[dict[str, Any]]:
-    tag_labels = {str(item["key"]): str(item["label"]) for item in _review_tag_catalog()}
+    tag_catalog = {
+        str(item["key"]): item for item in _review_tag_catalog()
+    }
     evidence_labels = {
-        str(item["key"]): str(item["label"])
+        str(item["key"]): str(item.get("label") or item["key"])
         for item in _missing_evidence_catalog()
     }
+
+    section_labels = {
+        "scene": "scene",
+        "interaction_decision": "trigger",
+        "egress": "egress",
+    }
+    section_titles = {
+        "scene": "场景",
+        "trigger": "触发判定",
+        "egress": "脱困方式",
+        "other": "其他",
+    }
+    group_titles = {
+        "environment": "环境",
+        "self_intent": "自车意图",
+        "false_trigger": "误触发",
+        "true_trigger": "应该触发",
+        "ra": "正确触发",
+        "no_assist": "无需协助",
+    }
+
+    def tag_label(key: Any) -> str:
+        text = _as_text(key)
+        item = tag_catalog.get(text) or {}
+        return _as_text(item.get("label")) or text
+
+    def tag_section(key: Any) -> str:
+        item = tag_catalog.get(_as_text(key)) or {}
+        return section_labels.get(_as_text(item.get("section")), "other")
+
+    def tag_values(annotation: dict[str, Any]) -> list[str]:
+        raw = annotation.get("tags") or []
+        if not isinstance(raw, (list, tuple, set)):
+            raw = [raw]
+        return [_as_text(value) for value in raw if _as_text(value)]
+
+    def joined_tag_labels(keys: list[str], section: str | None = None) -> str:
+        selected = [key for key in keys if section is None or tag_section(key) == section]
+        return "、".join(tag_label(key) for key in selected)
+
+    def tag_details(keys: list[str]) -> str:
+        details: list[str] = []
+        for key in keys:
+            item = tag_catalog.get(key) or {}
+            section = tag_section(key)
+            group = _as_text(item.get("group"))
+            prefix = section_titles.get(section, "其他")
+            if group_titles.get(group):
+                prefix = f"{prefix}/{group_titles[group]}"
+            details.append(f"{prefix}={tag_label(key)}")
+        return "；".join(details)
+
     exported: list[dict[str, Any]] = []
     for item in result.get("items", []):
         annotation = item.get("annotation") or {}
         prediction = item.get("prediction") or {}
+        tag_keys = tag_values(annotation)
+        evidence_keys = [
+            _as_text(key)
+            for key in (annotation.get("missing_evidence") or [])
+            if _as_text(key)
+        ]
         expected_output = _as_text(
             annotation.get("expected_output") or annotation.get("label")
         )
@@ -151,17 +221,23 @@ def _review_analysis_export_rows(result: dict[str, Any]) -> list[dict[str, Any]]
                 "model_confidence": prediction.get("confidence"),
                 "expected_output": expected_output,
                 "review_status": _as_text(annotation.get("review_status")),
+                "is_excluded": "是" if bool(annotation.get("is_excluded")) else "否",
                 "review_reason": _as_text(annotation.get("note")),
-                "tags": "、".join(
-                    tag_labels.get(_as_text(key), _as_text(key))
-                    for key in annotation.get("tags") or []
-                ),
+                "tags": "、".join(tag_label(key) for key in tag_keys),
+                "scene_tags": joined_tag_labels(tag_keys, "scene"),
+                "trigger_tags": joined_tag_labels(tag_keys, "trigger"),
+                "egress_tags": joined_tag_labels(tag_keys, "egress"),
+                "other_tags": joined_tag_labels(tag_keys, "other"),
+                "tag_details": tag_details(tag_keys),
+                "tag_keys": "、".join(tag_keys),
                 "missing_evidence": "、".join(
-                    evidence_labels.get(_as_text(key), _as_text(key))
-                    for key in annotation.get("missing_evidence") or []
+                    evidence_labels.get(key, key) for key in evidence_keys
                 ),
+                "missing_evidence_keys": "、".join(evidence_keys),
                 "reviewer": _as_text(annotation.get("author")),
                 "reviewed_at": _as_text(annotation.get("created_at")),
+                "review_model_run_id": _as_text(annotation.get("model_run_id")),
+                "review_work_split_id": _as_text(annotation.get("work_split_id")),
                 "review_url": _as_text(item.get("review_url")),
                 "voyager_issue_url": _as_text(item.get("voyager_issue_url")),
             }
