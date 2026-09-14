@@ -811,13 +811,15 @@ html[data-color-theme="light"] .detail-queue-index-input {
 }
 .work-split-people { display: grid; gap: 8px; max-height: 240px; overflow: auto; }
 .work-split-mode-row {
-  display: flex; align-items: end; justify-content: space-between; gap: 12px;
+  display: flex; flex-wrap: wrap; align-items: end; justify-content: flex-start; gap: 12px;
   padding: 9px 11px; border: 1px solid var(--line-soft); border-radius: 8px;
   background: rgba(34, 211, 238, .035);
 }
 .work-split-reviewer-count-picker { width: 110px; }
+.work-split-overlap-picker { width: 110px; }
 .work-split-reviewer-count-picker .ui-select-trigger { height: 34px; padding: 6px 9px; }
-.work-split-estimate { color: var(--muted); font-size: 12px; text-align: right; }
+.work-split-overlap-picker .ui-select-trigger { height: 34px; padding: 6px 9px; }
+.work-split-estimate { flex: 1 1 220px; color: var(--muted); font-size: 12px; text-align: right; }
 .work-split-person-row {
   display: grid; grid-template-columns: minmax(0, 1fr) 110px 34px; gap: 8px; align-items: center;
 }

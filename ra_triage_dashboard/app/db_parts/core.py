@@ -718,7 +718,9 @@ class DatabaseCoreMixin:
                     seed INTEGER,
                     total_count INTEGER NOT NULL DEFAULT 0,
                     filter_json TEXT NOT NULL DEFAULT '{}',
-                    assignees_json TEXT NOT NULL DEFAULT '[]'
+                    assignees_json TEXT NOT NULL DEFAULT '[]',
+                    overlap_ratio REAL NOT NULL DEFAULT 1.0
+                        CHECK(overlap_ratio >= 0 AND overlap_ratio <= 1)
                 );
 
                 CREATE TABLE IF NOT EXISTS review_work_assignments (
@@ -1016,6 +1018,7 @@ class DatabaseCoreMixin:
             self._ensure_column(conn, "issue_work_splits", "reviewers_per_issue", "INTEGER NOT NULL DEFAULT 1")
             self._ensure_column(conn, "issue_work_splits", "model_run_id", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "issue_work_splits", "assignment_count", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "issue_work_splits", "overlap_ratio", "REAL NOT NULL DEFAULT 1.0")
             self._ensure_column(
                 conn, "intent_experiments", "overlap_reviewers",
                 "INTEGER NOT NULL DEFAULT 2",

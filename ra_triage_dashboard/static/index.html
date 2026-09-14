@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-414`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-415`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1640,14 +1640,14 @@
         <div class="dialog-heading">
           <div>
             <h2><span class="ui-lang-zh">均分 Review 任务</span><span class="ui-lang-en">Split review work</span></h2>
-            <p class="dialog-copy" id="workSplitDialogHint">对当前筛选结果随机分配；可给部分人指定数量，其余人再均分剩余 Issue。</p>
+            <p class="dialog-copy" id="workSplitDialogHint"><span class="ui-lang-zh">对当前筛选结果随机分配；多人模式可设置交叉盲标比例，未抽中的 Issue 只分配基础负责人。</span><span class="ui-lang-en">Randomly assign the current filter; multi-review mode can sample a cross-review ratio, while unsampled Issues get only a base reviewer.</span></p>
           </div>
           <button class="icon-button" type="button" data-close="workSplitDialog" aria-label="关闭">×</button>
         </div>
         <div class="work-split-summary" id="workSplitSummary">当前筛选：—</div>
         <div class="work-split-mode-row">
           <label class="work-split-seed">
-            <span>每个 Issue 复核人数</span>
+            <span><span class="ui-lang-zh">每个 Issue 复核人数</span><span class="ui-lang-en">Reviewers per Issue</span></span>
             <div class="ui-select work-split-reviewer-count-picker" id="workSplitReviewersPerIssuePicker">
               <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
                 <span class="ui-select-summary">1 人</span>
@@ -1656,6 +1656,24 @@
               <div class="ui-select-panel" role="listbox" hidden></div>
               <select class="ui-select-native" id="workSplitReviewersPerIssue" aria-hidden="true" tabindex="-1">
                 <option value="1">1 人</option>
+              </select>
+            </div>
+          </label>
+          <label class="work-split-seed" id="workSplitOverlapField">
+            <span><span class="ui-lang-zh">交叉盲标比例</span><span class="ui-lang-en">Cross-review ratio</span></span>
+            <div class="ui-select work-split-overlap-picker" id="workSplitOverlapPicker">
+              <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                <span class="ui-select-summary">100%</span>
+                <span class="ui-select-caret" aria-hidden="true"></span>
+              </button>
+              <div class="ui-select-panel" role="listbox" hidden></div>
+              <select class="ui-select-native" id="workSplitOverlapRatio" aria-hidden="true" tabindex="-1">
+                <option value="0">0%</option>
+                <option value="0.1">10%</option>
+                <option value="0.2">20%</option>
+                <option value="0.3">30%</option>
+                <option value="0.5">50%</option>
+                <option value="1" selected>100%</option>
               </select>
             </div>
           </label>
@@ -1903,7 +1921,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-414`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-415`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

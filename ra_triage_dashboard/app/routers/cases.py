@@ -49,7 +49,7 @@ from ..runtime import (
     video_index,
 )
 from ..trail_sync import read_trail_issue_metadata
-from ..work_split import distribute_issue_ids
+from ..work_split import distribute_issue_ids, normalize_overlap_ratio
 
 router = APIRouter()
 
@@ -515,11 +515,19 @@ async def split_case_work(request: Request) -> dict[str, Any]:
     except (TypeError, ValueError):
         raise _detail(400, "reviewers_per_issue 必须是整数。")
     try:
+        overlap_ratio = normalize_overlap_ratio(
+            body.get("overlap_ratio"),
+            reviewers_per_issue=reviewers_per_issue,
+        )
+    except ValueError as exc:
+        raise _detail(400, str(exc))
+    try:
         assignments = distribute_issue_ids(
             issue_ids,
             assignees,
             seed=seed,
             reviewers_per_issue=reviewers_per_issue,
+            overlap_ratio=overlap_ratio,
         )
         saved = await asyncio.to_thread(
             database.apply_work_split,
@@ -527,6 +535,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
             created_by=identity.username,
             seed=seed,
             reviewers_per_issue=reviewers_per_issue,
+            overlap_ratio=overlap_ratio,
             model_run_id=filters["model_run_id"],
             filter_snapshot={
                 "model_run_id": filters["model_run_id"],
@@ -538,6 +547,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                 "review_status": list(review_statuses),
                 "exclusion": exclusion_filter,
                 "missing_evidence": filters["missing_evidence"],
+                "overlap_ratio": overlap_ratio,
                 "baselines": filters.get("baseline_scopes") and resolve_request_baseline_ids(
                     ",".join(
                         baseline_registry.scope_to_id(s) or s
@@ -559,6 +569,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
         "assignments": assignments,
         "assignment_count": saved["assignment_count"],
         "reviewers_per_issue": saved["reviewers_per_issue"],
+        "overlap_ratio": saved["overlap_ratio"],
         "work_assignees": await asyncio.to_thread(
             database.list_work_assignees,
             issue_ids=issue_ids,

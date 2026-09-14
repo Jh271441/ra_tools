@@ -5,6 +5,7 @@ import sqlite3
 import uuid
 from typing import Any, Iterable, Sequence
 
+from ..work_split import normalize_overlap_ratio
 from .shared import (
     COMPARISON_STATUSES,
     LABELS,
@@ -1114,11 +1115,17 @@ class DatabaseCasesMixin:
             (item for item in members if item["username"].lower() == current),
             None,
         )
+        reviewer_count = int(split["reviewers_per_issue"] or 1)
         return {
             "split_id": str(split["id"]),
             "mode": str(split["mode"] or "single"),
             "model_run_id": str(split["model_run_id"] or ""),
-            "reviewers_per_issue": int(split["reviewers_per_issue"] or 1),
+            "reviewers_per_issue": reviewer_count,
+            "overlap_ratio": (
+                float(split["overlap_ratio"] or 0)
+                if reviewer_count > 1
+                else 0.0
+            ),
             "assigned_count": len(members),
             "submitted_count": sum(bool(item["submitted"]) for item in members),
             "assigned": own is not None,
@@ -1255,6 +1262,7 @@ class DatabaseCasesMixin:
         seed: int | None = None,
         filter_snapshot: dict[str, Any] | None = None,
         reviewers_per_issue: int = 1,
+        overlap_ratio: float | None = None,
         model_run_id: str = "",
     ) -> dict[str, Any]:
         """Persist a work-split batch and overwrite assignments for its issues."""
@@ -1264,6 +1272,16 @@ class DatabaseCasesMixin:
             raise ValueError("均分操作人不能为空。")
         if not assignments:
             raise ValueError("分配结果为空。")
+        try:
+            reviewer_count = int(reviewers_per_issue or 1)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("每个 Issue 的复核人数必须是整数。") from exc
+        if reviewer_count < 1:
+            raise ValueError("每个 Issue 的复核人数至少为 1。")
+        resolved_overlap_ratio = normalize_overlap_ratio(
+            overlap_ratio,
+            reviewers_per_issue=reviewer_count,
+        )
         split_id = f"split-{uuid.uuid4().hex}"
         now = utc_now()
         rows: list[tuple[str, str, str, int, str, str]] = []
@@ -1301,8 +1319,8 @@ class DatabaseCasesMixin:
                 INSERT INTO issue_work_splits (
                     id, created_by, created_at, seed, total_count, filter_json,
                     assignees_json, mode, reviewers_per_issue, model_run_id,
-                    assignment_count
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    overlap_ratio, assignment_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     split_id,
@@ -1312,9 +1330,10 @@ class DatabaseCasesMixin:
                     len({row[0] for row in rows}),
                     json.dumps(filter_snapshot or {}, ensure_ascii=False),
                     json.dumps(assignments, ensure_ascii=False),
-                    "blind" if reviewers_per_issue > 1 else "single",
-                    reviewers_per_issue,
+                    "blind" if reviewer_count > 1 else "single",
+                    reviewer_count,
                     str(model_run_id or "").strip(),
+                    resolved_overlap_ratio,
                     len(rows),
                 ),
             )
@@ -1344,6 +1363,7 @@ class DatabaseCasesMixin:
             "seed": seed,
             "total": len({row[0] for row in rows}),
             "assignment_count": len(rows),
-            "reviewers_per_issue": reviewers_per_issue,
+            "reviewers_per_issue": reviewer_count,
+            "overlap_ratio": resolved_overlap_ratio,
             "assignments": assignments,
         }

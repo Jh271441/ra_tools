@@ -140,6 +140,33 @@ function workSplitReviewersPerIssue() {
   return Number.isFinite(value) ? Math.max(1, value) : 1;
 }
 
+function workSplitOverlapRatio() {
+  const value = Number.parseFloat($("#workSplitOverlapRatio")?.value || "1");
+  return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 1;
+}
+
+function renderWorkSplitOverlapPicker(selected = null) {
+  const picker = $("#workSplitOverlapPicker");
+  const requested = selected === null
+    ? workSplitOverlapRatio()
+    : Number.parseFloat(String(selected));
+  const value = Number.isFinite(requested)
+    ? Math.min(1, Math.max(0, requested))
+    : 1;
+  const options = [0, 0.1, 0.2, 0.3, 0.5, 1].map((ratio) => ({
+    value: String(ratio),
+    label: `${Math.round(ratio * 100)}%`,
+  }));
+  populateUiSelect(picker, options, String(value));
+  bindUiSelect(picker, { maxHeight: 260, maxWidth: 180 });
+  return value;
+}
+
+function updateWorkSplitOverlapVisibility() {
+  const field = $("#workSplitOverlapField");
+  if (field) field.hidden = workSplitReviewersPerIssue() <= 1;
+}
+
 function renderWorkSplitReviewersPerIssuePicker(selected = null) {
   const picker = $("#workSplitReviewersPerIssuePicker");
   const memberCount = readWorkSplitAssignees().length;
@@ -162,9 +189,11 @@ function renderWorkSplitReviewersPerIssuePicker(selected = null) {
 
 function updateWorkSplitEstimate() {
   const reviewers = workSplitReviewersPerIssue();
+  const overlapRatio = workSplitOverlapRatio();
   const people = readWorkSplitAssignees();
   const total = Number(state.caseTotal || 0);
   const target = $("#workSplitEstimate");
+  updateWorkSplitOverlapVisibility();
   document.querySelectorAll(".work-split-person-count").forEach((input) => {
     input.placeholder = reviewers > 1 ? "自动均衡" : t("work.even_split");
   });
@@ -173,7 +202,8 @@ function updateWorkSplitEstimate() {
     target.textContent = `每个 Issue 的人数不能超过已选 ${people.length} 人`;
     return;
   }
-  const assignmentCount = total * reviewers;
+  const overlapCount = reviewers > 1 ? Math.min(total, Math.round(total * overlapRatio)) : 0;
+  const assignmentCount = total + overlapCount * (reviewers - 1);
   const fixedTotal = people.reduce(
     (sum, person) => sum + (person.count === null ? 0 : Number(person.count || 0)),
     0,
@@ -197,11 +227,24 @@ function updateWorkSplitEstimate() {
   }
   const low = people.length ? Math.floor(assignmentCount / people.length) : 0;
   const high = people.length ? Math.ceil(assignmentCount / people.length) : 0;
-  target.textContent = reviewers === 1
-    ? `单人均分 · ${total} 条任务`
-    : `${total} × ${reviewers} = ${assignmentCount} 条盲标任务 · ${
-        fixedTotal ? `已指定 ${fixedTotal} 条，其余自动均衡` : `每人约 ${low}${high !== low ? `～${high}` : ""} 条`
-      }`;
+  if (reviewers === 1) {
+    target.textContent = t("work.single_estimate", { total });
+    return;
+  }
+  const estimate = t("work.blind_estimate", {
+    total,
+    ratio: Math.round(overlapRatio * 100),
+    overlap: overlapCount,
+    reviewers,
+    assignments: assignmentCount,
+  });
+  target.textContent = `${estimate} · ${
+    fixedTotal
+      ? t("work.fixed_remaining", { n: fixedTotal })
+      : t("work.person_estimate", {
+          range: `${low}${high !== low ? `～${high}` : ""}`,
+        })
+  }`;
 }
 
 function workAssigneeOptionsWithSelected(options, selected) {
@@ -309,6 +352,7 @@ async function openWorkSplitDialog() {
   renderWorkSplitPersonPickers();
   if ($("#workSplitReviewersPerIssue")) $("#workSplitReviewersPerIssue").value = "1";
   renderWorkSplitReviewersPerIssuePicker(1);
+  renderWorkSplitOverlapPicker(1);
   updateWorkSplitEstimate();
   openDialog("workSplitDialog");
 }
@@ -322,6 +366,10 @@ function renderWorkSplitResults(payload) {
     root.innerHTML = "";
     return;
   }
+  const reviewers = Math.max(1, Number(payload.reviewers_per_issue ?? 1));
+  const overlapRatio = reviewers > 1
+    ? Math.min(1, Math.max(0, Number(payload.overlap_ratio ?? 1)))
+    : 0;
   const cards = assignments
     .map((item, index) => {
       const ids = Array.isArray(item.issue_ids) ? item.issue_ids : [];
@@ -329,12 +377,12 @@ function renderWorkSplitResults(payload) {
         item.mode === "fixed"
           ? t("work.fixed_n", { n: item.requested_count ?? "—" })
           : item.mode === "blind"
-            ? `${Number(payload.reviewers_per_issue || 2)} 人盲标`
+            ? t("work.blind_n", { n: reviewers })
           : t("work.even_rest");
       return `<article class="work-split-card" data-work-split-index="${index}">
         <header>
           <strong>${escapeHtml(item.name || "—")}</strong>
-          <span>${escapeHtml(t("runs.count_n", { n: Number(item.count || 0) }))} · ${escapeHtml(mode)}</span>
+        <span>${escapeHtml(t("runs.count_n", { n: Number(item.count || 0) }))} · ${escapeHtml(mode)}</span>
         </header>
         <textarea class="work-split-ids" readonly rows="4">${escapeHtml(
           ids.join("\n")
@@ -352,7 +400,7 @@ function renderWorkSplitResults(payload) {
   root.innerHTML = `
     <div class="work-split-results-heading">
       <strong>${escapeHtml(t("work.result_title"))}</strong>
-      <span>${escapeHtml(t("work.result_meta", { n: Number(payload.total || 0), seed: payload.split_id || "" }))} · ${Number(payload.assignment_count || payload.total || 0)} 条任务${payload.truncated ? escapeHtml(t("work.truncated")) : ""}</span>
+      <span>${escapeHtml(t("work.result_meta", { n: Number(payload.total || 0), seed: payload.split_id || "" }))} · ${escapeHtml(t("work.task_count", { n: Number(payload.assignment_count || payload.total || 0) }))} · ${escapeHtml(reviewers > 1 ? t("work.cross_ratio", { n: Math.round(overlapRatio * 100) }) : t("work.single_review"))}${payload.truncated ? escapeHtml(t("work.truncated")) : ""}</span>
     </div>
     <div class="work-split-card-grid">${cards}</div>
   `;
@@ -370,11 +418,13 @@ async function generateWorkSplit() {
     return;
   }
   const reviewersPerIssue = workSplitReviewersPerIssue();
+  const overlapRatio = reviewersPerIssue > 1 ? workSplitOverlapRatio() : 0;
   const seedRaw = $("#workSplitSeed")?.value.trim() || "";
   const body = {
     filters: currentReviewFilterPayload(),
     assignees,
     reviewers_per_issue: reviewersPerIssue,
+    overlap_ratio: overlapRatio,
   };
   if (body.reviewers_per_issue > assignees.length) {
     showToast("每个 Issue 的复核人数不能超过已选成员数。", true);
@@ -502,6 +552,7 @@ function bindWorkSplitControls() {
     if (event.target.matches(".work-split-person-count")) updateWorkSplitEstimate();
   });
   $("#workSplitReviewersPerIssue")?.addEventListener("change", updateWorkSplitEstimate);
+  $("#workSplitOverlapRatio")?.addEventListener("change", updateWorkSplitEstimate);
   $("#workSplitGenerate")?.addEventListener("click", () => {
     generateWorkSplit().catch((error) => showToast(error.message, true));
   });

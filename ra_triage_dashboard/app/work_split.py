@@ -2,10 +2,37 @@
 
 from __future__ import annotations
 
+import math
 import random
 from typing import Any
 
 from .assignment_planner import build_balanced_assignments
+
+
+def normalize_overlap_ratio(
+    value: Any = None,
+    *,
+    reviewers_per_issue: int = 1,
+) -> float:
+    """Normalize the fraction of Issues that receive cross-reviewers.
+
+    Older Review split requests did not carry this field.  Keep those requests
+    equivalent to the previous all-Issue multi-review behavior when more than
+    one reviewer was requested; a single-review split has no overlap.
+    """
+
+    default = 1.0 if reviewers_per_issue > 1 else 0.0
+    if value in (None, ""):
+        return default
+    if isinstance(value, bool):
+        raise ValueError("overlap_ratio 必须是 0 到 1 之间的数字。")
+    try:
+        ratio = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("overlap_ratio 必须是 0 到 1 之间的数字。") from exc
+    if not math.isfinite(ratio) or ratio < 0 or ratio > 1:
+        raise ValueError("overlap_ratio 必须是 0 到 1 之间的数字。")
+    return round(ratio, 6)
 
 
 def _blind_quota_assignments(
@@ -13,11 +40,17 @@ def _blind_quota_assignments(
     people: list[dict[str, Any]],
     reviewers_per_issue: int,
     seed: int | None,
+    overlap_ratio: float,
 ) -> list[dict[str, Any]]:
-    """Assign exact reviewer quotas while keeping every Issue reviewer unique."""
+    """Assign exact quotas while keeping every Issue reviewer unique.
+
+    Every Issue receives one base reviewer.  The first ``overlap_count`` items
+    in the seeded pool receive the requested additional reviewers.
+    """
 
     issue_count = len(issue_ids)
-    total_slots = issue_count * reviewers_per_issue
+    overlap_count = min(issue_count, round(issue_count * overlap_ratio))
+    total_slots = issue_count + overlap_count * (reviewers_per_issue - 1)
     fixed_people = [person for person in people if person["fixed"] is not None]
     share_people = [person for person in people if person["fixed"] is None]
     for person in fixed_people:
@@ -61,6 +94,9 @@ def _blind_quota_assignments(
     ordinals = {name: 0 for name in names}
     by_person: dict[str, list[dict[str, Any]]] = {name: [] for name in names}
     for case_index, issue_id in enumerate(pool):
+        required_reviewers = (
+            reviewers_per_issue if case_index < overlap_count else 1
+        )
         eligible = [name for name in names if remaining.get(name, 0) > 0]
         eligible.sort(
             key=lambda name: (
@@ -68,8 +104,8 @@ def _blind_quota_assignments(
                 (tie_index[name] - case_index) % len(names),
             )
         )
-        selected = eligible[:reviewers_per_issue]
-        if len(selected) != reviewers_per_issue:
+        selected = eligible[:required_reviewers]
+        if len(selected) != required_reviewers:
             raise ValueError("当前个人数量组合无法保证每个 Issue 分给不同复核人。")
         for reviewer_index, name in enumerate(selected):
             remaining[name] -= 1
@@ -102,12 +138,16 @@ def distribute_issue_ids(
     *,
     seed: int | None = None,
     reviewers_per_issue: int = 1,
+    overlap_ratio: float | None = None,
 ) -> list[dict[str, Any]]:
     """Assign issue IDs to people.
 
     Each assignee may set a non-negative integer ``count`` for a fixed quota.
     Assignees without a fixed count share the remaining IDs evenly (larger
     remainder goes to earlier people in the share pool).
+    ``overlap_ratio`` controls the fraction of Issues that receive the extra
+    reviewers when ``reviewers_per_issue`` is greater than one.  Every Issue
+    still receives one base reviewer.
 
     Returns one result dict per input assignee, in the same order:
     ``{name, count, requested_count, mode, issue_ids}``.
@@ -152,6 +192,10 @@ def distribute_issue_ids(
         raise ValueError("每个 Issue 的复核人数至少为 1。")
     if reviewer_count > len(people):
         raise ValueError("每个 Issue 的复核人数不能超过已选成员数。")
+    resolved_overlap_ratio = normalize_overlap_ratio(
+        overlap_ratio,
+        reviewers_per_issue=reviewer_count,
+    )
     if reviewer_count > 1:
         if any(person["fixed"] is not None for person in people):
             return _blind_quota_assignments(
@@ -159,13 +203,14 @@ def distribute_issue_ids(
                 people,
                 reviewer_count,
                 seed,
+                resolved_overlap_ratio,
             )
         resolved_seed = seed if seed is not None else random.SystemRandom().randrange(2**63)
         rows = build_balanced_assignments(
             cleaned_ids,
             [person["name"] for person in people],
             "blind",
-            1.0,
+            resolved_overlap_ratio,
             resolved_seed,
             reviewer_count,
         )

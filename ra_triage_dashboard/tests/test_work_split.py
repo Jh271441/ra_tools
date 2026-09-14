@@ -88,6 +88,63 @@ class WorkSplitTest(unittest.TestCase):
         self.assertEqual(len(owners), 200)
         self.assertTrue(all(len(names) == 2 for names in owners.values()))
 
+    def test_partial_blind_assigns_one_base_reviewer_and_sampled_cross_reviewers(self) -> None:
+        result = distribute_issue_ids(
+            [f"id{i}" for i in range(100)],
+            [{"name": name} for name in ("alice", "bob", "carol", "dora")],
+            seed=42,
+            reviewers_per_issue=2,
+            overlap_ratio=0.2,
+        )
+        self.assertEqual(sum(item["count"] for item in result), 120)
+        self.assertEqual({item["count"] for item in result}, {30})
+        owners: dict[str, list[str]] = {}
+        for item in result:
+            for assignment in item["items"]:
+                owners.setdefault(assignment["issue_id"], []).append(
+                    assignment["assignment_kind"]
+                )
+        self.assertEqual(len(owners), 100)
+        self.assertEqual(sum(len(names) == 2 for names in owners.values()), 20)
+        self.assertEqual(sum(len(names) == 1 for names in owners.values()), 80)
+        self.assertTrue(all(names.count("base") == 1 for names in owners.values()))
+
+    def test_partial_blind_honors_fixed_member_quotas(self) -> None:
+        result = distribute_issue_ids(
+            [f"id{i}" for i in range(100)],
+            [
+                {"name": "alice", "count": 40},
+                {"name": "bob", "count": 30},
+                {"name": "carol", "count": 30},
+                {"name": "dora", "count": 20},
+            ],
+            seed=42,
+            reviewers_per_issue=2,
+            overlap_ratio=0.2,
+        )
+        self.assertEqual(
+            {item["name"]: item["count"] for item in result},
+            {"alice": 40, "bob": 30, "carol": 30, "dora": 20},
+        )
+        owners: dict[str, set[str]] = {}
+        for item in result:
+            for issue_id in item["issue_ids"]:
+                owners.setdefault(issue_id, set()).add(item["name"])
+        self.assertEqual(len(owners), 100)
+        self.assertEqual(sum(len(names) == 2 for names in owners.values()), 20)
+        self.assertTrue(all(len(names) in {1, 2} for names in owners.values()))
+
+    def test_overlap_ratio_must_be_a_finite_fraction(self) -> None:
+        for value in (-0.1, 1.1, "nan", True):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "overlap_ratio"):
+                    distribute_issue_ids(
+                        ["a", "b"],
+                        [{"name": "alice"}, {"name": "bob"}],
+                        reviewers_per_issue=2,
+                        overlap_ratio=value,
+                    )
+
     def test_double_blind_supports_fixed_and_automatic_member_quotas(self) -> None:
         result = distribute_issue_ids(
             [f"id{i}" for i in range(200)],
@@ -233,6 +290,7 @@ class WorkSplitTest(unittest.TestCase):
             )
             context = db.review_assignment_context("cn1", username="alice")
             self.assertEqual(context["assigned_count"], 2)
+            self.assertEqual(context["overlap_ratio"], 1.0)
             self.assertTrue(context["assigned"])
             alice = db.create_annotation(
                 issue_id="cn1", model_run_id="", work_split_id=saved["split_id"],
