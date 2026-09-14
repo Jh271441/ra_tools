@@ -358,6 +358,11 @@ def _review_reason_analysis_payload(
             representative_review = (
                 representative_candidates[0] if representative_candidates else None
             )
+        multi_model_run_id = str(
+            first.get("split_model_run_id")
+            or (first.get("annotation") or {}).get("model_run_id")
+            or model_run_id
+        )
         representative = dict(representative_review["annotation"]) if representative_review else {
             "id": None,
             "model_run_id": model_run_id,
@@ -387,9 +392,11 @@ def _review_reason_analysis_payload(
         source = {**first, "annotation": representative}
         source.pop("assignee", None)
         source.pop("split_id", None)
+        source.pop("split_model_run_id", None)
         multi_rows.append(source)
         multi_by_issue[issue_id] = {
             "split_id": str(first["split_id"]),
+            "model_run_id": multi_model_run_id,
             "agreement": agreement,
             "assigned_count": len(reviews),
             "completed_count": len(valid_outputs),
@@ -463,6 +470,13 @@ def _review_reason_analysis_payload(
         review_params = [f"issue={quote(issue_id, safe='')}"]
         if model_run_id:
             review_params.append(f"run={quote(model_run_id, safe='')}")
+        elif issue_id in multi_by_issue:
+            # ``run=none`` is a global human-Review view, but an active blind
+            # result still needs its immutable Run context for the editable
+            # detail page to load the assignment and write back to its split.
+            review_run_id = _as_text(multi_by_issue[issue_id].get("model_run_id"))
+            if review_run_id:
+                review_params.append(f"run={quote(review_run_id, safe='')}")
         if comparison_status == "mismatch" and model_run_id:
             review_params.append("failure=1")
         item["voyager_issue_url"] = _voyager_issue_url(issue_id)

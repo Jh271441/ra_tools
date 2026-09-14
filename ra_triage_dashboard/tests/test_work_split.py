@@ -407,6 +407,10 @@ class WorkSplitTest(unittest.TestCase):
                 no_overlay["items"][0]["annotation"]["model_run_id"], run["id"]
             )
             self.assertEqual(no_overlay["items"][0]["prediction"]["model_run_id"], "")
+            self.assertIn(f"run={run['id']}", no_overlay["items"][0]["review_url"])
+            self.assertEqual(
+                no_overlay["items"][0]["multi_review"]["model_run_id"], run["id"]
+            )
             self.assertEqual(no_overlay["scope"]["model_run"], None)
             self.assertEqual(
                 result["evidence_clusters"][0]["key"], "routing_direction"

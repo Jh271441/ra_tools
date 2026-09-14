@@ -1234,6 +1234,7 @@ class DatabaseCasesMixin:
                     "summary": str(row["summary"] or ""),
                     "gt_label": str(row["gt_label"] or ""),
                     "split_id": str(row["split_id"]),
+                    "split_model_run_id": str(row["split_model_run_id"] or ""),
                     "assignee": str(row["assignee"]),
                     "annotation": annotation,
                     "prediction": {
