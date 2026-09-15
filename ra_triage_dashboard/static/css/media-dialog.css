@@ -29,6 +29,15 @@
 .hero-media-button:hover { border-color: rgba(34,211,238,.62); }
 .hero-media-button[hidden] { display: none; }
 .hero-media-button img, .hero-media-button video { width: 100%; height: 100%; max-height: none; display: block; grid-area: 1 / 1; object-fit: contain; background: #05070a; }
+.hero-video-player.is-positioning video { visibility: hidden; }
+.video-positioning-status {
+  grid-area: 1 / 1; z-index: 2; align-self: center; justify-self: center; display: none;
+  padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px;
+  color: var(--muted); background: #0b1018; font-size: 11px; white-space: nowrap;
+}
+.hero-video-player.is-positioning .video-positioning-status { display: block; }
+.media-video-canvas { position: relative; display: grid; }
+.media-video-canvas video, .media-video-canvas .video-positioning-status { grid-area: 1 / 1; }
 .hero-media-button .detail-media-preview { z-index: 0; filter: saturate(.82) brightness(.72); }
 .hero-media-button .detail-media-image { position: relative; z-index: 1; }
 .hero-media-button.has-preview .detail-media-image { background: transparent; }

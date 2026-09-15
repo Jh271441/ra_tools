@@ -43,13 +43,12 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {
     .sort((left, right) => left - right)
     .map((step) => `<option value="${escapeHtml(step)}" ${step === 1 ? "selected" : ""}>${escapeHtml(step)}s${step === frameStepSec ? escapeHtml(t("media.frame_step")) : ""}</option>`)
     .join("");
-  const posterUrl = String(video?.poster_url || "").trim();
-  const posterAttribute = posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : "";
-  const videoMarkup = `<video src="${escapeHtml(video.url)}"${posterAttribute} preload="metadata" playsinline draggable="false" aria-label="Ares Studio BEV 视频"></video>`;
+  const videoMarkup = `<video src="${escapeHtml(video.url)}" preload="metadata" playsinline draggable="false" aria-label="Ares Studio BEV 视频"></video>`;
+  const positioningMarkup = '<span class="video-positioning-status" data-video-positioning-status><span class="ui-lang-zh">正在定位 t0…</span><span class="ui-lang-en">Positioning at t0…</span></span>';
   const mediaMarkup = zoomable
-    ? `<div class="media-viewport media-video-viewport" data-video-viewport><div class="media-canvas media-video-canvas" data-video-canvas>${videoMarkup}</div></div>`
-    : `<div class="hero-media-button hero-media-video">${videoMarkup}</div>`;
-  return `<div class="hero-video-player ${compact ? "is-compact" : ""}" data-bev-video-player
+    ? `<div class="media-viewport media-video-viewport" data-video-viewport><div class="media-canvas media-video-canvas" data-video-canvas>${videoMarkup}${positioningMarkup}</div></div>`
+    : `<div class="hero-media-button hero-media-video">${videoMarkup}${positioningMarkup}</div>`;
+  return `<div class="hero-video-player is-positioning ${compact ? "is-compact" : ""}" data-bev-video-player
       data-start-offset-sec="${escapeHtml(startOffsetSec)}"
       data-t0-player-sec="${escapeHtml(t0PlayerSec)}"
       data-duration-sec="${escapeHtml(durationSec)}"
@@ -108,6 +107,21 @@ function bindBevVideoPlayers(root) {
     let cancelPendingSeek = null;
     let queuedSeekTarget = null;
     let queuedSeekTimer = null;
+    const revealInitialFrame = () => {
+      const reveal = () => player.classList.remove("is-positioning");
+      if (typeof video.requestVideoFrameCallback === "function") {
+        video.requestVideoFrameCallback(reveal);
+      } else if (typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(() => window.requestAnimationFrame(reveal));
+      } else {
+        reveal();
+      }
+    };
+    video.addEventListener("seeked", revealInitialFrame, { once: true });
+    video.addEventListener("error", () => {
+      const status = player.querySelector("[data-video-positioning-status]");
+      if (status) status.textContent = uiText("视频加载失败", "Video failed to load");
+    }, { once: true });
     const duration = () => Number.isFinite(video.duration) ? video.duration : configuredDuration;
     const update = (previewTime = null) => {
       const total = Math.max(0, duration());
