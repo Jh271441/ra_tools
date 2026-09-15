@@ -514,13 +514,15 @@ class VideoIndex:
         # Support both shard layout and flat aggregate layout:
         #   shard-*-of-*/{issue_id}_{ts}/meta.json
         #   {issue_id}_{ts}/meta.json
-        #   issues/{issue_id}/meta.json (materialized merged capture layout)
+        #   issues/{issue_id}_{ts}/meta.json (materialized capture layout)
+        #   issues/{issue_id}/meta.json (legacy materialized merged layout)
         # Match only by issue_id prefix; pick the newest captured meta.
         meta_paths = {
             path.resolve()
             for pattern in (
                 f"shard-*-of-*/{issue_id}_*/meta.json",
                 f"{issue_id}_*/meta.json",
+                f"issues/{issue_id}_*/meta.json",
                 f"issues/{issue_id}/meta.json",
             )
             for path in self.video_root.glob(pattern)
