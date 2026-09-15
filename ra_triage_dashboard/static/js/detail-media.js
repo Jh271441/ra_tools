@@ -849,6 +849,7 @@ function detailExternalLinksMarkup(caseData) {
   const externalLinks = caseData?.external_links || {};
   const raRecordingUrl = safeUrl(externalLinks.ra_recording_url);
   const raEventUrl = safeUrl(externalLinks.ra_event_url);
+  const disableRaSimulationUrl = safeUrl(externalLinks.disable_ra_simulation_url);
   const raEvents = Array.isArray(externalLinks.ra_events) ? externalLinks.ra_events : [];
   const aresLinkMarkup = aresUrl
     ? "<a class=\"detail-id detail-id-link detail-ares-link\" href=\"" + escapeHtml(aresUrl) + "\" target=\"_blank\" rel=\"noreferrer\" title=\"在 Ares Studio 中打开事件前后各 10 秒\">Ares Studio ↗</a>"
@@ -861,11 +862,14 @@ function detailExternalLinksMarkup(caseData) {
     : raEventUrl
       ? "<a class=\"detail-id detail-id-link detail-external-link\" href=\"" + escapeHtml(raEventUrl) + "\" target=\"_blank\" rel=\"noreferrer\" title=\"在 Trail Issue 中查看 RA Event（" + Number(externalLinks.ra_event_count || 0) + " 条）\">RA Event ↗</a>"
       : "";
-  const pending = caseData?.trail_metadata_status === "pending" && !raRecordingUrl && !raEventUrl;
+  const disableRaSimulationLinkMarkup = disableRaSimulationUrl
+    ? "<a class=\"detail-id detail-id-link detail-external-link\" href=\"" + escapeHtml(disableRaSimulationUrl) + "\" target=\"_blank\" rel=\"noreferrer\" title=\"打开屏蔽 RA 指令仿真" + (externalLinks.disable_ra_simulation_task_id ? "：" + escapeHtml(externalLinks.disable_ra_simulation_task_id) : "") + "\">屏蔽 RA 指令仿真 ↗</a>"
+    : "";
+  const pending = caseData?.trail_metadata_status === "pending" && !raRecordingUrl && !raEventUrl && !disableRaSimulationUrl;
   const pendingMarkup = pending
     ? '<span class="detail-external-status" data-trail-metadata-pending>Trail 信息加载中…</span>'
     : "";
-  return aresLinkMarkup + raRecordingLinkMarkup + raEventLinkMarkup + pendingMarkup;
+  return aresLinkMarkup + raRecordingLinkMarkup + raEventLinkMarkup + disableRaSimulationLinkMarkup + pendingMarkup;
 }
 
 function bindDetailExternalLinks(caseData) {

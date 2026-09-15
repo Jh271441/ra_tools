@@ -25,6 +25,10 @@ TRAIL_DETAIL_FIELDS = (
     "trip_id",
     "ra_start_timestamp",
     "ra_end_timestamp",
+    # Trail's production field name contains the historical ``disabe`` typo.
+    # Keep the exact source spelling at this boundary so every Issue can expose
+    # its read-only "disable RA command" simulation task when one exists.
+    "te_task_id_disabe_ra",
 )
 _detail_cache: dict[tuple[str, int, str], tuple[float, dict[str, Any]]] = {}
 _detail_cache_lock = threading.Lock()

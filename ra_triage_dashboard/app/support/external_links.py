@@ -6,7 +6,8 @@ import hashlib
 import json
 import re
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlencode, urlsplit
+
 from ..sanitization import redact_sensitive_fields
 from ..trail_sync import ares_playback_metadata
 from ..runtime import settings
@@ -19,6 +20,7 @@ def _voyager_issue_url(issue_id: str) -> str:
         f"{quote(issue_id, safe='')}?view_id={settings.voyager_issue_view_id}"
     )
 
+
 def _ra_recording_url(ra_id: Any) -> str:
     """Build the read-only RA dashboard URL from Trail's canonical ra_id."""
 
@@ -29,6 +31,20 @@ def _ra_recording_url(ra_id: Any) -> str:
         f"{settings.ra_recording_base_url.rstrip('/')}/"
         f"{quote(value, safe='')}?returnUrl="
     )
+
+
+def _disable_ra_simulation_url(task_id: Any) -> str:
+    """Build a read-only Ares Animation link from Trail's task id."""
+
+    value = _as_text(task_id)
+    if not value or not value.isdigit():
+        return ""
+    voyager = urlsplit(settings.voyager_issue_base_url)
+    if voyager.scheme not in {"http", "https"} or not voyager.netloc:
+        return ""
+    query = urlencode({"task_id": value, "task_version": "0"})
+    return f"{voyager.scheme}://{voyager.netloc}/static/ares-animation/?{query}"
+
 
 def _case_external_links(issue_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
     """Expose the small, read-only RA link/event subset to the browser."""
@@ -64,7 +80,13 @@ def _case_external_links(issue_id: str, metadata: dict[str, Any]) -> dict[str, A
     return {
         "ra_recording_url": _ra_recording_url(metadata.get("ra_id")),
         "ra_event_url": _voyager_issue_url(issue_id) if event_count else "",
+        "disable_ra_simulation_url": _disable_ra_simulation_url(
+            metadata.get("te_task_id_disabe_ra")
+        ),
         "ra_task_id": _as_text(metadata.get("ra_id")),
+        "disable_ra_simulation_task_id": _as_text(
+            metadata.get("te_task_id_disabe_ra")
+        ),
         "ra_event_count": event_count,
         "ra_events": safe_events,
         # These two allowlisted values are sufficient to construct the Ares
@@ -80,7 +102,7 @@ def _case_link_metadata_fallback(case: dict[str, Any]) -> dict[str, Any]:
     for source in (case, case.get("extra")):
         if not isinstance(source, dict):
             continue
-        for key in ("ra_id", "ra_event"):
+        for key in ("ra_id", "ra_event", "te_task_id_disabe_ra"):
             if key not in fallback and source.get(key) not in (None, "", []):
                 fallback[key] = source[key]
     return fallback

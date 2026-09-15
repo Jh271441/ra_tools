@@ -10,6 +10,10 @@ from ra_triage_dashboard.app.trail_sync import (
     ares_playback_metadata,
     read_trail_issue_metadata,
 )
+from ra_triage_dashboard.app.support.external_links import (
+    _case_external_links,
+    _case_link_metadata_fallback,
+)
 
 
 class _Frame:
@@ -21,6 +25,7 @@ class _Frame:
         "trip_id",
         "ra_start_timestamp",
         "ra_end_timestamp",
+        "te_task_id_disabe_ra",
         "ra_stuck_auto_result_info",
         "unrelated_secret_field",
     ]
@@ -42,6 +47,7 @@ class _Frame:
                 "trip_id": "10350_20260511_204156",
                 "ra_start_timestamp": 1778504337849,
                 "ra_end_timestamp": 1778504346456,
+                "te_task_id_disabe_ra": 4515392300000101,
                 "ra_stuck_auto_result_info": {
                     "ra_triage_dashboard": {"should_exclude": True},
                     "unrelated": "must-not-leak",
@@ -79,6 +85,7 @@ class TrailDetailMetadataTest(unittest.TestCase):
 
         self.assertEqual(metadata["ra_id"], "10350_1119_1778504337830_100")
         self.assertEqual(metadata["car_id"], "10350")
+        self.assertEqual(metadata["te_task_id_disabe_ra"], "4515392300000101")
         self.assertEqual(metadata["ra_event"][0]["event"], "start")
         self.assertTrue(metadata["dashboard_should_exclude"])
         self.assertNotIn("unrelated_secret_field", metadata)
@@ -86,6 +93,29 @@ class TrailDetailMetadataTest(unittest.TestCase):
         playback = ares_playback_metadata(metadata, metadata["ra_event"])
         self.assertEqual(playback["ares_trip_id"], "10350_20260511_204156")
         self.assertEqual(playback["ares_timestamp_ms"], 1778504337849)
+
+        external_links = _case_external_links("cn31842459", metadata)
+        self.assertEqual(
+            external_links["disable_ra_simulation_url"],
+            "https://voyager.intra.xiaojukeji.com/static/ares-animation/"
+            "?task_id=4515392300000101&task_version=0",
+        )
+        self.assertEqual(
+            external_links["disable_ra_simulation_task_id"],
+            "4515392300000101",
+        )
+
+    def test_invalid_disable_ra_task_id_does_not_create_external_link(self) -> None:
+        external_links = _case_external_links(
+            "cn31842459", {"te_task_id_disabe_ra": "javascript:alert(1)"}
+        )
+        self.assertEqual(external_links["disable_ra_simulation_url"], "")
+
+    def test_imported_disable_ra_task_id_is_available_as_fallback(self) -> None:
+        metadata = _case_link_metadata_fallback(
+            {"extra": {"te_task_id_disabe_ra": "4515392300000101"}}
+        )
+        self.assertEqual(metadata["te_task_id_disabe_ra"], "4515392300000101")
 
     def test_start_event_is_ares_timestamp_fallback(self) -> None:
         playback = ares_playback_metadata(
