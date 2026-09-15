@@ -901,6 +901,10 @@ async function loadDeferredCaseMedia(issueId, requestSeq) {
     if (!isCurrent()) return;
     if (videoResult.value?.assets?.video?.url) {
       mergeMedia(videoResult.value);
+      const video = state.selectedCase.assets.video;
+      if (!video.poster_url && state.selectedCase.preview_thumbnail_url) {
+        video.poster_url = state.selectedCase.preview_thumbnail_url;
+      }
       state.selectedCase.media_status = "ready";
       hydrated = hydrateDetailMedia(state.selectedCase);
     }
