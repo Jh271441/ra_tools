@@ -260,6 +260,103 @@ class WorkSplitTest(unittest.TestCase):
             self.assertEqual(sum(item["issue_count"] for item in scoped), 4)
             self.assertEqual(db.list_work_assignees(issue_ids=[]), [])
 
+    def test_work_split_management_reports_progress_and_reassigns_pending_tasks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "work-management.sqlite")
+            db.init()
+            now = "2026-08-04T00:00:00+00:00"
+            with db._write_lock, db.connect() as conn:
+                for index in range(4):
+                    conn.execute(
+                        """
+                        INSERT INTO issues (
+                            issue_id, trip_id, title, scenario, summary, review_note,
+                            trail_url, gt_label, gt_source, source, baseline_scope,
+                            extra_json, created_at, updated_at
+                        ) VALUES (?, '', ?, '', '', '', '', '误触发', 'test', 'test',
+                                  'scope', '{}', ?, ?)
+                        """,
+                        (f"cn{index}", f"Issue {index}", now, now),
+                    )
+            assignments = distribute_issue_ids(
+                [f"cn{i}" for i in range(4)],
+                [{"name": "alice"}, {"name": "bob"}],
+                seed=9,
+            )
+            saved = db.apply_work_split(
+                assignments=assignments,
+                created_by="admin",
+                seed=9,
+                model_run_id="",
+                filter_snapshot={"baselines": "0821", "comparison_status": "mismatch"},
+            )
+            completed_issue = assignments[0]["issue_ids"][0]
+            db.create_annotation(
+                issue_id=completed_issue,
+                model_run_id="",
+                work_split_id="",
+                label="误触发",
+                review_status="reviewed",
+                tags=[],
+                missing_evidence=[],
+                note="done",
+                author=assignments[0]["name"],
+                expected_previous_annotation_id=None,
+            )
+
+            batches = db.list_review_work_splits()
+            self.assertEqual(len(batches), 1)
+            batch = batches[0]
+            self.assertEqual(batch["total_count"], 4)
+            self.assertEqual(batch["assignment_count"], 4)
+            self.assertEqual(batch["completed_count"], 1)
+            self.assertEqual(batch["pending_count"], 3)
+            self.assertEqual(sum(item["completed_count"] for item in batch["members"]), 1)
+
+            detail = db.get_review_work_split(saved["split_id"], page_size=20)
+            self.assertIsNotNone(detail)
+            assert detail is not None
+            self.assertEqual(detail["total"], 4)
+            self.assertEqual(sum(bool(item["submitted"]) for item in detail["items"]), 1)
+            pending = next(item for item in detail["items"] if not item["submitted"])
+            old_assignee = pending["assignee"]
+            new_assignee = "bob" if old_assignee == "alice" else "alice"
+            changed = db.reassign_review_work_assignment(
+                split_id=saved["split_id"],
+                issue_id=pending["issue_id"],
+                assignee=new_assignee,
+                changed_by="admin",
+            )
+            self.assertTrue(changed["changed"])
+            updated = db.get_review_work_split(saved["split_id"], page_size=20)
+            assert updated is not None
+            updated_item = next(item for item in updated["items"] if item["issue_id"] == pending["issue_id"])
+            self.assertEqual(updated_item["assignee"], new_assignee)
+            self.assertEqual(updated["change_count"], 1)
+            with self.assertRaisesRegex(ValueError, "已提交"):
+                db.reassign_review_work_assignment(
+                    split_id=saved["split_id"],
+                    issue_id=completed_issue,
+                    assignee=new_assignee,
+                    changed_by="admin",
+                )
+            db.apply_work_split(
+                assignments=[{"name": "bob", "issue_ids": [f"cn{i}" for i in range(4)]}],
+                created_by="admin",
+                model_run_id="",
+            )
+            history = next(
+                item
+                for item in db.list_review_work_splits()
+                if item["split_id"] == saved["split_id"]
+            )
+            self.assertFalse(history["is_current"])
+            self.assertEqual(history["completed_count"], 1)
+            old_detail = db.get_review_work_split(saved["split_id"], page_size=20)
+            assert old_detail is not None
+            self.assertEqual(old_detail["total"], 4)
+            self.assertEqual(sum(bool(item["submitted"]) for item in old_detail["items"]), 1)
+
     def test_multi_assignment_and_reviews_are_scoped_per_reviewer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "blind.sqlite")

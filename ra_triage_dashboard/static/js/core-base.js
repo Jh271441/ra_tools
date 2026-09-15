@@ -547,6 +547,11 @@ const PAGE_ROUTES = {
     titleZh: "判错复核",
     titleEn: "Manual Triage Review",
   },
+  "review-assignments": {
+    path: "/review-assignments",
+    titleZh: "任务分配",
+    titleEn: "Review Assignments",
+  },
   intent: {
     path: "/intent-labeling",
     titleZh: "意图标注",
@@ -734,6 +739,20 @@ const state = {
     data: null,
     comparisonStatus: "mismatch",
     workAgreement: "all",
+  },
+  reviewAssignments: {
+    splits: [],
+    selectedSplitId: "",
+    detail: null,
+    page: 1,
+    pageSize: 50,
+    assignee: "",
+    status: "all",
+    query: "",
+    requestSeq: 0,
+    detailRequestSeq: 0,
+    loading: false,
+    detailLoading: false,
   },
   analysisDiscussion: null,
   trailUpdate: {

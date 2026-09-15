@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 from pathlib import Path
 from typing import Any
@@ -36,7 +37,7 @@ from ..support.filter_parsing import _case_filter_kwargs
 from ..support.identity import _admin_identity
 from ..support.thumbnails import _render_case_thumbnail, _thumbnail_cache_path
 from ..review_workflow import derive_review_status, effective_expected_output
-from ..auth import SessionIdentity, request_identity
+from ..auth import SessionIdentity, normalise_username, request_identity
 from ..runtime import (
     asset_index,
     baseline_registry,
@@ -461,6 +462,103 @@ async def work_assignees(
     }
 
 
+@router.get("/api/cases/work-splits")
+async def list_case_work_splits(
+    request: Request,
+    limit: int = 50,
+    model_run_id: str = "",
+) -> dict[str, Any]:
+    """Admin-only history and progress for Review task allocations."""
+
+    await asyncio.to_thread(_admin_identity, request)
+    items = await asyncio.to_thread(
+        database.list_review_work_splits,
+        limit=max(1, min(int(limit or 50), 100)),
+        model_run_id=_as_text(model_run_id),
+    )
+    return {"items": items, "change_revision": await asyncio.to_thread(database.change_revision)}
+
+
+@router.get("/api/cases/work-splits/{split_id}")
+async def get_case_work_split(
+    split_id: str,
+    request: Request,
+    page: int = 1,
+    page_size: int = 50,
+    assignee: str = "",
+    status: str = "all",
+    q: str = "",
+) -> dict[str, Any]:
+    """Admin-only paginated task detail for one allocation batch."""
+
+    await asyncio.to_thread(_admin_identity, request)
+    try:
+        result = await asyncio.to_thread(
+            database.get_review_work_split,
+            split_id,
+            page=max(1, int(page or 1)),
+            page_size=max(10, min(int(page_size or 50), 100)),
+            assignee=_as_text(assignee),
+            status=_as_text(status),
+            query=_as_text(q),
+        )
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    if result is None:
+        raise _detail(404, "分配批次不存在。")
+    return result
+
+
+@router.patch("/api/cases/work-splits/{split_id}/assignments/{issue_id}")
+async def reassign_case_work_item(
+    split_id: str,
+    issue_id: str,
+    request: Request,
+) -> dict[str, Any]:
+    """Admin-only transfer of one unfinished Review task."""
+
+    identity = await asyncio.to_thread(_admin_identity, request)
+    if not ISSUE_ID_RE.fullmatch(issue_id):
+        raise _detail(404, "Issue 不存在。")
+    raw = await request.body()
+    if len(raw) > 8 * 1024:
+        raise _detail(413, "任务调整请求过大。")
+    try:
+        body = json.loads(raw)
+    except (TypeError, ValueError, UnicodeDecodeError) as exc:
+        raise _detail(400, "任务调整请求必须是 JSON。") from exc
+    if not isinstance(body, dict):
+        raise _detail(400, "任务调整请求必须是 JSON 对象。")
+    assignee = normalise_username(str(body.get("assignee") or "")).lower()
+    if not assignee:
+        raise _detail(400, "新负责人账号格式非法。")
+    access_users = await asyncio.to_thread(database.list_access_users)
+    eligible = {str(item.get("username") or "").strip().lower() for item in access_users}
+    if assignee not in eligible:
+        raise _detail(400, "新负责人不在 Dashboard 用户列表中。")
+    try:
+        change = await asyncio.to_thread(
+            database.reassign_review_work_assignment,
+            split_id=split_id,
+            issue_id=issue_id,
+            assignee=assignee,
+            changed_by=identity.username,
+        )
+    except ValueError as exc:
+        raise _detail(409, str(exc)) from exc
+    detail = await asyncio.to_thread(
+        database.get_review_work_split,
+        split_id,
+        page=1,
+        page_size=50,
+    )
+    return {
+        "change": change,
+        "split": detail,
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
 
 @router.post("/api/cases/work-split")
 async def split_case_work(request: Request) -> dict[str, Any]:
@@ -698,7 +796,7 @@ async def get_case_media(issue_id: str, kind: str = "all") -> dict[str, Any]:
     then attach video/BEV/camera when their indexes finish scanning.
     """
 
-    if kind not in {"all", "images", "bev"}:
+    if kind not in {"all", "images", "bev", "video"}:
         raise _detail(400, "不支持的媒体模式。")
     case = await asyncio.to_thread(database.get_issue, issue_id)
     if case is None:
@@ -707,6 +805,13 @@ async def get_case_media(issue_id: str, kind: str = "all") -> dict[str, Any]:
     if provider is None:
         assets, camera = empty_case_media(issue_id)
         status = "unavailable"
+    elif kind == "video":
+        assets, camera = empty_case_media(issue_id)
+        video = await asyncio.to_thread(provider.get_video, issue_id)
+        if video is not None:
+            assets["video"] = video
+            assets["available"] = True
+        status = "ready"
     elif kind != "all":
         assets = await asyncio.to_thread(provider.get_assets, issue_id)
         assets = {k: v for k, v in assets.items() if k != "video"}

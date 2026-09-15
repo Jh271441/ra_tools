@@ -73,6 +73,8 @@ function renderSession() {
     : "write";
   const userManagementNav = $("#userManagementNavButton");
   if (userManagementNav) userManagementNav.hidden = !state.session.is_admin;
+  const reviewAssignmentsNav = $("#reviewAssignmentsNavButton");
+  if (reviewAssignmentsNav) reviewAssignmentsNav.hidden = !state.session.is_admin;
   // The head script replays the last server-confirmed intent access before the
   // first paint. Language/theme rendering runs before /api/session resolves,
   // so an absent capability must not be coerced to false and briefly collapse

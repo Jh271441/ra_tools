@@ -154,6 +154,17 @@ async def intent_labeling_page(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/review-assignments", include_in_schema=False)
+async def review_assignments_page(request: Request) -> HTMLResponse:
+    """Serve the administrator-only Review assignment management page."""
+
+    await asyncio.to_thread(_admin_identity, request)
+    return HTMLResponse(
+        content=INDEX_HTML,
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
 @router.get("/intent-experiments", include_in_schema=False)
 @router.get("/intent-summary", include_in_schema=False)
 async def intent_experiments_page(request: Request) -> HTMLResponse:

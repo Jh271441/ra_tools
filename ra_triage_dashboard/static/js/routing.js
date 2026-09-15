@@ -79,6 +79,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
     "renderAnalysisCatalogFilters",
     "renderReviewerFilter",
     "renderWorkAssigneeFilter",
+    "renderReviewAssignmentPage",
     "renderTrailAttributeRunPicker",
     "renderTrailUpdateFilters",
   ];
@@ -463,6 +464,7 @@ function parsePageRoute() {
       ? Number.parseInt(params.get("page_size") || "20", 10) : 20,
     intentSummaryAxis: ["routing", "lane_change"].includes(params.get("axis")) ? params.get("axis") : "all",
     intentSummaryCommentQuery: (params.get("q") || "").trim().slice(0, 80),
+    reviewAssignmentSplitId: String(params.get("split") || "").trim(),
     // Issue / GT 上传已从页面移除；旧链接统一落到安全的模型结果导入区。
     importKind:
       params.get("import") === "model" ||
@@ -864,6 +866,7 @@ function showPage(
     intentOffsetMs = null,
     intentAssignees = null,
     intentExperimentId = "",
+    reviewAssignmentSplitId = "",
   } = {}
 ) {
   const target = PAGE_ROUTES[page] ? page : "review";
@@ -903,6 +906,12 @@ function showPage(
       return showPage("review", { historyMode: historyMode || "replace" });
     }
   }
+  if (target === "review-assignments") {
+    if (!state.session.identity_pending && !state.session.is_admin) {
+      showToast(uiText("当前账号没有任务分配管理权限。", "Review assignment management requires admin access."), true);
+      return showPage("review", { historyMode: historyMode || "replace" });
+    }
+  }
   if (target === "prediction") {
     const issueIds = issues.length ? issues : issue ? [issue] : [];
     ensurePredictionBatchName();
@@ -931,6 +940,17 @@ function showPage(
       offsetMs: intentOffsetMs,
       assignees: intentAssignees,
       experimentId: intentExperimentId,
+    }).catch((error) => showToast(error.message, true));
+  }
+  if (target === "review-assignments" && loadPageData && typeof loadReviewAssignments === "function") {
+    if (!reviewAssignmentSplitId) {
+      state.reviewAssignments.selectedSplitId = "";
+      state.reviewAssignments.detail = null;
+      state.reviewAssignments.detailLoading = false;
+    }
+    loadReviewAssignments({
+      splitId: reviewAssignmentSplitId,
+      force: true,
     }).catch((error) => showToast(error.message, true));
   }
   if (target === "intent-experiments" && loadPageData && typeof loadIntentExperimentAdmin === "function") {

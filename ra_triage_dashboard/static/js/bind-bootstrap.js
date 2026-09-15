@@ -174,6 +174,7 @@ function bindEvents() {
   bindGlobalSidebarShortcut();
   if (typeof bindIntentLabelingEvents === "function") bindIntentLabelingEvents();
   bindWorkSplitControls();
+  if (typeof bindReviewAssignmentsPage === "function") bindReviewAssignmentsPage();
   if (typeof bindRunComparisonEvents === "function") bindRunComparisonEvents();
   if (typeof bindIssueQueryControls === "function") bindIssueQueryControls();
   document.querySelectorAll("[data-page-target]").forEach((element) => {
@@ -932,6 +933,7 @@ function bindEvents() {
         intentExperimentId: route.intentExperimentId,
         intentCaseId: route.intentCaseId,
         intentOffsetMs: route.intentOffsetMs,
+        reviewAssignmentSplitId: route.reviewAssignmentSplitId,
       });
       if (
         route.page === "intent"
@@ -1040,16 +1042,22 @@ async function bootstrap() {
     intentOffsetMs: initialRoute.intentOffsetMs,
     intentAssignees: initialRoute.intentAssignees,
     intentExperimentId: initialRoute.intentExperimentId,
+    reviewAssignmentSplitId: initialRoute.reviewAssignmentSplitId,
   });
   const sessionRequest = resolveSessionInBackground();
   try {
     await settleInitialRequests([loadConfig()], "基础配置");
-    if (["users", "intent", "intent-experiments", "intent-summary"].includes(initialRoute.page)) {
+    const intentAccessPages = ["users", "intent", "intent-experiments", "intent-summary"];
+    if (intentAccessPages.includes(initialRoute.page) || initialRoute.page === "review-assignments") {
       await sessionRequest;
     }
     if (initialRoute.page === "users" && !state.session.is_admin) {
       initialRoute.page = "review";
       showToast(t("toast.admin_only"), true);
+    }
+    if (initialRoute.page === "review-assignments" && !state.session.is_admin) {
+      initialRoute.page = "review";
+      showToast("当前账号没有任务分配管理权限。", true);
     }
     if (initialRoute.page === "intent-experiments" && !state.session.can_view_intent) {
       initialRoute.page = "review";
@@ -1143,6 +1151,10 @@ async function bootstrap() {
       initialPageRequests.push(loadPredictionConfig(), loadPredictionBatches());
     } else if (initialRoute.page === "comparison") {
       initialPageRequests.push(loadRunComparison({ historyMode: "" }));
+    } else if (initialRoute.page === "review-assignments") {
+      initialPageRequests.push(loadAccessUsers(), loadReviewAssignments({
+        splitId: initialRoute.reviewAssignmentSplitId,
+      }));
     } else if (initialRoute.page === "intent") {
       initialPageRequests.push(loadIntentLabeling({
         datasetId: initialRoute.intentDatasetId,
@@ -1215,6 +1227,7 @@ async function bootstrap() {
       intentOffsetMs: initialRoute.intentOffsetMs,
       intentAssignees: initialRoute.intentAssignees,
       intentExperimentId: initialRoute.intentExperimentId,
+      reviewAssignmentSplitId: initialRoute.reviewAssignmentSplitId,
     });
     if (
       initialRoute.page === "intent"

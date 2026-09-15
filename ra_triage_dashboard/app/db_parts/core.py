@@ -739,6 +739,18 @@ class DatabaseCoreMixin:
                 CREATE INDEX IF NOT EXISTS idx_review_work_assignments_issue
                     ON review_work_assignments(issue_id, split_id);
 
+                CREATE TABLE IF NOT EXISTS review_work_assignment_changes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    split_id TEXT NOT NULL REFERENCES issue_work_splits(id) ON DELETE RESTRICT,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE CASCADE,
+                    from_assignee TEXT NOT NULL,
+                    to_assignee TEXT NOT NULL,
+                    changed_by TEXT NOT NULL DEFAULT '',
+                    changed_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_review_work_assignment_changes_split
+                    ON review_work_assignment_changes(split_id, changed_at DESC);
+
                 CREATE TABLE IF NOT EXISTS issue_work_assignments (
                     issue_id TEXT PRIMARY KEY REFERENCES issues(issue_id) ON DELETE CASCADE,
                     assignee TEXT NOT NULL DEFAULT '',
@@ -980,6 +992,7 @@ class DatabaseCoreMixin:
                 "issue_work_splits",
                 "issue_work_assignments",
                 "review_work_assignments",
+                "review_work_assignment_changes",
                 "intent_label_revisions",
                 "intent_frame_overrides",
                 "intent_label_heads",

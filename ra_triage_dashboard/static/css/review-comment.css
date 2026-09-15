@@ -837,6 +837,8 @@ html[data-color-theme="light"] .detail-queue-index-input {
   display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
   color: var(--muted); font-size: 12px;
 }
+.work-split-results-heading > span { min-width: 0; flex: 1 1 auto; }
+.work-split-results-heading .button { min-height: 28px; padding: 4px 8px; font-size: 10px; }
 .work-split-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
 .work-split-card {
   display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #0d121b;
@@ -850,6 +852,85 @@ html[data-color-theme="light"] .detail-queue-index-input {
 }
 .work-split-card-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .gallery-clear-split { margin-left: 6px; min-height: 24px; padding: 2px 8px; font-size: 11px; }
+
+/* Review assignment management page. */
+.review-assignments-page { width: min(1480px, 100%); display: grid; gap: 12px; margin: 0 auto; }
+.review-assignments-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.review-assignments-header > div:first-child { min-width: 0; display: grid; gap: 5px; }
+.review-assignments-eyebrow { color: var(--accent); font-size: 9px; font-weight: 800; letter-spacing: .12em; }
+.review-assignments-header h2 { color: var(--text); font-size: 21px; }
+.review-assignments-header p { max-width: 760px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.review-assignments-header-actions { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: 7px; }
+.review-assignment-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.review-assignment-metric { min-width: 0; display: grid; gap: 5px; padding: 13px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--raised); }
+.review-assignment-metric small { color: var(--faint); font-size: 10px; }
+.review-assignment-metric strong { color: var(--text); font-size: 22px; line-height: 1; font-variant-numeric: tabular-nums; }
+.review-assignment-metric span { color: var(--muted); font-size: 10px; }
+.review-assignment-section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 13px; }
+.review-assignment-section-heading > div { min-width: 0; display: grid; gap: 4px; }
+.review-assignment-section-heading h2 { color: var(--text); font-size: 17px; }
+.review-assignment-section-heading p { color: var(--muted); font-size: 11px; line-height: 1.45; }
+.review-assignment-section-heading > small { color: var(--faint); font-size: 10px; }
+.review-assignment-list-card, .review-assignment-detail-card { min-width: 0; }
+.review-assignment-list { display: grid; gap: 10px; }
+.review-assignment-empty { display: grid; justify-items: center; gap: 7px; padding: 38px 14px; border: 1px dashed var(--line); border-radius: 9px; color: var(--muted); font-size: 12px; text-align: center; }
+.review-assignment-batch { display: grid; gap: 12px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--overlay); }
+.review-assignment-batch-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.review-assignment-batch-header > div:first-child { min-width: 0; display: grid; gap: 4px; }
+.review-assignment-batch-title { overflow: hidden; color: var(--text); font-size: 13px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+.review-assignment-batch-meta { color: var(--faint); font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
+.review-assignment-status { flex: 0 0 auto; padding: 4px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--raised); font-size: 10px; white-space: nowrap; }
+.review-assignment-status.is-current { border-color: rgba(52,211,153,.35); color: var(--ok); background: rgba(52,211,153,.08); }
+.review-assignment-status.is-superseded { border-color: rgba(148,163,184,.28); color: var(--faint); }
+.review-assignment-progress { display: grid; gap: 7px; }
+.review-assignment-progress-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 10px; }
+.review-assignment-progress-heading strong { color: var(--text); font-size: 11px; font-variant-numeric: tabular-nums; }
+.review-assignment-progress-track { height: 6px; overflow: hidden; border-radius: 999px; background: var(--overlay-2); }
+.review-assignment-progress-track > span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width 180ms ease-out; }
+.review-assignment-member-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 7px; }
+.review-assignment-member { min-width: 0; display: grid; gap: 5px; padding: 8px 9px; border: 1px solid var(--line-soft); border-radius: 7px; background: rgba(8, 13, 21, .35); }
+.review-assignment-member-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.review-assignment-member-heading strong { overflow: hidden; color: #dce8f2; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.review-assignment-member-heading span { flex: 0 0 auto; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.review-assignment-member small { color: var(--faint); font-size: 9px; }
+.review-assignment-batch-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 1px; }
+.review-assignment-batch-footer > span { color: var(--faint); font-size: 10px; }
+.review-assignment-batch-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.review-assignment-detail-filters { display: grid; grid-template-columns: 220px 180px minmax(220px, 1fr); gap: 10px; margin-bottom: 12px; }
+.review-assignment-detail-filters label { min-width: 0; display: grid; gap: 5px; color: var(--muted); font-size: 10px; }
+.review-assignment-detail-filters input { min-width: 0; height: 34px; padding: 7px 9px; font-size: 12px; }
+.review-assignment-detail-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; color: var(--muted); font-size: 11px; }
+.review-assignment-page-jump-control { display: inline-flex; align-items: center; gap: 5px; margin-left: 5px; color: var(--faint); font-size: 10px; white-space: nowrap; }
+.review-assignment-page-jump-control input { width: 48px; height: 30px; margin: 0; padding: 4px 6px; border: 1px solid var(--line); border-radius: 7px; color: var(--text); background: #0e131c; font: 11px "SFMono-Regular", Consolas, monospace; text-align: center; -moz-appearance: textfield; }
+.review-assignment-page-jump-control input::-webkit-outer-spin-button, .review-assignment-page-jump-control input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.review-assignment-page-jump-control input:hover:not(:disabled), .review-assignment-page-jump-control input:focus { border-color: rgba(34,211,239,.55); outline: none; }
+.review-assignment-page-jump-control .button { min-width: 44px; height: 30px; padding: 4px 9px; font-size: 10px; }
+.review-assignment-summary-chip { padding: 4px 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--overlay); font-size: 10px; }
+.review-assignment-summary-chip.is-complete { border-color: rgba(52,211,153,.3); color: var(--ok); background: rgba(52,211,153,.07); }
+.review-assignment-summary-chip.is-pending { border-color: rgba(251,191,36,.32); color: var(--warn); background: rgba(251,191,36,.07); }
+.review-assignment-table-scroll { max-height: min(62vh, 720px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: #0b1018; }
+.review-assignment-table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 11px; }
+.review-assignment-table th, .review-assignment-table td { padding: 9px 10px; border-bottom: 1px solid var(--line-soft); text-align: left; vertical-align: middle; }
+.review-assignment-table th { position: sticky; top: 0; z-index: 1; color: #c5d8e8; background: #131b28; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.review-assignment-table td { color: var(--muted); }
+.review-assignment-table td:first-child { color: var(--text); font-weight: 650; }
+.review-assignment-issue-link { color: var(--accent); text-decoration: none; }
+.review-assignment-issue-link:hover { color: #b9f5fb; text-decoration: underline; text-underline-offset: 2px; }
+.review-assignment-issue-meta { display: block; max-width: 280px; overflow: hidden; color: var(--faint); font-size: 9px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.review-assignment-task-status { display: inline-flex; padding: 3px 6px; border: 1px solid var(--line); border-radius: 999px; color: var(--faint); background: var(--overlay); font-size: 9px; white-space: nowrap; }
+.review-assignment-task-status.is-complete { border-color: rgba(52,211,153,.3); color: var(--ok); background: rgba(52,211,153,.07); }
+.review-assignment-task-status.is-pending { border-color: rgba(251,191,36,.3); color: var(--warn); background: rgba(251,191,36,.07); }
+.review-assignment-person-picker { min-width: 150px; }
+.review-assignment-person-picker .ui-select-trigger { min-height: 32px; height: 32px; padding: 5px 8px; font-size: 11px; }
+.review-assignment-save { min-height: 32px; padding: 5px 8px; font-size: 10px; }
+.review-assignment-save:disabled { opacity: .6; }
+.review-assignment-locked { color: var(--faint); font-size: 10px; white-space: nowrap; }
+.review-assignment-change-log { margin-top: 13px; border-top: 1px solid var(--line-soft); padding-top: 10px; }
+.review-assignment-change-log > summary { color: var(--muted); cursor: pointer; font-size: 11px; }
+.review-assignment-change-log > div { display: grid; gap: 5px; max-height: 190px; overflow: auto; padding-top: 9px; }
+.review-assignment-change-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 6px 8px; border: 1px solid var(--line-soft); border-radius: 6px; color: var(--muted); background: var(--overlay); font-size: 10px; }
+.review-assignment-change-row strong { color: var(--text); }
+.review-assignment-change-row small { color: var(--faint); white-space: nowrap; }
 .review-tag-create-form { display: grid; gap: 12px; }
 .review-tag-create-form label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; }
 .review-tag-create-form input[type="text"] { height: 36px; padding: 8px 10px; font-size: 13px; }

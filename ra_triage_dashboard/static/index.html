@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-418`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-420`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -105,6 +105,12 @@
               <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="3.5" y="4.5" width="17" height="16" rx="3"/><path d="M8 4h8M9 3v3m6-3v3M7 5H5.8A1.8 1.8 0 0 0 4 6.8v11.4A1.8 1.8 0 0 0 5.8 20h12.4a1.8 1.8 0 0 0 1.8-1.8V6.8A1.8 1.8 0 0 0 18.2 5H17"/><path class="icon-emphasis" d="m8 12 2.1 2.1L16.4 8.8"/><path d="M8 17h8"/></svg>
             </span>
             <span class="sidebar-label"><strong class="ui-lang-zh">判错复核</strong><strong class="ui-lang-en">Failure review</strong></span>
+          </a>
+          <a class="sidebar-item" id="reviewAssignmentsNavButton" data-page-target="review-assignments" data-app-path="/review-assignments" href="/review-assignments" title="任务分配" hidden>
+            <span class="sidebar-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="4" y="4" width="16" height="16" rx="3"/><path d="M8 8h8M8 12h5M8 16h8"/><path class="icon-emphasis" d="m14 12 2 2 4-5"/></svg>
+            </span>
+            <span class="sidebar-label"><strong class="ui-lang-zh">任务分配</strong><strong class="ui-lang-en">Assignments</strong></span>
           </a>
           <div class="sidebar-group-label sidebar-label intent-group-label" hidden>意图标注</div>
           <a class="sidebar-item" id="intentLabelingNavButton" data-page-target="intent" data-app-path="/intent-labeling" href="/intent-labeling" title="意图标注" hidden>
@@ -352,6 +358,43 @@
                   </div>
                 </aside>
               </section>
+            </section>
+          </section>
+
+          <section class="app-page review-assignments-page hidden" id="reviewAssignmentsPage" data-page="review-assignments">
+            <section class="review-assignments-header page-card">
+              <div>
+                <span class="review-assignments-eyebrow">REVIEW WORK MANAGEMENT</span>
+                <h2><span class="ui-lang-zh">任务分配</span><span class="ui-lang-en">Review assignments</span></h2>
+                <p><span class="ui-lang-zh">集中查看均分批次、人员进度和待处理 Issue；可对未提交的任务进行转派。</span><span class="ui-lang-en">View split batches, member progress, and pending Issues in one place; unfinished tasks can be reassigned.</span></p>
+              </div>
+              <div class="review-assignments-header-actions">
+                <button class="button button-quiet" id="reviewAssignmentsGoReview" type="button"><span class="ui-lang-zh">去 Review 创建分配</span><span class="ui-lang-en">Create from Review</span></button>
+                <button class="button button-quiet" id="reviewAssignmentsRefresh" type="button"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
+              </div>
+            </section>
+            <section class="review-assignment-metrics" id="reviewAssignmentMetrics" aria-label="任务分配概览"></section>
+            <section class="page-card review-assignment-list-card">
+              <header class="review-assignment-section-heading">
+                <div><span class="review-assignments-eyebrow">ALLOCATION HISTORY</span><h2><span class="ui-lang-zh">分配批次</span><span class="ui-lang-en">Allocation batches</span></h2></div>
+                <small id="reviewAssignmentListStatus" aria-live="polite"></small>
+              </header>
+              <div class="review-assignment-list" id="reviewAssignmentList"><div class="review-assignment-empty"><span class="ui-lang-zh">正在加载任务分配。</span><span class="ui-lang-en">Loading assignments.</span></div></div>
+            </section>
+            <section class="page-card review-assignment-detail-card" id="reviewAssignmentDetail" hidden>
+              <header class="review-assignment-section-heading">
+                <div><span class="review-assignments-eyebrow">TASK DETAIL</span><h2 id="reviewAssignmentDetailTitle">任务明细</h2><p id="reviewAssignmentDetailMeta"></p></div>
+                <button class="button button-quiet" id="reviewAssignmentDetailClose" type="button"><span class="ui-lang-zh">收起明细</span><span class="ui-lang-en">Close detail</span></button>
+              </header>
+              <div class="review-assignment-detail-filters">
+                <label><span class="ui-lang-zh">负责人</span><span class="ui-lang-en">Assignee</span><div class="ui-select" id="reviewAssignmentAssigneePicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">全部负责人</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="reviewAssignmentAssigneeFilter" aria-hidden="true" tabindex="-1"></select></div></label>
+                <label><span class="ui-lang-zh">任务状态</span><span class="ui-lang-en">Task status</span><div class="ui-select" id="reviewAssignmentStatusPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">全部任务</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="reviewAssignmentStatusFilter" aria-hidden="true" tabindex="-1"></select></div></label>
+                <label class="review-assignment-search"><span class="ui-lang-zh">搜索 Issue</span><span class="ui-lang-en">Search Issue</span><input id="reviewAssignmentSearch" type="search" maxlength="128" autocomplete="off" placeholder="Issue ID / 场景"/></label>
+              </div>
+              <div class="review-assignment-detail-summary" id="reviewAssignmentDetailSummary"></div>
+              <div class="table-scroll review-assignment-table-scroll"><table class="review-assignment-table"><thead><tr><th>Issue</th><th>负责人</th><th>类型</th><th>状态</th><th>提交时间</th><th>任务调整</th></tr></thead><tbody id="reviewAssignmentDetailRows"></tbody></table></div>
+              <nav class="case-pagination gallery-pagination review-assignment-pagination" aria-label="任务明细分页"><div class="case-pagination-main"><button class="button button-quiet" id="reviewAssignmentPrevious" type="button">上一页</button><span id="reviewAssignmentPageState">1 / 1</span><button class="button button-quiet" id="reviewAssignmentNext" type="button">下一页</button><span class="review-assignment-page-jump-control"><label for="reviewAssignmentPageJump">跳至</label><input id="reviewAssignmentPageJump" type="number" min="1" step="1" inputmode="numeric" aria-label="跳至任务页"/><span>页</span><button class="button button-quiet" id="reviewAssignmentPageJumpButton" type="button">跳转</button></span></div><label class="case-page-size" for="reviewAssignmentPageSize"><span>每页</span><select id="reviewAssignmentPageSize" aria-label="每页数量"><option value="10">10</option><option value="20">20</option><option value="50" selected>50</option><option value="100">100</option></select><span>条</span></label></nav>
+              <details class="review-assignment-change-log"><summary><span class="ui-lang-zh">最近的转派记录</span><span class="ui-lang-en">Recent reassignment history</span></summary><div id="reviewAssignmentChangeLog"></div></details>
             </section>
           </section>
 
@@ -1948,7 +1991,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-418`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-420`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

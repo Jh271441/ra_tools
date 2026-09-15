@@ -654,6 +654,13 @@ async function refreshChangedDataNow() {
     if (state.session.is_admin) await loadRunComparison();
     return;
   }
+  if (state.activePage === "review-assignments") {
+    await loadReviewAssignments({
+      force: true,
+      splitId: state.reviewAssignments?.selectedSplitId || "",
+    });
+    return;
+  }
   if (state.activePage === "trail-update") {
     // Shared change-revision polling must not refresh Trail status behind the
     // operator's back. The top-bar Refresh button is the explicit refresh

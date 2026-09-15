@@ -403,6 +403,7 @@ function renderWorkSplitResults(payload) {
     <div class="work-split-results-heading">
       <strong>${escapeHtml(t("work.result_title"))}</strong>
       <span>${escapeHtml(t("work.result_meta", { n: Number(payload.total || 0), seed: payload.split_id || "" }))} · ${escapeHtml(t("work.task_count", { n: Number(payload.assignment_count || payload.total || 0) }))} · ${escapeHtml(reviewers > 1 ? t("work.cross_ratio", { n: Math.round(overlapRatio * 100) }) : t("work.single_review"))}${payload.truncated ? escapeHtml(t("work.truncated")) : ""}</span>
+      <button class="button button-quiet" type="button" data-open-review-assignments="${escapeHtml(payload.split_id || "")}">${escapeHtml(uiText("打开任务管理", "Open assignment manager"))}</button>
     </div>
     <div class="work-split-card-grid">${cards}</div>
   `;
@@ -559,6 +560,15 @@ function bindWorkSplitControls() {
     generateWorkSplit().catch((error) => showToast(error.message, true));
   });
   $("#workSplitResults")?.addEventListener("click", (event) => {
+    const manage = event.target.closest("[data-open-review-assignments]");
+    if (manage) {
+      const splitId = manage.dataset.openReviewAssignments || "";
+      if (splitId) {
+        state.reviewAssignments.selectedSplitId = splitId;
+        navigatePage("review-assignments", { reviewAssignmentSplitId: splitId });
+      }
+      return;
+    }
     const copy = event.target.closest("[data-copy-work-split]");
     if (copy) {
       copyWorkSplitAssignment(copy.dataset.copyWorkSplit);
