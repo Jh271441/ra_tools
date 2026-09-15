@@ -483,6 +483,7 @@ function renderMediaDialog() {
     renderFrameExtraInputs();
     state.media.imageRequestSeq += 1;
     if (videoStage.dataset.videoUrl !== video.url) {
+      releaseBevVideoPlayer(videoStage);
       videoStage.dataset.videoUrl = video.url;
       videoStage.innerHTML = videoPlayerMarkup(video);
       bindBevVideoPlayers(videoStage);

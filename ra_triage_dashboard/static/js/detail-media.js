@@ -33,8 +33,11 @@ function videoT0PlayerPosition(configuredDuration, decodedDuration = 0) {
 
 function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {
   const durationSec = Math.max(0, Number(video?.duration_ms || 0) / 1000);
-  const startOffsetSec = Number(video?.start_offset_sec ?? 0);
   const t0PlayerSec = videoT0PlayerPosition(durationSec);
+  // Review video t0 is always the clip midpoint. Some captures have stale or
+  // missing start_offset_sec metadata; using it makes a 40s clip read 0..40s
+  // even though player position 20s is t0.
+  const startOffsetSec = t0PlayerSec > 0 ? -t0PlayerSec : Number(video?.start_offset_sec ?? 0);
   const frameStepSec = Math.max(0.01, Number(video?.frame_step_ms || 100) / 1000);
   const stepOptions = [...new Set([frameStepSec, 0.5, 1, 5])]
     .sort((left, right) => left - right)
@@ -42,14 +45,7 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {
     .join("");
   const posterUrl = String(video?.poster_url || "").trim();
   const posterAttribute = posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : "";
-  // A media-fragment start tells Chromium where the first useful frame is
-  // before it schedules the initial byte-range request.  Setting currentTime
-  // immediately after creating a metadata-only element first starts a request
-  // near 0s, then abandons it for a second request around t0.
-  const initialUrl = t0PlayerSec > 0
-    ? `${String(video.url).split("#", 1)[0]}#t=${t0PlayerSec}`
-    : String(video.url);
-  const videoMarkup = `<video src="${escapeHtml(initialUrl)}"${posterAttribute} preload="auto" playsinline draggable="false" aria-label="Ares Studio BEV 视频"></video>`;
+  const videoMarkup = `<video src="${escapeHtml(video.url)}"${posterAttribute} preload="metadata" playsinline draggable="false" aria-label="Ares Studio BEV 视频"></video>`;
   const mediaMarkup = zoomable
     ? `<div class="media-viewport media-video-viewport" data-video-viewport><div class="media-canvas media-video-canvas" data-video-canvas>${videoMarkup}</div></div>`
     : `<div class="hero-media-button hero-media-video">${videoMarkup}</div>`;
@@ -96,6 +92,8 @@ function formatSignedSeconds(value) {
 
 function bindBevVideoPlayers(root) {
   root.querySelectorAll("[data-bev-video-player]").forEach((player) => {
+    if (player.dataset.videoBound === "1") return;
+    player.dataset.videoBound = "1";
     const video = player.querySelector("video");
     const playButton = player.querySelector("[data-video-play]");
     const seek = player.querySelector("[data-video-seek]");
@@ -264,19 +262,19 @@ function bindBevVideoPlayers(root) {
     });
     player.tabIndex = 0;
     update();
-    if (configuredT0PlayerSec > 0) {
-      // The URL fragment owns the initial seek.  Keep a fallback for browsers
-      // that ignore temporal media fragments, without issuing a duplicate seek
-      // while the target frame is already loading.
-      video.addEventListener("loadeddata", () => {
-        if (Math.abs(Number(video.currentTime || 0) - configuredT0PlayerSec) > 0.25) {
-          seekToT0();
-        }
-      }, { once: true });
-    } else {
-      video.addEventListener("loadedmetadata", seekToT0, { once: true });
-    }
+    // Fetch only metadata first, then issue exactly one range seek to t0.
+    // preload=auto can leave several large MP4 downloads alive during rapid
+    // Case navigation and starve the frame the user is actually viewing.
+    video.addEventListener("loadedmetadata", seekToT0, { once: true });
   });
+}
+
+function releaseBevVideoPlayer(root) {
+  const video = root?.matches?.("video") ? root : root?.querySelector?.("video");
+  if (!video) return;
+  video.pause();
+  video.removeAttribute("src");
+  video.load();
 }
 
 function ensureDetailMediaState(caseData) {
@@ -363,6 +361,17 @@ function hydrateDetailMedia(caseData) {
       window.scrollTo({ top: scrollY, behavior: "auto" });
     }
   });
+  return true;
+}
+
+function hydrateDetailMediaControls(caseData) {
+  const issueId = String(caseData?.issue_id || "");
+  if (!issueId || issueId !== state.selectedId) return false;
+  const command = $("#detailPane")?.querySelector(".detail-media-command");
+  if (command) command.outerHTML = detailMediaCommandMarkup(caseData);
+  // Rebind the newly replaced picker without replacing the decoded video.
+  // bindBevVideoPlayers is idempotent for the preserved player node.
+  bindDetailMedia(caseData);
   return true;
 }
 

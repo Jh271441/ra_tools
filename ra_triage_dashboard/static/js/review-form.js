@@ -742,6 +742,7 @@ function prefetchAdjacentCaseCores(issueId) {
 }
 
 function cancelCaseHydration() {
+  releaseBevVideoPlayer($("#detailHeroMedia"));
   state.caseMediaController?.abort();
   state.caseMediaController = null;
   state.trailMetadataController?.abort();
@@ -823,7 +824,9 @@ async function selectCase(
       loadingTimer = null;
     }
     const caseSummary = state.cases.find((item) => item.issue_id === issueId);
-    data.preview_thumbnail_url = safeSameOriginAssetUrl(caseSummary?.thumbnail?.url);
+    data.preview_thumbnail_url = safeSameOriginAssetUrl(
+      caseSummary?.thumbnail?.url || `/api/case-thumbnails/${encodeURIComponent(issueId)}`
+    );
     state.selectedCase = data;
     renderDetail(data);
     renderReview(data);
@@ -911,7 +914,9 @@ async function loadDeferredCaseMedia(issueId, requestSeq) {
     if (imagesResult.value) {
       mergeMedia(imagesResult.value);
       state.selectedCase.media_status = "ready";
-      hydrated = hydrateDetailMedia(state.selectedCase) || hydrated;
+      hydrated = hydrated && state.detailMedia.kind === "video"
+        ? hydrateDetailMediaControls(state.selectedCase)
+        : hydrateDetailMedia(state.selectedCase) || hydrated;
     }
     if (!hydrated) {
       state.selectedCase.media_status = "unavailable";
