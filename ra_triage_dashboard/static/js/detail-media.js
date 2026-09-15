@@ -107,11 +107,18 @@ function bindBevVideoPlayers(root) {
     let cancelPendingSeek = null;
     let queuedSeekTarget = null;
     let queuedSeekTimer = null;
+    let positioningFallbackTimer = null;
     const revealInitialFrame = () => {
-      const reveal = () => player.classList.remove("is-positioning");
-      if (typeof video.requestVideoFrameCallback === "function") {
-        video.requestVideoFrameCallback(reveal);
-      } else if (typeof window.requestAnimationFrame === "function") {
+      const reveal = () => {
+        if (positioningFallbackTimer !== null) window.clearTimeout(positioningFallbackTimer);
+        positioningFallbackTimer = null;
+        player.classList.remove("is-positioning");
+      };
+      // `seeked` means the target media position is ready. A paused Chromium
+      // video may never invoke a requestVideoFrameCallback registered after
+      // that event, so use compositor frames here and never gate visibility on
+      // a future decoded-frame callback.
+      if (typeof window.requestAnimationFrame === "function") {
         window.requestAnimationFrame(() => window.requestAnimationFrame(reveal));
       } else {
         reveal();
@@ -280,6 +287,8 @@ function bindBevVideoPlayers(root) {
     // preload=auto can leave several large MP4 downloads alive during rapid
     // Case navigation and starve the frame the user is actually viewing.
     video.addEventListener("loadedmetadata", seekToT0, { once: true });
+    // A browser event quirk must never leave Review permanently covered.
+    positioningFallbackTimer = window.setTimeout(revealInitialFrame, 5000);
   });
 }
 
