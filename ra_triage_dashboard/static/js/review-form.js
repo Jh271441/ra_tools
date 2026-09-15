@@ -855,30 +855,68 @@ async function selectCase(
 async function loadDeferredCaseMedia(issueId, requestSeq) {
   const controller = new AbortController();
   state.caseMediaController = controller;
+  const request = (kind) => api(`/api/cases/${encodeURIComponent(issueId)}/media?kind=${kind}`, {
+    cache: "no-store",
+    signal: controller.signal,
+  }).then(
+    (value) => ({ value, error: null }),
+    (error) => ({ value: null, error })
+  );
+  // Start both reads together, but apply video first. Camera discovery can be
+  // slow on a cold network volume and must not hold up the default video view.
+  const videoRequest = request("video");
+  const imagesRequest = request("images");
+  let hydrated = false;
+  const isCurrent = () => (
+    requestSeq === state.caseRequestSeq &&
+    state.selectedId === issueId &&
+    Boolean(state.selectedCase)
+  );
+  const mergeMedia = (media) => {
+    const currentAssets = state.selectedCase.assets || {};
+    const nextAssets = media?.assets || {};
+    state.selectedCase.assets = {
+      ...currentAssets,
+      ...nextAssets,
+      available: Boolean(
+        currentAssets.available || nextAssets.available ||
+        currentAssets.video?.url || nextAssets.video?.url ||
+        currentAssets.frames?.length || nextAssets.frames?.length
+      ),
+      frames: nextAssets.frames?.length ? nextAssets.frames : currentAssets.frames || [],
+      video: nextAssets.video || currentAssets.video || null,
+      capture: Object.keys(nextAssets.capture || {}).length
+        ? nextAssets.capture
+        : currentAssets.capture || {},
+    };
+    if (media?.camera?.frames?.length || !state.selectedCase.camera?.frames?.length) {
+      state.selectedCase.camera = media?.camera || state.selectedCase.camera;
+    }
+  };
   try {
-    const media = await api(`/api/cases/${encodeURIComponent(issueId)}/media`, {
-      cache: "no-store",
-      signal: controller.signal,
-    });
-    if (
-      requestSeq !== state.caseRequestSeq ||
-      state.selectedId !== issueId ||
-      !state.selectedCase
-    ) return;
-    state.selectedCase.assets = media?.assets || state.selectedCase.assets;
-    state.selectedCase.camera = media?.camera || state.selectedCase.camera;
-    state.selectedCase.media_status = media?.media_status || "ready";
-    // Hydrate only the media controls/surface. Rebuilding the complete detail
-    // header a second time causes visible jank during rapid Case navigation.
-    hydrateDetailMedia(state.selectedCase);
-  } catch (_error) {
-    if (
-      requestSeq !== state.caseRequestSeq ||
-      state.selectedId !== issueId ||
-      !state.selectedCase
-    ) return;
-    state.selectedCase.media_status = "unavailable";
-    renderDetail(state.selectedCase);
+    const videoResult = await videoRequest;
+    if (!isCurrent()) return;
+    if (videoResult.value?.assets?.video?.url) {
+      mergeMedia(videoResult.value);
+      const video = state.selectedCase.assets.video;
+      if (!video.poster_url && state.selectedCase.preview_thumbnail_url) {
+        video.poster_url = state.selectedCase.preview_thumbnail_url;
+      }
+      state.selectedCase.media_status = "ready";
+      hydrated = hydrateDetailMedia(state.selectedCase);
+    }
+
+    const imagesResult = await imagesRequest;
+    if (!isCurrent()) return;
+    if (imagesResult.value) {
+      mergeMedia(imagesResult.value);
+      state.selectedCase.media_status = "ready";
+      hydrated = hydrateDetailMedia(state.selectedCase) || hydrated;
+    }
+    if (!hydrated) {
+      state.selectedCase.media_status = "unavailable";
+      renderDetail(state.selectedCase);
+    }
   } finally {
     if (state.caseMediaController === controller) state.caseMediaController = null;
   }

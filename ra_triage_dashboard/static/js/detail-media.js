@@ -42,7 +42,14 @@ function videoPlayerMarkup(video, { zoomable = true, compact = false } = {}) {
     .join("");
   const posterUrl = String(video?.poster_url || "").trim();
   const posterAttribute = posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : "";
-  const videoMarkup = `<video src="${escapeHtml(video.url)}"${posterAttribute} preload="metadata" playsinline draggable="false" aria-label="Ares Studio BEV 视频"></video>`;
+  // A media-fragment start tells Chromium where the first useful frame is
+  // before it schedules the initial byte-range request.  Setting currentTime
+  // immediately after creating a metadata-only element first starts a request
+  // near 0s, then abandons it for a second request around t0.
+  const initialUrl = t0PlayerSec > 0
+    ? `${String(video.url).split("#", 1)[0]}#t=${t0PlayerSec}`
+    : String(video.url);
+  const videoMarkup = `<video src="${escapeHtml(initialUrl)}"${posterAttribute} preload="auto" playsinline draggable="false" aria-label="Ares Studio BEV 视频"></video>`;
   const mediaMarkup = zoomable
     ? `<div class="media-viewport media-video-viewport" data-video-viewport><div class="media-canvas media-video-canvas" data-video-canvas>${videoMarkup}</div></div>`
     : `<div class="hero-media-button hero-media-video">${videoMarkup}</div>`;
@@ -258,7 +265,14 @@ function bindBevVideoPlayers(root) {
     player.tabIndex = 0;
     update();
     if (configuredT0PlayerSec > 0) {
-      seekToT0();
+      // The URL fragment owns the initial seek.  Keep a fallback for browsers
+      // that ignore temporal media fragments, without issuing a duplicate seek
+      // while the target frame is already loading.
+      video.addEventListener("loadeddata", () => {
+        if (Math.abs(Number(video.currentTime || 0) - configuredT0PlayerSec) > 0.25) {
+          seekToT0();
+        }
+      }, { once: true });
     } else {
       video.addEventListener("loadedmetadata", seekToT0, { once: true });
     }
