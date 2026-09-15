@@ -200,9 +200,9 @@
   .review-detail-workspace { display: grid; grid-template-columns: minmax(0, 1fr) !important; gap: 8px; }
   .review-detail-workspace > .detail-pane,
   .review-detail-workspace > .review-pane { min-height: 0; grid-column: 1 !important; }
-  .detail-title { align-items: flex-start; }
+  .detail-title { align-items: flex-start; flex-wrap: wrap; }
   .detail-title h2 { max-width: 100%; font-size: 17px; }
-  .detail-external-links { width: 100%; }
+  .detail-external-links { width: 100%; flex-wrap: wrap; white-space: normal; }
   .detail-copy-id-button { width: 44px; height: 44px; }
   .detail-context-row { flex-wrap: wrap; align-items: stretch; gap: 7px; }
   .detail-context-row > .comparison-summary,

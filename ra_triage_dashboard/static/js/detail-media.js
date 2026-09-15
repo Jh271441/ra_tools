@@ -872,7 +872,7 @@ function detailExternalLinksMarkup(caseData) {
       ? "<a class=\"detail-id detail-id-link detail-external-link\" href=\"" + escapeHtml(raEventUrl) + "\" target=\"_blank\" rel=\"noreferrer\" title=\"在 Trail Issue 中查看 RA Event（" + Number(externalLinks.ra_event_count || 0) + " 条）\">RA Event ↗</a>"
       : "";
   const disableRaSimulationLinkMarkup = disableRaSimulationUrl
-    ? "<a class=\"detail-id detail-id-link detail-external-link\" href=\"" + escapeHtml(disableRaSimulationUrl) + "\" target=\"_blank\" rel=\"noreferrer\" title=\"打开屏蔽 RA 指令仿真" + (externalLinks.disable_ra_simulation_task_id ? "：" + escapeHtml(externalLinks.disable_ra_simulation_task_id) : "") + "\">屏蔽 RA 指令仿真 ↗</a>"
+    ? "<a class=\"detail-id detail-id-link detail-external-link detail-disable-ra-link\" href=\"" + escapeHtml(disableRaSimulationUrl) + "\" target=\"_blank\" rel=\"noreferrer\" title=\"打开屏蔽 RA 指令仿真" + (externalLinks.disable_ra_simulation_task_id ? "：" + escapeHtml(externalLinks.disable_ra_simulation_task_id) : "") + "\">屏蔽 RA ↗</a>"
     : "";
   const pending = caseData?.trail_metadata_status === "pending" && !raRecordingUrl && !raEventUrl && !disableRaSimulationUrl;
   const pendingMarkup = pending
