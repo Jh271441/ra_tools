@@ -151,6 +151,35 @@ class DatabaseCoreMixin:
             ).fetchone()
         return int(row["revision"] if row else 0)
 
+    def change_revision_state(self, since_revision: int = 0) -> dict[str, Any]:
+        """Return the global revision plus domains changed since a client cursor."""
+
+        since = max(0, int(since_revision or 0))
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT revision FROM dashboard_change_revision WHERE id = 1"
+            ).fetchone()
+            topic_rows = conn.execute(
+                "SELECT topic FROM dashboard_change_topics "
+                "WHERE revision > ? ORDER BY topic",
+                (since,),
+            ).fetchall()
+        return {
+            "revision": int(row["revision"] if row else 0),
+            "topics": [str(item["topic"] or "shared") for item in topic_rows],
+        }
+
+    @staticmethod
+    def _mark_change_topic(conn: Any, topic: str) -> None:
+        conn.execute(
+            """
+            INSERT INTO dashboard_change_topics (topic, revision)
+            SELECT ?, revision FROM dashboard_change_revision WHERE id = 1
+            ON CONFLICT(topic) DO UPDATE SET revision = excluded.revision
+            """,
+            (str(topic or "shared"),),
+        )
+
     def upsert_trail_issue_exclusion_history(
         self,
         *,
@@ -638,6 +667,11 @@ class DatabaseCoreMixin:
                 INSERT OR IGNORE INTO dashboard_change_revision (
                     id, revision, updated_at
                 ) VALUES (1, 0, '');
+
+                CREATE TABLE IF NOT EXISTS dashboard_change_topics (
+                    topic TEXT PRIMARY KEY,
+                    revision INTEGER NOT NULL DEFAULT 0
+                );
 
                 CREATE TABLE IF NOT EXISTS gt_sync_state (
                     baseline_scope TEXT PRIMARY KEY,

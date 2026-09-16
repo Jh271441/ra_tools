@@ -31,6 +31,9 @@ class BatchConfigDatabaseTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             database = Database(Path(directory) / "triage.sqlite3")
             database.init()
+            # Startup remains idempotent when adding the topic cursor table to
+            # an existing SQLite deployment.
+            database.init()
             initial = database.change_revision()
             database.upsert_issues(
                 [{"issue_id": "cn12345", "gt_label": "误触发"}],
@@ -39,6 +42,7 @@ class BatchConfigDatabaseTest(unittest.TestCase):
             )
             after_issue = database.change_revision()
             self.assertGreater(after_issue, initial)
+            self.assertEqual(database.change_revision_state(initial)["topics"], [])
             database.create_annotation(
                 issue_id="cn12345",
                 label="误触发",
@@ -49,6 +53,9 @@ class BatchConfigDatabaseTest(unittest.TestCase):
                 author="jasper",
             )
             self.assertGreater(database.change_revision(), after_issue)
+            state = database.change_revision_state(after_issue)
+            self.assertEqual(state["topics"], ["review"])
+            self.assertEqual(state["revision"], database.change_revision())
 
     def test_missing_evidence_catalog_is_shared_and_descriptive(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

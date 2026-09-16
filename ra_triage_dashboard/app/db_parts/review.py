@@ -841,7 +841,6 @@ class DatabaseReviewMixin:
                 if self.backend == "postgresql"
                 else int(cursor.lastrowid)
             )
-            conn.execute("UPDATE issues SET updated_at = ? WHERE issue_id = ?", (now, issue_id))
             for recipient in notification_recipients:
                 conn.execute(
                     """
@@ -874,6 +873,7 @@ class DatabaseReviewMixin:
                         now,
                     ),
                 )
+            self._mark_change_topic(conn, "review")
             row = conn.execute("SELECT * FROM annotations WHERE id = ?", (annotation_id,)).fetchone()
         result = self._annotation_dict(row)
         result["attachments"] = [
@@ -893,7 +893,6 @@ class DatabaseReviewMixin:
         annotation_id: int,
     ) -> dict[str, Any] | None:
         """Delete one review version and reconnect its superseding chain."""
-        now = utc_now()
         with self._write_lock, self.connect() as conn:
             row = conn.execute(
                 "SELECT * FROM annotations WHERE id = ? AND issue_id = ?",
@@ -913,10 +912,7 @@ class DatabaseReviewMixin:
                 "DELETE FROM annotations WHERE id = ? AND issue_id = ?",
                 (annotation_id, issue_id),
             )
-            conn.execute(
-                "UPDATE issues SET updated_at = ? WHERE issue_id = ?",
-                (now, issue_id),
-            )
+            self._mark_change_topic(conn, "review")
         result = self._annotation_dict(row)
         result["attachments"] = [self._attachment_dict(item) for item in attachments]
         return result

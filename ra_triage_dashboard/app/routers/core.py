@@ -278,6 +278,7 @@ async def overview(
 async def change_revision(
     response: Response,
     include_gt_sync: bool = False,
+    since_revision: int = 0,
 ) -> dict[str, Any]:
     """Cheap collaboration poll.
 
@@ -286,8 +287,12 @@ async def change_revision(
     """
 
     response.headers["Cache-Control"] = "no-store, max-age=0"
+    revision_state = await asyncio.to_thread(
+        database.change_revision_state,
+        since_revision,
+    )
     payload: dict[str, Any] = {
-        "revision": await asyncio.to_thread(database.change_revision),
+        **revision_state,
         # Default 5s keeps multi-user freshness without saturating the event
         # loop / Postgres pool while the gallery is also loading thumbs.
         "poll_after_ms": 5000,

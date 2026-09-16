@@ -730,6 +730,32 @@ function refreshChangedData() {
   return shared;
 }
 
+function sharedChangeNeedsRefresh(topics) {
+  const changed = new Set(Array.isArray(topics) ? topics : []);
+  if (!changed.size || changed.has("shared")) return true;
+  if (changed.has("access")) return false;
+  if (state.activePage === "review") {
+    if (changed.has("review")) state.reviewQueueStale = true;
+    return ["data", "runs", "batch"].some((topic) => changed.has(topic));
+  }
+  if (state.activePage === "analysis") {
+    // Preserve the reader's stable viewport. Their next filter, navigation or
+    // explicit refresh reads the latest Review-derived counts and rows.
+    return ["data", "runs"].some((topic) => changed.has(topic));
+  }
+  const relevantTopics = {
+    runs: ["runs", "batch"],
+    comparison: ["runs", "data"],
+    "review-assignments": ["review", "data", "runs"],
+    prediction: ["batch", "runs"],
+    intent: ["intent"],
+    "intent-experiments": ["intent"],
+    "intent-summary": ["intent"],
+    status: ["data", "runs", "batch", "review", "intent", "trail"],
+  };
+  return (relevantTopics[state.activePage] || []).some((topic) => changed.has(topic));
+}
+
 function scheduleChangePoll(delay = 5000) {
   clearTimeout(state.changePollTimer);
   state.changePollTimer = window.setTimeout(pollChangeRevision, delay);
@@ -748,9 +774,13 @@ async function pollChangeRevision() {
     const now = Date.now();
     const wantGtSync =
       !state._lastGtSyncPollAt || now - state._lastGtSyncPollAt > 20000;
-    const path = wantGtSync
-      ? "/api/change-revision?include_gt_sync=1"
-      : "/api/change-revision";
+    const query = new URLSearchParams();
+    if (wantGtSync) query.set("include_gt_sync", "1");
+    if (state.changeRevision !== null) {
+      query.set("since_revision", String(state.changeRevision));
+    }
+    const queryString = query.toString();
+    const path = `/api/change-revision${queryString ? `?${queryString}` : ""}`;
     const data = await api(path);
     if (pollEpoch !== state.changePollEpoch) return;
     if (data.gt_sync) {
@@ -764,7 +794,7 @@ async function pollChangeRevision() {
     if (state.changeRevision === null) {
       state.changeRevision = revision;
     } else if (revision !== state.changeRevision) {
-      await refreshChangedData();
+      if (sharedChangeNeedsRefresh(data.topics)) await refreshChangedData();
       state.changeRevision = revision;
     }
   } catch (error) {
