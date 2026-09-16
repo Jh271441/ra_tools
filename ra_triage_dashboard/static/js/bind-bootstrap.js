@@ -169,6 +169,7 @@ function scheduleReviewFilterReload(delay = 0) {
 }
 
 function bindEvents() {
+  bindLayoutResizers();
   bindShortcutGuide();
   bindGlobalRefreshShortcut();
   bindGlobalSidebarShortcut();

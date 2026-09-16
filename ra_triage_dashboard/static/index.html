@@ -15,6 +15,14 @@
           if (localStorage.getItem("ra-triage-sidebar-collapsed") === "true") {
             document.documentElement.dataset.sidebarPref = "collapsed";
           }
+          const sidebarWidth = Number(localStorage.getItem("ra-triage-sidebar-width"));
+          if (Number.isFinite(sidebarWidth) && sidebarWidth >= 190 && sidebarWidth <= 420) {
+            document.documentElement.style.setProperty("--app-sidebar-width", `${sidebarWidth}px`);
+          }
+          const reviewPaneWidth = Number(localStorage.getItem("ra-triage-review-pane-width"));
+          if (Number.isFinite(reviewPaneWidth) && reviewPaneWidth >= 304 && reviewPaneWidth <= 600) {
+            document.documentElement.style.setProperty("--review-pane-width", `${reviewPaneWidth}px`);
+          }
           // Last known intent access: show the nav on first paint instead of
           // waiting for /api/session. renderSession confirms or hides it.
           if (localStorage.getItem("ra-triage-can-view-intent") === "true") {
@@ -69,7 +77,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-441`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-442`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -212,6 +220,7 @@
             <kbd class="sidebar-shortcut" aria-hidden="true">\</kbd>
           </button>
         </div>
+        <div class="layout-resizer sidebar-resizer" id="sidebarResizer" role="separator" aria-label="调节左侧工具栏宽度" aria-orientation="vertical" aria-valuemin="190" aria-valuemax="420" aria-valuenow="240" tabindex="0"></div>
         </aside>
         <button class="mobile-sidebar-backdrop" id="mobileSidebarBackdrop" type="button" aria-label="关闭工具栏" hidden></button>
 
@@ -378,6 +387,8 @@
                     <p><span class="ui-lang-zh">点击 Gallery 卡片后，这里会显示 BEV / Camera 与模型输出。</span><span class="ui-lang-en">Open a gallery card to view BEV / Camera and model output.</span></p>
                   </div>
                 </section>
+
+                <div class="layout-resizer review-pane-resizer" id="reviewPaneResizer" role="separator" aria-label="调节 Review 面板宽度" aria-orientation="vertical" aria-valuemin="304" aria-valuemax="600" aria-valuenow="350" tabindex="0"></div>
 
                 <aside class="review-pane" id="reviewPane">
                   <div class="review-placeholder">
@@ -2019,7 +2030,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-441`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-442`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

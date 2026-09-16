@@ -6,6 +6,7 @@ i18n.js
 routing.js
 issue-query.js
 format-api.js
+layout-resize.js
 gt-sync.js
 session-config.js
 system-status.js

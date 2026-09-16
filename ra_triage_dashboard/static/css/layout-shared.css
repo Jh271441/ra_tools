@@ -7,17 +7,40 @@ button > * { pointer-events: none; }
 
 .app-shell { min-height: 100vh; display: block; }
 /* No margin transition on first paint — CSS load would animate 0→240 and feel like LTR wipe. */
-.app-frame { min-width: 0; margin-left: 240px; container-type: inline-size; }
+.app-frame { min-width: 0; margin-left: var(--app-sidebar-width, 240px); container-type: inline-size; }
 html.ra-ui-ready .app-frame { transition: margin-left 200ms ease-out; }
 html.ra-ui-ready .app-sidebar { transition: width 200ms ease-out; }
 .app-shell.sidebar-collapsed .app-frame,
 html[data-sidebar-pref="collapsed"] .app-frame { margin-left: 64px; }
 .app-sidebar {
-  width: 240px; height: 100dvh; min-width: 0; display: flex; flex-direction: column; overflow: hidden; position: fixed; inset: 0 auto 0 0; z-index: 20;
+  width: var(--app-sidebar-width, 240px); height: 100dvh; min-width: 0; display: flex; flex-direction: column; overflow: hidden; position: fixed; inset: 0 auto 0 0; z-index: 20;
   border-right: 1px solid var(--line); background: #0d1119;
 }
 .app-shell.sidebar-collapsed .app-sidebar,
 html[data-sidebar-pref="collapsed"] .app-sidebar { width: 64px; }
+.layout-resizer {
+  appearance: none; padding: 0; border: 0; border-radius: 0; background: transparent;
+  touch-action: none; user-select: none; z-index: 5;
+}
+.layout-resizer::after {
+  content: ""; position: absolute; inset: 0 auto 0 50%; width: 1px; transform: translateX(-50%);
+  background: transparent; transition: width 120ms ease-out, background 120ms ease-out, box-shadow 120ms ease-out;
+}
+.layout-resizer:hover::after,
+.layout-resizer:focus-visible::after,
+.layout-resizer.is-dragging::after {
+  width: 3px; background: var(--accent); box-shadow: 0 0 0 1px rgba(34,211,238,.16), 0 0 9px rgba(34,211,238,.28);
+}
+.layout-resizer:focus-visible { outline: none; }
+.sidebar-resizer {
+  width: 9px; position: absolute; inset: 0 -5px 0 auto; cursor: col-resize;
+}
+.app-shell.sidebar-collapsed .sidebar-resizer,
+html[data-sidebar-pref="collapsed"] .sidebar-resizer { display: none; }
+body.is-layout-resizing { cursor: col-resize !important; user-select: none !important; }
+body.is-layout-resizing * { cursor: col-resize !important; }
+body.is-layout-resizing .app-frame,
+body.is-layout-resizing .app-sidebar { transition: none !important; }
 .sidebar-brand { min-height: 60px; display: flex; align-items: center; gap: 10px; padding: 10px 11px; border-bottom: 1px solid var(--line); }
 .sidebar-copy, .sidebar-label { min-width: 0; }
 .sidebar-copy { display: grid; gap: 2px; white-space: nowrap; }

@@ -20,6 +20,10 @@
   .intent-summary-comment-field { grid-column: 1 / -1 !important; }
 }
 
+@media (max-width: 1200px) {
+  .sidebar-resizer { display: none; }
+}
+
 @media (max-width: 1024px) {
   .review-detail-workspace,
   .tool-page-grid,
@@ -32,6 +36,7 @@
   .analysis-decision-grid { grid-template-areas: "confusion" "status"; }
   .review-detail-workspace > .review-pane,
   .review-pane { grid-column: auto !important; }
+  .review-pane-resizer { display: none; }
   .issue-pane, .detail-pane, .review-pane,
   .gateway-card, .page-aside {
     height: auto; min-height: 0; max-height: none;
