@@ -384,9 +384,11 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn(".sidebar-icon { border-color: transparent; color: #8594a8; background: transparent; }", STYLES_CSS)
         self.assertIn(".sidebar-item.active .sidebar-icon .icon-emphasis", STYLES_CSS)
         self.assertIn("margin-left: 18px; width: calc(100% - 18px);", STYLES_CSS)
-        self.assertIn(".sidebar-nav-group .sidebar-item { width: 100%; margin-left: 0; }", STYLES_CSS)
         self.assertIn("width: 100%; min-height: 40px;", STYLES_CSS)
         self.assertIn("font-size: 13px; line-height: 1.25; letter-spacing: .02em;", STYLES_CSS)
+        self.assertIn("padding-inline: 6px; scrollbar-gutter: auto; scrollbar-width: none;", STYLES_CSS)
+        self.assertIn(".sidebar-nav-group .sidebar-item { width: 100%; min-width: 0; margin-left: 0; }", STYLES_CSS)
+        self.assertIn(".sidebar-nav-group .sidebar-item { width: 100% !important; min-width: 0; margin-left: 0 !important; }", STYLES_CSS)
         review_group = INDEX_HTML.split('data-sidebar-nav-group="review"', 1)[1].split('</section>', 1)[0]
         for nav_id in (
             "reviewNavButton",
@@ -1378,7 +1380,6 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
         self.assertIn("manual-triage-442", APP_ENTRY_JS)
-
     def test_desktop_layout_panels_are_mouse_and_keyboard_resizable(self) -> None:
         self.assertIn('id="sidebarResizer" role="separator"', INDEX_HTML)
         self.assertIn('id="reviewPaneResizer" role="separator"', INDEX_HTML)
@@ -1410,7 +1411,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('if (!preserveScroll && (target !== "review" || issue))', APP_JS)
         self.assertIn('window.scrollTo({ top: preservedScrollY, behavior: "auto" })', APP_JS)
 
-    def test_desktop_review_video_preserves_complete_frame_without_squeezing_review_rail(self) -> None:
+    def test_desktop_review_video_preserves_complete_frame_without_blank_card_space(self) -> None:
         self.assertIn('data-detail-media-kind="${escapeHtml(kind)}"', APP_JS)
         self.assertIn('"detail-pane-video"', APP_JS)
         self.assertIn('root?.dataset.detailMediaKind === "video"', APP_JS)
@@ -1418,7 +1419,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn(".review-tag-groups { min-width: 0; max-width: 100%; }", STYLES_CSS)
         self.assertIn(".review-section-heading .review-heading-actions { min-width: 0; flex-wrap: wrap; }", STYLES_CSS)
         self.assertIn(".review-detail-workspace > .review-pane { min-height: calc(100dvh - 75px); }", STYLES_CSS)
-        self.assertIn("height: auto; min-height: calc(100dvh - 75px)", STYLES_CSS)
+        self.assertIn(".detail-pane.detail-pane-video {\n    height: auto; min-height: 0;", STYLES_CSS)
         self.assertIn('.detail-pane.detail-pane-video > .detail-hero-media[data-detail-media-kind="video"]', STYLES_CSS)
         self.assertIn('.detail-hero-media[data-detail-media-kind="video"] .hero-media-video', STYLES_CSS)
         self.assertIn("height: auto; min-height: 0; aspect-ratio: 16 / 9", STYLES_CSS)

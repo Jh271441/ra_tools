@@ -85,6 +85,9 @@
   .sidebar-copy, .sidebar-label, .sidebar-group-label { display: none !important; }
   .sidebar-group-toggle { display: none; }
   .sidebar-nav-group-items { display: grid !important; }
+  .sidebar-nav { padding-inline: 6px; scrollbar-gutter: auto; scrollbar-width: none; }
+  .sidebar-nav::-webkit-scrollbar { width: 0; height: 0; }
+  .sidebar-nav-group .sidebar-item { width: 100% !important; min-width: 0; margin-left: 0 !important; }
   .sidebar-brand, .sidebar-item, .sidebar-user, .sidebar-collapse {
     justify-content: center; padding-inline: 6px;
   }

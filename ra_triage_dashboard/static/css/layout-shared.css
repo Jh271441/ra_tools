@@ -105,12 +105,18 @@ html[data-can-view-intent="true"] #intentSummaryNavButton[hidden] { display: fle
 @media (min-width: 640px) {
   /* The compact icon rail keeps every destination discoverable; group headers
      are replaced by the existing icon-only layout. */
+  .app-shell.sidebar-collapsed .sidebar-nav,
+  html[data-sidebar-pref="collapsed"] .sidebar-nav {
+    padding-inline: 6px; scrollbar-gutter: auto; scrollbar-width: none;
+  }
+  .app-shell.sidebar-collapsed .sidebar-nav::-webkit-scrollbar,
+  html[data-sidebar-pref="collapsed"] .sidebar-nav::-webkit-scrollbar { width: 0; height: 0; }
   .app-shell.sidebar-collapsed .sidebar-group-toggle,
   html[data-sidebar-pref="collapsed"] .sidebar-group-toggle { display: none; }
   .app-shell.sidebar-collapsed .sidebar-nav-group-items,
   html[data-sidebar-pref="collapsed"] .sidebar-nav-group-items { display: grid !important; }
   .app-shell.sidebar-collapsed .sidebar-nav-group .sidebar-item,
-  html[data-sidebar-pref="collapsed"] .sidebar-nav-group .sidebar-item { width: 100%; margin-left: 0; }
+  html[data-sidebar-pref="collapsed"] .sidebar-nav-group .sidebar-item { width: 100%; min-width: 0; margin-left: 0; }
 }
 .sidebar-icon, .user-avatar {
   width: 30px; height: 30px; flex: 0 0 30px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 7px;
