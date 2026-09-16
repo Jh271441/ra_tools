@@ -365,13 +365,13 @@ html[data-color-theme="light"] .detail-queue-index-input {
 
 @media (min-width: 1025px) {
   .detail-pane.detail-pane-video {
-    height: auto; min-height: 0;
+    height: calc(100dvh - 75px); min-height: calc(100dvh - 75px);
     display: flex; flex-direction: column; align-self: start;
   }
   .detail-pane.detail-pane-video > .detail-header,
   .detail-pane.detail-pane-video > .current-run-output { flex: 0 0 auto; }
   .detail-pane.detail-pane-video > .detail-hero-media[data-detail-media-kind="video"] {
-    min-height: 0; flex: 0 0 auto;
+    min-height: 0; flex: 1 1 auto;
   }
 }
 .review-form { display: grid; gap: 8px; }
