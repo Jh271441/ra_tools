@@ -239,7 +239,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-435", APP_ENTRY_JS)
+        self.assertIn("manual-triage-437", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -280,7 +280,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-435", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-437", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -366,11 +366,32 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('aria-label="Manual Triage 首页"', INDEX_HTML)
 
     def test_sidebar_navigation_is_grouped_and_scrollable(self) -> None:
-        self.assertIn('data-sidebar-nav-group="work"', INDEX_HTML)
-        self.assertIn('data-sidebar-nav-group="analysis"', INDEX_HTML)
+        self.assertIn('data-sidebar-nav-group="review"', INDEX_HTML)
         self.assertIn('data-sidebar-nav-group="intent"', INDEX_HTML)
         self.assertIn('data-sidebar-nav-group="system"', INDEX_HTML)
-        self.assertIn('data-sidebar-nav-group-toggle="analysis"', INDEX_HTML)
+        self.assertNotIn('data-sidebar-nav-group="work"', INDEX_HTML)
+        self.assertNotIn('data-sidebar-nav-group="analysis"', INDEX_HTML)
+        self.assertNotIn('<span class="ui-lang-zh">工作台</span>', INDEX_HTML)
+        self.assertNotIn('<span class="ui-lang-zh">分析工具</span>', INDEX_HTML)
+        self.assertIn('data-sidebar-nav-group-toggle="review"', INDEX_HTML)
+        self.assertIn('<span class="ui-lang-zh">判错复核</span>', INDEX_HTML)
+        self.assertEqual(INDEX_HTML.count('class="sidebar-group-icon"'), 3)
+        self.assertIn(".sidebar-group-icon {", STYLES_CSS)
+        self.assertIn(".sidebar-group-icon svg {", STYLES_CSS)
+        self.assertIn("order: 0; color: #8da0b7;", STYLES_CSS)
+        self.assertIn("order: 1; padding: 0;", STYLES_CSS)
+        self.assertIn("order: 2; margin-left: auto;", STYLES_CSS)
+        review_group = INDEX_HTML.split('data-sidebar-nav-group="review"', 1)[1].split('</section>', 1)[0]
+        for nav_id in (
+            "reviewNavButton",
+            "reviewAssignmentsNavButton",
+            "reviewAnalysisNavButton",
+            "trailAttributeUpdateNavButton",
+            "openRunManagerButton",
+            "runComparisonNavButton",
+            "openBatchPredictionButton",
+        ):
+            self.assertIn(f'id="{nav_id}"', review_group)
         self.assertIn('id="intentNavGroup"', INDEX_HTML)
         self.assertIn("overflow-y: auto", STYLES_CSS)
         self.assertIn("SIDEBAR_NAV_GROUP_PREFS_KEY", APP_JS)
@@ -410,7 +431,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-435`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-437`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -1349,7 +1370,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-435", APP_ENTRY_JS)
+        self.assertIn("manual-triage-437", APP_ENTRY_JS)
 
     def test_review_gallery_exports_the_complete_current_filter(self) -> None:
         self.assertIn('id="exportFilteredIssuesButton"', INDEX_HTML)
