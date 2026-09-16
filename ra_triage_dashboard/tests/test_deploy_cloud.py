@@ -153,6 +153,14 @@ COMMIT;
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
             self.assertEqual(json.loads(path.read_text()), {"status": "ok"})
 
+    def test_release_ids_remain_unique_within_one_second(self):
+        with tempfile.TemporaryDirectory() as temp, patch.object(d, "STATE", Path(temp)), patch.object(d.time, "strftime", return_value="20260916T080000Z"):
+            first_id, first = d.create_release_folder("a" * 40)
+            second_id, second = d.create_release_folder("a" * 40)
+        self.assertEqual(first_id, "20260916T080000Z-aaaaaaaaaaaa")
+        self.assertEqual(second_id, "20260916T080000Z-aaaaaaaaaaaa-01")
+        self.assertNotEqual(first, second)
+
     def test_cleanup_retains_latest_two_failed_and_busy(self):
         with tempfile.TemporaryDirectory() as temp:
             state=Path(temp); folders=[]
@@ -182,6 +190,27 @@ COMMIT;
                 d.cleanup(state,folder)
             run.assert_not_called()
 
+    def test_cleanup_skips_legacy_success_record_without_worktree_paths(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state = Path(temp)
+            legacy = state / "releases" / "20260909T042751Z-schema-e6d7ccdd3437"
+            legacy.mkdir(parents=True)
+            (legacy / "gray-data").mkdir()
+            d.save(legacy / "result.json", {"status": "success", "target": "a" * 40})
+            current = state / "releases" / "20260916T073312Z-dd5f248425ac"
+            current.mkdir()
+            d.save(current / "result.json", {
+                "status": "success",
+                "candidate": str(current / "candidate"),
+                "rollback": str(current / "rollback"),
+            })
+
+            with patch.object(d, "run") as run:
+                self.assertEqual(d.cleanup(state, current), [])
+
+            run.assert_not_called()
+            self.assertTrue((legacy / "gray-data").is_dir())
+
     def test_zombie_process_counts_as_stopped(self):
         with patch.object(d.Path,"read_text",return_value="27205 (python3) Z 17766 27205"):
             self.assertFalse(d.process_alive(27205))
@@ -200,7 +229,7 @@ COMMIT;
             with self.assertRaises(d.DeployError): d.stop_production(123)
             kill.assert_not_called()
 
-    def simulate_release(self, fail_tests=False, fail_production=False):
+    def simulate_release(self, fail_tests=False, fail_production=False, prepare_only=False, runtime_changed=False):
         with tempfile.TemporaryDirectory() as temp, ExitStack() as stack:
             base=Path(temp); repo=base/"repo"; repo.mkdir(); python=base/"python"; python.touch()
             env={"DASHBOARD_DATABASE_URL_FILE":"/db", "DASHBOARD_DATA_DIR":str(base/"data")}
@@ -211,15 +240,24 @@ COMMIT;
             stack.enter_context(patch.object(d.sys,"platform","linux"))
             def git(*args, **kwargs):
                 if args[0]=="branch": return "master"
-                if args[0]=="rev-parse": return target
+                if args[0]=="rev-parse" and args[1]=="origin/master": return target
+                if args[0]=="rev-parse" and args[1]=="HEAD":
+                    return old if Path(kwargs["cwd"]).name == "rollback" else target
                 return ""
             stack.enter_context(patch.object(d,"git",side_effect=git))
-            stack.enter_context(patch.object(d,"read_live",return_value=(11,env)))
+            live_calls = 0
+            def read_live():
+                nonlocal live_calls
+                live_calls += 1
+                return (12 if runtime_changed and live_calls >= 3 else 11, env)
+            stack.enter_context(patch.object(d,"read_live",side_effect=read_live))
             health={"ok":True,"build_commit":old,"storage":"postgresql"}
             stack.enter_context(patch.object(d,"get_json",return_value=health))
             stack.enter_context(patch.object(d.socket,"socket"))
             def run(*args,**kwargs):
                 if fail_tests and "pytest" in args: raise subprocess.CalledProcessError(1,["pytest"])
+                if args[:4] == ("git", "worktree", "add", "--detach"):
+                    Path(args[4]).mkdir(parents=True)
                 return MagicMock()
             stack.enter_context(patch.object(d,"run",side_effect=run))
             stack.enter_context(patch.object(d.subprocess,"Popen"))
@@ -233,8 +271,10 @@ COMMIT;
                 if fail_production and port==8785 and sha==target: raise d.DeployError("failed health")
                 return dict(health,build_commit=sha,storage=storage)
             stack.enter_context(patch.object(d,"smoke",side_effect=smoke))
-            if fail_tests or fail_production:
+            if fail_tests or fail_production or runtime_changed:
                 with self.assertRaises((d.DeployError,subprocess.CalledProcessError)): d.deploy(target)
+            elif prepare_only:
+                d.prepare_release(target)
             else: d.deploy(target)
             record=json.loads(next((base/"state/releases").glob("*/result.json")).read_text())
             return stop.call_args_list,start.call_args_list,record
@@ -243,6 +283,19 @@ COMMIT;
         stops,starts,record=self.simulate_release(fail_tests=True)
         self.assertEqual(stops,[]); self.assertEqual(starts,[])
         self.assertEqual(record["status"],"failed")
+
+    def test_prepare_stops_before_production_changes(self):
+        stops, starts, record = self.simulate_release(prepare_only=True)
+        self.assertEqual(stops, [])
+        self.assertEqual(starts, [])
+        self.assertEqual(record["status"], "prepared")
+        self.assertEqual(record["migration_mode"], "none")
+
+    def test_promote_rejects_runtime_change_after_prepare(self):
+        stops, starts, record = self.simulate_release(runtime_changed=True)
+        self.assertEqual(stops, [])
+        self.assertEqual(starts, [])
+        self.assertEqual(record["status"], "prepared")
 
     def test_failed_production_restores_previous_sha(self):
         stops,starts,record=self.simulate_release(fail_production=True)
@@ -256,6 +309,9 @@ COMMIT;
         self.assertEqual(len(stops),1); self.assertEqual(len(starts),1)
         self.assertEqual(record["target"],"a"*40)
         self.assertEqual(record["status"],"success")
+        self.assertEqual(record["schema_version"], d.RECORD_SCHEMA_VERSION)
+        self.assertIn("prepared_at", record)
+        self.assertIn("promoted_at", record)
 
     def test_rebase_only_changes_checkout_paths(self):
         env={"a":"/repo/app/file","b":"/repo-other/file","c":"/data/media"}
