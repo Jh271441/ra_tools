@@ -175,6 +175,7 @@ class ReviewWorkflowTest(unittest.TestCase):
     def test_gallery_export_resolves_exact_filtered_issue_membership(self) -> None:
         captured: dict[str, object] = {}
         captured_case_filters: dict[str, object] = {}
+        captured_export: dict[str, object] = {}
 
         def fake_payload(**kwargs):
             captured.update(kwargs)
@@ -184,6 +185,11 @@ class ReviewWorkflowTest(unittest.TestCase):
             captured_case_filters.update(filters)
             self.assertEqual(review_statuses, ("needs_gt_review",))
             return ["cn1", "cn2"]
+
+        def fake_export_response(result, export_format):
+            captured_export.update(result)
+            self.assertEqual(export_format, "xlsx")
+            return SimpleNamespace(status_code=200)
 
         request = Request(
             {
@@ -219,9 +225,60 @@ class ReviewWorkflowTest(unittest.TestCase):
             "_review_reason_analysis_payload",
             side_effect=fake_payload,
         ), patch.object(
+            analysis_router.database,
+            "list_cases",
+            return_value={
+                "items": [
+                    {
+                        "issue_id": "cn1",
+                        "title": "Pending one",
+                        "gt_label": "无需协助",
+                        "annotation": {
+                            "id": None,
+                            "label": "",
+                            "review_status": "pending",
+                            "tags": [],
+                            "missing_evidence": [],
+                            "note": "",
+                            "author": "",
+                            "created_at": "",
+                        },
+                        "prediction": {
+                            "model_run_id": "run-1",
+                            "label": "误触发",
+                            "reason": "model reason",
+                            "confidence": 0.9,
+                            "mismatch": True,
+                        },
+                    },
+                    {
+                        "issue_id": "cn2",
+                        "title": "Pending two",
+                        "gt_label": "误触发",
+                        "annotation": {
+                            "id": None,
+                            "label": "",
+                            "review_status": "pending",
+                            "tags": [],
+                            "missing_evidence": [],
+                            "note": "",
+                            "author": "",
+                            "created_at": "",
+                        },
+                        "prediction": {
+                            "model_run_id": "run-1",
+                            "label": "误触发",
+                            "reason": "second reason",
+                            "confidence": 0.8,
+                            "mismatch": False,
+                        },
+                    },
+                ]
+            },
+        ), patch.object(
             analysis_router,
             "_review_analysis_export_response",
-            return_value=SimpleNamespace(status_code=200),
+            side_effect=fake_export_response,
         ):
             response = asyncio.run(
                 analysis_router.export_review_reason_analysis(
@@ -244,6 +301,12 @@ class ReviewWorkflowTest(unittest.TestCase):
         self.assertEqual(captured["comment_state"], "all")
         self.assertTrue(captured["unbounded"])
         self.assertEqual(captured_case_filters["preferred_annotation_author"], "jasperchen")
+        exported_items = captured_export["items"]
+        self.assertEqual([item["issue_id"] for item in exported_items], ["cn1", "cn2"])
+        self.assertEqual(exported_items[0]["comparison_status"], "mismatch")
+        self.assertEqual(exported_items[1]["comparison_status"], "match")
+        self.assertEqual(exported_items[0]["annotation"]["review_status"], "pending")
+        self.assertEqual(exported_items[0]["prediction"]["reason"], "model reason")
 
     def test_review_analysis_exposes_blind_projection_to_every_viewer(self) -> None:
         captured: dict[str, object] = {}

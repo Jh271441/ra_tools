@@ -5,14 +5,15 @@ import csv
 import io
 from datetime import datetime
 from typing import Any
+from urllib.parse import quote
 
 import openpyxl
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
 
-from ..db import LABELS
+from ..db import LABELS, MODEL_LABELS
 from ..auth import request_identity
-from ..runtime import settings
+from ..runtime import _public_path, database, settings
 from ..support.baselines import (
     resolve_request_baseline_ids,
     resolve_request_baseline_scopes,
@@ -29,6 +30,7 @@ from ..support.review_payloads import (
     _review_reason_analysis_payload,
 )
 from ..support.filter_parsing import _case_filter_kwargs
+from ..support.external_links import _voyager_issue_url
 from .cases import _case_issue_ids_with_status_filter
 
 router = APIRouter()
@@ -247,6 +249,31 @@ def _review_analysis_export_rows(result: dict[str, Any]) -> list[dict[str, Any]]
     return exported
 
 
+def _gallery_export_fallback_item(item: dict[str, Any], model_run_id: str) -> dict[str, Any]:
+    """Adapt an unreviewed Gallery row to the shared Review-export schema."""
+
+    public = dict(item)
+    issue_id = _as_text(public.get("issue_id"))
+    prediction = public.get("prediction") or {}
+    model_label = _as_text(prediction.get("label"))
+    gt_label = _as_text(public.get("gt_label"))
+    if model_label not in MODEL_LABELS:
+        comparison_status = "none"
+    elif gt_label not in LABELS:
+        comparison_status = "no_gt"
+    elif bool(prediction.get("mismatch")):
+        comparison_status = "mismatch"
+    else:
+        comparison_status = "match"
+    review_params = [f"issue={quote(issue_id, safe='')}"]
+    if model_run_id:
+        review_params.append(f"run={quote(model_run_id, safe='')}")
+    public["comparison_status"] = comparison_status
+    public["review_url"] = _public_path(f"/review?{'&'.join(review_params)}")
+    public["voyager_issue_url"] = _voyager_issue_url(issue_id)
+    return public
+
+
 def _trail_expected_output_rows(result: dict[str, Any]) -> list[dict[str, str]]:
     """Return only GT-changing rows accepted by 张扬's expected-output mode."""
 
@@ -385,6 +412,7 @@ async def export_review_reason_analysis(
     export_issue_ids: str | list[str] = issue_ids
     export_search = search
     export_comment_state = comment_state
+    gallery_items: list[dict[str, Any]] = []
     if gallery_scope:
         case_filters = _case_filter_kwargs(
             search=search,
@@ -426,6 +454,14 @@ async def export_review_reason_analysis(
             return await asyncio.to_thread(
                 _review_analysis_export_response, {"items": []}, export_format
             )
+        gallery_case_filters = {**case_filters, "issue_ids": export_issue_ids}
+        gallery_result = await asyncio.to_thread(
+            database.list_cases,
+            **gallery_case_filters,
+            page=1,
+            page_size=len(export_issue_ids),
+        )
+        gallery_items = list(gallery_result.get("items") or [])
     result = await asyncio.to_thread(
         _review_reason_analysis_payload,
         model_run_id=model_run_id,
@@ -457,6 +493,16 @@ async def export_review_reason_analysis(
             include_multi_reviews and export_format != "trail_xlsx"
         ),
     )
+    if gallery_scope:
+        exported_issue_ids = {
+            _as_text(item.get("issue_id")) for item in result.get("items", [])
+        }
+        result.setdefault("items", []).extend(
+            _gallery_export_fallback_item(item, model_run_id)
+            for item in gallery_items
+            if _as_text(item.get("issue_id")) not in exported_issue_ids
+        )
+        result["items"].sort(key=lambda item: _as_text(item.get("issue_id")))
     result["baselines"] = resolve_request_baseline_ids(baselines, request=request)
     return await asyncio.to_thread(
         _review_analysis_export_response, result, export_format
