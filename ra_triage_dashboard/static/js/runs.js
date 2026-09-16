@@ -161,6 +161,14 @@ function renderReviewCatalogFilters() {
     selected: getMultiFilterValues($("#reviewStatusFilter")),
     onChange,
   });
+  renderMultiFilter($("#reviewDiscussionFilter"), {
+    options: [
+      { value: "with", label: uiText("有讨论", "With discussion") },
+      { value: "without", label: uiText("无讨论", "Without discussion") },
+    ],
+    selected: getMultiFilterValues($("#reviewDiscussionFilter")),
+    onChange,
+  });
   renderMultiFilter($("#reviewExclusionFilter"), {
     options: [
       {

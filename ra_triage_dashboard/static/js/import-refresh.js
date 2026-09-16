@@ -322,6 +322,7 @@ async function resetReviewFilters() {
   // reset so the fallback cannot revive a deliberately removed reviewer.
   persistReviewerFilterRoute?.("review", []);
   setMultiFilterValues($("#reviewStatusFilter"), []);
+  setMultiFilterValues($("#reviewDiscussionFilter"), []);
   setMultiFilterValues($("#reviewExclusionFilter"), []);
   setMultiFilterValues($("#workAssigneeFilter"), []);
   // The task-owner filter also falls back to its URL value while its custom

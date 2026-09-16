@@ -345,6 +345,7 @@ class DatabaseCasesMixin:
         missing_evidence: str = "",
         issue_ids: list[str] | None = None,
         work_assignee: str = "",
+        comment_state: str = "all",
         preferred_annotation_author: str = "",
         is_excluded: bool | None = None,
     ) -> tuple[str, list[Any], list[Any], str]:
@@ -390,6 +391,10 @@ class DatabaseCasesMixin:
         )
         if comparison_statuses and not model_run_id:
             raise ValueError("comparison_status requires model_run_id")
+
+        normalized_comment_state = str(comment_state or "all").strip().lower()
+        if normalized_comment_state not in {"all", "with", "without"}:
+            raise ValueError("unsupported comment_state")
 
         if search.strip():
             term = f"%{search.strip()}%"
@@ -439,6 +444,20 @@ class DatabaseCasesMixin:
             placeholders = ", ".join("?" for _ in cleaned_ids)
             where.append(f"i.issue_id IN ({placeholders})")
             params.extend(cleaned_ids)
+        if normalized_comment_state != "all":
+            comment_run_clause = " AND rc.model_run_id = ?" if model_run_id else ""
+            comment_exists = (
+                "EXISTS (SELECT 1 FROM review_comments rc "
+                "WHERE rc.issue_id = i.issue_id"
+                f"{comment_run_clause})"
+            )
+            where.append(
+                comment_exists
+                if normalized_comment_state == "with"
+                else f"NOT {comment_exists}"
+            )
+            if model_run_id:
+                params.append(model_run_id)
         assignees = _multi_values(work_assignee)
         named: list[str] = []
         if assignees:
@@ -531,6 +550,7 @@ class DatabaseCasesMixin:
         missing_evidence: str = "",
         issue_ids: list[str] | None = None,
         work_assignee: str = "",
+        comment_state: str = "all",
         preferred_annotation_author: str = "",
         is_excluded: bool | None = None,
         page: int = 1,
@@ -555,6 +575,7 @@ class DatabaseCasesMixin:
             missing_evidence=missing_evidence,
             issue_ids=issue_ids,
             work_assignee=work_assignee,
+            comment_state=comment_state,
             preferred_annotation_author=preferred_annotation_author,
             is_excluded=is_excluded,
         )
@@ -618,6 +639,7 @@ class DatabaseCasesMixin:
         missing_evidence: str = "",
         issue_ids: list[str] | None = None,
         work_assignee: str = "",
+        comment_state: str = "all",
         preferred_annotation_author: str = "",
         is_excluded: bool | None = None,
         limit: int = 5000,
@@ -638,6 +660,7 @@ class DatabaseCasesMixin:
             missing_evidence=missing_evidence,
             issue_ids=issue_ids,
             work_assignee=work_assignee,
+            comment_state=comment_state,
             preferred_annotation_author=preferred_annotation_author,
             is_excluded=is_excluded,
         )

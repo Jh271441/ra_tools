@@ -493,6 +493,10 @@ function currentReviewRouteOptions(overrides = {}) {
         ? reviewerFilterSelection("review")
         : getMultiFilterValues($("#reviewerFilter")),
     reviewStatus: getMultiFilterValues($("#reviewStatusFilter")),
+    commentState:
+      typeof selectedReviewDiscussionFilter === "function"
+        ? selectedReviewDiscussionFilter()
+        : "all",
     workAssignee:
       typeof workAssigneeFilterSelection === "function"
         ? workAssigneeFilterSelection()
@@ -536,6 +540,10 @@ function applyReviewRouteControls(route) {
   setMultiFilterValues($("#workAssigneeFilter"), route.workAssignee);
   setMultiFilterValues($("#reviewerFilter"), route.annotationAuthor);
   setMultiFilterValues($("#reviewStatusFilter"), route.reviewStatus);
+  setMultiFilterValues(
+    $("#reviewDiscussionFilter"),
+    route.commentState && route.commentState !== "all" ? [route.commentState] : []
+  );
   setMultiFilterValues(
     $("#reviewExclusionFilter"),
     route.exclusion && route.exclusion !== "all" ? [route.exclusion] : []
@@ -678,6 +686,9 @@ function pageUrl(page, options = {}) {
     if (modelLabel) url.searchParams.set("model_label", modelLabel);
     if (reviewer) url.searchParams.set("reviewer", reviewer);
     if (status) url.searchParams.set("status", status);
+    if (review.commentState && review.commentState !== "all") {
+      url.searchParams.set("comment_state", review.commentState);
+    }
     if (assignee) url.searchParams.set("work_assignee", assignee);
     if (review.exclusion && review.exclusion !== "all") {
       url.searchParams.set("exclusion", review.exclusion);

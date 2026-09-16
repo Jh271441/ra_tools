@@ -8,7 +8,7 @@
   min-width: 0; display: grid;
   grid-template-columns:
     minmax(150px, 1.35fr) minmax(118px, .72fr) minmax(120px, 1fr)
-    repeat(6, minmax(84px, .58fr)) auto;
+    repeat(7, minmax(84px, .58fr)) auto;
   align-items: end; gap: 5px;
 }
 .review-filters label { min-width: 0; display: grid; gap: 3px; color: var(--faint); font-size: 11px; }

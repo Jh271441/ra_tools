@@ -12,6 +12,13 @@ function reviewComparisonStatusForItem(item) {
   return prediction.mismatch ? "mismatch" : "match";
 }
 
+function selectedReviewDiscussionFilter() {
+  const values = parseFilterList(getMultiFilterValues($("#reviewDiscussionFilter")));
+  return values.length === 1 && ["with", "without"].includes(values[0])
+    ? values[0]
+    : "all";
+}
+
 function issueCardReviewFlag(annotation, comparisonStatus = "") {
   if (annotation?.is_excluded) {
     return `<span class="issue-card-flag issue-card-flag-excluded" data-card-review-flag="excluded"><span class="ui-lang-zh">应该排除</span><span class="ui-lang-en">Exclude</span></span>`;
@@ -548,6 +555,7 @@ async function loadCases({
     typeof selectedReviewExclusionFilter === "function"
       ? selectedReviewExclusionFilter()
       : "all";
+  const commentState = selectedReviewDiscussionFilter();
   const runFilter = $("#modelRunFilter");
   // During first paint the Run request and gallery request overlap.  A deep
   // link already owns ``state.selectedRunId``, but the native select has no
@@ -569,6 +577,7 @@ async function loadCases({
   if (reviewStatus) params.set("review_status", reviewStatus);
   if (workAssignee) params.set("work_assignee", workAssignee);
   if (exclusion !== "all") params.set("exclusion", exclusion);
+  if (commentState !== "all") params.set("comment_state", commentState);
   if (state.selectedRunId) params.set("model_run_id", state.selectedRunId);
   if (state.selectedRunId && state.reviewComparisonStatus !== "all") {
     params.set("comparison", state.reviewComparisonStatus);

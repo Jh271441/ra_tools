@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-427`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-428`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -284,6 +284,10 @@
                 <label class="filter-review-status">
                   <span class="ui-lang-zh" title="Issue GT Review状态">GT 复核状态</span><span class="ui-lang-en" title="Issue GT review status">GT Review status</span>
                   <div class="multi-filter" id="reviewStatusFilter" data-placeholder="全部状态" data-placeholder-en="All statuses" data-i18n-placeholder="analysis.all_statuses"></div>
+                </label>
+                <label class="filter-discussion-state">
+                  <span class="ui-lang-zh">讨论</span><span class="ui-lang-en">Discussion</span>
+                  <div class="multi-filter" id="reviewDiscussionFilter" data-placeholder="全部讨论状态" data-placeholder-en="All discussion states" aria-label="Discussion state filter"></div>
                 </label>
                 <label class="filter-exclusion">
                   <span class="ui-lang-zh">问题排除</span><span class="ui-lang-en">Issue exclusion</span>
@@ -1991,7 +1995,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-427`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-428`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

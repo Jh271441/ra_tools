@@ -41,6 +41,10 @@ function currentReviewFilterPayload() {
     model_label: joinFilterList(getMultiFilterValues($("#annotationFilter"))),
     annotation_author: joinFilterList(getMultiFilterValues($("#reviewerFilter"))),
     review_status: joinFilterList(getMultiFilterValues($("#reviewStatusFilter"))),
+    comment_state:
+      typeof selectedReviewDiscussionFilter === "function"
+        ? selectedReviewDiscussionFilter()
+        : "all",
     exclusion:
       typeof selectedReviewExclusionFilter === "function"
         ? selectedReviewExclusionFilter()

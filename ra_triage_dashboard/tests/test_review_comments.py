@@ -109,6 +109,55 @@ class ReviewCommentsTest(unittest.TestCase):
                     reply_to_id=parent["id"],
                 )
 
+    def test_gallery_filters_cases_by_discussion_state_and_selected_run(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = self.make_database(directory)
+            database.upsert_issues(
+                [
+                    {"issue_id": "cn2", "gt_label": "正确触发"},
+                    {"issue_id": "cn3", "gt_label": "无需协助"},
+                ],
+                source="test",
+                replace_gt=True,
+            )
+            run, _ = database.import_model_run(
+                name="discussion-run",
+                source_name="discussion.json",
+                source_sha256="d" * 64,
+                metadata={},
+                rows=[{"issue_id": "cn1", "model_label": "误触发"}],
+            )
+            database.create_review_comment(
+                issue_id="cn1",
+                model_run_id=run["id"],
+                body="Run A 讨论",
+                author="alice",
+            )
+            database.create_review_comment(
+                issue_id="cn2", body="未绑定讨论", author="bob"
+            )
+
+            any_run = database.list_cases(comment_state="with", page_size=20)
+            run_a = database.list_cases(
+                model_run_id=run["id"], comment_state="with", page_size=20
+            )
+            without_run_a = database.list_cases(
+                model_run_id=run["id"], comment_state="without", page_size=20
+            )
+
+            self.assertEqual(
+                [item["issue_id"] for item in any_run["items"]], ["cn1", "cn2"]
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in run_a["items"]], ["cn1"]
+            )
+            self.assertEqual(
+                [item["issue_id"] for item in without_run_a["items"]],
+                ["cn2", "cn3"],
+            )
+            with self.assertRaisesRegex(ValueError, "unsupported comment_state"):
+                database.list_cases(comment_state="broken")
+
     def test_comment_outbox_can_be_claimed_and_completed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             database = self.make_database(directory)

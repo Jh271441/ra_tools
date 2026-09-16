@@ -340,7 +340,7 @@
   .review-filters {
     grid-template-columns:
       minmax(140px, 1.3fr) minmax(110px, .7fr) minmax(120px, 1fr)
-      repeat(6, minmax(80px, .55fr)) auto;
+      repeat(7, minmax(80px, .55fr)) auto;
   }
   .review-quick-actions { justify-content: flex-end; }
   .tool-page-grid { grid-template-columns: 230px minmax(0, 1fr); }
