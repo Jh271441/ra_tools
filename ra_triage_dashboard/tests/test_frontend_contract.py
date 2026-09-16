@@ -239,7 +239,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-426", APP_ENTRY_JS)
+        self.assertIn("manual-triage-427", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -280,7 +280,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-426", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-427", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -388,7 +388,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-426`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-427`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -1264,6 +1264,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("prefetchAdjacentCaseCores(issueId)", APP_JS)
         self.assertIn("CASE_DETAIL_PREFETCH_TTL_MS = 15000", APP_JS)
         self.assertIn("data.preview_thumbnail_url = safeSameOriginAssetUrl", APP_JS)
+        self.assertNotIn("video.poster_url = state.selectedCase.preview_thumbnail_url", APP_JS)
         self.assertIn('class="detail-media-preview"', APP_JS)
         self.assertIn(".hero-media-button .detail-media-image { position: relative; z-index: 1; }", STYLES_CSS)
         self.assertIn('media_status === "pending"', APP_JS)
@@ -1314,7 +1315,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-426", APP_ENTRY_JS)
+        self.assertIn("manual-triage-427", APP_ENTRY_JS)
 
     def test_adjacent_review_navigation_preserves_scroll_position(self) -> None:
         self.assertIn("const preserveScrollY = window.scrollY;", APP_JS)
