@@ -32,6 +32,7 @@ from ..support.external_links import (
     _case_link_metadata_fallback,
     _public_batch_job,
     _voyager_issue_url,
+    resolve_disable_ra_simulation_version,
 )
 from ..support.filter_parsing import _case_filter_kwargs
 from ..support.identity import _admin_identity
@@ -776,6 +777,27 @@ async def get_case_trail_metadata(issue_id: str) -> dict[str, Any]:
         except Exception:
             status = "unavailable"
             logger.warning("Trail detail metadata unavailable issue_id=%s", issue_id)
+
+    disable_ra_task_id = trail_metadata.get("te_task_id_disabe_ra")
+    if disable_ra_task_id not in (None, ""):
+        try:
+            trail_metadata["te_task_version_disabe_ra"] = await asyncio.wait_for(
+                asyncio.to_thread(
+                    resolve_disable_ra_simulation_version,
+                    disable_ra_task_id,
+                ),
+                timeout=3.5,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "disable-RA simulation version lookup timed out issue_id=%s",
+                issue_id,
+            )
+        except Exception:
+            logger.warning(
+                "disable-RA simulation version unavailable issue_id=%s",
+                issue_id,
+            )
 
     dashboard_should_exclude = trail_metadata.get("dashboard_should_exclude")
     if not isinstance(dashboard_should_exclude, bool):

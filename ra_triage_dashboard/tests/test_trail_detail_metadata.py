@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import types
 import unittest
@@ -13,6 +14,7 @@ from ra_triage_dashboard.app.trail_sync import (
 from ra_triage_dashboard.app.support.external_links import (
     _case_external_links,
     _case_link_metadata_fallback,
+    resolve_disable_ra_simulation_version,
 )
 
 
@@ -94,16 +96,55 @@ class TrailDetailMetadataTest(unittest.TestCase):
         self.assertEqual(playback["ares_trip_id"], "10350_20260511_204156")
         self.assertEqual(playback["ares_timestamp_ms"], 1778504337849)
 
+        metadata["te_task_version_disabe_ra"] = 1
         external_links = _case_external_links("cn31842459", metadata)
         self.assertEqual(
             external_links["disable_ra_simulation_url"],
             "https://voyager.intra.xiaojukeji.com/static/ares-animation/"
-            "?task_id=4515392300000101&task_version=-1",
+            "?task_id=4515392300000101&task_version=1",
         )
         self.assertEqual(
             external_links["disable_ra_simulation_task_id"],
             "4515392300000101",
         )
+        self.assertEqual(external_links["disable_ra_simulation_task_version"], 1)
+
+    def test_disable_ra_task_version_uses_highest_completed_retry(self) -> None:
+        class Response:
+            def __init__(self, payload: dict[str, object]):
+                self.payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, _limit: int) -> bytes:
+                return json.dumps(self.payload).encode("utf-8")
+
+        def fake_urlopen(request, *, timeout):
+            self.assertGreater(timeout, 0)
+            version = json.loads(request.data)["version"]
+            return Response(
+                {
+                    "code": 0,
+                    "data": {
+                        "version": version,
+                        "result": {"trip_id": "trip"} if version <= 1 else {},
+                    },
+                }
+            )
+
+        with patch(
+            "ra_triage_dashboard.app.support.external_links.urlopen",
+            side_effect=fake_urlopen,
+        ):
+            version = resolve_disable_ra_simulation_version(
+                "4546661100000025",
+                cache_seconds=0,
+            )
+        self.assertEqual(version, 1)
 
     def test_invalid_disable_ra_task_id_does_not_create_external_link(self) -> None:
         external_links = _case_external_links(

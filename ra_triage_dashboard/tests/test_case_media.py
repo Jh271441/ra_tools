@@ -10,6 +10,41 @@ from ra_triage_dashboard.app.routers import cases as cases_router
 
 
 class DeferredCaseMediaTest(unittest.IsolatedAsyncioTestCase):
+    async def test_trail_metadata_resolves_disable_ra_task_version(self):
+        with patch.object(
+            cases_router.database,
+            "get_issue",
+            return_value={"issue_id": "cn1", "extra": {}},
+        ), patch.object(
+            cases_router,
+            "settings",
+            SimpleNamespace(
+                trail_detail_metadata_enabled=True,
+                ra_auto_triage_root="/tmp/ra-auto-triage-test",
+                trail_view_id=2410,
+                trail_detail_metadata_cache_seconds=0,
+            ),
+        ), patch.object(
+            cases_router,
+            "read_trail_issue_metadata",
+            return_value={"te_task_id_disabe_ra": "4546661100000025"},
+        ), patch.object(
+            cases_router,
+            "resolve_disable_ra_simulation_version",
+            return_value=1,
+        ):
+            payload = await cases_router.get_case_trail_metadata("cn1")
+
+        self.assertEqual(
+            payload["external_links"]["disable_ra_simulation_task_version"],
+            1,
+        )
+        self.assertTrue(
+            payload["external_links"]["disable_ra_simulation_url"].endswith(
+                "task_id=4546661100000025&task_version=1"
+            )
+        )
+
     def test_review_history_is_never_hidden_by_blind_assignment(self) -> None:
         annotations = [
             {"id": 1, "author": "legacy", "work_split_id": ""},
