@@ -7,6 +7,66 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_mention_enter_and_tab_precede_comment_submit_listener() -> None:
+    script = (ROOT / "static" / "js" / "review-mentions.js").read_text() + r'''
+const assert=require('node:assert/strict');
+state={mentionUsers:[],config:{},session:{}};
+window={addEventListener(){},getComputedStyle(){return {};}};
+document={activeElement:null};
+Event=class {constructor(type,options){this.type=type;this.bubbles=options?.bubbles;}};
+updateReviewMentionComposer=()=>{};
+
+function fixture(key) {
+  const listeners={capture:[],bubble:[]};
+  const option={dataset:{reviewMention:'alice'}};
+  const popover={};
+  const root={
+    hidden:false,
+    querySelectorAll(selector){return selector==='[data-review-mention]' ? [option] : [];},
+    querySelector(selector){
+      if (selector==='.review-mention-popover') return popover;
+      if (selector==='.review-mention-option.is-active') return {scrollIntoView(){}};
+      return null;
+    },
+    replaceChildren(){this.hidden=true;},
+    contains(){return false;},
+  };
+  const textarea={
+    value:'@a',selectionStart:2,selectionEnd:2,dataset:{},scrollTop:0,scrollLeft:0,
+    setAttribute(){},focus(){},dispatchEvent(){},
+    setRangeText(value,start,end){
+      this.value=this.value.slice(0,start)+value+this.value.slice(end);
+      this.selectionStart=this.selectionEnd=start+value.length;
+    },
+    addEventListener(type,listener,options){
+      if(type==='keydown') listeners[options?.capture ? 'capture' : 'bubble'].push(listener);
+    },
+  };
+  bindReviewMentionComposer(textarea,root);
+  let submitted=0;
+  textarea.addEventListener('keydown',(event)=>{if(event.key==='Enter'&&!event.defaultPrevented) submitted++;});
+  const event={
+    key,defaultPrevented:false,
+    preventDefault(){this.defaultPrevented=true;},
+    stopPropagation(){},
+  };
+  listeners.capture.forEach((listener)=>listener(event));
+  listeners.bubble.forEach((listener)=>listener(event));
+  return {textarea,event,submitted};
+}
+
+const enter=fixture('Enter');
+assert.equal(enter.textarea.value,'@alice ');
+assert.equal(enter.event.defaultPrevented,true);
+assert.equal(enter.submitted,0);
+const tab=fixture('Tab');
+assert.equal(tab.textarea.value,'@alice ');
+assert.equal(tab.event.defaultPrevented,true);
+assert.equal(tab.submitted,0);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
 def test_review_tag_group_shortcut_toggles_open_state() -> None:
     script = (ROOT / "static" / "js" / "review-tags.js").read_text() + r'''
 const assert=require('node:assert/strict');

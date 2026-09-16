@@ -407,7 +407,7 @@ function bindReviewMentionComposer(
       event.preventDefault();
       insertReviewMention(textarea, root, selected.dataset.reviewMention);
     }
-  });
+  }, { capture: true });
   ["click", "focus", "select"].forEach((eventName) => {
     textarea.addEventListener(eventName, () => updateReviewMentionComposer(textarea, root));
   });
