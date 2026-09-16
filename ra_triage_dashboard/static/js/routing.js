@@ -894,6 +894,9 @@ function showPage(
     if (active) item.setAttribute("aria-current", "page");
     else item.removeAttribute("aria-current");
   });
+  if (typeof ensureSidebarNavGroupForPage === "function") {
+    ensureSidebarNavGroupForPage(target);
+  }
   renderPageChrome();
   if (target === "runs") {
     renderRunManager();

@@ -814,6 +814,88 @@ function startChangePolling() {
   });
 }
 
+const SIDEBAR_NAV_GROUP_PREFS_KEY = "ra-triage-sidebar-nav-groups-v1";
+
+function sidebarNavGroupElement(group) {
+  return [...document.querySelectorAll("[data-sidebar-nav-group]")].find(
+    (element) => element.dataset.sidebarNavGroup === group
+  ) || null;
+}
+
+function readSidebarNavGroupPreferences() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SIDEBAR_NAV_GROUP_PREFS_KEY) || "null");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function persistSidebarNavGroupPreferences() {
+  const preferences = {};
+  document.querySelectorAll("[data-sidebar-nav-group]").forEach((group) => {
+    if (!group.dataset.sidebarNavGroup || group.hidden) return;
+    preferences[group.dataset.sidebarNavGroup] = !group.classList.contains("is-collapsed");
+  });
+  try {
+    localStorage.setItem(SIDEBAR_NAV_GROUP_PREFS_KEY, JSON.stringify(preferences));
+  } catch (_) {
+    // Private/hardened browser storage is optional; the current session still works.
+  }
+}
+
+function setSidebarNavGroupOpen(group, open, { persist = true } = {}) {
+  const root = sidebarNavGroupElement(group);
+  if (!root) return;
+  const toggle = root.querySelector("[data-sidebar-nav-group-toggle]");
+  const items = root.querySelector("[data-sidebar-nav-group-items]");
+  root.classList.toggle("is-collapsed", !open);
+  if (toggle) toggle.setAttribute("aria-expanded", String(Boolean(open)));
+  if (items) items.hidden = !open;
+  if (persist) persistSidebarNavGroupPreferences();
+}
+
+function ensureSidebarNavGroupForPage(page = state.activePage) {
+  const item = [...document.querySelectorAll(".sidebar-item[data-page-target]")].find(
+    (element) => element.dataset.pageTarget === page
+  );
+  const root = item?.closest("[data-sidebar-nav-group]");
+  const group = root?.dataset.sidebarNavGroup || "";
+  if (!group) return;
+  root.classList.add("has-active");
+  setSidebarNavGroupOpen(group, true, { persist: false });
+  document.querySelectorAll("[data-sidebar-nav-group]").forEach((element) => {
+    if (element !== root) element.classList.remove("has-active");
+  });
+}
+
+function restoreSidebarNavGroups() {
+  const preferences = readSidebarNavGroupPreferences();
+  document.querySelectorAll("[data-sidebar-nav-group]").forEach((group) => {
+    const key = group.dataset.sidebarNavGroup || "";
+    if (!key || group.hidden) return;
+    const defaultOpen = group.dataset.sidebarDefaultOpen === "true";
+    const saved = typeof preferences[key] === "boolean" ? preferences[key] : defaultOpen;
+    setSidebarNavGroupOpen(key, saved, { persist: false });
+  });
+  ensureSidebarNavGroupForPage();
+}
+
+function bindSidebarNavGroups() {
+  if (document.documentElement.dataset.sidebarNavGroupsBound === "1") return;
+  document.documentElement.dataset.sidebarNavGroupsBound = "1";
+  document.querySelectorAll("[data-sidebar-nav-group-toggle]").forEach((toggle) => {
+    toggle.addEventListener("click", (event) => {
+      event.preventDefault();
+      const group = toggle.dataset.sidebarNavGroupToggle || "";
+      const root = sidebarNavGroupElement(group);
+      if (!root) return;
+      setSidebarNavGroupOpen(group, root.classList.contains("is-collapsed"));
+    });
+  });
+  restoreSidebarNavGroups();
+}
+
 function isMobileSidebarViewport() {
   return typeof window.matchMedia === "function" && window.matchMedia("(max-width: 639px)").matches;
 }

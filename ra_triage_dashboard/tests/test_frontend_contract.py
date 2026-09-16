@@ -239,7 +239,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-434", APP_ENTRY_JS)
+        self.assertIn("manual-triage-435", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -280,7 +280,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-434", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-435", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -365,6 +365,28 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('data-page-target="review" data-app-path="/review"', INDEX_HTML)
         self.assertIn('aria-label="Manual Triage 首页"', INDEX_HTML)
 
+    def test_sidebar_navigation_is_grouped_and_scrollable(self) -> None:
+        self.assertIn('data-sidebar-nav-group="work"', INDEX_HTML)
+        self.assertIn('data-sidebar-nav-group="analysis"', INDEX_HTML)
+        self.assertIn('data-sidebar-nav-group="intent"', INDEX_HTML)
+        self.assertIn('data-sidebar-nav-group="system"', INDEX_HTML)
+        self.assertIn('data-sidebar-nav-group-toggle="analysis"', INDEX_HTML)
+        self.assertIn('id="intentNavGroup"', INDEX_HTML)
+        self.assertIn("overflow-y: auto", STYLES_CSS)
+        self.assertIn("SIDEBAR_NAV_GROUP_PREFS_KEY", APP_JS)
+        self.assertIn("function bindSidebarNavGroups", APP_JS)
+        self.assertIn("function ensureSidebarNavGroupForPage", APP_JS)
+        self.assertIn("ensureSidebarNavGroupForPage(target)", APP_JS)
+        self.assertIn('localStorage.setItem(SIDEBAR_NAV_GROUP_PREFS_KEY', APP_JS)
+        self.assertIn("sidebar-mobile-open .sidebar-nav-group", STYLES_CSS)
+
+    def test_review_assignment_history_uses_flat_visual_hierarchy(self) -> None:
+        self.assertIn(".review-assignment-list-card { padding: 4px 2px 0; border: 0;", STYLES_CSS)
+        self.assertIn("border-top: 1px solid var(--line-soft); border-radius: 0; background: transparent;", STYLES_CSS)
+        self.assertIn("grid-template-columns: 62px minmax(0, 1fr) auto", STYLES_CSS)
+        self.assertIn(".review-assignment-member + .review-assignment-member { padding-left: 14px; border-left: 1px solid var(--line-soft); }", STYLES_CSS)
+        self.assertIn(".review-assignment-member + .review-assignment-member { padding: 10px 0 2px; border-top: 1px solid var(--line-soft); border-left: 0; }", STYLES_CSS)
+
     def test_color_theme_is_persisted_and_applied_before_first_paint(self) -> None:
         self.assertIn('data-color-theme="dark"', INDEX_HTML)
         self.assertIn('localStorage.getItem("ra-triage-color-theme")', INDEX_HTML)
@@ -388,7 +410,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-434`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-435`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -1327,7 +1349,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-434", APP_ENTRY_JS)
+        self.assertIn("manual-triage-435", APP_ENTRY_JS)
 
     def test_review_gallery_exports_the_complete_current_filter(self) -> None:
         self.assertIn('id="exportFilteredIssuesButton"', INDEX_HTML)
@@ -1458,7 +1480,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("if (event.shiftKey) intentSetAggregate", APP_JS)
         self.assertIn("else intentSetFrameLabel", APP_JS)
         self.assertIn("button.blur();", APP_JS)
-        self.assertIn('class="sidebar-group-label sidebar-label system-group-label">系统管理', INDEX_HTML)
+        self.assertIn('class="sidebar-group-label sidebar-label system-group-label"><span class="ui-lang-zh">系统管理', INDEX_HTML)
         self.assertNotIn('class="nav-beta"', INDEX_HTML)
         self.assertIn('#openBatchPredictionButton { order: 7; }', STYLES_CSS)
         self.assertIn('body:is([data-active-page="intent"], [data-active-page="intent-experiments"], [data-active-page="intent-summary"]) .top-actions { min-width: 0; margin-left: auto; }', STYLES_CSS)

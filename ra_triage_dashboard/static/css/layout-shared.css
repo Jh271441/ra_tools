@@ -26,7 +26,30 @@ html[data-sidebar-pref="collapsed"] .app-sidebar { width: 64px; }
 .sidebar-home { border-radius: 5px; text-decoration: none; }
 .sidebar-home:hover strong { color: var(--accent); }
 .sidebar-home:focus-visible { outline: 2px solid rgba(34,211,238,.65); outline-offset: 3px; }
-.sidebar-nav { flex: 1; display: grid; align-content: start; gap: 3px; padding: 8px; }
+.sidebar-nav {
+  flex: 1; min-height: 0; display: grid; align-content: start; gap: 8px; padding: 8px;
+  overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable;
+}
+.sidebar-nav-group { min-width: 0; display: grid; gap: 2px; }
+.sidebar-nav-group[hidden] { display: none !important; }
+.sidebar-nav-group-items { min-width: 0; display: grid; gap: 3px; }
+.sidebar-nav-group-items[hidden] { display: none !important; }
+.sidebar-group-toggle {
+  width: calc(100% - 8px); min-height: 30px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-left: 8px; padding: 5px 9px; border: 1px solid transparent; border-radius: 7px;
+  color: var(--faint); background: transparent; text-align: left;
+}
+.sidebar-group-toggle:hover { border-color: var(--line-soft); color: var(--text); background: rgba(34,211,239,.045); }
+.sidebar-group-toggle:focus-visible { outline: 2px solid rgba(34,211,239,.58); outline-offset: 2px; }
+.sidebar-group-toggle .sidebar-group-label { min-width: 0; flex: 1 1 auto; padding: 0; color: inherit; font-size: 11px; letter-spacing: .04em; }
+.sidebar-group-chevron {
+  width: 14px; height: 14px; flex: 0 0 14px; color: currentColor; opacity: .72;
+  background: currentColor; -webkit-mask: var(--ui-chevron-mask) center / 14px 14px no-repeat; mask: var(--ui-chevron-mask) center / 14px 14px no-repeat;
+  transition: transform 160ms ease-out, opacity 160ms ease-out;
+}
+.sidebar-nav-group.is-collapsed .sidebar-group-chevron { transform: rotate(-90deg); }
+.sidebar-nav-group.has-active > .sidebar-group-toggle { color: var(--text); }
+.sidebar-nav-group.has-active > .sidebar-group-toggle .sidebar-group-label { color: var(--accent); }
 .sidebar-group-label { padding: 14px 10px 5px; color: var(--muted); font-size: 13px; font-weight: 750; line-height: 1.25; letter-spacing: .02em; }
 .sidebar-item { order: 20; }
 #reviewNavButton { order: 2; } #reviewAssignmentsNavButton { order: 3; } #reviewAnalysisNavButton { order: 4; } #trailAttributeUpdateNavButton { order: 5; } #openRunManagerButton { order: 6; } #runComparisonNavButton { order: 6; } #openBatchPredictionButton { order: 7; } #intentLabelingNavButton { order: 10; } #intentExperimentsNavButton { order: 11; } #intentSummaryNavButton { order: 12; }
@@ -46,6 +69,14 @@ html[data-can-view-intent="true"] #intentSummaryNavButton[hidden] { display: fle
 .sidebar-item.active .sidebar-icon {
   border-color: rgba(34,211,238,.52); color: var(--accent); background: linear-gradient(145deg, rgba(34,211,238,.18), rgba(34,211,238,.07));
   box-shadow: none;
+}
+@media (min-width: 640px) {
+  /* The compact icon rail keeps every destination discoverable; group headers
+     are replaced by the existing icon-only layout. */
+  .app-shell.sidebar-collapsed .sidebar-group-toggle,
+  html[data-sidebar-pref="collapsed"] .sidebar-group-toggle { display: none; }
+  .app-shell.sidebar-collapsed .sidebar-nav-group-items,
+  html[data-sidebar-pref="collapsed"] .sidebar-nav-group-items { display: grid !important; }
 }
 .sidebar-icon, .user-avatar {
   width: 30px; height: 30px; flex: 0 0 30px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 7px;

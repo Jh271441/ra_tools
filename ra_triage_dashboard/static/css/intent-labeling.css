@@ -2,6 +2,7 @@
 .intent-group-label { order: 8; }
 /* Replay last-known intent access before /api/session so refresh does not
  * hide 意图标注 / 实验分配 / 标注汇总 until identity returns. */
+html[data-can-view-intent="true"] #intentNavGroup[hidden] { display: grid !important; }
 html[data-can-view-intent="true"] .intent-group-label[hidden] { display: block !important; }
 html[data-sidebar-pref="collapsed"][data-can-view-intent="true"] .intent-group-label[hidden],
 html[data-can-view-intent="true"] .app-shell.sidebar-collapsed .intent-group-label[hidden] { display: none !important; }

@@ -653,6 +653,7 @@ function bindEvents() {
   $("#themeToggleButton").addEventListener("click", () => {
     applyColorTheme(state.colorTheme === "light" ? "dark" : "light");
   });
+  bindSidebarNavGroups();
   $("#sidebarToggle").addEventListener("click", toggleSidebar);
   $("#sidebarBrandToggle").addEventListener("click", toggleSidebar);
   $("#mobileSidebarBackdrop")?.addEventListener("click", closeMobileSidebar);

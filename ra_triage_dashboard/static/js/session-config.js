@@ -94,6 +94,8 @@ function renderSession() {
     else delete document.documentElement.dataset.canViewIntent;
     const intentGroupLabel = document.querySelector(".intent-group-label");
     if (intentGroupLabel) intentGroupLabel.hidden = !canViewIntent;
+    const intentNavGroup = $("#intentNavGroup");
+    if (intentNavGroup) intentNavGroup.hidden = !canViewIntent;
     const intentLabelingNav = $("#intentLabelingNavButton");
     if (intentLabelingNav) intentLabelingNav.hidden = !canViewIntent;
     const intentExperimentsNav = $("#intentExperimentsNavButton");
@@ -102,6 +104,9 @@ function renderSession() {
     $("#intentExperimentsPage")?.classList.toggle("is-readonly", canViewIntent && !state.session.can_manage_intent);
     const intentSummaryNav = $("#intentSummaryNavButton");
     if (intentSummaryNav) intentSummaryNav.hidden = !canViewIntent;
+    if (canViewIntent && typeof restoreSidebarNavGroups === "function") {
+      restoreSidebarNavGroups();
+    }
   }
   document.querySelectorAll("[data-intent-frame-axis], [data-intent-aggregate-axis], #intentRestoreBatchPrefill").forEach((element) => {
     element.disabled = state.session.can_annotate_intent === false;

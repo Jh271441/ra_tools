@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-434`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-435`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -99,79 +99,107 @@
           </div>
 
         <nav class="sidebar-nav" aria-label="工作台工具">
-          <div class="sidebar-group-label sidebar-label review-group-label">判错复核</div>
-          <a class="sidebar-item active" id="reviewNavButton" data-page-target="review" data-app-path="/review" href="/review" title="判错复核">
-            <span class="sidebar-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="3.5" y="4.5" width="17" height="16" rx="3"/><path d="M8 4h8M9 3v3m6-3v3M7 5H5.8A1.8 1.8 0 0 0 4 6.8v11.4A1.8 1.8 0 0 0 5.8 20h12.4a1.8 1.8 0 0 0 1.8-1.8V6.8A1.8 1.8 0 0 0 18.2 5H17"/><path class="icon-emphasis" d="m8 12 2.1 2.1L16.4 8.8"/><path d="M8 17h8"/></svg>
-            </span>
-            <span class="sidebar-label"><strong class="ui-lang-zh">判错复核</strong><strong class="ui-lang-en">Failure review</strong></span>
-          </a>
-          <a class="sidebar-item" id="reviewAssignmentsNavButton" data-page-target="review-assignments" data-app-path="/review-assignments" href="/review-assignments" title="任务分配" hidden>
-            <span class="sidebar-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="4" y="4" width="16" height="16" rx="3"/><path d="M8 8h8M8 12h5M8 16h8"/><path class="icon-emphasis" d="m14 12 2 2 4-5"/></svg>
-            </span>
-            <span class="sidebar-label"><strong class="ui-lang-zh">任务分配</strong><strong class="ui-lang-en">Assignments</strong></span>
-          </a>
-          <div class="sidebar-group-label sidebar-label intent-group-label" hidden>意图标注</div>
-          <a class="sidebar-item" id="intentLabelingNavButton" data-page-target="intent" data-app-path="/intent-labeling" href="/intent-labeling" title="意图标注" hidden>
-            <span class="sidebar-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="4" y="3.5" width="16" height="17" rx="3"/><path d="M8 8h8M8 12h5M8 16h8"/><path class="icon-emphasis" d="m14 13 2 2 4-5"/></svg>
-            </span>
-            <span class="sidebar-label"><strong class="ui-lang-zh">意图标注</strong><strong class="ui-lang-en">Intent labeling</strong></span>
-          </a>
-          <a class="sidebar-item" id="intentExperimentsNavButton" data-page-target="intent-experiments" data-app-path="/intent-experiments" href="/intent-experiments" title="多盲实验分配" hidden>
-            <span class="sidebar-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 5h16v14H4z"/><circle cx="8" cy="10" r="2"/><circle cx="16" cy="10" r="2"/><path d="M5.5 17c.4-2.3 1.5-3.5 3.5-3.5s3.1 1.2 3.5 3.5m-1 0c.4-2.3 1.5-3.5 3.5-3.5s3.1 1.2 3.5 3.5"/><path class="icon-emphasis" d="M7 5V3m10 2V3"/></svg>
-            </span>
-            <span class="sidebar-label"><strong class="ui-lang-zh">实验分配</strong><strong class="ui-lang-en">Experiment assignment</strong></span>
-          </a>
-          <a class="sidebar-item" id="intentSummaryNavButton" data-page-target="intent-summary" data-app-path="/intent-summary" href="/intent-summary" title="标注汇总" hidden>
-            <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 5h16v14H4z"/><path d="M7 16v-4m5 4V8m5 8v-6M6 19h13"/></svg></span>
-            <span class="sidebar-label"><strong>标注汇总</strong></span>
-          </a>
-          <a class="sidebar-item" id="reviewAnalysisNavButton" data-page-target="analysis" data-app-path="/review-analysis" href="/review-analysis" title="Review 原因聚类">
-            <span class="sidebar-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M7 3.5 19.8 6v12L12 21 4.2 18V6z"/><path d="m8.8 8.3 2 5.8m4.4-5.8-2 5.8M9.6 7h4.8"/><circle cx="7" cy="7" r="2.5"/><circle cx="17" cy="7" r="2.5"/><circle class="icon-emphasis" cx="12" cy="17" r="2.5"/></svg>
-            </span>
-            <span class="sidebar-label"><strong class="ui-lang-zh">原因聚类</strong><strong class="ui-lang-en">Review analysis</strong></span>
-          </a>
-          <a class="sidebar-item" id="trailAttributeUpdateNavButton" data-page-target="trail-update" data-app-path="/trail-attribute-update" href="/trail-attribute-update" title="问题排除">
-            <span class="sidebar-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M5 4.5h14v15H5z"/><path d="M8 8h8M8 12h5M8 16h8"/><path class="icon-emphasis" d="m15 12 3 3 3-3"/></svg>
-            </span>
-            <span class="sidebar-label"><strong class="ui-lang-zh">问题排除</strong><strong class="ui-lang-en">Issue exclusion</strong></span>
-          </a>
-          <a class="sidebar-item" id="openRunManagerButton" data-page-target="runs" data-app-path="/runs" href="/runs" title="模型 Runs">
-            <span class="sidebar-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="m4 8 8-5 8 5v11H4z"/><path d="M5 19V9m7 10V5m7 14v-7M3 19h18"/><path class="icon-emphasis" d="m5 7 7-4 7 6"/><path d="M8.5 15v-3m7 3V9"/></svg>
-            </span>
-            <span class="sidebar-label"><strong class="ui-lang-zh">模型结果</strong><strong class="ui-lang-en">Model Runs</strong></span>
-          </a>
-          <a class="sidebar-item" id="runComparisonNavButton" data-page-target="comparison" data-app-path="/run-comparison" href="/run-comparison" title="Run 对比（只读）">
-            <span class="sidebar-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 4h6v16H4zm10 0h6v16h-6z"/><path d="M7 8h9m-2-3 3 3-3 3M17 16H8m2-3-3 3 3 3"/><circle class="icon-emphasis" cx="7" cy="8" r="1.6"/><circle class="icon-emphasis" cx="17" cy="16" r="1.6"/></svg>
-            </span>
-            <span class="sidebar-label"><strong class="ui-lang-zh">Run 对比</strong><strong class="ui-lang-en">Run comparison</strong></span>
-          </a>
-          <a class="sidebar-item" id="openBatchPredictionButton" data-page-target="prediction" data-app-path="/batch-prediction" href="/batch-prediction" title="Batch 预测">
-            <span class="sidebar-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="3.5" y="3.5" width="9" height="9" rx="2.5"/><path d="M5 6.5A1.5 1.5 0 0 1 6.5 5h4A1.5 1.5 0 0 1 12 6.5v4a1.5 1.5 0 0 1-1.5 1.5h-4A1.5 1.5 0 0 1 5 10.5zM15.5 6.5h3M17 5v3M15.5 17h3M17 15.5v3M6.5 17h3M8 15.5v3"/><path class="icon-emphasis" d="m13.5 11 5 3-5 3z"/></svg>
-            </span>
-            <span class="sidebar-label"><strong class="ui-lang-zh">批次预测</strong><strong class="ui-lang-en">Batch prediction</strong></span>
-          </a>
-          <div class="sidebar-group-label sidebar-label system-group-label">系统管理</div>
-          <a class="sidebar-item" id="systemStatusNavButton" data-page-target="status" data-app-path="/system-status" href="/system-status" title="系统状态">
-            <span class="sidebar-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="4.5" y="4" width="15" height="13" rx="3"/><path d="M4 18h16M6 15V6.8A1.8 1.8 0 0 1 7.8 5h8.4A1.8 1.8 0 0 1 18 6.8V15"/><path class="icon-emphasis" d="M8 11h2l1.2-3 2 6 1.2-3H16"/></svg>
-            </span>
-            <span class="sidebar-label"><strong class="ui-lang-zh">系统状态</strong><strong class="ui-lang-en">System status</strong></span>
-          </a>
-          <a class="sidebar-item" id="userManagementNavButton" data-page-target="users" data-app-path="/users" href="/users" title="用户管理" hidden>
-            <span class="sidebar-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><circle class="icon-wash" cx="9" cy="8" r="3.5"/><path d="M3.5 18c.5-3.1 2.3-4.8 5.5-4.8s5 1.7 5.5 4.8M16 8.5h4M18 6.5v4M16 15.5h4"/></svg>
-            </span>
-            <span class="sidebar-label"><strong class="ui-lang-zh">用户管理</strong><strong class="ui-lang-en">User access</strong></span>
-          </a>
+          <section class="sidebar-nav-group" data-sidebar-nav-group="work" data-sidebar-default-open="true">
+            <button class="sidebar-group-toggle" type="button" data-sidebar-nav-group-toggle="work" aria-expanded="true" aria-controls="sidebarNavWork">
+              <span class="sidebar-group-label sidebar-label review-group-label"><span class="ui-lang-zh">工作台</span><span class="ui-lang-en">Workbench</span></span><span class="sidebar-group-chevron" aria-hidden="true"></span>
+            </button>
+            <div class="sidebar-nav-group-items" id="sidebarNavWork" data-sidebar-nav-group-items="work">
+              <a class="sidebar-item active" id="reviewNavButton" data-page-target="review" data-app-path="/review" href="/review" title="判错复核">
+                <span class="sidebar-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="3.5" y="4.5" width="17" height="16" rx="3"/><path d="M8 4h8M9 3v3m6-3v3M7 5H5.8A1.8 1.8 0 0 0 4 6.8v11.4A1.8 1.8 0 0 0 5.8 20h12.4a1.8 1.8 0 0 0 1.8-1.8V6.8A1.8 1.8 0 0 0 18.2 5H17"/><path class="icon-emphasis" d="m8 12 2.1 2.1L16.4 8.8"/><path d="M8 17h8"/></svg>
+                </span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">判错复核</strong><strong class="ui-lang-en">Failure review</strong></span>
+              </a>
+              <a class="sidebar-item" id="reviewAssignmentsNavButton" data-page-target="review-assignments" data-app-path="/review-assignments" href="/review-assignments" title="任务分配" hidden>
+                <span class="sidebar-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="4" y="4" width="16" height="16" rx="3"/><path d="M8 8h8M8 12h5M8 16h8"/><path class="icon-emphasis" d="m14 12 2 2 4-5"/></svg>
+                </span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">任务分配</strong><strong class="ui-lang-en">Assignments</strong></span>
+              </a>
+            </div>
+          </section>
+
+          <section class="sidebar-nav-group is-collapsed" data-sidebar-nav-group="analysis" data-sidebar-default-open="false">
+            <button class="sidebar-group-toggle" type="button" data-sidebar-nav-group-toggle="analysis" aria-expanded="false" aria-controls="sidebarNavAnalysis">
+              <span class="sidebar-group-label sidebar-label"><span class="ui-lang-zh">分析工具</span><span class="ui-lang-en">Analysis tools</span></span><span class="sidebar-group-chevron" aria-hidden="true"></span>
+            </button>
+            <div class="sidebar-nav-group-items" id="sidebarNavAnalysis" data-sidebar-nav-group-items="analysis" hidden>
+              <a class="sidebar-item" id="reviewAnalysisNavButton" data-page-target="analysis" data-app-path="/review-analysis" href="/review-analysis" title="Review 原因聚类">
+                <span class="sidebar-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M7 3.5 19.8 6v12L12 21 4.2 18V6z"/><path d="m8.8 8.3 2 5.8m4.4-5.8-2 5.8M9.6 7h4.8"/><circle cx="7" cy="7" r="2.5"/><circle cx="17" cy="7" r="2.5"/><circle class="icon-emphasis" cx="12" cy="17" r="2.5"/></svg>
+                </span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">原因聚类</strong><strong class="ui-lang-en">Review analysis</strong></span>
+              </a>
+              <a class="sidebar-item" id="trailAttributeUpdateNavButton" data-page-target="trail-update" data-app-path="/trail-attribute-update" href="/trail-attribute-update" title="问题排除">
+                <span class="sidebar-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M5 4.5h14v15H5z"/><path d="M8 8h8M8 12h5M8 16h8"/><path class="icon-emphasis" d="m15 12 3 3 3-3"/></svg>
+                </span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">问题排除</strong><strong class="ui-lang-en">Issue exclusion</strong></span>
+              </a>
+              <a class="sidebar-item" id="openRunManagerButton" data-page-target="runs" data-app-path="/runs" href="/runs" title="模型 Runs">
+                <span class="sidebar-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="m4 8 8-5 8 5v11H4z"/><path d="M5 19V9m7 10V5m7 14v-7M3 19h18"/><path class="icon-emphasis" d="m5 7 7-4 7 6"/><path d="M8.5 15v-3m7 3V9"/></svg>
+                </span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">模型结果</strong><strong class="ui-lang-en">Model Runs</strong></span>
+              </a>
+              <a class="sidebar-item" id="runComparisonNavButton" data-page-target="comparison" data-app-path="/run-comparison" href="/run-comparison" title="Run 对比（只读）">
+                <span class="sidebar-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 4h6v16H4zm10 0h6v16h-6z"/><path d="M7 8h9m-2-3 3 3-3 3M17 16H8m2-3-3 3 3 3"/><circle class="icon-emphasis" cx="7" cy="8" r="1.6"/><circle class="icon-emphasis" cx="17" cy="16" r="1.6"/></svg>
+                </span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">Run 对比</strong><strong class="ui-lang-en">Run comparison</strong></span>
+              </a>
+              <a class="sidebar-item" id="openBatchPredictionButton" data-page-target="prediction" data-app-path="/batch-prediction" href="/batch-prediction" title="Batch 预测">
+                <span class="sidebar-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="3.5" y="3.5" width="9" height="9" rx="2.5"/><path d="M5 6.5A1.5 1.5 0 0 1 6.5 5h4A1.5 1.5 0 0 1 12 6.5v4a1.5 1.5 0 0 1-1.5 1.5h-4A1.5 1.5 0 0 1 5 10.5zM15.5 6.5h3M17 5v3M15.5 17h3M17 15.5v3M6.5 17h3M8 15.5v3"/><path class="icon-emphasis" d="m13.5 11 5 3-5 3z"/></svg>
+                </span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">批次预测</strong><strong class="ui-lang-en">Batch prediction</strong></span>
+              </a>
+            </div>
+          </section>
+
+          <section class="sidebar-nav-group intent-nav-group is-collapsed" id="intentNavGroup" data-sidebar-nav-group="intent" data-sidebar-default-open="false" hidden>
+            <button class="sidebar-group-toggle" type="button" data-sidebar-nav-group-toggle="intent" aria-expanded="false" aria-controls="sidebarNavIntent">
+              <span class="sidebar-group-label sidebar-label intent-group-label"><span class="ui-lang-zh">意图标注</span><span class="ui-lang-en">Intent labeling</span></span><span class="sidebar-group-chevron" aria-hidden="true"></span>
+            </button>
+            <div class="sidebar-nav-group-items" id="sidebarNavIntent" data-sidebar-nav-group-items="intent" hidden>
+              <a class="sidebar-item" id="intentLabelingNavButton" data-page-target="intent" data-app-path="/intent-labeling" href="/intent-labeling" title="意图标注" hidden>
+                <span class="sidebar-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="4" y="3.5" width="16" height="17" rx="3"/><path d="M8 8h8M8 12h5M8 16h8"/><path class="icon-emphasis" d="m14 13 2 2 4-5"/></svg>
+                </span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">意图标注</strong><strong class="ui-lang-en">Intent labeling</strong></span>
+              </a>
+              <a class="sidebar-item" id="intentExperimentsNavButton" data-page-target="intent-experiments" data-app-path="/intent-experiments" href="/intent-experiments" title="多盲实验分配" hidden>
+                <span class="sidebar-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 5h16v14H4z"/><circle cx="8" cy="10" r="2"/><circle cx="16" cy="10" r="2"/><path d="M5.5 17c.4-2.3 1.5-3.5 3.5-3.5s3.1 1.2 3.5 3.5m-1 0c.4-2.3 1.5-3.5 3.5-3.5s3.1 1.2 3.5 3.5"/><path class="icon-emphasis" d="M7 5V3m10 2V3"/></svg>
+                </span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">实验分配</strong><strong class="ui-lang-en">Experiment assignment</strong></span>
+              </a>
+              <a class="sidebar-item" id="intentSummaryNavButton" data-page-target="intent-summary" data-app-path="/intent-summary" href="/intent-summary" title="标注汇总" hidden>
+                <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 5h16v14H4z"/><path d="M7 16v-4m5 4V8m5 8v-6M6 19h13"/></svg></span>
+                <span class="sidebar-label"><strong>标注汇总</strong></span>
+              </a>
+            </div>
+          </section>
+
+          <section class="sidebar-nav-group is-collapsed" data-sidebar-nav-group="system" data-sidebar-default-open="false">
+            <button class="sidebar-group-toggle" type="button" data-sidebar-nav-group-toggle="system" aria-expanded="false" aria-controls="sidebarNavSystem">
+              <span class="sidebar-group-label sidebar-label system-group-label"><span class="ui-lang-zh">系统管理</span><span class="ui-lang-en">System</span></span><span class="sidebar-group-chevron" aria-hidden="true"></span>
+            </button>
+            <div class="sidebar-nav-group-items" id="sidebarNavSystem" data-sidebar-nav-group-items="system" hidden>
+              <a class="sidebar-item" id="systemStatusNavButton" data-page-target="status" data-app-path="/system-status" href="/system-status" title="系统状态">
+                <span class="sidebar-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="4.5" y="4" width="15" height="13" rx="3"/><path d="M4 18h16M6 15V6.8A1.8 1.8 0 0 1 7.8 5h8.4A1.8 1.8 0 0 1 18 6.8V15"/><path class="icon-emphasis" d="M8 11h2l1.2-3 2 6 1.2-3H16"/></svg>
+                </span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">系统状态</strong><strong class="ui-lang-en">System status</strong></span>
+              </a>
+              <a class="sidebar-item" id="userManagementNavButton" data-page-target="users" data-app-path="/users" href="/users" title="用户管理" hidden>
+                <span class="sidebar-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><circle class="icon-wash" cx="9" cy="8" r="3.5"/><path d="M3.5 18c.5-3.1 2.3-4.8 5.5-4.8s5 1.7 5.5 4.8M16 8.5h4M18 6.5v4M16 15.5h4"/></svg>
+                </span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">用户管理</strong><strong class="ui-lang-en">User access</strong></span>
+              </a>
+            </div>
+          </section>
         </nav>
 
         <div class="sidebar-bottom">
@@ -1996,7 +2024,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-434`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-435`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

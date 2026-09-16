@@ -866,9 +866,13 @@ html[data-color-theme="light"] .detail-queue-index-input {
 .review-assignment-section-heading p { color: var(--muted); font-size: 11px; line-height: 1.45; }
 .review-assignment-section-heading > small { color: var(--faint); font-size: 10px; }
 .review-assignment-list-card, .review-assignment-detail-card { min-width: 0; }
-.review-assignment-list { display: grid; gap: 10px; }
+/* History is a page-level list, not a card inside another card. */
+.review-assignment-list-card { padding: 4px 2px 0; border: 0; border-radius: 0; background: transparent; }
+.review-assignment-list-card > .review-assignment-section-heading { margin: 0 0 4px; padding: 0 0 10px; border-bottom: 1px solid var(--line-soft); }
+.review-assignment-list { display: grid; gap: 0; }
 .review-assignment-empty { display: grid; justify-items: center; gap: 7px; padding: 38px 14px; border: 1px dashed var(--line); border-radius: 9px; color: var(--muted); font-size: 12px; text-align: center; }
-.review-assignment-batch { display: grid; gap: 12px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--overlay); }
+.review-assignment-batch { display: grid; gap: 10px; padding: 15px 2px; border: 0; border-top: 1px solid var(--line-soft); border-radius: 0; background: transparent; }
+.review-assignment-batch:first-child { padding-top: 12px; border-top: 0; }
 .review-assignment-batch-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .review-assignment-batch-header > div:first-child { min-width: 0; display: grid; gap: 4px; }
 .review-assignment-batch-title { overflow: hidden; color: var(--text); font-size: 13px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
@@ -876,13 +880,16 @@ html[data-color-theme="light"] .detail-queue-index-input {
 .review-assignment-status { flex: 0 0 auto; padding: 4px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--raised); font-size: 10px; white-space: nowrap; }
 .review-assignment-status.is-current { border-color: rgba(52,211,153,.35); color: var(--ok); background: rgba(52,211,153,.08); }
 .review-assignment-status.is-superseded { border-color: rgba(148,163,184,.28); color: var(--faint); }
-.review-assignment-progress { display: grid; gap: 7px; }
-.review-assignment-progress-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 10px; }
-.review-assignment-progress-heading strong { color: var(--text); font-size: 11px; font-variant-numeric: tabular-nums; }
+.review-assignment-progress { display: grid; grid-template-columns: 62px minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.review-assignment-progress-heading { display: contents; color: var(--muted); font-size: 10px; }
+.review-assignment-progress-heading span { grid-column: 1; }
+.review-assignment-progress-heading strong { grid-column: 3; color: var(--text); font-size: 11px; font-variant-numeric: tabular-nums; }
 .review-assignment-progress-track { height: 6px; overflow: hidden; border-radius: 999px; background: var(--overlay-2); }
+.review-assignment-progress > .review-assignment-progress-track { grid-column: 2; }
 .review-assignment-progress-track > span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width 180ms ease-out; }
-.review-assignment-member-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 7px; }
-.review-assignment-member { min-width: 0; display: grid; gap: 5px; padding: 8px 9px; border: 1px solid var(--line-soft); border-radius: 7px; background: rgba(8, 13, 21, .35); }
+.review-assignment-member-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0; padding-top: 9px; border-top: 1px solid var(--line-soft); }
+.review-assignment-member { min-width: 0; display: grid; gap: 5px; padding: 2px 14px 2px 0; border: 0; border-radius: 0; background: transparent; }
+.review-assignment-member + .review-assignment-member { padding-left: 14px; border-left: 1px solid var(--line-soft); }
 .review-assignment-member-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .review-assignment-member-heading strong { overflow: hidden; color: #dce8f2; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .review-assignment-member-heading span { flex: 0 0 auto; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
