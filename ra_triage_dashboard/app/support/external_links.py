@@ -42,7 +42,10 @@ def _disable_ra_simulation_url(task_id: Any) -> str:
     voyager = urlsplit(settings.voyager_issue_base_url)
     if voyager.scheme not in {"http", "https"} or not voyager.netloc:
         return ""
-    query = urlencode({"task_id": value, "task_version": "0"})
+    # Trail exposes only the disable-RA task id, not its retry/version. Ares
+    # defines version -1 as the latest available retry, so tasks with a v1+
+    # result do not silently fall back to the older v0 animation.
+    query = urlencode({"task_id": value, "task_version": "-1"})
     return f"{voyager.scheme}://{voyager.netloc}/static/ares-animation/?{query}"
 
 

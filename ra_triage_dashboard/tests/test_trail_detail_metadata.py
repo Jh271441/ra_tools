@@ -98,7 +98,7 @@ class TrailDetailMetadataTest(unittest.TestCase):
         self.assertEqual(
             external_links["disable_ra_simulation_url"],
             "https://voyager.intra.xiaojukeji.com/static/ares-animation/"
-            "?task_id=4515392300000101&task_version=0",
+            "?task_id=4515392300000101&task_version=-1",
         )
         self.assertEqual(
             external_links["disable_ra_simulation_task_id"],
