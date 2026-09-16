@@ -1371,12 +1371,29 @@ function downloadReviewAnalysis(format) {
     format,
     includePagination: false,
   });
+  downloadReviewAnalysisExport(params);
+}
+
+function downloadReviewAnalysisExport(params) {
   const link = document.createElement("a");
   link.href = withBase(`/api/review-reason-analysis/export?${params.toString()}`);
   link.download = "";
   document.body.appendChild(link);
   link.click();
   link.remove();
+}
+
+function downloadCurrentReviewIssue(issueId, modelRunId = "") {
+  const normalizedIssueId = String(issueId || "").trim();
+  if (!normalizedIssueId) return;
+  const params = new URLSearchParams({
+    format: "xlsx",
+    comparison: "all",
+    issue_ids: normalizedIssueId,
+  });
+  const normalizedRunId = String(modelRunId || "").trim();
+  if (normalizedRunId) params.set("model_run_id", normalizedRunId);
+  downloadReviewAnalysisExport(params);
 }
 
 function applyAnalysisComparisonSelection() {
