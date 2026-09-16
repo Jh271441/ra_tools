@@ -116,7 +116,7 @@ html[data-can-view-intent="true"] #intentSummaryNavButton[hidden] { display: fle
   .app-shell.sidebar-collapsed .sidebar-nav-group-items,
   html[data-sidebar-pref="collapsed"] .sidebar-nav-group-items { display: grid !important; }
   .app-shell.sidebar-collapsed .sidebar-nav-group .sidebar-item,
-  html[data-sidebar-pref="collapsed"] .sidebar-nav-group .sidebar-item { width: 100%; min-width: 0; margin-left: 0; }
+  html[data-sidebar-pref="collapsed"] .sidebar-nav-group .sidebar-item { width: 100% !important; min-width: 0; margin-left: 0 !important; }
 }
 .sidebar-icon, .user-avatar {
   width: 30px; height: 30px; flex: 0 0 30px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 7px;
