@@ -869,10 +869,9 @@ html[data-color-theme="light"] .detail-queue-index-input {
 /* History is a page-level list, not a card inside another card. */
 .review-assignment-list-card { padding: 4px 2px 0; border: 0; border-radius: 0; background: transparent; }
 .review-assignment-list-card > .review-assignment-section-heading { margin: 0 0 4px; padding: 0 0 10px; border-bottom: 1px solid var(--line-soft); }
-.review-assignment-list { display: grid; gap: 0; }
+.review-assignment-list { display: grid; gap: 10px; }
 .review-assignment-empty { display: grid; justify-items: center; gap: 7px; padding: 38px 14px; border: 1px dashed var(--line); border-radius: 9px; color: var(--muted); font-size: 12px; text-align: center; }
-.review-assignment-batch { display: grid; gap: 10px; padding: 15px 2px; border: 0; border-top: 1px solid var(--line-soft); border-radius: 0; background: transparent; }
-.review-assignment-batch:first-child { padding-top: 12px; border-top: 0; }
+.review-assignment-batch { display: grid; gap: 10px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--overlay); }
 .review-assignment-batch-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .review-assignment-batch-header > div:first-child { min-width: 0; display: grid; gap: 4px; }
 .review-assignment-batch-title { overflow: hidden; color: var(--text); font-size: 13px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }

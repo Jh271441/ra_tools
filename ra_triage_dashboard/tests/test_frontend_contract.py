@@ -239,7 +239,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-437", APP_ENTRY_JS)
+        self.assertIn("manual-triage-438", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -280,7 +280,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-437", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-438", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -403,7 +403,8 @@ class FrontendContractTest(unittest.TestCase):
 
     def test_review_assignment_history_uses_flat_visual_hierarchy(self) -> None:
         self.assertIn(".review-assignment-list-card { padding: 4px 2px 0; border: 0;", STYLES_CSS)
-        self.assertIn("border-top: 1px solid var(--line-soft); border-radius: 0; background: transparent;", STYLES_CSS)
+        self.assertIn(".review-assignment-list { display: grid; gap: 10px; }", STYLES_CSS)
+        self.assertIn(".review-assignment-batch { display: grid; gap: 10px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--overlay); }", STYLES_CSS)
         self.assertIn("grid-template-columns: 62px minmax(0, 1fr) auto", STYLES_CSS)
         self.assertIn(".review-assignment-member + .review-assignment-member { padding-left: 14px; border-left: 1px solid var(--line-soft); }", STYLES_CSS)
         self.assertIn(".review-assignment-member + .review-assignment-member { padding: 10px 0 2px; border-top: 1px solid var(--line-soft); border-left: 0; }", STYLES_CSS)
@@ -431,7 +432,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-437`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-438`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -1370,7 +1371,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-437", APP_ENTRY_JS)
+        self.assertIn("manual-triage-438", APP_ENTRY_JS)
 
     def test_review_gallery_exports_the_complete_current_filter(self) -> None:
         self.assertIn('id="exportFilteredIssuesButton"', INDEX_HTML)
