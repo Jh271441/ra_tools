@@ -407,28 +407,46 @@ def _review_reason_analysis_payload(
     else:
         rows = multi_rows
     if rows and (normalized_comment_state != "all" or normalized_comment_search):
-        row_issue_ids = [str(row.get("issue_id") or "") for row in rows]
-        comment_issue_ids = database.review_comment_issue_ids(
-            issue_ids=row_issue_ids,
-            model_run_id=model_run_id,
-        )
-        matching_comment_issue_ids = (
-            database.review_comment_issue_ids(
-                issue_ids=row_issue_ids,
-                model_run_id=model_run_id,
-                search=normalized_comment_search,
+        def comment_scope(row: dict[str, Any]) -> tuple[str, str]:
+            issue_id = str(row.get("issue_id") or "")
+            if model_run_id:
+                return issue_id, model_run_id
+            annotation = row.get("annotation") or {}
+            return issue_id, str(annotation.get("model_run_id") or "")
+
+        issue_ids_by_run: dict[str, list[str]] = {}
+        for row in rows:
+            issue_id, comment_run_id = comment_scope(row)
+            issue_ids_by_run.setdefault(comment_run_id, []).append(issue_id)
+        comment_scopes: set[tuple[str, str]] = set()
+        matching_comment_scopes: set[tuple[str, str]] = set()
+        for comment_run_id, scoped_issue_ids in issue_ids_by_run.items():
+            comment_scopes.update(
+                (issue_id, comment_run_id)
+                for issue_id in database.review_comment_issue_ids(
+                    issue_ids=scoped_issue_ids,
+                    model_run_id=comment_run_id,
+                )
             )
-            if normalized_comment_search
-            else comment_issue_ids
-        )
+            if normalized_comment_search:
+                matching_comment_scopes.update(
+                    (issue_id, comment_run_id)
+                    for issue_id in database.review_comment_issue_ids(
+                        issue_ids=scoped_issue_ids,
+                        model_run_id=comment_run_id,
+                        search=normalized_comment_search,
+                    )
+                )
+        if not normalized_comment_search:
+            matching_comment_scopes = comment_scopes
         rows = [
             row for row in rows
             if (
-                (not normalized_comment_search or str(row.get("issue_id") or "") in matching_comment_issue_ids)
+                (not normalized_comment_search or comment_scope(row) in matching_comment_scopes)
                 and (
                     normalized_comment_state == "all"
-                    or (normalized_comment_state == "with" and str(row.get("issue_id") or "") in comment_issue_ids)
-                    or (normalized_comment_state == "without" and str(row.get("issue_id") or "") not in comment_issue_ids)
+                    or (normalized_comment_state == "with" and comment_scope(row) in comment_scopes)
+                    or (normalized_comment_state == "without" and comment_scope(row) not in comment_scopes)
                 )
             )
         ]

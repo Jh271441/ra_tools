@@ -730,6 +730,7 @@ function renderAnalysisCases(data) {
             return `<span class="analysis-chip tag-chip"${section ? ` data-tag-section="${escapeHtml(section)}"` : ""}${group ? ` data-tag-group="${escapeHtml(group)}"` : ""}>${escapeHtml(tagLabel(key))}</span>`;
           })
           .join("");
+        const discussionRunId = state.selectedRunId || annotation.model_run_id || "";
         return `<article class="analysis-case-row">
           <div class="analysis-case-identity">
             ${issueIdMarkup}
@@ -758,7 +759,7 @@ function renderAnalysisCases(data) {
             <span>${escapeHtml(annotation.author || "未记录复核人")}${annotation.author_verified ? " · SSO" : ""}</span>
             <span>${escapeHtml(reviewStatusLabel(annotation.review_status))} · ${formatTime(annotation.created_at)}</span>
             <span class="analysis-case-actions">
-              <button class="analysis-discussion-link" type="button" data-analysis-discussion="${issueId}" data-model-run-id="${escapeHtml(state.selectedRunId || "")}">评论</button>
+              <button class="analysis-discussion-link" type="button" data-analysis-discussion="${issueId}" data-model-run-id="${escapeHtml(discussionRunId)}">评论</button>
               ${reviewUrl ? `<a class="text-link" href="${escapeHtml(reviewUrl)}" title="打开问题详情与 Review">问题详情</a>` : ""}
             </span>
           </div>
@@ -783,7 +784,10 @@ function renderAnalysisCases(data) {
     });
     target.querySelectorAll("[data-analysis-discussion]").forEach((button) => {
       button.addEventListener("click", () => {
-        openAnalysisDiscussion(button.dataset.analysisDiscussion).catch((error) => {
+        openAnalysisDiscussion(button.dataset.analysisDiscussion, {
+          runId: button.dataset.modelRunId || "",
+          source: "analysis",
+        }).catch((error) => {
           showToast(error.message, true);
         });
       });
