@@ -11,6 +11,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import Response
 
 from ..db import LABELS
+from ..auth import request_identity
+from ..runtime import settings
 from ..support.baselines import (
     resolve_request_baseline_ids,
     resolve_request_baseline_scopes,
@@ -26,6 +28,8 @@ from ..support.common import (
 from ..support.review_payloads import (
     _review_reason_analysis_payload,
 )
+from ..support.filter_parsing import _case_filter_kwargs
+from .cases import _case_issue_ids_with_status_filter
 
 router = APIRouter()
 
@@ -365,6 +369,8 @@ async def export_review_reason_analysis(
     exclusion: str = "all",
     baselines: str = "",
     work_agreement: str = "all",
+    gallery_scope: bool = False,
+    work_assignee: str = "",
 ) -> Response:
     # CSV/XLSX are read-only projections too, so keep their blind-review scope
     # identical for admins and ordinary viewers.  ``trail_xlsx`` below still
@@ -376,6 +382,50 @@ async def export_review_reason_analysis(
     if export_format == "trail_xlsx" and work_agreement.strip().lower() not in {"", "all"}:
         raise _detail(400, "多人盲标结果需先仲裁，不能直接导出 GT 更新表。")
     scopes = resolve_request_baseline_scopes(baselines, request=request)
+    export_issue_ids: str | list[str] = issue_ids
+    export_search = search
+    export_comment_state = comment_state
+    if gallery_scope:
+        case_filters = _case_filter_kwargs(
+            search=search,
+            gt_label=gt_label,
+            model_label=model_label,
+            annotation_label=annotation_label,
+            annotation_author=annotation_author,
+            review_status=review_status,
+            model_run_id=model_run_id,
+            comparison=comparison,
+            failure_only=failure_only,
+            missing_evidence=missing_evidence,
+            issue_ids=issue_ids,
+            work_assignee=work_assignee,
+            comment_state=comment_state,
+            exclusion=exclusion,
+            baselines=baselines,
+            request=request,
+        )
+        review_statuses = tuple(case_filters.pop("review_statuses", ()))
+        case_filters.pop("exclusion", None)
+        identity = await asyncio.to_thread(request_identity, request, settings)
+        case_filters["preferred_annotation_author"] = (
+            identity.username if identity.verified and identity.username else ""
+        )
+        export_issue_ids = await asyncio.to_thread(
+            _case_issue_ids_with_status_filter,
+            filters=case_filters,
+            review_statuses=review_statuses,
+        )
+        if len(export_issue_ids) >= 5000:
+            raise _detail(400, "当前筛选结果过多，请继续收窄后再导出。")
+        # Membership has already been resolved with the Gallery's exact search,
+        # discussion, exclusion and assignee semantics. Avoid applying the
+        # analysis page's different free-text/comment projection a second time.
+        export_search = ""
+        export_comment_state = "all"
+        if not export_issue_ids:
+            return await asyncio.to_thread(
+                _review_analysis_export_response, {"items": []}, export_format
+            )
     result = await asyncio.to_thread(
         _review_reason_analysis_payload,
         model_run_id=model_run_id,
@@ -392,9 +442,9 @@ async def export_review_reason_analysis(
         scene_tag=scene_tag,
         trigger_tag=trigger_tag,
         egress_tag=egress_tag,
-        issue_ids=issue_ids,
-        search=search,
-        comment_state=comment_state,
+        issue_ids=export_issue_ids,
+        search=export_search,
+        comment_state=export_comment_state,
         comment_search=comment_search,
         exclusion=exclusion,
         unbounded=True,

@@ -545,6 +545,7 @@ function bindEvents() {
   bindAnalysisDiscussionEnterSubmit();
   $("#analysisDiscussionDialog")?.addEventListener("close", clearAnalysisDiscussionImages);
   $("#analysisDiscussionForm")?.addEventListener("submit", saveAnalysisDiscussion);
+  $("#exportFilteredIssuesButton")?.addEventListener("click", downloadFilteredReviewIssues);
   $("#predictFilteredButton").addEventListener("click", () => {
     const limit = predictionBatchLimit();
     if (state.caseTotal > limit) {

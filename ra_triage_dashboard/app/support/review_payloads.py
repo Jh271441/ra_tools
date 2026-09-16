@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Sequence
 from typing import Any
 from urllib.parse import quote
 
@@ -38,7 +40,7 @@ def _review_reason_analysis_payload(
     scene_tag: str = "",
     trigger_tag: str = "",
     egress_tag: str = "",
-    issue_ids: str = "",
+    issue_ids: str | Sequence[str] = "",
     search: str = "",
     comment_state: str = "all",
     comment_search: str = "",
@@ -112,8 +114,23 @@ def _review_reason_analysis_payload(
     trigger_tags = _csv_filter_values(trigger_tag)
     egress_tags = _csv_filter_values(egress_tag)
     legacy_tags = _csv_filter_values(tag)
-    selected_issue_ids = _parse_issue_id_filter(issue_ids)
-    if _as_text(issue_ids).strip() and not selected_issue_ids:
+    if isinstance(issue_ids, str):
+        selected_issue_ids = _parse_issue_id_filter(issue_ids)
+        issue_ids_supplied = bool(_as_text(issue_ids).strip())
+    else:
+        selected_issue_ids = []
+        seen_issue_ids: set[str] = set()
+        for raw_issue_id in issue_ids:
+            issue_id = _as_text(raw_issue_id).strip()
+            if (
+                not re.fullmatch(r"[A-Za-z0-9_-]{3,128}", issue_id)
+                or issue_id in seen_issue_ids
+            ):
+                continue
+            seen_issue_ids.add(issue_id)
+            selected_issue_ids.append(issue_id)
+        issue_ids_supplied = bool(issue_ids)
+    if issue_ids_supplied and not selected_issue_ids:
         raise _detail(400, "issue_ids 未包含有效的 Issue ID。")
     for requested_tag in (*legacy_tags, *scene_tags, *trigger_tags, *egress_tags):
         if requested_tag not in tag_by_key:

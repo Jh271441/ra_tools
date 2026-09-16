@@ -5,6 +5,7 @@ import io
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import openpyxl
@@ -170,6 +171,79 @@ class ReviewWorkflowTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(captured["include_multi_reviews"])
         self.assertEqual(captured["issue_ids"], "cn1,cn2")
+
+    def test_gallery_export_resolves_exact_filtered_issue_membership(self) -> None:
+        captured: dict[str, object] = {}
+        captured_case_filters: dict[str, object] = {}
+
+        def fake_payload(**kwargs):
+            captured.update(kwargs)
+            return {"items": []}
+
+        def fake_issue_ids(*, filters, review_statuses):
+            captured_case_filters.update(filters)
+            self.assertEqual(review_statuses, ("needs_gt_review",))
+            return ["cn1", "cn2"]
+
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/review-reason-analysis/export",
+                "headers": [],
+            }
+        )
+        parsed_filters = {
+            "review_statuses": ("needs_gt_review",),
+            "exclusion": "included",
+            "comparison_status": "mismatch",
+            "issue_ids": [],
+            "work_assignee": "alice",
+        }
+        with patch.object(
+            analysis_router, "resolve_request_baseline_scopes", return_value=["scope"]
+        ), patch.object(
+            analysis_router, "resolve_request_baseline_ids", return_value=["0821"]
+        ), patch.object(
+            analysis_router, "_case_filter_kwargs", return_value=parsed_filters
+        ), patch.object(
+            analysis_router,
+            "_case_issue_ids_with_status_filter",
+            side_effect=fake_issue_ids,
+        ), patch.object(
+            analysis_router,
+            "request_identity",
+            return_value=SimpleNamespace(verified=True, username="jasperchen"),
+        ), patch.object(
+            analysis_router,
+            "_review_reason_analysis_payload",
+            side_effect=fake_payload,
+        ), patch.object(
+            analysis_router,
+            "_review_analysis_export_response",
+            return_value=SimpleNamespace(status_code=200),
+        ):
+            response = asyncio.run(
+                analysis_router.export_review_reason_analysis(
+                    request,
+                    format="xlsx",
+                    gallery_scope=True,
+                    work_assignee="alice",
+                    review_status="needs_gt_review",
+                    comparison="mismatch",
+                    model_run_id="run-1",
+                    search="gallery keyword",
+                    comment_state="with",
+                    exclusion="included",
+                )
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(captured["issue_ids"], ["cn1", "cn2"])
+        self.assertEqual(captured["search"], "")
+        self.assertEqual(captured["comment_state"], "all")
+        self.assertTrue(captured["unbounded"])
+        self.assertEqual(captured_case_filters["preferred_annotation_author"], "jasperchen")
 
     def test_review_analysis_exposes_blind_projection_to_every_viewer(self) -> None:
         captured: dict[str, object] = {}

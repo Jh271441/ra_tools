@@ -222,7 +222,6 @@ function renderDetail(caseData) {
         <div class="detail-context-actions">
           ${detailMediaCommandMarkup(caseData)}
           <div class="detail-actions">
-            <button class="button button-quiet" type="button" data-export-current-issue title="按复核汇总字段导出 XLSX"><span class="ui-lang-zh">导出当前 Issue</span><span class="ui-lang-en">Export Issue</span></button>
             <button class="button button-quiet" type="button" data-predict-current-case><span class="ui-lang-zh">API 推理</span><span class="ui-lang-en">API inference</span></button>
             ${modelHistoryButton}
           </div>
@@ -232,9 +231,6 @@ function renderDetail(caseData) {
     </div>
     ${currentRunOutputMarkup(caseData, primary)}
     ${heroMediaSection(caseData)}`;
-  $("#detailPane").querySelector("[data-export-current-issue]")?.addEventListener("click", () => {
-    downloadCurrentReviewIssue(caseData.issue_id, state.selectedRunId || primary?.model_run_id || "");
-  });
   $("#detailPane").querySelector("[data-predict-current-case]")?.addEventListener("click", () => {
     openBatchDraft([caseData.issue_id], "single");
   });

@@ -399,9 +399,49 @@ function predictionBatchLimit() {
   );
 }
 
+function currentReviewGalleryExportParams() {
+  const payload = currentReviewFilterPayload();
+  payload.annotation_author = joinFilterList(
+    typeof reviewerFilterSelection === "function"
+      ? reviewerFilterSelection("review")
+      : getMultiFilterValues($("#reviewerFilter"))
+  );
+  payload.work_assignee = joinFilterList(
+    typeof workAssigneeFilterSelection === "function"
+      ? workAssigneeFilterSelection()
+      : getMultiFilterValues($("#workAssigneeFilter"))
+  );
+  const params = new URLSearchParams({ format: "xlsx", gallery_scope: "true" });
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value && value !== "all") params.set(key, String(value));
+  });
+  return params;
+}
+
+function downloadFilteredReviewIssues() {
+  if (!Number(state.caseTotal || 0)) return;
+  const params = currentReviewGalleryExportParams();
+  const link = document.createElement("a");
+  link.href = withBase(`/api/review-reason-analysis/export?${params.toString()}`);
+  link.download = "";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
 function updateFilteredPredictionButton() {
   const total = Number(state.caseTotal || 0);
   const limit = predictionBatchLimit();
+  const exportButton = $("#exportFilteredIssuesButton");
+  if (exportButton) {
+    exportButton.disabled = total === 0;
+    exportButton.innerHTML = total
+      ? `<span class="ui-lang-zh">导出当前筛选 · ${total}</span><span class="ui-lang-en">Export selection · ${total}</span>`
+      : `<span class="ui-lang-zh">导出当前筛选</span><span class="ui-lang-en">Export selection</span>`;
+    exportButton.title = total
+      ? uiText(`按复核汇总格式导出当前 ${total} 个 Issue。`, `Export ${total} filtered Issues using the review-summary schema.`)
+      : uiText("当前筛选没有可导出的 Issue。", "No Issues match the current filter.");
+  }
   const predict = $("#predictFilteredButton");
   if (predict) {
     predict.disabled = total === 0 || state.config?.batch_prediction?.enabled === false;

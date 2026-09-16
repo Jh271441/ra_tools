@@ -69,7 +69,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-433`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-434`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -309,6 +309,7 @@
                   <div class="gallery-heading-actions">
                     <div class="review-quick-actions">
                       <button class="button button-quiet" id="reviewUploadModelButton" type="button"><span class="ui-lang-zh">上传模型结果</span><span class="ui-lang-en">Upload model results</span></button>
+                      <button class="button button-quiet" id="exportFilteredIssuesButton" type="button" disabled><span class="ui-lang-zh">导出当前筛选</span><span class="ui-lang-en">Export selection</span></button>
                       <button class="button button-quiet" id="splitFilteredButton" type="button" disabled><span class="ui-lang-zh">均分任务</span><span class="ui-lang-en">Split work</span></button>
                       <button class="button button-primary" id="predictFilteredButton" type="button" disabled><span class="ui-lang-zh">预测当前筛选</span><span class="ui-lang-en">Predict selection</span></button>
                     </div>
@@ -1995,7 +1996,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-433`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-434`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
