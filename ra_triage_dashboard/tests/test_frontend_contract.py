@@ -239,7 +239,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-439", APP_ENTRY_JS)
+        self.assertIn("manual-triage-440", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -280,7 +280,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-439", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-440", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -383,6 +383,8 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("order: 2; margin-left: auto;", STYLES_CSS)
         self.assertIn(".sidebar-icon { border-color: transparent; color: #8594a8; background: transparent; }", STYLES_CSS)
         self.assertIn(".sidebar-item.active .sidebar-icon .icon-emphasis", STYLES_CSS)
+        self.assertIn("margin-left: 18px; width: calc(100% - 18px);", STYLES_CSS)
+        self.assertIn(".sidebar-nav-group .sidebar-item { width: 100%; margin-left: 0; }", STYLES_CSS)
         review_group = INDEX_HTML.split('data-sidebar-nav-group="review"', 1)[1].split('</section>', 1)[0]
         for nav_id in (
             "reviewNavButton",
@@ -434,7 +436,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-439`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-440`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -1373,7 +1375,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-439", APP_ENTRY_JS)
+        self.assertIn("manual-triage-440", APP_ENTRY_JS)
 
     def test_review_gallery_exports_the_complete_current_filter(self) -> None:
         self.assertIn('id="exportFilteredIssuesButton"', INDEX_HTML)

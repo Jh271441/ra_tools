@@ -366,7 +366,7 @@
   }
   .app-shell.sidebar-mobile-open .sidebar-nav-group { display: grid; gap: 2px; }
   .app-shell.sidebar-mobile-open .sidebar-group-toggle {
-    width: calc(100% - 8px); min-height: 40px; margin-left: 8px; padding: 7px 9px;
+    width: 100%; min-height: 40px; margin-left: 0; padding: 7px;
   }
   .app-shell.sidebar-mobile-open .sidebar-group-toggle .sidebar-label,
   .app-shell.sidebar-mobile-open .sidebar-group-toggle .sidebar-group-label { display: grid; }
