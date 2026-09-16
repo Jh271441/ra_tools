@@ -161,7 +161,8 @@ function bindBevVideoPlayers(root) {
         cancelPendingSeek = null;
       };
       video.addEventListener("seeked", settle);
-      video.pause();
+      // Setting currentTime preserves the native play/pause state. A jump
+      // while playing must continue playback; a paused video stays paused.
       video.currentTime = target;
       update();
       // A remote asset can delay seeked while metadata or the first keyframe
@@ -171,7 +172,6 @@ function bindBevVideoPlayers(root) {
     const queueSeek = (target, delay = 75) => {
       const total = Math.max(0, duration());
       queuedSeekTarget = Math.min(total, Math.max(0, Number(target) || 0));
-      video.pause();
       update(queuedSeekTarget);
       if (queuedSeekTimer !== null) window.clearTimeout(queuedSeekTimer);
       queuedSeekTimer = window.setTimeout(() => {
