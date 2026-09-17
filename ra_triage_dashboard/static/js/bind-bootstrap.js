@@ -214,6 +214,8 @@ function bindEvents() {
     if (runId !== state.selectedRunId) {
       state.reviewAnalysis.workSplitId = "";
       state.reviewAnalysis.availableWorkSplitId = "";
+      state.reviewAnalysis.workSplitOptions = [];
+      state.reviewAnalysis.workSplitOptionsKey = "";
       renderAnalysisWorkSplitPicker?.("");
     }
     const previouslyHadRun = Boolean(state.selectedRunId);

@@ -743,6 +743,8 @@ const state = {
     workAgreement: "all",
     workSplitId: "",
     availableWorkSplitId: "",
+    workSplitOptions: [],
+    workSplitOptionsKey: "",
   },
   reviewAssignments: {
     splits: [],

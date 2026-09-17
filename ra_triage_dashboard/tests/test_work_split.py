@@ -16,6 +16,51 @@ from ra_triage_dashboard.app.work_split import distribute_issue_ids
 
 
 class WorkSplitTest(unittest.TestCase):
+    def test_analysis_work_split_options_only_returns_current_matching_batches(self) -> None:
+        request = Request(
+            {"type": "http", "method": "GET", "path": "/api/review-work-splits", "headers": []}
+        )
+        rows = [
+            {
+                "split_id": "split-current",
+                "model_run_id": "run-1",
+                "created_at": "2026-09-17T10:00:00+08:00",
+                "created_by": "alice",
+                "mode": "blind",
+                "reviewers_per_issue": 2,
+                "total_count": 10,
+                "assignment_count": 20,
+                "completed_count": 6,
+                "filter_snapshot": {"baselines": ["0508"]},
+                "is_current": True,
+            },
+            {
+                "split_id": "split-other-baseline",
+                "model_run_id": "run-1",
+                "filter_snapshot": {"baselines": ["0821"]},
+                "is_current": True,
+            },
+            {
+                "split_id": "split-superseded",
+                "model_run_id": "run-1",
+                "filter_snapshot": {"baselines": ["0508"]},
+                "is_current": False,
+            },
+        ]
+        with patch.object(
+            cases_router, "resolve_request_baseline_ids", return_value=["0508"]
+        ), patch.object(
+            cases_router.database, "list_review_work_splits", return_value=rows
+        ):
+            result = asyncio.run(
+                cases_router.review_work_split_options(
+                    request, model_run_id="run-1", baselines="0508"
+                )
+            )
+        self.assertEqual([item["split_id"] for item in result["items"]], ["split-current"])
+        self.assertEqual(result["items"][0]["completed_count"], 6)
+        self.assertEqual(result["items"][0]["baselines"], ["0508"])
+
     def test_exact_split_scope_keeps_task_membership_and_new_reviews_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "exact-split-scope.sqlite")

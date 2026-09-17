@@ -40,6 +40,14 @@ function workSplitOptionLabel(splitId) {
   return uiText(`本次任务新增 · ${value.slice(0, 18)}…`, `This task only · ${value.slice(0, 18)}…`);
 }
 
+function analysisWorkSplitOptionLabel(item) {
+  const splitId = String(item?.split_id || "").trim();
+  const date = item?.created_at ? formatTime(item.created_at) : "";
+  const progress = `${Number(item?.completed_count || 0)}/${Number(item?.assignment_count || 0)}`;
+  const owner = String(item?.created_by || "").trim();
+  return [date, owner, progress, splitId.slice(0, 14)].filter(Boolean).join(" · ");
+}
+
 function renderWorkSplitScopePicker(rootSelector, selected, available, onChange) {
   const root = $(rootSelector);
   if (!root) return;
@@ -65,15 +73,47 @@ function renderReviewWorkSplitPicker(selected = state.reviewWorkSplitId) {
 }
 
 function renderAnalysisWorkSplitPicker(selected = state.reviewAnalysis.workSplitId) {
-  renderWorkSplitScopePicker(
-    "#analysisWorkSplitPicker",
-    selected,
-    state.reviewAnalysis.availableWorkSplitId,
-    (value) => {
+  const root = $("#analysisWorkSplitPicker");
+  if (!root) return;
+  const known = String(selected || state.reviewAnalysis.availableWorkSplitId || "").trim();
+  const options = [
+    { value: "", label: workSplitOptionLabel("") },
+    ...(state.reviewAnalysis.workSplitOptions || []).map((item) => ({
+      value: String(item.split_id || ""),
+      label: analysisWorkSplitOptionLabel(item),
+    })),
+  ];
+  if (known && !options.some((item) => item.value === known)) {
+    options.push({ value: known, label: workSplitOptionLabel(known) });
+  }
+  populateUiSelect(root, options, String(selected || ""));
+  bindUiSelect(root, {
+    onChange: (value) => {
       state.reviewAnalysis.workSplitId = value || "";
+      if (value) state.reviewAnalysis.availableWorkSplitId = value;
       scheduleAnalysisFilterReload?.(0);
-    }
-  );
+    },
+    maxHeight: 320,
+    maxWidth: 520,
+  });
+}
+
+async function loadAnalysisWorkSplits({ force = false } = {}) {
+  const runId = state.selectedRunId || $("#analysisRunFilter")?.value || "";
+  const baselines = selectedBaselineQueryValue();
+  const key = `${runId}|${baselines}`;
+  if (!force && state.reviewAnalysis.workSplitOptionsKey === key) {
+    renderAnalysisWorkSplitPicker(state.reviewAnalysis.workSplitId);
+    return state.reviewAnalysis.workSplitOptions;
+  }
+  const params = new URLSearchParams();
+  if (runId) params.set("model_run_id", runId);
+  if (baselines) params.set("baselines", baselines);
+  const result = await api(`/api/review-work-splits?${params.toString()}`);
+  state.reviewAnalysis.workSplitOptionsKey = key;
+  state.reviewAnalysis.workSplitOptions = result.items || [];
+  renderAnalysisWorkSplitPicker(state.reviewAnalysis.workSplitId);
+  return state.reviewAnalysis.workSplitOptions;
 }
 
 function currentReviewFilterPayload() {

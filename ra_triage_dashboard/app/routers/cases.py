@@ -497,6 +497,62 @@ async def list_case_work_splits(
     return {"items": items, "change_revision": await asyncio.to_thread(database.change_revision)}
 
 
+@router.get("/api/review-work-splits")
+async def review_work_split_options(
+    request: Request,
+    model_run_id: str = "",
+    baselines: str = "",
+) -> dict[str, Any]:
+    """Return minimal current task batches for the read-only Review filters."""
+
+    selected_baselines = set(resolve_request_baseline_ids(baselines, request=request))
+    raw_items = await asyncio.to_thread(
+        database.list_review_work_splits,
+        limit=100,
+        model_run_id=_as_text(model_run_id),
+    )
+
+    def snapshot_baselines(item: dict[str, Any]) -> set[str]:
+        snapshot = item.get("filter_snapshot") or {}
+        raw = snapshot.get("baselines") or snapshot.get("baseline_scopes") or []
+        if isinstance(raw, str):
+            values = raw.split(",")
+        elif isinstance(raw, (list, tuple, set)):
+            values = raw
+        else:
+            values = []
+        normalized = set()
+        for value in values:
+            text = str(value).strip()
+            if not text:
+                continue
+            normalized.add(baseline_registry.scope_to_id(text) or text)
+        return normalized
+
+    items = []
+    for item in raw_items:
+        if not item.get("is_current"):
+            continue
+        item_baselines = snapshot_baselines(item)
+        if selected_baselines and item_baselines and selected_baselines.isdisjoint(item_baselines):
+            continue
+        items.append(
+            {
+                "split_id": str(item.get("split_id") or ""),
+                "model_run_id": str(item.get("model_run_id") or ""),
+                "created_at": str(item.get("created_at") or ""),
+                "created_by": str(item.get("created_by") or ""),
+                "mode": str(item.get("mode") or "single"),
+                "reviewers_per_issue": int(item.get("reviewers_per_issue") or 1),
+                "total_count": int(item.get("total_count") or 0),
+                "assignment_count": int(item.get("assignment_count") or 0),
+                "completed_count": int(item.get("completed_count") or 0),
+                "baselines": sorted(item_baselines),
+            }
+        )
+    return {"items": items}
+
+
 @router.get("/api/cases/work-splits/{split_id}")
 async def get_case_work_split(
     split_id: str,

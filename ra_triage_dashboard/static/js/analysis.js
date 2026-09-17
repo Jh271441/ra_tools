@@ -1362,6 +1362,7 @@ async function enterAnalysisPage({ includeOverview = false } = {}) {
 
 async function loadReviewReasonAnalysis({ keepPainted = false } = {}) {
   const requestSeq = ++state.reviewAnalysis.requestSeq;
+  await loadAnalysisWorkSplits();
   const params = buildAnalysisQueryParams({ includePagination: true });
   // Keep existing paint when revisiting the tab; avoid blanking for a snappier switch.
   if (!keepPainted) {
