@@ -10,6 +10,7 @@ from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from ..review_mentions import extract_review_mentions, notification_recipients
+from .case_annotations import _require_unmigrated_issue
 from ..runtime import database, review_notification_dispatcher, settings
 from ..support.attachments import (
     _public_comment_attachment,
@@ -131,6 +132,7 @@ async def _create_review_comment_record(
     *,
     attachments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    await _require_unmigrated_issue(issue_id)
     text = _as_text(body.get("body")).strip()
     if not text:
         raise _detail(400, "评论内容不能为空。")

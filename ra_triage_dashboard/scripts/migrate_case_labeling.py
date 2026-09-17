@@ -15,6 +15,7 @@ if str(APP_ROOT) not in sys.path:
 from app.labeling_migration import (
     DEFAULT_LABEL_DATASETS,
     DEFAULT_POLICY_VERSION,
+    activate_legacy_labeling,
     labeling_inventory_fingerprint,
     labeling_inventory_fingerprints,
     legacy_labeling_inventory,
@@ -86,24 +87,16 @@ def main() -> int:
             parser.error("activate exactly one dataset at a time")
         if args.expected_epoch is None:
             parser.error("activate requires --expected-epoch")
-        reconciliation = reconcile_legacy_labeling(
+        output["activation"] = activate_legacy_labeling(
             database,
             scopes=scopes,
             policy_version=args.policy_version,
             tag_catalog=_review_tag_catalog(),
-        )
-        output["reconciliation"] = reconciliation
-        if not reconciliation["passed"]:
-            print(json.dumps(output, ensure_ascii=False, indent=2, sort_keys=True))
-            return 2
-        output["activation"] = database.set_labeling_scope_state(
-            baseline_scope=scopes[0],
-            status="active",
-            policy_version=args.policy_version,
-            source_inventory_sha256=reconciliation["source_inventory_sha256"],
-            updated_by=args.actor,
             expected_epoch=args.expected_epoch,
+            updated_by=args.actor,
         )
+        print(json.dumps(output, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0 if output["activation"]["passed"] else 2
     print(json.dumps(output, ensure_ascii=False, indent=2, sort_keys=True))
     if args.mode == "reconcile" and not output["reconciliation"]["passed"]:
         return 2

@@ -25,84 +25,85 @@ def _normalized_scopes(scopes: Sequence[str]) -> list[str]:
     )
 
 
-def labeling_inventory_fingerprint(database: Any, *, scopes: Sequence[str]) -> str:
+def _inventory_fingerprint_on_connection(
+    conn: Any, *, scopes: Sequence[str]
+) -> str:
     normalized = _normalized_scopes(scopes)
     if not normalized:
         return hashlib.sha256(b"").hexdigest()
     placeholders = ", ".join("?" for _ in normalized)
-    with database.connect() as conn:
-        issues = conn.execute(
-            f"SELECT issue_id, baseline_scope, COALESCE(gt_label, '') AS gt_label, COALESCE(gt_source, '') AS gt_source FROM issues WHERE baseline_scope IN ({placeholders}) ORDER BY baseline_scope, issue_id",
-            normalized,
-        ).fetchall()
-        annotations = conn.execute(
-            f"""
-            SELECT annotation.*
-            FROM annotations annotation
-            JOIN issues issue ON issue.issue_id = annotation.issue_id
-            WHERE issue.baseline_scope IN ({placeholders})
-            ORDER BY annotation.id
-            """,
-            normalized,
-        ).fetchall()
-        comments = conn.execute(
-            f"""
-            SELECT comment.*
-            FROM review_comments comment
-            JOIN issues issue ON issue.issue_id = comment.issue_id
-            WHERE issue.baseline_scope IN ({placeholders})
-            ORDER BY comment.id
-            """,
-            normalized,
-        ).fetchall()
-        tasks = conn.execute(
-            f"""
-            SELECT DISTINCT split.id, split.filter_json, split.assignees_json,
-                   split.model_run_id, split.assignment_count, split.created_at,
-                   split.created_by, split.seed, split.total_count, split.mode,
-                   split.reviewers_per_issue, split.overlap_ratio
-            FROM issue_work_splits split
-            JOIN review_work_assignments assignment ON assignment.split_id = split.id
-            JOIN issues issue ON issue.issue_id = assignment.issue_id
-            WHERE issue.baseline_scope IN ({placeholders})
-            ORDER BY split.id
-            """,
-            normalized,
-        ).fetchall()
-        review_attachments = conn.execute(
-            f"""
-            SELECT attachment.* FROM review_attachments attachment
-            JOIN annotations annotation ON annotation.id = attachment.annotation_id
-            JOIN issues issue ON issue.issue_id = annotation.issue_id
-            WHERE issue.baseline_scope IN ({placeholders}) ORDER BY attachment.id
-            """, normalized,
-        ).fetchall()
-        comment_attachments = conn.execute(
-            f"""
-            SELECT attachment.* FROM comment_attachments attachment
-            JOIN review_comments comment ON comment.id = attachment.comment_id
-            JOIN issues issue ON issue.issue_id = comment.issue_id
-            WHERE issue.baseline_scope IN ({placeholders}) ORDER BY attachment.id
-            """, normalized,
-        ).fetchall()
-        assignments = conn.execute(
-            f"""
-            SELECT assignment.* FROM review_work_assignments assignment
-            JOIN issues issue ON issue.issue_id = assignment.issue_id
-            WHERE issue.baseline_scope IN ({placeholders})
-            ORDER BY assignment.split_id, assignment.issue_id, assignment.assignee
-            """, normalized,
-        ).fetchall()
-        assignment_changes = conn.execute(
-            f"""
-            SELECT change.* FROM review_work_assignment_changes change
-            JOIN issues issue ON issue.issue_id = change.issue_id
-            WHERE issue.baseline_scope IN ({placeholders}) ORDER BY change.id
-            """, normalized,
-        ).fetchall()
-        tag_catalog = conn.execute(
-            "SELECT * FROM review_tag_catalog ORDER BY key"
-        ).fetchall()
+    issues = conn.execute(
+        f"SELECT issue_id, baseline_scope, COALESCE(gt_label, '') AS gt_label, COALESCE(gt_source, '') AS gt_source FROM issues WHERE baseline_scope IN ({placeholders}) ORDER BY baseline_scope, issue_id",
+        normalized,
+    ).fetchall()
+    annotations = conn.execute(
+        f"""
+        SELECT annotation.*
+        FROM annotations annotation
+        JOIN issues issue ON issue.issue_id = annotation.issue_id
+        WHERE issue.baseline_scope IN ({placeholders})
+        ORDER BY annotation.id
+        """,
+        normalized,
+    ).fetchall()
+    comments = conn.execute(
+        f"""
+        SELECT comment.*
+        FROM review_comments comment
+        JOIN issues issue ON issue.issue_id = comment.issue_id
+        WHERE issue.baseline_scope IN ({placeholders})
+        ORDER BY comment.id
+        """,
+        normalized,
+    ).fetchall()
+    tasks = conn.execute(
+        f"""
+        SELECT DISTINCT split.id, split.filter_json, split.assignees_json,
+               split.model_run_id, split.assignment_count, split.created_at,
+               split.created_by, split.seed, split.total_count, split.mode,
+               split.reviewers_per_issue, split.overlap_ratio
+        FROM issue_work_splits split
+        JOIN review_work_assignments assignment ON assignment.split_id = split.id
+        JOIN issues issue ON issue.issue_id = assignment.issue_id
+        WHERE issue.baseline_scope IN ({placeholders})
+        ORDER BY split.id
+        """,
+        normalized,
+    ).fetchall()
+    review_attachments = conn.execute(
+        f"""
+        SELECT attachment.* FROM review_attachments attachment
+        JOIN annotations annotation ON annotation.id = attachment.annotation_id
+        JOIN issues issue ON issue.issue_id = annotation.issue_id
+        WHERE issue.baseline_scope IN ({placeholders}) ORDER BY attachment.id
+        """, normalized,
+    ).fetchall()
+    comment_attachments = conn.execute(
+        f"""
+        SELECT attachment.* FROM comment_attachments attachment
+        JOIN review_comments comment ON comment.id = attachment.comment_id
+        JOIN issues issue ON issue.issue_id = comment.issue_id
+        WHERE issue.baseline_scope IN ({placeholders}) ORDER BY attachment.id
+        """, normalized,
+    ).fetchall()
+    assignments = conn.execute(
+        f"""
+        SELECT assignment.* FROM review_work_assignments assignment
+        JOIN issues issue ON issue.issue_id = assignment.issue_id
+        WHERE issue.baseline_scope IN ({placeholders})
+        ORDER BY assignment.split_id, assignment.issue_id, assignment.assignee
+        """, normalized,
+    ).fetchall()
+    assignment_changes = conn.execute(
+        f"""
+        SELECT change.* FROM review_work_assignment_changes change
+        JOIN issues issue ON issue.issue_id = change.issue_id
+        WHERE issue.baseline_scope IN ({placeholders}) ORDER BY change.id
+        """, normalized,
+    ).fetchall()
+    tag_catalog = conn.execute(
+        "SELECT * FROM review_tag_catalog ORDER BY key"
+    ).fetchall()
 
     def plain(rows: Sequence[Any]) -> list[dict[str, Any]]:
         # Preserve NULL distinctly, name columns, and canonicalize JSONB/text
@@ -133,6 +134,22 @@ def labeling_inventory_fingerprint(database: Any, *, scopes: Sequence[str]) -> s
     return hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
+
+
+def labeling_inventory_fingerprint(database: Any, *, scopes: Sequence[str]) -> str:
+    with database.connect() as conn:
+        return _inventory_fingerprint_on_connection(conn, scopes=scopes)
+
+
+def scope_inventory_verifier(
+    scopes: Sequence[str],
+) -> Any:
+    """Build a connection-scoped fingerprint check for atomic activation."""
+
+    def verify(conn: Any) -> str:
+        return _inventory_fingerprint_on_connection(conn, scopes=scopes)
+
+    return verify
 
 
 def labeling_inventory_fingerprints(
@@ -800,3 +817,84 @@ def reconcile_legacy_labeling(
         "errors": errors,
         "scope_states": states,
     }
+
+
+def activate_legacy_labeling(
+    database: Any,
+    *,
+    scopes: Sequence[str],
+    policy_version: str = DEFAULT_POLICY_VERSION,
+    tag_catalog: Sequence[dict[str, Any]] = (),
+    expected_epoch: int,
+    updated_by: str = "migration",
+) -> dict[str, Any]:
+    """Activate one dataset scope atomically and verify the cutover afterwards."""
+
+    normalized = _normalized_scopes(scopes)
+    if len(normalized) != 1:
+        raise ValueError("activate 每次只能处理一个数据集。")
+    scope = normalized[0]
+    reconciliation = reconcile_legacy_labeling(
+        database,
+        scopes=[scope],
+        policy_version=policy_version,
+        tag_catalog=tag_catalog,
+    )
+    result: dict[str, Any] = {
+        "passed": False,
+        "policy_version": policy_version,
+        "baseline_scope": scope,
+        "reconciliation": reconciliation,
+        "activation": None,
+        "post_reconciliation": None,
+        "paused_state": None,
+    }
+    if not reconciliation["passed"]:
+        return result
+    expected_fingerprint = reconciliation["source_inventory_sha256_by_scope"][scope]
+    state = next(
+        (
+            item for item in reconciliation["scope_states"]
+            if item["baseline_scope"] == scope
+        ),
+        None,
+    )
+    if state is None or state["policy_version"] != policy_version:
+        result["errors"] = ["该数据集缺少当前 policy 的回填状态；请先 backfill。"]
+        return result
+    if state["source_inventory_sha256"] != expected_fingerprint:
+        result["errors"] = ["回填状态与对账指纹不一致；请重新 backfill。"]
+        return result
+    activation = database.activate_labeling_scope(
+        baseline_scope=scope,
+        policy_version=policy_version,
+        source_inventory_sha256=expected_fingerprint,
+        updated_by=updated_by,
+        expected_epoch=expected_epoch,
+        verify_inventory=scope_inventory_verifier([scope]),
+    )
+    result["activation"] = activation
+    post = reconcile_legacy_labeling(
+        database,
+        scopes=[scope],
+        policy_version=policy_version,
+        tag_catalog=tag_catalog,
+    )
+    result["post_reconciliation"] = post
+    if not post["passed"]:
+        # A write slipped into the activation window: pause the scope so the
+        # old entry stays closed while the drift is re-audited.
+        result["paused_state"] = database.set_labeling_scope_state(
+            baseline_scope=scope,
+            status="paused",
+            policy_version=policy_version,
+            source_inventory_sha256=post["source_inventory_sha256_by_scope"][scope],
+            updated_by=updated_by,
+            expected_epoch=activation["epoch"],
+        )
+        result["errors"] = [
+            "激活后源数据校验失败，该数据集已暂停；请重新对账后再激活。"
+        ]
+        return result
+    result["passed"] = True
+    return result

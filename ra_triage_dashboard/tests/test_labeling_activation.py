@@ -11,7 +11,7 @@ from unittest.mock import patch
 from fastapi import HTTPException, Request
 
 from ra_triage_dashboard.app.db import Database
-from ra_triage_dashboard.app.routers import labeling
+from ra_triage_dashboard.app.routers import case_annotations, case_comments, labeling
 
 
 class LabelingActivationTest(unittest.IsolatedAsyncioTestCase):
@@ -174,6 +174,91 @@ class LabelingActivationTest(unittest.IsolatedAsyncioTestCase):
         with patch.object(self.database, "create_label_gt_export_preview") as create:
             with self.assertRaises(HTTPException) as raised:
                 await labeling.create_gt_export_preview(self.request({"baselines": "shadow"}))
+            self.assertEqual(raised.exception.status_code, 409)
+            create.assert_not_called()
+
+
+class LegacyWriteHandoverTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.database = Database(self.root / "handover.sqlite")
+        self.database.init()
+        self.database.upsert_issues(
+            [{"issue_id": "cn-migrated", "gt_label": "正确触发"}],
+            source="test", replace_gt=True, baseline_scope="migrated",
+        )
+        self.database.upsert_issues(
+            [{"issue_id": "cn-legacy", "gt_label": "正确触发"},
+             {"issue_id": "cn-elsewhere", "gt_label": "正确触发"}],
+            source="test", replace_gt=True, baseline_scope="elsewhere",
+        )
+        self.database.set_labeling_scope_state(
+            baseline_scope="migrated", status="active", policy_version="test-v1",
+            source_inventory_sha256="a" * 64, updated_by="test",
+        )
+        patches = ExitStack()
+        self.addCleanup(patches.close)
+        for module in (case_annotations, case_comments):
+            patches.enter_context(patch.object(module, "database", self.database))
+        patches.enter_context(patch.object(case_comments, "settings", SimpleNamespace(
+            dchat_notifications_enabled=False, comment_attachments_dir=self.root,
+        )))
+
+    def request(self, body: dict | None = None) -> Request:
+        async def receive():
+            return {"type": "http.request", "body": json.dumps(body or {}).encode()}
+
+        return Request({"type": "http", "headers": [], "query_string": b""}, receive)
+
+    async def test_old_annotation_entries_reject_migrated_scope(self) -> None:
+        with patch.object(case_annotations, "_create_annotation_record") as create:
+            for issue_id in ("cn-migrated", "missing"):
+                with self.subTest(issue_id=issue_id):
+                    with self.assertRaises(HTTPException) as raised:
+                        await case_annotations.create_annotation(issue_id, self.request())
+                    expected = 409 if issue_id == "cn-migrated" else 404
+                    self.assertEqual(raised.exception.status_code, expected)
+            create.assert_not_called()
+            await case_annotations.create_annotation("cn-legacy", self.request())
+            create.assert_called_once()
+
+    async def test_old_delete_rejects_migrated_scope(self) -> None:
+        with self.assertRaises(HTTPException) as raised:
+            await case_annotations.delete_annotation("cn-migrated", 1, self.request())
+        self.assertEqual(raised.exception.status_code, 409)
+        with self.assertRaises(HTTPException) as raised:
+            await case_annotations.delete_annotation("cn-legacy", 1, self.request())
+        self.assertEqual(raised.exception.status_code, 404)
+
+    async def test_old_comment_entries_reject_migrated_scope(self) -> None:
+        with patch.object(case_comments, "_action_actor", return_value=("alice", "kylin_ticket", True)), patch.object(
+            case_comments, "extract_review_mentions", return_value=[]
+        ):
+            with self.assertRaises(HTTPException) as raised:
+                await case_comments.create_review_comment("cn-migrated", self.request({"body": "讨论"}))
+            self.assertEqual(raised.exception.status_code, 409)
+            result = await case_comments.create_review_comment(
+                "cn-legacy", self.request({"body": "讨论"})
+            )
+            self.assertEqual(result["comment"]["body"], "讨论")
+
+    async def test_handover_follows_activation_state(self) -> None:
+        self.database.set_labeling_scope_state(
+            baseline_scope="migrated", status="paused", policy_version="test-v1",
+            source_inventory_sha256="a" * 64, updated_by="test", expected_epoch=1,
+        )
+        with patch.object(case_annotations, "_create_annotation_record") as create:
+            await case_annotations.create_annotation("cn-migrated", self.request())
+            create.assert_called_once()
+        self.database.set_labeling_scope_state(
+            baseline_scope="migrated", status="active", policy_version="test-v1",
+            source_inventory_sha256="a" * 64, updated_by="test", expected_epoch=2,
+        )
+        with patch.object(case_annotations, "_create_annotation_record") as create:
+            with self.assertRaises(HTTPException) as raised:
+                await case_annotations.create_annotation("cn-migrated", self.request())
             self.assertEqual(raised.exception.status_code, 409)
             create.assert_not_called()
 

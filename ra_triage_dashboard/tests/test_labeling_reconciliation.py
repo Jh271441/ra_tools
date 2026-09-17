@@ -5,11 +5,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from ra_triage_dashboard.app.db import Database
+from ra_triage_dashboard.app.db import Database, LabelAnnotationConflictError
 from ra_triage_dashboard.app.labeling_migration import (
+    activate_legacy_labeling,
     labeling_inventory_fingerprint,
     migrate_legacy_labeling,
     reconcile_legacy_labeling,
+    scope_inventory_verifier,
 )
 from ra_triage_dashboard.app.work_split import distribute_issue_ids
 
@@ -166,6 +168,92 @@ class LabelingReconciliationTest(unittest.TestCase):
         fields = {field for item in result["content_mismatches"] for field in item["fields"]}
         self.assertIn("supersedes_id", fields)
         self.assertIn("source_run_id", fields)
+
+
+class LabelingActivationCutoverTest(LabelingReconciliationTest):
+    def activate(self, expected_epoch: int) -> dict:
+        return activate_legacy_labeling(
+            self.database, scopes=["scope"], policy_version="test-v1",
+            tag_catalog=[], expected_epoch=expected_epoch, updated_by="test",
+        )
+
+    def test_activate_requires_backfilled_state(self) -> None:
+        result = self.activate(expected_epoch=0)
+        self.assertFalse(result["passed"])
+        self.assertIsNone(result["activation"])
+        self.assertTrue(
+            any("回填" in error for error in result.get("errors") or [])
+            or not result["reconciliation"]["passed"],
+            result,
+        )
+
+    def test_activate_epoch_mismatch_leaves_scope_untouched(self) -> None:
+        self.migrate()
+        state = self.database.labeling_scope_states(["scope"])[0]
+        with self.assertRaises(LabelAnnotationConflictError):
+            self.activate(expected_epoch=state["epoch"] + 1)
+        current = self.database.labeling_scope_states(["scope"])[0]
+        self.assertEqual(current["status"], "shadow")
+        self.assertEqual(current["epoch"], state["epoch"])
+
+    def test_activate_reverifies_inventory_inside_epoch_transaction(self) -> None:
+        self.migrate()
+        state = self.database.labeling_scope_states(["scope"])[0]
+        with self.database.connect() as conn:
+            conn.execute("UPDATE annotations SET note = '窗口内并发写入'")
+        with self.assertRaises(LabelAnnotationConflictError):
+            self.database.activate_labeling_scope(
+                baseline_scope="scope", policy_version="test-v1",
+                source_inventory_sha256=state["source_inventory_sha256"],
+                updated_by="test", expected_epoch=state["epoch"],
+                verify_inventory=scope_inventory_verifier(["scope"]),
+            )
+        current = self.database.labeling_scope_states(["scope"])[0]
+        self.assertEqual(current["status"], "shadow")
+        self.assertEqual(current["epoch"], state["epoch"])
+
+    def test_activate_cutover_passes_and_rejects_double_activation(self) -> None:
+        self.migrate()
+        state = self.database.labeling_scope_states(["scope"])[0]
+        result = self.activate(expected_epoch=state["epoch"])
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(result["activation"]["status"], "active")
+        self.assertEqual(result["activation"]["epoch"], state["epoch"] + 1)
+        self.assertTrue(result["post_reconciliation"]["passed"])
+        with self.assertRaisesRegex(ValueError, "已处于激活状态"):
+            self.activate(expected_epoch=state["epoch"])
+
+    def test_post_activation_source_drift_blocks_reactivation(self) -> None:
+        self.migrate()
+        state = self.database.labeling_scope_states(["scope"])[0]
+        self.assertTrue(self.activate(expected_epoch=state["epoch"])["passed"])
+        with self.database.connect() as conn:
+            conn.execute("UPDATE annotations SET note = '激活后变化'")
+        result = self.activate(expected_epoch=state["epoch"] + 1)
+        self.assertFalse(result["passed"])
+        self.assertIsNone(result["activation"])
+
+    def test_write_during_activation_window_pauses_scope(self) -> None:
+        self.migrate()
+        state = self.database.labeling_scope_states(["scope"])[0]
+        original = self.database.activate_labeling_scope
+
+        def activate_then_simulate_inflight_write(**kwargs):
+            result = original(**kwargs)
+            with self.database.connect() as conn:
+                conn.execute("UPDATE annotations SET note = '切换窗口内提交'")
+            return result
+
+        with patch.object(
+            self.database, "activate_labeling_scope",
+            activate_then_simulate_inflight_write,
+        ):
+            result = self.activate(expected_epoch=state["epoch"])
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["paused_state"]["status"], "paused")
+        self.assertEqual(result["paused_state"]["epoch"], state["epoch"] + 2)
+        current = self.database.labeling_scope_states(["scope"])[0]
+        self.assertEqual(current["status"], "paused")
 
 
 if __name__ == "__main__":

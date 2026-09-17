@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Restore a verified cloud backup and rehearse Case-labeling without cutover."""
+"""Restore a verified cloud backup and rehearse Case-labeling end to end.
+
+Backfill, reconciliation and the M6 activation cutover all run inside one
+disposable database restored from the backup; production is never written.
+"""
 
 from __future__ import annotations
 
@@ -194,6 +198,31 @@ def main() -> int:
                         )
                     })
         scopes = report["plan"]["baseline_scopes"]
+        # M6 rehearsal: flip every rehearsed scope to active inside the
+        # disposable database, proving the atomic epoch/fingerprint cutover
+        # on a real restored copy before any production activation.
+        activation_results = []
+        states_by_scope = {
+            str(state["baseline_scope"]): state
+            for state in report["reconcile"]["scope_states"]
+        }
+        for dataset_id, scope in zip(report["plan"]["dataset_ids"], scopes):
+            state = states_by_scope.get(scope)
+            if state is None:
+                activation_results.append({
+                    "dataset": dataset_id, "baseline_scope": scope, "passed": False,
+                    "errors": ["缺少回填状态。"],
+                })
+                continue
+            output = run(
+                sys.executable, script, "activate", "--datasets", dataset_id,
+                "--policy-version", args.policy_version, "--apply",
+                "--actor", "rehearsal", "--expected-epoch", str(state["epoch"]),
+                cwd=APP_ROOT, env=env,
+            )
+            activation = json.loads(output.stdout)["activation"]
+            activation_results.append(activation)
+        report["activation_rehearsal"] = activation_results
         with psycopg.connect(database_url) as connection:
             report["source_after"] = source_digest(connection)
             report["attachments"] = verify_attachment_files(
@@ -222,7 +251,8 @@ def main() -> int:
             report["unrelated_scope_states_unchanged"],
             report["reconcile"]["reconciliation"]["passed"],
             report["reconcile_repeat"]["reconciliation"]["passed"],
-            report["active_scope_count"] == 0,
+            all(item["passed"] for item in activation_results),
+            report["active_scope_count"] == len(scopes),
         ))
     except Exception as exc:
         # stderr may contain raw imported values or settings; retain only the

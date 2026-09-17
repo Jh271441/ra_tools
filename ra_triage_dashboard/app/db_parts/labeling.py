@@ -140,6 +140,65 @@ class DatabaseLabelingMixin:
             self._mark_labeling_change(conn)
         return self.labeling_scope_states([scope])[0]
 
+    def activate_labeling_scope(
+        self,
+        *,
+        baseline_scope: str,
+        policy_version: str,
+        source_inventory_sha256: str,
+        updated_by: str,
+        expected_epoch: int,
+        verify_inventory: Any,
+    ) -> dict[str, Any]:
+        """Flip one scope to active only while its source inventory still
+        matches the reconciled fingerprint, inside the epoch-guarded
+        transaction that performs the switch."""
+        scope = str(baseline_scope or "").strip()
+        if not scope:
+            raise ValueError("标注范围不合法。")
+        with self._write_lock, self.connect() as conn:
+            current = conn.execute(
+                "SELECT * FROM labeling_scope_state WHERE baseline_scope = ?"
+                + (" FOR UPDATE" if self.backend == "postgresql" else ""),
+                (scope,),
+            ).fetchone()
+            if current is None:
+                raise ValueError("该数据集尚未回填，不能激活。")
+            if str(current["status"]) == "active":
+                raise ValueError("该数据集已处于激活状态。")
+            current_epoch = int(current["epoch"] or 0)
+            if int(expected_epoch) != current_epoch:
+                raise LabelAnnotationConflictError(
+                    f"标注范围 epoch 已变化：当前 {current_epoch}，请求 {expected_epoch}。"
+                )
+            fingerprint = str(verify_inventory(conn) or "")
+            if (
+                fingerprint != str(source_inventory_sha256 or "")
+                or fingerprint != str(current["source_inventory_sha256"] or "")
+            ):
+                raise LabelAnnotationConflictError(
+                    "激活时源数据与对账结果不一致；请重新 reconcile。"
+                )
+            now = utc_now()
+            conn.execute(
+                """
+                UPDATE labeling_scope_state SET
+                    status = 'active', policy_version = ?, epoch = ?,
+                    source_inventory_sha256 = ?, updated_by = ?, updated_at = ?
+                WHERE baseline_scope = ?
+                """,
+                (
+                    str(policy_version or ""),
+                    current_epoch + 1,
+                    fingerprint,
+                    str(updated_by or ""),
+                    now,
+                    scope,
+                ),
+            )
+            self._mark_labeling_change(conn)
+        return self.labeling_scope_states([scope])[0]
+
     @staticmethod
     def _label_revision_dict(row: Any) -> dict[str, Any]:
         return {
