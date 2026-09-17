@@ -245,6 +245,11 @@ async function setBaselineScopes(
   }
   try {
     await loadConfig();
+    if (state.activePage === "labeling") {
+      state.selectedRunId = "";
+      await enterCaseLabeling({ route: parsePageRoute() });
+      return;
+    }
     // Resolve the compatible Run first: the remaining facets and overview all
     // depend on the final overlay selection.
     await loadRuns({ preserveEmpty: true, clearIncompatible: true });
@@ -264,6 +269,8 @@ async function setBaselineScopes(
     } else if (state.activePage === "review") {
       await loadCases({ keepSelection: false, page: 1 });
       if (typeof loadClusters === "function") await loadClusters();
+    } else if (state.activePage === "labeling") {
+      await enterCaseLabeling({ route: parsePageRoute() });
     } else if (state.activePage === "runs") {
       await loadRuns({ preserveEmpty: true });
     } else if (state.activePage === "trail-update") {
@@ -632,6 +639,24 @@ async function refreshChangedDataNow() {
     }
     return;
   }
+  if (state.activePage === "labeling") {
+    await Promise.all([
+      loadConfig(),
+      loadCaseLabelingTasks(),
+      loadCaseLabelingCases({ page: state.caseLabeling.page }),
+    ]);
+    if (state.caseLabeling.issueId) {
+      if (state.caseLabeling.dirty) {
+        showToast("检测到新的标注更新；当前未保存内容已保留，请保存或刷新后查看。");
+      } else {
+        await selectCaseLabelingIssue(
+          state.caseLabeling.issueId,
+          { updateRoute: false }
+        );
+      }
+    }
+    return;
+  }
   if (state.activePage === "analysis") {
     await Promise.all([
       loadConfig(),
@@ -737,6 +762,9 @@ function sharedChangeNeedsRefresh(topics) {
   if (state.activePage === "review") {
     if (changed.has("review")) state.reviewQueueStale = true;
     return ["data", "runs", "batch"].some((topic) => changed.has(topic));
+  }
+  if (state.activePage === "labeling") {
+    return ["labeling", "data"].some((topic) => changed.has(topic));
   }
   if (state.activePage === "analysis") {
     // Preserve the reader's stable viewport. Their next filter, navigation or

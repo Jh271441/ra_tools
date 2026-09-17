@@ -395,6 +395,25 @@ function normalizedRunsRouteFilters(params) {
   };
 }
 
+function normalizedCaseLabelingRouteFilters(params) {
+  const rawPage = Number.parseInt(params.get("page") || "1", 10);
+  const rawPageSize = Number.parseInt(
+    params.get("page_size") || String(DEFAULT_CASE_PAGE_SIZE), 10
+  );
+  const status = String(params.get("status") || "all").trim().toLowerCase();
+  return {
+    taskId: /^split-[A-Za-z0-9]+$/.test(params.get("task") || "")
+      ? params.get("task")
+      : "",
+    search: params.get("q") || "",
+    status: ["pending", "resolved", "conflict"].includes(status) ? status : "all",
+    page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
+    pageSize: CASE_PAGE_SIZES.includes(rawPageSize)
+      ? rawPageSize
+      : DEFAULT_CASE_PAGE_SIZE,
+  };
+}
+
 function normalizedRunComparisonRouteFilters(params) {
   const transition = String(params.get("transition") || "ALL").toUpperCase();
   const gtLabel = String(params.get("gt") || "ALL");
@@ -455,6 +474,7 @@ function parsePageRoute() {
     failureOnly: params.has("failure") ? params.get("failure") === "1" : params.has("run") ? false : null,
     ...reviewFilters,
     analysisFilters: normalizedAnalysisRouteFilters(params),
+    labelingFilters: normalizedCaseLabelingRouteFilters(params),
     trailUpdateFilters: normalizedTrailUpdateRouteFilters(params),
     runsFilters: normalizedRunsRouteFilters(params),
     comparisonFilters: normalizedRunComparisonRouteFilters(params),
@@ -677,6 +697,21 @@ function applyAnalysisRouteControls(route) {
 function pageUrl(page, options = {}) {
   const config = PAGE_ROUTES[page] || PAGE_ROUTES.review;
   const url = new URL(withBase(config.path), window.location.origin);
+  if (page === "labeling") {
+    const labeling = typeof caseLabelingRouteOptions === "function"
+      ? caseLabelingRouteOptions(options)
+      : options;
+    if (labeling.issue) url.searchParams.set("issue", labeling.issue);
+    if (labeling.taskId) url.searchParams.set("task", labeling.taskId);
+    if (labeling.search) url.searchParams.set("q", labeling.search);
+    if (labeling.status && labeling.status !== "all") {
+      url.searchParams.set("status", labeling.status);
+    }
+    if (Number(labeling.page) > 1) url.searchParams.set("page", String(labeling.page));
+    if (Number(labeling.pageSize) !== DEFAULT_CASE_PAGE_SIZE) {
+      url.searchParams.set("page_size", String(labeling.pageSize));
+    }
+  }
   if (page === "review") {
     const review = currentReviewRouteOptions(options);
     const issueId = review.issue;
@@ -922,6 +957,9 @@ function showPage(
     renderRunManager();
     if (importKind) setImportKind(importKind);
     else activateRunSourceTab(runSourceTab || "upload");
+  }
+  if (target === "labeling" && loadPageData && typeof enterCaseLabeling === "function") {
+    enterCaseLabeling({ route: parsePageRoute() }).catch((error) => showToast(error.message, true));
   }
   if (target === "comparison") {
     renderRunComparisonSelectors?.();

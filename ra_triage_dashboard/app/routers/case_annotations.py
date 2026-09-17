@@ -108,11 +108,14 @@ async def delete_annotation(
             or identity.username.lower() != str(target.get("author") or "").lower()
         ):
             raise _detail(403, "只能删除自己的盲标 Review 版本。")
-    deleted = await asyncio.to_thread(
-        database.delete_annotation,
-        issue_id=issue_id,
-        annotation_id=annotation_id,
-    )
+    try:
+        deleted = await asyncio.to_thread(
+            database.delete_annotation,
+            issue_id=issue_id,
+            annotation_id=annotation_id,
+        )
+    except ValueError as exc:
+        raise _detail(409, str(exc))
     if deleted is None:
         raise _detail(404, "Review 版本不存在或已被删除。")
     attachment_root = settings.review_attachments_dir.resolve()

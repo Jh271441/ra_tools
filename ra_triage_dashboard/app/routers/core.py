@@ -129,6 +129,7 @@ def _dashboard_config_payload() -> dict[str, Any]:
 
 @router.get("/", include_in_schema=False)
 @router.get("/review", include_in_schema=False)
+@router.get("/case-labeling", include_in_schema=False)
 @router.get("/review-analysis", include_in_schema=False)
 @router.get("/runs", include_in_schema=False)
 @router.get("/inference", include_in_schema=False)

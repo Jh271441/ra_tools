@@ -25,6 +25,20 @@
 
 实现入口：`app/baseline_registry.py`、`app/media_registry.py`、DB `baseline_scopes` IN 过滤、顶栏 `#baselineFilter`。
 
+### RA Case 标注与模型复核解耦
+
+`/case-labeling` 是独立的三分类 Case 标注工作区，只加载 Case 事实、媒体、
+标注版本、任务结果与标注讨论，不返回或展示模型 prediction、confidence、Reason
+及推理 jobs。`/review` 继续承载模型判错复核。两页共享媒体、标签目录、任务、
+历史与页面组件，但保存范围和统计口径独立。
+
+0522、0626、0821 的历史 Review 可通过幂等迁移工具映射为标注版本，原
+annotation/comment 保留；0821 的 200/150/150 三个批次恢复为标注任务并保留选样
+Run。显式裁决引用精确人员 heads，writer/admin 均可执行；GT 更新导出会先固定
+候选来源并在下载前重新校验。设计与迁移细节见
+[`docs/review-labeling-redesign-plan.md`](docs/review-labeling-redesign-plan.md) 和
+[`docs/dataset-migration-and-labeling-ui-design.md`](docs/dataset-migration-and-labeling-ui-design.md)。
+
 ### Routing / 自车变道意图标注
 
 `/intent-labeling` 是与三分类 Review 隔离的人工标注页。页面路由、标注 API

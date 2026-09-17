@@ -900,6 +900,15 @@ class DatabaseReviewMixin:
             ).fetchone()
             if row is None:
                 return None
+            label_reference = conn.execute(
+                "SELECT id FROM label_revisions WHERE source_annotation_id = ? LIMIT 1",
+                (annotation_id,),
+            ).fetchone()
+            if label_reference is not None:
+                raise ValueError(
+                    "该 Review 版本已作为迁移后的标注来源，不能直接删除；"
+                    "请在标注工作区撤回或更正。"
+                )
             attachments = conn.execute(
                 "SELECT * FROM review_attachments WHERE annotation_id = ? ORDER BY created_at ASC",
                 (annotation_id,),

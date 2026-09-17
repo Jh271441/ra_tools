@@ -20,6 +20,7 @@ CSS_PATHS = (
     "css/layout-shared.css",
     "css/trail-update.css",
     "css/review-comment.css",
+    "css/case-labeling.css",
     "css/analysis.css",
     "css/intent-labeling.css",
     "css/media-dialog.css",
@@ -239,7 +240,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-453", APP_ENTRY_JS)
+        self.assertIn("manual-triage-454", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -280,7 +281,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-453", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-454", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -374,11 +375,12 @@ class FrontendContractTest(unittest.TestCase):
         self.assertNotIn('<span class="ui-lang-zh">工作台</span>', INDEX_HTML)
         self.assertNotIn('<span class="ui-lang-zh">分析工具</span>', INDEX_HTML)
         self.assertIn('data-sidebar-nav-group-toggle="review"', INDEX_HTML)
-        self.assertIn('<span class="ui-lang-zh">判错复核</span>', INDEX_HTML)
+        self.assertIn('<span class="ui-lang-zh">RA 标注与复核</span>', INDEX_HTML)
         self.assertEqual(INDEX_HTML.count('class="sidebar-group-icon"'), 3)
         self.assertIn(".sidebar-group-icon {", STYLES_CSS)
         self.assertIn(".sidebar-group-icon svg {", STYLES_CSS)
         self.assertIn("order: 0; color: #9aacbf;", STYLES_CSS)
+        self.assertIn("#caseLabelingNavButton { order: 1; }", STYLES_CSS)
         self.assertIn("order: 1; padding: 0;", STYLES_CSS)
         self.assertIn("order: 2; margin-left: auto;", STYLES_CSS)
         self.assertIn(".sidebar-icon { border-color: transparent; color: #8594a8; background: transparent; }", STYLES_CSS)
@@ -393,6 +395,7 @@ class FrontendContractTest(unittest.TestCase):
         )
         review_group = INDEX_HTML.split('data-sidebar-nav-group="review"', 1)[1].split('</section>', 1)[0]
         for nav_id in (
+            "caseLabelingNavButton",
             "reviewNavButton",
             "reviewAssignmentsNavButton",
             "reviewAnalysisNavButton",
@@ -410,6 +413,19 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("ensureSidebarNavGroupForPage(target)", APP_JS)
         self.assertIn('localStorage.setItem(SIDEBAR_NAV_GROUP_PREFS_KEY', APP_JS)
         self.assertIn("sidebar-mobile-open .sidebar-nav-group", STYLES_CSS)
+
+    def test_case_labeling_is_a_separate_model_free_workspace(self) -> None:
+        self.assertIn('data-page-target="labeling" data-app-path="/case-labeling"', INDEX_HTML)
+        self.assertIn('id="caseLabelingPage" data-page="labeling"', INDEX_HTML)
+        self.assertIn('path: "/case-labeling"', APP_JS)
+        self.assertIn('"case-labeling.js"', APP_ENTRY_JS)
+        self.assertIn('"css/case-labeling.css"', INDEX_HTML)
+        self.assertIn('/api/labeling/cases', APP_JS)
+        self.assertIn('function renderCaseLabelingEditor', APP_JS)
+        self.assertIn('此处不填写模型判错原因', APP_JS)
+        self.assertIn('body[data-active-page="labeling"] .header-metrics', STYLES_CSS)
+        self.assertIn('if (initialRoute.page !== "labeling")', APP_JS)
+        self.assertIn('if (state.activePage === "labeling")', APP_JS)
 
     def test_review_assignment_history_uses_flat_visual_hierarchy(self) -> None:
         self.assertIn(".review-assignment-list-card { padding: 4px 2px 0; border: 0;", STYLES_CSS)
@@ -442,7 +458,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-453`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-454`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -1400,7 +1416,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-453", APP_ENTRY_JS)
+        self.assertIn("manual-triage-454", APP_ENTRY_JS)
     def test_desktop_layout_panels_are_mouse_and_keyboard_resizable(self) -> None:
         self.assertIn('id="sidebarResizer" role="separator"', INDEX_HTML)
         self.assertIn('id="reviewPaneResizer" role="separator"', INDEX_HTML)

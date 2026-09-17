@@ -174,6 +174,7 @@ function bindEvents() {
   bindGlobalRefreshShortcut();
   bindGlobalSidebarShortcut();
   if (typeof bindIntentLabelingEvents === "function") bindIntentLabelingEvents();
+  if (typeof bindCaseLabelingEvents === "function") bindCaseLabelingEvents();
   bindWorkSplitControls();
   if (typeof bindReviewAssignmentsPage === "function") bindReviewAssignmentsPage();
   if (typeof bindRunComparisonEvents === "function") bindRunComparisonEvents();
@@ -452,6 +453,11 @@ function bindEvents() {
           datasetIds: state.intentLabeling.summaryDatasetIds,
           force: true,
         });
+        showToast(t("toast.page_refreshed"));
+        return;
+      }
+      if (state.activePage === "labeling") {
+        await enterCaseLabeling({ route: parsePageRoute() });
         showToast(t("toast.page_refreshed"));
         return;
       }
@@ -1121,35 +1127,39 @@ async function bootstrap() {
         : "all";
       state.failureOnly = state.reviewComparisonStatus === "mismatch";
     }
-    // Resolve the Run before loading queue-dependent facets. Otherwise a
-    // dataset can briefly (or permanently, after a race) render counts for an
-    // unrelated newest Run.
-    await settleInitialRequests(
-      [
-        loadRuns({
-          preferDefault: !initialRoute.runId,
-          preserveEmpty: initialRoute.runId === "none",
-        }),
-      ],
-      "模型 Run"
-    );
+    // Case labeling is intentionally model-free. Other pages resolve the Run
+    // before loading queue-dependent facets so their counts cannot race.
+    if (initialRoute.page !== "labeling") {
+      await settleInitialRequests(
+        [
+          loadRuns({
+            preferDefault: !initialRoute.runId,
+            preserveEmpty: initialRoute.runId === "none",
+          }),
+        ],
+        "模型 Run"
+      );
+    } else {
+      state.selectedRunId = "";
+    }
     if (initialRoute.page === "comparison") {
       applyRunComparisonRoute(initialRoute.comparisonFilters);
     }
-    const sharedDataPromise = settleInitialRequests(
-      [
-        loadReviewers(),
-        loadWorkAssignees(),
-      ],
-      "共享数据"
-    );
+    const sharedDataPromise = initialRoute.page === "labeling"
+      ? Promise.resolve()
+      : settleInitialRequests(
+          [loadReviewers(), loadWorkAssignees()],
+          "共享数据"
+        );
     setReviewComparisonStatus(state.reviewComparisonStatus, {
       hasRun: Boolean(state.selectedRunId),
     });
     if (initialRoute.page === "review") applyReviewRouteControls(initialRoute);
     if (initialRoute.page === "analysis") applyAnalysisRouteControls(initialRoute);
     // Review home: paint cases first; cluster chips are secondary chrome.
-    const initialPageRequests = [loadOverview()];
+    const initialPageRequests = initialRoute.page === "labeling"
+      ? []
+      : [loadOverview()];
     let initialDetailRequest = null;
     if (initialRoute.page === "review") {
       initialPageRequests.push(
@@ -1169,6 +1179,8 @@ async function bootstrap() {
       initialPageRequests.push(loadPredictionConfig(), loadPredictionBatches());
     } else if (initialRoute.page === "comparison") {
       initialPageRequests.push(loadRunComparison({ historyMode: "" }));
+    } else if (initialRoute.page === "labeling") {
+      initialPageRequests.push(enterCaseLabeling({ route: initialRoute }));
     } else if (initialRoute.page === "review-assignments") {
       initialPageRequests.push(loadAccessUsers(), loadReviewAssignments({
         splitId: initialRoute.reviewAssignmentSplitId,

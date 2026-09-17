@@ -26,7 +26,7 @@ SENSITIVE_HEADER_RE = re.compile(
     re.IGNORECASE,
 )
 MUTATION_REQUEST_MARKERS = frozenset(
-    {"browser-v1", "review-v1", "comment-v1", "publish-v1"}
+    {"browser-v1", "review-v1", "labeling-v1", "comment-v1", "publish-v1"}
 )
 KYLIN_TICKET_COOKIE = "_kylin_ticket"
 KYLIN_USERNAME_COOKIE = "_kylin_username"

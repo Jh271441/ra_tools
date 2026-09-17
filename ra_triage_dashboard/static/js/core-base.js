@@ -542,6 +542,11 @@ function stripBasePath(pathname) {
 }
 
 const PAGE_ROUTES = {
+  labeling: {
+    path: "/case-labeling",
+    titleZh: "Case 标注",
+    titleEn: "Case Labeling",
+  },
   review: {
     path: "/review",
     titleZh: "判错复核",
@@ -759,6 +764,20 @@ const state = {
     detailRequestSeq: 0,
     loading: false,
     detailLoading: false,
+  },
+  caseLabeling: {
+    tasks: [],
+    taskId: "",
+    search: "",
+    status: "all",
+    page: 1,
+    pageSize: DEFAULT_CASE_PAGE_SIZE,
+    requestSeq: 0,
+    detailSeq: 0,
+    data: null,
+    issueId: "",
+    caseData: null,
+    dirty: false,
   },
   analysisDiscussion: null,
   trailUpdate: {

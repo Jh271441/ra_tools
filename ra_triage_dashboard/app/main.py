@@ -44,6 +44,7 @@ from .routers import (
     core,
     imports,
     inference,
+    labeling,
     reviews,
     runs,
     trail_update,
@@ -270,19 +271,34 @@ async def request_size_guard(request: Request, call_next):
             )
     if (
         request.method == "POST"
-        and request.url.path.startswith("/api/cases/")
-        and request.url.path.endswith(
-            ("/annotations-with-attachments", "/comments-with-attachments")
+        and (
+            (
+                request.url.path.startswith("/api/cases/")
+                and request.url.path.endswith(
+                    ("/annotations-with-attachments", "/comments-with-attachments")
+                )
+            )
+            or (
+                request.url.path.startswith("/api/labeling/cases/")
+                and request.url.path.endswith("/revisions-with-attachments")
+            )
         )
     ):
         is_comment_upload = request.url.path.endswith("/comments-with-attachments")
-        required_marker = "comment-v1" if is_comment_upload else "review-v1"
+        is_label_upload = request.url.path.endswith("/revisions-with-attachments")
+        required_marker = (
+            "comment-v1" if is_comment_upload
+            else "labeling-v1" if is_label_upload
+            else "review-v1"
+        )
         if request.headers.get("x-ra-triage-request") != required_marker:
             return JSONResponse(
                 status_code=403,
                 content={
                     "detail": "缺少评论图片请求标记。"
                     if is_comment_upload
+                    else "缺少标注图片请求标记。"
+                    if is_label_upload
                     else "缺少 Review 截图请求标记。"
                 },
             )
@@ -390,5 +406,6 @@ app.include_router(analysis.router)
 app.include_router(imports.router)
 app.include_router(batch.router)
 app.include_router(inference.router)
+app.include_router(labeling.router)
 app.include_router(trail_update.router)
 app.include_router(intent_labeling.router)

@@ -785,6 +785,151 @@ class DatabaseCoreMixin:
                 CREATE INDEX IF NOT EXISTS idx_review_work_assignment_changes_split
                     ON review_work_assignment_changes(split_id, changed_at DESC);
 
+                CREATE TABLE IF NOT EXISTS review_worksets (
+                    id TEXT PRIMARY KEY,
+                    baseline_scope TEXT NOT NULL,
+                    name TEXT NOT NULL DEFAULT '',
+                    selection_source_run_id TEXT NOT NULL DEFAULT '',
+                    source_filter_json TEXT NOT NULL DEFAULT '{}',
+                    member_count INTEGER NOT NULL DEFAULT 0,
+                    members_sha256 TEXT NOT NULL,
+                    created_by TEXT NOT NULL DEFAULT '',
+                    created_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    created_by_verified INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_review_worksets_scope_created
+                    ON review_worksets(baseline_scope, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS review_workset_items (
+                    workset_id TEXT NOT NULL
+                        REFERENCES review_worksets(id) ON DELETE RESTRICT,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE RESTRICT,
+                    ordinal INTEGER NOT NULL CHECK(ordinal > 0),
+                    PRIMARY KEY(workset_id, issue_id),
+                    UNIQUE(workset_id, ordinal)
+                );
+                CREATE INDEX IF NOT EXISTS idx_review_workset_items_issue
+                    ON review_workset_items(issue_id, workset_id);
+
+                CREATE TABLE IF NOT EXISTS label_cases (
+                    id TEXT PRIMARY KEY,
+                    baseline_scope TEXT NOT NULL,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE RESTRICT,
+                    task_id TEXT NOT NULL DEFAULT '',
+                    source_run_id TEXT NOT NULL DEFAULT '',
+                    seen_gt_label TEXT NOT NULL DEFAULT '',
+                    seen_gt_source TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    UNIQUE(baseline_scope, issue_id, task_id, source_run_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_label_cases_scope_issue
+                    ON label_cases(baseline_scope, issue_id, task_id);
+
+                CREATE TABLE IF NOT EXISTS label_revisions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    label_case_id TEXT NOT NULL
+                        REFERENCES label_cases(id) ON DELETE RESTRICT,
+                    expected_output TEXT,
+                    tags_json TEXT NOT NULL DEFAULT '[]',
+                    evidence_gaps_json TEXT NOT NULL DEFAULT '[]',
+                    rationale TEXT NOT NULL DEFAULT '',
+                    is_excluded INTEGER NOT NULL DEFAULT 0,
+                    author TEXT NOT NULL DEFAULT '',
+                    author_source TEXT NOT NULL DEFAULT 'legacy',
+                    author_verified INTEGER NOT NULL DEFAULT 0,
+                    revision_kind TEXT NOT NULL DEFAULT 'submission'
+                        CHECK(revision_kind IN ('submission', 'adjudication', 'legacy')),
+                    supersedes_id INTEGER REFERENCES label_revisions(id),
+                    source_annotation_id INTEGER UNIQUE,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_label_revisions_case_author
+                    ON label_revisions(label_case_id, author, id DESC);
+
+                CREATE TABLE IF NOT EXISTS label_attachments (
+                    id TEXT PRIMARY KEY,
+                    revision_id INTEGER NOT NULL
+                        REFERENCES label_revisions(id) ON DELETE RESTRICT,
+                    source_review_attachment_id TEXT UNIQUE,
+                    original_name TEXT NOT NULL DEFAULT '',
+                    stored_name TEXT NOT NULL,
+                    media_type TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL,
+                    width INTEGER NOT NULL,
+                    height INTEGER NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_label_attachments_revision
+                    ON label_attachments(revision_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS label_resolutions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    label_case_id TEXT NOT NULL
+                        REFERENCES label_cases(id) ON DELETE RESTRICT,
+                    method TEXT NOT NULL CHECK(method IN ('adjudication')),
+                    result_revision_id INTEGER NOT NULL
+                        REFERENCES label_revisions(id) ON DELETE RESTRICT,
+                    source_revision_ids_json TEXT NOT NULL DEFAULT '[]',
+                    source_fingerprint TEXT NOT NULL,
+                    supersedes_id INTEGER REFERENCES label_resolutions(id),
+                    created_by TEXT NOT NULL DEFAULT '',
+                    created_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    created_by_verified INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_label_resolutions_case
+                    ON label_resolutions(label_case_id, id DESC);
+
+                CREATE TABLE IF NOT EXISTS label_migration_map (
+                    source_table TEXT NOT NULL,
+                    source_id TEXT NOT NULL,
+                    target_table TEXT NOT NULL,
+                    target_id TEXT NOT NULL,
+                    policy_version TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(source_table, source_id, target_table, policy_version)
+                );
+
+                CREATE TABLE IF NOT EXISTS label_gt_export_batches (
+                    id TEXT PRIMARY KEY,
+                    baseline_scopes_json TEXT NOT NULL DEFAULT '[]',
+                    source_fingerprint TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'preview'
+                        CHECK(status IN ('preview', 'exported', 'stale')),
+                    item_count INTEGER NOT NULL DEFAULT 0,
+                    file_sha256 TEXT NOT NULL DEFAULT '',
+                    created_by TEXT NOT NULL DEFAULT '',
+                    created_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    created_by_verified INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    exported_at TEXT
+                );
+                CREATE TABLE IF NOT EXISTS label_gt_export_items (
+                    batch_id TEXT NOT NULL
+                        REFERENCES label_gt_export_batches(id) ON DELETE RESTRICT,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE RESTRICT,
+                    old_gt_label TEXT NOT NULL DEFAULT '',
+                    expected_output TEXT NOT NULL,
+                    source_revision_ids_json TEXT NOT NULL DEFAULT '[]',
+                    source_fingerprint TEXT NOT NULL,
+                    PRIMARY KEY(batch_id, issue_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS label_comment_links (
+                    comment_id INTEGER PRIMARY KEY
+                        REFERENCES review_comments(id) ON DELETE RESTRICT,
+                    baseline_scope TEXT NOT NULL,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE RESTRICT,
+                    task_id TEXT NOT NULL DEFAULT '',
+                    source_run_id TEXT NOT NULL DEFAULT '',
+                    policy_version TEXT NOT NULL,
+                    linked_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_label_comment_links_scope
+                    ON label_comment_links(baseline_scope, issue_id, task_id);
+
                 CREATE TABLE IF NOT EXISTS issue_work_assignments (
                     issue_id TEXT PRIMARY KEY REFERENCES issues(issue_id) ON DELETE CASCADE,
                     assignee TEXT NOT NULL DEFAULT '',
@@ -1027,6 +1172,16 @@ class DatabaseCoreMixin:
                 "issue_work_assignments",
                 "review_work_assignments",
                 "review_work_assignment_changes",
+                "review_worksets",
+                "review_workset_items",
+                "label_cases",
+                "label_revisions",
+                "label_attachments",
+                "label_resolutions",
+                "label_migration_map",
+                "label_gt_export_batches",
+                "label_gt_export_items",
+                "label_comment_links",
                 "intent_label_revisions",
                 "intent_frame_overrides",
                 "intent_label_heads",
@@ -1066,6 +1221,9 @@ class DatabaseCoreMixin:
             self._ensure_column(conn, "issue_work_splits", "model_run_id", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "issue_work_splits", "assignment_count", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "issue_work_splits", "overlap_ratio", "REAL NOT NULL DEFAULT 1.0")
+            self._ensure_column(conn, "issue_work_splits", "task_kind", "TEXT NOT NULL DEFAULT 'legacy'")
+            self._ensure_column(conn, "issue_work_splits", "workset_id", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "issue_work_splits", "selection_source_run_id", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(
                 conn, "intent_experiments", "overlap_reviewers",
                 "INTEGER NOT NULL DEFAULT 2",

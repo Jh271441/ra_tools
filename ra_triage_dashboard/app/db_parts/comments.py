@@ -250,7 +250,9 @@ class DatabaseCommentsMixin:
                 """
                 SELECT
                     (SELECT COALESCE(SUM(size_bytes), 0) FROM review_attachments) +
-                    (SELECT COALESCE(SUM(size_bytes), 0) FROM comment_attachments)
+                    (SELECT COALESCE(SUM(size_bytes), 0) FROM comment_attachments) +
+                    (SELECT COALESCE(SUM(size_bytes), 0) FROM label_attachments
+                     WHERE source_review_attachment_id IS NULL)
                     AS total
                 """
             ).fetchone()

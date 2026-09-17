@@ -90,6 +90,10 @@ class IntentAnnotationConflictError(RuntimeError):
     """Raised when an intent-label save is based on a stale case revision."""
 
 
+class LabelAnnotationConflictError(RuntimeError):
+    """Raised when a Case-label save or adjudication uses stale source heads."""
+
+
 # ``None`` is a valid expected value (the editor saw no Review yet).  The
 # sentinel keeps direct/legacy Database callers backwards compatible while the
 # HTTP Review form always sends an explicit optimistic-lock value.

@@ -1,0 +1,38 @@
+.case-labeling-page { display: grid; gap: 14px; }
+body[data-active-page="labeling"] .header-metrics { display: none; }
+.case-labeling-command { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(220px, .7fr) minmax(180px, .5fr) auto auto; gap: 12px; align-items: end; padding: 14px; }
+.case-labeling-command label { display: grid; gap: 6px; min-width: 0; }
+.case-labeling-command label > span { color: var(--muted); font-size: 12px; }
+.case-labeling-command input { width: 100%; }
+.case-labeling-gallery { display: grid; gap: 12px; }
+.case-labeling-gallery .gallery-heading p { margin: 4px 0 0; color: var(--muted); }
+.case-labeling-card { text-align: left; }
+.case-labeling-card .issue-card-status { display: flex; gap: 6px; flex-wrap: wrap; }
+.label-state-resolved { color: var(--ok); }
+.label-state-conflict { color: var(--fail); }
+.label-state-pending { color: var(--muted); }
+.case-labeling-detail { display: grid; gap: 12px; }
+.case-labeling-detail-heading { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.case-labeling-detail-heading strong { font-size: 18px; }
+.case-labeling-detail-heading span { color: var(--muted); margin-left: auto; }
+.case-labeling-workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, var(--review-pane-width)); gap: 12px; align-items: start; }
+.case-labeling-media, .case-labeling-editor { min-width: 0; }
+.case-labeling-media-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.case-labeling-media-card { margin: 0; display: grid; gap: 6px; }
+.case-labeling-media-card figcaption { color: var(--muted); font-size: 12px; }
+.case-labeling-media-card img { width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #000; border-radius: 7px; }
+.case-labeling-form { display: grid; gap: 14px; }
+.case-labeling-output-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.case-labeling-output-grid label { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 4px; white-space: nowrap; }
+.case-labeling-form textarea { width: 100%; min-height: 118px; resize: vertical; }
+.case-labeling-history { display: grid; gap: 8px; }
+.case-labeling-history-row { border-top: 1px solid var(--line); padding-top: 8px; }
+.case-labeling-history-row header { display: flex; gap: 8px; justify-content: space-between; flex-wrap: wrap; }
+.case-labeling-adjudication { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 8px; }
+@media (max-width: 1024px) {
+  .case-labeling-command { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .case-labeling-workspace { grid-template-columns: 1fr; }
+}
+@media (max-width: 639px) {
+  .case-labeling-command, .case-labeling-media-grid, .case-labeling-output-grid { grid-template-columns: 1fr; }
+}
