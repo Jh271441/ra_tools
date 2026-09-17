@@ -155,10 +155,13 @@ class LabelingReconciliationTest(unittest.TestCase):
 
     def test_migration_preserves_missing_source_run_reference(self) -> None:
         self.database.create_annotation(
-            issue_id="cn2", model_run_id="never-imported-run",
-            label="误触发", review_status="needs_gt_review",
+            issue_id="cn2", label="误触发", review_status="needs_gt_review",
             tags=[], missing_evidence=[], note="无 Run 上下文", author="alice",
         )
+        with self.database.connect() as conn:
+            conn.execute(
+                "UPDATE annotations SET model_run_id = 'never-imported-run' WHERE issue_id = 'cn2'"
+            )
         self.migrate()
         result = self.reconcile()
         self.assertTrue(result["passed"], result)
