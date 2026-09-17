@@ -22,20 +22,26 @@ function currentReviewRunId(caseData) {
   return "";
 }
 
+// A blind-task binding applies only to assigned reviewers; anyone else keeps
+// editing the ordinary Review stream for the selected Run.
+function reviewWorkSplitBinding(caseData) {
+  const assignment = caseData?.review_assignment;
+  if (assignment?.mode !== "blind" || !assignment?.assigned) return "";
+  return String(assignment.split_id || "").trim();
+}
+
 function reviewAnnotationsForCurrentRun(caseData) {
   const runId = currentReviewRunId(caseData);
   const annotations = caseData?.annotations || [];
   let bound = annotations.filter(
     (annotation) => String(annotation.model_run_id || "").trim() === runId
   );
-  const assignment = caseData?.review_assignment;
-  if (assignment?.blind_active) {
-    const splitId = String(assignment.split_id || "").trim();
+  const workSplitId = reviewWorkSplitBinding(caseData);
+  if (workSplitId) {
     const currentUser = String(state.session?.username || "").trim().toLowerCase();
     bound = bound.filter(
       (annotation) =>
-        splitId &&
-        String(annotation.work_split_id || "").trim() === splitId &&
+        String(annotation.work_split_id || "").trim() === workSplitId &&
         String(annotation.author || "").trim().toLowerCase() === currentUser
     );
   } else {
@@ -155,9 +161,7 @@ function annotationTimestamp(annotation) {
 
 function reviewDraftForCase(caseData) {
   const runId = currentReviewRunId(caseData);
-  const workSplitId = caseData?.review_assignment?.mode === "blind"
-    ? caseData.review_assignment.split_id || ""
-    : "";
+  const workSplitId = reviewWorkSplitBinding(caseData);
   const draft = readReviewDraft(caseData?.issue_id, runId, workSplitId);
   if (!draft) return null;
   const serverAnnotation = reviewAnnotationsForCurrentRun(caseData)[0];
@@ -194,9 +198,7 @@ function persistReviewDraft(caseData) {
     author: $("#annotationAuthor")?.value || "",
   };
   try {
-    const workSplitId = caseData?.review_assignment?.mode === "blind"
-      ? caseData.review_assignment.split_id || ""
-      : "";
+    const workSplitId = reviewWorkSplitBinding(caseData);
     window.localStorage.setItem(reviewDraftStorageKey(caseData.issue_id, runId, workSplitId), JSON.stringify(draft));
   } catch {
     // Draft persistence is best effort and must never block Review input.

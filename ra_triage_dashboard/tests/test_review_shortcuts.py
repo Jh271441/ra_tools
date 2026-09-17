@@ -389,7 +389,7 @@ def test_review_form_scopes_edit_head_to_current_stream_while_history_keeps_all(
     script = (ROOT / "static" / "js" / "review-draft.js").read_text() + r'''
 const assert=require('node:assert/strict');
 const state={selectedRunId:'run-1',session:{username:'Alice'}};
-const data={review_assignment:{blind_active:true,mode:'blind',split_id:'split-new'},annotations:[
+const data={review_assignment:{blind_active:true,assigned:true,mode:'blind',split_id:'split-new'},annotations:[
   {id:7,model_run_id:'run-1',work_split_id:'split-new',author:'alice'},
   {id:6,model_run_id:'run-1',work_split_id:'split-new',author:'bob'},
   {id:5,model_run_id:'run-1',work_split_id:'split-old',author:'alice'},
@@ -398,11 +398,27 @@ const data={review_assignment:{blind_active:true,mode:'blind',split_id:'split-ne
 ]};
 assert.deepEqual(reviewAnnotationsForCurrentRun(data).map((item)=>item.id),[7]);
 assert.deepEqual(reviewAnnotationsForAllRuns(data).map((item)=>item.id),[7,6,5,4,3]);
+assert.equal(reviewWorkSplitBinding(data),'split-new');
 
 const firstMultiReview={...data,annotations:data.annotations.slice(1)};
 assert.deepEqual(reviewAnnotationsForCurrentRun(firstMultiReview),[]);
 
+const blindTaskNonMember={
+  ...data,
+  review_assignment:{...data.review_assignment,assigned:false},
+};
+assert.deepEqual(reviewAnnotationsForCurrentRun(blindTaskNonMember).map((item)=>item.id),[4]);
+assert.equal(reviewWorkSplitBinding(blindTaskNonMember),'');
+
+const blindTaskWithoutSplit={
+  ...data,
+  review_assignment:{...data.review_assignment,split_id:''},
+};
+assert.deepEqual(reviewAnnotationsForCurrentRun(blindTaskWithoutSplit).map((item)=>item.id),[4]);
+assert.equal(reviewWorkSplitBinding(blindTaskWithoutSplit),'');
+
 const ordinary={review_assignment:{blind_active:false,mode:'single'},annotations:data.annotations};
 assert.deepEqual(reviewAnnotationsForCurrentRun(ordinary).map((item)=>item.id),[4]);
+assert.equal(reviewWorkSplitBinding(ordinary),'');
 '''
     subprocess.run(["node", "-e", script], check=True, capture_output=True)

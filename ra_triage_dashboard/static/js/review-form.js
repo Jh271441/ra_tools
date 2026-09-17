@@ -1127,10 +1127,7 @@ async function saveAnnotation(event) {
   }
   const payload = {
     model_run_id: state.reviewEditRunId || currentReviewRunId(state.selectedCase),
-    work_split_id:
-      state.selectedCase?.review_assignment?.mode === "blind"
-        ? state.selectedCase.review_assignment.split_id || ""
-        : "",
+    work_split_id: reviewWorkSplitBinding(state.selectedCase),
     expected_previous_annotation_id: state.reviewEditBaseAnnotationId || null,
     expected_output: $("#expectedOutputInput")?.value || "",
     is_excluded: Boolean($("#reviewExcludeInput")?.checked),
