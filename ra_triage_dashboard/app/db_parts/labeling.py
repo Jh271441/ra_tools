@@ -41,6 +41,105 @@ class DatabaseLabelingMixin:
             )
         self._mark_change_topic(conn, "labeling")
 
+    def labeling_scope_states(
+        self, baseline_scopes: Sequence[str] = ()
+    ) -> list[dict[str, Any]]:
+        scopes = _clean_values(baseline_scopes)
+        where = ""
+        params: list[Any] = []
+        if scopes:
+            where = f"WHERE baseline_scope IN ({', '.join('?' for _ in scopes)})"
+            params.extend(scopes)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM labeling_scope_state {where} ORDER BY baseline_scope",
+                params,
+            ).fetchall()
+        return [
+            {
+                "baseline_scope": str(row["baseline_scope"] or ""),
+                "status": str(row["status"] or "shadow"),
+                "policy_version": str(row["policy_version"] or ""),
+                "epoch": int(row["epoch"] or 0),
+                "source_inventory_sha256": str(row["source_inventory_sha256"] or ""),
+                "updated_by": str(row["updated_by"] or ""),
+                "updated_at": str(row["updated_at"] or ""),
+            }
+            for row in rows
+        ]
+
+    def active_labeling_scopes(self) -> tuple[str, ...]:
+        return tuple(
+            item["baseline_scope"]
+            for item in self.labeling_scope_states()
+            if item["status"] == "active"
+        )
+
+    def set_labeling_scope_state(
+        self,
+        *,
+        baseline_scope: str,
+        status: str,
+        policy_version: str,
+        source_inventory_sha256: str,
+        updated_by: str,
+        expected_epoch: int | None = None,
+    ) -> dict[str, Any]:
+        scope = str(baseline_scope or "").strip()
+        normalized_status = str(status or "").strip()
+        if not scope or normalized_status not in {"shadow", "active", "paused"}:
+            raise ValueError("标注范围状态不合法。")
+        with self._write_lock, self.connect() as conn:
+            current = conn.execute(
+                "SELECT * FROM labeling_scope_state WHERE baseline_scope = ?"
+                + (" FOR UPDATE" if self.backend == "postgresql" else ""),
+                (scope,),
+            ).fetchone()
+            current_epoch = int(current["epoch"] or 0) if current else 0
+            if expected_epoch is not None and int(expected_epoch) != current_epoch:
+                raise LabelAnnotationConflictError(
+                    f"标注范围 epoch 已变化：当前 {current_epoch}，请求 {expected_epoch}。"
+                )
+            state_changed = bool(
+                current
+                and (
+                    str(current["status"]) != normalized_status
+                    or str(current["policy_version"] or "") != str(policy_version or "")
+                    or str(current["source_inventory_sha256"] or "")
+                    != str(source_inventory_sha256 or "")
+                )
+            )
+            next_epoch = current_epoch + (1 if state_changed else 0)
+            if current is None and normalized_status == "active":
+                next_epoch = 1
+            now = utc_now()
+            conn.execute(
+                """
+                INSERT INTO labeling_scope_state (
+                    baseline_scope, status, policy_version, epoch,
+                    source_inventory_sha256, updated_by, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(baseline_scope) DO UPDATE SET
+                    status = excluded.status,
+                    policy_version = excluded.policy_version,
+                    epoch = excluded.epoch,
+                    source_inventory_sha256 = excluded.source_inventory_sha256,
+                    updated_by = excluded.updated_by,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    scope,
+                    normalized_status,
+                    str(policy_version or ""),
+                    next_epoch,
+                    str(source_inventory_sha256 or ""),
+                    str(updated_by or ""),
+                    now,
+                ),
+            )
+            self._mark_labeling_change(conn)
+        return self.labeling_scope_states([scope])[0]
+
     @staticmethod
     def _label_revision_dict(row: Any) -> dict[str, Any]:
         return {

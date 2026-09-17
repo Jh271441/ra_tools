@@ -340,6 +340,10 @@ function renderConfig() {
   renderTrailSyncState();
   renderGtSyncStatus(state.config?.gt_sync || state.gtSync);
   renderBatchRuntimeSummary();
+  const caseLabelingNav = $("#caseLabelingNavButton");
+  if (caseLabelingNav) {
+    caseLabelingNav.hidden = !(state.config?.case_labeling?.active_baseline_ids || []).length;
+  }
   updateFilteredPredictionButton();
   if (typeof renderReviewCatalogFilters === "function") {
     renderReviewCatalogFilters();

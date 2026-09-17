@@ -97,6 +97,21 @@ def _labeling_actor(request: Request) -> tuple[str, str, bool]:
     return identity.username, identity.source, True
 
 
+async def _active_labeling_scopes(scopes: list[str]) -> list[str]:
+    active = set(await asyncio.to_thread(database.active_labeling_scopes))
+    return [scope for scope in scopes if scope in active]
+
+
+async def _require_active_labeling_issue(issue_id: str) -> dict[str, Any]:
+    issue = await asyncio.to_thread(database.get_issue, issue_id)
+    if issue is None:
+        raise _detail(404, "Issue 不存在。")
+    active = set(await asyncio.to_thread(database.active_labeling_scopes))
+    if str(issue.get("baseline_scope") or "") not in active:
+        raise _detail(409, "该数据集的 Case 标注迁移尚未激活。")
+    return issue
+
+
 def _labeling_payload(body: dict[str, Any]) -> dict[str, Any]:
     tags = body.get("tags") or []
     evidence = body.get("evidence_gaps") or []
@@ -122,6 +137,7 @@ def _labeling_payload(body: dict[str, Any]) -> dict[str, Any]:
 @router.get("/api/labeling/tasks")
 async def list_labeling_tasks(request: Request, baselines: str = "") -> dict[str, Any]:
     scopes = resolve_request_baseline_scopes(baselines, request=request)
+    scopes = await _active_labeling_scopes(scopes)
     return {
         "items": await asyncio.to_thread(database.list_labeling_tasks, scopes),
         "baseline_scopes": scopes,
@@ -166,6 +182,10 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
         }
         if len(scope_values) != 1 or "" in scope_values:
             raise ValueError("一个标注任务只能包含一个已注册数据集。")
+        if next(iter(scope_values)) not in set(
+            await asyncio.to_thread(database.active_labeling_scopes)
+        ):
+            raise ValueError("该数据集的 Case 标注迁移尚未激活。")
         workset = await asyncio.to_thread(
             database.create_review_workset,
             baseline_scope=next(iter(scope_values)),
@@ -209,6 +229,7 @@ async def list_labeling_cases(
     if normalized_status not in {"all", "pending", "resolved", "conflict"}:
         raise _detail(400, "标注状态不合法。")
     scopes = resolve_request_baseline_scopes(baselines, request=request)
+    scopes = await _active_labeling_scopes(scopes)
     result = await asyncio.to_thread(
         database.list_labeling_cases,
         baseline_scopes=scopes,
@@ -237,9 +258,7 @@ async def get_labeling_case(
     request: Request,
     task_id: str = "",
 ) -> dict[str, Any]:
-    issue = await asyncio.to_thread(database.get_issue, issue_id)
-    if issue is None:
-        raise _detail(404, "Issue 不存在。")
+    issue = await _require_active_labeling_issue(issue_id)
     scopes = resolve_request_baseline_scopes("", request=request)
     if scopes and str(issue.get("baseline_scope") or "") not in scopes:
         raise _detail(404, "Issue 不在当前数据集。")
@@ -275,6 +294,7 @@ async def get_labeling_case(
 
 @router.post("/api/labeling/cases/{issue_id}/revisions")
 async def create_label_revision(issue_id: str, request: Request) -> dict[str, Any]:
+    await _require_active_labeling_issue(issue_id)
     try:
         body = await request.json()
     except (TypeError, ValueError):
@@ -323,6 +343,7 @@ async def create_label_revision_with_attachments(
     payload: str = Form(...),
     attachments: Optional[List[UploadFile]] = File(None),
 ) -> dict[str, Any]:
+    await _require_active_labeling_issue(issue_id)
     try:
         body = json.loads(payload)
     except (TypeError, ValueError, json.JSONDecodeError) as exc:
@@ -407,6 +428,10 @@ async def adjudicate_label_case(label_case_id: str, request: Request) -> dict[st
     actor, actor_source, actor_verified = await asyncio.to_thread(
         _labeling_actor, request
     )
+    current_case = await asyncio.to_thread(database.get_label_case, label_case_id)
+    if current_case is None:
+        raise _detail(404, "标注 Case 不存在。")
+    await _require_active_labeling_issue(current_case["issue_id"])
     payload = _labeling_payload(body)
     raw_sources = body.get("source_revision_ids") or []
     if not isinstance(raw_sources, list):
@@ -443,6 +468,7 @@ async def adjudicate_label_case(label_case_id: str, request: Request) -> dict[st
 @router.get("/api/labeling/gt-candidates")
 async def get_gt_candidates(request: Request, baselines: str = "") -> dict[str, Any]:
     scopes = resolve_request_baseline_scopes(baselines, request=request)
+    scopes = await _active_labeling_scopes(scopes)
     items = await asyncio.to_thread(database.label_gt_candidates, scopes)
     return {
         "items": items,
@@ -466,6 +492,9 @@ async def create_gt_export_preview(request: Request) -> dict[str, Any]:
     scopes = resolve_request_baseline_scopes(
         _as_text(body.get("baselines")), request=request
     )
+    scopes = await _active_labeling_scopes(scopes)
+    if not scopes:
+        raise _detail(409, "当前选择的数据集尚未激活 Case 标注迁移。")
     issue_ids = body.get("issue_ids") or []
     if not isinstance(issue_ids, list):
         raise _detail(400, "issue_ids 必须是数组。")
@@ -498,6 +527,9 @@ async def get_gt_export_preview(batch_id: str) -> dict[str, Any]:
 async def export_gt_candidates(batch_id: str, request: Request) -> Response:
     await asyncio.to_thread(_labeling_actor, request)
     batch = await asyncio.to_thread(database.validate_label_gt_export_batch, batch_id)
+    active_scopes = await _active_labeling_scopes(list(batch["baseline_scopes"]))
+    if set(active_scopes) != set(batch["baseline_scopes"]):
+        raise _detail(409, "该导出批次包含已暂停或未激活的数据集。")
     if batch["stale_issue_ids"]:
         raise _detail(
             409,

@@ -930,6 +930,17 @@ class DatabaseCoreMixin:
                 CREATE INDEX IF NOT EXISTS idx_label_comment_links_scope
                     ON label_comment_links(baseline_scope, issue_id, task_id);
 
+                CREATE TABLE IF NOT EXISTS labeling_scope_state (
+                    baseline_scope TEXT PRIMARY KEY,
+                    status TEXT NOT NULL DEFAULT 'shadow'
+                        CHECK(status IN ('shadow', 'active', 'paused')),
+                    policy_version TEXT NOT NULL,
+                    epoch INTEGER NOT NULL DEFAULT 0,
+                    source_inventory_sha256 TEXT NOT NULL DEFAULT '',
+                    updated_by TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS issue_work_assignments (
                     issue_id TEXT PRIMARY KEY REFERENCES issues(issue_id) ON DELETE CASCADE,
                     assignee TEXT NOT NULL DEFAULT '',
@@ -1182,6 +1193,7 @@ class DatabaseCoreMixin:
                 "label_gt_export_batches",
                 "label_gt_export_items",
                 "label_comment_links",
+                "labeling_scope_state",
                 "intent_label_revisions",
                 "intent_frame_overrides",
                 "intent_label_heads",

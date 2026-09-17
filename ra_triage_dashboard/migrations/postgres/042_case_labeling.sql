@@ -157,4 +157,15 @@ CREATE TABLE IF NOT EXISTS label_comment_links (
 CREATE INDEX IF NOT EXISTS idx_label_comment_links_scope
     ON label_comment_links(baseline_scope, issue_id, task_id);
 
+CREATE TABLE IF NOT EXISTS labeling_scope_state (
+    baseline_scope text PRIMARY KEY,
+    status varchar(16) NOT NULL DEFAULT 'shadow'
+        CHECK(status IN ('shadow', 'active', 'paused')),
+    policy_version text NOT NULL,
+    epoch integer NOT NULL DEFAULT 0 CHECK(epoch >= 0),
+    source_inventory_sha256 varchar(64) NOT NULL DEFAULT '',
+    updated_by text NOT NULL DEFAULT '',
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 COMMIT;

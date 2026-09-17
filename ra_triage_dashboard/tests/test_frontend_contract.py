@@ -416,6 +416,8 @@ class FrontendContractTest(unittest.TestCase):
 
     def test_case_labeling_is_a_separate_model_free_workspace(self) -> None:
         self.assertIn('data-page-target="labeling" data-app-path="/case-labeling"', INDEX_HTML)
+        self.assertIn('id="caseLabelingNavButton"', INDEX_HTML)
+        self.assertIn('state.config?.case_labeling?.active_baseline_ids', APP_JS)
         self.assertIn('id="caseLabelingPage" data-page="labeling"', INDEX_HTML)
         self.assertIn('path: "/case-labeling"', APP_JS)
         self.assertIn('"case-labeling.js"', APP_ENTRY_JS)

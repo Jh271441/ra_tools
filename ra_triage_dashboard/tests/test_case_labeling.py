@@ -5,7 +5,10 @@ import unittest
 from pathlib import Path
 
 from ra_triage_dashboard.app.db import Database, LabelAnnotationConflictError
-from ra_triage_dashboard.app.labeling_migration import migrate_legacy_labeling
+from ra_triage_dashboard.app.labeling_migration import (
+    migrate_legacy_labeling,
+    reconcile_legacy_labeling,
+)
 from ra_triage_dashboard.app.routers.labeling import _public_label_attachment
 from ra_triage_dashboard.app.work_split import distribute_issue_ids
 
@@ -237,6 +240,73 @@ class CaseLabelingTest(unittest.TestCase):
             self.assertEqual(comments[0]["body"], "原始标注讨论")
             with self.assertRaisesRegex(ValueError, "迁移后的标注来源"):
                 database.delete_annotation(issue_id="cn1", annotation_id=legacy["id"])
+            reconciliation = reconcile_legacy_labeling(
+                database, scopes=["scope"], policy_version="test-v1"
+            )
+            self.assertTrue(reconciliation["passed"], reconciliation["errors"])
+            shadow = database.labeling_scope_states(["scope"])[0]
+            self.assertEqual(shadow["status"], "shadow")
+            active = database.set_labeling_scope_state(
+                baseline_scope="scope", status="active",
+                policy_version="test-v1",
+                source_inventory_sha256=reconciliation["source_inventory_sha256"],
+                updated_by="admin", expected_epoch=0,
+            )
+            self.assertEqual(active["status"], "active")
+            self.assertEqual(active["epoch"], 1)
+            self.assertEqual(database.active_labeling_scopes(), ("scope",))
+            database.create_annotation(
+                issue_id="cn2", model_run_id="", work_split_id="",
+                label="正确触发", review_status="pending", tags=[],
+                missing_evidence=[], note="cutover 后的新 Review",
+                author="bob", author_source="kylin_ticket",
+                author_verified=True, expected_previous_annotation_id=None,
+            )
+            with self.assertRaisesRegex(ValueError, "不能直接重新回填"):
+                migrate_legacy_labeling(
+                    database, scopes=["scope"], tag_catalog=[],
+                    policy_version="test-v1",
+                )
+            self.assertEqual(
+                database.labeling_scope_states(["scope"])[0]["status"],
+                "active",
+            )
+
+    def test_multi_scope_backfill_reconciles_and_activates_independently(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.make_db(tmp)
+            database.upsert_issues(
+                [{"issue_id": "cn3", "gt_label": "无需协助"}],
+                source="test", replace_gt=True, baseline_scope="scope-two",
+            )
+            for issue_id, label in (("cn1", "误触发"), ("cn3", "无需协助")):
+                database.create_annotation(
+                    issue_id=issue_id, model_run_id="", work_split_id="",
+                    label=label, review_status="pending", tags=[],
+                    missing_evidence=[], note=f"label {issue_id}",
+                    author="alice", author_source="kylin_ticket",
+                    author_verified=True, expected_previous_annotation_id=None,
+                )
+                database.create_review_comment(
+                    issue_id=issue_id, model_run_id="", body=f"comment {issue_id}",
+                    author="alice", author_source="kylin_ticket",
+                    author_verified=True,
+                )
+            migrated = migrate_legacy_labeling(
+                database, scopes=["scope", "scope-two"], tag_catalog=[],
+                policy_version="test-multi-v1",
+            )
+            fingerprints = migrated["source_inventory_sha256_by_scope"]
+            self.assertEqual(set(fingerprints), {"scope", "scope-two"})
+            self.assertNotEqual(fingerprints["scope"], fingerprints["scope-two"])
+            for scope in ("scope", "scope-two"):
+                reconciliation = reconcile_legacy_labeling(
+                    database, scopes=[scope], policy_version="test-multi-v1"
+                )
+                self.assertTrue(reconciliation["passed"], reconciliation["errors"])
+                self.assertEqual(
+                    reconciliation["source_inventory_sha256"], fingerprints[scope]
+                )
 
     def test_legacy_blind_task_migrates_as_labeling_workset(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

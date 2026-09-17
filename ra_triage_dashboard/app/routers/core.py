@@ -74,6 +74,7 @@ def _dashboard_config_payload() -> dict[str, Any]:
     """Build DB/catalog-backed config in one worker-thread hop."""
 
     default_model_run_id = database.default_model_run_id()
+    labeling_states = database.labeling_scope_states()
     return {
         "baseline": runtime_state["baseline"],
         "baselines": runtime_state.get("baselines")
@@ -113,6 +114,15 @@ def _dashboard_config_payload() -> dict[str, Any]:
             "delivery_mode": settings.dchat_delivery_mode,
             "mention_limit": MAX_REVIEW_MENTIONS,
             "requires_verified_sso": True,
+        },
+        "case_labeling": {
+            "scope_states": labeling_states,
+            "active_baseline_ids": [
+                baseline_id
+                for item in labeling_states
+                if item["status"] == "active"
+                and (baseline_id := baseline_registry.scope_to_id(item["baseline_scope"]))
+            ],
         },
         "default_failure_only": bool(default_model_run_id),
         "batch_prediction": {

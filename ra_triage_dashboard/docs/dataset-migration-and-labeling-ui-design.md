@@ -199,15 +199,18 @@
 
 ## 5. 迁移工具与流程
 
-建议实现一个服务端离线迁移工具，按迁移批次和数据集运行，阶段与业务 deploy 分离。以下为待实现的命令设计，不是现有可执行命令：
+已实现服务端离线迁移工具，按迁移批次和数据集运行，阶段与业务 deploy 分离。命令默认仅盘点；`backfill` 和 `activate` 必须显式传入 `--apply`：
 
 ```text
-plan      --datasets 0522,0626,0821 --policy <versioned-policy>
-rehearse  --batch <id> --target <disposable-database>
-verify    --batch <id> --target <disposable-database>
-backfill  --batch <id> --datasets <scope> --activate false
-reconcile --batch <id> --datasets <scope>
-activate  --batch <id> --datasets <scope> --expected-epoch <n>
+python3 ra_triage_dashboard/scripts/migrate_case_labeling.py plan \
+  --datasets 0522,0626,0821 --policy-version <versioned-policy>
+python3 ra_triage_dashboard/scripts/migrate_case_labeling.py backfill \
+  --datasets 0522,0626,0821 --policy-version <versioned-policy> --apply
+python3 ra_triage_dashboard/scripts/migrate_case_labeling.py reconcile \
+  --datasets 0522,0626,0821 --policy-version <versioned-policy>
+python3 ra_triage_dashboard/scripts/migrate_case_labeling.py activate \
+  --datasets 0522 --policy-version <versioned-policy> \
+  --expected-epoch <n> --actor <ldap> --apply
 ```
 
 工具只在云端运行，不把生产数据库、备注正文或媒体打包拷到 Mac。开发侧保留脱敏统计、规则与测试 fixture。
@@ -236,7 +239,7 @@ unassigned_policy: 保留历史集合，不造任务槽位
 
 ### M2：恢复库试迁移
 
-在云端可控的隔离数据库中恢复逻辑备份，媒体只读复用，禁用所有外部写入、推理任务和通知发送。
+在云端可控的隔离数据库中恢复逻辑备份，媒体只读复用，禁用所有外部写入、推理任务和通知发送。对恢复库运行同一组 `backfill` 和 `reconcile` 命令；生产 backfill 前必须保存其通过报告。
 
 按以下次序建立映射：
 
@@ -269,7 +272,7 @@ unassigned_policy: 保留历史集合，不造任务槽位
 
 ### M5：确定逐数据集激活顺序
 
-激活顺序建议：0522 → 0626 → 0821 → 0206/0508 的已确认批次。
+激活命令每次只接受一个数据集，且要求 reconcile 通过及精确 `expected-epoch`。激活顺序建议：0522 → 0626 → 0821 → 0206/0508 的已确认批次。
 
 - 0522：验证已有 GT 与工作台历史标注分离、无 Split 记录、截图和页面路由。
 - 0626：验证同 Case 多版本、不同来源 Run、历史 Excel 提示与真实提交区分。
