@@ -37,12 +37,7 @@ def labeling_inventory_fingerprint(database: Any, *, scopes: Sequence[str]) -> s
         ).fetchall()
         annotations = conn.execute(
             f"""
-            SELECT annotation.id, annotation.issue_id, annotation.model_run_id,
-                   annotation.work_split_id, COALESCE(annotation.label, '') AS label,
-                   annotation.tags_json, annotation.missing_evidence_json,
-                   annotation.note, annotation.author, annotation.author_source,
-                   annotation.author_verified, annotation.supersedes_id,
-                   annotation.created_at
+            SELECT annotation.*
             FROM annotations annotation
             JOIN issues issue ON issue.issue_id = annotation.issue_id
             WHERE issue.baseline_scope IN ({placeholders})
@@ -52,8 +47,7 @@ def labeling_inventory_fingerprint(database: Any, *, scopes: Sequence[str]) -> s
         ).fetchall()
         comments = conn.execute(
             f"""
-            SELECT comment.id, comment.issue_id, comment.model_run_id,
-                   comment.body, comment.author, comment.reply_to_id, comment.created_at
+            SELECT comment.*
             FROM review_comments comment
             JOIN issues issue ON issue.issue_id = comment.issue_id
             WHERE issue.baseline_scope IN ({placeholders})
@@ -64,7 +58,9 @@ def labeling_inventory_fingerprint(database: Any, *, scopes: Sequence[str]) -> s
         tasks = conn.execute(
             f"""
             SELECT DISTINCT split.id, split.filter_json, split.assignees_json,
-                   split.model_run_id, split.assignment_count, split.created_at
+                   split.model_run_id, split.assignment_count, split.created_at,
+                   split.created_by, split.seed, split.total_count, split.mode,
+                   split.reviewers_per_issue, split.overlap_ratio
             FROM issue_work_splits split
             JOIN review_work_assignments assignment ON assignment.split_id = split.id
             JOIN issues issue ON issue.issue_id = assignment.issue_id
@@ -73,17 +69,66 @@ def labeling_inventory_fingerprint(database: Any, *, scopes: Sequence[str]) -> s
             """,
             normalized,
         ).fetchall()
-    def plain(rows: Sequence[Any]) -> list[list[str]]:
+        review_attachments = conn.execute(
+            f"""
+            SELECT attachment.* FROM review_attachments attachment
+            JOIN annotations annotation ON annotation.id = attachment.annotation_id
+            JOIN issues issue ON issue.issue_id = annotation.issue_id
+            WHERE issue.baseline_scope IN ({placeholders}) ORDER BY attachment.id
+            """, normalized,
+        ).fetchall()
+        comment_attachments = conn.execute(
+            f"""
+            SELECT attachment.* FROM comment_attachments attachment
+            JOIN review_comments comment ON comment.id = attachment.comment_id
+            JOIN issues issue ON issue.issue_id = comment.issue_id
+            WHERE issue.baseline_scope IN ({placeholders}) ORDER BY attachment.id
+            """, normalized,
+        ).fetchall()
+        assignments = conn.execute(
+            f"""
+            SELECT assignment.* FROM review_work_assignments assignment
+            JOIN issues issue ON issue.issue_id = assignment.issue_id
+            WHERE issue.baseline_scope IN ({placeholders})
+            ORDER BY assignment.split_id, assignment.issue_id, assignment.assignee
+            """, normalized,
+        ).fetchall()
+        assignment_changes = conn.execute(
+            f"""
+            SELECT change.* FROM review_work_assignment_changes change
+            JOIN issues issue ON issue.issue_id = change.issue_id
+            WHERE issue.baseline_scope IN ({placeholders}) ORDER BY change.id
+            """, normalized,
+        ).fetchall()
+        tag_catalog = conn.execute(
+            "SELECT * FROM review_tag_catalog ORDER BY key"
+        ).fetchall()
+
+    def plain(rows: Sequence[Any]) -> list[dict[str, Any]]:
+        # Preserve NULL distinctly, name columns, and canonicalize JSONB/text
+        # equally rather than relying on the database's JSON rendering order.
         return [
-            [str(row[key] if row[key] is not None else "") for key in row.keys()]
+            {
+                key: (
+                    _json_load(row[key], None) if key.endswith("_json")
+                    else None if row[key] is None else str(row[key])
+                )
+                for key in row.keys()
+            }
             for row in rows
         ]
     payload = {
+        "fingerprint_version": 2,
         "scopes": sorted(normalized),
         "issues": plain(issues),
         "annotations": plain(annotations),
         "comments": plain(comments),
         "tasks": plain(tasks),
+        "review_attachments": plain(review_attachments),
+        "comment_attachments": plain(comment_attachments),
+        "assignments": plain(assignments),
+        "assignment_changes": plain(assignment_changes),
+        "tag_catalog": plain(tag_catalog),
     }
     return hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -147,7 +192,7 @@ def legacy_labeling_inventory(
     annotations = {
         str(row["baseline_scope"]): {
             "version_count": int(row["version_count"] or 0),
-            "issue_count": int(row["issue_count"] or 0),
+            "annotated_issue_count": int(row["issue_count"] or 0),
             "task_version_count": int(row["task_version_count"] or 0),
         }
         for row in annotation_rows
@@ -160,6 +205,7 @@ def legacy_labeling_inventory(
                 "gt_count": int(row["gt_count"] or 0),
                 **annotations.get(str(row["baseline_scope"]), {
                     "version_count": 0,
+                    "annotated_issue_count": 0,
                     "task_version_count": 0,
                 }),
             }
@@ -370,9 +416,11 @@ def migrate_legacy_labeling(
             policy_version=policy_version,
         )
         linked_comments += 1
-    source_fingerprints = labeling_inventory_fingerprints(
+    final_fingerprints = labeling_inventory_fingerprints(
         database, scopes=normalized_scopes
     )
+    if final_fingerprints != source_fingerprints:
+        raise ValueError("回填期间源数据发生变化；本次回填不能作为激活依据，请重新对账。")
     scope_states = []
     for scope in normalized_scopes:
         existing = existing_states.get(scope)
@@ -414,6 +462,7 @@ def reconcile_legacy_labeling(
     *,
     scopes: Sequence[str],
     policy_version: str = DEFAULT_POLICY_VERSION,
+    tag_catalog: Sequence[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     normalized = _normalized_scopes(scopes)
     placeholders = ", ".join("?" for _ in normalized)
@@ -422,7 +471,9 @@ def reconcile_legacy_labeling(
     with database.connect() as conn:
         source_annotations = conn.execute(
             f"""
-            SELECT annotation.id FROM annotations annotation
+            SELECT annotation.*, issue.baseline_scope,
+                   issue.gt_label AS source_gt_label, issue.gt_source AS source_gt_source
+            FROM annotations annotation
             JOIN issues issue ON issue.issue_id = annotation.issue_id
             WHERE issue.baseline_scope IN ({placeholders}) ORDER BY annotation.id
             """,
@@ -430,7 +481,12 @@ def reconcile_legacy_labeling(
         ).fetchall()
         mapped_annotations = conn.execute(
             f"""
-            SELECT mapping.source_id
+            SELECT mapping.source_id, revision.*,
+                   label_case.baseline_scope AS target_scope,
+                   label_case.issue_id AS target_issue_id,
+                   label_case.task_id AS target_task_id,
+                   label_case.source_run_id AS target_run_id,
+                   label_case.seen_gt_label, label_case.seen_gt_source
             FROM label_migration_map mapping
             JOIN label_revisions revision
               ON CAST(revision.id AS TEXT) = mapping.target_id
@@ -444,7 +500,7 @@ def reconcile_legacy_labeling(
         ).fetchall()
         source_comments = conn.execute(
             f"""
-            SELECT comment.id FROM review_comments comment
+            SELECT comment.*, issue.baseline_scope FROM review_comments comment
             JOIN issues issue ON issue.issue_id = comment.issue_id
             WHERE issue.baseline_scope IN ({placeholders}) ORDER BY comment.id
             """,
@@ -452,7 +508,7 @@ def reconcile_legacy_labeling(
         ).fetchall()
         mapped_comments = conn.execute(
             f"""
-            SELECT link.comment_id FROM label_comment_links link
+            SELECT link.* FROM label_comment_links link
             JOIN issues issue ON issue.issue_id = link.issue_id
             WHERE issue.baseline_scope IN ({placeholders})
               AND link.policy_version = ?
@@ -462,7 +518,7 @@ def reconcile_legacy_labeling(
         ).fetchall()
         source_tasks = conn.execute(
             f"""
-            SELECT DISTINCT split.id FROM issue_work_splits split
+            SELECT DISTINCT split.* FROM issue_work_splits split
             JOIN review_work_assignments assignment ON assignment.split_id = split.id
             JOIN issues issue ON issue.issue_id = assignment.issue_id
             WHERE issue.baseline_scope IN ({placeholders})
@@ -472,7 +528,7 @@ def reconcile_legacy_labeling(
         ).fetchall()
         mapped_tasks = conn.execute(
             f"""
-            SELECT mapping.source_id
+            SELECT mapping.source_id, workset.*
             FROM label_migration_map mapping
             JOIN review_worksets workset ON workset.id = mapping.target_id
             WHERE mapping.source_table = 'issue_work_splits'
@@ -481,6 +537,40 @@ def reconcile_legacy_labeling(
               AND workset.baseline_scope IN ({placeholders})
             """,
             (policy_version, *normalized),
+        ).fetchall()
+        source_attachments = conn.execute(
+            f"""
+            SELECT attachment.* FROM review_attachments attachment
+            JOIN annotations annotation ON annotation.id = attachment.annotation_id
+            JOIN issues issue ON issue.issue_id = annotation.issue_id
+            WHERE issue.baseline_scope IN ({placeholders}) ORDER BY attachment.id
+            """, normalized,
+        ).fetchall()
+        target_attachments = conn.execute(
+            f"""
+            SELECT attachment.* FROM label_attachments attachment
+            JOIN label_revisions revision ON revision.id = attachment.revision_id
+            JOIN label_cases label_case ON label_case.id = revision.label_case_id
+            WHERE label_case.baseline_scope IN ({placeholders})
+              AND revision.source_annotation_id IS NOT NULL
+            ORDER BY attachment.id
+            """, normalized,
+        ).fetchall()
+        assignment_rows = conn.execute(
+            f"""
+            SELECT assignment.* FROM review_work_assignments assignment
+            JOIN issues issue ON issue.issue_id = assignment.issue_id
+            WHERE issue.baseline_scope IN ({placeholders})
+            ORDER BY assignment.ordinal, assignment.issue_id, assignment.assignee
+            """, normalized,
+        ).fetchall()
+        workset_items = conn.execute(
+            f"""
+            SELECT item.* FROM review_workset_items item
+            JOIN review_worksets workset ON workset.id = item.workset_id
+            WHERE workset.baseline_scope IN ({placeholders})
+            ORDER BY item.workset_id, item.ordinal
+            """, normalized,
         ).fetchall()
     source_annotation_ids = {str(row["id"]) for row in source_annotations}
     mapped_annotation_ids = {str(row["source_id"]) for row in mapped_annotations}
@@ -507,6 +597,166 @@ def reconcile_legacy_labeling(
         errors.append(f"缺少任务映射 {len(missing_tasks)} 条。")
     if extra_tasks:
         errors.append(f"存在范围外任务映射 {len(extra_tasks)} 条。")
+    # IDs alone cannot prove a migration: an existing source revision is never
+    # rewritten by backfill. Validate content and ownership before activation.
+    mismatches: list[dict[str, Any]] = []
+
+    def mismatch(kind: str, source_id: Any, fields: Sequence[str]) -> None:
+        if fields:
+            mismatches.append({
+                "kind": kind, "source_id": str(source_id), "fields": list(fields),
+            })
+
+    def text_value(value: Any) -> str:
+        return str(value if value is not None else "")
+
+    revisions_by_source = {str(row["source_id"]): row for row in mapped_annotations}
+    task_by_source = {str(row["source_id"]): row for row in mapped_tasks}
+    for source in source_annotations:
+        source_id = str(source["id"])
+        target = revisions_by_source.get(source_id)
+        if target is None:
+            continue
+        source_tags = _json_load(source["tags_json"], [])
+        expected_output, _ = effective_expected_output(
+            {"label": source["label"], "tags": source_tags}, tag_catalog
+        )
+        split_id = text_value(source["work_split_id"])
+        expected_task = split_id if split_id in task_by_source else ""
+        expected_run = text_value(source["model_run_id"])
+        if not expected_run and expected_task:
+            expected_run = text_value(task_by_source[expected_task]["selection_source_run_id"])
+        predecessor = revisions_by_source.get(text_value(source["supersedes_id"]))
+        fields = []
+        expected_fields = {
+            "source_annotation_id": source_id,
+            "expected_output": expected_output,
+            "rationale": text_value(source["note"]),
+            "author": text_value(source["author"]),
+            "author_source": text_value(source["author_source"]) or "legacy",
+            "created_at": text_value(source["created_at"]),
+            "revision_kind": "legacy",
+            "target_scope": text_value(source["baseline_scope"]),
+            "target_issue_id": text_value(source["issue_id"]),
+            "target_task_id": expected_task,
+            "target_run_id": expected_run,
+            "seen_gt_label": text_value(source["source_gt_label"]),
+            "seen_gt_source": text_value(source["source_gt_source"]),
+            "supersedes_id": text_value(predecessor["id"]) if predecessor else "",
+        }
+        for key, expected in expected_fields.items():
+            if text_value(target[key]) != expected:
+                fields.append(key)
+        if source["supersedes_id"] is not None and predecessor is None:
+            fields.append("unmapped_source_predecessor")
+        for key in ("is_excluded", "author_verified"):
+            if bool(target[key]) != bool(source[key]):
+                fields.append(key)
+        for target_key, values in (
+            ("tags_json", source_tags),
+            ("evidence_gaps_json", _json_load(source["missing_evidence_json"], [])),
+        ):
+            if _json_load(target[target_key], []) != _normalized_scopes(values):
+                fields.append(target_key)
+        mismatch("annotation", source_id, fields)
+
+    source_attachment_ids = {str(row["id"]) for row in source_attachments}
+    target_attachments_by_source = {
+        text_value(row["source_review_attachment_id"]): row for row in target_attachments
+    }
+    missing_attachments = sorted(source_attachment_ids - set(target_attachments_by_source))
+    extra_attachments = sorted(set(target_attachments_by_source) - source_attachment_ids)
+    if missing_attachments:
+        errors.append(f"缺少 Review 附件映射 {len(missing_attachments)} 条。")
+    if extra_attachments:
+        errors.append(f"存在范围外 Review 附件映射 {len(extra_attachments)} 条。")
+    for source in source_attachments:
+        source_id = str(source["id"])
+        target = target_attachments_by_source.get(source_id)
+        if target is None:
+            continue
+        fields = [
+            key for key in (
+                "id", "original_name", "stored_name", "media_type", "size_bytes",
+                "width", "height", "sha256", "created_at",
+            ) if text_value(source[key]) != text_value(target[key])
+        ]
+        revision = revisions_by_source.get(str(source["annotation_id"]))
+        if revision is None or int(target["revision_id"]) != int(revision["id"]):
+            fields.append("revision_id")
+        mismatch("attachment", source_id, fields)
+
+    items_by_workset: dict[str, list[Any]] = defaultdict(list)
+    for row in workset_items:
+        items_by_workset[str(row["workset_id"])].append(row)
+    assignments_by_task: dict[str, list[str]] = defaultdict(list)
+    for row in assignment_rows:
+        assignments_by_task[str(row["split_id"])].append(str(row["issue_id"]))
+    contexts_by_issue: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for source in source_tasks:
+        source_id = str(source["id"])
+        target = task_by_source.get(source_id)
+        if target is None:
+            continue
+        issue_ids = _snapshot_issue_ids(_json_load(source["assignees_json"], []))
+        if not issue_ids:
+            issue_ids = list(dict.fromkeys(assignments_by_task[source_id]))
+        items = items_by_workset[str(target["id"])]
+        actual_ids = [str(item["issue_id"]) for item in items]
+        fields = []
+        if actual_ids != issue_ids:
+            fields.append("members")
+        if [int(item["ordinal"]) for item in items] != list(range(1, len(issue_ids) + 1)):
+            fields.append("ordinals")
+        if int(target["member_count"]) != len(issue_ids):
+            fields.append("member_count")
+        digest = hashlib.sha256("\n".join(issue_ids).encode("utf-8")).hexdigest()
+        if str(target["members_sha256"]) != digest:
+            fields.append("members_sha256")
+        if str(source["workset_id"]) != str(target["id"]):
+            fields.append("workset_id")
+        if str(source["task_kind"]) != "labeling":
+            fields.append("task_kind")
+        for key in ("model_run_id", "selection_source_run_id"):
+            if text_value(source[key]) != text_value(target["selection_source_run_id"]):
+                fields.append(key)
+        if _json_load(source["filter_json"], {}) != _json_load(target["source_filter_json"], {}):
+            fields.append("source_filter_json")
+        mismatch("task", source_id, fields)
+        for issue_id in issue_ids:
+            contexts_by_issue[issue_id].append((source_id, text_value(source["model_run_id"])))
+
+    links_by_comment = {str(row["comment_id"]): row for row in mapped_comments}
+    for source in source_comments:
+        source_id = str(source["id"])
+        target = links_by_comment.get(source_id)
+        if target is None:
+            continue
+        source_run = text_value(source["model_run_id"])
+        candidates = [
+            task for task, run in contexts_by_issue[text_value(source["issue_id"])]
+            if run == source_run
+        ]
+        expected_fields = {
+            "issue_id": text_value(source["issue_id"]),
+            "baseline_scope": text_value(source["baseline_scope"]),
+            "source_run_id": source_run,
+            "task_id": candidates[0] if len(candidates) == 1 else "",
+        }
+        fields = [
+            key for key, expected in expected_fields.items()
+            if text_value(target[key]) != expected
+        ]
+        if source["reply_to_id"] is not None:
+            parent = links_by_comment.get(str(source["reply_to_id"]))
+            if parent is None or any(
+                text_value(parent[key]) != text_value(target[key])
+                for key in ("issue_id", "task_id", "source_run_id")
+            ):
+                fields.append("reply_context")
+        mismatch("comment", source_id, fields)
+    if mismatches:
+        errors.append(f"源/目标内容或归属不一致 {len(mismatches)} 条。")
     current_fingerprint = labeling_inventory_fingerprint(database, scopes=normalized)
     current_fingerprints = labeling_inventory_fingerprints(
         database, scopes=normalized
@@ -541,6 +791,12 @@ def reconcile_legacy_labeling(
         "missing_annotation_ids": missing_annotations[:100],
         "missing_comment_ids": missing_comments[:100],
         "missing_task_ids": missing_tasks[:100],
+        "source_attachment_count": len(source_attachment_ids),
+        "mapped_attachment_count": len(source_attachment_ids & set(target_attachments_by_source)),
+        "missing_attachment_ids": missing_attachments[:100],
+        "content_mismatch_count": len(mismatches),
+        "content_mismatches": mismatches[:100],
+        "attachment_file_verification": "not_performed",
         "errors": errors,
         "scope_states": states,
     }

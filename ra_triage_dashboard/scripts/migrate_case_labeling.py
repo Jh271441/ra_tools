@@ -39,7 +39,11 @@ def main() -> int:
     parser.add_argument("--actor", default="migration")
     parser.add_argument("--expected-epoch", type=int)
     args = parser.parse_args()
-    dataset_ids = [value.strip() for value in args.datasets.split(",") if value.strip()]
+    dataset_ids = list(dict.fromkeys(
+        value.strip() for value in args.datasets.split(",") if value.strip()
+    ))
+    if not dataset_ids:
+        parser.error("at least one dataset is required")
     unknown = [value for value in dataset_ids if baseline_registry.by_id(value) is None]
     if unknown:
         parser.error("unknown datasets: " + ", ".join(unknown))
@@ -73,6 +77,7 @@ def main() -> int:
             database,
             scopes=scopes,
             policy_version=args.policy_version,
+            tag_catalog=_review_tag_catalog(),
         )
     elif args.mode == "activate":
         if not args.apply:
@@ -85,6 +90,7 @@ def main() -> int:
             database,
             scopes=scopes,
             policy_version=args.policy_version,
+            tag_catalog=_review_tag_catalog(),
         )
         output["reconciliation"] = reconciliation
         if not reconciliation["passed"]:
@@ -99,6 +105,8 @@ def main() -> int:
             expected_epoch=args.expected_epoch,
         )
     print(json.dumps(output, ensure_ascii=False, indent=2, sort_keys=True))
+    if args.mode == "reconcile" and not output["reconciliation"]["passed"]:
+        return 2
     return 0
 
 

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from ra_triage_dashboard.app.db import Database, LabelAnnotationConflictError
 from ra_triage_dashboard.app.labeling_migration import (
+    legacy_labeling_inventory,
     migrate_legacy_labeling,
     reconcile_legacy_labeling,
 )
@@ -209,6 +210,9 @@ class CaseLabelingTest(unittest.TestCase):
                 issue_id="cn1", model_run_id="", body="原始标注讨论",
                 author="alice", author_source="kylin_ticket", author_verified=True,
             )
+            inventory = legacy_labeling_inventory(database, scopes=["scope"])
+            self.assertEqual(inventory["datasets"][0]["issue_count"], 2)
+            self.assertEqual(inventory["datasets"][0]["annotated_issue_count"], 1)
             first = migrate_legacy_labeling(
                 database,
                 scopes=["scope"],

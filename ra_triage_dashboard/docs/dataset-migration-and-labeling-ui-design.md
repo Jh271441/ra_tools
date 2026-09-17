@@ -2,7 +2,7 @@
 
 - 更新：2026-09-17，依据用户对历史数据用途的补充。
 - 总体方案：`review-labeling-redesign-plan.md`；本文件细化并优先定义数据集迁移和 UI 分离。
-- 当前动作：代码核对、生产数据库只读汇总、独立标注域/UI/迁移工具实现与本地验证。没有执行生产数据迁移或发布。
+- 当前进度：2026-09-18 已发布基础版本 `e1619457066127e3535cb3b81f6df1002680b300`，PostgreSQL migration 042 已通过备份恢复验证后应用；所有标注范围仍未激活。后续数据迁移在 `codex/case-labeling-migration` 分支验证。
 - 代码基线：`970473245a86d1545e3aabc27c68008c80f3f4cb`。
 
 ## 1. 本轮确定的用途映射
@@ -240,6 +240,19 @@ unassigned_policy: 保留历史集合，不造任务槽位
 ### M2：恢复库试迁移
 
 在云端可控的隔离数据库中恢复逻辑备份，媒体只读复用，禁用所有外部写入、推理任务和通知发送。对恢复库运行同一组 `backfill` 和 `reconcile` 命令；生产 backfill 前必须保存其通过报告。
+
+`scripts/rehearse_case_labeling.py` 提供这一演练入口，必须使用干净的已提交 checkout、云端备份 checksum 和同用户 0600 的发布运行配置：
+
+```text
+python3 ra_triage_dashboard/scripts/rehearse_case_labeling.py \
+  --backup <cloud-postgres-backup.dump> \
+  --runtime-config <release>/production-env.json \
+  --datasets 0522
+```
+
+工具生成专用临时 PostgreSQL 库，始终覆盖目标 DSN，连续执行两轮回填/对账；核验原始 GT、Review、模型数据、人员分配及通知表的内容 hash 不变，并只读检查附件文件大小和 SHA-256。演练不执行激活，结束后删除其创建的临时库。完整报告仅保存于云端 `ra_triage_dashboard_deploy/labeling-rehearsals/`，本地记录非敏感汇总即可。清理失败仍保存失败报告及准确的临时库名。
+
+当前 `activate` 尚未完成 M6 中的旧写入口交接和事务内 epoch 校验；即使恢复库对账通过，也不能据此宣称生产切换已具备完整条件。先完成 M6 再执行生产激活。
 
 按以下次序建立映射：
 

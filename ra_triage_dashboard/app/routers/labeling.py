@@ -112,6 +112,17 @@ async def _require_active_labeling_issue(issue_id: str) -> dict[str, Any]:
     return issue
 
 
+async def _require_active_gt_export_batch(batch_id: str) -> dict[str, Any]:
+    batch = await asyncio.to_thread(database.get_label_gt_export_batch, batch_id)
+    if batch is None:
+        raise _detail(404, "GT 更新导出批次不存在。")
+    scopes = list(batch["baseline_scopes"])
+    active_scopes = await _active_labeling_scopes(scopes)
+    if not scopes or set(active_scopes) != set(scopes):
+        raise _detail(409, "该导出批次包含已暂停或未激活的数据集。")
+    return batch
+
+
 def _labeling_payload(body: dict[str, Any]) -> dict[str, Any]:
     tags = body.get("tags") or []
     evidence = body.get("evidence_gaps") or []
@@ -139,7 +150,10 @@ async def list_labeling_tasks(request: Request, baselines: str = "") -> dict[str
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     scopes = await _active_labeling_scopes(scopes)
     return {
-        "items": await asyncio.to_thread(database.list_labeling_tasks, scopes),
+        "items": (
+            await asyncio.to_thread(database.list_labeling_tasks, scopes)
+            if scopes else []
+        ),
         "baseline_scopes": scopes,
     }
 
@@ -230,10 +244,18 @@ async def list_labeling_cases(
         raise _detail(400, "标注状态不合法。")
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     scopes = await _active_labeling_scopes(scopes)
+    normalized_task_id = _as_text(task_id)
+    if normalized_task_id:
+        tasks = (
+            await asyncio.to_thread(database.list_labeling_tasks, scopes)
+            if scopes else []
+        )
+        if not any(task["id"] == normalized_task_id for task in tasks):
+            raise _detail(404, "标注任务不在当前已激活的数据集中。")
     result = await asyncio.to_thread(
         database.list_labeling_cases,
         baseline_scopes=scopes,
-        task_id=_as_text(task_id),
+        task_id=normalized_task_id,
         search=_as_text(q),
         status=normalized_status,
         page=page,
@@ -402,6 +424,7 @@ async def get_label_attachment(attachment_id: str) -> FileResponse:
     attachment = await asyncio.to_thread(database.get_label_attachment, attachment_id)
     if attachment is None:
         raise _detail(404, "标注图片不存在。")
+    await _require_active_labeling_issue(attachment["issue_id"])
     root = settings.review_attachments_dir.resolve()
     path = (root / attachment["stored_name"]).resolve()
     if root not in path.parents or not await asyncio.to_thread(path.is_file):
@@ -412,7 +435,7 @@ async def get_label_attachment(attachment_id: str) -> FileResponse:
         headers={
             "Content-Disposition": "inline",
             "X-Content-Type-Options": "nosniff",
-            "Cache-Control": "private, max-age=31536000, immutable",
+            "Cache-Control": "private, no-cache",
         },
     )
 
@@ -517,19 +540,15 @@ async def create_gt_export_preview(request: Request) -> dict[str, Any]:
 
 @router.get("/api/labeling/gt-export-previews/{batch_id}")
 async def get_gt_export_preview(batch_id: str) -> dict[str, Any]:
-    batch = await asyncio.to_thread(database.get_label_gt_export_batch, batch_id)
-    if batch is None:
-        raise _detail(404, "GT 更新导出批次不存在。")
+    batch = await _require_active_gt_export_batch(batch_id)
     return {"preview": batch}
 
 
 @router.get("/api/labeling/gt-exports/{batch_id}")
 async def export_gt_candidates(batch_id: str, request: Request) -> Response:
     await asyncio.to_thread(_labeling_actor, request)
+    await _require_active_gt_export_batch(batch_id)
     batch = await asyncio.to_thread(database.validate_label_gt_export_batch, batch_id)
-    active_scopes = await _active_labeling_scopes(list(batch["baseline_scopes"]))
-    if set(active_scopes) != set(batch["baseline_scopes"]):
-        raise _detail(409, "该导出批次包含已暂停或未激活的数据集。")
     if batch["stale_issue_ids"]:
         raise _detail(
             409,

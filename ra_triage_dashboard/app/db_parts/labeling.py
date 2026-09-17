@@ -942,10 +942,22 @@ class DatabaseLabelingMixin:
     def get_label_attachment(self, attachment_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute(
-                "SELECT * FROM label_attachments WHERE id = ?",
+                """
+                SELECT attachment.*, label_case.issue_id, label_case.baseline_scope
+                FROM label_attachments attachment
+                JOIN label_revisions revision ON revision.id = attachment.revision_id
+                JOIN label_cases label_case ON label_case.id = revision.label_case_id
+                WHERE attachment.id = ?
+                """,
                 (str(attachment_id or "").strip(),),
             ).fetchone()
-        return self._label_attachment_dict(row) if row is not None else None
+        if row is None:
+            return None
+        return {
+            **self._label_attachment_dict(row),
+            "issue_id": str(row["issue_id"]),
+            "baseline_scope": str(row["baseline_scope"]),
+        }
 
     def adjudicate_label_case(
         self,
@@ -1080,8 +1092,11 @@ class DatabaseLabelingMixin:
                 JOIN issue_work_splits task ON task.workset_id = member.workset_id
                 JOIN issues issue ON issue.issue_id = member.issue_id
             """
-            where = "task.id = ?"
-            parameters.append(task)
+            where = (
+                "task.id = ? AND task.task_kind = 'labeling'"
+                f" AND issue.baseline_scope IN ({', '.join('?' for _ in scopes)})"
+            )
+            parameters.extend([task, *scopes])
         else:
             from_sql = "FROM issues issue"
             where = f"issue.baseline_scope IN ({', '.join('?' for _ in scopes)})"
