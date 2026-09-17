@@ -1362,7 +1362,13 @@ async function enterAnalysisPage({ includeOverview = false } = {}) {
 
 async function loadReviewReasonAnalysis({ keepPainted = false } = {}) {
   const requestSeq = ++state.reviewAnalysis.requestSeq;
-  await loadAnalysisWorkSplits();
+  try {
+    await loadAnalysisWorkSplits();
+  } catch (_error) {
+    // Task-batch options are a secondary filter facet. A transient failure
+    // must not block the analysis payload or an already URL-selected Split.
+    renderAnalysisWorkSplitPicker(state.reviewAnalysis.workSplitId);
+  }
   const params = buildAnalysisQueryParams({ includePagination: true });
   // Keep existing paint when revisiting the tab; avoid blanking for a snappier switch.
   if (!keepPainted) {
