@@ -731,6 +731,8 @@ const state = {
   failureOnly: false,
   clusterKey: "",
   reviewQueueStale: false,
+  reviewWorkSplitId: "",
+  availableReviewWorkSplitId: "",
   reviewAnalysis: {
     page: 1,
     pageSize: DEFAULT_CASE_PAGE_SIZE,
@@ -739,6 +741,8 @@ const state = {
     data: null,
     comparisonStatus: "mismatch",
     workAgreement: "all",
+    workSplitId: "",
+    availableWorkSplitId: "",
   },
   reviewAssignments: {
     splits: [],

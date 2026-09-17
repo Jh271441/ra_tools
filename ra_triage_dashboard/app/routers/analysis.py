@@ -61,6 +61,7 @@ async def review_reason_analysis(
     page_size: int = 20,
     baselines: str = "",
     work_agreement: str = "all",
+    work_split_id: str = "",
 ) -> dict[str, Any]:
     # Multi-review analysis is read-only.  Blind mode isolates each user's
     # writes, but does not restrict submitted Review history or aggregate
@@ -94,6 +95,7 @@ async def review_reason_analysis(
         baselines=baselines,
         baseline_scopes=scopes,
         work_agreement=work_agreement,
+        work_split_id=work_split_id,
         include_multi_reviews=include_multi_reviews,
     )
     payload["baselines"] = resolve_request_baseline_ids(baselines, request=request)
@@ -396,6 +398,7 @@ async def export_review_reason_analysis(
     exclusion: str = "all",
     baselines: str = "",
     work_agreement: str = "all",
+    work_split_id: str = "",
     gallery_scope: bool = False,
     work_assignee: str = "",
 ) -> Response:
@@ -428,6 +431,7 @@ async def export_review_reason_analysis(
             missing_evidence=missing_evidence,
             issue_ids=issue_ids,
             work_assignee=work_assignee,
+            work_split_id=work_split_id,
             comment_state=comment_state,
             exclusion=exclusion,
             baselines=baselines,
@@ -488,6 +492,7 @@ async def export_review_reason_analysis(
         baselines=baselines,
         baseline_scopes=scopes,
         work_agreement=work_agreement,
+        work_split_id=work_split_id,
         include_multi_reviews=include_multi_reviews,
     )
     if gallery_scope:

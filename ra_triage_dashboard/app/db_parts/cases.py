@@ -206,6 +206,7 @@ class DatabaseCasesMixin:
         *,
         projection_authors: Sequence[str] = (),
         preferred_annotation_author: str = "",
+        work_split_id: str = "",
     ) -> tuple[str, list[Any]]:
         """Project the primary assignment Review without hiding old behavior.
 
@@ -223,6 +224,7 @@ class DatabaseCasesMixin:
         )
         authors = tuple(value for value in authors if value)
         preferred_author = str(preferred_annotation_author or "").strip()
+        split_id = str(work_split_id or "").strip()
         # An explicit reviewer/assignee filter owns the projection. The signed-
         # in user's Review is only the default preference when no such filter
         # was requested.
@@ -235,6 +237,8 @@ class DatabaseCasesMixin:
                 f"AND wa.assignee IN ({', '.join('?' for _ in authors)})"
             )
             author_params.extend(authors)
+        split_clause = "AND ws.id = ?" if split_id else ""
+        split_params: list[Any] = [split_id] if split_id else []
         preferred_order = (
             "CASE WHEN a.author = ? THEN 0 ELSE 1 END,"
             if preferred_author
@@ -249,6 +253,7 @@ class DatabaseCasesMixin:
                 WHERE wa.issue_id = i.issue_id
                   AND ws.model_run_id = ?
                   {author_clause}
+                  {split_clause}
             )
         """
         assignment_annotation = f"""
@@ -267,6 +272,7 @@ class DatabaseCasesMixin:
                 WHERE wa.issue_id = i.issue_id
                   AND ws.model_run_id = ?
                   {author_clause}
+                  {split_clause}
                 ORDER BY
                   CASE WHEN a.id IS NULL THEN 1 ELSE 0 END,
                   {preferred_order}
@@ -322,8 +328,10 @@ class DatabaseCasesMixin:
         params = [
             run_id,
             *author_params,
+            *split_params,
             run_id,
             *author_params,
+            *split_params,
             *([preferred_author] if preferred_author else []),
             *ordinary_params,
         ]
@@ -345,6 +353,7 @@ class DatabaseCasesMixin:
         missing_evidence: str = "",
         issue_ids: list[str] | None = None,
         work_assignee: str = "",
+        work_split_id: str = "",
         comment_state: str = "all",
         preferred_annotation_author: str = "",
         is_excluded: bool | None = None,
@@ -486,6 +495,17 @@ class DatabaseCasesMixin:
                 )
                 params.extend((model_run_id, *named))
             where.append(f"({' OR '.join(assignee_clauses)})")
+        normalized_work_split_id = str(work_split_id or "").strip()
+        if normalized_work_split_id:
+            if not model_run_id:
+                raise ValueError("work_split_id requires model_run_id")
+            where.append(
+                "EXISTS (SELECT 1 FROM review_work_assignments wa_split "
+                "JOIN issue_work_splits ws_split ON ws_split.id = wa_split.split_id "
+                "WHERE wa_split.issue_id = i.issue_id AND ws_split.id = ? "
+                "AND ws_split.model_run_id = ?)"
+            )
+            params.extend((normalized_work_split_id, model_run_id))
         if comparison_statuses and set(comparison_statuses) != {
             "match",
             "mismatch",
@@ -521,6 +541,7 @@ class DatabaseCasesMixin:
             model_run_id,
             projection_authors=authors or tuple(named),
             preferred_annotation_author=preferred_annotation_author,
+            work_split_id=normalized_work_split_id,
         )
         common = f"""
             FROM issues i
@@ -550,6 +571,7 @@ class DatabaseCasesMixin:
         missing_evidence: str = "",
         issue_ids: list[str] | None = None,
         work_assignee: str = "",
+        work_split_id: str = "",
         comment_state: str = "all",
         preferred_annotation_author: str = "",
         is_excluded: bool | None = None,
@@ -575,6 +597,7 @@ class DatabaseCasesMixin:
             missing_evidence=missing_evidence,
             issue_ids=issue_ids,
             work_assignee=work_assignee,
+            work_split_id=work_split_id,
             comment_state=comment_state,
             preferred_annotation_author=preferred_annotation_author,
             is_excluded=is_excluded,
@@ -639,6 +662,7 @@ class DatabaseCasesMixin:
         missing_evidence: str = "",
         issue_ids: list[str] | None = None,
         work_assignee: str = "",
+        work_split_id: str = "",
         comment_state: str = "all",
         preferred_annotation_author: str = "",
         is_excluded: bool | None = None,
@@ -660,6 +684,7 @@ class DatabaseCasesMixin:
             missing_evidence=missing_evidence,
             issue_ids=issue_ids,
             work_assignee=work_assignee,
+            work_split_id=work_split_id,
             comment_state=comment_state,
             preferred_annotation_author=preferred_annotation_author,
             is_excluded=is_excluded,
@@ -817,6 +842,7 @@ class DatabaseCasesMixin:
         model_run_id: str = "",
         failure_only: bool = True,
         annotation_author: str = "",
+        work_split_id: str = "",
         is_excluded: bool | None = None,
     ) -> list[dict[str, Any]]:
         scopes = self._normalize_baseline_scopes(baseline_scopes, baseline_scope=baseline_scope)
@@ -824,12 +850,30 @@ class DatabaseCasesMixin:
             raise ValueError("baseline_scopes must not be empty")
         scope_clause, scope_params = self._scope_in_sql(scopes)
         where = [scope_clause, "ann.id IS NOT NULL"]
-        annotation_params = self._latest_annotation_join_params(
-            model_run_id,
-            include_unbound_fallback=True,
-            include_bound_history_fallback=True,
-        )
+        normalized_work_split_id = str(work_split_id or "").strip()
+        if normalized_work_split_id:
+            annotation_join, annotation_params = self._gallery_annotation_join(
+                model_run_id,
+                work_split_id=normalized_work_split_id,
+            )
+            where.append(
+                "EXISTS (SELECT 1 FROM review_work_assignments wa_split "
+                "WHERE wa_split.issue_id = i.issue_id AND wa_split.split_id = ?)"
+            )
+        else:
+            annotation_join = self._latest_annotation_join(
+                model_run_id,
+                include_unbound_fallback=True,
+                include_bound_history_fallback=True,
+            )
+            annotation_params = self._latest_annotation_join_params(
+                model_run_id,
+                include_unbound_fallback=True,
+                include_bound_history_fallback=True,
+            )
         params: list[Any] = [*annotation_params, model_run_id, *scope_params]
+        if normalized_work_split_id:
+            params.append(normalized_work_split_id)
         if failure_only and model_run_id:
             mismatch_sql, mismatch_params = model_prediction_mismatch_sql()
             where.extend(
@@ -850,11 +894,7 @@ class DatabaseCasesMixin:
         query = f"""
             SELECT ann.missing_evidence_json
             FROM issues i
-            {self._latest_annotation_join(
-                model_run_id,
-                include_unbound_fallback=True,
-                include_bound_history_fallback=True,
-            )}
+            {annotation_join}
             LEFT JOIN model_predictions mp
               ON mp.issue_id = i.issue_id AND mp.model_run_id = ?
             WHERE {' AND '.join(where)}
@@ -1871,20 +1911,29 @@ class DatabaseCasesMixin:
         *,
         model_run_id: str = "",
         username: str = "",
+        work_split_id: str = "",
     ) -> dict[str, Any] | None:
         """Return the current assignment snapshot for one Issue/Run."""
 
         with self.connect() as conn:
+            normalized_split_id = str(work_split_id or "").strip()
+            split_condition = "AND split.id = ?" if normalized_split_id else ""
+            split_parameters: tuple[Any, ...] = (
+                (str(issue_id or "").strip(), str(model_run_id or "").strip(), normalized_split_id)
+                if normalized_split_id
+                else (str(issue_id or "").strip(), str(model_run_id or "").strip())
+            )
             split = conn.execute(
-                """
+                f"""
                 SELECT split.*
                 FROM review_work_assignments assignment
                 JOIN issue_work_splits split ON split.id = assignment.split_id
                 WHERE assignment.issue_id = ? AND split.model_run_id = ?
+                  {split_condition}
                 ORDER BY split.created_at DESC, split.id DESC
                 LIMIT 1
                 """,
-                (str(issue_id or "").strip(), str(model_run_id or "").strip()),
+                split_parameters,
             ).fetchone()
             if split is None:
                 return None
@@ -1943,6 +1992,7 @@ class DatabaseCasesMixin:
         *,
         baseline_scopes: Sequence[str],
         model_run_id: str = "",
+        work_split_id: str = "",
         issue_ids: Sequence[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Return one row per current blind assignment member for aggregation."""
@@ -1967,9 +2017,30 @@ class DatabaseCasesMixin:
             )
             issue_params.extend(selected_issue_ids)
         selected_run_id = str(model_run_id or "").strip()
-        if selected_run_id:
-            split_filter = "split.model_run_id = ?"
-            split_params: list[Any] = [selected_run_id]
+        selected_work_split_id = str(work_split_id or "").strip()
+        if selected_work_split_id:
+            split_filter = "split.id = ?"
+            split_params = [selected_work_split_id]
+            if selected_run_id:
+                split_filter += " AND split.model_run_id = ?"
+                split_params.append(selected_run_id)
+            prediction_run_id = selected_run_id
+        elif selected_run_id:
+            split_filter = """
+                split.model_run_id = ?
+                AND split.id = (
+                    SELECT latest_split.id
+                    FROM issue_work_splits latest_split
+                    JOIN review_work_assignments latest_assignment
+                      ON latest_assignment.split_id = latest_split.id
+                    WHERE latest_assignment.issue_id = assignment.issue_id
+                      AND latest_split.model_run_id = ?
+                      AND latest_split.mode = 'blind'
+                    ORDER BY latest_split.created_at DESC, latest_split.id DESC
+                    LIMIT 1
+                )
+            """
+            split_params = [selected_run_id, selected_run_id]
             prediction_run_id = selected_run_id
         else:
             # No model overlay is a global human-Review view, not the legacy
@@ -1992,9 +2063,11 @@ class DatabaseCasesMixin:
             # A no-overlay response must not silently attach the split's model
             # prediction. The Review retains its own immutable Run binding.
             prediction_run_id = ""
+        mode_filter = "TRUE" if selected_work_split_id else "split.mode = 'blind'"
         query = f"""
             SELECT i.issue_id, i.title, i.scenario, i.summary, i.gt_label,
                    i.baseline_scope, assignment.split_id, assignment.assignee,
+                   split.mode AS split_mode,
                    split.model_run_id AS split_model_run_id,
                    annotation.id AS annotation_id,
                    annotation.label AS annotation_label,
@@ -2016,14 +2089,17 @@ class DatabaseCasesMixin:
                 SELECT candidate.id FROM annotations candidate
                 WHERE candidate.issue_id = assignment.issue_id
                   AND candidate.model_run_id = split.model_run_id
-                  AND candidate.work_split_id = assignment.split_id
+                  AND (
+                    (split.mode = 'blind' AND candidate.work_split_id = assignment.split_id)
+                    OR (split.mode <> 'blind' AND candidate.work_split_id = '')
+                  )
                   AND candidate.author = assignment.assignee
                 ORDER BY candidate.id DESC LIMIT 1
             )
             LEFT JOIN model_predictions prediction
               ON prediction.issue_id = i.issue_id
              AND prediction.model_run_id = ?
-            WHERE split.mode = 'blind' AND {split_filter}
+            WHERE {mode_filter} AND {split_filter}
               AND {scope_clause}
               {issue_clause}
             ORDER BY i.issue_id ASC, assignment.assignee ASC
@@ -2040,7 +2116,11 @@ class DatabaseCasesMixin:
                 annotation = {
                     "id": int(row["annotation_id"]),
                     "model_run_id": str(row["split_model_run_id"] or ""),
-                    "work_split_id": str(row["split_id"]),
+                    "work_split_id": (
+                        str(row["split_id"])
+                        if str(row["split_mode"] or "") == "blind"
+                        else ""
+                    ),
                     "label": str(row["annotation_label"] or ""),
                     "review_status": str(row["annotation_review_status"] or "pending"),
                     "is_excluded": bool(row["annotation_is_excluded"]),

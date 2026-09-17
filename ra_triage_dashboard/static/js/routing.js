@@ -306,6 +306,9 @@ function normalizedReviewRouteFilters(params) {
     workAssignee: parseFilterList(
       params.get("work_assignee") || params.get("assignee") || ""
     ),
+    workSplitId: /^split-[A-Za-z0-9]+$/.test(params.get("work_split") || "")
+      ? params.get("work_split")
+      : "",
     exclusion,
     clusterKey: params.get("evidence") || "",
     casePage: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
@@ -354,6 +357,9 @@ function normalizedAnalysisRouteFilters(params) {
     workAgreement: ["pending", "agreed", "conflict"].includes(params.get("work_agreement"))
       ? params.get("work_agreement")
       : "all",
+    workSplitId: /^split-[A-Za-z0-9]+$/.test(params.get("work_split") || "")
+      ? params.get("work_split")
+      : "",
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
     pageSize: CASE_PAGE_SIZES.includes(rawPageSize) ? rawPageSize : DEFAULT_CASE_PAGE_SIZE,
   };
@@ -501,6 +507,7 @@ function currentReviewRouteOptions(overrides = {}) {
       typeof workAssigneeFilterSelection === "function"
         ? workAssigneeFilterSelection()
         : getMultiFilterValues($("#workAssigneeFilter")),
+    workSplitId: state.reviewWorkSplitId || "",
     exclusion:
       typeof selectedReviewExclusionFilter === "function"
         ? selectedReviewExclusionFilter()
@@ -538,6 +545,11 @@ function applyReviewRouteControls(route) {
   setMultiFilterValues($("#gtFilter"), route.gtLabel);
   setMultiFilterValues($("#annotationFilter"), route.modelLabel);
   setMultiFilterValues($("#workAssigneeFilter"), route.workAssignee);
+  state.reviewWorkSplitId = route.workSplitId || "";
+  if (state.reviewWorkSplitId) {
+    state.availableReviewWorkSplitId = state.reviewWorkSplitId;
+  }
+  renderReviewWorkSplitPicker?.(state.reviewWorkSplitId);
   setMultiFilterValues($("#reviewerFilter"), route.annotationAuthor);
   setMultiFilterValues($("#reviewStatusFilter"), route.reviewStatus);
   setMultiFilterValues(
@@ -586,6 +598,7 @@ function currentAnalysisRouteOptions(overrides = {}) {
         ? selectedAnalysisExclusionFilter()
         : "all",
     workAgreement: $("#analysisWorkAgreementFilter")?.value || state.reviewAnalysis.workAgreement || "all",
+    workSplitId: state.reviewAnalysis.workSplitId || "",
     page: state.reviewAnalysis.page,
     pageSize: state.reviewAnalysis.pageSize,
     ...overrides,
@@ -617,7 +630,12 @@ function applyAnalysisRouteControls(route) {
   if ($("#analysisCommentStateFilter")) $("#analysisCommentStateFilter").value = filters.commentState || "all";
   renderAnalysisCommentStatePicker?.(filters.commentState || "all");
   state.reviewAnalysis.workAgreement = filters.workAgreement || "all";
+  state.reviewAnalysis.workSplitId = filters.workSplitId || "";
+  if (state.reviewAnalysis.workSplitId) {
+    state.reviewAnalysis.availableWorkSplitId = state.reviewAnalysis.workSplitId;
+  }
   renderAnalysisWorkAgreementPicker?.(state.reviewAnalysis.workAgreement);
+  renderAnalysisWorkSplitPicker?.(state.reviewAnalysis.workSplitId);
   setMultiFilterValues($("#analysisGtFilter"), filters.gtLabel);
   setMultiFilterValues($("#analysisModelLabelFilter"), filters.modelLabel);
   setMultiFilterValues($("#analysisStatusFilter"), filters.reviewStatus);
@@ -690,6 +708,7 @@ function pageUrl(page, options = {}) {
       url.searchParams.set("comment_state", review.commentState);
     }
     if (assignee) url.searchParams.set("work_assignee", assignee);
+    if (review.workSplitId) url.searchParams.set("work_split", review.workSplitId);
     if (review.exclusion && review.exclusion !== "all") {
       url.searchParams.set("exclusion", review.exclusion);
     }
@@ -737,6 +756,7 @@ function pageUrl(page, options = {}) {
     if (analysis.workAgreement && analysis.workAgreement !== "all") {
       url.searchParams.set("work_agreement", analysis.workAgreement);
     }
+    if (analysis.workSplitId) url.searchParams.set("work_split", analysis.workSplitId);
     if (Number(analysis.page) > 1) url.searchParams.set("page", String(analysis.page));
     if (Number(analysis.pageSize) !== DEFAULT_CASE_PAGE_SIZE) {
       url.searchParams.set("page_size", String(analysis.pageSize));

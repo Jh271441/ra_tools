@@ -706,6 +706,9 @@ function caseCorePath(issueId) {
   if (state.selectedRunId) {
     path += `&model_run_id=${encodeURIComponent(state.selectedRunId)}`;
   }
+  if (state.reviewWorkSplitId) {
+    path += `&work_split_id=${encodeURIComponent(state.reviewWorkSplitId)}`;
+  }
   return path;
 }
 
@@ -1204,7 +1207,7 @@ async function saveAnnotation(event) {
       state.selectedCase?.issue_id === issueId
     ) {
       const refreshed = await api(
-        `/api/cases/${encodeURIComponent(issueId)}?include_media=false&model_run_id=${encodeURIComponent(payload.model_run_id || "")}`
+        `/api/cases/${encodeURIComponent(issueId)}?include_media=false&model_run_id=${encodeURIComponent(payload.model_run_id || "")}&work_split_id=${encodeURIComponent(payload.work_split_id || "")}`
       );
       if (state.selectedCase?.issue_id === refreshed?.issue_id) {
         state.selectedCase.annotations = refreshed.annotations || state.selectedCase.annotations;

@@ -56,6 +56,9 @@ async function loadClusters() {
       : getMultiFilterValues($("#reviewerFilter"))
   );
   if (annotationAuthor) params.set("annotation_author", annotationAuthor);
+  if (state.activePage === "review" && state.reviewWorkSplitId) {
+    params.set("work_split_id", state.reviewWorkSplitId);
+  }
   // The exclusion slice belongs to 原因聚类/分析.  Review's quick cluster
   // chips should keep the neutral all-inclusive scope even if a previous
   // analysis page selection is still present in the shared DOM.
@@ -113,6 +116,7 @@ function analysisRequestOptions() {
     comparisonStatus: runId ? checkedAnalysisComparisonStatus() : "all",
     exclusion: selectedAnalysisExclusionFilter(),
     workAgreement: $("#analysisWorkAgreementFilter")?.value || "all",
+    workSplitId: state.reviewAnalysis.workSplitId || "",
   });
 }
 
@@ -148,6 +152,7 @@ function buildAnalysisQueryParams({ format = "", includePagination = true } = {}
   if (options.workAgreement && options.workAgreement !== "all") {
     params.set("work_agreement", options.workAgreement);
   }
+  if (options.workSplitId) params.set("work_split_id", options.workSplitId);
   for (const [key, value] of fields) {
     if (value) params.set(key, value);
   }
@@ -1316,8 +1321,11 @@ function renderReviewReasonAnalysis(data, { animatePies = true } = {}) {
   const reviewScope = run
     ? `${run.name}${comparisonStatus === "all" ? "" : ` · ${comparisonLabels}`}${exclusionSuffix}`
     : `${uiText("全部最新 Review", "All latest reviews")}${exclusionSuffix}`;
-  $("#analysisReviewScope").textContent = reviewScope;
-  $("#analysisReviewScope").title = reviewScope;
+  const workSplitSuffix = data.scope?.work_split_id
+    ? ` · ${uiText("本次任务新增", "This task only")}`
+    : "";
+  $("#analysisReviewScope").textContent = `${reviewScope}${workSplitSuffix}`;
+  $("#analysisReviewScope").title = `${reviewScope}${workSplitSuffix}`;
   renderAnalysisReviewStatus(data);
   renderAnalysisClusterPanels(data, { animatePies });
   renderAnalysisConfusion(data);

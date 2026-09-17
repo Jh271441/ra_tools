@@ -40,6 +40,43 @@ function reviewAssignmentFilterLabel(item) {
     : uiText("按创建时的筛选结果分配", "Created from the saved Review filter");
 }
 
+function reviewAssignmentRouteOptions(item, page) {
+  const filter = item?.filter_snapshot && typeof item.filter_snapshot === "object"
+    ? item.filter_snapshot
+    : {};
+  const common = {
+    runId: item?.model_run_id || "",
+    comparisonStatus: filter.comparison_status || "all",
+    search: filter.search || "",
+    gtLabel: parseFilterList(filter.gt_label),
+    modelLabel: parseFilterList(filter.model_label),
+    annotationAuthor: parseFilterList(filter.annotation_author),
+    reviewStatus: parseFilterList(filter.review_status),
+    exclusion: filter.exclusion || "all",
+    workSplitId: item?.split_id || "",
+    baselines: filter.baselines || filter.baseline_scopes || [],
+  };
+  if (page === "analysis") {
+    return {
+      ...common,
+      issueIds: [],
+      missingEvidence: parseFilterList(filter.missing_evidence),
+      page: 1,
+    };
+  }
+  return {
+    ...common,
+    issue: "",
+    issueIds: [],
+    clusterKey: filter.missing_evidence || "",
+    casePage: 1,
+  };
+}
+
+function reviewAssignmentBatchHref(item, page) {
+  return pageUrl(page, reviewAssignmentRouteOptions(item, page));
+}
+
 function reviewAssignmentMetricMarkup(label, value, note = "") {
   return `<article class="review-assignment-metric"><small>${escapeHtml(label)}</small><strong>${escapeHtml(value)}</strong>${note ? `<span>${escapeHtml(note)}</span>` : ""}</article>`;
 }
@@ -80,6 +117,9 @@ function renderReviewAssignmentBatch(item) {
   const changeNote = Number(item.change_count || 0)
     ? uiText(`已转派 ${item.change_count} 次`, `${item.change_count} transfers`)
     : uiText("尚未转派", "No transfers");
+  const taskLinks = item.is_current
+    ? `<a class="button button-quiet" href="${escapeHtml(reviewAssignmentBatchHref(item, "review"))}">${escapeHtml(uiText("去判错复核", "Open Review"))}</a><a class="button button-quiet" href="${escapeHtml(reviewAssignmentBatchHref(item, "analysis"))}">${escapeHtml(uiText("去原因聚类", "Open analysis"))}</a>`
+    : "";
   return `<article class="review-assignment-batch" data-review-assignment-batch="${escapeHtml(item.split_id)}">
     <header class="review-assignment-batch-header">
       <div><strong class="review-assignment-batch-title">${escapeHtml(reviewAssignmentRunLabel(item.model_run_id))} · ${escapeHtml(formatTime(item.created_at))}</strong><span class="review-assignment-batch-meta">${escapeHtml(item.split_id)} · ${escapeHtml(item.created_by || uiText("未记录", "Unknown"))} · ${escapeHtml(reviewAssignmentModeLabel(item))}</span><span class="review-assignment-batch-meta">${escapeHtml(filterLabel)}</span></div>
@@ -87,7 +127,7 @@ function renderReviewAssignmentBatch(item) {
     </header>
     <div class="review-assignment-progress"><div class="review-assignment-progress-heading"><span>${escapeHtml(uiText("整体进度", "Overall progress"))}</span><strong>${escapeHtml(`${item.completed_count || 0} / ${item.assignment_count || 0} · ${percent}%`)}</strong></div><div class="review-assignment-progress-track"><span style="width:${percent}%"></span></div></div>
     <div class="review-assignment-member-grid">${(item.members || []).map(reviewAssignmentMemberMarkup).join("") || `<span class="quiet-meta">${escapeHtml(uiText("没有成员记录", "No member data"))}</span>`}</div>
-    <footer class="review-assignment-batch-footer"><span>${escapeHtml(`${item.total_count || 0} ${uiText("个 Issue", "Issues")} · ${changeNote}`)}</span><div class="review-assignment-batch-actions"><button class="button button-quiet" type="button" data-open-review-assignment="${escapeHtml(item.split_id)}">${escapeHtml(uiText("查看任务明细", "View task detail"))}</button></div></footer>
+    <footer class="review-assignment-batch-footer"><span>${escapeHtml(`${item.total_count || 0} ${uiText("个 Issue", "Issues")} · ${changeNote}`)}</span><div class="review-assignment-batch-actions">${taskLinks}<button class="button button-quiet" type="button" data-open-review-assignment="${escapeHtml(item.split_id)}">${escapeHtml(uiText("查看任务明细", "View task detail"))}</button></div></footer>
   </article>`;
 }
 
@@ -132,6 +172,7 @@ function reviewAssignmentIssueHref(item) {
     runId: item.split_model_run_id || state.reviewAssignments.detail?.model_run_id || "",
     comparisonStatus: "all",
     workAssignee: [item.assignee],
+    workSplitId: state.reviewAssignments.detail?.split_id || "",
     issueIds: [],
     casePage: 1,
   });

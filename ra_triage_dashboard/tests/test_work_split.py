@@ -16,6 +16,95 @@ from ra_triage_dashboard.app.work_split import distribute_issue_ids
 
 
 class WorkSplitTest(unittest.TestCase):
+    def test_exact_split_scope_keeps_task_membership_and_new_reviews_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "exact-split-scope.sqlite")
+            db.init()
+            scope = "scope"
+            db.upsert_issues(
+                [
+                    {"issue_id": "cn1", "gt_label": "误触发"},
+                    {"issue_id": "cn2", "gt_label": "误触发"},
+                    {"issue_id": "cn3", "gt_label": "误触发"},
+                ],
+                source="test",
+                replace_gt=True,
+                baseline_scope=scope,
+            )
+            run, _ = db.import_model_run(
+                name="split-run",
+                source_name="split.json",
+                source_sha256="6" * 64,
+                metadata={},
+                rows=[
+                    {"issue_id": issue_id, "model_label": "正确触发"}
+                    for issue_id in ("cn1", "cn2", "cn3")
+                ],
+            )
+            db.create_annotation(
+                issue_id="cn1", model_run_id=run["id"], label="无需协助",
+                review_status="needs_gt_review", tags=[], missing_evidence=[],
+                note="old ordinary", author="legacy",
+            )
+            db.create_annotation(
+                issue_id="cn2", model_run_id=run["id"], label="无需协助",
+                review_status="needs_gt_review", tags=[], missing_evidence=[],
+                note="old ordinary", author="legacy",
+            )
+            assignments = distribute_issue_ids(
+                ["cn1", "cn2"],
+                [{"name": "alice"}, {"name": "bob"}],
+                seed=1,
+                reviewers_per_issue=2,
+            )
+            saved = db.apply_work_split(
+                assignments=assignments,
+                created_by="admin",
+                reviewers_per_issue=2,
+                model_run_id=run["id"],
+            )
+            fresh = db.create_annotation(
+                issue_id="cn1", model_run_id=run["id"],
+                work_split_id=saved["split_id"], label="正确触发",
+                review_status="needs_gt_review", tags=[],
+                missing_evidence=["routing_direction"],
+                note="new split result", author="alice",
+                expected_previous_annotation_id=None,
+            )
+
+            gallery = db.list_cases(
+                baseline_scopes=[scope], model_run_id=run["id"],
+                work_split_id=saved["split_id"], page_size=10,
+            )
+            self.assertEqual([item["issue_id"] for item in gallery["items"]], ["cn1", "cn2"])
+            self.assertEqual(gallery["items"][0]["annotation"]["id"], fresh["id"])
+            self.assertIsNone(gallery["items"][1]["annotation"]["id"])
+            self.assertEqual(
+                db.review_clusters(
+                    baseline_scopes=[scope], model_run_id=run["id"],
+                    failure_only=False, work_split_id=saved["split_id"],
+                ),
+                [{"key": "routing_direction", "count": 1}],
+            )
+
+            with patch.object(review_payloads, "database", db), patch(
+                "ra_triage_dashboard.app.support.catalogs.database", db
+            ):
+                analysis = review_payloads._review_reason_analysis_payload(
+                    model_run_id=run["id"],
+                    comparison="all",
+                    baseline_scopes=[scope],
+                    work_split_id=saved["split_id"],
+                    include_multi_reviews=True,
+                )
+
+            self.assertEqual(analysis["total"], 1)
+            self.assertEqual(analysis["items"][0]["issue_id"], "cn1")
+            self.assertEqual(analysis["items"][0]["annotation"]["id"], fresh["id"])
+            self.assertEqual(analysis["items"][0]["multi_review"]["agreement"], "pending")
+            self.assertEqual(analysis["scope"]["work_split_id"], saved["split_id"])
+            self.assertEqual(analysis["filters"]["work_split_id"], saved["split_id"])
+
     def test_reviewer_endpoint_keeps_cross_review_additive_to_existing_facet(self) -> None:
         request = Request(
             {"type": "http", "method": "GET", "path": "/api/reviewers", "headers": []}

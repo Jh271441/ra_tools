@@ -320,6 +320,7 @@ async def review_clusters(
     model_run_id: str = "",
     failure_only: bool = True,
     annotation_author: str = "",
+    work_split_id: str = "",
     exclusion: str = "all",
     baselines: str = "",
 ) -> dict[str, Any]:
@@ -332,6 +333,7 @@ async def review_clusters(
             model_run_id=model_run_id,
             failure_only=failure_only,
             annotation_author=annotation_author,
+            work_split_id=work_split_id,
             is_excluded=is_excluded,
         ),
         "exclusion": exclusion,

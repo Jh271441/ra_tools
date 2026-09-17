@@ -51,6 +51,7 @@ def _review_reason_analysis_payload(
     baselines: str = "",
     baseline_scopes: list[str] | None = None,
     work_agreement: str = "all",
+    work_split_id: str = "",
     include_multi_reviews: bool = False,
 ) -> dict[str, Any]:
     exclusion, is_excluded = resolve_review_exclusion_filter(exclusion)
@@ -243,11 +244,13 @@ def _review_reason_analysis_payload(
     if normalized_work_agreement not in {"all", "pending", "agreed", "conflict"}:
         raise _detail(400, "work_agreement 不在支持范围内。")
     multi_by_issue: dict[str, dict[str, Any]] = {}
+    normalized_work_split_id = _as_text(work_split_id).strip()
     grouped: dict[str, list[dict[str, Any]]] = {}
     if include_multi_reviews or normalized_work_agreement != "all":
         for row in database.review_multi_rows(
             baseline_scopes=scopes,
             model_run_id=model_run_id,
+            work_split_id=normalized_work_split_id,
             issue_ids=selected_issue_ids,
         ):
             grouped.setdefault(str(row["issue_id"]), []).append(row)
@@ -291,6 +294,10 @@ def _review_reason_analysis_payload(
             # assignments into synthetic Review results.
             if not submitted_reviews:
                 continue
+        elif normalized_work_split_id and not submitted_reviews:
+            # An exact task-batch scope means “Reviews added by this batch”,
+            # not untouched assignments padded with historical fallback rows.
+            continue
         elif agreement != normalized_work_agreement:
             continue
         first = members[0]
@@ -412,7 +419,12 @@ def _review_reason_analysis_payload(
             },
             "reviews": reviews,
         }
-    if normalized_work_agreement == "all":
+    if normalized_work_split_id:
+        # Exact task scope never falls back to an ordinary/older Review.  The
+        # multi rows above already suppress zero-submission assignments.
+        rows = multi_rows
+        rows.sort(key=lambda row: str(row.get("issue_id") or ""))
+    elif normalized_work_agreement == "all":
         # The active blind-task projection owns an Issue once it has a result;
         # do not duplicate a legacy/ordinary Review row for the same Issue.
         multi_issue_ids = {str(row["issue_id"]) for row in multi_rows}
@@ -504,6 +516,10 @@ def _review_reason_analysis_payload(
                 review_params.append(f"run={quote(review_run_id, safe='')}")
         if comparison_status == "mismatch" and model_run_id:
             review_params.append("failure=1")
+        if normalized_work_split_id:
+            review_params.append(
+                f"work_split={quote(normalized_work_split_id, safe='')}"
+            )
         item["voyager_issue_url"] = _voyager_issue_url(issue_id)
         item["review_url"] = _public_path(f"/review?{'&'.join(review_params)}")
         if issue_id in multi_by_issue:
@@ -552,7 +568,9 @@ def _review_reason_analysis_payload(
         "comment_state": normalized_comment_state,
         "comment_search": normalized_comment_search,
         "work_agreement": normalized_work_agreement,
+        "work_split_id": normalized_work_split_id,
     }
+    result["scope"]["work_split_id"] = normalized_work_split_id
     result["multi_review_summary"] = {
         "pending": sum(item["agreement"] == "pending" for item in multi_by_issue.values()),
         "agreed": sum(item["agreement"] == "agreed" for item in multi_by_issue.values()),

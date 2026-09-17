@@ -76,6 +76,7 @@ def _create_annotation_record(
             issue_id,
             model_run_id=model_run_id,
             username=author,
+            work_split_id=work_split_id,
         )
         if (
             not author_verified

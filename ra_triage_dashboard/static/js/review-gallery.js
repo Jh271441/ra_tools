@@ -616,6 +616,7 @@ async function loadCases({
   if (annotationAuthor) params.set("annotation_author", annotationAuthor);
   if (reviewStatus) params.set("review_status", reviewStatus);
   if (workAssignee) params.set("work_assignee", workAssignee);
+  if (state.reviewWorkSplitId) params.set("work_split_id", state.reviewWorkSplitId);
   if (exclusion !== "all") params.set("exclusion", exclusion);
   if (commentState !== "all") params.set("comment_state", commentState);
   if (state.selectedRunId) params.set("model_run_id", state.selectedRunId);

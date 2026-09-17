@@ -34,6 +34,48 @@ function persistWorkAssigneeFilterRoute(values) {
   );
 }
 
+function workSplitOptionLabel(splitId) {
+  const value = String(splitId || "").trim();
+  if (!value) return uiText("综合结果", "Combined results");
+  return uiText(`本次任务新增 · ${value.slice(0, 18)}…`, `This task only · ${value.slice(0, 18)}…`);
+}
+
+function renderWorkSplitScopePicker(rootSelector, selected, available, onChange) {
+  const root = $(rootSelector);
+  if (!root) return;
+  const known = String(selected || available || "").trim();
+  const options = [{ value: "", label: workSplitOptionLabel("") }];
+  if (known) options.push({ value: known, label: workSplitOptionLabel(known) });
+  populateUiSelect(root, options, String(selected || ""));
+  bindUiSelect(root, { onChange, maxHeight: 180, maxWidth: 360 });
+}
+
+function renderReviewWorkSplitPicker(selected = state.reviewWorkSplitId) {
+  renderWorkSplitScopePicker(
+    "#reviewWorkSplitPicker",
+    selected,
+    state.availableReviewWorkSplitId,
+    (value) => {
+      state.reviewWorkSplitId = value || "";
+      state.casePage = 1;
+      persistCurrentReviewRoute({ workSplitId: state.reviewWorkSplitId, casePage: 1 });
+      scheduleReviewFilterReload?.(0);
+    }
+  );
+}
+
+function renderAnalysisWorkSplitPicker(selected = state.reviewAnalysis.workSplitId) {
+  renderWorkSplitScopePicker(
+    "#analysisWorkSplitPicker",
+    selected,
+    state.reviewAnalysis.availableWorkSplitId,
+    (value) => {
+      state.reviewAnalysis.workSplitId = value || "";
+      scheduleAnalysisFilterReload?.(0);
+    }
+  );
+}
+
 function currentReviewFilterPayload() {
   return {
     search: $("#searchInput")?.value.trim() || "",
@@ -61,6 +103,7 @@ function currentReviewFilterPayload() {
     // When creating a new split, ignore current assignee filter so the pool
     // is the full filtered set unless the admin intentionally kept it.
     work_assignee: "",
+    work_split_id: state.reviewWorkSplitId || "",
   };
 }
 

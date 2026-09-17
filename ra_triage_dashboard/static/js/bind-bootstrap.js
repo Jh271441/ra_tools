@@ -211,6 +211,11 @@ function bindEvents() {
   });
   $("#analysisRunFilter").addEventListener("change", async () => {
     const runId = $("#analysisRunFilter").value;
+    if (runId !== state.selectedRunId) {
+      state.reviewAnalysis.workSplitId = "";
+      state.reviewAnalysis.availableWorkSplitId = "";
+      renderAnalysisWorkSplitPicker?.("");
+    }
     const previouslyHadRun = Boolean(state.selectedRunId);
     const nextStatus = !runId
       ? "all"
@@ -285,6 +290,9 @@ function bindEvents() {
     if ($("#analysisWorkAgreementFilter")) {
       $("#analysisWorkAgreementFilter").value = "all";
     }
+    state.reviewAnalysis.workSplitId = "";
+    state.reviewAnalysis.availableWorkSplitId = "";
+    renderAnalysisWorkSplitPicker?.("");
     state.reviewAnalysis.workAgreement = "all";
     renderAnalysisWorkAgreementPicker?.("all");
     // See resetReviewFilters: clear the durable route state as well as the
@@ -342,6 +350,11 @@ function bindEvents() {
   $("#modelRunFilter").addEventListener("change", async () => {
     const previousRunId = state.selectedRunId;
     state.selectedRunId = $("#modelRunFilter").value;
+    if (state.selectedRunId !== previousRunId) {
+      state.reviewWorkSplitId = "";
+      state.availableReviewWorkSplitId = "";
+      renderReviewWorkSplitPicker?.("");
+    }
     if (!state.selectedRunId) state.reviewComparisonStatus = "all";
     if (state.selectedRunId && !previousRunId) {
       // Run selection changes the prediction overlay, not the immutable

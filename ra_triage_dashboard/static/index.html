@@ -77,7 +77,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-445`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-446`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -328,6 +328,14 @@
                 <label>
                   <span class="ui-lang-zh">任务负责人</span><span class="ui-lang-en">Assignee</span>
                   <div class="multi-filter" id="workAssigneeFilter" data-placeholder="全部负责人" data-placeholder-en="All assignees" data-i18n-placeholder="filter.all_assignees" aria-label="Work assignee filter"></div>
+                </label>
+                <label>
+                  <span class="ui-lang-zh">Review 数据范围</span><span class="ui-lang-en">Review data scope</span>
+                  <div class="ui-select" id="reviewWorkSplitPicker">
+                    <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">综合结果</span><span class="ui-select-caret" aria-hidden="true"></span></button>
+                    <div class="ui-select-panel" role="listbox" hidden></div>
+                    <select class="ui-select-native" id="reviewWorkSplitFilter" aria-hidden="true" tabindex="-1"><option value="">综合结果</option></select>
+                  </div>
                 </label>
                 <button class="button button-quiet filter-submit" id="resetReviewFiltersButton" type="button"><span class="ui-lang-zh">重置</span><span class="ui-lang-en">Reset</span></button>
               </form>
@@ -602,6 +610,14 @@
                       <option value="agreed">一致</option>
                       <option value="conflict">冲突</option>
                     </select>
+                  </div>
+                </label>
+                <label>
+                  <span class="ui-lang-zh">Review 数据范围</span><span class="ui-lang-en">Review data scope</span>
+                  <div class="ui-select" id="analysisWorkSplitPicker">
+                    <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">综合结果</span><span class="ui-select-caret" aria-hidden="true"></span></button>
+                    <div class="ui-select-panel" role="listbox" hidden></div>
+                    <select class="ui-select-native" id="analysisWorkSplitFilter" aria-hidden="true" tabindex="-1"><option value="">综合结果</option></select>
                   </div>
                 </label>
                 <label>
@@ -2030,7 +2046,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-445`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-446`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
