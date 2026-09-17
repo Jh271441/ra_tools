@@ -523,6 +523,7 @@ class DatabaseLabelingMixin:
         task_id: str = "",
         source_run_id: str = "",
         created_at: str = "",
+        allow_missing_source_run: bool = False,
     ) -> dict[str, Any]:
         issue_key = str(issue_id or "").strip()
         task = str(task_id or "").strip()
@@ -548,7 +549,7 @@ class DatabaseLabelingMixin:
                     raise ValueError("Issue 不在该标注任务的冻结工作集中。")
                 if not source_run:
                     source_run = str(split["selection_source_run_id"] or "")
-            if source_run and conn.execute(
+            if source_run and not allow_missing_source_run and conn.execute(
                 "SELECT 1 FROM model_runs WHERE id = ?", (source_run,)
             ).fetchone() is None:
                 raise ValueError("选样来源 Run 不存在。")

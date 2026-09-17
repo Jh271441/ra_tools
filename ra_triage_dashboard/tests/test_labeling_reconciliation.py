@@ -153,6 +153,25 @@ class LabelingReconciliationTest(unittest.TestCase):
                 self.migrate()
         self.assertEqual(self.database.labeling_scope_states(["scope"]), [])
 
+    def test_migration_preserves_missing_source_run_reference(self) -> None:
+        self.database.create_annotation(
+            issue_id="cn2", model_run_id="never-imported-run",
+            label="误触发", review_status="needs_gt_review",
+            tags=[], missing_evidence=[], note="无 Run 上下文", author="alice",
+        )
+        self.migrate()
+        result = self.reconcile()
+        self.assertTrue(result["passed"], result)
+        with self.database.connect() as conn:
+            row = conn.execute(
+                "SELECT source_run_id FROM label_cases WHERE issue_id = 'cn2'"
+            ).fetchone()
+        self.assertEqual(row["source_run_id"], "never-imported-run")
+        with self.assertRaisesRegex(ValueError, "选样来源 Run 不存在"):
+            self.database.ensure_label_case(
+                issue_id="cn2", source_run_id="never-imported-run"
+            )
+
     def test_version_edge_and_comment_context_are_reconciled(self) -> None:
         self.database.create_annotation(
             issue_id="cn1", label="无需协助", review_status="needs_gt_review",

@@ -361,6 +361,9 @@ def migrate_legacy_labeling(
             task_id=task_id,
             source_run_id=source_run_id,
             created_at=str(row["created_at"] or ""),
+            # Legacy annotations may reference a source Run that was never
+            # imported or has since been deleted; the id stays as context.
+            allow_missing_source_run=True,
         )
         annotation = {
             "label": str(row["label"] or ""),
