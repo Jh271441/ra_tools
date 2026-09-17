@@ -385,16 +385,24 @@ assert.equal(dialog.open,false);
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
 
 
-def test_blind_review_form_keeps_current_author_while_history_keeps_peers() -> None:
+def test_review_form_scopes_edit_head_to_current_stream_while_history_keeps_all() -> None:
     script = (ROOT / "static" / "js" / "review-draft.js").read_text() + r'''
 const assert=require('node:assert/strict');
 const state={selectedRunId:'run-1',session:{username:'Alice'}};
-const data={review_assignment:{blind_active:true},annotations:[
-  {id:3,model_run_id:'run-1',author:'bob'},
-  {id:2,model_run_id:'run-1',author:'alice'},
-  {id:1,model_run_id:'run-0',author:'alice'},
+const data={review_assignment:{blind_active:true,mode:'blind',split_id:'split-new'},annotations:[
+  {id:7,model_run_id:'run-1',work_split_id:'split-new',author:'alice'},
+  {id:6,model_run_id:'run-1',work_split_id:'split-new',author:'bob'},
+  {id:5,model_run_id:'run-1',work_split_id:'split-old',author:'alice'},
+  {id:4,model_run_id:'run-1',work_split_id:'',author:'alice'},
+  {id:3,model_run_id:'run-0',work_split_id:'',author:'alice'},
 ]};
-assert.deepEqual(reviewAnnotationsForCurrentRun(data).map((item)=>item.id),[2]);
-assert.deepEqual(reviewAnnotationsForAllRuns(data).map((item)=>item.id),[3,2,1]);
+assert.deepEqual(reviewAnnotationsForCurrentRun(data).map((item)=>item.id),[7]);
+assert.deepEqual(reviewAnnotationsForAllRuns(data).map((item)=>item.id),[7,6,5,4,3]);
+
+const firstMultiReview={...data,annotations:data.annotations.slice(1)};
+assert.deepEqual(reviewAnnotationsForCurrentRun(firstMultiReview),[]);
+
+const ordinary={review_assignment:{blind_active:false,mode:'single'},annotations:data.annotations};
+assert.deepEqual(reviewAnnotationsForCurrentRun(ordinary).map((item)=>item.id),[4]);
 '''
     subprocess.run(["node", "-e", script], check=True, capture_output=True)

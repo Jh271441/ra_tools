@@ -28,10 +28,22 @@ function reviewAnnotationsForCurrentRun(caseData) {
   let bound = annotations.filter(
     (annotation) => String(annotation.model_run_id || "").trim() === runId
   );
-  if (caseData?.review_assignment?.blind_active) {
+  const assignment = caseData?.review_assignment;
+  if (assignment?.blind_active) {
+    const splitId = String(assignment.split_id || "").trim();
     const currentUser = String(state.session?.username || "").trim().toLowerCase();
     bound = bound.filter(
-      (annotation) => String(annotation.author || "").trim().toLowerCase() === currentUser
+      (annotation) =>
+        splitId &&
+        String(annotation.work_split_id || "").trim() === splitId &&
+        String(annotation.author || "").trim().toLowerCase() === currentUser
+    );
+  } else {
+    // Single-review assignments and unassigned Issues share the ordinary
+    // stream. Historical blind-split versions stay visible in History, but
+    // must never become the edit head for this stream.
+    bound = bound.filter(
+      (annotation) => !String(annotation.work_split_id || "").trim()
     );
   }
   // A selected Run is an explicit Review namespace.  Do not fall back to a
@@ -39,7 +51,7 @@ function reviewAnnotationsForCurrentRun(caseData) {
   // so makes another person's/Run's Review look like it belongs here.
   if (runId) return bound;
   // With no selected Run, preserve the legacy/unbound editing stream.
-  return annotations.filter((annotation) => !String(annotation.model_run_id || "").trim());
+  return bound;
 }
 
 // The edit form is scoped to the selected Run, while the Issue-level history

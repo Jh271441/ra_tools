@@ -132,7 +132,7 @@ class ReviewWorkflowTest(unittest.TestCase):
         self.assertIn("一般直行道路", csv_text)
         self.assertIn(",是,", csv_text)
 
-    def test_gt_update_export_never_includes_partial_blind_reviews(self) -> None:
+    def test_gt_update_export_uses_partial_blind_review_projection(self) -> None:
         captured: dict[str, object] = {}
 
         def fake_payload(**kwargs):
@@ -169,7 +169,7 @@ class ReviewWorkflowTest(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertFalse(captured["include_multi_reviews"])
+        self.assertTrue(captured["include_multi_reviews"])
         self.assertEqual(captured["issue_ids"], "cn1,cn2")
 
     def test_gallery_export_resolves_exact_filtered_issue_membership(self) -> None:

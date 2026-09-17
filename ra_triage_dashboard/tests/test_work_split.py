@@ -576,6 +576,13 @@ class WorkSplitTest(unittest.TestCase):
             self.assertEqual(item["multi_review"]["agreement"], "pending")
             self.assertEqual(item["multi_review"]["completed_count"], 1)
             self.assertEqual(item["multi_review"]["assigned_count"], 2)
+            # GT-update export shares the current analysis projection: the
+            # submitted blind result wins over stale ordinary history even
+            # before every assigned reviewer has completed the Issue.
+            self.assertEqual(
+                analysis_router._trail_expected_output_rows(result),
+                [{"issue_id": "cn1", "期望输出": "正确触发"}],
+            )
             self.assertEqual(no_overlay["total"], 1)
             self.assertEqual(no_overlay["items"][0]["issue_id"], "cn1")
             self.assertEqual(no_overlay["items"][0]["annotation"]["author"], "alice")

@@ -399,15 +399,16 @@ async def export_review_reason_analysis(
     gallery_scope: bool = False,
     work_assignee: str = "",
 ) -> Response:
-    # CSV/XLSX are read-only projections too, so keep their blind-review scope
-    # identical for admins and ordinary viewers.  ``trail_xlsx`` below still
-    # disables multi-review rows because GT update requires adjudication.
+    # Every export format uses the same current Review projection. Once the
+    # active blind Split has at least one submission it takes precedence over
+    # an older ordinary Review; an untouched Split still falls back to the
+    # ordinary stream. This also lets GT-update exports include partial blind
+    # progress without duplicating or silently preferring stale single-review
+    # history.
     include_multi_reviews = True
     export_format = _as_text(format).strip().lower()
     if export_format not in {"csv", "xlsx", "trail_xlsx"}:
         raise _detail(400, "format 仅支持 csv、xlsx 或 trail_xlsx。")
-    if export_format == "trail_xlsx" and work_agreement.strip().lower() not in {"", "all"}:
-        raise _detail(400, "多人盲标结果需先仲裁，不能直接导出 GT 更新表。")
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     export_issue_ids: str | list[str] = issue_ids
     export_search = search
@@ -487,11 +488,7 @@ async def export_review_reason_analysis(
         baselines=baselines,
         baseline_scopes=scopes,
         work_agreement=work_agreement,
-        # A partial blind Review is useful in read-only CSV/XLSX analysis but
-        # is not an adjudicated result and must never enter a GT update sheet.
-        include_multi_reviews=(
-            include_multi_reviews and export_format != "trail_xlsx"
-        ),
+        include_multi_reviews=include_multi_reviews,
     )
     if gallery_scope:
         exported_issue_ids = {
