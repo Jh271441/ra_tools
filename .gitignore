@@ -43,6 +43,11 @@ auto_triage_bot/.data/
 # macOS Finder junk
 .DS_Store
 
+# Local extras that are not ra_tools product source.
+/knowledge_backup/
+.claude/
+/ra_triage_dashboard/docs/sso-incident-20260913.md
+
 # Generated results and audit tree snapshots (keep outside Git)
 outputs/
 
