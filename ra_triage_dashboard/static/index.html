@@ -77,7 +77,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-446`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-447`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -588,15 +588,15 @@
                   <span class="ui-lang-zh">模型判断结果</span><span class="ui-lang-en">Model comparison</span>
                   <div class="multi-filter" id="analysisComparisonFilter" data-placeholder="全部结果" data-placeholder-en="All results" data-i18n-placeholder="filter.all_results" aria-label="Model comparison"></div>
                 </label>
-                <label>
+                <label class="analysis-reviewer-filter">
                   <span class="ui-lang-zh">复核人</span><span class="ui-lang-en">Reviewer</span>
                   <div class="multi-filter" id="analysisReviewerFilter" data-placeholder="全部复核人" data-placeholder-en="All reviewers" data-i18n-placeholder="filter.all_reviewers"></div>
                 </label>
-                <label class="filter-review-status">
+                <label class="filter-review-status analysis-review-status-filter">
                   <span class="ui-lang-zh" title="Issue GT Review状态">GT 复核状态</span><span class="ui-lang-en" title="Issue GT review status">GT Review status</span>
                   <div class="multi-filter" id="analysisStatusFilter" data-placeholder="全部状态" data-placeholder-en="All statuses" data-i18n-placeholder="analysis.all_statuses"></div>
                 </label>
-                <label id="analysisWorkAgreementField">
+                <label class="analysis-work-agreement-filter" id="analysisWorkAgreementField">
                   <span>多人复核结果</span>
                   <div class="ui-select" id="analysisWorkAgreementPicker">
                     <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
@@ -612,7 +612,7 @@
                     </select>
                   </div>
                 </label>
-                <label>
+                <label class="analysis-work-split-filter">
                   <span class="ui-lang-zh">Review 数据范围</span><span class="ui-lang-en">Review data scope</span>
                   <div class="ui-select" id="analysisWorkSplitPicker">
                     <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary">综合结果</span><span class="ui-select-caret" aria-hidden="true"></span></button>
@@ -620,11 +620,11 @@
                     <select class="ui-select-native" id="analysisWorkSplitFilter" aria-hidden="true" tabindex="-1"><option value="">综合结果</option></select>
                   </div>
                 </label>
-                <label>
+                <label class="analysis-gt-filter">
                   <span>GT</span>
                   <div class="multi-filter" id="analysisGtFilter" data-placeholder="全部 GT" data-placeholder-en="All GT" data-i18n-placeholder="filter.all_gt"></div>
                 </label>
-                <label>
+                <label class="analysis-model-label-filter">
                   <span class="ui-lang-zh">模型预测</span><span class="ui-lang-en">Model prediction</span>
                   <div class="multi-filter" id="analysisModelLabelFilter" data-placeholder="全部模型预测" data-placeholder-en="All model predictions" data-i18n-placeholder="analysis.all_model_pred"></div>
                 </label>
@@ -2046,7 +2046,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-446`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-447`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

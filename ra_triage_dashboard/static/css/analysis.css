@@ -24,12 +24,20 @@
 .analysis-page { width: min(1480px, 100%); gap: 6px; }
 .analysis-filter-card { display: grid; gap: 7px; padding: 8px 10px; }
 .analysis-filters {
-  display: grid; grid-template-columns: repeat(9, minmax(90px, 1fr)); align-items: end; gap: 6px;
+  display: grid; grid-template-columns: repeat(10, minmax(82px, 1fr)); align-items: end; gap: 6px;
 }
 .analysis-filters label { min-width: 0; display: grid; gap: 3px; color: var(--faint); font-size: 11px; }
 .analysis-filters input:not([type="checkbox"]), .analysis-filters select, .analysis-filters .ui-select-trigger { height: 34px; min-width: 0; padding: 5px 29px 5px 8px; font-size: 12px; }
 .analysis-issue-input { width: 100%; min-width: 0; height: 34px; min-height: 34px; padding: 6px 8px; overflow: auto; resize: none; font-size: 12px; line-height: 20px; }
 .analysis-run-filter { grid-column: span 2; grid-row: 1; }
+.analysis-issue-filter { grid-column: 3; grid-row: 1; }
+.analysis-comparison-filter { grid-column: 4; grid-row: 1; }
+.analysis-reviewer-filter { grid-column: 5; grid-row: 1; }
+.analysis-review-status-filter { grid-column: 6; grid-row: 1; }
+.analysis-work-agreement-filter { grid-column: 7; grid-row: 1; }
+.analysis-work-split-filter { grid-column: 8; grid-row: 1; }
+.analysis-gt-filter { grid-column: 9; grid-row: 1; }
+.analysis-model-label-filter { grid-column: 10; grid-row: 1; }
 .analysis-exclusion-filter { grid-column: 1; grid-row: 2; }
 .analysis-evidence-filter { grid-column: 2; grid-row: 2; }
 .analysis-tag-filter { grid-column: 3; grid-row: 2; }
@@ -347,7 +355,7 @@
   .run-filter-three { grid-template-columns: minmax(210px, 1.35fr) minmax(145px, 1fr) minmax(135px, .8fr); }
   .batch-result-item { grid-template-columns: minmax(105px, .7fr) auto auto minmax(100px, 1fr); }
   .analysis-filters { grid-template-columns: repeat(4, minmax(125px, 1fr)); }
-  .analysis-run-filter, .analysis-evidence-filter, .analysis-tag-filter, .analysis-trigger-filter, .analysis-egress-filter, .analysis-exclusion-filter, .analysis-comment-state-filter, .analysis-comment-search-filter, .analysis-search-actions { grid-column: auto; grid-row: auto; }
+  .analysis-run-filter, .analysis-issue-filter, .analysis-comparison-filter, .analysis-reviewer-filter, .analysis-review-status-filter, .analysis-work-agreement-filter, .analysis-work-split-filter, .analysis-gt-filter, .analysis-model-label-filter, .analysis-evidence-filter, .analysis-tag-filter, .analysis-trigger-filter, .analysis-egress-filter, .analysis-exclusion-filter, .analysis-comment-state-filter, .analysis-comment-search-filter, .analysis-search-actions { grid-column: auto; grid-row: auto; }
   .analysis-run-filter { grid-column: span 2; }
   .analysis-search-actions { grid-column: 1 / -1; }
   .analysis-case-row { grid-template-columns: minmax(130px, .7fr) minmax(200px, 1fr) minmax(0, 2fr); }
