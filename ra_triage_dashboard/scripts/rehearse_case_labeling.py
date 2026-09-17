@@ -204,7 +204,7 @@ def main() -> int:
         activation_results = []
         states_by_scope = {
             str(state["baseline_scope"]): state
-            for state in report["reconcile"]["scope_states"]
+            for state in report["reconcile"]["reconciliation"]["scope_states"]
         }
         for dataset_id, scope in zip(report["plan"]["dataset_ids"], scopes):
             state = states_by_scope.get(scope)
