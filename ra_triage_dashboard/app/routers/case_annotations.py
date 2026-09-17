@@ -18,7 +18,7 @@ from ..support.common import _detail
 router = APIRouter()
 
 
-async def _require_unmigrated_issue(issue_id: str) -> dict[str, Any]:
+async def _require_unmigrated_issue(issue_id: str, database: Any) -> dict[str, Any]:
     issue = await asyncio.to_thread(database.get_issue, issue_id)
     if issue is None:
         raise _detail(404, "Issue 不存在。")
@@ -32,7 +32,7 @@ async def _require_unmigrated_issue(issue_id: str) -> dict[str, Any]:
 
 @router.post("/api/cases/{issue_id}/annotations")
 async def create_annotation(issue_id: str, request: Request) -> dict[str, Any]:
-    await _require_unmigrated_issue(issue_id)
+    await _require_unmigrated_issue(issue_id, database)
     try:
         body = await request.json()
     except (TypeError, ValueError):
@@ -60,7 +60,7 @@ async def create_annotation_with_attachments(
     payload: str = Form(...),
     attachments: Optional[List[UploadFile]] = File(None),
 ) -> dict[str, Any]:
-    await _require_unmigrated_issue(issue_id)
+    await _require_unmigrated_issue(issue_id, database)
     try:
         body = json.loads(payload)
     except (TypeError, ValueError, json.JSONDecodeError):
@@ -98,7 +98,7 @@ async def delete_annotation(
 ) -> dict[str, Any]:
     if annotation_id <= 0:
         raise _detail(400, "Review 版本 ID 不合法。")
-    await _require_unmigrated_issue(issue_id)
+    await _require_unmigrated_issue(issue_id, database)
     case = await asyncio.to_thread(database.get_case, issue_id)
     target = next(
         (

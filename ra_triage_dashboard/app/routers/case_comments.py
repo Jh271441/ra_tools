@@ -132,7 +132,7 @@ async def _create_review_comment_record(
     *,
     attachments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    await _require_unmigrated_issue(issue_id)
+    await _require_unmigrated_issue(issue_id, database)
     text = _as_text(body.get("body")).strip()
     if not text:
         raise _detail(400, "评论内容不能为空。")
