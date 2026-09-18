@@ -344,6 +344,7 @@ function bindMissingEvidenceCatalogControls(root = document) {
 }
 
 function activeReviewChromeRoot() {
+  if (typeof $ !== "function") return document;
   if (state.activePage === "labeling") return $("#caseLabelingEditor") || document;
   return $("#reviewPane") || document;
 }
@@ -519,7 +520,8 @@ function reviewDropdownShortcutAllowed(target) {
 }
 
 function toggleReviewExcludeShortcut() {
-  const input = activeReviewChromeRoot().querySelector("#reviewExcludeInput, #caseLabelingExcluded");
+  const input = (typeof $ === "function" && ($("#reviewExcludeInput") || $("#caseLabelingExcluded")))
+    || activeReviewChromeRoot()?.querySelector?.("#reviewExcludeInput, #caseLabelingExcluded");
   if (!input || input.disabled) return false;
   input.checked = !input.checked;
   input.dispatchEvent(new Event("change", { bubbles: true }));
@@ -542,9 +544,9 @@ function toggleReviewShortcutDropdown(dropdown) {
 }
 
 function openReviewTagShortcutGroup(groupKey) {
-  return toggleReviewShortcutDropdown(activeReviewChromeRoot().querySelector(
-    `.review-tag-dropdown[data-tag-dropdown-group="${CSS.escape(groupKey)}"]`
-  ));
+  const selector = `.review-tag-dropdown[data-tag-dropdown-group="${CSS.escape(groupKey)}"]`;
+  const scoped = activeReviewChromeRoot()?.querySelector?.(selector);
+  return toggleReviewShortcutDropdown(scoped || document.querySelector(selector));
 }
 
 function openReviewMissingEvidenceShortcut() {
