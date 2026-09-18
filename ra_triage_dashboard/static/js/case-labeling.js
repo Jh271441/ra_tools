@@ -412,6 +412,7 @@ function renderCaseLabelingEditor(caseData) {
   bindUiSelect($("#caseLabelingExpectedOutputPicker"), { maxHeight: 260, maxWidth: 420 });
   bindSelectedReviewTagControls(editor);
   bindReviewTagCatalogControls(editor);
+  bindReviewDropdownToggles(editor);
   bindReviewDropdownDismiss();
   editor.querySelectorAll('input[name="reviewTags"]').forEach((input) => {
     input.addEventListener("change", updateTagSummary);

@@ -553,48 +553,7 @@ function renderReview(caseData) {
   bindReviewKeyboardShortcuts();
   bindReviewComposerShortcuts();
   bindReviewDetailActionShortcuts();
-  $("#reviewPane").querySelectorAll(".review-dropdown").forEach((dropdown) => {
-    if (dropdown.dataset.reviewDropdownToggleBound === "1") return;
-    dropdown.dataset.reviewDropdownToggleBound = "1";
-    const summary = dropdown.querySelector(":scope > summary");
-    // Creator controls remain in the compact familiar order: ＋ → count →
-    // chevron.  Prevent only the surrounding details summary from toggling;
-    // the native button keeps its own complete click target and handler.
-    summary?.addEventListener(
-      "click",
-      (event) => {
-        const target = event.target instanceof Element ? event.target : null;
-        if (target?.closest(".tag-catalog-add-button")) event.preventDefault();
-      },
-      true
-    );
-    // Park off-screen before <details> flips open so the first paint never uses absolute top:100%.
-    summary?.addEventListener(
-      "pointerdown",
-      (event) => {
-        const target = event.target instanceof Element ? event.target : null;
-        if (target?.closest(".tag-catalog-add-button")) return;
-        if (dropdown.open) return;
-        prepareReviewDropdownPanelForMeasure(reviewDropdownPanel(dropdown));
-      },
-      true
-    );
-    dropdown.addEventListener("toggle", () => {
-      const panel = reviewDropdownPanel(dropdown);
-      if (!dropdown.open) {
-        resetReviewDropdownPanel(panel);
-        return;
-      }
-      $("#reviewPane").querySelectorAll(".review-dropdown").forEach((other) => {
-        if (other === dropdown) return;
-        other.open = false;
-        resetReviewDropdownPanel(reviewDropdownPanel(other));
-      });
-      // Same tick as open: measure + place + reveal only at final coords (no rAF down-flash).
-      prepareReviewDropdownPanelForMeasure(panel);
-      positionReviewDropdownPanel(dropdown);
-    });
-  });
+  bindReviewDropdownToggles($("#reviewPane"));
   $("#reviewPane").querySelector("[data-open-history='review']")?.addEventListener("click", () => {
     toggleHistoryDialog("review", caseData);
   });

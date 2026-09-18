@@ -999,6 +999,52 @@ function closeAllReviewDropdowns(except = null) {
   });
 }
 
+/* Review dropdowns park their option panel off-screen until JS positions it;
+ * both the Review pane and the Case-labeling editor render these dropdowns,
+ * so the toggle/position binding must be shared or panels stay invisible. */
+function bindReviewDropdownToggles(root) {
+  if (!root) return;
+  root.querySelectorAll(".review-dropdown").forEach((dropdown) => {
+    if (dropdown.dataset.reviewDropdownToggleBound === "1") return;
+    dropdown.dataset.reviewDropdownToggleBound = "1";
+    const summary = dropdown.querySelector(":scope > summary");
+    // ＋ keeps its own click target; stop the surrounding summary from toggling.
+    summary?.addEventListener(
+      "click",
+      (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (target?.closest(".tag-catalog-add-button")) event.preventDefault();
+      },
+      true
+    );
+    summary?.addEventListener(
+      "pointerdown",
+      (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (target?.closest(".tag-catalog-add-button")) return;
+        if (dropdown.open) return;
+        prepareReviewDropdownPanelForMeasure(reviewDropdownPanel(dropdown));
+      },
+      true
+    );
+    dropdown.addEventListener("toggle", () => {
+      const panel = reviewDropdownPanel(dropdown);
+      if (!dropdown.open) {
+        resetReviewDropdownPanel(panel);
+        return;
+      }
+      root.querySelectorAll(".review-dropdown").forEach((other) => {
+        if (other === dropdown) return;
+        other.open = false;
+        resetReviewDropdownPanel(reviewDropdownPanel(other));
+      });
+      // Same tick as open: measure + place + reveal only at final coords (no rAF down-flash).
+      prepareReviewDropdownPanelForMeasure(panel);
+      positionReviewDropdownPanel(dropdown);
+    });
+  });
+}
+
 function bindReviewDropdownDismiss() {
   if (document.documentElement.dataset.reviewDropdownDismissBound === "1") return;
   document.documentElement.dataset.reviewDropdownDismissBound = "1";
