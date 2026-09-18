@@ -29,6 +29,23 @@ def _source_fingerprint(values: Iterable[int]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _parse_labeling_cluster(value: Any) -> tuple[str, str] | tuple[str, str, str] | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    if raw.startswith("pair:"):
+        gt, sep, output = raw[5:].partition("|")
+        if sep and gt in LABELS and output in LABELS:
+            return ("pair", gt, output)
+        raise ValueError("聚类筛选不合法。")
+    if raw.startswith("scenario:"):
+        name = raw[9:].strip()
+        if name:
+            return ("scenario", name)
+        raise ValueError("聚类筛选不合法。")
+    raise ValueError("聚类筛选不合法。")
+
+
 class DatabaseLabelingMixin:
     def _mark_labeling_change(self, conn: Any) -> None:
         # SQLite tables have the standard row triggers installed by init().
@@ -1264,6 +1281,7 @@ class DatabaseLabelingMixin:
         assignee: str = "",
         exclusion: str = "all",
         expected_output: str = "",
+        cluster: str = "",
     ) -> tuple[list[dict[str, Any]], str]:
         scopes = _clean_values(baseline_scopes)
         if not scopes:
@@ -1311,6 +1329,7 @@ class DatabaseLabelingMixin:
         normalized_exclusion = str(exclusion or "all").strip().lower() or "all"
         if normalized_exclusion not in {"all", "excluded", "active"}:
             raise ValueError("排除筛选不合法。")
+        normalized_cluster = _parse_labeling_cluster(cluster)
         with self.connect() as conn:
             rows = conn.execute(
                 f"""
@@ -1356,6 +1375,16 @@ class DatabaseLabelingMixin:
                 continue
             if normalized_expected_output and expected_output_value != normalized_expected_output:
                 continue
+            if normalized_cluster is not None:
+                if normalized_cluster[0] == "pair":
+                    if (
+                        aggregate_state != "resolved"
+                        or str(row["gt_label"] or "") != normalized_cluster[1]
+                        or expected_output_value != normalized_cluster[2]
+                    ):
+                        continue
+                elif str(row["scenario"] or "") != normalized_cluster[1]:
+                    continue
             if normalized_exclusion != "all":
                 resolved_excluded = any(
                     (item["resolution"].get("result_revision") or {}).get("is_excluded")
@@ -1393,6 +1422,7 @@ class DatabaseLabelingMixin:
         assignee: str = "",
         exclusion: str = "all",
         expected_output: str = "",
+        cluster: str = "",
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
@@ -1408,6 +1438,7 @@ class DatabaseLabelingMixin:
             assignee=assignee,
             exclusion=exclusion,
             expected_output=expected_output,
+            cluster=cluster,
         )
         safe_page_size = min(100, max(1, int(page_size)))
         total = len(projected)
@@ -1435,6 +1466,7 @@ class DatabaseLabelingMixin:
         assignee: str = "",
         exclusion: str = "all",
         expected_output: str = "",
+        cluster: str = "",
     ) -> list[str]:
         projected, _ = self._project_labeling_cases(
             baseline_scopes=baseline_scopes,
@@ -1445,8 +1477,67 @@ class DatabaseLabelingMixin:
             assignee=assignee,
             exclusion=exclusion,
             expected_output=expected_output,
+            cluster=cluster,
         )
         return [item["issue_id"] for item in projected]
+
+    def labeling_clusters(
+        self,
+        *,
+        baseline_scopes: Sequence[str],
+        task_id: str = "",
+        search: str = "",
+        status: str = "all",
+        author: str = "",
+        assignee: str = "",
+        exclusion: str = "all",
+        expected_output: str = "",
+    ) -> list[dict[str, Any]]:
+        projected, _ = self._project_labeling_cases(
+            baseline_scopes=baseline_scopes,
+            task_id=task_id,
+            search=search,
+            status=status,
+            author=author,
+            assignee=assignee,
+            exclusion=exclusion,
+            expected_output=expected_output,
+        )
+        pair_counts: dict[tuple[str, str], int] = {}
+        scenario_counts: dict[str, int] = {}
+        for item in projected:
+            scenario = str(item["scenario"] or "").strip()
+            if scenario:
+                scenario_counts[scenario] = scenario_counts.get(scenario, 0) + 1
+            if item["label_state"] != "resolved":
+                continue
+            gt = str(item["gt_label"] or "").strip()
+            output = str(item["expected_output"] or "").strip()
+            if gt in LABELS and output in LABELS:
+                pair_counts[(gt, output)] = pair_counts.get((gt, output), 0) + 1
+        clusters: list[dict[str, Any]] = [
+            {
+                "kind": "pair",
+                "key": f"pair:{gt}|{output}",
+                "label": f"{gt} → {output}",
+                "count": count,
+            }
+            for (gt, output), count in sorted(
+                pair_counts.items(), key=lambda kv: (-kv[1], kv[0])
+            )
+        ]
+        clusters.extend(
+            {
+                "kind": "scenario",
+                "key": f"scenario:{name}",
+                "label": name,
+                "count": count,
+            }
+            for name, count in sorted(
+                scenario_counts.items(), key=lambda kv: (-kv[1], kv[0])
+            )
+        )
+        return clusters
 
     def label_gt_candidates(self, baseline_scopes: Sequence[str]) -> list[dict[str, Any]]:
         scopes = _clean_values(baseline_scopes)

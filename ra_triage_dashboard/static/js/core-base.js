@@ -776,6 +776,8 @@ const state = {
     label: "",
     labelers: [],
     assignees: [],
+    cluster: "",
+    clusters: [],
     page: 1,
     pageSize: DEFAULT_CASE_PAGE_SIZE,
     requestSeq: 0,

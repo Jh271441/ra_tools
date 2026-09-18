@@ -295,6 +295,7 @@ async def list_labeling_cases(
     assignee: str = "",
     exclusion: str = "all",
     label: str = "",
+    cluster: str = "",
     page: int = 1,
     page_size: int = 20,
 ) -> dict[str, Any]:
@@ -317,6 +318,7 @@ async def list_labeling_cases(
     if normalized_exclusion not in {"all", "excluded", "active"}:
         raise _detail(400, "排除筛选不合法。")
     normalized_label = _as_text(label).strip()
+    normalized_cluster = _as_text(cluster)
     try:
         result = await asyncio.to_thread(
             database.list_labeling_cases,
@@ -328,6 +330,7 @@ async def list_labeling_cases(
             assignee=_as_text(assignee).strip().lower(),
             exclusion=normalized_exclusion,
             expected_output=normalized_label,
+            cluster=normalized_cluster,
             page=page,
             page_size=page_size,
         )
@@ -347,8 +350,60 @@ async def list_labeling_cases(
         "assignee": _as_text(assignee).strip().lower(),
         "exclusion": normalized_exclusion,
         "label": normalized_label,
+        "cluster": normalized_cluster,
     }
     return result
+
+
+@router.get("/api/labeling/clusters")
+async def list_labeling_clusters(
+    request: Request,
+    baselines: str = "",
+    task_id: str = "",
+    q: str = "",
+    status: str = "all",
+    author: str = "",
+    assignee: str = "",
+    exclusion: str = "all",
+    label: str = "",
+) -> dict[str, Any]:
+    await _require_labeling_admin(request)
+    normalized_status = _as_text(status).lower() or "all"
+    if normalized_status not in {"all", "pending", "resolved", "conflict"}:
+        raise _detail(400, "标注状态不合法。")
+    scopes = resolve_request_baseline_scopes(baselines, request=request)
+    scopes = await _active_labeling_scopes(scopes)
+    normalized_exclusion = (_as_text(exclusion).lower() or "all")
+    if normalized_exclusion not in {"all", "excluded", "active"}:
+        raise _detail(400, "排除筛选不合法。")
+    normalized_label = _as_text(label).strip()
+    try:
+        clusters = await asyncio.to_thread(
+            database.labeling_clusters,
+            baseline_scopes=scopes,
+            task_id=_as_text(task_id),
+            search=_as_text(q),
+            status=normalized_status,
+            author=_as_text(author).strip().lower(),
+            assignee=_as_text(assignee).strip().lower(),
+            exclusion=normalized_exclusion,
+            expected_output=normalized_label,
+        )
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    return {
+        "items": clusters,
+        "filters": {
+            "baseline_scopes": scopes,
+            "task_id": _as_text(task_id),
+            "q": _as_text(q),
+            "status": normalized_status,
+            "author": _as_text(author).strip().lower(),
+            "assignee": _as_text(assignee).strip().lower(),
+            "exclusion": normalized_exclusion,
+            "label": normalized_label,
+        },
+    }
 
 
 @router.get("/api/labeling/cases/{issue_id}")

@@ -78,7 +78,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-468`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-469`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -425,6 +425,7 @@
             <section class="gallery-panel" id="caseLabelingGallery">
               <div class="gallery-heading"><div><h2>问题图库 <small class="case-labeling-preview-badge">内测 · 仅管理员</small></h2><p id="caseLabelingSummary">正在加载…</p></div><div class="gallery-heading-actions"><button class="button button-primary" id="caseLabelingCreateTask" type="button">建标注任务</button><div class="gallery-heading-meta"><span class="count-pill" id="caseLabelingCount">—</span></div></div></div>
               <div class="review-cluster-strip case-labeling-progress-strip" id="caseLabelingTaskProgress" hidden><span class="subheading">任务进度</span><div class="cluster-list" id="caseLabelingTaskProgressList"></div></div>
+              <div class="review-cluster-strip case-labeling-cluster-strip" id="caseLabelingClusterStrip" hidden><span class="subheading">聚类</span><div class="cluster-list" id="caseLabelingClusterList"></div></div>
               <div class="issue-grid" id="caseLabelingList" aria-live="polite"></div>
               <nav class="case-pagination gallery-pagination" aria-label="标注 Case 分页"><div class="case-pagination-main"><button class="button button-quiet" id="caseLabelingPrevious" type="button">上一页</button><span id="caseLabelingPageSummary">— / —</span><button class="button button-quiet" id="caseLabelingNext" type="button">下一页</button></div><label class="case-page-size"><span>每页</span><select id="caseLabelingPageSize"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option><option value="100">100</option></select><span>条</span></label></nav>
             </section>
@@ -2140,7 +2141,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-468`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-469`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

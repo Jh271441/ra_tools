@@ -467,6 +467,53 @@ class CaseLabelingTest(unittest.TestCase):
             ]
             self.assertEqual(all_ids, ["cn1", "cn2", "cn3"])
 
+    def test_labeling_clusters_and_cluster_filter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.make_db(tmp)
+            database.upsert_issues(
+                [
+                    {"issue_id": "cn1", "gt_label": "正确触发", "scenario": "路口左转"},
+                    {"issue_id": "cn2", "gt_label": "正确触发", "scenario": "路口左转"},
+                    {"issue_id": "cn3", "gt_label": "误触发", "scenario": "直行"},
+                ],
+                source="test", replace_gt=True, baseline_scope="scope",
+            )
+            for issue_id in ("cn1", "cn2", "cn3"):
+                database.create_label_revision(
+                    issue_id=issue_id, expected_output="误触发",
+                    tags=[], evidence_gaps=[], rationale="r", is_excluded=False,
+                    author="alice", author_source="kylin_ticket", author_verified=True,
+                    expected_previous_revision_id=None,
+                )
+            clusters = database.labeling_clusters(baseline_scopes=["scope"])
+            self.assertEqual(
+                [item["key"] for item in clusters],
+                [
+                    "pair:正确触发|误触发",
+                    "pair:误触发|误触发",
+                    "scenario:路口左转",
+                    "scenario:直行",
+                ],
+            )
+            self.assertEqual(clusters[0]["count"], 2)
+            self.assertEqual(clusters[0]["label"], "正确触发 → 误触发")
+            pair_ids = [
+                item["issue_id"]
+                for item in database.list_labeling_cases(
+                    baseline_scopes=["scope"], cluster="pair:正确触发|误触发",
+                )["items"]
+            ]
+            self.assertEqual(pair_ids, ["cn1", "cn2"])
+            scenario_ids = [
+                item["issue_id"]
+                for item in database.list_labeling_cases(
+                    baseline_scopes=["scope"], cluster="scenario:直行",
+                )["items"]
+            ]
+            self.assertEqual(scenario_ids, ["cn3"])
+            with self.assertRaises(ValueError):
+                database.list_labeling_cases(baseline_scopes=["scope"], cluster="bogus")
+
     def test_labeling_splits_do_not_leak_into_review_work_splits(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             database = self.make_db(tmp)

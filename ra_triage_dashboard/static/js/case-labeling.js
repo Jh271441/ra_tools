@@ -9,6 +9,7 @@ function caseLabelingRouteOptions(overrides = {}) {
     status: overrides.status ?? labeling.status ?? "all",
     author: overrides.author ?? labeling.author ?? "",
     assignee: overrides.assignee ?? labeling.assignee ?? "",
+    cluster: overrides.cluster ?? labeling.cluster ?? "",
     label: overrides.label ?? labeling.label ?? "all",
     exclusion: overrides.exclusion ?? labeling.exclusion ?? "all",
     page: overrides.page ?? labeling.page ?? 1,
@@ -104,6 +105,60 @@ function renderCaseLabelingTaskProgress() {
   }
   list.innerHTML = chips.join("");
   strip.hidden = false;
+}
+
+function renderCaseLabelingClusterStrip() {
+  const strip = $("#caseLabelingClusterStrip");
+  const list = $("#caseLabelingClusterList");
+  if (!strip || !list) return;
+  const clusters = state.caseLabeling.clusters || [];
+  if (!clusters.length) {
+    strip.hidden = true;
+    list.innerHTML = "";
+    return;
+  }
+  list.innerHTML = clusters
+    .map(
+      (item) => `<button type="button" class="cluster-chip ${state.caseLabeling.cluster === item.key ? "active" : ""}" data-cluster-key="${escapeHtml(item.key)}"><span>${escapeHtml(item.label)}</span><b>${item.count}</b></button>`
+    )
+    .join("");
+  list.querySelectorAll("[data-cluster-key]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.clusterKey || "";
+      state.caseLabeling.cluster = state.caseLabeling.cluster === key ? "" : key;
+      state.caseLabeling.page = 1;
+      renderCaseLabelingClusterStrip();
+      loadCaseLabelingCases({ page: 1 }).catch((error) => showToast(error.message, true));
+    });
+  });
+  strip.hidden = false;
+}
+
+async function loadCaseLabelingClusters() {
+  if (!selectedActiveLabelingBaselineIds().length) {
+    state.caseLabeling.clusters = [];
+    renderCaseLabelingClusterStrip();
+    return;
+  }
+  const params = new URLSearchParams({
+    baselines: selectedBaselineQueryValue(),
+    task_id: state.caseLabeling.taskId || "",
+    q: state.caseLabeling.search || "",
+    status: state.caseLabeling.status || "all",
+    author: state.caseLabeling.author || "",
+    assignee: state.caseLabeling.assignee || "",
+    exclusion: state.caseLabeling.exclusion || "all",
+    label: state.caseLabeling.label && state.caseLabeling.label !== "all" ? state.caseLabeling.label : "",
+  });
+  const result = await api(`/api/labeling/clusters?${params}`);
+  state.caseLabeling.clusters = result.items || [];
+  if (
+    state.caseLabeling.cluster &&
+    !state.caseLabeling.clusters.some((item) => item.key === state.caseLabeling.cluster)
+  ) {
+    state.caseLabeling.cluster = "";
+  }
+  renderCaseLabelingClusterStrip();
 }
 
 function renderCaseLabelingStatusPicker() {
@@ -598,6 +653,8 @@ async function loadCaseLabelingCases({ page = state.caseLabeling.page } = {}) {
     if (seq !== state.caseLabeling.requestSeq) return;
     state.caseLabeling.page = 1;
     state.caseLabeling.data = { items: [], total: 0, page: 1, pages: 1, page_size: state.caseLabeling.pageSize, inactive: true };
+    state.caseLabeling.clusters = [];
+    renderCaseLabelingClusterStrip();
     renderCaseLabelingList(state.caseLabeling.data);
     persistCaseLabelingRoute({ issue: "", page: 1 });
     return;
@@ -609,6 +666,7 @@ async function loadCaseLabelingCases({ page = state.caseLabeling.page } = {}) {
     status: state.caseLabeling.status || "all",
     author: state.caseLabeling.author || "",
     assignee: state.caseLabeling.assignee || "",
+    cluster: state.caseLabeling.cluster || "",
     exclusion: state.caseLabeling.exclusion || "all",
     label: state.caseLabeling.label && state.caseLabeling.label !== "all" ? state.caseLabeling.label : "",
     page: String(Math.max(1, Number(page) || 1)),
@@ -630,6 +688,7 @@ async function loadCaseLabelingCases({ page = state.caseLabeling.page } = {}) {
   renderCaseLabelingAssigneePicker();
   renderCaseLabelingList(result);
   persistCaseLabelingRoute({ issue: "", page: state.caseLabeling.page });
+  loadCaseLabelingClusters().catch((error) => showToast(error.message, true));
 }
 
 function caseLabelingQueueItems() {
@@ -1282,6 +1341,7 @@ async function enterCaseLabeling({ route = null } = {}) {
   state.caseLabeling.status = filters.status ?? state.caseLabeling.status;
   state.caseLabeling.author = filters.author ?? state.caseLabeling.author;
   state.caseLabeling.assignee = filters.assignee ?? state.caseLabeling.assignee;
+  state.caseLabeling.cluster = filters.cluster ?? state.caseLabeling.cluster;
   state.caseLabeling.label = filters.label ?? state.caseLabeling.label;
   state.caseLabeling.exclusion = filters.exclusion ?? state.caseLabeling.exclusion;
   state.caseLabeling.page = filters.page || 1;
@@ -1306,6 +1366,7 @@ function bindCaseLabelingEvents() {
     state.caseLabeling.taskId = $("#caseLabelingTask").value || "";
     state.caseLabeling.author = "";
     state.caseLabeling.assignee = "";
+    state.caseLabeling.cluster = "";
     state.caseLabeling.page = 1;
     renderCaseLabelingTaskProgress();
     closeCaseLabelingDetail({ updateRoute: false });
@@ -1344,6 +1405,7 @@ function bindCaseLabelingEvents() {
     state.caseLabeling.status = "all";
     state.caseLabeling.author = "";
     state.caseLabeling.assignee = "";
+    state.caseLabeling.cluster = "";
     state.caseLabeling.label = "all";
     state.caseLabeling.exclusion = "all";
     state.caseLabeling.search = "";
