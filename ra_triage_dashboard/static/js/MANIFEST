@@ -26,9 +26,9 @@ review-draft.js
 review-history.js
 review-mentions.js
 review-tags.js
-case-labeling.js
 review-attachments.js
 review-form.js
+case-labeling.js
 media-dialog.js
 batch-gateway.js
 batch-config.js

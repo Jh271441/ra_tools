@@ -277,6 +277,18 @@ function releaseBevVideoPlayer(root) {
   video.load();
 }
 
+function detailMediaPane() {
+  return state.activePage === "labeling" ? $("#caseLabelingMedia") : $("#detailPane");
+}
+
+function detailMediaPrefix() {
+  return state.activePage === "labeling" ? "caseLabeling" : "detail";
+}
+
+function detailHeroMediaEl() {
+  return detailMediaPane()?.querySelector(".detail-hero-media") || $("#detailHeroMedia");
+}
+
 function ensureDetailMediaState(caseData) {
   const issueId = String(caseData?.issue_id || "");
   const available = {
@@ -306,7 +318,7 @@ function heroMediaSection(caseData) {
   const previewThumbnailUrl = safeSameOriginAssetUrl(caseData?.preview_thumbnail_url);
   if (!frames.length && !camera.length && !video?.url) {
     if (caseData?.media_status === "pending") {
-      return `<section class="hero-media detail-hero-media" id="detailHeroMedia" tabindex="0"><div class="no-asset hero-media-placeholder detail-media-pending"><span>${escapeHtml(uiText("正在加载 BEV、Camera 与视频…", "Loading BEV, camera, and video…"))}</span></div></section>`;
+      return `<section class="hero-media detail-hero-media" id="${detailMediaPrefix()}HeroMedia" tabindex="0"><div class="no-asset hero-media-placeholder detail-media-pending"><span>${escapeHtml(uiText("正在加载 BEV、Camera 与视频…", "Loading BEV, camera, and video…"))}</span></div></section>`;
     }
     return `<section class="hero-media"><div class="no-asset hero-media-placeholder"><span>${escapeHtml(t("media.no_assets"))}</span></div></section>`;
   }
@@ -332,15 +344,15 @@ function heroMediaSection(caseData) {
   const quickTimeline = kind === "video" ? "" : mediaTimelineMarkup(activeFrames, index, "detail-media-frame");
   const frameControls = kind === "video" ? "" : `
     <div class="detail-media-frame-controls" aria-label="图片帧切换">
-      <button class="button button-quiet" id="detailMediaPreviousButton" type="button" aria-label="${escapeHtml(t("media.prev_frame"))}">${escapeHtml(t("media.prev_frame"))}</button>
+      <button class="button button-quiet" id="${detailMediaPrefix()}MediaPreviousButton" type="button" aria-label="${escapeHtml(t("media.prev_frame"))}">${escapeHtml(t("media.prev_frame"))}</button>
       <div class="detail-media-frame-center">
-        <span class="detail-media-position" id="detailMediaPosition">${activeFrames.length ? `${index + 1} / ${activeFrames.length}` : "—"}</span>
+        <span class="detail-media-position" id="${detailMediaPrefix()}MediaPosition">${activeFrames.length ? `${index + 1} / ${activeFrames.length}` : "—"}</span>
         ${quickTimeline}
       </div>
-      <button class="button button-quiet" id="detailMediaNextButton" type="button" aria-label="${escapeHtml(t("media.next_frame"))}">${escapeHtml(t("media.next_frame"))}</button>
+      <button class="button button-quiet" id="${detailMediaPrefix()}MediaNextButton" type="button" aria-label="${escapeHtml(t("media.next_frame"))}">${escapeHtml(t("media.next_frame"))}</button>
     </div>`;
   return `
-      <section class="hero-media detail-hero-media" id="detailHeroMedia" data-detail-media-kind="${escapeHtml(kind)}" tabindex="0" aria-label="Issue 媒体" aria-keyshortcuts="0">
+      <section class="hero-media detail-hero-media" id="${detailMediaPrefix()}HeroMedia" data-detail-media-kind="${escapeHtml(kind)}" tabindex="0" aria-label="Issue 媒体" aria-keyshortcuts="0">
       <div class="detail-media-content">${content}</div>
       ${frameControls}
       <p class="detail-media-help">${escapeHtml(kind === "video" ? t("media.help_video") : t("media.help_image"))}</p>
@@ -349,15 +361,19 @@ function heroMediaSection(caseData) {
 
 function hydrateDetailMedia(caseData) {
   const issueId = String(caseData?.issue_id || "");
-  if (!issueId || issueId !== state.selectedId) return false;
+  const expectedId = state.activePage === "labeling"
+    ? state.caseLabeling?.issueId
+    : state.selectedId;
+  if (!issueId || issueId !== expectedId) return false;
   const scrollY = window.scrollY;
-  const hero = $("#detailHeroMedia");
+  const pane = detailMediaPane();
+  const hero = pane?.querySelector(".detail-hero-media") || $("#detailHeroMedia");
   if (hero) hero.outerHTML = heroMediaSection(caseData);
-  const command = $("#detailPane")?.querySelector(".detail-media-command");
+  const command = pane?.querySelector(".detail-media-command");
   if (command) command.outerHTML = detailMediaCommandMarkup(caseData);
   bindDetailMedia(caseData);
   window.requestAnimationFrame(() => {
-    if (state.selectedId === issueId) {
+    if (expectedId === issueId) {
       window.scrollTo({ top: scrollY, behavior: "auto" });
     }
   });
@@ -366,8 +382,11 @@ function hydrateDetailMedia(caseData) {
 
 function hydrateDetailMediaControls(caseData) {
   const issueId = String(caseData?.issue_id || "");
-  if (!issueId || issueId !== state.selectedId) return false;
-  const command = $("#detailPane")?.querySelector(".detail-media-command");
+  const expectedId = state.activePage === "labeling"
+    ? state.caseLabeling?.issueId
+    : state.selectedId;
+  if (!issueId || issueId !== expectedId) return false;
+  const command = detailMediaPane()?.querySelector(".detail-media-command");
   if (command) command.outerHTML = detailMediaCommandMarkup(caseData);
   // Rebind the newly replaced picker without replacing the decoded video.
   // bindBevVideoPlayers is idempotent for the preserved player node.
@@ -530,13 +549,13 @@ function detailMediaCommandMarkup(caseData) {
   const options = detailMediaKindOptions(caseData, available);
   const active = options.find((item) => item.value === kind) || options[0];
   return `<div class="detail-media-command" aria-label="详情媒体控制">
-    <div class="ui-select detail-media-picker" id="detailMediaKindPicker">
-      <button class="ui-select-trigger detail-media-picker-trigger" id="detailMediaKindTrigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="detailMediaKindPanel" aria-label="媒体类型">
+    <div class="ui-select detail-media-picker" id="${detailMediaPrefix()}MediaKindPicker">
+      <button class="ui-select-trigger detail-media-picker-trigger" id="${detailMediaPrefix()}MediaKindTrigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="${detailMediaPrefix()}MediaKindPanel" aria-label="媒体类型">
         <span class="ui-select-summary detail-media-picker-summary">${escapeHtml(active?.label || "媒体类型")}</span>
         <span class="ui-select-caret" aria-hidden="true"></span>
       </button>
-      <div class="ui-select-panel detail-media-picker-panel" id="detailMediaKindPanel" role="listbox" hidden></div>
-      <select class="ui-select-native gateway-model-native-select detail-media-select" id="detailMediaKindSelect" aria-hidden="true" tabindex="-1">
+      <div class="ui-select-panel detail-media-picker-panel" id="${detailMediaPrefix()}MediaKindPanel" role="listbox" hidden></div>
+      <select class="ui-select-native gateway-model-native-select detail-media-select" id="${detailMediaPrefix()}MediaKindSelect" aria-hidden="true" tabindex="-1">
         ${options
           .map(
             (item) =>
@@ -545,7 +564,7 @@ function detailMediaCommandMarkup(caseData) {
           .join("")}
       </select>
     </div>
-    <button class="button button-quiet detail-media-expand" id="detailMediaExpandButton" type="button"><span class="ui-lang-zh">展开查看</span><span class="ui-lang-en">Expand</span></button>
+    <button class="button button-quiet detail-media-expand" id="${detailMediaPrefix()}MediaExpandButton" type="button"><span class="ui-lang-zh">展开查看</span><span class="ui-lang-en">Expand</span></button>
   </div>`;
 }
 
@@ -577,19 +596,22 @@ function bindDetailMediaTimeline(root, caseData, onRender = null) {
 }
 
 function bindDetailMedia(caseData) {
-  const root = $("#detailHeroMedia");
-  $("#detailPane")?.classList.toggle(
+  const pane = detailMediaPane();
+  const prefix = detailMediaPrefix();
+  const root = pane?.querySelector(".detail-hero-media") || $("#detailHeroMedia");
+  pane?.classList.toggle(
     "detail-pane-video",
     root?.dataset.detailMediaKind === "video"
   );
-  if (!root) return;
+  if (!pane || !root) return;
   const focusMediaSurface = () => {
-    const surface = $("#detailHeroMedia");
+    const surface = pane?.querySelector(".detail-hero-media");
     if (!surface) return;
     surface.focus({ preventScroll: true });
   };
   const render = () => {
-    root.outerHTML = heroMediaSection(caseData);
+    const current = pane?.querySelector(".detail-hero-media");
+    if (current) current.outerHTML = heroMediaSection(caseData);
     bindDetailMedia(caseData);
   };
   const switchKind = (kind) => {
@@ -639,8 +661,8 @@ function bindDetailMedia(caseData) {
     state.detailMedia.kind === "video" ? 0 : state.detailMedia.indexes[state.detailMedia.kind],
     { caseData }
   );
-  const kindSelect = $("#detailMediaKindSelect");
-  const kindPicker = $("#detailMediaKindPicker");
+  const kindSelect = pane.querySelector(`#${prefix}MediaKindSelect`);
+  const kindPicker = pane.querySelector(`#${prefix}MediaKindPicker`);
   if (kindSelect) {
     kindSelect.value = state.detailMedia.kind;
     kindSelect.onchange = () => {
@@ -650,7 +672,7 @@ function bindDetailMedia(caseData) {
       // ArrowLeft/ArrowRight continue changing this selector instead of
       // stepping frames or jumping the video.
       kindSelect.blur();
-      $("#detailMediaKindTrigger")?.blur();
+      pane.querySelector(`#${prefix}MediaKindTrigger`)?.blur();
       if (nextKind === state.detailMedia.kind) {
         focusMediaSurface();
         return;
@@ -667,9 +689,9 @@ function bindDetailMedia(caseData) {
     );
     bindUiSelect(kindPicker, { maxHeight: 260, maxWidth: 280 });
   }
-  const previousButton = $("#detailMediaPreviousButton");
-  const nextButton = $("#detailMediaNextButton");
-  const position = $("#detailMediaPosition");
+  const previousButton = pane.querySelector(`#${prefix}MediaPreviousButton`);
+  const nextButton = pane.querySelector(`#${prefix}MediaNextButton`);
+  const position = pane.querySelector(`#${prefix}MediaPosition`);
   const videoMode = state.detailMedia.kind === "video";
   if (previousButton) {
     previousButton.hidden = videoMode;
@@ -687,7 +709,7 @@ function bindDetailMedia(caseData) {
     position.hidden = videoMode;
     position.textContent = activeFrames.length ? `${activeIndex + 1} / ${activeFrames.length}` : "—";
   }
-  const expandButton = $("#detailMediaExpandButton");
+  const expandButton = pane.querySelector(`#${prefix}MediaExpandButton`);
   if (expandButton) expandButton.onclick = expand;
   root.querySelectorAll("[data-detail-media-expand]").forEach((button) => button.addEventListener("click", expand));
   bindDetailMediaTimeline(root, caseData, render);
@@ -881,8 +903,7 @@ function detailExternalLinksMarkup(caseData) {
   return aresLinkMarkup + raRecordingLinkMarkup + raEventLinkMarkup + disableRaSimulationLinkMarkup + pendingMarkup;
 }
 
-function bindDetailExternalLinks(caseData) {
-  const root = $("#detailExternalLinks");
+function bindDetailExternalLinks(caseData, root = $("#detailExternalLinks") || $("#caseLabelingExternalLinks")) {
   root?.querySelector("[data-open-ra-event]")?.addEventListener("click", () => {
     openRaEventDialog(caseData);
   });

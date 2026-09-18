@@ -78,7 +78,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-458`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-459`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -424,12 +424,11 @@
               <nav class="case-pagination gallery-pagination" aria-label="标注 Case 分页"><div class="case-pagination-main"><button class="button button-quiet" id="caseLabelingPrevious" type="button">上一页</button><span id="caseLabelingPageSummary">— / —</span><button class="button button-quiet" id="caseLabelingNext" type="button">下一页</button></div><label class="case-page-size"><span>每页</span><select id="caseLabelingPageSize"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option><option value="100">100</option></select><span>条</span></label></nav>
             </section>
             </section>
-            <section class="case-labeling-detail hidden" id="caseLabelingDetail">
-              <div class="case-labeling-detail-heading"><button class="button button-quiet" id="caseLabelingBack" type="button">← 返回标注列表</button><strong id="caseLabelingIssueTitle">—</strong><span id="caseLabelingPosition">—</span></div>
-              <div class="case-labeling-workspace">
-                <section class="detail-pane case-labeling-media" id="caseLabelingMedia"><div class="empty-state"><h2>正在加载媒体…</h2></div></section>
-                <aside class="review-pane case-labeling-editor" id="caseLabelingEditor"><div class="review-placeholder"><h2>Case 标注</h2><p>填写期望输出、Issue 标签与标注依据。</p></div></aside>
-              </div>
+            <section class="review-detail-view case-labeling-detail hidden" id="caseLabelingDetail">
+              <section class="review-detail-workspace">
+                <section class="detail-pane" id="caseLabelingMedia"><div class="empty-state"><h2>正在加载 BEV / Camera…</h2></div></section>
+                <aside class="review-pane" id="caseLabelingEditor"><div class="review-placeholder"><h2>Case 标注</h2><p>填写期望输出、Issue 标签与标注依据。</p></div></aside>
+              </section>
             </section>
           </section>
 
@@ -2071,7 +2070,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-458`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-459`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

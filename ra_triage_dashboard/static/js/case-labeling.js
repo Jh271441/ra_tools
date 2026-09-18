@@ -202,37 +202,68 @@ async function loadCaseLabelingCases({ page = state.caseLabeling.page } = {}) {
   persistCaseLabelingRoute({ issue: "", page: state.caseLabeling.page });
 }
 
-function labelingFrameAtT0(frames) {
-  const list = Array.isArray(frames) ? frames : [];
-  return list[heroFrameIndex(list)] || null;
+function caseLabelingQueueItems() {
+  return state.caseLabeling.data?.items || [];
 }
 
-function caseLabelingMediaMarkup(caseData) {
-  const bev = labelingFrameAtT0(caseData?.assets?.frames);
-  const camera = labelingFrameAtT0(caseData?.camera?.frames);
-  const video = caseData?.assets?.video;
-  const cards = [
-    ["BEV", bev],
-    ["Camera", camera],
-  ].map(([label, frame]) => `<figure class="case-labeling-media-card"><figcaption>${label}${frame ? ` · ${escapeHtml(frameLabel(frame))}` : ""}</figcaption>${frame?.url ? `<img src="${escapeHtml(frame.url)}" alt="${label} ${escapeHtml(frameLabel(frame))}" />` : `<div class="no-asset">暂无 ${label}</div>`}</figure>`).join("");
-  return `<div class="case-labeling-media-grid">${cards}</div>${video?.url ? `<section>${videoPlayerMarkup(video, { zoomable: false, compact: true })}</section>` : ""}`;
+function navigateCaseLabelingIssue(direction) {
+  const items = caseLabelingQueueItems();
+  const current = String(state.caseLabeling.issueId || "");
+  const index = items.findIndex((item) => item.issue_id === current);
+  const next = items[index + direction];
+  if (!next?.issue_id) return Promise.resolve();
+  return selectCaseLabelingIssue(next.issue_id);
 }
 
-function caseLabelingTagMarkup(selectedTags) {
-  const selected = new Set(selectedTags || []);
-  const catalog = (state.config?.review_tag_catalog || []).filter(
-    (item) => item.visible !== false && !item.deleted
-  );
-  const groups = [
-    ["environment", "环境"], ["self_intent", "自车意图"],
-    ["false_trigger", "误触发"], ["true_trigger", "应该触发"],
-    ["ra", "正确触发"], ["no_assist", "无需协助"],
-  ];
-  return groups.map(([key, label]) => {
-    const items = catalog.filter((item) => String(item.group || item.group_key || "") === key);
-    if (!items.length) return "";
-    return `<details class="review-tag-dropdown review-dropdown"><summary><span>${escapeHtml(label)}</span><span class="tag-group-chevron" aria-hidden="true"></span></summary><div class="review-tag-options">${items.map((item) => `<label class="tag-option"${item.hint ? ` title="${escapeHtml(item.hint)}"` : ""}><input type="checkbox" name="caseLabelTags" value="${escapeHtml(item.key)}" data-tag-group="${escapeHtml(key)}" ${selected.has(item.key) ? "checked" : ""}/><span>${escapeHtml(item.label)}</span></label>`).join("")}</div></details>`;
-  }).join("");
+function renderCaseLabelingDetailMedia(caseData) {
+  const issueUrl = safeUrl(caseData.voyager_issue_url || caseData.trail_url);
+  const issueId = escapeHtml(caseData.issue_id);
+  const issueIdValue = String(caseData.issue_id || "");
+  const issueIdLink = issueUrl
+    ? `<a class="detail-id detail-id-link" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" title="打开 Voyager Issue">${issueId}</a>`
+    : `<span class="detail-id">${issueId}</span>`;
+  const issueIdMarkup = `<span class="detail-issue-id-group">${issueIdLink}<button class="detail-copy-id-button" type="button" data-copy-issue-id aria-label="复制 Issue ID ${issueId}" title="复制 Issue ID"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="6" width="9" height="10" rx="2"></rect><path d="M13 6V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></span>`;
+  ensureDetailMediaState(caseData);
+  const items = caseLabelingQueueItems();
+  const index = items.findIndex((item) => item.issue_id === issueIdValue);
+  $("#caseLabelingMedia").innerHTML = `
+    <div class="detail-header">
+      <div class="detail-title-row">
+        <div class="detail-title-group">
+          <div class="detail-title"><h2><span class="ui-lang-zh">问题详情</span><span class="ui-lang-en">Issue Details</span></h2>${issueIdMarkup}<span id="caseLabelingExternalLinks" class="detail-external-links">${typeof detailExternalLinksMarkup === "function" ? detailExternalLinksMarkup(caseData) : ""}</span></div>
+        </div>
+        <div class="detail-navigation">
+          <div class="case-detail-pager">
+            <button class="button button-quiet" id="caseLabelingPreviousIssue" type="button" ${index <= 0 ? "disabled" : ""}><span class="ui-lang-zh">← 上一 Issue</span><span class="ui-lang-en">← Prev</span><kbd class="review-control-shortcut review-nav-shortcut" aria-hidden="true">[</kbd></button>
+            <span class="detail-queue-position">${index >= 0 ? index + 1 : "—"} / ${items.length || "—"}</span>
+            <button class="button button-quiet" id="caseLabelingNextIssue" type="button" ${index < 0 || index >= items.length - 1 ? "disabled" : ""}><span class="ui-lang-zh">下一 Issue →</span><span class="ui-lang-en">Next →</span><kbd class="review-control-shortcut review-nav-shortcut" aria-hidden="true">]</kbd></button>
+          </div>
+        </div>
+      </div>
+      <div class="detail-context-row">
+        <div class="comparison-summary" aria-label="当前 GT">
+          <span class="comparison-side-label comparison-side-gt">GT</span>${labelBadge(caseData.gt_label, uiText("缺失", "Missing"))}
+        </div>
+        <button class="button button-quiet detail-back-button" id="caseLabelingBack" type="button"><span class="ui-lang-zh">← 返回筛选结果</span><span class="ui-lang-en">← Back to gallery</span></button>
+        ${caseData.summary ? `<p class="detail-summary">${escapeHtml(caseData.summary)}</p>` : ""}
+        <div class="detail-context-actions">${detailMediaCommandMarkup(caseData)}</div>
+      </div>
+    </div>
+    ${heroMediaSection(caseData)}`;
+  $("#caseLabelingMedia").querySelector("[data-copy-issue-id]")?.addEventListener("click", (event) => {
+    if (typeof copyReviewIssueId === "function") copyReviewIssueId(issueIdValue, event.currentTarget);
+  });
+  $("#caseLabelingBack")?.addEventListener("click", () => closeCaseLabelingDetail());
+  $("#caseLabelingPreviousIssue")?.addEventListener("click", () => {
+    navigateCaseLabelingIssue(-1).catch((error) => showToast(error.message, true));
+  });
+  $("#caseLabelingNextIssue")?.addEventListener("click", () => {
+    navigateCaseLabelingIssue(1).catch((error) => showToast(error.message, true));
+  });
+  if (typeof bindDetailExternalLinks === "function") {
+    bindDetailExternalLinks(caseData, $("#caseLabelingExternalLinks"));
+  }
+  bindDetailMedia(caseData);
 }
 
 function currentEditableLabelCase(caseData) {
@@ -284,7 +315,6 @@ function caseLabelingCommentsMarkup(caseData) {
 }
 
 function renderCaseLabelingEditor(caseData) {
-  const editable = currentEditableLabelCase(caseData);
   const revision = currentLabelingRevision(caseData);
   const aggregateResolved = (caseData.label_cases || []).find(
     (item) => item.resolution?.state === "resolved"
@@ -294,17 +324,80 @@ function renderCaseLabelingEditor(caseData) {
     ? (caseData.label_cases || []).find((item) => item.task_id === state.caseLabeling.taskId)
     : null;
   const resolution = exactTaskCase?.resolution || null;
-  $("#caseLabelingEditor").innerHTML = `<form class="case-labeling-form" id="caseLabelingForm">
-    <section><div class="review-section-heading"><h2>期望输出</h2><span>${escapeHtml(caseLabelingStateText(resolution?.state || (source.expected_output ? "resolved" : "pending")))}</span></div><div class="case-labeling-output-grid">${LABELS.map((label) => `<label><input type="radio" name="caseLabelOutput" value="${escapeHtml(label)}" ${source.expected_output === label ? "checked" : ""}/><span>${escapeHtml(label)}</span></label>`).join("")}</div></section>
-    <section><div class="review-section-heading"><h2>Issue 标签</h2></div><div class="review-tag-groups-shell">${caseLabelingTagMarkup(source.tags || [])}</div></section>
-    <section><label><span>标注依据</span><textarea id="caseLabelingRationale" placeholder="说明判断依据；此处不填写模型判错原因。">${escapeHtml(source.rationale || "")}</textarea></label></section>
-    <label class="review-exclude-toggle"><input id="caseLabelingExcluded" type="checkbox" ${source.is_excluded ? "checked" : ""}/><span>应该排除</span></label>
-    <label><span>标注截图（最多 4 张）</span><input id="caseLabelingAttachments" type="file" accept="image/png,image/jpeg,image/webp" multiple /></label>
-    <button class="button button-primary" type="submit" ${state.session?.is_admin ? "" : "disabled"}>保存标注</button>
-    ${resolution?.state === "conflict" || resolution?.state === "stale" ? `<section class="case-labeling-adjudication"><strong>标注冲突</strong><p>${(resolution.heads || []).map((item) => `${escapeHtml(item.author)}：${escapeHtml(item.expected_output || "待补充")}`).join(" · ")}</p><button class="button button-quiet" id="caseLabelingAdjudicate" type="button">按当前表单显式裁决</button></section>` : ""}
-    <section><div class="review-section-heading"><h2>标注历史</h2></div><div class="case-labeling-history">${caseLabelingHistoryMarkup(caseData)}</div></section>
-    <section><div class="review-section-heading"><h2>标注讨论</h2></div><div class="case-labeling-history">${caseLabelingCommentsMarkup(caseData)}</div></section>
-  </form>`;
+  const expectedOutput = String(source.expected_output || "");
+  const reviewStatus = !expectedOutput
+    ? "pending"
+    : expectedOutput === String(caseData.gt_label || "")
+      ? "reviewed"
+      : "needs_gt_review";
+  const chosenTags = new Set(source.tags || []);
+  const tagCatalog = state.config?.review_tag_catalog || [];
+  const tagOption = (key, label, selected, groupKey = "", item = null) => reviewTagOptionMarkup(
+    item || { key, label, builtin: true },
+    selected,
+    groupKey,
+  );
+  const issueTagGroups = renderReviewTagGroups(tagCatalog, chosenTags, tagOption);
+  const historyCount = (caseData.label_cases || []).reduce(
+    (count, labelCase) => count + (labelCase.resolution?.heads || []).length, 0
+  );
+  $("#caseLabelingEditor").innerHTML = `
+    <form class="review-form" id="caseLabelingForm">
+      <section class="review-section issue-tag-section">
+        <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span></h2></div><span class="evidence-summary-count" id="tagSummaryCount">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
+        <div class="review-tag-groups-shell">${issueTagGroups}</div>
+        <label class="review-exclude-toggle" title="${escapeHtml(uiText("按 K 切换应该排除", "Press K to toggle Exclude"))}"><input id="caseLabelingExcluded" type="checkbox" aria-keyshortcuts="K" ${source.is_excluded ? "checked" : ""} /><span><strong class="ui-lang-zh">应该排除</strong><strong class="ui-lang-en">Exclude</strong><small class="ui-lang-zh">不是模型需要解决的场景 case</small><small class="ui-lang-en">Not a case the model is expected to solve</small></span><kbd class="review-control-shortcut review-exclude-shortcut" aria-hidden="true">K</kbd></label>
+      </section>
+      <section class="review-section model-error-section">
+        <div class="review-section-heading">
+          <div>
+            <h2><span class="ui-lang-zh">Case 标注</span><span class="ui-lang-en">Case labeling</span></h2>
+          </div>
+          <div class="review-heading-actions">
+            <button class="history-inline-button" id="caseLabelingOpenDiscussion" type="button" aria-keyshortcuts="D" title="展开或收起讨论（D）">
+              <span class="ui-lang-zh">讨论</span><span class="ui-lang-en">Discussion</span>
+              <kbd class="review-control-shortcut" aria-hidden="true">D</kbd>
+            </button>
+            <button class="history-inline-button" id="caseLabelingHistoryToggle" type="button" aria-keyshortcuts="J" title="展开或收起标注历史（J）">
+              <span class="ui-lang-zh">历史 · ${historyCount}</span>
+              <span class="ui-lang-en">History · ${historyCount}</span>
+              <kbd class="review-control-shortcut" aria-hidden="true">J</kbd>
+            </button>
+          </div>
+        </div>
+        <div class="review-expected-output-field">
+          <div class="review-expected-output-heading">
+            <span id="caseLabelingExpectedOutputLabel"><span class="ui-lang-zh">期望输出</span><span class="ui-lang-en">Expected output</span></span>
+            <span class="derived-review-status">${escapeHtml(caseLabelingStateText(resolution?.state || (expectedOutput ? "resolved" : "pending")))}</span>
+          </div>
+          <div class="ui-select expected-output-picker" id="caseLabelingExpectedOutputPicker">
+            <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+              <span class="ui-select-summary">${escapeHtml(expectedOutput || "待补充")}</span>
+              <span class="ui-select-caret" aria-hidden="true"></span>
+            </button>
+            <div class="ui-select-panel" role="listbox" hidden></div>
+            <select class="ui-select-native" id="caseLabelingExpectedOutput" aria-hidden="true" tabindex="-1">
+              ${EXPECTED_OUTPUT_OPTIONS.map((item) => `<option value="${escapeHtml(item.value)}" ${item.value === expectedOutput ? "selected" : ""}>${escapeHtml(item.labelZh)}</option>`).join("")}
+            </select>
+          </div>
+        </div>
+        <label class="review-reason">
+          <span class="review-reason-heading">
+            <span><span class="ui-lang-zh">标注依据</span><span class="ui-lang-en">Label rationale</span></span>
+            <small class="review-reason-shortcuts"><span class="ui-lang-zh"><kbd>E</kbd> 聚焦 · <kbd>⇧ Enter</kbd> 换行</span></small>
+          </span>
+          <textarea id="caseLabelingRationale" rows="2" placeholder="说明判断依据；此处不填写模型判错原因。">${escapeHtml(source.rationale || "")}</textarea>
+        </label>
+        <label class="review-attachment-field"><span>标注截图（最多 4 张）</span><input id="caseLabelingAttachments" type="file" accept="image/png,image/jpeg,image/webp" multiple /></label>
+        ${resolution?.state === "conflict" || resolution?.state === "stale" ? `<section class="case-labeling-adjudication"><strong>标注冲突</strong><p>${(resolution.heads || []).map((item) => `${escapeHtml(item.author)}：${escapeHtml(item.expected_output || "待补充")}`).join(" · ")}</p><button class="button button-quiet" id="caseLabelingAdjudicate" type="button">按当前表单显式裁决</button></section>` : ""}
+        <button class="button button-primary full-width review-save-button" type="submit" ${state.session?.is_admin ? "" : "disabled"}><span class="ui-lang-zh">保存标注</span><span class="ui-lang-en">Save label</span><kbd class="review-save-shortcut" aria-hidden="true">Enter</kbd></button>
+      </section>
+      <section class="review-section" id="caseLabelingHistoryPanel" hidden>
+        <div class="review-section-heading"><h2>标注历史</h2></div>
+        <div class="case-labeling-history">${caseLabelingHistoryMarkup(caseData)}</div>
+      </section>
+    </form>`;
+  const editor = $("#caseLabelingEditor");
   $("#caseLabelingForm").addEventListener("submit", saveCaseLabelingRevision);
   $("#caseLabelingForm").addEventListener("input", () => { state.caseLabeling.dirty = true; });
   $("#caseLabelingForm").addEventListener("change", () => { state.caseLabeling.dirty = true; });
@@ -312,6 +405,20 @@ function renderCaseLabelingEditor(caseData) {
   $("#caseLabelingOpenDiscussion")?.addEventListener("click", () => {
     openCaseLabelingDiscussion().catch((error) => showToast(error.message, true));
   });
+  $("#caseLabelingHistoryToggle")?.addEventListener("click", () => {
+    const panel = $("#caseLabelingHistoryPanel");
+    if (panel) panel.hidden = !panel.hidden;
+  });
+  bindUiSelect($("#caseLabelingExpectedOutputPicker"), { maxHeight: 260, maxWidth: 420 });
+  bindSelectedReviewTagControls(editor);
+  bindReviewTagCatalogControls(editor);
+  bindReviewDropdownDismiss();
+  editor.querySelectorAll('input[name="reviewTags"]').forEach((input) => {
+    input.addEventListener("change", updateTagSummary);
+  });
+  updateTagSummary();
+  syncReviewDropdownShortcutHints(editor);
+  bindReviewKeyboardShortcuts();
 }
 
 async function selectCaseLabelingIssue(issueId, { updateRoute = true } = {}) {
@@ -327,17 +434,16 @@ async function selectCaseLabelingIssue(issueId, { updateRoute = true } = {}) {
   $("#caseLabelingGalleryView")?.classList.add("hidden");
   $("#caseLabelingGallery")?.classList.add("hidden");
   $("#caseLabelingDetail").classList.remove("hidden");
-  $("#caseLabelingIssueTitle").textContent = normalized;
-  $("#caseLabelingPosition").textContent = `${caseData.baseline_scope || ""} · GT ${caseData.gt_label || "待补充"}`;
-  $("#caseLabelingMedia").innerHTML = `<div class="empty-state"><h2>正在加载 BEV / Camera…</h2></div>`;
+  caseData.media_status = "pending";
+  renderCaseLabelingDetailMedia(caseData);
   renderCaseLabelingEditor(caseData);
   if (updateRoute) persistCaseLabelingRoute({ issue: normalized }, "push");
   try {
     const media = await api(`/api/cases/${encodeURIComponent(normalized)}/media`);
     if (seq !== state.caseLabeling.detailSeq || state.caseLabeling.issueId !== normalized) return;
     Object.assign(caseData, media);
-    $("#caseLabelingMedia").innerHTML = caseLabelingMediaMarkup(caseData);
-    bindBevVideoPlayers($("#caseLabelingMedia"));
+    caseData.media_status = "";
+    renderCaseLabelingDetailMedia(caseData);
   } catch (error) {
     if (seq === state.caseLabeling.detailSeq) {
       $("#caseLabelingMedia").innerHTML = `<div class="empty-state"><h2>媒体加载失败</h2><p>${escapeHtml(error.message)}</p></div>`;
@@ -358,10 +464,11 @@ function closeCaseLabelingDetail({ updateRoute = true } = {}) {
 }
 
 function caseLabelingFormPayload() {
+  const editor = $("#caseLabelingEditor");
   return {
     task_id: state.caseLabeling.taskId || "",
-    expected_output: document.querySelector('input[name="caseLabelOutput"]:checked')?.value || "",
-    tags: [...document.querySelectorAll('input[name="caseLabelTags"]:checked')].map((item) => item.value),
+    expected_output: $("#caseLabelingExpectedOutput")?.value || "",
+    tags: [...(editor?.querySelectorAll('input[name="reviewTags"]:checked') || [])].map((item) => item.value),
     evidence_gaps: [],
     rationale: $("#caseLabelingRationale")?.value || "",
     is_excluded: Boolean($("#caseLabelingExcluded")?.checked),

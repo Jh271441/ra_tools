@@ -343,19 +343,25 @@ function bindMissingEvidenceCatalogControls(root = document) {
   });
 }
 
+function activeReviewChromeRoot() {
+  if (state.activePage === "labeling") return $("#caseLabelingEditor") || document;
+  return $("#reviewPane") || document;
+}
+
 function updateTagSummary() {
-  const inputs = [...document.querySelectorAll('input[name="reviewTags"]')];
+  const root = activeReviewChromeRoot();
+  const inputs = [...root.querySelectorAll('input[name="reviewTags"]')];
   const count = inputs.filter((input) => input.checked).length;
-  const target = $("#tagSummaryCount");
+  const target = root.querySelector("#tagSummaryCount") || $("#tagSummaryCount");
   if (target) target.textContent = `已选 ${count} 项`;
-  document.querySelectorAll("[data-tag-summary]").forEach((summary) => {
+  root.querySelectorAll("[data-tag-summary]").forEach((summary) => {
     const group = summary.dataset.tagSummary || "";
     const groupCount = inputs.filter(
       (input) => input.checked && input.dataset.tagGroup === group
     ).length;
     summary.textContent = `${groupCount} 项`;
   });
-  document.querySelectorAll("[data-selected-tags-section]").forEach((container) => {
+  root.querySelectorAll("[data-selected-tags-section]").forEach((container) => {
     const root = container.closest(".review-tag-axis");
     if (!root) return;
     const section = container.dataset.selectedTagsSection || "";
@@ -468,15 +474,22 @@ function handleReviewDropdownKeyboard(event) {
   return false;
 }
 
+function submitActiveReviewForm() {
+  if (state.savingAnnotation) return;
+  if (state.activePage === "labeling") {
+    $("#caseLabelingForm")?.requestSubmit();
+    return;
+  }
+  $("#annotationForm")?.requestSubmit($("#reviewSaveButton") || undefined);
+}
+
 function submitReviewFromDropdown(event, target) {
   if (event.key !== "Enter" || !target?.closest?.(".review-dropdown")) {
     return false;
   }
   event.preventDefault();
   event.stopPropagation();
-  if (!state.savingAnnotation) {
-    $("#annotationForm")?.requestSubmit($("#reviewSaveButton") || undefined);
-  }
+  submitActiveReviewForm();
   return true;
 }
 
@@ -493,9 +506,7 @@ function submitReviewFromKeyboard(event, target) {
   }
   event.preventDefault();
   event.stopPropagation();
-  if (!state.savingAnnotation) {
-    $("#annotationForm")?.requestSubmit($("#reviewSaveButton") || undefined);
-  }
+  submitActiveReviewForm();
   return true;
 }
 
@@ -508,7 +519,7 @@ function reviewDropdownShortcutAllowed(target) {
 }
 
 function toggleReviewExcludeShortcut() {
-  const input = $("#reviewExcludeInput");
+  const input = activeReviewChromeRoot().querySelector("#reviewExcludeInput, #caseLabelingExcluded");
   if (!input || input.disabled) return false;
   input.checked = !input.checked;
   input.dispatchEvent(new Event("change", { bubbles: true }));
@@ -531,7 +542,7 @@ function toggleReviewShortcutDropdown(dropdown) {
 }
 
 function openReviewTagShortcutGroup(groupKey) {
-  return toggleReviewShortcutDropdown(document.querySelector(
+  return toggleReviewShortcutDropdown(activeReviewChromeRoot().querySelector(
     `.review-tag-dropdown[data-tag-dropdown-group="${CSS.escape(groupKey)}"]`
   ));
 }
@@ -552,9 +563,10 @@ function bindReviewKeyboardShortcuts() {
       event.ctrlKey ||
       event.metaKey ||
       event.altKey ||
-      state.activePage !== "review" ||
-      !state.selectedCase ||
-      !document.querySelector("#annotationForm") ||
+      !(
+        (state.activePage === "review" && state.selectedCase && document.querySelector("#annotationForm"))
+        || (state.activePage === "labeling" && state.caseLabeling?.issueId && document.querySelector("#caseLabelingForm"))
+      ) ||
       document.querySelector("dialog[open]")
     ) {
       return;
@@ -594,6 +606,12 @@ function bindReviewKeyboardShortcuts() {
 
     if (key === "[" || key === "]") {
       const direction = key === "[" ? -1 : 1;
+      if (state.activePage === "labeling") {
+        event.preventDefault();
+        closeAllReviewDropdowns();
+        navigateCaseLabelingIssue(direction).catch((error) => showToast(error.message, true));
+        return;
+      }
       const button = $(direction < 0 ? "#previousIssueButton" : "#nextIssueButton");
       if (!button || button.disabled) return;
       event.preventDefault();

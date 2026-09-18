@@ -762,12 +762,12 @@ function bindEvents() {
         return;
       }
       const detailMediaActive =
-        state.activePage === "review" &&
-        Boolean(state.selectedCase) &&
-        Boolean($("#detailHeroMedia")) &&
+        ((state.activePage === "review" && Boolean(state.selectedCase))
+          || (state.activePage === "labeling" && Boolean(state.caseLabeling?.issueId))) &&
+        Boolean(typeof detailHeroMediaEl === "function" ? detailHeroMediaEl() : $("#detailHeroMedia")) &&
         !document.querySelector("dialog[open]");
       const reviewDropdownActive = Boolean(
-        document.querySelector("#reviewPane .review-dropdown[open]")
+        document.querySelector("#reviewPane .review-dropdown[open], #caseLabelingEditor .review-dropdown[open]")
       );
       if (
         !detailMediaActive ||
@@ -784,9 +784,12 @@ function bindEvents() {
         return true;
       };
       const key = event.key.toLowerCase();
+      const hero = typeof detailHeroMediaEl === "function" ? detailHeroMediaEl() : $("#detailHeroMedia");
+      const pane = typeof detailMediaPane === "function" ? detailMediaPane() : $("#detailPane");
+      const prefix = typeof detailMediaPrefix === "function" ? detailMediaPrefix() : "detail";
       if (["b", "c", "v"].includes(key)) {
         const kind = { b: "bev", c: "camera", v: "video" }[key];
-        const select = $("#detailMediaKindSelect");
+        const select = pane?.querySelector(`#${prefix}MediaKindSelect`) || $("#detailMediaKindSelect");
         const option = select?.querySelector(`option[value="${kind}"]`);
         if (select && option && !option.disabled && select.value !== kind) {
           event.preventDefault();
@@ -795,29 +798,26 @@ function bindEvents() {
         }
       } else if (key === " " && state.detailMedia.kind === "video") {
         event.preventDefault();
-        if (!event.repeat) $("#detailHeroMedia")?.querySelector("[data-video-play]")?.click();
+        if (!event.repeat) hero?.querySelector("[data-video-play]")?.click();
       } else if (key === "arrowleft" || key === "arrowright") {
         const direction = key === "arrowleft" ? -1 : 1;
         const control = state.detailMedia.kind === "video"
-          ? $("#detailHeroMedia")?.querySelector(`[data-video-jump="${direction}"]`)
-          : $(direction < 0 ? "#detailMediaPreviousButton" : "#detailMediaNextButton");
+          ? hero?.querySelector(`[data-video-jump="${direction}"]`)
+          : pane?.querySelector(direction < 0 ? `#${prefix}MediaPreviousButton` : `#${prefix}MediaNextButton`);
         activate(control);
       } else if (key === "f") {
-        if (!event.repeat) activate($("#detailMediaExpandButton"));
+        if (!event.repeat) activate(pane?.querySelector(`#${prefix}MediaExpandButton`));
       } else if (key === "0") {
+        const mediaCase = state.activePage === "labeling" ? state.caseLabeling?.caseData : state.selectedCase;
         if (state.detailMedia.kind === "video") {
-          activate($("#detailHeroMedia")?.querySelector("[data-video-t0]"));
+          activate(hero?.querySelector("[data-video-t0]"));
         } else {
           const frames = state.detailMedia.kind === "camera"
-            ? state.selectedCase?.camera?.frames || []
-            : state.selectedCase?.assets?.frames || [];
+            ? mediaCase?.camera?.frames || []
+            : mediaCase?.assets?.frames || [];
           const t0Index = heroFrameIndex(frames);
           if (t0Index >= 0) {
-            activate(
-              $("#detailHeroMedia")?.querySelector(
-                `[data-detail-media-frame="${t0Index}"]`
-              )
-            );
+            activate(hero?.querySelector(`[data-detail-media-frame="${t0Index}"]`));
           }
         }
       }

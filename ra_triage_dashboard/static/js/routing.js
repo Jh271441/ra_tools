@@ -905,7 +905,7 @@ function setReviewView(issueId = "") {
   detail.classList.toggle("hidden", !showingDetail);
   $("#reviewPage")?.classList.toggle("is-detail", showingDetail);
   if (!showingDetail) {
-    $("#detailHeroMedia")?.querySelector("video")?.pause();
+    (typeof detailHeroMediaEl === "function" ? detailHeroMediaEl() : $("#detailHeroMedia"))?.querySelector("video")?.pause();
     closeDialog("mediaDialog");
     window.requestAnimationFrame(() => {
       window.scrollTo({ top: state.galleryScrollY, behavior: "auto" });
@@ -937,7 +937,9 @@ function showPage(
 ) {
   const target = PAGE_ROUTES[page] ? page : "review";
   const previousPage = state.activePage;
-  if (target !== "review") $("#detailHeroMedia")?.querySelector("video")?.pause();
+  if (target !== "review") {
+    (typeof detailHeroMediaEl === "function" ? detailHeroMediaEl() : $("#detailHeroMedia"))?.querySelector("video")?.pause();
+  }
   state.activePage = target;
   document.body.dataset.activePage = target;
   document.querySelectorAll("[data-page]").forEach((section) => {
