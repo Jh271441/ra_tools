@@ -180,6 +180,35 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
         raise _detail(400, "issue_ids 必须是数组。")
     issue_ids = list(dict.fromkeys(_as_text(value) for value in raw_issue_ids))
     issue_ids = [value for value in issue_ids if value]
+    filter_body = body.get("filters") if isinstance(body.get("filters"), dict) else {}
+    if not issue_ids and filter_body:
+        scopes = resolve_request_baseline_scopes(
+            _as_text(filter_body.get("baselines")), request=request
+        )
+        scopes = await _active_labeling_scopes(scopes)
+        normalized_status = _as_text(filter_body.get("status")).lower() or "all"
+        if normalized_status not in {"all", "pending", "resolved", "conflict"}:
+            raise _detail(400, "标注状态不合法。")
+        normalized_exclusion = _as_text(filter_body.get("exclusion")).lower() or "all"
+        if normalized_exclusion not in {"all", "excluded", "active"}:
+            raise _detail(400, "排除筛选不合法。")
+        normalized_label = _as_text(filter_body.get("label")).strip()
+        if normalized_label == "all":
+            normalized_label = ""
+        try:
+            resolved = await asyncio.to_thread(
+                database.labeling_case_issue_ids,
+                baseline_scopes=scopes,
+                task_id=_as_text(filter_body.get("task_id")),
+                search=_as_text(filter_body.get("q")),
+                status=normalized_status,
+                author=_as_text(filter_body.get("author")).strip().lower(),
+                exclusion=normalized_exclusion,
+                expected_output=normalized_label,
+            )
+        except ValueError as exc:
+            raise _detail(400, str(exc)) from exc
+        issue_ids = list(dict.fromkeys(resolved))
     if len(issue_ids) > 5000:
         raise _detail(400, "单个标注任务最多包含 5000 个 Issue。")
     assignees = body.get("assignees") or []
@@ -233,6 +262,11 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
     return {
         "task": task,
         "workset": workset,
+        "split_id": task["id"],
+        "total": len(issue_ids),
+        "assignments": assignments,
+        "reviewers_per_issue": task["reviewers_per_issue"],
+        "overlap_ratio": task["overlap_ratio"],
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
 

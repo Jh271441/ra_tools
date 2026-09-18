@@ -169,8 +169,8 @@ function workSplitPersonRow(name = "", count = "") {
   </div>`;
 }
 
-function renderWorkSplitPersonPickers() {
-  const pickers = [...document.querySelectorAll("#workSplitPeople .work-split-person-picker")];
+function renderWorkSplitPersonPickers(rootSelector = "#workSplitPeople") {
+  const pickers = [...document.querySelectorAll(`${rootSelector} .work-split-person-picker`)];
   const selectedByPicker = new Map(
     pickers.map((picker) => {
       const select = picker.querySelector(".work-split-person-name");
@@ -200,16 +200,16 @@ function renderWorkSplitPersonPickers() {
   });
 }
 
-function ensureWorkSplitPeople(minRows = 2) {
-  const root = $("#workSplitPeople");
+function ensureWorkSplitPeople(minRows = 2, rootSelector = "#workSplitPeople") {
+  const root = $(rootSelector);
   if (!root) return;
   while (root.querySelectorAll(".work-split-person-row").length < minRows) {
     root.insertAdjacentHTML("beforeend", workSplitPersonRow());
   }
 }
 
-function readWorkSplitAssignees() {
-  const rows = [...document.querySelectorAll("#workSplitPeople .work-split-person-row")];
+function readWorkSplitAssignees(rootSelector = "#workSplitPeople") {
+  const rows = [...document.querySelectorAll(`${rootSelector} .work-split-person-row`)];
   return rows
     .map((row) => {
       const name = row.querySelector(".work-split-person-name")?.value.trim() || "";

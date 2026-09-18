@@ -121,6 +121,317 @@ async function loadCaseLabelingTasks() {
   renderCaseLabelingTaskPicker();
 }
 
+function labelingTaskFilterPayload() {
+  return {
+    baselines: selectedBaselineQueryValue(),
+    task_id: state.caseLabeling.taskId || "",
+    q: state.caseLabeling.search || "",
+    status: state.caseLabeling.status || "all",
+    author: state.caseLabeling.author || "",
+    exclusion: state.caseLabeling.exclusion || "all",
+    label:
+      state.caseLabeling.label && state.caseLabeling.label !== "all"
+        ? state.caseLabeling.label
+        : "all",
+  };
+}
+
+function labelingTaskReviewersPerIssue() {
+  const value = Number.parseInt($("#labelingTaskReviewersPerIssue")?.value || "1", 10);
+  return Number.isFinite(value) ? Math.max(1, value) : 1;
+}
+
+function labelingTaskOverlapRatio() {
+  const value = Number.parseFloat($("#labelingTaskOverlapRatio")?.value || "1");
+  return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 1;
+}
+
+function renderLabelingTaskPersonPickers() {
+  renderWorkSplitPersonPickers("#labelingTaskPeople");
+}
+
+function ensureLabelingTaskPeople(minRows = 2) {
+  ensureWorkSplitPeople(minRows, "#labelingTaskPeople");
+}
+
+function readLabelingTaskAssignees() {
+  return readWorkSplitAssignees("#labelingTaskPeople");
+}
+
+function updateLabelingTaskOverlapVisibility() {
+  const field = $("#labelingTaskOverlapField");
+  if (field) field.hidden = labelingTaskReviewersPerIssue() <= 1;
+}
+
+function renderLabelingTaskOverlapPicker(selected = null) {
+  const picker = $("#labelingTaskOverlapPicker");
+  if (!picker) return 1;
+  const requested =
+    selected === null ? labelingTaskOverlapRatio() : Number.parseFloat(String(selected));
+  const value = Number.isFinite(requested) ? Math.min(1, Math.max(0, requested)) : 1;
+  populateUiSelect(
+    picker,
+    [0, 0.1, 0.2, 0.3, 0.5, 1].map((ratio) => ({
+      value: String(ratio),
+      label: `${Math.round(ratio * 100)}%`,
+    })),
+    String(value),
+  );
+  bindUiSelect(picker, { maxHeight: 260, maxWidth: 180 });
+  return value;
+}
+
+function renderLabelingTaskReviewersPerIssuePicker(selected = null) {
+  const picker = $("#labelingTaskReviewersPerIssuePicker");
+  if (!picker) return 1;
+  const maximum = Math.max(1, readLabelingTaskAssignees().length);
+  const requested =
+    selected === null
+      ? labelingTaskReviewersPerIssue()
+      : Number.parseInt(String(selected), 10);
+  const value = Math.min(Math.max(1, Number.isFinite(requested) ? requested : 1), maximum);
+  populateUiSelect(
+    picker,
+    Array.from({ length: maximum }, (_, index) => ({
+      value: String(index + 1),
+      label: `${index + 1} 人`,
+    })),
+    String(value),
+  );
+  bindUiSelect(picker, { maxHeight: 260, maxWidth: 180 });
+  return value;
+}
+
+function updateLabelingTaskEstimate() {
+  const reviewers = labelingTaskReviewersPerIssue();
+  const overlapRatio = labelingTaskOverlapRatio();
+  const people = readLabelingTaskAssignees();
+  const total = Number(state.caseLabeling.data?.total || 0);
+  const target = $("#labelingTaskEstimate");
+  updateLabelingTaskOverlapVisibility();
+  document
+    .querySelectorAll("#labelingTaskPeople .work-split-person-count")
+    .forEach((input) => {
+      input.placeholder = reviewers > 1 ? "自动均衡" : t("work.even_split");
+    });
+  if (!target) return;
+  if (reviewers > people.length && people.length) {
+    target.textContent = `每个 Case 的人数不能超过已选 ${people.length} 人`;
+    return;
+  }
+  const overlapCount =
+    reviewers > 1 ? Math.min(total, Math.round(total * overlapRatio)) : 0;
+  const assignmentCount = total + overlapCount * (reviewers - 1);
+  target.textContent =
+    reviewers === 1
+      ? t("work.single_estimate", { total })
+      : t("work.blind_estimate", {
+          total,
+          ratio: Math.round(overlapRatio * 100),
+          overlap: overlapCount,
+          reviewers,
+          assignments: assignmentCount,
+        });
+}
+
+async function openLabelingTaskDialog() {
+  if (!state.session?.is_admin) {
+    showToast(t("work.split_admin_only"), true);
+    return;
+  }
+  const total = Number(state.caseLabeling.data?.total || 0);
+  const summary = $("#labelingTaskSummary");
+  const results = $("#labelingTaskResults");
+  if (summary) {
+    summary.textContent = total ? t("work.summary_n", { n: total }) : t("work.no_issues");
+  }
+  if (results) {
+    results.classList.add("hidden");
+    results.innerHTML = "";
+  }
+  try {
+    if (!state.accessUsers?.length) await loadAccessUsers();
+  } catch (error) {
+    showToast(error.message || t("work.load_users_fail"), true);
+    return;
+  }
+  const root = $("#labelingTaskPeople");
+  if (root) {
+    root.innerHTML = "";
+    const users = state.accessUsers || [];
+    if (users.length) {
+      users.forEach((user) => {
+        root.insertAdjacentHTML("beforeend", workSplitPersonRow(user.username, ""));
+      });
+    } else {
+      ensureLabelingTaskPeople(2);
+      showToast(t("work.no_writers"), true);
+    }
+  }
+  renderLabelingTaskPersonPickers();
+  if ($("#labelingTaskReviewersPerIssue")) $("#labelingTaskReviewersPerIssue").value = "1";
+  if ($("#labelingTaskName")) $("#labelingTaskName").value = "";
+  if ($("#labelingTaskSeed")) $("#labelingTaskSeed").value = "";
+  renderLabelingTaskReviewersPerIssuePicker(1);
+  renderLabelingTaskOverlapPicker(1);
+  updateLabelingTaskEstimate();
+  openDialog("labelingTaskDialog");
+}
+
+function renderLabelingTaskResults(payload) {
+  const root = $("#labelingTaskResults");
+  if (!root) return;
+  const task = payload?.task || {};
+  const assignments = Array.isArray(payload?.assignments) ? payload.assignments : [];
+  const reviewers = Math.max(1, Number(payload?.reviewers_per_issue ?? 1));
+  const overlapRatio =
+    reviewers > 1 ? Math.min(1, Math.max(0, Number(payload?.overlap_ratio ?? 0))) : 0;
+  const cards = assignments
+    .map(
+      (item) => `<article class="work-split-card">
+        <header>
+          <strong>${escapeHtml(item.name || "—")}</strong>
+          <span>${escapeHtml(t("runs.count_n", { n: Number(item.count || 0) }))}</span>
+        </header>
+      </article>`
+    )
+    .join("");
+  root.classList.remove("hidden");
+  root.innerHTML = `
+    <div class="work-split-results-heading">
+      <strong>标注任务已创建</strong>
+      <span>${escapeHtml(task.name || task.id || "")} · ${escapeHtml(
+        t("work.task_count", { n: Number(payload?.total || 0) })
+      )} · ${escapeHtml(
+        reviewers > 1
+          ? t("work.cross_ratio", { n: Math.round(overlapRatio * 100) })
+          : t("work.single_review")
+      )}</span>
+      <button class="button button-quiet" type="button" data-open-labeling-task="${escapeHtml(
+        task.id || ""
+      )}">查看该任务</button>
+    </div>
+    <div class="work-split-card-grid">${cards}</div>
+  `;
+}
+
+async function generateLabelingTask() {
+  if (!state.session?.is_admin) {
+    showToast(t("work.split_admin_only"), true);
+    return;
+  }
+  const assignees = readLabelingTaskAssignees();
+  if (!assignees.length) {
+    showToast(t("work.need_reviewer"), true);
+    return;
+  }
+  const reviewersPerIssue = labelingTaskReviewersPerIssue();
+  if (reviewersPerIssue > assignees.length) {
+    showToast(`每个 Case 的标注人数不能超过已选 ${assignees.length} 人。`, true);
+    return;
+  }
+  const overlapRatio = reviewersPerIssue > 1 ? labelingTaskOverlapRatio() : 0;
+  const seedRaw = ($("#labelingTaskSeed")?.value || "").trim();
+  const name = ($("#labelingTaskName")?.value || "").trim();
+  const body = {
+    filters: labelingTaskFilterPayload(),
+    assignees,
+    reviewers_per_issue: reviewersPerIssue,
+    overlap_ratio: overlapRatio,
+  };
+  if (seedRaw !== "") {
+    const seed = Number(seedRaw);
+    if (!Number.isFinite(seed)) {
+      showToast(t("work.seed_int"), true);
+      return;
+    }
+    body.seed = seed;
+  }
+  if (name) body.name = name;
+  const button = $("#labelingTaskGenerate");
+  if (button) {
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+  }
+  try {
+    const result = await api("/api/labeling/tasks", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    acknowledgeLocalChange(result);
+    renderLabelingTaskResults(result);
+    await loadCaseLabelingTasks();
+    showToast("标注任务已创建。");
+  } catch (error) {
+    showToast(error.message || "创建标注任务失败。", true);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+    }
+  }
+}
+
+function bindLabelingTaskControls() {
+  $("#caseLabelingCreateTask")?.addEventListener("click", () => {
+    if (!state.session?.is_admin) {
+      showToast(t("work.split_admin_only"), true);
+      return;
+    }
+    if (!Number(state.caseLabeling.data?.total || 0)) {
+      showToast(t("work.no_issues"), true);
+      return;
+    }
+    openLabelingTaskDialog().catch((error) => showToast(error.message, true));
+  });
+  $("#labelingTaskAddPerson")?.addEventListener("click", () => {
+    $("#labelingTaskPeople")?.insertAdjacentHTML("beforeend", workSplitPersonRow());
+    renderLabelingTaskPersonPickers();
+    renderLabelingTaskReviewersPerIssuePicker();
+    updateLabelingTaskEstimate();
+  });
+  $("#labelingTaskPeople")?.addEventListener("click", (event) => {
+    const remove = event.target.closest(".work-split-remove-person");
+    if (!remove) return;
+    const row = remove.closest(".work-split-person-row");
+    if (!row) return;
+    row.remove();
+    ensureLabelingTaskPeople(1);
+    renderLabelingTaskPersonPickers();
+    renderLabelingTaskReviewersPerIssuePicker();
+    updateLabelingTaskEstimate();
+  });
+  $("#labelingTaskPeople")?.addEventListener("change", (event) => {
+    if (event.target.matches(".work-split-person-name")) {
+      event.target.closest(".work-split-person-picker").dataset.workSplitSelected =
+        event.target.value || "";
+      renderLabelingTaskPersonPickers();
+      renderLabelingTaskReviewersPerIssuePicker();
+    }
+    updateLabelingTaskEstimate();
+  });
+  $("#labelingTaskPeople")?.addEventListener("input", (event) => {
+    if (event.target.matches(".work-split-person-count")) updateLabelingTaskEstimate();
+  });
+  $("#labelingTaskReviewersPerIssue")?.addEventListener("change", updateLabelingTaskEstimate);
+  $("#labelingTaskOverlapRatio")?.addEventListener("change", updateLabelingTaskEstimate);
+  $("#labelingTaskGenerate")?.addEventListener("click", () => {
+    generateLabelingTask().catch((error) => showToast(error.message, true));
+  });
+  $("#labelingTaskResults")?.addEventListener("click", (event) => {
+    const open = event.target.closest("[data-open-labeling-task]");
+    if (!open) return;
+    const taskId = open.dataset.openLabelingTask || "";
+    if (!taskId) return;
+    state.caseLabeling.taskId = taskId;
+    state.caseLabeling.page = 1;
+    closeDialog("labelingTaskDialog");
+    closeCaseLabelingDetail({ updateRoute: false });
+    renderCaseLabelingTaskPicker();
+    loadCaseLabelingCases({ page: 1 }).catch((error) => showToast(error.message, true));
+  });
+}
+
 function caseLabelingGalleryItem(item) {
   return {
     ...item,

@@ -176,6 +176,7 @@ function bindEvents() {
   if (typeof bindIntentLabelingEvents === "function") bindIntentLabelingEvents();
   if (typeof bindCaseLabelingEvents === "function") bindCaseLabelingEvents();
   bindWorkSplitControls();
+  if (typeof bindLabelingTaskControls === "function") bindLabelingTaskControls();
   if (typeof bindReviewAssignmentsPage === "function") bindReviewAssignmentsPage();
   if (typeof bindRunComparisonEvents === "function") bindRunComparisonEvents();
   if (typeof bindIssueQueryControls === "function") bindIssueQueryControls();

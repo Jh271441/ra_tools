@@ -246,7 +246,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-466", APP_ENTRY_JS)
+        self.assertIn("manual-triage-467", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -287,7 +287,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-466", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-467", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -481,7 +481,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-466`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-467`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -699,6 +699,32 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('exclusion: state.caseLabeling.exclusion || "all"', APP_JS)
         self.assertIn("def labeling_labelers", APP_PY_LABELING_DB)
         self.assertIn('author: str = ""', APP_PY_LABELING_ROUTER)
+        # M8a-1: Case-labeling create-task dialog reuses the work-split helpers.
+        self.assertIn('id="caseLabelingCreateTask"', INDEX_HTML)
+        self.assertIn('id="labelingTaskDialog"', INDEX_HTML)
+        self.assertIn('id="labelingTaskPeople"', INDEX_HTML)
+        self.assertIn('id="labelingTaskReviewersPerIssuePicker"', INDEX_HTML)
+        self.assertIn('id="labelingTaskOverlapPicker"', INDEX_HTML)
+        self.assertIn("function openLabelingTaskDialog", APP_JS)
+        self.assertIn("function generateLabelingTask", APP_JS)
+        self.assertIn("function bindLabelingTaskControls", APP_JS)
+        self.assertIn("function labelingTaskFilterPayload", APP_JS)
+        self.assertIn('renderWorkSplitPersonPickers("#labelingTaskPeople")', APP_JS)
+        self.assertIn(
+            'function renderWorkSplitPersonPickers(rootSelector = "#workSplitPeople")',
+            APP_JS,
+        )
+        self.assertIn(
+            'function readWorkSplitAssignees(rootSelector = "#workSplitPeople")', APP_JS
+        )
+        self.assertIn(
+            "if (typeof bindLabelingTaskControls === \"function\") bindLabelingTaskControls();",
+            APP_JS,
+        )
+        self.assertIn("def _project_labeling_cases", APP_PY_LABELING_DB)
+        self.assertIn("def labeling_case_issue_ids", APP_PY_LABELING_DB)
+        self.assertIn("database.labeling_case_issue_ids", APP_PY_LABELING_ROUTER)
+        self.assertIn('"assignments": assignments', APP_PY_LABELING_ROUTER)
         # Exactly one paste path per form: Review evidence, Markdown comment
         # composer, and the Case-labeling screenshot zone.
         self.assertIn('// Single form-level paste handler', APP_JS)
@@ -1476,7 +1502,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-466", APP_ENTRY_JS)
+        self.assertIn("manual-triage-467", APP_ENTRY_JS)
     def test_desktop_layout_panels_are_mouse_and_keyboard_resizable(self) -> None:
         self.assertIn('id="sidebarResizer" role="separator"', INDEX_HTML)
         self.assertIn('id="reviewPaneResizer" role="separator"', INDEX_HTML)

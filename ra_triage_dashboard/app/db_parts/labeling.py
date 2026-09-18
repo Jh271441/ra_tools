@@ -1159,7 +1159,7 @@ class DatabaseLabelingMixin:
             ).fetchall()
         return [str(row["labeler"] or "") for row in rows]
 
-    def list_labeling_cases(
+    def _project_labeling_cases(
         self,
         *,
         baseline_scopes: Sequence[str],
@@ -1169,12 +1169,10 @@ class DatabaseLabelingMixin:
         author: str = "",
         exclusion: str = "all",
         expected_output: str = "",
-        page: int = 1,
-        page_size: int = 20,
-    ) -> dict[str, Any]:
+    ) -> tuple[list[dict[str, Any]], str]:
         scopes = _clean_values(baseline_scopes)
         if not scopes:
-            return {"items": [], "total": 0, "page": 1, "page_size": page_size, "pages": 0}
+            return [], ""
         task = str(task_id or "").strip()
         parameters: list[Any] = []
         if task:
@@ -1229,16 +1227,16 @@ class DatabaseLabelingMixin:
             }
             if len(resolved_outputs) > 1:
                 aggregate_state = "conflict"
-                expected_output = ""
+                expected_output_value = ""
             elif len(resolved_outputs) == 1:
                 aggregate_state = "resolved"
-                expected_output = next(iter(resolved_outputs))
+                expected_output_value = next(iter(resolved_outputs))
             elif any(item["resolution"]["state"] in {"conflict", "stale"} for item in cases):
                 aggregate_state = "conflict"
-                expected_output = ""
+                expected_output_value = ""
             else:
                 aggregate_state = "pending"
-                expected_output = ""
+                expected_output_value = ""
             if status != "all" and aggregate_state != status:
                 continue
             if normalized_author and not any(
@@ -1247,7 +1245,7 @@ class DatabaseLabelingMixin:
                 for head in item["resolution"].get("heads") or []
             ):
                 continue
-            if normalized_expected_output and expected_output != normalized_expected_output:
+            if normalized_expected_output and expected_output_value != normalized_expected_output:
                 continue
             if normalized_exclusion != "all":
                 resolved_excluded = any(
@@ -1268,11 +1266,38 @@ class DatabaseLabelingMixin:
                     "title": str(row["title"] or ""),
                     "scenario": str(row["scenario"] or ""),
                     "label_state": aggregate_state,
-                    "expected_output": expected_output,
+                    "expected_output": expected_output_value,
                     "source_count": len(cases),
                     "label_cases": cases,
                 }
             )
+        return projected, task
+
+    def list_labeling_cases(
+        self,
+        *,
+        baseline_scopes: Sequence[str],
+        task_id: str = "",
+        search: str = "",
+        status: str = "all",
+        author: str = "",
+        exclusion: str = "all",
+        expected_output: str = "",
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, Any]:
+        scopes = _clean_values(baseline_scopes)
+        if not scopes:
+            return {"items": [], "total": 0, "page": 1, "page_size": page_size, "pages": 0}
+        projected, task = self._project_labeling_cases(
+            baseline_scopes=baseline_scopes,
+            task_id=task_id,
+            search=search,
+            status=status,
+            author=author,
+            exclusion=exclusion,
+            expected_output=expected_output,
+        )
         safe_page_size = min(100, max(1, int(page_size)))
         total = len(projected)
         pages = (total + safe_page_size - 1) // safe_page_size if total else 0
@@ -1286,6 +1311,28 @@ class DatabaseLabelingMixin:
             "pages": pages,
             "labelers": self.labeling_labelers(scopes, task),
         }
+
+    def labeling_case_issue_ids(
+        self,
+        *,
+        baseline_scopes: Sequence[str],
+        task_id: str = "",
+        search: str = "",
+        status: str = "all",
+        author: str = "",
+        exclusion: str = "all",
+        expected_output: str = "",
+    ) -> list[str]:
+        projected, _ = self._project_labeling_cases(
+            baseline_scopes=baseline_scopes,
+            task_id=task_id,
+            search=search,
+            status=status,
+            author=author,
+            exclusion=exclusion,
+            expected_output=expected_output,
+        )
+        return [item["issue_id"] for item in projected]
 
     def label_gt_candidates(self, baseline_scopes: Sequence[str]) -> list[dict[str, Any]]:
         scopes = _clean_values(baseline_scopes)

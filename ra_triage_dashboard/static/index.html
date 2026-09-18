@@ -78,7 +78,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-466`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-467`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -422,7 +422,7 @@
               </form>
             </section>
             <section class="gallery-panel" id="caseLabelingGallery">
-              <div class="gallery-heading"><div><h2>问题图库 <small class="case-labeling-preview-badge">内测 · 仅管理员</small></h2><p id="caseLabelingSummary">正在加载…</p></div><div class="gallery-heading-actions"><div class="gallery-heading-meta"><span class="count-pill" id="caseLabelingCount">—</span></div></div></div>
+              <div class="gallery-heading"><div><h2>问题图库 <small class="case-labeling-preview-badge">内测 · 仅管理员</small></h2><p id="caseLabelingSummary">正在加载…</p></div><div class="gallery-heading-actions"><button class="button button-primary" id="caseLabelingCreateTask" type="button">建标注任务</button><div class="gallery-heading-meta"><span class="count-pill" id="caseLabelingCount">—</span></div></div></div>
               <div class="issue-grid" id="caseLabelingList" aria-live="polite"></div>
               <nav class="case-pagination gallery-pagination" aria-label="标注 Case 分页"><div class="case-pagination-main"><button class="button button-quiet" id="caseLabelingPrevious" type="button">上一页</button><span id="caseLabelingPageSummary">— / —</span><button class="button button-quiet" id="caseLabelingNext" type="button">下一页</button></div><label class="case-page-size"><span>每页</span><select id="caseLabelingPageSize"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option><option value="100">100</option></select><span>条</span></label></nav>
             </section>
@@ -1848,6 +1848,70 @@
       </div>
     </dialog>
 
+    <dialog class="dialog work-split-dialog" id="labelingTaskDialog">
+      <div class="dialog-card">
+        <div class="dialog-heading">
+          <div>
+            <h2>建标注任务</h2>
+            <p class="dialog-copy">对当前筛选的 Case 随机分配标注人；多人模式可设置交叉盲标比例，未抽中的 Case 只分配基础标注人。</p>
+          </div>
+          <button class="icon-button" type="button" data-close="labelingTaskDialog" aria-label="关闭">×</button>
+        </div>
+        <div class="work-split-summary" id="labelingTaskSummary">当前筛选：—</div>
+        <label class="work-split-seed labeling-task-name">
+          <span>任务名称（可选）</span>
+          <input id="labelingTaskName" type="text" maxlength="80" placeholder="留空自动生成" autocomplete="off" />
+        </label>
+        <div class="work-split-mode-row">
+          <label class="work-split-seed">
+            <span>每个 Case 标注人数</span>
+            <div class="ui-select work-split-reviewer-count-picker" id="labelingTaskReviewersPerIssuePicker">
+              <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                <span class="ui-select-summary">1 人</span>
+                <span class="ui-select-caret" aria-hidden="true"></span>
+              </button>
+              <div class="ui-select-panel" role="listbox" hidden></div>
+              <select class="ui-select-native" id="labelingTaskReviewersPerIssue" aria-hidden="true" tabindex="-1">
+                <option value="1">1 人</option>
+              </select>
+            </div>
+          </label>
+          <label class="work-split-seed" id="labelingTaskOverlapField">
+            <span>交叉盲标比例</span>
+            <div class="ui-select work-split-overlap-picker" id="labelingTaskOverlapPicker">
+              <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                <span class="ui-select-summary">100%</span>
+                <span class="ui-select-caret" aria-hidden="true"></span>
+              </button>
+              <div class="ui-select-panel" role="listbox" hidden></div>
+              <select class="ui-select-native" id="labelingTaskOverlapRatio" aria-hidden="true" tabindex="-1">
+                <option value="0">0%</option>
+                <option value="0.1">10%</option>
+                <option value="0.2">20%</option>
+                <option value="0.3">30%</option>
+                <option value="0.5">50%</option>
+                <option value="1" selected>100%</option>
+              </select>
+            </div>
+          </label>
+          <div class="work-split-estimate" id="labelingTaskEstimate">单人均分</div>
+        </div>
+        <div class="work-split-people" id="labelingTaskPeople" aria-label="标注人列表"></div>
+        <div class="work-split-toolbar">
+          <button class="button button-quiet" id="labelingTaskAddPerson" type="button">添加人员</button>
+          <label class="work-split-seed">
+            <span>随机种子（可选）</span>
+            <input id="labelingTaskSeed" type="number" inputmode="numeric" placeholder="留空则每次不同" />
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <button class="button button-quiet" type="button" data-close="labelingTaskDialog">取消</button>
+          <button class="button button-primary" id="labelingTaskGenerate" type="button">创建任务</button>
+        </div>
+        <div class="work-split-results hidden" id="labelingTaskResults" aria-live="polite"></div>
+      </div>
+    </dialog>
+
     <dialog class="dialog review-tag-create-dialog" id="reviewTagCreateDialog">
       <div class="dialog-card">
         <div class="dialog-heading">
@@ -2074,7 +2138,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-466`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-467`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
