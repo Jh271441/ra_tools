@@ -778,6 +778,7 @@ const state = {
     issueId: "",
     caseData: null,
     dirty: false,
+    pendingImages: [],
   },
   analysisDiscussion: null,
   trailUpdate: {

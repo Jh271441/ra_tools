@@ -388,7 +388,17 @@ function renderCaseLabelingEditor(caseData) {
           </span>
           <textarea id="caseLabelingRationale" rows="2" placeholder="说明判断依据；此处不填写模型判错原因。">${escapeHtml(source.rationale || "")}</textarea>
         </label>
-        <label class="review-attachment-field"><span>标注截图（最多 4 张）</span><input id="caseLabelingAttachments" type="file" accept="image/png,image/jpeg,image/webp" multiple /></label>
+        <div class="review-attachment-field">
+          <div class="screenshot-paste-zone is-compact" id="caseLabelingPasteZone" tabindex="0" role="group" aria-label="拖拽、粘贴或选择标注截图">
+            <span class="screenshot-paste-copy">
+              <strong><span class="ui-lang-zh">标注截图</span><span class="ui-lang-en">Screenshots</span></strong>
+              <small><span class="ui-lang-zh">拖拽到此处 / 粘贴 Ctrl/⌘+V · 最多 4 张</span><span class="ui-lang-en">Drop here / Paste Ctrl/⌘+V · max 4</span></small>
+            </span>
+            <button class="screenshot-browse-button" id="caseLabelingScreenshotBrowse" type="button"><span class="ui-lang-zh">选择图片</span><span class="ui-lang-en">Browse</span></button>
+          </div>
+          <input class="hidden" id="caseLabelingScreenshotInput" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+          <div class="pending-screenshot-list" id="caseLabelingPendingScreenshots"></div>
+        </div>
         ${resolution?.state === "conflict" || resolution?.state === "stale" ? `<section class="case-labeling-adjudication"><strong>标注冲突</strong><p>${(resolution.heads || []).map((item) => `${escapeHtml(item.author)}：${escapeHtml(item.expected_output || "待补充")}`).join(" · ")}</p><button class="button button-quiet" id="caseLabelingAdjudicate" type="button">按当前表单显式裁决</button></section>` : ""}
         <button class="button button-primary full-width review-save-button" type="submit" ${state.session?.is_admin ? "" : "disabled"}><span class="ui-lang-zh">保存标注</span><span class="ui-lang-en">Save label</span><kbd class="review-save-shortcut" aria-hidden="true">Enter</kbd></button>
       </section>
@@ -414,6 +424,8 @@ function renderCaseLabelingEditor(caseData) {
   bindReviewTagCatalogControls(editor);
   bindReviewDropdownToggles(editor);
   bindReviewDropdownDismiss();
+  bindCaseLabelingAttachmentInputs();
+  renderPendingCaseLabelingImages();
   editor.querySelectorAll('input[name="reviewTags"]').forEach((input) => {
     input.addEventListener("change", updateTagSummary);
   });
@@ -432,6 +444,7 @@ async function selectCaseLabelingIssue(issueId, { updateRoute = true } = {}) {
   state.caseLabeling.issueId = normalized;
   state.caseLabeling.caseData = caseData;
   state.caseLabeling.dirty = false;
+  clearPendingCaseLabelingImages();
   $("#caseLabelingGalleryView")?.classList.add("hidden");
   $("#caseLabelingGallery")?.classList.add("hidden");
   $("#caseLabelingDetail").classList.remove("hidden");
@@ -457,6 +470,7 @@ function closeCaseLabelingDetail({ updateRoute = true } = {}) {
   state.caseLabeling.issueId = "";
   state.caseLabeling.caseData = null;
   state.caseLabeling.dirty = false;
+  clearPendingCaseLabelingImages();
   state.caseLabeling.detailSeq += 1;
   $("#caseLabelingDetail").classList.add("hidden");
   $("#caseLabelingGalleryView")?.classList.remove("hidden");
@@ -476,6 +490,156 @@ function caseLabelingFormPayload() {
   };
 }
 
+function addPendingCaseLabelingImages(files) {
+  const limits = state.config?.review_attachment_limits || {};
+  const maxCount = Number(limits.max_count || 4);
+  const maxBytes = Number(limits.max_bytes_each || 8 * 1024 * 1024);
+  const maxTotalBytes = Number(limits.max_bytes_total || 24 * 1024 * 1024);
+  const allowed = new Set(limits.media_types || ["image/png", "image/jpeg", "image/webp"]);
+  let rejected = "";
+  files.forEach((file) => {
+    if (state.caseLabeling.pendingImages.length >= maxCount) {
+      rejected = `最多只能添加 ${maxCount} 张截图。`;
+      return;
+    }
+    if (!allowed.has(file.type)) {
+      rejected = "仅支持 PNG、JPEG 或 WebP 图片。";
+      return;
+    }
+    if (file.size > maxBytes) {
+      rejected = "单张截图不能超过 8 MB。";
+      return;
+    }
+    const currentBytes = state.caseLabeling.pendingImages.reduce(
+      (sum, item) => sum + item.file.size,
+      0
+    );
+    if (currentBytes + file.size > maxTotalBytes) {
+      rejected = "本次截图总大小不能超过 24 MB。";
+      return;
+    }
+    state.caseLabeling.pendingImages.push({
+      id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+      file,
+      previewUrl: URL.createObjectURL(file),
+    });
+  });
+  renderPendingCaseLabelingImages();
+  if (rejected) showToast(rejected, true);
+}
+
+function renderPendingCaseLabelingImages() {
+  const target = $("#caseLabelingPendingScreenshots");
+  if (!target) return;
+  target.innerHTML = state.caseLabeling.pendingImages
+    .map(
+      (item) => `<div class="pending-screenshot">
+        <img src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.file.name || "待上传截图")}" />
+        <button type="button" data-remove-case-screenshot="${escapeHtml(item.id)}" aria-label="移除截图">×</button>
+      </div>`
+    )
+    .join("");
+  target.querySelectorAll("[data-remove-case-screenshot]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = state.caseLabeling.pendingImages.findIndex(
+        (item) => item.id === button.dataset.removeCaseScreenshot
+      );
+      if (index < 0) return;
+      const previewUrl = state.caseLabeling.pendingImages[index].previewUrl;
+      state.caseLabeling.pendingImages.splice(index, 1);
+      renderPendingCaseLabelingImages();
+      releasePreviewUrlLater(previewUrl);
+    });
+  });
+}
+
+function clearPendingCaseLabelingImages() {
+  if (!state.caseLabeling.pendingImages.length) return;
+  const previewUrls = state.caseLabeling.pendingImages.map((item) => item.previewUrl);
+  state.caseLabeling.pendingImages = [];
+  renderPendingCaseLabelingImages();
+  previewUrls.forEach(releasePreviewUrlLater);
+}
+
+function bindCaseLabelingAttachmentInputs() {
+  const pasteZone = $("#caseLabelingPasteZone");
+  const screenshotInput = $("#caseLabelingScreenshotInput");
+  const screenshotBrowse = $("#caseLabelingScreenshotBrowse");
+  if (!pasteZone || !screenshotInput) return;
+
+  const openScreenshotPicker = () => screenshotInput.click();
+  screenshotBrowse?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openScreenshotPicker();
+  });
+  pasteZone.addEventListener("click", () => {
+    pasteZone.focus({ preventScroll: true });
+  });
+  pasteZone.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openScreenshotPicker();
+    }
+  });
+
+  const acceptImagePasteOrDrop = (event, dataTransfer) => {
+    const files = imageFilesFromDataTransfer(dataTransfer);
+    if (!files.length) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    addPendingCaseLabelingImages(files);
+    return true;
+  };
+  $("#caseLabelingForm")?.addEventListener("paste", (event) => {
+    const target = event.target;
+    if (
+      target instanceof HTMLTextAreaElement ||
+      (target instanceof HTMLInputElement &&
+        !["checkbox", "radio", "file", "button", "submit"].includes(target.type))
+    ) {
+      const hasImage = [...(event.clipboardData?.items || [])].some(
+        (item) => item.kind === "file" && item.type.startsWith("image/")
+      );
+      if (!hasImage) return;
+    }
+    acceptImagePasteOrDrop(event, event.clipboardData);
+  });
+
+  let dragDepth = 0;
+  const setDragOver = (active) => pasteZone.classList.toggle("is-dragover", active);
+  pasteZone.addEventListener("dragenter", (event) => {
+    if (![...(event.dataTransfer?.types || [])].includes("Files")) return;
+    event.preventDefault();
+    dragDepth += 1;
+    setDragOver(true);
+  });
+  pasteZone.addEventListener("dragover", (event) => {
+    if (![...(event.dataTransfer?.types || [])].includes("Files")) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    setDragOver(true);
+  });
+  pasteZone.addEventListener("dragleave", (event) => {
+    if (![...(event.dataTransfer?.types || [])].includes("Files")) return;
+    event.preventDefault();
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) setDragOver(false);
+  });
+  pasteZone.addEventListener("drop", (event) => {
+    dragDepth = 0;
+    setDragOver(false);
+    if (!acceptImagePasteOrDrop(event, event.dataTransfer)) {
+      event.preventDefault();
+      showToast("请拖入 PNG / JPEG / WebP 图片。", true);
+    }
+  });
+  screenshotInput.addEventListener("change", () => {
+    addPendingCaseLabelingImages([...screenshotInput.files]);
+    screenshotInput.value = "";
+  });
+}
+
 async function saveCaseLabelingRevision(event) {
   event.preventDefault();
   const caseData = state.caseLabeling.caseData;
@@ -485,7 +649,7 @@ async function saveCaseLabelingRevision(event) {
     ...caseLabelingFormPayload(),
     expected_previous_revision_id: revision?.id || null,
   };
-  const files = [...($("#caseLabelingAttachments")?.files || [])];
+  const files = state.caseLabeling.pendingImages.map((item) => item.file);
   if (files.length > 4) {
     showToast("标注截图最多 4 张。", true);
     return;
@@ -510,6 +674,7 @@ async function saveCaseLabelingRevision(event) {
     }
     acknowledgeLocalChange(result);
     state.caseLabeling.dirty = false;
+    clearPendingCaseLabelingImages();
     showToast("标注已保存。");
     await Promise.all([
       selectCaseLabelingIssue(caseData.issue_id, { updateRoute: false }),
