@@ -78,7 +78,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-459`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-460`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -427,6 +427,7 @@
             <section class="review-detail-view case-labeling-detail hidden" id="caseLabelingDetail">
               <section class="review-detail-workspace">
                 <section class="detail-pane" id="caseLabelingMedia"><div class="empty-state"><h2>正在加载 BEV / Camera…</h2></div></section>
+                <div class="layout-resizer review-pane-resizer" id="caseLabelingPaneResizer" role="separator" aria-label="调节标注面板宽度" aria-orientation="vertical" aria-valuemin="304" aria-valuemax="600" aria-valuenow="350" tabindex="0"></div>
                 <aside class="review-pane" id="caseLabelingEditor"><div class="review-placeholder"><h2>Case 标注</h2><p>填写期望输出、Issue 标签与标注依据。</p></div></aside>
               </section>
             </section>
@@ -2070,7 +2071,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-459`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-460`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

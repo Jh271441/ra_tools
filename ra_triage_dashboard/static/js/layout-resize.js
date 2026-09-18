@@ -19,10 +19,24 @@ const LAYOUT_WIDTH_PREFERENCES = {
     defaultValue: 350,
     direction: -1,
     availableMax: () => {
-      const workspaceWidth = $(".review-detail-workspace")?.clientWidth || 0;
+      const workspaceWidth = $("#reviewDetailView .review-detail-workspace")?.clientWidth || 0;
       return workspaceWidth ? Math.max(304, workspaceWidth - 528) : 600;
     },
     enabled: () => window.matchMedia("(min-width: 1025px)").matches && !$("#reviewDetailView")?.classList.contains("hidden"),
+  },
+  caseLabelingPane: {
+    element: "#caseLabelingPaneResizer",
+    cssProperty: "--review-pane-width",
+    storageKey: "ra-triage-review-pane-width",
+    min: 304,
+    max: 600,
+    defaultValue: 350,
+    direction: -1,
+    availableMax: () => {
+      const workspaceWidth = $("#caseLabelingDetail .review-detail-workspace")?.clientWidth || 0;
+      return workspaceWidth ? Math.max(304, workspaceWidth - 528) : 600;
+    },
+    enabled: () => window.matchMedia("(min-width: 1025px)").matches && !$("#caseLabelingDetail")?.classList.contains("hidden"),
   },
 };
 
