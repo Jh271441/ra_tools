@@ -1,5 +1,7 @@
 .case-labeling-page { display: grid; gap: 8px; }
 body[data-active-page="labeling"] .header-metrics { display: none; }
+/* metrics carried margin-left:auto; keep the right cluster right-aligned. */
+body[data-active-page="labeling"] .gt-sync-control { margin-left: auto; }
 .case-labeling-filters {
   grid-template-columns: minmax(180px, 1.5fr) minmax(160px, .9fr) minmax(140px, .7fr) auto auto;
 }

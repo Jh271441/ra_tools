@@ -750,23 +750,34 @@ function currentRunOutputMarkup(_caseData, prediction) {
 function openHistoryDialog(kind, caseData) {
   if (!caseData) return;
   const isModel = kind === "model";
+  const isLabeling = kind === "labeling";
   const dialog = $("#historyDialog");
-  if (dialog) dialog.dataset.historyKind = isModel ? "model" : "review";
+  if (dialog) dialog.dataset.historyKind = isModel ? "model" : isLabeling ? "labeling" : "review";
   const predictions = caseData.predictions || [];
-  const annotations = isModel
+  const annotations = isModel || isLabeling
     ? []
     : typeof reviewAnnotationsForAllRuns === "function"
       ? reviewAnnotationsForAllRuns(caseData)
       : (caseData.annotations || []);
   $("#historyDialogTitle").textContent = isModel
     ? uiText("评测 Run 输出历史", "Model run history")
-    : uiText("Review 历史", "Review history");
+    : isLabeling
+      ? uiText("标注历史", "Label history")
+      : uiText("Review 历史", "Review history");
   $("#historyDialogMeta").textContent = isModel
     ? uiText(
         `${predictions.length} 个模型 Run · 当前 Review Run 会高亮`,
         `${predictions.length} model runs · current review run is highlighted`
       )
-    : (() => {
+    : isLabeling
+      ? (() => {
+          const labelCount = (caseData.label_cases || []).reduce(
+            (count, labelCase) => count + (labelCase.resolution?.heads || []).length,
+            0
+          );
+          return uiText(`${labelCount} 条工作台标注`, `${labelCount} workbench labels`);
+        })()
+      : (() => {
         const runCount = new Set(
           annotations.map((item) => String(item.model_run_id || "legacy"))
         ).size;
@@ -777,8 +788,10 @@ function openHistoryDialog(kind, caseData) {
       })();
   $("#historyDialogContent").innerHTML = isModel
     ? predictionCards(caseData)
-    : annotationHistory(annotations);
-  if (!isModel) bindAnnotationHistory($("#historyDialogContent"), caseData);
+    : isLabeling
+      ? caseLabelingHistoryMarkup(caseData)
+      : annotationHistory(annotations);
+  if (!isModel && !isLabeling) bindAnnotationHistory($("#historyDialogContent"), caseData);
   openDialog("historyDialog");
 }
 

@@ -240,7 +240,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-463", APP_ENTRY_JS)
+        self.assertIn("manual-triage-464", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -281,7 +281,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-463", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-464", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -475,7 +475,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-463`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-464`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -661,10 +661,17 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('id="caseLabelingPendingScreenshots"', APP_JS)
         self.assertIn('$("#caseLabelingForm")?.addEventListener("paste"', APP_JS)
         self.assertIn("data-remove-case-screenshot", APP_JS)
-        # History panel collapses for real: display:grid would beat [hidden].
-        self.assertIn(".review-section[hidden] { display: none; }", STYLES_CSS)
+        # Labeling history opens the shared dialog, like Review's J button,
+        # and the topbar keeps its right cluster right-aligned without metrics.
         self.assertIn("function bindCaseLabelingEditorShortcuts", APP_JS)
-        self.assertIn('const panel = $("#caseLabelingHistoryPanel");', APP_JS)
+        self.assertIn('toggleHistoryDialog("labeling", state.caseLabeling.caseData)', APP_JS)
+        self.assertIn('uiText("标注历史", "Label history")', APP_JS)
+        self.assertIn("caseLabelingHistoryMarkup(caseData)", APP_JS)
+        self.assertNotIn("caseLabelingHistoryPanel", APP_JS)
+        self.assertIn(
+            'body[data-active-page="labeling"] .gt-sync-control { margin-left: auto; }',
+            STYLES_CSS,
+        )
         # Exactly one paste path per form: Review evidence, Markdown comment
         # composer, and the Case-labeling screenshot zone.
         self.assertIn('// Single form-level paste handler', APP_JS)
@@ -1442,7 +1449,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-463", APP_ENTRY_JS)
+        self.assertIn("manual-triage-464", APP_ENTRY_JS)
     def test_desktop_layout_panels_are_mouse_and_keyboard_resizable(self) -> None:
         self.assertIn('id="sidebarResizer" role="separator"', INDEX_HTML)
         self.assertIn('id="reviewPaneResizer" role="separator"', INDEX_HTML)

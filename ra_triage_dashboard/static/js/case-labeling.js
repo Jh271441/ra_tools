@@ -402,10 +402,6 @@ function renderCaseLabelingEditor(caseData) {
         ${resolution?.state === "conflict" || resolution?.state === "stale" ? `<section class="case-labeling-adjudication"><strong>标注冲突</strong><p>${(resolution.heads || []).map((item) => `${escapeHtml(item.author)}：${escapeHtml(item.expected_output || "待补充")}`).join(" · ")}</p><button class="button button-quiet" id="caseLabelingAdjudicate" type="button">按当前表单显式裁决</button></section>` : ""}
         <button class="button button-primary full-width review-save-button" type="submit" ${state.session?.is_admin ? "" : "disabled"}><span class="ui-lang-zh">保存标注</span><span class="ui-lang-en">Save label</span><kbd class="review-save-shortcut" aria-hidden="true">Enter</kbd></button>
       </section>
-      <section class="review-section" id="caseLabelingHistoryPanel" hidden>
-        <div class="review-section-heading"><h2>标注历史</h2></div>
-        <div class="case-labeling-history">${caseLabelingHistoryMarkup(caseData)}</div>
-      </section>
     </form>`;
   const editor = $("#caseLabelingEditor");
   $("#caseLabelingForm").addEventListener("submit", saveCaseLabelingRevision);
@@ -416,8 +412,7 @@ function renderCaseLabelingEditor(caseData) {
     openCaseLabelingDiscussion().catch((error) => showToast(error.message, true));
   });
   $("#caseLabelingHistoryToggle")?.addEventListener("click", () => {
-    const panel = $("#caseLabelingHistoryPanel");
-    if (panel) panel.hidden = !panel.hidden;
+    toggleHistoryDialog("labeling", state.caseLabeling.caseData);
   });
   bindUiSelect($("#caseLabelingExpectedOutputPicker"), { maxHeight: 260, maxWidth: 420 });
   bindSelectedReviewTagControls(editor);
@@ -764,11 +759,16 @@ function bindCaseLabelingEditorShortcuts() {
       openCaseLabelingDiscussion().catch((error) => showToast(error.message, true));
       return;
     }
+    const historyDialog = $("#historyDialog");
+    if (key === "j" && historyDialog?.open) {
+      event.preventDefault();
+      toggleHistoryDialog("labeling", state.caseLabeling.caseData);
+      return;
+    }
     if (document.querySelector("dialog[open]")) return;
     if (key === "j") {
       event.preventDefault();
-      const panel = $("#caseLabelingHistoryPanel");
-      if (panel) panel.hidden = !panel.hidden;
+      toggleHistoryDialog("labeling", state.caseLabeling.caseData);
       return;
     }
     if (key === "e" && !event.shiftKey) {
