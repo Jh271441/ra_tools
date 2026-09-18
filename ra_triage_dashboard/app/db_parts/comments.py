@@ -115,6 +115,7 @@ class DatabaseCommentsMixin:
         notification_recipients: list[str] | None = None,
         reply_to_id: int | None = None,
         attachments: list[dict[str, Any]] | None = None,
+        require_existing_model_run: bool = True,
     ) -> dict[str, Any]:
         normalized_body = str(body or "").strip()
         if not normalized_body:
@@ -147,7 +148,7 @@ class DatabaseCommentsMixin:
             ).fetchone()
             if issue is None:
                 raise ValueError("Issue 不存在。")
-            if normalized_run_id:
+            if normalized_run_id and require_existing_model_run:
                 run = conn.execute(
                     "SELECT id FROM model_runs WHERE id = ?", (normalized_run_id,)
                 ).fetchone()

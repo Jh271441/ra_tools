@@ -139,7 +139,6 @@ def _dashboard_config_payload() -> dict[str, Any]:
 
 @router.get("/", include_in_schema=False)
 @router.get("/review", include_in_schema=False)
-@router.get("/case-labeling", include_in_schema=False)
 @router.get("/review-analysis", include_in_schema=False)
 @router.get("/runs", include_in_schema=False)
 @router.get("/inference", include_in_schema=False)
@@ -148,6 +147,17 @@ def _dashboard_config_payload() -> dict[str, Any]:
 @router.get("/users", include_in_schema=False)
 @router.get("/trail-attribute-update", include_in_schema=False)
 async def index() -> HTMLResponse:
+    return HTMLResponse(
+        content=INDEX_HTML,
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@router.get("/case-labeling", include_in_schema=False)
+async def case_labeling_page(request: Request) -> HTMLResponse:
+    """Serve the Case-labeling preview to Dashboard administrators only."""
+
+    await asyncio.to_thread(_admin_identity, request)
     return HTMLResponse(
         content=INDEX_HTML,
         headers={"Cache-Control": "no-store, max-age=0"},

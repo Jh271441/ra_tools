@@ -829,18 +829,22 @@ async function openAnalysisDiscussion(
     focusCommentId = 0,
     intentDatasetId = "",
     intentCaseId = "",
+    kind = "",
+    taskId = "",
   } = {}
 ) {
   const isIntentDiscussion = Boolean(intentDatasetId && intentCaseId);
+  const isLabelingDiscussion = kind === "labeling" || source === "labeling";
   clearAnalysisDiscussionImages();
   const normalizedRunId = String(runId || "");
   state.analysisDiscussion = {
-    kind: isIntentDiscussion ? "intent" : "review",
+    kind: isIntentDiscussion ? "intent" : isLabelingDiscussion ? "labeling" : "review",
     issueId,
     runId: normalizedRunId,
     source,
     intentDatasetId: String(intentDatasetId || ""),
     intentCaseId: String(intentCaseId || ""),
+    taskId: String(taskId || ""),
     replyTo: null,
     comments: [],
     pendingImages: [],
@@ -849,11 +853,21 @@ async function openAnalysisDiscussion(
   const discussionTitle = $("#analysisDiscussionTitle");
   const discussionTitleZh = discussionTitle?.querySelector(".ui-lang-zh");
   const discussionTitleEn = discussionTitle?.querySelector(".ui-lang-en");
-  if (discussionTitleZh) discussionTitleZh.textContent = isIntentDiscussion ? "意图标注讨论" : "评论";
-  if (discussionTitleEn) discussionTitleEn.textContent = isIntentDiscussion ? "Intent discussion" : "Comments";
+  if (discussionTitleZh) {
+    discussionTitleZh.textContent = isIntentDiscussion
+      ? "意图标注讨论"
+      : isLabelingDiscussion ? "标注讨论" : "评论";
+  }
+  if (discussionTitleEn) {
+    discussionTitleEn.textContent = isIntentDiscussion
+      ? "Intent discussion"
+      : isLabelingDiscussion ? "Labeling discussion" : "Comments";
+  }
   $("#analysisDiscussionContext").textContent = isIntentDiscussion
     ? `${intentDatasetId} · ${issueId}`
-    : `${issueId} · ${runId || "未绑定 Run"}`;
+    : isLabelingDiscussion
+      ? `${issueId}${taskId ? ` · 任务 ${taskId}` : " · Case 讨论"}`
+      : `${issueId} · ${runId || "未绑定 Run"}`;
   const textarea = $("#analysisDiscussionNote");
   textarea.value = "";
   textarea.hidden = false;
@@ -861,8 +875,9 @@ async function openAnalysisDiscussion(
   $("[data-comment-preview-toggle]").textContent = "预览";
   renderAnalysisDiscussionImages();
   const canWriteIntentDiscussion = !isIntentDiscussion || Boolean(state.session?.can_annotate_intent);
-  $("#analysisDiscussionComposer").hidden = Boolean(state.session?.read_only) || !canWriteIntentDiscussion;
-  $("#analysisDiscussionSubmit").hidden = Boolean(state.session?.read_only) || !canWriteIntentDiscussion;
+  const canWriteLabelingDiscussion = !isLabelingDiscussion || Boolean(state.session?.is_admin);
+  $("#analysisDiscussionComposer").hidden = Boolean(state.session?.read_only) || !canWriteIntentDiscussion || !canWriteLabelingDiscussion;
+  $("#analysisDiscussionSubmit").hidden = Boolean(state.session?.read_only) || !canWriteIntentDiscussion || !canWriteLabelingDiscussion;
   document.querySelectorAll("[data-comment-image]").forEach((button) => {
     button.hidden = isIntentDiscussion;
   });
@@ -877,7 +892,9 @@ async function openAnalysisDiscussion(
   $("#analysisDiscussionDialog").showModal();
   const result = isIntentDiscussion
     ? await api(`/api/intent-datasets/${encodeURIComponent(intentDatasetId)}/cases/${encodeURIComponent(intentCaseId)}/comments`)
-    : await api(`/api/cases/${encodeURIComponent(issueId)}/comments?model_run_id=${encodeURIComponent(normalizedRunId)}`);
+    : isLabelingDiscussion
+      ? await api(`/api/labeling/cases/${encodeURIComponent(issueId)}/comments?task_id=${encodeURIComponent(String(taskId || ""))}`)
+      : await api(`/api/cases/${encodeURIComponent(issueId)}/comments?model_run_id=${encodeURIComponent(normalizedRunId)}`);
   if (
     !state.analysisDiscussion
     || state.analysisDiscussion.issueId !== issueId
@@ -889,6 +906,9 @@ async function openAnalysisDiscussion(
     state.intentLabeling.caseData.collaboration ||= {};
     state.intentLabeling.caseData.collaboration.comments = state.analysisDiscussion.comments;
     if (typeof renderIntentCollaboration === "function") renderIntentCollaboration();
+  }
+  if (isLabelingDiscussion && state.caseLabeling?.caseData?.issue_id === String(issueId)) {
+    state.caseLabeling.caseData.comments = state.analysisDiscussion.comments;
   }
   renderAnalysisDiscussionThread();
   updateAnalysisDiscussionCount(issueId, normalizedRunId, Number(result.count || 0));
@@ -1067,6 +1087,14 @@ function analysisDiscussionShareUrl(commentId) {
     intentUrl.searchParams.set("comment", String(Number(commentId)));
     return intentUrl.href;
   }
+  if (context?.kind === "labeling") {
+    const labelingUrl = new URL(withBase(PAGE_ROUTES.labeling.path), window.location.origin);
+    labelingUrl.searchParams.set("issue", String(context.issueId || ""));
+    if (context.taskId) labelingUrl.searchParams.set("task", String(context.taskId));
+    labelingUrl.searchParams.set("comments", "1");
+    labelingUrl.searchParams.set("comment", String(Number(commentId)));
+    return labelingUrl.href;
+  }
   const url = new URL(withBase(PAGE_ROUTES.review.path), window.location.origin);
   url.searchParams.set("issue", String(context?.issueId || ""));
   if (context?.runId) url.searchParams.set("run", String(context.runId));
@@ -1228,6 +1256,28 @@ async function saveAnalysisDiscussion(event) {
           }),
         }
       );
+    } else if (context.kind === "labeling" && context.pendingImages?.length) {
+      const form = new FormData();
+      payload.task_id = String(context.taskId || "");
+      payload.attachment_tokens = context.pendingImages.map((item) => item.token);
+      form.append("payload", JSON.stringify(payload));
+      context.pendingImages.forEach((item, index) => {
+        form.append("attachments", item.file, item.file.name || `comment-${index + 1}.png`);
+      });
+      result = await api(`/api/labeling/cases/${encodeURIComponent(context.issueId)}/comments-with-attachments`, {
+        method: "POST",
+        body: form,
+        headers: { "X-RA-Triage-Request": "comment-v1" },
+      });
+    } else if (context.kind === "labeling") {
+      result = await api(`/api/labeling/cases/${encodeURIComponent(context.issueId)}/comments`, {
+        method: "POST",
+        body: JSON.stringify({
+          body: discussion,
+          reply_to_id: context.replyTo?.id || null,
+          task_id: String(context.taskId || ""),
+        }),
+      });
     } else if (context.pendingImages?.length) {
       const form = new FormData();
       payload.attachment_tokens = context.pendingImages.map((item) => item.token);
@@ -1253,6 +1303,9 @@ async function saveAnalysisDiscussion(event) {
       state.intentLabeling.caseData.collaboration ||= {};
       state.intentLabeling.caseData.collaboration.comments = context.comments;
       if (typeof renderIntentCollaboration === "function") renderIntentCollaboration();
+    }
+    if (context.kind === "labeling" && state.caseLabeling?.caseData?.issue_id === context.issueId) {
+      state.caseLabeling.caseData.comments = context.comments;
     }
     context.replyTo = null;
     $("#analysisDiscussionNote").value = "";

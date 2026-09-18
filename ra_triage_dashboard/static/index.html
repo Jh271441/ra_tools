@@ -78,7 +78,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-454`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-455`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -114,11 +114,11 @@
               <span class="sidebar-group-label sidebar-label review-group-label"><span class="ui-lang-zh">RA 标注与复核</span><span class="ui-lang-en">RA labeling & review</span></span><span class="sidebar-group-chevron" aria-hidden="true"></span>
             </button>
             <div class="sidebar-nav-group-items" id="sidebarNavReview" data-sidebar-nav-group-items="review">
-              <a class="sidebar-item" id="caseLabelingNavButton" data-page-target="labeling" data-app-path="/case-labeling" href="/case-labeling" title="Case 标注" hidden>
+              <a class="sidebar-item" id="caseLabelingNavButton" data-page-target="labeling" data-app-path="/case-labeling" href="/case-labeling" title="Case 标注（内测，仅管理员）" hidden>
                 <span class="sidebar-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="4" y="3.5" width="16" height="17" rx="3"/><path d="M8 8h8M8 12h8M8 16h5"/><path class="icon-emphasis" d="m14 15 2 2 4-5"/></svg>
                 </span>
-                <span class="sidebar-label"><strong class="ui-lang-zh">Case 标注</strong><strong class="ui-lang-en">Case labeling</strong></span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">Case 标注</strong><strong class="ui-lang-en">Case labeling</strong><small class="sidebar-preview-badge">内测</small></span>
               </a>
               <a class="sidebar-item active" id="reviewNavButton" data-page-target="review" data-app-path="/review" href="/review" title="判错复核">
                 <span class="sidebar-icon" aria-hidden="true">
@@ -416,7 +416,7 @@
               <button class="button button-primary" id="caseLabelingExportGt" type="button">导出 GT 更新</button>
             </section>
             <section class="case-labeling-gallery" id="caseLabelingGallery">
-              <div class="gallery-heading"><div><h2>Case 标注</h2><p id="caseLabelingSummary">正在加载…</p></div><span class="count-pill" id="caseLabelingCount">—</span></div>
+              <div class="gallery-heading"><div><h2>Case 标注 <small class="case-labeling-preview-badge">内测 · 仅管理员</small></h2><p id="caseLabelingSummary">正在加载…</p></div><span class="count-pill" id="caseLabelingCount">—</span></div>
               <div class="issue-grid" id="caseLabelingList" aria-live="polite"></div>
               <nav class="case-pagination gallery-pagination" aria-label="标注 Case 分页"><div class="case-pagination-main"><button class="button button-quiet" id="caseLabelingPrevious" type="button">上一页</button><span id="caseLabelingPageSummary">— / —</span><button class="button button-quiet" id="caseLabelingNext" type="button">下一页</button></div><label class="case-page-size"><span>每页</span><select id="caseLabelingPageSize"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option><option value="100">100</option></select><span>条</span></label></nav>
             </section>
@@ -2067,7 +2067,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-454`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-455`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

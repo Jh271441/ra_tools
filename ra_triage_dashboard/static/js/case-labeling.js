@@ -20,6 +20,26 @@ function persistCaseLabelingRoute(overrides = {}, mode = "replace") {
   );
 }
 
+function activeLabelingBaselineIds() {
+  return [...new Set(state.config?.case_labeling?.active_baseline_ids || [])].map(String);
+}
+
+function selectedActiveLabelingBaselineIds() {
+  const active = new Set(activeLabelingBaselineIds());
+  return normalizeBaselineIds(state.selectedBaselineIds).filter((id) => active.has(id));
+}
+
+function labelingBaselineItems(ids) {
+  const wanted = new Set((ids || []).map(String));
+  return (state.config?.baselines || state.baselineCatalog || []).filter((item) =>
+    wanted.has(String(item.id))
+  );
+}
+
+function canAccessCaseLabelingPreview() {
+  return Boolean(state.session?.is_admin);
+}
+
 function caseLabelingStateText(value) {
   return ({ pending: "待标注", resolved: "已形成结果", conflict: "冲突待处理", stale: "裁决需确认" })[value] || value || "待标注";
 }
@@ -77,27 +97,67 @@ function caseLabelingCardMarkup(item, index) {
   </button>`;
 }
 
+function renderCaseLabelingInactiveState() {
+  const selected = labelingBaselineItems(normalizeBaselineIds(state.selectedBaselineIds));
+  const active = labelingBaselineItems(activeLabelingBaselineIds());
+  const selectedText = selected.length
+    ? selected.map((item) => item.label || item.id).join("、")
+    : "当前数据集";
+  const switches = active.length
+    ? `<div class="case-labeling-active-switchers">${active.map((item) => `<button class="button button-primary" type="button" data-labeling-baseline="${escapeHtml(item.id)}">查看 ${escapeHtml(item.label || item.id)} · ${escapeHtml(String(item.count ?? "—"))}</button>`).join("")}</div>`
+    : `<p>当前还没有已激活的标注数据集。</p>`;
+  return `<div class="empty-state case-labeling-inactive-state"><p class="case-labeling-preview-badge">内测 · 仅管理员</p><h2>${escapeHtml(selectedText)} 尚未切换到 Case 标注</h2><p>该范围仍在「判错复核」工作台。Case 标注内测只列出已激活数据集，避免把未迁移范围显示成 0 个 Case。</p>${switches}</div>`;
+}
+
 function renderCaseLabelingList(data) {
   const list = $("#caseLabelingList");
   const items = data.items || [];
+  const pagination = $("#caseLabelingGallery")?.querySelector(".case-pagination");
+  if (pagination) pagination.hidden = Boolean(data.inactive);
+  if (data.inactive) {
+    list.innerHTML = renderCaseLabelingInactiveState();
+    list.querySelectorAll("[data-labeling-baseline]").forEach((button) => {
+      button.addEventListener("click", () => {
+        setBaselineScopes([button.dataset.labelingBaseline]).catch((error) => showToast(error.message, true));
+      });
+    });
+    $("#caseLabelingCount").textContent = "0";
+    $("#caseLabelingSummary").textContent = "内测中 · 当前数据集尚未激活";
+    $("#caseLabelingPageSummary").textContent = "— / —";
+    $("#caseLabelingPrevious").disabled = true;
+    $("#caseLabelingNext").disabled = true;
+    if ($("#caseLabelingExportGt")) $("#caseLabelingExportGt").disabled = true;
+    return;
+  }
   list.innerHTML = items.length
     ? items.map(caseLabelingCardMarkup).join("")
-    : `<div class="empty-state"><h2>当前范围没有 Case</h2><p>请切换数据集、任务或状态。</p></div>`;
+    : `<div class="empty-state"><h2>当前范围没有 Case</h2><p>请切换已激活的数据集、任务或状态。</p></div>`;
   list.querySelectorAll("[data-labeling-issue]").forEach((button) => {
     button.addEventListener("click", () => selectCaseLabelingIssue(button.dataset.labelingIssue));
   });
   $("#caseLabelingCount").textContent = String(data.total || 0);
   $("#caseLabelingSummary").textContent = state.caseLabeling.taskId
     ? `任务范围 · ${data.total || 0} 个 Case`
-    : `当前数据集 · ${data.total || 0} 个 Case`;
+    : `当前已激活数据集 · ${data.total || 0} 个 Case`;
   $("#caseLabelingPageSummary").textContent = `${data.page || 1} / ${data.pages || 1}`;
   $("#caseLabelingPrevious").disabled = Number(data.page || 1) <= 1;
   $("#caseLabelingNext").disabled = Number(data.page || 1) >= Number(data.pages || 1);
   $("#caseLabelingPageSize").value = String(data.page_size || DEFAULT_CASE_PAGE_SIZE);
+  if ($("#caseLabelingExportGt")) {
+    $("#caseLabelingExportGt").disabled = !state.session?.is_admin;
+  }
 }
 
 async function loadCaseLabelingCases({ page = state.caseLabeling.page } = {}) {
   const seq = ++state.caseLabeling.requestSeq;
+  if (!selectedActiveLabelingBaselineIds().length) {
+    if (seq !== state.caseLabeling.requestSeq) return;
+    state.caseLabeling.page = 1;
+    state.caseLabeling.data = { items: [], total: 0, page: 1, pages: 1, page_size: state.caseLabeling.pageSize, inactive: true };
+    renderCaseLabelingList(state.caseLabeling.data);
+    persistCaseLabelingRoute({ issue: "", page: 1 });
+    return;
+  }
   const params = new URLSearchParams({
     baselines: selectedBaselineQueryValue(),
     task_id: state.caseLabeling.taskId || "",
@@ -174,8 +234,25 @@ function caseLabelingHistoryMarkup(caseData) {
 
 function caseLabelingCommentsMarkup(caseData) {
   const comments = caseData.comments || [];
-  if (!comments.length) return `<p class="muted">尚无迁移到当前范围的标注讨论。</p>`;
-  return comments.map((comment) => `<article class="case-labeling-history-row"><header><strong>${escapeHtml(comment.author || "未记录")}</strong><span>${escapeHtml(comment.created_at || "")}</span></header><p>${escapeHtml(comment.body || "")}</p>${comment.source_run_id ? `<small>历史来源 Run · ${escapeHtml(comment.source_run_id)}</small>` : ""}</article>`).join("");
+  const count = comments.length;
+  const button = `<button class="button button-quiet" type="button" id="caseLabelingOpenDiscussion">打开讨论${count ? ` · ${count}` : ""} <kbd>D</kbd></button>`;
+  if (!comments.length) {
+    return `${button}<p class="muted">尚无标注讨论。可在讨论面板回复历史线程或发起新讨论。</p>`;
+  }
+  const items = comments.map((comment) => {
+    const body = typeof reviewCommentBodyMarkup === "function"
+      ? reviewCommentBodyMarkup(comment.body || "", comment.attachments || [])
+      : `<p>${escapeHtml(comment.body || "")}</p>`;
+    const displayName = typeof reviewMentionDisplayName === "function"
+      ? reviewMentionDisplayName(comment.author || "未记录")
+      : (comment.author || "未记录");
+    const sourceBits = [
+      comment.label_task_id ? "任务讨论" : "",
+      comment.source_run_id ? `历史来源 Run · ${comment.source_run_id}` : "",
+    ].filter(Boolean);
+    return `<article class="case-labeling-history-row"><header><strong>${escapeHtml(displayName)}</strong><span>${escapeHtml(comment.created_at || "")}</span></header><div class="comment-thread-body">${body}</div>${sourceBits.length ? `<small>${escapeHtml(sourceBits.join(" · "))}</small>` : ""}</article>`;
+  }).join("");
+  return `${button}<div class="case-labeling-history">${items}</div>`;
 }
 
 function renderCaseLabelingEditor(caseData) {
@@ -195,7 +272,7 @@ function renderCaseLabelingEditor(caseData) {
     <section><label><span>标注依据</span><textarea id="caseLabelingRationale" placeholder="说明判断依据；此处不填写模型判错原因。">${escapeHtml(source.rationale || "")}</textarea></label></section>
     <label class="review-exclude-toggle"><input id="caseLabelingExcluded" type="checkbox" ${source.is_excluded ? "checked" : ""}/><span>应该排除</span></label>
     <label><span>标注截图（最多 4 张）</span><input id="caseLabelingAttachments" type="file" accept="image/png,image/jpeg,image/webp" multiple /></label>
-    <button class="button button-primary" type="submit" ${state.session?.can_write ? "" : "disabled"}>保存标注</button>
+    <button class="button button-primary" type="submit" ${state.session?.is_admin ? "" : "disabled"}>保存标注</button>
     ${resolution?.state === "conflict" || resolution?.state === "stale" ? `<section class="case-labeling-adjudication"><strong>标注冲突</strong><p>${(resolution.heads || []).map((item) => `${escapeHtml(item.author)}：${escapeHtml(item.expected_output || "待补充")}`).join(" · ")}</p><button class="button button-quiet" id="caseLabelingAdjudicate" type="button">按当前表单显式裁决</button></section>` : ""}
     <section><div class="review-section-heading"><h2>标注历史</h2></div><div class="case-labeling-history">${caseLabelingHistoryMarkup(caseData)}</div></section>
     <section><div class="review-section-heading"><h2>标注讨论</h2></div><div class="case-labeling-history">${caseLabelingCommentsMarkup(caseData)}</div></section>
@@ -204,6 +281,9 @@ function renderCaseLabelingEditor(caseData) {
   $("#caseLabelingForm").addEventListener("input", () => { state.caseLabeling.dirty = true; });
   $("#caseLabelingForm").addEventListener("change", () => { state.caseLabeling.dirty = true; });
   $("#caseLabelingAdjudicate")?.addEventListener("click", adjudicateCaseLabeling);
+  $("#caseLabelingOpenDiscussion")?.addEventListener("click", () => {
+    openCaseLabelingDiscussion().catch((error) => showToast(error.message, true));
+  });
 }
 
 async function selectCaseLabelingIssue(issueId, { updateRoute = true } = {}) {
@@ -330,7 +410,44 @@ async function adjudicateCaseLabeling() {
   }
 }
 
+function openCaseLabelingDiscussion(focusCommentId = 0) {
+  const issueId = state.caseLabeling.issueId || state.caseLabeling.caseData?.issue_id;
+  if (!issueId || typeof openAnalysisDiscussion !== "function") return Promise.resolve();
+  return openAnalysisDiscussion(issueId, {
+    source: "labeling",
+    kind: "labeling",
+    taskId: state.caseLabeling.taskId || "",
+    focusCommentId,
+  });
+}
+
+function bindCaseLabelingDiscussionShortcut() {
+  if (document.documentElement.dataset.caseLabelingKeys === "1") return;
+  document.documentElement.dataset.caseLabelingKeys = "1";
+  document.addEventListener("keydown", (event) => {
+    if (state.activePage !== "labeling" || !state.caseLabeling.issueId) return;
+    const key = String(event.key || "").toLowerCase();
+    if (key !== "d") return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest("textarea, input, select, [contenteditable='true']")) return;
+    event.preventDefault();
+    const dialog = $("#analysisDiscussionDialog");
+    if (dialog?.open && state.analysisDiscussion?.kind === "labeling") {
+      if (typeof closeDialog === "function") closeDialog("analysisDiscussionDialog");
+      else dialog.close();
+      return;
+    }
+    if (document.querySelector("dialog[open]")) return;
+    openCaseLabelingDiscussion().catch((error) => showToast(error.message, true));
+  });
+}
+
 async function enterCaseLabeling({ route = null } = {}) {
+  if (!canAccessCaseLabelingPreview() && !state.session?.identity_pending) {
+    showToast("Case 标注内测仅限管理员。", true);
+    if (typeof showPage === "function") showPage("review", { historyMode: "replace" });
+    return;
+  }
   const filters = route?.labelingFilters || parsePageRoute().labelingFilters || {};
   state.caseLabeling.taskId = filters.taskId ?? state.caseLabeling.taskId;
   state.caseLabeling.search = filters.search ?? state.caseLabeling.search;
@@ -347,6 +464,7 @@ async function enterCaseLabeling({ route = null } = {}) {
 }
 
 function bindCaseLabelingEvents() {
+  bindCaseLabelingDiscussionShortcut();
   $("#caseLabelingTask")?.addEventListener("change", () => {
     state.caseLabeling.taskId = $("#caseLabelingTask").value || "";
     state.caseLabeling.page = 1;

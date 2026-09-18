@@ -29,6 +29,12 @@ body[data-active-page="labeling"] .header-metrics { display: none; }
 .case-labeling-history-row { border-top: 1px solid var(--line); padding-top: 8px; }
 .case-labeling-history-row header { display: flex; gap: 8px; justify-content: space-between; flex-wrap: wrap; }
 .case-labeling-adjudication { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 8px; }
+.case-labeling-preview-badge, .sidebar-preview-badge { display: inline-block; margin-left: 8px; padding: 1px 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; vertical-align: middle; }
+.sidebar-item .sidebar-preview-badge { margin-left: 6px; }
+.case-labeling-inactive-state { max-width: 640px; margin: 48px auto; text-align: center; display: grid; gap: 12px; justify-items: center; }
+.case-labeling-inactive-state .case-labeling-preview-badge { margin-left: 0; }
+.case-labeling-active-switchers { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.case-labeling-history .comment-thread-body { overflow-wrap: anywhere; }
 @media (max-width: 1024px) {
   .case-labeling-command { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .case-labeling-workspace { grid-template-columns: 1fr; }

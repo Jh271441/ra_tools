@@ -1072,7 +1072,11 @@ async function bootstrap() {
   try {
     await settleInitialRequests([loadConfig()], "基础配置");
     const intentAccessPages = ["users", "intent", "intent-experiments", "intent-summary"];
-    if (intentAccessPages.includes(initialRoute.page) || initialRoute.page === "review-assignments") {
+    if (
+      intentAccessPages.includes(initialRoute.page)
+      || initialRoute.page === "review-assignments"
+      || initialRoute.page === "labeling"
+    ) {
       await sessionRequest;
     }
     if (initialRoute.page === "users" && !state.session.is_admin) {
@@ -1082,6 +1086,10 @@ async function bootstrap() {
     if (initialRoute.page === "review-assignments" && !state.session.is_admin) {
       initialRoute.page = "review";
       showToast("当前账号没有任务分配管理权限。", true);
+    }
+    if (initialRoute.page === "labeling" && !state.session.is_admin) {
+      initialRoute.page = "review";
+      showToast("Case 标注内测仅限管理员。", true);
     }
     if (initialRoute.page === "intent-experiments" && !state.session.can_view_intent) {
       initialRoute.page = "review";
@@ -1236,11 +1244,15 @@ async function bootstrap() {
     }
     if (initialRoute.openComments && initialRoute.issue) {
       await sessionRequest;
-      await openAnalysisDiscussion(initialRoute.issue, {
-        runId: initialRoute.runId || "",
-        source: "deep-link",
-        focusCommentId: initialRoute.commentId || 0,
-      });
+      if (initialRoute.page === "labeling") {
+        await openCaseLabelingDiscussion(initialRoute.commentId || 0);
+      } else {
+        await openAnalysisDiscussion(initialRoute.issue, {
+          runId: initialRoute.runId || "",
+          source: "deep-link",
+          focusCommentId: initialRoute.commentId || 0,
+        });
+      }
     }
     showPage(initialRoute.page, {
       historyMode: "replace",

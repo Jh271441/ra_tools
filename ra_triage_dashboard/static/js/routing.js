@@ -958,9 +958,6 @@ function showPage(
     if (importKind) setImportKind(importKind);
     else activateRunSourceTab(runSourceTab || "upload");
   }
-  if (target === "labeling" && loadPageData && typeof enterCaseLabeling === "function") {
-    enterCaseLabeling({ route: parsePageRoute() }).catch((error) => showToast(error.message, true));
-  }
   if (target === "comparison") {
     renderRunComparisonSelectors?.();
     renderRunComparison?.();
@@ -982,6 +979,15 @@ function showPage(
     if (!state.session.identity_pending && !state.session.is_admin) {
       showToast(uiText("当前账号没有任务分配管理权限。", "Review assignment management requires admin access."), true);
       return showPage("review", { historyMode: historyMode || "replace" });
+    }
+  }
+  if (target === "labeling") {
+    if (!state.session.identity_pending && !state.session.is_admin) {
+      showToast(uiText("Case 标注内测仅限管理员。", "Case labeling preview is admin-only."), true);
+      return showPage("review", { historyMode: historyMode || "replace" });
+    }
+    if (loadPageData && typeof enterCaseLabeling === "function") {
+      enterCaseLabeling({ route: parsePageRoute() }).catch((error) => showToast(error.message, true));
     }
   }
   if (target === "prediction") {

@@ -343,6 +343,44 @@ class CaseLabelingTest(unittest.TestCase):
             self.assertEqual(cases[0]["resolution"]["state"], "conflict")
             self.assertEqual(cases[0]["resolution"]["submitted_count"], 2)
 
+    def test_list_label_comments_includes_task_threads_in_case_view(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.make_db(tmp)
+            workset = database.create_review_workset(
+                baseline_scope="scope", issue_ids=["cn1"], created_by="admin",
+            )
+            task = database.create_labeling_task(
+                workset_id=workset["id"],
+                assignments=[{"name": "alice", "issue_ids": ["cn1"]}],
+                created_by="admin", seed=1, reviewers_per_issue=1, overlap_ratio=0,
+            )
+            case_comment = database.create_review_comment(
+                issue_id="cn1", model_run_id="", body="Case 历史讨论",
+                author="alice", author_source="kylin_ticket", author_verified=True,
+            )
+            task_comment = database.create_review_comment(
+                issue_id="cn1", model_run_id="", body="任务讨论",
+                author="bob", author_source="kylin_ticket", author_verified=True,
+            )
+            database.link_label_comment(
+                comment_id=case_comment["id"], task_id="",
+                source_run_id="", policy_version="test-v1",
+            )
+            database.link_label_comment(
+                comment_id=task_comment["id"], task_id=task["id"],
+                source_run_id="", policy_version="test-v1",
+            )
+            unscoped = database.list_label_comments(issue_id="cn1")
+            self.assertEqual(
+                [item["id"] for item in unscoped],
+                [case_comment["id"], task_comment["id"]],
+            )
+            scoped = database.list_label_comments(issue_id="cn1", task_id=task["id"])
+            self.assertEqual(
+                [item["id"] for item in scoped],
+                [case_comment["id"], task_comment["id"]],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

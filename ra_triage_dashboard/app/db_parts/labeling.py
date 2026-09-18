@@ -1548,22 +1548,33 @@ class DatabaseLabelingMixin:
             )
             self._mark_labeling_change(conn)
 
+    def get_label_comment_link(self, comment_id: int) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM label_comment_links WHERE comment_id = ?",
+                (int(comment_id),),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
     def list_label_comments(self, *, issue_id: str, task_id: str = "") -> list[dict[str, Any]]:
         task = str(task_id or "").strip()
-        with self.connect() as conn:
-            rows = conn.execute(
-                """
+        issue = str(issue_id or "").strip()
+        query = """
                 SELECT comment.*, parent.author AS reply_to_author,
                        parent.body AS reply_to_body, link.task_id,
                        link.source_run_id, link.policy_version
                 FROM label_comment_links link
                 JOIN review_comments comment ON comment.id = link.comment_id
                 LEFT JOIN review_comments parent ON parent.id = comment.reply_to_id
-                WHERE link.issue_id = ? AND link.task_id = ?
-                ORDER BY comment.id
-                """,
-                (str(issue_id or "").strip(), task),
-            ).fetchall()
+                WHERE link.issue_id = ?
+                """
+        params: tuple[Any, ...] = (issue,)
+        if task:
+            query += " AND (link.task_id = ? OR link.task_id = '')"
+            params = (issue, task)
+        query += " ORDER BY comment.id"
+        with self.connect() as conn:
+            rows = conn.execute(query, params).fetchall()
             attachments = self._comment_attachments_for_rows(conn, rows)
         comments: list[dict[str, Any]] = []
         for row in rows:
