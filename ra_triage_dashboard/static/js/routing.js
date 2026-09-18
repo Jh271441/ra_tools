@@ -401,12 +401,18 @@ function normalizedCaseLabelingRouteFilters(params) {
     params.get("page_size") || String(DEFAULT_CASE_PAGE_SIZE), 10
   );
   const status = String(params.get("status") || "all").trim().toLowerCase();
+  const label = String(params.get("label") || "all").trim();
+  const exclusion = String(params.get("exclusion") || "all").trim().toLowerCase();
+  const author = String(params.get("author") || "").trim().toLowerCase();
   return {
     taskId: /^split-[A-Za-z0-9]+$/.test(params.get("task") || "")
       ? params.get("task")
       : "",
     search: params.get("q") || "",
     status: ["pending", "resolved", "conflict"].includes(status) ? status : "all",
+    author: /^[a-z0-9._@-]{1,128}$/.test(author) ? author : "",
+    label: ["误触发", "正确触发", "无需协助"].includes(label) ? label : "all",
+    exclusion: ["excluded", "active"].includes(exclusion) ? exclusion : "all",
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
     pageSize: CASE_PAGE_SIZES.includes(rawPageSize)
       ? rawPageSize
@@ -706,6 +712,13 @@ function pageUrl(page, options = {}) {
     if (labeling.search) url.searchParams.set("q", labeling.search);
     if (labeling.status && labeling.status !== "all") {
       url.searchParams.set("status", labeling.status);
+    }
+    if (labeling.author) url.searchParams.set("author", labeling.author);
+    if (labeling.label && labeling.label !== "all") {
+      url.searchParams.set("label", labeling.label);
+    }
+    if (labeling.exclusion && labeling.exclusion !== "all") {
+      url.searchParams.set("exclusion", labeling.exclusion);
     }
     if (Number(labeling.page) > 1) url.searchParams.set("page", String(labeling.page));
     if (Number(labeling.pageSize) !== DEFAULT_CASE_PAGE_SIZE) {

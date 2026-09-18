@@ -244,6 +244,9 @@ async def list_labeling_cases(
     task_id: str = "",
     q: str = "",
     status: str = "all",
+    author: str = "",
+    exclusion: str = "all",
+    label: str = "",
     page: int = 1,
     page_size: int = 20,
 ) -> dict[str, Any]:
@@ -261,15 +264,26 @@ async def list_labeling_cases(
         )
         if not any(task["id"] == normalized_task_id for task in tasks):
             raise _detail(404, "标注任务不在当前已激活的数据集中。")
-    result = await asyncio.to_thread(
-        database.list_labeling_cases,
-        baseline_scopes=scopes,
-        task_id=normalized_task_id,
-        search=_as_text(q),
-        status=normalized_status,
-        page=page,
-        page_size=page_size,
-    )
+    normalized_author = _as_text(author).strip().lower()
+    normalized_exclusion = (_as_text(exclusion).lower() or "all")
+    if normalized_exclusion not in {"all", "excluded", "active"}:
+        raise _detail(400, "排除筛选不合法。")
+    normalized_label = _as_text(label).strip()
+    try:
+        result = await asyncio.to_thread(
+            database.list_labeling_cases,
+            baseline_scopes=scopes,
+            task_id=normalized_task_id,
+            search=_as_text(q),
+            status=normalized_status,
+            author=normalized_author,
+            exclusion=normalized_exclusion,
+            expected_output=normalized_label,
+            page=page,
+            page_size=page_size,
+        )
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
     for item in result["items"]:
         item["thumbnail_url"] = _public_path(
             f"/api/case-thumbnails/{item['issue_id']}"
@@ -280,6 +294,9 @@ async def list_labeling_cases(
         "task_id": _as_text(task_id),
         "q": _as_text(q),
         "status": normalized_status,
+        "author": normalized_author,
+        "exclusion": normalized_exclusion,
+        "label": normalized_label,
     }
     return result
 

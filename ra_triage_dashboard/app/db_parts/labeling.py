@@ -1131,6 +1131,34 @@ class DatabaseLabelingMixin:
         result["saved_resolution_id"] = resolution_id
         return result
 
+    def labeling_labelers(
+        self, baseline_scopes: Sequence[str], task_id: str = ""
+    ) -> list[str]:
+        scopes = _clean_values(baseline_scopes)
+        if not scopes:
+            return []
+        params: list[Any] = [*scopes]
+        task_clause = ""
+        task = str(task_id or "").strip()
+        if task:
+            task_clause = "AND label_case.task_id = ?"
+            params.append(task)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT DISTINCT lower(trim(revision.author)) AS labeler
+                FROM label_revisions revision
+                JOIN label_cases label_case ON label_case.id = revision.label_case_id
+                WHERE label_case.baseline_scope IN ({', '.join('?' for _ in scopes)})
+                  AND revision.revision_kind IN ('submission', 'legacy')
+                  AND trim(revision.author) != ''
+                  {task_clause}
+                ORDER BY labeler
+                """,
+                params,
+            ).fetchall()
+        return [str(row["labeler"] or "") for row in rows]
+
     def list_labeling_cases(
         self,
         *,
@@ -1138,6 +1166,9 @@ class DatabaseLabelingMixin:
         task_id: str = "",
         search: str = "",
         status: str = "all",
+        author: str = "",
+        exclusion: str = "all",
+        expected_output: str = "",
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
@@ -1166,6 +1197,13 @@ class DatabaseLabelingMixin:
             where += " AND (issue.issue_id LIKE ? OR issue.title LIKE ? OR issue.scenario LIKE ?)"
             needle = f"%{normalized_search}%"
             parameters.extend((needle, needle, needle))
+        normalized_author = str(author or "").strip().lower()
+        normalized_expected_output = str(expected_output or "").strip()
+        if normalized_expected_output and normalized_expected_output not in LABELS:
+            raise ValueError("标注结果类别不合法。")
+        normalized_exclusion = str(exclusion or "all").strip().lower() or "all"
+        if normalized_exclusion not in {"all", "excluded", "active"}:
+            raise ValueError("排除筛选不合法。")
         with self.connect() as conn:
             rows = conn.execute(
                 f"""
@@ -1203,6 +1241,24 @@ class DatabaseLabelingMixin:
                 expected_output = ""
             if status != "all" and aggregate_state != status:
                 continue
+            if normalized_author and not any(
+                head["author"].strip().lower() == normalized_author
+                for item in cases
+                for head in item["resolution"].get("heads") or []
+            ):
+                continue
+            if normalized_expected_output and expected_output != normalized_expected_output:
+                continue
+            if normalized_exclusion != "all":
+                resolved_excluded = any(
+                    (item["resolution"].get("result_revision") or {}).get("is_excluded")
+                    for item in cases
+                    if item["resolution"]["state"] == "resolved"
+                )
+                if normalized_exclusion == "excluded" and not resolved_excluded:
+                    continue
+                if normalized_exclusion == "active" and resolved_excluded:
+                    continue
             projected.append(
                 {
                     "issue_id": str(row["issue_id"]),
@@ -1228,6 +1284,7 @@ class DatabaseLabelingMixin:
             "page": safe_page,
             "page_size": safe_page_size,
             "pages": pages,
+            "labelers": self.labeling_labelers(scopes, task),
         }
 
     def label_gt_candidates(self, baseline_scopes: Sequence[str]) -> list[dict[str, Any]]:
