@@ -724,24 +724,58 @@ function openCaseLabelingDiscussion(focusCommentId = 0) {
   });
 }
 
-function bindCaseLabelingDiscussionShortcut() {
+function bindCaseLabelingEditorShortcuts() {
   if (document.documentElement.dataset.caseLabelingKeys === "1") return;
   document.documentElement.dataset.caseLabelingKeys = "1";
   document.addEventListener("keydown", (event) => {
-    if (state.activePage !== "labeling" || !state.caseLabeling.issueId) return;
+    if (
+      event.defaultPrevented ||
+      event.isComposing ||
+      event.repeat ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      state.activePage !== "labeling" ||
+      !state.caseLabeling.issueId
+    ) return;
     const key = String(event.key || "").toLowerCase();
-    if (key !== "d") return;
     const target = event.target instanceof Element ? event.target : null;
+    const rationale = $("#caseLabelingRationale");
+    if (target === rationale) {
+      // Enter-submit is already handled by the shared submitReviewFromKeyboard.
+      if (key === "escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        rationale.blur();
+      }
+      return;
+    }
+    if (key !== "d" && key !== "j" && key !== "e") return;
     if (target?.closest("textarea, input, select, [contenteditable='true']")) return;
-    event.preventDefault();
-    const dialog = $("#analysisDiscussionDialog");
-    if (dialog?.open && state.analysisDiscussion?.kind === "labeling") {
-      if (typeof closeDialog === "function") closeDialog("analysisDiscussionDialog");
-      else dialog.close();
+    if (key === "d") {
+      event.preventDefault();
+      const dialog = $("#analysisDiscussionDialog");
+      if (dialog?.open && state.analysisDiscussion?.kind === "labeling") {
+        if (typeof closeDialog === "function") closeDialog("analysisDiscussionDialog");
+        else dialog.close();
+        return;
+      }
+      if (document.querySelector("dialog[open]")) return;
+      openCaseLabelingDiscussion().catch((error) => showToast(error.message, true));
       return;
     }
     if (document.querySelector("dialog[open]")) return;
-    openCaseLabelingDiscussion().catch((error) => showToast(error.message, true));
+    if (key === "j") {
+      event.preventDefault();
+      const panel = $("#caseLabelingHistoryPanel");
+      if (panel) panel.hidden = !panel.hidden;
+      return;
+    }
+    if (key === "e" && !event.shiftKey) {
+      event.preventDefault();
+      closeAllReviewDropdowns();
+      rationale?.focus({ preventScroll: false });
+    }
   });
 }
 
@@ -767,7 +801,7 @@ async function enterCaseLabeling({ route = null } = {}) {
 }
 
 function bindCaseLabelingEvents() {
-  bindCaseLabelingDiscussionShortcut();
+  bindCaseLabelingEditorShortcuts();
   $("#caseLabelingFilterForm")?.addEventListener("submit", (event) => event.preventDefault());
   $("#caseLabelingTask")?.addEventListener("change", () => {
     state.caseLabeling.taskId = $("#caseLabelingTask").value || "";

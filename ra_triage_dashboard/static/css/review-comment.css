@@ -471,6 +471,8 @@ html[data-color-theme="light"] .detail-queue-index-input {
   transition: transform 140ms ease, background-color 140ms ease, opacity 140ms ease;
 }
 .review-section { display: grid; gap: 7px; padding: 0; border: 0; border-radius: 0; background: transparent; }
+/* display:grid above beats the UA [hidden] rule — keep hidden sections collapsed. */
+.review-section[hidden] { display: none; }
 .review-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .review-section-heading > div { min-width: 0; display: grid; gap: 2px; }
 .review-section-heading h2 { color: var(--text); font-size: 16px; }
