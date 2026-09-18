@@ -37,6 +37,8 @@
   min-width: 0; min-height: 0; flex-wrap: nowrap; overflow-x: auto; margin: 0; padding-bottom: 1px; scrollbar-width: thin;
 }
 .review-cluster-strip .cluster-chip { flex: 0 0 auto; }
+.case-labeling-progress-strip { margin: 4px 0 10px; }
+.case-labeling-progress-strip .cluster-chip span { color: #b7c5d7; }
 .baseline-banner {
   min-height: 57px; padding: 11px 14px; display: flex; align-items: center; justify-content: space-between; gap: 15px;
   border: 1px solid var(--line); border-radius: var(--radius); background: var(--raised); margin-bottom: 12px;

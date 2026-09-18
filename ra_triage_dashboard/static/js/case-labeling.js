@@ -8,6 +8,7 @@ function caseLabelingRouteOptions(overrides = {}) {
     search: overrides.search ?? labeling.search ?? "",
     status: overrides.status ?? labeling.status ?? "all",
     author: overrides.author ?? labeling.author ?? "",
+    assignee: overrides.assignee ?? labeling.assignee ?? "",
     label: overrides.label ?? labeling.label ?? "all",
     exclusion: overrides.exclusion ?? labeling.exclusion ?? "all",
     page: overrides.page ?? labeling.page ?? 1,
@@ -54,11 +55,55 @@ function renderCaseLabelingTaskPicker() {
     { value: "", label: "全部标注" },
     ...(state.caseLabeling.tasks || []).map((task) => ({
       value: task.id,
-      label: `${task.name || task.id} · ${task.member_count} Case`,
+      label: caseLabelingTaskOptionLabel(task),
     })),
   ];
   populateUiSelect(root, options, state.caseLabeling.taskId || "");
   bindUiSelect(root);
+  renderCaseLabelingTaskProgress();
+}
+
+function caseLabelingTaskOptionLabel(task) {
+  const name = task.name || task.id;
+  const progress = task.progress || {};
+  const total = Number(progress.total || task.member_count || 0);
+  const resolved = Number(progress.resolved || 0);
+  const conflict = Number(progress.conflict || 0);
+  const parts = [`${name} · ${resolved}/${total} 已标注`];
+  if (conflict > 0) parts.push(`${conflict} 冲突`);
+  return parts.join(" · ");
+}
+
+function selectedCaseLabelingTask() {
+  const taskId = state.caseLabeling.taskId || "";
+  if (!taskId) return null;
+  return (state.caseLabeling.tasks || []).find((item) => item.id === taskId) || null;
+}
+
+function renderCaseLabelingTaskProgress() {
+  const strip = $("#caseLabelingTaskProgress");
+  const list = $("#caseLabelingTaskProgressList");
+  if (!strip || !list) return;
+  const task = selectedCaseLabelingTask();
+  const progress = task?.progress;
+  if (!task || !progress || !Number(progress.total)) {
+    strip.hidden = true;
+    list.innerHTML = "";
+    return;
+  }
+  const chips = [
+    `<span class="cluster-chip"><span>总计</span><b>${progress.resolved}/${progress.total}</b></span>`,
+  ];
+  if (Number(progress.conflict) > 0) {
+    chips.push(`<span class="cluster-chip"><span>冲突</span><b>${progress.conflict}</b></span>`);
+  }
+  for (const person of progress.assignees || []) {
+    chips.push(
+      `<span class="cluster-chip"><span>${escapeHtml(person.name)}</span><b>${person.labeled}/${person.total}</b></span>`
+    );
+  }
+  list.innerHTML = chips.join("");
+  strip.hidden = false;
 }
 
 function renderCaseLabelingStatusPicker() {
@@ -83,6 +128,19 @@ function renderCaseLabelingAuthorPicker() {
     })),
   ];
   populateUiSelect(root, options, state.caseLabeling.author || "");
+  bindUiSelect(root);
+}
+
+function renderCaseLabelingAssigneePicker() {
+  const root = $("#caseLabelingAssigneePicker");
+  if (!root) return;
+  const options = [
+    { value: "", label: "全部任务队列" },
+    ...(state.caseLabeling.assignees || []).map((name) => ({
+      value: name, label: name,
+    })),
+  ];
+  populateUiSelect(root, options, state.caseLabeling.assignee || "");
   bindUiSelect(root);
 }
 
@@ -128,6 +186,7 @@ function labelingTaskFilterPayload() {
     q: state.caseLabeling.search || "",
     status: state.caseLabeling.status || "all",
     author: state.caseLabeling.author || "",
+    assignee: state.caseLabeling.assignee || "",
     exclusion: state.caseLabeling.exclusion || "all",
     label:
       state.caseLabeling.label && state.caseLabeling.label !== "all"
@@ -514,9 +573,16 @@ function renderCaseLabelingList(data) {
     : `<div class="empty-state issue-grid-empty"><h2>当前范围没有 Case</h2><p>请切换已激活的数据集、任务或状态。</p></div>`;
   bindCaseLabelingGalleryCards(list);
   $("#caseLabelingCount").textContent = String(data.total || 0);
-  $("#caseLabelingSummary").textContent = state.caseLabeling.taskId
-    ? `任务范围 · ${data.total || 0} 个 Case`
-    : `当前已激活数据集 · ${data.total || 0} 个 Case`;
+  if (state.caseLabeling.taskId) {
+    const progress = selectedCaseLabelingTask()?.progress || {};
+    const total = Number(progress.total || data.total || 0);
+    const resolved = Number(progress.resolved || 0);
+    const conflict = Number(progress.conflict || 0);
+    const detail = conflict > 0 ? ` · ${conflict} 冲突` : "";
+    $("#caseLabelingSummary").textContent = `任务范围 · ${resolved}/${total} 已标注${detail}`;
+  } else {
+    $("#caseLabelingSummary").textContent = `当前已激活数据集 · ${data.total || 0} 个 Case`;
+  }
   $("#caseLabelingPageSummary").textContent = `${data.page || 1} / ${data.pages || 1}`;
   $("#caseLabelingPrevious").disabled = Number(data.page || 1) <= 1;
   $("#caseLabelingNext").disabled = Number(data.page || 1) >= Number(data.pages || 1);
@@ -542,6 +608,7 @@ async function loadCaseLabelingCases({ page = state.caseLabeling.page } = {}) {
     q: state.caseLabeling.search || "",
     status: state.caseLabeling.status || "all",
     author: state.caseLabeling.author || "",
+    assignee: state.caseLabeling.assignee || "",
     exclusion: state.caseLabeling.exclusion || "all",
     label: state.caseLabeling.label && state.caseLabeling.label !== "all" ? state.caseLabeling.label : "",
     page: String(Math.max(1, Number(page) || 1)),
@@ -555,7 +622,12 @@ async function loadCaseLabelingCases({ page = state.caseLabeling.page } = {}) {
   if (state.caseLabeling.author && !state.caseLabeling.labelers.includes(state.caseLabeling.author)) {
     state.caseLabeling.author = "";
   }
+  state.caseLabeling.assignees = result.assignees || [];
+  if (state.caseLabeling.assignee && !state.caseLabeling.assignees.includes(state.caseLabeling.assignee)) {
+    state.caseLabeling.assignee = "";
+  }
   renderCaseLabelingAuthorPicker();
+  renderCaseLabelingAssigneePicker();
   renderCaseLabelingList(result);
   persistCaseLabelingRoute({ issue: "", page: state.caseLabeling.page });
 }
@@ -1209,6 +1281,7 @@ async function enterCaseLabeling({ route = null } = {}) {
   state.caseLabeling.search = filters.search ?? state.caseLabeling.search;
   state.caseLabeling.status = filters.status ?? state.caseLabeling.status;
   state.caseLabeling.author = filters.author ?? state.caseLabeling.author;
+  state.caseLabeling.assignee = filters.assignee ?? state.caseLabeling.assignee;
   state.caseLabeling.label = filters.label ?? state.caseLabeling.label;
   state.caseLabeling.exclusion = filters.exclusion ?? state.caseLabeling.exclusion;
   state.caseLabeling.page = filters.page || 1;
@@ -1217,6 +1290,7 @@ async function enterCaseLabeling({ route = null } = {}) {
   await loadCaseLabelingTasks();
   renderCaseLabelingStatusPicker();
   renderCaseLabelingAuthorPicker();
+  renderCaseLabelingAssigneePicker();
   renderCaseLabelingLabelPicker();
   renderCaseLabelingExclusionPicker();
   await loadCaseLabelingCases({ page: state.caseLabeling.page });
@@ -1231,7 +1305,9 @@ function bindCaseLabelingEvents() {
   $("#caseLabelingTask")?.addEventListener("change", () => {
     state.caseLabeling.taskId = $("#caseLabelingTask").value || "";
     state.caseLabeling.author = "";
+    state.caseLabeling.assignee = "";
     state.caseLabeling.page = 1;
+    renderCaseLabelingTaskProgress();
     closeCaseLabelingDetail({ updateRoute: false });
     loadCaseLabelingCases({ page: 1 }).catch((error) => showToast(error.message, true));
   });
@@ -1241,6 +1317,10 @@ function bindCaseLabelingEvents() {
   });
   $("#caseLabelingAuthor")?.addEventListener("change", () => {
     state.caseLabeling.author = $("#caseLabelingAuthor").value || "";
+    loadCaseLabelingCases({ page: 1 }).catch((error) => showToast(error.message, true));
+  });
+  $("#caseLabelingAssignee")?.addEventListener("change", () => {
+    state.caseLabeling.assignee = $("#caseLabelingAssignee").value || "";
     loadCaseLabelingCases({ page: 1 }).catch((error) => showToast(error.message, true));
   });
   $("#caseLabelingLabel")?.addEventListener("change", () => {
@@ -1263,6 +1343,7 @@ function bindCaseLabelingEvents() {
     state.caseLabeling.taskId = "";
     state.caseLabeling.status = "all";
     state.caseLabeling.author = "";
+    state.caseLabeling.assignee = "";
     state.caseLabeling.label = "all";
     state.caseLabeling.exclusion = "all";
     state.caseLabeling.search = "";
@@ -1270,6 +1351,7 @@ function bindCaseLabelingEvents() {
     renderCaseLabelingTaskPicker();
     renderCaseLabelingStatusPicker();
     renderCaseLabelingAuthorPicker();
+    renderCaseLabelingAssigneePicker();
     renderCaseLabelingLabelPicker();
     renderCaseLabelingExclusionPicker();
     loadCaseLabelingCases({ page: 1 }).catch((error) => showToast(error.message, true));

@@ -157,13 +157,25 @@ async def list_labeling_tasks(request: Request, baselines: str = "") -> dict[str
     await _require_labeling_admin(request)
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     scopes = await _active_labeling_scopes(scopes)
-    return {
-        "items": (
-            await asyncio.to_thread(database.list_labeling_tasks, scopes)
-            if scopes else []
-        ),
-        "baseline_scopes": scopes,
+    if not scopes:
+        return {"items": [], "baseline_scopes": scopes}
+    tasks = await asyncio.to_thread(database.list_labeling_tasks, scopes)
+    task_ids = [str(item["id"]) for item in tasks]
+    progress = (
+        await asyncio.to_thread(database.labeling_task_progress, scopes, task_ids)
+        if task_ids
+        else {}
+    )
+    empty_progress = {
+        "total": 0,
+        "resolved": 0,
+        "conflict": 0,
+        "pending": 0,
+        "assignees": [],
     }
+    for item in tasks:
+        item["progress"] = progress.get(str(item["id"]), dict(empty_progress))
+    return {"items": tasks, "baseline_scopes": scopes}
 
 
 @router.post("/api/labeling/tasks")
@@ -203,6 +215,7 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
                 search=_as_text(filter_body.get("q")),
                 status=normalized_status,
                 author=_as_text(filter_body.get("author")).strip().lower(),
+                assignee=_as_text(filter_body.get("assignee")).strip().lower(),
                 exclusion=normalized_exclusion,
                 expected_output=normalized_label,
             )
@@ -279,6 +292,7 @@ async def list_labeling_cases(
     q: str = "",
     status: str = "all",
     author: str = "",
+    assignee: str = "",
     exclusion: str = "all",
     label: str = "",
     page: int = 1,
@@ -311,6 +325,7 @@ async def list_labeling_cases(
             search=_as_text(q),
             status=normalized_status,
             author=normalized_author,
+            assignee=_as_text(assignee).strip().lower(),
             exclusion=normalized_exclusion,
             expected_output=normalized_label,
             page=page,
@@ -329,6 +344,7 @@ async def list_labeling_cases(
         "q": _as_text(q),
         "status": normalized_status,
         "author": normalized_author,
+        "assignee": _as_text(assignee).strip().lower(),
         "exclusion": normalized_exclusion,
         "label": normalized_label,
     }

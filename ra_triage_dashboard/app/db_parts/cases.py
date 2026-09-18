@@ -1183,8 +1183,11 @@ class DatabaseCasesMixin:
 
         safe_limit = max(1, min(int(limit or 50), 100))
         run_id = str(model_run_id or "").strip()
-        where = "WHERE split.model_run_id = ?" if run_id else ""
-        parameters: tuple[Any, ...] = (run_id,) if run_id else ()
+        where = "WHERE split.task_kind != 'labeling'"
+        parameters: list[Any] = []
+        if run_id:
+            where += " AND split.model_run_id = ?"
+            parameters.append(run_id)
         with self.connect() as conn:
             split_rows = conn.execute(
                 f"""

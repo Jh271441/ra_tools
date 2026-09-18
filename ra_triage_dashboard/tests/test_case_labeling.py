@@ -381,6 +381,113 @@ class CaseLabelingTest(unittest.TestCase):
                 [case_comment["id"], task_comment["id"]],
             )
 
+    def test_labeling_task_progress_aggregates_per_task_and_assignee(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.make_db(tmp)
+            database.upsert_issues(
+                [{"issue_id": "cn3", "gt_label": ""}],
+                source="test", replace_gt=True, baseline_scope="scope",
+            )
+            workset = database.create_review_workset(
+                baseline_scope="scope", issue_ids=["cn1", "cn2", "cn3"],
+                name="progress task", created_by="admin",
+            )
+            task = database.create_labeling_task(
+                workset_id=workset["id"],
+                assignments=[
+                    {"name": "alice", "issue_ids": ["cn1", "cn2"]},
+                    {"name": "bob", "issue_ids": ["cn3"]},
+                ],
+                created_by="admin", seed=1, reviewers_per_issue=1, overlap_ratio=0,
+            )
+            task_id = task["id"]
+            for issue_id, author, output in (
+                ("cn1", "alice", "误触发"),
+                ("cn3", "bob", "正确触发"),
+            ):
+                database.create_label_revision(
+                    issue_id=issue_id, task_id=task_id, expected_output=output,
+                    tags=[], evidence_gaps=[], rationale="r", is_excluded=False,
+                    author=author, author_source="kylin_ticket", author_verified=True,
+                    expected_previous_revision_id=None,
+                )
+            progress = database.labeling_task_progress(["scope"], [task_id])[task_id]
+            self.assertEqual(progress["total"], 3)
+            self.assertEqual(progress["resolved"], 2)
+            self.assertEqual(progress["conflict"], 0)
+            self.assertEqual(progress["pending"], 1)
+            by_name = {item["name"]: item for item in progress["assignees"]}
+            self.assertEqual(by_name["alice"], {"name": "alice", "total": 2, "labeled": 1})
+            self.assertEqual(by_name["bob"], {"name": "bob", "total": 1, "labeled": 1})
+            self.assertEqual(database.labeling_task_progress([], [task_id]), {})
+            self.assertEqual(database.labeling_task_progress(["scope"], []), {})
+
+    def test_assignee_filter_scopes_labeling_cases_to_queue(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.make_db(tmp)
+            database.upsert_issues(
+                [{"issue_id": "cn3", "gt_label": ""}],
+                source="test", replace_gt=True, baseline_scope="scope",
+            )
+            workset = database.create_review_workset(
+                baseline_scope="scope", issue_ids=["cn1", "cn2", "cn3"],
+                name="queue task", created_by="admin",
+            )
+            task = database.create_labeling_task(
+                workset_id=workset["id"],
+                assignments=[
+                    {"name": "Alice", "issue_ids": ["cn1", "cn2"]},
+                    {"name": "bob", "issue_ids": ["cn3"]},
+                ],
+                created_by="admin", seed=1, reviewers_per_issue=1, overlap_ratio=0,
+            )
+            task_id = task["id"]
+            self.assertEqual(
+                database.labeling_assignees(["scope"], task_id), ["alice", "bob"]
+            )
+            alice_ids = [
+                item["issue_id"]
+                for item in database.list_labeling_cases(
+                    baseline_scopes=["scope"], task_id=task_id, assignee="alice",
+                )["items"]
+            ]
+            self.assertEqual(alice_ids, ["cn1", "cn2"])
+            bob_ids = [
+                item["issue_id"]
+                for item in database.list_labeling_cases(
+                    baseline_scopes=["scope"], task_id=task_id, assignee="bob",
+                )["items"]
+            ]
+            self.assertEqual(bob_ids, ["cn3"])
+            all_ids = [
+                item["issue_id"]
+                for item in database.list_labeling_cases(
+                    baseline_scopes=["scope"], task_id=task_id,
+                )["items"]
+            ]
+            self.assertEqual(all_ids, ["cn1", "cn2", "cn3"])
+
+    def test_labeling_splits_do_not_leak_into_review_work_splits(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.make_db(tmp)
+            workset = database.create_review_workset(
+                baseline_scope="scope", issue_ids=["cn1"], created_by="admin",
+            )
+            task = database.create_labeling_task(
+                workset_id=workset["id"],
+                assignments=[{"name": "alice", "issue_ids": ["cn1"]}],
+                created_by="admin", seed=1, reviewers_per_issue=1, overlap_ratio=0,
+            )
+            review_split = database.apply_work_split(
+                assignments=distribute_issue_ids(
+                    ["cn1"], [{"name": "carol"}], seed=2, reviewers_per_issue=1,
+                ),
+                created_by="admin", reviewers_per_issue=1, model_run_id="run-1",
+            )
+            review_ids = {row["split_id"] for row in database.list_review_work_splits()}
+            self.assertIn(review_split["split_id"], review_ids)
+            self.assertNotIn(task["id"], review_ids)
+
 
 if __name__ == "__main__":
     unittest.main()

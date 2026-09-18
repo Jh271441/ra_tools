@@ -404,6 +404,7 @@ function normalizedCaseLabelingRouteFilters(params) {
   const label = String(params.get("label") || "all").trim();
   const exclusion = String(params.get("exclusion") || "all").trim().toLowerCase();
   const author = String(params.get("author") || "").trim().toLowerCase();
+  const assignee = String(params.get("assignee") || "").trim().toLowerCase();
   return {
     taskId: /^split-[A-Za-z0-9]+$/.test(params.get("task") || "")
       ? params.get("task")
@@ -411,6 +412,7 @@ function normalizedCaseLabelingRouteFilters(params) {
     search: params.get("q") || "",
     status: ["pending", "resolved", "conflict"].includes(status) ? status : "all",
     author: /^[a-z0-9._@-]{1,128}$/.test(author) ? author : "",
+    assignee: /^[a-z0-9._@-]{1,128}$/.test(assignee) ? assignee : "",
     label: ["误触发", "正确触发", "无需协助"].includes(label) ? label : "all",
     exclusion: ["excluded", "active"].includes(exclusion) ? exclusion : "all",
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
@@ -714,6 +716,7 @@ function pageUrl(page, options = {}) {
       url.searchParams.set("status", labeling.status);
     }
     if (labeling.author) url.searchParams.set("author", labeling.author);
+    if (labeling.assignee) url.searchParams.set("assignee", labeling.assignee);
     if (labeling.label && labeling.label !== "all") {
       url.searchParams.set("label", labeling.label);
     }

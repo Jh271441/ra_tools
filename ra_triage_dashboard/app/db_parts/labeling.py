@@ -516,6 +516,71 @@ class DatabaseLabelingMixin:
             for row in rows
         ]
 
+    def labeling_task_progress(
+        self, baseline_scopes: Sequence[str], task_ids: Sequence[str]
+    ) -> dict[str, dict[str, Any]]:
+        scopes = _clean_values(baseline_scopes)
+        tasks = _clean_values(task_ids)
+        if not scopes or not tasks:
+            return {}
+        roster: dict[str, dict[str, int]] = {task: {} for task in tasks}
+        placeholders = ", ".join("?" for _ in tasks)
+        with self.connect() as conn:
+            assignment_rows = conn.execute(
+                f"""
+                SELECT split_id, lower(trim(assignee)) AS assignee,
+                       COUNT(DISTINCT issue_id) AS assigned_count
+                FROM review_work_assignments
+                WHERE split_id IN ({placeholders}) AND trim(assignee) != ''
+                GROUP BY split_id, lower(trim(assignee))
+                """,
+                tasks,
+            ).fetchall()
+        for row in assignment_rows:
+            split_id = str(row["split_id"])
+            if split_id in roster:
+                roster[split_id][str(row["assignee"])] = int(row["assigned_count"] or 0)
+        progress: dict[str, dict[str, Any]] = {}
+        for task in tasks:
+            projected, _ = self._project_labeling_cases(
+                baseline_scopes=scopes, task_id=task
+            )
+            total = len(projected)
+            resolved = 0
+            conflict = 0
+            labeled_by_assignee: dict[str, int] = {}
+            for item in projected:
+                state = item["label_state"]
+                if state == "resolved":
+                    resolved += 1
+                elif state == "conflict":
+                    conflict += 1
+                seen: set[str] = set()
+                for case in item["label_cases"]:
+                    for head in case["resolution"].get("heads") or []:
+                        author = str(head["author"] or "").strip().lower()
+                        if author and author not in seen:
+                            seen.add(author)
+                            labeled_by_assignee[author] = (
+                                labeled_by_assignee.get(author, 0) + 1
+                            )
+            assignees = [
+                {
+                    "name": name,
+                    "total": count,
+                    "labeled": labeled_by_assignee.get(name, 0),
+                }
+                for name, count in sorted(roster.get(task, {}).items())
+            ]
+            progress[task] = {
+                "total": total,
+                "resolved": resolved,
+                "conflict": conflict,
+                "pending": total - resolved - conflict,
+                "assignees": assignees,
+            }
+        return progress
+
     def ensure_label_case(
         self,
         *,
@@ -1159,6 +1224,35 @@ class DatabaseLabelingMixin:
             ).fetchall()
         return [str(row["labeler"] or "") for row in rows]
 
+    def labeling_assignees(
+        self, baseline_scopes: Sequence[str], task_id: str = ""
+    ) -> list[str]:
+        scopes = _clean_values(baseline_scopes)
+        if not scopes:
+            return []
+        params: list[Any] = [*scopes]
+        task_clause = ""
+        task = str(task_id or "").strip()
+        if task:
+            task_clause = "AND split.id = ?"
+            params.append(task)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT DISTINCT lower(trim(assignment.assignee)) AS assignee
+                FROM review_work_assignments assignment
+                JOIN issue_work_splits split ON split.id = assignment.split_id
+                JOIN review_worksets workset ON workset.id = split.workset_id
+                WHERE workset.baseline_scope IN ({', '.join('?' for _ in scopes)})
+                  AND split.task_kind = 'labeling'
+                  AND trim(assignment.assignee) != ''
+                  {task_clause}
+                ORDER BY assignee
+                """,
+                params,
+            ).fetchall()
+        return [str(row["assignee"] or "") for row in rows]
+
     def _project_labeling_cases(
         self,
         *,
@@ -1167,6 +1261,7 @@ class DatabaseLabelingMixin:
         search: str = "",
         status: str = "all",
         author: str = "",
+        assignee: str = "",
         exclusion: str = "all",
         expected_output: str = "",
     ) -> tuple[list[dict[str, Any]], str]:
@@ -1195,6 +1290,20 @@ class DatabaseLabelingMixin:
             where += " AND (issue.issue_id LIKE ? OR issue.title LIKE ? OR issue.scenario LIKE ?)"
             needle = f"%{normalized_search}%"
             parameters.extend((needle, needle, needle))
+        normalized_assignee = str(assignee or "").strip().lower()
+        if normalized_assignee:
+            where += (
+                " AND EXISTS (SELECT 1 FROM review_work_assignments wa"
+                " JOIN issue_work_splits wa_split ON wa_split.id = wa.split_id"
+                " WHERE wa.issue_id = issue.issue_id"
+                " AND wa_split.task_kind = 'labeling'"
+                " AND lower(wa.assignee) = ?"
+                + (" AND wa_split.id = ?" if task else "")
+                + ")"
+            )
+            parameters.append(normalized_assignee)
+            if task:
+                parameters.append(task)
         normalized_author = str(author or "").strip().lower()
         normalized_expected_output = str(expected_output or "").strip()
         if normalized_expected_output and normalized_expected_output not in LABELS:
@@ -1281,6 +1390,7 @@ class DatabaseLabelingMixin:
         search: str = "",
         status: str = "all",
         author: str = "",
+        assignee: str = "",
         exclusion: str = "all",
         expected_output: str = "",
         page: int = 1,
@@ -1295,6 +1405,7 @@ class DatabaseLabelingMixin:
             search=search,
             status=status,
             author=author,
+            assignee=assignee,
             exclusion=exclusion,
             expected_output=expected_output,
         )
@@ -1310,6 +1421,7 @@ class DatabaseLabelingMixin:
             "page_size": safe_page_size,
             "pages": pages,
             "labelers": self.labeling_labelers(scopes, task),
+            "assignees": self.labeling_assignees(scopes, task),
         }
 
     def labeling_case_issue_ids(
@@ -1320,6 +1432,7 @@ class DatabaseLabelingMixin:
         search: str = "",
         status: str = "all",
         author: str = "",
+        assignee: str = "",
         exclusion: str = "all",
         expected_output: str = "",
     ) -> list[str]:
@@ -1329,6 +1442,7 @@ class DatabaseLabelingMixin:
             search=search,
             status=status,
             author=author,
+            assignee=assignee,
             exclusion=exclusion,
             expected_output=expected_output,
         )
