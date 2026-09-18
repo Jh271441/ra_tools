@@ -78,7 +78,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-455`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-456`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -118,7 +118,7 @@
                 <span class="sidebar-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="4" y="3.5" width="16" height="17" rx="3"/><path d="M8 8h8M8 12h8M8 16h5"/><path class="icon-emphasis" d="m14 15 2 2 4-5"/></svg>
                 </span>
-                <span class="sidebar-label"><strong class="ui-lang-zh">Case 标注</strong><strong class="ui-lang-en">Case labeling</strong><small class="sidebar-preview-badge">内测</small></span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">Case 标注<small class="sidebar-preview-badge">内测</small></strong><strong class="ui-lang-en">Case labeling<small class="sidebar-preview-badge">preview</small></strong></span>
               </a>
               <a class="sidebar-item active" id="reviewNavButton" data-page-target="review" data-app-path="/review" href="/review" title="判错复核">
                 <span class="sidebar-icon" aria-hidden="true">
@@ -2067,7 +2067,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-455`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-456`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

@@ -106,14 +106,16 @@ function renderCaseLabelingInactiveState() {
   const switches = active.length
     ? `<div class="case-labeling-active-switchers">${active.map((item) => `<button class="button button-primary" type="button" data-labeling-baseline="${escapeHtml(item.id)}">查看 ${escapeHtml(item.label || item.id)} · ${escapeHtml(String(item.count ?? "—"))}</button>`).join("")}</div>`
     : `<p>当前还没有已激活的标注数据集。</p>`;
-  return `<div class="empty-state case-labeling-inactive-state"><p class="case-labeling-preview-badge">内测 · 仅管理员</p><h2>${escapeHtml(selectedText)} 尚未切换到 Case 标注</h2><p>该范围仍在「判错复核」工作台。Case 标注内测只列出已激活数据集，避免把未迁移范围显示成 0 个 Case。</p>${switches}</div>`;
+  return `<div class="empty-state issue-grid-empty case-labeling-inactive-state"><h2>${escapeHtml(selectedText)} 尚未切换到 Case 标注<small class="case-labeling-preview-badge">内测 · 仅管理员</small></h2><p>该范围仍在「判错复核」工作台。Case 标注内测只列出已激活数据集，避免把未迁移范围显示成 0 个 Case。</p>${switches}</div>`;
 }
 
 function renderCaseLabelingList(data) {
   const list = $("#caseLabelingList");
   const items = data.items || [];
   const pagination = $("#caseLabelingGallery")?.querySelector(".case-pagination");
+  const command = document.querySelector(".case-labeling-command");
   if (pagination) pagination.hidden = Boolean(data.inactive);
+  if (command) command.hidden = Boolean(data.inactive);
   if (data.inactive) {
     list.innerHTML = renderCaseLabelingInactiveState();
     list.querySelectorAll("[data-labeling-baseline]").forEach((button) => {
