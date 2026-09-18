@@ -274,6 +274,7 @@ async def list_labeling_cases(
         item["thumbnail_url"] = _public_path(
             f"/api/case-thumbnails/{item['issue_id']}"
         )
+        item["voyager_issue_url"] = _voyager_issue_url(item["issue_id"])
     result["filters"] = {
         "baseline_scopes": scopes,
         "task_id": _as_text(task_id),

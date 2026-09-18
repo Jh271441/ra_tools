@@ -82,19 +82,47 @@ async function loadCaseLabelingTasks() {
   renderCaseLabelingTaskPicker();
 }
 
-function caseLabelingCardMarkup(item, index) {
-  const statusClass = `label-state-${item.label_state || "pending"}`;
-  const output = item.expected_output
-    ? labelBadge(item.expected_output, "待标注")
-    : `<span class="${statusClass}">${escapeHtml(caseLabelingStateText(item.label_state))}</span>`;
-  return `<button class="issue-card case-labeling-card" type="button" data-labeling-issue="${escapeHtml(item.issue_id)}" data-labeling-index="${index}">
-    <div class="issue-card-preview"><img src="${escapeHtml(item.thumbnail_url || "")}" alt="${escapeHtml(item.issue_id)} BEV" loading="lazy" /></div>
-    <div class="issue-card-body">
-      <div class="issue-card-heading"><strong>${escapeHtml(item.issue_id)}</strong>${output}</div>
-      <p>${escapeHtml(item.scenario || item.title || "暂无场景说明")}</p>
-      <div class="issue-card-status"><span>GT ${escapeHtml(item.gt_label || "待补充")}</span><span>来源 ${Number(item.source_count || 0)}</span></div>
-    </div>
-  </button>`;
+function caseLabelingGalleryItem(item) {
+  return {
+    ...item,
+    gallery_workspace: "labeling",
+    thumbnail: {
+      url: item.thumbnail_url || item.thumbnail?.url || "",
+      label: item.thumbnail?.label || t("gallery.bev_keyframe"),
+    },
+    annotation: {
+      label: item.expected_output || "",
+      author: item.author || "",
+      author_verified: Boolean(item.author_verified),
+      is_excluded: Boolean(item.is_excluded),
+      missing_evidence: item.evidence_gaps || [],
+    },
+  };
+}
+
+function bindCaseLabelingGalleryCards(list) {
+  list.querySelectorAll("[data-open-issue]").forEach((button) => {
+    button.addEventListener("click", () => selectCaseLabelingIssue(button.dataset.openIssue));
+  });
+  list.querySelectorAll("[data-case-media-preview]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof openCaseMediaPreview !== "function") return;
+      openCaseMediaPreview(button.dataset.caseMediaPreview, button).catch((error) => {
+        showToast(error.message, true);
+      });
+    });
+  });
+  list.querySelectorAll("[data-case-thumbnail]").forEach((image) => {
+    image.addEventListener("error", () => {
+      const thumbnail = image.closest(".issue-thumbnail");
+      thumbnail?.classList.add("thumbnail-missing");
+      const label = thumbnail?.querySelector(".issue-thumbnail-label");
+      if (label) label.textContent = t("gallery.thumb_fail");
+      image.remove();
+    });
+  });
 }
 
 function renderCaseLabelingInactiveState() {
@@ -132,11 +160,9 @@ function renderCaseLabelingList(data) {
     return;
   }
   list.innerHTML = items.length
-    ? items.map(caseLabelingCardMarkup).join("")
-    : `<div class="empty-state"><h2>当前范围没有 Case</h2><p>请切换已激活的数据集、任务或状态。</p></div>`;
-  list.querySelectorAll("[data-labeling-issue]").forEach((button) => {
-    button.addEventListener("click", () => selectCaseLabelingIssue(button.dataset.labelingIssue));
-  });
+    ? items.map((item) => issueCard(caseLabelingGalleryItem(item), { workspace: "labeling" })).join("")
+    : `<div class="empty-state issue-grid-empty"><h2>当前范围没有 Case</h2><p>请切换已激活的数据集、任务或状态。</p></div>`;
+  bindCaseLabelingGalleryCards(list);
   $("#caseLabelingCount").textContent = String(data.total || 0);
   $("#caseLabelingSummary").textContent = state.caseLabeling.taskId
     ? `任务范围 · ${data.total || 0} 个 Case`
@@ -298,7 +324,8 @@ async function selectCaseLabelingIssue(issueId, { updateRoute = true } = {}) {
   state.caseLabeling.issueId = normalized;
   state.caseLabeling.caseData = caseData;
   state.caseLabeling.dirty = false;
-  $("#caseLabelingGallery").classList.add("hidden");
+  $("#caseLabelingGalleryView")?.classList.add("hidden");
+  $("#caseLabelingGallery")?.classList.add("hidden");
   $("#caseLabelingDetail").classList.remove("hidden");
   $("#caseLabelingIssueTitle").textContent = normalized;
   $("#caseLabelingPosition").textContent = `${caseData.baseline_scope || ""} · GT ${caseData.gt_label || "待补充"}`;
@@ -325,7 +352,8 @@ function closeCaseLabelingDetail({ updateRoute = true } = {}) {
   state.caseLabeling.dirty = false;
   state.caseLabeling.detailSeq += 1;
   $("#caseLabelingDetail").classList.add("hidden");
-  $("#caseLabelingGallery").classList.remove("hidden");
+  $("#caseLabelingGalleryView")?.classList.remove("hidden");
+  $("#caseLabelingGallery")?.classList.remove("hidden");
   if (updateRoute) persistCaseLabelingRoute({ issue: "" }, "push");
 }
 
@@ -467,6 +495,7 @@ async function enterCaseLabeling({ route = null } = {}) {
 
 function bindCaseLabelingEvents() {
   bindCaseLabelingDiscussionShortcut();
+  $("#caseLabelingFilterForm")?.addEventListener("submit", (event) => event.preventDefault());
   $("#caseLabelingTask")?.addEventListener("change", () => {
     state.caseLabeling.taskId = $("#caseLabelingTask").value || "";
     state.caseLabeling.page = 1;

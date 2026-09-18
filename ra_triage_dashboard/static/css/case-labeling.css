@@ -1,20 +1,13 @@
-.case-labeling-page { display: grid; gap: 14px; }
+.case-labeling-page { display: grid; gap: 8px; }
 body[data-active-page="labeling"] .header-metrics { display: none; }
-.case-labeling-command { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(220px, .7fr) minmax(180px, .5fr) auto auto; gap: 12px; align-items: end; padding: 14px; }
+.case-labeling-filters {
+  grid-template-columns: minmax(180px, 1.5fr) minmax(160px, .9fr) minmax(140px, .7fr) auto auto;
+}
 .case-labeling-command[hidden],
-.case-labeling-gallery .gallery-pagination[hidden] { display: none !important; }
-.case-labeling-command label { display: grid; gap: 6px; min-width: 0; }
-.case-labeling-command label > span { color: var(--muted); font-size: 12px; }
-.case-labeling-command input { width: 100%; }
-.case-labeling-gallery { display: grid; gap: 12px; }
-.case-labeling-gallery .gallery-heading h2 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.case-labeling-gallery .gallery-heading .case-labeling-preview-badge { margin-left: 0; }
-.case-labeling-gallery .gallery-heading p { margin: 4px 0 0; color: var(--muted); }
-.case-labeling-card { text-align: left; }
-.case-labeling-card .issue-card-status { display: flex; gap: 6px; flex-wrap: wrap; }
-.label-state-resolved { color: var(--ok); }
-.label-state-conflict { color: var(--fail); }
-.label-state-pending { color: var(--muted); }
+#caseLabelingGallery .gallery-pagination[hidden] { display: none !important; }
+.case-labeling-page .gallery-heading h2 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.case-labeling-page .gallery-heading .case-labeling-preview-badge { margin-left: 0; }
+.case-labeling-page .gallery-heading p { margin: 4px 0 0; color: var(--muted); }
 .case-labeling-detail { display: grid; gap: 12px; }
 .case-labeling-detail-heading { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .case-labeling-detail-heading strong { font-size: 18px; }
@@ -40,9 +33,9 @@ body[data-active-page="labeling"] .header-metrics { display: none; }
 .case-labeling-active-switchers { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .case-labeling-history .comment-thread-body { overflow-wrap: anywhere; }
 @media (max-width: 1024px) {
-  .case-labeling-command { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .case-labeling-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .case-labeling-workspace { grid-template-columns: 1fr; }
 }
 @media (max-width: 639px) {
-  .case-labeling-command, .case-labeling-media-grid, .case-labeling-output-grid { grid-template-columns: 1fr; }
+  .case-labeling-filters, .case-labeling-media-grid, .case-labeling-output-grid { grid-template-columns: 1fr; }
 }

@@ -240,7 +240,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-457", APP_ENTRY_JS)
+        self.assertIn("manual-triage-458", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -281,7 +281,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-457", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-458", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -312,7 +312,7 @@ class FrontendContractTest(unittest.TestCase):
         )
 
     def test_gallery_reviewer_metadata_shares_the_label_row(self) -> None:
-        card_start = APP_JS.index("function issueCard(item)")
+        card_start = APP_JS.index("function issueCard(item, options = {})")
         card_end = APP_JS.index("\nfunction caseGallerySignature", card_start)
         card_body = APP_JS[card_start:card_end]
         labels_start = card_body.index('<div class="issue-card-labels">')
@@ -322,7 +322,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertNotIn('<div class="issue-reviewer">', card_body)
 
     def test_dense_gallery_labels_do_not_split_or_overflow_the_card(self) -> None:
-        card_start = APP_JS.index("function issueCard(item)")
+        card_start = APP_JS.index("function issueCard(item, options = {})")
         card_end = APP_JS.index("\nfunction caseGallerySignature", card_start)
         card_body = APP_JS[card_start:card_end]
         self.assertIn("grid-auto-rows: 1fr; align-items: stretch;", STYLES_CSS)
@@ -424,6 +424,9 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('Case 标注<small class="sidebar-preview-badge">内测</small>', INDEX_HTML)
         self.assertNotIn('#caseLabelingNavButton .sidebar-label strong { display: inline-flex', STYLES_CSS)
         self.assertIn('issue-grid-empty case-labeling-inactive-state', APP_JS)
+        self.assertIn('class="gallery-panel" id="caseLabelingGallery"', INDEX_HTML)
+        self.assertIn('issueCard(caseLabelingGalleryItem(item), { workspace: "labeling" })', APP_JS)
+        self.assertNotIn('issue-card-preview', APP_JS)
         self.assertIn('/api/labeling/cases/${encodeURIComponent(issueId)}/comments', APP_JS)
         self.assertIn('kind === "labeling"', APP_JS)
         self.assertIn('id="caseLabelingPage" data-page="labeling"', INDEX_HTML)
@@ -468,7 +471,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-457`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-458`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -1426,7 +1429,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-457", APP_ENTRY_JS)
+        self.assertIn("manual-triage-458", APP_ENTRY_JS)
     def test_desktop_layout_panels_are_mouse_and_keyboard_resizable(self) -> None:
         self.assertIn('id="sidebarResizer" role="separator"', INDEX_HTML)
         self.assertIn('id="reviewPaneResizer" role="separator"', INDEX_HTML)

@@ -32,12 +32,24 @@ function issueCardReviewFlag(annotation, comparisonStatus = "") {
   return "";
 }
 
-function issueCard(item) {
-  const isSelected = item.issue_id === state.selectedId;
+function issueCardLabelingFlag(item) {
+  if (item.annotation?.is_excluded) {
+    return issueCardReviewFlag(item.annotation);
+  }
+  if (item.label_state === "conflict" || item.label_state === "stale") {
+    return `<span class="issue-card-flag issue-card-flag-needs-gt" data-card-review-flag="conflict"><span class="ui-lang-zh">冲突待处理</span><span class="ui-lang-en">Conflict</span></span>`;
+  }
+  return "";
+}
+
+function issueCard(item, options = {}) {
+  const workspace = options.workspace || item.gallery_workspace || "review";
+  const isLabeling = workspace === "labeling";
+  const isSelected = item.issue_id === (isLabeling ? state.caseLabeling?.issueId : state.selectedId);
   const annotationRunId = String(item.annotation?.model_run_id || "").trim();
   const prediction = item.prediction?.label;
-  const comparisonStatus = reviewComparisonStatusForItem(item);
-  const comparisonMeta = REVIEW_COMPARISON_META[comparisonStatus];
+  const comparisonStatus = isLabeling ? "" : reviewComparisonStatusForItem(item);
+  const comparisonMeta = comparisonStatus ? REVIEW_COMPARISON_META[comparisonStatus] : null;
   const displayPrediction = prediction || (comparisonStatus === "none" ? "NONE" : "");
   const thumbnailUrl = safeSameOriginAssetUrl(item.thumbnail?.url);
   const thumbnailLabel = String(
@@ -54,12 +66,22 @@ function issueCard(item) {
         .join("")}</div>`
     : "";
   const historicalReview = Boolean(
-    state.selectedRunId && annotationRunId && annotationRunId !== state.selectedRunId
+    !isLabeling && state.selectedRunId && annotationRunId && annotationRunId !== state.selectedRunId
   );
-  const reviewFlag = issueCardReviewFlag(item.annotation, comparisonStatus);
+  const reviewFlag = isLabeling
+    ? issueCardLabelingFlag(item)
+    : issueCardReviewFlag(item.annotation, comparisonStatus);
+  const openLabel = isLabeling
+    ? `打开 ${item.issue_id} 标注`
+    : `打开 ${item.issue_id} Review`;
+  const outputPair = isLabeling
+    ? `<span class="issue-label-pair"><small class="ui-lang-zh">标注</small><small class="ui-lang-en">Label</small>${labelBadge(item.expected_output || item.annotation?.label, "—")}</span>`
+    : `<span class="issue-label-pair"><small class="ui-lang-zh">模型</small><small class="ui-lang-en">Model</small>${displayPrediction ? labelBadge(displayPrediction, "—") : labelBadge("", "—")}</span>`;
+  const actorKindZh = isLabeling ? "标注" : "复核";
+  const actorKindEn = isLabeling ? "Label" : "Review";
   return `
     <article class="issue-card ${isSelected ? "selected" : ""}" data-issue-id="${escapeHtml(item.issue_id)}">
-      <button class="issue-card-open" type="button" data-open-issue="${escapeHtml(item.issue_id)}" aria-label="打开 ${escapeHtml(item.issue_id)} Review"></button>
+      <button class="issue-card-open" type="button" data-open-issue="${escapeHtml(item.issue_id)}" aria-label="${escapeHtml(openLabel)}"></button>
       <div class="issue-thumbnail">
         <div class="issue-thumbnail-placeholder" aria-hidden="true"><span>RA</span><small>${escapeHtml(t("gallery.no_bev_thumb"))}</small></div>
         ${thumbnailUrl ? `<img src="${escapeHtml(thumbnailUrl)}" alt="${escapeHtml(item.issue_id)} ${escapeHtml(thumbnailLabel)}" loading="lazy" decoding="async" data-case-thumbnail />` : ""}
@@ -77,9 +99,9 @@ function issueCard(item) {
         </div>
         <div class="issue-card-labels">
           <span class="issue-label-pair"><small>GT</small>${labelBadge(item.gt_label, "—")}</span>
-          <span class="issue-label-pair"><small class="ui-lang-zh">模型</small><small class="ui-lang-en">Model</small>${displayPrediction ? labelBadge(displayPrediction, "—") : labelBadge("", "—")}</span>
+          ${outputPair}
           ${historicalReview ? `<span class="issue-reviewer historical-review" title="${escapeHtml(uiText("复用其他 Model Run 的历史 Review；当前 Run 尚未保存独立版本", "Reusing a Review from another Model Run; this Run has no saved version yet"))}"><span class="ui-lang-zh">历史 Review</span><span class="ui-lang-en">Historical review</span></span>` : ""}
-          ${item.annotation?.author ? `<span class="issue-reviewer" title="${escapeHtml(uiText(`复核人：${item.annotation.author}${item.annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}`, `Reviewer: ${item.annotation.author}${item.annotation.author_verified ? " · SSO verified" : " · unverified"}`))}"><span class="ui-lang-zh">复核</span><span class="ui-lang-en">Review</span> · ${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO" : ""}</span>` : ""}
+          ${item.annotation?.author ? `<span class="issue-reviewer" title="${escapeHtml(uiText(`${actorKindZh}人：${item.annotation.author}${item.annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}`, `${actorKindEn}: ${item.annotation.author}${item.annotation.author_verified ? " · SSO verified" : " · unverified"}`))}"><span class="ui-lang-zh">${actorKindZh}</span><span class="ui-lang-en">${actorKindEn}</span> · ${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO" : ""}</span>` : ""}
         </div>
       </div>
     </article>`;

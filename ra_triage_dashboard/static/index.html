@@ -78,7 +78,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-457`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-458`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -408,17 +408,21 @@
           </section>
 
           <section class="app-page case-labeling-page hidden" id="caseLabelingPage" data-page="labeling">
-            <section class="case-labeling-command page-card">
+            <section class="review-gallery-view" id="caseLabelingGalleryView">
+            <section class="review-commandbar case-labeling-command" aria-label="标注筛选">
+              <form class="review-filters case-labeling-filters" id="caseLabelingFilterForm">
               <label class="case-labeling-search"><span>Issue</span><input id="caseLabelingSearch" type="search" placeholder="Issue ID、场景" autocomplete="off" /></label>
               <label><span>标注任务</span><div class="ui-select" id="caseLabelingTaskPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary" id="caseLabelingTaskSummary">全部标注</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="caseLabelingTask" aria-hidden="true" tabindex="-1"><option value="">全部标注</option></select></div></label>
               <label><span>结果状态</span><div class="ui-select" id="caseLabelingStatusPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary" id="caseLabelingStatusSummary">全部状态</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="caseLabelingStatus" aria-hidden="true" tabindex="-1"><option value="all">全部状态</option></select></div></label>
-              <button class="button button-quiet" id="caseLabelingReset" type="button">重置</button>
-              <button class="button button-primary" id="caseLabelingExportGt" type="button">导出 GT 更新</button>
+              <button class="button button-quiet filter-submit" id="caseLabelingReset" type="button">重置</button>
+              <button class="button button-primary filter-submit" id="caseLabelingExportGt" type="button">导出 GT 更新</button>
+              </form>
             </section>
-            <section class="case-labeling-gallery" id="caseLabelingGallery">
-              <div class="gallery-heading"><div><h2>Case 标注 <small class="case-labeling-preview-badge">内测 · 仅管理员</small></h2><p id="caseLabelingSummary">正在加载…</p></div><span class="count-pill" id="caseLabelingCount">—</span></div>
+            <section class="gallery-panel" id="caseLabelingGallery">
+              <div class="gallery-heading"><div><h2>问题图库 <small class="case-labeling-preview-badge">内测 · 仅管理员</small></h2><p id="caseLabelingSummary">正在加载…</p></div><div class="gallery-heading-actions"><div class="gallery-heading-meta"><span class="count-pill" id="caseLabelingCount">—</span></div></div></div>
               <div class="issue-grid" id="caseLabelingList" aria-live="polite"></div>
               <nav class="case-pagination gallery-pagination" aria-label="标注 Case 分页"><div class="case-pagination-main"><button class="button button-quiet" id="caseLabelingPrevious" type="button">上一页</button><span id="caseLabelingPageSummary">— / —</span><button class="button button-quiet" id="caseLabelingNext" type="button">下一页</button></div><label class="case-page-size"><span>每页</span><select id="caseLabelingPageSize"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option><option value="100">100</option></select><span>条</span></label></nav>
+            </section>
             </section>
             <section class="case-labeling-detail hidden" id="caseLabelingDetail">
               <div class="case-labeling-detail-heading"><button class="button button-quiet" id="caseLabelingBack" type="button">← 返回标注列表</button><strong id="caseLabelingIssueTitle">—</strong><span id="caseLabelingPosition">—</span></div>
@@ -2067,7 +2071,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-457`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-458`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
