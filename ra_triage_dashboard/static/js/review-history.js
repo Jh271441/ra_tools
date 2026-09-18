@@ -3,25 +3,31 @@
  * Loaded as a classic script (shared global scope). Do not convert to
  * ES modules without auditing cross-file function/state dependencies.
  */
-function annotationHistory(annotations) {
+function annotationHistory(annotations, options = {}) {
+  const deletable = options.deletable !== false;
+  const runMeta = typeof options.runMeta === "function" ? options.runMeta : null;
   if (!annotations?.length) {
-    return '<div class="annotation-history"><p class="muted history-empty">尚无人工 review；保存后会保留旧版本。</p></div>';
+    const emptyText = options.emptyText || "尚无人工 review；保存后会保留旧版本。";
+    return `<div class="annotation-history"><p class="muted history-empty">${emptyText}</p></div>`;
   }
   return `<div class="annotation-history">${annotations
     .map(
       (annotation) => {
         const expectedOutput = annotationExpectedOutput(annotation);
         const currentUser = String(state.session?.username || "").trim().toLowerCase();
-        const canDelete = !annotation.work_split_id || state.session?.is_admin || (
+        const canDelete = deletable && (!annotation.work_split_id || state.session?.is_admin || (
           currentUser && String(annotation.author || "").trim().toLowerCase() === currentUser
-        );
+        ));
+        const run = runMeta
+          ? runMeta(annotation)
+          : { title: "Review 绑定的 Model Run", text: `Run · ${reviewRunLabel(annotation.model_run_id)}` };
         return `<article class="history-row">
         <div class="history-head">
           <span class="history-expected-output" title="期望输出">期望 ${labelBadge(expectedOutput, "待补充")}</span>
           <span class="history-derived-status">${escapeHtml(reviewStatusLabel(annotation.review_status))}</span>
           ${annotation.is_excluded ? '<span class="tag exclusion-tag">已排除</span>' : ""}
           <span class="history-reviewer" title="${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}` : "复核人：历史记录未填写")}">${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO" : " · 未验证"}` : "复核人：未记录")}</span>
-          <span class="history-run" title="Review 绑定的 Model Run">Run · ${escapeHtml(reviewRunLabel(annotation.model_run_id))}</span>
+          ${run ? `<span class="history-run" title="${escapeHtml(run.title)}">${escapeHtml(run.text)}</span>` : ""}
           <span class="history-actions"><span class="history-time">${formatTime(annotation.created_at)}</span>${canDelete ? `<button class="history-delete-button" type="button" data-delete-annotation="${escapeHtml(annotation.id)}" title="删除这条 Review 版本" aria-label="删除 ${escapeHtml(formatTime(annotation.created_at))} 的 Review 版本"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h12M8 3h4l1 2H7zM6 6l.7 11h6.6L14 6M8.5 9v5m3-5v5"/></svg></button>` : ""}</span>
         </div>
         ${annotation.missing_evidence?.length ? `<div class="tags">${annotation.missing_evidence.map((key) => `<span class="tag evidence-tag">${escapeHtml(evidenceLabel(key))}</span>`).join("")}</div>` : ""}

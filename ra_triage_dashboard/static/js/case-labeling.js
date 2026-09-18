@@ -283,12 +283,47 @@ function currentLabelingRevision(caseData) {
   ) || editable.resolution?.result_revision || null;
 }
 
+function caseLabelingHistoryAnnotations(caseData) {
+  const gtLabel = String(caseData?.gt_label || "");
+  return (caseData?.label_cases || [])
+    .flatMap((labelCase) =>
+      (labelCase.resolution?.heads || []).map((revision) => ({ labelCase, revision }))
+    )
+    .sort((a, b) => Number(b.revision.id) - Number(a.revision.id))
+    .map(({ labelCase, revision }) => {
+      const expectedOutput = String(revision.expected_output || "").trim();
+      return {
+        id: revision.id,
+        expected_output: expectedOutput,
+        review_status: !expectedOutput
+          ? "pending"
+          : expectedOutput === gtLabel
+            ? "reviewed"
+            : "needs_gt_review",
+        is_excluded: Boolean(revision.is_excluded),
+        author: revision.author || "",
+        author_verified: Boolean(revision.author_verified),
+        created_at: revision.created_at || "",
+        tags: revision.tags || [],
+        missing_evidence: revision.evidence_gaps || [],
+        attachments: revision.attachments || [],
+        note: revision.rationale || "",
+        labeling_task_id: labelCase.task_id || "",
+      };
+    });
+}
+
 function caseLabelingHistoryMarkup(caseData) {
-  const all = (caseData.label_cases || []).flatMap((labelCase) =>
-    (labelCase.resolution?.heads || []).map((revision) => ({ labelCase, revision }))
-  );
-  if (!all.length) return `<p class="muted">尚无工作台标注。</p>`;
-  return all.sort((a, b) => Number(b.revision.id) - Number(a.revision.id)).map(({ labelCase, revision }) => `<article class="case-labeling-history-row"><header><strong>${escapeHtml(revision.author || "未记录")}</strong><span>${escapeHtml(revision.created_at || "")}</span></header><div>${labelBadge(revision.expected_output, "待补充")} · ${escapeHtml(labelCase.task_id ? "任务标注" : "历史/自由标注")}</div>${revision.rationale ? `<p>${escapeHtml(revision.rationale)}</p>` : ""}${revision.attachments?.length ? `<div class="tags">${revision.attachments.map((attachment, index) => `<a class="tag" href="${escapeHtml(attachment.url)}" target="_blank" rel="noreferrer">标注截图 ${index + 1}</a>`).join("")}</div>` : ""}</article>`).join("");
+  return annotationHistory(caseLabelingHistoryAnnotations(caseData), {
+    deletable: false,
+    emptyText: "尚无工作台标注。",
+    runMeta: (item) => ({
+      title: "标注来源",
+      text: item.labeling_task_id
+        ? `任务标注 · ${item.labeling_task_id}`
+        : "历史/自由标注",
+    }),
+  });
 }
 
 function caseLabelingCommentsMarkup(caseData) {
@@ -444,9 +479,20 @@ async function selectCaseLabelingIssue(issueId, { updateRoute = true } = {}) {
   $("#caseLabelingGallery")?.classList.add("hidden");
   $("#caseLabelingDetail").classList.remove("hidden");
   caseData.media_status = "pending";
+  caseData.trail_metadata_status = "pending";
   renderCaseLabelingDetailMedia(caseData);
   renderCaseLabelingEditor(caseData);
   if (updateRoute) persistCaseLabelingRoute({ issue: normalized }, "push");
+  void startTrailDetailMetadata(normalized, seq).then((result) => {
+    if (seq !== state.caseLabeling.detailSeq || state.caseLabeling.issueId !== normalized) return;
+    caseData.external_links = result?.external_links || {};
+    caseData.trail_metadata_status = result?.status || "unavailable";
+    const links = $("#caseLabelingExternalLinks");
+    if (links) {
+      links.innerHTML = detailExternalLinksMarkup(caseData);
+      bindDetailExternalLinks(caseData, links);
+    }
+  });
   try {
     const media = await api(`/api/cases/${encodeURIComponent(normalized)}/media`);
     if (seq !== state.caseLabeling.detailSeq || state.caseLabeling.issueId !== normalized) return;
@@ -736,7 +782,7 @@ function bindCaseLabelingEditorShortcuts() {
     const key = String(event.key || "").toLowerCase();
     const target = event.target instanceof Element ? event.target : null;
     const rationale = $("#caseLabelingRationale");
-    if (target === rationale) {
+    if (rationale && target === rationale) {
       // Enter-submit is already handled by the shared submitReviewFromKeyboard.
       if (key === "escape") {
         event.preventDefault();
@@ -745,8 +791,23 @@ function bindCaseLabelingEditorShortcuts() {
       }
       return;
     }
-    if (key !== "d" && key !== "j" && key !== "e") return;
+    if (key !== "d" && key !== "j" && key !== "e" && key !== "t") return;
     if (target?.closest("textarea, input, select, [contenteditable='true']")) return;
+    if (key === "t") {
+      const raEventDialog = $("#raEventDialog");
+      if (raEventDialog?.open) {
+        event.preventDefault();
+        closeDialog("raEventDialog");
+        return;
+      }
+      if (document.querySelector("dialog[open]")) return;
+      const raEventButton = $("#caseLabelingExternalLinks")?.querySelector("[data-open-ra-event]");
+      if (!raEventButton) return;
+      event.preventDefault();
+      closeAllReviewDropdowns();
+      raEventButton.click();
+      return;
+    }
     if (key === "d") {
       event.preventDefault();
       const dialog = $("#analysisDiscussionDialog");
