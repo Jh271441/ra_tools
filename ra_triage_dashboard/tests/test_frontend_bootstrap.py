@@ -24,9 +24,16 @@ class FrontendBootstrapTest(unittest.TestCase):
     def test_initial_route_owns_its_heavy_requests(self) -> None:
         self.assertIn("loadPageData = true", APP_JS)
         self.assertEqual(APP_JS.count("loadPageData: false"), 5)
-        self.assertIn('const initialPageRequests = initialRoute.page === "labeling"', APP_JS)
+        self.assertIn(
+            'const initialPageRequests = ["labeling", "labeling-new-task"].includes(initialRoute.page)',
+            APP_JS,
+        )
         self.assertIn(': [loadOverview()]', APP_JS)
-        self.assertIn('if (initialRoute.page !== "labeling")', APP_JS)
+        self.assertIn(
+            'if (!["labeling", "labeling-new-task"].includes(initialRoute.page))',
+            APP_JS,
+        )
+        self.assertIn('initialPageRequests.push(enterLabelingNewTask({ route: initialRoute }))', APP_JS)
         self.assertIn('initialRoute.page === "review"', APP_JS)
         self.assertIn('initialRoute.page === "status"', APP_JS)
         self.assertIn('initialRoute.page === "prediction"', APP_JS)
