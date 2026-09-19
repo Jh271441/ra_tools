@@ -707,7 +707,7 @@ function applyAnalysisRouteControls(route) {
 function pageUrl(page, options = {}) {
   const config = PAGE_ROUTES[page] || PAGE_ROUTES.review;
   const url = new URL(withBase(config.path), window.location.origin);
-  if (page === "labeling") {
+  if (page === "labeling" || page === "labeling-new-task") {
     const labeling = typeof caseLabelingRouteOptions === "function"
       ? caseLabelingRouteOptions(options)
       : options;
@@ -1011,6 +1011,15 @@ function showPage(
       enterCaseLabeling({ route: parsePageRoute() }).catch((error) => showToast(error.message, true));
     }
   }
+  if (target === "labeling-new-task") {
+    if (!state.session.identity_pending && !state.session.is_admin) {
+      showToast(uiText("Case 标注内测仅限管理员。", "Case labeling preview is admin-only."), true);
+      return showPage("review", { historyMode: historyMode || "replace" });
+    }
+    if (loadPageData && typeof enterLabelingNewTask === "function") {
+      enterLabelingNewTask().catch((error) => showToast(error.message, true));
+    }
+  }
   if (target === "prediction") {
     const issueIds = issues.length ? issues : issue ? [issue] : [];
     ensurePredictionBatchName();
@@ -1113,6 +1122,8 @@ function showPage(
   const routeOptions =
     target === "review"
       ? currentReviewRouteOptions({ issue })
+      : target === "labeling-new-task" && typeof caseLabelingRouteOptions === "function"
+        ? caseLabelingRouteOptions({ issue: state.caseLabeling.issueId || "" })
       : target === "analysis"
         ? currentAnalysisRouteOptions()
         : target === "trail-update"
@@ -1133,6 +1144,7 @@ function showPage(
   const historyState = {
     page: target,
     issue: target === "review" ? issue : "",
+    returnTo: target === "labeling-new-task" && previousPage === "labeling" ? "labeling" : "",
     openedFromGallery:
       target === "review" &&
       Boolean(issue) &&

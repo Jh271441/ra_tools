@@ -275,8 +275,15 @@ class LabelingPreviewAdminTest(unittest.TestCase):
         core = (
             Path(__file__).resolve().parents[1] / "app" / "routers" / "core.py"
         ).read_text(encoding="utf-8")
+        self.assertIn('@router.get("/case-labeling/new-task", include_in_schema=False)', core)
         self.assertIn("async def case_labeling_page(request: Request)", core)
         self.assertIn("await asyncio.to_thread(_admin_identity, request)", core)
+
+    def test_labeling_task_creation_applies_selected_cluster(self) -> None:
+        router = (
+            Path(__file__).resolve().parents[1] / "app" / "routers" / "labeling.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("cluster=normalized_cluster", router)
 
     def test_labeling_actor_rejects_writer(self) -> None:
         identity = SimpleNamespace(

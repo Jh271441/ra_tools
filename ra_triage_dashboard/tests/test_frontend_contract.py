@@ -249,7 +249,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-469", APP_ENTRY_JS)
+        self.assertIn("manual-triage-470", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -290,7 +290,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-469", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-470", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -376,6 +376,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('aria-label="Manual Triage 首页"', INDEX_HTML)
 
     def test_sidebar_navigation_is_grouped_and_scrollable(self) -> None:
+        self.assertIn('data-sidebar-nav-group="labeling"', INDEX_HTML)
         self.assertIn('data-sidebar-nav-group="review"', INDEX_HTML)
         self.assertIn('data-sidebar-nav-group="intent"', INDEX_HTML)
         self.assertIn('data-sidebar-nav-group="system"', INDEX_HTML)
@@ -383,9 +384,12 @@ class FrontendContractTest(unittest.TestCase):
         self.assertNotIn('data-sidebar-nav-group="analysis"', INDEX_HTML)
         self.assertNotIn('<span class="ui-lang-zh">工作台</span>', INDEX_HTML)
         self.assertNotIn('<span class="ui-lang-zh">分析工具</span>', INDEX_HTML)
+        self.assertIn('data-sidebar-nav-group-toggle="labeling"', INDEX_HTML)
         self.assertIn('data-sidebar-nav-group-toggle="review"', INDEX_HTML)
-        self.assertIn('<span class="ui-lang-zh">RA 标注与复核</span>', INDEX_HTML)
-        self.assertEqual(INDEX_HTML.count('class="sidebar-group-icon"'), 3)
+        self.assertIn('labeling-group-label"><span class="ui-lang-zh">Case 标注</span>', INDEX_HTML)
+        self.assertIn('review-group-label"><span class="ui-lang-zh">判错复核</span>', INDEX_HTML)
+        self.assertNotIn('<span class="ui-lang-zh">RA 标注与复核</span>', INDEX_HTML)
+        self.assertEqual(INDEX_HTML.count('class="sidebar-group-icon"'), 4)
         self.assertIn(".sidebar-group-icon {", STYLES_CSS)
         self.assertIn(".sidebar-group-icon svg {", STYLES_CSS)
         self.assertIn("order: 0; color: #9aacbf;", STYLES_CSS)
@@ -402,9 +406,12 @@ class FrontendContractTest(unittest.TestCase):
             STYLES_CSS.count(".sidebar-nav-group .sidebar-item { width: 100% !important; min-width: 0; margin-left: 0 !important; }"),
             2,
         )
+        labeling_attr = INDEX_HTML.index('data-sidebar-nav-group="labeling"')
+        labeling_group = INDEX_HTML[INDEX_HTML.rindex('<section', 0, labeling_attr):].split('</section>', 1)[0]
+        self.assertIn('id="caseLabelingNavGroup"', labeling_group)
+        self.assertIn('id="caseLabelingNavButton"', labeling_group)
         review_group = INDEX_HTML.split('data-sidebar-nav-group="review"', 1)[1].split('</section>', 1)[0]
         for nav_id in (
-            "caseLabelingNavButton",
             "reviewNavButton",
             "reviewAssignmentsNavButton",
             "reviewAnalysisNavButton",
@@ -414,6 +421,7 @@ class FrontendContractTest(unittest.TestCase):
             "openBatchPredictionButton",
         ):
             self.assertIn(f'id="{nav_id}"', review_group)
+        self.assertNotIn('id="caseLabelingNavButton"', review_group)
         self.assertIn('id="intentNavGroup"', INDEX_HTML)
         self.assertIn("overflow-y: auto", STYLES_CSS)
         self.assertIn("SIDEBAR_NAV_GROUP_PREFS_KEY", APP_JS)
@@ -449,8 +457,11 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('renderReviewTagGroups(tagCatalog, chosenTags, tagOption)', APP_JS)
         self.assertIn('function renderCaseLabelingDetailMedia', APP_JS)
         self.assertNotIn('case-labeling-media-grid', APP_JS)
-        self.assertIn('body[data-active-page="labeling"] .header-metrics', STYLES_CSS)
-        self.assertIn('if (initialRoute.page !== "labeling")', APP_JS)
+        self.assertIn('body[data-active-page^="labeling"] .header-metrics', STYLES_CSS)
+        self.assertIn(
+            'if (!["labeling", "labeling-new-task"].includes(initialRoute.page))',
+            APP_JS,
+        )
         self.assertIn('if (state.activePage === "labeling")', APP_JS)
 
     def test_review_assignment_history_uses_flat_visual_hierarchy(self) -> None:
@@ -484,7 +495,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-469`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-470`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -689,7 +700,7 @@ class FrontendContractTest(unittest.TestCase):
             APP_JS,
         )
         self.assertIn(
-            'body[data-active-page="labeling"] .gt-sync-control { margin-left: auto; }',
+            'body[data-active-page^="labeling"] .gt-sync-control { margin-left: auto; }',
             STYLES_CSS,
         )
         # Gallery filter bar adds labeler / result-category / exclusion filters.
@@ -702,13 +713,28 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('exclusion: state.caseLabeling.exclusion || "all"', APP_JS)
         self.assertIn("def labeling_labelers", APP_PY_LABELING_DB)
         self.assertIn('author: str = ""', APP_PY_LABELING_ROUTER)
-        # M8a-1: Case-labeling create-task dialog reuses the work-split helpers.
+        # M8a-1 / M8c #24: create-task is a standalone page reusing work-split helpers.
         self.assertIn('id="caseLabelingCreateTask"', INDEX_HTML)
-        self.assertIn('id="labelingTaskDialog"', INDEX_HTML)
+        self.assertIn('id="caseLabelingNewTaskPage"', INDEX_HTML)
+        self.assertIn('id="caseLabelingNewTaskPage" data-page="labeling-new-task"', INDEX_HTML)
+        self.assertIn('id="labelingTaskBack"', INDEX_HTML)
         self.assertIn('id="labelingTaskPeople"', INDEX_HTML)
         self.assertIn('id="labelingTaskReviewersPerIssuePicker"', INDEX_HTML)
         self.assertIn('id="labelingTaskOverlapPicker"', INDEX_HTML)
-        self.assertIn("function openLabelingTaskDialog", APP_JS)
+        self.assertIn('path: "/case-labeling/new-task"', APP_JS)
+        self.assertIn('if (target === "labeling-new-task")', APP_JS)
+        self.assertIn('showPage("labeling-new-task", { historyMode: "push" })', APP_JS)
+        self.assertIn("function enterLabelingNewTask", APP_JS)
+        self.assertIn(
+            "loadCaseLabelingCases({ page: state.caseLabeling.page, persistRoute: false })",
+            APP_JS,
+        )
+        self.assertIn('initialRoute.page === "labeling-new-task"', APP_JS)
+        self.assertIn('initialPageRequests.push(enterLabelingNewTask({ route: initialRoute }))', APP_JS)
+        self.assertIn('returnTo: target === "labeling-new-task" && previousPage === "labeling"', APP_JS)
+        self.assertIn('page === "labeling" || page === "labeling-new-task"', APP_JS)
+        self.assertNotIn("labelingTaskDialog", INDEX_HTML)
+        self.assertNotIn("openLabelingTaskDialog", APP_JS)
         self.assertIn("function generateLabelingTask", APP_JS)
         self.assertIn("function bindLabelingTaskControls", APP_JS)
         self.assertIn("function labelingTaskFilterPayload", APP_JS)
@@ -763,6 +789,32 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("database.labeling_clusters", APP_PY_LABELING_ROUTER)
         self.assertIn('"/api/labeling/clusters"', APP_PY_LABELING_ROUTER)
         self.assertIn(".review-cluster-strip[hidden] { display: none; }", STYLES_CSS)
+        task_filter_payload = APP_JS.split("function labelingTaskFilterPayload()", 1)[1].split("\n}", 1)[0]
+        self.assertIn('cluster: state.caseLabeling.cluster || ""', task_filter_payload)
+        # M8c #23: single-row filter bar; GT export moved out of the filters.
+        self.assertIn(
+            "grid-template-columns: minmax(150px, 1.2fr) repeat(6, minmax(96px, .72fr)) auto;",
+            STYLES_CSS,
+        )
+        self.assertIn('id="caseLabelingExportGt"', INDEX_HTML)
+        self.assertIn('id="caseLabelingReset"', INDEX_HTML)
+        filters_form = INDEX_HTML.split('id="caseLabelingFilterForm"', 1)[1].split("</form>", 1)[0]
+        self.assertEqual(filters_form.count("<label"), 7)
+        self.assertNotIn('id="caseLabelingExportGt"', filters_form)
+        self.assertIn(
+            '<div class="gallery-heading-actions"><button class="button button-quiet" id="caseLabelingExportGt" type="button">',
+            INDEX_HTML,
+        )
+        self.assertIn(
+            '<button class="button button-primary" id="caseLabelingCreateTask" type="button">',
+            INDEX_HTML,
+        )
+        # M8c #24: the create-task page supplies the surface its dialog wrapper had.
+        self.assertIn(".case-labeling-newtask-page .dialog-card {", STYLES_CSS)
+        self.assertIn('id="labelingTaskCancel"', INDEX_HTML)
+        # M8c #25: the new sidebar group is gated on admin like the nav button.
+        self.assertIn("const caseLabelingNavGroup = $(\"#caseLabelingNavGroup\");", APP_JS)
+        self.assertEqual(APP_JS.count("caseLabelingNavGroup.hidden = !state.session"), 2)
         # Exactly one paste path per form: Review evidence, Markdown comment
         # composer, and the Case-labeling screenshot zone.
         self.assertIn('// Single form-level paste handler', APP_JS)
@@ -1540,7 +1592,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-469", APP_ENTRY_JS)
+        self.assertIn("manual-triage-470", APP_ENTRY_JS)
     def test_desktop_layout_panels_are_mouse_and_keyboard_resizable(self) -> None:
         self.assertIn('id="sidebarResizer" role="separator"', INDEX_HTML)
         self.assertIn('id="reviewPaneResizer" role="separator"', INDEX_HTML)

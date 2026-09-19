@@ -78,7 +78,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-469`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-470`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -108,18 +108,27 @@
           </div>
 
         <nav class="sidebar-nav" aria-label="工作台工具">
-          <section class="sidebar-nav-group" data-sidebar-nav-group="review" data-sidebar-default-open="true">
-            <button class="sidebar-group-toggle" type="button" data-sidebar-nav-group-toggle="review" aria-expanded="true" aria-controls="sidebarNavReview">
-              <span class="sidebar-group-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M7 3.5h10v3H7zM5 6.5h14v14H5z"/><path d="m8 13 2.3 2.3L16 9.8"/></svg></span>
-              <span class="sidebar-group-label sidebar-label review-group-label"><span class="ui-lang-zh">RA 标注与复核</span><span class="ui-lang-en">RA labeling & review</span></span><span class="sidebar-group-chevron" aria-hidden="true"></span>
+          <section class="sidebar-nav-group" id="caseLabelingNavGroup" data-sidebar-nav-group="labeling" data-sidebar-default-open="true" hidden>
+            <button class="sidebar-group-toggle" type="button" data-sidebar-nav-group-toggle="labeling" aria-expanded="true" aria-controls="sidebarNavLabeling">
+              <span class="sidebar-group-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="4" y="3.5" width="16" height="17" rx="3"/><path d="M8 8h8M8 12h8M8 16h5"/><path class="icon-emphasis" d="m14 15 2 2 4-5"/></svg></span>
+              <span class="sidebar-group-label sidebar-label labeling-group-label"><span class="ui-lang-zh">Case 标注</span><span class="ui-lang-en">Case labeling</span></span><span class="sidebar-group-chevron" aria-hidden="true"></span>
             </button>
-            <div class="sidebar-nav-group-items" id="sidebarNavReview" data-sidebar-nav-group-items="review">
+            <div class="sidebar-nav-group-items" id="sidebarNavLabeling" data-sidebar-nav-group-items="labeling">
               <a class="sidebar-item" id="caseLabelingNavButton" data-page-target="labeling" data-app-path="/case-labeling" href="/case-labeling" title="Case 标注（内测，仅管理员）" hidden>
                 <span class="sidebar-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="4" y="3.5" width="16" height="17" rx="3"/><path d="M8 8h8M8 12h8M8 16h5"/><path class="icon-emphasis" d="m14 15 2 2 4-5"/></svg>
                 </span>
                 <span class="sidebar-label"><strong class="ui-lang-zh">Case 标注<small class="sidebar-preview-badge">内测</small></strong><strong class="ui-lang-en">Case labeling<small class="sidebar-preview-badge">preview</small></strong></span>
               </a>
+            </div>
+          </section>
+
+          <section class="sidebar-nav-group" data-sidebar-nav-group="review" data-sidebar-default-open="true">
+            <button class="sidebar-group-toggle" type="button" data-sidebar-nav-group-toggle="review" aria-expanded="true" aria-controls="sidebarNavReview">
+              <span class="sidebar-group-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M7 3.5h10v3H7zM5 6.5h14v14H5z"/><path d="m8 13 2.3 2.3L16 9.8"/></svg></span>
+              <span class="sidebar-group-label sidebar-label review-group-label"><span class="ui-lang-zh">判错复核</span><span class="ui-lang-en">Failure review</span></span><span class="sidebar-group-chevron" aria-hidden="true"></span>
+            </button>
+            <div class="sidebar-nav-group-items" id="sidebarNavReview" data-sidebar-nav-group-items="review">
               <a class="sidebar-item active" id="reviewNavButton" data-page-target="review" data-app-path="/review" href="/review" title="判错复核">
                 <span class="sidebar-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="3.5" y="4.5" width="17" height="16" rx="3"/><path d="M8 4h8M9 3v3m6-3v3M7 5H5.8A1.8 1.8 0 0 0 4 6.8v11.4A1.8 1.8 0 0 0 5.8 20h12.4a1.8 1.8 0 0 0 1.8-1.8V6.8A1.8 1.8 0 0 0 18.2 5H17"/><path class="icon-emphasis" d="m8 12 2.1 2.1L16.4 8.8"/><path d="M8 17h8"/></svg>
@@ -407,6 +416,70 @@
             </section>
           </section>
 
+          <section class="app-page case-labeling-newtask-page hidden" id="caseLabelingNewTaskPage" data-page="labeling-new-task">
+            <div class="dialog-card">
+              <div class="dialog-heading">
+                <div>
+                  <h2>建标注任务</h2>
+                  <p class="dialog-copy">对当前筛选的 Case 随机分配标注人；多人模式可设置交叉盲标比例，未抽中的 Case 只分配基础标注人。</p>
+                </div>
+                <button class="button button-quiet" type="button" id="labelingTaskBack">返回图库</button>
+              </div>
+              <div class="work-split-summary" id="labelingTaskSummary">当前筛选：—</div>
+              <label class="work-split-seed labeling-task-name">
+                <span>任务名称（可选）</span>
+                <input id="labelingTaskName" type="text" maxlength="80" placeholder="留空自动生成" autocomplete="off" />
+              </label>
+              <div class="work-split-mode-row">
+                <label class="work-split-seed">
+                  <span>每个 Case 标注人数</span>
+                  <div class="ui-select work-split-reviewer-count-picker" id="labelingTaskReviewersPerIssuePicker">
+                    <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                      <span class="ui-select-summary">1 人</span>
+                      <span class="ui-select-caret" aria-hidden="true"></span>
+                    </button>
+                    <div class="ui-select-panel" role="listbox" hidden></div>
+                    <select class="ui-select-native" id="labelingTaskReviewersPerIssue" aria-hidden="true" tabindex="-1">
+                      <option value="1">1 人</option>
+                    </select>
+                  </div>
+                </label>
+                <label class="work-split-seed" id="labelingTaskOverlapField">
+                  <span>交叉盲标比例</span>
+                  <div class="ui-select work-split-overlap-picker" id="labelingTaskOverlapPicker">
+                    <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                      <span class="ui-select-summary">100%</span>
+                      <span class="ui-select-caret" aria-hidden="true"></span>
+                    </button>
+                    <div class="ui-select-panel" role="listbox" hidden></div>
+                    <select class="ui-select-native" id="labelingTaskOverlapRatio" aria-hidden="true" tabindex="-1">
+                      <option value="0">0%</option>
+                      <option value="0.1">10%</option>
+                      <option value="0.2">20%</option>
+                      <option value="0.3">30%</option>
+                      <option value="0.5">50%</option>
+                      <option value="1" selected>100%</option>
+                    </select>
+                  </div>
+                </label>
+                <div class="work-split-estimate" id="labelingTaskEstimate">单人均分</div>
+              </div>
+              <div class="work-split-people" id="labelingTaskPeople" aria-label="标注人列表"></div>
+              <div class="work-split-toolbar">
+                <button class="button button-quiet" id="labelingTaskAddPerson" type="button">添加人员</button>
+                <label class="work-split-seed">
+                  <span>随机种子（可选）</span>
+                  <input id="labelingTaskSeed" type="number" inputmode="numeric" placeholder="留空则每次不同" />
+                </label>
+              </div>
+              <div class="dialog-actions">
+                <button class="button button-quiet" type="button" id="labelingTaskCancel">取消</button>
+                <button class="button button-primary" id="labelingTaskGenerate" type="button">创建任务</button>
+              </div>
+              <div class="work-split-results hidden" id="labelingTaskResults" aria-live="polite"></div>
+            </div>
+          </section>
+
           <section class="app-page case-labeling-page hidden" id="caseLabelingPage" data-page="labeling">
             <section class="review-gallery-view" id="caseLabelingGalleryView">
             <section class="review-commandbar case-labeling-command" aria-label="标注筛选">
@@ -419,11 +492,10 @@
               <label><span>结果类别</span><div class="ui-select" id="caseLabelingLabelPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary" id="caseLabelingLabelSummary">全部类别</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="caseLabelingLabel" aria-hidden="true" tabindex="-1"><option value="all">全部类别</option></select></div></label>
               <label><span>排除</span><div class="ui-select" id="caseLabelingExclusionPicker"><button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary" id="caseLabelingExclusionSummary">全部（含问题排除）</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="caseLabelingExclusion" aria-hidden="true" tabindex="-1"><option value="all">全部（含问题排除）</option></select></div></label>
               <button class="button button-quiet filter-submit" id="caseLabelingReset" type="button">重置</button>
-              <button class="button button-primary filter-submit" id="caseLabelingExportGt" type="button">导出 GT 更新</button>
               </form>
             </section>
             <section class="gallery-panel" id="caseLabelingGallery">
-              <div class="gallery-heading"><div><h2>问题图库 <small class="case-labeling-preview-badge">内测 · 仅管理员</small></h2><p id="caseLabelingSummary">正在加载…</p></div><div class="gallery-heading-actions"><button class="button button-primary" id="caseLabelingCreateTask" type="button">建标注任务</button><div class="gallery-heading-meta"><span class="count-pill" id="caseLabelingCount">—</span></div></div></div>
+              <div class="gallery-heading"><div><h2>问题图库 <small class="case-labeling-preview-badge">内测 · 仅管理员</small></h2><p id="caseLabelingSummary">正在加载…</p></div><div class="gallery-heading-actions"><button class="button button-quiet" id="caseLabelingExportGt" type="button">导出 GT 更新</button><button class="button button-primary" id="caseLabelingCreateTask" type="button">建标注任务</button><div class="gallery-heading-meta"><span class="count-pill" id="caseLabelingCount">—</span></div></div></div>
               <div class="review-cluster-strip case-labeling-progress-strip" id="caseLabelingTaskProgress" hidden><span class="subheading">任务进度</span><div class="cluster-list" id="caseLabelingTaskProgressList"></div></div>
               <div class="review-cluster-strip case-labeling-cluster-strip" id="caseLabelingClusterStrip" hidden><span class="subheading">聚类</span><div class="cluster-list" id="caseLabelingClusterList"></div></div>
               <div class="issue-grid" id="caseLabelingList" aria-live="polite"></div>
@@ -1851,70 +1923,6 @@
       </div>
     </dialog>
 
-    <dialog class="dialog work-split-dialog" id="labelingTaskDialog">
-      <div class="dialog-card">
-        <div class="dialog-heading">
-          <div>
-            <h2>建标注任务</h2>
-            <p class="dialog-copy">对当前筛选的 Case 随机分配标注人；多人模式可设置交叉盲标比例，未抽中的 Case 只分配基础标注人。</p>
-          </div>
-          <button class="icon-button" type="button" data-close="labelingTaskDialog" aria-label="关闭">×</button>
-        </div>
-        <div class="work-split-summary" id="labelingTaskSummary">当前筛选：—</div>
-        <label class="work-split-seed labeling-task-name">
-          <span>任务名称（可选）</span>
-          <input id="labelingTaskName" type="text" maxlength="80" placeholder="留空自动生成" autocomplete="off" />
-        </label>
-        <div class="work-split-mode-row">
-          <label class="work-split-seed">
-            <span>每个 Case 标注人数</span>
-            <div class="ui-select work-split-reviewer-count-picker" id="labelingTaskReviewersPerIssuePicker">
-              <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
-                <span class="ui-select-summary">1 人</span>
-                <span class="ui-select-caret" aria-hidden="true"></span>
-              </button>
-              <div class="ui-select-panel" role="listbox" hidden></div>
-              <select class="ui-select-native" id="labelingTaskReviewersPerIssue" aria-hidden="true" tabindex="-1">
-                <option value="1">1 人</option>
-              </select>
-            </div>
-          </label>
-          <label class="work-split-seed" id="labelingTaskOverlapField">
-            <span>交叉盲标比例</span>
-            <div class="ui-select work-split-overlap-picker" id="labelingTaskOverlapPicker">
-              <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
-                <span class="ui-select-summary">100%</span>
-                <span class="ui-select-caret" aria-hidden="true"></span>
-              </button>
-              <div class="ui-select-panel" role="listbox" hidden></div>
-              <select class="ui-select-native" id="labelingTaskOverlapRatio" aria-hidden="true" tabindex="-1">
-                <option value="0">0%</option>
-                <option value="0.1">10%</option>
-                <option value="0.2">20%</option>
-                <option value="0.3">30%</option>
-                <option value="0.5">50%</option>
-                <option value="1" selected>100%</option>
-              </select>
-            </div>
-          </label>
-          <div class="work-split-estimate" id="labelingTaskEstimate">单人均分</div>
-        </div>
-        <div class="work-split-people" id="labelingTaskPeople" aria-label="标注人列表"></div>
-        <div class="work-split-toolbar">
-          <button class="button button-quiet" id="labelingTaskAddPerson" type="button">添加人员</button>
-          <label class="work-split-seed">
-            <span>随机种子（可选）</span>
-            <input id="labelingTaskSeed" type="number" inputmode="numeric" placeholder="留空则每次不同" />
-          </label>
-        </div>
-        <div class="dialog-actions">
-          <button class="button button-quiet" type="button" data-close="labelingTaskDialog">取消</button>
-          <button class="button button-primary" id="labelingTaskGenerate" type="button">创建任务</button>
-        </div>
-        <div class="work-split-results hidden" id="labelingTaskResults" aria-live="polite"></div>
-      </div>
-    </dialog>
-
     <dialog class="dialog review-tag-create-dialog" id="reviewTagCreateDialog">
       <div class="dialog-card">
         <div class="dialog-heading">
@@ -2141,7 +2149,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-469`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-470`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

@@ -18,6 +18,28 @@ function caseLabelingRouteOptions(overrides = {}) {
   };
 }
 
+function restoreCaseLabelingRouteState(route = null) {
+  const filters = route?.labelingFilters || parsePageRoute().labelingFilters || {};
+  if (route?.issue) state.caseLabeling.issueId = route.issue;
+  state.caseLabeling.taskId = filters.taskId ?? state.caseLabeling.taskId;
+  state.caseLabeling.search = filters.search ?? state.caseLabeling.search;
+  state.caseLabeling.status = filters.status ?? state.caseLabeling.status;
+  state.caseLabeling.author = filters.author ?? state.caseLabeling.author;
+  state.caseLabeling.assignee = filters.assignee ?? state.caseLabeling.assignee;
+  state.caseLabeling.cluster = filters.cluster ?? state.caseLabeling.cluster;
+  state.caseLabeling.label = filters.label ?? state.caseLabeling.label;
+  state.caseLabeling.exclusion = filters.exclusion ?? state.caseLabeling.exclusion;
+  state.caseLabeling.page = filters.page || 1;
+  state.caseLabeling.pageSize = filters.pageSize || DEFAULT_CASE_PAGE_SIZE;
+  if ($("#caseLabelingSearch")) {
+    $("#caseLabelingSearch").value = state.caseLabeling.search;
+  }
+  if ($("#caseLabelingPageSize")) {
+    $("#caseLabelingPageSize").value = String(state.caseLabeling.pageSize);
+  }
+  return filters;
+}
+
 function persistCaseLabelingRoute(overrides = {}, mode = "replace") {
   const url = pageUrl("labeling", caseLabelingRouteOptions(overrides));
   window.history[mode === "push" ? "pushState" : "replaceState"](
@@ -242,6 +264,7 @@ function labelingTaskFilterPayload() {
     status: state.caseLabeling.status || "all",
     author: state.caseLabeling.author || "",
     assignee: state.caseLabeling.assignee || "",
+    cluster: state.caseLabeling.cluster || "",
     exclusion: state.caseLabeling.exclusion || "all",
     label:
       state.caseLabeling.label && state.caseLabeling.label !== "all"
@@ -348,11 +371,22 @@ function updateLabelingTaskEstimate() {
         });
 }
 
-async function openLabelingTaskDialog() {
-  if (!state.session?.is_admin) {
-    showToast(t("work.split_admin_only"), true);
+async function enterLabelingNewTask({ route = null } = {}) {
+  if (!canAccessCaseLabelingPreview() && !state.session?.identity_pending) {
+    showToast("Case 标注内测仅限管理员。", true);
+    if (typeof showPage === "function") showPage("review", { historyMode: "replace" });
     return;
   }
+  restoreCaseLabelingRouteState(route);
+  await loadCaseLabelingTasks();
+  renderCaseLabelingStatusPicker();
+  renderCaseLabelingAuthorPicker();
+  renderCaseLabelingAssigneePicker();
+  renderCaseLabelingLabelPicker();
+  renderCaseLabelingExclusionPicker();
+  // Deep links and history restoration must resolve the current filtered pool.
+  // Do not rewrite the standalone task-page URL while loading the gallery data.
+  await loadCaseLabelingCases({ page: state.caseLabeling.page, persistRoute: false });
   const total = Number(state.caseLabeling.data?.total || 0);
   const summary = $("#labelingTaskSummary");
   const results = $("#labelingTaskResults");
@@ -389,7 +423,6 @@ async function openLabelingTaskDialog() {
   renderLabelingTaskReviewersPerIssuePicker(1);
   renderLabelingTaskOverlapPicker(1);
   updateLabelingTaskEstimate();
-  openDialog("labelingTaskDialog");
 }
 
 function renderLabelingTaskResults(payload) {
@@ -496,8 +529,23 @@ function bindLabelingTaskControls() {
       showToast(t("work.no_issues"), true);
       return;
     }
-    openLabelingTaskDialog().catch((error) => showToast(error.message, true));
+    showPage("labeling-new-task", { historyMode: "push" });
   });
+  const leaveTaskPage = () => {
+    if (
+      window.history.state?.page === "labeling-new-task" &&
+      window.history.state?.returnTo === "labeling"
+    ) {
+      window.history.back();
+      return;
+    }
+    showPage("labeling", {
+      historyMode: "replace",
+      issue: state.caseLabeling.issueId || "",
+    });
+  };
+  $("#labelingTaskBack")?.addEventListener("click", leaveTaskPage);
+  $("#labelingTaskCancel")?.addEventListener("click", leaveTaskPage);
   $("#labelingTaskAddPerson")?.addEventListener("click", () => {
     $("#labelingTaskPeople")?.insertAdjacentHTML("beforeend", workSplitPersonRow());
     renderLabelingTaskPersonPickers();
@@ -539,10 +587,10 @@ function bindLabelingTaskControls() {
     if (!taskId) return;
     state.caseLabeling.taskId = taskId;
     state.caseLabeling.page = 1;
-    closeDialog("labelingTaskDialog");
-    closeCaseLabelingDetail({ updateRoute: false });
-    renderCaseLabelingTaskPicker();
-    loadCaseLabelingCases({ page: 1 }).catch((error) => showToast(error.message, true));
+    // enterCaseLabeling() re-reads the route, so stage the URL first; pushing
+    // keeps the new-task page reachable via the back button.
+    persistCaseLabelingRoute({ issue: "", page: 1 }, "push");
+    showPage("labeling", { historyMode: "replace" });
   });
 }
 
@@ -647,7 +695,7 @@ function renderCaseLabelingList(data) {
   }
 }
 
-async function loadCaseLabelingCases({ page = state.caseLabeling.page } = {}) {
+async function loadCaseLabelingCases({ page = state.caseLabeling.page, persistRoute = true } = {}) {
   const seq = ++state.caseLabeling.requestSeq;
   if (!selectedActiveLabelingBaselineIds().length) {
     if (seq !== state.caseLabeling.requestSeq) return;
@@ -656,7 +704,7 @@ async function loadCaseLabelingCases({ page = state.caseLabeling.page } = {}) {
     state.caseLabeling.clusters = [];
     renderCaseLabelingClusterStrip();
     renderCaseLabelingList(state.caseLabeling.data);
-    persistCaseLabelingRoute({ issue: "", page: 1 });
+    if (persistRoute) persistCaseLabelingRoute({ issue: "", page: 1 });
     return;
   }
   const params = new URLSearchParams({
@@ -687,7 +735,7 @@ async function loadCaseLabelingCases({ page = state.caseLabeling.page } = {}) {
   renderCaseLabelingAuthorPicker();
   renderCaseLabelingAssigneePicker();
   renderCaseLabelingList(result);
-  persistCaseLabelingRoute({ issue: "", page: state.caseLabeling.page });
+  if (persistRoute) persistCaseLabelingRoute({ issue: "", page: state.caseLabeling.page });
   loadCaseLabelingClusters().catch((error) => showToast(error.message, true));
 }
 
@@ -1335,18 +1383,7 @@ async function enterCaseLabeling({ route = null } = {}) {
     if (typeof showPage === "function") showPage("review", { historyMode: "replace" });
     return;
   }
-  const filters = route?.labelingFilters || parsePageRoute().labelingFilters || {};
-  state.caseLabeling.taskId = filters.taskId ?? state.caseLabeling.taskId;
-  state.caseLabeling.search = filters.search ?? state.caseLabeling.search;
-  state.caseLabeling.status = filters.status ?? state.caseLabeling.status;
-  state.caseLabeling.author = filters.author ?? state.caseLabeling.author;
-  state.caseLabeling.assignee = filters.assignee ?? state.caseLabeling.assignee;
-  state.caseLabeling.cluster = filters.cluster ?? state.caseLabeling.cluster;
-  state.caseLabeling.label = filters.label ?? state.caseLabeling.label;
-  state.caseLabeling.exclusion = filters.exclusion ?? state.caseLabeling.exclusion;
-  state.caseLabeling.page = filters.page || 1;
-  state.caseLabeling.pageSize = filters.pageSize || DEFAULT_CASE_PAGE_SIZE;
-  $("#caseLabelingSearch").value = state.caseLabeling.search;
+  const filters = restoreCaseLabelingRouteState(route);
   await loadCaseLabelingTasks();
   renderCaseLabelingStatusPicker();
   renderCaseLabelingAuthorPicker();

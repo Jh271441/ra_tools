@@ -1077,6 +1077,7 @@ async function bootstrap() {
       intentAccessPages.includes(initialRoute.page)
       || initialRoute.page === "review-assignments"
       || initialRoute.page === "labeling"
+      || initialRoute.page === "labeling-new-task"
     ) {
       await sessionRequest;
     }
@@ -1088,7 +1089,7 @@ async function bootstrap() {
       initialRoute.page = "review";
       showToast("当前账号没有任务分配管理权限。", true);
     }
-    if (initialRoute.page === "labeling" && !state.session.is_admin) {
+    if (["labeling", "labeling-new-task"].includes(initialRoute.page) && !state.session.is_admin) {
       initialRoute.page = "review";
       showToast("Case 标注内测仅限管理员。", true);
     }
@@ -1138,7 +1139,7 @@ async function bootstrap() {
     }
     // Case labeling is intentionally model-free. Other pages resolve the Run
     // before loading queue-dependent facets so their counts cannot race.
-    if (initialRoute.page !== "labeling") {
+    if (!["labeling", "labeling-new-task"].includes(initialRoute.page)) {
       await settleInitialRequests(
         [
           loadRuns({
@@ -1154,7 +1155,7 @@ async function bootstrap() {
     if (initialRoute.page === "comparison") {
       applyRunComparisonRoute(initialRoute.comparisonFilters);
     }
-    const sharedDataPromise = initialRoute.page === "labeling"
+    const sharedDataPromise = ["labeling", "labeling-new-task"].includes(initialRoute.page)
       ? Promise.resolve()
       : settleInitialRequests(
           [loadReviewers(), loadWorkAssignees()],
@@ -1166,7 +1167,7 @@ async function bootstrap() {
     if (initialRoute.page === "review") applyReviewRouteControls(initialRoute);
     if (initialRoute.page === "analysis") applyAnalysisRouteControls(initialRoute);
     // Review home: paint cases first; cluster chips are secondary chrome.
-    const initialPageRequests = initialRoute.page === "labeling"
+    const initialPageRequests = ["labeling", "labeling-new-task"].includes(initialRoute.page)
       ? []
       : [loadOverview()];
     let initialDetailRequest = null;
@@ -1190,6 +1191,8 @@ async function bootstrap() {
       initialPageRequests.push(loadRunComparison({ historyMode: "" }));
     } else if (initialRoute.page === "labeling") {
       initialPageRequests.push(enterCaseLabeling({ route: initialRoute }));
+    } else if (initialRoute.page === "labeling-new-task") {
+      initialPageRequests.push(enterLabelingNewTask({ route: initialRoute }));
     } else if (initialRoute.page === "review-assignments") {
       initialPageRequests.push(loadAccessUsers(), loadReviewAssignments({
         splitId: initialRoute.reviewAssignmentSplitId,

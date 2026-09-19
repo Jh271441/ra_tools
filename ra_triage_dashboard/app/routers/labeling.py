@@ -207,6 +207,7 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
         normalized_label = _as_text(filter_body.get("label")).strip()
         if normalized_label == "all":
             normalized_label = ""
+        normalized_cluster = _as_text(filter_body.get("cluster")).strip()
         try:
             resolved = await asyncio.to_thread(
                 database.labeling_case_issue_ids,
@@ -218,6 +219,7 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
                 assignee=_as_text(filter_body.get("assignee")).strip().lower(),
                 exclusion=normalized_exclusion,
                 expected_output=normalized_label,
+                cluster=normalized_cluster,
             )
         except ValueError as exc:
             raise _detail(400, str(exc)) from exc

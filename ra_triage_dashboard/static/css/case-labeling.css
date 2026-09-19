@@ -1,9 +1,18 @@
 .case-labeling-page { display: grid; gap: 8px; }
-body[data-active-page="labeling"] .header-metrics { display: none; }
+body[data-active-page^="labeling"] .header-metrics { display: none; }
 /* metrics carried margin-left:auto; keep the right cluster right-aligned. */
-body[data-active-page="labeling"] .gt-sync-control { margin-left: auto; }
+body[data-active-page^="labeling"] .gt-sync-control { margin-left: auto; }
+/* The create-task form is a page, not a <dialog>, so the card must supply the
+   surface and width its former .dialog wrapper provided. */
+.case-labeling-newtask-page .dialog-card {
+  width: min(720px, 100%);
+  margin: 0 auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--raised);
+}
 .case-labeling-filters {
-  grid-template-columns: minmax(180px, 1.5fr) minmax(160px, .9fr) minmax(140px, .7fr) auto auto;
+  grid-template-columns: minmax(150px, 1.2fr) repeat(6, minmax(96px, .72fr)) auto;
 }
 .case-labeling-command[hidden],
 #caseLabelingGallery .gallery-pagination[hidden] { display: none !important; }

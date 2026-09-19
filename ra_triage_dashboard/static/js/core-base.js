@@ -547,6 +547,11 @@ const PAGE_ROUTES = {
     titleZh: "Case 标注（内测）",
     titleEn: "Case Labeling (preview)",
   },
+  "labeling-new-task": {
+    path: "/case-labeling/new-task",
+    titleZh: "建标注任务",
+    titleEn: "New labeling task",
+  },
   review: {
     path: "/review",
     titleZh: "判错复核",

@@ -154,8 +154,9 @@ async def index() -> HTMLResponse:
 
 
 @router.get("/case-labeling", include_in_schema=False)
+@router.get("/case-labeling/new-task", include_in_schema=False)
 async def case_labeling_page(request: Request) -> HTMLResponse:
-    """Serve the Case-labeling preview to Dashboard administrators only."""
+    """Serve Case-labeling pages to Dashboard administrators only."""
 
     await asyncio.to_thread(_admin_identity, request)
     return HTMLResponse(
