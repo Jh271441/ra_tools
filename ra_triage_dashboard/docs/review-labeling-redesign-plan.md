@@ -1,24 +1,33 @@
-# Review 与标注解耦改造计划（待评审）
+# Review、标注与跨 Run 评测改造计划（续建评审稿）
 
-- 日期：2026-09-17。
-- 核对代码：`970473245a86d1545e3aabc27c68008c80f3f4cb`。
-- 本文从设计提案继续记录实施状态；已完成生产只读汇总和首批本地实现，没有执行生产数据库迁移或线上发布。
+- 初版：2026-09-17；本次续写：2026-09-20。
+- 当前代码与线上基线：`2632977be2e679b8cd85e68774f53088e6499973`。
+- 本文承接此前的 Review/标注解耦讨论，并依据已经上线的 Case 标注域重新规划后续工作。
 - 范围：RA 三分类标注、模型判错复核、Review 任务分配、GT 修正候选、裁决及相关统计。已有 Routing/lane-change 意图标注不纳入本次重构。
 - 后续业务确认：0522、0626、0821 的历史记录以标注为主，note 默认迁为标注依据；0206、0508 按历史批次保留/核对模型复核用途。
 - 详细数据集映射、生产盘点、迁移步骤与独立 UI 设计见 [数据集迁移与独立标注页面设计](dataset-migration-and-labeling-ui-design.md)。涉及这两部分时以该补充设计为准。
 
-## 实施状态（2026-09-18）
+## 实施状态（2026-09-20）
 
-当前工作区已实现第一批可独立验证的能力，尚未提交、发布或迁移生产数据：
+P1/P2 的主体能力已经提交、发布并完成生产迁移：
 
 - 新增 frozen Workset、Label Case/revision、显式 adjudication、迁移映射、标注讨论链接、标注附件和 GT 导出批次 schema。
-- 新增模型无关的 `/case-labeling` 页面和专用 API；启动与切数据集时不请求 Runs、模型 overview 或 reviewer facets。
+- 已上线模型无关的 `/case-labeling` 页面和专用 API；启动与切数据集时不请求 Runs、模型 overview 或 reviewer facets。
 - writer/admin 裁决绑定当前人员 heads；任何参与来源缺交、冲突或过期都会阻止 GT 导出。
 - GT 导出先固定来源 fingerprint，下载前重新检查标签与 GT；仍输出兼容的两列 XLSX，不写 Trail。
-- 新增 dry-run 默认的幂等迁移工具，0522/0626/0821 按标注规则回填；原 annotations/comments 保留，迁移来源 Review 禁止从旧页直接删除。
+- dry-run 默认的幂等迁移工具已用于 0522、0626、0821 的生产回填与激活；三个范围均为 epoch 1、policy `case-labeling-v1`。原 annotations/comments 保留，迁移来源 Review 禁止从旧页直接删除。
 - 历史 comment、回复与 comment 附件通过原记录链接复用，不重发通知；Review 截图映射为标注附件，不复制文件。
 
-尚未切换现有 `/review` 的新写入模型和原因统计。它继续使用 legacy mixed Review，直到 P3 的 model-review schema、兼容分析和影子对账完成；这避免在标签迁移前破坏现有判错工作流。
+后续没有完成的部分正是当前“半成品”体验的来源：
+
+- `/review` 仍使用 legacy mixed Review。`expected_output`、`review_status`、模型原因和缺失信息仍保存在同一 annotation 中。
+- Review Gallery 的跨 Run fallback 只复用 `work_split_id=''` 的普通记录。旧 Split/任务记录即使已经表达 Issue 标签，也不会投影到另一个 Run；直接放宽 fallback 会把任务进度和模型诊断一起串到新 Run，因此不能作为最终修复。
+- `/case-labeling` 已经有任务内 Label resolution 和 GT 候选，但 `/review`、Overview、原因分析及 Run Comparison 还没有消费同一份 Issue 级共享标签投影。
+- GT 同步仍以 `issues.gt_label + gt_sync_labels` 保存当前 overlay，成功同步的历史版本没有形成不可变 `gt_snapshot`。
+- Model Runs 仍是平铺列表和两两比较；没有 Runs 合集、合集版本、统一 Workset/标签快照或可复现评测记录。
+- `issue_work_splits` 同时承担 legacy Review task、Labeling Campaign 和分配配置；缺少清晰生命周期及面向 Runs 合集的父子任务关系。
+
+当前优先级应从“继续补 Case 标注页面”转为：先把 Issue 标签状态接回所有 Run 视图，再拆模型复核，最后补齐任务 Campaign 与 Runs 合集。
 
 ## 1. 本次要达成的结果
 
@@ -93,6 +102,29 @@
 同一个 Issue 可以属于多个任务。每个任务先计算自己的结果。跨任务展示可并排、汇总和对照，但没有默认“最新任务覆盖所有旧任务”的规则。
 
 从模型复核提出的独立 GT 修正，保存来源 Run/Review 作为追溯字段。相同 Issue、相同所见 GT 和相同标签/证据定义下的修正可以归入同一个修正事项；任务内标注仍留在原任务。跨事项冲突由 GT 更新候选汇总时提示，使用显式选择或裁决解决。
+
+### 3.4 Runs 合集是评测容器，不是标签作用域
+
+Runs 合集用于把同一数据集上的若干不可变 Model Run 组织起来，例如“ckpt330 全量、confidence batch3、rand10”。合集本身不拥有 GT、人工标注或模型原因；它保存成员关系与默认评测上下文。
+
+```text
+Run Collection revision
+  + Frozen Workset
+  + GT snapshot 或 Label snapshot
+  + Scoring policy
+  = Evaluation context
+```
+
+合集成员每次变更生成新 revision。已有评测继续引用旧 revision，不能因为后来加入一个 Run 而改变历史分母或比较结果。合集中的每个 Run 共享同一份 Issue 标签参考，但模型输出、判错原因和复核完成度继续按 Run 隔离。
+
+合集第一版提供：
+
+- 保存/命名一组 Runs，并固定成员顺序和基准 Run。
+- 选择一个 Workset 与一个标签参考版本，对全部成员计算覆盖、Match/Mismatch/No GT/NONE 和成对变化。
+- 查看某个 Issue 在全部成员中的预测横向表，以及一份共享标签状态。
+- 从合集创建任务组：Labeling 只创建一个共享任务；Model Review 为每个目标 Run 创建独立子任务，并共用 Workset 与标签快照。
+
+合集不自动合并不同 Run 的模型原因，也不把“其他 Run 已复核”算作当前 Run 完成。需要复用原因时，用户显式“引用为起点”，新记录保存来源 revision ID。
 
 ## 4. 用户操作流程
 
@@ -250,6 +282,62 @@ Gallery、分析、导出、Overview 使用对应出口及统一过滤器，避�
 
 按某模型预测筛出的工作集，其指标只代表该子集。即使多个 Run 在这份固定子集上可直接对照，也要保留选样来源，不宣称覆盖整个数据集。
 
+### 7.3 Review 页面采用组合投影
+
+每个 Review Case 的读模型固定为：
+
+```text
+当前 Case
+= 当前 GT snapshot 中的正式 GT
++ Issue 级共享标签状态
++ 当前 Run 的 prediction/comparison
++ 当前 Run 的模型复核状态与原因
++ 可选的当前任务分配上下文
+```
+
+Issue 级共享标签状态由 `baseline_scope + issue_id` 解析，不读取“当前 Run 最新 annotation”来决定。它至少返回：
+
+```text
+state: none | pending | resolved | conflict | stale
+expected_output
+gt_relation: matches_gt | differs_from_gt | fills_missing_gt | unknown
+method: single | consensus | adjudication
+source_task_ids[]
+source_revision_ids[]
+```
+
+UI 将其映射为独立状态：
+
+- `resolved + matches_gt`：显示“与 GT 一致”。
+- `resolved + differs_from_gt/fills_missing_gt`：显示“GT 待复核”。
+- `conflict/stale`：显示“标签冲突/需重新确认”。
+- `none/pending`：不制造一个已完成标签结论。
+
+这些状态在两个重叠 Run 中保持一致。当前 Run 是否完成判错复核，仍只看该 Run 的 model-review 记录。任务外查看可以读取共享标签及来源，但不会增加任务提交数、人员工作量或当前 Run 的复核完成度。
+
+因此，当前 `_gallery_annotation_join` 的 ordinary fallback 只保留为 legacy 模型复核兼容层。Split 记录不通过扩大 fallback 来跨 Run 共享；迁移后的 Label resolution 通过共享标签投影进入页面。这样可直接覆盖 `d4b...` 与 `95dc...` 中重叠 Issue 的需求，同时不把旧 Run 的判错原因错误地算给 rand10。
+
+### 7.4 讨论使用显式频道，不按页面偶然合并
+
+当前 `D` 快捷键共用同一个讨论弹窗，但数据作用域不同：
+
+```text
+判错复核讨论： (issue_id, model_run_id)
+Case 标注讨论： (baseline_scope, issue_id, optional label_task_id)
+```
+
+- `/review` 的讨论严格绑定当前 Run；`run=''` 是单独的未绑定频道。回复也必须留在同一 Issue/Run。另一个 Run 当前不会读取或命中该线程。
+- `/case-labeling` 通过 `label_comment_links` 使用 Issue/Task 频道。指定 Task 时读取该 Task 与 Case 级公共讨论；未指定 Task 时可以汇总该 Issue 的标注讨论。`source_run_id` 只是迁移/选样来源，不限制读取。
+- 评论仍与 Review/Label revision 分离，不改变 GT、标签结果、模型复核状态或任务进度。
+
+目标 UI 在 `D` 弹窗中明确显示频道：
+
+1. “Issue / 标注讨论”：跨 Runs 共享，可选当前 Labeling Campaign；用于证据、标签判断和 GT 复核。
+2. “当前 Run 讨论”：只属于当前模型 Run；用于模型输出、Prompt、输入和判错原因。
+3. “其他 Runs 讨论”：只读参考入口，按 Run 分组展示；不会计入当前 Run 的评论筛选、通知或复核完成度。用户若要回复，先明确切换到目标 Run 频道。
+
+Runs 合集页面可以汇总各频道的未读/评论数，但不把不同 Run 的回复树合并成一个线程。分享链接继续固定频道与 comment ID，刷新后必须打开同一个上下文。
+
 ## 8. 数据与 API 方案
 
 ### 8.1 推荐的持久化边界
@@ -259,7 +347,7 @@ Gallery、分析、导出、Overview 使用对应出口及统一过滤器，避�
 | 逻辑实体/建议表 | 关键内容 | 第一版策略 |
 |---|---|---|
 | `review_worksets`、`review_workset_items` | 数据集、冻结成员、来源 Run/GT、筛选快照、hash | 任务创建时生成，可复用；不增加独立管理界面 |
-| 扩展 `issue_work_splits` | task kind、workset 引用、被复核 Run、标签基准、配置/生命周期 | 物理表先不改名；旧记录保留 `legacy` 语义 |
+| 扩展 `issue_work_splits` | task kind、workset 引用、被复核 Run、标签基准、状态、配置版本、可选 task group | 物理表先不改名，代码/API 统一称 Campaign；旧记录保留 `legacy` 语义 |
 | 复用 `review_work_assignments` 与转派历史 | task/Issue/assignee 及角色、分配版本 | 人员变更不改变 Workset 的成员集合 |
 | `label_cases`、`label_revisions` | task 或修正事项、Issue、作者链、期望输出、Tags、依据、证据/所见 GT | task 为空表示自由修正；Case 的 current-result 指针为并发锁定对象 |
 | `label_resolutions` | 单人/一致/裁决的结果与精确输入版本、显式替代关系 | append-only；派生 current 状态可以重建 |
@@ -267,9 +355,11 @@ Gallery、分析、导出、Overview 使用对应出口及统一过滤器，避�
 | `label_result_snapshots` 及成员清单 | 本地任务结果的不可变集合、覆盖、源 resolution IDs | 支持任务输出/跨 Run 诊断引用，标明非正式 GT |
 | `gt_snapshots` 及成员清单 | 完整成功 Trail 读取的标签版本、覆盖/hash | 保留既有当前 overlay 作为读取加速；历史版本另外保留 |
 | `gt_export_batches` 及条目 | 导出时的候选、确认、GT 旧值、目标值、文件 hash、核对状态 | 导出/核对可追溯，不实现 GT 写入 API |
-| 评测记录 | Run、Workset、参考快照、评分契约/排除集合版本、结果 hash | 复用已有模型预测；生成新指标不要求重新推理 |
+| `run_collections`、`run_collection_revisions`、`run_collection_members` | 合集身份、不可变成员版本、顺序及基准 Run | 编辑合集产生新 revision；不复制或修改 Model Run |
+| `evaluation_contexts` | Collection revision、Workset、参考快照、评分契约/排除集合版本、结果 hash | 复用已有模型预测；生成新指标不要求重新推理 |
+| `review_task_groups` | 从 Runs 合集批量创建的任务组及子 Campaign | Labeling 组只有一个共享任务；Model Review 组按 Run 建子任务 |
 
-这是最终职责划分，不要求一个 migration 同时创建所有表。源版本关联和 snapshot items 使用明确的关联表或受约束的成员清单，避免把需要查验的版本关系放进不可核对的自由 JSON。
+这是最终职责划分，不要求一个 migration 同时创建所有表。当前已存在 `review_worksets`、Label tables 和 Label GT export tables；GT snapshots、model-review、Runs 合集与 evaluation contexts 属于后续 migration。源版本关联和 snapshot items 使用明确的关联表或受约束的成员清单，避免把需要查验的版本关系放进不可核对的自由 JSON。
 
 标注和模型诊断的附件不再只能绑定旧 annotation ID。抽取可复用的附件 blob/存储操作，新建明确的 owner 关联，保留原 URL 与原附件所有权；历史引用源存在时，不删除其文件。截图、版本记录、关联与通知入队仍保持事务一致性。
 
@@ -285,12 +375,16 @@ Gallery、分析、导出、Overview 使用对应出口及统一过滤器，避�
 |---|---|---|
 | 冻结选样 | `POST /api/review-worksets` | 校验数据集/Run/筛选，固定成员与来源 |
 | 创建两类任务 | 现有 work-split 创建接口扩展 task kind | 校验任务目的、必需引用和配置快照 |
+| 读取 Issue 共享标签 | `GET /api/issue-label-states`，并批量嵌入 Case 列表/详情 | 在分页与计数前统一解析 Label resolution、跨任务冲突和 GT 关系 |
 | 标注详情/列表 | 独立 labeling detail/summary 接口 | 只返回标注需要的事实、媒体、历史和任务，不加载 predictions 或推理 jobs |
 | 就地提出 GT 修正 | `POST /api/cases/{issue_id}/gt-corrections` | 原子查找/创建兼容的修正事项并保存首个版本，记录来源 Review |
 | 保存标注/自由修正 | `POST /api/label-cases/{id}/revisions` | 范围、身份、作者版本与标签契约；支持附件 |
 | 查看结果/源版本 | `GET /api/label-cases/{id}` | 返回 task result、GT 关系、当前 heads 与裁决来源 |
 | 显式裁决 | `POST /api/label-cases/{id}/adjudications` | writer/admin、源指纹、前一结果版本、事务锁 |
 | 保存模型诊断 | `POST /api/model-review-cases/{id}/revisions` | 校验 Run、Task、参考快照与作者版本 |
+| 管理 Runs 合集 | `POST/GET/PATCH /api/run-collections` | 创建合集；成员变化生成不可变 revision，校验同一数据集覆盖 |
+| 创建评测上下文 | `POST /api/evaluation-contexts` | 固定 collection revision、Workset、标签参考与评分策略 |
+| 从合集创建任务组 | `POST /api/review-task-groups` | Labeling 创建一个共享 Campaign；Model Review 按 Run 创建子 Campaign |
 | GT 更新预览 | `POST /api/gt-update-previews` | 固定候选来源、检测冲突/过期/重复 Issue |
 | 确认导出 | `POST /api/gt-update-exports` | 再核验、生成导出批次与现有两列文件 |
 | 同步核对 | 复用 GT 同步流程及批次状态读取 | 完整读取后更新当前 GT、追加快照、核对批次 |
@@ -331,46 +425,98 @@ GT 修正与模型原因都可以在同一页面操作，但使用各自保存�
 
 ## 10. 分阶段交付
 
-### P0：冻结规则与建立对照数据
+### 已完成基线：原 P0/P1/P2 主体
 
-- 产出本文的确认版、字段词典、状态表和新旧口径对照样例。
-- 增加核心行为基线：非成员普通提交、双人冲突、部分交付、跨任务重叠、跨 Run 历史、GT 更新导出。
-- 明确哪些现有测试应保留，哪些因为业务规则变化需要改写。例如“conflict 代表行取最新”可继续用于历史展示，但不能再验证它可作为 GT 更新结果。
-- 验收：所有页面/导出对“提交、完成、冲突、期望输出、GT”含义一致；完成迁移数据清单。
+- 领域规则、迁移清单、Workset、Label Case/revision/resolution、writer 裁决、GT 候选/导出批次和独立 Case 标注页已经落地。
+- 0522、0626、0821 已迁移并激活；0821 原任务/来源关系已经保留。
+- 仍未完成的原 P1 项是不可变 GT snapshot 和 Review 页内独立 GT 修正入口；原 P3/P4 基本尚未开始。
 
-### P1：先完成 GT 修正、裁决和导出闭环
+### S1：跨 Run 共享 Issue 标签投影（建议下一轮先做）
 
-- 引入 Label Case/revision/resolution 的最小 schema 与服务，旧 annotations 通过兼容适配提供候选证据。
-- 提取共享 UI 组件并提供独立标注页，先用 0522 进行隔离试迁移；已有 GT、历史标注与任务提交分别展示。
-- 现有 Review 页面增加独立的“GT 待复核”保存与显式裁决动作；writer/admin 可裁决。
-- 新 GT 更新预览仅接收已解决/已确认的候选，拦截冲突、缺交、过期及跨来源矛盾；文件保持两列。
-- 添加 GT 初始/新快照和导出批次核对，以便保存旧值并识别外部更新。
-- 验收：可以完成“发现 GT 错 → 保存期望输出 → writer 裁决/确认 → 导出 → Trail 同步核对”；普通补充再新也不替代裁决。
+目标是立即解决“两个 Run 的重叠 Issue 看不到同一份 GT 待复核/与 GT 一致状态”，且不污染 Run 级判错进度。
 
-### P2：独立标注任务与冻结子集
+后端：
 
-- 建立 Workset 与 task kind，复用分配、交叉比例和转派能力。
-- 标注任务区分选样来源 Run 和标签作用域，支持缺 GT/无模型输出 Case。
-- 独立标注表单与按 Case 结果、部分任务快照、GT 更新候选衔接。
-- 按 0522、0626、0821 顺序迁移和激活标注工作区；0821 保留 200/150/150 三批原任务、讨论和来源 Run。
-- 验收：同一来源 Run 选出的子集可独立标注；两个重叠任务不互相填充完成度；任务结果可分批导出。
+1. 在 Labeling domain 新增批量 `project_issue_label_states(baseline_scope, issue_ids)`。
+2. 一次查询当前页/筛选全集涉及的 Label Cases、人员 heads、resolution 与当前 GT；在分页和计数前完成状态解析。
+3. 同一 Issue 若所有可用结果得到唯一标签，返回 `resolved`；不同任务给出不同标签返回 `conflict`；依赖变化返回 `stale`；缺交保留 `pending`。
+4. 单独派生 `gt_relation`，不再复用 annotation 的 `review_status`。
+5. `/api/cases`、Issue detail、Overview 和筛选 API 返回相同 `label_state`，来源包含 Task/revision/method，但默认列表不展开全部历史。
 
-### P3：模型原因 Review 单独存储和统计
+前端：
 
-- 新模型复核接口/版本、独立 note 与缺失信息、明确 GT/标签参考版本。
-- 同页 GT 修正入口、草稿/附件队列隔离及历史对照。
-- Gallery、Overview、原因分析、人员 facet 和 CSV/XLSX 切换到明确的模型复核投影。
-- 0206/0508 先保留模型复核入口，再逐批处理用途和版本链兼容；不按新的标注集规则一键迁走。
-- 验收：填期望输出不算模型归因完成；Run A 的诊断不填充 Run B；多人模型意见可对照且不假扮标签冲突。
+1. Review 卡片拆成“共享标签状态”和“当前 Run 判错复核”两行。
+2. `GT 待复核 / 与 GT 一致 / 标签冲突`来自 `label_state`；模型原因、reviewer、完成状态来自当前 Run。
+3. 点击共享状态打开来源任务/裁决的只读历史；需要修改时跳到 `/case-labeling` 的准确 Task/Issue。
+4. 保持 Run 编辑表单只编辑当前 Run 的模型复核，不把共享标签复制成一个新 annotation。
 
-### P4：跨 Run 对照与兼容收尾
+兼容策略：
 
-- 新建不可变评测记录，绑定相同 Workset、GT/标签快照和评分规则；GT 更新生成新版本对比。
-- 增加任务结果/原始提交/模型诊断的清晰汇总和来源导出。
-- 影子对照后逐范围迁移历史入口，清理重复 SQL 与旧字段的业务依赖；原始历史仍可查看。
-- 验收：历史指标可复现，GT 争议不暗改分母，跨任务总览不重复累计，未迁移的历史数据有明确兼容展示。
+- 不扩大 `_gallery_annotation_join` 对 Split annotation 的 fallback。
+- 已迁移范围读取 Label resolution；未迁移的 0206/0508 暂时继续显示 legacy 状态并明确标为“历史 Review”。
+- S1 可以不增加数据库表，适合作为首个小版本上线，并先在当前两个 Run 的重叠 Issue 上验收。
 
-P1 是建议的第一轮实际实施范围，优先解决当前已暴露的裁决与 GT 导出问题。后续阶段逐个评审、验收，不将整个重构一次性发布。
+验收：
+
+- `d4b519b7…` 与 `95dc9002…` 的同一 0821 Issue 显示相同共享标签状态及来源。
+- rand10 不增加模型复核完成数，也不继承旧 Run 的 note、missing evidence 或 reviewer。
+- 源任务出现新冲突时，两个 Run 同时显示“标签冲突”；旧的正式指标仍绑定原 GT 口径。
+
+### S2：不可变 GT/Label 快照与可复现参考
+
+1. 新增 content-addressed `gt_snapshots`/items；每次完整 Trail 同步创建或复用一个快照，再更新 active pointer。现有 overlay 继续作为当前读取缓存。
+2. 用切换时的当前 overlay 生成第一份可确认快照；更早历史无法重建时明确标记，不从当前值倒推。
+3. 新增 `label_result_snapshots`/items，从已解决 Label resolution 固定一个 Workset 的本地标签参考。
+4. GT 导出批次绑定 source GT snapshot、目标 revisions 和目标值；后续同步在新 snapshot 上逐项核对 `matched / not_applied / changed_again`。
+5. 正式评测必须引用 GT snapshot；使用 Label snapshot 的结果标为“本地标注对照”。普通 Review 页面可以提供“当前”视图，但展示 active snapshot ID/时间。
+
+验收：GT 更新不会改写旧评测；同一 Run 对旧/新 GT snapshot 可复算并说明差异；导出完成不再等同于 Trail 已更新。
+
+### S3：模型判错复核独立存储与状态
+
+1. 增加 `model_review_cases/revisions/attachments`，键为 Run、Issue、可选 Campaign、标签参考、作者；note 与 missing evidence 只表示模型诊断。
+2. 明确状态 `pending / in_progress / completed / blocked_by_label`。状态由模型复核操作产生，不再由 expected output 与 GT 比较推导。
+3. `/review` 的主保存动作写 model-review；“GT 有误”小面板写 Label domain，并保留当前 Run/revision 作为来源。
+4. Gallery、Overview、Reason Analysis、reviewer facet、CSV/XLSX 先做新旧影子对照，再按数据集/任务切换到 model-review 投影。现有 `/review-analysis` 和侧栏“原因聚类”继续专门回答“模型为什么判错”，不混入 Case 标注依据。
+5. 0206/0508 按已确认批次迁移；混合 note 原文保留为 legacy evidence，不自动拆成两个已完成记录。0522/0626/0821 的已迁移标签继续只在 Label domain 生效。
+6. 判错复核讨论继续以 `Issue + evaluation Run` 为频道；D 弹窗增加“Issue / 标注讨论”和“其他 Runs 讨论”只读入口，但当前 Run 的评论筛选、通知和完成度只读取本频道。
+
+验收：Run A 和 Run B 的诊断、完成度、评论及附件互不填充；共享标签变化只更新 `blocked_by_label`/参考提示，不改写历史原因；填写标签不会算作模型归因完成。
+
+### S4：任务分配收敛为 Campaign
+
+1. 代码、API 和 UI 统一使用 Campaign 术语，物理上先扩展 `issue_work_splits`，避免重写已迁移 ID 和深链接。
+2. Campaign 固定 `purpose = labeling | model_review`、Workset、可选 `evaluation_run_id`、reference snapshot、`draft/active/closed/cancelled/superseded` 生命周期及配置 revision。
+3. Labeling Campaign 不绑定 evaluation Run；`selection_source_run_id` 只保留在 Workset 作为选样来源。Model Review Campaign 必须绑定一个 evaluation Run。
+4. Assignment 使用每个 Issue 的真实应交人数；转派追加审计版本。关闭任务固定结果/进度快照，重新打开生成新配置 revision。
+5. 增加 `review_task_groups`：面向 Runs 合集的一个用户动作可以创建多个子 Campaign，但每个 Run 的模型复核进度仍独立。
+6. 任务分配页按 Campaign 一张卡展示用途、数据集、Workset、目标 Run/合集、标签参考、进度、冲突和生命周期；Task detail 区分“来源历史”和“本任务交付”。当前独立页对 `task_kind='labeling'` 的排除需要移除，页面按 `purpose` 提供“Case 标注 / 判错复核”两个明确视图。
+7. Case 标注分组增加“任务分配”入口，复用同一 Campaign 管理页并固定 `purpose=labeling`；支持进度、人员工作量、转派、冲突/裁决状态和审计历史。Case 标注页内仍保留快捷创建与任务筛选。
+8. Case 标注分组增加“标注分析”入口。第一版复用并扩展现有 `/api/labeling/clusters`：除 GT→结果混淆对和 scenario 外，统计期望输出、GT 关系、Scene/Trigger/Egress Tags、证据缺口、排除提议、任务、标注人、冲突与裁决。`label_rationale` 提供全文搜索和明细导出，不自动把自由文本包装成稳定业务类别。
+9. Case 标注讨论明确区分 Case 级公共频道与 Campaign 频道。任务页默认显示当前 Campaign + Case 公共讨论；跨任务历史作为分组只读参考，发言时必须选择目标频道。
+
+验收：两个重叠 Campaign 不互相补完成度；Labeling 结果可供多个 Run 读取；关闭后成员集合和进度口径不会漂移；合集批量分配可以追溯到每个 Run 子任务；Case 标注任务可以在独立管理页转派和审计；“标注分析”与模型“原因聚类”的统计对象和文案不会混淆。
+
+### S5：Runs 合集与统一评测工作区
+
+1. 新增 `run_collections`、不可变 revision 和 members；编辑名称不改 revision，增删/排序成员生成新 revision。
+2. 创建 `evaluation_context`，固定 Collection revision、Workset、GT/Label snapshot、评分策略和排除集合版本。
+3. 合集页显示各 Run 覆盖率、混淆矩阵、相对基准 Run 的 P2F/F2P、缺预测，以及全部成员的 Issue 横向表。
+4. 同一 Issue 只显示一份共享标签状态；每个 Run 单独显示 prediction、match 和 model-review 状态。
+5. 从合集可创建共享 Labeling Campaign，或为选中的 Runs 创建 Model Review task group。
+6. 现有两两 Run Comparison 保留为快捷视图，并可以“保存为合集”；它不再承担长期实验组织职责。
+
+验收：合集成员更新不改变旧 evaluation；多个 Run 使用相同分母与参考快照；按某一 Run 选样的 Workset 明确标识选择偏差；导出包含 collection revision、Workset hash、snapshot ID 和评分契约。
+
+### S6：历史兼容收尾
+
+1. 逐范围将 legacy annotation 变为只读历史证据，业务统计停止依赖“最大 annotation ID”与 cross-Run fallback。
+2. 保留旧 URL、annotation ID、Task ID、评论和附件映射；旧链接进入兼容详情并引导到当前 Label/Model Review 对象。
+3. 清理 Gallery、Overview、Analysis、Trail preview 中重复且口径不同的 SQL，统一调用 Label projection、Model Review projection 和 Evaluation service。
+4. 为未分类的 0206/0508 历史提供明确 `legacy_mixed` 展示；没有证据的内容不伪造为已标注、已复核或已裁决。
+5. 每次切换保留影子对账和范围开关；回退只切读写入口，不删除新版本或历史证据。
+
+最终完成条件：共享 Issue 标签、Run 级模型诊断、Campaign 进度和评测指标四套口径在页面、API、导出中一致；legacy fallback 不再决定任何新统计。
 
 ## 11. 验收场景与测试
 
@@ -387,6 +533,9 @@ P1 是建议的第一轮实际实施范围，优先解决当前已暴露的裁�
 | 同一 Issue 在任务 A 已交、任务 B 未交 | B 保持未交；独立进度及来源正确 |
 | 非任务成员普通保存 | 保留已发布修复，无 403；不计入任务人员提交 |
 | 从 Run A 筛 150 个 Case 标注，再用 Run B 对照 | 工作集固定；来源 A 可追溯；B 使用明确的相同标签快照 |
+| Run A 的 Split 标注与 Run B/rand10 重叠 | 两边显示相同 Issue 标签状态；Run B 不继承 Run A 的模型原因、reviewer 或完成度 |
+| 同一 Issue 的两个标注任务得到相同标签 | 共享状态为 resolved，并列出两个来源；不重复计算为两个 Issue |
+| 同一 Issue 的两个标注任务得到不同标签 | 所有 Run 视图显示 source conflict；任何一个任务都不能靠时间戳覆盖另一个 |
 | Review 发现 GT 错误，仅保存期望输出 | 生成 GT 修正提议；模型原因不强制填、不自动判完成 |
 | GT 更新后模型与新 GT 一致 | 新比较可变为 MATCH；旧评测/诊断内容保持可追溯 |
 | 多任务对同 Issue 给出不同期望输出 | 导出前提示冲突，不按最大 ID 或行顺序选择 |
@@ -398,6 +547,13 @@ P1 是建议的第一轮实际实施范围，优先解决当前已暴露的裁�
 | 0522/0626/0821 的历史 Review note | 按用途映射原样成为标注依据；例外可追溯，不丢正文或批量留在错误的模型区域 |
 | 标注页从任务、旧链接、刷新或浏览器返回进入 | 不显示模型结果和判错复核控件，payload 也不加载模型预测 |
 | 数据集有完整 GT 但仅少数 Case 有工作台记录 | GT 覆盖与真实提交覆盖分别保留，不补造或丢失人工记录 |
+| Runs 合集增加、删除或调整成员顺序 | 生成新 collection revision；旧 evaluation 的成员、分母和结果保持不变 |
+| 从 Runs 合集创建模型复核任务 | 每个 Run 有独立子 Campaign/进度，共用 Workset 与参考快照；任务组可汇总但不合并完成状态 |
+| 同一 Run 对两个 GT snapshots 评测 | 两个结果均可复现并显示参考版本；active GT 更新不改写旧结果 |
+| 从 Case 标注分组进入任务分配 | 只显示 Labeling Campaign；可查看进度、转派和审计，不混入 Run Review 完成数 |
+| 从 Case 标注分组进入标注分析 | 展示标签/GT/Tags/证据/冲突聚合；不把 label rationale 计入模型判错原因聚类 |
+| Run A 的讨论与 Run B/rand10 重叠 Issue | 当前 Run 频道互相隔离；Issue/标注公共频道两边可见，并明确标出频道来源 |
+| 指定 Labeling Campaign 打开讨论 | 显示当前 Campaign 与 Case 公共消息；其他 Campaign 仅按分组参考，不串回复树 |
 
 数据库测试覆盖 SQLite 和 PostgreSQL，尤其验证多连接并发、约束、幂等和事务回滚；仅 SQLite 或 Python 进程锁测试不够。
 
@@ -425,7 +581,8 @@ P1 是建议的第一轮实际实施范围，优先解决当前已暴露的裁�
 4. writer/admin 都能裁决，任务成员身份不作为裁决资格。
 5. 单人修正允许在导出预览批量确认；多人冲突先显式裁决；已裁决结果无需额外管理员审批。
 6. 任务可逐 Case 产出、分批导出，不等整批关闭。
-7. 第一版不实现严格双盲、任务自动发布策略、跨 Run 自动复用模型原因或自动写 Trail GT。
+7. 暂不实现严格双盲、跨 Run 自动复用模型原因或自动写 Trail GT；Runs 合集只组织评测和任务，不改变这三条边界。
 8. 正式指标按固定参考版本计算；GT 待复核作为可见争议，不能静默改变分母。
-9. 建议先做 P1 的可用闭环，再逐步分离独立标注任务、模型诊断和跨 Run 评测。
+9. 下一轮先交付 S1 跨 Run 共享标签投影；随后按 S2 快照、S3 模型复核、S4 Campaign、S5 Runs 合集推进。
 10. 0522/0626/0821 默认迁到标注区，原 Review note 作为标注依据；0206/0508 保留并按批次核对模型复核用途。
+11. Runs 合集成员版本不可变；一次正式评测固定 Collection revision、Workset、标签快照与评分策略。
