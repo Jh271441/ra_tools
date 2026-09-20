@@ -1026,13 +1026,6 @@ class DatabaseCoreMixin:
                 CREATE INDEX IF NOT EXISTS idx_label_result_snapshot_items_scope_issue
                     ON label_result_snapshot_items(baseline_scope, issue_id, snapshot_id);
 
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_label_cases_id_issue
-                    ON label_cases(id, issue_id);
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_label_revisions_id_case
-                    ON label_revisions(id, label_case_id);
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_label_resolutions_id_case
-                    ON label_resolutions(id, label_case_id);
-
                 CREATE TABLE IF NOT EXISTS label_result_snapshot_sources (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     snapshot_id TEXT NOT NULL REFERENCES label_result_snapshots(id) ON DELETE RESTRICT,
@@ -1046,13 +1039,7 @@ class DatabaseCoreMixin:
                     source_key TEXT NOT NULL,
                     UNIQUE(snapshot_id, source_key),
                     FOREIGN KEY(snapshot_id, issue_id)
-                        REFERENCES label_result_snapshot_items(snapshot_id, issue_id) ON DELETE RESTRICT,
-                    FOREIGN KEY(label_case_id, issue_id)
-                        REFERENCES label_cases(id, issue_id) ON DELETE RESTRICT,
-                    FOREIGN KEY(resolution_id, label_case_id)
-                        REFERENCES label_resolutions(id, label_case_id) ON DELETE RESTRICT,
-                    FOREIGN KEY(revision_id, label_case_id)
-                        REFERENCES label_revisions(id, label_case_id) ON DELETE RESTRICT
+                        REFERENCES label_result_snapshot_items(snapshot_id, issue_id) ON DELETE RESTRICT
                 );
                 CREATE INDEX IF NOT EXISTS idx_label_result_snapshot_sources_case
                     ON label_result_snapshot_sources(label_case_id, snapshot_id);

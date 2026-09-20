@@ -8,6 +8,22 @@ from .shared import LABELS, utc_now
 class DatabaseGtSyncMixin:
     """Persist and atomically apply authoritative GT snapshots."""
 
+    def _ensure_gt_sync_scope_lock_with_conn(self, conn: Any, scope: str) -> None:
+        conn.execute(
+            """
+            INSERT INTO gt_sync_state (baseline_scope)
+            VALUES (?) ON CONFLICT(baseline_scope) DO NOTHING
+            """,
+            (scope,),
+        )
+        lock_sql = (
+            "SELECT baseline_scope FROM gt_sync_state WHERE baseline_scope = ? FOR UPDATE"
+            if self.backend == "postgresql"
+            else "SELECT baseline_scope FROM gt_sync_state WHERE baseline_scope = ?"
+        )
+        if conn.execute(lock_sql, (scope,)).fetchone() is None:
+            raise RuntimeError("GT sync scope lock row disappeared")
+
     def _mark_gt_sync_change(self, conn: Any) -> None:
         if self.backend == "postgresql":
             conn.execute(
@@ -142,24 +158,31 @@ class DatabaseGtSyncMixin:
         if not normalized_scope:
             raise ValueError("GT 同步 baseline scope 不能为空。")
 
-        materialized: dict[str, dict[str, str]] = {}
-        for raw in rows:
-            issue_id = str(raw.get("issue_id") or "").strip()
-            label = str(raw.get("gt_label") or "").strip()
-            if not issue_id:
-                raise ValueError("GT 同步结果包含空 issue_id。")
-            if issue_id in materialized:
-                raise ValueError(f"GT 同步结果包含重复 issue_id: {issue_id}")
-            if label not in LABELS:
-                raise ValueError(f"GT 同步结果包含非法三分类标签: {issue_id}={label!r}")
-            materialized[issue_id] = {
-                "gt_label": label,
-                "source_updated_at": str(raw.get("source_updated_at") or "").strip(),
-                "source_updated_by": str(raw.get("source_updated_by") or "").strip(),
-            }
-
-        checked_at = utc_now()
         with self._write_lock, self.connect() as conn:
+            # Lock the stable scope row before reading either the Issue
+            # membership or the sync state. PostgreSQL calls serialize here.
+            self._ensure_gt_sync_scope_lock_with_conn(conn, normalized_scope)
+            checked_at = utc_now()
+            materialized: dict[str, dict[str, str]] = {}
+            for raw in rows:
+                issue_id = str(raw.get("issue_id") or "").strip()
+                label = str(raw.get("gt_label") or "").strip()
+                if not issue_id:
+                    raise ValueError("GT 同步结果包含空 issue_id。")
+                if issue_id in materialized:
+                    raise ValueError(f"GT 同步结果包含重复 issue_id: {issue_id}")
+                if label not in LABELS:
+                    raise ValueError(f"GT 同步结果包含非法三分类标签: {issue_id}={label!r}")
+                materialized[issue_id] = {
+                    "gt_label": label,
+                    "source_updated_at": str(raw.get("source_updated_at") or "").strip(),
+                    "source_updated_by": str(raw.get("source_updated_by") or "").strip(),
+                }
+            previous_row = conn.execute(
+                "SELECT * FROM gt_sync_state WHERE baseline_scope = ?",
+                (normalized_scope,),
+            ).fetchone()
+            previous = self._gt_sync_state_dict(previous_row)
             current_rows = conn.execute(
                 """
                 SELECT issue_id, gt_label
@@ -243,26 +266,9 @@ class DatabaseGtSyncMixin:
                 activate=True,
                 activation_reason="gt_sync",
                 mark_change=False,
+                scope_lock_held=True,
             )
             source_hash = gt_snapshot["content_sha256"]
-
-            previous_row = conn.execute(
-                "SELECT * FROM gt_sync_state WHERE baseline_scope = ?",
-                (normalized_scope,),
-            ).fetchone()
-            previous = (
-                self._gt_sync_state_dict(previous_row)
-                if previous_row is not None
-                else self._default_gt_sync_status(normalized_scope)
-            )
-            conn.execute(
-                """
-                INSERT INTO gt_sync_state (baseline_scope)
-                VALUES (?)
-                ON CONFLICT(baseline_scope) DO NOTHING
-                """,
-                (normalized_scope,),
-            )
             changed = [
                 issue_id
                 for issue_id in sorted(target_labels)
@@ -311,30 +317,28 @@ class DatabaseGtSyncMixin:
                     ),
                 )
 
-            changed_source_times = sorted(
+            observed_source_times = sorted(
                 {
-                    materialized[issue_id]["source_updated_at"]
-                    for issue_id in changed
-                    if issue_id in materialized
-                    and materialized[issue_id]["source_updated_at"]
+                    item["source_updated_at"]
+                    for item in materialized.values()
+                    if item["source_updated_at"]
                 }
             )
-            changed_source_users = sorted(
+            observed_source_users = sorted(
                 {
-                    materialized[issue_id]["source_updated_by"]
-                    for issue_id in changed
-                    if issue_id in materialized
-                    and materialized[issue_id]["source_updated_by"]
+                    item["source_updated_by"]
+                    for item in materialized.values()
+                    if item["source_updated_by"]
                 }
             )
             source_updated_at = (
-                changed_source_times[-1]
-                if changed_source_times
+                observed_source_times[-1]
+                if observed_source_times
                 else previous["source_updated_at"]
             )
             source_updated_by = (
-                "、".join(changed_source_users)
-                if changed_source_users
+                "、".join(observed_source_users)
+                if observed_source_users
                 else previous["source_updated_by"]
             )
             applied_at = (
@@ -434,10 +438,17 @@ class DatabaseGtSyncMixin:
         requested_by_verified: bool,
     ) -> dict[str, Any]:
         normalized_scope = str(scope or "").strip()
-        checked_at = utc_now()
-        previous = self.gt_sync_status(normalized_scope)
+        if not normalized_scope:
+            raise ValueError("GT 同步 baseline scope 不能为空。")
         message = f"权威 GT 同步失败：{str(error_text or '').strip()}"
         with self._write_lock, self.connect() as conn:
+            self._ensure_gt_sync_scope_lock_with_conn(conn, normalized_scope)
+            previous_row = conn.execute(
+                "SELECT * FROM gt_sync_state WHERE baseline_scope = ?",
+                (normalized_scope,),
+            ).fetchone()
+            previous = self._gt_sync_state_dict(previous_row)
+            checked_at = utc_now()
             conn.execute(
                 """
                 INSERT INTO gt_sync_state (

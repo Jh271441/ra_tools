@@ -30,7 +30,14 @@ rehearsal described below has not been run yet.
 8. Exercise GT export preview/download/reconcile in the disposable database:
    `matched`, `not_applied`, and `changed_again` must be per-item and the batch
    summary must distinguish export/download from later Trail-value observation.
-9. Record all comparisons, stop the disposable databases, remove their data and
+9. Run the PostgreSQL same-scope concurrency test with two independent Database
+   instances/connections against the disposable database:
+   `DASHBOARD_TEST_DISPOSABLE_POSTGRES_URL=<disposable-url> python3 -m unittest ra_triage_dashboard.tests.test_gt_snapshot_postgres_concurrency`.
+   Start two sync writers together for one scope, then verify the active
+   snapshot item, `issues.gt_label`, `gt_sync_labels`, and `gt_sync_state` all
+   describe the same winning snapshot. The test deliberately leaves uniquely
+   named fixture rows; discard the disposable database after the run.
+10. Record all comparisons, stop the disposable databases, remove their data and
    credentials, and retain only the non-sensitive result summary.
 
 ## Rollback boundary

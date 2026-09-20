@@ -88,14 +88,110 @@ class GtLabelSnapshotsTest(unittest.TestCase):
         self.assertEqual(by_id["activation"], active["activation"])
         self.assertEqual(by_id["observation"]["last_checked_at"], active["observation"]["last_checked_at"])
 
-    def test_postgres_head_lock_uses_stable_scope_row_before_active_row(self) -> None:
+    def test_metadata_only_gt_sync_reuses_content_and_refreshes_observation(self) -> None:
+        db = self.make_db()
+        self.add_scope(db, "scope", [("a", "正确触发")])
+        with patch(
+            "ra_triage_dashboard.app.db_parts.gt_sync.utc_now",
+            return_value="2026-09-20T10:00:00+00:00",
+        ):
+            first = self.sync(
+                db,
+                "scope",
+                [{
+                    "issue_id": "a",
+                    "gt_label": "正确触发",
+                    "source_updated_at": "2026-09-01T10:00:00Z",
+                    "source_updated_by": "alice",
+                }],
+            )["active_gt_snapshot"]
+        first_item = db.get_gt_snapshot(first["id"], include_items=True)["items"][0]
+
+        with patch(
+            "ra_triage_dashboard.app.db_parts.gt_sync.utc_now",
+            return_value="2026-09-20T10:00:01+00:00",
+        ):
+            second = self.sync(
+                db,
+                "scope",
+                [{
+                    "issue_id": "a",
+                    "gt_label": "正确触发",
+                    "source_updated_at": "2026-09-02T11:00:00Z",
+                    "source_updated_by": "bob",
+                }],
+            )["active_gt_snapshot"]
+        self.assertEqual(first["id"], second["id"])
+        self.assertEqual(first["content_sha256"], second["content_sha256"])
+        self.assertNotEqual(
+            first["observation"]["last_checked_at"],
+            second["observation"]["last_checked_at"],
+        )
+        self.assertEqual(
+            second["observation"]["source_updated_at"], "2026-09-02T11:00:00Z"
+        )
+        self.assertEqual(second["observation"]["source_updated_by"], "bob")
+        second_item = db.get_gt_snapshot(second["id"], include_items=True)["items"][0]
+        self.assertEqual(second_item["source_updated_at"], first_item["source_updated_at"])
+        self.assertEqual(second_item["source_updated_by"], first_item["source_updated_by"])
+        with db.connect() as conn:
+            count = conn.execute("SELECT COUNT(*) AS count FROM gt_snapshots").fetchone()["count"]
+        self.assertEqual(count, 1)
+
+    def test_gt_snapshot_identity_changes_for_contract_or_membership_changes(self) -> None:
+        db = self.make_db()
+        self.add_scope(db, "scope", [("a", "正确触发"), ("b", "误触发")])
+        first = self.sync(
+            db,
+            "scope",
+            [
+                {"issue_id": "a", "gt_label": "正确触发"},
+                {"issue_id": "b", "gt_label": "误触发"},
+            ],
+        )["active_gt_snapshot"]
+        contract_changed = db.apply_gt_sync_snapshot(
+            scope="scope",
+            rows=[
+                {"issue_id": "a", "gt_label": "正确触发"},
+                {"issue_id": "b", "gt_label": "误触发"},
+            ],
+            source_name="Trail",
+            source_view_id=1001,
+            source_field="ra_merge_result",
+            trigger="test",
+            requested_by="tester",
+            requested_by_source="test",
+            requested_by_verified=False,
+            expected_issue_ids=["a", "b"],
+        )["active_gt_snapshot"]
+        self.assertNotEqual(first["id"], contract_changed["id"])
+
+        db.upsert_issues(
+            [{"issue_id": "c", "gt_label": "无需协助"}],
+            source="snapshot-test-membership-change",
+            replace_gt=True,
+            baseline_scope="scope",
+        )
+        membership_changed = self.sync(
+            db,
+            "scope",
+            [
+                {"issue_id": "a", "gt_label": "正确触发"},
+                {"issue_id": "b", "gt_label": "误触发"},
+                {"issue_id": "c", "gt_label": "无需协助"},
+            ],
+        )["active_gt_snapshot"]
+        self.assertNotEqual(contract_changed["id"], membership_changed["id"])
+        self.assertEqual(membership_changed["member_count"], 3)
+
+    def test_postgres_scope_lock_and_active_pointer_both_use_for_update(self) -> None:
         db = self.make_db()
         db.backend = "postgresql"
 
         class Cursor:
             @staticmethod
             def fetchone():
-                return None
+                return {"baseline_scope": "scope", "snapshot_id": "snapshot"}
 
         class RecordingConnection:
             def __init__(self):
@@ -106,12 +202,60 @@ class GtLabelSnapshotsTest(unittest.TestCase):
                 return Cursor()
 
         connection = RecordingConnection()
-        db._lock_gt_snapshot_head_with_conn(connection, "scope")
-        self.assertEqual(len(connection.statements), 2)
-        self.assertIn("FROM gt_sync_state", connection.statements[0][0])
-        self.assertIn("FOR UPDATE", connection.statements[0][0])
-        self.assertIn("FROM gt_snapshot_active", connection.statements[1][0])
+        db._ensure_gt_sync_scope_lock_with_conn(connection, "scope")
+        db._lock_gt_snapshot_active_with_conn(connection, "scope")
+        self.assertEqual(len(connection.statements), 3)
+        self.assertIn("INSERT INTO gt_sync_state", connection.statements[0][0])
+        self.assertIn("FROM gt_sync_state", connection.statements[1][0])
         self.assertIn("FOR UPDATE", connection.statements[1][0])
+        self.assertIn("FROM gt_snapshot_active", connection.statements[2][0])
+        self.assertIn("FOR UPDATE", connection.statements[2][0])
+
+    def test_gt_sync_and_cutover_lock_scope_before_reading_issue_membership(self) -> None:
+        db = self.make_db()
+        self.add_scope(db, "scope", [("a", "正确触发")])
+        statements: list[str] = []
+        original_connect = db.connect
+
+        @contextmanager
+        def traced_connect():
+            with original_connect() as conn:
+                conn.set_trace_callback(statements.append)
+                yield conn
+
+        db.connect = traced_connect
+        self.sync(db, "scope", [{"issue_id": "a", "gt_label": "正确触发"}])
+        lock_index = next(
+            index
+            for index, sql in enumerate(statements)
+            if "SELECT baseline_scope FROM gt_sync_state" in sql
+        )
+        issue_read_index = next(
+            index
+            for index, sql in enumerate(statements)
+            if "SELECT issue_id, gt_label" in sql and "FROM issues" in sql
+        )
+        self.assertLess(lock_index, issue_read_index)
+
+        statements.clear()
+        db.create_gt_snapshot_from_current(
+            scope="scope",
+            gt_mode="strict",
+            source_name="Trail",
+            source_view_id=1000,
+            source_field="ra_merge_result",
+        )
+        lock_index = next(
+            index
+            for index, sql in enumerate(statements)
+            if "SELECT baseline_scope FROM gt_sync_state" in sql
+        )
+        issue_read_index = next(
+            index
+            for index, sql in enumerate(statements)
+            if "SELECT issue_id, gt_label, gt_source" in sql and "FROM issues" in sql
+        )
+        self.assertLess(lock_index, issue_read_index)
 
     def test_gt_sync_rolls_back_active_pointer_overlay_and_state_together(self) -> None:
         db = self.make_db()
@@ -290,6 +434,100 @@ class GtLabelSnapshotsTest(unittest.TestCase):
         self.assertNotEqual(second["id"], partial["id"])
         self.assertEqual(partial["pending_count"], 1)
         self.assertEqual(db.get_label_result_snapshot(first["id"], include_items=True)["items"], first_saved["items"])
+
+    def test_label_snapshot_service_rejects_source_case_from_another_issue_atomically(self) -> None:
+        db = self.make_db()
+        self.add_scope(db, "scope", [("a", "正确触发"), ("b", "正确触发")])
+        workset = db.create_review_workset(
+            baseline_scope="scope", issue_ids=["a"], created_by="admin"
+        )
+        wrong_revision = db.create_label_revision(
+            issue_id="b", expected_output="正确触发", tags=[], evidence_gaps=[],
+            rationale="source for b", is_excluded=False, author="alice",
+            author_source="test", author_verified=False,
+        )
+        wrong_case_id = wrong_revision["label_case_id"]
+        tampered_projection = {
+            "a": {
+                "state": "resolved",
+                "expected_output": "正确触发",
+                "method": "single",
+                "gt_relation": "matches_gt",
+                "source_revision_ids": [wrong_revision["id"]],
+                "sources": [{
+                    "label_case_id": wrong_case_id,
+                    "task_id": "",
+                    "source_revision_ids": [wrong_revision["id"]],
+                    "adjudication": None,
+                    "resolution_id": None,
+                }],
+            }
+        }
+        with patch.object(db, "project_issue_label_states", return_value=tampered_projection):
+            with self.assertRaisesRegex(ValueError, "does not match issue/scope/task"):
+                db.create_label_result_snapshot(
+                    workset_id=workset["id"], created_by="admin"
+                )
+        with db.connect() as conn:
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) AS n FROM label_result_snapshots").fetchone()["n"],
+                0,
+            )
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) AS n FROM label_result_snapshot_sources").fetchone()["n"],
+                0,
+            )
+
+    def test_label_snapshot_service_rejects_resolution_from_another_case(self) -> None:
+        db = self.make_db()
+        self.add_scope(db, "scope", [("a", "正确触发"), ("b", "正确触发")])
+        workset = db.create_review_workset(
+            baseline_scope="scope", issue_ids=["a"], created_by="admin"
+        )
+        case_a = db.ensure_label_case(issue_id="a")
+        revision_b = db.create_label_revision(
+            issue_id="b", expected_output="正确触发", tags=[], evidence_gaps=[],
+            rationale="source for b", is_excluded=False, author="alice",
+            author_source="test", author_verified=False,
+        )
+        with db.connect() as conn:
+            resolution = conn.execute(
+                """
+                INSERT INTO label_resolutions (
+                    label_case_id, method, result_revision_id,
+                    source_revision_ids_json, source_fingerprint, supersedes_id,
+                    created_by, created_by_source, created_by_verified, created_at
+                ) VALUES (?, 'adjudication', ?, '[]', 'fixture', NULL,
+                          'admin', 'test', 0, '2026-09-20T00:00:00Z')
+                """,
+                (revision_b["label_case_id"], revision_b["id"]),
+            )
+            resolution_id = int(resolution.lastrowid)
+        tampered_projection = {
+            "a": {
+                "state": "resolved",
+                "expected_output": "正确触发",
+                "method": "adjudication",
+                "gt_relation": "matches_gt",
+                "source_revision_ids": [revision_b["id"]],
+                "sources": [{
+                    "label_case_id": case_a["id"],
+                    "task_id": "",
+                    "source_revision_ids": [revision_b["id"]],
+                    "adjudication": {
+                        "id": resolution_id,
+                        "result_revision_id": revision_b["id"],
+                        "source_revision_ids": [],
+                    },
+                    "resolution_id": resolution_id,
+                }],
+            }
+        }
+        with patch.object(db, "project_issue_label_states", return_value=tampered_projection):
+            with self.assertRaisesRegex(ValueError, "resolution does not belong"):
+                db.create_label_result_snapshot(
+                    workset_id=workset["id"], created_by="admin"
+                )
 
     def test_label_result_partial_requires_explicit_flag(self) -> None:
         db = self.make_db()

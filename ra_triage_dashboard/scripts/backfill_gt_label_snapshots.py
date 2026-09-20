@@ -211,13 +211,12 @@ def main() -> int:
             snapshot = database.create_gt_snapshot_from_current(
                 scope=scope,
                 gt_mode=entry.gt_mode,
-                source_name=str(state.get("source_name") or "Trail"),
-                source_view_id=int(state.get("source_view_id") or 1000),
-                source_field=str(state.get("source_field") or "ra_merge_result"),
                 created_by=args.created_by,
                 created_by_source=args.created_by_source,
                 created_by_verified=False,
                 activation_reason="cutover_current",
+                expected_member_count=entry.expected_count,
+                expected_membership_sha256=entry.members_sha256,
             )
             reports.append({"baseline_scope": scope, "action": "apply", "snapshot": snapshot})
         print(json.dumps({"apply": True, "scopes": reports}, ensure_ascii=False, indent=2))
