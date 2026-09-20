@@ -239,6 +239,24 @@ def sync_authoritative_gt(
                         expected_issue_ids=issue_ids,
                         allow_sparse=allow_sparse,
                     )
+                    try:
+                        database.reconcile_label_gt_export_batches_for_scope(
+                            entry.scope
+                        )
+                    except Exception as reconcile_exc:
+                        logger.exception(
+                            "GT export reconciliation failed after sync for %s",
+                            entry.id,
+                        )
+                        try:
+                            database.record_label_gt_export_reconcile_error_for_scope(
+                                entry.scope, str(reconcile_exc)
+                            )
+                        except Exception:
+                            logger.exception(
+                                "failed to record GT export reconciliation error for %s",
+                                entry.id,
+                            )
             except Exception as exc:
                 logger.exception(
                     "authoritative GT sync failed for baseline %s", entry.id

@@ -78,7 +78,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-472`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-473`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1242,6 +1242,7 @@
 
             <div class="comparison-results hidden" id="comparisonResults">
               <section class="comparison-summary-grid" id="comparisonSummary"></section>
+              <p class="muted comparison-gt-reference" id="comparisonGtReference"></p>
 
               <section class="comparison-matrix-grid">
                 <article class="page-card comparison-matrix-card" id="comparisonBaselineMatrixCard">
@@ -2167,7 +2168,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-472`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-473`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

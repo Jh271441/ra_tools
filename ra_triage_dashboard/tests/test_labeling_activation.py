@@ -29,6 +29,18 @@ class LabelingActivationTest(unittest.IsolatedAsyncioTestCase):
                 [{"issue_id": issue_id, "gt_label": "正确触发"}],
                 source="test", replace_gt=True, baseline_scope=scope,
             )
+            self.database.apply_gt_sync_snapshot(
+                scope=scope,
+                rows=[{"issue_id": issue_id, "gt_label": "正确触发"}],
+                source_name="Trail",
+                source_view_id=1000,
+                source_field="ra_merge_result",
+                trigger="test",
+                requested_by="tester",
+                requested_by_source="test",
+                requested_by_verified=False,
+                expected_issue_ids=[issue_id],
+            )
             self.set_scope(scope, status)
             workset = self.database.create_review_workset(
                 baseline_scope=scope, issue_ids=[issue_id], created_by="admin",

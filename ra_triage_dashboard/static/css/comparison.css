@@ -74,6 +74,12 @@
   gap: 6px;
 }
 
+.comparison-gt-reference {
+  margin: -2px 2px 2px;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .comparison-metric {
   min-width: 0;
   min-height: 62px;

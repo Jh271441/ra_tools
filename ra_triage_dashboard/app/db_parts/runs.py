@@ -363,6 +363,8 @@ class DatabaseRunsMixin:
         run_placeholders = ", ".join("?" for _ in run_ids)
         scope_clause, scope_params = self._scope_in_sql(scopes, "i.baseline_scope")
         with self.connect() as conn:
+            if self.backend == "postgresql":
+                conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
             run_rows = conn.execute(
                 f"SELECT * FROM model_runs WHERE id IN ({run_placeholders})",
                 run_ids,
@@ -421,6 +423,7 @@ class DatabaseRunsMixin:
                     *LABELS,
                 ),
             ).fetchall()
+            active_gt_snapshot_rows = self._active_gt_snapshots_with_conn(conn, scopes)
 
         runs = {str(row["id"]): self._run_dict(row) for row in run_rows}
         if any(run_id not in runs for run_id in run_ids):
@@ -556,6 +559,35 @@ class DatabaseRunsMixin:
 
         baseline_matrix = matrix_payload("baseline")
         candidate_matrix = matrix_payload("candidate")
+        active_gt_by_scope = {
+            str(item["baseline_scope"]): item
+            for item in active_gt_snapshot_rows
+        }
+        gt_references = []
+        for scope in scopes:
+            snapshot = active_gt_by_scope.get(scope)
+            if snapshot is None:
+                gt_references.append(
+                    {
+                        "baseline_scope": scope,
+                        "reference_type": "legacy_current",
+                        "snapshot_id": "",
+                        "content_sha256": "",
+                    }
+                )
+            else:
+                gt_references.append(
+                    {
+                        "baseline_scope": scope,
+                        "reference_type": "gt_snapshot",
+                        "snapshot_id": str(snapshot.get("id") or ""),
+                        "content_sha256": str(snapshot.get("content_sha256") or ""),
+                        "membership_sha256": str(snapshot.get("membership_sha256") or ""),
+                        "gt_mode": str(snapshot.get("gt_mode") or "strict"),
+                        "activation": snapshot.get("activation"),
+                        "observation": snapshot.get("observation"),
+                    }
+                )
 
         def matches_input_filter(item: dict[str, Any]) -> bool:
             scope = normalized_input_filter["run"]
@@ -634,6 +666,7 @@ class DatabaseRunsMixin:
                 else None
             ),
             "baseline_scopes": scopes,
+            "gt_references": gt_references,
             "summary": {
                 "total_count": len(comparison_rows),
                 "label_changed_count": sum(

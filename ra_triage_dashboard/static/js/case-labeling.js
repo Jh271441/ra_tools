@@ -285,12 +285,22 @@ async function createCaseLabelingResultSnapshot() {
   const button = $("#caseLabelingCreateLabelSnapshot");
   if (button) button.disabled = true;
   try {
-    const result = await api("/api/labeling/label-result-snapshots", {
+    const saveSnapshot = (allowPartial) => api("/api/labeling/label-result-snapshots", {
       method: "POST",
-      body: JSON.stringify({ workset_id: task.workset_id, allow_partial: true }),
+      body: JSON.stringify({ workset_id: task.workset_id, allow_partial: allowPartial }),
     });
+    let result;
+    try {
+      result = await saveSnapshot(false);
+    } catch (error) {
+      if (!String(error.message || "").includes("requires all Workset members")) throw error;
+      const message = `${error.message}\n\n是否保存为诊断用的 partial snapshot？`;
+      if (!window.confirm(message)) return;
+      result = await saveSnapshot(true);
+    }
     const snapshot = result.snapshot || {};
-    showToast(`Label snapshot 已保存：${snapshot.resolved_count || 0}/${snapshot.member_count || 0} · ${snapshot.coverage_status || ""}`);
+    const coverageLabel = snapshot.coverage_status === "partial" ? "诊断 partial" : "complete";
+    showToast(`Label snapshot 已保存：${snapshot.resolved_count || 0}/${snapshot.member_count || 0} · ${coverageLabel}`);
   } catch (error) {
     showToast(error.message || "Label snapshot 保存失败。", true);
   } finally {
@@ -747,6 +757,7 @@ async function loadCaseLabelingCases({ page = state.caseLabeling.page, persistRo
     renderCaseLabelingClusterStrip();
     renderCaseLabelingList(state.caseLabeling.data);
     if (persistRoute) persistCaseLabelingRoute({ issue: "", page: 1 });
+    await loadCaseLabelingSnapshotReferences();
     return;
   }
   const params = new URLSearchParams({
@@ -779,7 +790,7 @@ async function loadCaseLabelingCases({ page = state.caseLabeling.page, persistRo
   renderCaseLabelingList(result);
   if (persistRoute) persistCaseLabelingRoute({ issue: "", page: state.caseLabeling.page });
   loadCaseLabelingClusters().catch((error) => showToast(error.message, true));
-  loadCaseLabelingSnapshotReferences().catch(() => {});
+  await loadCaseLabelingSnapshotReferences();
 }
 
 function caseLabelingQueueItems() {
@@ -1428,14 +1439,12 @@ async function enterCaseLabeling({ route = null } = {}) {
   }
   const filters = restoreCaseLabelingRouteState(route);
   await loadCaseLabelingTasks();
-  await loadCaseLabelingSnapshotReferences();
   renderCaseLabelingStatusPicker();
   renderCaseLabelingAuthorPicker();
   renderCaseLabelingAssigneePicker();
   renderCaseLabelingLabelPicker();
   renderCaseLabelingExclusionPicker();
   await loadCaseLabelingCases({ page: state.caseLabeling.page });
-  await loadCaseLabelingSnapshotReferences();
   const issue = route?.issue || filters.issue || "";
   if (issue) await selectCaseLabelingIssue(issue, { updateRoute: false });
   else closeCaseLabelingDetail({ updateRoute: false });

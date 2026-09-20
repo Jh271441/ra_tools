@@ -381,6 +381,18 @@ function renderRunComparisonSummary(payload) {
   const summary = payload.summary || {};
   const baseline = summary.baseline || {};
   const candidate = summary.candidate || {};
+  const gtReferences = payload.gt_references || [];
+  const referenceMeta = $("#comparisonGtReference");
+  if (referenceMeta) {
+    referenceMeta.textContent = gtReferences.map((item) => {
+      const scope = String(item.baseline_scope || "");
+      if (item.reference_type !== "gt_snapshot") {
+        return `${scope}: ${uiText("当前 GT（旧版引用）", "legacy current GT")}`;
+      }
+      const snapshotId = String(item.snapshot_id || "");
+      return `${scope}: ${uiText("GT snapshot", "GT snapshot")} ${snapshotId.slice(0, 24)}`;
+    }).join(" · ");
+  }
   if (payload.view_mode === "single") {
     const side = payload.candidate_run ? candidate : baseline;
     const run = payload.candidate_run || payload.baseline_run || {};

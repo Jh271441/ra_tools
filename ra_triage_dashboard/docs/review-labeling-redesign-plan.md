@@ -598,9 +598,13 @@ Existing overlay tables remain the current read cache; snapshot metadata is
 returned without loading all items.
 
 Local Label result snapshots bind one frozen Workset and its members hash to an
-immutable `label_result_snapshots` record, with paged items and explicit source
-links. Partial snapshots are diagnostic only. GT export previews record active
-snapshot IDs/hashes and expose a later matched/not_applied/changed_again
-reconcile operation. The cutover backfill script is dry-run by default and only
-writes with `--apply`. Migration 043 is additive and has not been applied to
-production in this phase.
+immutable `label_result_snapshots` record, with paged items and explicit case,
+task, resolution, revision, and role links. Complete snapshots require every
+member to be resolved; a partial snapshot needs a separate diagnostic action.
+GT export previews bind each selected scope to its active snapshot and hash.
+After successful sync, outstanding exports are reconciled in batches against
+the new active snapshot; missing snapshot members produce an error state for
+retry instead of an empty-label match. The cutover backfill is read-only by
+default and only writes snapshots with `--apply` after migration 043 is already
+installed. Migration 043 is additive and has not been applied to production in
+this phase. The disposable PostgreSQL rehearsal remains planned, not run.

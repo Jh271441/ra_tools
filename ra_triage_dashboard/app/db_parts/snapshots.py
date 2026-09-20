@@ -21,10 +21,6 @@ SNAPSHOT_LABEL_STATES = {"none", "pending", "resolved", "conflict", "stale"}
 SNAPSHOT_LABEL_METHODS = {"single", "consensus", "adjudication"}
 
 
-class SnapshotConflictError(RuntimeError):
-    """The active snapshot changed since a caller's read."""
-
-
 def _sha256_json(value: Any) -> str:
     return hashlib.sha256(
         json.dumps(
@@ -41,8 +37,32 @@ def _snapshot_membership_sha(issue_ids: Sequence[str]) -> str:
 
 
 class DatabaseSnapshotMixin:
+    def _lock_gt_snapshot_head_with_conn(self, conn: Any, scope: str) -> Any:
+        sync_lock_sql = (
+            "SELECT baseline_scope FROM gt_sync_state WHERE baseline_scope = ? FOR UPDATE"
+            if self.backend == "postgresql"
+            else "SELECT baseline_scope FROM gt_sync_state WHERE baseline_scope = ?"
+        )
+        conn.execute(sync_lock_sql, (scope,)).fetchone()
+        active_lock_sql = (
+            "SELECT snapshot_id FROM gt_snapshot_active WHERE baseline_scope = ? FOR UPDATE"
+            if self.backend == "postgresql"
+            else "SELECT snapshot_id FROM gt_snapshot_active WHERE baseline_scope = ?"
+        )
+        return conn.execute(active_lock_sql, (scope,)).fetchone()
+
     @staticmethod
     def _gt_snapshot_dict(row: Any, *, active: bool = False) -> dict[str, Any]:
+        row_keys = set(row.keys()) if hasattr(row, "keys") else set()
+        activation = None
+        if "active_activated_at" in row_keys and row["active_activated_at"] is not None:
+            activation = {
+                "activated_at": str(row["active_activated_at"] or ""),
+                "activated_by": str(row["active_activated_by"] or ""),
+                "activated_by_source": str(row["active_activated_by_source"] or ""),
+                "activated_by_verified": bool(row["active_activated_by_verified"]),
+                "activation_reason": str(row["active_activation_reason"] or ""),
+            }
         return {
             "id": str(row["id"] or ""),
             "baseline_scope": str(row["baseline_scope"] or ""),
@@ -60,6 +80,18 @@ class DatabaseSnapshotMixin:
             "created_by_verified": bool(row["created_by_verified"]),
             "created_at": str(row["created_at"] or ""),
             "active": bool(active),
+            "activation": activation,
+            "observation": (
+                {
+                    "status": str(row["observation_status"] or "not_started"),
+                    "last_checked_at": str(row["observation_last_checked_at"] or ""),
+                    "source_sha256": str(row["observation_source_sha256"] or ""),
+                    "source_updated_at": str(row["observation_source_updated_at"] or ""),
+                    "source_updated_by": str(row["observation_source_updated_by"] or ""),
+                }
+                if "observation_last_checked_at" in row_keys
+                else None
+            ),
         }
 
     @staticmethod
@@ -102,7 +134,12 @@ class DatabaseSnapshotMixin:
                 "source_field": source_field,
             },
             "members": [
-                [issue_id, str(rows[issue_id].get("gt_label") or "")]
+                [
+                    issue_id,
+                    str(rows[issue_id].get("gt_label") or ""),
+                    str(rows[issue_id].get("source_updated_at") or ""),
+                    str(rows[issue_id].get("source_updated_by") or ""),
+                ]
                 for issue_id in sorted(rows)
             ],
         }
@@ -124,6 +161,7 @@ class DatabaseSnapshotMixin:
         created_by_verified: bool = False,
         activate: bool = True,
         activation_reason: str = "sync",
+        mark_change: bool = True,
     ) -> dict[str, Any]:
         normalized_scope = str(scope or "").strip()
         mode = str(gt_mode or "strict").strip().lower()
@@ -146,6 +184,15 @@ class DatabaseSnapshotMixin:
             }
         if not normalized_rows:
             raise ValueError("GT snapshot membership must not be empty")
+        current_members = {
+            str(row["issue_id"] or "")
+            for row in conn.execute(
+                "SELECT issue_id FROM issues WHERE baseline_scope = ?",
+                (normalized_scope,),
+            ).fetchall()
+        }
+        if set(normalized_rows) != current_members:
+            raise ValueError("GT snapshot membership must exactly match its baseline scope")
         content_sha = self._gt_snapshot_content_hash(
             baseline_scope=normalized_scope,
             gt_mode=mode,
@@ -171,6 +218,7 @@ class DatabaseSnapshotMixin:
             "SELECT * FROM gt_snapshots WHERE baseline_scope = ? AND content_sha256 = ?",
             (normalized_scope, content_sha),
         ).fetchone()
+        snapshot_created = existing is None
         if existing is None:
             conn.execute(
                 """
@@ -224,12 +272,16 @@ class DatabaseSnapshotMixin:
         else:
             snapshot_id = str(existing["id"])
         if activate:
-            lock_sql = (
-                "SELECT snapshot_id FROM gt_snapshot_active WHERE baseline_scope = ? FOR UPDATE"
-                if self.backend == "postgresql"
-                else "SELECT snapshot_id FROM gt_snapshot_active WHERE baseline_scope = ?"
+            conn.execute(
+                """
+                INSERT INTO gt_sync_state (baseline_scope)
+                VALUES (?) ON CONFLICT(baseline_scope) DO NOTHING
+                """,
+                (normalized_scope,),
             )
-            current_active = conn.execute(lock_sql, (normalized_scope,)).fetchone()
+            current_active = self._lock_gt_snapshot_head_with_conn(
+                conn, normalized_scope
+            )
             current_active_id = (
                 str(current_active["snapshot_id"] or "") if current_active else ""
             )
@@ -258,9 +310,35 @@ class DatabaseSnapshotMixin:
                         str(activation_reason or "sync"),
                     ),
                 )
+                if mark_change:
+                    self._mark_gt_sync_change(conn)
+            elif snapshot_created:
+                if mark_change:
+                    self._mark_gt_sync_change(conn)
         row = conn.execute("SELECT * FROM gt_snapshots WHERE id = ?", (snapshot_id,)).fetchone()
         if row is None:
             raise RuntimeError("GT snapshot disappeared after insert")
+        if activate:
+            row = conn.execute(
+                """
+                SELECT snapshot.*,
+                       active.activated_at AS active_activated_at,
+                       active.activated_by AS active_activated_by,
+                       active.activated_by_source AS active_activated_by_source,
+                       active.activated_by_verified AS active_activated_by_verified,
+                       active.activation_reason AS active_activation_reason,
+                       sync.status AS observation_status,
+                       sync.last_checked_at AS observation_last_checked_at,
+                       sync.source_sha256 AS observation_source_sha256,
+                       sync.source_updated_at AS observation_source_updated_at,
+                       sync.source_updated_by AS observation_source_updated_by
+                FROM gt_snapshots snapshot
+                JOIN gt_snapshot_active active ON active.snapshot_id = snapshot.id
+                LEFT JOIN gt_sync_state sync ON sync.baseline_scope = snapshot.baseline_scope
+                WHERE snapshot.id = ?
+                """,
+                (snapshot_id,),
+            ).fetchone()
         result = self._gt_snapshot_dict(row, active=activate)
         result["active_snapshot_id"] = snapshot_id if activate else ""
         return result
@@ -272,117 +350,118 @@ class DatabaseSnapshotMixin:
         with self.connect() as conn:
             row = conn.execute(
                 """
-                SELECT snapshot.* FROM gt_snapshot_active active
+                SELECT snapshot.*,
+                       active.activated_at AS active_activated_at,
+                       active.activated_by AS active_activated_by,
+                       active.activated_by_source AS active_activated_by_source,
+                       active.activated_by_verified AS active_activated_by_verified,
+                       active.activation_reason AS active_activation_reason,
+                       sync.status AS observation_status,
+                       sync.last_checked_at AS observation_last_checked_at,
+                       sync.source_sha256 AS observation_source_sha256,
+                       sync.source_updated_at AS observation_source_updated_at,
+                       sync.source_updated_by AS observation_source_updated_by
+                FROM gt_snapshot_active active
                 JOIN gt_snapshots snapshot ON snapshot.id = active.snapshot_id
+                LEFT JOIN gt_sync_state sync ON sync.baseline_scope = active.baseline_scope
                 WHERE active.baseline_scope = ?
                 """,
                 (scope,),
             ).fetchone()
         return self._gt_snapshot_dict(row, active=True) if row is not None else None
 
-    def active_gt_snapshots(self, baseline_scopes: Sequence[str]) -> list[dict[str, Any]]:
-        scopes = [str(item or "").strip() for item in baseline_scopes if str(item or "").strip()]
+    def _active_gt_snapshots_with_conn(
+        self, conn: Any, baseline_scopes: Sequence[str]
+    ) -> list[dict[str, Any]]:
+        scopes = [
+            str(item or "").strip()
+            for item in baseline_scopes
+            if str(item or "").strip()
+        ]
         scopes = list(dict.fromkeys(scopes))
         if not scopes:
             return []
-        with self.connect() as conn:
-            rows = conn.execute(
-                f"""
-                SELECT snapshot.* FROM gt_snapshot_active active
-                JOIN gt_snapshots snapshot ON snapshot.id = active.snapshot_id
-                WHERE active.baseline_scope IN ({', '.join('?' for _ in scopes)})
-                ORDER BY snapshot.baseline_scope
-                """,
-                scopes,
-            ).fetchall()
+        rows = conn.execute(
+            f"""
+            SELECT snapshot.*,
+                   active.activated_at AS active_activated_at,
+                   active.activated_by AS active_activated_by,
+                   active.activated_by_source AS active_activated_by_source,
+                   active.activated_by_verified AS active_activated_by_verified,
+                   active.activation_reason AS active_activation_reason,
+                   sync.status AS observation_status,
+                   sync.last_checked_at AS observation_last_checked_at,
+                   sync.source_sha256 AS observation_source_sha256,
+                   sync.source_updated_at AS observation_source_updated_at,
+                   sync.source_updated_by AS observation_source_updated_by
+            FROM gt_snapshot_active active
+            JOIN gt_snapshots snapshot ON snapshot.id = active.snapshot_id
+            LEFT JOIN gt_sync_state sync ON sync.baseline_scope = active.baseline_scope
+            WHERE active.baseline_scope IN ({', '.join('?' for _ in scopes)})
+            ORDER BY snapshot.baseline_scope
+            """,
+            scopes,
+        ).fetchall()
         return [self._gt_snapshot_dict(row, active=True) for row in rows]
 
-    def activate_gt_snapshot(
-        self,
-        *,
-        baseline_scope: str,
-        snapshot_id: str,
-        expected_previous_snapshot_id: str | None = None,
-        activated_by: str = "",
-        activated_by_source: str = "system",
-        activated_by_verified: bool = False,
-        activation_reason: str = "manual",
-    ) -> dict[str, Any]:
-        scope = str(baseline_scope or "").strip()
-        target = str(snapshot_id or "").strip()
-        if not scope or not target:
-            raise ValueError("baseline_scope and snapshot_id are required")
-        now = utc_now()
-        with self._write_lock, self.connect() as conn:
-            snapshot = conn.execute(
-                "SELECT * FROM gt_snapshots WHERE id = ? AND baseline_scope = ?",
-                (target, scope),
-            ).fetchone()
-            if snapshot is None:
-                raise ValueError("GT snapshot does not exist for this scope")
-            lock_sql = (
-                "SELECT snapshot_id FROM gt_snapshot_active WHERE baseline_scope = ? FOR UPDATE"
-                if self.backend == "postgresql"
-                else "SELECT snapshot_id FROM gt_snapshot_active WHERE baseline_scope = ?"
-            )
-            current = conn.execute(lock_sql, (scope,)).fetchone()
-            current_id = str(current["snapshot_id"] or "") if current else ""
-            if expected_previous_snapshot_id is not None and str(
-                expected_previous_snapshot_id or ""
-            ) != current_id:
-                raise SnapshotConflictError(
-                    f"active GT snapshot changed: current={current_id or 'none'}"
-                )
-            conn.execute(
-                """
-                INSERT INTO gt_snapshot_active (
-                    baseline_scope, snapshot_id, activated_at, activated_by,
-                    activated_by_source, activated_by_verified, activation_reason
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(baseline_scope) DO UPDATE SET
-                    snapshot_id = excluded.snapshot_id,
-                    activated_at = excluded.activated_at,
-                    activated_by = excluded.activated_by,
-                    activated_by_source = excluded.activated_by_source,
-                    activated_by_verified = excluded.activated_by_verified,
-                    activation_reason = excluded.activation_reason
-                """,
-                (
-                    scope,
-                    target,
-                    now,
-                    str(activated_by or ""),
-                    str(activated_by_source or "system"),
-                    bool(activated_by_verified),
-                    str(activation_reason or "manual"),
-                ),
-            )
-            self._mark_change_topic(conn, "gt_sync")
-        return self.get_active_gt_snapshot(scope) or {}
+    def active_gt_snapshots(self, baseline_scopes: Sequence[str]) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            return self._active_gt_snapshots_with_conn(conn, baseline_scopes)
 
     def get_gt_snapshot(
-        self, snapshot_id: str, *, include_items: bool = False, item_limit: int = 100
+        self,
+        snapshot_id: str,
+        *,
+        include_items: bool = False,
+        item_limit: int = 100,
+        page: int = 1,
+        page_size: int | None = None,
     ) -> dict[str, Any] | None:
         normalized = str(snapshot_id or "").strip()
         if not normalized:
             return None
         with self.connect() as conn:
-            row = conn.execute("SELECT * FROM gt_snapshots WHERE id = ?", (normalized,)).fetchone()
+            row = conn.execute(
+                """
+                SELECT snapshot.*,
+                       active.activated_at AS active_activated_at,
+                       active.activated_by AS active_activated_by,
+                       active.activated_by_source AS active_activated_by_source,
+                       active.activated_by_verified AS active_activated_by_verified,
+                       active.activation_reason AS active_activation_reason,
+                       sync.status AS observation_status,
+                       sync.last_checked_at AS observation_last_checked_at,
+                       sync.source_sha256 AS observation_source_sha256,
+                       sync.source_updated_at AS observation_source_updated_at,
+                       sync.source_updated_by AS observation_source_updated_by
+                FROM gt_snapshots snapshot
+                LEFT JOIN gt_snapshot_active active ON active.snapshot_id = snapshot.id
+                LEFT JOIN gt_sync_state sync ON sync.baseline_scope = snapshot.baseline_scope
+                WHERE snapshot.id = ?
+                """,
+                (normalized,),
+            ).fetchone()
             if row is None:
                 return None
             result = self._gt_snapshot_dict(row)
-            active = conn.execute(
-                "SELECT 1 FROM gt_snapshot_active WHERE snapshot_id = ? LIMIT 1",
-                (normalized,),
-            ).fetchone()
-            result["active"] = active is not None
+            result["active"] = row["active_activated_at"] is not None
             if include_items:
+                normalized_page = max(1, min(int(page), 1_000_000))
+                normalized_page_size = max(
+                    1, min(int(page_size if page_size is not None else item_limit), 1000)
+                )
+                offset = (normalized_page - 1) * normalized_page_size
+                total_row = conn.execute(
+                    "SELECT COUNT(*) AS total FROM gt_snapshot_items WHERE snapshot_id = ?",
+                    (normalized,),
+                ).fetchone()
+                total = int(total_row["total"] or 0)
                 rows = conn.execute(
                     """
                     SELECT issue_id, ordinal, gt_label, source_updated_at, source_updated_by
-                    FROM gt_snapshot_items WHERE snapshot_id = ? ORDER BY ordinal LIMIT ?
+                    FROM gt_snapshot_items WHERE snapshot_id = ? ORDER BY ordinal LIMIT ? OFFSET ?
                     """,
-                    (normalized, max(1, min(int(item_limit), 1000))),
+                    (normalized, normalized_page_size, offset),
                 ).fetchall()
                 result["items"] = [
                     {
@@ -394,6 +473,14 @@ class DatabaseSnapshotMixin:
                     }
                     for item in rows
                 ]
+                result["items_total"] = total
+                result["items_page"] = normalized_page
+                result["items_page_size"] = normalized_page_size
+                result["items_next_page"] = (
+                    normalized_page + 1
+                    if offset + len(rows) < total
+                    else None
+                )
         return result
 
     def gt_snapshot_item_labels(
@@ -451,8 +538,16 @@ class DatabaseSnapshotMixin:
                 }
                 for row in rows
             }
-            status = self.gt_sync_status(normalized)
-            return self._create_or_reuse_gt_snapshot_with_conn(
+            state_row = conn.execute(
+                "SELECT * FROM gt_sync_state WHERE baseline_scope = ?",
+                (normalized,),
+            ).fetchone()
+            status = (
+                self._gt_sync_state_dict(state_row)
+                if state_row is not None
+                else self._default_gt_sync_status(normalized)
+            )
+            result = self._create_or_reuse_gt_snapshot_with_conn(
                 conn,
                 scope=normalized,
                 gt_mode=gt_mode,
@@ -471,42 +566,114 @@ class DatabaseSnapshotMixin:
                 activate=True,
                 activation_reason=activation_reason,
             )
+        return self.get_active_gt_snapshot(normalized) or result
 
     def _label_result_snapshot_source_rows(
         self,
         snapshot_id: str,
         issue_id: str,
-        sources: Sequence[dict[str, Any]],
+        provenance: Sequence[dict[str, Any]],
     ) -> list[tuple[Any, ...]]:
         rows: list[tuple[Any, ...]] = []
-        for source in sources:
-            case_id = str(source.get("label_case_id") or "").strip()
-            if not case_id:
-                continue
-            resolution = source.get("adjudication") or {}
-            resolution_id = resolution.get("id")
-            try:
-                resolution_id = int(resolution_id) if resolution_id not in (None, "") else None
-            except (TypeError, ValueError):
-                resolution_id = None
-            revision_ids = []
-            for value in source.get("source_revision_ids") or []:
-                try:
-                    revision_ids.append(int(value))
-                except (TypeError, ValueError):
-                    continue
-            for revision_id in revision_ids or [None]:
+        for source in provenance:
+            case_id = str(source["label_case_id"])
+            revision_sources = [
+                {"revision_id": None, "source_role": "case"},
+                *source["revision_sources"],
+            ]
+            for revision_source in revision_sources:
+                link = {
+                    "issue_id": issue_id,
+                    "label_case_id": case_id,
+                    "task_id": str(source["task_id"]),
+                    "resolution_id": source["resolution_id"],
+                    "revision_id": revision_source["revision_id"],
+                    "source_role": revision_source["source_role"],
+                }
                 rows.append(
                     (
                         snapshot_id,
                         issue_id,
                         case_id,
-                        resolution_id,
-                        revision_id,
-                        "resolution" if resolution_id else "head",
+                        str(source["task_id"]),
+                        source["resolution_id"],
+                        revision_source["revision_id"],
+                        str(revision_source["source_role"]),
+                        _sha256_json(link),
                     )
                 )
         return rows
+
+    @staticmethod
+    def _label_result_snapshot_provenance(
+        sources: Sequence[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        normalized: list[dict[str, Any]] = []
+        for source in sources:
+            if not isinstance(source, dict):
+                continue
+            case_id = str(source.get("label_case_id") or "").strip()
+            if not case_id:
+                raise ValueError("Label snapshot source is missing label_case_id")
+            adjudication = source.get("adjudication")
+            adjudication = adjudication if isinstance(adjudication, dict) else {}
+            raw_resolution_id = adjudication.get("id") or source.get("resolution_id")
+            try:
+                resolution_id = (
+                    int(raw_resolution_id)
+                    if raw_resolution_id not in (None, "")
+                    else None
+                )
+            except (TypeError, ValueError):
+                resolution_id = None
+            try:
+                result_revision_id = int(adjudication.get("result_revision_id") or 0)
+            except (TypeError, ValueError):
+                result_revision_id = 0
+            revision_ids: set[int] = set()
+            for value in source.get("source_revision_ids") or []:
+                try:
+                    revision_ids.add(int(value))
+                except (TypeError, ValueError):
+                    continue
+            if result_revision_id:
+                revision_ids.add(result_revision_id)
+            resolution_input_ids: set[int] = set()
+            for value in adjudication.get("source_revision_ids") or []:
+                try:
+                    resolution_input_ids.add(int(value))
+                except (TypeError, ValueError):
+                    continue
+            revision_sources = []
+            for revision_id in sorted(revision_ids | resolution_input_ids):
+                source_roles = []
+                if resolution_id and revision_id == result_revision_id:
+                    source_roles.append("resolution_result")
+                if resolution_id and revision_id in resolution_input_ids:
+                    source_roles.append("resolution_input")
+                if not source_roles:
+                    source_roles.append("head")
+                revision_sources.extend(
+                    {"revision_id": revision_id, "source_role": source_role}
+                    for source_role in source_roles
+                )
+            normalized.append(
+                {
+                    "label_case_id": case_id,
+                    "task_id": str(source.get("task_id") or "").strip(),
+                    "resolution_id": resolution_id,
+                    "revision_sources": revision_sources,
+                }
+            )
+        normalized.sort(
+            key=lambda item: (
+                item["label_case_id"],
+                item["task_id"],
+                item["resolution_id"] or 0,
+                _sha256_json(item["revision_sources"]),
+            )
+        )
+        return normalized
 
     def create_label_result_snapshot(
         self,
@@ -528,7 +695,8 @@ class DatabaseSnapshotMixin:
         projections = self.project_issue_label_states(scope, members, include_sources=True)
         counts = defaultdict(int)
         content_items: list[list[Any]] = []
-        for ordinal, issue_id in enumerate(members, 1):
+        provenance_by_issue: dict[str, list[dict[str, Any]]] = {}
+        for issue_id in members:
             projection = projections.get(issue_id) or {
                 "state": "none", "expected_output": "", "method": "single", "gt_relation": "unknown", "sources": []
             }
@@ -536,21 +704,37 @@ class DatabaseSnapshotMixin:
             method = str(projection.get("method") or "single")
             if state not in SNAPSHOT_LABEL_STATES or method not in SNAPSHOT_LABEL_METHODS:
                 raise ValueError(f"invalid label projection for {issue_id}")
+            expected_output = str(projection.get("expected_output") or "")
+            if expected_output and expected_output not in LABELS:
+                raise ValueError(f"invalid expected output for {issue_id}")
+            gt_relation = str(projection.get("gt_relation") or "unknown")
+            if gt_relation not in {"matches_gt", "differs_from_gt", "fills_missing_gt", "unknown"}:
+                raise ValueError(f"invalid GT relation for {issue_id}")
+            provenance = self._label_result_snapshot_provenance(
+                projection.get("sources") or []
+            )
+            provenance_by_issue[issue_id] = provenance
             counts[state] += 1
             content_items.append(
                 [
                     issue_id,
                     state,
-                    str(projection.get("expected_output") or ""),
+                    expected_output,
                     method,
-                    str(projection.get("gt_relation") or "unknown"),
-                    sorted(int(item) for item in projection.get("source_revision_ids") or []),
+                    gt_relation,
+                    provenance,
                 ]
             )
         unresolved_states = {"none", "pending", "conflict", "stale"}
-        if not allow_partial and any(item[1] in unresolved_states for item in content_items):
+        unresolved_count = sum(item[1] in unresolved_states for item in content_items)
+        if not allow_partial and unresolved_count:
+            coverage_summary = ", ".join(
+                f"{state}={counts[state]}"
+                for state in ("none", "pending", "conflict", "stale")
+            )
             raise ValueError(
                 "Label result snapshot requires all Workset members to be resolved; "
+                f"unresolved={unresolved_count}/{len(members)} ({coverage_summary}); "
                 "set allow_partial=true for a diagnostic snapshot"
             )
         content_sha = _sha256_json(
@@ -562,9 +746,7 @@ class DatabaseSnapshotMixin:
             }
         )
         snapshot_id = f"label-result-{content_sha}"
-        coverage_status = "complete"
-        if any(item[1] != "resolved" for item in content_items):
-            coverage_status = "partial" if allow_partial else "complete"
+        coverage_status = "partial" if unresolved_count else "complete"
         now = utc_now()
         with self._write_lock, self.connect() as conn:
             existing = conn.execute(
@@ -628,16 +810,16 @@ class DatabaseSnapshotMixin:
                     self._label_result_snapshot_source_rows(
                         snapshot_id,
                         issue_id,
-                        projections.get(issue_id, {}).get("sources") or [],
+                        provenance_by_issue.get(issue_id) or [],
                     )
                 )
             if source_rows:
                 conn.executemany(
                     """
                     INSERT INTO label_result_snapshot_sources (
-                        snapshot_id, issue_id, label_case_id, resolution_id,
-                        revision_id, source_role
-                    ) VALUES (?, ?, ?, ?, ?, ?)
+                        snapshot_id, issue_id, label_case_id, task_id,
+                        resolution_id, revision_id, source_role, source_key
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT DO NOTHING
                     """,
                     source_rows,
@@ -649,7 +831,16 @@ class DatabaseSnapshotMixin:
         return self._label_result_snapshot_dict(row)
 
     def get_label_result_snapshot(
-        self, snapshot_id: str, *, include_items: bool = False, item_limit: int = 100
+        self,
+        snapshot_id: str,
+        *,
+        include_items: bool = False,
+        item_limit: int = 100,
+        page: int = 1,
+        page_size: int | None = None,
+        include_sources: bool = False,
+        source_page: int = 1,
+        source_page_size: int = 100,
     ) -> dict[str, Any] | None:
         normalized = str(snapshot_id or "").strip()
         if not normalized:
@@ -662,13 +853,23 @@ class DatabaseSnapshotMixin:
                 return None
             result = self._label_result_snapshot_dict(row)
             if include_items:
+                normalized_page = max(1, min(int(page), 1_000_000))
+                normalized_page_size = max(
+                    1, min(int(page_size if page_size is not None else item_limit), 1000)
+                )
+                offset = (normalized_page - 1) * normalized_page_size
+                total_row = conn.execute(
+                    "SELECT COUNT(*) AS total FROM label_result_snapshot_items WHERE snapshot_id = ?",
+                    (normalized,),
+                ).fetchone()
+                total = int(total_row["total"] or 0)
                 items = conn.execute(
                     """
                     SELECT issue_id, ordinal, state, expected_output, method, gt_relation
                     FROM label_result_snapshot_items WHERE snapshot_id = ?
-                    ORDER BY ordinal LIMIT ?
+                    ORDER BY ordinal LIMIT ? OFFSET ?
                     """,
-                    (normalized, max(1, min(int(item_limit), 1000))),
+                    (normalized, normalized_page_size, offset),
                 ).fetchall()
                 result["items"] = [
                     {
@@ -681,4 +882,60 @@ class DatabaseSnapshotMixin:
                     }
                     for item in items
                 ]
+                result["items_total"] = total
+                result["items_page"] = normalized_page
+                result["items_page_size"] = normalized_page_size
+                result["items_next_page"] = (
+                    normalized_page + 1
+                    if offset + len(items) < total
+                    else None
+                )
+            if include_sources:
+                normalized_source_page = max(1, min(int(source_page), 1_000_000))
+                normalized_source_page_size = max(1, min(int(source_page_size), 1000))
+                source_offset = (normalized_source_page - 1) * normalized_source_page_size
+                source_total_row = conn.execute(
+                    "SELECT COUNT(*) AS total FROM label_result_snapshot_sources WHERE snapshot_id = ?",
+                    (normalized,),
+                ).fetchone()
+                source_total = int(source_total_row["total"] or 0)
+                sources = conn.execute(
+                    """
+                    SELECT issue_id, label_case_id, task_id, resolution_id,
+                           revision_id, source_role, source_key
+                    FROM label_result_snapshot_sources
+                    WHERE snapshot_id = ?
+                    ORDER BY issue_id, label_case_id, source_role, revision_id
+                    LIMIT ? OFFSET ?
+                    """,
+                    (normalized, normalized_source_page_size, source_offset),
+                ).fetchall()
+                result["sources"] = [
+                    {
+                        "issue_id": str(item["issue_id"]),
+                        "label_case_id": str(item["label_case_id"]),
+                        "task_id": str(item["task_id"] or ""),
+                        "resolution_id": (
+                            int(item["resolution_id"])
+                            if item["resolution_id"] is not None
+                            else None
+                        ),
+                        "revision_id": (
+                            int(item["revision_id"])
+                            if item["revision_id"] is not None
+                            else None
+                        ),
+                        "source_role": str(item["source_role"]),
+                        "source_key": str(item["source_key"]),
+                    }
+                    for item in sources
+                ]
+                result["sources_total"] = source_total
+                result["sources_page"] = normalized_source_page
+                result["sources_page_size"] = normalized_source_page_size
+                result["sources_next_page"] = (
+                    normalized_source_page + 1
+                    if source_offset + len(sources) < source_total
+                    else None
+                )
         return result

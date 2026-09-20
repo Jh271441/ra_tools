@@ -8,6 +8,20 @@ from .shared import LABELS, utc_now
 class DatabaseGtSyncMixin:
     """Persist and atomically apply authoritative GT snapshots."""
 
+    def _mark_gt_sync_change(self, conn: Any) -> None:
+        if self.backend == "postgresql":
+            conn.execute(
+                "UPDATE dashboard_change_revision "
+                "SET revision = revision + 1, updated_at = now() WHERE id = 1"
+            )
+        else:
+            conn.execute(
+                "UPDATE dashboard_change_revision "
+                "SET revision = revision + 1, updated_at = ? WHERE id = 1",
+                (utc_now(),),
+            )
+        self._mark_change_topic(conn, "gt_sync")
+
     @staticmethod
     def _default_gt_sync_status(scope: str) -> dict[str, Any]:
         return {
@@ -228,6 +242,7 @@ class DatabaseGtSyncMixin:
                 created_by_verified=requested_by_verified,
                 activate=True,
                 activation_reason="gt_sync",
+                mark_change=False,
             )
             source_hash = gt_snapshot["content_sha256"]
 
@@ -398,6 +413,8 @@ class DatabaseGtSyncMixin:
                 """,
                 values,
             )
+            if snapshot_changed or changed or previous["status"] != "ready":
+                self._mark_gt_sync_change(conn)
 
         status = self.gt_sync_status(normalized_scope)
         status["active_gt_snapshot"] = self.get_active_gt_snapshot(normalized_scope)
@@ -468,4 +485,5 @@ class DatabaseGtSyncMixin:
                     str(error_text or "").strip()[:2000],
                 ),
             )
+            self._mark_gt_sync_change(conn)
         return self.gt_sync_status(normalized_scope)

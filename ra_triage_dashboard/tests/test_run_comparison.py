@@ -97,6 +97,43 @@ class RunComparisonDatabaseTest(unittest.TestCase):
         options.update(overrides)
         return self.database.compare_model_runs(**options)
 
+    def test_comparison_discloses_gt_reference_without_changing_scores(self) -> None:
+        legacy = self.compare()
+        self.assertEqual(
+            legacy["gt_references"],
+            [{
+                "baseline_scope": self.scope,
+                "reference_type": "legacy_current",
+                "snapshot_id": "",
+                "content_sha256": "",
+            }],
+        )
+        rows = [
+            {
+                "issue_id": issue_id,
+                "gt_label": self.database.get_issue(issue_id)["gt_label"],
+            }
+            for issue_id in self.database.baseline_issue_ids(scope=self.scope)
+        ]
+        self.database.apply_gt_sync_snapshot(
+            scope=self.scope,
+            rows=rows,
+            source_name="Trail",
+            source_view_id=1000,
+            source_field="ra_merge_result",
+            trigger="test",
+            requested_by="tester",
+            requested_by_source="test",
+            requested_by_verified=False,
+            expected_issue_ids=[item["issue_id"] for item in rows],
+        )
+        snapshotted = self.compare()
+        reference = snapshotted["gt_references"][0]
+        self.assertEqual(reference["reference_type"], "gt_snapshot")
+        self.assertTrue(reference["snapshot_id"])
+        self.assertTrue(reference["content_sha256"])
+        self.assertEqual(legacy["summary"], snapshotted["summary"])
+
     def test_transition_counts_matrices_and_stage1_semantics(self) -> None:
         payload = self.compare()
         self.assertEqual(

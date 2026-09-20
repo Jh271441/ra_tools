@@ -27,6 +27,19 @@ class CaseLabelingTest(unittest.TestCase):
             replace_gt=True,
             baseline_scope="scope",
         )
+        database.apply_gt_sync_snapshot(
+            scope="scope",
+            rows=[{"issue_id": "cn1", "gt_label": "正确触发"}],
+            source_name="Trail",
+            source_view_id=1000,
+            source_field="ra_merge_result",
+            trigger="test",
+            requested_by="tester",
+            requested_by_source="test",
+            requested_by_verified=False,
+            expected_issue_ids=["cn1", "cn2"],
+            allow_sparse=True,
+        )
         return database
 
     def test_free_label_revision_is_independent_gt_candidate(self) -> None:

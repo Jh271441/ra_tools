@@ -1999,6 +1999,8 @@ class DatabaseLabelingMixin:
         created_by_verified: bool,
     ) -> dict[str, Any]:
         scopes = _clean_values(baseline_scopes)
+        if not scopes:
+            raise ValueError("至少选择一个 GT 数据集。")
         selected = set(_clean_values(issue_ids))
         candidates = [
             item for item in self.label_gt_candidates(scopes)
@@ -2009,13 +2011,19 @@ class DatabaseLabelingMixin:
             scope: self.get_active_gt_snapshot(scope)
             for scope in scopes
         }
+        missing_snapshots = [scope for scope, snapshot in active_snapshots.items() if not snapshot]
+        if missing_snapshots:
+            raise ValueError(
+                "GT 导出需要每个数据集先有正式 GT snapshot；缺少："
+                + "、".join(missing_snapshots)
+            )
         snapshot_ids = {
-            scope: str((snapshot or {}).get("id") or "")
+            scope: str(snapshot["id"])
             for scope, snapshot in active_snapshots.items()
             if snapshot
         }
         snapshot_hashes = {
-            scope: str((snapshot or {}).get("content_sha256") or "")
+            scope: str(snapshot["content_sha256"])
             for scope, snapshot in active_snapshots.items()
             if snapshot
         }
@@ -2089,6 +2097,17 @@ class DatabaseLabelingMixin:
                     for item in items
                 ],
             )
+            conn.executemany(
+                """
+                INSERT INTO label_gt_export_source_snapshots (
+                    batch_id, baseline_scope, snapshot_id, content_sha256
+                ) VALUES (?, ?, ?, ?)
+                """,
+                [
+                    (batch_id, scope, snapshot_ids[scope], snapshot_hashes[scope])
+                    for scope in scopes
+                ],
+            )
             self._mark_labeling_change(conn)
         return {
             "id": batch_id,
@@ -2098,6 +2117,14 @@ class DatabaseLabelingMixin:
             "source_gt_snapshot_id": (next(iter(snapshot_ids.values())) if len(snapshot_ids) == 1 else ""),
             "source_gt_snapshot_ids": snapshot_ids,
             "source_gt_snapshot_sha256": _sha256_json(snapshot_hashes),
+            "source_gt_snapshots": [
+                {
+                    "baseline_scope": scope,
+                    "snapshot_id": snapshot_ids[scope],
+                    "content_sha256": snapshot_hashes[scope],
+                }
+                for scope in scopes
+            ],
             "reconcile_status": "not_checked",
             "item_count": len(items),
             "items": items,
@@ -2114,7 +2141,20 @@ class DatabaseLabelingMixin:
             if row is None:
                 return None
             item_rows = conn.execute(
-                "SELECT * FROM label_gt_export_items WHERE batch_id = ? ORDER BY issue_id",
+                """
+                SELECT item.*, issue.baseline_scope
+                FROM label_gt_export_items item
+                JOIN issues issue ON issue.issue_id = item.issue_id
+                WHERE item.batch_id = ? ORDER BY item.issue_id
+                """,
+                (normalized,),
+            ).fetchall()
+            source_rows = conn.execute(
+                """
+                SELECT baseline_scope, snapshot_id, content_sha256
+                FROM label_gt_export_source_snapshots
+                WHERE batch_id = ? ORDER BY baseline_scope
+                """,
                 (normalized,),
             ).fetchall()
         return {
@@ -2133,13 +2173,23 @@ class DatabaseLabelingMixin:
             "source_gt_snapshot_ids": _json_load(row["source_gt_snapshot_ids_json"], {}),
             "source_gt_snapshot_sha256": str(row["source_gt_snapshot_sha256"] or ""),
             "reconcile_status": str(row["reconcile_status"] or "not_checked"),
+            "reconcile_error": str(row["reconcile_error"] or ""),
             "reconciled_at": str(row["reconciled_at"] or ""),
             "reconciled_count": int(row["reconciled_count"] or 0),
             "not_applied_count": int(row["not_applied_count"] or 0),
             "changed_again_count": int(row["changed_again_count"] or 0),
+            "source_gt_snapshots": [
+                {
+                    "baseline_scope": str(source["baseline_scope"]),
+                    "snapshot_id": str(source["snapshot_id"]),
+                    "content_sha256": str(source["content_sha256"]),
+                }
+                for source in source_rows
+            ],
             "items": [
                 {
                     "issue_id": str(item["issue_id"]),
+                    "baseline_scope": str(item["baseline_scope"] or ""),
                     "old_gt_label": str(item["old_gt_label"] or ""),
                     "expected_output": str(item["expected_output"] or ""),
                     "source_revision_ids": _json_load(item["source_revision_ids_json"], []),
@@ -2164,14 +2214,20 @@ class DatabaseLabelingMixin:
         stale: list[str] = []
         stored_snapshot_ids = {
             str(key): str(value or "")
-            for key, value in (batch.get("source_gt_snapshot_ids") or {}).items()
+            for key, value in (
+                {
+                    item["baseline_scope"]: item["snapshot_id"]
+                    for item in batch.get("source_gt_snapshots") or []
+                }
+                or batch.get("source_gt_snapshot_ids")
+                or {}
+            ).items()
         }
-        current_snapshot_ids = {
-            scope: str((snapshot or {}).get("id") or "")
-            for scope in batch["baseline_scopes"]
-            if (snapshot := self.get_active_gt_snapshot(scope)) is not None
-        }
-        if stored_snapshot_ids and stored_snapshot_ids != current_snapshot_ids:
+        current_snapshot_ids = {}
+        for scope in batch["baseline_scopes"]:
+            snapshot = self.get_active_gt_snapshot(scope)
+            current_snapshot_ids[scope] = str((snapshot or {}).get("id") or "")
+        if stored_snapshot_ids != current_snapshot_ids:
             stale.extend(str(item["issue_id"]) for item in batch["items"])
         for item in batch["items"]:
             candidate = current.get(item["issue_id"])
@@ -2209,88 +2265,313 @@ class DatabaseLabelingMixin:
         This is an observation/reconciliation write only. It never writes GT,
         Trail, or the active snapshot pointer.
         """
-
         batch = self.get_label_gt_export_batch(batch_id)
         if batch is None:
             raise ValueError("GT 更新导出批次不存在。")
         if batch.get("status") != "exported":
             raise ValueError("只有已下载的 GT 导出批次可以进行同步核对。")
-        issue_ids = [str(item["issue_id"]) for item in batch["items"]]
-        scopes_by_issue = self.issue_baseline_scopes(issue_ids)
-        active_by_scope = {
-            scope: self.get_active_gt_snapshot(scope)
-            for scope in set(scopes_by_issue.values())
-        }
-        labels_by_snapshot: dict[str, dict[str, str]] = {}
-        for snapshot in active_by_scope.values():
-            if snapshot:
-                snapshot_id = str(snapshot.get("id") or "")
-                labels_by_snapshot[snapshot_id] = self.gt_snapshot_item_labels(
-                    snapshot_id,
-                    [issue_id for issue_id, scope in scopes_by_issue.items()
-                     if (active_by_scope.get(scope) or {}).get("id") == snapshot_id],
-                )
+        results = self._reconcile_label_gt_export_batches([str(batch["id"])])
+        return results[0] if results else (self.get_label_gt_export_batch(batch_id) or {})
+
+    def reconcile_label_gt_export_batches_for_scope(
+        self, baseline_scope: str
+    ) -> list[dict[str, Any]]:
+        """Reconcile outstanding exported batches after one successful GT sync."""
+
+        scope = str(baseline_scope or "").strip()
+        if not scope:
+            return []
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT batch.id FROM label_gt_export_batches batch
+                WHERE batch.status = 'exported'
+                  AND batch.reconcile_status <> 'matched'
+                  AND EXISTS (
+                      SELECT 1 FROM label_gt_export_source_snapshots source
+                      WHERE source.batch_id = batch.id AND source.baseline_scope = ?
+                  )
+                ORDER BY batch.created_at, batch.id
+                """,
+                (scope,),
+            ).fetchall()
+        ids = [str(row["id"]) for row in rows]
+        results: list[dict[str, Any]] = []
+        for offset in range(0, len(ids), 200):
+            results.extend(self._reconcile_label_gt_export_batches(ids[offset : offset + 200]))
+        return results
+
+    def record_label_gt_export_reconcile_error_for_scope(
+        self, baseline_scope: str, error_text: str
+    ) -> int:
+        scope = str(baseline_scope or "").strip()
+        if not scope:
+            return 0
+        message = str(error_text or "GT export reconciliation failed").strip()[:2000]
         now = utc_now()
-        counts = {"matched": 0, "not_applied": 0, "changed_again": 0}
-        item_statuses: list[tuple[str, str, str, str]] = []
-        for item in batch["items"]:
-            issue_id = str(item["issue_id"])
-            scope = scopes_by_issue.get(issue_id, "")
-            snapshot = active_by_scope.get(scope)
-            current_label = ""
-            snapshot_id = ""
-            if snapshot:
-                snapshot_id = str(snapshot.get("id") or "")
-                current_label = labels_by_snapshot.get(snapshot_id, {}).get(issue_id, "")
-            target = str(item.get("expected_output") or "")
-            old = str(item.get("old_gt_label") or "")
-            if current_label == target:
-                status = "matched"
-            elif current_label == old:
-                status = "not_applied"
-            else:
-                status = "changed_again"
-            counts[status] += 1
-            item_statuses.append((issue_id, status, snapshot_id, now))
-        if counts["matched"] == len(batch["items"]):
-            overall = "matched"
-        elif counts["changed_again"] == len(batch["items"]):
-            overall = "changed_again"
-        else:
-            overall = "partial"
         with self._write_lock, self.connect() as conn:
-            conn.executemany(
+            rows = conn.execute(
                 """
-                UPDATE label_gt_export_items
-                SET reconcile_status = ?, reconciled_snapshot_id = ?, reconciled_at = ?
-                WHERE batch_id = ? AND issue_id = ?
+                SELECT batch.id FROM label_gt_export_batches batch
+                WHERE batch.status = 'exported'
+                  AND batch.reconcile_status <> 'matched'
+                  AND EXISTS (
+                      SELECT 1 FROM label_gt_export_source_snapshots source
+                      WHERE source.batch_id = batch.id AND source.baseline_scope = ?
+                  )
                 """,
-                [
-                    (status, snapshot_id, stamp, str(batch["id"]), issue_id)
-                    for issue_id, status, snapshot_id, stamp in item_statuses
-                ],
-            )
-            conn.execute(
-                """
-                UPDATE label_gt_export_batches
-                SET reconcile_status = ?, reconciled_at = ?,
-                    reconciled_count = ?, not_applied_count = ?,
-                    changed_again_count = ?
-                WHERE id = ?
-                """,
-                (
-                    overall,
-                    now,
-                    counts["matched"],
-                    counts["not_applied"],
-                    counts["changed_again"],
-                    str(batch["id"]),
-                ),
-            )
+                (scope,),
+            ).fetchall()
+            ids = [str(row["id"]) for row in rows]
+            if not ids:
+                return 0
+            for offset in range(0, len(ids), 200):
+                batch = ids[offset : offset + 200]
+                placeholders = ", ".join("?" for _ in batch)
+                conn.execute(
+                    f"UPDATE label_gt_export_items SET reconcile_status = 'error', "
+                    f"reconciled_snapshot_id = NULL, reconciled_at = ? "
+                    f"WHERE batch_id IN ({placeholders})",
+                    (now, *batch),
+                )
+                conn.execute(
+                    f"UPDATE label_gt_export_batches SET reconcile_status = 'error', "
+                    f"reconcile_error = ?, reconciled_at = ?, reconciled_count = 0, "
+                    f"not_applied_count = 0, changed_again_count = 0 "
+                    f"WHERE id IN ({placeholders})",
+                    (message, now, *batch),
+                )
             self._mark_labeling_change(conn)
-        result = self.get_label_gt_export_batch(batch_id) or {}
-        result["reconcile_counts"] = counts
-        return result
+        return len(ids)
+
+    def _reconcile_label_gt_export_batches(
+        self, batch_ids: Sequence[str]
+    ) -> list[dict[str, Any]]:
+        ids = list(dict.fromkeys(str(item or "").strip() for item in batch_ids if str(item or "").strip()))
+        if not ids:
+            return []
+        outcomes: dict[str, dict[str, Any]] = {}
+        with self.connect() as conn:
+            batch_rows = []
+            for offset in range(0, len(ids), 400):
+                chunk = ids[offset : offset + 400]
+                batch_rows.extend(
+                    conn.execute(
+                        f"SELECT id, status FROM label_gt_export_batches "
+                        f"WHERE id IN ({', '.join('?' for _ in chunk)})",
+                        chunk,
+                    ).fetchall()
+                )
+            found_ids = {str(row["id"]) for row in batch_rows}
+            missing = sorted(set(ids) - found_ids)
+            if missing:
+                raise ValueError("GT 更新导出批次不存在：" + "、".join(missing))
+            not_exported = [
+                str(row["id"]) for row in batch_rows if str(row["status"] or "") != "exported"
+            ]
+            if not_exported:
+                raise ValueError("只有已下载的 GT 导出批次可以进行同步核对。")
+            item_rows = []
+            source_rows = []
+            for offset in range(0, len(ids), 200):
+                chunk = ids[offset : offset + 200]
+                placeholders = ", ".join("?" for _ in chunk)
+                item_rows.extend(
+                    conn.execute(
+                        f"""
+                        SELECT item.batch_id, item.issue_id, issue.baseline_scope,
+                               item.old_gt_label, item.expected_output
+                        FROM label_gt_export_items item
+                        JOIN issues issue ON issue.issue_id = item.issue_id
+                        WHERE item.batch_id IN ({placeholders})
+                        ORDER BY item.batch_id, item.issue_id
+                        """,
+                        chunk,
+                    ).fetchall()
+                )
+                source_rows.extend(
+                    conn.execute(
+                        f"SELECT batch_id, baseline_scope FROM label_gt_export_source_snapshots "
+                        f"WHERE batch_id IN ({placeholders})",
+                        chunk,
+                    ).fetchall()
+                )
+            scopes = list(
+                dict.fromkeys(
+                    [str(row["baseline_scope"] or "") for row in item_rows]
+                    + [str(row["baseline_scope"] or "") for row in source_rows]
+                )
+            )
+            scopes = [scope for scope in scopes if scope]
+            active_by_scope: dict[str, dict[str, str]] = {}
+            if scopes:
+                scope_placeholders = ", ".join("?" for _ in scopes)
+                active_rows = conn.execute(
+                    f"""
+                    SELECT active.baseline_scope, snapshot.id AS snapshot_id,
+                           snapshot.content_sha256
+                    FROM gt_snapshot_active active
+                    JOIN gt_snapshots snapshot ON snapshot.id = active.snapshot_id
+                    WHERE active.baseline_scope IN ({scope_placeholders})
+                    """,
+                    scopes,
+                ).fetchall()
+                active_by_scope = {
+                    str(row["baseline_scope"]): {
+                        "snapshot_id": str(row["snapshot_id"]),
+                        "content_sha256": str(row["content_sha256"]),
+                    }
+                    for row in active_rows
+                }
+            issue_ids = list(dict.fromkeys(str(row["issue_id"]) for row in item_rows))
+            current_labels: dict[tuple[str, str], str] = {}
+            for offset in range(0, len(issue_ids), 400):
+                chunk = issue_ids[offset : offset + 400]
+                if not chunk or not active_by_scope:
+                    continue
+                snapshot_ids = list(
+                    dict.fromkeys(item["snapshot_id"] for item in active_by_scope.values())
+                )
+                snapshot_placeholders = ", ".join("?" for _ in snapshot_ids)
+                issue_placeholders = ", ".join("?" for _ in chunk)
+                label_rows = conn.execute(
+                    f"""
+                    SELECT item.baseline_scope, item.issue_id, item.gt_label
+                    FROM gt_snapshot_items item
+                    WHERE item.snapshot_id IN ({snapshot_placeholders})
+                      AND item.issue_id IN ({issue_placeholders})
+                    """,
+                    (*snapshot_ids, *chunk),
+                ).fetchall()
+                current_labels.update(
+                    {
+                        (str(row["baseline_scope"]), str(row["issue_id"])):
+                            str(row["gt_label"] or "")
+                        for row in label_rows
+                    }
+                )
+
+        items_by_batch: dict[str, list[Any]] = defaultdict(list)
+        for item in item_rows:
+            items_by_batch[str(item["batch_id"])].append(item)
+        now = utc_now()
+        for batch_id in ids:
+            items = items_by_batch.get(batch_id, [])
+            if not items:
+                outcomes[batch_id] = {
+                    "status": "error",
+                    "error": "GT 导出批次没有候选条目。",
+                    "now": now,
+                    "counts": {"matched": 0, "not_applied": 0, "changed_again": 0},
+                    "items": [],
+                }
+                continue
+            counts = {"matched": 0, "not_applied": 0, "changed_again": 0}
+            item_outcomes: list[tuple[str, str, str | None, str]] = []
+            error = ""
+            for item in items:
+                issue_id = str(item["issue_id"])
+                scope = str(item["baseline_scope"] or "")
+                active = active_by_scope.get(scope)
+                if not scope or active is None:
+                    error = f"{issue_id}: no active GT snapshot for scope {scope or '(empty)'}"
+                    break
+                key = (scope, issue_id)
+                if key not in current_labels:
+                    error = f"{issue_id}: missing from active GT snapshot {active['snapshot_id']}"
+                    break
+                current_label = current_labels[key]
+                target = str(item["expected_output"] or "")
+                old = str(item["old_gt_label"] or "")
+                if current_label == target:
+                    status = "matched"
+                elif current_label == old:
+                    status = "not_applied"
+                else:
+                    status = "changed_again"
+                counts[status] += 1
+                item_outcomes.append(
+                    (issue_id, status, active["snapshot_id"], now)
+                )
+            if error:
+                outcomes[batch_id] = {
+                    "status": "error",
+                    "error": error,
+                    "now": now,
+                    "counts": {"matched": 0, "not_applied": 0, "changed_again": 0},
+                    "items": [],
+                }
+            else:
+                states = {status for _, status, _, _ in item_outcomes}
+                outcomes[batch_id] = {
+                    "status": next(iter(states)) if len(states) == 1 else "partial",
+                    "error": "",
+                    "now": now,
+                    "counts": counts,
+                    "items": item_outcomes,
+                }
+
+        with self._write_lock, self.connect() as conn:
+            for batch_id, outcome in outcomes.items():
+                if outcome["status"] == "error":
+                    conn.execute(
+                        """
+                        UPDATE label_gt_export_items
+                        SET reconcile_status = 'error', reconciled_snapshot_id = NULL,
+                            reconciled_at = ?
+                        WHERE batch_id = ?
+                        """,
+                        (outcome["now"], batch_id),
+                    )
+                    conn.execute(
+                        """
+                        UPDATE label_gt_export_batches
+                        SET reconcile_status = 'error', reconcile_error = ?,
+                            reconciled_at = ?, reconciled_count = 0,
+                            not_applied_count = 0, changed_again_count = 0
+                        WHERE id = ?
+                        """,
+                        (outcome["error"], outcome["now"], batch_id),
+                    )
+                else:
+                    conn.executemany(
+                        """
+                        UPDATE label_gt_export_items
+                        SET reconcile_status = ?, reconciled_snapshot_id = ?, reconciled_at = ?
+                        WHERE batch_id = ? AND issue_id = ?
+                        """,
+                        [
+                            (status, snapshot_id, stamp, batch_id, issue_id)
+                            for issue_id, status, snapshot_id, stamp in outcome["items"]
+                        ],
+                    )
+                    counts = outcome["counts"]
+                    conn.execute(
+                        """
+                        UPDATE label_gt_export_batches
+                        SET reconcile_status = ?, reconcile_error = '', reconciled_at = ?,
+                            reconciled_count = ?, not_applied_count = ?,
+                            changed_again_count = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            outcome["status"],
+                            outcome["now"],
+                            counts["matched"],
+                            counts["not_applied"],
+                            counts["changed_again"],
+                            batch_id,
+                        ),
+                    )
+            self._mark_labeling_change(conn)
+        results = []
+        for batch_id, outcome in outcomes.items():
+            result = self.get_label_gt_export_batch(batch_id) or {}
+            result["reconcile_counts"] = outcome["counts"]
+            if outcome["error"]:
+                result["reconcile_error"] = outcome["error"]
+            results.append(result)
+        return results
 
     def record_label_migration_map(
         self,

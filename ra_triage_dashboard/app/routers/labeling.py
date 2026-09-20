@@ -100,6 +100,25 @@ def _labeling_actor(request: Request) -> tuple[str, str, bool]:
     return identity.username, identity.source, True
 
 
+def _labeling_snapshot_actor(request: Request) -> tuple[str, str, bool]:
+    identity = request_identity(request, settings)
+    role = (
+        database.access_role(identity.username)
+        if identity.verified and identity.username
+        else ""
+    )
+    if not identity.verified or not identity.username or role not in {"writer", "admin"}:
+        raise _detail(403, "保存 Label snapshot 仅限 Dashboard writer 或管理员。")
+    return identity.username, identity.source, True
+
+
+def _snapshot_allow_partial(body: dict[str, Any]) -> bool:
+    value = body.get("allow_partial", False)
+    if type(value) is not bool:
+        raise _detail(400, "allow_partial 必须是 JSON boolean。")
+    return value
+
+
 async def _require_labeling_admin(request: Request) -> None:
     await asyncio.to_thread(_admin_identity, request)
 
@@ -878,10 +897,20 @@ async def list_gt_snapshots(request: Request, baselines: str = "") -> dict[str, 
 
 
 @router.get("/api/labeling/gt-snapshots/{snapshot_id}")
-async def get_gt_snapshot(snapshot_id: str, request: Request, items: bool = False) -> dict[str, Any]:
+async def get_gt_snapshot(
+    snapshot_id: str,
+    request: Request,
+    items: bool = False,
+    page: int = 1,
+    page_size: int = 100,
+) -> dict[str, Any]:
     await _require_labeling_admin(request)
     snapshot = await asyncio.to_thread(
-        database.get_gt_snapshot, snapshot_id, include_items=items
+        database.get_gt_snapshot,
+        snapshot_id,
+        include_items=items,
+        page=page,
+        page_size=page_size,
     )
     if snapshot is None:
         raise _detail(404, "GT snapshot 不存在。")
@@ -891,7 +920,7 @@ async def get_gt_snapshot(snapshot_id: str, request: Request, items: bool = Fals
 @router.post("/api/labeling/label-result-snapshots")
 async def create_label_result_snapshot(request: Request) -> dict[str, Any]:
     actor, actor_source, actor_verified = await asyncio.to_thread(
-        _labeling_actor, request
+        _labeling_snapshot_actor, request
     )
     try:
         body = await request.json()
@@ -899,14 +928,19 @@ async def create_label_result_snapshot(request: Request) -> dict[str, Any]:
         raise _detail(400, "Label snapshot 请求必须是 JSON 对象。")
     if not isinstance(body, dict) or not _as_text(body.get("workset_id")):
         raise _detail(400, "workset_id 必填。")
-    snapshot = await asyncio.to_thread(
-        database.create_label_result_snapshot,
-        workset_id=_as_text(body.get("workset_id")),
-        created_by=actor,
-        created_by_source=actor_source,
-        created_by_verified=actor_verified,
-        allow_partial=bool(body.get("allow_partial", False)),
-    )
+    allow_partial = _snapshot_allow_partial(body)
+    try:
+        snapshot = await asyncio.to_thread(
+            database.create_label_result_snapshot,
+            workset_id=_as_text(body.get("workset_id")),
+            created_by=actor,
+            created_by_source=actor_source,
+            created_by_verified=actor_verified,
+            allow_partial=allow_partial,
+        )
+    except ValueError as exc:
+        status = 409 if "requires all Workset members" in str(exc) else 400
+        raise _detail(status, str(exc))
     return {
         "snapshot": snapshot,
         "change_revision": await asyncio.to_thread(database.change_revision),
@@ -915,11 +949,25 @@ async def create_label_result_snapshot(request: Request) -> dict[str, Any]:
 
 @router.get("/api/labeling/label-result-snapshots/{snapshot_id}")
 async def get_label_result_snapshot(
-    snapshot_id: str, request: Request, items: bool = False
+    snapshot_id: str,
+    request: Request,
+    items: bool = False,
+    sources: bool = False,
+    page: int = 1,
+    page_size: int = 100,
+    source_page: int = 1,
+    source_page_size: int = 100,
 ) -> dict[str, Any]:
     await _require_labeling_admin(request)
     snapshot = await asyncio.to_thread(
-        database.get_label_result_snapshot, snapshot_id, include_items=items
+        database.get_label_result_snapshot,
+        snapshot_id,
+        include_items=items,
+        page=page,
+        page_size=page_size,
+        include_sources=sources,
+        source_page=source_page,
+        source_page_size=source_page_size,
     )
     if snapshot is None:
         raise _detail(404, "Label result snapshot 不存在。")
@@ -946,14 +994,17 @@ async def create_gt_export_preview(request: Request) -> dict[str, Any]:
     issue_ids = body.get("issue_ids") or []
     if not isinstance(issue_ids, list):
         raise _detail(400, "issue_ids 必须是数组。")
-    preview = await asyncio.to_thread(
-        database.create_label_gt_export_preview,
-        baseline_scopes=scopes,
-        issue_ids=[_as_text(value) for value in issue_ids],
-        created_by=actor,
-        created_by_source=actor_source,
-        created_by_verified=actor_verified,
-    )
+    try:
+        preview = await asyncio.to_thread(
+            database.create_label_gt_export_preview,
+            baseline_scopes=scopes,
+            issue_ids=[_as_text(value) for value in issue_ids],
+            created_by=actor,
+            created_by_source=actor_source,
+            created_by_verified=actor_verified,
+        )
+    except ValueError as exc:
+        raise _detail(409, str(exc))
     if not preview["item_count"]:
         raise _detail(400, "当前没有已解决且需要更新的 GT 候选。")
     return {

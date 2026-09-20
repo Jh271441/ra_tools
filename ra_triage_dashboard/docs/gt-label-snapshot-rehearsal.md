@@ -1,18 +1,21 @@
 # S2 GT / Label snapshot rehearsal (local design)
 
 This document is a release preparation recipe. It is not an instruction to
-connect to production from a developer workstation.
+connect to production from a developer workstation. The disposable PostgreSQL
+rehearsal described below has not been run yet.
 
 ## Disposable PostgreSQL restore
 
-1. From `cloud_server`, create a custom-format logical backup with the existing
-   Dashboard backup script and verify its checksum and `pg_restore --list` output.
-2. Restore the dump into a newly created disposable PostgreSQL 14 database owned
-   by the test role. Keep the production database URL and physical data path out
-   of logs and shell history.
-3. Record public table counts and the migration count before applying 043.
-4. Restore the dump into a second disposable database, apply migration 043, and
-   compare public table counts, migration count, and `dashboard_change_revision`.
+1. Use a sanitized backup artifact already provisioned for testing, or create a
+   deterministic fixture in a local disposable PostgreSQL database. Verify its
+   checksum and `pg_restore --list` output. Do not connect to production to
+   obtain rehearsal data.
+2. Restore that artifact into two newly created disposable PostgreSQL 14
+   databases owned by the test role.
+3. Record public table counts and the migration count in both databases before
+   applying 043 to one of them.
+4. Apply migration 043 to the upgraded copy and compare public table counts,
+   migration count, and `dashboard_change_revision` with the untouched copy.
 5. Run the snapshot backfill tool once without `--apply` and compare the
    non-sensitive scope/member/coverage report. Run it with `--apply` twice; the
    second run must reuse every content-identical snapshot.
