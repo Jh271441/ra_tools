@@ -18,6 +18,19 @@ from .shared import (
 
 
 LABEL_TASK_KINDS = ("labeling", "model_review", "legacy")
+ISSUE_LABEL_STATES = ("none", "pending", "resolved", "conflict", "stale")
+ISSUE_LABEL_STATE_FILTERS = (
+    *ISSUE_LABEL_STATES,
+    "matches_gt",
+    "needs_gt_review",
+    "unknown",
+)
+ISSUE_LABEL_GT_RELATIONS = (
+    "matches_gt",
+    "differs_from_gt",
+    "fills_missing_gt",
+    "unknown",
+)
 
 
 def _clean_values(values: Iterable[Any]) -> list[str]:
@@ -27,6 +40,18 @@ def _clean_values(values: Iterable[Any]) -> list[str]:
 def _source_fingerprint(values: Iterable[int]) -> str:
     payload = ",".join(str(value) for value in sorted({int(value) for value in values}))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _issue_label_gt_relation(expected_output: Any, gt_label: Any) -> str:
+    expected = str(expected_output or "").strip()
+    gt = str(gt_label or "").strip()
+    if expected not in LABELS:
+        return "unknown"
+    if gt in LABELS:
+        return "matches_gt" if expected == gt else "differs_from_gt"
+    if not gt:
+        return "fills_missing_gt"
+    return "unknown"
 
 
 def _parse_labeling_cluster(value: Any) -> tuple[str, str] | tuple[str, str, str] | None:
@@ -866,15 +891,27 @@ class DatabaseLabelingMixin:
         return results
 
     def _batch_label_cases(
-        self, issue_ids: Sequence[str], task_id: str = ""
+        self,
+        issue_ids: Sequence[str],
+        task_id: str = "",
+        baseline_scope: str = "",
     ) -> dict[str, list[dict[str, Any]]]:
+        """Resolve current Label Case heads in bounded SQL batches.
+
+        Read only the current per-author heads, latest resolution and any
+        adjudication result revision. Historical revisions are not materialized
+        for gallery filters or Overview projections.
+        """
+
         cleaned = list(dict.fromkeys(str(value or "").strip() for value in issue_ids))
         cleaned = [value for value in cleaned if value]
         if not cleaned:
             return {}
         task = str(task_id or "").strip()
+        scope = str(baseline_scope or "").strip()
         case_rows: list[Any] = []
-        revision_rows: list[Any] = []
+        head_rows: list[Any] = []
+        result_revision_rows: list[Any] = []
         resolution_rows: list[Any] = []
         assignment_rows: list[Any] = []
         with self.connect() as conn:
@@ -882,6 +919,9 @@ class DatabaseLabelingMixin:
                 batch = cleaned[offset : offset + 400]
                 clause = f"issue_id IN ({', '.join('?' for _ in batch)})"
                 params: list[Any] = list(batch)
+                if scope:
+                    clause += " AND baseline_scope = ?"
+                    params.append(scope)
                 if task:
                     clause += " AND task_id = ?"
                     params.append(task)
@@ -895,19 +935,58 @@ class DatabaseLabelingMixin:
             for offset in range(0, len(case_ids), 400):
                 batch = case_ids[offset : offset + 400]
                 placeholders = ", ".join("?" for _ in batch)
-                revision_rows.extend(
+                head_rows.extend(
                     conn.execute(
-                        f"SELECT * FROM label_revisions WHERE label_case_id IN ({placeholders}) ORDER BY id",
+                        f"""
+                        SELECT revision.* FROM label_revisions revision
+                        WHERE revision.label_case_id IN ({placeholders})
+                          AND revision.revision_kind IN ('submission', 'legacy')
+                          AND revision.id = (
+                              SELECT MAX(candidate.id) FROM label_revisions candidate
+                              WHERE candidate.label_case_id = revision.label_case_id
+                                AND lower(candidate.author) = lower(revision.author)
+                                AND candidate.revision_kind IN ('submission', 'legacy')
+                          )
+                        ORDER BY revision.label_case_id, lower(revision.author), revision.id
+                        """,
                         batch,
                     ).fetchall()
                 )
                 resolution_rows.extend(
                     conn.execute(
-                        f"SELECT * FROM label_resolutions WHERE label_case_id IN ({placeholders}) ORDER BY id",
+                        f"""
+                        SELECT resolution.* FROM label_resolutions resolution
+                        WHERE resolution.label_case_id IN ({placeholders})
+                          AND resolution.id = (
+                              SELECT MAX(candidate.id) FROM label_resolutions candidate
+                              WHERE candidate.label_case_id = resolution.label_case_id
+                          )
+                        ORDER BY resolution.label_case_id, resolution.id
+                        """,
                         batch,
                     ).fetchall()
                 )
-            task_ids = sorted({str(row["task_id"] or "") for row in case_rows if str(row["task_id"] or "")})
+            latest_resolutions = {
+                str(row["label_case_id"]): row for row in resolution_rows
+            }
+            result_revision_ids = list(
+                dict.fromkeys(
+                    int(row["result_revision_id"])
+                    for row in resolution_rows
+                    if row["result_revision_id"] not in (None, "")
+                )
+            )
+            for offset in range(0, len(result_revision_ids), 400):
+                batch = result_revision_ids[offset : offset + 400]
+                result_revision_rows.extend(
+                    conn.execute(
+                        f"SELECT * FROM label_revisions WHERE id IN ({', '.join('?' for _ in batch)})",
+                        batch,
+                    ).fetchall()
+                )
+            task_ids = sorted(
+                {str(row["task_id"] or "") for row in case_rows if str(row["task_id"] or "")}
+            )
             for offset in range(0, len(task_ids), 200):
                 batch = task_ids[offset : offset + 200]
                 assignment_rows.extend(
@@ -921,15 +1000,16 @@ class DatabaseLabelingMixin:
                         batch,
                     ).fetchall()
                 )
-        revisions_by_case: dict[str, list[dict[str, Any]]] = defaultdict(list)
+
+        heads_by_case: dict[str, list[dict[str, Any]]] = defaultdict(list)
         revisions_by_id: dict[int, dict[str, Any]] = {}
-        for row in revision_rows:
+        for row in head_rows:
             item = self._label_revision_dict(row)
-            revisions_by_case[item["label_case_id"]].append(item)
+            heads_by_case[item["label_case_id"]].append(item)
             revisions_by_id[int(item["id"])] = item
-        latest_resolution_by_case: dict[str, Any] = {}
-        for row in resolution_rows:
-            latest_resolution_by_case[str(row["label_case_id"])] = row
+        for row in result_revision_rows:
+            item = self._label_revision_dict(row)
+            revisions_by_id[int(item["id"])] = item
         assigned_by_case: dict[tuple[str, str], list[str]] = defaultdict(list)
         for row in assignment_rows:
             assigned_by_case[(str(row["split_id"]), str(row["issue_id"]))].append(
@@ -938,22 +1018,18 @@ class DatabaseLabelingMixin:
         result: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for row in case_rows:
             case_id = str(row["id"])
-            latest_by_author: dict[str, dict[str, Any]] = {}
-            for revision in revisions_by_case.get(case_id, []):
-                if revision["revision_kind"] not in {"submission", "legacy"}:
-                    continue
-                latest_by_author[revision["author"].strip().lower()] = revision
             assigned = assigned_by_case.get(
                 (str(row["task_id"] or ""), str(row["issue_id"])), []
             )
-            heads = list(latest_by_author.values())
+            heads = list(heads_by_case.get(case_id, []))
             if assigned:
                 heads = [item for item in heads if item["author"].strip().lower() in assigned]
             heads.sort(key=lambda item: (item["author"].lower(), int(item["id"])))
-            latest_resolution = latest_resolution_by_case.get(case_id)
+            latest_resolution = latest_resolutions.get(case_id)
             result_revision = (
                 revisions_by_id.get(int(latest_resolution["result_revision_id"]))
                 if latest_resolution is not None
+                and latest_resolution["result_revision_id"] not in (None, "")
                 else None
             )
             item = self._label_case_dict(row)
@@ -965,6 +1041,277 @@ class DatabaseLabelingMixin:
             )
             result[str(row["issue_id"])].append(item)
         return dict(result)
+
+    def project_issue_label_states(
+        self,
+        baseline_scope: str,
+        issue_ids: Sequence[str],
+        *,
+        include_sources: bool = True,
+    ) -> dict[str, dict[str, Any]]:
+        """Resolve shared Labeling state for a bounded set of baseline Issues.
+
+        Model Run identity is intentionally absent from this projection. Every
+        source Label Case in the requested baseline scope participates, and an
+        unresolved source blocks a resolved-looking aggregate.
+        """
+
+        scope = str(baseline_scope or "").strip()
+        cleaned = list(dict.fromkeys(str(value or "").strip() for value in issue_ids))
+        cleaned = [value for value in cleaned if value]
+
+        def empty_state() -> dict[str, Any]:
+            return {
+                "state": "none",
+                "expected_output": "",
+                "gt_relation": "unknown",
+                "method": "single",
+                "source_task_ids": [],
+                "source_revision_ids": [],
+                "sources": [],
+            }
+
+        projected = {issue_id: empty_state() for issue_id in cleaned}
+        if not scope or not cleaned:
+            return projected
+
+        gt_by_issue: dict[str, str] = {}
+        with self.connect() as conn:
+            for offset in range(0, len(cleaned), 400):
+                batch = cleaned[offset : offset + 400]
+                rows = conn.execute(
+                    f"""
+                    SELECT issue_id, gt_label FROM issues
+                    WHERE baseline_scope = ?
+                      AND issue_id IN ({', '.join('?' for _ in batch)})
+                    """,
+                    (scope, *batch),
+                ).fetchall()
+                gt_by_issue.update(
+                    {
+                        str(row["issue_id"]): str(row["gt_label"] or "")
+                        for row in rows
+                    }
+                )
+
+        cases_by_issue = self._batch_label_cases(cleaned, baseline_scope=scope)
+        for issue_id in cleaned:
+            cases = cases_by_issue.get(issue_id, [])
+            if not cases or issue_id not in gt_by_issue:
+                continue
+            cases = sorted(
+                cases,
+                key=lambda item: (
+                    str(item.get("task_id") or ""),
+                    str(item.get("id") or ""),
+                ),
+            )
+            resolutions = [item.get("resolution") or {} for item in cases]
+            source_states = [str(item.get("state") or "pending") for item in resolutions]
+            resolved_outputs = [
+                str(item.get("expected_output") or "")
+                for item in resolutions
+                if item.get("state") == "resolved"
+            ]
+            distinct_outputs = {value for value in resolved_outputs if value in LABELS}
+
+            if "stale" in source_states:
+                aggregate_state = "stale"
+            elif "conflict" in source_states or len(distinct_outputs) > 1:
+                aggregate_state = "conflict"
+            elif (
+                any(item != "resolved" for item in source_states)
+                or len(resolved_outputs) != len(cases)
+                or any(value not in LABELS for value in resolved_outputs)
+                or len(distinct_outputs) != 1
+            ):
+                aggregate_state = "pending"
+            else:
+                aggregate_state = "resolved"
+
+            expected_output = (
+                next(iter(distinct_outputs)) if aggregate_state == "resolved" else ""
+            )
+            method = "consensus" if len(cases) > 1 else str(
+                resolutions[0].get("method") or "single"
+            )
+            if method not in {"single", "consensus", "adjudication"}:
+                method = "single"
+
+            source_task_ids: set[str] = set()
+            source_revision_ids: set[int] = set()
+            sources: list[dict[str, Any]] = []
+            for case, resolution in zip(cases, resolutions):
+                task_id = str(case.get("task_id") or "").strip()
+                if task_id:
+                    source_task_ids.add(task_id)
+                heads = list(resolution.get("heads") or [])
+                adjudication = resolution.get("adjudication") or {}
+                revisions_by_id: dict[int, dict[str, Any]] = {}
+                for revision in heads:
+                    try:
+                        revision_id = int(revision.get("id"))
+                    except (TypeError, ValueError):
+                        continue
+                    source_revision_ids.add(revision_id)
+                    revisions_by_id[revision_id] = {
+                        "id": revision_id,
+                        "expected_output": str(revision.get("expected_output") or ""),
+                    }
+                adjudication_source_ids: list[int] = []
+                for value in adjudication.get("source_revision_ids") or []:
+                    try:
+                        revision_id = int(value)
+                    except (TypeError, ValueError):
+                        continue
+                    source_revision_ids.add(revision_id)
+                    adjudication_source_ids.append(revision_id)
+                result_revision = resolution.get("result_revision") or {}
+                try:
+                    result_revision_id = int(result_revision.get("id"))
+                except (TypeError, ValueError):
+                    result_revision_id = 0
+                if result_revision_id:
+                    source_revision_ids.add(result_revision_id)
+                    revisions_by_id.setdefault(
+                        result_revision_id,
+                        {
+                            "id": result_revision_id,
+                            "expected_output": str(
+                                result_revision.get("expected_output") or ""
+                            ),
+                        },
+                    )
+                sources.append(
+                    {
+                        "label_case_id": str(case.get("id") or ""),
+                        "task_id": task_id,
+                        "source_run_id": str(case.get("source_run_id") or ""),
+                        "state": str(resolution.get("state") or "pending"),
+                        "expected_output": (
+                            str(resolution.get("expected_output") or "")
+                            if resolution.get("state") == "resolved"
+                            else ""
+                        ),
+                        "method": str(resolution.get("method") or "single"),
+                        "source_revision_ids": sorted(revisions_by_id),
+                        "revision_summaries": [
+                            revisions_by_id[key] for key in sorted(revisions_by_id)
+                        ],
+                        "adjudication": (
+                            {
+                                "id": adjudication.get("id"),
+                                "stale": bool(adjudication.get("stale")),
+                                "result_revision_id": result_revision_id or None,
+                                "source_revision_ids": sorted(set(adjudication_source_ids)),
+                            }
+                            if adjudication
+                            else None
+                        ),
+                    }
+                )
+
+            relation = (
+                _issue_label_gt_relation(expected_output, gt_by_issue[issue_id])
+                if aggregate_state == "resolved"
+                else "unknown"
+            )
+            if not include_sources:
+                projected[issue_id] = {
+                    "state": aggregate_state,
+                    "expected_output": expected_output,
+                    "gt_relation": relation,
+                    "method": method,
+                    "source_task_ids": [],
+                    "source_revision_ids": [],
+                    "sources": [],
+                }
+                continue
+            projected[issue_id] = {
+                "state": aggregate_state,
+                "expected_output": expected_output,
+                "gt_relation": relation,
+                "method": method,
+                "source_task_ids": sorted(source_task_ids),
+                "source_revision_ids": sorted(source_revision_ids),
+                "sources": sources,
+            }
+        return projected
+
+    def issue_label_state_counts(
+        self, baseline_scopes: Sequence[str] = ()
+    ) -> dict[str, int]:
+        """Count the shared Issue-label projection without mixing Run Reviews."""
+
+        scopes = _clean_values(baseline_scopes)
+        issue_where = (
+            f"WHERE baseline_scope IN ({', '.join('?' for _ in scopes)})"
+            if scopes
+            else ""
+        )
+        label_where = (
+            f"WHERE label_case.baseline_scope IN ({', '.join('?' for _ in scopes)})"
+            if scopes
+            else ""
+        )
+        with self.connect() as conn:
+            issue_rows = conn.execute(
+                f"""
+                SELECT baseline_scope, COUNT(*) AS issue_count
+                FROM issues {issue_where}
+                GROUP BY baseline_scope
+                """,
+                list(scopes),
+            ).fetchall()
+            label_rows = conn.execute(
+                f"""
+                SELECT label_case.baseline_scope, label_case.issue_id
+                FROM label_cases label_case
+                JOIN issues issue
+                  ON issue.issue_id = label_case.issue_id
+                 AND issue.baseline_scope = label_case.baseline_scope
+                {label_where}
+                GROUP BY label_case.baseline_scope, label_case.issue_id
+                ORDER BY label_case.baseline_scope, label_case.issue_id
+                """,
+                list(scopes),
+            ).fetchall()
+
+        totals_by_scope = {
+            str(row["baseline_scope"] or ""): int(row["issue_count"] or 0)
+            for row in issue_rows
+        }
+        ids_by_scope: dict[str, list[str]] = defaultdict(list)
+        for row in label_rows:
+            ids_by_scope[str(row["baseline_scope"] or "")].append(
+                str(row["issue_id"] or "")
+            )
+        counts = {
+            **{state: 0 for state in ISSUE_LABEL_STATES},
+            **{relation: 0 for relation in ISSUE_LABEL_GT_RELATIONS},
+            "gt_review_pending": 0,
+        }
+        for scope, total in totals_by_scope.items():
+            issue_ids = ids_by_scope.get(scope, [])
+            counts["none"] += max(total - len(issue_ids), 0)
+            if not issue_ids:
+                continue
+            projections = self.project_issue_label_states(
+                scope, issue_ids, include_sources=False
+            )
+            for item in projections.values():
+                state = str(item.get("state") or "none")
+                if state not in ISSUE_LABEL_STATES:
+                    state = "pending"
+                counts[state] += 1
+                relation = str(item.get("gt_relation") or "unknown")
+                if relation not in ISSUE_LABEL_GT_RELATIONS:
+                    relation = "unknown"
+                counts[relation] += 1
+        counts["gt_review_pending"] = (
+            counts["differs_from_gt"] + counts["fills_missing_gt"]
+        )
+        return counts
 
     def create_label_revision(
         self,

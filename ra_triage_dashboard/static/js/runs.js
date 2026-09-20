@@ -154,11 +154,25 @@ function renderReviewCatalogFilters() {
   });
   renderMultiFilter($("#reviewStatusFilter"), {
     options: [
-      { value: "pending", label: t("status.pending") },
-      { value: "reviewed", label: t("status.matches_gt") },
-      { value: "needs_gt_review", label: t("status.needs_gt") },
+      { value: "pending", label: uiText("待补充", "Pending") },
+      { value: "reviewed", label: uiText("判错已提交", "Model review submitted") },
+      { value: "needs_gt_review", label: uiText("判错需复核", "Model review needs a check") },
     ],
     selected: getMultiFilterValues($("#reviewStatusFilter")),
+    onChange,
+  });
+  renderMultiFilter($("#sharedLabelStateFilter"), {
+    options: [
+      { value: "none", label: uiText("无共享标签", "No shared label") },
+      { value: "pending", label: uiText("标签待完成", "Label pending") },
+      { value: "resolved", label: uiText("已形成标签结论", "Label resolved") },
+      { value: "matches_gt", label: uiText("与 GT 一致", "Matches GT") },
+      { value: "needs_gt_review", label: uiText("GT 待复核", "Needs GT review") },
+      { value: "conflict", label: uiText("标签冲突", "Label conflict") },
+      { value: "stale", label: uiText("裁决需重新确认", "Stale adjudication") },
+      { value: "unknown", label: uiText("GT 关系未知", "GT relation unknown") },
+    ],
+    selected: getMultiFilterValues($("#sharedLabelStateFilter")),
     onChange,
   });
   renderMultiFilter($("#reviewDiscussionFilter"), {

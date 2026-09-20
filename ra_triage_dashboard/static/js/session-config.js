@@ -644,6 +644,15 @@ function renderOverview(data) {
     );
   }
   $("#statPredictions").textContent = data.predictions ?? "—";
+  const labelCounts = data.label_state_counts || {};
+  $("#statSharedLabels").textContent = labelCounts.resolved ?? "—";
+  const sharedLabelMetric = $("#statSharedLabels")?.closest("div");
+  if (sharedLabelMetric) {
+    sharedLabelMetric.title = uiText(
+      `共享标签：已形成结论 ${labelCounts.resolved ?? 0}；与 GT 一致 ${labelCounts.matches_gt ?? 0}；GT 待复核 ${labelCounts.gt_review_pending ?? 0}；任务待完成 ${labelCounts.pending ?? 0}；冲突 ${labelCounts.conflict ?? 0}；裁决需重新确认 ${labelCounts.stale ?? 0}；无来源 ${labelCounts.none ?? 0}。这些共享标签不计入人工 Review 完成数。`,
+      `Shared labels: ${labelCounts.resolved ?? 0} resolved; ${labelCounts.matches_gt ?? 0} match GT; ${labelCounts.gt_review_pending ?? 0} need GT review; ${labelCounts.pending ?? 0} pending; ${labelCounts.conflict ?? 0} conflicts; ${labelCounts.stale ?? 0} stale adjudications; ${labelCounts.none ?? 0} with no source. Shared labels do not count as human Review completion.`
+    );
+  }
   renderActiveRun(data);
 }
 

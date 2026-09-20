@@ -78,7 +78,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-470`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-471`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -259,6 +259,7 @@
             <div><span class="ui-lang-zh">基线</span><span class="ui-lang-en">Baseline</span><strong id="statIssues">—</strong></div>
             <div class="metric-fail"><span class="ui-lang-zh">判断失败</span><span class="ui-lang-en">Mismatches</span><strong id="statFailures">—</strong></div>
             <div class="metric-reviewed"><span class="ui-lang-zh">人工复核</span><span class="ui-lang-en">Human reviews</span><strong id="statReviewed">—</strong></div>
+            <div class="metric-shared-labels"><span class="ui-lang-zh">共享标签结论</span><span class="ui-lang-en">Labels resolved</span><strong id="statSharedLabels">—</strong></div>
             <div><span class="ui-lang-zh">模型输出</span><span class="ui-lang-en">Predictions</span><strong id="statPredictions">—</strong></div>
           </div>
           <div class="gt-sync-control" id="gtSyncControl" data-status="not_started">
@@ -330,8 +331,12 @@
                   <div class="multi-filter" id="reviewerFilter" data-placeholder="全部复核人" data-placeholder-en="All reviewers" data-i18n-placeholder="filter.all_reviewers"></div>
                 </label>
                 <label class="filter-review-status">
-                  <span class="ui-lang-zh" title="Issue GT Review状态">GT 复核状态</span><span class="ui-lang-en" title="Issue GT review status">GT Review status</span>
-                  <div class="multi-filter" id="reviewStatusFilter" data-placeholder="全部状态" data-placeholder-en="All statuses" data-i18n-placeholder="analysis.all_statuses"></div>
+                  <span class="ui-lang-zh" title="模型判错复核状态">模型判错复核</span><span class="ui-lang-en" title="Model error review status">Model review</span>
+                  <div class="multi-filter" id="reviewStatusFilter" data-placeholder="全部判错状态" data-placeholder-en="All model review statuses"></div>
+                </label>
+                <label class="filter-shared-label-state">
+                  <span class="ui-lang-zh" title="跨 Run 共享的 Issue 标签状态">共享标签状态</span><span class="ui-lang-en" title="Issue label state shared across Runs">Shared label state</span>
+                  <div class="multi-filter" id="sharedLabelStateFilter" data-placeholder="全部标签状态" data-placeholder-en="All label states" aria-label="Shared label state filter"></div>
                 </label>
                 <label class="filter-discussion-state">
                   <span class="ui-lang-zh">讨论</span><span class="ui-lang-en">Discussion</span>
@@ -2143,13 +2148,26 @@
       </div>
     </dialog>
 
+    <dialog class="dialog dialog-wide history-dialog shared-label-state-dialog" id="sharedLabelStateDialog" aria-labelledby="sharedLabelStateDialogTitle">
+      <div class="dialog-card">
+        <div class="dialog-heading">
+          <div>
+            <h2 id="sharedLabelStateDialogTitle"><span class="ui-lang-zh">共享标签来源</span><span class="ui-lang-en">Shared label sources</span></h2>
+          </div>
+          <button class="icon-button" type="button" data-close-shared-label-state aria-label="Close" data-i18n-aria-label="dialog.close">×</button>
+        </div>
+        <div class="history-dialog-meta" id="sharedLabelStateDialogMeta"></div>
+        <div class="history-dialog-content" id="sharedLabelStateDialogContent"></div>
+      </div>
+    </dialog>
+
     <div class="toast hidden" id="toast"></div>
     <script>
       document.querySelectorAll("[data-app-path]").forEach((link) => {
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-470`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-471`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

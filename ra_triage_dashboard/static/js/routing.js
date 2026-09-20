@@ -282,6 +282,9 @@ function normalizedReviewRouteFilters(params) {
   const reviewStatus = parseFilterList(params.get("status")).filter((value) =>
     ["pending", "reviewed", "needs_gt_review"].includes(value)
   );
+  const labelStates = parseFilterList(params.get("label_state")).filter((value) =>
+    ["none", "pending", "resolved", "conflict", "stale", "matches_gt", "needs_gt_review", "unknown"].includes(value)
+  );
   const rawPage = Number.parseInt(params.get("page") || "1", 10);
   const rawPageSize = Number.parseInt(
     params.get("page_size") || String(DEFAULT_CASE_PAGE_SIZE),
@@ -303,6 +306,7 @@ function normalizedReviewRouteFilters(params) {
     ),
     annotationAuthor: parseFilterList(params.get("reviewer")),
     reviewStatus,
+    labelStates,
     workAssignee: parseFilterList(
       params.get("work_assignee") || params.get("assignee") || ""
     ),
@@ -529,6 +533,7 @@ function currentReviewRouteOptions(overrides = {}) {
         ? reviewerFilterSelection("review")
         : getMultiFilterValues($("#reviewerFilter")),
     reviewStatus: getMultiFilterValues($("#reviewStatusFilter")),
+    labelStates: getMultiFilterValues($("#sharedLabelStateFilter")),
     commentState:
       typeof selectedReviewDiscussionFilter === "function"
         ? selectedReviewDiscussionFilter()
@@ -582,6 +587,7 @@ function applyReviewRouteControls(route) {
   renderReviewWorkSplitPicker?.(state.reviewWorkSplitId);
   setMultiFilterValues($("#reviewerFilter"), route.annotationAuthor);
   setMultiFilterValues($("#reviewStatusFilter"), route.reviewStatus);
+  setMultiFilterValues($("#sharedLabelStateFilter"), route.labelStates);
   setMultiFilterValues(
     $("#reviewDiscussionFilter"),
     route.commentState && route.commentState !== "all" ? [route.commentState] : []
@@ -753,11 +759,13 @@ function pageUrl(page, options = {}) {
     const modelLabel = joinFilterList(review.modelLabel);
     const reviewer = joinFilterList(review.annotationAuthor);
     const status = joinFilterList(review.reviewStatus);
+    const labelState = joinFilterList(review.labelStates);
     const assignee = joinFilterList(review.workAssignee);
     if (gt) url.searchParams.set("gt", gt);
     if (modelLabel) url.searchParams.set("model_label", modelLabel);
     if (reviewer) url.searchParams.set("reviewer", reviewer);
     if (status) url.searchParams.set("status", status);
+    if (labelState) url.searchParams.set("label_state", labelState);
     if (review.commentState && review.commentState !== "all") {
       url.searchParams.set("comment_state", review.commentState);
     }

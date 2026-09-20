@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Iterator, Sequence
 
 from ..work_split import normalize_overlap_ratio
 from .shared import (
@@ -723,7 +723,7 @@ class DatabaseCasesMixin:
         with self.connect() as conn:
             rows = conn.execute(
                 f"""
-                SELECT DISTINCT i.issue_id, i.gt_label,
+                SELECT DISTINCT i.issue_id, i.baseline_scope, i.gt_label,
                        ann.id AS annotation_id,
                        ann.label AS annotation_label,
                        ann.tags_json AS annotation_tags_json
@@ -737,6 +737,7 @@ class DatabaseCasesMixin:
         return [
             {
                 "issue_id": str(row["issue_id"] or ""),
+                "baseline_scope": str(row["baseline_scope"] or ""),
                 "gt_label": str(row["gt_label"] or ""),
                 "annotation": {
                     "id": row["annotation_id"],
@@ -746,6 +747,58 @@ class DatabaseCasesMixin:
             }
             for row in rows
         ]
+
+    def iter_case_review_candidate_batches(
+        self, *, batch_size: int = 400, **filters: Any
+    ) -> Iterator[list[dict[str, Any]]]:
+        """Yield the complete Review candidate set in ordered bounded batches.
+
+        Unlike the legacy convenience method above, this internal scan has no
+        result cap. Keyset pagination keeps each SQL parameter set small and
+        avoids loading the whole multi-baseline candidate set at once.
+        """
+
+        batch_size = min(max(1, int(batch_size)), 1000)
+        condition, params, model_args, common = self._case_list_filters(**filters)
+        last_issue_id = ""
+        with self.connect() as conn:
+            while True:
+                batch_condition = (
+                    f"{condition} AND i.issue_id > ?"
+                    if condition
+                    else "WHERE i.issue_id > ?"
+                )
+                rows = conn.execute(
+                    f"""
+                    SELECT DISTINCT i.issue_id, i.baseline_scope, i.gt_label,
+                           ann.id AS annotation_id,
+                           ann.label AS annotation_label,
+                           ann.tags_json AS annotation_tags_json
+                    {common}
+                    {batch_condition}
+                    ORDER BY i.issue_id ASC
+                    LIMIT ?
+                    """,
+                    (*model_args, *params, last_issue_id, batch_size),
+                ).fetchall()
+                if not rows:
+                    break
+                yield [
+                    {
+                        "issue_id": str(row["issue_id"] or ""),
+                        "baseline_scope": str(row["baseline_scope"] or ""),
+                        "gt_label": str(row["gt_label"] or ""),
+                        "annotation": {
+                            "id": row["annotation_id"],
+                            "label": str(row["annotation_label"] or ""),
+                            "tags": _json_load(row["annotation_tags_json"], []),
+                        },
+                    }
+                    for row in rows
+                ]
+                last_issue_id = str(rows[-1]["issue_id"] or "")
+                if len(rows) < batch_size:
+                    break
 
     def get_case(self, issue_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
@@ -984,6 +1037,7 @@ class DatabaseCasesMixin:
             running += conn.execute(
                 "SELECT COUNT(*) FROM batch_prediction_jobs WHERE status IN ('queued', 'running')"
             ).fetchone()[0]
+        label_state_counts = self.issue_label_state_counts(scopes)
         return {
             "issues": int(total),
             "labelled": int(labelled),
@@ -992,6 +1046,7 @@ class DatabaseCasesMixin:
             "model_failures": int(failures),
             "reviewed_failures": int(reviewed_failures),
             "running_jobs": int(running),
+            "label_state_counts": label_state_counts,
         }
 
     @staticmethod
@@ -2012,13 +2067,6 @@ class DatabaseCasesMixin:
             )
         )
         issue_clause = ""
-        issue_params: list[Any] = []
-        if selected_issue_ids:
-            issue_clause = (
-                f"AND assignment.issue_id IN "
-                f"({', '.join('?' for _ in selected_issue_ids)})"
-            )
-            issue_params.extend(selected_issue_ids)
         selected_run_id = str(model_run_id or "").strip()
         selected_work_split_id = str(work_split_id or "").strip()
         if selected_work_split_id:
@@ -2104,14 +2152,30 @@ class DatabaseCasesMixin:
              AND prediction.model_run_id = ?
             WHERE {mode_filter} AND {split_filter}
               AND {scope_clause}
-              {issue_clause}
+              {{issue_clause}}
             ORDER BY i.issue_id ASC, assignment.assignee ASC
         """
         with self.connect() as conn:
-            rows = conn.execute(
-                query,
-                (prediction_run_id, *split_params, *scope_params, *issue_params),
-            ).fetchall()
+            rows: list[Any] = []
+            if selected_issue_ids:
+                for offset in range(0, len(selected_issue_ids), 400):
+                    batch = selected_issue_ids[offset : offset + 400]
+                    issue_clause = (
+                        "AND assignment.issue_id IN "
+                        f"({', '.join('?' for _ in batch)})"
+                    )
+                    chunk_query = query.replace("{issue_clause}", issue_clause)
+                    rows.extend(
+                        conn.execute(
+                            chunk_query,
+                            (prediction_run_id, *split_params, *scope_params, *batch),
+                        ).fetchall()
+                    )
+            else:
+                rows = conn.execute(
+                    query.replace("{issue_clause}", ""),
+                    (prediction_run_id, *split_params, *scope_params),
+                ).fetchall()
         results: list[dict[str, Any]] = []
         for row in rows:
             annotation = None

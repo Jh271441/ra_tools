@@ -382,6 +382,7 @@ async def export_review_reason_analysis(
     failure_only: bool = False,
     annotation_author: str = "",
     review_status: str = "",
+    label_state: str = "",
     gt_label: str = "",
     annotation_label: str = "",
     model_label: str = "",
@@ -425,6 +426,7 @@ async def export_review_reason_analysis(
             annotation_label=annotation_label,
             annotation_author=annotation_author,
             review_status=review_status,
+            label_state=label_state,
             model_run_id=model_run_id,
             comparison=comparison,
             failure_only=failure_only,
@@ -438,6 +440,7 @@ async def export_review_reason_analysis(
             request=request,
         )
         review_statuses = tuple(case_filters.pop("review_statuses", ()))
+        label_states = tuple(case_filters.pop("label_states", ()))
         case_filters.pop("exclusion", None)
         identity = await asyncio.to_thread(request_identity, request, settings)
         case_filters["preferred_annotation_author"] = (
@@ -447,9 +450,8 @@ async def export_review_reason_analysis(
             _case_issue_ids_with_status_filter,
             filters=case_filters,
             review_statuses=review_statuses,
+            label_states=label_states,
         )
-        if len(export_issue_ids) >= 5000:
-            raise _detail(400, "当前筛选结果过多，请继续收窄后再导出。")
         # Membership has already been resolved with the Gallery's exact search,
         # discussion, exclusion and assignee semantics. Avoid applying the
         # analysis page's different free-text/comment projection a second time.
@@ -459,14 +461,16 @@ async def export_review_reason_analysis(
             return await asyncio.to_thread(
                 _review_analysis_export_response, {"items": []}, export_format
             )
-        gallery_case_filters = {**case_filters, "issue_ids": export_issue_ids}
-        gallery_result = await asyncio.to_thread(
-            database.list_cases,
-            **gallery_case_filters,
-            page=1,
-            page_size=len(export_issue_ids),
-        )
-        gallery_items = list(gallery_result.get("items") or [])
+        for offset in range(0, len(export_issue_ids), 400):
+            issue_batch = export_issue_ids[offset : offset + 400]
+            gallery_case_filters = {**case_filters, "issue_ids": issue_batch}
+            gallery_result = await asyncio.to_thread(
+                database.list_cases,
+                **gallery_case_filters,
+                page=1,
+                page_size=len(issue_batch),
+            )
+            gallery_items.extend(gallery_result.get("items") or [])
     result = await asyncio.to_thread(
         _review_reason_analysis_payload,
         model_run_id=model_run_id,

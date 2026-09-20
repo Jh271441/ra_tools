@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import Request
 
 from ..db import LABELS, MODEL_LABELS, REVIEW_STATUSES
+from ..db_parts.labeling import ISSUE_LABEL_STATE_FILTERS
 from ..model_labels import canonical_model_label
 from ..review_analysis import COMPARISON_STATUSES
 from .baselines import resolve_request_baseline_scopes
@@ -26,6 +27,7 @@ def _case_filter_kwargs(
     annotation_label: str = "",
     annotation_author: str = "",
     review_status: str = "",
+    label_state: str = "",
     model_run_id: str = "",
     comparison: str = "",
     failure_only: bool = False,
@@ -77,6 +79,10 @@ def _case_filter_kwargs(
     for status in review_statuses:
         if status not in REVIEW_STATUSES:
             raise _detail(400, "review_status 不在支持范围内。")
+    raw_label_states = _csv_filter_values(label_state)
+    if any(value not in {"all", *ISSUE_LABEL_STATE_FILTERS} for value in raw_label_states):
+        raise _detail(400, "label_state 不在支持范围内。")
+    label_states = tuple(value for value in raw_label_states if value != "all")
     exclusion_filter, is_excluded = resolve_review_exclusion_filter(exclusion)
     normalized_comment_state = _as_text(comment_state).strip().lower() or "all"
     if normalized_comment_state not in {"all", "with", "without"}:
@@ -93,6 +99,7 @@ def _case_filter_kwargs(
         # Case status is derived from effective expected output versus GT in
         # the router so historical Tag-only Reviews stay aligned with analysis.
         "review_statuses": tuple(review_statuses),
+        "label_states": label_states,
         "model_run_id": model_run_id,
         "comparison_status": comparison_status,
         "failure_only": failure_only,

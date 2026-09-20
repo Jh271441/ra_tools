@@ -18,6 +18,7 @@ intent-media.js
 intent-collaboration.js
 intent-labeling.js
 review-gallery.js
+review-label-state.js
 work-split.js
 review-assignments.js
 analysis.js

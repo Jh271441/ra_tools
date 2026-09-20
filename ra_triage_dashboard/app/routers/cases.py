@@ -143,20 +143,121 @@ def _with_effective_case_review_status(
     return public
 
 
+def _empty_issue_label_state() -> dict[str, Any]:
+    return {
+        "state": "none",
+        "expected_output": "",
+        "gt_relation": "unknown",
+        "method": "single",
+        "source_task_ids": [],
+        "source_revision_ids": [],
+        "sources": [],
+    }
+
+
+def _project_case_label_states(
+    items: list[dict[str, Any]], *, include_sources: bool = True
+) -> dict[str, dict[str, Any]]:
+    issue_ids_by_scope: dict[str, list[str]] = {}
+    projected: dict[str, dict[str, Any]] = {}
+    for item in items:
+        issue_id = _as_text(item.get("issue_id"))
+        scope = _as_text(item.get("baseline_scope"))
+        if not issue_id:
+            continue
+        if not scope:
+            projected[issue_id] = _empty_issue_label_state()
+            continue
+        issue_ids_by_scope.setdefault(scope, []).append(issue_id)
+    for scope, issue_ids in issue_ids_by_scope.items():
+        projected.update(
+            database.project_issue_label_states(
+                scope, issue_ids, include_sources=include_sources
+            )
+        )
+    return projected
+
+
+def _case_derived_issue_ids(
+    *,
+    filters: dict[str, Any],
+    review_statuses: tuple[str, ...],
+    label_states: tuple[str, ...],
+    tag_catalog: tuple[dict[str, Any], ...] | None = None,
+) -> list[str]:
+    """Apply derived Review/label filters across the complete candidate scan."""
+
+    allowed_review_statuses = set(review_statuses)
+    allowed_label_states = set(label_states)
+    catalog = tag_catalog if tag_catalog is not None else (
+        _review_tag_catalog() if allowed_review_statuses else ()
+    )
+    matching_ids: list[str] = []
+    for candidates in database.iter_case_review_candidate_batches(
+        batch_size=400,
+        **filters,
+    ):
+        label_state_by_id = (
+            _project_case_label_states(candidates, include_sources=False)
+            if allowed_label_states
+            else {}
+        )
+        for item in candidates:
+            issue_id = _as_text(item.get("issue_id"))
+            if allowed_review_statuses:
+                status = _with_effective_case_review_status(item, catalog)["annotation"][
+                    "review_status"
+                ]
+                if status not in allowed_review_statuses:
+                    continue
+            if allowed_label_states:
+                projection = label_state_by_id.get(issue_id, _empty_issue_label_state())
+                state = str(projection.get("state") or "none")
+                relation = str(projection.get("gt_relation") or "unknown")
+                state_matches = any(
+                    (
+                        selected == state
+                        or (
+                            selected == "needs_gt_review"
+                            and state == "resolved"
+                            and relation in {"differs_from_gt", "fills_missing_gt"}
+                        )
+                        or (
+                            selected == "matches_gt"
+                            and state == "resolved"
+                            and relation == "matches_gt"
+                        )
+                        or (
+                            selected == "unknown"
+                            and state == "resolved"
+                            and relation == "unknown"
+                        )
+                    )
+                    for selected in allowed_label_states
+                )
+                if not state_matches:
+                    continue
+            if issue_id:
+                matching_ids.append(issue_id)
+    return matching_ids
+
+
 def _case_result_with_status_filter(
     *,
     filters: dict[str, Any],
     review_statuses: tuple[str, ...],
     page: int,
     page_size: int,
+    label_states: tuple[str, ...] = (),
 ) -> dict[str, Any]:
-    """Filter after read-time Tag inference, then paginate the exact slice."""
+    """Filter derived Review and shared-label states before pagination."""
 
     tag_catalog = _review_tag_catalog()
-    if review_statuses:
-        matching_ids = _case_review_status_issue_ids(
+    if review_statuses or label_states:
+        matching_ids = _case_derived_issue_ids(
             filters=filters,
             review_statuses=review_statuses,
+            label_states=label_states,
             tag_catalog=tag_catalog,
         )
         start = (page - 1) * page_size
@@ -172,6 +273,11 @@ def _case_result_with_status_filter(
                 _with_effective_case_review_status(item, tag_catalog)
                 for item in raw.get("items", [])
             ]
+            label_state_by_id = _project_case_label_states(items)
+            for item in items:
+                item["label_state"] = label_state_by_id.get(
+                    _as_text(item.get("issue_id")), _empty_issue_label_state()
+                )
         else:
             items = []
         return {
@@ -190,38 +296,24 @@ def _case_result_with_status_filter(
         _with_effective_case_review_status(item, tag_catalog)
         for item in result.get("items", [])
     ]
+    label_state_by_id = _project_case_label_states(result.get("items", []))
+    for item in result.get("items", []):
+        item["label_state"] = label_state_by_id.get(
+            _as_text(item.get("issue_id")), _empty_issue_label_state()
+        )
     return result
-
-
-def _case_review_status_issue_ids(
-    *,
-    filters: dict[str, Any],
-    review_statuses: tuple[str, ...],
-    tag_catalog: tuple[dict[str, Any], ...] | None = None,
-) -> list[str]:
-    allowed = set(review_statuses)
-    catalog = tag_catalog if tag_catalog is not None else _review_tag_catalog()
-    candidates = database.list_case_review_candidates(**filters, limit=5000)
-    return [
-        str(item.get("issue_id") or "")
-        for item in candidates
-        if _with_effective_case_review_status(item, catalog)["annotation"][
-            "review_status"
-        ]
-        in allowed
-    ]
 
 
 def _case_issue_ids_with_status_filter(
     *,
     filters: dict[str, Any],
     review_statuses: tuple[str, ...],
+    label_states: tuple[str, ...] = (),
 ) -> list[str]:
-    if not review_statuses:
-        return database.list_case_issue_ids(**filters, limit=5000)
-    return _case_review_status_issue_ids(
+    return _case_derived_issue_ids(
         filters=filters,
         review_statuses=review_statuses,
+        label_states=label_states,
     )
 
 
@@ -273,6 +365,7 @@ async def list_cases(
     annotation_label: str = "",
     annotation_author: str = "",
     review_status: str = "",
+    label_state: str = "",
     model_run_id: str = "",
     comparison: str = "",
     failure_only: bool = False,
@@ -294,6 +387,7 @@ async def list_cases(
         annotation_label=annotation_label,
         annotation_author=annotation_author,
         review_status=review_status,
+        label_state=label_state,
         model_run_id=model_run_id,
         comparison=comparison,
         failure_only=failure_only,
@@ -307,6 +401,7 @@ async def list_cases(
         request=request,
     )
     review_statuses = tuple(filters.pop("review_statuses", ()))
+    label_states = tuple(filters.pop("label_states", ()))
     exclusion_filter = str(filters.pop("exclusion", "all"))
     identity = await asyncio.to_thread(request_identity, request, settings)
     filters["preferred_annotation_author"] = (
@@ -319,6 +414,7 @@ async def list_cases(
         _case_result_with_status_filter,
         filters=filters,
         review_statuses=review_statuses,
+        label_states=label_states,
         page=safe_page,
         page_size=safe_page_size,
     )
@@ -336,6 +432,7 @@ async def list_cases(
         "work_split_id": filters["work_split_id"],
         "comment_state": filters["comment_state"],
         "review_status": list(review_statuses),
+        "label_state": list(label_states),
         "exclusion": exclusion_filter,
         "baselines": resolve_request_baseline_ids(baselines, request=request),
         "baseline_scopes": filters.get("baseline_scopes") or [],
@@ -353,6 +450,7 @@ async def list_case_issue_ids(
     annotation_label: str = "",
     annotation_author: str = "",
     review_status: str = "",
+    label_state: str = "",
     model_run_id: str = "",
     comparison: str = "",
     failure_only: bool = False,
@@ -373,6 +471,7 @@ async def list_case_issue_ids(
         annotation_label=annotation_label,
         annotation_author=annotation_author,
         review_status=review_status,
+        label_state=label_state,
         model_run_id=model_run_id,
         comparison=comparison,
         failure_only=failure_only,
@@ -386,6 +485,7 @@ async def list_case_issue_ids(
         request=request,
     )
     review_statuses = tuple(filters.pop("review_statuses", ()))
+    label_states = tuple(filters.pop("label_states", ()))
     exclusion_filter = str(filters.pop("exclusion", "all"))
     identity = await asyncio.to_thread(request_identity, request, settings)
     filters["preferred_annotation_author"] = (
@@ -395,11 +495,12 @@ async def list_case_issue_ids(
         _case_issue_ids_with_status_filter,
         filters=filters,
         review_statuses=review_statuses,
+        label_states=label_states,
     )
     return {
         "issue_ids": ids,
         "total": len(ids),
-        "truncated": len(ids) >= 5000,
+        "truncated": False,
         "filters": {
             "model_run_id": model_run_id,
             "comparison_status": filters["comparison_status"],
@@ -409,6 +510,7 @@ async def list_case_issue_ids(
             "work_split_id": filters["work_split_id"],
             "comment_state": filters["comment_state"],
             "review_status": list(review_statuses),
+            "label_state": list(label_states),
             "exclusion": exclusion_filter,
         },
     }
@@ -422,6 +524,7 @@ async def work_assignees(
     annotation_label: str = "",
     annotation_author: str = "",
     review_status: str = "",
+    label_state: str = "",
     model_run_id: str = "",
     comparison: str = "",
     failure_only: bool = False,
@@ -441,6 +544,7 @@ async def work_assignees(
         annotation_label=annotation_label,
         annotation_author=annotation_author,
         review_status=review_status,
+        label_state=label_state,
         model_run_id=model_run_id,
         comparison=comparison,
         failure_only=failure_only,
@@ -454,11 +558,13 @@ async def work_assignees(
         request=request,
     )
     review_statuses = tuple(filters.pop("review_statuses", ()))
+    label_states = tuple(filters.pop("label_states", ()))
     exclusion_filter = str(filters.pop("exclusion", "all"))
     filtered_issue_ids = await asyncio.to_thread(
         _case_issue_ids_with_status_filter,
         filters=filters,
         review_statuses=review_statuses,
+        label_states=label_states,
     )
     return {
         "items": await asyncio.to_thread(
@@ -471,6 +577,7 @@ async def work_assignees(
             "model_run_id": filters["model_run_id"],
             "comparison_status": filters["comparison_status"],
             "review_status": list(review_statuses),
+            "label_state": list(label_states),
             "comment_state": filters["comment_state"],
             "exclusion": exclusion_filter,
             "baselines": resolve_request_baseline_ids(
@@ -653,6 +760,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
         annotation_label=_as_text(filter_body.get("annotation_label")),
         annotation_author=_as_text(filter_body.get("annotation_author")),
         review_status=_as_text(filter_body.get("review_status")),
+        label_state=_as_text(filter_body.get("label_state")),
         model_run_id=_as_text(filter_body.get("model_run_id")),
         comparison=_as_text(filter_body.get("comparison") or filter_body.get("comparison_status")),
         failure_only=bool(filter_body.get("failure_only")),
@@ -665,12 +773,16 @@ async def split_case_work(request: Request) -> dict[str, Any]:
         request=request,
     )
     review_statuses = tuple(filters.pop("review_statuses", ()))
+    label_states = tuple(filters.pop("label_states", ()))
     exclusion_filter = str(filters.pop("exclusion", "all"))
     issue_ids = await asyncio.to_thread(
         _case_issue_ids_with_status_filter,
         filters=filters,
         review_statuses=review_statuses,
+        label_states=label_states,
     )
+    if len(issue_ids) > 5000:
+        raise _detail(400, "均分任务单次最多包含 5000 个 Issue，请收窄筛选。")
     assignees = body.get("assignees")
     if not isinstance(assignees, list):
         raise _detail(400, "assignees 必须是数组。")
@@ -719,6 +831,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                 "model_label": filters["model_label"],
                 "annotation_author": filters["annotation_author"],
                 "review_status": list(review_statuses),
+                "label_state": list(label_states),
                 "exclusion": exclusion_filter,
                 "missing_evidence": filters["missing_evidence"],
                 "overlap_ratio": overlap_ratio,
@@ -735,7 +848,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
         raise _detail(400, str(exc))
     return {
         "total": len(issue_ids),
-        "truncated": len(issue_ids) >= 5000,
+        "truncated": False,
         "seed": seed,
         "split_id": saved["split_id"],
         "created_by": saved["created_by"],
@@ -756,6 +869,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
             "failure_only": filters["comparison_status"] == "mismatch",
             "work_assignee": filters["work_assignee"],
             "review_status": list(review_statuses),
+            "label_state": list(label_states),
             "exclusion": exclusion_filter,
         },
     }
@@ -940,6 +1054,12 @@ async def get_case(
     case = await asyncio.to_thread(database.get_case, issue_id)
     if case is None:
         raise _detail(404, "Issue 不存在。")
+    label_state = await asyncio.to_thread(
+        database.project_issue_label_states,
+        _as_text(case.get("baseline_scope")),
+        [issue_id],
+    )
+    case["label_state"] = label_state.get(issue_id, _empty_issue_label_state())
     assignment = (
         await asyncio.to_thread(
             database.review_assignment_context,

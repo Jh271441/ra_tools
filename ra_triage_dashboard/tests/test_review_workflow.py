@@ -181,7 +181,7 @@ class ReviewWorkflowTest(unittest.TestCase):
             captured.update(kwargs)
             return {"items": []}
 
-        def fake_issue_ids(*, filters, review_statuses):
+        def fake_issue_ids(*, filters, review_statuses, label_states=()):
             captured_case_filters.update(filters)
             self.assertEqual(review_statuses, ("needs_gt_review",))
             return ["cn1", "cn2"]
@@ -480,8 +480,8 @@ class ReviewWorkflowTest(unittest.TestCase):
             ]
         }
         with patch(
-            "ra_triage_dashboard.app.routers.cases.database.list_case_review_candidates",
-            return_value=raw["items"],
+            "ra_triage_dashboard.app.routers.cases.database.iter_case_review_candidate_batches",
+            return_value=[raw["items"]],
         ), patch(
             "ra_triage_dashboard.app.routers.cases.database.list_cases",
             return_value={"items": [raw["items"][3]], "total": 1},

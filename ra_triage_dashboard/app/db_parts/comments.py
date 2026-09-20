@@ -56,7 +56,7 @@ class DatabaseCommentsMixin:
         cleaned = list(dict.fromkeys(
             str(issue_id or "").strip() for issue_id in issue_ids
             if str(issue_id or "").strip()
-        ))[:5000]
+        ))
         if not cleaned:
             return set()
         result: set[str] = set()

@@ -161,7 +161,7 @@
   }
   .topbar-baselines .multi-filter-trigger,
   .intent-topbar-dataset .multi-filter-trigger { min-height: 44px; height: 44px; }
-  .header-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .header-metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .header-metrics > div { min-width: 0; padding: 6px 3px; }
   .header-metrics span { font-size: 9px; }
   .header-metrics strong { font-size: 13px; }

@@ -23,11 +23,8 @@ function issueCardReviewFlag(annotation, comparisonStatus = "") {
   if (annotation?.is_excluded) {
     return `<span class="issue-card-flag issue-card-flag-excluded" data-card-review-flag="excluded"><span class="ui-lang-zh">应该排除</span><span class="ui-lang-en">Exclude</span></span>`;
   }
-  if (annotation?.review_status === "needs_gt_review") {
-    return `<span class="issue-card-flag issue-card-flag-needs-gt" data-card-review-flag="needs_gt_review"><span class="ui-lang-zh">GT 待复核</span><span class="ui-lang-en">Review GT</span></span>`;
-  }
   if (comparisonStatus === "no_gt") {
-    return `<span class="issue-card-flag issue-card-flag-needs-gt" data-card-review-flag="needs_gt_review"><span class="ui-lang-zh">GT 待复核</span><span class="ui-lang-en">Review GT</span></span>`;
+    return `<span class="issue-card-flag issue-card-flag-model-no-gt" data-card-review-flag="model_no_gt"><span class="ui-lang-zh">模型缺 GT</span><span class="ui-lang-en">Model has no GT</span></span>`;
   }
   return "";
 }
@@ -66,11 +63,26 @@ function issueCard(item, options = {}) {
         .join("")}</div>`
     : "";
   const historicalReview = Boolean(
-    !isLabeling && state.selectedRunId && annotationRunId && annotationRunId !== state.selectedRunId
+    !isLabeling &&
+    state.selectedRunId &&
+    item.annotation?.id &&
+    annotationRunId !== state.selectedRunId
   );
+  const historicalReviewTitle = annotationRunId
+    ? uiText(
+        "复用其他 Model Run 的历史 Review；当前 Run 尚未保存独立版本",
+        "Reusing a Review from another Model Run; this Run has no saved version yet"
+      )
+    : uiText(
+        "复用未绑定 Run 的历史 Review；当前 Run 尚未保存独立版本",
+        "Showing a legacy Review not bound to a Run; this Run has no saved version yet"
+      );
   const reviewFlag = isLabeling
     ? issueCardLabelingFlag(item)
     : issueCardReviewFlag(item.annotation, comparisonStatus);
+  const sharedLabelFlag = isLabeling
+    ? ""
+    : sharedLabelStateButtonMarkup(item, { compact: true });
   const openLabel = isLabeling
     ? `打开 ${item.issue_id} 标注`
     : `打开 ${item.issue_id} Review`;
@@ -95,12 +107,13 @@ function issueCard(item, options = {}) {
             ${issueUrl ? `<a class="issue-id" href="${escapeHtml(issueUrl)}" target="_blank" rel="noreferrer" data-card-link title="打开 Voyager Issue">${escapeHtml(item.issue_id)}</a>` : `<span class="issue-id">${escapeHtml(item.issue_id)}</span>`}
             ${evidenceRow}
           </div>
-          ${reviewFlag}
+          <div class="issue-card-flags">${reviewFlag}${sharedLabelFlag}</div>
         </div>
         <div class="issue-card-labels">
           <span class="issue-label-pair"><small>GT</small>${labelBadge(item.gt_label, "—")}</span>
           ${outputPair}
-          ${historicalReview ? `<span class="issue-reviewer historical-review" title="${escapeHtml(uiText("复用其他 Model Run 的历史 Review；当前 Run 尚未保存独立版本", "Reusing a Review from another Model Run; this Run has no saved version yet"))}"><span class="ui-lang-zh">历史 Review</span><span class="ui-lang-en">Historical review</span></span>` : ""}
+          ${!isLabeling ? currentRunReviewStatusMarkup(item) : ""}
+          ${historicalReview ? `<span class="issue-reviewer historical-review" title="${escapeHtml(historicalReviewTitle)}"><span class="ui-lang-zh">历史 Review</span><span class="ui-lang-en">Historical review</span></span>` : ""}
           ${item.annotation?.author ? `<span class="issue-reviewer" title="${escapeHtml(uiText(`${actorKindZh}人：${item.annotation.author}${item.annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}`, `${actorKindEn}: ${item.annotation.author}${item.annotation.author_verified ? " · SSO verified" : " · unverified"}`))}"><span class="ui-lang-zh">${actorKindZh}</span><span class="ui-lang-en">${actorKindEn}</span> · ${escapeHtml(item.annotation.author)}${item.annotation.author_verified ? " · SSO" : ""}</span>` : ""}
         </div>
       </div>
@@ -127,6 +140,17 @@ function caseGallerySignature(items) {
             author: item.annotation.author || "",
             author_verified: Boolean(item.annotation.author_verified),
             missing_evidence: item.annotation.missing_evidence || [],
+          }
+        : null,
+      label_state: item.label_state
+        ? {
+            state: item.label_state.state || "none",
+            expected_output: item.label_state.expected_output || "",
+            gt_relation: item.label_state.gt_relation || "unknown",
+            method: item.label_state.method || "single",
+            source_task_ids: item.label_state.source_task_ids || [],
+            source_revision_ids: item.label_state.source_revision_ids || [],
+            source_case_ids: (item.label_state.sources || []).map((source) => source.label_case_id || ""),
           }
         : null,
       thumbnail: item.thumbnail?.url || "",
@@ -392,6 +416,9 @@ function renderCases(data) {
   list.querySelectorAll("[data-open-issue]").forEach((button) => {
     button.addEventListener("click", () => selectCase(button.dataset.openIssue));
   });
+  bindSharedLabelStateTriggers(list, (issueId) =>
+    state.cases.find((item) => item.issue_id === issueId)
+  );
   list.querySelectorAll("[data-case-media-preview]").forEach((button) => {
     button.addEventListener("click", () => {
       openCaseMediaPreview(button.dataset.caseMediaPreview, button).catch((error) => {
@@ -608,6 +635,9 @@ async function loadCases({
   const reviewStatus = joinFilterList(
     getMultiFilterValues($("#reviewStatusFilter"))
   );
+  const labelState = joinFilterList(
+    getMultiFilterValues($("#sharedLabelStateFilter"))
+  );
   const workAssignee = joinFilterList(
     typeof workAssigneeFilterSelection === "function"
       ? workAssigneeFilterSelection()
@@ -637,6 +667,7 @@ async function loadCases({
   if (modelLabel) params.set("model_label", modelLabel);
   if (annotationAuthor) params.set("annotation_author", annotationAuthor);
   if (reviewStatus) params.set("review_status", reviewStatus);
+  if (labelState) params.set("label_state", labelState);
   if (workAssignee) params.set("work_assignee", workAssignee);
   if (state.reviewWorkSplitId) params.set("work_split_id", state.reviewWorkSplitId);
   if (exclusion !== "all") params.set("exclusion", exclusion);

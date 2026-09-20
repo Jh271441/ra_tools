@@ -1783,11 +1783,6 @@ class DatabaseCoreMixin:
                 if str(issue_id or "").strip()
             )
         )
-        if selected_issue_ids:
-            where.append(
-                f"i.issue_id IN ({', '.join('?' for _ in selected_issue_ids)})"
-            )
-            params.extend(selected_issue_ids)
         evidence_keys = _multi_values(missing_evidence)
         if evidence_keys:
             evidence_clauses = [
@@ -1829,7 +1824,7 @@ class DatabaseCoreMixin:
                 params.extend([term, term, term, term, term, term])
             where.append(f"({' OR '.join(search_clauses)})")
 
-        query = f"""
+        select_sql = """
             SELECT i.issue_id, i.title, i.scenario, i.summary, i.gt_label,
                    i.baseline_scope,
                    ann.id AS annotation_id,
@@ -1846,6 +1841,8 @@ class DatabaseCoreMixin:
                    ann.model_run_id AS annotation_model_run_id,
                    mp.model_run_id, mp.model_label, mp.model_reason,
                    mp.model_confidence
+        """
+        from_sql = f"""
             FROM issues i
             {self._latest_annotation_join(
                 model_run_id,
@@ -1854,11 +1851,29 @@ class DatabaseCoreMixin:
             )}
             LEFT JOIN model_predictions mp
               ON mp.issue_id = i.issue_id AND {prediction_join}
-            WHERE {' AND '.join(where)}
-            ORDER BY i.issue_id ASC
-            """
+        """
         with self.connect() as conn:
-            rows = conn.execute(query, params).fetchall()
+            rows: list[Any] = []
+            if selected_issue_ids:
+                for offset in range(0, len(selected_issue_ids), 400):
+                    batch = selected_issue_ids[offset : offset + 400]
+                    clauses = [
+                        *where,
+                        f"i.issue_id IN ({', '.join('?' for _ in batch)})",
+                    ]
+                    query = (
+                        f"{select_sql} {from_sql} WHERE {' AND '.join(clauses)} "
+                        "ORDER BY i.issue_id ASC"
+                    )
+                    rows.extend(
+                        conn.execute(query, (*params, *batch)).fetchall()
+                    )
+            else:
+                query = (
+                    f"{select_sql} {from_sql} WHERE {' AND '.join(where)} "
+                    "ORDER BY i.issue_id ASC"
+                )
+                rows = conn.execute(query, params).fetchall()
         results: list[dict[str, Any]] = []
         for row in rows:
             model_label = str(row["model_label"] or "")
@@ -1907,6 +1922,7 @@ class DatabaseCoreMixin:
                     },
                 }
             )
+        results.sort(key=lambda item: str(item.get("issue_id") or ""))
         return results
 
     @staticmethod

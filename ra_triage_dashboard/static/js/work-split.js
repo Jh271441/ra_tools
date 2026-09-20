@@ -123,6 +123,7 @@ function currentReviewFilterPayload() {
     model_label: joinFilterList(getMultiFilterValues($("#annotationFilter"))),
     annotation_author: joinFilterList(getMultiFilterValues($("#reviewerFilter"))),
     review_status: joinFilterList(getMultiFilterValues($("#reviewStatusFilter"))),
+    label_state: joinFilterList(getMultiFilterValues($("#sharedLabelStateFilter"))),
     comment_state:
       typeof selectedReviewDiscussionFilter === "function"
         ? selectedReviewDiscussionFilter()

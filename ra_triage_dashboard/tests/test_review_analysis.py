@@ -1069,8 +1069,8 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
             # returned in the synthetic pending slice merely because it is
             # unbound to the selected Run.
             with patch(
-                "ra_triage_dashboard.app.routers.cases.database.list_case_review_candidates",
-                return_value=progress_cases["items"],
+                "ra_triage_dashboard.app.routers.cases.database.iter_case_review_candidate_batches",
+                return_value=[progress_cases["items"]],
             ), patch(
                 "ra_triage_dashboard.app.routers.cases._review_tag_catalog",
                 return_value=(),
