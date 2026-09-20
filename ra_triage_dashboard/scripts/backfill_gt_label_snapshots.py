@@ -8,6 +8,7 @@ is the only mode that creates or activates snapshots.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sqlite3
@@ -18,6 +19,7 @@ from typing import Any, Iterator
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.baseline import load_baseline_entry
 from app.db import Database, LABELS
 from app.db_parts.snapshots import _snapshot_membership_sha
 from app.runtime import baseline_registry
@@ -104,6 +106,155 @@ def require_snapshot_schema(connection: Any) -> None:
             raise
 
 
+def inspect_scope(
+    connection: Any,
+    entry: Any,
+    state: dict[str, Any],
+    *,
+    action: str,
+) -> dict[str, Any]:
+    """Check source bytes and authoritative Issue membership independently."""
+
+    scope = str(entry.scope)
+    configured_source_sha = str(entry.members_sha256 or "").strip().lower()
+    actual_source_sha = ""
+    source_file_error = ""
+    try:
+        source_bytes = entry.xlsx.read_bytes()
+        actual_source_sha = hashlib.sha256(source_bytes).hexdigest()
+    except OSError as exc:
+        source_file_error = type(exc).__name__
+    source_file_sha_matches = bool(actual_source_sha) and (
+        not configured_source_sha or actual_source_sha == configured_source_sha
+    )
+
+    loaded = None
+    loader_error = ""
+    try:
+        loaded = load_baseline_entry(
+            loader=str(entry.loader),
+            path=Path(entry.xlsx),
+            dataset=str(entry.dataset or ""),
+        )
+    except Exception as exc:
+        loader_error = type(exc).__name__
+
+    loader_rows = list(loaded.rows) if loaded is not None else []
+    loader_ids = [str(row.get("issue_id") or "").strip() for row in loader_rows]
+    loader_empty_issue_ids = sum(not issue_id for issue_id in loader_ids)
+    nonempty_loader_ids = [issue_id for issue_id in loader_ids if issue_id]
+    loader_duplicate_count = len(nonempty_loader_ids) - len(set(nonempty_loader_ids))
+    expected_issue_ids = sorted(set(nonempty_loader_ids))
+    expected_membership_sha = _snapshot_membership_sha(expected_issue_ids)
+    loader_source_rows = int(loaded.source_rows) if loaded is not None else 0
+    loader_skipped_rows = int(loaded.skipped_rows) if loaded is not None else 0
+    loader_member_count = len(loader_rows)
+    expected_count = entry.expected_count
+    loader_count_matches = (
+        expected_count is None
+        or (
+            loader_source_rows == int(expected_count)
+            and loader_member_count == int(expected_count)
+        )
+    )
+    loader_complete = bool(
+        loaded is not None
+        and loader_source_rows == loader_member_count
+        and loader_skipped_rows == 0
+        and loader_empty_issue_ids == 0
+        and loader_duplicate_count == 0
+    )
+
+    database_rows = read_scope_rows(connection, scope)
+    database_ids = [str(row["issue_id"] or "").strip() for row in database_rows]
+    database_empty_issue_ids = sum(not issue_id for issue_id in database_ids)
+    nonempty_database_ids = [issue_id for issue_id in database_ids if issue_id]
+    database_duplicate_count = len(nonempty_database_ids) - len(set(nonempty_database_ids))
+    actual_membership_sha = _snapshot_membership_sha(
+        sorted(set(nonempty_database_ids))
+    )
+    expected_id_set = set(expected_issue_ids)
+    database_id_set = set(nonempty_database_ids)
+    missing_ids = sorted(expected_id_set - database_id_set)
+    extra_ids = sorted(database_id_set - expected_id_set)
+    database_count_matches = len(database_rows) == len(expected_issue_ids)
+    membership_matches = bool(
+        loader_complete
+        and not database_empty_issue_ids
+        and not database_duplicate_count
+        and not missing_ids
+        and not extra_ids
+        and actual_membership_sha == expected_membership_sha
+    )
+
+    valid_label_count = sum(row["gt_label"] in LABELS for row in database_rows)
+    empty_label_count = sum(not row["gt_label"] for row in database_rows)
+    noncanonical_label_count = sum(
+        bool(row["gt_label"]) and row["gt_label"] not in LABELS
+        for row in database_rows
+    )
+    sync_status = str(state.get("status") or "not_started")
+    source_sha = str(state.get("source_sha256") or "")
+    errors = []
+    if source_file_error:
+        errors.append(f"source baseline file unavailable ({source_file_error})")
+    if not source_file_sha_matches:
+        errors.append("source baseline file SHA does not match registry")
+    if loader_error:
+        errors.append(f"baseline loader failed ({loader_error})")
+    if loaded is None:
+        errors.append("baseline loader returned no result")
+    elif not loader_count_matches or not loader_complete:
+        errors.append("baseline loader membership/count is incomplete or invalid")
+    if not database_count_matches or not membership_matches:
+        errors.append("database Issue membership does not match baseline loader membership")
+    if not database_rows:
+        errors.append("baseline scope has no database members")
+    if sync_status != "ready" or not source_sha:
+        errors.append("GT sync is not ready with a source hash")
+    if noncanonical_label_count:
+        errors.append("current GT contains noncanonical labels")
+    if entry.gt_mode == "strict" and valid_label_count != len(database_rows):
+        errors.append("strict scope contains empty/noncanonical current GT")
+
+    return {
+        "baseline_scope": scope,
+        "gt_mode": str(entry.gt_mode),
+        "configured_source_file_sha256": configured_source_sha,
+        "actual_source_file_sha256": actual_source_sha,
+        "source_file_sha_configured": bool(configured_source_sha),
+        "source_file_sha_matches": source_file_sha_matches,
+        "loader_source_row_count": loader_source_rows,
+        "loader_member_count": loader_member_count,
+        "loader_skipped_row_count": loader_skipped_rows,
+        "loader_empty_issue_id_count": loader_empty_issue_ids,
+        "loader_duplicate_issue_id_count": loader_duplicate_count,
+        "loader_count_matches": loader_count_matches,
+        "expected_count": expected_count,
+        "expected_membership_sha256": expected_membership_sha,
+        "actual_membership_sha256": actual_membership_sha,
+        "membership_matches": membership_matches,
+        "database_member_count": len(database_rows),
+        "database_empty_issue_id_count": database_empty_issue_ids,
+        "database_duplicate_issue_id_count": database_duplicate_count,
+        "database_count_matches": database_count_matches,
+        "missing_issue_count": len(missing_ids),
+        "extra_issue_count": len(extra_ids),
+        "missing_issue_ids_sample": missing_ids[:5],
+        "extra_issue_ids_sample": extra_ids[:5],
+        "valid_label_count": valid_label_count,
+        "empty_label_count": empty_label_count,
+        "noncanonical_label_count": noncanonical_label_count,
+        "gt_sync_status": sync_status,
+        "source_sha256": source_sha,
+        "schema_mode": "read_only" if action == "dry_run" else "existing_043_schema",
+        "action": action,
+        "errors": errors,
+        **({"error": errors[0]} if errors else {}),
+        "_expected_issue_ids": expected_issue_ids,
+    }
+
+
 def main() -> int:
     args = parse_args()
     settings = Settings.from_env()
@@ -125,101 +276,74 @@ def main() -> int:
             print(json.dumps({"error": "configured baseline registry is empty"}, ensure_ascii=False, indent=2))
             return 2
 
-        if not args.apply:
-            # No init: only read existing schema and data.
-            with read_connection(database) as connection:
-                require_snapshot_schema(connection)
-                reports: list[dict[str, Any]] = []
-                for scope in scopes:
-                    rows = read_scope_rows(connection, scope)
-                    state = read_state(connection, scope)
-                    entry = registry[scope]
-                    actual_sha = _snapshot_membership_sha([row["issue_id"] for row in rows])
-                    valid = sum(row["gt_label"] in LABELS for row in rows)
-                    noncanonical = sum(
-                        bool(row["gt_label"]) and row["gt_label"] not in LABELS
-                        for row in rows
-                    )
-                    expected_count = entry.expected_count
-                    configured_sha = entry.members_sha256
-                    report = {
-                        "baseline_scope": scope,
-                        "gt_mode": entry.gt_mode,
-                        "member_count": len(rows),
-                        "valid_label_count": valid,
-                        "empty_label_count": len(rows) - valid,
-                        "noncanonical_label_count": noncanonical,
-                        "expected_count": expected_count,
-                        "membership_sha256": actual_sha,
-                        "configured_membership_sha256": configured_sha,
-                        "count_matches": expected_count in (None, len(rows)),
-                        "sha_matches": not configured_sha or configured_sha == actual_sha,
-                        "gt_sync_status": str(state.get("status") or "not_started"),
-                        "source_sha256": str(state.get("source_sha256") or ""),
-                        "schema_mode": "read_only",
-                        "action": "dry_run",
-                    }
-                    if not report["count_matches"] or not report["sha_matches"]:
-                        report["error"] = "baseline membership count/hash does not match registry"
-                    elif str(state.get("status") or "") != "ready" or not str(state.get("source_sha256") or ""):
-                        report["error"] = "GT sync is not ready with a source hash; run a complete sync first"
-                    elif not rows:
-                        report["error"] = "baseline scope has no members"
-                    elif noncanonical:
-                        report["error"] = "current GT contains noncanonical labels"
-                    elif entry.gt_mode == "strict" and valid != len(rows):
-                        report["error"] = "strict scope contains empty/noncanonical current GT"
-                    reports.append(report)
-            print(json.dumps({"apply": False, "scopes": reports}, ensure_ascii=False, indent=2))
-            return 0 if not any(report.get("error") for report in reports) else 2
-
-        # Apply mode may write snapshots only into an already upgraded schema.
-        # It must never apply DDL or otherwise initialize a database.
+        action = "apply" if args.apply else "dry_run"
+        plans: list[tuple[Any, dict[str, Any], dict[str, Any]]] = []
         with read_connection(database) as connection:
             require_snapshot_schema(connection)
-        plans: list[tuple[Any, dict[str, Any], list[dict[str, str]]]] = []
-        for scope in scopes:
-            entry = registry[scope]
-            state = database.gt_sync_status(scope)
-            with database.connect() as connection:
-                rows = read_scope_rows(connection, scope)
-            actual_sha = _snapshot_membership_sha([row["issue_id"] for row in rows])
-            if str(state.get("status") or "") != "ready" or not str(state.get("source_sha256") or ""):
-                raise RuntimeError(f"{scope}: GT sync is not ready with a source hash")
-            if not rows:
-                raise RuntimeError(f"{scope}: baseline scope has no members")
-            if entry.expected_count not in (None, len(rows)):
-                raise RuntimeError(f"{scope}: membership count mismatch")
-            if entry.members_sha256 and entry.members_sha256 != actual_sha:
-                raise RuntimeError(f"{scope}: membership SHA mismatch")
-            noncanonical = [
-                row["issue_id"]
-                for row in rows
-                if row["gt_label"] and row["gt_label"] not in LABELS
-            ]
-            if noncanonical:
-                raise RuntimeError(f"{scope}: current GT contains noncanonical labels")
-            if entry.gt_mode == "strict" and any(row["gt_label"] not in LABELS for row in rows):
-                raise RuntimeError(
-                    f"{scope}: strict scope contains empty/noncanonical current GT"
-                )
-            plans.append((entry, state, rows))
+            for scope in scopes:
+                entry = registry[scope]
+                state = read_state(connection, scope)
+                report = inspect_scope(connection, entry, state, action=action)
+                plans.append((entry, state, report))
 
-        reports = []
-        for entry, state, _rows in plans:
-            scope = entry.scope
+        def public_report(report: dict[str, Any]) -> dict[str, Any]:
+            return {key: value for key, value in report.items() if not key.startswith("_")}
+
+        reports = [public_report(report) for _entry, _state, report in plans]
+        errors = [report for report in reports if report.get("errors")]
+        if errors:
+            print(json.dumps({"apply": bool(args.apply), "scopes": reports}, ensure_ascii=False, indent=2))
+            return 2
+
+        if not args.apply:
+            print(json.dumps({"apply": False, "scopes": reports}, ensure_ascii=False, indent=2))
+            return 0
+
+        # Recheck source bytes for every scope before the first snapshot write.
+        for entry, _state, report in plans:
+            try:
+                current_source_sha = hashlib.sha256(entry.xlsx.read_bytes()).hexdigest()
+            except OSError:
+                current_source_sha = ""
+            if current_source_sha != report["actual_source_file_sha256"]:
+                report["errors"].append("source baseline file changed after preflight")
+        if any(report["errors"] for _entry, _state, report in plans):
+            print(json.dumps(
+                {"apply": True, "scopes": [public_report(report) for _entry, _state, report in plans]},
+                ensure_ascii=False,
+                indent=2,
+            ))
+            return 2
+
+        applied_reports = []
+        for entry, _state, report in plans:
             snapshot = database.create_gt_snapshot_from_current(
-                scope=scope,
+                scope=entry.scope,
                 gt_mode=entry.gt_mode,
                 created_by=args.created_by,
                 created_by_source=args.created_by_source,
                 created_by_verified=False,
                 activation_reason="cutover_current",
-                expected_member_count=entry.expected_count,
-                expected_membership_sha256=entry.members_sha256,
+                expected_member_count=report["loader_member_count"],
+                expected_membership_sha256=report["expected_membership_sha256"],
             )
-            reports.append({"baseline_scope": scope, "action": "apply", "snapshot": snapshot})
-        print(json.dumps({"apply": True, "scopes": reports}, ensure_ascii=False, indent=2))
+            observation = snapshot.get("observation") or {}
+            applied_reports.append({
+                "baseline_scope": entry.scope,
+                "action": "apply",
+                "gt_mode": str(snapshot.get("gt_mode") or entry.gt_mode),
+                "snapshot_id": str(snapshot.get("id") or ""),
+                "content_sha256": str(snapshot.get("content_sha256") or ""),
+                "membership_sha256": str(snapshot.get("membership_sha256") or ""),
+                "member_count": int(snapshot.get("member_count") or 0),
+                "valid_label_count": int(snapshot.get("valid_label_count") or 0),
+                "empty_label_count": int(snapshot.get("member_count") or 0)
+                    - int(snapshot.get("valid_label_count") or 0),
+                "active": bool(snapshot.get("active")),
+                "observation_last_checked_at": str(observation.get("last_checked_at") or ""),
+                "observation_source_sha256": str(observation.get("source_sha256") or ""),
+            })
+        print(json.dumps({"apply": True, "scopes": applied_reports}, ensure_ascii=False, indent=2))
         return 0
     finally:
         database.close()

@@ -17,8 +17,10 @@ rehearsal described below has not been run yet.
 4. Apply migration 043 to the upgraded copy and compare public table counts,
    migration count, and `dashboard_change_revision` with the untouched copy.
 5. Run the snapshot backfill tool once without `--apply` and compare the
-   non-sensitive scope/member/coverage report. Run it with `--apply` twice; the
-   second run must reuse every content-identical snapshot.
+   non-sensitive scope/member/coverage report. Source-file byte SHA and loader-
+   derived Issue-membership SHA are separate checks; compare the five scope
+   counts and hashes without printing per-Issue labels. Run it with `--apply`
+   twice; the second run must reuse every content-identical snapshot.
 6. For one strict and one sparse scope, compare active snapshot membership,
    `membership_sha256`, `content_sha256`, active pointer, `gt_sync_labels`, and
    `issues.gt_label`. Change one sparse source label to an unmapped value and
