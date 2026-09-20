@@ -867,6 +867,22 @@ class DatabaseCasesMixin:
         data["predictions"] = [self._prediction_dict(row) for row in predictions]
         data["jobs"] = [self._job_dict(row) for row in jobs]
         data["batch_jobs"] = [self._case_batch_job_dict(row) for row in batch_jobs]
+        label_states = self.project_issue_label_states(
+            str(data.get("baseline_scope") or ""),
+            [issue_id],
+        )
+        data["label_state"] = label_states.get(
+            issue_id,
+            {
+                "state": "none",
+                "expected_output": "",
+                "gt_relation": "unknown",
+                "method": "single",
+                "source_task_ids": [],
+                "source_revision_ids": [],
+                "sources": [],
+            },
+        )
         return data
 
     def get_issue(self, issue_id: str) -> dict[str, Any] | None:

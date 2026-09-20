@@ -1054,12 +1054,7 @@ async def get_case(
     case = await asyncio.to_thread(database.get_case, issue_id)
     if case is None:
         raise _detail(404, "Issue 不存在。")
-    label_state = await asyncio.to_thread(
-        database.project_issue_label_states,
-        _as_text(case.get("baseline_scope")),
-        [issue_id],
-    )
-    case["label_state"] = label_state.get(issue_id, _empty_issue_label_state())
+    case["label_state"] = case.get("label_state") or _empty_issue_label_state()
     assignment = (
         await asyncio.to_thread(
             database.review_assignment_context,
