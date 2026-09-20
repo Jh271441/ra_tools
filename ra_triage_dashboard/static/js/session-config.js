@@ -644,6 +644,19 @@ function renderOverview(data) {
     );
   }
   $("#statPredictions").textContent = data.predictions ?? "—";
+  const gtSnapshots = Array.isArray(data.gt_snapshots) ? data.gt_snapshots : [];
+  const gtSyncMeta = $("#gtSyncMeta");
+  if (gtSyncMeta) {
+    gtSyncMeta.title = gtSnapshots.length
+      ? uiText(
+          `当前正式 GT snapshot：${gtSnapshots.map((item) => `${item.baseline_scope} ${String(item.id || "").slice(0, 18)}… · ${item.valid_label_count ?? 0}/${item.member_count ?? 0}`).join("；")}`,
+          `Active formal GT snapshots: ${gtSnapshots.map((item) => `${item.baseline_scope} ${String(item.id || "").slice(0, 18)}… · ${item.valid_label_count ?? 0}/${item.member_count ?? 0}`).join("; ")}`
+        )
+      : uiText(
+          "当前还没有正式 GT snapshot；当前页面使用 legacy current GT reference。",
+          "No formal GT snapshot is active; the current page uses the legacy current GT reference."
+        );
+  }
   const labelCounts = data.label_state_counts || {};
   $("#statSharedLabels").textContent = labelCounts.resolved ?? "—";
   const sharedLabelMetric = $("#statSharedLabels")?.closest("div");

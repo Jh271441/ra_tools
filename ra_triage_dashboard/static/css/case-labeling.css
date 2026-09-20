@@ -1,5 +1,6 @@
 .case-labeling-page { display: grid; gap: 8px; }
 body[data-active-page^="labeling"] .header-metrics { display: none; }
+.snapshot-reference-meta { min-height: 14px; color: var(--faint); font-size: 10px; line-height: 1.4; }
 /* metrics carried margin-left:auto; keep the right cluster right-aligned. */
 body[data-active-page^="labeling"] .gt-sync-control { margin-left: auto; }
 /* The create-task form is a page, not a <dialog>, so the card must supply the

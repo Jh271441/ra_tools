@@ -708,6 +708,51 @@ class DatabaseCoreMixin:
                 CREATE INDEX IF NOT EXISTS idx_gt_sync_labels_issue
                     ON gt_sync_labels(issue_id, baseline_scope);
 
+                CREATE TABLE IF NOT EXISTS gt_snapshots (
+                    id TEXT PRIMARY KEY,
+                    baseline_scope TEXT NOT NULL,
+                    gt_mode TEXT NOT NULL CHECK(gt_mode IN ('strict', 'sparse')),
+                    source_name TEXT NOT NULL DEFAULT 'Trail',
+                    source_view_id INTEGER NOT NULL DEFAULT 0,
+                    source_field TEXT NOT NULL DEFAULT '',
+                    source_metadata_json TEXT NOT NULL DEFAULT '{}',
+                    content_sha256 TEXT NOT NULL,
+                    membership_sha256 TEXT NOT NULL,
+                    member_count INTEGER NOT NULL DEFAULT 0,
+                    valid_label_count INTEGER NOT NULL DEFAULT 0,
+                    created_by TEXT NOT NULL DEFAULT '',
+                    created_by_source TEXT NOT NULL DEFAULT 'system',
+                    created_by_verified INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(baseline_scope, content_sha256)
+                );
+                CREATE INDEX IF NOT EXISTS idx_gt_snapshots_scope_created
+                    ON gt_snapshots(baseline_scope, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS gt_snapshot_items (
+                    snapshot_id TEXT NOT NULL REFERENCES gt_snapshots(id) ON DELETE RESTRICT,
+                    baseline_scope TEXT NOT NULL,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE RESTRICT,
+                    ordinal INTEGER NOT NULL CHECK(ordinal > 0),
+                    gt_label TEXT NOT NULL DEFAULT '',
+                    source_updated_at TEXT NOT NULL DEFAULT '',
+                    source_updated_by TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY(snapshot_id, issue_id),
+                    UNIQUE(snapshot_id, ordinal)
+                );
+                CREATE INDEX IF NOT EXISTS idx_gt_snapshot_items_scope_issue
+                    ON gt_snapshot_items(baseline_scope, issue_id, snapshot_id);
+
+                CREATE TABLE IF NOT EXISTS gt_snapshot_active (
+                    baseline_scope TEXT PRIMARY KEY,
+                    snapshot_id TEXT NOT NULL REFERENCES gt_snapshots(id) ON DELETE RESTRICT,
+                    activated_at TEXT NOT NULL,
+                    activated_by TEXT NOT NULL DEFAULT '',
+                    activated_by_source TEXT NOT NULL DEFAULT 'system',
+                    activated_by_verified INTEGER NOT NULL DEFAULT 0,
+                    activation_reason TEXT NOT NULL DEFAULT ''
+                );
+
                 CREATE TABLE IF NOT EXISTS review_tag_catalog (
                     key TEXT PRIMARY KEY,
                     label TEXT NOT NULL UNIQUE,
@@ -904,7 +949,15 @@ class DatabaseCoreMixin:
                     created_by_source TEXT NOT NULL DEFAULT 'legacy',
                     created_by_verified INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
-                    exported_at TEXT
+                    exported_at TEXT,
+                    source_gt_snapshot_id TEXT REFERENCES gt_snapshots(id) ON DELETE RESTRICT,
+                    source_gt_snapshot_ids_json TEXT NOT NULL DEFAULT '{}',
+                    source_gt_snapshot_sha256 TEXT NOT NULL DEFAULT '',
+                    reconcile_status TEXT NOT NULL DEFAULT 'not_checked',
+                    reconciled_at TEXT,
+                    reconciled_count INTEGER NOT NULL DEFAULT 0,
+                    not_applied_count INTEGER NOT NULL DEFAULT 0,
+                    changed_again_count INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE TABLE IF NOT EXISTS label_gt_export_items (
                     batch_id TEXT NOT NULL
@@ -914,8 +967,62 @@ class DatabaseCoreMixin:
                     expected_output TEXT NOT NULL,
                     source_revision_ids_json TEXT NOT NULL DEFAULT '[]',
                     source_fingerprint TEXT NOT NULL,
+                    reconcile_status TEXT NOT NULL DEFAULT 'not_checked',
+                    reconciled_snapshot_id TEXT REFERENCES gt_snapshots(id) ON DELETE RESTRICT,
+                    reconciled_at TEXT,
                     PRIMARY KEY(batch_id, issue_id)
                 );
+
+                CREATE TABLE IF NOT EXISTS label_result_snapshots (
+                    id TEXT PRIMARY KEY,
+                    baseline_scope TEXT NOT NULL,
+                    workset_id TEXT NOT NULL REFERENCES review_worksets(id) ON DELETE RESTRICT,
+                    workset_members_sha256 TEXT NOT NULL,
+                    content_sha256 TEXT NOT NULL,
+                    member_count INTEGER NOT NULL DEFAULT 0,
+                    resolved_count INTEGER NOT NULL DEFAULT 0,
+                    pending_count INTEGER NOT NULL DEFAULT 0,
+                    conflict_count INTEGER NOT NULL DEFAULT 0,
+                    stale_count INTEGER NOT NULL DEFAULT 0,
+                    unknown_count INTEGER NOT NULL DEFAULT 0,
+                    coverage_status TEXT NOT NULL DEFAULT 'complete'
+                        CHECK(coverage_status IN ('complete', 'partial')),
+                    created_by TEXT NOT NULL DEFAULT '',
+                    created_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    created_by_verified INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(workset_id, content_sha256)
+                );
+                CREATE INDEX IF NOT EXISTS idx_label_result_snapshots_scope_created
+                    ON label_result_snapshots(baseline_scope, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS label_result_snapshot_items (
+                    snapshot_id TEXT NOT NULL REFERENCES label_result_snapshots(id) ON DELETE RESTRICT,
+                    baseline_scope TEXT NOT NULL,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE RESTRICT,
+                    ordinal INTEGER NOT NULL CHECK(ordinal > 0),
+                    state TEXT NOT NULL CHECK(state IN ('none', 'pending', 'resolved', 'conflict', 'stale')),
+                    expected_output TEXT,
+                    method TEXT NOT NULL CHECK(method IN ('single', 'consensus', 'adjudication')),
+                    gt_relation TEXT NOT NULL DEFAULT 'unknown',
+                    PRIMARY KEY(snapshot_id, issue_id),
+                    UNIQUE(snapshot_id, ordinal)
+                );
+                CREATE INDEX IF NOT EXISTS idx_label_result_snapshot_items_scope_issue
+                    ON label_result_snapshot_items(baseline_scope, issue_id, snapshot_id);
+
+                CREATE TABLE IF NOT EXISTS label_result_snapshot_sources (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    snapshot_id TEXT NOT NULL REFERENCES label_result_snapshots(id) ON DELETE RESTRICT,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE RESTRICT,
+                    label_case_id TEXT NOT NULL REFERENCES label_cases(id) ON DELETE RESTRICT,
+                    resolution_id INTEGER REFERENCES label_resolutions(id) ON DELETE RESTRICT,
+                    revision_id INTEGER REFERENCES label_revisions(id) ON DELETE RESTRICT,
+                    source_role TEXT NOT NULL DEFAULT 'head',
+                    UNIQUE(snapshot_id, issue_id, label_case_id, resolution_id, revision_id, source_role)
+                );
+                CREATE INDEX IF NOT EXISTS idx_label_result_snapshot_sources_case
+                    ON label_result_snapshot_sources(label_case_id, snapshot_id);
 
                 CREATE TABLE IF NOT EXISTS label_comment_links (
                     comment_id INTEGER PRIMARY KEY
@@ -1194,6 +1301,12 @@ class DatabaseCoreMixin:
                 "label_gt_export_items",
                 "label_comment_links",
                 "labeling_scope_state",
+                "gt_snapshots",
+                "gt_snapshot_items",
+                "gt_snapshot_active",
+                "label_result_snapshots",
+                "label_result_snapshot_items",
+                "label_result_snapshot_sources",
                 "intent_label_revisions",
                 "intent_frame_overrides",
                 "intent_label_heads",
@@ -1242,6 +1355,17 @@ class DatabaseCoreMixin:
             )
             self._ensure_column(conn, "annotations", "is_excluded", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "annotations", "missing_evidence_json", "TEXT NOT NULL DEFAULT '[]'")
+            self._ensure_column(conn, "label_gt_export_batches", "source_gt_snapshot_id", "TEXT")
+            self._ensure_column(conn, "label_gt_export_batches", "source_gt_snapshot_ids_json", "TEXT NOT NULL DEFAULT '{}'")
+            self._ensure_column(conn, "label_gt_export_batches", "source_gt_snapshot_sha256", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "label_gt_export_batches", "reconcile_status", "TEXT NOT NULL DEFAULT 'not_checked'")
+            self._ensure_column(conn, "label_gt_export_batches", "reconciled_at", "TEXT")
+            self._ensure_column(conn, "label_gt_export_batches", "reconciled_count", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "label_gt_export_batches", "not_applied_count", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "label_gt_export_batches", "changed_again_count", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "label_gt_export_items", "reconcile_status", "TEXT NOT NULL DEFAULT 'not_checked'")
+            self._ensure_column(conn, "label_gt_export_items", "reconciled_snapshot_id", "TEXT")
+            self._ensure_column(conn, "label_gt_export_items", "reconciled_at", "TEXT")
             self._ensure_column(conn, "annotations", "author_source", "TEXT NOT NULL DEFAULT 'legacy'")
             self._ensure_column(conn, "annotations", "author_verified", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "annotations", "mentions_json", "TEXT NOT NULL DEFAULT '[]'")

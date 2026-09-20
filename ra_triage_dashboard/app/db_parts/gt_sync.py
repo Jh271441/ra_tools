@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from typing import Any, Iterable
 
 from .shared import LABELS, utc_now
@@ -188,17 +186,50 @@ class DatabaseGtSyncMixin:
                 issue_id: materialized.get(issue_id, {}).get("gt_label", "")
                 for issue_id in expected_ids
             }
-            digest_payload = [
-                [issue_id, target_labels[issue_id]]
+            snapshot_rows = {
+                issue_id: materialized.get(
+                    issue_id,
+                    {
+                        "gt_label": "",
+                        "source_updated_at": "",
+                        "source_updated_by": "",
+                    },
+                )
                 for issue_id in sorted(target_labels)
-            ]
-            source_hash = hashlib.sha256(
-                json.dumps(
-                    digest_payload,
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                ).encode("utf-8")
-            ).hexdigest()
+            }
+            gt_snapshot = self._create_or_reuse_gt_snapshot_with_conn(
+                conn,
+                scope=normalized_scope,
+                gt_mode="sparse" if allow_sparse else "strict",
+                source_name=source_name,
+                source_view_id=source_view_id,
+                source_field=source_field,
+                rows=snapshot_rows,
+                source_metadata={
+                    "source_updated_at": sorted(
+                        {
+                            item.get("source_updated_at", "")
+                            for item in snapshot_rows.values()
+                            if item.get("source_updated_at")
+                        }
+                    )[-1]
+                    if any(item.get("source_updated_at") for item in snapshot_rows.values())
+                    else "",
+                    "source_updated_by": sorted(
+                        {
+                            item.get("source_updated_by", "")
+                            for item in snapshot_rows.values()
+                            if item.get("source_updated_by")
+                        }
+                    ),
+                },
+                created_by=requested_by,
+                created_by_source=requested_by_source,
+                created_by_verified=requested_by_verified,
+                activate=True,
+                activation_reason="gt_sync",
+            )
+            source_hash = gt_snapshot["content_sha256"]
 
             previous_row = conn.execute(
                 "SELECT * FROM gt_sync_state WHERE baseline_scope = ?",
@@ -368,7 +399,9 @@ class DatabaseGtSyncMixin:
                 values,
             )
 
-        return self.gt_sync_status(normalized_scope)
+        status = self.gt_sync_status(normalized_scope)
+        status["active_gt_snapshot"] = self.get_active_gt_snapshot(normalized_scope)
+        return status
 
     def record_gt_sync_failure(
         self,

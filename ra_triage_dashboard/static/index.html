@@ -78,7 +78,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-471`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-472`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -500,7 +500,7 @@
               </form>
             </section>
             <section class="gallery-panel" id="caseLabelingGallery">
-              <div class="gallery-heading"><div><h2>问题图库 <small class="case-labeling-preview-badge">内测 · 仅管理员</small></h2><p id="caseLabelingSummary">正在加载…</p></div><div class="gallery-heading-actions"><button class="button button-quiet" id="caseLabelingExportGt" type="button">导出 GT 更新</button><button class="button button-primary" id="caseLabelingCreateTask" type="button">建标注任务</button><div class="gallery-heading-meta"><span class="count-pill" id="caseLabelingCount">—</span></div></div></div>
+              <div class="gallery-heading"><div><h2>问题图库 <small class="case-labeling-preview-badge">内测 · 仅管理员</small></h2><p id="caseLabelingSummary">正在加载…</p><p class="snapshot-reference-meta" id="caseLabelingSnapshotMeta"></p></div><div class="gallery-heading-actions"><button class="button button-quiet" id="caseLabelingExportGt" type="button">导出 GT 更新</button><button class="button button-quiet" id="caseLabelingCreateLabelSnapshot" type="button" hidden>保存 Label 快照</button><button class="button button-primary" id="caseLabelingCreateTask" type="button">建标注任务</button><div class="gallery-heading-meta"><span class="count-pill" id="caseLabelingCount">—</span></div></div></div>
               <div class="review-cluster-strip case-labeling-progress-strip" id="caseLabelingTaskProgress" hidden><span class="subheading">任务进度</span><div class="cluster-list" id="caseLabelingTaskProgressList"></div></div>
               <div class="review-cluster-strip case-labeling-cluster-strip" id="caseLabelingClusterStrip" hidden><span class="subheading">聚类</span><div class="cluster-list" id="caseLabelingClusterList"></div></div>
               <div class="issue-grid" id="caseLabelingList" aria-live="polite"></div>
@@ -2167,7 +2167,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-471`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-472`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

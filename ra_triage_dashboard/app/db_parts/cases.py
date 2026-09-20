@@ -644,6 +644,11 @@ class DatabaseCasesMixin:
             "total": int(total),
             "page": page,
             "page_size": page_size,
+            "gt_snapshots": self.active_gt_snapshots(
+                self._normalize_baseline_scopes(
+                    baseline_scopes, baseline_scope=baseline_scope
+                )
+            ),
         }
 
     def list_case_issue_ids(
@@ -883,6 +888,9 @@ class DatabaseCasesMixin:
                 "sources": [],
             },
         )
+        data["gt_snapshot"] = self.get_active_gt_snapshot(
+            str(data.get("baseline_scope") or "")
+        )
         return data
 
     def get_issue(self, issue_id: str) -> dict[str, Any] | None:
@@ -1063,6 +1071,7 @@ class DatabaseCasesMixin:
             "reviewed_failures": int(reviewed_failures),
             "running_jobs": int(running),
             "label_state_counts": label_state_counts,
+            "gt_snapshots": self.active_gt_snapshots(scopes),
         }
 
     @staticmethod

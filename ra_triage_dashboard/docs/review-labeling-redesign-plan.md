@@ -586,3 +586,21 @@ GT 修正与模型原因都可以在同一页面操作，但使用各自保存�
 9. 下一轮先交付 S1 跨 Run 共享标签投影；随后按 S2 快照、S3 模型复核、S4 Campaign、S5 Runs 合集推进。
 10. 0522/0626/0821 默认迁到标注区，原 Review note 作为标注依据；0206/0508 保留并按批次核对模型复核用途。
 11. Runs 合集成员版本不可变；一次正式评测固定 Collection revision、Workset、标签快照与评分策略。
+
+### S2 implementation notes (local, not released)
+
+S2 adds content addressed `gt_snapshots` / `gt_snapshot_items` with one
+`gt_snapshot_active` pointer per baseline scope. A successful Trail sync creates
+or reuses the snapshot using the complete frozen membership (including empty
+labels for sparse scopes), then switches the active pointer, replaces the current
+`gt_sync_labels` overlay and updates `issues.gt_label` in the same transaction.
+Existing overlay tables remain the current read cache; snapshot metadata is
+returned without loading all items.
+
+Local Label result snapshots bind one frozen Workset and its members hash to an
+immutable `label_result_snapshots` record, with paged items and explicit source
+links. Partial snapshots are diagnostic only. GT export previews record active
+snapshot IDs/hashes and expose a later matched/not_applied/changed_again
+reconcile operation. The cutover backfill script is dry-run by default and only
+writes with `--apply`. Migration 043 is additive and has not been applied to
+production in this phase.

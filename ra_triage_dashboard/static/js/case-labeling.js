@@ -256,6 +256,48 @@ async function loadCaseLabelingTasks() {
   renderCaseLabelingTaskPicker();
 }
 
+async function loadCaseLabelingSnapshotReferences() {
+  const meta = $("#caseLabelingSnapshotMeta");
+  const button = $("#caseLabelingCreateLabelSnapshot");
+  if (!meta || !button) return;
+  try {
+    const result = await api(withBaselineQuery("/api/labeling/gt-snapshots"));
+    const snapshots = result.items || [];
+    state.caseLabeling.gtSnapshots = snapshots;
+    meta.textContent = snapshots.length
+      ? `正式 GT snapshot · ${snapshots.map((item) => `${item.baseline_scope} ${String(item.id || "").slice(0, 18)}… · ${item.valid_label_count}/${item.member_count}`).join(" · ")}`
+      : "正式 GT snapshot 尚未建立；当前页面使用 legacy current GT reference。";
+  } catch (error) {
+    state.caseLabeling.gtSnapshots = [];
+    meta.textContent = "GT snapshot metadata unavailable。";
+  }
+  const task = selectedCaseLabelingTask();
+  button.hidden = !state.session?.is_admin || !task?.workset_id;
+  button.disabled = button.hidden;
+}
+
+async function createCaseLabelingResultSnapshot() {
+  const task = selectedCaseLabelingTask();
+  if (!task?.workset_id) {
+    showToast("请选择一个冻结标注任务后再保存 Label snapshot。", true);
+    return;
+  }
+  const button = $("#caseLabelingCreateLabelSnapshot");
+  if (button) button.disabled = true;
+  try {
+    const result = await api("/api/labeling/label-result-snapshots", {
+      method: "POST",
+      body: JSON.stringify({ workset_id: task.workset_id, allow_partial: true }),
+    });
+    const snapshot = result.snapshot || {};
+    showToast(`Label snapshot 已保存：${snapshot.resolved_count || 0}/${snapshot.member_count || 0} · ${snapshot.coverage_status || ""}`);
+  } catch (error) {
+    showToast(error.message || "Label snapshot 保存失败。", true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 function labelingTaskFilterPayload() {
   return {
     baselines: selectedBaselineQueryValue(),
@@ -737,6 +779,7 @@ async function loadCaseLabelingCases({ page = state.caseLabeling.page, persistRo
   renderCaseLabelingList(result);
   if (persistRoute) persistCaseLabelingRoute({ issue: "", page: state.caseLabeling.page });
   loadCaseLabelingClusters().catch((error) => showToast(error.message, true));
+  loadCaseLabelingSnapshotReferences().catch(() => {});
 }
 
 function caseLabelingQueueItems() {
@@ -1385,12 +1428,14 @@ async function enterCaseLabeling({ route = null } = {}) {
   }
   const filters = restoreCaseLabelingRouteState(route);
   await loadCaseLabelingTasks();
+  await loadCaseLabelingSnapshotReferences();
   renderCaseLabelingStatusPicker();
   renderCaseLabelingAuthorPicker();
   renderCaseLabelingAssigneePicker();
   renderCaseLabelingLabelPicker();
   renderCaseLabelingExclusionPicker();
   await loadCaseLabelingCases({ page: state.caseLabeling.page });
+  await loadCaseLabelingSnapshotReferences();
   const issue = route?.issue || filters.issue || "";
   if (issue) await selectCaseLabelingIssue(issue, { updateRoute: false });
   else closeCaseLabelingDetail({ updateRoute: false });
@@ -1398,6 +1443,9 @@ async function enterCaseLabeling({ route = null } = {}) {
 
 function bindCaseLabelingEvents() {
   bindCaseLabelingEditorShortcuts();
+  $("#caseLabelingCreateLabelSnapshot")?.addEventListener("click", () => {
+    createCaseLabelingResultSnapshot().catch((error) => showToast(error.message, true));
+  });
   $("#caseLabelingFilterForm")?.addEventListener("submit", (event) => event.preventDefault());
   $("#caseLabelingTask")?.addEventListener("change", () => {
     state.caseLabeling.taskId = $("#caseLabelingTask").value || "";

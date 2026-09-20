@@ -865,6 +865,67 @@ async def get_gt_candidates(request: Request, baselines: str = "") -> dict[str, 
     }
 
 
+@router.get("/api/labeling/gt-snapshots")
+async def list_gt_snapshots(request: Request, baselines: str = "") -> dict[str, Any]:
+    """Return active immutable GT reference metadata only."""
+
+    await _require_labeling_admin(request)
+    scopes = resolve_request_baseline_scopes(baselines, request=request)
+    return {
+        "items": await asyncio.to_thread(database.active_gt_snapshots, scopes),
+        "baseline_scopes": scopes,
+    }
+
+
+@router.get("/api/labeling/gt-snapshots/{snapshot_id}")
+async def get_gt_snapshot(snapshot_id: str, request: Request, items: bool = False) -> dict[str, Any]:
+    await _require_labeling_admin(request)
+    snapshot = await asyncio.to_thread(
+        database.get_gt_snapshot, snapshot_id, include_items=items
+    )
+    if snapshot is None:
+        raise _detail(404, "GT snapshot 不存在。")
+    return {"snapshot": snapshot}
+
+
+@router.post("/api/labeling/label-result-snapshots")
+async def create_label_result_snapshot(request: Request) -> dict[str, Any]:
+    actor, actor_source, actor_verified = await asyncio.to_thread(
+        _labeling_actor, request
+    )
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        raise _detail(400, "Label snapshot 请求必须是 JSON 对象。")
+    if not isinstance(body, dict) or not _as_text(body.get("workset_id")):
+        raise _detail(400, "workset_id 必填。")
+    snapshot = await asyncio.to_thread(
+        database.create_label_result_snapshot,
+        workset_id=_as_text(body.get("workset_id")),
+        created_by=actor,
+        created_by_source=actor_source,
+        created_by_verified=actor_verified,
+        allow_partial=bool(body.get("allow_partial", False)),
+    )
+    return {
+        "snapshot": snapshot,
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
+
+
+@router.get("/api/labeling/label-result-snapshots/{snapshot_id}")
+async def get_label_result_snapshot(
+    snapshot_id: str, request: Request, items: bool = False
+) -> dict[str, Any]:
+    await _require_labeling_admin(request)
+    snapshot = await asyncio.to_thread(
+        database.get_label_result_snapshot, snapshot_id, include_items=items
+    )
+    if snapshot is None:
+        raise _detail(404, "Label result snapshot 不存在。")
+    return {"snapshot": snapshot}
+
+
 @router.post("/api/labeling/gt-export-previews")
 async def create_gt_export_preview(request: Request) -> dict[str, Any]:
     actor, actor_source, actor_verified = await asyncio.to_thread(
@@ -907,6 +968,19 @@ async def get_gt_export_preview(batch_id: str, request: Request) -> dict[str, An
     await _require_labeling_admin(request)
     batch = await _require_active_gt_export_batch(batch_id)
     return {"preview": batch}
+
+
+@router.post("/api/labeling/gt-export-previews/{batch_id}/reconcile")
+async def reconcile_gt_export_preview(batch_id: str, request: Request) -> dict[str, Any]:
+    await _require_labeling_admin(request)
+    await _require_active_gt_export_batch(batch_id)
+    result = await asyncio.to_thread(
+        database.reconcile_label_gt_export_batch, batch_id
+    )
+    return {
+        "preview": result,
+        "change_revision": await asyncio.to_thread(database.change_revision),
+    }
 
 
 @router.get("/api/labeling/gt-exports/{batch_id}")

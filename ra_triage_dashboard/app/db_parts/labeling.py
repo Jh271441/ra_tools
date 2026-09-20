@@ -15,6 +15,7 @@ from .shared import (
     _json_load,
     utc_now,
 )
+from .snapshots import _sha256_json
 
 
 LABEL_TASK_KINDS = ("labeling", "model_review", "legacy")
@@ -1208,6 +1209,9 @@ class DatabaseLabelingMixin:
                             if adjudication
                             else None
                         ),
+                        "resolution_id": (
+                            adjudication.get("id") if adjudication else None
+                        ),
                     }
                 )
 
@@ -1890,11 +1894,12 @@ class DatabaseLabelingMixin:
         scopes = _clean_values(baseline_scopes)
         with self.connect() as conn:
             rows = conn.execute(
-                f"SELECT issue_id, gt_label FROM issues WHERE baseline_scope IN ({', '.join('?' for _ in scopes)}) ORDER BY issue_id",
+                f"SELECT issue_id, baseline_scope, gt_label FROM issues WHERE baseline_scope IN ({', '.join('?' for _ in scopes)}) ORDER BY baseline_scope, issue_id",
                 scopes,
             ).fetchall() if scopes else []
         cases_by_issue = self._batch_label_cases([str(row["issue_id"]) for row in rows])
         gt_by_issue = {str(row["issue_id"]): str(row["gt_label"] or "") for row in rows}
+        scope_by_issue = {str(row["issue_id"]): str(row["baseline_scope"] or "") for row in rows}
         by_issue: dict[str, list[dict[str, Any]]] = {}
         blocked_by_issue: dict[str, list[dict[str, Any]]] = {}
         for issue_id, label_cases in cases_by_issue.items():
@@ -1904,6 +1909,7 @@ class DatabaseLabelingMixin:
                     by_issue.setdefault(issue_id, []).append(
                         {
                             "label_case_id": str(row["id"]),
+                            "baseline_scope": scope_by_issue.get(issue_id, ""),
                             "task_id": str(row["task_id"] or ""),
                             "source_run_id": str(row["source_run_id"] or ""),
                             "expected_output": resolution["expected_output"],
@@ -1915,6 +1921,7 @@ class DatabaseLabelingMixin:
                     blocked_by_issue.setdefault(issue_id, []).append(
                         {
                             "label_case_id": str(row["id"]),
+                            "baseline_scope": scope_by_issue.get(issue_id, ""),
                             "task_id": str(row["task_id"] or ""),
                             "source_run_id": str(row["source_run_id"] or ""),
                             "state": str(resolution["state"] or "pending"),
@@ -1932,6 +1939,7 @@ class DatabaseLabelingMixin:
                 output.append(
                     {
                         "issue_id": issue_id,
+                        "baseline_scope": scope_by_issue.get(issue_id, ""),
                         "status": "unresolved",
                         "gt_label": gt_label,
                         "sources": sources,
@@ -1941,7 +1949,13 @@ class DatabaseLabelingMixin:
                 continue
             if len(labels) > 1:
                 output.append(
-                    {"issue_id": issue_id, "status": "source_conflict", "gt_label": gt_label, "sources": sources}
+                    {
+                        "issue_id": issue_id,
+                        "baseline_scope": scope_by_issue.get(issue_id, ""),
+                        "status": "source_conflict",
+                        "gt_label": gt_label,
+                        "sources": sources,
+                    }
                 )
                 continue
             expected = next(iter(labels))
@@ -1950,6 +1964,7 @@ class DatabaseLabelingMixin:
             output.append(
                 {
                     "issue_id": issue_id,
+                    "baseline_scope": scope_by_issue.get(issue_id, ""),
                     "status": "ready",
                     "gt_label": gt_label,
                     "expected_output": expected,
@@ -1990,12 +2005,28 @@ class DatabaseLabelingMixin:
             if item.get("status") == "ready"
             and (not selected or str(item.get("issue_id") or "") in selected)
         ]
+        active_snapshots = {
+            scope: self.get_active_gt_snapshot(scope)
+            for scope in scopes
+        }
+        snapshot_ids = {
+            scope: str((snapshot or {}).get("id") or "")
+            for scope, snapshot in active_snapshots.items()
+            if snapshot
+        }
+        snapshot_hashes = {
+            scope: str((snapshot or {}).get("content_sha256") or "")
+            for scope, snapshot in active_snapshots.items()
+            if snapshot
+        }
         items: list[dict[str, Any]] = []
         for candidate in candidates:
             fingerprint = self._gt_candidate_fingerprint(candidate)
+            scope = str(candidate.get("baseline_scope") or "")
             items.append(
                 {
                     "issue_id": str(candidate["issue_id"]),
+                    "baseline_scope": scope,
                     "old_gt_label": str(candidate.get("gt_label") or ""),
                     "expected_output": str(candidate["expected_output"]),
                     "source_revision_ids": sorted(
@@ -2003,11 +2034,13 @@ class DatabaseLabelingMixin:
                         for source in candidate.get("sources") or []
                     ),
                     "source_fingerprint": fingerprint,
+                    "source_gt_snapshot_id": snapshot_ids.get(scope, ""),
                 }
             )
-        batch_fingerprint = hashlib.sha256(
-            "\n".join(item["source_fingerprint"] for item in items).encode("utf-8")
-        ).hexdigest()
+        batch_fingerprint = _sha256_json({
+            "source_gt_snapshot_ids": snapshot_ids,
+            "items": [item["source_fingerprint"] for item in items],
+        })
         batch_id = f"gt-export-{uuid4().hex}"
         now = utc_now()
         with self._write_lock, self.connect() as conn:
@@ -2016,8 +2049,12 @@ class DatabaseLabelingMixin:
                 INSERT INTO label_gt_export_batches (
                     id, baseline_scopes_json, source_fingerprint, status,
                     item_count, file_sha256, created_by, created_by_source,
-                    created_by_verified, created_at, exported_at
-                ) VALUES (?, ?, ?, 'preview', ?, '', ?, ?, ?, ?, NULL)
+                    created_by_verified, created_at, exported_at,
+                    source_gt_snapshot_id, source_gt_snapshot_ids_json,
+                    source_gt_snapshot_sha256, reconcile_status,
+                    reconciled_at, reconciled_count, not_applied_count,
+                    changed_again_count
+                ) VALUES (?, ?, ?, 'preview', ?, '', ?, ?, ?, ?, NULL, ?, ?, ?, 'not_checked', NULL, 0, 0, 0)
                 """,
                 (
                     batch_id,
@@ -2028,6 +2065,9 @@ class DatabaseLabelingMixin:
                     str(created_by_source or "legacy"),
                     bool(created_by_verified),
                     now,
+                    (next(iter(snapshot_ids.values())) if len(snapshot_ids) == 1 else None),
+                    _json(snapshot_ids),
+                    _sha256_json(snapshot_hashes),
                 ),
             )
             conn.executemany(
@@ -2055,6 +2095,10 @@ class DatabaseLabelingMixin:
             "status": "preview",
             "baseline_scopes": scopes,
             "source_fingerprint": batch_fingerprint,
+            "source_gt_snapshot_id": (next(iter(snapshot_ids.values())) if len(snapshot_ids) == 1 else ""),
+            "source_gt_snapshot_ids": snapshot_ids,
+            "source_gt_snapshot_sha256": _sha256_json(snapshot_hashes),
+            "reconcile_status": "not_checked",
             "item_count": len(items),
             "items": items,
             "created_by": str(created_by or ""),
@@ -2085,6 +2129,14 @@ class DatabaseLabelingMixin:
             "created_by_verified": bool(row["created_by_verified"]),
             "created_at": str(row["created_at"] or ""),
             "exported_at": str(row["exported_at"] or ""),
+            "source_gt_snapshot_id": str(row["source_gt_snapshot_id"] or ""),
+            "source_gt_snapshot_ids": _json_load(row["source_gt_snapshot_ids_json"], {}),
+            "source_gt_snapshot_sha256": str(row["source_gt_snapshot_sha256"] or ""),
+            "reconcile_status": str(row["reconcile_status"] or "not_checked"),
+            "reconciled_at": str(row["reconciled_at"] or ""),
+            "reconciled_count": int(row["reconciled_count"] or 0),
+            "not_applied_count": int(row["not_applied_count"] or 0),
+            "changed_again_count": int(row["changed_again_count"] or 0),
             "items": [
                 {
                     "issue_id": str(item["issue_id"]),
@@ -2092,6 +2144,9 @@ class DatabaseLabelingMixin:
                     "expected_output": str(item["expected_output"] or ""),
                     "source_revision_ids": _json_load(item["source_revision_ids_json"], []),
                     "source_fingerprint": str(item["source_fingerprint"] or ""),
+                    "reconcile_status": str(item["reconcile_status"] or "not_checked"),
+                    "reconciled_snapshot_id": str(item["reconciled_snapshot_id"] or ""),
+                    "reconciled_at": str(item["reconciled_at"] or ""),
                 }
                 for item in item_rows
             ],
@@ -2107,10 +2162,22 @@ class DatabaseLabelingMixin:
             if item.get("status") == "ready"
         }
         stale: list[str] = []
+        stored_snapshot_ids = {
+            str(key): str(value or "")
+            for key, value in (batch.get("source_gt_snapshot_ids") or {}).items()
+        }
+        current_snapshot_ids = {
+            scope: str((snapshot or {}).get("id") or "")
+            for scope in batch["baseline_scopes"]
+            if (snapshot := self.get_active_gt_snapshot(scope)) is not None
+        }
+        if stored_snapshot_ids and stored_snapshot_ids != current_snapshot_ids:
+            stale.extend(str(item["issue_id"]) for item in batch["items"])
         for item in batch["items"]:
             candidate = current.get(item["issue_id"])
             if candidate is None or self._gt_candidate_fingerprint(candidate) != item["source_fingerprint"]:
                 stale.append(item["issue_id"])
+        stale = list(dict.fromkeys(stale))
         if stale:
             with self._write_lock, self.connect() as conn:
                 conn.execute(
@@ -2135,6 +2202,95 @@ class DatabaseLabelingMixin:
             )
             self._mark_labeling_change(conn)
         return self.get_label_gt_export_batch(batch_id) or {}
+
+    def reconcile_label_gt_export_batch(self, batch_id: str) -> dict[str, Any]:
+        """Compare an exported batch with the current active GT snapshot.
+
+        This is an observation/reconciliation write only. It never writes GT,
+        Trail, or the active snapshot pointer.
+        """
+
+        batch = self.get_label_gt_export_batch(batch_id)
+        if batch is None:
+            raise ValueError("GT 更新导出批次不存在。")
+        if batch.get("status") != "exported":
+            raise ValueError("只有已下载的 GT 导出批次可以进行同步核对。")
+        issue_ids = [str(item["issue_id"]) for item in batch["items"]]
+        scopes_by_issue = self.issue_baseline_scopes(issue_ids)
+        active_by_scope = {
+            scope: self.get_active_gt_snapshot(scope)
+            for scope in set(scopes_by_issue.values())
+        }
+        labels_by_snapshot: dict[str, dict[str, str]] = {}
+        for snapshot in active_by_scope.values():
+            if snapshot:
+                snapshot_id = str(snapshot.get("id") or "")
+                labels_by_snapshot[snapshot_id] = self.gt_snapshot_item_labels(
+                    snapshot_id,
+                    [issue_id for issue_id, scope in scopes_by_issue.items()
+                     if (active_by_scope.get(scope) or {}).get("id") == snapshot_id],
+                )
+        now = utc_now()
+        counts = {"matched": 0, "not_applied": 0, "changed_again": 0}
+        item_statuses: list[tuple[str, str, str, str]] = []
+        for item in batch["items"]:
+            issue_id = str(item["issue_id"])
+            scope = scopes_by_issue.get(issue_id, "")
+            snapshot = active_by_scope.get(scope)
+            current_label = ""
+            snapshot_id = ""
+            if snapshot:
+                snapshot_id = str(snapshot.get("id") or "")
+                current_label = labels_by_snapshot.get(snapshot_id, {}).get(issue_id, "")
+            target = str(item.get("expected_output") or "")
+            old = str(item.get("old_gt_label") or "")
+            if current_label == target:
+                status = "matched"
+            elif current_label == old:
+                status = "not_applied"
+            else:
+                status = "changed_again"
+            counts[status] += 1
+            item_statuses.append((issue_id, status, snapshot_id, now))
+        if counts["matched"] == len(batch["items"]):
+            overall = "matched"
+        elif counts["changed_again"] == len(batch["items"]):
+            overall = "changed_again"
+        else:
+            overall = "partial"
+        with self._write_lock, self.connect() as conn:
+            conn.executemany(
+                """
+                UPDATE label_gt_export_items
+                SET reconcile_status = ?, reconciled_snapshot_id = ?, reconciled_at = ?
+                WHERE batch_id = ? AND issue_id = ?
+                """,
+                [
+                    (status, snapshot_id, stamp, str(batch["id"]), issue_id)
+                    for issue_id, status, snapshot_id, stamp in item_statuses
+                ],
+            )
+            conn.execute(
+                """
+                UPDATE label_gt_export_batches
+                SET reconcile_status = ?, reconciled_at = ?,
+                    reconciled_count = ?, not_applied_count = ?,
+                    changed_again_count = ?
+                WHERE id = ?
+                """,
+                (
+                    overall,
+                    now,
+                    counts["matched"],
+                    counts["not_applied"],
+                    counts["changed_again"],
+                    str(batch["id"]),
+                ),
+            )
+            self._mark_labeling_change(conn)
+        result = self.get_label_gt_export_batch(batch_id) or {}
+        result["reconcile_counts"] = counts
+        return result
 
     def record_label_migration_map(
         self,

@@ -423,6 +423,11 @@ async def list_cases(
         result.get("items", []),
         include_thumbnail=include_thumbnail,
     )
+    if "gt_snapshots" not in result:
+        result["gt_snapshots"] = await asyncio.to_thread(
+            database.active_gt_snapshots,
+            filters.get("baseline_scopes") or [],
+        )
     result["filters"] = {
         "model_run_id": model_run_id,
         "comparison_status": comparison_status,
@@ -1055,6 +1060,7 @@ async def get_case(
     if case is None:
         raise _detail(404, "Issue 不存在。")
     case["label_state"] = case.get("label_state") or _empty_issue_label_state()
+    case["gt_snapshot"] = case.get("gt_snapshot")
     assignment = (
         await asyncio.to_thread(
             database.review_assignment_context,

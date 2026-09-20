@@ -62,6 +62,7 @@ def _gt_sync_item(baseline_id: str) -> dict[str, Any]:
             "message": f"GT 同步 baseline {baseline_id} 不存在。",
         }
     persisted = database.gt_sync_status(entry.scope)
+    active_snapshot = database.get_active_gt_snapshot(entry.scope)
     running_by_scope = runtime_state.get("gt_sync") or {}
     running = running_by_scope.get(entry.scope) or {}
     if running.get("status") == "running":
@@ -76,6 +77,7 @@ def _gt_sync_item(baseline_id: str) -> dict[str, Any]:
         "source_view_id": settings.gt_sync_view_id,
         "source_field": TRAIL_GT_FIELD,
         "gt_mode": entry.gt_mode,
+        "active_gt_snapshot": active_snapshot,
         "target_row_count": (
             len(database.baseline_issue_ids(scope=entry.scope))
             if entry.gt_mode == "sparse"
