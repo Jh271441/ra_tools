@@ -10,15 +10,17 @@ S4_ROOT=/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manual_s4_
 S3_ROOT=/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manual_s3_smoke_20260921
 S4_DB=manual_s4_smoke_20260921_campaign
 S5_DB=manual_s5_smoke_20260922_runcollections
+S4_RESTORE_DB=manual_s5_s4_restore_20260922
 S4_RESTORE_SHA=bf745129e4e7359db3631c18ee60da3e20ab74f2
 S4_RESTORE_ROOT="$S5_ROOT/s4-restore-source-bf74512"
 APP_ROOT="$S5_ROOT/source-$S5_SHA/ra_triage_dashboard"
 URL_FILE="$S5_ROOT/config/postgres_url"
+S4_RESTORE_URL_FILE="$S5_ROOT/config/s4_restore_postgres_url"
 DUMP_FILE="$S5_ROOT/data/s4-smoke-clone.dump"
 
 [[ -f "$APP_ROOT/app/main.py" ]] || { echo "Archived S5 source tree is missing." >&2; exit 1; }
 [[ -d "$S5_ROOT" && "$(stat -c '%a' "$S5_ROOT")" == 700 && "$(stat -c '%U' "$S5_ROOT")" == "$(id -un)" ]] || { echo "S5 experiment root must exist, be owned by this user, and have mode 0700." >&2; exit 1; }
-[[ ! -e "$URL_FILE" && ! -e "$DUMP_FILE" ]] || { echo "S5 configuration or dump already exists; refusing to overwrite it." >&2; exit 1; }
+[[ ! -e "$URL_FILE" && ! -e "$S4_RESTORE_URL_FILE" && ! -e "$DUMP_FILE" ]] || { echo "S5 configuration or dump already exists; refusing to overwrite it." >&2; exit 1; }
 [[ -d "$S4_ROOT" && -d "$S3_ROOT/baselines" ]] || { echo "Validated S4/S3 smoke roots are unavailable." >&2; exit 1; }
 
 PROD_LISTENER="$(ss -H -ltnp 'sport = :8785')"
@@ -73,7 +75,18 @@ pg_restore --no-owner --no-acl --dbname="$S5_DB" "$DUMP_FILE"
 printf 'postgresql:///%s\n' "$S5_DB" > "$URL_FILE"
 chmod 600 "$URL_FILE"
 
+if sudo -n -u postgres psql --dbname=postgres -Atqc "SELECT 1 FROM pg_database WHERE datname = '$S4_RESTORE_DB'" | grep -q '^1$'; then
+  echo "S5 S4-restore database already exists; refusing to overwrite it." >&2
+  exit 1
+fi
+sudo -n -u postgres createdb --owner="$(id -un)" --template=template0 "$S4_RESTORE_DB"
+pg_restore --no-owner --no-acl --dbname="$S4_RESTORE_DB" "$DUMP_FILE"
+printf 'postgresql:///%s\n' "$S4_RESTORE_DB" > "$S4_RESTORE_URL_FILE"
+chmod 600 "$S4_RESTORE_URL_FILE"
+
 CLONE_COUNTS="$(psql --dbname="$S5_DB" -Atqc "SELECT (SELECT COUNT(*) FROM issues), (SELECT COUNT(*) FROM dashboard_schema_migrations)")"
 [[ "$CLONE_COUNTS" == "413|46" ]] || { echo "S5 clone is not the validated S4 fixture (expected 413 Issues and 46 migrations)." >&2; exit 1; }
 printf 'Created isolated S5 database from S4 fixture: %s (%s Issues, %s migrations before S5).\n' \
   "$S5_DB" "${CLONE_COUNTS%%|*}" "${CLONE_COUNTS##*|}"
+S4_RESTORE_COUNTS="$(psql --dbname="$S4_RESTORE_DB" -Atqc "SELECT (SELECT COUNT(*) FROM issues), (SELECT COUNT(*) FROM dashboard_schema_migrations)")"
+[[ "$S4_RESTORE_COUNTS" == "413|46" ]] || { echo "S5 restore database is not the validated S4 snapshot." >&2; exit 1; }

@@ -10,13 +10,14 @@ S4_ROOT=/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manual_s4_
 S4_FROZEN_SHA=bf745129e4e7359db3631c18ee60da3e20ab74f2
 S4_BUILD=b75aa55
 S5_ROOT=/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manual_s5_run_collections_20260922
+S4_RESTORE_DB=manual_s5_s4_restore_20260922
 S5_SHA_FILE="$S5_ROOT/config/source_sha"
 S5_PID_FILE="$S5_ROOT/runtime/s5.pid"
 S4_SOURCE_ROOT="$S5_ROOT/s4-restore-source-bf74512"
 S4_APP_ROOT="$S4_SOURCE_ROOT/ra_triage_dashboard"
 S4_VENV=/volume/home/workspace/ra_triage_dashboard_venv
-S4_DB_URL_FILE="$S4_ROOT/config/postgres_url"
-S4_DATA_DIR="$S4_ROOT/data"
+S4_DB_URL_FILE="$S5_ROOT/config/s4_restore_postgres_url"
+S4_DATA_DIR="$S5_ROOT/data/s4_restore"
 S4_LOG_FILE="$S5_ROOT/logs/restore_s4_8786.log"
 LAYOUT_ID=release0508_1071_20260729
 
@@ -32,7 +33,9 @@ S5_PID="$(cat "$S5_PID_FILE")"
 [[ "$S5_APP_SHA" =~ ^[a-f0-9]{40}$ && "$S5_PID" =~ ^[0-9]+$ ]] || fail "S5 source or PID receipt is invalid."
 S5_APP_ROOT="$S5_ROOT/source-$S5_APP_SHA/ra_triage_dashboard"
 [[ -d "$S4_ROOT" && "$(stat -c '%a' "$S4_ROOT")" == 700 ]] || fail "S4 smoke root is missing or not mode 0700."
-[[ -f "$S4_DB_URL_FILE" && "$(stat -c '%a' "$S4_DB_URL_FILE")" == 600 ]] || fail "S4 DB URL file is missing or not mode 0600."
+[[ -f "$S4_DB_URL_FILE" && "$(stat -c '%a' "$S4_DB_URL_FILE")" == 600 ]] || fail "S5-owned S4-restore DB URL file is missing or not mode 0600."
+S4_RESTORE_COUNTS="$(psql --dbname="$S4_RESTORE_DB" -Atqc "SELECT (SELECT COUNT(*) FROM issues), (SELECT COUNT(*) FROM dashboard_schema_migrations)")"
+[[ "$S4_RESTORE_COUNTS" == "413|46" ]] || fail "S5-owned S4-restore database is not the pinned pre-S5 snapshot."
 [[ -f "$S4_APP_ROOT/app/main.py" && "$(git -C "$S4_SOURCE_ROOT" rev-parse HEAD)" == "$S4_FROZEN_SHA" ]] || fail "Frozen S4 bf74512 source worktree is unavailable."
 [[ -x "$S4_VENV/bin/python3" ]] || fail "Dashboard Python environment is missing."
 
