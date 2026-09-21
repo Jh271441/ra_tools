@@ -18,6 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.db import Database
+from app.db_parts.shared import _json_load
 from app.settings import Settings
 
 
@@ -98,8 +99,8 @@ def main() -> int:
                 report["skipped"][str(annotation_id)] = "already_migrated"
                 continue
             reason = str(row["note"] or "").strip()
-            evidence = json.loads(row["missing_evidence_json"] or "[]")
-            tags = json.loads(row["tags_json"] or "[]")
+            evidence = _json_load(row["missing_evidence_json"], [])
+            tags = _json_load(row["tags_json"], [])
             mixed = bool(str(row["label"] or "").strip() or tags or row["is_excluded"])
             if mixed:
                 report["skipped"][str(annotation_id)] = "mixed_label_and_model_review"
