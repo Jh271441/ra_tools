@@ -229,7 +229,7 @@ def main() -> int:
 
         with database.connect() as connection:
             remaining = int(connection.execute(
-                "SELECT COUNT(*) AS n FROM issues WHERE issue_id LIKE 'cn990%' AND source='manual_s3_perf_probe'"
+                "SELECT COUNT(*) AS n FROM issues WHERE LEFT(issue_id, 5) = 'cn990' AND source='manual_s3_perf_probe'"
             ).fetchone()["n"])
             after_scope_counts = {
                 scope: int(connection.execute(
