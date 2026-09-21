@@ -391,9 +391,9 @@ def main() -> int:
         label_a_id = label_a["campaign"]["id"]
         label_b_id = label_b["campaign"]["id"]
         for issue_id, reviewer, rationale in (
-            (issue_a, smoke_users["alice"], "queueing: red light wait is normal"),
-            (issue_b, smoke_users["alice"], "planning route did not consider the target lane"),
-            (issue_b, smoke_users["bob"], "planning route did not consider the target lane"),
+            (issue_a, smoke_users["alice"], "红灯排队等待属于正常交通状态"),
+            (issue_b, smoke_users["alice"], "规划路线未考虑目标车道方向"),
+            (issue_b, smoke_users["bob"], "规划路线未考虑目标车道方向"),
         ):
             db.create_label_revision(
                 issue_id=issue_id,
