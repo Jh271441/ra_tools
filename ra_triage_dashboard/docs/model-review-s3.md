@@ -59,5 +59,8 @@ rank, adds the requested Issue, one representative overlap from the two pinned
 Runs, required Label states and task examples, records pinned additions and lineage, rebuilds task/workset counts and smoke
 GT snapshots, removes attachment binaries/metadata and external-effect queues,
 and fails on FK or unselected-Issue references.
+If the source has no stale adjudication, it creates one explicitly marked
+smoke-only stale state on a sampled Issue and records its synthetic revisions
+in the cloud-only manifest.
 
 Production PostgreSQL and port 8785 are never valid targets for this workflow.

@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from ra_triage_dashboard.app.db import Database
+
 
 SCRIPT = Path(__file__).parents[1] / "scripts" / "build_manual_s3_smoke.py"
 SPEC = importlib.util.spec_from_file_location("build_manual_s3_smoke", SCRIPT)
@@ -42,6 +44,24 @@ class ManualS3SmokeSafetyTest(unittest.TestCase):
         self.assertEqual(first, smoke.stable_rank("seed", "scope-a", "cn1"))
         self.assertNotEqual(first, smoke.stable_rank("seed", "scope-b", "cn1"))
         self.assertNotEqual(first, smoke.stable_rank("seed-2", "scope-a", "cn1"))
+
+    def test_synthetic_stale_pin_builds_an_auditable_smoke_only_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database = Database(Path(temp_dir) / "smoke.sqlite3")
+            database.init()
+            self.addCleanup(database.close)
+            database.upsert_issues(
+                [{"issue_id": "cn1", "gt_label": "误触发"}],
+                source="test", replace_gt=True, baseline_scope="scope",
+            )
+            seeded = smoke.seed_synthetic_stale_label_state(database, "cn1")
+            state = database.project_issue_label_states(
+                "scope", ["cn1"], include_sources=False
+            )["cn1"]
+            self.assertTrue(seeded["synthetic"])
+            self.assertEqual(seeded["state"], "stale")
+            self.assertEqual(state["state"], "stale")
+            self.assertEqual(len(seeded["source_revision_ids"]), 2)
 
 
 if __name__ == "__main__":

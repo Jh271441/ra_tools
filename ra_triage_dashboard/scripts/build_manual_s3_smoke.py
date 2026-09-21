@@ -169,6 +169,121 @@ def rebuild_worksets(connection: Any) -> None:
         )
 
 
+def seed_synthetic_stale_label_state(database: Database, issue_id: str) -> dict[str, Any]:
+    """Create one explicit smoke-only stale adjudication on a sampled Issue."""
+
+    issue = database.get_issue(issue_id)
+    if issue is None:
+        raise RuntimeError("synthetic stale-state Issue disappeared")
+    identity = hashlib.sha256(f"manual-s3-stale\0{issue_id}".encode()).hexdigest()[:16]
+    split_id = f"manual-s3-stale-{identity}"
+    now = datetime.now(timezone.utc).isoformat()
+    workset = database.create_review_workset(
+        baseline_scope=str(issue.get("baseline_scope") or ""),
+        issue_ids=[issue_id],
+        name="Smoke-only stale-state fixture",
+        source_filter={"manual_s3_smoke_synthetic_state": "stale"},
+        created_by="manual_s3_smoke_builder",
+        created_by_source="smoke",
+        created_by_verified=False,
+    )
+    names = ("manual_s3_smoke_a", "manual_s3_smoke_b")
+    split_members = [
+        {
+            "name": name,
+            "count": 1,
+            "requested_count": 1,
+            "mode": "fixed",
+            "items": [
+                {
+                    "issue_id": issue_id,
+                    "assignment_kind": "base" if index == 0 else "cross",
+                    "ordinal": 1,
+                }
+            ],
+        }
+        for index, name in enumerate(names)
+    ]
+    with database._write_lock, database.connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO issue_work_splits (
+                id, created_by, created_at, seed, total_count, filter_json,
+                assignees_json, mode, reviewers_per_issue, model_run_id,
+                assignment_count, overlap_ratio, task_kind, workset_id,
+                selection_source_run_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO NOTHING
+            """,
+            (
+                split_id, "manual_s3_smoke_builder", now, 0, 1,
+                json.dumps({"smoke_synthetic_state": "stale"}),
+                json.dumps(split_members), "blind", 2, "", 2, 1.0,
+                "labeling", str(workset["id"]), "",
+            ),
+        )
+        for index, name in enumerate(names):
+            connection.execute(
+                """
+                INSERT INTO review_work_assignments (
+                    split_id, issue_id, assignee, assignment_kind, ordinal,
+                    assigned_by, assigned_at
+                ) VALUES (?, ?, ?, ?, 1, ?, ?)
+                ON CONFLICT(split_id, issue_id, assignee) DO NOTHING
+                """,
+                (
+                    split_id, issue_id, name,
+                    "base" if index == 0 else "cross",
+                    "manual_s3_smoke_builder", now,
+                ),
+            )
+    first = database.create_label_revision(
+        issue_id=issue_id, expected_output="误触发", tags=[], evidence_gaps=[],
+        rationale="smoke-only stale-state source A", is_excluded=False,
+        author=names[0], author_source="smoke", author_verified=False,
+        task_id=split_id, expected_previous_revision_id=None,
+    )
+    second = database.create_label_revision(
+        issue_id=issue_id, expected_output="正确触发", tags=[], evidence_gaps=[],
+        rationale="smoke-only stale-state source B", is_excluded=False,
+        author=names[1], author_source="smoke", author_verified=False,
+        task_id=split_id, expected_previous_revision_id=None,
+    )
+    label_case_id = str((first.get("label_case") or {}).get("id") or "")
+    if not label_case_id:
+        raise RuntimeError("synthetic stale-state Label Case was not created")
+    database.adjudicate_label_case(
+        label_case_id=label_case_id,
+        source_revision_ids=[int(first["id"]), int(second["id"])],
+        expected_output="误触发", tags=[], evidence_gaps=[],
+        rationale="smoke-only adjudication before a later source revision",
+        is_excluded=False, actor="manual_s3_smoke_admin",
+        actor_source="smoke", actor_verified=False,
+        expected_previous_resolution_id=None,
+    )
+    later = database.create_label_revision(
+        issue_id=issue_id, expected_output="无需协助", tags=[], evidence_gaps=[],
+        rationale="smoke-only later source revision makes adjudication stale",
+        is_excluded=False, author=names[0], author_source="smoke",
+        author_verified=False, task_id=split_id,
+        expected_previous_revision_id=int(first["id"]),
+    )
+    state = database.project_issue_label_states(
+        str(issue.get("baseline_scope") or ""), [issue_id], include_sources=False
+    ).get(issue_id, {})
+    if str(state.get("state") or "") != "stale":
+        raise RuntimeError("synthetic shared Label state did not resolve to stale")
+    return {
+        "issue_id": issue_id,
+        "baseline_scope": str(issue.get("baseline_scope") or ""),
+        "state": "stale",
+        "task_id": split_id,
+        "source_revision_ids": [int(first["id"]), int(second["id"])],
+        "later_revision_id": int(later["id"]),
+        "synthetic": True,
+    }
+
+
 def orphan_checks(connection: Any) -> list[dict[str, Any]]:
     constraints = connection.execute(
         """
@@ -314,15 +429,39 @@ def main() -> int:
                 for issue_id, projection in projections.items():
                     states_by_issue[issue_id] = str(projection.get("state") or "none")
             required_states = ("resolved", "conflict", "pending", "stale")
+            synthetic_label_states: list[dict[str, Any]] = []
             for state in required_states:
                 candidate = next(
                     (issue_id for issue_id in all_ids if states_by_issue.get(issue_id) == state),
                     "",
                 )
+                synthetic = False
+                if not candidate and state == "stale":
+                    eligible = [
+                        issue_id for issue_id in all_ids
+                        if states_by_issue.get(issue_id, "none") not in {"resolved", "conflict", "pending"}
+                    ]
+                    if not eligible:
+                        eligible = [
+                            issue_id for issue_id in all_ids
+                            if issue_id not in pinned["label_states"]
+                        ]
+                    candidate = min(
+                        eligible,
+                        key=lambda issue_id: stable_rank(
+                            args.seed, "synthetic-stale-label", issue_id
+                        ),
+                    ) if eligible else ""
+                    synthetic = bool(candidate)
                 if not candidate:
                     raise RuntimeError(f"required shared Label state is missing: {state}")
                 pinned["label_states"].append(candidate)
                 selected.add(candidate)
+                if synthetic:
+                    synthetic_label_states.append({
+                        "state": state, "issue_id": candidate,
+                        "synthetic": True,
+                    })
             no_gt = connection.execute(
                 """
                 SELECT issue_id FROM issues
@@ -396,6 +535,7 @@ def main() -> int:
                 "apply": bool(args.apply),
                 "scopes": per_scope,
                 "pins": pinned,
+                "synthetic_label_states": synthetic_label_states,
                 "selected_issue_count": len(selected),
                 "selected_issue_ids_sha256": _snapshot_membership_sha(sorted(selected)),
                 "source_run_ids": list(PIN_RUNS),
@@ -531,6 +671,12 @@ def main() -> int:
                     """,
                     (smoke_source_sha, int(valid_count or 0), scope),
                 )
+
+        for synthetic_state in manifest.get("synthetic_label_states", []):
+            seeded = seed_synthetic_stale_label_state(
+                database, str(synthetic_state["issue_id"])
+            )
+            synthetic_state.update(seeded)
 
         # Create content-addressed smoke GT snapshots after the prune transaction commits.
         for _baseline_id, scope, mode in SCOPES:
