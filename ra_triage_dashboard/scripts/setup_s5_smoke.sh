@@ -53,7 +53,7 @@ manifest.write_text(json.dumps(replace_paths(payload), ensure_ascii=False, inden
 PY
 chmod 600 "$S5_ROOT/config/baselines.json"
 
-if psql -Atqc "SELECT 1 FROM pg_database WHERE datname = '$S5_DB'" | grep -q '^1$'; then
+if sudo -n -u postgres psql --dbname=postgres -Atqc "SELECT 1 FROM pg_database WHERE datname = '$S5_DB'" | grep -q '^1$'; then
   echo "S5 target database already exists; refusing to overwrite it." >&2
   exit 1
 fi
