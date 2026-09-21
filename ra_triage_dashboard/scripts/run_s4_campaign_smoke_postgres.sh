@@ -28,7 +28,7 @@ cleanup() {
       echo "SMOKE_FIXTURE_RETAINED database=$FIXTURE_DB url_file=$FIXTURE_URL_FILE dump=$DUMP"
       return
     fi
-    dropdb --if-exists "$FIXTURE_DB" >/dev/null 2>&1 || true
+    sudo -n -u postgres dropdb --if-exists "$FIXTURE_DB" >/dev/null 2>&1 || true
   fi
   rm -f "$DUMP" "$FIXTURE_URL_FILE"
 }
@@ -49,7 +49,7 @@ fi
 
 pg_dump --no-owner --no-acl --format=custom --file="$DUMP" --dbname="$SOURCE_DB"
 chmod 600 "$DUMP"
-createdb --owner="$(id -un)" --template=template0 "$FIXTURE_DB"
+sudo -n -u postgres createdb --owner="$(id -un)" --template=template0 "$FIXTURE_DB"
 FIXTURE_CREATED=true
 pg_restore --no-owner --no-acl --dbname="$FIXTURE_DB" "$DUMP"
 printf 'postgresql:///%s\n' "$FIXTURE_DB" > "$FIXTURE_URL_FILE"

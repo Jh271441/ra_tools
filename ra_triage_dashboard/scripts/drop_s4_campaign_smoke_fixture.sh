@@ -27,6 +27,6 @@ if [[ "$(psql --dbname="$FIXTURE_DB" --tuples-only --no-align --command="SELECT 
   exit 1
 fi
 
-dropdb "$FIXTURE_DB"
+sudo -n -u postgres dropdb "$FIXTURE_DB"
 rm -f "$URL_FILE" "$DUMP"
 echo "SMOKE_FIXTURE_CLEANED $FIXTURE_DB"
