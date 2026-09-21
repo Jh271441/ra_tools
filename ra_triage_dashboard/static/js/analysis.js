@@ -103,6 +103,9 @@ function reviewStatusLabel(status) {
   return (
     {
       pending: t("status.pending"),
+      in_progress: uiText("复核中", "In progress"),
+      completed: uiText("已完成", "Completed"),
+      blocked_by_label: uiText("标签阻塞", "Blocked by label"),
       reviewed: t("status.matches_gt"),
       needs_gt_review: t("status.needs_gt"),
     }[status] || status || t("status.recorded")

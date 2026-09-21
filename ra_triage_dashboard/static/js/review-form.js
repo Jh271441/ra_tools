@@ -17,6 +17,13 @@ const EXPECTED_OUTPUT_BY_TAG_GROUP = {
   no_assist: "无需协助",
 };
 
+const MODEL_REVIEW_STATUS_OPTIONS = [
+  { value: "pending", labelZh: "待开始", labelEn: "Pending" },
+  { value: "in_progress", labelZh: "复核中", labelEn: "In progress" },
+  { value: "completed", labelZh: "已完成", labelEn: "Completed" },
+  { value: "blocked_by_label", labelZh: "标签阻塞", labelEn: "Blocked by label" },
+];
+
 function annotationExpectedOutput(annotation) {
   if (annotation && Object.prototype.hasOwnProperty.call(annotation, "expected_output")) {
     return String(annotation.expected_output || "").trim();
@@ -352,6 +359,12 @@ function syncReviewFormFromCase(caseData) {
     note.value = previous.note || "";
     updateReviewMentionComposer(note);
   }
+  const modelReviewStatusInput = $("#modelReviewStatusInput");
+  if (modelReviewStatusInput) {
+    modelReviewStatusInput.value = String(
+      previous.model_review_status || (previous.note ? "completed" : "pending")
+    );
+  }
   const author = $("#annotationAuthor");
   if (author && !(state.session.verified && state.session.username)) {
     author.value = state.session.username || previous.author || "";
@@ -378,6 +391,7 @@ function syncReviewFormFromCase(caseData) {
 
 function renderReview(caseData) {
   const reviewRunId = currentReviewRunId(caseData);
+  const runBoundModelReview = Boolean(reviewRunId);
   const runAnnotations = reviewAnnotationsForCurrentRun(caseData);
   const allAnnotations = reviewAnnotationsForAllRuns(caseData);
   const sourceSuggestion = currentReviewSourceSuggestion(caseData);
@@ -417,6 +431,9 @@ function renderReview(caseData) {
     : expectedOutput === String(caseData.gt_label || "")
       ? "reviewed"
       : "needs_gt_review";
+  const modelReviewStatus = String(
+    previous.model_review_status || (previous.note ? "completed" : "pending")
+  );
   const customEvidenceOptions = customEvidenceKeys
     .map((key) => missingEvidenceOptionMarkup({ key, label: evidenceLabel(key), hint: "本条 Review 新建的缺失信息", builtin: false }, true, false))
     .join("");
@@ -435,7 +452,7 @@ function renderReview(caseData) {
   const sourceSuggestionMarkup = issueTagSourceSuggestionMarkup(sourceSuggestion);
   $("#reviewPane").innerHTML = `
     <form class="review-form" id="annotationForm">
-      <section class="review-section issue-tag-section">
+      <section class="review-section issue-tag-section" ${runBoundModelReview ? "hidden" : ""}>
         <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span></h2>${sourceSuggestionMarkup}</div><span class="evidence-summary-count" id="tagSummaryCount">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
         <div class="review-tag-groups-shell">${issueTagGroups}${customTagOptions ? `<div class="review-tag-legacy"><span class="ui-lang-zh">历史标签</span><span class="ui-lang-en">Legacy tags</span><div class="review-tag-options">${customTagOptions}</div></div>` : ""}</div>
         <label class="review-exclude-toggle" title="${escapeHtml(uiText("按 K 切换应该排除", "Press K to toggle Exclude"))}"><input id="reviewExcludeInput" type="checkbox" aria-keyshortcuts="K" ${previous.is_excluded ? "checked" : ""} /><span><strong class="ui-lang-zh">应该排除</strong><strong class="ui-lang-en">Exclude</strong><small class="ui-lang-zh">不是模型需要解决的场景 case</small><small class="ui-lang-en">Not a case the model is expected to solve</small></span><kbd class="review-control-shortcut review-exclude-shortcut" aria-hidden="true">K</kbd></label>
@@ -460,7 +477,7 @@ function renderReview(caseData) {
             </button>
           </div>
         </div>
-        <div class="review-expected-output-field">
+        <div class="review-expected-output-field" ${runBoundModelReview ? "hidden" : ""}>
           <div class="review-expected-output-heading">
             <span id="expectedOutputLabel"><span class="ui-lang-zh">期望输出</span><span class="ui-lang-en">Expected output</span></span>
             <span class="derived-review-status" id="derivedReviewStatus" data-status="${escapeHtml(reviewStatus)}"></span>
@@ -497,6 +514,7 @@ function renderReview(caseData) {
           <small class="review-expected-output-hint" id="expectedOutputHint" hidden></small>
           <input id="reviewStatusInput" type="hidden" value="${escapeHtml(reviewStatus)}" />
         </div>
+        ${runBoundModelReview ? `<div class="model-review-domain-notice"><strong><span class="ui-lang-zh">当前 Run 判错复核</span><span class="ui-lang-en">Current Run model review</span></strong><span class="ui-lang-zh">原因、缺失信息、状态和讨论只属于当前 Run；共享标签请在 Case 标注中修改。</span><span class="ui-lang-en">Reason, missing evidence, status, and discussion belong only to this Run. Edit shared labels in Case labeling.</span></div><label class="model-review-status-field"><span><span class="ui-lang-zh">判错复核状态</span><span class="ui-lang-en">Model review status</span></span><select id="modelReviewStatusInput">${MODEL_REVIEW_STATUS_OPTIONS.map((item) => `<option value="${item.value}" ${item.value === modelReviewStatus ? "selected" : ""}>${escapeHtml(i18nLocale() === "en" ? item.labelEn : item.labelZh)}</option>`).join("")}</select></label>` : ""}
         <label class="review-reason">
           <span class="review-reason-heading">
             <span><span class="ui-lang-zh">模型为什么判错？</span><span class="ui-lang-en">Why was the model wrong?</span></span>
@@ -1076,12 +1094,15 @@ async function saveAnnotation(event) {
   event.preventDefault();
   if (!state.selectedId || state.savingAnnotation) return;
   const issueId = String(state.selectedId);
+  const runBoundModelReview = Boolean(
+    state.reviewEditRunId || currentReviewRunId(state.selectedCase)
+  );
   const expectedOutputState = expectedOutputSelectionState();
-  if (expectedOutputState.conflictKind === "tags") {
+  if (!runBoundModelReview && expectedOutputState.conflictKind === "tags") {
     showToast("Tags 指向多个期望输出，请先消除冲突。", true);
     return;
   }
-  if (expectedOutputState.conflictKind === "selection") {
+  if (!runBoundModelReview && expectedOutputState.conflictKind === "selection") {
     showToast(
       `当前期望输出与 Tags 自动推断的“${expectedOutputState.value}”冲突，请改回自动推断项或调整 Tags。`,
       true
@@ -1107,6 +1128,12 @@ async function saveAnnotation(event) {
     note: $("#annotationNote").value,
     author: $("#annotationAuthor").value,
   };
+  if (runBoundModelReview) {
+    payload.model_review_status = $("#modelReviewStatusInput")?.value || "pending";
+    delete payload.expected_output;
+    delete payload.is_excluded;
+    delete payload.tags;
+  }
   const screenshotItems = [...state.pendingReviewImages];
   const screenshotFiles = screenshotItems.map((item) => item.file);
   const navigationContext = reviewSaveNavigationContext(issueId);

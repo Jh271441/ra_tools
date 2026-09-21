@@ -6,9 +6,10 @@ from typing import Any
 
 from fastapi import Request
 
-from ..db import AnnotationConflictError
+from ..db import AnnotationConflictError, _EXPECTED_ANNOTATION_UNSET
 from ..review_mentions import extract_review_mentions, notification_recipients
 from ..runtime import database, settings
+from ..db_parts.model_reviews import MODEL_REVIEW_STATUSES
 from ..review_workflow import derive_review_status, resolve_expected_output
 from .catalogs import (
     _normalise_missing_evidence,
@@ -18,6 +19,92 @@ from .catalogs import (
 )
 from .common import _as_text, _detail
 from .identity import _action_actor
+
+
+def _create_model_review_record(
+    *,
+    issue_id: str,
+    request: Request,
+    body: dict[str, Any],
+    attachments: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Append a Run-bound model diagnosis without writing shared Label state."""
+
+    model_run_id = _as_text(body.get("model_run_id")).strip()
+    if not model_run_id:
+        raise _detail(400, "Model Review 必须绑定 Model Run。")
+    missing_evidence = body.get("missing_evidence") or []
+    if not isinstance(missing_evidence, list):
+        raise _detail(400, "missing_evidence 必须是数组。")
+    missing_evidence = _normalise_missing_evidence(missing_evidence)
+    case = database.get_case(issue_id)
+    if case is None:
+        raise _detail(404, "Issue 不存在。")
+    author, author_source, author_verified = _action_actor(request, body.get("author"))
+    work_split_id = _as_text(body.get("work_split_id"))
+    if work_split_id:
+        assignment = database.review_assignment_context(
+            issue_id,
+            model_run_id=model_run_id,
+            username=author,
+            work_split_id=work_split_id,
+        )
+        if (
+            not author_verified
+            or assignment is None
+            or assignment.get("split_id") != work_split_id
+            or not assignment.get("assigned")
+        ):
+            raise _detail(403, "当前账号不在该判错复核任务中，不能提交 Review。")
+    label_state = dict(case.get("label_state") or {})
+    requested_status = _as_text(body.get("model_review_status")).lower()
+    if not requested_status:
+        if str(label_state.get("state") or "") in {"conflict", "stale"}:
+            requested_status = "blocked_by_label"
+        elif _as_text(body.get("note")) or missing_evidence:
+            requested_status = "completed"
+        else:
+            requested_status = "pending"
+    if requested_status not in MODEL_REVIEW_STATUSES:
+        raise _detail(400, "model_review_status 不在支持范围内。")
+    has_expected_previous = "expected_previous_annotation_id" in body
+    expected_previous: int | None | object = _EXPECTED_ANNOTATION_UNSET
+    if has_expected_previous:
+        raw = body.get("expected_previous_annotation_id")
+        if raw in (None, "", 0, "0"):
+            expected_previous = None
+        else:
+            try:
+                expected_previous = int(raw)
+            except (TypeError, ValueError) as exc:
+                raise _detail(400, "expected_previous_annotation_id 不合法。") from exc
+    try:
+        review = database.create_model_review(
+            issue_id=issue_id,
+            model_run_id=model_run_id,
+            campaign_id=_as_text(body.get("campaign_id")),
+            reference_id=_as_text(body.get("reference_id")),
+            work_split_id=work_split_id,
+            status=requested_status,
+            reason=_as_text(body.get("note") or body.get("reason")),
+            missing_evidence=missing_evidence,
+            reviewer=author,
+            reviewer_source=author_source,
+            reviewer_verified=author_verified,
+            label_state=label_state,
+            expected_previous_annotation_id=expected_previous,
+            attachments=attachments,
+        )
+    except AnnotationConflictError as exc:
+        raise _detail(409, str(exc))
+    except ValueError as exc:
+        raise _detail(400, str(exc))
+    review["notification"] = {
+        "mentions": [],
+        "queued": [],
+        "status": "model_review_domain",
+    }
+    return review
 
 
 def _create_annotation_record(

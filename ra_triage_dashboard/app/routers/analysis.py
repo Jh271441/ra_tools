@@ -103,6 +103,34 @@ async def review_reason_analysis(
     return payload
 
 
+@router.get("/api/model-review-facets")
+async def model_review_facets(
+    request: Request, model_run_id: str, baselines: str = ""
+) -> dict[str, Any]:
+    scopes = resolve_request_baseline_scopes(baselines, request=request)
+    result = await asyncio.to_thread(
+        database.model_review_facets,
+        model_run_id=_as_text(model_run_id),
+        baseline_scopes=scopes,
+    )
+    result["baseline_scopes"] = scopes
+    return result
+
+
+@router.get("/api/model-review-shadow-comparison")
+async def model_review_shadow_comparison(
+    request: Request, model_run_id: str, baselines: str = ""
+) -> dict[str, Any]:
+    scopes = resolve_request_baseline_scopes(baselines, request=request)
+    result = await asyncio.to_thread(
+        database.model_review_shadow_comparison,
+        model_run_id=_as_text(model_run_id),
+        baseline_scopes=scopes,
+    )
+    result["baseline_scopes"] = scopes
+    return result
+
+
 REVIEW_ANALYSIS_EXPORT_COLUMNS: tuple[tuple[str, str], ...] = (
     ("issue_id", "Issue ID"),
     ("scene", "场景"),
@@ -113,6 +141,8 @@ REVIEW_ANALYSIS_EXPORT_COLUMNS: tuple[tuple[str, str], ...] = (
     ("model_confidence", "模型置信度"),
     ("expected_output", "期望输出"),
     ("review_status", "Issue GT Review状态"),
+    ("model_review_status", "模型判错复核状态"),
+    ("review_domain", "Review 数据域"),
     ("is_excluded", "应该排除"),
     ("review_reason", "人工 Review 原因"),
     ("tags", "场景 Tags"),
@@ -227,6 +257,10 @@ def _review_analysis_export_rows(result: dict[str, Any]) -> list[dict[str, Any]]
                 "model_confidence": prediction.get("confidence"),
                 "expected_output": expected_output,
                 "review_status": _as_text(annotation.get("review_status")),
+                "model_review_status": _as_text(
+                    annotation.get("model_review_status")
+                ),
+                "review_domain": _as_text(annotation.get("review_domain")) or "legacy",
                 "is_excluded": "是" if bool(annotation.get("is_excluded")) else "否",
                 "review_reason": _as_text(annotation.get("note")),
                 "tags": "、".join(tag_label(key) for key in tag_keys),

@@ -1293,3 +1293,19 @@ html[data-color-theme="light"] .shared-label-state-unknown { border-color: #cbd5
 html[data-color-theme="light"] .issue-card-run-review-state { color: #64748b; }
 html[data-color-theme="light"] .issue-card-run-review-prefix { color: #475569; }
 html[data-color-theme="light"] .issue-card-flag-model-no-gt { border-color: #fcd34d; color: #92400e; background: #fffbeb; }
+.model-review-domain-notice {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+  color: var(--muted);
+}
+
+.model-review-domain-notice strong { color: var(--text); }
+
+.model-review-status-field {
+  display: grid;
+  gap: 5px;
+}

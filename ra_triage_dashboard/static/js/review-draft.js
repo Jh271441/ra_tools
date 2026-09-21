@@ -4,6 +4,7 @@
  * ES modules without auditing cross-file function/state dependencies.
  */
 const REVIEW_DRAFT_FIELDS = [
+  "model_review_status",
   "label",
   "expected_output",
   "is_excluded",
@@ -189,6 +190,7 @@ function persistReviewDraft(caseData) {
     version: 1,
     issue_id: caseData.issue_id,
     model_run_id: runId,
+    model_review_status: $("#modelReviewStatusInput")?.value || "",
     saved_at: Date.now(),
     expected_output: $("#expectedOutputInput")?.value || "",
     is_excluded: Boolean($("#reviewExcludeInput")?.checked),

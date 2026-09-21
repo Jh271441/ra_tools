@@ -25,6 +25,14 @@ CREATE INDEX IF NOT EXISTS idx_intent_comment_notifications
 COMMIT;
 """
         d.validate_additive_migration_sql(path, safe)
+        d.validate_additive_migration_sql(
+            "ra_triage_dashboard/migrations/postgres/044_model_reviews.sql",
+            """BEGIN;
+CREATE VIEW review_records AS SELECT 1 AS id;
+CREATE VIEW review_record_attachments AS SELECT 1 AS id;
+COMMIT;
+""",
+        )
         for unsafe in (
             "BEGIN; DROP TABLE intent_case_comments; COMMIT;",
             "BEGIN; ALTER TABLE intent_case_comments RENAME TO old_comments; COMMIT;",

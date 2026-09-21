@@ -8,7 +8,7 @@ from fastapi import APIRouter, File, Form, Request, UploadFile
 
 from ..auth import request_identity
 from ..runtime import database, logger, review_notification_dispatcher, settings
-from ..support.annotations import _create_annotation_record
+from ..support.annotations import _create_annotation_record, _create_model_review_record
 from ..support.attachments import (
     _public_review_attachment,
     _store_review_attachments,
@@ -50,8 +50,13 @@ async def create_annotation(issue_id: str, request: Request) -> dict[str, Any]:
     await _require_unmigrated_issue(
         issue_id, database, model_run_id=_as_text(body.get("model_run_id")).strip()
     )
+    create_record = (
+        _create_model_review_record
+        if _as_text(body.get("model_run_id")).strip()
+        else _create_annotation_record
+    )
     annotation = await asyncio.to_thread(
-        _create_annotation_record,
+        create_record,
         issue_id=issue_id,
         request=request,
         body=body,
@@ -82,8 +87,11 @@ async def create_annotation_with_attachments(
     records, paths = await _store_review_attachments(attachments or [])
     try:
         await _require_unmigrated_issue(issue_id, database, model_run_id=model_run_id)
+        create_record = (
+            _create_model_review_record if model_run_id else _create_annotation_record
+        )
         annotation = await asyncio.to_thread(
-            _create_annotation_record,
+            create_record,
             issue_id=issue_id,
             request=request,
             body=body,
@@ -103,6 +111,18 @@ async def create_annotation_with_attachments(
         "annotation": annotation,
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
+
+
+@router.get("/api/cases/{issue_id}/model-reviews")
+async def list_model_reviews(issue_id: str, model_run_id: str = "") -> dict[str, Any]:
+    if await asyncio.to_thread(database.get_issue, issue_id) is None:
+        raise _detail(404, "Issue 不存在。")
+    items = await asyncio.to_thread(
+        database.model_review_revisions,
+        issue_id=issue_id,
+        model_run_id=_as_text(model_run_id),
+    )
+    return {"items": items, "count": len(items)}
 
 
 @router.delete("/api/cases/{issue_id}/annotations/{annotation_id}")

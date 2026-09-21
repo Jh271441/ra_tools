@@ -378,19 +378,25 @@ def build_review_reason_analysis(
             annotation.get("missing_evidence")
         )
         annotation["note"] = str(annotation.get("note") or "").strip()
-        expected_output, expected_output_source = effective_expected_output(
-            annotation,
-            tag_catalog_items,
-        )
-        annotation["expected_output"] = expected_output
-        # ``label`` remains the response-level compatibility alias for callers
-        # created before the expected-output field was introduced.
-        annotation["label"] = expected_output
-        annotation["expected_output_source"] = expected_output_source
-        annotation["review_status"] = derive_review_status(
-            expected_output,
-            item.get("gt_label"),
-        )
+        if annotation.get("review_domain") == "model_review":
+            # Model diagnosis never adjudicates or rewrites the shared Label domain.
+            annotation["expected_output"] = ""
+            annotation["label"] = ""
+            annotation["expected_output_source"] = "model_review_separate_domain"
+        else:
+            expected_output, expected_output_source = effective_expected_output(
+                annotation,
+                tag_catalog_items,
+            )
+            annotation["expected_output"] = expected_output
+            # ``label`` remains the response-level compatibility alias for callers
+            # created before the expected-output field was introduced.
+            annotation["label"] = expected_output
+            annotation["expected_output_source"] = expected_output_source
+            annotation["review_status"] = derive_review_status(
+                expected_output,
+                item.get("gt_label"),
+            )
         item["annotation"] = annotation
         item["prediction"] = prediction
         gt_label = str(item.get("gt_label") or "")

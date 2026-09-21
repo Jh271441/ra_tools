@@ -573,6 +573,152 @@ class DatabaseCoreMixin:
                 CREATE INDEX IF NOT EXISTS idx_predictions_issue_id
                     ON model_predictions(issue_id, model_run_id);
 
+                CREATE TABLE IF NOT EXISTS model_review_revisions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    model_run_id TEXT NOT NULL REFERENCES model_runs(id) ON DELETE RESTRICT,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE RESTRICT,
+                    campaign_id TEXT NOT NULL DEFAULT '',
+                    reference_id TEXT NOT NULL DEFAULT '',
+                    work_split_id TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'pending'
+                        CHECK(status IN ('pending', 'in_progress', 'completed', 'blocked_by_label')),
+                    reason TEXT NOT NULL DEFAULT '',
+                    missing_evidence_json TEXT NOT NULL DEFAULT '[]',
+                    label_state_fingerprint TEXT NOT NULL DEFAULT '',
+                    label_state_json TEXT NOT NULL DEFAULT '{}',
+                    reviewer TEXT NOT NULL,
+                    reviewer_source TEXT NOT NULL DEFAULT 'legacy',
+                    reviewer_verified INTEGER NOT NULL DEFAULT 0,
+                    supersedes_id INTEGER REFERENCES model_review_revisions(id) ON DELETE RESTRICT,
+                    legacy_base_annotation_id INTEGER REFERENCES annotations(id) ON DELETE RESTRICT,
+                    legacy_annotation_id INTEGER UNIQUE REFERENCES annotations(id) ON DELETE RESTRICT,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_model_review_revisions_run_issue
+                    ON model_review_revisions(model_run_id, issue_id, id DESC);
+                CREATE INDEX IF NOT EXISTS idx_model_review_revisions_scope_filters
+                    ON model_review_revisions(model_run_id, status, reviewer, id DESC);
+                CREATE INDEX IF NOT EXISTS idx_model_review_revisions_work_split
+                    ON model_review_revisions(work_split_id, model_run_id, issue_id, reviewer, id DESC);
+
+                CREATE TABLE IF NOT EXISTS model_review_heads (
+                    model_run_id TEXT NOT NULL REFERENCES model_runs(id) ON DELETE RESTRICT,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE RESTRICT,
+                    campaign_id TEXT NOT NULL DEFAULT '',
+                    reference_id TEXT NOT NULL DEFAULT '',
+                    reviewer TEXT NOT NULL,
+                    revision_id INTEGER NOT NULL UNIQUE
+                        REFERENCES model_review_revisions(id) ON DELETE RESTRICT,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(model_run_id, issue_id, campaign_id, reference_id, reviewer)
+                );
+                CREATE INDEX IF NOT EXISTS idx_model_review_heads_issue_run
+                    ON model_review_heads(issue_id, model_run_id, revision_id DESC);
+
+                CREATE TABLE IF NOT EXISTS model_review_attachments (
+                    id TEXT PRIMARY KEY,
+                    revision_id INTEGER NOT NULL
+                        REFERENCES model_review_revisions(id) ON DELETE RESTRICT,
+                    original_name TEXT NOT NULL DEFAULT '',
+                    stored_name TEXT NOT NULL UNIQUE,
+                    media_type TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL CHECK(size_bytes >= 0),
+                    width INTEGER NOT NULL CHECK(width > 0),
+                    height INTEGER NOT NULL CHECK(height > 0),
+                    sha256 TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_model_review_attachments_revision
+                    ON model_review_attachments(revision_id, created_at);
+
+                CREATE VIEW IF NOT EXISTS review_records AS
+                SELECT
+                    annotation.id AS id,
+                    annotation.issue_id,
+                    annotation.model_run_id,
+                    annotation.work_split_id,
+                    annotation.label,
+                    annotation.review_status,
+                    annotation.is_excluded,
+                    annotation.tags_json,
+                    annotation.missing_evidence_json,
+                    annotation.mentions_json,
+                    annotation.note,
+                    annotation.author,
+                    annotation.author_source,
+                    annotation.author_verified,
+                    annotation.supersedes_id,
+                    annotation.created_at,
+                    'legacy' AS review_domain,
+                    '' AS model_review_status,
+                    '' AS campaign_id,
+                    '' AS reference_id,
+                    annotation.id AS storage_id
+                FROM annotations annotation
+                UNION ALL
+                SELECT
+                    4000000000000000 + revision.id AS id,
+                    revision.issue_id,
+                    revision.model_run_id,
+                    revision.work_split_id,
+                    NULL AS label,
+                    CASE revision.status
+                        WHEN 'completed' THEN 'reviewed'
+                        WHEN 'blocked_by_label' THEN 'needs_gt_review'
+                        ELSE 'pending'
+                    END AS review_status,
+                    0 AS is_excluded,
+                    '[]' AS tags_json,
+                    revision.missing_evidence_json,
+                    '[]' AS mentions_json,
+                    revision.reason AS note,
+                    revision.reviewer AS author,
+                    revision.reviewer_source AS author_source,
+                    revision.reviewer_verified AS author_verified,
+                    CASE
+                        WHEN revision.supersedes_id IS NOT NULL
+                            THEN 4000000000000000 + revision.supersedes_id
+                        ELSE revision.legacy_base_annotation_id
+                    END AS supersedes_id,
+                    revision.created_at,
+                    'model_review' AS review_domain,
+                    revision.status AS model_review_status,
+                    revision.campaign_id,
+                    revision.reference_id,
+                    revision.id AS storage_id
+                FROM model_review_revisions revision;
+
+                CREATE VIEW IF NOT EXISTS review_record_attachments AS
+                SELECT
+                    attachment.id,
+                    attachment.annotation_id,
+                    attachment.original_name,
+                    attachment.stored_name,
+                    attachment.media_type,
+                    attachment.size_bytes,
+                    attachment.width,
+                    attachment.height,
+                    attachment.sha256,
+                    attachment.created_at,
+                    'legacy' AS review_domain,
+                    attachment.annotation_id AS storage_revision_id
+                FROM review_attachments attachment
+                UNION ALL
+                SELECT
+                    attachment.id,
+                    4000000000000000 + attachment.revision_id AS annotation_id,
+                    attachment.original_name,
+                    attachment.stored_name,
+                    attachment.media_type,
+                    attachment.size_bytes,
+                    attachment.width,
+                    attachment.height,
+                    attachment.sha256,
+                    attachment.created_at,
+                    'model_review' AS review_domain,
+                    attachment.revision_id AS storage_revision_id
+                FROM model_review_attachments attachment;
+
                 CREATE TABLE IF NOT EXISTS inference_jobs (
                     id TEXT PRIMARY KEY,
                     issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE CASCADE,
@@ -1317,6 +1463,9 @@ class DatabaseCoreMixin:
                 "mention_users",
                 "review_comments",
                 "comment_attachments",
+                "model_review_revisions",
+                "model_review_heads",
+                "model_review_attachments",
                 "issue_work_splits",
                 "issue_work_assignments",
                 "review_work_assignments",
@@ -1794,6 +1943,7 @@ class DatabaseCoreMixin:
         failure_only: bool = False,
         annotation_author: str = "",
         review_status: str = "",
+        model_review_status: str = "",
         gt_label: str = "",
         annotation_label: str = "",
         model_label: str = "",
@@ -1922,6 +2072,28 @@ class DatabaseCoreMixin:
                 f"ann.review_status IN ({', '.join('?' for _ in statuses)})"
             )
             params.extend(statuses)
+        model_statuses = tuple(
+            value
+            for value in _multi_values(model_review_status)
+            if value in {"pending", "in_progress", "completed", "blocked_by_label"}
+        )
+        if model_statuses:
+            legacy_by_model_status = {
+                "pending": "pending",
+                "in_progress": "pending",
+                "completed": "reviewed",
+                "blocked_by_label": "needs_gt_review",
+            }
+            legacy_statuses = tuple(
+                dict.fromkeys(legacy_by_model_status[value] for value in model_statuses)
+            )
+            where.append(
+                "((ann.review_domain = 'model_review' AND ann.model_review_status IN "
+                f"({', '.join('?' for _ in model_statuses)})) OR "
+                "(ann.review_domain = 'legacy' AND ann.review_status IN "
+                f"({', '.join('?' for _ in legacy_statuses)})))"
+            )
+            params.extend((*model_statuses, *legacy_statuses))
         gt_labels = tuple(value for value in _multi_values(gt_label) if value in LABELS)
         if gt_labels:
             where.append(f"i.gt_label IN ({', '.join('?' for _ in gt_labels)})")
@@ -2005,6 +2177,10 @@ class DatabaseCoreMixin:
                    ann.author_verified AS annotation_author_verified,
                    ann.created_at AS annotation_created_at,
                    ann.model_run_id AS annotation_model_run_id,
+                   ann.review_domain AS annotation_review_domain,
+                   ann.model_review_status AS annotation_model_review_status,
+                   ann.campaign_id AS annotation_campaign_id,
+                   ann.reference_id AS annotation_reference_id,
                    mp.model_run_id, mp.model_label, mp.model_reason,
                    mp.model_confidence
         """
@@ -2055,6 +2231,14 @@ class DatabaseCoreMixin:
                     "gt_label": current_gt,
                     "annotation": {
                         "id": int(row["annotation_id"]),
+                        "review_domain": str(
+                            row["annotation_review_domain"] or "legacy"
+                        ),
+                        "model_review_status": str(
+                            row["annotation_model_review_status"] or ""
+                        ),
+                        "campaign_id": str(row["annotation_campaign_id"] or ""),
+                        "reference_id": str(row["annotation_reference_id"] or ""),
                         "model_run_id": str(row["annotation_model_run_id"] or ""),
                         "label": str(row["annotation_label"] or ""),
                         "review_status": str(

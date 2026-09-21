@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import quote
 
 from ..db import LABELS, MODEL_LABELS, REVIEW_STATUSES
+from ..db_parts.model_reviews import MODEL_REVIEW_STATUSES
 from ..model_labels import canonical_model_label, model_label_matches_gt
 from ..review_workflow import derive_review_status, effective_expected_output
 from ..review_analysis import COMPARISON_STATUSES, build_review_reason_analysis
@@ -93,8 +94,12 @@ def _review_reason_analysis_payload(
     ]
     evidence_keys = _csv_filter_values(missing_evidence)
     for status in statuses:
-        if status not in REVIEW_STATUSES:
+        if status not in REVIEW_STATUSES and status not in MODEL_REVIEW_STATUSES:
             raise _detail(400, "review_status 不在支持范围内。")
+    legacy_statuses = [status for status in statuses if status in REVIEW_STATUSES]
+    model_review_statuses = [
+        status for status in statuses if status in MODEL_REVIEW_STATUSES
+    ]
     for label in gt_labels:
         if label not in LABELS:
             raise _detail(400, "gt_label 不在三分类范围内。")
@@ -190,7 +195,7 @@ def _review_reason_analysis_payload(
             or label.casefold() in folded_search
         )
     )
-    effective_statuses = tuple(statuses)
+    effective_statuses = tuple(legacy_statuses)
     status_filter_impossible = False
     if search_statuses:
         search_status_set = set(search_statuses)
@@ -226,6 +231,7 @@ def _review_reason_analysis_payload(
             # Historical persisted status/label fields predate expected output.
             # Apply both filters after read-time Tag inference below.
             review_status="",
+            model_review_status=",".join(model_review_statuses),
             gt_label=",".join(gt_labels),
             annotation_label="",
             model_label=",".join(model_labels),
@@ -260,14 +266,19 @@ def _review_reason_analysis_payload(
         for member in members:
             annotation = dict(member.get("annotation") or {})
             if annotation:
-                output, source = effective_expected_output(annotation, tag_catalog)
-                annotation["expected_output"] = output
-                annotation["label"] = output
-                annotation["expected_output_source"] = source
-                annotation["review_status"] = derive_review_status(
-                    output,
-                    member.get("gt_label"),
-                )
+                if annotation.get("review_domain") == "model_review":
+                    annotation["expected_output"] = ""
+                    annotation["label"] = ""
+                    annotation["expected_output_source"] = "model_review_separate_domain"
+                else:
+                    output, source = effective_expected_output(annotation, tag_catalog)
+                    annotation["expected_output"] = output
+                    annotation["label"] = output
+                    annotation["expected_output_source"] = source
+                    annotation["review_status"] = derive_review_status(
+                        output,
+                        member.get("gt_label"),
+                    )
             reviews.append(
                 {
                     "username": member["assignee"],
@@ -329,8 +340,9 @@ def _review_reason_analysis_payload(
                     continue
             elif not matching_reviews:
                 continue
-        if effective_statuses and not any(
+        if (effective_statuses or model_review_statuses) and not any(
             annotation.get("review_status") in effective_statuses
+            or annotation.get("model_review_status") in model_review_statuses
             for annotation in annotations
         ):
             continue

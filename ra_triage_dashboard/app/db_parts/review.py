@@ -666,7 +666,7 @@ class DatabaseReviewMixin:
                     fallbacks.append(
                         """
                           (
-                              SELECT a.id FROM annotations a
+                              SELECT a.id FROM review_records a
                               WHERE a.issue_id = i.issue_id
                                 AND a.model_run_id = ''
                                 AND a.work_split_id = ''
@@ -678,7 +678,7 @@ class DatabaseReviewMixin:
                     fallbacks.append(
                         """
                           (
-                              SELECT a.id FROM annotations a
+                              SELECT a.id FROM review_records a
                               WHERE a.issue_id = i.issue_id
                                 AND a.model_run_id NOT IN (?, '')
                                 AND a.work_split_id = ''
@@ -687,10 +687,10 @@ class DatabaseReviewMixin:
                         """
                     )
                 return """
-                    LEFT JOIN annotations ann
+                    LEFT JOIN review_records ann
                       ON ann.id = COALESCE(
                           (
-                              SELECT a.id FROM annotations a
+                              SELECT a.id FROM review_records a
                               WHERE a.issue_id = i.issue_id
                                 AND a.model_run_id = ?
                                 AND a.work_split_id = ''
@@ -703,9 +703,9 @@ class DatabaseReviewMixin:
         else:
             run_clause = ""
         return """
-            LEFT JOIN annotations ann
+            LEFT JOIN review_records ann
               ON ann.id = (
-                  SELECT a.id FROM annotations a
+                  SELECT a.id FROM review_records a
                   WHERE a.issue_id = i.issue_id
                     AND a.work_split_id = ''
                   {run_clause}
@@ -929,7 +929,7 @@ class DatabaseReviewMixin:
     def get_review_attachment(self, attachment_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute(
-                "SELECT * FROM review_attachments WHERE id = ?",
+                "SELECT * FROM review_record_attachments WHERE id = ?",
                 (attachment_id,),
             ).fetchone()
         return self._attachment_dict(row) if row else None
@@ -937,7 +937,7 @@ class DatabaseReviewMixin:
     def review_attachment_storage_bytes(self) -> int:
         with self.connect() as conn:
             row = conn.execute(
-                "SELECT COALESCE(SUM(size_bytes), 0) AS total FROM review_attachments"
+                "SELECT COALESCE(SUM(size_bytes), 0) AS total FROM review_record_attachments"
             ).fetchone()
         return int(row["total"] or 0)
 
@@ -946,6 +946,29 @@ class DatabaseReviewMixin:
         label = row["label"] or ""
         return {
             "id": row["id"],
+            "storage_id": (
+                row["storage_id"] if "storage_id" in row.keys() else row["id"]
+            ),
+            "review_domain": (
+                str(row["review_domain"] or "legacy")
+                if "review_domain" in row.keys()
+                else "legacy"
+            ),
+            "model_review_status": (
+                str(row["model_review_status"] or "")
+                if "model_review_status" in row.keys()
+                else ""
+            ),
+            "campaign_id": (
+                str(row["campaign_id"] or "")
+                if "campaign_id" in row.keys()
+                else ""
+            ),
+            "reference_id": (
+                str(row["reference_id"] or "")
+                if "reference_id" in row.keys()
+                else ""
+            ),
             "issue_id": row["issue_id"],
             "model_run_id": (
                 str(row["model_run_id"] or "")

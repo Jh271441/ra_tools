@@ -261,7 +261,7 @@ class DatabaseCasesMixin:
                 SELECT a.id
                 FROM review_work_assignments wa
                 JOIN issue_work_splits ws ON ws.id = wa.split_id
-                LEFT JOIN annotations a
+                LEFT JOIN review_records a
                   ON a.issue_id = wa.issue_id
                  AND a.model_run_id = ws.model_run_id
                  AND a.author = wa.assignee
@@ -285,21 +285,21 @@ class DatabaseCasesMixin:
             ordinary_annotation = """
                 COALESCE(
                     (
-                        SELECT a.id FROM annotations a
+                        SELECT a.id FROM review_records a
                         WHERE a.issue_id = i.issue_id
                           AND a.model_run_id = ?
                           AND a.work_split_id = ''
                         ORDER BY a.id DESC LIMIT 1
                     ),
                     (
-                        SELECT a.id FROM annotations a
+                        SELECT a.id FROM review_records a
                         WHERE a.issue_id = i.issue_id
                           AND a.model_run_id = ''
                           AND a.work_split_id = ''
                         ORDER BY a.id DESC LIMIT 1
                     ),
                     (
-                        SELECT a.id FROM annotations a
+                        SELECT a.id FROM review_records a
                         WHERE a.issue_id = i.issue_id
                           AND a.model_run_id NOT IN (?, '')
                           AND a.work_split_id = ''
@@ -311,7 +311,7 @@ class DatabaseCasesMixin:
         else:
             ordinary_annotation = """
                 (
-                    SELECT a.id FROM annotations a
+                    SELECT a.id FROM review_records a
                     WHERE a.issue_id = i.issue_id
                       AND a.work_split_id = ''
                     ORDER BY a.id DESC LIMIT 1
@@ -319,7 +319,7 @@ class DatabaseCasesMixin:
             """
             ordinary_params = []
         join = f"""
-            LEFT JOIN annotations ann
+            LEFT JOIN review_records ann
               ON ann.id = CASE
                   WHEN {assignment_exists} THEN {assignment_annotation}
                   ELSE {ordinary_annotation}
@@ -628,6 +628,10 @@ class DatabaseCasesMixin:
                        ann.author_verified AS annotation_author_verified,
                        ann.created_at AS annotation_created_at,
                        ann.model_run_id AS annotation_model_run_id,
+                       ann.review_domain AS annotation_review_domain,
+                       ann.model_review_status AS annotation_model_review_status,
+                       ann.campaign_id AS annotation_campaign_id,
+                       ann.reference_id AS annotation_reference_id,
                        mp.model_label, mp.model_reason, mp.model_confidence, mp.model_run_id,
                        COALESCE(work_summary.work_assignee, '') AS work_assignee,
                        COALESCE(work_summary.work_split_id, '') AS work_split_id
@@ -811,7 +815,7 @@ class DatabaseCasesMixin:
             if issue is None:
                 return None
             annotations = conn.execute(
-                "SELECT * FROM annotations WHERE issue_id = ? ORDER BY id DESC", (issue_id,)
+                "SELECT * FROM review_records WHERE issue_id = ? ORDER BY id DESC", (issue_id,)
             ).fetchall()
             predictions = conn.execute(
                 """
@@ -852,8 +856,8 @@ class DatabaseCasesMixin:
             attachments = conn.execute(
                 """
                 SELECT ra.*
-                FROM review_attachments ra
-                JOIN annotations ann ON ann.id = ra.annotation_id
+                FROM review_record_attachments ra
+                JOIN review_records ann ON ann.id = ra.annotation_id
                 WHERE ann.issue_id = ?
                 ORDER BY ra.created_at ASC
                 """,
@@ -1114,6 +1118,26 @@ class DatabaseCasesMixin:
                 "work_split_id": work_split_id,
                 "annotation": {
                     "id": row["annotation_id"] if "annotation_id" in keys else None,
+                    "review_domain": (
+                        str(row["annotation_review_domain"] or "legacy")
+                        if "annotation_review_domain" in keys
+                        else "legacy"
+                    ),
+                    "model_review_status": (
+                        str(row["annotation_model_review_status"] or "")
+                        if "annotation_model_review_status" in keys
+                        else ""
+                    ),
+                    "campaign_id": (
+                        str(row["annotation_campaign_id"] or "")
+                        if "annotation_campaign_id" in keys
+                        else ""
+                    ),
+                    "reference_id": (
+                        str(row["annotation_reference_id"] or "")
+                        if "annotation_reference_id" in keys
+                        else ""
+                    ),
                     "model_run_id": (
                         str(row["annotation_model_run_id"] or "")
                         if "annotation_model_run_id" in keys
@@ -1300,7 +1324,7 @@ class DatabaseCasesMixin:
                        COUNT(*) AS assigned_count,
                        SUM(CASE WHEN EXISTS (
                            SELECT 1
-                           FROM annotations annotation
+                           FROM review_records annotation
                            WHERE annotation.issue_id = assignment.issue_id
                              AND annotation.model_run_id = split.model_run_id
                              AND annotation.author = assignment.assignee
@@ -1363,7 +1387,7 @@ class DatabaseCasesMixin:
                         rows = conn.execute(
                             f"""
                             SELECT DISTINCT annotation.issue_id
-                            FROM annotations annotation
+                            FROM review_records annotation
                             WHERE annotation.model_run_id = ?
                               AND annotation.author = ?
                               AND {work_split_clause}
@@ -1492,7 +1516,7 @@ class DatabaseCasesMixin:
         submitted_condition = """
             EXISTS (
                 SELECT 1
-                FROM annotations annotation
+                FROM review_records annotation
                 WHERE annotation.issue_id = assignment.issue_id
                   AND annotation.model_run_id = split.model_run_id
                   AND annotation.author = assignment.assignee
@@ -1548,7 +1572,7 @@ class DatabaseCasesMixin:
                        CASE WHEN {submitted_condition} THEN 1 ELSE 0 END AS submitted,
                        (
                            SELECT annotation.created_at
-                           FROM annotations annotation
+                           FROM review_records annotation
                            WHERE annotation.issue_id = assignment.issue_id
                              AND annotation.model_run_id = split.model_run_id
                              AND annotation.author = assignment.assignee
@@ -1561,7 +1585,7 @@ class DatabaseCasesMixin:
                        ) AS submitted_at,
                        (
                            SELECT annotation.review_status
-                           FROM annotations annotation
+                           FROM review_records annotation
                            WHERE annotation.issue_id = assignment.issue_id
                              AND annotation.model_run_id = split.model_run_id
                              AND annotation.author = assignment.assignee
@@ -1681,7 +1705,7 @@ class DatabaseCasesMixin:
                         f"""
                         SELECT annotation.issue_id, annotation.author, annotation.id,
                                annotation.created_at, annotation.review_status
-                        FROM annotations annotation
+                        FROM review_records annotation
                         WHERE annotation.model_run_id = ?
                           AND {annotation_work_split}
                           AND annotation.issue_id IN ({batch_placeholders})
@@ -1863,7 +1887,7 @@ class DatabaseCasesMixin:
             submitted = conn.execute(
                 """
                 SELECT annotation.id
-                FROM annotations annotation
+                FROM review_records annotation
                 WHERE annotation.issue_id = ?
                   AND annotation.model_run_id = ?
                   AND annotation.author = ?
@@ -2025,7 +2049,7 @@ class DatabaseCasesMixin:
                 SELECT assignment.assignee, assignment.assignment_kind,
                        assignment.ordinal,
                        (
-                           SELECT annotation.id FROM annotations annotation
+                           SELECT annotation.id FROM review_records annotation
                            WHERE annotation.issue_id = assignment.issue_id
                              AND annotation.model_run_id = ?
                              AND annotation.work_split_id = assignment.split_id
@@ -2156,13 +2180,17 @@ class DatabaseCasesMixin:
                    annotation.author_source AS annotation_author_source,
                    annotation.author_verified AS annotation_author_verified,
                    annotation.created_at AS annotation_created_at,
+                   annotation.review_domain AS annotation_review_domain,
+                   annotation.model_review_status AS annotation_model_review_status,
+                   annotation.campaign_id AS annotation_campaign_id,
+                   annotation.reference_id AS annotation_reference_id,
                    prediction.model_run_id, prediction.model_label,
                    prediction.model_reason, prediction.model_confidence
             FROM review_work_assignments assignment
             JOIN issue_work_splits split ON split.id = assignment.split_id
             JOIN issues i ON i.issue_id = assignment.issue_id
-            LEFT JOIN annotations annotation ON annotation.id = (
-                SELECT candidate.id FROM annotations candidate
+            LEFT JOIN review_records annotation ON annotation.id = (
+                SELECT candidate.id FROM review_records candidate
                 WHERE candidate.issue_id = assignment.issue_id
                   AND candidate.model_run_id = split.model_run_id
                   AND (
@@ -2207,6 +2235,10 @@ class DatabaseCasesMixin:
             if row["annotation_id"] is not None:
                 annotation = {
                     "id": int(row["annotation_id"]),
+                    "review_domain": str(row["annotation_review_domain"] or "legacy"),
+                    "model_review_status": str(row["annotation_model_review_status"] or ""),
+                    "campaign_id": str(row["annotation_campaign_id"] or ""),
+                    "reference_id": str(row["annotation_reference_id"] or ""),
                     "model_run_id": str(row["split_model_run_id"] or ""),
                     "work_split_id": (
                         str(row["split_id"])
