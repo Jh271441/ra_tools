@@ -34,6 +34,7 @@ STYLES_CSS = "\n".join(
 )
 INDEX_HTML = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 RUN_COMPARISON_JS = (JS_DIR / "run-comparison.js").read_text(encoding="utf-8")
+CAMPAIGNS_JS = (JS_DIR / "campaigns.js").read_text(encoding="utf-8")
 APP_PY_LABELING_DB = (
     STATIC_DIR.parent / "app" / "db_parts" / "labeling.py"
 ).read_text(encoding="utf-8")
@@ -49,6 +50,12 @@ APP_PY_CASES_DB = (
 
 
 class FrontendContractTest(unittest.TestCase):
+    def test_campaign_list_uses_the_selected_baseline_scopes(self) -> None:
+        endpoint = CAMPAIGNS_JS.split("function campaignListEndpoint()", 1)[1].split(
+            "\nasync function loadCampaigns", 1
+        )[0]
+        self.assertIn("baselines: selectedBaselineQueryValue()", endpoint)
+
     def test_label_result_snapshot_defaults_to_complete_and_confirms_diagnostic_partial(self) -> None:
         create_block = APP_JS.split(
             "async function createCaseLabelingResultSnapshot", 1

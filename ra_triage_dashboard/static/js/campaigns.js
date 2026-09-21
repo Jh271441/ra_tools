@@ -137,6 +137,7 @@ function saveCampaignRoute(mode = "push", overrides = {}) {
 
 function campaignListEndpoint() {
   const params = new URLSearchParams({
+    baselines: selectedBaselineQueryValue(),
     lifecycle: campaignPageState.lifecycle || "all",
     page: "1",
     page_size: String(CAMPAIGN_PAGE_SIZE),
