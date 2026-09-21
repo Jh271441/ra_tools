@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import threading
 from pathlib import Path
@@ -819,15 +820,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
             reviewers_per_issue=reviewers_per_issue,
             overlap_ratio=overlap_ratio,
         )
-        saved = await asyncio.to_thread(
-            database.apply_work_split,
-            assignments=assignments,
-            created_by=identity.username,
-            seed=seed,
-            reviewers_per_issue=reviewers_per_issue,
-            overlap_ratio=overlap_ratio,
-            model_run_id=filters["model_run_id"],
-            filter_snapshot={
+        filter_snapshot = {
                 "model_run_id": filters["model_run_id"],
                 "comparison_status": filters["comparison_status"],
                 "comment_state": filters["comment_state"],
@@ -847,8 +840,71 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                     )
                 ) or baseline_registry.default_ids(),
                 "baseline_scopes": filters.get("baseline_scopes") or [],
-            },
-        )
+            }
+        idempotency_key = _as_text(
+            request.headers.get("idempotency-key")
+            or body.get("idempotency_key")
+            or body.get("request_id")
+        ).strip()[:160]
+        if idempotency_key and seed is None:
+            seed = int.from_bytes(hashlib.sha256(idempotency_key.encode("utf-8")).digest()[:8], "big") % (2**63)
+            assignments = distribute_issue_ids(
+                issue_ids,
+                assignees,
+                seed=seed,
+                reviewers_per_issue=reviewers_per_issue,
+                overlap_ratio=overlap_ratio,
+            )
+        if filters["model_run_id"]:
+            by_issue: dict[str, list[dict[str, str]]] = {}
+            for member in assignments:
+                for item in member.get("items") or []:
+                    issue_id = _as_text(item.get("issue_id"))
+                    by_issue.setdefault(issue_id, []).append({
+                        "assignee": _as_text(member.get("name")).strip().lower(),
+                        "assignment_kind": _as_text(item.get("assignment_kind") or "base"),
+                    })
+            campaign = await asyncio.to_thread(
+                database.create_campaign,
+                spec={
+                    "purpose": "model_review",
+                    "evaluation_run_id": filters["model_run_id"],
+                    "selection_source_run_id": filters["model_run_id"],
+                    "name": _as_text(body.get("name")) or f"Review task · {len(issue_ids)} Issues",
+                    "seed": seed,
+                    "overlap_ratio": overlap_ratio,
+                    "filters": filter_snapshot,
+                    "members": [
+                        {"issue_id": issue_id, "ordinal": ordinal,
+                         "assignees": by_issue.get(issue_id, [])}
+                        for ordinal, issue_id in enumerate(issue_ids, 1)
+                    ],
+                },
+                actor=identity.username,
+                actor_source=identity.source,
+                actor_verified=True,
+                idempotency_key=idempotency_key,
+            )
+            campaign_meta = campaign["campaign"]
+            saved = {
+                "split_id": campaign_meta["id"],
+                "created_by": campaign_meta["created_by"],
+                "created_at": campaign_meta["created_at"],
+                "assignment_count": sum(len(items) for items in by_issue.values()),
+                "reviewers_per_issue": reviewers_per_issue,
+                "overlap_ratio": overlap_ratio,
+            }
+        else:
+            saved = await asyncio.to_thread(
+                database.apply_work_split,
+                assignments=assignments,
+                created_by=identity.username,
+                seed=seed,
+                reviewers_per_issue=reviewers_per_issue,
+                overlap_ratio=overlap_ratio,
+                model_run_id=filters["model_run_id"],
+                filter_snapshot=filter_snapshot,
+            )
     except ValueError as exc:
         raise _detail(400, str(exc))
     return {

@@ -290,6 +290,11 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
             seed=seed,
             reviewers_per_issue=reviewers_per_issue,
             overlap_ratio=overlap_ratio,
+            created_by_source=identity.source,
+            created_by_verified=True,
+            idempotency_key=_as_text(
+                request.headers.get("idempotency-key") or body.get("request_id")
+            ).strip(),
         )
     except ValueError as exc:
         raise _detail(400, str(exc))
@@ -493,12 +498,21 @@ async def _create_label_comment_record(
         _labeling_actor, request
     )
     task_id = _as_text(body.get("task_id"))
+    discussion_channel = "campaign" if task_id else "case"
     if task_id:
         tasks = await asyncio.to_thread(
             database.list_labeling_tasks, [str(issue.get("baseline_scope") or "")]
         )
         if not any(task["id"] == task_id for task in tasks):
             raise _detail(404, "标注任务不在当前已激活的数据集中。")
+        campaign_detail = await asyncio.to_thread(database.get_campaign, task_id, page=1, page_size=1)
+        campaign = (campaign_detail or {}).get("campaign") or {}
+        if campaign and (
+            campaign.get("purpose") not in {None, "labeling"}
+            or campaign.get("lifecycle") != "active"
+            or campaign.get("legacy_read_only")
+        ):
+            raise _detail(409, "该 Campaign 当前只读，不能新增标注讨论。")
     raw_reply_to_id = body.get("reply_to_id")
     reply_to_id: int | None = None
     parent: dict[str, Any] | None = None
@@ -516,14 +530,31 @@ async def _create_label_comment_record(
         parent_link = await asyncio.to_thread(
             database.get_label_comment_link, reply_to_id
         )
-        if parent is None or parent_link is None:
+        if parent is None:
             raise _detail(404, "回复的评论不存在。")
         if str(parent.get("issue_id") or "") != issue_id:
             raise _detail(400, "只能回复当前 Case 的标注讨论。")
-        model_run_id = str(parent.get("model_run_id") or "")
-        source_run_id = str(parent_link.get("source_run_id") or "")
-        if not task_id:
-            task_id = str(parent_link.get("task_id") or "")
+        parent_channel = str(parent.get("discussion_channel") or "legacy")
+        if parent_channel == "case":
+            if str(parent.get("baseline_scope") or "") != str(issue.get("baseline_scope") or ""):
+                raise _detail(400, "只能回复当前 baseline scope 下的 Case 公共讨论。")
+            discussion_channel = "case"
+            task_id = ""
+            model_run_id = ""
+            source_run_id = ""
+        elif parent_channel == "campaign":
+            parent_campaign_id = str(parent.get("campaign_id") or "")
+            if not parent_campaign_id or (task_id and task_id != parent_campaign_id):
+                raise _detail(400, "只能回复当前 Campaign 下的标注讨论。")
+            discussion_channel = "campaign"
+            task_id = parent_campaign_id
+            model_run_id = ""
+            source_run_id = str((parent_link or {}).get("source_run_id") or "")
+        else:
+            raise _detail(400, "只能回复 Case 公共频道或 Labeling Campaign 频道。")
+    if task_id and not source_run_id:
+        campaign_detail = await asyncio.to_thread(database.get_campaign, task_id, page=1, page_size=1)
+        source_run_id = str(((campaign_detail or {}).get("campaign") or {}).get("selection_source_run_id") or "")
     try:
         mentions = extract_review_mentions(text)
     except ValueError as exc:
@@ -560,7 +591,7 @@ async def _create_label_comment_record(
         comment = await asyncio.to_thread(
             database.create_review_comment,
             issue_id=issue_id,
-            model_run_id=model_run_id,
+            model_run_id="",
             body=text,
             author=actor,
             author_source=actor_source,
@@ -569,6 +600,9 @@ async def _create_label_comment_record(
             notification_recipients=queued_recipients,
             reply_to_id=reply_to_id,
             attachments=attachments,
+            discussion_channel=discussion_channel,
+            campaign_id=task_id,
+            baseline_scope=str(issue.get("baseline_scope") or ""),
             require_existing_model_run=False,
         )
         await asyncio.to_thread(
@@ -610,7 +644,7 @@ async def _create_label_comment_record(
 
 @router.get("/api/labeling/cases/{issue_id}/comments")
 async def list_labeling_comments(
-    issue_id: str, request: Request, task_id: str = ""
+    issue_id: str, request: Request, task_id: str = "", channel: str = "both"
 ) -> dict[str, Any]:
     await _require_labeling_admin(request)
     await _require_active_labeling_issue(issue_id)
@@ -618,6 +652,7 @@ async def list_labeling_comments(
         database.list_label_comments,
         issue_id=issue_id,
         task_id=_as_text(task_id),
+        discussion_channel=_as_text(channel or "both"),
     )
     return {
         "comments": [_public_label_comment(comment) for comment in comments],

@@ -167,6 +167,33 @@ class DatabaseModelReviewMixin:
                 raise ValueError("Issue 不存在。")
             if run is None:
                 raise ValueError("模型 Run 不存在。")
+            if campaign_id:
+                campaign_sql = (
+                    "SELECT purpose, evaluation_run_id, reference_id, lifecycle, legacy_read_only "
+                    "FROM issue_work_splits WHERE id = ?"
+                    + (" FOR UPDATE" if self.backend == "postgresql" else "")
+                )
+                campaign = conn.execute(campaign_sql, (campaign_id,)).fetchone()
+                membership = conn.execute(
+                    "SELECT 1 FROM campaign_issue_members WHERE campaign_id = ? AND issue_id = ?",
+                    (campaign_id, issue_id),
+                ).fetchone()
+                if (
+                    campaign is None
+                    or str(campaign["purpose"] or "") != "model_review"
+                    or str(campaign["evaluation_run_id"] or "") != model_run_id
+                    or str(campaign["lifecycle"] or "") != "active"
+                    or bool(campaign["legacy_read_only"])
+                    or membership is None
+                ):
+                    raise ValueError("该 Campaign 当前只读，或 Issue / Model Run 与任务不匹配。")
+                expected_reference_id = str(campaign["reference_id"] or "")
+                if reference_id and reference_id != expected_reference_id:
+                    raise ValueError("Model Review reference 与 Campaign 冻结参考不匹配。")
+                reference_id = expected_reference_id
+                if work_split_id and work_split_id != campaign_id:
+                    raise ValueError("兼容 work_split_id 必须与 Campaign ID 一致。")
+                work_split_id = campaign_id
             head = conn.execute(
                 """
                 SELECT head.revision_id, revision.work_split_id

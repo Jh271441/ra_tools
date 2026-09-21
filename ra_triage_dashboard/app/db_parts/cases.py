@@ -1364,8 +1364,12 @@ class DatabaseCasesMixin:
                              AND lower(head.reviewer) = lower(assignment.assignee)
                              AND revision.status = 'completed'
                              AND (
-                               (split.mode = 'blind' AND revision.work_split_id = assignment.split_id)
-                               OR (split.mode <> 'blind' AND revision.work_split_id = '')
+                               (split.purpose = 'model_review' AND head.campaign_id = split.id
+                                AND head.reference_id = split.reference_id)
+                               OR (COALESCE(split.purpose, '') <> 'model_review'
+                                   AND split.mode = 'blind' AND revision.work_split_id = assignment.split_id)
+                               OR (COALESCE(split.purpose, '') <> 'model_review'
+                                   AND split.mode <> 'blind' AND revision.work_split_id = '')
                              )
                        ) THEN 1 ELSE 0 END) AS completed_count
                 FROM review_work_assignments assignment
@@ -1559,8 +1563,12 @@ class DatabaseCasesMixin:
                   AND lower(head.reviewer) = lower(assignment.assignee)
                   AND revision.status = 'completed'
                   AND (
-                    (split.mode = 'blind' AND revision.work_split_id = assignment.split_id)
-                    OR (split.mode <> 'blind' AND revision.work_split_id = '')
+                    (split.purpose = 'model_review' AND head.campaign_id = split.id
+                     AND head.reference_id = split.reference_id)
+                    OR (COALESCE(split.purpose, '') <> 'model_review'
+                        AND split.mode = 'blind' AND revision.work_split_id = assignment.split_id)
+                    OR (COALESCE(split.purpose, '') <> 'model_review'
+                        AND split.mode <> 'blind' AND revision.work_split_id = '')
                   )
             )
         """
@@ -1617,8 +1625,12 @@ class DatabaseCasesMixin:
                              AND lower(head.reviewer) = lower(assignment.assignee)
                              AND revision.status = 'completed'
                              AND (
-                               (split.mode = 'blind' AND revision.work_split_id = assignment.split_id)
-                               OR (split.mode <> 'blind' AND revision.work_split_id = '')
+                               (split.purpose = 'model_review' AND head.campaign_id = split.id
+                                AND head.reference_id = split.reference_id)
+                               OR (COALESCE(split.purpose, '') <> 'model_review'
+                                   AND split.mode = 'blind' AND revision.work_split_id = assignment.split_id)
+                               OR (COALESCE(split.purpose, '') <> 'model_review'
+                                   AND split.mode <> 'blind' AND revision.work_split_id = '')
                              )
                            ORDER BY revision.id DESC LIMIT 1
                        ) AS submitted_at,
@@ -1643,8 +1655,12 @@ class DatabaseCasesMixin:
                              AND head.model_run_id = split.model_run_id
                              AND lower(head.reviewer) = lower(assignment.assignee)
                              AND (
-                               (split.mode = 'blind' AND revision.work_split_id = assignment.split_id)
-                               OR (split.mode <> 'blind' AND revision.work_split_id = '')
+                               (split.purpose = 'model_review' AND head.campaign_id = split.id
+                                AND head.reference_id = split.reference_id)
+                               OR (COALESCE(split.purpose, '') <> 'model_review'
+                                   AND split.mode = 'blind' AND revision.work_split_id = assignment.split_id)
+                               OR (COALESCE(split.purpose, '') <> 'model_review'
+                                   AND split.mode <> 'blind' AND revision.work_split_id = '')
                              )
                            ORDER BY revision.id DESC LIMIT 1
                        ) AS model_review_status

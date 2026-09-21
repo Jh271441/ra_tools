@@ -47,20 +47,117 @@ async def list_review_comments(
 ) -> dict[str, Any]:
     if await asyncio.to_thread(database.get_issue, issue_id) is None:
         raise _detail(404, "Issue 不存在。")
+    selected_run = str(model_run_id or "").strip()
     comments = await asyncio.to_thread(
         database.list_review_comments,
         issue_id=issue_id,
-        model_run_id=str(model_run_id or "").strip(),
-    )
+        model_run_id=selected_run,
+        discussion_channel="model_review",
+    ) if selected_run else []
     count = await asyncio.to_thread(
         database.review_comment_count,
         issue_id=issue_id,
-        model_run_id=str(model_run_id or "").strip(),
-    )
+        model_run_id=selected_run,
+        discussion_channel="model_review",
+    ) if selected_run else 0
     return {
         "comments": [_public_review_comment(comment) for comment in comments],
         "count": count,
     }
+
+
+@router.get("/api/cases/{issue_id}/case-comments")
+async def list_case_discussion(issue_id: str) -> dict[str, Any]:
+    issue = await asyncio.to_thread(database.get_issue, issue_id)
+    if issue is None:
+        raise _detail(404, "Issue 不存在。")
+    scope = str(issue.get("baseline_scope") or "")
+    comments = await asyncio.to_thread(
+        database.list_review_comments,
+        issue_id=issue_id,
+        discussion_channel="case",
+        baseline_scope=scope,
+    )
+    count = await asyncio.to_thread(
+        database.review_comment_count,
+        issue_id=issue_id,
+        discussion_channel="case",
+        baseline_scope=scope,
+    )
+    return {"comments": [_public_review_comment(comment) for comment in comments], "count": count}
+
+
+@router.post("/api/cases/{issue_id}/case-comments")
+async def create_case_discussion(issue_id: str, request: Request) -> dict[str, Any]:
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        raise _detail(400, "评论请求必须是 JSON。")
+    if not isinstance(body, dict):
+        raise _detail(400, "评论请求必须是 JSON 对象。")
+    text = _as_text(body.get("body")).strip()
+    if not text or len(text) > 3500:
+        raise _detail(400, "评论内容必须为 1 到 3500 个字符。")
+    issue = await asyncio.to_thread(database.get_issue, issue_id)
+    if issue is None:
+        raise _detail(404, "Issue 不存在。")
+    scope = str(issue.get("baseline_scope") or "")
+    author, author_source, author_verified = await asyncio.to_thread(
+        _action_actor, request, body.get("author")
+    )
+    if not author:
+        raise _detail(400, "无法确认评论人。")
+    parent_id = None
+    parent = None
+    raw_parent = body.get("reply_to_id")
+    if raw_parent not in (None, "", 0, "0"):
+        try:
+            parent_id = int(raw_parent)
+        except (TypeError, ValueError) as exc:
+            raise _detail(400, "reply_to_id 不合法。") from exc
+        parent = await asyncio.to_thread(database.get_review_comment, parent_id)
+        if parent is None or parent.get("issue_id") != issue_id or parent.get("discussion_channel") != "case" or str(parent.get("baseline_scope") or "") != scope:
+            raise _detail(400, "只能回复当前 baseline scope 与 Issue 下的 Case 评论。")
+    try:
+        mentions = extract_review_mentions(text)
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    requested = list(mentions)
+    if parent and parent.get("author"):
+        requested.append(str(parent["author"]).strip().lower())
+    enabled = await asyncio.to_thread(database.enabled_mention_recipients, list(dict.fromkeys(requested)))
+    unsupported = [name for name in mentions if name not in enabled]
+    if unsupported:
+        raise _detail(400, "以下用户不在可 @ / DChat 通知人员目录中：" + "、".join(f"@{name}" for name in unsupported))
+    recipients = notification_recipients(enabled, author=author)
+    queued = recipients if settings.dchat_notifications_enabled and author_verified else []
+    try:
+        comment = await asyncio.to_thread(
+            database.create_review_comment,
+            issue_id=issue_id,
+            body=text,
+            author=author,
+            author_source=author_source,
+            author_verified=author_verified,
+            mentions=mentions,
+            notification_recipients=queued,
+            reply_to_id=parent_id,
+            discussion_channel="case",
+            baseline_scope=scope,
+            require_existing_model_run=False,
+        )
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    if queued:
+        review_notification_dispatcher.wake()
+    count = await asyncio.to_thread(
+        database.review_comment_count,
+        issue_id=issue_id,
+        discussion_channel="case",
+        baseline_scope=scope,
+    )
+    return {"comment": _public_review_comment(comment), "comment_count": count,
+            "notification": {"mentions": mentions, "queued": queued}}
 
 
 @router.post("/api/cases/{issue_id}/comments")

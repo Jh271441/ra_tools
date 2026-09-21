@@ -959,6 +959,11 @@ function bindEvents() {
         intentCaseId: route.intentCaseId,
         intentOffsetMs: route.intentOffsetMs,
         reviewAssignmentSplitId: route.reviewAssignmentSplitId,
+        discussionChannel: route.discussionChannel,
+        campaignId: route.campaignId,
+        campaignPurpose: route.campaignPurpose,
+        campaignLifecycle: route.campaignLifecycle,
+        campaignQuery: route.campaignQuery,
       });
       if (
         route.page === "intent"
@@ -1068,6 +1073,11 @@ async function bootstrap() {
     intentAssignees: initialRoute.intentAssignees,
     intentExperimentId: initialRoute.intentExperimentId,
     reviewAssignmentSplitId: initialRoute.reviewAssignmentSplitId,
+    discussionChannel: initialRoute.discussionChannel,
+    campaignId: initialRoute.campaignId,
+    campaignPurpose: initialRoute.campaignPurpose,
+    campaignLifecycle: initialRoute.campaignLifecycle,
+    campaignQuery: initialRoute.campaignQuery,
   });
   const sessionRequest = resolveSessionInBackground();
   try {
@@ -1197,6 +1207,13 @@ async function bootstrap() {
       initialPageRequests.push(loadAccessUsers(), loadReviewAssignments({
         splitId: initialRoute.reviewAssignmentSplitId,
       }));
+    } else if (initialRoute.page === "campaigns") {
+      initialPageRequests.push(loadCampaigns({
+        campaignId: initialRoute.campaignId,
+        purpose: initialRoute.campaignPurpose,
+        lifecycle: initialRoute.campaignLifecycle,
+        query: initialRoute.campaignQuery,
+      }));
     } else if (initialRoute.page === "intent") {
       initialPageRequests.push(loadIntentLabeling({
         datasetId: initialRoute.intentDatasetId,
@@ -1249,7 +1266,10 @@ async function bootstrap() {
     if (initialRoute.openComments && initialRoute.issue) {
       await sessionRequest;
       if (initialRoute.page === "labeling") {
-        await openCaseLabelingDiscussion(initialRoute.commentId || 0);
+        await openCaseLabelingDiscussion(
+          initialRoute.commentId || 0,
+          initialRoute.discussionChannel || "",
+        );
       } else {
         await openAnalysisDiscussion(initialRoute.issue, {
           runId: initialRoute.runId || "",
@@ -1274,6 +1294,11 @@ async function bootstrap() {
       intentAssignees: initialRoute.intentAssignees,
       intentExperimentId: initialRoute.intentExperimentId,
       reviewAssignmentSplitId: initialRoute.reviewAssignmentSplitId,
+      discussionChannel: initialRoute.discussionChannel,
+      campaignId: initialRoute.campaignId,
+      campaignPurpose: initialRoute.campaignPurpose,
+      campaignLifecycle: initialRoute.campaignLifecycle,
+      campaignQuery: initialRoute.campaignQuery,
     });
     if (
       initialRoute.page === "intent"

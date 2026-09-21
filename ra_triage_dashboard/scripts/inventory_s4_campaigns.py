@@ -19,6 +19,7 @@ APP_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(APP_ROOT))
 
 from app.db import Database  # noqa: E402
+from app.db_parts.campaigns import campaign_inventory_fingerprint  # noqa: E402
 
 SAFE_DATABASE_RE = re.compile(r"^manual_s4_smoke(?:_[a-z0-9][a-z0-9_-]*)?$", re.IGNORECASE)
 SAFE_HOSTS = {"", "127.0.0.1", "::1", "localhost"}
@@ -140,6 +141,7 @@ def collect_inventory(database: Database) -> dict[str, Any]:
         host = str(identity["host"] or "")
         if not SAFE_DATABASE_RE.fullmatch(db_name) or host not in SAFE_HOSTS:
             raise RuntimeError("S4 inventory refuses a non-smoke or non-local database")
+        source_inventory_sha256 = campaign_inventory_fingerprint(connection)
         migration_count = int(
             connection.execute(
                 "SELECT COUNT(*) AS n FROM dashboard_schema_migrations"
@@ -304,6 +306,7 @@ def collect_inventory(database: Database) -> dict[str, Any]:
         "database": db_name,
         "host": host or "local_socket",
         "migration_count": migration_count,
+        "source_inventory_sha256": source_inventory_sha256,
         "mode": "read_only_dry_run",
         "task_kind_counts": {
             str(row["task_kind"] or "legacy"): int(row["count"] or 0)

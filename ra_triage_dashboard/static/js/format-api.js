@@ -686,6 +686,10 @@ async function refreshChangedDataNow() {
     });
     return;
   }
+  if (state.activePage === "campaigns") {
+    await loadCampaigns({ ...campaignRouteOptions() });
+    return;
+  }
   if (state.activePage === "trail-update") {
     // Shared change-revision polling must not refresh Trail status behind the
     // operator's back. The top-bar Refresh button is the explicit refresh

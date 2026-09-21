@@ -434,6 +434,9 @@ class DatabaseLabelingMixin:
         seed: int | None,
         reviewers_per_issue: int,
         overlap_ratio: float,
+        created_by_source: str = "legacy",
+        created_by_verified: bool = False,
+        idempotency_key: str = "",
     ) -> dict[str, Any]:
         workset = self.get_review_workset(workset_id)
         if workset is None:
@@ -442,7 +445,7 @@ class DatabaseLabelingMixin:
         if not actor:
             raise ValueError("任务创建人不能为空。")
         allowed = {item["issue_id"] for item in workset["items"]}
-        rows: list[tuple[str, str, str, int, str, str]] = []
+        assignments_by_issue: dict[str, list[dict[str, Any]]] = defaultdict(list)
         now = utc_now()
         for member in assignments:
             assignee = str(member.get("name") or "").strip().lower()
@@ -456,65 +459,52 @@ class DatabaseLabelingMixin:
                 issue_id = str(item.get("issue_id") or "").strip()
                 if issue_id not in allowed:
                     raise ValueError(f"任务分配包含工作集外 Issue：{issue_id}")
-                rows.append(
-                    (
-                        issue_id,
-                        assignee,
-                        str(item.get("assignment_kind") or "base"),
-                        int(item.get("ordinal") or 1),
-                        actor,
-                        now,
-                    )
-                )
-        if not rows:
+                assignments_by_issue[issue_id].append({
+                    "assignee": assignee,
+                    "assignment_kind": str(item.get("assignment_kind") or "base"),
+                })
+        assignment_count = sum(len(items) for items in assignments_by_issue.values())
+        if not assignment_count:
             raise ValueError("任务分配不能为空。")
-        task_id = f"split-{uuid4().hex}"
         reviewer_count = max(1, int(reviewers_per_issue))
-        with self._write_lock, self.connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO issue_work_splits (
-                    id, created_by, created_at, seed, total_count, filter_json,
-                    assignees_json, mode, reviewers_per_issue, model_run_id,
-                    overlap_ratio, assignment_count, task_kind, workset_id,
-                    selection_source_run_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, 'labeling', ?, ?)
-                """,
-                (
-                    task_id,
-                    actor,
-                    now,
-                    seed,
-                    len({row[0] for row in rows}),
-                    _json(workset.get("source_filter") or {}),
-                    _json(list(assignments)),
-                    "blind" if reviewer_count > 1 else "single",
-                    reviewer_count,
-                    float(overlap_ratio),
-                    len(rows),
-                    workset_id,
-                    str(workset.get("selection_source_run_id") or ""),
-                ),
-            )
-            conn.executemany(
-                """
-                INSERT INTO review_work_assignments (
-                    split_id, issue_id, assignee, assignment_kind, ordinal,
-                    assigned_by, assigned_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                [(task_id, *row) for row in rows],
-            )
-            self._mark_labeling_change(conn)
+        campaign = self.create_campaign(
+            spec={
+                "purpose": "labeling",
+                "name": str(workset.get("name") or "").strip(),
+                "workset_id": workset_id,
+                "seed": seed,
+                "filters": workset.get("source_filter") or {},
+                "overlap_ratio": float(overlap_ratio),
+                "members": [
+                    {
+                        "issue_id": str(item["issue_id"]),
+                        "ordinal": int(item["ordinal"] or index),
+                        "assignees": assignments_by_issue.get(str(item["issue_id"]), []),
+                    }
+                    for index, item in enumerate(workset["items"], 1)
+                ],
+            },
+            actor=actor,
+            actor_source=created_by_source,
+            actor_verified=created_by_verified,
+            idempotency_key=idempotency_key,
+        )
+        campaign_meta = campaign["campaign"]
         return {
-            "id": task_id,
+            "id": campaign_meta["id"],
+            "campaign_id": campaign_meta["id"],
+            "purpose": "labeling",
+            "name": campaign_meta["name"],
             "workset_id": workset_id,
-            "member_count": len({row[0] for row in rows}),
-            "assignment_count": len(rows),
+            "member_count": int(campaign["progress"].get("member_count") or 0),
+            "assignment_count": assignment_count,
             "reviewers_per_issue": reviewer_count,
             "overlap_ratio": float(overlap_ratio),
             "created_by": actor,
-            "created_at": now,
+            "created_at": str(campaign_meta.get("created_at") or now),
+            "lifecycle": campaign_meta.get("lifecycle"),
+            "config_revision": campaign_meta.get("config_revision"),
+            "progress": campaign.get("progress") or {},
         }
 
     def list_labeling_tasks(self, baseline_scopes: Sequence[str] = ()) -> list[dict[str, Any]]:
@@ -530,6 +520,7 @@ class DatabaseLabelingMixin:
                 SELECT split.id, split.created_by, split.created_at, split.mode,
                        split.reviewers_per_issue, split.overlap_ratio,
                        split.assignment_count, split.workset_id,
+                       workset.selection_source_run_id AS workset_selection_source_run_id,
                        split.selection_source_run_id,
                        workset.baseline_scope, workset.name, workset.member_count,
                        workset.members_sha256
@@ -548,7 +539,10 @@ class DatabaseLabelingMixin:
                 "workset_id": str(row["workset_id"] or ""),
                 "member_count": int(row["member_count"] or 0),
                 "members_sha256": str(row["members_sha256"] or ""),
-                "selection_source_run_id": str(row["selection_source_run_id"] or ""),
+                "selection_source_run_id": str(
+                    row["workset_selection_source_run_id"]
+                    or row["selection_source_run_id"] or ""
+                ),
                 "mode": str(row["mode"] or "single"),
                 "reviewers_per_issue": int(row["reviewers_per_issue"] or 1),
                 "overlap_ratio": float(row["overlap_ratio"] or 0),
@@ -645,18 +639,31 @@ class DatabaseLabelingMixin:
                 raise ValueError("Issue 不存在。")
             if task:
                 split = conn.execute(
-                    "SELECT task_kind, workset_id, selection_source_run_id FROM issue_work_splits WHERE id = ?",
+                    "SELECT split.task_kind, split.workset_id, split.selection_source_run_id, "
+                    "split.purpose, split.lifecycle, split.legacy_read_only, "
+                    "workset.selection_source_run_id AS workset_selection_source_run_id "
+                    "FROM issue_work_splits split LEFT JOIN review_worksets workset "
+                    "ON workset.id = split.workset_id WHERE split.id = ?",
                     (task,),
                 ).fetchone()
                 if split is None or str(split["task_kind"] or "") != "labeling":
                     raise ValueError("标注任务不存在或尚未启用。")
+                if (
+                    str(split["lifecycle"] or "active") != "active"
+                    or bool(split["legacy_read_only"])
+                    or str(split["purpose"] or "labeling") != "labeling"
+                ):
+                    raise ValueError("该 Campaign 当前只读，不能创建 Label Case。")
                 if conn.execute(
                     "SELECT 1 FROM review_workset_items WHERE workset_id = ? AND issue_id = ?",
                     (str(split["workset_id"] or ""), issue_key),
                 ).fetchone() is None:
                     raise ValueError("Issue 不在该标注任务的冻结工作集中。")
                 if not source_run:
-                    source_run = str(split["selection_source_run_id"] or "")
+                    source_run = str(
+                        split["workset_selection_source_run_id"]
+                        or split["selection_source_run_id"] or ""
+                    )
             if source_run and not allow_missing_source_run and conn.execute(
                 "SELECT 1 FROM model_runs WHERE id = ?", (source_run,)
             ).fetchone() is None:
@@ -896,6 +903,7 @@ class DatabaseLabelingMixin:
         issue_ids: Sequence[str],
         task_id: str = "",
         baseline_scope: str = "",
+        source_run_id: str = "",
     ) -> dict[str, list[dict[str, Any]]]:
         """Resolve current Label Case heads in bounded SQL batches.
 
@@ -910,6 +918,7 @@ class DatabaseLabelingMixin:
             return {}
         task = str(task_id or "").strip()
         scope = str(baseline_scope or "").strip()
+        selected_source_run = str(source_run_id or "").strip()
         case_rows: list[Any] = []
         head_rows: list[Any] = []
         result_revision_rows: list[Any] = []
@@ -926,6 +935,9 @@ class DatabaseLabelingMixin:
                 if task:
                     clause += " AND task_id = ?"
                     params.append(task)
+                if selected_source_run:
+                    clause += " AND source_run_id = ?"
+                    params.append(selected_source_run)
                 case_rows.extend(
                     conn.execute(
                         f"SELECT * FROM label_cases WHERE {clause} ORDER BY created_at, id",
@@ -1356,6 +1368,18 @@ class DatabaseLabelingMixin:
                     (label_case["id"],),
                 ).fetchone()
             if task_id:
+                campaign = conn.execute(
+                    "SELECT purpose, lifecycle, legacy_read_only FROM issue_work_splits WHERE id = ?",
+                    (task_id,),
+                ).fetchone()
+                if (
+                    campaign is None
+                    or bool(campaign["legacy_read_only"])
+                    or str(campaign["lifecycle"] or "active") != "active"
+                    or str(campaign["purpose"] or "labeling") != "labeling"
+                ):
+                    raise ValueError("该 Campaign 当前只读，不能提交标注。")
+            if task_id:
                 assigned = conn.execute(
                     """
                     SELECT 1 FROM review_work_assignments
@@ -1486,6 +1510,17 @@ class DatabaseLabelingMixin:
             current = self._resolve_label_case_with_conn(conn, case_row)
             if not str(case_row["task_id"] or ""):
                 raise ValueError("自由标注无需任务冲突裁决。")
+            campaign = conn.execute(
+                "SELECT purpose, lifecycle, legacy_read_only FROM issue_work_splits WHERE id = ?",
+                (str(case_row["task_id"]),),
+            ).fetchone()
+            if (
+                campaign is None
+                or bool(campaign["legacy_read_only"])
+                or str(campaign["lifecycle"] or "active") != "active"
+                or str(campaign["purpose"] or "labeling") != "labeling"
+            ):
+                raise ValueError("该 Campaign 当前只读，不能提交标注裁决。")
             if current["state"] not in {"conflict", "stale"}:
                 raise ValueError("当前任务标注没有需要裁决的冲突。")
             current_sources = sorted(int(item["id"]) for item in current["heads"])
@@ -1643,6 +1678,7 @@ class DatabaseLabelingMixin:
             from_sql = """
                 FROM review_workset_items member
                 JOIN issue_work_splits task ON task.workset_id = member.workset_id
+                JOIN review_worksets workset ON workset.id = member.workset_id
                 JOIN issues issue ON issue.issue_id = member.issue_id
             """
             where = (
@@ -1681,19 +1717,22 @@ class DatabaseLabelingMixin:
         if normalized_exclusion not in {"all", "excluded", "active"}:
             raise ValueError("排除筛选不合法。")
         normalized_cluster = _parse_labeling_cluster(cluster)
+        selected_source_sql = ", workset.selection_source_run_id AS task_source_run_id" if task else ""
         with self.connect() as conn:
             rows = conn.execute(
                 f"""
                 SELECT issue.issue_id, issue.baseline_scope, issue.gt_label,
-                       issue.gt_source, issue.title, issue.scenario
+                       issue.gt_source, issue.title, issue.scenario{selected_source_sql}
                 {from_sql}
                 WHERE {where}
                 ORDER BY issue.issue_id
                 """,
                 parameters,
             ).fetchall()
+        task_source_run_id = str(rows[0]["task_source_run_id"] or "") if task and rows else ""
         cases_by_issue = self._batch_label_cases(
-            [str(row["issue_id"]) for row in rows], task
+            [str(row["issue_id"]) for row in rows], task,
+            source_run_id=task_source_run_id,
         )
         projected: list[dict[str, Any]] = []
         for row in rows:
@@ -2649,21 +2688,38 @@ class DatabaseLabelingMixin:
             ).fetchone()
         return dict(row) if row is not None else None
 
-    def list_label_comments(self, *, issue_id: str, task_id: str = "") -> list[dict[str, Any]]:
+    def list_label_comments(
+        self, *, issue_id: str, task_id: str = "", discussion_channel: str = "both"
+    ) -> list[dict[str, Any]]:
         task = str(task_id or "").strip()
         issue = str(issue_id or "").strip()
+        channel = str(discussion_channel or "both").strip().lower()
+        if channel not in {"both", "case", "campaign"}:
+            raise ValueError("标注讨论频道不合法。")
         query = """
                 SELECT comment.*, parent.author AS reply_to_author,
-                       parent.body AS reply_to_body, link.task_id,
-                       link.source_run_id, link.policy_version
-                FROM label_comment_links link
-                JOIN review_comments comment ON comment.id = link.comment_id
+                       parent.body AS reply_to_body,
+                       COALESCE(link.task_id, '') AS task_id,
+                       COALESCE(link.source_run_id, '') AS source_run_id,
+                       COALESCE(link.policy_version, '') AS policy_version
+                FROM review_comments comment
+                JOIN issues issue ON issue.issue_id = comment.issue_id
+                LEFT JOIN label_comment_links link ON link.comment_id = comment.id
                 LEFT JOIN review_comments parent ON parent.id = comment.reply_to_id
-                WHERE link.issue_id = ?
+                WHERE comment.issue_id = ?
+                  AND comment.baseline_scope = issue.baseline_scope
+                  AND (link.comment_id IS NOT NULL OR comment.discussion_channel = 'case')
                 """
         params: tuple[Any, ...] = (issue,)
-        if task:
-            query += " AND (link.task_id = ? OR link.task_id = '')"
+        if channel == "case":
+            query += " AND comment.discussion_channel = 'case'"
+        elif channel == "campaign":
+            if not task:
+                return []
+            query += " AND comment.discussion_channel = 'campaign' AND COALESCE(link.task_id, '') = ?"
+            params = (issue, task)
+        elif task:
+            query += " AND (comment.discussion_channel = 'case' OR (comment.discussion_channel = 'campaign' AND COALESCE(link.task_id, '') = ?))"
             params = (issue, task)
         query += " ORDER BY comment.id"
         with self.connect() as conn:

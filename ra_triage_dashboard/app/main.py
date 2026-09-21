@@ -40,6 +40,7 @@ from .routers import (
     batch,
     case_annotations,
     case_comments,
+    campaigns,
     cases,
     core,
     imports,
@@ -400,6 +401,7 @@ app.mount(
 app.include_router(core.router)
 app.include_router(cases.router)
 app.include_router(case_comments.router)
+app.include_router(campaigns.router)
 app.include_router(case_annotations.router)
 app.include_router(reviews.router)
 app.include_router(runs.router)

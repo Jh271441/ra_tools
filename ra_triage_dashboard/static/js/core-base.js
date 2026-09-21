@@ -562,6 +562,11 @@ const PAGE_ROUTES = {
     titleZh: "任务分配",
     titleEn: "Review Assignments",
   },
+  campaigns: {
+    path: "/campaigns",
+    titleZh: "Campaign 任务与标注分析",
+    titleEn: "Campaigns and Label Analysis",
+  },
   intent: {
     path: "/intent-labeling",
     titleZh: "意图标注",

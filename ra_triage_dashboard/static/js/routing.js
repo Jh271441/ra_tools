@@ -484,6 +484,8 @@ function parsePageRoute() {
     runId: params.get("run") || "",
     openComments: params.get("comments") === "1",
     commentId: Number.parseInt(params.get("comment") || "0", 10) || 0,
+    discussionChannel: ["case", "campaign", "both"].includes(params.get("channel"))
+      ? params.get("channel") : "",
     comparisonStatus: routeReviewComparisonStatus(params),
     failureOnly: params.has("failure") ? params.get("failure") === "1" : params.has("run") ? false : null,
     ...reviewFilters,
@@ -505,6 +507,10 @@ function parsePageRoute() {
     intentSummaryAxis: ["routing", "lane_change"].includes(params.get("axis")) ? params.get("axis") : "all",
     intentSummaryCommentQuery: (params.get("q") || "").trim().slice(0, 80),
     reviewAssignmentSplitId: String(params.get("split") || "").trim(),
+    campaignId: String(params.get("campaign") || "").trim(),
+    campaignPurpose: ["labeling", "model_review"].includes(params.get("purpose")) ? params.get("purpose") : "",
+    campaignLifecycle: params.get("lifecycle") || "all",
+    campaignQuery: String(params.get("q") || "").slice(0, 128),
     // Issue / GT 上传已从页面移除；旧链接统一落到安全的模型结果导入区。
     importKind:
       params.get("import") === "model" ||
@@ -726,6 +732,7 @@ function pageUrl(page, options = {}) {
     if (labeling.author) url.searchParams.set("author", labeling.author);
     if (labeling.assignee) url.searchParams.set("assignee", labeling.assignee);
     if (labeling.cluster) url.searchParams.set("cluster", labeling.cluster);
+    if (labeling.discussionChannel) url.searchParams.set("channel", labeling.discussionChannel);
     if (labeling.label && labeling.label !== "all") {
       url.searchParams.set("label", labeling.label);
     }
@@ -736,6 +743,14 @@ function pageUrl(page, options = {}) {
     if (Number(labeling.pageSize) !== DEFAULT_CASE_PAGE_SIZE) {
       url.searchParams.set("page_size", String(labeling.pageSize));
     }
+  }
+  if (page === "campaigns") {
+    if (options.campaignId) url.searchParams.set("campaign", String(options.campaignId));
+    if (options.purpose) url.searchParams.set("purpose", String(options.purpose));
+    if (options.lifecycle && options.lifecycle !== "all") {
+      url.searchParams.set("lifecycle", String(options.lifecycle));
+    }
+    if (options.query) url.searchParams.set("q", String(options.query).slice(0, 128));
   }
   if (page === "review") {
     const review = currentReviewRouteOptions(options);
@@ -960,6 +975,10 @@ function showPage(
     intentAssignees = null,
     intentExperimentId = "",
     reviewAssignmentSplitId = "",
+    campaignId = "",
+    campaignPurpose = "",
+    campaignLifecycle = "all",
+    campaignQuery = "",
   } = {}
 ) {
   const target = PAGE_ROUTES[page] ? page : "review";
@@ -1069,6 +1088,14 @@ function showPage(
       force: true,
     }).catch((error) => showToast(error.message, true));
   }
+  if (target === "campaigns" && loadPageData && typeof loadCampaigns === "function") {
+    loadCampaigns({
+      campaignId,
+      purpose: campaignPurpose,
+      lifecycle: campaignLifecycle,
+      query: campaignQuery,
+    }).catch((error) => showToast(error.message, true));
+  }
   if (target === "intent-experiments" && loadPageData && typeof loadIntentExperimentAdmin === "function") {
     loadIntentExperimentAdmin({
       datasetId: intentDatasetId,
@@ -1138,8 +1165,15 @@ function showPage(
           ? (typeof currentTrailUpdateRouteOptions === "function"
               ? currentTrailUpdateRouteOptions()
               : { runId: state.trailUpdate?.runId || "" })
-        : target === "comparison" && typeof runComparisonRouteOptions === "function"
+      : target === "comparison" && typeof runComparisonRouteOptions === "function"
           ? runComparisonRouteOptions()
+        : target === "campaigns"
+          ? {
+              campaignId,
+              purpose: campaignPurpose,
+              lifecycle: campaignLifecycle,
+              query: campaignQuery,
+            }
         : target === "intent" && typeof intentRouteOptions === "function"
           ? intentRouteOptions({
               datasetId: intentDatasetId,

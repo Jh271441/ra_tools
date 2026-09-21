@@ -42,6 +42,8 @@ def _create_model_review_record(
         raise _detail(404, "Issue 不存在。")
     author, author_source, author_verified = _action_actor(request, body.get("author"))
     work_split_id = _as_text(body.get("work_split_id"))
+    campaign_id = _as_text(body.get("campaign_id"))
+    reference_id = _as_text(body.get("reference_id"))
     if work_split_id:
         assignment = database.review_assignment_context(
             issue_id,
@@ -56,6 +58,13 @@ def _create_model_review_record(
             or not assignment.get("assigned")
         ):
             raise _detail(403, "当前账号不在该判错复核任务中，不能提交 Review。")
+        campaign_detail = database.get_campaign(work_split_id, page=1, page_size=1)
+        campaign = (campaign_detail or {}).get("campaign") or {}
+        if campaign.get("purpose") == "model_review":
+            if str(campaign.get("evaluation_run_id") or "") != model_run_id:
+                raise _detail(409, "当前 Model Run 与 Campaign 任务不匹配。")
+            campaign_id = str(campaign.get("id") or work_split_id)
+            reference_id = str(campaign.get("reference_id") or "")
     label_state = dict(case.get("label_state") or {})
     requested_status = _as_text(body.get("model_review_status")).lower()
     if not requested_status:
@@ -82,8 +91,8 @@ def _create_model_review_record(
         review = database.create_model_review(
             issue_id=issue_id,
             model_run_id=model_run_id,
-            campaign_id=_as_text(body.get("campaign_id")),
-            reference_id=_as_text(body.get("reference_id")),
+            campaign_id=campaign_id,
+            reference_id=reference_id,
             work_split_id=work_split_id,
             status=requested_status,
             reason=_as_text(body.get("note") or body.get("reason")),

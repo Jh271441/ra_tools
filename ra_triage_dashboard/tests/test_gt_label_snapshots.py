@@ -359,6 +359,7 @@ class GtLabelSnapshotsTest(unittest.TestCase):
     def test_label_snapshot_hash_tracks_resolution_and_new_pending_source_provenance(self) -> None:
         db = self.make_db()
         self.add_scope(db, "scope", [("a", "正确触发")])
+        self.sync(db, "scope", [{"issue_id": "a", "gt_label": "正确触发"}])
         workset = db.create_review_workset(
             baseline_scope="scope", issue_ids=["a"], created_by="admin"
         )

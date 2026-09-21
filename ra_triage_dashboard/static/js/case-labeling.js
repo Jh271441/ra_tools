@@ -14,6 +14,7 @@ function caseLabelingRouteOptions(overrides = {}) {
     exclusion: overrides.exclusion ?? labeling.exclusion ?? "all",
     page: overrides.page ?? labeling.page ?? 1,
     pageSize: overrides.pageSize ?? labeling.pageSize ?? DEFAULT_CASE_PAGE_SIZE,
+    discussionChannel: overrides.discussionChannel ?? "",
     baselines: overrides.baselines ?? state.selectedBaselineIds,
   };
 }
@@ -1345,13 +1346,14 @@ async function adjudicateCaseLabeling() {
   }
 }
 
-function openCaseLabelingDiscussion(focusCommentId = 0) {
+function openCaseLabelingDiscussion(focusCommentId = 0, discussionChannel = "") {
   const issueId = state.caseLabeling.issueId || state.caseLabeling.caseData?.issue_id;
   if (!issueId || typeof openAnalysisDiscussion !== "function") return Promise.resolve();
   return openAnalysisDiscussion(issueId, {
     source: "labeling",
     kind: "labeling",
     taskId: state.caseLabeling.taskId || "",
+    discussionChannel,
     focusCommentId,
   });
 }

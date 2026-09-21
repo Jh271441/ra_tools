@@ -496,6 +496,11 @@ class DatabaseCoreMixin:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE CASCADE,
                     model_run_id TEXT NOT NULL DEFAULT '',
+                    discussion_channel TEXT NOT NULL DEFAULT 'legacy'
+                        CHECK(discussion_channel IN ('case', 'campaign', 'model_review', 'legacy')),
+                    campaign_id TEXT NOT NULL DEFAULT '',
+                    baseline_scope TEXT NOT NULL DEFAULT '',
+                    evaluation_run_id TEXT NOT NULL DEFAULT '',
                     body TEXT NOT NULL,
                     author TEXT NOT NULL,
                     author_source TEXT NOT NULL DEFAULT 'legacy',
@@ -952,8 +957,90 @@ class DatabaseCoreMixin:
                     filter_json TEXT NOT NULL DEFAULT '{}',
                     assignees_json TEXT NOT NULL DEFAULT '[]',
                     overlap_ratio REAL NOT NULL DEFAULT 1.0
-                        CHECK(overlap_ratio >= 0 AND overlap_ratio <= 1)
+                        CHECK(overlap_ratio >= 0 AND overlap_ratio <= 1),
+                    purpose TEXT CHECK(purpose IS NULL OR purpose IN ('labeling', 'model_review')),
+                    evaluation_run_id TEXT,
+                    reference_type TEXT NOT NULL DEFAULT '',
+                    reference_id TEXT NOT NULL DEFAULT '',
+                    reference_sha256 TEXT NOT NULL DEFAULT '',
+                    lifecycle TEXT NOT NULL DEFAULT 'active'
+                        CHECK(lifecycle IN ('draft', 'active', 'closed', 'cancelled', 'superseded')),
+                    config_revision INTEGER NOT NULL DEFAULT 1 CHECK(config_revision > 0),
+                    created_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    created_by_verified INTEGER NOT NULL DEFAULT 0,
+                    updated_by TEXT NOT NULL DEFAULT '',
+                    updated_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    updated_by_verified INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL DEFAULT '',
+                    closed_by TEXT NOT NULL DEFAULT '',
+                    closed_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    closed_by_verified INTEGER NOT NULL DEFAULT 0,
+                    closed_at TEXT,
+                    closed_revision INTEGER,
+                    legacy_read_only INTEGER NOT NULL DEFAULT 0,
+                    legacy_mapping_status TEXT NOT NULL DEFAULT 'not_inventoried',
+                    idempotency_key TEXT NOT NULL DEFAULT '',
+                    idempotency_fingerprint TEXT NOT NULL DEFAULT '',
+                    campaign_name TEXT NOT NULL DEFAULT '',
+                    task_group_id TEXT,
+                    latest_close_snapshot_id TEXT,
+                    CHECK((reference_type = '' AND reference_id = '') OR (reference_type <> '' AND reference_id <> '')),
+                    CHECK(purpose IS NULL OR
+                          (purpose = 'labeling' AND COALESCE(evaluation_run_id, '') = '') OR
+                          (purpose = 'model_review' AND COALESCE(TRIM(evaluation_run_id), '') <> ''))
                 );
+
+                CREATE TABLE IF NOT EXISTS review_task_groups (
+                    id TEXT PRIMARY KEY,
+                    purpose TEXT NOT NULL CHECK(purpose IN ('labeling', 'model_review')),
+                    name TEXT NOT NULL DEFAULT '',
+                    lifecycle TEXT NOT NULL DEFAULT 'draft'
+                        CHECK(lifecycle IN ('draft', 'active', 'closed', 'cancelled', 'superseded')),
+                    config_revision INTEGER NOT NULL DEFAULT 1 CHECK(config_revision > 0),
+                    workset_id TEXT NOT NULL DEFAULT '',
+                    source_run_ids_json TEXT NOT NULL DEFAULT '[]',
+                    reference_type TEXT NOT NULL DEFAULT '',
+                    reference_id TEXT NOT NULL DEFAULT '',
+                    reference_sha256 TEXT NOT NULL DEFAULT '',
+                    idempotency_key TEXT NOT NULL DEFAULT '',
+                    idempotency_fingerprint TEXT NOT NULL DEFAULT '',
+                    created_by TEXT NOT NULL DEFAULT '',
+                    created_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    created_by_verified INTEGER NOT NULL DEFAULT 0,
+                    updated_by TEXT NOT NULL DEFAULT '',
+                    updated_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    updated_by_verified INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL DEFAULT '',
+                    closed_by TEXT NOT NULL DEFAULT '',
+                    closed_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    closed_by_verified INTEGER NOT NULL DEFAULT 0,
+                    closed_at TEXT,
+                    closed_revision INTEGER,
+                    created_at TEXT NOT NULL,
+                    CHECK((reference_type = '' AND reference_id = '') OR (reference_type <> '' AND reference_id <> ''))
+                );
+                CREATE TABLE IF NOT EXISTS review_task_group_campaigns (
+                    group_id TEXT NOT NULL REFERENCES review_task_groups(id) ON DELETE RESTRICT,
+                    campaign_id TEXT NOT NULL REFERENCES issue_work_splits(id) ON DELETE RESTRICT,
+                    evaluation_run_id TEXT NOT NULL DEFAULT '',
+                    ordinal INTEGER NOT NULL CHECK(ordinal > 0),
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(group_id, evaluation_run_id),
+                    UNIQUE(campaign_id)
+                );
+                CREATE TABLE IF NOT EXISTS review_task_group_revisions (
+                    group_id TEXT NOT NULL REFERENCES review_task_groups(id) ON DELETE RESTRICT,
+                    revision_no INTEGER NOT NULL CHECK(revision_no > 0),
+                    config_json TEXT NOT NULL DEFAULT '{}',
+                    config_sha256 TEXT NOT NULL,
+                    changed_by TEXT NOT NULL DEFAULT '',
+                    changed_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    changed_by_verified INTEGER NOT NULL DEFAULT 0,
+                    changed_at TEXT NOT NULL,
+                    PRIMARY KEY(group_id, revision_no)
+                );
+                CREATE INDEX IF NOT EXISTS idx_review_task_groups_purpose_lifecycle
+                    ON review_task_groups(purpose, lifecycle, created_at DESC);
 
                 CREATE TABLE IF NOT EXISTS review_work_assignments (
                     split_id TEXT NOT NULL REFERENCES issue_work_splits(id) ON DELETE RESTRICT,
@@ -1009,6 +1096,156 @@ class DatabaseCoreMixin:
                 );
                 CREATE INDEX IF NOT EXISTS idx_review_workset_items_issue
                     ON review_workset_items(issue_id, workset_id);
+
+                CREATE TABLE IF NOT EXISTS campaign_config_revisions (
+                    campaign_id TEXT NOT NULL REFERENCES issue_work_splits(id) ON DELETE RESTRICT,
+                    revision_no INTEGER NOT NULL CHECK(revision_no > 0),
+                    purpose TEXT,
+                    workset_id TEXT NOT NULL DEFAULT '',
+                    evaluation_run_id TEXT,
+                    reference_type TEXT NOT NULL DEFAULT '',
+                    reference_id TEXT NOT NULL DEFAULT '',
+                    lifecycle TEXT NOT NULL,
+                    member_count INTEGER NOT NULL DEFAULT 0 CHECK(member_count >= 0),
+                    required_submitter_count INTEGER NOT NULL DEFAULT 0 CHECK(required_submitter_count >= 0),
+                    members_sha256 TEXT NOT NULL DEFAULT '',
+                    config_json TEXT NOT NULL DEFAULT '{}',
+                    config_sha256 TEXT NOT NULL,
+                    changed_by TEXT NOT NULL DEFAULT '',
+                    changed_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    changed_by_verified INTEGER NOT NULL DEFAULT 0,
+                    change_source TEXT NOT NULL DEFAULT 'user',
+                    changed_at TEXT NOT NULL,
+                    idempotency_key TEXT NOT NULL DEFAULT '',
+                    idempotency_fingerprint TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY(campaign_id, revision_no)
+                );
+                CREATE TABLE IF NOT EXISTS campaign_config_members (
+                    campaign_id TEXT NOT NULL,
+                    revision_no INTEGER NOT NULL,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE RESTRICT,
+                    ordinal INTEGER NOT NULL CHECK(ordinal > 0),
+                    required_submitter_count INTEGER NOT NULL DEFAULT 0 CHECK(required_submitter_count >= 0),
+                    reviewers_per_issue INTEGER NOT NULL DEFAULT 0 CHECK(reviewers_per_issue >= 0),
+                    assignment_kinds_json TEXT NOT NULL DEFAULT '[]',
+                    PRIMARY KEY(campaign_id, revision_no, issue_id),
+                    UNIQUE(campaign_id, revision_no, ordinal),
+                    FOREIGN KEY(campaign_id, revision_no)
+                        REFERENCES campaign_config_revisions(campaign_id, revision_no) ON DELETE RESTRICT
+                );
+                CREATE INDEX IF NOT EXISTS idx_campaign_config_members_issue
+                    ON campaign_config_members(issue_id, campaign_id, revision_no DESC);
+                CREATE TABLE IF NOT EXISTS campaign_issue_members (
+                    campaign_id TEXT NOT NULL REFERENCES issue_work_splits(id) ON DELETE RESTRICT,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE RESTRICT,
+                    baseline_scope TEXT NOT NULL DEFAULT '',
+                    ordinal INTEGER NOT NULL CHECK(ordinal > 0),
+                    required_submitter_count INTEGER NOT NULL DEFAULT 0 CHECK(required_submitter_count >= 0),
+                    reviewers_per_issue INTEGER NOT NULL DEFAULT 0 CHECK(reviewers_per_issue >= 0),
+                    assignment_kinds_json TEXT NOT NULL DEFAULT '[]',
+                    config_revision INTEGER NOT NULL DEFAULT 1 CHECK(config_revision > 0),
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(campaign_id, issue_id),
+                    UNIQUE(campaign_id, ordinal)
+                );
+                CREATE INDEX IF NOT EXISTS idx_campaign_issue_members_issue
+                    ON campaign_issue_members(issue_id, campaign_id);
+                CREATE INDEX IF NOT EXISTS idx_campaign_issue_members_scope
+                    ON campaign_issue_members(campaign_id, baseline_scope, ordinal);
+                CREATE TABLE IF NOT EXISTS campaign_assignment_audit (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    campaign_id TEXT NOT NULL REFERENCES issue_work_splits(id) ON DELETE RESTRICT,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE RESTRICT,
+                    action TEXT NOT NULL
+                        CHECK(action IN ('assigned', 'reassigned', 'unassigned', 'legacy_snapshot')),
+                    assignment_kind TEXT NOT NULL DEFAULT 'base',
+                    from_assignee TEXT NOT NULL DEFAULT '',
+                    to_assignee TEXT NOT NULL DEFAULT '',
+                    changed_by TEXT NOT NULL DEFAULT '',
+                    changed_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    changed_by_verified INTEGER NOT NULL DEFAULT 0,
+                    config_revision INTEGER NOT NULL CHECK(config_revision > 0),
+                    idempotency_key TEXT NOT NULL DEFAULT '',
+                    idempotency_fingerprint TEXT NOT NULL DEFAULT '',
+                    reason TEXT NOT NULL DEFAULT '',
+                    changed_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS campaign_close_snapshots (
+                    id TEXT PRIMARY KEY,
+                    campaign_id TEXT NOT NULL REFERENCES issue_work_splits(id) ON DELETE RESTRICT,
+                    config_revision INTEGER NOT NULL CHECK(config_revision > 0),
+                    member_count INTEGER NOT NULL DEFAULT 0 CHECK(member_count >= 0),
+                    assigned_issue_count INTEGER NOT NULL DEFAULT 0 CHECK(assigned_issue_count >= 0),
+                    required_submitter_count INTEGER NOT NULL DEFAULT 0 CHECK(required_submitter_count >= 0),
+                    submitted_submitter_count INTEGER NOT NULL DEFAULT 0 CHECK(submitted_submitter_count >= 0),
+                    completed_issue_count INTEGER NOT NULL DEFAULT 0 CHECK(completed_issue_count >= 0),
+                    pending_issue_count INTEGER NOT NULL DEFAULT 0 CHECK(pending_issue_count >= 0),
+                    conflict_issue_count INTEGER NOT NULL DEFAULT 0 CHECK(conflict_issue_count >= 0),
+                    adjudicated_issue_count INTEGER NOT NULL DEFAULT 0 CHECK(adjudicated_issue_count >= 0),
+                    stale_issue_count INTEGER NOT NULL DEFAULT 0 CHECK(stale_issue_count >= 0),
+                    blocked_issue_count INTEGER NOT NULL DEFAULT 0 CHECK(blocked_issue_count >= 0),
+                    status_counts_json TEXT NOT NULL DEFAULT '{}',
+                    result_snapshot_json TEXT NOT NULL DEFAULT '{}',
+                    source_fingerprint TEXT NOT NULL,
+                    closed_by TEXT NOT NULL DEFAULT '',
+                    closed_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    closed_by_verified INTEGER NOT NULL DEFAULT 0,
+                    closed_at TEXT NOT NULL,
+                    UNIQUE(campaign_id, config_revision)
+                );
+                CREATE TABLE IF NOT EXISTS campaign_close_snapshot_items (
+                    snapshot_id TEXT NOT NULL
+                        REFERENCES campaign_close_snapshots(id) ON DELETE RESTRICT,
+                    campaign_id TEXT NOT NULL REFERENCES issue_work_splits(id) ON DELETE RESTRICT,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE RESTRICT,
+                    required_submitter_count INTEGER NOT NULL DEFAULT 0 CHECK(required_submitter_count >= 0),
+                    submitted_submitter_count INTEGER NOT NULL DEFAULT 0 CHECK(submitted_submitter_count >= 0),
+                    result_state TEXT NOT NULL DEFAULT 'pending'
+                        CHECK(result_state IN ('pending', 'completed', 'conflict', 'adjudicated', 'stale', 'blocked')),
+                    status_counts_json TEXT NOT NULL DEFAULT '{}',
+                    source_revision_ids_json TEXT NOT NULL DEFAULT '[]',
+                    PRIMARY KEY(snapshot_id, issue_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_campaign_close_snapshot_items_campaign
+                    ON campaign_close_snapshot_items(campaign_id, snapshot_id, issue_id);
+                CREATE TABLE IF NOT EXISTS campaign_lifecycle_audit (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    campaign_id TEXT NOT NULL REFERENCES issue_work_splits(id) ON DELETE RESTRICT,
+                    action TEXT NOT NULL CHECK(action IN ('closed', 'reopened', 'cancelled')),
+                    from_lifecycle TEXT NOT NULL,
+                    to_lifecycle TEXT NOT NULL,
+                    config_revision INTEGER NOT NULL CHECK(config_revision > 0),
+                    changed_by TEXT NOT NULL DEFAULT '',
+                    changed_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    changed_by_verified INTEGER NOT NULL DEFAULT 0,
+                    snapshot_id TEXT NOT NULL DEFAULT '',
+                    idempotency_key TEXT NOT NULL DEFAULT '',
+                    idempotency_fingerprint TEXT NOT NULL DEFAULT '',
+                    reason TEXT NOT NULL DEFAULT '',
+                    changed_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS campaign_migration_map (
+                    source_table TEXT NOT NULL,
+                    source_id TEXT NOT NULL,
+                    campaign_id TEXT NOT NULL REFERENCES issue_work_splits(id) ON DELETE RESTRICT,
+                    purpose TEXT,
+                    mapping_status TEXT NOT NULL,
+                    mapping_evidence_json TEXT NOT NULL DEFAULT '[]',
+                    source_inventory_sha256 TEXT NOT NULL,
+                    policy_version TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(source_table, source_id, policy_version)
+                );
+                CREATE TABLE IF NOT EXISTS campaign_reference_items (
+                    campaign_id TEXT NOT NULL REFERENCES issue_work_splits(id) ON DELETE RESTRICT,
+                    baseline_scope TEXT NOT NULL,
+                    reference_type TEXT NOT NULL
+                        CHECK(reference_type IN ('gt_snapshot', 'label_result_snapshot')),
+                    reference_id TEXT NOT NULL,
+                    reference_sha256 TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(campaign_id, baseline_scope)
+                );
 
                 CREATE TABLE IF NOT EXISTS label_cases (
                     id TEXT PRIMARY KEY,
@@ -1463,6 +1700,15 @@ class DatabaseCoreMixin:
                 "mention_users",
                 "review_comments",
                 "comment_attachments",
+                "campaign_assignment_audit",
+                "campaign_close_snapshots",
+                "campaign_close_snapshot_items",
+                "campaign_lifecycle_audit",
+                "campaign_config_revisions",
+                "campaign_config_members",
+                "campaign_issue_members",
+                "campaign_migration_map",
+                "campaign_reference_items",
                 "model_review_revisions",
                 "model_review_heads",
                 "model_review_attachments",
@@ -1472,6 +1718,9 @@ class DatabaseCoreMixin:
                 "review_work_assignment_changes",
                 "review_worksets",
                 "review_workset_items",
+                "review_task_groups",
+                "review_task_group_campaigns",
+                "review_task_group_revisions",
                 "label_cases",
                 "label_revisions",
                 "label_attachments",
@@ -1530,6 +1779,304 @@ class DatabaseCoreMixin:
             self._ensure_column(conn, "issue_work_splits", "task_kind", "TEXT NOT NULL DEFAULT 'legacy'")
             self._ensure_column(conn, "issue_work_splits", "workset_id", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "issue_work_splits", "selection_source_run_id", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "issue_work_splits", "purpose", "TEXT")
+            self._ensure_column(conn, "issue_work_splits", "evaluation_run_id", "TEXT")
+            self._ensure_column(conn, "issue_work_splits", "reference_type", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "issue_work_splits", "reference_id", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "issue_work_splits", "reference_sha256", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "issue_work_splits", "lifecycle", "TEXT NOT NULL DEFAULT 'active'")
+            self._ensure_column(conn, "issue_work_splits", "config_revision", "INTEGER NOT NULL DEFAULT 1")
+            self._ensure_column(conn, "issue_work_splits", "created_by_source", "TEXT NOT NULL DEFAULT 'legacy'")
+            self._ensure_column(conn, "issue_work_splits", "created_by_verified", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "issue_work_splits", "updated_by", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "issue_work_splits", "updated_by_source", "TEXT NOT NULL DEFAULT 'legacy'")
+            self._ensure_column(conn, "issue_work_splits", "updated_by_verified", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "issue_work_splits", "updated_at", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "issue_work_splits", "closed_by", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "issue_work_splits", "closed_by_source", "TEXT NOT NULL DEFAULT 'legacy'")
+            self._ensure_column(conn, "issue_work_splits", "closed_by_verified", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "issue_work_splits", "closed_at", "TEXT")
+            self._ensure_column(conn, "issue_work_splits", "closed_revision", "INTEGER")
+            self._ensure_column(conn, "issue_work_splits", "legacy_read_only", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "issue_work_splits", "legacy_mapping_status", "TEXT NOT NULL DEFAULT 'not_inventoried'")
+            self._ensure_column(conn, "issue_work_splits", "idempotency_key", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "issue_work_splits", "idempotency_fingerprint", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "issue_work_splits", "campaign_name", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "issue_work_splits", "task_group_id", "TEXT")
+            self._ensure_column(conn, "issue_work_splits", "latest_close_snapshot_id", "TEXT")
+            self._ensure_column(
+                conn, "campaign_assignment_audit", "idempotency_fingerprint",
+                "TEXT NOT NULL DEFAULT ''",
+            )
+            self._ensure_column(
+                conn, "campaign_close_snapshots", "blocked_issue_count",
+                "INTEGER NOT NULL DEFAULT 0",
+            )
+            self._ensure_column(conn, "review_comments", "discussion_channel", "TEXT NOT NULL DEFAULT 'legacy'")
+            self._ensure_column(conn, "review_comments", "campaign_id", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "review_comments", "baseline_scope", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "review_comments", "evaluation_run_id", "TEXT NOT NULL DEFAULT ''")
+            conn.execute(
+                """
+                UPDATE review_comments
+                SET discussion_channel = 'model_review',
+                    evaluation_run_id = model_run_id,
+                    baseline_scope = COALESCE((
+                        SELECT issue.baseline_scope FROM issues issue
+                        WHERE issue.issue_id = review_comments.issue_id
+                    ), '')
+                WHERE discussion_channel = 'legacy'
+                  AND model_run_id <> ''
+                  AND NOT EXISTS (
+                      SELECT 1 FROM label_comment_links link
+                      WHERE link.comment_id = review_comments.id
+                  )
+                """
+            )
+            conn.execute(
+                """
+                UPDATE review_comments
+                SET discussion_channel = CASE
+                        WHEN COALESCE((SELECT link.task_id FROM label_comment_links link
+                                       WHERE link.comment_id = review_comments.id), '') <> ''
+                        THEN 'campaign' ELSE 'case' END,
+                    campaign_id = COALESCE((SELECT link.task_id FROM label_comment_links link
+                                            WHERE link.comment_id = review_comments.id), ''),
+                    baseline_scope = COALESCE((SELECT link.baseline_scope FROM label_comment_links link
+                                               WHERE link.comment_id = review_comments.id), ''),
+                    evaluation_run_id = ''
+                WHERE discussion_channel = 'legacy'
+                  AND EXISTS (
+                      SELECT 1 FROM label_comment_links link
+                      WHERE link.comment_id = review_comments.id
+                  )
+                """
+            )
+            conn.execute(
+                """
+                UPDATE review_comments
+                SET discussion_channel = 'case',
+                    baseline_scope = COALESCE((
+                        SELECT issue.baseline_scope FROM issues issue
+                        WHERE issue.issue_id = review_comments.issue_id
+                    ), '')
+                WHERE discussion_channel = 'legacy' AND model_run_id = ''
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_issue_work_splits_campaign_listing "
+                "ON issue_work_splits(purpose, lifecycle, created_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_issue_work_splits_idempotency "
+                "ON issue_work_splits(idempotency_key) WHERE idempotency_key <> ''"
+            )
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_review_task_groups_idempotency "
+                "ON review_task_groups(idempotency_key) WHERE idempotency_key <> ''"
+            )
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_campaign_assignment_audit_idempotency "
+                "ON campaign_assignment_audit(campaign_id, idempotency_key) WHERE idempotency_key <> ''"
+            )
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_campaign_lifecycle_audit_idempotency "
+                "ON campaign_lifecycle_audit(campaign_id, idempotency_key) WHERE idempotency_key <> ''"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_campaign_lifecycle_audit_campaign "
+                "ON campaign_lifecycle_audit(campaign_id, changed_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_campaign_config_revisions_created "
+                "ON campaign_config_revisions(campaign_id, revision_no DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_campaign_assignment_audit_issue "
+                "ON campaign_assignment_audit(campaign_id, issue_id, changed_at DESC, id DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_campaign_close_snapshots_created "
+                "ON campaign_close_snapshots(campaign_id, closed_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_campaign_migration_map_campaign "
+                "ON campaign_migration_map(campaign_id, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_campaign_reference_items_scope "
+                "ON campaign_reference_items(baseline_scope, campaign_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_review_comments_case_channel "
+                "ON review_comments(baseline_scope, issue_id, discussion_channel, id ASC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_review_comments_campaign_channel "
+                "ON review_comments(campaign_id, issue_id, id ASC) WHERE discussion_channel = 'campaign'"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_review_comments_run_channel "
+                "ON review_comments(evaluation_run_id, issue_id, id ASC) WHERE discussion_channel = 'model_review'"
+            )
+            for table in (
+                "campaign_config_revisions",
+                "campaign_config_members",
+                "campaign_assignment_audit",
+                "campaign_close_snapshots",
+                "campaign_close_snapshot_items",
+                "campaign_lifecycle_audit",
+                "campaign_migration_map",
+                "review_task_group_revisions",
+            ):
+                for action in ("UPDATE", "DELETE"):
+                    conn.execute(
+                        f"""
+                        CREATE TRIGGER IF NOT EXISTS trg_{table}_{action.lower()}_immutable
+                        BEFORE {action} ON {table}
+                        BEGIN
+                            SELECT RAISE(ABORT, 'campaign audit and close snapshots are append-only');
+                        END
+                        """
+                    )
+            for action, operation, split_column in (
+                ("insert", "INSERT", "NEW.split_id"),
+                ("delete", "DELETE", "OLD.split_id"),
+            ):
+                conn.execute(
+                    f"""
+                    CREATE TRIGGER IF NOT EXISTS trg_review_work_assignments_closed_{action}
+                    BEFORE {operation} ON review_work_assignments
+                    WHEN EXISTS (
+                        SELECT 1 FROM issue_work_splits
+                        WHERE id = {split_column} AND lifecycle = 'closed'
+                    )
+                    BEGIN
+                        SELECT RAISE(ABORT, 'closed Campaign membership is immutable');
+                    END
+                    """
+                )
+            conn.execute(
+                """
+                CREATE TRIGGER IF NOT EXISTS trg_review_work_assignments_closed_update
+                BEFORE UPDATE ON review_work_assignments
+                WHEN EXISTS (SELECT 1 FROM issue_work_splits WHERE id = OLD.split_id AND lifecycle = 'closed')
+                  OR EXISTS (SELECT 1 FROM issue_work_splits WHERE id = NEW.split_id AND lifecycle = 'closed')
+                BEGIN
+                    SELECT RAISE(ABORT, 'closed Campaign membership is immutable');
+                END
+                """
+            )
+            for action, operation, campaign_column in (
+                ("insert", "INSERT", "NEW.campaign_id"),
+                ("delete", "DELETE", "OLD.campaign_id"),
+            ):
+                conn.execute(
+                    f"""
+                    CREATE TRIGGER IF NOT EXISTS trg_campaign_issue_members_closed_{action}
+                    BEFORE {operation} ON campaign_issue_members
+                    WHEN EXISTS (
+                        SELECT 1 FROM issue_work_splits
+                        WHERE id = {campaign_column} AND lifecycle = 'closed'
+                    )
+                    BEGIN
+                        SELECT RAISE(ABORT, 'closed Campaign member snapshot is immutable');
+                    END
+                    """
+                )
+            conn.execute(
+                """
+                CREATE TRIGGER IF NOT EXISTS trg_campaign_issue_members_closed_update
+                BEFORE UPDATE ON campaign_issue_members
+                WHEN EXISTS (SELECT 1 FROM issue_work_splits WHERE id = OLD.campaign_id AND lifecycle = 'closed')
+                  OR EXISTS (SELECT 1 FROM issue_work_splits WHERE id = NEW.campaign_id AND lifecycle = 'closed')
+                BEGIN
+                    SELECT RAISE(ABORT, 'closed Campaign member snapshot is immutable');
+                END
+                """
+            )
+            for action, operation in (("insert", "INSERT"), ("update", "UPDATE")):
+                conn.execute(
+                    f"""
+                    CREATE TRIGGER IF NOT EXISTS trg_issue_work_splits_campaign_check_{action}
+                    BEFORE {operation} ON issue_work_splits
+                    WHEN (NEW.purpose IS NOT NULL AND NEW.purpose NOT IN ('labeling', 'model_review'))
+                      OR NEW.lifecycle NOT IN ('draft', 'active', 'closed', 'cancelled', 'superseded')
+                      OR NEW.config_revision < 1
+                      OR (NEW.purpose = 'labeling' AND COALESCE(TRIM(NEW.evaluation_run_id), '') <> '')
+                      OR (NEW.purpose = 'model_review' AND COALESCE(TRIM(NEW.evaluation_run_id), '') = '')
+                      OR ((NEW.reference_type = '') <> (NEW.reference_id = ''))
+                    BEGIN
+                        SELECT RAISE(ABORT, 'Campaign purpose, lifecycle, revision, Run or reference is invalid');
+                    END
+                    """
+                )
+            conn.execute(
+                """
+                CREATE TRIGGER IF NOT EXISTS trg_issue_work_splits_reopen_revision
+                BEFORE UPDATE ON issue_work_splits
+                WHEN OLD.lifecycle = 'closed' AND NEW.lifecycle <> 'closed'
+                  AND NEW.config_revision <= OLD.config_revision
+                BEGIN
+                    SELECT RAISE(ABORT, 'reopening a closed Campaign requires a new config revision');
+                END
+                """
+            )
+            conn.execute(
+                """
+                CREATE TRIGGER IF NOT EXISTS trg_issue_work_splits_closed_config_guard
+                BEFORE UPDATE ON issue_work_splits
+                WHEN OLD.lifecycle = 'closed' AND (
+                    (NEW.lifecycle = 'closed' AND (
+                        NEW.purpose IS NOT OLD.purpose
+                        OR NEW.evaluation_run_id IS NOT OLD.evaluation_run_id
+                        OR NEW.reference_type IS NOT OLD.reference_type
+                        OR NEW.reference_id IS NOT OLD.reference_id
+                        OR NEW.reference_sha256 IS NOT OLD.reference_sha256
+                        OR NEW.workset_id IS NOT OLD.workset_id
+                        OR NEW.selection_source_run_id IS NOT OLD.selection_source_run_id
+                        OR NEW.campaign_name IS NOT OLD.campaign_name
+                        OR NEW.task_group_id IS NOT OLD.task_group_id
+                        OR NEW.mode IS NOT OLD.mode
+                        OR NEW.model_run_id IS NOT OLD.model_run_id
+                        OR NEW.total_count <> OLD.total_count
+                        OR NEW.assignment_count <> OLD.assignment_count
+                        OR NEW.reviewers_per_issue <> OLD.reviewers_per_issue
+                        OR NEW.overlap_ratio <> OLD.overlap_ratio
+                        OR NEW.assignees_json IS NOT OLD.assignees_json
+                        OR NEW.closed_by IS NOT OLD.closed_by
+                        OR NEW.closed_by_source IS NOT OLD.closed_by_source
+                        OR NEW.closed_by_verified <> OLD.closed_by_verified
+                        OR NEW.closed_at IS NOT OLD.closed_at
+                        OR NEW.closed_revision IS NOT OLD.closed_revision
+                        OR NEW.latest_close_snapshot_id IS NOT OLD.latest_close_snapshot_id
+                        OR NEW.config_revision <> OLD.config_revision
+                    ))
+                    OR (NEW.lifecycle <> 'closed' AND (
+                        NEW.lifecycle <> 'active'
+                        OR NEW.config_revision <= OLD.config_revision
+                    ))
+                )
+                BEGIN
+                    SELECT RAISE(ABORT, 'closed Campaign configuration is immutable; reopen with a new revision');
+                END
+                """
+            )
+            for action, operation in (("insert", "INSERT"), ("update", "UPDATE")):
+                conn.execute(
+                    f"""
+                    CREATE TRIGGER IF NOT EXISTS trg_review_comments_discussion_check_{action}
+                    BEFORE {operation} ON review_comments
+                    WHEN NEW.discussion_channel NOT IN ('case', 'campaign', 'model_review', 'legacy')
+                      OR (NEW.discussion_channel = 'campaign' AND NEW.campaign_id = '')
+                      OR (NEW.discussion_channel = 'model_review' AND NEW.evaluation_run_id = '')
+                      OR (NEW.discussion_channel IN ('case', 'campaign') AND NEW.evaluation_run_id <> '')
+                      OR (NEW.discussion_channel IN ('case', 'model_review', 'legacy') AND NEW.campaign_id <> '')
+                    BEGIN
+                        SELECT RAISE(ABORT, 'discussion channel scope is invalid');
+                    END
+                    """
+                )
             self._ensure_column(
                 conn, "intent_experiments", "overlap_reviewers",
                 "INTEGER NOT NULL DEFAULT 2",

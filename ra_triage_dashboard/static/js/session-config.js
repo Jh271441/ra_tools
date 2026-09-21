@@ -79,6 +79,8 @@ function renderSession() {
   if (caseLabelingNav) caseLabelingNav.hidden = !state.session.is_admin;
   const caseLabelingNavGroup = $("#caseLabelingNavGroup");
   if (caseLabelingNavGroup) caseLabelingNavGroup.hidden = !state.session.is_admin;
+  const campaignLabelExport = $("#campaignLabelExportCsv");
+  if (campaignLabelExport) campaignLabelExport.hidden = !state.session.is_admin;
   // The head script replays the last server-confirmed intent access before the
   // first paint. Language/theme rendering runs before /api/session resolves,
   // so an absent capability must not be coerced to false and briefly collapse
@@ -351,6 +353,10 @@ function renderConfig() {
   const caseLabelingNavGroup = $("#caseLabelingNavGroup");
   if (caseLabelingNavGroup) {
     caseLabelingNavGroup.hidden = !state.session?.is_admin;
+  }
+  const campaignLabelExport = $("#campaignLabelExportCsv");
+  if (campaignLabelExport) {
+    campaignLabelExport.hidden = !state.session?.is_admin;
   }
   updateFilteredPredictionButton();
   if (typeof renderReviewCatalogFilters === "function") {

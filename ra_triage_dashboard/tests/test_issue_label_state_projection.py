@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import tempfile
 from contextlib import contextmanager
 import unittest
@@ -31,6 +33,62 @@ class IssueLabelStateProjectionTest(unittest.TestCase):
             replace_gt=True,
             baseline_scope=scope,
         )
+        with self.database.connect() as conn:
+            current = conn.execute(
+                "SELECT issue_id, gt_label, gt_source FROM issues WHERE baseline_scope = ? ORDER BY issue_id",
+                (scope,),
+            ).fetchall()
+            labels = [
+                {"issue_id": str(row["issue_id"]), "gt_label": str(row["gt_label"] or ""),
+                 "source_updated_by": str(row["gt_source"] or "")}
+                for row in current
+            ]
+            content_sha = hashlib.sha256(
+                json.dumps(labels, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            ).hexdigest()
+            member_sha = hashlib.sha256(
+                "\n".join(sorted(item["issue_id"] for item in labels)).encode("utf-8")
+            ).hexdigest()
+            snapshot_id = f"projection-{scope}-{content_sha[:16]}"
+            now = "2026-09-21T00:00:00Z"
+            valid_count = sum(item["gt_label"] in {"误触发", "正确触发", "无需协助"} for item in labels)
+            gt_mode = "strict" if valid_count == len(labels) else "sparse"
+            conn.execute(
+                """
+                INSERT INTO gt_snapshots (
+                    id, baseline_scope, gt_mode, content_sha256, membership_sha256,
+                    member_count, valid_label_count, created_by, created_by_source,
+                    created_by_verified, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'test', 'test', 0, ?)
+                ON CONFLICT(baseline_scope, content_sha256) DO NOTHING
+                """,
+                (snapshot_id, scope, gt_mode, content_sha, member_sha, len(labels), valid_count, now),
+            )
+            snapshot_id = str(conn.execute(
+                "SELECT id FROM gt_snapshots WHERE baseline_scope = ? AND content_sha256 = ?",
+                (scope, content_sha),
+            ).fetchone()["id"])
+            conn.executemany(
+                """
+                INSERT INTO gt_snapshot_items (
+                    snapshot_id, baseline_scope, issue_id, ordinal, gt_label, source_updated_by
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(snapshot_id, issue_id) DO NOTHING
+                """,
+                [(snapshot_id, scope, item["issue_id"], ordinal, item["gt_label"], item["source_updated_by"])
+                 for ordinal, item in enumerate(labels, 1)],
+            )
+            conn.execute(
+                """
+                INSERT INTO gt_snapshot_active (baseline_scope, snapshot_id, activated_at, activation_reason)
+                VALUES (?, ?, ?, 'test_fixture')
+                ON CONFLICT(baseline_scope) DO UPDATE SET
+                    snapshot_id = excluded.snapshot_id,
+                    activated_at = excluded.activated_at,
+                    activation_reason = excluded.activation_reason
+                """,
+                (scope, snapshot_id, now),
+            )
 
     def create_revision(
         self,

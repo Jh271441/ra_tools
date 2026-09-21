@@ -8,10 +8,42 @@ from .shared import _json, _json_load, utc_now
 class DatabaseCommentsMixin:
     """Append-only discussion threads scoped to one Issue and model Run."""
 
+    @staticmethod
+    def _comment_channel_scope(
+        *, discussion_channel: str | None, model_run_id: str = "",
+        campaign_id: str = "", baseline_scope: str = "",
+    ) -> tuple[str, str, str, str]:
+        run_id = str(model_run_id or "").strip()
+        channel = str(discussion_channel or ("model_review" if run_id else "case")).strip().lower()
+        campaign_key = str(campaign_id or "").strip()
+        scope = str(baseline_scope or "").strip()
+        if channel not in {"case", "campaign", "model_review", "legacy"}:
+            raise ValueError("discussion_channel 不合法。")
+        if channel == "model_review":
+            if not run_id:
+                run_id = str(model_run_id or "").strip()
+            if not run_id:
+                raise ValueError("Model Review 讨论必须绑定 Model Run。")
+            if campaign_key:
+                raise ValueError("Model Review 讨论不能绑定 Campaign ID。")
+        elif channel == "campaign":
+            if not campaign_key or run_id:
+                raise ValueError("Campaign 讨论必须绑定 Campaign 且不能绑定 Model Run。")
+        elif channel == "case":
+            if run_id or campaign_key:
+                raise ValueError("Case 讨论只按 baseline scope 与 Issue 隔离。")
+        return channel, campaign_key, scope, run_id
+
     def list_review_comments(
-        self, *, issue_id: str, model_run_id: str = "", limit: int = 200
+        self, *, issue_id: str, model_run_id: str = "", limit: int = 200,
+        discussion_channel: str | None = None, campaign_id: str = "",
+        baseline_scope: str = "",
     ) -> list[dict[str, Any]]:
         bounded_limit = max(1, min(int(limit), 500))
+        channel, campaign_key, scope, run_id = self._comment_channel_scope(
+            discussion_channel=discussion_channel, model_run_id=model_run_id,
+            campaign_id=campaign_id, baseline_scope=baseline_scope,
+        )
         with self.connect() as conn:
             rows = conn.execute(
                 """
@@ -19,11 +51,13 @@ class DatabaseCommentsMixin:
                        parent.body AS reply_to_body
                 FROM review_comments c
                 LEFT JOIN review_comments parent ON parent.id = c.reply_to_id
-                WHERE c.issue_id = ? AND c.model_run_id = ?
+                WHERE c.issue_id = ? AND c.discussion_channel = ?
+                  AND c.campaign_id = ? AND c.evaluation_run_id = ?
+                  AND (? = '' OR c.baseline_scope = ?)
                 ORDER BY c.id ASC
                 LIMIT ?
                 """,
-                (issue_id, str(model_run_id or "").strip(), bounded_limit),
+                (issue_id, channel, campaign_key, run_id, scope, scope, bounded_limit),
             ).fetchall()
             attachments = self._comment_attachments_for_rows(conn, rows)
         return [
@@ -33,14 +67,24 @@ class DatabaseCommentsMixin:
             for row in rows
         ]
 
-    def review_comment_count(self, *, issue_id: str, model_run_id: str = "") -> int:
+    def review_comment_count(
+        self, *, issue_id: str, model_run_id: str = "",
+        discussion_channel: str | None = None, campaign_id: str = "",
+        baseline_scope: str = "",
+    ) -> int:
+        channel, campaign_key, scope, run_id = self._comment_channel_scope(
+            discussion_channel=discussion_channel, model_run_id=model_run_id,
+            campaign_id=campaign_id, baseline_scope=baseline_scope,
+        )
         with self.connect() as conn:
             row = conn.execute(
                 """
                 SELECT COUNT(*) AS count FROM review_comments
-                WHERE issue_id = ? AND model_run_id = ?
+                WHERE issue_id = ? AND discussion_channel = ?
+                  AND campaign_id = ? AND evaluation_run_id = ?
+                  AND (? = '' OR baseline_scope = ?)
                 """,
-                (issue_id, str(model_run_id or "").strip()),
+                (issue_id, channel, campaign_key, run_id, scope, scope),
             ).fetchone()
         return int(row["count"] if row else 0)
 
@@ -50,6 +94,7 @@ class DatabaseCommentsMixin:
         issue_ids: list[str],
         model_run_id: str = "",
         search: str = "",
+        discussion_channel: str = "model_review",
     ) -> set[str]:
         """Return bounded Issue ids with a matching comment in one Run."""
 
@@ -66,9 +111,10 @@ class DatabaseCommentsMixin:
                 batch = cleaned[offset : offset + 500]
                 where = [
                     f"issue_id IN ({', '.join('?' for _ in batch)})",
-                    "model_run_id = ?",
+                    "discussion_channel = ?",
+                    "evaluation_run_id = ?",
                 ]
-                params: list[Any] = [*batch, str(model_run_id or "").strip()]
+                params: list[Any] = [*batch, discussion_channel, str(model_run_id or "").strip()]
                 if query:
                     where.append("body LIKE ?")
                     params.append(f"%{query}%")
@@ -111,6 +157,10 @@ class DatabaseCommentsMixin:
         author: str,
         author_source: str = "legacy",
         author_verified: bool = False,
+        discussion_channel: str | None = None,
+        campaign_id: str = "",
+        baseline_scope: str = "",
+        evaluation_run_id: str = "",
         mentions: list[str] | None = None,
         notification_recipients: list[str] | None = None,
         reply_to_id: int | None = None,
@@ -125,7 +175,11 @@ class DatabaseCommentsMixin:
         normalized_author = str(author or "").strip()
         if not normalized_author:
             raise ValueError("评论人不能为空。")
-        normalized_run_id = str(model_run_id or "").strip()
+        normalized_run_id = str(evaluation_run_id or model_run_id or "").strip()
+        channel, campaign_key, scope, normalized_run_id = self._comment_channel_scope(
+            discussion_channel=discussion_channel, model_run_id=normalized_run_id,
+            campaign_id=campaign_id, baseline_scope=baseline_scope,
+        )
         normalized_mentions = list(
             dict.fromkeys(
                 str(item).strip().lower()
@@ -144,11 +198,32 @@ class DatabaseCommentsMixin:
         now = utc_now()
         with self._write_lock, self.connect() as conn:
             issue = conn.execute(
-                "SELECT issue_id FROM issues WHERE issue_id = ?", (issue_id,)
+                "SELECT issue_id, baseline_scope FROM issues WHERE issue_id = ?", (issue_id,)
             ).fetchone()
             if issue is None:
                 raise ValueError("Issue 不存在。")
-            if normalized_run_id and require_existing_model_run:
+            issue_scope = str(issue["baseline_scope"] or "")
+            if channel == "case":
+                if scope and scope != issue_scope:
+                    raise ValueError("Case 讨论 baseline scope 与 Issue 不匹配。")
+                scope = issue_scope
+            elif channel == "campaign":
+                campaign = conn.execute(
+                    "SELECT purpose, lifecycle, legacy_read_only FROM issue_work_splits WHERE id = ?",
+                    (campaign_key,),
+                ).fetchone()
+                member = conn.execute(
+                    "SELECT baseline_scope FROM campaign_issue_members WHERE campaign_id = ? AND issue_id = ?",
+                    (campaign_key, issue_id),
+                ).fetchone()
+                if campaign is None or member is None or str(member["baseline_scope"] or "") != issue_scope:
+                    raise ValueError("Issue 不属于指定 Campaign。")
+                if bool(campaign["legacy_read_only"]) or str(campaign["lifecycle"] or "") != "active":
+                    raise ValueError("该 Campaign 当前只读，不能新增讨论。")
+                if scope and scope != issue_scope:
+                    raise ValueError("Campaign 讨论 baseline scope 与 Issue 不匹配。")
+                scope = issue_scope
+            if channel == "model_review" and normalized_run_id and require_existing_model_run:
                 run = conn.execute(
                     "SELECT id FROM model_runs WHERE id = ?", (normalized_run_id,)
                 ).fetchone()
@@ -163,14 +238,19 @@ class DatabaseCommentsMixin:
                     raise ValueError("回复的评论不存在。")
                 if (
                     str(parent["issue_id"]) != issue_id
-                    or str(parent["model_run_id"] or "") != normalized_run_id
+                    or str(parent["discussion_channel"] or "legacy") != channel
+                    or str(parent["campaign_id"] or "") != campaign_key
+                    or str(parent["evaluation_run_id"] or "") != normalized_run_id
+                    or (scope and str(parent["baseline_scope"] or "") != scope)
                 ):
-                    raise ValueError("只能回复当前 Issue 与 Model Run 下的评论。")
+                    raise ValueError("只能回复当前 Issue 与讨论频道下的评论。")
             insert_sql = """
                 INSERT INTO review_comments (
                     issue_id, model_run_id, body, author, author_source,
-                    author_verified, mentions_json, reply_to_id, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    author_verified, mentions_json, reply_to_id, created_at,
+                    discussion_channel, campaign_id, baseline_scope,
+                    evaluation_run_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             if self.backend == "postgresql":
                 insert_sql += " RETURNING id"
@@ -186,6 +266,10 @@ class DatabaseCommentsMixin:
                     _json(normalized_mentions),
                     int(reply_to_id) if reply_to_id is not None else None,
                     now,
+                    channel,
+                    campaign_key,
+                    scope,
+                    normalized_run_id,
                 ),
             )
             comment_id = (
@@ -306,6 +390,18 @@ class DatabaseCommentsMixin:
             "id": int(row["id"]),
             "issue_id": str(row["issue_id"]),
             "model_run_id": str(row["model_run_id"] or ""),
+            "discussion_channel": str(row["discussion_channel"] or "legacy")
+            if "discussion_channel" in keys
+            else ("model_review" if str(row["model_run_id"] or "") else "case"),
+            "campaign_id": str(row["campaign_id"] or "")
+            if "campaign_id" in keys
+            else "",
+            "baseline_scope": str(row["baseline_scope"] or "")
+            if "baseline_scope" in keys
+            else "",
+            "evaluation_run_id": str(row["evaluation_run_id"] or "")
+            if "evaluation_run_id" in keys
+            else str(row["model_run_id"] or ""),
             "body": str(row["body"] or ""),
             "author": str(row["author"] or ""),
             "author_source": str(row["author_source"] or "legacy"),
