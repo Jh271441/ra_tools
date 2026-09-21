@@ -1037,6 +1037,26 @@ class DatabaseCasesMixin:
                 """,
                 (*annotation_params, *scope_params),
             ).fetchone()[0]
+            model_review_status_counts = {
+                "pending": 0,
+                "in_progress": 0,
+                "completed": 0,
+                "blocked_by_label": 0,
+            }
+            status_rows = conn.execute(
+                f"""
+                SELECT ann.model_review_status AS status, COUNT(DISTINCT i.issue_id) AS count
+                FROM issues i
+                {annotation_join}
+                {base_where}
+                  AND ann.review_domain = 'model_review'
+                  AND ann.model_review_status IN ('pending', 'in_progress', 'completed', 'blocked_by_label')
+                GROUP BY ann.model_review_status
+                """,
+                (*annotation_params, *scope_params),
+            ).fetchall()
+            for row in status_rows:
+                model_review_status_counts[str(row["status"])] = int(row["count"] or 0)
             predictions = failures = reviewed_failures = 0
             if model_run_id:
                 common = f"""
@@ -1063,7 +1083,7 @@ class DatabaseCasesMixin:
                     ),
                 ).fetchone()[0]
                 reviewed_failures = conn.execute(
-                    f"SELECT COUNT(*) {common}{failure_condition} AND ann.id IS NOT NULL",
+                    f"SELECT COUNT(*) {common}{failure_condition} AND ann.review_domain = 'model_review' AND ann.model_review_status = 'completed'",
                     (
                         *annotation_params,
                         model_run_id,
@@ -1086,6 +1106,7 @@ class DatabaseCasesMixin:
             "predictions": int(predictions),
             "model_failures": int(failures),
             "reviewed_failures": int(reviewed_failures),
+            "model_review_status_counts": model_review_status_counts,
             "running_jobs": int(running),
             "label_state_counts": label_state_counts,
             "gt_snapshots": self.active_gt_snapshots(scopes),

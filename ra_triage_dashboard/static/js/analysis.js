@@ -837,6 +837,7 @@ async function openAnalysisDiscussion(
   const isLabelingDiscussion = kind === "labeling" || source === "labeling";
   clearAnalysisDiscussionImages();
   const normalizedRunId = String(runId || "");
+  const unboundReviewReadOnly = !normalizedRunId && !isIntentDiscussion && !isLabelingDiscussion;
   state.analysisDiscussion = {
     kind: isIntentDiscussion ? "intent" : isLabelingDiscussion ? "labeling" : "review",
     issueId,
@@ -867,7 +868,7 @@ async function openAnalysisDiscussion(
     ? `${intentDatasetId} · ${issueId}`
     : isLabelingDiscussion
       ? `${issueId}${taskId ? ` · 任务 ${taskId}` : " · Case 讨论"}`
-      : `${issueId} · ${runId || "未绑定 Run"}`;
+      : `${issueId} · ${runId || "未绑定 Run"}${unboundReviewReadOnly ? " · 历史只读" : ""}`;
   const textarea = $("#analysisDiscussionNote");
   textarea.value = "";
   textarea.hidden = false;
@@ -876,14 +877,14 @@ async function openAnalysisDiscussion(
   renderAnalysisDiscussionImages();
   const canWriteIntentDiscussion = !isIntentDiscussion || Boolean(state.session?.can_annotate_intent);
   const canWriteLabelingDiscussion = !isLabelingDiscussion || Boolean(state.session?.is_admin);
-  $("#analysisDiscussionComposer").hidden = Boolean(state.session?.read_only) || !canWriteIntentDiscussion || !canWriteLabelingDiscussion;
-  $("#analysisDiscussionSubmit").hidden = Boolean(state.session?.read_only) || !canWriteIntentDiscussion || !canWriteLabelingDiscussion;
+  $("#analysisDiscussionComposer").hidden = Boolean(state.session?.read_only) || !canWriteIntentDiscussion || !canWriteLabelingDiscussion || unboundReviewReadOnly;
+  $("#analysisDiscussionSubmit").hidden = Boolean(state.session?.read_only) || !canWriteIntentDiscussion || !canWriteLabelingDiscussion || unboundReviewReadOnly;
   document.querySelectorAll("[data-comment-image]").forEach((button) => {
-    button.hidden = isIntentDiscussion;
+    button.hidden = isIntentDiscussion || unboundReviewReadOnly;
   });
   const imageInput = $("#analysisDiscussionImageInput");
-  if (imageInput) imageInput.disabled = isIntentDiscussion;
-  $("#analysisDiscussionImages").hidden = isIntentDiscussion;
+  if (imageInput) imageInput.disabled = isIntentDiscussion || unboundReviewReadOnly;
+  $("#analysisDiscussionImages").hidden = isIntentDiscussion || unboundReviewReadOnly;
   renderAnalysisDiscussionReplyContext();
   $("#analysisDiscussionThread").innerHTML =
     `<div class="comment-thread-empty">正在加载评论…</div>`;
@@ -1179,7 +1180,7 @@ function renderAnalysisDiscussionThread() {
       <div class="comment-thread-body">${reviewCommentBodyMarkup(comment.body || "", comment.attachments || [])}</div>
       <div class="comment-thread-actions">
         <button class="analysis-discussion-link" type="button" data-comment-share="${Number(comment.id)}">分享</button>
-        ${state.session?.read_only || (context.kind === "intent" && !state.session?.can_annotate_intent) ? "" : `<button class="analysis-discussion-link" type="button" data-comment-reply="${Number(comment.id)}">回复</button>`}
+        ${state.session?.read_only || (context.kind === "intent" && !state.session?.can_annotate_intent) || (context.kind === "review" && !context.runId) ? "" : `<button class="analysis-discussion-link" type="button" data-comment-reply="${Number(comment.id)}">回复</button>`}
       </div>
     </article>`;
   }).join("");
@@ -1230,6 +1231,10 @@ async function saveAnalysisDiscussion(event) {
   event.preventDefault();
   const context = state.analysisDiscussion;
   const discussion = String($("#analysisDiscussionNote")?.value || "").trim();
+  if (context?.kind === "review" && !context.runId) {
+    showToast("未绑定 Run 的历史讨论为只读；请选择 Model Run 发起新讨论。", true);
+    return;
+  }
   if (!context?.issueId || !discussion) {
     showToast("请输入讨论内容。", true);
     return;

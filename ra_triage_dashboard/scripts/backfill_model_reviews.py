@@ -79,7 +79,19 @@ def main() -> int:
                 "SELECT legacy_annotation_id FROM model_review_revisions "
                 "WHERE legacy_annotation_id IS NOT NULL"
             ).fetchall()
-        migrated = {int(row["legacy_annotation_id"]) for row in migrated_rows}
+            migrated = {int(row["legacy_annotation_id"]) for row in migrated_rows}
+        scope_issue_ids: dict[str, list[str]] = {}
+        for row in rows:
+            scope_issue_ids.setdefault(str(row["baseline_scope"] or ""), []).append(
+                str(row["issue_id"] or "")
+            )
+        label_states_by_issue: dict[str, dict[str, Any]] = {}
+        for scope, issue_ids in scope_issue_ids.items():
+            label_states_by_issue.update(
+                database.project_issue_label_states(
+                    scope, issue_ids, include_sources=False
+                )
+            )
         for row in rows:
             annotation_id = int(row["id"])
             if annotation_id in migrated:
@@ -100,15 +112,21 @@ def main() -> int:
                 continue
             # Legacy review_status is derived from expected-output/GT
             # comparison. It cannot determine model-review progress. A
-            # persisted diagnostic-only row maps to completed; a current
-            # conflicting/stale Label projection may still force blocked_by_label.
-            status = "completed"
+            # persisted diagnostic-only row maps to completed; only the current
+            # shared Label projection can force blocked_by_label.
+            label_state = label_states_by_issue.get(str(row["issue_id"]), {})
+            status = (
+                "blocked_by_label"
+                if str(label_state.get("state") or "") in {"conflict", "stale"}
+                else "completed"
+            )
             item = {
                 "legacy_annotation_id": annotation_id,
                 "issue_id": str(row["issue_id"]),
                 "model_run_id": str(row["model_run_id"]),
                 "status": status,
                 "reviewer": str(row["author"] or ""),
+                "label_state": str(label_state.get("state") or "none"),
             }
             report["eligible"].append(item)
             if args.apply:
@@ -122,6 +140,7 @@ def main() -> int:
                     reviewer=item["reviewer"],
                     reviewer_source=str(row["author_source"] or "legacy"),
                     reviewer_verified=bool(row["author_verified"]),
+                    label_state=label_state,
                     legacy_annotation_id=annotation_id,
                 )
         print(json.dumps(report, ensure_ascii=False, indent=2))

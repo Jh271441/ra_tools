@@ -156,6 +156,11 @@ class ModelReviewStorageTest(unittest.TestCase):
         )
         self.assertEqual([item["annotation"]["id"] for item in result["items"]], [completed["id"]])
         self.assertNotEqual(completed["id"], pending["id"])
+        overview = self.db.overview(
+            baseline_scopes=["scope"], model_run_id=self.run_a["id"]
+        )
+        self.assertEqual(overview["model_review_status_counts"]["completed"], 1)
+        self.assertEqual(overview["reviewed_failures"], 1)
 
     def test_label_conflict_forces_blocked_state(self) -> None:
         review = self.create(
