@@ -265,7 +265,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-476", APP_ENTRY_JS)
+        self.assertIn("manual-triage-478", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -284,6 +284,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("!modelReview", history)
         self.assertIn('review_status_counts', (JS_DIR / "analysis.js").read_text(encoding="utf-8"))
         self.assertIn('model_review_status_counts', (JS_DIR / "analysis.js").read_text(encoding="utf-8"))
+
         self.assertIn("baselineLabelForScope(item.baseline_scope)", APP_JS)
         self.assertIn("...baselineRows", APP_JS)
         self.assertIn("baselineMediaReady", APP_JS)
@@ -319,7 +320,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-476", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-478", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -327,6 +328,13 @@ class FrontendContractTest(unittest.TestCase):
         self.assertNotIn("function withBase(path)", APP_ENTRY_JS)
         self.assertIn("async function bootstrap", APP_JS)
         self.assertIn("function withBase(path)", APP_JS)
+
+    def test_reviewer_facets_merge_current_model_review_heads(self) -> None:
+        runs_js = (JS_DIR / "runs.js").read_text(encoding="utf-8")
+        self.assertIn("/api/model-review-facets", runs_js)
+        self.assertIn("modelReviewFacets?.reviewers", runs_js)
+        self.assertIn("model_review_count", runs_js)
+        self.assertIn("modelVerifiedCount", runs_js)
 
     def test_frontend_uses_one_base_path_boundary(self) -> None:
         self.assertIn('meta[name="ra-triage-base"]', APP_JS)
@@ -524,7 +532,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-476`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-478`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -920,7 +928,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("beforeunload", APP_JS)
         self.assertIn("if (runId) return bound;", APP_JS)
         self.assertIn("legacy unbound annotation", APP_JS)
-        self.assertIn("clearReviewDraft(issueId, payload.model_run_id, payload.work_split_id)", APP_JS)
+        self.assertIn("clearReviewDraft(issueId, payload.model_run_id, payload.work_split_id, payload.author)", APP_JS)
         self.assertIn("comparison-side-label", APP_JS)
         self.assertIn("state.reviewComparisonStatus = \"all\";", APP_JS)
         self.assertIn("const displayPrediction = prediction || (comparisonStatus === \"none\" ? \"NONE\" : \"\")", APP_JS)
@@ -1621,7 +1629,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-476", APP_ENTRY_JS)
+        self.assertIn("manual-triage-478", APP_ENTRY_JS)
     def test_desktop_layout_panels_are_mouse_and_keyboard_resizable(self) -> None:
         self.assertIn('id="sidebarResizer" role="separator"', INDEX_HTML)
         self.assertIn('id="reviewPaneResizer" role="separator"', INDEX_HTML)

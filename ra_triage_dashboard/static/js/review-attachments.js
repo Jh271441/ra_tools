@@ -219,13 +219,14 @@ function enqueueBackgroundReviewUpload(task) {
       const draft = readReviewDraft(
         task.issueId,
         task.payload.model_run_id,
-        task.payload.work_split_id
+        task.payload.work_split_id,
+        task.payload.author
       );
       const draftChangedAfterQueue = Boolean(
         draft && Number(draft.saved_at || 0) > Number(task.queuedAt || 0)
       );
       if (!draftChangedAfterQueue) {
-        clearReviewDraft(task.issueId, task.payload.model_run_id, task.payload.work_split_id);
+        clearReviewDraft(task.issueId, task.payload.model_run_id, task.payload.work_split_id, task.payload.author);
       }
       if (state.selectedId === task.issueId && result?.annotation) {
         state.reviewEditRunId = result.annotation.model_run_id || state.reviewEditRunId;

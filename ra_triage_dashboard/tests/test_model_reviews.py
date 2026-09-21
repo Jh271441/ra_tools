@@ -143,7 +143,30 @@ class ModelReviewStorageTest(unittest.TestCase):
         )
         self.assertEqual(facets["total"], 1)
         self.assertEqual(facets["statuses"], [{"value": "completed", "count": 1}])
-        self.assertEqual(facets["reviewers"], [{"value": "alice", "count": 1}])
+        self.assertEqual(
+            facets["reviewers"],
+            [{"value": "alice", "count": 1, "verified_count": 0, "unverified_count": 1}],
+        )
+
+    def test_reviewer_facets_preserve_verified_sso_counts(self) -> None:
+        self.create(
+            self.run_a["id"], "completed", "verified", reviewer="alice",
+            reviewer_source="sso", reviewer_verified=True,
+        )
+        self.create(
+            self.run_a["id"], "completed", "unverified", reviewer="bob",
+            reviewer_source="legacy", reviewer_verified=False,
+        )
+        facets = self.db.model_review_facets(
+            model_run_id=self.run_a["id"], baseline_scopes=["scope"]
+        )
+        self.assertEqual(
+            facets["reviewers"],
+            [
+                {"value": "alice", "count": 1, "verified_count": 1, "unverified_count": 0},
+                {"value": "bob", "count": 1, "verified_count": 0, "unverified_count": 1},
+            ],
+        )
 
     def test_model_review_status_filter_uses_s3_domain(self) -> None:
         completed = self.create(self.run_a["id"], "completed", "done")

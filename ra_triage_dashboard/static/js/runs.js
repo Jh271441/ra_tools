@@ -76,8 +76,45 @@ async function loadReviewers(selections = reviewerFilterSelections()) {
   if (runId) params.set("model_run_id", runId);
   appendBaselineParams(params);
   const query = params.toString() ? `?${params.toString()}` : "";
-  const data = await api(`/api/reviewers${query}`);
-  state.reviewers = data.items || [];
+  const [data, modelReviewFacets] = await Promise.all([
+    api(`/api/reviewers${query}`),
+    runId ? api(`/api/model-review-facets${query}`).catch(() => null) : Promise.resolve(null),
+  ]);
+  const mergeModelReviewReviewers = (baseItems, modelItems) => {
+    const merged = new Map(
+      (baseItems || []).map((item) => [String(item.name || "").toLowerCase(), { ...item }])
+    );
+    for (const item of modelItems || []) {
+      const name = String(item.value || "").trim();
+      const key = name.toLowerCase();
+      if (!key) continue;
+      const current = merged.get(key);
+      const modelReviewCount = Number(item.count || 0);
+      const modelVerifiedCount = Number(item.verified_count || 0);
+      const modelUnverifiedCount = Number(item.unverified_count || 0);
+      if (current) {
+        current.model_review_count = modelReviewCount;
+        current.review_count = Math.max(Number(current.review_count || 0), modelReviewCount);
+        current.verified_count = Math.max(Number(current.verified_count || 0), modelVerifiedCount);
+        current.unverified_count = Math.max(Number(current.unverified_count || 0), modelUnverifiedCount);
+        current.verified = current.verified_count > 0 && current.unverified_count === 0;
+      } else {
+        merged.set(key, {
+          name,
+          verified: modelVerifiedCount > 0 && modelUnverifiedCount === 0,
+          verified_count: modelVerifiedCount,
+          unverified_count: modelUnverifiedCount,
+          review_count: modelReviewCount,
+          model_review_count: modelReviewCount,
+        });
+      }
+    }
+    return [...merged.values()];
+  };
+  state.reviewers = mergeModelReviewReviewers(
+    data.items || [],
+    modelReviewFacets?.reviewers || []
+  );
   const reviewerOptionsFor = (items) => (items || []).map((item) => {
     const trust =
       item.verified_count > 0 && item.unverified_count > 0
@@ -92,7 +129,10 @@ async function loadReviewers(selections = reviewerFilterSelections()) {
   });
   const reviewerOptions = reviewerOptionsFor(state.reviewers);
   const analysisReviewerOptions = reviewerOptionsFor(
-    Array.isArray(data.analysis_items) ? data.analysis_items : state.reviewers
+    mergeModelReviewReviewers(
+      Array.isArray(data.analysis_items) ? data.analysis_items : state.reviewers,
+      modelReviewFacets?.reviewers || []
+    )
   );
   const reviewSelect = $("#reviewerFilter");
   if (reviewSelect) {

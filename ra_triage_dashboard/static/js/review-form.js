@@ -451,7 +451,7 @@ function renderReview(caseData) {
   const issueTagGroups = renderReviewTagGroups(tagCatalog, chosenTags, tagOption);
   const sourceSuggestionMarkup = issueTagSourceSuggestionMarkup(sourceSuggestion);
   $("#reviewPane").innerHTML = `
-    <form class="review-form" id="annotationForm">
+    <form class="review-form" id="annotationForm" data-issue-id="${escapeHtml(caseData.issue_id)}">
       <section class="review-section issue-tag-section" hidden>
         <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span></h2>${sourceSuggestionMarkup}</div><span class="evidence-summary-count" id="tagSummaryCount">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
         <div class="review-tag-groups-shell">${issueTagGroups}${customTagOptions ? `<div class="review-tag-legacy"><span class="ui-lang-zh">历史标签</span><span class="ui-lang-en">Legacy tags</span><div class="review-tag-options">${customTagOptions}</div></div>` : ""}</div>
@@ -1127,7 +1127,11 @@ async function saveAnnotation(event) {
   const payload = {
     model_run_id: state.reviewEditRunId || currentReviewRunId(state.selectedCase),
     work_split_id: reviewWorkSplitBinding(state.selectedCase),
-    expected_previous_annotation_id: state.reviewEditBaseAnnotationId || null,
+    expected_previous_annotation_id: currentReviewBaseAnnotationId(
+      currentReviewAnnotation(state.selectedCase),
+      state.reviewEditRunId || currentReviewRunId(state.selectedCase),
+      $("#annotationAuthor")?.value || ""
+    ),
     expected_output: $("#expectedOutputInput")?.value || "",
     is_excluded: Boolean($("#reviewExcludeInput")?.checked),
     tags: [...document.querySelectorAll('input[name="reviewTags"]:checked')].map(
@@ -1187,7 +1191,7 @@ async function saveAnnotation(event) {
       state.reviewEditRunId = result.annotation.model_run_id || state.reviewEditRunId;
       state.reviewEditBaseAnnotationId = result.annotation.id || null;
     }
-    clearReviewDraft(issueId, payload.model_run_id, payload.work_split_id);
+    clearReviewDraft(issueId, payload.model_run_id, payload.work_split_id, payload.author);
     const screenshotCount = 0;
     state.reviewFormDirty = false;
     state.deferredDetailRefresh = false;

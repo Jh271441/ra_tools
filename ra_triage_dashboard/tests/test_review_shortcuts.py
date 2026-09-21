@@ -422,3 +422,72 @@ assert.deepEqual(reviewAnnotationsForCurrentRun(ordinary).map((item)=>item.id),[
 assert.equal(reviewWorkSplitBinding(ordinary),'');
 '''
     subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_s3_model_review_status_and_reason_do_not_leak_between_run_drafts() -> None:
+    script = (ROOT / "static" / "js" / "review-draft.js").read_text() + r'''
+const assert=require('node:assert/strict');
+const state={selectedRunId:'run-A',session:{username:'manual_s3_probe',verified:true}};
+const detail={annotations:[
+  {id:4000000000000002,review_domain:'model_review',model_run_id:'run-B',work_split_id:'',author:'manual_s3_probe',model_review_status:'completed',note:'Run B diagnosis'},
+  {id:4000000000000001,review_domain:'model_review',model_run_id:'run-A',work_split_id:'',author:'manual_s3_probe',model_review_status:'in_progress',note:'Run A diagnosis'},
+  {id:8,review_domain:'legacy',model_run_id:'',work_split_id:'',author:'legacy',note:'historical label evidence'},
+]};
+assert.equal(currentReviewAnnotation(detail).model_run_id,'run-A');
+assert.equal(currentReviewAnnotation(detail).model_review_status,'in_progress');
+assert.equal(currentReviewAnnotation(detail).note,'Run A diagnosis');
+state.selectedRunId='run-B';
+assert.equal(currentReviewAnnotation(detail).model_run_id,'run-B');
+assert.equal(currentReviewAnnotation(detail).model_review_status,'completed');
+assert.equal(currentReviewAnnotation(detail).note,'Run B diagnosis');
+assert.equal(reviewAnnotationsForAllRuns(detail).length,3);
+'''
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_verified_reviewer_selects_only_own_s3_head_within_current_run() -> None:
+    script = (ROOT / "static" / "js" / "review-draft.js").read_text() + r'''
+const assert=require('node:assert/strict');
+const alice={id:4000000000000001,review_domain:'model_review',model_run_id:'run-A',work_split_id:'',author:'alice',model_review_status:'in_progress',note:'Alice A'};
+const bob={id:4000000000000002,review_domain:'model_review',model_run_id:'run-A',work_split_id:'',author:'bob',model_review_status:'completed',note:'Bob A'};
+const aliceOther={id:4000000000000003,review_domain:'model_review',model_run_id:'run-B',work_split_id:'',author:'alice',model_review_status:'completed',note:'Alice B'};
+const data={annotations:[aliceOther,bob,alice]};
+const state={selectedRunId:'run-A',session:{username:'alice',verified:true}};
+assert.equal(currentReviewAnnotation(data).note,'Alice A');
+assert.equal(currentReviewAnnotation(data).model_review_status,'in_progress');
+assert.equal(currentReviewBaseAnnotationId(bob,'run-A','alice'),null);
+assert.equal(currentReviewBaseAnnotationId(alice,'run-A','alice'),alice.id);
+state.session.username='bob';
+assert.equal(currentReviewAnnotation(data).note,'Bob A');
+state.session.username='carol';
+assert.deepEqual(currentReviewAnnotation(data),{});
+''';
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)
+
+
+def test_local_review_drafts_are_isolated_by_verified_reviewer() -> None:
+    script = (ROOT / "static" / "js" / "review-draft.js").read_text() + r'''
+const assert=require('node:assert/strict');
+const values=new Map();
+const window={localStorage:{
+  getItem(key){return values.has(key)?values.get(key):null;},
+  setItem(key,value){values.set(key,value);},
+  removeItem(key){values.delete(key);},
+}};
+const state={selectedRunId:'run-A',session:{username:'alice',verified:true}};
+const aliceKey=reviewDraftStorageKey('cn1','run-A','','');
+window.localStorage.setItem(aliceKey,JSON.stringify({version:1,saved_at:Date.now(),author:'alice',note:'Alice private draft'}));
+assert.equal(readReviewDraft('cn1','run-A','','').note,'Alice private draft');
+const legacyAliceKey=legacyReviewDraftStorageKey('cn2','run-A','');
+window.localStorage.setItem(legacyAliceKey,JSON.stringify({version:1,saved_at:Date.now(),author:'alice',note:'Alice legacy draft'}));
+state.session.username='bob';
+assert.notEqual(reviewDraftStorageKey('cn1','run-A','',''),aliceKey);
+assert.equal(readReviewDraft('cn1','run-A','',''),null);
+assert.equal(readReviewDraft('cn2','run-A','',''),null);
+assert.equal(values.has(legacyAliceKey),true);
+state.session.username='alice';
+assert.equal(readReviewDraft('cn1','run-A','','').note,'Alice private draft');
+assert.equal(readReviewDraft('cn2','run-A','','').note,'Alice legacy draft');
+assert.equal(values.has(legacyAliceKey),false);
+''';
+    subprocess.run(["node", "-e", script], check=True, capture_output=True)

@@ -415,7 +415,11 @@ class DatabaseModelReviewMixin:
             ).fetchall()
             reviewer_rows = conn.execute(
                 f"""
-                SELECT revision.reviewer AS value, COUNT(*) AS count
+                SELECT revision.reviewer AS value, COUNT(*) AS count,
+                       SUM(CASE WHEN revision.reviewer_verified = TRUE THEN 1 ELSE 0 END)
+                           AS verified_count,
+                       SUM(CASE WHEN revision.reviewer_verified = TRUE THEN 0 ELSE 1 END)
+                           AS unverified_count
                 FROM model_review_heads head
                 JOIN model_review_revisions revision ON revision.id = head.revision_id
                 JOIN issues issue ON issue.issue_id = revision.issue_id
@@ -429,7 +433,12 @@ class DatabaseModelReviewMixin:
             for row in status_rows
         ]
         reviewers = [
-            {"value": str(row["value"]), "count": int(row["count"] or 0)}
+            {
+                "value": str(row["value"]),
+                "count": int(row["count"] or 0),
+                "verified_count": int(row["verified_count"] or 0),
+                "unverified_count": int(row["unverified_count"] or 0),
+            }
             for row in reviewer_rows
         ]
         return {
