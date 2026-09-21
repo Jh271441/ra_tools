@@ -39,6 +39,13 @@ class ManualS3SmokeSafetyTest(unittest.TestCase):
             os.chmod(path, 0o600)
             self.assertEqual(smoke.read_url_file(path), "postgresql://localhost/test")
 
+    def test_gt_snapshot_facts_are_deleted_before_issue_pruning(self) -> None:
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertLess(
+            source.index('connection.execute("DELETE FROM gt_snapshot_items")'),
+            source.index('f"DELETE FROM issues WHERE issue_id NOT IN ({placeholders})"'),
+        )
+
     def test_sampling_rank_is_stable_and_scope_specific(self) -> None:
         first = smoke.stable_rank("seed", "scope-a", "cn1")
         self.assertEqual(first, smoke.stable_rank("seed", "scope-a", "cn1"))

@@ -618,6 +618,12 @@ def main() -> int:
                 """
             )
 
+            # Snapshot item rows hold restrictive Issue FKs. Drop the active
+            # pointers and the full-restore facts before pruning Issues.
+            connection.execute("DELETE FROM gt_snapshot_active")
+            connection.execute("DELETE FROM gt_snapshot_items")
+            connection.execute("DELETE FROM gt_snapshots")
+
             connection.execute(
                 f"DELETE FROM issues WHERE issue_id NOT IN ({placeholders})",
                 selected_params,
@@ -651,9 +657,6 @@ def main() -> int:
             )
 
             # Existing full-data snapshots/export references cannot claim subset coverage.
-            connection.execute("DELETE FROM gt_snapshot_active")
-            connection.execute("DELETE FROM gt_snapshot_items")
-            connection.execute("DELETE FROM gt_snapshots")
             for _baseline_id, scope, _mode in SCOPES:
                 scoped = sorted(set(scope_rows[scope]).intersection(selected))
                 valid_count = connection.execute(
