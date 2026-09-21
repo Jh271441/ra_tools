@@ -10,6 +10,8 @@ S4_ROOT=/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manual_s4_
 S3_ROOT=/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manual_s3_smoke_20260921
 S4_DB=manual_s4_smoke_20260921_campaign
 S5_DB=manual_s5_smoke_20260922_runcollections
+S4_RESTORE_SHA=bf745129e4e7359db3631c18ee60da3e20ab74f2
+S4_RESTORE_ROOT="$S5_ROOT/s4-restore-source-bf74512"
 APP_ROOT="$S5_ROOT/source-$S5_SHA/ra_triage_dashboard"
 URL_FILE="$S5_ROOT/config/postgres_url"
 DUMP_FILE="$S5_ROOT/data/s4-smoke-clone.dump"
@@ -25,6 +27,13 @@ PROD_HEALTH="$(curl -fsS --max-time 5 http://127.0.0.1:8785/health)"
 printf '%s' "$PROD_HEALTH" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("build_commit")=="5fdc41ba8b0215170a8307237762e1ed50a9aaf2"' || { echo "Production health/build changed; refusing S5 setup." >&2; exit 1; }
 
 install -d -m 700 "$S5_ROOT/config" "$S5_ROOT/data" "$S5_ROOT/logs" "$S5_ROOT/baselines" "$S5_ROOT/runtime"
+if [[ -e "$S4_RESTORE_ROOT" ]]; then
+  [[ "$(git -C "$S4_RESTORE_ROOT" rev-parse HEAD)" == "$S4_RESTORE_SHA" ]] || { echo "Existing S4 restore worktree is not the pinned S4 commit." >&2; exit 1; }
+else
+  git -C "$APP_ROOT" cat-file -e "$S4_RESTORE_SHA^{commit}"
+  git -C "$APP_ROOT" worktree add --detach "$S4_RESTORE_ROOT" "$S4_RESTORE_SHA"
+  chmod 700 "$S4_RESTORE_ROOT"
+fi
 printf '%s\n' "$S5_SHA" > "$S5_ROOT/config/source_sha"
 chmod 600 "$S5_ROOT/config/source_sha"
 
