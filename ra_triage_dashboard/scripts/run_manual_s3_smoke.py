@@ -264,7 +264,7 @@ def _read_check(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _record(checks: list[dict[str, Any]], name: str, fn: Callable[[], dict[str, Any]]) -> None:
+def record_check(checks: list[dict[str, Any]], name: str, fn: Callable[[], dict[str, Any]]) -> None:
     try:
         details = fn()
         checks.append({"name": name, "status": "PASS", "assertions": details})
