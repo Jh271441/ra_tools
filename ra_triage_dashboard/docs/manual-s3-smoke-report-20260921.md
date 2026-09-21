@@ -2,7 +2,7 @@
 
 ## Result
 
-The isolated S1–S3 smoke completed with **11 PASS, 0 FAIL, and 2 NOT_RUN**. The final cloud test suite completed with **533 passed, 2 skipped** in 25.37 seconds.
+The API/DB smoke completed with **11 PASS, 0 FAIL**. Follow-up CUA browser acceptance added one PASS; the overall result is **12 PASS, 0 FAIL, 0 NOT_RUN, and 1 OUT_OF_SCOPE**. The cloud test suite completed with **533 passed, 2 skipped** in 25.37 seconds.
 
 Candidate branch: `codex/model-review-s3`  
 Candidate SHA: `53c9e67cfc5b9a95ea81b89643808ef39520d8e3`
@@ -37,17 +37,23 @@ All five sampled memberships matched their active GT snapshot membership hashes.
 
 | Area | Result | Evidence |
 |---|---|---|
-| S1 Run/reviewer isolation | PASS | Run A and Run B had distinct current heads; detail returned both Runs in the audit history; selected-Run draft projection and shared Label state were checked; the Run A discussion did not appear in Run B |
+| S1 Run/reviewer isolation | PASS | API smoke confirmed distinct Run A/Run B heads, full detail audit history, and Run-scoped discussion isolation. In the browser's specified target Issue, the shared Label block matched across Runs; neither Run had a saved S3 head or discussion, and the human reason stayed blank with `pending` status in both |
 | S2 unchanged snapshot reuse | PASS | Reused the active snapshot in all five scopes |
 | S2 changed content and export reconciliation | PASS | Same content reused one snapshot; two changed contents produced new immutable snapshots; historical facts stayed unchanged; reconciliation returned `not_applied=1`, `matched=1`, `changed_again=1` |
 | S2 conservative legacy backfill | PASS | Original preflight had 0 eligible and 80 ambiguous rows skipped. One marked synthetic row was eligible in dry-run and apply; repeat dry-run/apply reported it already migrated, and the repeat apply did not add a revision/head |
 | S3 status and projections | PASS | Gallery and Reason Analysis each returned the filtered smoke row; CSV and XLSX included the Model Review status; all four status facets and reviewer identity counts were present; shadow comparison was `matched=1`, `different=0`, `new_only=5` |
 | S3 write boundaries | PASS | No-Run Review and comment writes were both rejected with HTTP 400; shared Label/GT fields stayed outside Model Review |
 | S3 binary attachment API | PASS | Multipart PNG upload linked to one Model Review revision; API read-back hash matched stored metadata; temporary row and file were removed |
+| Interactive browser acceptance | PASS | Built-in browser verified the base path, five-dataset joint filter and 413-row result, pagination, Run A/B detail state, Model Review status options, Reason Analysis and export entries, GT update/reference display, HTTP 200 responses, and no console errors or SSO redirect |
 | 5,000+ candidate probe | PASS | 9,040 total candidates across five scopes; page, keyset scan, EXPLAIN, and cleanup checks passed |
 | Final database integrity | PASS | 413 Issues, 0 FK orphans, 0 references outside the selected set, 0 GT snapshot mismatches, and 0 remaining attachments, notification rows, or queued jobs |
-| Verified SSO WorkSplit browser acceptance | NOT_RUN | Requires an interactive verified SSO session; SSO was disabled in this smoke configuration |
-| Interactive browser screenshot acceptance | NOT_RUN | This run exercised the loopback API and did not capture a browser session |
+| Verified SSO WorkSplit acceptance | OUT_OF_SCOPE | This is an identity/permission-specific S4 scenario. SSO remained disabled; no verified WorkSplit write was attempted |
+
+## Browser acceptance details
+
+The in-app browser reached `http://127.0.0.1:8786/manual-s3/review` with base path `/manual-s3` and the expected smoke build. All five dataset options were visible; selecting all five produced 413 rows, and Next moved the page from 1–20 to 21–40. The specified target Issue showed the same shared Label status (`GT 待复核`, one source) in both requested Runs. It had no saved S3 head or comments on either Run, so the human reason remained blank and status remained `pending`; the reviewer field showed the current unverified session identity. The displayed model prediction reason followed the selected Run.
+
+The Model Review filter exposed `pending`, `in_progress`, `completed`, and `blocked_by_label`. The Reason Analysis page and CSV, XLSX, and GT update export entries were visible. The selected baseline's GT update time and shared Label reference were displayed. The captured page reload produced 57 HTTP 200 responses, no failed network requests, no console errors or warnings, and no SSO redirect. The viewport screenshot was visually inspected; no screenshot file was retained.
 
 ## Overview and facet counts
 
