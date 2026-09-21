@@ -269,9 +269,16 @@ def record_check(checks: list[dict[str, Any]], name: str, fn: Callable[[], dict[
         details = fn()
         checks.append({"name": name, "status": "PASS", "assertions": details})
     except Exception as exc:
-        # Avoid putting Issue IDs, request bodies, or database connection data
-        # into the report if an assertion fails.
-        checks.append({"name": name, "status": "FAIL", "error_type": type(exc).__name__})
+        message = str(exc)
+        message = re.sub(r"\bcn[a-z0-9_-]{6,}\b", "<issue-id>", message, flags=re.IGNORECASE)
+        message = re.sub(r"(?i)postgres(?:ql)?://[^\s\"'<>]+", "<database-url>", message)
+        message = re.sub(r"(?i)(password|token|secret)=\S+", r"\1=<redacted>", message)
+        checks.append({
+            "name": name,
+            "status": "FAIL",
+            "error_type": type(exc).__name__,
+            "error_summary": message[:240],
+        })
 
 
 def _selected_ids(manifest: dict[str, Any]) -> tuple[list[str], dict[str, str]]:
@@ -654,10 +661,14 @@ def main() -> int:
 
         def snapshot_reuse() -> dict[str, Any]:
             results = []
+            gt_modes = {
+                str(scope): str(mode)
+                for _baseline_id, scope, mode in _load_smoke_builder().SCOPES
+            }
             for item in manifest["scopes"]:
                 before = database.get_active_gt_snapshot(str(item["scope"])) or {}
                 reused = database.create_gt_snapshot_from_current(
-                    scope=str(item["scope"]), gt_mode=str(item["gt_mode"]),
+                    scope=str(item["scope"]), gt_mode=gt_modes[str(item["scope"])],
                     created_by="manual_s3_smoke_runner", created_by_source="smoke",
                     created_by_verified=False, activation_reason="smoke_idempotence_check",
                     expected_member_count=int(item["final_count"]),
@@ -807,7 +818,7 @@ assert.equal(reviewAnnotationsForAllRuns(data).length,input.annotations.length);
             reviewer = "manual_s3_smoke_gallery_probe"
             with database.connect() as connection:
                 row = connection.execute(
-                    "SELECT issue_id FROM model_review_heads head JOIN model_review_revisions revision ON revision.id=head.revision_id WHERE head.reviewer=? AND head.model_run_id=? AND revision.status='in_progress' ORDER BY revision.id DESC LIMIT 1",
+                    "SELECT head.issue_id FROM model_review_heads head JOIN model_review_revisions revision ON revision.id=head.revision_id WHERE head.reviewer=? AND head.model_run_id=? AND revision.status='in_progress' ORDER BY revision.id DESC LIMIT 1",
                     (reviewer, runs[0]),
                 ).fetchone()
             if row is None:
