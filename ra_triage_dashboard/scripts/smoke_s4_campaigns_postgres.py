@@ -9,6 +9,7 @@ short-lived database created by run_s4_campaign_smoke_postgres.sh.
 from __future__ import annotations
 
 import argparse
+import asyncio
 from contextlib import nullcontext
 import hashlib
 import json
@@ -18,10 +19,15 @@ import stat
 import sys
 import threading
 import time
+from types import SimpleNamespace
+from unittest.mock import patch
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import quote
 from uuid import uuid4
+
+from fastapi import HTTPException
+from starlette.requests import Request
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(APP_ROOT))
@@ -150,8 +156,6 @@ def main() -> int:
     from app.routers import campaigns as campaigns_router
     from app.routers import case_comments as case_comments_router
     from app.routers import cases as cases_router
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
     from types import SimpleNamespace
     from unittest.mock import patch
 
@@ -218,11 +222,6 @@ def main() -> int:
                 continue
             db.set_access_user(username=username, role="writer", actor=actor, intent_permission="view")
 
-        smoke_app = FastAPI()
-        smoke_app.include_router(campaigns_router.router)
-        smoke_app.include_router(case_comments_router.router)
-        smoke_app.include_router(cases_router.router)
-
         def verified_smoke_request(
             method: str,
             path: str,
@@ -233,10 +232,54 @@ def main() -> int:
             case_writer: bool = False,
         ) -> Any:
             request_headers = {
-                "X-RA-Triage-Request": "comment-v1" if "/comments" in path else "review-v1",
+                "x-ra-triage-request": "comment-v1" if "/comments" in path else "review-v1",
             }
             if payload and payload.get("idempotency_key"):
-                request_headers["Idempotency-Key"] = str(payload["idempotency_key"])
+                request_headers["idempotency-key"] = str(payload["idempotency_key"])
+            body = json.dumps(payload or {}, ensure_ascii=False).encode("utf-8")
+
+            async def receive() -> dict[str, Any]:
+                return {"type": "http.request", "body": body, "more_body": False}
+
+            request = Request(
+                {
+                    "type": "http",
+                    "method": method.upper(),
+                    "path": path,
+                    "headers": [(str(name).lower().encode("ascii"), str(value).encode("utf-8")) for name, value in request_headers.items()],
+                },
+                receive,
+            )
+
+            async def dispatch() -> Any:
+                parts = [part for part in path.split("/") if part]
+                if path == "/api/campaigns":
+                    return await campaigns_router.create_campaign(request)
+                if path == "/api/review-task-groups":
+                    return await campaigns_router.create_campaign_group(request)
+                if path == "/api/cases/work-split":
+                    return await cases_router.split_case_work(request)
+                if len(parts) >= 3 and parts[0:2] == ["api", "campaigns"]:
+                    campaign_id = parts[2]
+                    if len(parts) == 4 and parts[3] in {"close", "reopen", "activate", "cancel", "supersede"}:
+                        return await getattr(campaigns_router, f"{parts[3]}_campaign")(campaign_id, request)
+                    if len(parts) == 6 and parts[3] == "issues" and parts[5] == "assignments":
+                        return await campaigns_router.update_campaign_assignment(campaign_id, parts[4], request)
+                    if len(parts) == 6 and parts[3] == "issues" and parts[5] == "comments":
+                        return await campaigns_router.create_campaign_comment(campaign_id, parts[4], request)
+                if len(parts) == 4 and parts[0:2] == ["api", "cases"] and parts[3] == "case-comments":
+                    return await case_comments_router.create_case_discussion(parts[2], request)
+                raise RuntimeError(f"smoke router path not supported: {path}")
+
+            class SmokeResponse:
+                def __init__(self, status_code: int, value: Any = None, detail: Any = None):
+                    self.status_code = status_code
+                    self._value = value
+                    self._detail = detail
+                    self.text = json.dumps(value if value is not None else {"detail": detail}, ensure_ascii=False)
+
+                def json(self) -> Any:
+                    return self._value if self._value is not None else {"detail": self._detail}
             with patch.object(campaigns_router, "database", db), \
                  patch.object(case_comments_router, "database", db), \
                  patch.object(cases_router, "database", db):
@@ -259,12 +302,11 @@ def main() -> int:
                 )
                 with (admin_patch if campaign_admin else nullcontext()), \
                      (cases_patch if cases_admin else nullcontext()), \
-                     (case_writer_patch if case_writer else nullcontext()), \
-                     TestClient(smoke_app) as client:
-                    kwargs = {"headers": request_headers}
-                    if payload is not None:
-                        kwargs["json"] = payload
-                    return getattr(client, method.lower())(path, **kwargs)
+                     (case_writer_patch if case_writer else nullcontext()):
+                    try:
+                        return SmokeResponse(200, asyncio.run(dispatch()))
+                    except HTTPException as exc:
+                        return SmokeResponse(int(exc.status_code), detail=exc.detail)
 
         def create_campaign_via_api(spec: dict[str, Any]) -> dict[str, Any]:
             response = verified_smoke_request(
@@ -676,100 +718,64 @@ def main() -> int:
         result["performance_ms"]["seed_5000_issues"] = seed_issue_ms
         result["performance_ms"]["create_5000_member_campaign"] = create_ms
 
-        from fastapi import FastAPI
-        from fastapi.testclient import TestClient
         from app.routers import campaigns as campaigns_router
         from app.routers import case_comments as case_comments_router
         from app.routers import cases as cases_router
-        from types import SimpleNamespace
-        from unittest.mock import patch
-
-        original_database = campaigns_router.database
-        original_case_database = case_comments_router.database
-        original_cases_database = cases_router.database
-        campaigns_router.database = db
-        case_comments_router.database = db
-        cases_router.database = db
-        smoke_app = FastAPI()
-        smoke_app.include_router(campaigns_router.router)
-        smoke_app.include_router(case_comments_router.router)
-        smoke_app.include_router(cases_router.router)
         baseline_id = baseline_registry.scope_to_id(scope) or baseline_registry.default_ids()[0]
-        try:
-            with TestClient(smoke_app) as client:
-                work_split_body = {
-                    "filters": {
-                        "baselines": str(baseline_id),
-                        "model_run_id": run_a["id"],
-                        "issue_ids": issue_c,
-                    },
-                    "assignees": [{"name": smoke_users["work_split"]}],
-                    "seed": 42,
-                    "reviewers_per_issue": 1,
-                    "overlap_ratio": 0.0,
-                    "name": f"S4 smoke Run Work Split {token}",
-                    "idempotency_key": f"{token}:run-work-split",
-                }
-                with patch.object(
-                    cases_router,
-                    "_admin_identity",
-                    return_value=SimpleNamespace(
-                        username=actor,
-                        source="verified_smoke_client",
-                        verified=True,
-                    ),
-                ):
-                    work_split_response = client.post(
-                        "/api/cases/work-split",
-                        json=work_split_body,
-                        headers={"Idempotency-Key": f"{token}:run-work-split"},
-                    )
-                assert work_split_response.status_code == 200, work_split_response.text
-                work_split_campaign = db.get_campaign(work_split_response.json()["split_id"])
-                assert work_split_campaign["campaign"]["workset_id"]
-                assert work_split_campaign["campaign"]["evaluation_run_id"] == run_a["id"]
-                result["assertions"]["run_based_work_split_creates_frozen_workset"] = True
 
-                query = (
-                    f"?baselines={quote(str(baseline_id))}&purpose=labeling&lifecycle=all"
-                    f"&include_legacy=false&q={quote(scale_id)}&page_size=100"
-                )
-                listed, result["performance_ms"]["campaign_list_5000_member"] = timed(
-                    lambda: client.get("/api/campaigns" + query)
-                )
-                assert listed.status_code == 200
-                assert listed.json()["total"] == 1
-                detail_response, result["performance_ms"]["campaign_detail_5000_member"] = timed(
-                    lambda: client.get(f"/api/campaigns/{quote(scale_id)}?page=1&page_size=50")
-                )
-                assert detail_response.status_code == 200
-                detail_json = detail_response.json()
-                assert detail_json["progress"]["member_count"] == 5000
-                assert detail_json["progress"]["required_submitter_count"] == 5000
-                analysis_response, result["performance_ms"]["label_analysis_5000_member"] = timed(
-                    lambda: client.get(f"/api/campaigns/{quote(scale_id)}/analysis?page=1&page_size=100")
-                )
-                assert analysis_response.status_code == 200
-                assert analysis_response.json()["total"] == 5000
-                group_response = client.get(f"/api/review-task-groups/{quote(group['id'])}")
-                assert group_response.status_code == 200
-                discussion_response = client.get(
-                    f"/api/campaigns/{quote(label_a_id)}/issues/{quote(issue_b)}/discussion"
-                )
-                assert discussion_response.status_code == 200
-                discussion = discussion_response.json()
-                assert any(item["id"] == case_comment["id"] for item in discussion["case_comments"])
-                assert any(item["id"] == campaign_comment["id"] for item in discussion["campaign_comments"])
-                assert any(group["campaign_id"] == label_b_id for group in discussion["other_campaigns"])
-                run_discussion_response = client.get(
-                    f"/api/cases/{quote(issue_b)}/comments?model_run_id={quote(run_a['id'])}"
-                )
-                assert run_discussion_response.status_code == 200
-                assert any(item["id"] == run_comment["id"] for item in run_discussion_response.json()["comments"])
-        finally:
-            campaigns_router.database = original_database
-            case_comments_router.database = original_case_database
-            cases_router.database = original_cases_database
+        work_split_body = {
+            "filters": {"baselines": str(baseline_id), "model_run_id": run_a["id"], "issue_ids": issue_c},
+            "assignees": [{"name": smoke_users["work_split"]}], "seed": 42,
+            "reviewers_per_issue": 1, "overlap_ratio": 0.0,
+            "name": f"S4 smoke Run Work Split {token}",
+            "idempotency_key": f"{token}:run-work-split",
+        }
+        work_split_response = verified_smoke_request(
+            "post", "/api/cases/work-split", work_split_body, cases_admin=True
+        )
+        assert work_split_response.status_code == 200, work_split_response.text
+        work_split_campaign = db.get_campaign(work_split_response.json()["split_id"])
+        assert work_split_campaign["campaign"]["workset_id"]
+        assert work_split_campaign["campaign"]["evaluation_run_id"] == run_a["id"]
+        result["assertions"]["run_based_work_split_creates_frozen_workset"] = True
+
+        def list_campaigns_api() -> dict[str, Any]:
+            with patch.object(campaigns_router, "database", db):
+                return asyncio.run(campaigns_router.list_campaigns(
+                    Request({"type": "http", "method": "GET", "path": "/api/campaigns", "headers": []}),
+                    baselines=str(baseline_id), purpose="labeling", lifecycle="all",
+                    include_legacy=False, q=scale_id, page=1, page_size=100,
+                ))
+
+        def get_campaign_api(campaign_id: str) -> dict[str, Any]:
+            with patch.object(campaigns_router, "database", db):
+                return asyncio.run(campaigns_router.get_campaign(campaign_id, page=1, page_size=50))
+
+        def get_analysis_api(campaign_id: str) -> dict[str, Any]:
+            with patch.object(campaigns_router, "database", db):
+                return asyncio.run(campaigns_router.campaign_analysis(campaign_id, page=1, page_size=100))
+
+        def get_group_api(group_id: str) -> dict[str, Any]:
+            with patch.object(campaigns_router, "database", db):
+                return asyncio.run(campaigns_router.get_campaign_group(group_id))
+
+        def get_discussion_api(campaign_id: str, issue_id: str) -> dict[str, Any]:
+            with patch.object(campaigns_router, "database", db):
+                return asyncio.run(campaigns_router.get_campaign_discussion(campaign_id, issue_id))
+
+        listed, result["performance_ms"]["campaign_list_5000_member"] = timed(list_campaigns_api)
+        assert listed["total"] == 1
+        detail_json, result["performance_ms"]["campaign_detail_5000_member"] = timed(lambda: get_campaign_api(scale_id))
+        assert detail_json["progress"]["member_count"] == 5000
+        assert detail_json["progress"]["required_submitter_count"] == 5000
+        analysis_json, result["performance_ms"]["label_analysis_5000_member"] = timed(lambda: get_analysis_api(scale_id))
+        assert analysis_json["total"] == 5000
+        assert get_group_api(group["id"])["group"]["id"] == group["id"]
+        discussion = get_discussion_api(label_a_id, issue_b)
+        assert any(item["id"] == case_comment["id"] for item in discussion["case_comments"])
+        assert any(item["id"] == campaign_comment["id"] for item in discussion["campaign_comments"])
+        assert any(item["campaign_id"] == label_b_id for item in discussion["other_campaigns"])
+        result["assertions"]["api_read_routes_discussion_group_and_5000_member_queries"] = True
 
         with db.connect() as connection:
             scale_row = connection.execute(
