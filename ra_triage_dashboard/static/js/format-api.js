@@ -237,7 +237,12 @@ async function setBaselineScopes(
   }
   renderBaselinePicker();
   if (!skipHistory && typeof pageUrl === "function") {
+    const routeOptions = state.activePage === "campaigns"
+      && typeof campaignRouteOptions === "function"
+      ? campaignRouteOptions()
+      : {};
     const nextUrl = pageUrl(state.activePage || "review", {
+      ...routeOptions,
       issue: "",
       baselines: next,
     });

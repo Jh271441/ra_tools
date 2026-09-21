@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
+from fastapi import HTTPException
 from starlette.requests import Request
 
 from ra_triage_dashboard.app.db import AnnotationConflictError, Database
@@ -16,6 +20,133 @@ from ra_triage_dashboard.app.work_split import distribute_issue_ids
 
 
 class WorkSplitTest(unittest.TestCase):
+    def test_run_based_work_split_creates_a_single_scope_frozen_workset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "campaign-workset.sqlite")
+            db.init()
+            db.upsert_issues(
+                [
+                    {"issue_id": "cn1", "gt_label": "正确触发"},
+                    {"issue_id": "cn2", "gt_label": "误触发"},
+                ],
+                source="test",
+                replace_gt=True,
+                baseline_scope="scope",
+            )
+            run, _ = db.import_model_run(
+                name="model-workset-run",
+                source_name="model-workset-run.json",
+                source_sha256="d" * 64,
+                metadata={},
+                rows=[
+                    {"issue_id": "cn1", "model_label": "正确触发"},
+                    {"issue_id": "cn2", "model_label": "误触发"},
+                ],
+            )
+            now = "2026-09-22T00:00:00Z"
+            content_sha = hashlib.sha256(b"work-split-gt").hexdigest()
+            with db.connect() as conn:
+                conn.execute(
+                    "INSERT INTO gt_snapshots (id, baseline_scope, gt_mode, content_sha256, membership_sha256, member_count, valid_label_count, created_at) "
+                    "VALUES (?, ?, 'strict', ?, ?, 2, 2, ?)",
+                    ("gt-work-split", "scope", content_sha, "e" * 64, now),
+                )
+                conn.executemany(
+                    "INSERT INTO gt_snapshot_items (snapshot_id, baseline_scope, issue_id, ordinal, gt_label) VALUES (?, ?, ?, ?, ?)",
+                    [("gt-work-split", "scope", "cn1", 1, "正确触发"),
+                     ("gt-work-split", "scope", "cn2", 2, "误触发")],
+                )
+                conn.execute(
+                    "INSERT INTO gt_snapshot_active (baseline_scope, snapshot_id, activated_at) VALUES (?, ?, ?)",
+                    ("scope", "gt-work-split", now),
+                )
+
+            filters = {
+                "baseline_scope": "scope",
+                "baseline_scopes": ["scope"],
+                "model_run_id": run["id"],
+                "comparison_status": "all",
+                "comment_state": "all",
+                "search": "",
+                "work_assignee": "",
+                "gt_label": "",
+                "model_label": "",
+                "annotation_author": "",
+                "review_statuses": (),
+                "label_states": (),
+                "exclusion": "all",
+                "missing_evidence": "",
+            }
+            body = {
+                "filters": {"model_run_id": run["id"], "baselines": "0508"},
+                "assignees": [{"name": "alice"}, {"name": "bob"}],
+                "seed": 7,
+                "reviewers_per_issue": 1,
+                "overlap_ratio": 0,
+                "name": "Run-scoped Campaign",
+                "idempotency_key": "run-workset-campaign",
+            }
+            body_bytes = json.dumps(body).encode("utf-8")
+
+            async def receive():
+                return {"type": "http.request", "body": body_bytes, "more_body": False}
+
+            request = Request(
+                {
+                    "type": "http",
+                    "method": "POST",
+                    "path": "/api/cases/work-split",
+                    "headers": [(b"content-type", b"application/json"),
+                                (b"idempotency-key", b"run-workset-campaign")],
+                },
+                receive,
+            )
+            with patch.object(
+                cases_router, "_admin_identity",
+                return_value=SimpleNamespace(username="admin", source="test", verified=True),
+            ), patch.object(cases_router, "_case_filter_kwargs", return_value=dict(filters)), patch.object(
+                cases_router, "_case_issue_ids_with_status_filter", return_value=["cn1", "cn2"]
+            ), patch.object(cases_router, "database", db):
+                response = asyncio.run(cases_router.split_case_work(request))
+
+            self.assertEqual(response["total"], 2)
+            detail = db.get_campaign(response["split_id"])
+            workset_id = detail["campaign"]["workset_id"]
+            self.assertTrue(workset_id)
+            workset = db.get_review_workset(workset_id)
+            self.assertEqual(workset["baseline_scope"], "scope")
+            self.assertEqual({item["issue_id"] for item in workset["items"]}, {"cn1", "cn2"})
+            self.assertEqual(detail["campaign"]["evaluation_run_id"], run["id"])
+            self.assertEqual(detail["campaign"]["selection_source_run_id"], run["id"])
+            with db.connect() as conn:
+                workset_count_before_multi = int(conn.execute(
+                    "SELECT COUNT(*) AS n FROM review_worksets"
+                ).fetchone()["n"])
+
+            multi_scope_request = Request(
+                {
+                    "type": "http",
+                    "method": "POST",
+                    "path": "/api/cases/work-split",
+                    "headers": [(b"content-type", b"application/json")],
+                },
+                receive,
+            )
+            multi_scope_filters = {**filters, "baseline_scopes": ["scope", "scope-2"]}
+            with patch.object(
+                cases_router, "_admin_identity",
+                return_value=SimpleNamespace(username="admin", source="test", verified=True),
+            ), patch.object(cases_router, "_case_filter_kwargs", return_value=multi_scope_filters), patch.object(
+                cases_router, "_case_issue_ids_with_status_filter", return_value=["cn1", "cn2"]
+            ), patch.object(cases_router, "database", db):
+                with self.assertRaises(HTTPException):
+                    asyncio.run(cases_router.split_case_work(multi_scope_request))
+            with db.connect() as conn:
+                workset_count_after_multi = int(conn.execute(
+                    "SELECT COUNT(*) AS n FROM review_worksets"
+                ).fetchone()["n"])
+            self.assertEqual(workset_count_after_multi, workset_count_before_multi)
+
     def test_analysis_work_split_options_only_returns_current_matching_batches(self) -> None:
         request = Request(
             {"type": "http", "method": "GET", "path": "/api/review-work-splits", "headers": []}

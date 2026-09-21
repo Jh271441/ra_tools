@@ -27,6 +27,7 @@ CSS_PATHS = (
     "css/comparison.css",
     "css/batch-gateway.css",
     "css/runs.css",
+    "css/campaigns.css",
     "css/mobile.css",
 )
 STYLES_CSS = "\n".join(
@@ -35,6 +36,8 @@ STYLES_CSS = "\n".join(
 INDEX_HTML = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 RUN_COMPARISON_JS = (JS_DIR / "run-comparison.js").read_text(encoding="utf-8")
 CAMPAIGNS_JS = (JS_DIR / "campaigns.js").read_text(encoding="utf-8")
+CAMPAIGNS_CSS = (STATIC_DIR / "css/campaigns.css").read_text(encoding="utf-8")
+FORMAT_API_JS = (JS_DIR / "format-api.js").read_text(encoding="utf-8")
 APP_PY_LABELING_DB = (
     STATIC_DIR.parent / "app" / "db_parts" / "labeling.py"
 ).read_text(encoding="utf-8")
@@ -47,6 +50,18 @@ APP_PY_LABELING_ROUTER = (
 APP_PY_CASES_DB = (
     STATIC_DIR.parent / "app" / "db_parts" / "cases.py"
 ).read_text(encoding="utf-8")
+APP_PY_CAMPAIGNS_DB = (
+    STATIC_DIR.parent / "app" / "db_parts" / "campaigns.py"
+).read_text(encoding="utf-8")
+APP_PY_CAMPAIGNS_ROUTER = (
+    STATIC_DIR.parent / "app" / "routers" / "campaigns.py"
+).read_text(encoding="utf-8")
+APP_PY_CASES_ROUTER = (
+    STATIC_DIR.parent / "app" / "routers" / "cases.py"
+).read_text(encoding="utf-8")
+APP_PY_COMMENTS_DB = (
+    STATIC_DIR.parent / "app" / "db_parts" / "comments.py"
+).read_text(encoding="utf-8")
 
 
 class FrontendContractTest(unittest.TestCase):
@@ -55,6 +70,81 @@ class FrontendContractTest(unittest.TestCase):
             "\nasync function loadCampaigns", 1
         )[0]
         self.assertIn("baselines: selectedBaselineQueryValue()", endpoint)
+
+    def test_campaign_views_respect_the_hidden_attribute(self) -> None:
+        self.assertIn("#campaignsListView[hidden]", CAMPAIGNS_CSS)
+        self.assertIn("#campaignDetailView[hidden]", CAMPAIGNS_CSS)
+        self.assertIn("display: none !important", CAMPAIGNS_CSS)
+
+    def test_campaign_route_survives_baseline_selection_updates(self) -> None:
+        self.assertIn("async function setBaselineScopes", FORMAT_API_JS)
+        self.assertIn('state.activePage === "campaigns"', FORMAT_API_JS)
+        self.assertIn("campaignRouteOptions()", FORMAT_API_JS)
+        self.assertIn("...routeOptions", FORMAT_API_JS)
+        parser = APP_JS.split("function parsePageRoute()", 1)[1].split(
+            "function normalizedAnalysisRouteFilters", 1
+        )[0]
+        self.assertIn('campaignId: String(params.get("campaign") || "").trim()', parser)
+        self.assertIn('campaignPurpose: ["labeling", "model_review"]', parser)
+        self.assertIn('campaignLifecycle: params.get("lifecycle") || "all"', parser)
+        self.assertIn('campaignQuery: String(params.get("q") || "").slice(0, 128)', parser)
+        self.assertIn('campaignGroupId: String(params.get("group") || "").trim()', parser)
+        page_url = APP_JS.split("function pageUrl(page, options = {})", 1)[1].split(
+            "function setReviewView", 1
+        )[0]
+        for key in ("campaignId", "groupId", "purpose", "lifecycle", "query"):
+            self.assertIn(f"options.{key}", page_url)
+
+    def test_campaign_task_group_detail_exposes_shared_config_and_child_progress(self) -> None:
+        self.assertIn('id="campaignGroupView"', INDEX_HTML)
+        self.assertIn('id="campaignGroupRows"', INDEX_HTML)
+        self.assertIn("function loadCampaignGroupDetail", CAMPAIGNS_JS)
+        self.assertIn("/api/review-task-groups/${encodeURIComponent(groupId)}", CAMPAIGNS_JS)
+        self.assertIn("evaluation_run_id", CAMPAIGNS_JS)
+        self.assertIn("progress.completed_issue_count", CAMPAIGNS_JS)
+
+    def test_native_campaign_adapters_bind_a_frozen_workset(self) -> None:
+        self.assertIn("Model Review Campaign 必须绑定冻结 Workset", APP_PY_CAMPAIGNS_DB)
+        self.assertIn("database.create_review_workset", APP_PY_CASES_ROUTER)
+        self.assertIn('"workset_id": workset["id"]', APP_PY_CASES_ROUTER)
+        self.assertIn("Model Review Campaign 固定绑定一个 Workset", APP_PY_CASES_ROUTER)
+
+    def test_campaign_lifecycle_and_assignment_controls_are_audited(self) -> None:
+        for element_id in (
+            "campaignActivateButton",
+            "campaignCancelButton",
+            "campaignSupersedeButton",
+            "campaignLifecycleAuditRows",
+            "campaignAssignmentAuditRows",
+        ):
+            self.assertIn(f'id="{element_id}"', INDEX_HTML)
+        self.assertIn('mutateCampaignLifecycle("activate")', CAMPAIGNS_JS)
+        self.assertIn('mutateCampaignLifecycle("cancel")', CAMPAIGNS_JS)
+        self.assertIn('mutateCampaignLifecycle("supersede")', CAMPAIGNS_JS)
+        self.assertIn('action: "reassign"', CAMPAIGNS_JS)
+        self.assertIn('payload.assignment_audit || []', CAMPAIGNS_JS)
+        self.assertIn('payload.lifecycle_audit || []', CAMPAIGNS_JS)
+
+    def test_campaign_discussions_use_shared_thread_with_channel_locked_replies(self) -> None:
+        self.assertIn("function openAnalysisDiscussion", APP_JS)
+        self.assertIn('kind === "campaign"', APP_JS)
+        self.assertIn("/discussion`)", APP_JS)
+        self.assertIn("context.otherCampaigns", APP_JS)
+        self.assertIn("context.replyTo.discussion_channel", APP_JS)
+        self.assertIn("list_related_campaign_comment_groups", APP_PY_COMMENTS_DB)
+        self.assertIn('@router.get("/api/campaigns/{campaign_id}/issues/{issue_id}/discussion")', APP_PY_CAMPAIGNS_ROUTER)
+
+    def test_campaign_label_analysis_separates_tag_axes_and_rationale_themes(self) -> None:
+        for element_id in (
+            "campaignSceneTagCounts",
+            "campaignTriggerTagCounts",
+            "campaignEgressTagCounts",
+            "campaignRationaleThemeCounts",
+        ):
+            self.assertIn(f'id="{element_id}"', INDEX_HTML)
+        self.assertIn("reviewTagCatalogItem(key)", CAMPAIGNS_JS)
+        self.assertIn("progress.rationale_theme_counts", CAMPAIGNS_JS)
+        self.assertIn("classify_review_reason", APP_PY_CAMPAIGNS_DB)
 
     def test_label_result_snapshot_defaults_to_complete_and_confirms_diagnostic_partial(self) -> None:
         create_block = APP_JS.split(
@@ -272,7 +362,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-479", APP_ENTRY_JS)
+        self.assertIn("manual-triage-480", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -327,7 +417,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-479", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-480", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -539,7 +629,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-479`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-480`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -1636,7 +1726,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-479", APP_ENTRY_JS)
+        self.assertIn("manual-triage-480", APP_ENTRY_JS)
     def test_desktop_layout_panels_are_mouse_and_keyboard_resizable(self) -> None:
         self.assertIn('id="sidebarResizer" role="separator"', INDEX_HTML)
         self.assertIn('id="reviewPaneResizer" role="separator"', INDEX_HTML)

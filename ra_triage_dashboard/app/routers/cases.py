@@ -856,6 +856,11 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                 overlap_ratio=overlap_ratio,
             )
         if filters["model_run_id"]:
+            workset_scopes = list(filters.get("baseline_scopes") or [])
+            if len(workset_scopes) != 1:
+                raise ValueError(
+                    "Model Review Campaign 固定绑定一个 Workset；请一次选择一个数据集。"
+                )
             by_issue: dict[str, list[dict[str, str]]] = {}
             for member in assignments:
                 for item in member.get("items") or []:
@@ -864,12 +869,24 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                         "assignee": _as_text(member.get("name")).strip().lower(),
                         "assignment_kind": _as_text(item.get("assignment_kind") or "base"),
                     })
+            workset = await asyncio.to_thread(
+                database.create_review_workset,
+                baseline_scope=workset_scopes[0],
+                issue_ids=issue_ids,
+                name=_as_text(body.get("name")) or f"Review Workset · {len(issue_ids)} Issues",
+                selection_source_run_id=filters["model_run_id"],
+                source_filter=filter_snapshot,
+                created_by=identity.username,
+                created_by_source=identity.source,
+                created_by_verified=True,
+            )
             campaign = await asyncio.to_thread(
                 database.create_campaign,
                 spec={
                     "purpose": "model_review",
                     "evaluation_run_id": filters["model_run_id"],
                     "selection_source_run_id": filters["model_run_id"],
+                    "workset_id": workset["id"],
                     "name": _as_text(body.get("name")) or f"Review task · {len(issue_ids)} Issues",
                     "seed": seed,
                     "overlap_ratio": overlap_ratio,

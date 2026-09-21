@@ -73,12 +73,22 @@ class CampaignStorageTest(unittest.TestCase):
                 {"issue_id": "cn002", "model_label": "误触发"},
             ],
         )
+        self.model_workset = self.db.create_review_workset(
+            baseline_scope="scope",
+            issue_ids=["cn001", "cn002"],
+            name="Model Review fixture",
+            selection_source_run_id=self.run_a["id"],
+            created_by="admin",
+            created_by_source="test",
+            created_by_verified=True,
+        )
 
     def _model_campaign(self):
         return self.db.create_campaign(
             spec={
                 "purpose": "model_review",
                 "evaluation_run_id": self.run_a["id"],
+                "workset_id": self.model_workset["id"],
                 "name": "Overlap review",
                 "members": [
                     {"issue_id": "cn001", "assignees": ["alice", "bob"]},
@@ -90,6 +100,33 @@ class CampaignStorageTest(unittest.TestCase):
             actor_verified=True,
             idempotency_key="create-overlap",
         )
+
+    def test_native_model_review_campaign_requires_a_frozen_workset(self) -> None:
+        with self.assertRaisesRegex(ValueError, "冻结 Workset"):
+            self.db.create_campaign(
+                spec={
+                    "purpose": "model_review",
+                    "evaluation_run_id": self.run_a["id"],
+                    "members": [{"issue_id": "cn001", "assignees": ["alice"]}],
+                },
+                actor="admin",
+                actor_source="test",
+                actor_verified=True,
+            )
+
+    def test_model_review_campaign_uses_the_exact_workset_members(self) -> None:
+        with self.assertRaisesRegex(ValueError, "完整匹配其冻结 Workset"):
+            self.db.create_campaign(
+                spec={
+                    "purpose": "model_review",
+                    "evaluation_run_id": self.run_a["id"],
+                    "workset_id": self.model_workset["id"],
+                    "members": [{"issue_id": "cn001", "assignees": ["alice"]}],
+                },
+                actor="admin",
+                actor_source="test",
+                actor_verified=True,
+            )
 
     def test_overlapping_requirements_assignment_audit_and_close_reopen(self) -> None:
         created = self._model_campaign()
@@ -140,18 +177,38 @@ class CampaignStorageTest(unittest.TestCase):
                 **{**change_args, "assignee": "dave"}
             )
 
+        reassign_args = {
+            **change_args,
+            "action": "reassign",
+            "from_assignee": "carol",
+            "assignee": "dave",
+            "expected_revision": 2,
+            "idempotency_key": "reassign-carol-to-dave",
+            "reason": "reviewer rotation",
+        }
+        reassigned = self.db.update_campaign_assignment(**reassign_args)
+        self.assertEqual(reassigned["config_revision"], 3)
+        self.assertTrue(self.db.update_campaign_assignment(**reassign_args)["replayed"])
+        after_reassign = self.db.get_campaign(campaign_id)
+        self.assertEqual(
+            [item["assignee"] for item in after_reassign["issues"][1]["assignments"]],
+            ["alice", "dave"],
+        )
+        self.assertEqual(after_reassign["assignment_audit"][0]["action"], "reassigned")
+        self.assertEqual(after_reassign["assignment_audit"][0]["reason"], "reviewer rotation")
+
         closed = self.db.close_campaign(
             campaign_id=campaign_id,
             actor="admin",
             actor_source="test",
             actor_verified=True,
-            expected_revision=2,
-            idempotency_key="close-2",
+            expected_revision=3,
+            idempotency_key="close-3",
             reason="review complete",
         )
         snapshot_id = closed["snapshot_id"]
         self.assertEqual(closed["campaign"]["campaign"]["lifecycle"], "closed")
-        self.assertEqual(closed["campaign"]["close_snapshot"]["config_revision"], 2)
+        self.assertEqual(closed["campaign"]["close_snapshot"]["config_revision"], 3)
         with self.db.connect() as conn:
             snapshot = conn.execute(
                 "SELECT source_fingerprint, result_snapshot_json FROM campaign_close_snapshots WHERE id = ?",
@@ -165,7 +222,7 @@ class CampaignStorageTest(unittest.TestCase):
             self.assertEqual(int(item_count), 2)
         with self.assertRaises(CampaignReadOnlyError):
             self.db.update_campaign_assignment(
-                **{**change_args, "expected_revision": 2, "idempotency_key": "after-close"}
+                **{**change_args, "expected_revision": 3, "idempotency_key": "after-close"}
             )
 
         reopened = self.db.reopen_campaign(
@@ -173,16 +230,129 @@ class CampaignStorageTest(unittest.TestCase):
             actor="admin",
             actor_source="test",
             actor_verified=True,
-            expected_revision=2,
-            idempotency_key="reopen-2",
+            expected_revision=3,
+            idempotency_key="reopen-3",
             reason="one more check",
         )
-        self.assertEqual(reopened["campaign"]["campaign"]["config_revision"], 3)
+        self.assertEqual(reopened["campaign"]["campaign"]["config_revision"], 4)
         self.assertEqual(reopened["campaign"]["campaign"]["lifecycle"], "active")
         with self.db.connect() as conn:
             self.assertIsNotNone(conn.execute(
                 "SELECT 1 FROM campaign_close_snapshots WHERE id = ?", (snapshot_id,)
             ).fetchone())
+
+    def test_draft_activation_cancel_supersede_and_illegal_transitions(self) -> None:
+        draft = self.db.create_campaign(
+            spec={
+                "purpose": "model_review",
+                "evaluation_run_id": self.run_a["id"],
+                "workset_id": self.model_workset["id"],
+                "lifecycle": "draft",
+                "name": "Draft activation",
+                "members": [
+                    {"issue_id": "cn001", "assignees": ["alice"]},
+                    {"issue_id": "cn002", "assignees": ["alice"]},
+                ],
+            },
+            actor="admin",
+            actor_source="test",
+            actor_verified=True,
+            idempotency_key="draft-activation",
+        )
+        draft_id = draft["campaign"]["id"]
+        activated = self.db.transition_campaign(
+            campaign_id=draft_id,
+            action="activate",
+            actor="admin",
+            actor_source="test",
+            actor_verified=True,
+            expected_revision=1,
+            idempotency_key="activate-draft",
+            reason="Ready for review",
+        )
+        self.assertEqual(activated["campaign"]["campaign"]["lifecycle"], "active")
+        self.assertEqual(activated["campaign"]["campaign"]["config_revision"], 2)
+        replay = self.db.transition_campaign(
+            campaign_id=draft_id,
+            action="activate",
+            actor="admin",
+            actor_source="test",
+            actor_verified=True,
+            expected_revision=1,
+            idempotency_key="activate-draft",
+            reason="Ready for review",
+        )
+        self.assertTrue(replay["replayed"])
+
+        cancelled = self.db.transition_campaign(
+            campaign_id=draft_id,
+            action="cancel",
+            actor="admin",
+            actor_source="test",
+            actor_verified=True,
+            expected_revision=2,
+            idempotency_key="cancel-active",
+            reason="Run withdrawn",
+        )
+        self.assertEqual(cancelled["campaign"]["campaign"]["lifecycle"], "cancelled")
+        with self.assertRaises(CampaignReadOnlyError):
+            self.db.transition_campaign(
+                campaign_id=draft_id,
+                action="activate",
+                actor="admin",
+                actor_source="test",
+                actor_verified=True,
+                expected_revision=3,
+                idempotency_key="illegal-reactivate-cancelled",
+            )
+        with self.assertRaises(Exception):
+            with self.db.connect() as conn:
+                conn.execute(
+                    "UPDATE issue_work_splits SET lifecycle = 'active', config_revision = 4 WHERE id = ?",
+                    (draft_id,),
+                )
+        self.assertEqual(self.db.get_campaign(draft_id)["campaign"]["lifecycle"], "cancelled")
+
+        active = self.db.create_campaign(
+            spec={
+                "purpose": "model_review",
+                "evaluation_run_id": self.run_b["id"],
+                "workset_id": self.model_workset["id"],
+                "name": "Campaign to supersede",
+                "members": [
+                    {"issue_id": "cn001", "assignees": ["bob"]},
+                    {"issue_id": "cn002", "assignees": ["bob"]},
+                ],
+            },
+            actor="admin",
+            actor_source="test",
+            actor_verified=True,
+            idempotency_key="active-to-superseded",
+        )
+        active_id = active["campaign"]["id"]
+        result = self.db.transition_campaign(
+            campaign_id=active_id,
+            action="supersede",
+            actor="admin",
+            actor_source="test",
+            actor_verified=True,
+            expected_revision=1,
+            idempotency_key="supersede-active",
+            reason="Replaced by a newer Run review",
+        )
+        self.assertEqual(result["campaign"]["campaign"]["lifecycle"], "superseded")
+        self.assertEqual(result["campaign"]["lifecycle_audit"][0]["action"], "superseded")
+        with self.assertRaises(CampaignReadOnlyError):
+            self.db.transition_campaign(
+                campaign_id=active_id,
+                action="cancel",
+                actor="admin",
+                actor_source="test",
+                actor_verified=True,
+                expected_revision=2,
+                idempotency_key="illegal-cancel-superseded",
+                reason="Too late",
+            )
 
     def test_grouped_runs_and_discussion_channels_are_isolated(self) -> None:
         with self.db.connect() as conn:
@@ -221,6 +391,26 @@ class CampaignStorageTest(unittest.TestCase):
         )
         self.assertEqual(len(group["campaigns"]), 2)
         self.assertEqual({item["campaign"]["evaluation_run_id"] for item in group["campaigns"]}, {self.run_a["id"], self.run_b["id"]})
+        campaign_a = group["campaigns"][0]["campaign"]
+        self.db.create_model_review(
+            issue_id="cn001",
+            model_run_id=self.run_a["id"],
+            status="completed",
+            reason="run A reviewed",
+            missing_evidence=[],
+            reviewer="alice",
+            campaign_id=campaign_a["id"],
+            reference_id=campaign_a["reference_id"],
+            work_split_id=campaign_a["id"],
+        )
+        group_detail = self.db.get_campaign_group(group["id"])
+        self.assertEqual(group_detail["group"]["workset_id"], "ws-group")
+        progress_by_run = {
+            child["campaign"]["evaluation_run_id"]: child["progress"]
+            for child in group_detail["campaigns"]
+        }
+        self.assertEqual(progress_by_run[self.run_a["id"]]["completed_issue_count"], 1)
+        self.assertEqual(progress_by_run[self.run_b["id"]]["completed_issue_count"], 0)
         self.assertTrue(self.db.create_campaign_group(
             name="Compare two runs",
             purpose="model_review",
@@ -247,21 +437,52 @@ class CampaignStorageTest(unittest.TestCase):
             issue_id="cn001", body="Campaign thread", author="alice", author_source="test",
             discussion_channel="campaign", campaign_id=campaign_id, require_existing_model_run=False,
         )
+        other_campaign_id = group["campaigns"][1]["campaign"]["id"]
+        other_campaign_comment = self.db.create_review_comment(
+            issue_id="cn001", body="Other Campaign thread", author="bob", author_source="test",
+            discussion_channel="campaign", campaign_id=other_campaign_id, require_existing_model_run=False,
+        )
         self.assertEqual(model_comment["discussion_channel"], "model_review")
         self.assertEqual(case_comment["discussion_channel"], "case")
         self.assertEqual(campaign_comment["discussion_channel"], "campaign")
         self.assertEqual(len(self.db.list_review_comments(issue_id="cn001", model_run_id=self.run_a["id"])), 1)
         self.assertEqual(len(self.db.list_review_comments(issue_id="cn001", discussion_channel="case", baseline_scope="scope")), 1)
         self.assertEqual(len(self.db.list_review_comments(issue_id="cn001", discussion_channel="campaign", campaign_id=campaign_id)), 1)
+        related = self.db.list_related_campaign_comment_groups(
+            issue_id="cn001", exclude_campaign_id=campaign_id
+        )
+        self.assertEqual([item["campaign_id"] for item in related], [other_campaign_id])
+        self.assertEqual(related[0]["comments"][0]["id"], other_campaign_comment["id"])
         with self.assertRaises(ValueError):
             self.db.create_review_comment(
                 issue_id="cn001", body="Wrong channel reply", author="alice",
                 discussion_channel="campaign", campaign_id=campaign_id,
                 reply_to_id=int(case_comment["id"]), require_existing_model_run=False,
             )
+        with self.assertRaises(ValueError):
+            self.db.create_review_comment(
+                issue_id="cn001", body="Cross reply to Campaign", author="alice",
+                discussion_channel="case", baseline_scope="scope",
+                reply_to_id=int(campaign_comment["id"]), require_existing_model_run=False,
+            )
+        with self.assertRaises(ValueError):
+            self.db.create_review_comment(
+                issue_id="cn001", model_run_id=self.run_a["id"], body="Cross reply to Case",
+                author="alice", discussion_channel="model_review",
+                reply_to_id=int(case_comment["id"]),
+            )
 
     def test_label_analysis_uses_frozen_reference_and_per_issue_requirements(self) -> None:
         with self.db.connect() as conn:
+            conn.executemany(
+                "INSERT INTO review_tag_catalog (key, label, section, group_key, created_by, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    ("scene:merge", "Merge scene", "scene", "environment", "admin", "2026-09-21T00:00:00Z"),
+                    ("trigger:queue", "Queueing", "interaction_decision", "false_trigger", "admin", "2026-09-21T00:00:00Z"),
+                    ("egress:detour", "Detour", "egress", "ra", "admin", "2026-09-21T00:00:00Z"),
+                ],
+            )
             conn.execute(
                 """
                 INSERT INTO review_worksets (
@@ -292,16 +513,20 @@ class CampaignStorageTest(unittest.TestCase):
         )
         campaign_id = campaign["campaign"]["id"]
         for issue_id, author, output, tags, evidence, excluded in (
-            ("cn001", "alice", "正确触发", ["scene:merge"], ["gap:signal"], False),
-            ("cn001", "bob", "正确触发", ["scene:merge"], [], False),
-            ("cn002", "alice", "误触发", ["scene:parking"], [], True),
+            ("cn001", "alice", "正确触发", ["scene:merge", "trigger:queue"], ["gap:signal"], False),
+            ("cn001", "bob", "正确触发", ["scene:merge", "trigger:queue"], [], False),
+            ("cn002", "alice", "误触发", ["egress:detour"], [], True),
         ):
             self.db.create_label_revision(
                 issue_id=issue_id,
                 expected_output=output,
                 tags=tags,
                 evidence_gaps=evidence,
-                rationale="test label",
+                rationale=(
+                    "红灯排队时，规划方向未对齐目标车道"
+                    if issue_id == "cn001"
+                    else "miscellaneous legacy wording"
+                ),
                 is_excluded=excluded,
                 author=author,
                 author_source="test",
@@ -315,16 +540,21 @@ class CampaignStorageTest(unittest.TestCase):
         self.assertEqual(detail["progress"]["completed_issue_count"], 2)
         self.assertEqual(detail["progress"]["label_output_counts"], {"误触发": 1, "正确触发": 1, "无需协助": 0})
         self.assertEqual(detail["progress"]["reference_relation_counts"]["matches_gt"], 2)
-        self.assertEqual(detail["progress"]["tag_counts"], {"scene:merge": 1, "scene:parking": 1})
+        self.assertEqual(detail["progress"]["tag_counts"], {
+            "scene:merge": 1, "trigger:queue": 1, "egress:detour": 1,
+        })
         self.assertEqual(detail["progress"]["evidence_gap_counts"], {"gap:signal": 1})
         self.assertEqual(detail["progress"]["scenario_counts"], {"scenario-a": 1, "scenario-b": 1})
+        self.assertEqual(detail["progress"]["rationale_theme_counts"]["normal_traffic"], 1)
+        self.assertEqual(detail["progress"]["rationale_theme_counts"]["routing_intent"], 1)
+        self.assertEqual(detail["progress"]["unclustered_rationale_issue_count"], 1)
         self.assertEqual(detail["progress"]["excluded_issue_count"], 1)
         self.assertEqual(detail["progress"]["rationale_issue_count"], 2)
         self.assertEqual({item["reference_relation"] for item in detail["issues"]}, {"matches_gt"})
-        export = self.db.campaign_label_analysis_export(campaign_id, query="test label")
-        self.assertEqual(export["total"], 2)
+        export = self.db.campaign_label_analysis_export(campaign_id, query="红灯")
+        self.assertEqual(export["total"], 1)
         self.assertEqual(len(export["issues"][0]["label_revisions"]), 2)
-        self.assertIn("test label", export["issues"][0]["label_revisions"][0]["rationale"])
+        self.assertIn("红灯", export["issues"][0]["label_revisions"][0]["rationale"])
         case_comment = self.db.create_review_comment(
             issue_id="cn001", body="Case public", author="alice", author_source="test",
             discussion_channel="case", baseline_scope="scope", require_existing_model_run=False,

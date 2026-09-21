@@ -88,6 +88,46 @@ class DatabaseCommentsMixin:
             ).fetchone()
         return int(row["count"] if row else 0)
 
+    def list_related_campaign_comment_groups(
+        self, *, issue_id: str, exclude_campaign_id: str = ""
+    ) -> list[dict[str, Any]]:
+        issue_key = str(issue_id or "").strip()
+        excluded = str(exclude_campaign_id or "").strip()
+        if not issue_key:
+            return []
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT split.id, split.campaign_name, split.purpose,
+                       split.lifecycle, split.legacy_read_only
+                FROM campaign_issue_members member
+                JOIN issue_work_splits split ON split.id = member.campaign_id
+                JOIN review_comments comment
+                  ON comment.campaign_id = split.id
+                 AND comment.issue_id = member.issue_id
+                 AND comment.discussion_channel = 'campaign'
+                WHERE member.issue_id = ? AND split.id <> ?
+                ORDER BY split.campaign_name, split.id
+                """,
+                (issue_key, excluded),
+            ).fetchall()
+        groups: list[dict[str, Any]] = []
+        for row in rows:
+            campaign_id = str(row["id"] or "")
+            groups.append({
+                "campaign_id": campaign_id,
+                "name": str(row["campaign_name"] or campaign_id),
+                "purpose": str(row["purpose"] or ""),
+                "lifecycle": str(row["lifecycle"] or "active"),
+                "legacy_read_only": bool(row["legacy_read_only"]),
+                "comments": self.list_review_comments(
+                    issue_id=issue_key,
+                    discussion_channel="campaign",
+                    campaign_id=campaign_id,
+                ),
+            })
+        return groups
+
     def review_comment_issue_ids(
         self,
         *,

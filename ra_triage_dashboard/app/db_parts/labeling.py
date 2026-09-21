@@ -321,12 +321,15 @@ class DatabaseLabelingMixin:
         digest = hashlib.sha256("\n".join(ordered).encode("utf-8")).hexdigest()
         source_run = str(selection_source_run_id or "").strip()
         with self._write_lock, self.connect() as conn:
-            placeholders = ", ".join("?" for _ in ordered)
-            rows = conn.execute(
-                f"SELECT issue_id, baseline_scope FROM issues WHERE issue_id IN ({placeholders})",
-                ordered,
-            ).fetchall()
-            by_id = {str(row["issue_id"]): str(row["baseline_scope"] or "") for row in rows}
+            by_id: dict[str, str] = {}
+            for offset in range(0, len(ordered), 500):
+                batch = ordered[offset : offset + 500]
+                placeholders = ", ".join("?" for _ in batch)
+                rows = conn.execute(
+                    f"SELECT issue_id, baseline_scope FROM issues WHERE issue_id IN ({placeholders})",
+                    batch,
+                ).fetchall()
+                by_id.update({str(row["issue_id"]): str(row["baseline_scope"] or "") for row in rows})
             missing = [item for item in ordered if item not in by_id]
             wrong_scope = [item for item in ordered if by_id.get(item) != scope]
             if missing:

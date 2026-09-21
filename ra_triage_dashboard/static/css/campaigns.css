@@ -25,6 +25,9 @@
 .campaigns-table td { font-size: 12px; line-height: 1.45; }
 .campaign-row-button { display: grid; gap: 3px; max-width: 300px; padding: 0; border: 0; color: var(--text); background: transparent; text-align: left; }
 .campaign-row-button:hover { color: var(--accent); }
+.campaign-row-identity { display: grid; justify-items: start; gap: 5px; }
+.campaign-group-link { padding: 0; border: 0; color: var(--accent); background: transparent; font-size: 10px; text-align: left; }
+.campaign-group-link:hover { text-decoration: underline; }
 .campaign-row-name { font-weight: 750; }
 .campaign-row-id,
 .campaign-reference-text { display: block; color: var(--faint); font-size: 10px; overflow-wrap: anywhere; }
@@ -68,7 +71,20 @@
 .campaign-issue-pagination { margin-top: 2px; }
 .campaign-assignee-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .campaign-assignee-chip { display: inline-flex; padding: 2px 6px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 10px; }
+.campaign-assignment-controls { display: grid; gap: 6px; min-width: 235px; }
+.campaign-assignment-action { display: flex; gap: 5px; align-items: center; }
+.campaign-assignment-action select { min-width: 0; max-width: 150px; }
+.campaign-group-child-button { padding: 0; border: 0; color: var(--accent); background: transparent; font: inherit; font-weight: 700; text-align: left; }
+.campaign-group-child-button:hover { text-decoration: underline; }
 .campaign-empty-state { padding: 22px 12px; color: var(--muted); text-align: center; }
+#campaignsListView[hidden],
+#campaignDetailView[hidden],
+#campaignGroupView[hidden] { display: none !important; }
+.campaign-group-view { display: grid; gap: 14px; min-width: 0; }
+.campaign-discussion-channel { display: grid; gap: 8px; margin-bottom: 12px; }
+.campaign-discussion-channel h3 { color: var(--muted); font-size: 12px; }
+.campaign-discussion-related { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: 8px; }
+.campaign-discussion-related > summary { color: var(--muted); cursor: pointer; font-size: 11px; }
 @media (max-width: 950px) {
   .campaign-progress-metrics { grid-template-columns: repeat(3, minmax(100px, 1fr)); }
   .campaigns-toolbar { align-items: stretch; }

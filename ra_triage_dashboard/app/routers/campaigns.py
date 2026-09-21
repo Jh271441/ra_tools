@@ -418,6 +418,48 @@ async def reopen_campaign(campaign_id: str, request: Request) -> dict[str, Any]:
     return result
 
 
+async def _transition_campaign(
+    campaign_id: str, request: Request, *, action: str
+) -> dict[str, Any]:
+    actor, source, verified = _campaign_admin(request)
+    body = _json_body(await request.body(), maximum=16 * 1024)
+    try:
+        result = await asyncio.to_thread(
+            database.transition_campaign,
+            campaign_id=campaign_id,
+            action=action,
+            actor=actor,
+            actor_source=source,
+            actor_verified=verified,
+            expected_revision=_required_integer(body, "expected_revision"),
+            idempotency_key=_idempotency_key(request, body),
+            reason=_as_text(body.get("reason")),
+        )
+    except CampaignConflictError as exc:
+        raise _detail(409, str(exc)) from exc
+    except CampaignReadOnlyError as exc:
+        raise _detail(409, str(exc)) from exc
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    result["change_revision"] = await asyncio.to_thread(database.change_revision)
+    return result
+
+
+@router.post("/api/campaigns/{campaign_id}/activate")
+async def activate_campaign(campaign_id: str, request: Request) -> dict[str, Any]:
+    return await _transition_campaign(campaign_id, request, action="activate")
+
+
+@router.post("/api/campaigns/{campaign_id}/cancel")
+async def cancel_campaign(campaign_id: str, request: Request) -> dict[str, Any]:
+    return await _transition_campaign(campaign_id, request, action="cancel")
+
+
+@router.post("/api/campaigns/{campaign_id}/supersede")
+async def supersede_campaign(campaign_id: str, request: Request) -> dict[str, Any]:
+    return await _transition_campaign(campaign_id, request, action="supersede")
+
+
 @router.get("/api/campaigns/{campaign_id}/issues/{issue_id}/comments")
 async def list_campaign_comments(campaign_id: str, issue_id: str) -> dict[str, Any]:
     if not await _campaign_issue_exists(campaign_id, issue_id):
@@ -435,6 +477,56 @@ async def list_campaign_comments(campaign_id: str, issue_id: str) -> dict[str, A
         campaign_id=campaign_id,
     )
     return {"comments": [_public_review_comment(item) for item in comments], "count": count}
+
+
+@router.get("/api/campaigns/{campaign_id}/issues/{issue_id}/discussion")
+async def get_campaign_discussion(campaign_id: str, issue_id: str) -> dict[str, Any]:
+    if not await _campaign_issue_exists(campaign_id, issue_id):
+        raise _detail(404, "Campaign Issue 不存在。")
+    detail = await asyncio.to_thread(database.get_campaign, campaign_id, page=1, page_size=1)
+    campaign = (detail or {}).get("campaign") or {}
+    issue = await asyncio.to_thread(database.get_issue, issue_id)
+    if issue is None:
+        raise _detail(404, "Issue 不存在。")
+    baseline_scope = str(issue.get("baseline_scope") or "")
+    case_comments = await asyncio.to_thread(
+        database.list_review_comments,
+        issue_id=issue_id,
+        discussion_channel="case",
+        baseline_scope=baseline_scope,
+    )
+    campaign_comments = await asyncio.to_thread(
+        database.list_review_comments,
+        issue_id=issue_id,
+        discussion_channel="campaign",
+        campaign_id=campaign_id,
+    )
+    other_campaigns = await asyncio.to_thread(
+        database.list_related_campaign_comment_groups,
+        issue_id=issue_id,
+        exclude_campaign_id=campaign_id,
+    )
+    run_id = str(campaign.get("evaluation_run_id") or "")
+    run_comments = await asyncio.to_thread(
+        database.list_review_comments,
+        issue_id=issue_id,
+        discussion_channel="model_review",
+        model_run_id=run_id,
+    ) if run_id else []
+    public = lambda rows: [_public_review_comment(item) for item in rows]
+    return {
+        "campaign_id": campaign_id,
+        "issue_id": issue_id,
+        "baseline_scope": baseline_scope,
+        "case_comments": public(case_comments),
+        "campaign_comments": public(campaign_comments),
+        "other_campaigns": [
+            {**group, "comments": public(group.get("comments") or [])}
+            for group in other_campaigns
+        ],
+        "run_id": run_id,
+        "run_comments": public(run_comments),
+    }
 
 
 @router.post("/api/campaigns/{campaign_id}/issues/{issue_id}/comments")

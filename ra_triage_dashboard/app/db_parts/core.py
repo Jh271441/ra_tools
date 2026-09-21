@@ -1211,7 +1211,7 @@ class DatabaseCoreMixin:
                 CREATE TABLE IF NOT EXISTS campaign_lifecycle_audit (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     campaign_id TEXT NOT NULL REFERENCES issue_work_splits(id) ON DELETE RESTRICT,
-                    action TEXT NOT NULL CHECK(action IN ('closed', 'reopened', 'cancelled')),
+                    action TEXT NOT NULL CHECK(action IN ('closed', 'reopened', 'activated', 'cancelled', 'superseded')),
                     from_lifecycle TEXT NOT NULL,
                     to_lifecycle TEXT NOT NULL,
                     config_revision INTEGER NOT NULL CHECK(config_revision > 0),
@@ -2062,6 +2062,83 @@ class DatabaseCoreMixin:
                 END
                 """
             )
+            conn.execute(
+                """
+                CREATE TRIGGER IF NOT EXISTS trg_issue_work_splits_lifecycle_transition
+                BEFORE UPDATE OF lifecycle ON issue_work_splits
+                WHEN NEW.lifecycle <> OLD.lifecycle
+                BEGIN
+                    SELECT CASE WHEN NOT (
+                        (OLD.lifecycle = 'draft' AND NEW.lifecycle = 'active' AND NEW.config_revision > OLD.config_revision)
+                        OR (OLD.lifecycle = 'draft' AND NEW.lifecycle = 'cancelled' AND NEW.config_revision > OLD.config_revision)
+                        OR (OLD.lifecycle = 'active' AND NEW.lifecycle = 'cancelled' AND NEW.config_revision > OLD.config_revision)
+                        OR (OLD.lifecycle = 'active' AND NEW.lifecycle = 'superseded' AND NEW.config_revision > OLD.config_revision)
+                        OR (OLD.lifecycle = 'active' AND NEW.lifecycle = 'closed'
+                            AND NEW.config_revision = OLD.config_revision
+                            AND NEW.closed_revision = OLD.config_revision
+                            AND COALESCE(NEW.latest_close_snapshot_id, '') <> '')
+                        OR (OLD.lifecycle = 'closed' AND NEW.lifecycle = 'active' AND NEW.config_revision > OLD.config_revision)
+                    ) THEN RAISE(ABORT, 'illegal Campaign lifecycle transition or revision') END;
+                    SELECT CASE WHEN NOT EXISTS (
+                        SELECT 1 FROM campaign_lifecycle_audit audit
+                        WHERE audit.campaign_id = OLD.id
+                          AND audit.from_lifecycle = OLD.lifecycle
+                          AND audit.to_lifecycle = NEW.lifecycle
+                          AND audit.action = CASE
+                              WHEN OLD.lifecycle = 'draft' AND NEW.lifecycle = 'active' THEN 'activated'
+                              WHEN NEW.lifecycle = 'cancelled' THEN 'cancelled'
+                              WHEN NEW.lifecycle = 'superseded' THEN 'superseded'
+                              WHEN NEW.lifecycle = 'closed' THEN 'closed'
+                              WHEN OLD.lifecycle = 'closed' AND NEW.lifecycle = 'active' THEN 'reopened'
+                              ELSE '' END
+                          AND audit.config_revision = CASE
+                              WHEN NEW.lifecycle = 'closed' THEN OLD.config_revision
+                              ELSE NEW.config_revision END
+                          AND audit.idempotency_key <> ''
+                    ) THEN RAISE(ABORT, 'Campaign lifecycle transition requires a matching audit row') END;
+                END
+                """
+            )
+            conn.execute(
+                """
+                CREATE TRIGGER IF NOT EXISTS trg_issue_work_splits_terminal_lifecycle_guard
+                BEFORE UPDATE ON issue_work_splits
+                WHEN OLD.lifecycle IN ('cancelled', 'superseded')
+                BEGIN
+                    SELECT RAISE(ABORT, 'terminal Campaign cannot be modified');
+                END
+                """
+            )
+            for table, column in (
+                ("review_work_assignments", "split_id"),
+                ("campaign_issue_members", "campaign_id"),
+            ):
+                for action, operation, source_expr, target_expr in (
+                    ("insert", "INSERT", "", f"NEW.{column}"),
+                    ("delete", "DELETE", f"OLD.{column}", ""),
+                    ("update", "UPDATE", f"OLD.{column}", f"NEW.{column}"),
+                ):
+                    checks = []
+                    if source_expr:
+                        checks.append(
+                            f"EXISTS (SELECT 1 FROM issue_work_splits WHERE id = {source_expr} "
+                            "AND lifecycle IN ('closed', 'cancelled', 'superseded'))"
+                        )
+                    if target_expr:
+                        checks.append(
+                            f"EXISTS (SELECT 1 FROM issue_work_splits WHERE id = {target_expr} "
+                            "AND lifecycle IN ('closed', 'cancelled', 'superseded'))"
+                        )
+                    conn.execute(
+                        f"""
+                        CREATE TRIGGER IF NOT EXISTS trg_{table}_terminal_{action}
+                        BEFORE {operation} ON {table}
+                        WHEN {' OR '.join(checks)}
+                        BEGIN
+                            SELECT RAISE(ABORT, 'terminal Campaign membership is immutable');
+                        END
+                        """
+                    )
             for action, operation in (("insert", "INSERT"), ("update", "UPDATE")):
                 conn.execute(
                     f"""

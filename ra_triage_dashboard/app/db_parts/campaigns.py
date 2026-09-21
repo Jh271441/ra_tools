@@ -9,6 +9,7 @@ from collections import Counter, defaultdict
 from typing import Any, Sequence
 from uuid import uuid4
 
+from ..review_analysis import REASON_THEME_CATALOG, classify_review_reason
 from .shared import _json, _json_load, utc_now
 
 CAMPAIGN_PURPOSES = {"labeling", "model_review"}
@@ -158,6 +159,9 @@ class DatabaseCampaignMixin:
         purpose = str(spec.get("purpose") or "").strip().lower()
         if purpose not in CAMPAIGN_PURPOSES:
             raise ValueError("Campaign purpose 只能是 labeling 或 model_review。")
+        initial_lifecycle = str(spec.get("lifecycle") or "active").strip().lower()
+        if initial_lifecycle not in {"draft", "active"}:
+            raise ValueError("新建 Campaign 的 lifecycle 只能是 draft 或 active。")
         evaluation_run_id = str(spec.get("evaluation_run_id") or "").strip()
         if purpose == "model_review":
             if not evaluation_run_id:
@@ -172,6 +176,8 @@ class DatabaseCampaignMixin:
         ).fetchone() if workset_id else None
         if workset_id and workset is None:
             raise ValueError("Workset 不存在。")
+        if purpose == "model_review" and workset is None:
+            raise ValueError("Model Review Campaign 必须绑定冻结 Workset。")
         if purpose == "labeling" and workset is None:
             raise ValueError("Labeling Campaign 必须绑定冻结 Workset。")
         raw_members = spec.get("members")
@@ -333,7 +339,7 @@ class DatabaseCampaignMixin:
                 legacy_read_only, legacy_mapping_status, idempotency_key,
                 idempotency_fingerprint, campaign_name, task_group_id
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                      'active', 1, ?, ?, ?, ?, ?, ?, false, 'native_s4', ?, ?, ?, ?)
+                      ?, 1, ?, ?, ?, ?, ?, ?, false, 'native_s4', ?, ?, ?, ?)
             """,
             (
                 campaign_id, actor_name, now, spec.get("seed"), len(normalized_members),
@@ -342,6 +348,7 @@ class DatabaseCampaignMixin:
                 "labeling" if purpose == "labeling" else "s4_model_review",
                 workset_id, selection_source_run_id, purpose, evaluation_run_id or None,
                 top_reference_type, top_reference_id, top_reference_sha,
+                initial_lifecycle,
                 str(actor_source or "legacy"), bool(actor_verified), actor_name,
                 str(actor_source or "legacy"), bool(actor_verified), now,
                 idempotency_key, idempotency_fingerprint, campaign_name,
@@ -816,6 +823,20 @@ class DatabaseCampaignMixin:
                 "ORDER BY revision_no DESC LIMIT 50",
                 (campaign_key,),
             ).fetchall()
+            assignment_audit_rows = conn.execute(
+                "SELECT id, issue_id, action, assignment_kind, from_assignee, to_assignee, "
+                "changed_by, changed_by_source, changed_by_verified, config_revision, "
+                "reason, changed_at FROM campaign_assignment_audit "
+                "WHERE campaign_id = ? ORDER BY id DESC LIMIT 200",
+                (campaign_key,),
+            ).fetchall()
+            lifecycle_audit_rows = conn.execute(
+                "SELECT id, action, from_lifecycle, to_lifecycle, config_revision, "
+                "changed_by, changed_by_source, changed_by_verified, snapshot_id, reason, changed_at "
+                "FROM campaign_lifecycle_audit WHERE campaign_id = ? "
+                "ORDER BY id DESC LIMIT 100",
+                (campaign_key,),
+            ).fetchall()
             close_snapshot = None
             snapshot_id = str(row["latest_close_snapshot_id"] or "")
             if snapshot_id:
@@ -867,6 +888,35 @@ class DatabaseCampaignMixin:
                  "change_source": str(item["change_source"] or ""),
                  "changed_at": str(item["changed_at"] or "")}
                 for item in revision_rows
+            ],
+            "assignment_audit": [
+                {"id": int(item["id"]),
+                 "issue_id": str(item["issue_id"] or ""),
+                 "action": str(item["action"] or ""),
+                 "assignment_kind": str(item["assignment_kind"] or "base"),
+                 "from_assignee": str(item["from_assignee"] or ""),
+                 "to_assignee": str(item["to_assignee"] or ""),
+                 "changed_by": str(item["changed_by"] or ""),
+                 "changed_by_source": str(item["changed_by_source"] or ""),
+                 "changed_by_verified": bool(item["changed_by_verified"]),
+                 "config_revision": int(item["config_revision"] or 0),
+                 "reason": str(item["reason"] or ""),
+                 "changed_at": str(item["changed_at"] or "")}
+                for item in assignment_audit_rows
+            ],
+            "lifecycle_audit": [
+                {"id": int(item["id"]),
+                 "action": str(item["action"] or ""),
+                 "from_lifecycle": str(item["from_lifecycle"] or ""),
+                 "to_lifecycle": str(item["to_lifecycle"] or ""),
+                 "config_revision": int(item["config_revision"] or 0),
+                 "changed_by": str(item["changed_by"] or ""),
+                 "changed_by_source": str(item["changed_by_source"] or ""),
+                 "changed_by_verified": bool(item["changed_by_verified"]),
+                 "snapshot_id": str(item["snapshot_id"] or ""),
+                 "reason": str(item["reason"] or ""),
+                 "changed_at": str(item["changed_at"] or "")}
+                for item in lifecycle_audit_rows
             ],
             "task_group": group,
         }
@@ -1332,6 +1382,18 @@ class DatabaseCampaignMixin:
                 new_revision = revision + 1
                 now = utc_now()
                 snapshot_id = str(split["latest_close_snapshot_id"] or "")
+                conn.execute(
+                    """
+                    INSERT INTO campaign_lifecycle_audit (
+                        campaign_id, action, from_lifecycle, to_lifecycle,
+                        config_revision, changed_by, changed_by_source,
+                        changed_by_verified, snapshot_id, idempotency_key,
+                        idempotency_fingerprint, reason, changed_at
+                    ) VALUES (?, 'reopened', 'closed', 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (campaign_key, new_revision, actor_name, str(actor_source or "legacy"),
+                     bool(actor_verified), snapshot_id, key, fingerprint, explanation, now),
+                )
                 updated = conn.execute(
                     "UPDATE issue_work_splits SET lifecycle='active', config_revision=?, "
                     "closed_by='', closed_by_source='legacy', closed_by_verified=false, "
@@ -1352,6 +1414,85 @@ class DatabaseCampaignMixin:
                     changed_by_verified=bool(actor_verified), change_source="reopen",
                     idempotency_key=key,
                 )
+                self._mark_change_topic(conn, "review")
+                if str(split["purpose"] or "") == "labeling":
+                    self._mark_change_topic(conn, "labeling")
+        return {"campaign": self.get_campaign(campaign_key)}
+
+    def transition_campaign(
+        self,
+        *,
+        campaign_id: str,
+        action: str,
+        actor: str,
+        actor_source: str = "legacy",
+        actor_verified: bool = False,
+        expected_revision: int,
+        idempotency_key: str,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        campaign_key = str(campaign_id or "").strip()
+        operation = str(action or "").strip().lower()
+        actor_name = str(actor or "").strip()
+        key = str(idempotency_key or "").strip()[:160]
+        explanation = str(reason or "").strip()[:500]
+        transitions = {
+            "activate": ({"draft"}, "active", "activated"),
+            "cancel": ({"draft", "active"}, "cancelled", "cancelled"),
+            "supersede": ({"active"}, "superseded", "superseded"),
+        }
+        if operation not in transitions:
+            raise ValueError("Campaign transition 只能是 activate、cancel 或 supersede。")
+        if not campaign_key or not actor_name or not key:
+            raise ValueError("Campaign、操作人和 idempotency_key 不能为空。")
+        if operation in {"cancel", "supersede"} and not explanation:
+            raise ValueError("取消或替代 Campaign 必须填写原因。")
+        try:
+            expected = int(expected_revision)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("expected_revision 必须是正整数。") from exc
+        if expected < 1:
+            raise ValueError("expected_revision 必须是正整数。")
+        allowed_sources, target_lifecycle, audit_action = transitions[operation]
+        fingerprint = _fingerprint({
+            "action": operation,
+            "campaign_id": campaign_key,
+            "expected_revision": expected,
+            "reason": explanation,
+        })
+        replayed = False
+        with self._write_lock, self.connect() as conn:
+            if self.backend == "postgresql":
+                conn.execute("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+            existing = conn.execute(
+                "SELECT idempotency_fingerprint FROM campaign_lifecycle_audit "
+                "WHERE campaign_id = ? AND idempotency_key = ?",
+                (campaign_key, key),
+            ).fetchone()
+            if existing is not None:
+                if str(existing["idempotency_fingerprint"] or "").strip() != fingerprint:
+                    raise CampaignConflictError("lifecycle idempotency key 已用于不同操作。")
+                replayed = True
+            else:
+                split = conn.execute(
+                    "SELECT * FROM issue_work_splits WHERE id = ?"
+                    + (" FOR UPDATE" if self.backend == "postgresql" else ""),
+                    (campaign_key,),
+                ).fetchone()
+                if split is None:
+                    raise ValueError("Campaign 不存在。")
+                if bool(split["legacy_read_only"]) or not str(split["purpose"] or ""):
+                    raise CampaignReadOnlyError("未分类的 legacy Campaign 只读，不能更改生命周期。")
+                current_lifecycle = str(split["lifecycle"] or "")
+                if current_lifecycle not in allowed_sources:
+                    raise CampaignReadOnlyError(
+                        f"不允许 Campaign 从 {current_lifecycle or 'unknown'} 转换为 {target_lifecycle}。"
+                    )
+                revision = int(split["config_revision"] or 1)
+                if revision != expected:
+                    raise CampaignConflictError("Campaign 配置已更新，请刷新后重试。")
+                new_revision = revision + 1
+                now = utc_now()
                 conn.execute(
                     """
                     INSERT INTO campaign_lifecycle_audit (
@@ -1359,15 +1500,48 @@ class DatabaseCampaignMixin:
                         config_revision, changed_by, changed_by_source,
                         changed_by_verified, snapshot_id, idempotency_key,
                         idempotency_fingerprint, reason, changed_at
-                    ) VALUES (?, 'reopened', 'closed', 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?)
                     """,
-                    (campaign_key, new_revision, actor_name, str(actor_source or "legacy"),
-                     bool(actor_verified), snapshot_id, key, fingerprint, explanation, now),
+                    (campaign_key, audit_action, current_lifecycle, target_lifecycle,
+                     new_revision, actor_name, str(actor_source or "legacy"),
+                     bool(actor_verified), key, fingerprint, explanation, now),
+                )
+                conn.execute(
+                    "UPDATE campaign_issue_members SET config_revision = ? WHERE campaign_id = ?",
+                    (new_revision, campaign_key),
+                )
+                updated = conn.execute(
+                    """
+                    UPDATE issue_work_splits
+                    SET lifecycle = ?, config_revision = ?, updated_by = ?,
+                        updated_by_source = ?, updated_by_verified = ?, updated_at = ?
+                    WHERE id = ? AND config_revision = ? AND lifecycle = ?
+                    """,
+                    (target_lifecycle, new_revision, actor_name,
+                     str(actor_source or "legacy"), bool(actor_verified), now,
+                     campaign_key, revision, current_lifecycle),
+                )
+                if int(updated.rowcount or 0) != 1:
+                    raise CampaignConflictError("Campaign 配置已更新，请刷新后重试。")
+                self._campaign_insert_revision(
+                    conn,
+                    campaign_id=campaign_key,
+                    revision_no=new_revision,
+                    changed_by=actor_name,
+                    changed_by_source=str(actor_source or "legacy"),
+                    changed_by_verified=bool(actor_verified),
+                    change_source=operation,
+                    idempotency_key=key,
                 )
                 self._mark_change_topic(conn, "review")
                 if str(split["purpose"] or "") == "labeling":
                     self._mark_change_topic(conn, "labeling")
-        return {"campaign": self.get_campaign(campaign_key)}
+        return {
+            "campaign": self.get_campaign(campaign_key),
+            "action": operation,
+            "changed": not replayed,
+            "replayed": replayed,
+        }
 
     def _campaign_insert_revision(
         self,
@@ -2253,6 +2427,13 @@ class DatabaseCampaignMixin:
                 "scenario_counts": {},
                 "excluded_issue_count": 0,
                 "rationale_issue_count": 0,
+                "unclustered_rationale_issue_count": 0,
+                "rationale_theme_counts": {},
+                "rationale_theme_catalog": [
+                    {"key": str(item["key"]), "label": str(item["label"]),
+                     "description": str(item["description"])}
+                    for item in REASON_THEME_CATALOG
+                ],
                 "assignees": [],
                 "issues": [],
             }
@@ -2291,6 +2472,7 @@ class DatabaseCampaignMixin:
                 issue_evidence_gaps: set[str] = set()
                 issue_excluded = False
                 issue_has_rationale = False
+                issue_rationale_themes: set[str] = set()
                 if purpose == "labeling":
                     case_ids = [
                         case_id for case_id, case_heads in label_heads_by_case.items()
@@ -2328,6 +2510,10 @@ class DatabaseCampaignMixin:
                             )
                             issue_excluded = issue_excluded or bool(head["is_excluded"])
                             issue_has_rationale = issue_has_rationale or bool(str(head["rationale"] or "").strip())
+                            issue_rationale_themes.update(
+                                str(theme["key"])
+                                for theme in classify_review_reason(head["rationale"])
+                            )
                             if output in {"误触发", "正确触发", "无需协助"} and author:
                                 assignee_outputs[author].add(output)
                         resolution = resolutions_by_case.get(case_id)
@@ -2353,6 +2539,10 @@ class DatabaseCampaignMixin:
                                     }
                                     issue_excluded = bool(result_row["is_excluded"])
                                     issue_has_rationale = bool(str(result_row["rationale"] or "").strip())
+                                    issue_rationale_themes = {
+                                        str(theme["key"])
+                                        for theme in classify_review_reason(result_row["rationale"])
+                                    }
                             else:
                                 stale_resolution = True
                     submitted = len(submitted_names)
@@ -2420,6 +2610,12 @@ class DatabaseCampaignMixin:
                         summary["excluded_issue_count"] += 1
                     if issue_has_rationale:
                         summary["rationale_issue_count"] += 1
+                    if issue_has_rationale and not issue_rationale_themes:
+                        summary["unclustered_rationale_issue_count"] += 1
+                    for theme in issue_rationale_themes:
+                        summary["rationale_theme_counts"][theme] = int(
+                            summary["rationale_theme_counts"].get(theme, 0)
+                        ) + 1
                 summary["issues"].append({
                     "issue_id": issue,
                     "state": state,

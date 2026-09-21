@@ -79,7 +79,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-479`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-480`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -583,14 +583,18 @@
               <div class="table-scroll"><table class="campaigns-table"><thead><tr><th>Campaign</th><th>用途</th><th>生命周期</th><th>成员 / 要求</th><th>已提交</th><th>进度</th><th>数据集 / 参考</th></tr></thead><tbody id="campaignsRows"></tbody></table></div>
             </section>
             <section class="page-card campaign-detail-card" id="campaignDetailView" hidden>
-              <header class="campaign-detail-header"><div><button class="button button-quiet" id="campaignDetailBack" type="button">← <span class="ui-lang-zh">返回列表</span><span class="ui-lang-en">Back to list</span></button><h2 id="campaignDetailTitle">Campaign</h2><p id="campaignDetailMeta"></p></div><div class="campaign-detail-actions"><button class="button button-quiet" id="campaignCloseButton" type="button" hidden><span class="ui-lang-zh">关闭 Campaign</span><span class="ui-lang-en">Close Campaign</span></button><button class="button button-quiet" id="campaignReopenButton" type="button" hidden><span class="ui-lang-zh">重新打开</span><span class="ui-lang-en">Reopen</span></button><span class="campaign-lifecycle-badge" id="campaignDetailLifecycle"></span></div></header>
+              <header class="campaign-detail-header"><div><button class="button button-quiet" id="campaignDetailBack" type="button">← <span class="ui-lang-zh">返回列表</span><span class="ui-lang-en">Back to list</span></button><h2 id="campaignDetailTitle">Campaign</h2><p id="campaignDetailMeta"></p><button class="button button-quiet" id="campaignOpenGroupButton" type="button" hidden><span class="ui-lang-zh">查看 Task Group</span><span class="ui-lang-en">View Task Group</span></button></div><div class="campaign-detail-actions"><button class="button button-quiet" id="campaignActivateButton" type="button" hidden><span class="ui-lang-zh">激活草稿</span><span class="ui-lang-en">Activate draft</span></button><button class="button button-quiet" id="campaignCloseButton" type="button" hidden><span class="ui-lang-zh">关闭 Campaign</span><span class="ui-lang-en">Close Campaign</span></button><button class="button button-quiet" id="campaignReopenButton" type="button" hidden><span class="ui-lang-zh">重新打开</span><span class="ui-lang-en">Reopen</span></button><button class="button button-quiet" id="campaignCancelButton" type="button" hidden><span class="ui-lang-zh">取消 Campaign</span><span class="ui-lang-en">Cancel Campaign</span></button><button class="button button-quiet" id="campaignSupersedeButton" type="button" hidden><span class="ui-lang-zh">标记为替代</span><span class="ui-lang-en">Supersede</span></button><span class="campaign-lifecycle-badge" id="campaignDetailLifecycle"></span></div></header>
               <div class="campaign-progress-metrics" id="campaignProgressMetrics"></div>
               <section class="campaign-label-analysis" id="campaignLabelAnalysis" hidden>
                 <div class="campaign-analysis-toolbar"><a class="button button-quiet" id="campaignLabelExportCsv" href="#" hidden><span class="ui-lang-zh">导出明细 CSV</span><span class="ui-lang-en">Export detail CSV</span></a></div>
                 <div class="campaign-analysis-grid">
                   <article class="campaign-analysis-card"><h3><span class="ui-lang-zh">标注结果分布</span><span class="ui-lang-en">Label output distribution</span></h3><div id="campaignLabelOutputCounts"></div></article>
                   <article class="campaign-analysis-card"><h3><span class="ui-lang-zh">相对冻结参考</span><span class="ui-lang-en">Against frozen reference</span></h3><div id="campaignReferenceRelationCounts"></div></article>
-                  <article class="campaign-analysis-card"><h3><span class="ui-lang-zh">Issue Tags</span><span class="ui-lang-en">Issue Tags</span></h3><div id="campaignTagCounts"></div></article>
+                  <article class="campaign-analysis-card"><h3><span class="ui-lang-zh">场景标签</span><span class="ui-lang-en">Scene tags</span></h3><div id="campaignSceneTagCounts"></div></article>
+                  <article class="campaign-analysis-card"><h3><span class="ui-lang-zh">触发 / 交互</span><span class="ui-lang-en">Trigger / interaction</span></h3><div id="campaignTriggerTagCounts"></div></article>
+                  <article class="campaign-analysis-card"><h3><span class="ui-lang-zh">脱困方式</span><span class="ui-lang-en">Egress</span></h3><div id="campaignEgressTagCounts"></div></article>
+                  <article class="campaign-analysis-card"><h3><span class="ui-lang-zh">历史 / 其他标签</span><span class="ui-lang-en">Legacy / other tags</span></h3><div id="campaignOtherTagCounts"></div></article>
+                  <article class="campaign-analysis-card"><h3><span class="ui-lang-zh">标注依据原因聚类</span><span class="ui-lang-en">Label rationale themes</span></h3><div id="campaignRationaleThemeCounts"></div></article>
                   <article class="campaign-analysis-card"><h3><span class="ui-lang-zh">证据缺口</span><span class="ui-lang-en">Evidence gaps</span></h3><div id="campaignEvidenceGapCounts"></div></article>
                   <article class="campaign-analysis-card"><h3><span class="ui-lang-zh">Scenario 分布</span><span class="ui-lang-en">Scenario distribution</span></h3><div id="campaignScenarioCounts"></div></article>
                   <article class="campaign-analysis-card"><h3><span class="ui-lang-zh">标注提醒</span><span class="ui-lang-en">Labeling notes</span></h3><div id="campaignLabelingNoteCounts"></div></article>
@@ -598,8 +602,14 @@
               </section>
               <div class="campaign-close-snapshot" id="campaignCloseSnapshot" hidden></div>
               <details class="campaign-config-history"><summary><span class="ui-lang-zh">配置版本历史</span><span class="ui-lang-en">Configuration history</span></summary><div class="table-scroll"><table class="campaigns-table"><thead><tr><th>Revision</th><th>Change</th><th>Changed by</th><th>At</th><th>Config SHA-256</th></tr></thead><tbody id="campaignRevisionRows"></tbody></table></div></details>
+              <details class="campaign-config-history"><summary><span class="ui-lang-zh">生命周期审计</span><span class="ui-lang-en">Lifecycle audit</span></summary><div class="table-scroll"><table class="campaigns-table"><thead><tr><th>Action</th><th>Transition</th><th>Changed by</th><th>Revision</th><th>Reason</th><th>At</th></tr></thead><tbody id="campaignLifecycleAuditRows"></tbody></table></div></details>
+              <details class="campaign-config-history"><summary><span class="ui-lang-zh">分配转派审计</span><span class="ui-lang-en">Assignment audit</span></summary><div class="table-scroll"><table class="campaigns-table"><thead><tr><th>Action</th><th>Issue</th><th>Assignee</th><th>Changed by</th><th>Revision</th><th>Reason</th><th>At</th></tr></thead><tbody id="campaignAssignmentAuditRows"></tbody></table></div></details>
               <section class="campaign-assignee-section"><h3><span class="ui-lang-zh">负责人进度</span><span class="ui-lang-en">Assignee progress</span></h3><div class="table-scroll"><table class="campaigns-table"><thead><tr><th>Assignee</th><th>Assigned</th><th>Submitted</th><th>Completed</th></tr></thead><tbody id="campaignAssigneeRows"></tbody></table></div></section>
               <section class="campaign-issue-section"><div class="campaign-issue-heading"><h3><span class="ui-lang-zh">Issue 状态</span><span class="ui-lang-en">Issue progress</span></h3><span id="campaignIssueCount"></span></div><div class="campaign-issue-filters"><label><span class="ui-lang-zh">负责人</span><span class="ui-lang-en">Assignee</span><select id="campaignIssueAssignee"><option value="">全部负责人</option></select></label><label><span class="ui-lang-zh">状态</span><span class="ui-lang-en">State</span><select id="campaignIssueState"><option value="all">全部</option><option value="pending">待处理</option><option value="in_progress">进行中</option><option value="completed">完成</option><option value="conflict">冲突</option><option value="adjudicated">已裁决</option><option value="stale">已过期</option><option value="blocked">阻塞</option><option value="unassigned">未分配</option><option value="legacy_read_only">Legacy 只读</option></select></label><label class="campaigns-search"><span>Search Issue / Label rationale</span><input id="campaignIssueQuery" type="search" maxlength="128" autocomplete="off" placeholder="Issue ID、场景或标注依据"/></label><button class="button button-quiet" id="campaignIssueFilterButton" type="button"><span class="ui-lang-zh">筛选</span><span class="ui-lang-en">Filter</span></button></div><div class="table-scroll"><table class="campaigns-table campaign-issues-table"><thead><tr><th>Issue</th><th>GT / 参考</th><th>期望输出</th><th>Tags / 证据缺口</th><th>排除</th><th>Assignees</th><th>已提交 / 要求</th><th>状态</th><th data-campaign-admin-column hidden>管理</th></tr></thead><tbody id="campaignIssueRows"></tbody></table></div><nav class="case-pagination gallery-pagination campaign-issue-pagination"><div class="case-pagination-main"><button class="button button-quiet" id="campaignIssuePrevious" type="button">上一页</button><span id="campaignIssuePageState">1 / 1</span><button class="button button-quiet" id="campaignIssueNext" type="button">下一页</button></div><label class="case-page-size"><span>每页</span><select id="campaignIssuePageSize"><option value="20">20</option><option value="50" selected>50</option><option value="100">100</option></select><span>条</span></label></nav></section>
+            </section>
+            <section class="page-card campaign-group-view" id="campaignGroupView" hidden>
+              <header class="campaign-detail-header"><div><button class="button button-quiet" id="campaignGroupBack" type="button">← <span class="ui-lang-zh">返回</span><span class="ui-lang-en">Back</span></button><h2 id="campaignGroupTitle">Task Group</h2><p id="campaignGroupMeta"></p></div></header>
+              <section class="campaign-issue-section"><div class="campaign-issue-heading"><h3><span class="ui-lang-zh">子 Campaign 独立进度</span><span class="ui-lang-en">Independent child Campaign progress</span></h3><span id="campaignGroupChildCount"></span></div><div class="table-scroll"><table class="campaigns-table"><thead><tr><th>Model Run</th><th>Campaign</th><th>Purpose</th><th>Lifecycle</th><th>Issues</th><th>Required</th><th>Submitted / Completed</th></tr></thead><tbody id="campaignGroupRows"></tbody></table></div></section>
             </section>
           </section>
 
@@ -1648,7 +1658,7 @@
         <div class="comment-thread-list" id="analysisDiscussionThread" aria-live="polite"></div>
         <div class="comment-reply-context" id="analysisDiscussionReplyContext" hidden></div>
         <div class="comment-editor" id="analysisDiscussionComposer">
-          <label class="discussion-channel-field" id="analysisDiscussionChannelField" hidden><span><span class="ui-lang-zh">发言频道</span><span class="ui-lang-en">Post in</span></span><select id="analysisDiscussionChannel"><option value="both">当前 Campaign + Case 公共讨论</option><option value="case">Case 公共讨论</option><option value="campaign">当前 Campaign</option></select></label>
+          <label class="discussion-channel-field" id="analysisDiscussionChannelField" hidden><span><span class="ui-lang-zh">讨论范围 / 发言频道</span><span class="ui-lang-en">Discussion scope / post in</span></span><select id="analysisDiscussionChannel"><option value="both">同时查看 Case + Campaign；发言前请选择频道</option><option value="case">Case 公共讨论</option><option value="campaign">当前 Campaign</option></select></label>
           <div class="comment-editor-heading">
             <span><span class="ui-lang-zh">添加评论</span><span class="ui-lang-en">Add comment</span></span>
             <small>Markdown</small>
@@ -2219,7 +2229,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-479`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-480`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

@@ -511,6 +511,7 @@ function parsePageRoute() {
     campaignPurpose: ["labeling", "model_review"].includes(params.get("purpose")) ? params.get("purpose") : "",
     campaignLifecycle: params.get("lifecycle") || "all",
     campaignQuery: String(params.get("q") || "").slice(0, 128),
+    campaignGroupId: String(params.get("group") || "").trim(),
     // Issue / GT 上传已从页面移除；旧链接统一落到安全的模型结果导入区。
     importKind:
       params.get("import") === "model" ||
@@ -746,6 +747,7 @@ function pageUrl(page, options = {}) {
   }
   if (page === "campaigns") {
     if (options.campaignId) url.searchParams.set("campaign", String(options.campaignId));
+    if (options.groupId) url.searchParams.set("group", String(options.groupId));
     if (options.purpose) url.searchParams.set("purpose", String(options.purpose));
     if (options.lifecycle && options.lifecycle !== "all") {
       url.searchParams.set("lifecycle", String(options.lifecycle));
@@ -963,6 +965,9 @@ function showPage(
     issues = [],
     source = "",
     runId = "",
+    openComments = false,
+    commentId = 0,
+    discussionChannel = "",
     importKind = "",
     runSourceTab = "",
     restoreRoute = false,
@@ -979,6 +984,7 @@ function showPage(
     campaignPurpose = "",
     campaignLifecycle = "all",
     campaignQuery = "",
+    campaignGroupId = "",
   } = {}
 ) {
   const target = PAGE_ROUTES[page] ? page : "review";
@@ -1094,6 +1100,11 @@ function showPage(
       purpose: campaignPurpose,
       lifecycle: campaignLifecycle,
       query: campaignQuery,
+      groupId: campaignGroupId,
+      discussionIssue: openComments ? issue : "",
+      openComments,
+      commentId,
+      discussionChannel,
     }).catch((error) => showToast(error.message, true));
   }
   if (target === "intent-experiments" && loadPageData && typeof loadIntentExperimentAdmin === "function") {
