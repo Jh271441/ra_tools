@@ -4,6 +4,7 @@ import asyncio
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from ..db_parts.campaigns import CampaignConflictError, CampaignReadOnlyError
 from ..db_parts.run_collections import RunCollectionConflictError
@@ -248,11 +249,15 @@ async def get_run_evaluation(
 
 
 @router.get("/api/run-evaluations/{context_id}/export")
-async def export_run_evaluation(context_id: str) -> dict[str, Any]:
+async def export_run_evaluation(context_id: str) -> JSONResponse:
     item = await asyncio.to_thread(database.export_run_evaluation, context_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Evaluation Context 不存在。")
-    return item
+    safe_id = "".join(char for char in str(context_id) if char.isalnum() or char in "-_")[:80] or "context"
+    return JSONResponse(
+        content=item,
+        headers={"Content-Disposition": f'attachment; filename="run-evaluation-{safe_id}.json"'},
+    )
 
 
 @router.post("/api/run-evaluations/{context_id}/labeling-campaign")

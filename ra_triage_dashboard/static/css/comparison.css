@@ -1132,7 +1132,8 @@ html[data-color-theme="light"] #comparisonReasonDialog [data-triage-label="æ— éœ
 .run-collection-mini-matrix tbody th { text-align:left; }
 .run-collection-table-wrap { width:100%; overflow:auto; border:1px solid var(--line); border-radius:8px; }
 .run-collection-table { width:100%; min-width:760px; border-collapse:collapse; font-size:11px; }
-.run-collection-table th,.run-collection-table td { min-width:130px; max-width:300px; padding:8px; border-bottom:1px solid var(--line-soft); text-align:left; vertical-align:top; }
+.run-collection-table th,.run-collection-table td { min-width:130px; max-width:300px; padding:8px; border-right:1px solid var(--line-soft); border-bottom:1px solid var(--line-soft); text-align:left; vertical-align:top; overflow-wrap:anywhere; word-break:break-word; }
+.run-collection-table th:last-child,.run-collection-table td:last-child { border-right:0; }
 .run-collection-table thead th { position:sticky; top:0; z-index:1; background:var(--raised); }
 .run-collection-table tbody th { color:var(--accent); font-weight:600; }
 .run-collection-table td > small,.run-collection-table tbody th > small { display:block; max-width:260px; overflow:hidden; margin-top:4px; color:var(--muted); text-overflow:ellipsis; white-space:nowrap; font-size:9px; }

@@ -265,7 +265,7 @@ function renderRunCollectionEvaluation(payload) {
   const search = $("#runCollectionSearch");
   if (search && search.value !== runCollectionUi.search) search.value = runCollectionUi.search;
   const exportLink = $("#runCollectionExport");
-  if (exportLink) exportLink.href = `/api/run-evaluations/${encodeURIComponent(payload.id)}/export`;
+  if (exportLink) exportLink.href = withBase(`/api/run-evaluations/${encodeURIComponent(payload.id)}/export`);
 }
 
 async function loadRunCollectionEvaluationHistory() {

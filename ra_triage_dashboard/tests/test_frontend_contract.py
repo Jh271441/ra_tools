@@ -328,6 +328,10 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('comparisonCaseActive &&', APP_JS)
         self.assertIn('.comparison-reason-content p', STYLES_CSS)
 
+    def test_run_collection_export_and_issue_ids_respect_base_path_and_wrap(self) -> None:
+        self.assertIn('withBase(`/api/run-evaluations/${encodeURIComponent(payload.id)}/export`)', APP_JS)
+        self.assertIn('overflow-wrap:anywhere; word-break:break-word;', STYLES_CSS)
+
     def test_stage1_true_stuck_has_explicit_comparison_contract(self) -> None:
         self.assertIn('const STAGE1_TRUE_STUCK_LABEL = "真实卡住"', APP_JS)
         self.assertIn('const MODEL_LABELS = [...LABELS, STAGE1_TRUE_STUCK_LABEL]', APP_JS)
