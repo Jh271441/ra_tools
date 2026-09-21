@@ -120,7 +120,10 @@ def api_multipart_image(
     request = urllib.request.Request(
         base_url + path,
         data=b"".join(chunks),
-        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        headers={
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "X-RA-Triage-Request": "review-v1",
+        },
         method="POST",
     )
     try:
@@ -776,7 +779,8 @@ assert.equal(reviewAnnotationsForAllRuns(data).length,input.annotations.length);
             csv_status, _headers, csv_bytes = api_request(
                 args.base_url, "GET", "/api/review-reason-analysis/export?" + urllib.parse.urlencode({**{"model_run_id": runs[0], "review_status": "in_progress", "annotation_author": reviewer, "baselines": baselines, "format": "csv"}})
             )
-            if csv_status != 200 or not any("in_progress" in row for row in csv.reader(io.StringIO(csv_bytes.decode("utf-8-sig")))[1:]):
+            csv_rows = list(csv.reader(io.StringIO(csv_bytes.decode("utf-8-sig"))))
+            if csv_status != 200 or not any("in_progress" in row for row in csv_rows[1:]):
                 raise AssertionError("CSV export omitted the model-review status")
             xlsx_status, _headers, xlsx_bytes = api_request(
                 args.base_url, "GET", "/api/review-reason-analysis/export?" + urllib.parse.urlencode({"model_run_id": runs[0], "review_status": "in_progress", "annotation_author": reviewer, "baselines": baselines, "format": "xlsx"})
