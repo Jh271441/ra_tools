@@ -32,6 +32,7 @@ SCOPES = (
     ("0522", "release0522_100_20260908", "strict"),
     ("0821", "release0821_1242_20260908", "sparse"),
 )
+POSTGRES_MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "postgres"
 PIN_ISSUE = "cn35638989"
 PIN_RUNS = (
     "d4b519b7-ea35-4589-9139-9e1631403a8b",
@@ -338,7 +339,11 @@ def orphan_checks(connection: Any) -> list[dict[str, Any]]:
 
 def main() -> int:
     args = parse_args()
-    database = Database(read_url_file(Path(args.database_url_file)), pool_size=2)
+    database = Database(
+        read_url_file(Path(args.database_url_file)),
+        postgres_migrations_dir=POSTGRES_MIGRATIONS_DIR,
+        pool_size=2,
+    )
     manifest_path = Path(args.manifest).expanduser().absolute()
     try:
         with database.connect() as connection:

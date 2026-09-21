@@ -29,6 +29,11 @@ class ManualS3SmokeSafetyTest(unittest.TestCase):
                 with self.subTest(name=name, host=host):
                     smoke.require_safe_target(name, host)
 
+    def test_postgres_apply_has_a_migration_directory(self) -> None:
+        self.assertTrue(
+            (smoke.POSTGRES_MIGRATIONS_DIR / "044_model_reviews.sql").is_file()
+        )
+
     def test_database_url_file_must_be_owned_and_exactly_0600(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "database-url"
