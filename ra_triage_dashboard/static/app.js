@@ -9,7 +9,7 @@
  * filenames are domain names without numeric prefixes.
  */
 (() => {
-  const CACHE_VERSION = "manual-triage-480";
+  const CACHE_VERSION = "manual-triage-481";
   const MODULES = [
     "core-base.js",
     "i18n-messages.js",
@@ -23,6 +23,7 @@
     "system-status.js",
     "runs.js",
     "run-comparison.js",
+    "run-collections.js",
     "intent-workspaces.js",
     "intent-summary.js",
     "intent-media.js",

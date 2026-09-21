@@ -179,6 +179,7 @@ function bindEvents() {
   if (typeof bindLabelingTaskControls === "function") bindLabelingTaskControls();
   if (typeof bindReviewAssignmentsPage === "function") bindReviewAssignmentsPage();
   if (typeof bindRunComparisonEvents === "function") bindRunComparisonEvents();
+  if (typeof bindRunCollectionsEvents === "function") bindRunCollectionsEvents();
   if (typeof bindIssueQueryControls === "function") bindIssueQueryControls();
   document.querySelectorAll("[data-page-target]").forEach((element) => {
     element.addEventListener("click", (event) => {

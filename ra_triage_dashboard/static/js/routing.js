@@ -909,6 +909,12 @@ function pageUrl(page, options = {}) {
     if (Number(comparison.pageSize) !== 10) {
       url.searchParams.set("page_size", String(comparison.pageSize));
     }
+    const currentParams = new URLSearchParams(window.location.search);
+    ["collection_id", "collection_revision", "evaluation_id", "evaluation_page", "evaluation_q", "evaluation_reference_run_id"]
+      .forEach((key) => {
+        const value = currentParams.get(key);
+        if (value) url.searchParams.set(key, value);
+      });
   }
   if (page === "intent") {
     const intent = typeof intentRouteOptions === "function"

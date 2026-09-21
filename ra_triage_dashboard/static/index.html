@@ -79,7 +79,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-480`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-481`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1295,6 +1295,57 @@
               <p class="muted comparison-selection-note" id="comparisonSelectionNote"><span class="ui-lang-zh">请选择两个不同的 Run。</span><span class="ui-lang-en">Choose two different Runs.</span></p>
             </section>
 
+            <section class="page-card run-collection-workbench" id="runCollectionsWorkbench">
+              <div class="run-collection-heading">
+                <div><h2>Run Collections</h2><p class="muted"><span class="ui-lang-zh">保存有序 Run 集合，并按冻结的 Workset、标签参考、策略和排除集生成可复现评估。</span><span class="ui-lang-en">Save ordered Run sets and evaluate them against frozen Worksets, references, policies, and exclusions.</span></p></div>
+                <button class="button button-quiet" id="comparisonSaveCollectionButton" type="button"><span class="ui-lang-zh">将 Pairwise 保存为 Collection</span><span class="ui-lang-en">Save pairwise as Collection</span></button>
+              </div>
+              <div class="run-collection-toolbar">
+                <label><span class="ui-lang-zh">Collection</span><span class="ui-lang-en">Collection</span><select id="runCollectionSelect"><option value="">Loading…</option></select></label>
+                <label><span class="ui-lang-zh">Revision</span><span class="ui-lang-en">Revision</span><select id="runCollectionRevisionSelect" disabled></select></label>
+                <label class="run-collection-name-field"><span class="ui-lang-zh">名称</span><span class="ui-lang-en">Name</span><input id="runCollectionName" maxlength="160" autocomplete="off" placeholder="Collection name"></label>
+                <label class="run-collection-name-field"><span class="ui-lang-zh">说明</span><span class="ui-lang-en">Description</span><input id="runCollectionDescription" maxlength="2000" autocomplete="off"></label>
+                <button class="button button-quiet" id="runCollectionRenameButton" type="button"><span class="ui-lang-zh">只改名称/说明</span><span class="ui-lang-en">Rename metadata</span></button>
+                <button class="button button-quiet" id="runCollectionRefreshButton" type="button"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
+              </div>
+              <p class="muted run-collection-meta-note"><span class="ui-lang-zh">改名称不会创建新 Revision；调整成员顺序或成员后，点击“追加 Revision”。历史评估固定指向原 Revision。</span><span class="ui-lang-en">Renaming does not create a revision. Member edits and ordering changes require “Append revision”; prior evaluations keep their original revision.</span></p>
+              <div class="run-collection-member-editor">
+                <div class="run-collection-member-tools">
+                  <label><span class="ui-lang-zh">添加 Run</span><span class="ui-lang-en">Add Run</span><select id="runCollectionAddRun"><option value="">Select a Run</option></select></label>
+                  <button class="button button-quiet" id="runCollectionAddRunButton" type="button"><span class="ui-lang-zh">添加</span><span class="ui-lang-en">Add</span></button>
+                  <button class="button button-primary" id="runCollectionAppendRevisionButton" type="button"><span class="ui-lang-zh">追加 Revision</span><span class="ui-lang-en">Append revision</span></button>
+                  <span class="muted" id="runCollectionMemberHash"></span>
+                </div>
+                <ol id="runCollectionMembers" class="run-collection-members"></ol>
+              </div>
+              <details class="run-collection-create-details"><summary><span class="ui-lang-zh">创建新 Collection</span><span class="ui-lang-en">Create a Collection</span></summary>
+                <div class="run-collection-create-row"><label><span class="ui-lang-zh">Collection 名称</span><span class="ui-lang-en">Collection name</span><input id="runCollectionCreateName" maxlength="160" autocomplete="off"></label><button class="button button-primary" id="runCollectionCreateButton" type="button"><span class="ui-lang-zh">用当前成员创建</span><span class="ui-lang-en">Create from current members</span></button></div>
+              </details>
+              <details class="run-collection-history"><summary><span class="ui-lang-zh">Revision 历史</span><span class="ui-lang-en">Revision history</span></summary><ol id="runCollectionHistory"></ol></details>
+              <details class="run-collection-audit"><summary><span class="ui-lang-zh">Collection 审计记录</span><span class="ui-lang-en">Collection audit</span></summary><ol id="runCollectionAudit"></ol></details>
+              <div class="run-collection-evaluation-controls">
+                <label><span class="ui-lang-zh">评分参考</span><span class="ui-lang-en">Scoring reference</span><select id="runCollectionReferenceType"><option value="gt">当前 GT（创建时冻结）</option><option value="label_result">Label result snapshot</option><option value="run">Run prediction snapshot</option></select></label>
+                <label><span class="ui-lang-zh">参考 ID</span><span class="ui-lang-en">Reference ID</span><input id="runCollectionReferenceId" placeholder="Label result / Run ID"></label>
+                <label><span class="ui-lang-zh">比较基准 Run</span><span class="ui-lang-en">Transition reference Run</span><select id="runCollectionComparisonReference"><option value="">Use Collection reference mark</option></select></label>
+                <label><span class="ui-lang-zh">冻结 Workset ID（可选）</span><span class="ui-lang-en">Frozen Workset ID (optional)</span><input id="runCollectionWorksetId" placeholder="workset-…"></label>
+                <label><span class="ui-lang-zh">按来源 Run 筛选 Workset（可选）</span><span class="ui-lang-en">Filter Workset by source Run (optional)</span><select id="runCollectionSelectionSourceRun"><option value="">Do not filter by a Run</option></select></label>
+                <button class="button button-primary" id="runCollectionEvaluateButton" type="button"><span class="ui-lang-zh">冻结并评估</span><span class="ui-lang-en">Freeze and evaluate</span></button>
+              </div>
+              <details class="run-collection-evaluation-history"><summary><span class="ui-lang-zh">历史 Evaluation Context</span><span class="ui-lang-en">Evaluation Context history</span></summary><ol id="runCollectionEvaluationHistory"></ol></details>
+              <div class="run-collection-integrations">
+                <label><span class="ui-lang-zh">管理员分配对象（逗号分隔）</span><span class="ui-lang-en">Admin assignees (comma separated)</span><input id="runCollectionTaskAssignees" placeholder="user1, user2"></label>
+                <button class="button button-quiet" id="runCollectionCreateLabelingCampaign" type="button"><span class="ui-lang-zh">创建共享 Labeling Campaign</span><span class="ui-lang-en">Create shared Labeling Campaign</span></button>
+                <button class="button button-quiet" id="runCollectionCreateModelReviewGroup" type="button"><span class="ui-lang-zh">创建每 Run Model Review Group</span><span class="ui-lang-en">Create per-Run Model Review Group</span></button>
+              </div>
+              <div id="runCollectionEvaluation" class="run-collection-evaluation" hidden>
+                <div id="runCollectionProvenance" class="run-collection-provenance"></div>
+                <div id="runCollectionMetrics" class="run-collection-metrics"></div>
+                <div class="run-collection-table-wrap"><table class="run-collection-table"><thead id="runCollectionTableHead"></thead><tbody id="runCollectionTableBody"></tbody></table></div>
+                <div class="run-collection-pagination"><button class="button button-quiet" id="runCollectionPagePrevious" type="button">‹</button><span id="runCollectionPageSummary">—</span><button class="button button-quiet" id="runCollectionPageNext" type="button">›</button><label><span class="ui-lang-zh">Issue 搜索</span><span class="ui-lang-en">Issue search</span><input id="runCollectionSearch" maxlength="128" autocomplete="off"></label><a class="button button-quiet" id="runCollectionExport" target="_blank" rel="noopener"><span class="ui-lang-zh">导出 JSON</span><span class="ui-lang-en">Export JSON</span></a></div>
+              </div>
+              <p class="muted" id="runCollectionStatus" role="status"></p>
+            </section>
+
             <section class="comparison-empty page-card" id="comparisonEmptyState">
               <strong><span class="ui-lang-zh">至少选择一个 Run</span><span class="ui-lang-en">Select at least one Run</span></strong>
               <p class="muted"><span class="ui-lang-zh">结果不会修改 Review、GT、Run 或 Trail。</span><span class="ui-lang-en">Comparison does not change Reviews, GT, Runs, or Trail.</span></p>
@@ -2229,7 +2280,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-480`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-481`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

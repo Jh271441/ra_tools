@@ -48,6 +48,7 @@ from .routers import (
     labeling,
     reviews,
     runs,
+    run_collections,
     trail_update,
     intent_labeling,
 )
@@ -405,6 +406,7 @@ app.include_router(campaigns.router)
 app.include_router(case_annotations.router)
 app.include_router(reviews.router)
 app.include_router(runs.router)
+app.include_router(run_collections.router)
 app.include_router(analysis.router)
 app.include_router(imports.router)
 app.include_router(batch.router)

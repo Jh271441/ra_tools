@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+S5_ROOT=/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manual_s5_run_collections_20260922
+S5_SHA_FILE="$S5_ROOT/config/source_sha"
+DB_URL_FILE="$S5_ROOT/config/postgres_url"
+DATA_DIR="$S5_ROOT/data"
+LOG_FILE="$S5_ROOT/logs/server.log"
+VENV_DIR=/volume/home/workspace/ra_triage_dashboard_venv
+PORT="${S5_SMOKE_PORT:-8786}"
+LAYOUT_ID=manual_s5_run_collections
+
+case "$PORT" in
+  8786|8787) ;;
+  *) echo "S5 smoke launcher only permits loopback ports 8786 or 8787." >&2; exit 1 ;;
+esac
+
+if [[ ! -d "$S5_ROOT" || "$(stat -c '%a' "$S5_ROOT")" != 700 || "$(stat -c '%U' "$S5_ROOT")" != "$(id -un)" ]]; then
+  echo "S5 experiment root must exist, be owned by this user, and have mode 0700." >&2
+  exit 1
+fi
+if [[ ! -f "$S5_SHA_FILE" || "$(stat -c '%a' "$S5_SHA_FILE")" != 600 ]]; then
+  echo "S5 source SHA file must be a private 0600 file." >&2
+  exit 1
+fi
+S5_SHA="$(cat "$S5_SHA_FILE")"
+if [[ ! "$S5_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+  echo "S5 source SHA must be a full Git commit hash." >&2
+  exit 1
+fi
+APP_ROOT="$S5_ROOT/source-$S5_SHA/ra_triage_dashboard"
+if [[ ! -f "$APP_ROOT/app/main.py" || ! -d "$APP_ROOT/migrations/postgres" ]]; then
+  echo "Versioned S5 source tree is missing." >&2
+  exit 1
+fi
+if [[ ! -f "$DB_URL_FILE" || "$(stat -c '%a' "$DB_URL_FILE")" != 600 || "$(stat -c '%U' "$DB_URL_FILE")" != "$(id -un)" ]]; then
+  echo "S5 PostgreSQL URL file must be owned by this user and mode 0600." >&2
+  exit 1
+fi
+if [[ ! -f "$S5_ROOT/config/baselines.json" || ! -d "$S5_ROOT/baselines" ]]; then
+  echo "S5 baseline configuration and copied read-only fixtures are required." >&2
+  exit 1
+fi
+if [[ ! -x "$VENV_DIR/bin/python3" ]]; then
+  echo "Dashboard Python environment is missing." >&2
+  exit 1
+fi
+if ss -H -ltn "sport = :$PORT" | grep -q .; then
+  echo "Port $PORT is occupied; refusing to replace an unverified process." >&2
+  exit 1
+fi
+
+install -d -m 700 \
+  "$(dirname "$LOG_FILE")" \
+  "$DATA_DIR/media_layouts/$LAYOUT_ID" \
+  "$DATA_DIR/intent_media/bev" \
+  "$DATA_DIR/intent_media/camera41" \
+  "$DATA_DIR/issue_tag_sources" \
+  "$DATA_DIR/batch_bags"
+
+unset DASHBOARD_DATABASE_URL
+export DASHBOARD_VENV_DIR="$VENV_DIR"
+export DASHBOARD_DATABASE_URL_FILE="$DB_URL_FILE"
+export DASHBOARD_DATA_DIR="$DATA_DIR"
+export DASHBOARD_POSTGRES_PERSISTENT_DATA=false
+export DASHBOARD_BUILD_COMMIT="$S5_SHA"
+export DASHBOARD_HOST=127.0.0.1
+export DASHBOARD_PORT="$PORT"
+export DASHBOARD_BASE_PATH=/manual-s5
+
+export DASHBOARD_BASELINES_FILE="$S5_ROOT/config/baselines.json"
+export DASHBOARD_BASELINE_LABEL_XLSX="$S5_ROOT/baselines/trail_0508_0206_subset.xlsx"
+export DASHBOARD_BASELINE_DATASET=0508
+export DASHBOARD_BASELINE_SCOPE=release0508_1071_20260729
+export DASHBOARD_BASELINE_OVERLAP_MODE=fail_skip
+
+export DASHBOARD_MEDIA_LAYOUT_ROOT="$DATA_DIR/media_layouts"
+export DASHBOARD_MEDIA_LAYOUT="$LAYOUT_ID"
+export ARES_CAPTURE_RA_ROOT="$DATA_DIR/media_layouts/$LAYOUT_ID"
+export ARES_CAPTURE_MANIFEST="$DATA_DIR/media_layouts/$LAYOUT_ID/manifest.jsonl"
+export CAMERA_CACHE_ROOT="$DATA_DIR/media_layouts/$LAYOUT_ID/camera/102"
+export ARES_CAPTURE_VIDEO_ROOT="$DATA_DIR/media_layouts/$LAYOUT_ID/video"
+export DASHBOARD_INTENT_BEV_ROOT="$DATA_DIR/intent_media/bev"
+export DASHBOARD_INTENT_CAMERA_ROOT="$DATA_DIR/intent_media/camera41"
+export DASHBOARD_INTENT_CAMERA_MANIFEST="$DATA_DIR/intent_media/camera41/source_manifest.jsonl"
+export DASHBOARD_ISSUE_TAG_SOURCE_0206_XLSX="$DATA_DIR/issue_tag_sources/0206.xlsx"
+export DASHBOARD_ISSUE_TAG_SOURCE_0626_XLSX="$DATA_DIR/issue_tag_sources/0626.xlsx"
+
+export DASHBOARD_SEED_EXAMPLES_ENABLED=false
+export DASHBOARD_DEPLOYMENT_MODE=production
+export DASHBOARD_TRUST_PROXY_IDENTITY_HEADERS=false
+export DASHBOARD_IDENTITY_DIAGNOSTICS=false
+export DASHBOARD_KYLIN_SSO_ENABLED=true
+export DASHBOARD_SSO_WRITE_USERS=
+export DASHBOARD_TEAM_DEFAULT_MANAGERS=
+
+export DASHBOARD_SYNC_TRAIL_ON_START=false
+export DASHBOARD_GT_SYNC_ENABLED=false
+export DASHBOARD_TRAIL_DETAIL_METADATA_ENABLED=false
+export DASHBOARD_TRAIL_ATTRIBUTE_WRITE_ENABLED=false
+export DASHBOARD_TRAIL_ATTRIBUTE_REVIEW_WRITE_ENABLED=false
+export DASHBOARD_BATCH_PREDICTION_ENABLED=false
+export DASHBOARD_AUTOTRIAGE_PUSH_ENABLED=false
+export DASHBOARD_DCHAT_NOTIFICATIONS_ENABLED=false
+export DASHBOARD_DCHAT_CREDENTIALS_FILE=/dev/null
+export DASHBOARD_RA_MODEL_API_KEY_FILE=/dev/null
+export DASHBOARD_RA_MODEL_TOKENSERVICE_API_KEY_FILE=/dev/null
+export DASHBOARD_TRUSTED_INGRESS_TOKEN_FILE=
+export DASHBOARD_BOOTSTRAP_MODEL_JSON=
+export DASHBOARD_BATCH_BAG_CACHE_DIR="$DATA_DIR/batch_bags"
+export RA_AUTO_TRIAGE_ROOT=/volume/home/workspace/ra_auto_triage
+
+exec "$VENV_DIR/bin/python3" -m uvicorn app.main:app \
+  --app-dir "$APP_ROOT" --host "$DASHBOARD_HOST" --port "$DASHBOARD_PORT" \
+  >> "$LOG_FILE" 2>&1

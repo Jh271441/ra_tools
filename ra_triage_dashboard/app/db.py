@@ -37,6 +37,7 @@ from .db_parts.model_reviews import DatabaseModelReviewMixin
 from .db_parts.review import DatabaseReviewMixin
 from .db_parts.notifications import DatabaseNotificationsMixin
 from .db_parts.runs import DatabaseRunsMixin
+from .db_parts.run_collections import DatabaseRunCollectionsMixin
 from .db_parts.intent import DatabaseIntentMixin
 from .db_parts.snapshots import DatabaseSnapshotMixin
 
@@ -55,6 +56,7 @@ class Database(
     DatabaseReviewMixin,
     DatabaseNotificationsMixin,
     DatabaseRunsMixin,
+    DatabaseRunCollectionsMixin,
 ):
     """SQLite/PostgreSQL storage with versioned review history.
 
