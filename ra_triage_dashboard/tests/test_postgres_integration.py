@@ -139,12 +139,71 @@ class PostgresDatabaseIntegrationTest(unittest.TestCase):
                 actor="pg-test", actor_source="test", actor_verified=True,
                 idempotency_key=f"pg-create-{suffix}",
             )
+            with database.connect() as conn:
+                before_rollback = {
+                    table: int(conn.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()["count"])
+                    for table in ("review_worksets", "run_evaluation_exclusion_snapshots", "run_evaluation_contexts")
+                }
+            with self.assertRaisesRegex(ValueError, "scoring_policy"):
+                database.create_run_evaluation(
+                    collection_id=collection["id"], baseline_scopes=[scope],
+                    scoring_policy={"version": "unsupported-v9"},
+                )
+            with database.connect() as conn:
+                after_rollback = {
+                    table: int(conn.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()["count"])
+                    for table in before_rollback
+                }
+            self.assertEqual(after_rollback, before_rollback)
+            snapshot = database.apply_gt_sync_snapshot(
+                scope=scope,
+                rows=[{"issue_id": issue_id, "gt_label": "正确触发"}],
+                source_name="test", source_view_id=1000, source_field="gt",
+                trigger="test", requested_by="pg-test", requested_by_source="test",
+                requested_by_verified=True, expected_issue_ids=[issue_id],
+            )
             evaluation = database.create_run_evaluation(
                 collection_id=collection["id"], baseline_scopes=[scope],
                 actor="pg-test", actor_source="test", actor_verified=True,
             )
             self.assertEqual(evaluation["summary"]["reference_denominator"], 1)
             self.assertEqual([row["correct_count"] for row in evaluation["summary"]["runs"]], [1, 0])
+            workset_id = evaluation["workset"]["workset_id"]
+            references = [{
+                "baseline_scope": scope,
+                "reference_type": "gt_snapshot",
+                "reference_id": snapshot["active_gt_snapshot"]["id"],
+            }]
+            label_campaign = database.create_campaign(
+                spec={
+                    "purpose": "labeling", "lifecycle": "draft",
+                    "campaign_name": f"S5 shared labels {suffix}",
+                    "workset_id": workset_id, "references": references,
+                    "members": [{"issue_id": issue_id, "assignees": ["reviewer"]}],
+                },
+                actor="pg-test", actor_source="test", actor_verified=True,
+                idempotency_key=f"pg-label-campaign-{suffix}",
+            )
+            self.assertEqual(label_campaign["campaign"]["purpose"], "labeling")
+            self.assertFalse(label_campaign["campaign"]["evaluation_run_id"])
+            group = database.create_campaign_group(
+                name=f"S5 Run group {suffix}", purpose="model_review",
+                campaigns=[
+                    {
+                        "purpose": "model_review", "lifecycle": "draft",
+                        "campaign_name": f"S5 review {run_id[:8]}",
+                        "evaluation_run_id": run_id, "workset_id": workset_id,
+                        "references": references,
+                        "members": [{"issue_id": issue_id, "assignees": ["reviewer"]}],
+                    }
+                    for run_id in run_ids
+                ],
+                actor="pg-test", actor_source="test", actor_verified=True,
+                idempotency_key=f"pg-model-review-group-{suffix}",
+            )
+            self.assertEqual(group["purpose"], "model_review")
+            self.assertEqual(len(group["campaigns"]), 2)
+            self.assertEqual({item["campaign"]["workset_id"] for item in group["campaigns"]}, {workset_id})
 
             def append(db: Database, member_id: str) -> str:
                 try:

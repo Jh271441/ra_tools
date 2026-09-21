@@ -146,6 +146,31 @@ class RunCollectionsDatabaseTest(unittest.TestCase):
         self.assertEqual(revision_count, 2)
         self.assertEqual(creation_audit_count, 1)
 
+    def test_failed_evaluation_rolls_back_its_workset_and_exclusion_snapshot(self) -> None:
+        scope = "run-collections-rollback"
+        self.database.upsert_issues(
+            [self.issue("rollback-a", "正确触发")],
+            source="test", replace_gt=True, baseline_scope=scope,
+        )
+        run = self._make_run("rollback", [{"issue_id": "rollback-a", "model_label": "正确触发"}])
+        collection = self.database.create_run_collection(name="Rollback", members=[run["id"]])
+        with self.database.connect() as conn:
+            before = {
+                table: int(conn.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()["count"])
+                for table in ("review_worksets", "run_evaluation_exclusion_snapshots", "run_evaluation_contexts")
+            }
+        with self.assertRaisesRegex(ValueError, "scoring_policy"):
+            self.database.create_run_evaluation(
+                collection_id=collection["id"], baseline_scopes=[scope],
+                scoring_policy={"version": "unsupported-v9"},
+            )
+        with self.database.connect() as conn:
+            after = {
+                table: int(conn.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()["count"])
+                for table in before
+            }
+        self.assertEqual(after, before)
+
     def test_evaluation_freezes_reference_collection_and_predictions(self) -> None:
         scope = "run-collections-history"
         self.database.upsert_issues(

@@ -29,6 +29,10 @@ class RunCollectionsApiTest(unittest.TestCase):
             name="api-run", source_name="api-run.json", source_sha256="api-run-collections-test",
             metadata={}, rows=[{"issue_id": "api-a", "model_label": "正确触发"}],
         )
+        self.candidate, _ = self.database.import_model_run(
+            name="api-candidate", source_name="api-candidate.json", source_sha256="api-run-collections-candidate-test",
+            metadata={}, rows=[{"issue_id": "api-a", "model_label": "误触发"}],
+        )
 
     @staticmethod
     def request(method: str, path: str, body: dict, *, idempotency_key: str = "") -> Request:
@@ -88,6 +92,24 @@ class RunCollectionsApiTest(unittest.TestCase):
                 )))
         self.assertEqual(caught.exception.status_code, 403)
         self.assertEqual(self.database.list_run_collections(), [])
+
+    def test_pairwise_save_preserves_baseline_candidate_order(self) -> None:
+        identity = SimpleNamespace(username="verified-admin", source="test-sso", verified=True)
+        request = self.request(
+            "POST", "/api/run-comparison/save-collection",
+            {
+                "baseline_run_id": self.run["id"],
+                "candidate_run_id": self.candidate["id"],
+                "name": "Saved Pairwise",
+            },
+            idempotency_key="api-pairwise-save",
+        )
+        original_url = str(request.url)
+        with patch.object(api, "database", self.database), patch.object(api, "_admin_identity", return_value=identity):
+            collection = asyncio.run(api.save_pairwise_as_collection(request))
+        self.assertEqual([item["run_id"] for item in collection["current"]["members"]], [self.run["id"], self.candidate["id"]])
+        self.assertTrue(collection["current"]["members"][0]["is_reference"])
+        self.assertEqual(str(request.url), original_url)
 
 
 if __name__ == "__main__":
