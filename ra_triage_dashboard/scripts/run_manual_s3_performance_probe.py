@@ -170,7 +170,7 @@ def main() -> int:
             insert_seconds = time.perf_counter() - insert_started
 
             with database.connect() as connection:
-                for table in ("issues", "predictions", "annotations", "model_review_revisions", "model_review_heads"):
+                for table in ("issues", "model_predictions", "annotations", "model_review_revisions", "model_review_heads"):
                     connection.execute(f"ANALYZE {table}")
 
             page_started = time.perf_counter()
