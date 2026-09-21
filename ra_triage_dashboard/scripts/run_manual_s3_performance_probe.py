@@ -191,7 +191,6 @@ def main() -> int:
             condition, params, model_args, common = database._case_list_filters(
                 baseline_scopes=SCOPES,
                 model_run_id=run,
-                model_review_status="completed",
             )
             explain_sql = (
                 f"EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "
@@ -257,6 +256,7 @@ def main() -> int:
             "keyset_scan_seconds": round(stream_seconds, 3),
             "status_filtered_candidate_count": int(status_filtered["total"]),
             "explain": {
+                "query_shape": "five-scope selected-Run candidate page without a Review-status predicate",
                 "planning_ms": float(explain_root.get("Planning Time") or 0),
                 "execution_ms": float(explain_root.get("Execution Time") or 0),
                 "index_names": sorted({str(node.get("Index Name")) for node in plan_nodes if node.get("Index Name")}),
