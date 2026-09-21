@@ -3,7 +3,7 @@ set -euo pipefail
 umask 077
 
 ROOT=/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manual_s4_smoke_20260921_campaign
-APP_ROOT="$ROOT/source-fab4143/ra_triage_dashboard"
+APP_ROOT="$ROOT/source-e86a99f/ra_triage_dashboard"
 VENV_DIR=/volume/home/workspace/ra_triage_dashboard_venv
 PORT=8786
 LAYOUT_ID=release0508_1071_20260729
@@ -57,7 +57,7 @@ export DASHBOARD_VENV_DIR="$VENV_DIR"
 export DASHBOARD_DATABASE_URL_FILE="$DB_URL_FILE"
 export DASHBOARD_DATA_DIR="$DATA_DIR"
 export DASHBOARD_POSTGRES_PERSISTENT_DATA=false
-export DASHBOARD_BUILD_COMMIT=fab414311a00fb39e514b829802e88b2b660d927
+export DASHBOARD_BUILD_COMMIT=b75aa55
 export DASHBOARD_HOST=127.0.0.1
 export DASHBOARD_PORT="$PORT"
 export DASHBOARD_BASE_PATH=/manual-s4

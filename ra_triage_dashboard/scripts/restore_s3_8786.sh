@@ -5,7 +5,8 @@ umask 077
 PORT=8786
 PY=/volume/home/workspace/ra_triage_dashboard_venv/bin/python3
 S4_ROOT=/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manual_s4_smoke_20260921_campaign
-S4_APP="$S4_ROOT/source-fab4143/ra_triage_dashboard"
+S4_APP="$S4_ROOT/source-e86a99f/ra_triage_dashboard"
+S4_APP_NEW="$S4_ROOT/source-fab4143/ra_triage_dashboard"
 S4_APP_OLD="$S4_ROOT/source-c8ba26b/ra_triage_dashboard"
 S3_ROOT=/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manual_s3_smoke_20260921
 S3_SCRIPT="$S3_ROOT/run_s3_smoke.sh"
@@ -69,7 +70,7 @@ if [[ -n "$listener" ]]; then
     echo "S3 is already serving 8786."
     exit 0
   fi
-  if [[ "$command_line" != *"$S4_APP"* && "$command_line" != *"$S4_APP_OLD"* ]]; then
+  if [[ "$command_line" != *"$S4_APP"* && "$command_line" != *"$S4_APP_NEW"* && "$command_line" != *"$S4_APP_OLD"* ]]; then
     echo "Port $PORT is held by an unknown application; refusing to stop it." >&2
     exit 1
   fi
@@ -87,7 +88,7 @@ for attempt in $(seq 1 30); do
     exit 1
   fi
   command_line="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
-  if [[ "$command_line" != *"$S4_APP"* && "$command_line" != *"$S4_APP_OLD"* ]]; then
+  if [[ "$command_line" != *"$S4_APP"* && "$command_line" != *"$S4_APP_NEW"* && "$command_line" != *"$S4_APP_OLD"* ]]; then
     echo "Port $PORT changed to an unknown listener during restore; refusing to continue." >&2
     exit 1
   fi
