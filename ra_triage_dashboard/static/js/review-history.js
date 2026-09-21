@@ -14,8 +14,9 @@ function annotationHistory(annotations, options = {}) {
     .map(
       (annotation) => {
         const expectedOutput = annotationExpectedOutput(annotation);
+        const modelReview = annotation.review_domain === "model_review";
         const currentUser = String(state.session?.username || "").trim().toLowerCase();
-        const canDelete = deletable && (!annotation.work_split_id || state.session?.is_admin || (
+        const canDelete = deletable && !modelReview && (!annotation.work_split_id || state.session?.is_admin || (
           currentUser && String(annotation.author || "").trim().toLowerCase() === currentUser
         ));
         const run = runMeta
@@ -23,8 +24,8 @@ function annotationHistory(annotations, options = {}) {
           : { title: "Review 绑定的 Model Run", text: `Run · ${reviewRunLabel(annotation.model_run_id)}` };
         return `<article class="history-row">
         <div class="history-head">
-          <span class="history-expected-output" title="期望输出">期望 ${labelBadge(expectedOutput, "待补充")}</span>
-          <span class="history-derived-status">${escapeHtml(reviewStatusLabel(annotation.review_status))}</span>
+          <span class="history-expected-output" title="${modelReview ? "模型判错复核状态" : "历史期望输出"}">${modelReview ? `模型复核 ${escapeHtml(reviewStatusLabel(annotation.model_review_status))}` : `历史期望 ${labelBadge(expectedOutput, "待补充")}`}</span>
+          <span class="history-derived-status">${escapeHtml(reviewStatusLabel(annotation.model_review_status || annotation.review_status))}</span>
           ${annotation.is_excluded ? '<span class="tag exclusion-tag">已排除</span>' : ""}
           <span class="history-reviewer" title="${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO 已验证" : " · 未验证身份"}` : "复核人：历史记录未填写")}">${escapeHtml(annotation.author ? `复核人：${annotation.author}${annotation.author_verified ? " · SSO" : " · 未验证"}` : "复核人：未记录")}</span>
           ${run ? `<span class="history-run" title="${escapeHtml(run.title)}">${escapeHtml(run.text)}</span>` : ""}

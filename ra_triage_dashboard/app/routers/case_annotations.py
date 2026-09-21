@@ -21,7 +21,7 @@ router = APIRouter()
 async def _require_unmigrated_issue(
     issue_id: str, database: Any, *, model_run_id: str = ""
 ) -> dict[str, Any]:
-    """Block only legacy no-Run writes after Case-label activation."""
+    """Keep legacy no-Run operations off activated Case-label scopes."""
 
     issue = await asyncio.to_thread(database.get_issue, issue_id)
     if issue is None:
@@ -47,16 +47,15 @@ async def create_annotation(issue_id: str, request: Request) -> dict[str, Any]:
         raise _detail(400, "标注请求必须是 JSON。")
     if not isinstance(body, dict):
         raise _detail(400, "标注请求必须是 JSON 对象。")
-    await _require_unmigrated_issue(
-        issue_id, database, model_run_id=_as_text(body.get("model_run_id")).strip()
-    )
-    create_record = (
-        _create_model_review_record
-        if _as_text(body.get("model_run_id")).strip()
-        else _create_annotation_record
-    )
+    model_run_id = _as_text(body.get("model_run_id")).strip()
+    await _require_unmigrated_issue(issue_id, database, model_run_id=model_run_id)
+    if not model_run_id:
+        raise _detail(
+            400,
+            "新建模型复核必须先选择 Model Run；共享标签和 GT 请到 Case 标注工作台修改。",
+        )
     annotation = await asyncio.to_thread(
-        create_record,
+        _create_model_review_record,
         issue_id=issue_id,
         request=request,
         body=body,
@@ -84,14 +83,16 @@ async def create_annotation_with_attachments(
         raise _detail(400, "payload 必须是 JSON 对象。")
     model_run_id = _as_text(body.get("model_run_id")).strip()
     await _require_unmigrated_issue(issue_id, database, model_run_id=model_run_id)
+    if not model_run_id:
+        raise _detail(
+            400,
+            "新建模型复核必须先选择 Model Run；共享标签和 GT 请到 Case 标注工作台修改。",
+        )
     records, paths = await _store_review_attachments(attachments or [])
     try:
         await _require_unmigrated_issue(issue_id, database, model_run_id=model_run_id)
-        create_record = (
-            _create_model_review_record if model_run_id else _create_annotation_record
-        )
         annotation = await asyncio.to_thread(
-            create_record,
+            _create_model_review_record,
             issue_id=issue_id,
             request=request,
             body=body,
@@ -140,6 +141,8 @@ async def delete_annotation(
         ),
         None,
     )
+    if target and target.get("review_domain") == "model_review":
+        raise _detail(409, "模型复核版本为追加式审计记录，不能通过旧 Review 删除接口移除。")
     if target and target.get("work_split_id"):
         identity = await asyncio.to_thread(request_identity, request, settings)
         role = (

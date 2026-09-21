@@ -37,7 +37,9 @@ PIN_RUNS = (
     "d4b519b7-ea35-4589-9139-9e1631403a8b",
     "95dc9002-16cc-46b5-aa13-84dcf0e5db5a",
 )
-SAFE_DATABASE_RE = re.compile(r"(?:smoke|manual_s3)", re.IGNORECASE)
+SAFE_DATABASE_RE = re.compile(
+    r"^manual_s3_smoke(?:_[a-z0-9][a-z0-9_-]*)?$", re.IGNORECASE
+)
 SAFE_HOSTS = {"", "127.0.0.1", "::1", "localhost"}
 
 
@@ -57,7 +59,7 @@ def read_url_file(path: Path) -> str:
         metadata = os.fstat(descriptor)
         if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid():
             raise RuntimeError("database URL file must be an owned regular file")
-        if stat.S_IMODE(metadata.st_mode) & 0o077:
+        if stat.S_IMODE(metadata.st_mode) != 0o600:
             raise RuntimeError("database URL file must be 0600")
         value = os.read(descriptor, 16 * 1024 + 1)
     finally:
@@ -75,7 +77,7 @@ def stable_rank(seed: str, scope: str, issue_id: str) -> str:
 
 
 def require_safe_target(database_name: str, host: str) -> None:
-    if not SAFE_DATABASE_RE.search(str(database_name or "")):
+    if not SAFE_DATABASE_RE.fullmatch(str(database_name or "")):
         raise RuntimeError(f"refusing unsafe database name: {database_name}")
     if str(host or "") not in SAFE_HOSTS:
         raise RuntimeError(f"refusing non-local database host: {host}")
@@ -228,9 +230,14 @@ def main() -> int:
             identity = connection.execute(
                 "SELECT current_database() AS name, COALESCE(inet_server_addr()::text, '') AS host"
             ).fetchone()
+            previous_smoke = connection.execute(
+                "SELECT COUNT(*) AS count FROM gt_sync_state WHERE message = 'manual_s3 smoke subset'"
+            ).fetchone()
         db_name = str(identity["name"] or "")
         host = str(identity["host"] or "")
         require_safe_target(db_name, host)
+        if int(previous_smoke["count"] or 0):
+            raise RuntimeError("target already contains a smoke subset; restore a fresh logical backup first")
 
         if args.apply:
             database.init()
@@ -261,23 +268,41 @@ def main() -> int:
                 "no_gt": [], "model_review_task": [], "case_labeling_task": [],
             }
             explicit = connection.execute(
-                "SELECT issue_id FROM issues WHERE issue_id = ?", (PIN_ISSUE,)
+                "SELECT issue_id FROM issues WHERE issue_id = ? AND baseline_scope IN (?, ?, ?, ?, ?)",
+                (PIN_ISSUE, *(scope for _baseline_id, scope, _mode in SCOPES)),
             ).fetchone()
-            if explicit:
-                pinned["explicit_issue"].append(PIN_ISSUE)
-                selected.add(PIN_ISSUE)
+            if explicit is None:
+                raise RuntimeError(
+                    f"required pinned Issue is missing from smoke scopes: {PIN_ISSUE}"
+                )
+            pinned["explicit_issue"].append(PIN_ISSUE)
+            selected.add(PIN_ISSUE)
             overlap = connection.execute(
                 """
                 SELECT left_prediction.issue_id
                 FROM model_predictions left_prediction
                 JOIN model_predictions right_prediction
                   ON right_prediction.issue_id = left_prediction.issue_id
+                JOIN issues issue ON issue.issue_id = left_prediction.issue_id
                 WHERE left_prediction.model_run_id = ? AND right_prediction.model_run_id = ?
+                  AND issue.baseline_scope IN (?, ?, ?, ?, ?)
                 ORDER BY left_prediction.issue_id
                 """,
-                PIN_RUNS,
+                (*PIN_RUNS, *(scope for _baseline_id, scope, _mode in SCOPES)),
             ).fetchall()
-            pinned["run_overlap"] = [str(row["issue_id"]) for row in overlap]
+            overlap_ids = [str(row["issue_id"]) for row in overlap]
+            if not overlap_ids:
+                raise RuntimeError(
+                    "required pinned Run overlap is missing from the five smoke scopes"
+                )
+            pinned["run_overlap"] = [
+                min(
+                    overlap_ids,
+                    key=lambda issue_id: stable_rank(
+                        args.seed, "pinned-run-overlap", issue_id
+                    ),
+                )
+            ]
             selected.update(pinned["run_overlap"])
 
             all_ids = [item for values in scope_rows.values() for item in values]
@@ -288,14 +313,16 @@ def main() -> int:
                 )
                 for issue_id, projection in projections.items():
                     states_by_issue[issue_id] = str(projection.get("state") or "none")
-            for state in ("resolved", "conflict", "pending", "stale"):
+            required_states = ("resolved", "conflict", "pending", "stale")
+            for state in required_states:
                 candidate = next(
                     (issue_id for issue_id in all_ids if states_by_issue.get(issue_id) == state),
                     "",
                 )
-                if candidate:
-                    pinned["label_states"].append(candidate)
-                    selected.add(candidate)
+                if not candidate:
+                    raise RuntimeError(f"required shared Label state is missing: {state}")
+                pinned["label_states"].append(candidate)
+                selected.add(candidate)
             no_gt = connection.execute(
                 """
                 SELECT issue_id FROM issues
@@ -307,25 +334,37 @@ def main() -> int:
             if no_gt:
                 pinned["no_gt"].append(str(no_gt["issue_id"]))
                 selected.add(str(no_gt["issue_id"]))
+            else:
+                raise RuntimeError("required sparse-scope no-GT Issue is missing")
             model_task = connection.execute(
                 """
                 SELECT assignment.issue_id FROM review_work_assignments assignment
                 JOIN issue_work_splits split ON split.id = assignment.split_id
-                WHERE TRIM(split.model_run_id) != '' ORDER BY split.created_at DESC LIMIT 1
-                """
+                JOIN issues issue ON issue.issue_id = assignment.issue_id
+                WHERE TRIM(split.model_run_id) != ''
+                  AND issue.baseline_scope IN (?, ?, ?, ?, ?)
+                ORDER BY split.created_at DESC LIMIT 1
+                """,
+                tuple(scope for _baseline_id, scope, _mode in SCOPES),
             ).fetchone()
-            if model_task:
-                pinned["model_review_task"].append(str(model_task["issue_id"]))
-                selected.add(str(model_task["issue_id"]))
+            if model_task is None:
+                raise RuntimeError("required Run-bound model-review task Issue is missing from smoke scopes")
+            pinned["model_review_task"].append(str(model_task["issue_id"]))
+            selected.add(str(model_task["issue_id"]))
             label_task = connection.execute(
                 """
-                SELECT issue_id FROM label_cases WHERE TRIM(task_id) != ''
-                ORDER BY created_at DESC LIMIT 1
-                """
+                SELECT label_case.issue_id FROM label_cases label_case
+                JOIN issues issue ON issue.issue_id = label_case.issue_id
+                WHERE TRIM(label_case.task_id) != ''
+                  AND issue.baseline_scope IN (?, ?, ?, ?, ?)
+                ORDER BY label_case.created_at DESC LIMIT 1
+                """,
+                tuple(scope for _baseline_id, scope, _mode in SCOPES),
             ).fetchone()
-            if label_task:
-                pinned["case_labeling_task"].append(str(label_task["issue_id"]))
-                selected.add(str(label_task["issue_id"]))
+            if label_task is None:
+                raise RuntimeError("required Case-labeling task Issue is missing from smoke scopes")
+            pinned["case_labeling_task"].append(str(label_task["issue_id"]))
+            selected.add(str(label_task["issue_id"]))
 
             selected.intersection_update(all_ids)
             placeholders, selected_params = selected_table_sql(selected)
@@ -424,6 +463,20 @@ def main() -> int:
             connection.execute("DELETE FROM review_worksets WHERE id NOT IN (SELECT DISTINCT workset_id FROM review_workset_items)")
             rebuild_split_snapshots(connection)
             rebuild_worksets(connection)
+            connection.execute(
+                """
+                DELETE FROM label_migration_map
+                WHERE (target_table = 'label_revisions' AND target_id NOT IN (
+                    SELECT CAST(id AS text) FROM label_revisions
+                )) OR (target_table = 'review_worksets' AND target_id NOT IN (
+                    SELECT id FROM review_worksets
+                )) OR (source_table = 'issue_work_splits' AND source_id NOT IN (
+                    SELECT id FROM issue_work_splits
+                )) OR (source_table = 'annotations' AND source_id NOT IN (
+                    SELECT CAST(id AS text) FROM annotations
+                ))
+                """
+            )
 
             connection.execute(
                 f"DELETE FROM issues WHERE issue_id NOT IN ({placeholders})",

@@ -2078,22 +2078,11 @@ class DatabaseCoreMixin:
             if value in {"pending", "in_progress", "completed", "blocked_by_label"}
         )
         if model_statuses:
-            legacy_by_model_status = {
-                "pending": "pending",
-                "in_progress": "pending",
-                "completed": "reviewed",
-                "blocked_by_label": "needs_gt_review",
-            }
-            legacy_statuses = tuple(
-                dict.fromkeys(legacy_by_model_status[value] for value in model_statuses)
-            )
             where.append(
-                "((ann.review_domain = 'model_review' AND ann.model_review_status IN "
-                f"({', '.join('?' for _ in model_statuses)})) OR "
-                "(ann.review_domain = 'legacy' AND ann.review_status IN "
-                f"({', '.join('?' for _ in legacy_statuses)})))"
+                "(ann.review_domain = 'model_review' AND ann.model_review_status IN "
+                f"({', '.join('?' for _ in model_statuses)}))"
             )
-            params.extend((*model_statuses, *legacy_statuses))
+            params.extend(model_statuses)
         gt_labels = tuple(value for value in _multi_values(gt_label) if value in LABELS)
         if gt_labels:
             where.append(f"i.gt_label IN ({', '.join('?' for _ in gt_labels)})")

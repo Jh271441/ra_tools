@@ -6,6 +6,7 @@ import uuid
 from typing import Any, Iterable, Iterator, Sequence
 
 from ..work_split import normalize_overlap_ratio
+from .model_reviews import MODEL_REVIEW_STATUSES
 from .shared import (
     COMPARISON_STATUSES,
     LABELS,
@@ -347,6 +348,7 @@ class DatabaseCasesMixin:
         model_label: str = "",
         annotation_label: str = "",
         annotation_author: str = "",
+        model_review_status: str = "",
         model_run_id: str = "",
         comparison_status: str = "all",
         failure_only: bool = False,
@@ -433,6 +435,15 @@ class DatabaseCasesMixin:
         if authors:
             where.append(f"ann.author IN ({', '.join('?' for _ in authors)})")
             params.extend(authors)
+        model_review_statuses = _multi_values(model_review_status)
+        if any(value not in MODEL_REVIEW_STATUSES for value in model_review_statuses):
+            raise ValueError("unsupported model_review_status")
+        if model_review_statuses:
+            where.append(
+                "(ann.review_domain = 'model_review' AND ann.model_review_status IN "
+                f"({', '.join('?' for _ in model_review_statuses)}))"
+            )
+            params.extend(model_review_statuses)
         if is_excluded is not None:
             # No local Review is an included case.  COALESCE keeps that
             # intuitive all/included/excluded split while supporting SQLite
@@ -565,6 +576,7 @@ class DatabaseCasesMixin:
         model_label: str = "",
         annotation_label: str = "",
         annotation_author: str = "",
+        model_review_status: str = "",
         model_run_id: str = "",
         comparison_status: str = "all",
         failure_only: bool = False,
@@ -591,6 +603,7 @@ class DatabaseCasesMixin:
             model_label=model_label,
             annotation_label=annotation_label,
             annotation_author=annotation_author,
+            model_review_status=model_review_status,
             model_run_id=model_run_id,
             comparison_status=comparison_status,
             failure_only=failure_only,
@@ -1323,14 +1336,15 @@ class DatabaseCasesMixin:
                        assignment.assignee,
                        COUNT(*) AS assigned_count,
                        SUM(CASE WHEN EXISTS (
-                           SELECT 1
-                           FROM review_records annotation
-                           WHERE annotation.issue_id = assignment.issue_id
-                             AND annotation.model_run_id = split.model_run_id
-                             AND annotation.author = assignment.assignee
+                           SELECT 1 FROM model_review_heads head
+                           JOIN model_review_revisions revision ON revision.id = head.revision_id
+                           WHERE head.issue_id = assignment.issue_id
+                             AND head.model_run_id = split.model_run_id
+                             AND lower(head.reviewer) = lower(assignment.assignee)
+                             AND revision.status = 'completed'
                              AND (
-                               (split.mode = 'blind' AND annotation.work_split_id = assignment.split_id)
-                               OR (split.mode <> 'blind' AND annotation.work_split_id = '')
+                               (split.mode = 'blind' AND revision.work_split_id = assignment.split_id)
+                               OR (split.mode <> 'blind' AND revision.work_split_id = '')
                              )
                        ) THEN 1 ELSE 0 END) AS completed_count
                 FROM review_work_assignments assignment
@@ -1386,12 +1400,14 @@ class DatabaseCasesMixin:
                         query_parameters.extend(batch)
                         rows = conn.execute(
                             f"""
-                            SELECT DISTINCT annotation.issue_id
-                            FROM review_records annotation
-                            WHERE annotation.model_run_id = ?
-                              AND annotation.author = ?
-                              AND {work_split_clause}
-                              AND annotation.issue_id IN ({batch_placeholders})
+                            SELECT DISTINCT head.issue_id
+                            FROM model_review_heads head
+                            JOIN model_review_revisions revision ON revision.id = head.revision_id
+                            WHERE head.model_run_id = ?
+                              AND lower(head.reviewer) = lower(?)
+                              AND revision.status = 'completed'
+                              AND {work_split_clause.replace('annotation.work_split_id', 'revision.work_split_id')}
+                              AND head.issue_id IN ({batch_placeholders})
                             """,
                             query_parameters,
                         ).fetchall()
@@ -1515,14 +1531,15 @@ class DatabaseCasesMixin:
         normalized_query = str(query or "").strip()[:128]
         submitted_condition = """
             EXISTS (
-                SELECT 1
-                FROM review_records annotation
-                WHERE annotation.issue_id = assignment.issue_id
-                  AND annotation.model_run_id = split.model_run_id
-                  AND annotation.author = assignment.assignee
+                SELECT 1 FROM model_review_heads head
+                JOIN model_review_revisions revision ON revision.id = head.revision_id
+                WHERE head.issue_id = assignment.issue_id
+                  AND head.model_run_id = split.model_run_id
+                  AND lower(head.reviewer) = lower(assignment.assignee)
+                  AND revision.status = 'completed'
                   AND (
-                    (split.mode = 'blind' AND annotation.work_split_id = assignment.split_id)
-                    OR (split.mode <> 'blind' AND annotation.work_split_id = '')
+                    (split.mode = 'blind' AND revision.work_split_id = assignment.split_id)
+                    OR (split.mode <> 'blind' AND revision.work_split_id = '')
                   )
             )
         """
@@ -1571,20 +1588,21 @@ class DatabaseCasesMixin:
                        issue.baseline_scope,
                        CASE WHEN {submitted_condition} THEN 1 ELSE 0 END AS submitted,
                        (
-                           SELECT annotation.created_at
-                           FROM review_records annotation
-                           WHERE annotation.issue_id = assignment.issue_id
-                             AND annotation.model_run_id = split.model_run_id
-                             AND annotation.author = assignment.assignee
+                           SELECT revision.created_at
+                           FROM model_review_heads head
+                           JOIN model_review_revisions revision ON revision.id = head.revision_id
+                           WHERE head.issue_id = assignment.issue_id
+                             AND head.model_run_id = split.model_run_id
+                             AND lower(head.reviewer) = lower(assignment.assignee)
+                             AND revision.status = 'completed'
                              AND (
-                               (split.mode = 'blind' AND annotation.work_split_id = assignment.split_id)
-                               OR (split.mode <> 'blind' AND annotation.work_split_id = '')
+                               (split.mode = 'blind' AND revision.work_split_id = assignment.split_id)
+                               OR (split.mode <> 'blind' AND revision.work_split_id = '')
                              )
-                           ORDER BY annotation.id DESC
-                           LIMIT 1
+                           ORDER BY revision.id DESC LIMIT 1
                        ) AS submitted_at,
                        (
-                           SELECT annotation.review_status
+                       SELECT annotation.review_status
                            FROM review_records annotation
                            WHERE annotation.issue_id = assignment.issue_id
                              AND annotation.model_run_id = split.model_run_id
@@ -1595,7 +1613,20 @@ class DatabaseCasesMixin:
                              )
                            ORDER BY annotation.id DESC
                            LIMIT 1
-                       ) AS review_status
+                       ) AS review_status,
+                       (
+                           SELECT revision.status
+                           FROM model_review_heads head
+                           JOIN model_review_revisions revision ON revision.id = head.revision_id
+                           WHERE head.issue_id = assignment.issue_id
+                             AND head.model_run_id = split.model_run_id
+                             AND lower(head.reviewer) = lower(assignment.assignee)
+                             AND (
+                               (split.mode = 'blind' AND revision.work_split_id = assignment.split_id)
+                               OR (split.mode <> 'blind' AND revision.work_split_id = '')
+                             )
+                           ORDER BY revision.id DESC LIMIT 1
+                       ) AS model_review_status
                 {from_sql}
                 WHERE {where}
                 ORDER BY assignment.assignee ASC, assignment.ordinal ASC, assignment.issue_id ASC
@@ -1629,6 +1660,7 @@ class DatabaseCasesMixin:
                 "submitted": bool(row["submitted"]),
                 "submitted_at": str(row["submitted_at"] or ""),
                 "review_status": str(row["review_status"] or ""),
+                "model_review_status": str(row["model_review_status"] or ""),
             }
             for row in item_rows
         ]
@@ -1704,7 +1736,8 @@ class DatabaseCasesMixin:
                     annotation_rows = conn.execute(
                         f"""
                         SELECT annotation.issue_id, annotation.author, annotation.id,
-                               annotation.created_at, annotation.review_status
+                               annotation.created_at, annotation.review_status,
+                               annotation.review_domain, annotation.model_review_status
                         FROM review_records annotation
                         WHERE annotation.model_run_id = ?
                           AND {annotation_work_split}
@@ -1720,6 +1753,8 @@ class DatabaseCasesMixin:
                             {
                                 "created_at": str(row["created_at"] or ""),
                                 "review_status": str(row["review_status"] or ""),
+                                "review_domain": str(row["review_domain"] or "legacy"),
+                                "model_review_status": str(row["model_review_status"] or ""),
                             },
                         )
             snapshot_rows: list[dict[str, Any]] = []
@@ -1728,8 +1763,11 @@ class DatabaseCasesMixin:
                 for assignment in member.get("items") or []:
                     assignment_issue_id = str(assignment["issue_id"])
                     issue = issue_by_id.get(assignment_issue_id, {})
-                    annotation = annotation_by_key.get(
-                        (assignment_issue_id, member_name)
+                    annotation = annotation_by_key.get((assignment_issue_id, member_name))
+                    completed = bool(
+                        annotation
+                        and annotation.get("review_domain") == "model_review"
+                        and annotation.get("model_review_status") == "completed"
                     )
                     row = {
                         "issue_id": assignment_issue_id,
@@ -1744,9 +1782,10 @@ class DatabaseCasesMixin:
                         "scenario": str(issue.get("scenario") or ""),
                         "gt_label": str(issue.get("gt_label") or ""),
                         "baseline_scope": str(issue.get("baseline_scope") or ""),
-                        "submitted": bool(annotation),
-                        "submitted_at": str((annotation or {}).get("created_at") or ""),
+                        "submitted": completed,
+                        "submitted_at": str((annotation or {}).get("created_at") or "") if completed else "",
                         "review_status": str((annotation or {}).get("review_status") or ""),
+                        "model_review_status": str((annotation or {}).get("model_review_status") or ""),
                     }
                     if normalized_assignee and member_name.lower() != normalized_assignee:
                         continue
@@ -2049,12 +2088,14 @@ class DatabaseCasesMixin:
                 SELECT assignment.assignee, assignment.assignment_kind,
                        assignment.ordinal,
                        (
-                           SELECT annotation.id FROM review_records annotation
-                           WHERE annotation.issue_id = assignment.issue_id
-                             AND annotation.model_run_id = ?
-                             AND annotation.work_split_id = assignment.split_id
-                             AND annotation.author = assignment.assignee
-                           ORDER BY annotation.id DESC LIMIT 1
+                           SELECT revision.id FROM model_review_heads head
+                           JOIN model_review_revisions revision ON revision.id = head.revision_id
+                           WHERE head.issue_id = assignment.issue_id
+                             AND head.model_run_id = ?
+                             AND revision.work_split_id = assignment.split_id
+                             AND lower(head.reviewer) = lower(assignment.assignee)
+                             AND revision.status = 'completed'
+                           ORDER BY revision.id DESC LIMIT 1
                        ) AS annotation_id
                 FROM review_work_assignments assignment
                 WHERE assignment.issue_id = ? AND assignment.split_id = ?

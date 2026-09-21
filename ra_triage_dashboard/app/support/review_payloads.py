@@ -96,7 +96,10 @@ def _review_reason_analysis_payload(
     for status in statuses:
         if status not in REVIEW_STATUSES and status not in MODEL_REVIEW_STATUSES:
             raise _detail(400, "review_status 不在支持范围内。")
-    legacy_statuses = [status for status in statuses if status in REVIEW_STATUSES]
+    legacy_statuses = [
+        status for status in statuses
+        if status in REVIEW_STATUSES and status not in MODEL_REVIEW_STATUSES
+    ]
     model_review_statuses = [
         status for status in statuses if status in MODEL_REVIEW_STATUSES
     ]

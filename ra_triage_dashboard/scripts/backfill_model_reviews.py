@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -24,6 +25,15 @@ DEFAULT_SCOPES = (
     "release0508_1071_20260729",
     "release0206_1326_20260729",
 )
+SAFE_DATABASE_RE = re.compile(r"^manual_s3_smoke(?:_[a-z0-9][a-z0-9_-]*)?$", re.IGNORECASE)
+SAFE_HOSTS = {"", "127.0.0.1", "::1", "localhost"}
+
+
+def require_safe_target(database_name: str, host: str) -> None:
+    if not SAFE_DATABASE_RE.fullmatch(str(database_name or "")):
+        raise RuntimeError(f"refusing unsafe database name: {database_name}")
+    if str(host or "") not in SAFE_HOSTS:
+        raise RuntimeError(f"refusing non-local database host: {host}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -44,6 +54,15 @@ def main() -> int:
     scopes = tuple(dict.fromkeys(args.scopes or DEFAULT_SCOPES))
     report = {"apply": bool(args.apply), "scopes": list(scopes), "eligible": [], "skipped": {}}
     try:
+        with database.connect() as connection:
+            identity = connection.execute(
+                "SELECT current_database() AS name, COALESCE(inet_server_addr()::text, '') AS host"
+            ).fetchone()
+        database_name = str(identity["name"] or "")
+        host = str(identity["host"] or "")
+        if args.apply:
+            require_safe_target(database_name, host)
+            database.init()
         with database.connect() as connection:
             clause, scope_params = database._scope_in_sql(scopes, "issue.baseline_scope")
             rows = connection.execute(
@@ -76,11 +95,14 @@ def main() -> int:
             if not reason and not evidence:
                 report["skipped"][str(annotation_id)] = "no_model_diagnostic_content"
                 continue
-            status = {
-                "pending": "pending",
-                "reviewed": "completed",
-                "needs_gt_review": "blocked_by_label",
-            }.get(str(row["review_status"] or "pending"), "pending")
+            if not str(row["author"] or "").strip():
+                report["skipped"][str(annotation_id)] = "missing_reviewer_identity"
+                continue
+            # Legacy review_status is derived from expected-output/GT
+            # comparison. It cannot determine model-review progress. A
+            # persisted diagnostic-only row maps to completed; a current
+            # conflicting/stale Label projection may still force blocked_by_label.
+            status = "completed"
             item = {
                 "legacy_annotation_id": annotation_id,
                 "issue_id": str(row["issue_id"]),

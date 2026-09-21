@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -13,17 +15,27 @@ SPEC.loader.exec_module(smoke)
 
 class ManualS3SmokeSafetyTest(unittest.TestCase):
     def test_target_gate_rejects_production_names_and_remote_hosts(self) -> None:
-        for name in ("ra_triage", "production", "dashboard"):
+        for name in ("ra_triage", "production", "dashboard", "dashboard_smoke_20260921", "prod_manual_s3"):
             with self.subTest(name=name), self.assertRaises(RuntimeError):
                 smoke.require_safe_target(name, "")
         with self.assertRaises(RuntimeError):
             smoke.require_safe_target("manual_s3_smoke", "10.0.0.8")
 
     def test_target_gate_accepts_local_smoke_names(self) -> None:
-        for name in ("manual_s3_smoke", "dashboard_smoke_20260921"):
+        for name in ("manual_s3_smoke", "manual_s3_smoke_20260921"):
             for host in ("", "127.0.0.1", "::1", "localhost"):
                 with self.subTest(name=name, host=host):
                     smoke.require_safe_target(name, host)
+
+    def test_database_url_file_must_be_owned_and_exactly_0600(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "database-url"
+            path.write_text("postgresql://localhost/test", encoding="utf-8")
+            os.chmod(path, 0o640)
+            with self.assertRaises(RuntimeError):
+                smoke.read_url_file(path)
+            os.chmod(path, 0o600)
+            self.assertEqual(smoke.read_url_file(path), "postgresql://localhost/test")
 
     def test_sampling_rank_is_stable_and_scope_specific(self) -> None:
         first = smoke.stable_rank("seed", "scope-a", "cn1")

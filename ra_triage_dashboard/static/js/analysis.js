@@ -102,7 +102,7 @@ function safeSameOriginReviewUrl(url) {
 function reviewStatusLabel(status) {
   return (
     {
-      pending: t("status.pending"),
+      pending: uiText("待开始", "Pending"),
       in_progress: uiText("复核中", "In progress"),
       completed: uiText("已完成", "Completed"),
       blocked_by_label: uiText("标签阻塞", "Blocked by label"),
@@ -457,34 +457,31 @@ function renderAnalysisReviewStatus(data) {
   const target = $("#analysisReviewStatusChart");
   const summaryTarget = $("#analysisReviewStatusSummary");
   if (!target) return;
-  const counts = data.summary?.review_status_counts || {};
+  const counts = data.summary?.model_review_status_counts || {};
   const statuses = [
     {
       key: "pending",
       label: reviewStatusLabel("pending"),
       count: Number(counts.pending || 0),
-      description: uiText(
-        "未填写期望输出，或 Tags 没有唯一推断",
-        "Expected output is missing or Tags have no unique inference"
-      ),
+      description: uiText("尚未开始模型判错复核", "Model review has not started"),
     },
     {
-      key: "reviewed",
-      label: reviewStatusLabel("reviewed"),
-      count: Number(counts.reviewed || 0),
-      description: uiText(
-        "期望输出与当前 GT 一致",
-        "Expected output matches the current GT"
-      ),
+      key: "in_progress",
+      label: reviewStatusLabel("in_progress"),
+      count: Number(counts.in_progress || 0),
+      description: uiText("模型判错复核正在进行", "Model review is in progress"),
     },
     {
-      key: "needs_gt_review",
-      label: reviewStatusLabel("needs_gt_review"),
-      count: Number(counts.needs_gt_review || 0),
-      description: uiText(
-        "期望输出与当前 GT 不一致",
-        "Expected output differs from the current GT"
-      ),
+      key: "completed",
+      label: reviewStatusLabel("completed"),
+      count: Number(counts.completed || 0),
+      description: uiText("模型判错复核已完成", "Model review is complete"),
+    },
+    {
+      key: "blocked_by_label",
+      label: reviewStatusLabel("blocked_by_label"),
+      count: Number(counts.blocked_by_label || 0),
+      description: uiText("共享标签冲突或过期，暂不能完成", "Shared labels conflict or are stale"),
     },
   ];
   const total = statuses.reduce((sum, item) => sum + item.count, 0);
@@ -748,7 +745,7 @@ function renderAnalysisCases(data) {
             ${comparisonBadge}
             ${multiBadge}
             <span title="${escapeHtml(`${baselineLabelForScope(item.baseline_scope)} GT`)}">GT ${labelBadge(item.gt_label)}</span>
-            <span title="人工 Review 期望输出"><span class="ui-lang-zh">期望</span><span class="ui-lang-en">Expected</span> ${labelBadge(expectedOutput, uiText("待补充", "Pending"))}</span>
+            ${annotation.review_domain === "model_review" ? `<span title="模型判错复核状态"><span class="ui-lang-zh">模型复核</span><span class="ui-lang-en">Model review</span> ${escapeHtml(reviewStatusLabel(annotation.model_review_status))}</span>` : `<span title="历史 Review 期望输出"><span class="ui-lang-zh">历史期望</span><span class="ui-lang-en">Legacy expected</span> ${labelBadge(expectedOutput, uiText("待补充", "Pending"))}</span>`}
             <button class="analysis-model-history-button" type="button"
               data-analysis-model-history="${issueId}"
               title="查看此 Issue 的全部评测 Run 输出历史"
@@ -765,7 +762,7 @@ function renderAnalysisCases(data) {
           </div>
           <div class="analysis-case-meta">
             <span>${escapeHtml(annotation.author || "未记录复核人")}${annotation.author_verified ? " · SSO" : ""}</span>
-            <span>${escapeHtml(reviewStatusLabel(annotation.review_status))} · ${formatTime(annotation.created_at)}</span>
+            <span>${escapeHtml(reviewStatusLabel(annotation.model_review_status || annotation.review_status))} · ${formatTime(annotation.created_at)}</span>
             <span class="analysis-case-actions">
               <button class="analysis-discussion-link" type="button" data-analysis-discussion="${issueId}" data-model-run-id="${escapeHtml(discussionRunId)}">评论</button>
               ${reviewUrl ? `<a class="text-link" href="${escapeHtml(reviewUrl)}" title="打开问题详情与 Review">问题详情</a>` : ""}

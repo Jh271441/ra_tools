@@ -471,6 +471,12 @@ def build_review_reason_analysis(
         "reviewed": 0,
         "needs_gt_review": 0,
     }
+    model_review_status_counts = {
+        "pending": 0,
+        "in_progress": 0,
+        "completed": 0,
+        "blocked_by_label": 0,
+    }
     confusion_counts: dict[str, dict[str, int]] = {
         gt_label: {model_label: 0 for model_label in MODEL_LABELS}
         for gt_label in TRIAGE_LABELS
@@ -483,9 +489,14 @@ def build_review_reason_analysis(
         evidences = annotation["missing_evidence"]
         tags = annotation["tags"]
         review_status = str(annotation.get("review_status") or "pending")
-        review_status_counts[review_status] = review_status_counts.get(
-            review_status, 0
-        ) + 1
+        if annotation.get("review_domain") == "model_review":
+            model_status = str(annotation.get("model_review_status") or "pending")
+            if model_status in model_review_status_counts:
+                model_review_status_counts[model_status] += 1
+        else:
+            review_status_counts[review_status] = review_status_counts.get(
+                review_status, 0
+            ) + 1
         themes = item["reason_themes"]
         if note:
             with_reason += 1
@@ -608,6 +619,7 @@ def build_review_reason_analysis(
             "missing_gt_predictions": missing_gt_predictions,
             "manual_gt_disagreements": manual_gt_disagreements,
             "review_status_counts": review_status_counts,
+            "model_review_status_counts": model_review_status_counts,
         },
         "evidence_clusters": evidence_clusters,
         "cluster_panels": cluster_panels,

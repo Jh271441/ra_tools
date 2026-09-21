@@ -102,6 +102,22 @@ class ModelReviewStorageTest(unittest.TestCase):
         )
         self.assertEqual(shadow["counts"]["different"], 1)
 
+    def test_shadow_does_not_compare_legacy_gt_status_as_model_progress(self) -> None:
+        legacy = self.db.create_annotation(
+            issue_id="cn1", model_run_id=self.run_a["id"], label="误触发",
+            review_status="needs_gt_review", tags=[], missing_evidence=["routing_direction"],
+            note="same diagnosis", author="alice",
+        )
+        current = self.create(
+            self.run_a["id"], "completed", "same diagnosis",
+            missing_evidence=["routing_direction"],
+        )
+        self.assertEqual(current["legacy_base_annotation_id"], legacy["id"])
+        shadow = self.db.model_review_shadow_comparison(
+            model_run_id=self.run_a["id"], baseline_scopes=["scope"]
+        )
+        self.assertEqual(shadow["counts"]["matched"], 1)
+
     def test_attachment_metadata_belongs_to_model_review_revision(self) -> None:
         attachment = {
             "id": "attachment-1", "original_name": "evidence.png",
@@ -128,6 +144,18 @@ class ModelReviewStorageTest(unittest.TestCase):
         self.assertEqual(facets["total"], 1)
         self.assertEqual(facets["statuses"], [{"value": "completed", "count": 1}])
         self.assertEqual(facets["reviewers"], [{"value": "alice", "count": 1}])
+
+    def test_model_review_status_filter_uses_s3_domain(self) -> None:
+        completed = self.create(self.run_a["id"], "completed", "done")
+        pending = self.create(self.run_b["id"], "pending", "")
+        result = self.db.list_cases(
+            baseline_scopes=["scope"],
+            model_run_id=self.run_a["id"],
+            model_review_status="completed",
+            page_size=10,
+        )
+        self.assertEqual([item["annotation"]["id"] for item in result["items"]], [completed["id"]])
+        self.assertNotEqual(completed["id"], pending["id"])
 
     def test_label_conflict_forces_blocked_state(self) -> None:
         review = self.create(

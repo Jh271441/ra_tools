@@ -78,7 +78,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-474`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-475`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -701,7 +701,7 @@
                   <div class="multi-filter" id="analysisReviewerFilter" data-placeholder="全部复核人" data-placeholder-en="All reviewers" data-i18n-placeholder="filter.all_reviewers"></div>
                 </label>
                 <label class="filter-review-status analysis-review-status-filter">
-                  <span class="ui-lang-zh" title="Issue GT Review状态">GT 复核状态</span><span class="ui-lang-en" title="Issue GT review status">GT Review status</span>
+                  <span class="ui-lang-zh" title="模型判错复核状态">模型判错复核</span><span class="ui-lang-en" title="Model error review status">Model review</span>
                   <div class="multi-filter" id="analysisStatusFilter" data-placeholder="全部状态" data-placeholder-en="All statuses" data-i18n-placeholder="analysis.all_statuses"></div>
                 </label>
                 <label class="analysis-work-agreement-filter" id="analysisWorkAgreementField">
@@ -805,7 +805,7 @@
               <section class="page-card analysis-review-status-card" aria-labelledby="analysisReviewStatusTitle">
                 <div class="section-heading analysis-review-status-heading">
                   <div>
-                    <h3 id="analysisReviewStatusTitle"><span class="ui-lang-zh">Issue GT Review 状态</span><span class="ui-lang-en">Issue GT Review status</span></h3>
+                    <h3 id="analysisReviewStatusTitle"><span class="ui-lang-zh">模型判错复核状态</span><span class="ui-lang-en">Model review status</span></h3>
                   </div>
                   <small id="analysisReviewStatusSummary"><span class="ui-lang-zh">正在统计当前筛选范围…</span><span class="ui-lang-en">Aggregating the current filter scope…</span></small>
                 </div>
@@ -915,7 +915,7 @@
                       <div class="multi-filter" id="trailUpdateReviewerFilter" data-placeholder="全部复核人" data-placeholder-en="All reviewers"></div>
                     </label>
                     <label>
-                      <span class="ui-lang-zh">Issue GT Review 状态</span><span class="ui-lang-en">Issue GT Review status</span>
+                      <span class="ui-lang-zh">模型判错复核状态</span><span class="ui-lang-en">Model review status</span>
                       <div class="multi-filter" id="trailUpdateReviewStatusFilter" data-placeholder="全部状态" data-placeholder-en="All statuses"></div>
                     </label>
                     <label>
@@ -2168,7 +2168,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-474`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-475`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

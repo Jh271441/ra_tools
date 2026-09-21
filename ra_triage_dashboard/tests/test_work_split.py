@@ -417,25 +417,32 @@ class WorkSplitTest(unittest.TestCase):
                 [{"name": "alice"}, {"name": "bob"}],
                 seed=9,
             )
+            run, _ = db.import_model_run(
+                name="work split run",
+                source_name="work-split.json",
+                source_sha256="e" * 64,
+                metadata={},
+                rows=[
+                    {"issue_id": f"cn{i}", "model_label": "误触发"}
+                    for i in range(4)
+                ],
+            )
             saved = db.apply_work_split(
                 assignments=assignments,
                 created_by="admin",
                 seed=9,
-                model_run_id="",
+                model_run_id=run["id"],
                 filter_snapshot={"baselines": "0821", "comparison_status": "mismatch"},
             )
             completed_issue = assignments[0]["issue_ids"][0]
-            db.create_annotation(
+            db.create_model_review(
                 issue_id=completed_issue,
-                model_run_id="",
+                model_run_id=run["id"],
                 work_split_id="",
-                label="误触发",
-                review_status="reviewed",
-                tags=[],
+                status="completed",
+                reason="done",
                 missing_evidence=[],
-                note="done",
-                author=assignments[0]["name"],
-                expected_previous_annotation_id=None,
+                reviewer=assignments[0]["name"],
             )
 
             batches = db.list_review_work_splits()
@@ -477,7 +484,7 @@ class WorkSplitTest(unittest.TestCase):
             db.apply_work_split(
                 assignments=[{"name": "bob", "issue_ids": [f"cn{i}" for i in range(4)]}],
                 created_by="admin",
-                model_run_id="",
+                model_run_id=run["id"],
             )
             history = next(
                 item

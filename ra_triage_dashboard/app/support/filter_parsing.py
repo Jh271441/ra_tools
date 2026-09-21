@@ -8,6 +8,7 @@ from fastapi import Request
 
 from ..db import LABELS, MODEL_LABELS, REVIEW_STATUSES
 from ..db_parts.labeling import ISSUE_LABEL_STATE_FILTERS
+from ..db_parts.model_reviews import MODEL_REVIEW_STATUSES
 from ..model_labels import canonical_model_label
 from ..review_analysis import COMPARISON_STATUSES
 from .baselines import resolve_request_baseline_scopes
@@ -75,10 +76,20 @@ def _case_filter_kwargs(
     for label in gt_labels:
         if label not in LABELS:
             raise _detail(400, "gt_label 不在三分类范围内。")
-    review_statuses = _csv_filter_values(review_status)
-    for status in review_statuses:
-        if status not in REVIEW_STATUSES:
+    requested_statuses = _csv_filter_values(review_status)
+    for status in requested_statuses:
+        if status not in REVIEW_STATUSES and status not in MODEL_REVIEW_STATUSES:
             raise _detail(400, "review_status 不在支持范围内。")
+    # This filter now describes Run-bound model-review state. Legacy GT-derived
+    # statuses remain accepted for old links, but an overlapping "pending" is
+    # interpreted in the current Run-bound domain.
+    review_statuses = tuple(
+        status for status in requested_statuses
+        if status in REVIEW_STATUSES and status not in MODEL_REVIEW_STATUSES
+    )
+    model_review_statuses = tuple(
+        status for status in requested_statuses if status in MODEL_REVIEW_STATUSES
+    )
     raw_label_states = _csv_filter_values(label_state)
     if any(value not in {"all", *ISSUE_LABEL_STATE_FILTERS} for value in raw_label_states):
         raise _detail(400, "label_state 不在支持范围内。")
@@ -98,7 +109,8 @@ def _case_filter_kwargs(
         "annotation_author": annotation_author,
         # Case status is derived from effective expected output versus GT in
         # the router so historical Tag-only Reviews stay aligned with analysis.
-        "review_statuses": tuple(review_statuses),
+        "review_statuses": review_statuses,
+        "model_review_status": ",".join(model_review_statuses),
         "label_states": label_states,
         "model_run_id": model_run_id,
         "comparison_status": comparison_status,

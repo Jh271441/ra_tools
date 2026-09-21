@@ -447,7 +447,6 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
             result["summary"]["review_status_counts"],
             {"pending": 2, "reviewed": 1, "needs_gt_review": 1},
         )
-
         needs_gt = build_review_reason_analysis(
             rows,
             tag_catalog=tag_catalog,
@@ -465,6 +464,52 @@ class ReviewReasonAnalysisTest(unittest.TestCase):
         self.assertEqual(
             [item["issue_id"] for item in false_trigger["items"]],
             ["cn1"],
+        )
+
+    def test_model_review_status_counts_are_separate_from_gt_derived_statuses(self) -> None:
+        result = build_review_reason_analysis(
+            [
+                {
+                    "issue_id": "cn-model-complete",
+                    "gt_label": "误触发",
+                    "annotation": {
+                        "review_domain": "model_review",
+                        "model_review_status": "completed",
+                        "review_status": "reviewed",
+                        "expected_output": "",
+                        "note": "原因已经查明",
+                    },
+                },
+                {
+                    "issue_id": "cn-model-blocked",
+                    "gt_label": "正确触发",
+                    "annotation": {
+                        "review_domain": "model_review",
+                        "model_review_status": "blocked_by_label",
+                        "review_status": "needs_gt_review",
+                        "expected_output": "",
+                        "note": "共享标签有冲突",
+                    },
+                },
+                {
+                    "issue_id": "cn-legacy",
+                    "gt_label": "正确触发",
+                    "annotation": {
+                        "review_domain": "legacy",
+                        "review_status": "needs_gt_review",
+                        "expected_output": "误触发",
+                    },
+                },
+            ],
+            include_reason_themes=False,
+        )
+        self.assertEqual(
+            result["summary"]["model_review_status_counts"],
+            {"pending": 0, "in_progress": 0, "completed": 1, "blocked_by_label": 1},
+        )
+        self.assertEqual(
+            result["summary"]["review_status_counts"],
+            {"pending": 0, "reviewed": 0, "needs_gt_review": 1},
         )
 
     def test_reason_classification_is_explainable_and_multi_label(self) -> None:

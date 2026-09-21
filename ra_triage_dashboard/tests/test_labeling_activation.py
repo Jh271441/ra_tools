@@ -269,8 +269,10 @@ class LegacyWriteHandoverTest(unittest.IsolatedAsyncioTestCase):
                     expected = 409 if issue_id == "cn-migrated" else 404
                     self.assertEqual(raised.exception.status_code, expected)
             create.assert_not_called()
-            await case_annotations.create_annotation("cn-legacy", self.request())
-            create.assert_called_once()
+            with self.assertRaises(HTTPException) as raised:
+                await case_annotations.create_annotation("cn-legacy", self.request())
+            self.assertEqual(raised.exception.status_code, 400)
+            create.assert_not_called()
 
     async def test_active_scope_run_annotations_allow_json_and_multipart(self) -> None:
         json_result = await case_annotations.create_annotation(
@@ -348,10 +350,11 @@ class LegacyWriteHandoverTest(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(HTTPException) as raised:
                 await case_comments.create_review_comment("cn-migrated", self.request({"body": "讨论"}))
             self.assertEqual(raised.exception.status_code, 409)
-            result = await case_comments.create_review_comment(
-                "cn-legacy", self.request({"body": "讨论"})
-            )
-            self.assertEqual(result["comment"]["body"], "讨论")
+            with self.assertRaises(HTTPException) as inactive_raised:
+                await case_comments.create_review_comment(
+                    "cn-legacy", self.request({"body": "讨论"})
+                )
+            self.assertEqual(inactive_raised.exception.status_code, 400)
 
     async def test_active_scope_run_comments_allow_json_and_multipart(self) -> None:
         with patch.object(case_comments, "_action_actor", return_value=("alice", "kylin_ticket", True)), patch.object(
@@ -417,7 +420,7 @@ class LegacyWriteHandoverTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raised.exception.status_code, 409)
         store.assert_not_called()
 
-    async def test_inactive_scope_keeps_multipart_annotation_and_comment_compatible(self) -> None:
+    async def test_inactive_scope_rejects_new_unbound_annotation_and_comment_writes(self) -> None:
         review_attachment = {
             "id": "legacy-review-attachment",
             "original_name": "legacy-review.png",
@@ -432,17 +435,20 @@ class LegacyWriteHandoverTest(unittest.IsolatedAsyncioTestCase):
             case_annotations,
             "_store_review_attachments",
             return_value=([review_attachment], [self.root / "legacy-review.png"]),
-        ):
-            annotation = await case_annotations.create_annotation_with_attachments(
-                "cn-legacy",
-                self.request(),
-                payload=json.dumps({
-                    "expected_output": "误触发",
-                    "note": "legacy no-Run review",
-                    "author": "alice",
-                }),
-                attachments=[],
-            )
+        ) as store:
+            with self.assertRaises(HTTPException) as raised:
+                await case_annotations.create_annotation_with_attachments(
+                    "cn-legacy",
+                    self.request(),
+                    payload=json.dumps({
+                        "expected_output": "误触发",
+                        "note": "legacy no-Run review",
+                        "author": "alice",
+                    }),
+                    attachments=[],
+                )
+            self.assertEqual(raised.exception.status_code, 400)
+            store.assert_not_called()
 
         comment_attachment = {
             "id": "legacy-comment-attachment",
@@ -460,19 +466,19 @@ class LegacyWriteHandoverTest(unittest.IsolatedAsyncioTestCase):
             case_comments,
             "_store_comment_attachments",
             return_value=([comment_attachment], [self.root / "legacy-comment.png"]),
-        ):
-            comment = await case_comments.create_review_comment_with_attachments(
-                "cn-legacy",
-                self.request(),
-                payload=json.dumps({
-                    "body": "![evidence](attachment:token)",
-                    "attachment_tokens": ["token"],
-                }),
-                attachments=[SimpleNamespace()],
-            )
-
-        self.assertEqual(annotation["annotation"]["model_run_id"], "")
-        self.assertEqual(comment["comment"]["model_run_id"], "")
+        ) as store:
+            with self.assertRaises(HTTPException) as raised:
+                await case_comments.create_review_comment_with_attachments(
+                    "cn-legacy",
+                    self.request(),
+                    payload=json.dumps({
+                        "body": "![evidence](attachment:token)",
+                        "attachment_tokens": ["token"],
+                    }),
+                    attachments=[SimpleNamespace()],
+                )
+            self.assertEqual(raised.exception.status_code, 400)
+            store.assert_not_called()
 
     async def test_handover_follows_activation_state(self) -> None:
         self.database.set_labeling_scope_state(
@@ -480,8 +486,10 @@ class LegacyWriteHandoverTest(unittest.IsolatedAsyncioTestCase):
             source_inventory_sha256="a" * 64, updated_by="test", expected_epoch=1,
         )
         with patch.object(case_annotations, "_create_annotation_record") as create:
-            await case_annotations.create_annotation("cn-migrated", self.request())
-            create.assert_called_once()
+            with self.assertRaises(HTTPException) as raised:
+                await case_annotations.create_annotation("cn-migrated", self.request())
+            self.assertEqual(raised.exception.status_code, 400)
+            create.assert_not_called()
         self.database.set_labeling_scope_state(
             baseline_scope="migrated", status="active", policy_version="test-v1",
             source_inventory_sha256="a" * 64, updated_by="test", expected_epoch=2,

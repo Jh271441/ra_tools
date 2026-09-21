@@ -25,15 +25,17 @@ The established `/api/cases/{issue_id}/annotations` JSON/multipart routes remain
 the browser compatibility entry point:
 
 - non-empty `model_run_id` appends a model-review revision;
-- empty Run retains the legacy write path on inactive scopes and remains 409 on
-  active Case-labeling scopes;
+- a new Review without a selected Run is rejected. Active Case-labeling scopes
+  return 409 with the Label-workbench handoff; other scopes return 400 and ask
+  the user to select a Run;
 - WorkSplit membership, author and optimistic concurrency checks still run;
 - expected-output, Tags and exclusion fields are not written into S3.
 
 The Review UI hides shared-label editing controls in Run-bound mode and displays
 the S3 state selector. Shared Label changes remain under `/api/labeling/...`.
-Run discussion continues to use the existing Issue+Run comment namespace. Label
-discussion continues to use `label_comment_links` and the labeling routes.
+Run discussion continues to use the existing Issue+Run comment namespace; new
+unbound Review comments are rejected. Label discussion continues to use
+`label_comment_links` and the labeling routes.
 
 ## Read boundary and compatibility
 
@@ -50,9 +52,11 @@ exclusion payload. Mixed notes stay on legacy fallback.
 ## Smoke database
 
 `scripts/build_manual_s3_smoke.py` operates only on a fresh logical restore whose
-database name contains `smoke` or `manual_s3` and whose host is local. It defaults
+database name is `manual_s3_smoke` or starts with `manual_s3_smoke_`, and whose
+PostgreSQL server address is local. It defaults
 to dry-run and requires `--apply` for pruning. It selects 10% by stable SHA-256
-rank, records pinned additions and lineage, rebuilds task/workset counts and smoke
+rank, adds the requested Issue, one representative overlap from the two pinned
+Runs, required Label states and task examples, records pinned additions and lineage, rebuilds task/workset counts and smoke
 GT snapshots, removes attachment binaries/metadata and external-effect queues,
 and fails on FK or unselected-Issue references.
 

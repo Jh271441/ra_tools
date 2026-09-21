@@ -452,7 +452,7 @@ function renderReview(caseData) {
   const sourceSuggestionMarkup = issueTagSourceSuggestionMarkup(sourceSuggestion);
   $("#reviewPane").innerHTML = `
     <form class="review-form" id="annotationForm">
-      <section class="review-section issue-tag-section" ${runBoundModelReview ? "hidden" : ""}>
+      <section class="review-section issue-tag-section" hidden>
         <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span></h2>${sourceSuggestionMarkup}</div><span class="evidence-summary-count" id="tagSummaryCount">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
         <div class="review-tag-groups-shell">${issueTagGroups}${customTagOptions ? `<div class="review-tag-legacy"><span class="ui-lang-zh">历史标签</span><span class="ui-lang-en">Legacy tags</span><div class="review-tag-options">${customTagOptions}</div></div>` : ""}</div>
         <label class="review-exclude-toggle" title="${escapeHtml(uiText("按 K 切换应该排除", "Press K to toggle Exclude"))}"><input id="reviewExcludeInput" type="checkbox" aria-keyshortcuts="K" ${previous.is_excluded ? "checked" : ""} /><span><strong class="ui-lang-zh">应该排除</strong><strong class="ui-lang-en">Exclude</strong><small class="ui-lang-zh">不是模型需要解决的场景 case</small><small class="ui-lang-en">Not a case the model is expected to solve</small></span><kbd class="review-control-shortcut review-exclude-shortcut" aria-hidden="true">K</kbd></label>
@@ -477,7 +477,7 @@ function renderReview(caseData) {
             </button>
           </div>
         </div>
-        <div class="review-expected-output-field" ${runBoundModelReview ? "hidden" : ""}>
+        <div class="review-expected-output-field" hidden>
           <div class="review-expected-output-heading">
             <span id="expectedOutputLabel"><span class="ui-lang-zh">期望输出</span><span class="ui-lang-en">Expected output</span></span>
             <span class="derived-review-status" id="derivedReviewStatus" data-status="${escapeHtml(reviewStatus)}"></span>
@@ -514,7 +514,7 @@ function renderReview(caseData) {
           <small class="review-expected-output-hint" id="expectedOutputHint" hidden></small>
           <input id="reviewStatusInput" type="hidden" value="${escapeHtml(reviewStatus)}" />
         </div>
-        ${runBoundModelReview ? `<div class="model-review-domain-notice"><strong><span class="ui-lang-zh">当前 Run 判错复核</span><span class="ui-lang-en">Current Run model review</span></strong><span class="ui-lang-zh">原因、缺失信息、状态和讨论只属于当前 Run；共享标签请在 Case 标注中修改。</span><span class="ui-lang-en">Reason, missing evidence, status, and discussion belong only to this Run. Edit shared labels in Case labeling.</span></div><label class="model-review-status-field"><span><span class="ui-lang-zh">判错复核状态</span><span class="ui-lang-en">Model review status</span></span><select id="modelReviewStatusInput">${MODEL_REVIEW_STATUS_OPTIONS.map((item) => `<option value="${item.value}" ${item.value === modelReviewStatus ? "selected" : ""}>${escapeHtml(i18nLocale() === "en" ? item.labelEn : item.labelZh)}</option>`).join("")}</select></label>` : ""}
+        ${runBoundModelReview ? `<div class="model-review-domain-notice"><strong><span class="ui-lang-zh">当前 Run 判错复核</span><span class="ui-lang-en">Current Run model review</span></strong><span class="ui-lang-zh">原因、缺失信息、状态和讨论只属于当前 Run；共享标签请在 Case 标注中修改。</span><span class="ui-lang-en">Reason, missing evidence, status, and discussion belong only to this Run. Edit shared labels in Case labeling.</span></div><label class="model-review-status-field"><span><span class="ui-lang-zh">判错复核状态</span><span class="ui-lang-en">Model review status</span></span><select id="modelReviewStatusInput">${MODEL_REVIEW_STATUS_OPTIONS.map((item) => `<option value="${item.value}" ${item.value === modelReviewStatus ? "selected" : ""}>${escapeHtml(i18nLocale() === "en" ? item.labelEn : item.labelZh)}</option>`).join("")}</select></label>` : `<div class="model-review-domain-notice"><strong><span class="ui-lang-zh">只读历史复核</span><span class="ui-lang-en">Read-only review history</span></strong><span class="ui-lang-zh">请先选择 Model Run 才能新建模型复核；共享标签和 GT 请到 Case 标注工作台修改。</span><span class="ui-lang-en">Select a Model Run to create a review. Edit shared labels and GT in Case labeling.</span></div>`}
         <label class="review-reason">
           <span class="review-reason-heading">
             <span><span class="ui-lang-zh">模型为什么判错？</span><span class="ui-lang-en">Why was the model wrong?</span></span>
@@ -523,7 +523,7 @@ function renderReview(caseData) {
               <span class="ui-lang-en"><kbd>E</kbd> Focus · <kbd>⇧ Enter</kbd> New line</span>
             </small>
           </span>
-          <textarea id="annotationNote" rows="2" aria-keyshortcuts="E Escape Enter Shift+Enter" placeholder="说明关键证据；输入 @ 可通知同事。">${escapeHtml(previous.note || "")}</textarea>
+          <textarea id="annotationNote" rows="2" aria-keyshortcuts="E Escape Enter Shift+Enter" placeholder="说明关键证据；输入 @ 可通知同事。" ${runBoundModelReview ? "" : "disabled"}>${escapeHtml(previous.note || "")}</textarea>
         </label>
         <div class="review-mention-composer" id="reviewMentionComposer" aria-live="polite"></div>
         <details class="evidence-dropdown review-dropdown review-tag-dropdown" data-missing-evidence-dropdown>
@@ -552,8 +552,13 @@ function renderReview(caseData) {
         </div>
       </section>
       <label><span><span class="ui-lang-zh">复核人${authorLocked ? "（SSO）" : "（必填）"}</span><span class="ui-lang-en">Reviewer${authorLocked ? " (SSO)" : " (required)"}</span></span><input id="annotationAuthor" value="${escapeHtml(author)}" placeholder="姓名或工号" autocomplete="off" required ${authorLocked ? "readonly" : ""} /></label>
-      <button class="button button-primary full-width review-save-button" id="reviewSaveButton" type="submit" aria-keyshortcuts="Enter" title="输入原因时按 Enter 保存；Shift+Enter 换行"><span class="ui-lang-zh">保存新的 review 版本</span><span class="ui-lang-en">Save new review version</span><kbd class="review-save-shortcut" aria-hidden="true">Enter</kbd></button>
+      <button class="button button-primary full-width review-save-button" id="reviewSaveButton" type="submit" aria-keyshortcuts="Enter" title="输入原因时按 Enter 保存；Shift+Enter 换行" ${runBoundModelReview ? "" : "disabled"}><span class="ui-lang-zh">保存新的模型复核版本</span><span class="ui-lang-en">Save model review version</span><kbd class="review-save-shortcut" aria-hidden="true">Enter</kbd></button>
     </form>`;
+  if (!runBoundModelReview) {
+    $("#annotationForm")?.querySelectorAll(
+      "#missingEvidenceOptions input, #reviewScreenshotInput, #reviewScreenshotBrowse, #annotationAuthor, [data-open-missing-evidence-creator]"
+    ).forEach((control) => { control.disabled = true; });
+  }
   bindSelectedReviewTagControls($("#reviewPane"));
   $("#reviewPane").querySelector("[data-review-comments]")?.addEventListener("click", () => {
     openCurrentReviewDiscussion(caseData);
@@ -1097,6 +1102,10 @@ async function saveAnnotation(event) {
   const runBoundModelReview = Boolean(
     state.reviewEditRunId || currentReviewRunId(state.selectedCase)
   );
+  if (!runBoundModelReview) {
+    showToast("请先选择 Model Run；共享标签和 GT 请到 Case 标注工作台修改。", true);
+    return;
+  }
   const expectedOutputState = expectedOutputSelectionState();
   if (!runBoundModelReview && expectedOutputState.conflictKind === "tags") {
     showToast("Tags 指向多个期望输出，请先消除冲突。", true);
@@ -1128,12 +1137,10 @@ async function saveAnnotation(event) {
     note: $("#annotationNote").value,
     author: $("#annotationAuthor").value,
   };
-  if (runBoundModelReview) {
-    payload.model_review_status = $("#modelReviewStatusInput")?.value || "pending";
-    delete payload.expected_output;
-    delete payload.is_excluded;
-    delete payload.tags;
-  }
+  payload.model_review_status = $("#modelReviewStatusInput")?.value || "pending";
+  delete payload.expected_output;
+  delete payload.is_excluded;
+  delete payload.tags;
   const screenshotItems = [...state.pendingReviewImages];
   const screenshotFiles = screenshotItems.map((item) => item.file);
   const navigationContext = reviewSaveNavigationContext(issueId);

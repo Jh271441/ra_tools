@@ -24,6 +24,13 @@ router = APIRouter()
 _COMMENT_ATTACHMENT_TOKEN_RE = re.compile(r"^[A-Za-z0-9-]{1,80}$")
 
 
+def _require_model_run_comment(model_run_id: str) -> str:
+    value = _as_text(model_run_id).strip()
+    if not value:
+        raise _detail(400, "新建模型复核讨论必须先选择 Model Run；Case 标注讨论请使用 Case 标注工作台。")
+    return value
+
+
 def _public_review_comment(comment: dict[str, Any]) -> dict[str, Any]:
     return {
         **comment,
@@ -64,9 +71,11 @@ async def create_review_comment(issue_id: str, request: Request) -> dict[str, An
         raise _detail(400, "评论请求必须是 JSON。")
     if not isinstance(body, dict):
         raise _detail(400, "评论请求必须是 JSON 对象。")
+    model_run_id = _as_text(body.get("model_run_id")).strip()
     await _require_unmigrated_issue(
-        issue_id, database, model_run_id=_as_text(body.get("model_run_id")).strip()
+        issue_id, database, model_run_id=model_run_id
     )
+    _require_model_run_comment(model_run_id)
     return await _create_review_comment_record(issue_id, request, body)
 
 
@@ -83,9 +92,11 @@ async def create_review_comment_with_attachments(
         raise _detail(400, "评论 payload 不是合法 JSON。") from exc
     if not isinstance(body, dict):
         raise _detail(400, "评论 payload 必须是 JSON 对象。")
+    model_run_id = _as_text(body.get("model_run_id")).strip()
     await _require_unmigrated_issue(
-        issue_id, database, model_run_id=_as_text(body.get("model_run_id")).strip()
+        issue_id, database, model_run_id=model_run_id
     )
+    _require_model_run_comment(model_run_id)
     uploads = attachments or []
     raw_tokens = body.get("attachment_tokens", [])
     if not isinstance(raw_tokens, list) or len(raw_tokens) != len(uploads):
@@ -147,6 +158,7 @@ async def _create_review_comment_record(
     await _require_unmigrated_issue(
         issue_id, database, model_run_id=model_run_id
     )
+    model_run_id = _require_model_run_comment(model_run_id)
     author, author_source, author_verified = await asyncio.to_thread(
         _action_actor, request, body.get("author")
     )

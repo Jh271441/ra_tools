@@ -129,7 +129,7 @@ class DatabaseModelReviewMixin:
         campaign_id = str(campaign_id or "").strip()
         reference_id = str(reference_id or "").strip()
         work_split_id = str(work_split_id or "").strip()
-        reviewer = str(reviewer or "").strip()
+        reviewer = str(reviewer or "").strip().lower()
         status = str(status or "pending").strip().lower()
         if not issue_id or not model_run_id:
             raise ValueError("Model Review requires issue_id and model_run_id")
@@ -151,8 +151,14 @@ class DatabaseModelReviewMixin:
         attachments = list(attachments or [])
         now = utc_now()
         with self._write_lock, self.connect() as conn:
+            issue_sql = "SELECT issue_id FROM issues WHERE issue_id = ?"
+            if self.backend == "postgresql":
+                # Serialize first submissions as well as updates when no head
+                # row exists yet; a process-local lock alone cannot protect
+                # multiple Uvicorn workers.
+                issue_sql += " FOR UPDATE"
             issue = conn.execute(
-                "SELECT issue_id FROM issues WHERE issue_id = ?", (issue_id,)
+                issue_sql, (issue_id,)
             ).fetchone()
             run = conn.execute(
                 "SELECT id FROM model_runs WHERE id = ?", (model_run_id,)
@@ -364,6 +370,7 @@ class DatabaseModelReviewMixin:
                     SELECT candidate.id FROM annotations candidate
                     WHERE candidate.issue_id = revision.issue_id
                       AND candidate.model_run_id = revision.model_run_id
+                      AND candidate.work_split_id = revision.work_split_id
                       AND lower(candidate.author) = lower(revision.reviewer)
                     ORDER BY candidate.id DESC LIMIT 1
                 )
@@ -378,7 +385,6 @@ class DatabaseModelReviewMixin:
             legacy_exists = row["legacy_id"] is not None
             same = bool(
                 legacy_exists
-                and self._model_review_legacy_status(str(row["status"])) == str(row["legacy_status"] or "pending")
                 and str(row["reason"] or "") == str(row["legacy_reason"] or "")
                 and _json_load(row["missing_evidence_json"], []) == _json_load(row["legacy_missing_evidence_json"], [])
                 and str(row["reviewer"] or "").lower() == str(row["legacy_reviewer"] or "").lower()
