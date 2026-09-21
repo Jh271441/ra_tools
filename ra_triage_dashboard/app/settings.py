@@ -175,6 +175,7 @@ class Settings:
     kylin_sso_cache_seconds: int
     sso_write_users: tuple[str, ...]
     team_default_managers: tuple[str, ...]
+    seed_examples_enabled: bool
     dchat_notifications_enabled: bool
     dchat_delivery_mode: str
     dchat_base_url: str
@@ -577,6 +578,7 @@ class Settings:
             ),
             sso_write_users=sso_write_users,
             team_default_managers=team_default_managers,
+            seed_examples_enabled=_bool("DASHBOARD_SEED_EXAMPLES_ENABLED", True),
             dchat_notifications_enabled=_bool(
                 "DASHBOARD_DCHAT_NOTIFICATIONS_ENABLED", False
             ),

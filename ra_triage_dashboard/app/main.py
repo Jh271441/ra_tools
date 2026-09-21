@@ -149,7 +149,8 @@ async def lifespan(_: FastAPI):
         administrators=settings.team_default_managers,
     )
     database.bootstrap_mention_users()
-    database.seed_examples(EXAMPLE_CASES)
+    if settings.seed_examples_enabled:
+        database.seed_examples(EXAMPLE_CASES)
     # Local-only seed from baseline workbooks / registry. No Trail I/O.
     bootstrap_baseline()
     # Historical spot-check tags are read-only form suggestions.  They do not

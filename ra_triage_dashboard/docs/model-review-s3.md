@@ -62,5 +62,8 @@ and fails on FK or unselected-Issue references.
 If the source has no stale adjudication, it creates one explicitly marked
 smoke-only stale state on a sampled Issue and records its synthetic revisions
 in the cloud-only manifest.
+The smoke launcher uses a subset-only baseline registry and sets
+`DASHBOARD_SEED_EXAMPLES_ENABLED=false` so startup cannot expand the sample with
+the normal demonstration Issues.
 
 Production PostgreSQL and port 8785 are never valid targets for this workflow.
