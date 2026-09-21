@@ -13,32 +13,43 @@ from ..support.attachments import (
     _public_review_attachment,
     _store_review_attachments,
 )
-from ..support.common import _detail
+from ..support.common import _as_text, _detail
 
 router = APIRouter()
 
 
-async def _require_unmigrated_issue(issue_id: str, database: Any) -> dict[str, Any]:
+async def _require_unmigrated_issue(
+    issue_id: str, database: Any, *, model_run_id: str = ""
+) -> dict[str, Any]:
+    """Block only legacy no-Run writes after Case-label activation."""
+
     issue = await asyncio.to_thread(database.get_issue, issue_id)
     if issue is None:
         raise _detail(404, "Issue 不存在。")
     active = await asyncio.to_thread(database.active_labeling_scopes)
-    if str(issue.get("baseline_scope") or "") in active:
+    if (
+        str(issue.get("baseline_scope") or "") in active
+        and not str(model_run_id or "").strip()
+    ):
         raise _detail(
-            409, "该数据集已切换为 Case 标注，请刷新后在 Case 标注工作台操作。"
+            409,
+            "该数据集已启用 Case 标注：无 Run 的标签/GT 写入请到 Case 标注工作台；"
+            "带 Model Run 的判错复核可继续在 Review 保存。",
         )
     return issue
 
 
 @router.post("/api/cases/{issue_id}/annotations")
 async def create_annotation(issue_id: str, request: Request) -> dict[str, Any]:
-    await _require_unmigrated_issue(issue_id, database)
     try:
         body = await request.json()
     except (TypeError, ValueError):
         raise _detail(400, "标注请求必须是 JSON。")
     if not isinstance(body, dict):
         raise _detail(400, "标注请求必须是 JSON 对象。")
+    await _require_unmigrated_issue(
+        issue_id, database, model_run_id=_as_text(body.get("model_run_id")).strip()
+    )
     annotation = await asyncio.to_thread(
         _create_annotation_record,
         issue_id=issue_id,
@@ -60,15 +71,17 @@ async def create_annotation_with_attachments(
     payload: str = Form(...),
     attachments: Optional[List[UploadFile]] = File(None),
 ) -> dict[str, Any]:
-    await _require_unmigrated_issue(issue_id, database)
     try:
         body = json.loads(payload)
     except (TypeError, ValueError, json.JSONDecodeError):
         raise _detail(400, "payload 必须是 JSON 对象。")
     if not isinstance(body, dict):
         raise _detail(400, "payload 必须是 JSON 对象。")
+    model_run_id = _as_text(body.get("model_run_id")).strip()
+    await _require_unmigrated_issue(issue_id, database, model_run_id=model_run_id)
     records, paths = await _store_review_attachments(attachments or [])
     try:
+        await _require_unmigrated_issue(issue_id, database, model_run_id=model_run_id)
         annotation = await asyncio.to_thread(
             _create_annotation_record,
             issue_id=issue_id,

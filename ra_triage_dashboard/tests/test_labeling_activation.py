@@ -12,6 +12,8 @@ from fastapi import HTTPException, Request
 
 from ra_triage_dashboard.app.db import Database
 from ra_triage_dashboard.app.routers import case_annotations, case_comments, labeling
+from ra_triage_dashboard.app.support import annotations as annotation_support
+from ra_triage_dashboard.app.support import catalogs as catalog_support
 
 
 class LabelingActivationTest(unittest.IsolatedAsyncioTestCase):
@@ -217,10 +219,37 @@ class LegacyWriteHandoverTest(unittest.IsolatedAsyncioTestCase):
             baseline_scope="migrated", status="active", policy_version="test-v1",
             source_inventory_sha256="a" * 64, updated_by="test",
         )
+        rows = [
+            {"issue_id": issue_id, "model_label": "正确触发"}
+            for issue_id in ("cn-migrated", "cn-legacy", "cn-elsewhere")
+        ]
+        self.run_a, _ = self.database.import_model_run(
+            name="run-a", source_name="run-a.json", source_sha256="a" * 64,
+            metadata={}, rows=rows,
+        )
+        self.run_b, _ = self.database.import_model_run(
+            name="run-b", source_name="run-b.json", source_sha256="b" * 64,
+            metadata={}, rows=rows,
+        )
         patches = ExitStack()
         self.addCleanup(patches.close)
         for module in (case_annotations, case_comments):
             patches.enter_context(patch.object(module, "database", self.database))
+        patches.enter_context(patch.object(annotation_support, "database", self.database))
+        patches.enter_context(patch.object(catalog_support, "database", self.database))
+        patches.enter_context(patch.object(
+            annotation_support,
+            "settings",
+            SimpleNamespace(dchat_notifications_enabled=False),
+        ))
+        patches.enter_context(patch.object(
+            annotation_support,
+            "_action_actor",
+            return_value=("alice", "kylin_ticket", True),
+        ))
+        patches.enter_context(patch.object(
+            annotation_support, "_review_tag_catalog", return_value=[]
+        ))
         patches.enter_context(patch.object(case_comments, "settings", SimpleNamespace(
             dchat_notifications_enabled=False, comment_attachments_dir=self.root,
         )))
@@ -243,6 +272,67 @@ class LegacyWriteHandoverTest(unittest.IsolatedAsyncioTestCase):
             await case_annotations.create_annotation("cn-legacy", self.request())
             create.assert_called_once()
 
+    async def test_active_scope_run_annotations_allow_json_and_multipart(self) -> None:
+        json_result = await case_annotations.create_annotation(
+            "cn-migrated",
+            self.request({
+                "model_run_id": self.run_a["id"],
+                "expected_output": "误触发",
+                "note": "run A review",
+                "author": "alice",
+            }),
+        )
+        attachment = {
+            "id": "review-attachment",
+            "original_name": "review.png",
+            "stored_name": "review.png",
+            "media_type": "image/png",
+            "size_bytes": 4,
+            "width": 1,
+            "height": 1,
+            "sha256": "c" * 64,
+        }
+        with patch.object(
+            case_annotations,
+            "_store_review_attachments",
+            return_value=([attachment], [self.root / "review.png"]),
+        ):
+            multipart_result = await case_annotations.create_annotation_with_attachments(
+                "cn-migrated",
+                self.request(),
+                payload=json.dumps({
+                    "model_run_id": self.run_b["id"],
+                    "expected_output": "正确触发",
+                    "note": "run B review",
+                    "author": "alice",
+                }),
+                attachments=[],
+            )
+
+        self.assertEqual(json_result["annotation"]["model_run_id"], self.run_a["id"])
+        self.assertEqual(multipart_result["annotation"]["model_run_id"], self.run_b["id"])
+        run_a_case = self.database.list_cases(
+            baseline_scopes=["migrated"], model_run_id=self.run_a["id"], page_size=10
+        )["items"][0]
+        run_b_case = self.database.list_cases(
+            baseline_scopes=["migrated"], model_run_id=self.run_b["id"], page_size=10
+        )["items"][0]
+        self.assertEqual(run_a_case["annotation"]["note"], "run A review")
+        self.assertEqual(run_b_case["annotation"]["note"], "run B review")
+
+    async def test_active_scope_no_run_rejects_before_annotation_attachment_storage(self) -> None:
+        with patch.object(case_annotations, "_store_review_attachments") as store:
+            with self.assertRaises(HTTPException) as raised:
+                await case_annotations.create_annotation_with_attachments(
+                    "cn-migrated",
+                    self.request(),
+                    payload=json.dumps({"note": "legacy label write"}),
+                    attachments=[],
+                )
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertIn("Case 标注工作台", str(raised.exception.detail))
+        store.assert_not_called()
+
     async def test_old_delete_rejects_migrated_scope(self) -> None:
         with self.assertRaises(HTTPException) as raised:
             await case_annotations.delete_annotation("cn-migrated", 1, self.request())
@@ -262,6 +352,127 @@ class LegacyWriteHandoverTest(unittest.IsolatedAsyncioTestCase):
                 "cn-legacy", self.request({"body": "讨论"})
             )
             self.assertEqual(result["comment"]["body"], "讨论")
+
+    async def test_active_scope_run_comments_allow_json_and_multipart(self) -> None:
+        with patch.object(case_comments, "_action_actor", return_value=("alice", "kylin_ticket", True)), patch.object(
+            case_comments, "extract_review_mentions", return_value=[]
+        ):
+            json_result = await case_comments.create_review_comment(
+                "cn-migrated",
+                self.request({"body": "Run A discussion", "model_run_id": self.run_a["id"]}),
+            )
+            attachment = {
+                "id": "comment-attachment",
+                "original_name": "comment.png",
+                "stored_name": "comment.png",
+                "media_type": "image/png",
+                "size_bytes": 4,
+                "width": 1,
+                "height": 1,
+                "sha256": "d" * 64,
+            }
+            with patch.object(
+                case_comments,
+                "_store_comment_attachments",
+                return_value=([attachment], [self.root / "comment.png"]),
+            ):
+                multipart_result = await case_comments.create_review_comment_with_attachments(
+                    "cn-migrated",
+                    self.request(),
+                    payload=json.dumps({
+                        "body": "![evidence](attachment:token)",
+                        "model_run_id": self.run_b["id"],
+                        "attachment_tokens": ["token"],
+                    }),
+                    attachments=[SimpleNamespace()],
+                )
+
+        self.assertEqual(json_result["comment"]["model_run_id"], self.run_a["id"])
+        self.assertEqual(multipart_result["comment"]["model_run_id"], self.run_b["id"])
+        self.assertEqual(
+            self.database.review_comment_count(
+                issue_id="cn-migrated", model_run_id=self.run_a["id"]
+            ),
+            1,
+        )
+        self.assertEqual(
+            self.database.review_comment_count(
+                issue_id="cn-migrated", model_run_id=self.run_b["id"]
+            ),
+            1,
+        )
+
+    async def test_active_scope_no_run_rejects_before_comment_attachment_storage(self) -> None:
+        with patch.object(case_comments, "_store_comment_attachments") as store:
+            with self.assertRaises(HTTPException) as raised:
+                await case_comments.create_review_comment_with_attachments(
+                    "cn-migrated",
+                    self.request(),
+                    payload=json.dumps({
+                        "body": "![evidence](attachment:token)",
+                        "attachment_tokens": ["token"],
+                    }),
+                    attachments=[SimpleNamespace()],
+                )
+        self.assertEqual(raised.exception.status_code, 409)
+        store.assert_not_called()
+
+    async def test_inactive_scope_keeps_multipart_annotation_and_comment_compatible(self) -> None:
+        review_attachment = {
+            "id": "legacy-review-attachment",
+            "original_name": "legacy-review.png",
+            "stored_name": "legacy-review.png",
+            "media_type": "image/png",
+            "size_bytes": 4,
+            "width": 1,
+            "height": 1,
+            "sha256": "e" * 64,
+        }
+        with patch.object(
+            case_annotations,
+            "_store_review_attachments",
+            return_value=([review_attachment], [self.root / "legacy-review.png"]),
+        ):
+            annotation = await case_annotations.create_annotation_with_attachments(
+                "cn-legacy",
+                self.request(),
+                payload=json.dumps({
+                    "expected_output": "误触发",
+                    "note": "legacy no-Run review",
+                    "author": "alice",
+                }),
+                attachments=[],
+            )
+
+        comment_attachment = {
+            "id": "legacy-comment-attachment",
+            "original_name": "legacy-comment.png",
+            "stored_name": "legacy-comment.png",
+            "media_type": "image/png",
+            "size_bytes": 4,
+            "width": 1,
+            "height": 1,
+            "sha256": "f" * 64,
+        }
+        with patch.object(case_comments, "_action_actor", return_value=("alice", "kylin_ticket", True)), patch.object(
+            case_comments, "extract_review_mentions", return_value=[]
+        ), patch.object(
+            case_comments,
+            "_store_comment_attachments",
+            return_value=([comment_attachment], [self.root / "legacy-comment.png"]),
+        ):
+            comment = await case_comments.create_review_comment_with_attachments(
+                "cn-legacy",
+                self.request(),
+                payload=json.dumps({
+                    "body": "![evidence](attachment:token)",
+                    "attachment_tokens": ["token"],
+                }),
+                attachments=[SimpleNamespace()],
+            )
+
+        self.assertEqual(annotation["annotation"]["model_run_id"], "")
+        self.assertEqual(comment["comment"]["model_run_id"], "")
 
     async def test_handover_follows_activation_state(self) -> None:
         self.database.set_labeling_scope_state(

@@ -64,6 +64,9 @@ async def create_review_comment(issue_id: str, request: Request) -> dict[str, An
         raise _detail(400, "评论请求必须是 JSON。")
     if not isinstance(body, dict):
         raise _detail(400, "评论请求必须是 JSON 对象。")
+    await _require_unmigrated_issue(
+        issue_id, database, model_run_id=_as_text(body.get("model_run_id")).strip()
+    )
     return await _create_review_comment_record(issue_id, request, body)
 
 
@@ -80,6 +83,9 @@ async def create_review_comment_with_attachments(
         raise _detail(400, "评论 payload 不是合法 JSON。") from exc
     if not isinstance(body, dict):
         raise _detail(400, "评论 payload 必须是 JSON 对象。")
+    await _require_unmigrated_issue(
+        issue_id, database, model_run_id=_as_text(body.get("model_run_id")).strip()
+    )
     uploads = attachments or []
     raw_tokens = body.get("attachment_tokens", [])
     if not isinstance(raw_tokens, list) or len(raw_tokens) != len(uploads):
@@ -132,13 +138,15 @@ async def _create_review_comment_record(
     *,
     attachments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    await _require_unmigrated_issue(issue_id, database)
     text = _as_text(body.get("body")).strip()
     if not text:
         raise _detail(400, "评论内容不能为空。")
     if len(text) > 3500:
         raise _detail(400, "评论内容不能超过 3500 个字符。")
     model_run_id = _as_text(body.get("model_run_id")).strip()
+    await _require_unmigrated_issue(
+        issue_id, database, model_run_id=model_run_id
+    )
     author, author_source, author_verified = await asyncio.to_thread(
         _action_actor, request, body.get("author")
     )
