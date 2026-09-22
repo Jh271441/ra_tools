@@ -964,20 +964,32 @@ async def create_label_result_snapshot(request: Request) -> dict[str, Any]:
     if not isinstance(body, dict) or not _as_text(body.get("workset_id")):
         raise _detail(400, "workset_id 必填。")
     allow_partial = _snapshot_allow_partial(body)
+    requested_scopes = body.get("baseline_scopes")
+    if requested_scopes is not None and not isinstance(requested_scopes, list):
+        raise _detail(400, "baseline_scopes 必须是数组。")
+    scopes = list(dict.fromkeys(
+        _as_text(value) for value in (requested_scopes or []) if _as_text(value)
+    ))
+    if not scopes and _as_text(body.get("baseline_scope")):
+        scopes = [_as_text(body.get("baseline_scope"))]
     try:
-        snapshot = await asyncio.to_thread(
-            database.create_label_result_snapshot,
-            workset_id=_as_text(body.get("workset_id")),
-            created_by=actor,
-            created_by_source=actor_source,
-            created_by_verified=actor_verified,
-            allow_partial=allow_partial,
-        )
+        snapshots = []
+        for scope in scopes or [""]:
+            snapshots.append(await asyncio.to_thread(
+                database.create_label_result_snapshot,
+                workset_id=_as_text(body.get("workset_id")),
+                baseline_scope=scope,
+                created_by=actor,
+                created_by_source=actor_source,
+                created_by_verified=actor_verified,
+                allow_partial=allow_partial,
+            ))
     except ValueError as exc:
         status = 409 if "requires all Workset members" in str(exc) else 400
         raise _detail(status, str(exc))
     return {
-        "snapshot": snapshot,
+        "snapshot": snapshots[0] if len(snapshots) == 1 else None,
+        "snapshots": snapshots,
         "change_revision": await asyncio.to_thread(database.change_revision),
     }
 

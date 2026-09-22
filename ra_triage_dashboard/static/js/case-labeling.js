@@ -286,9 +286,18 @@ async function createCaseLabelingResultSnapshot() {
   const button = $("#caseLabelingCreateLabelSnapshot");
   if (button) button.disabled = true;
   try {
+    const taskScopes = [...new Set(
+      (Array.isArray(task.baseline_scopes) ? task.baseline_scopes : [task.baseline_scope])
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+    )];
     const saveSnapshot = (allowPartial) => api("/api/labeling/label-result-snapshots", {
       method: "POST",
-      body: JSON.stringify({ workset_id: task.workset_id, allow_partial: allowPartial }),
+      body: JSON.stringify({
+        workset_id: task.workset_id,
+        allow_partial: allowPartial,
+        ...(taskScopes.length > 1 ? { baseline_scopes: taskScopes } : {}),
+      }),
     });
     let result;
     try {
@@ -299,9 +308,14 @@ async function createCaseLabelingResultSnapshot() {
       if (!window.confirm(message)) return;
       result = await saveSnapshot(true);
     }
-    const snapshot = result.snapshot || {};
-    const coverageLabel = snapshot.coverage_status === "partial" ? "诊断 partial" : "complete";
-    showToast(`Label snapshot 已保存：${snapshot.resolved_count || 0}/${snapshot.member_count || 0} · ${coverageLabel}`);
+    const snapshots = Array.isArray(result.snapshots) && result.snapshots.length
+      ? result.snapshots
+      : [result.snapshot || {}];
+    const resolved = snapshots.reduce((total, item) => total + Number(item.resolved_count || 0), 0);
+    const members = snapshots.reduce((total, item) => total + Number(item.member_count || 0), 0);
+    const partial = snapshots.some((item) => item.coverage_status === "partial");
+    const coverageLabel = partial ? "诊断 partial" : "complete";
+    showToast(`Label snapshot 已保存：${snapshots.length} 个 scope · ${resolved}/${members} · ${coverageLabel}`);
   } catch (error) {
     showToast(error.message || "Label snapshot 保存失败。", true);
   } finally {

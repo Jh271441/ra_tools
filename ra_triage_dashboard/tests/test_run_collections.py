@@ -508,6 +508,39 @@ class RunCollectionsDatabaseTest(unittest.TestCase):
             comparison_reference_run_id=first["id"],
         )
         self.assertEqual(reused["id"], evaluation["id"])
+        for item in issue_rows:
+            self.database.create_label_revision(
+                issue_id=item["issue_id"],
+                expected_output=item["gt_label"],
+                tags=[], evidence_gaps=[], rationale="multi-scope snapshot",
+                is_excluded=False, author="snapshot-reviewer",
+                author_source="test", author_verified=True,
+            )
+        label_snapshots = {
+            scope: self.database.create_label_result_snapshot(
+                workset_id=evaluation["workset"]["workset_id"],
+                baseline_scope=scope,
+                created_by="admin", created_by_source="test",
+                created_by_verified=True,
+            )
+            for scope in scopes
+        }
+        self.assertEqual(
+            {item["member_count"] for item in label_snapshots.values()}, {2}
+        )
+        label_evaluation = self.database.create_run_evaluation(
+            collection_id=collection["id"],
+            workset_id=evaluation["workset"]["workset_id"],
+            reference_type="label_result",
+            reference_ids={
+                scope: snapshot["id"] for scope, snapshot in label_snapshots.items()
+            },
+            comparison_reference_run_id=first["id"],
+        )
+        self.assertEqual(label_evaluation["reference"]["type"], "label_result")
+        self.assertEqual(
+            len(label_evaluation["reference"]["snapshot"]["scope_snapshots"]), 5
+        )
         with self.assertRaisesRegex(ValueError, "不支持.*reference_type=run"):
             self.database.create_run_evaluation(
                 collection_id=collection["id"], baseline_scopes=scopes,
