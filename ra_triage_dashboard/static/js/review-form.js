@@ -627,6 +627,9 @@ function renderReview(caseData) {
     loadCombinedReviewContext(caseData).catch((error) => showToast(error.message, true));
   } else {
     state.combinedReviewContext = null;
+    if (!runBoundModelReview && $("#reviewSaveButton")) {
+      $("#reviewSaveButton").disabled = true;
+    }
   }
 }
 

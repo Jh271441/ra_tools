@@ -1245,6 +1245,7 @@ html[data-color-theme="light"] .review-mention-avatar { color: #075d6d; backgrou
 }
 .shared-label-state-detail > strong { color: var(--faint); font-size: 10px; }
 .combined-case-label-card { border-color: color-mix(in srgb, var(--accent) 28%, var(--line)); background: color-mix(in srgb, var(--surface) 92%, var(--accent) 5%); }
+.combined-case-label-card[hidden] { display: none !important; }
 .combined-review-dual-status,
 .combined-case-label-meta { display: flex; flex-wrap: wrap; gap: 6px; }
 .combined-review-dual-status > span,
