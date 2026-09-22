@@ -467,6 +467,41 @@ class RunCollectionsDatabaseTest(unittest.TestCase):
             ).fetchone()["count"]
         self.assertEqual(scope_rows, 5)
 
+    def test_label_result_snapshot_is_an_official_frozen_reference(self) -> None:
+        scope = "run-collections-label-reference"
+        issue_id = "label-reference-issue"
+        self.database.upsert_issues(
+            [{"issue_id": issue_id, "gt_label": "正确触发"}],
+            source="test", replace_gt=True, baseline_scope=scope,
+        )
+        workset = self.database.create_review_workset(
+            baseline_scope=scope, issue_ids=[issue_id],
+            name="Label reference", created_by="admin",
+        )
+        self.database.ensure_label_case(issue_id=issue_id)
+        self.database.create_label_revision(
+            issue_id=issue_id, expected_output="正确触发", tags=[],
+            evidence_gaps=[], rationale="snapshot", is_excluded=False,
+            author="reviewer", author_source="test", author_verified=True,
+        )
+        snapshot = self.database.create_label_result_snapshot(
+            workset_id=workset["id"], created_by="admin",
+            created_by_source="test", created_by_verified=True,
+        )
+        run = self._make_run("label-reference-run", [
+            {"issue_id": issue_id, "model_label": "正确触发"},
+        ])
+        collection = self.database.create_run_collection(
+            name="Label reference collection", members=[run["id"]]
+        )
+        evaluation = self.database.create_run_evaluation(
+            collection_id=collection["id"], workset_id=workset["id"],
+            reference_type="label_result", reference_id=snapshot["id"],
+        )
+        self.assertEqual(evaluation["reference"]["type"], "label_result")
+        self.assertEqual(evaluation["reference"]["id"], snapshot["id"])
+        self.assertEqual(evaluation["items"][0]["shared_label"]["method"], "single")
+
 
 if __name__ == "__main__":
     unittest.main()

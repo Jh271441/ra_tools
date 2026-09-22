@@ -945,6 +945,12 @@ class DatabaseRunCollectionsMixin:
                     ).hexdigest()
                     gt_snapshot = active_gt.get(scope) or {}
                     label_snapshot = label_results.get(scope) or {}
+                    label_snapshot_id = (
+                        str(label_snapshot["id"] or "") if label_snapshot else ""
+                    )
+                    label_snapshot_sha = (
+                        str(label_snapshot["content_sha256"] or "") if label_snapshot else ""
+                    )
                     conn.execute(
                         """
                         INSERT INTO review_workset_scopes (
@@ -958,8 +964,8 @@ class DatabaseRunCollectionsMixin:
                             workset_id, scope, ordinal, len(members_for_scope),
                             scope_members_sha, str(gt_snapshot.get("id") or ""),
                             str(gt_snapshot.get("content_sha256") or ""),
-                            str(label_snapshot.get("id") or ""),
-                            str(label_snapshot.get("content_sha256") or ""),
+                            label_snapshot_id,
+                            label_snapshot_sha,
                         ),
                     )
 
