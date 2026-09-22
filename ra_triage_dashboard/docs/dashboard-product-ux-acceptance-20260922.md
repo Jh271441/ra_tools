@@ -5,7 +5,7 @@ Recorded: 2026-09-22 (Asia/Shanghai)
 ## Runtime
 
 - Branch: `codex/dashboard-product-ux`
-- Deployed UX source: `bb59a84f9c7994d59f432ec266ae12085ceb08ea`
+- Deployed UX source: `6cf64f4fa727199c7107f77208312f62c2f9a0b2`
 - UX smoke root: `/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manual_dashboard_product_ux_20260922`
 - UX smoke database: `manual_dashboard_product_ux_20260922`, cloned logically from S6 v2.
 - UX endpoint: loopback `127.0.0.1:8786`, base path `/manual-s6`.
@@ -162,3 +162,22 @@ no operating-system native popup.
 `scripts/restore_s6_8786.sh` restores the frozen S6 v2 source on loopback 8786.
 Before stopping the UX listener, it verifies the pinned production PID/build and
 that port 8786 belongs to the UX smoke root.
+
+## Final interface polish (2026-09-23)
+
+Cache `manual-triage-497` adds the final Review workflow polish without changing
+business semantics. Review filters now keep Run, comparison and search in the
+main row, expose the remaining facets under More filters, and show removable
+active-filter chips. The combined Review pane defaults to 430–490px, scrolls
+independently, and keeps its dual status and submit action visible. Case and
+model sections can be collapsed. The task split dialog uses explicit mode cards,
+column headers, advanced seed settings and a sticky footer.
+
+Browser acceptance passed at 1280×720, 1440×900 and 1920×1080 in dark and light
+themes and Chinese/English. At 1280 the main filter row measured 52px with no
+horizontal overflow; at 1920 the advanced row was visible by default. The 1440
+combined pane measured 456px, with sticky status/footer and independent form
+scroll. Task-mode cards, Advanced settings and section collapse interactions all
+updated their native state and ARIA state correctly. Browser console errors: 0.
+The runtime reported PostgreSQL migration count 52. Production 8785 retained PID
+10634 and was not restarted.
