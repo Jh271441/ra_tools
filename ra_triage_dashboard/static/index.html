@@ -79,7 +79,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-485`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-486`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -121,6 +121,14 @@
                 </span>
                 <span class="sidebar-label"><strong class="ui-lang-zh">Case 标注<small class="sidebar-preview-badge">内测</small></strong><strong class="ui-lang-en">Case labeling<small class="sidebar-preview-badge">preview</small></strong></span>
               </a>
+              <a class="sidebar-item" id="labelingExperimentsNavButton" data-page-target="labeling-new-task" data-app-path="/labeling-experiments" href="/labeling-experiments" title="标注实验">
+                <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 5h16v14H4z"/><path d="M8 8h8M8 12h5M8 16h8"/><circle class="icon-emphasis" cx="17" cy="16" r="2"/></svg></span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">实验分配</strong><strong class="ui-lang-en">Labeling experiments</strong></span>
+              </a>
+              <a class="sidebar-item" id="labelingSummaryNavButton" data-page-target="campaigns" data-app-path="/labeling-summary" href="/labeling-summary" title="标注汇总">
+                <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 5h16v14H4z"/><path d="M7 16v-4m5 4V8m5 8v-6M6 19h13"/></svg></span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">标注汇总</strong><strong class="ui-lang-en">Labeling summary</strong></span>
+              </a>
             </div>
           </section>
 
@@ -142,10 +150,6 @@
                 </span>
                 <span class="sidebar-label"><strong class="ui-lang-zh">任务分配</strong><strong class="ui-lang-en">Assignments</strong></span>
               </a>
-              <a class="sidebar-item" id="campaignsNavButton" data-page-target="campaigns" data-app-path="/campaigns" href="/campaigns" title="Campaign 与标注分析">
-                <span class="sidebar-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><rect class="icon-wash" x="3.5" y="4" width="17" height="16" rx="3"/><path d="M7 8h10M7 12h6M7 16h10"/><circle class="icon-emphasis" cx="17" cy="12" r="2.1"/></svg></span>
-                <span class="sidebar-label"><strong class="ui-lang-zh">Campaign 任务</strong><strong class="ui-lang-en">Campaigns</strong></span>
-              </a>
               <a class="sidebar-item" id="reviewAnalysisNavButton" data-page-target="analysis" data-app-path="/review-analysis" href="/review-analysis" title="Review 原因聚类">
                 <span class="sidebar-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M7 3.5 19.8 6v12L12 21 4.2 18V6z"/><path d="m8.8 8.3 2 5.8m4.4-5.8-2 5.8M9.6 7h4.8"/><circle cx="7" cy="7" r="2.5"/><circle cx="17" cy="7" r="2.5"/><circle class="icon-emphasis" cx="12" cy="17" r="2.5"/></svg>
@@ -158,6 +162,16 @@
                 </span>
                 <span class="sidebar-label"><strong class="ui-lang-zh">问题排除</strong><strong class="ui-lang-en">Issue exclusion</strong></span>
               </a>
+            </div>
+          </section>
+
+
+          <section class="sidebar-nav-group" data-sidebar-nav-group="model-evaluation" data-sidebar-default-open="true">
+            <button class="sidebar-group-toggle" type="button" data-sidebar-nav-group-toggle="model-evaluation" aria-expanded="true" aria-controls="sidebarNavModelEvaluation">
+              <span class="sidebar-group-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 5h16v14H4z"/><path d="M8 8h8M8 12h5M8 16h8"/></svg></span>
+              <span class="sidebar-group-label sidebar-label"><span class="ui-lang-zh">模型评测</span><span class="ui-lang-en">Model evaluation</span></span><span class="sidebar-group-chevron" aria-hidden="true"></span>
+            </button>
+            <div class="sidebar-nav-group-items" id="sidebarNavModelEvaluation" data-sidebar-nav-group-items="model-evaluation">
               <a class="sidebar-item" id="openRunManagerButton" data-page-target="runs" data-app-path="/runs" href="/runs" title="模型 Runs">
                 <span class="sidebar-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="m4 8 8-5 8 5v11H4z"/><path d="M5 19V9m7 10V5m7 14v-7M3 19h18"/><path class="icon-emphasis" d="m5 7 7-4 7 6"/><path d="M8.5 15v-3m7 3V9"/></svg>
@@ -170,11 +184,11 @@
                 </span>
                 <span class="sidebar-label"><strong class="ui-lang-zh">Run 对比</strong><strong class="ui-lang-en">Run comparison</strong></span>
               </a>
-              <a class="sidebar-item" id="runCollectionsNavButton" data-page-target="run-collections" data-app-path="/run-collections" href="/run-collections" title="Runs 合集与统一评测">
+              <a class="sidebar-item" id="runCollectionsNavButton" data-page-target="run-collections" data-app-path="/multi-run-evaluation" href="/multi-run-evaluation" title="多 Run 评测">
                 <span class="sidebar-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" focusable="false"><path class="icon-wash" d="M4 5h16v14H4z"/><path d="M8 8h8M8 12h5M8 16h8"/><circle class="icon-emphasis" cx="17" cy="16" r="2"/></svg>
                 </span>
-                <span class="sidebar-label"><strong class="ui-lang-zh">Runs 合集</strong><strong class="ui-lang-en">Run Collections</strong></span>
+                <span class="sidebar-label"><strong class="ui-lang-zh">多 Run 评测</strong><strong class="ui-lang-en">Multi-run evaluation</strong></span>
               </a>
               <a class="sidebar-item" id="openBatchPredictionButton" data-page-target="prediction" data-app-path="/batch-prediction" href="/batch-prediction" title="Batch 预测">
                 <span class="sidebar-icon" aria-hidden="true">
@@ -184,7 +198,6 @@
               </a>
             </div>
           </section>
-
           <section class="sidebar-nav-group intent-nav-group is-collapsed" id="intentNavGroup" data-sidebar-nav-group="intent" data-sidebar-default-open="false" hidden>
             <button class="sidebar-group-toggle" type="button" data-sidebar-nav-group-toggle="intent" aria-expanded="false" aria-controls="sidebarNavIntent">
               <span class="sidebar-group-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 5h16v14H4z"/><circle cx="8" cy="10" r="2"/><circle cx="16" cy="10" r="2"/><path d="M5.5 17c.4-2.3 1.5-3.5 3.5-3.5s3.1 1.2 3.5 3.5m-1 0c.4-2.3 1.5-3.5 3.5-3.5s3.1 1.2 3.5 3.5"/></svg></span>
@@ -364,6 +377,14 @@
                 <button class="button button-quiet filter-submit" id="resetReviewFiltersButton" type="button"><span class="ui-lang-zh">重置</span><span class="ui-lang-en">Reset</span></button>
               </form>
               </section>
+
+              <details class="review-task-drawer" id="reviewTaskDrawer">
+                <summary><span class="ui-lang-zh">复核任务</span><span class="ui-lang-en">Review tasks</span><small><span class="ui-lang-zh">按任务范围查看，不影响共享标签</span><span class="ui-lang-en">Run-scoped task view; shared labels stay separate</span></small></summary>
+                <div class="review-task-drawer-body">
+                  <label><span class="ui-lang-zh">任务范围</span><span class="ui-lang-en">Task range</span><div class="ui-select" id="reviewTaskPicker"><button class="ui-select-trigger" type="button"><span class="ui-select-summary">综合结果</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="reviewTaskFilter" aria-hidden="true" tabindex="-1"><option value="">综合结果</option></select></div></label>
+                  <span class="muted"><span class="ui-lang-zh">模型复核任务只影响当前 Run 的诊断和完成度。</span><span class="ui-lang-en">Review tasks affect only the selected Run diagnosis and completion.</span></span>
+                </div>
+              </details>
 
               <section class="gallery-panel">
                 <div class="gallery-heading">
@@ -567,26 +588,31 @@
           <section class="app-page tool-page campaign-page hidden" id="campaignsPage" data-page="campaigns">
             <section class="page-card campaigns-header">
               <div>
-                <span class="campaigns-eyebrow">CAMPAIGN WORK MANAGEMENT</span>
-                <h2><span class="ui-lang-zh">Campaign 任务与标注分析</span><span class="ui-lang-en">Campaigns and Label Analysis</span></h2>
+                <span class="campaigns-eyebrow">LABELING EXPERIMENTS</span>
+                <h2><span class="ui-lang-zh">标注实验与结果</span><span class="ui-lang-en">Labeling experiments and results</span></h2>
                 <p><span class="ui-lang-zh">按用途、生命周期与冻结参考查看任务组、逐 Issue 要求和提交进度。</span><span class="ui-lang-en">Browse task groups, per-Issue requirements, and submission progress by purpose, lifecycle, and frozen reference.</span></p>
               </div>
+              <section class="labeling-experiment-guide" id="labelingExperimentGuide" hidden>
+                <span class="eyebrow">LABELING EXPERIMENT</span>
+                <h3><span class="ui-lang-zh">创建标注实验</span><span class="ui-lang-en">Create a labeling experiment</span></h3>
+                <ol><li><span>1</span><b>选择数据集和 Case 范围</b></li><li><span>2</span><b>选择人员</b></li><li><span>3</span><b>设置单人/双人/交叉比例</b></li><li><span>4</span><b>预览工作量和重叠</b></li><li><span>5</span><b>创建实验</b></li></ol>
+              </section>
               <button class="button button-quiet" id="campaignsRefresh" type="button"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
             </section>
             <section class="page-card campaigns-list-card" id="campaignsListView">
               <div class="campaigns-toolbar">
-                <div class="campaigns-view-tabs" role="tablist" aria-label="Campaign 视图">
-                  <button class="button button-quiet is-active" id="campaignsAllTab" type="button" role="tab" aria-selected="true"><span class="ui-lang-zh">全部 Campaign</span><span class="ui-lang-en">All campaigns</span></button>
-                  <button class="button button-quiet" id="campaignsLabelAnalysisTab" type="button" role="tab" aria-selected="false"><span class="ui-lang-zh">Label Analysis</span><span class="ui-lang-en">Label Analysis</span></button>
+                <div class="campaigns-view-tabs" role="tablist" aria-label="实验视图">
+                  <button class="button button-quiet is-active" id="campaignsAllTab" type="button" role="tab" aria-selected="true"><span class="ui-lang-zh">全部实验</span><span class="ui-lang-en">All experiments</span></button>
+                  <button class="button button-quiet" id="campaignsLabelAnalysisTab" type="button" role="tab" aria-selected="false"><span class="ui-lang-zh">标注汇总</span><span class="ui-lang-en">标注汇总</span></button>
                 </div>
                 <form class="campaigns-filters" id="campaignsFilterForm">
                   <label><span class="ui-lang-zh">生命周期</span><span class="ui-lang-en">Lifecycle</span><select id="campaignsLifecycle"><option value="all">全部</option><option value="active">进行中</option><option value="draft">草稿</option><option value="closed">已关闭</option><option value="cancelled">已取消</option><option value="superseded">已替代</option></select></label>
-                  <label class="campaigns-search"><span>Search</span><input id="campaignsQuery" type="search" maxlength="128" autocomplete="off" placeholder="名称、Workset 或 ID"/></label>
+                  <label class="campaigns-search"><span>Search</span><input id="campaignsQuery" type="search" maxlength="128" autocomplete="off" placeholder="名称或 Issue"/></label>
                   <button class="button button-primary" type="submit"><span class="ui-lang-zh">筛选</span><span class="ui-lang-en">Filter</span></button>
                 </form>
               </div>
               <p class="campaigns-list-status" id="campaignsListStatus" aria-live="polite">正在加载 Campaign…</p>
-              <div class="table-scroll"><table class="campaigns-table"><thead><tr><th>Campaign</th><th>用途</th><th>生命周期</th><th>成员 / 要求</th><th>已提交</th><th>进度</th><th>数据集 / 参考</th></tr></thead><tbody id="campaignsRows"></tbody></table></div>
+              <div class="table-scroll"><table class="campaigns-table"><thead><tr><th>实验</th><th>用途</th><th>生命周期</th><th>成员 / 要求</th><th>已提交</th><th>进度</th><th>数据集 / 参考</th></tr></thead><tbody id="campaignsRows"></tbody></table></div>
             </section>
             <section class="page-card campaign-detail-card" id="campaignDetailView" hidden>
               <header class="campaign-detail-header"><div><button class="button button-quiet" id="campaignDetailBack" type="button">← <span class="ui-lang-zh">返回列表</span><span class="ui-lang-en">Back to list</span></button><h2 id="campaignDetailTitle">Campaign</h2><p id="campaignDetailMeta"></p><button class="button button-quiet" id="campaignOpenGroupButton" type="button" hidden><span class="ui-lang-zh">查看 Task Group</span><span class="ui-lang-en">View Task Group</span></button></div><div class="campaign-detail-actions"><button class="button button-quiet" id="campaignActivateButton" type="button" hidden><span class="ui-lang-zh">激活草稿</span><span class="ui-lang-en">Activate draft</span></button><button class="button button-quiet" id="campaignCloseButton" type="button" hidden><span class="ui-lang-zh">关闭 Campaign</span><span class="ui-lang-en">Close Campaign</span></button><button class="button button-quiet" id="campaignReopenButton" type="button" hidden><span class="ui-lang-zh">重新打开</span><span class="ui-lang-en">Reopen</span></button><button class="button button-quiet" id="campaignCancelButton" type="button" hidden><span class="ui-lang-zh">取消 Campaign</span><span class="ui-lang-en">Cancel Campaign</span></button><button class="button button-quiet" id="campaignSupersedeButton" type="button" hidden><span class="ui-lang-zh">标记为替代</span><span class="ui-lang-en">Supersede</span></button><span class="campaign-lifecycle-badge" id="campaignDetailLifecycle"></span></div></header>
@@ -615,7 +641,7 @@
             </section>
             <section class="page-card campaign-group-view" id="campaignGroupView" hidden>
               <header class="campaign-detail-header"><div><button class="button button-quiet" id="campaignGroupBack" type="button">← <span class="ui-lang-zh">返回</span><span class="ui-lang-en">Back</span></button><h2 id="campaignGroupTitle">Task Group</h2><p id="campaignGroupMeta"></p></div></header>
-              <section class="campaign-issue-section"><div class="campaign-issue-heading"><h3><span class="ui-lang-zh">子 Campaign 独立进度</span><span class="ui-lang-en">Independent child Campaign progress</span></h3><span id="campaignGroupChildCount"></span></div><div class="table-scroll"><table class="campaigns-table"><thead><tr><th>Model Run</th><th>Campaign</th><th>Purpose</th><th>Lifecycle</th><th>Issues</th><th>Required</th><th>Submitted / Completed</th></tr></thead><tbody id="campaignGroupRows"></tbody></table></div></section>
+              <section class="campaign-issue-section"><div class="campaign-issue-heading"><h3><span class="ui-lang-zh">子 Campaign 独立进度</span><span class="ui-lang-en">Independent child Campaign progress</span></h3><span id="campaignGroupChildCount"></span></div><div class="table-scroll"><table class="campaigns-table"><thead><tr><th>Model Run</th><th>实验</th><th>Purpose</th><th>Lifecycle</th><th>Issues</th><th>Required</th><th>Submitted / Completed</th></tr></thead><tbody id="campaignGroupRows"></tbody></table></div></section>
             </section>
           </section>
 
@@ -1307,47 +1333,47 @@
 
             <section class="page-card run-collection-workbench" id="runCollectionsWorkbench">
               <div class="run-collection-heading">
-                <div><h2>Run Collections</h2><p class="muted"><span class="ui-lang-zh">保存有序 Run 集合，并按冻结的 Workset、标签参考、策略和排除集生成可复现评估。</span><span class="ui-lang-en">Save ordered Run sets and evaluate them against frozen Worksets, references, policies, and exclusions.</span></p></div>
-                <button class="button button-quiet" id="comparisonSaveCollectionButton" type="button"><span class="ui-lang-zh">将 Pairwise 保存为 Collection</span><span class="ui-lang-en">Save pairwise as Collection</span></button>
+                <div><h2>Multi-run evaluation</h2><p class="muted"><span class="ui-lang-zh">选择多个 Run 和 Case 范围，生成可复现的模型评测。</span><span class="ui-lang-en">Choose multiple Runs and a Case range for a reproducible evaluation.</span></p></div>
+                <button class="button button-quiet" id="comparisonSaveCollectionButton" type="button"><span class="ui-lang-zh">将 Pairwise 保存为 评测项目</span><span class="ui-lang-en">Save pairwise as 评测项目</span></button>
               </div>
               <div class="run-collection-toolbar">
-                <label><span class="ui-lang-zh">Collection</span><span class="ui-lang-en">Collection</span><select id="runCollectionSelect"><option value="">Loading…</option></select></label>
-                <label><span class="ui-lang-zh">Revision</span><span class="ui-lang-en">Revision</span><select id="runCollectionRevisionSelect" disabled></select></label>
-                <label class="run-collection-name-field"><span class="ui-lang-zh">名称</span><span class="ui-lang-en">Name</span><input id="runCollectionName" maxlength="160" autocomplete="off" placeholder="Collection name"></label>
+                <label><span class="ui-lang-zh">评测项目</span><span class="ui-lang-en">评测项目</span><select id="runCollectionSelect"><option value="">Loading…</option></select></label>
+                <label><span class="ui-lang-zh">项目版本</span><span class="ui-lang-en">Project version</span><select id="runCollectionRevisionSelect" disabled></select></label>
+                <label class="run-collection-name-field"><span class="ui-lang-zh">名称</span><span class="ui-lang-en">Name</span><input id="runCollectionName" maxlength="160" autocomplete="off" placeholder="Project name"></label>
                 <label class="run-collection-name-field"><span class="ui-lang-zh">说明</span><span class="ui-lang-en">Description</span><input id="runCollectionDescription" maxlength="2000" autocomplete="off"></label>
                 <button class="button button-quiet" id="runCollectionRenameButton" type="button"><span class="ui-lang-zh">只改名称/说明</span><span class="ui-lang-en">Rename metadata</span></button>
                 <button class="button button-quiet" id="runCollectionRefreshButton" type="button"><span class="ui-lang-zh">刷新</span><span class="ui-lang-en">Refresh</span></button>
               </div>
-              <p class="muted run-collection-meta-note"><span class="ui-lang-zh">改名称不会创建新 Revision；调整成员顺序或成员后，点击“追加 Revision”。历史评估固定指向原 Revision。</span><span class="ui-lang-en">Renaming does not create a revision. Member edits and ordering changes require “Append revision”; prior evaluations keep their original revision.</span></p>
+              <p class="muted run-collection-meta-note"><span class="ui-lang-zh">改名称不会创建新的项目版本；调整成员顺序或成员后，点击“保存项目版本”。历史评测固定指向原项目版本。</span><span class="ui-lang-en">Renaming does not create a revision. Member edits and ordering changes require “Save project version”; prior evaluations keep their original revision.</span></p>
               <div class="run-collection-member-editor">
                 <div class="run-collection-member-tools">
                   <label><span class="ui-lang-zh">添加 Run</span><span class="ui-lang-en">Add Run</span><select id="runCollectionAddRun"><option value="">Select a Run</option></select></label>
                   <button class="button button-quiet" id="runCollectionAddRunButton" type="button"><span class="ui-lang-zh">添加</span><span class="ui-lang-en">Add</span></button>
-                  <button class="button button-primary" id="runCollectionAppendRevisionButton" type="button"><span class="ui-lang-zh">追加 Revision</span><span class="ui-lang-en">Append revision</span></button>
+                  <button class="button button-primary" id="runCollectionAppendRevisionButton" type="button"><span class="ui-lang-zh">保存项目版本</span><span class="ui-lang-en">Save project version</span></button>
                   <span class="muted" id="runCollectionMemberHash"></span>
                 </div>
                 <ol id="runCollectionMembers" class="run-collection-members"></ol>
               </div>
-              <details class="run-collection-create-details" id="runCollectionCreateDetails"><summary><span class="ui-lang-zh">创建新 Collection</span><span class="ui-lang-en">Create a Collection</span></summary>
-                <div class="run-collection-create-row"><label><span class="ui-lang-zh">Collection 名称</span><span class="ui-lang-en">Collection name</span><input id="runCollectionCreateName" maxlength="160" autocomplete="off"></label><button class="button button-primary" id="runCollectionCreateButton" type="button"><span class="ui-lang-zh">用当前成员创建</span><span class="ui-lang-en">Create from current members</span></button></div>
+              <details class="run-collection-create-details" id="runCollectionCreateDetails"><summary><span class="ui-lang-zh">创建评测项目</span><span class="ui-lang-en">Create evaluation project</span></summary>
+                <div class="run-collection-create-row"><label><span class="ui-lang-zh">评测项目名称</span><span class="ui-lang-en">Project name</span><input id="runCollectionCreateName" maxlength="160" autocomplete="off"></label><button class="button button-primary" id="runCollectionCreateButton" type="button"><span class="ui-lang-zh">用当前成员创建</span><span class="ui-lang-en">Create from current members</span></button></div>
               </details>
-              <details class="run-collection-history"><summary><span class="ui-lang-zh">Revision 历史</span><span class="ui-lang-en">Revision history</span></summary><ol id="runCollectionHistory"></ol></details>
-              <details class="run-collection-audit"><summary><span class="ui-lang-zh">Collection 审计记录</span><span class="ui-lang-en">Collection audit</span></summary><ol id="runCollectionAudit"></ol></details>
+              <details class="run-collection-history"><summary><span class="ui-lang-zh">项目版本历史</span><span class="ui-lang-en">Project version history</span></summary><ol id="runCollectionHistory"></ol></details>
+              <details class="run-collection-audit"><summary><span class="ui-lang-zh">项目审计记录</span><span class="ui-lang-en">Project audit</span></summary><ol id="runCollectionAudit"></ol></details>
               <div class="run-collection-evaluation-controls">
-                <label><span class="ui-lang-zh">评分参考</span><span class="ui-lang-en">Scoring reference</span><select id="runCollectionReferenceType"><option value="gt">GT snapshot（创建时冻结）</option><option value="label_result">Label result snapshot</option></select></label>
-                <label><span class="ui-lang-zh">参考 ID（Label snapshot 可选）</span><span class="ui-lang-en">Reference ID (optional for Label snapshot set)</span><input id="runCollectionReferenceId" placeholder="Label result snapshot ID"></label>
+                <label><span class="ui-lang-zh">评分参考</span><span class="ui-lang-en">Scoring reference</span><select id="runCollectionReferenceType"><option value="gt">GT 版本（创建时冻结）</option><option value="label_result">标注版本</option></select></label>
+                <label><span class="ui-lang-zh">参考 ID（Label snapshot 可选）</span><span class="ui-lang-en">Reference ID (optional for Label snapshot set)</span><input id="runCollectionReferenceId" placeholder="标注版本 ID"></label>
                 <div id="runCollectionLabelReferenceSet" class="run-collection-label-reference-set" hidden></div>
-                <label><span class="ui-lang-zh">比较基准 Run</span><span class="ui-lang-en">Transition reference Run</span><select id="runCollectionComparisonReference"><option value="">Use Collection reference mark</option></select></label>
-                <label><span class="ui-lang-zh">冻结 Workset ID（可选）</span><span class="ui-lang-en">Frozen Workset ID (optional)</span><input id="runCollectionWorksetId" placeholder="workset-…"></label>
-                <label><span class="ui-lang-zh">按来源 Run 筛选 Workset（可选）</span><span class="ui-lang-en">Filter Workset by source Run (optional)</span><select id="runCollectionSelectionSourceRun"><option value="">Do not filter by a Run</option></select></label>
+                <label><span class="ui-lang-zh">比较基准 Run</span><span class="ui-lang-en">Transition reference Run</span><select id="runCollectionComparisonReference"><option value="">Use project reference</option></select></label>
+                <label><span class="ui-lang-zh">Case 范围 ID（可选）</span><span class="ui-lang-en">Case range ID (optional)</span><input id="runCollectionWorksetId" placeholder="workset-…"></label>
+                <label><span class="ui-lang-zh">按来源 Run 筛选范围（可选）</span><span class="ui-lang-en">Filter Workset by source Run (optional)</span><select id="runCollectionSelectionSourceRun"><option value="">Do not filter by a Run</option></select></label>
                 <button class="button button-primary" id="runCollectionEvaluateButton" type="button"><span class="ui-lang-zh">冻结并评估</span><span class="ui-lang-en">Freeze and evaluate</span></button>
               </div>
               <p class="muted run-collection-readonly-note" id="runCollectionReadonlyNote" hidden><span class="ui-lang-zh">当前为只读会话；可以查看历史和导出，管理与冻结操作需要已验证管理员。</span><span class="ui-lang-en">Read-only session: history and export are available; management and freeze actions require a verified administrator.</span></p>
-              <details class="run-collection-evaluation-history"><summary><span class="ui-lang-zh">历史 Evaluation Context</span><span class="ui-lang-en">Evaluation Context history</span></summary><ol id="runCollectionEvaluationHistory"></ol></details>
+              <details class="run-collection-evaluation-history"><summary><span class="ui-lang-zh">评测快照历史</span><span class="ui-lang-en">评测快照历史</span></summary><ol id="runCollectionEvaluationHistory"></ol></details>
               <div class="run-collection-integrations">
                 <label><span class="ui-lang-zh">管理员分配对象（逗号分隔）</span><span class="ui-lang-en">Admin assignees (comma separated)</span><input id="runCollectionTaskAssignees" placeholder="user1, user2"></label>
-                <button class="button button-quiet" id="runCollectionCreateLabelingCampaign" type="button"><span class="ui-lang-zh">创建共享 Labeling Campaign</span><span class="ui-lang-en">Create shared Labeling Campaign</span></button>
-                <button class="button button-quiet" id="runCollectionCreateModelReviewGroup" type="button"><span class="ui-lang-zh">创建每 Run Model Review Group</span><span class="ui-lang-en">Create per-Run Model Review Group</span></button>
+                <button class="button button-quiet" id="runCollectionCreateLabelingCampaign" type="button"><span class="ui-lang-zh">创建标注实验</span><span class="ui-lang-en">Create labeling experiment</span></button>
+                <button class="button button-quiet" id="runCollectionCreateModelReviewGroup" type="button"><span class="ui-lang-zh">创建每 Run 复核任务</span><span class="ui-lang-en">Create per-Run 复核任务</span></button>
               </div>
               <div id="runCollectionEvaluation" class="run-collection-evaluation" hidden>
                 <div id="runCollectionProvenance" class="run-collection-provenance"></div>
@@ -1358,7 +1384,7 @@
               <p class="muted" id="runCollectionStatus" role="status"></p>
             </section>
             <details class="run-collection-pairwise-details" id="runCollectionPairwiseDetails">
-              <summary><span class="ui-lang-zh">Runs 合集管理</span><span class="ui-lang-en">Run Collection manager</span></summary>
+              <summary><span class="ui-lang-zh">多 Run 评测管理</span><span class="ui-lang-en">Evaluation project manager</span></summary>
               <div id="runCollectionPairwiseHost"></div>
             </details>
 
@@ -2296,7 +2322,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-485`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-486`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

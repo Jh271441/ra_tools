@@ -1,4 +1,4 @@
-/* Run Collections and frozen multi-Run evaluation workspace. */
+/* Multi-run evaluation and frozen multi-Run evaluation workspace. */
 
 const runCollectionUi = {
   collections: [],
@@ -145,7 +145,7 @@ function runCollectionUpdateUrl(mode = "replace") {
   window.history[mode === "push" ? "pushState" : "replaceState"](
     { ...(window.history.state || {}), page: state.activePage === "run-collections" ? "run-collections" : "comparison" },
     "",
-    `${withBase(state.activePage === "run-collections" ? "/run-collections" : "/run-comparison")}${url.search}${url.hash}`
+    `${withBase(state.activePage === "run-collections" ? "/multi-run-evaluation" : "/run-comparison")}${url.search}${url.hash}`
   );
 }
 
@@ -181,7 +181,7 @@ function renderRunCollectionSelectors() {
   renderRunCollectionLabelReferenceSet(runCollectionUi.evaluation?.workset?.baseline_scopes || runCollectionSelectedScopes(), {});
   const selectedCollectionId = String(runCollectionUi.detail?.id || "");
   collectionSelect.innerHTML = [
-    `<option value="">${escapeHtml(runCollectionText("选择 Collection", "Select a Collection"))}</option>`,
+    `<option value="">${escapeHtml(runCollectionText("选择评测项目", "Select an evaluation project"))}</option>`,
     ...runCollectionUi.collections.map((item) =>
       `<option value="${escapeHtml(item.id)}" ${item.id === selectedCollectionId ? "selected" : ""}>${escapeHtml(item.name)} · r${Number(item.current_revision || 0)}</option>`
     ),
@@ -331,14 +331,17 @@ function renderRunCollectionEvaluation(payload) {
     `${escapeHtml(item.baseline_scope || "")}: ${escapeHtml(item.id || "")} · ${escapeHtml(String(item.content_sha256 || "").slice(0, 16))} · ${Number(item.member_count || 0)}`
   ).join(" | ");
   provenance.innerHTML = `
-    <strong>${escapeHtml(runCollectionText("冻结评估上下文", "Frozen evaluation context"))} · ${escapeHtml(payload.id)}</strong>
+    <strong>${escapeHtml(runCollectionText("已冻结的评测快照", "Frozen evaluation snapshot"))} · ${escapeHtml(payload.id)}</strong>
     ${bias}
-    <span>Collection r${Number(payload.collection_revision)} · ${escapeHtml(String(payload.collection_sha256 || ""))}</span>
-    <span>Workset ${escapeHtml(String(payload.workset?.workset_id || ""))} · ${escapeHtml(String(payload.workset_sha256 || ""))} · ${Number(payload.summary?.workset_count || 0)} Issues</span>
-    <span>Scopes ${escapeHtml((payload.workset?.baseline_scopes || []).join(", "))} · ${scopeProvenance}</span>
-    <span>${escapeHtml(payload.reference?.type || "")} ${escapeHtml(payload.reference?.id || "")} · ${escapeHtml(String(payload.reference?.sha256 || ""))}</span>
-    <span>Policy ${escapeHtml(payload.scoring_policy_version || "")} · ${escapeHtml(String(payload.scoring_policy_sha256 || ""))}</span>
-    <span>Exclusion ${escapeHtml(String(payload.exclusion?.sha256 || ""))} · context ${escapeHtml(String(payload.context_sha256 || ""))}</span>
+    <span>Case 范围 · ${Number(payload.summary?.workset_count || 0)} Issues · ${(payload.workset?.baseline_scopes || []).map(escapeHtml).join(", ")}</span>
+    <details class="run-collection-technical-details"><summary>${escapeHtml(runCollectionText("版本与技术详情", "Version and technical details"))}</summary>
+      <span>Project version r${Number(payload.collection_revision)} · ${escapeHtml(String(payload.collection_sha256 || ""))}</span>
+      <span>Case range ${escapeHtml(String(payload.workset?.workset_id || ""))} · ${escapeHtml(String(payload.workset_sha256 || ""))}</span>
+      <span>Frozen references ${scopeProvenance}</span>
+      <span>${escapeHtml(payload.reference?.type || "")} ${escapeHtml(payload.reference?.id || "")} · ${escapeHtml(String(payload.reference?.sha256 || ""))}</span>
+      <span>Policy ${escapeHtml(payload.scoring_policy_version || "")} · ${escapeHtml(String(payload.scoring_policy_sha256 || ""))}</span>
+      <span>Exclusion ${escapeHtml(String(payload.exclusion?.sha256 || ""))} · snapshot ${escapeHtml(String(payload.context_sha256 || ""))}</span>
+    </details>
   `;
   metrics.innerHTML = (payload.summary?.runs || []).map((item) => {
     const confusionRows = item.confusion || [];
@@ -606,7 +609,7 @@ function bindRunCollectionsEvents() {
   });
   $("#runCollectionAppendRevisionButton")?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
-    if (!runCollectionUi.detail?.id) return runCollectionSetStatus(runCollectionText("请先选择 Collection。", "Select a Collection first."), true);
+    if (!runCollectionUi.detail?.id) return runCollectionSetStatus(runCollectionText("请先选择评测项目。", "Select an evaluation project first."), true);
     runCollectionSaveButton(button, true);
     try {
       const result = await api(`/api/run-collections/${encodeURIComponent(runCollectionUi.detail.id)}/revisions`, {
@@ -617,13 +620,13 @@ function bindRunCollectionsEvents() {
       runCollectionUi.selectedRevision = Number(result.current_revision);
       renderRunCollectionDetail();
       runCollectionUpdateUrl("push");
-      runCollectionSetStatus(runCollectionText(`已追加 Revision r${result.current_revision}。`, `Appended revision r${result.current_revision}.`));
+      runCollectionSetStatus(runCollectionText(`已保存项目版本 r${result.current_revision}。`, `Appended revision r${result.current_revision}.`));
     } catch (error) { runCollectionSetStatus(error.message, true); }
     finally { runCollectionSaveButton(button, false); }
   });
   $("#runCollectionRenameButton")?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
-    if (!runCollectionUi.detail?.id) return runCollectionSetStatus(runCollectionText("请先选择 Collection。", "Select a Collection first."), true);
+    if (!runCollectionUi.detail?.id) return runCollectionSetStatus(runCollectionText("请先选择评测项目。", "Select an evaluation project first."), true);
     runCollectionSaveButton(button, true);
     try {
       runCollectionUi.detail = await api(`/api/run-collections/${encodeURIComponent(runCollectionUi.detail.id)}`, {
@@ -651,7 +654,7 @@ function bindRunCollectionsEvents() {
       return runCollectionSetStatus(runCollectionText("选择两个不同的 Run 后再保存。", "Choose two different Runs before saving."), true);
     }
     const defaultName = `${runCollectionMemberName({ run_id: baseline })} vs ${runCollectionMemberName({ run_id: candidate })}`;
-    const name = window.prompt(runCollectionText("Collection 名称", "Collection name"), defaultName);
+    const name = window.prompt(runCollectionText("评测项目名称", "Collection name"), defaultName);
     if (name == null || !name.trim()) return;
     const button = event.currentTarget;
     runCollectionSaveButton(button, true);
@@ -717,10 +720,10 @@ function bindRunCollectionsEvents() {
     finally { runCollectionSaveButton(button, false); }
   };
   $("#runCollectionCreateLabelingCampaign")?.addEventListener("click", (event) => {
-    createReviewArtifact("labeling-campaign", event.currentTarget, runCollectionText("共享 Labeling Campaign", "Shared Labeling Campaign"));
+    createReviewArtifact("labeling-campaign", event.currentTarget, runCollectionText("创建标注实验", "标注实验"));
   });
   $("#runCollectionCreateModelReviewGroup")?.addEventListener("click", (event) => {
-    createReviewArtifact("model-review-group", event.currentTarget, runCollectionText("Model Review Group", "Model Review Group"));
+    createReviewArtifact("model-review-group", event.currentTarget, runCollectionText("复核任务", "复核任务"));
   });
   $("#runCollectionPagePrevious")?.addEventListener("click", () => {
     if (runCollectionUi.evaluation && runCollectionUi.page > 1) {

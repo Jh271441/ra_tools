@@ -59,8 +59,9 @@ function renderWorkSplitScopePicker(rootSelector, selected, available, onChange)
 }
 
 function renderReviewWorkSplitPicker(selected = state.reviewWorkSplitId) {
+  const rootSelector = document.getElementById("reviewTaskPicker") ? "#reviewTaskPicker" : "#reviewWorkSplitPicker";
   renderWorkSplitScopePicker(
-    "#reviewWorkSplitPicker",
+    rootSelector,
     selected,
     state.availableReviewWorkSplitId,
     (value) => {

@@ -20,8 +20,8 @@ const campaignPageState = {
 
 function campaignLabel(value) {
   const map = {
-    labeling: ["Labeling", "Labeling"],
-    model_review: ["Model Review", "Model Review"],
+    labeling: ["标注实验", "Labeling experiment"],
+    model_review: ["复核任务", "Review task"],
     active: ["进行中", "Active"],
     draft: ["草稿", "Draft"],
     closed: ["已关闭", "Closed"],
@@ -95,13 +95,13 @@ async function mutateCampaignAssignment(issueId, { action, assignee = "", fromAs
       }
     );
     acknowledgeLocalChange(result);
-    showToast(uiText("Campaign 分配已更新。", "Campaign assignment updated."));
+    showToast(uiText("实验分配已更新。", "Campaign assignment updated."));
     await loadCampaignDetail(campaign.id);
   } catch (error) {
     if (String(error.message || "").includes("已更新")) {
       await loadCampaignDetail(campaign.id).catch(() => {});
     }
-    showToast(error.message || uiText("更新 Campaign 分配失败。", "Unable to update assignment."), true);
+    showToast(error.message || uiText("更新实验分配失败。", "Unable to update assignment."), true);
   }
 }
 
@@ -122,7 +122,7 @@ async function mutateCampaignLifecycle(action) {
     reopen: ["填写重新打开原因。", "Enter a reason for reopening."],
   }[action];
   const reason = action === "close"
-    ? uiText("从 Campaign 管理页关闭。", "Closed from Campaign management.")
+    ? uiText("从 实验管理页关闭。", "Closed from Campaign management.")
     : window.prompt(uiText(...(reasonLabel || ["填写原因。", "Enter a reason."])), "");
   if (reason === null || ((action !== "close") && !String(reason || "").trim())) return;
   const key = globalThis.crypto?.randomUUID?.() || `campaign-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -138,12 +138,12 @@ async function mutateCampaignLifecycle(action) {
     });
     acknowledgeLocalChange(result);
     const successText = {
-      activate: ["Campaign 已激活。", "Campaign activated."],
-      close: ["Campaign 已关闭并保存快照。", "Campaign closed with a saved snapshot."],
+      activate: ["实验已激活。", "Campaign activated."],
+      close: ["实验已关闭并保存快照。", "Campaign closed with a saved snapshot."],
       reopen: ["Campaign 已重新打开。", "Campaign reopened."],
-      cancel: ["Campaign 已取消。", "Campaign canceled."],
-      supersede: ["Campaign 已标记为替代。", "Campaign superseded."],
-    }[action] || ["Campaign 生命周期已更新。", "Campaign lifecycle updated."];
+      cancel: ["实验已取消。", "Campaign canceled."],
+      supersede: ["实验已标记为替代。", "Campaign superseded."],
+    }[action] || ["实验状态已更新。", "Campaign lifecycle updated."];
     showToast(uiText(...successText));
     await loadCampaignDetail(campaign.id);
   } catch (error) {
@@ -201,6 +201,7 @@ async function loadCampaigns({
   campaignPageState.lifecycle = String(lifecycle || route.campaignLifecycle || "all").trim() || "all";
   campaignPageState.query = String(query || route.campaignQuery || "").trim().slice(0, 128);
   campaignPageState.groupId = String(groupId || route.campaignGroupId || "").trim();
+  document.getElementById("labelingExperimentGuide")?.toggleAttribute("hidden", campaignPageState.purpose !== "labeling");
   const lifecycleSelect = document.getElementById("campaignsLifecycle");
   const queryInput = document.getElementById("campaignsQuery");
   if (lifecycleSelect) lifecycleSelect.value = campaignPageState.lifecycle;
@@ -251,12 +252,16 @@ async function loadCampaigns({
 async function loadCampaignList() {
   const status = document.getElementById("campaignsListStatus");
   const rowsRoot = document.getElementById("campaignsRows");
-  if (status) status.textContent = uiText("正在加载 Campaign…", "Loading campaigns…");
+  if (status) status.textContent = uiText("正在加载实验…", "Loading campaigns…");
   if (rowsRoot) rowsRoot.innerHTML = `<tr><td colspan="7" class="campaign-empty-state">${escapeHtml(uiText("正在加载…", "Loading…"))}</td></tr>`;
   const payload = await api(campaignListEndpoint());
   const items = Array.isArray(payload.items) ? payload.items : [];
   if (status) {
-    const noun = uiText("个 Campaign", "campaigns");
+    const noun = campaignPageState.purpose === "labeling"
+      ? uiText("个标注实验", "labeling experiments")
+      : campaignPageState.purpose === "model_review"
+        ? uiText("个复核任务", "review tasks")
+        : uiText("个实验", "experiments");
     status.textContent = `${campaignNumber(payload.total)} ${noun}`;
   }
   if (!rowsRoot) return payload;
@@ -294,7 +299,7 @@ async function loadCampaignDetail(campaignId) {
   const title = document.getElementById("campaignDetailTitle");
   if (list) list.setAttribute("hidden", "");
   if (detailRoot) detailRoot.removeAttribute("hidden");
-  if (title) title.textContent = uiText("正在加载 Campaign…", "Loading campaign…");
+  if (title) title.textContent = uiText("正在加载实验…", "Loading campaign…");
   const params = new URLSearchParams({
     page: String(campaignPageState.issuePage),
     page_size: String(campaignPageState.issuePageSize),

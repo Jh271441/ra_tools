@@ -1066,6 +1066,8 @@ html[data-color-theme="light"] #comparisonReasonDialog [data-triage-label="æ— éœ
 .run-collection-workbench.is-pairwise-manager { margin-top:8px; }
 .run-collection-pairwise-details { margin:8px 0 0; }
 .run-collection-pairwise-details > summary { color:var(--accent); cursor:pointer; font-size:12px; }
+.run-collection-technical-details { display:grid; gap:4px; margin-top:6px; color:var(--muted); font-size:10px; }
+.run-collection-technical-details > summary { color:var(--accent); cursor:pointer; }
 .run-collection-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
 .run-collection-heading h2 { margin:0 0 5px; font-size:18px; }
 .run-collection-heading p { margin:0; max-width:860px; }

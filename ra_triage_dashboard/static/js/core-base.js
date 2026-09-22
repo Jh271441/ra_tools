@@ -603,9 +603,9 @@ const PAGE_ROUTES = {
     titleEn: "Run Comparison",
   },
   "run-collections": {
-    path: "/run-collections",
-    titleZh: "Runs 合集与统一评测",
-    titleEn: "Run Collections",
+    path: "/multi-run-evaluation",
+    titleZh: "多 Run 评测",
+    titleEn: "Multi-run evaluation",
   },
   prediction: {
     path: "/batch-prediction",

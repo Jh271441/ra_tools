@@ -143,3 +143,8 @@ html[data-color-theme="light"] .import-example-contract,
 html[data-color-theme="light"] .import-example-preview,
 html[data-color-theme="light"] .import-example-code,
 html[data-color-theme="light"] .import-example-tabs { background: #f8fafc; }
+.review-task-drawer { margin: 8px 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--overlay); }
+.review-task-drawer > summary { display:flex; align-items:center; gap:10px; padding:9px 12px; color:var(--accent); cursor:pointer; list-style:none; }
+.review-task-drawer > summary small { color:var(--muted); font-size:11px; }
+.review-task-drawer-body { display:flex; align-items:end; gap:12px; padding:10px 12px 12px; flex-wrap:wrap; }
+.review-task-drawer-body label { display:grid; gap:5px; min-width:240px; color:var(--muted); font-size:11px; }

@@ -467,9 +467,21 @@ function parsePageRoute() {
         .filter((value, index, values) => /^[A-Za-z0-9_-]{3,128}$/.test(value) && values.indexOf(value) === index);
   const legacyImport = pathname === "/import";
   const reviewFilters = normalizedReviewRouteFilters(params);
+  const legacyModelReviewCampaign = pathname === "/campaigns" && params.get("purpose") === "model_review";
+  const uxAlias = legacyModelReviewCampaign
+    ? "review"
+    : pathname === "/run-collections"
+    ? "run-collections"
+    : pathname === "/multi-run-evaluation"
+      ? "run-collections"
+      : pathname === "/labeling-experiments"
+        ? "labeling-new-task"
+        : pathname === "/labeling-summary"
+          ? "campaigns"
+          : "";
   return {
     page:
-      match?.[0] ||
+      uxAlias || match?.[0] ||
       (pathname === "/inference"
         ? "prediction"
         : legacyImport
@@ -508,7 +520,12 @@ function parsePageRoute() {
     intentSummaryCommentQuery: (params.get("q") || "").trim().slice(0, 80),
     reviewAssignmentSplitId: String(params.get("split") || "").trim(),
     campaignId: String(params.get("campaign") || "").trim(),
-    campaignPurpose: ["labeling", "model_review"].includes(params.get("purpose")) ? params.get("purpose") : "",
+    campaignPurpose: ["labeling", "model_review"].includes(params.get("purpose"))
+      ? params.get("purpose")
+      : ["/labeling-experiments", "/labeling-summary"].includes(pathname)
+        ? "labeling"
+        : "",
+    legacyModelReviewCampaign,
     campaignLifecycle: params.get("lifecycle") || "all",
     campaignQuery: String(params.get("q") || "").slice(0, 128),
     campaignGroupId: String(params.get("group") || "").trim(),
