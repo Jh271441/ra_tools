@@ -417,14 +417,17 @@ async def list_cases(
     comparison_status = filters["comparison_status"]
     safe_page = max(1, int(page))
     safe_page_size = min(max(1, int(page_size)), 100)
-    result = await asyncio.to_thread(
-        _case_result_with_status_filter,
-        filters=filters,
-        review_statuses=review_statuses,
-        label_states=label_states,
-        page=safe_page,
-        page_size=safe_page_size,
-    )
+    try:
+        result = await asyncio.to_thread(
+            _case_result_with_status_filter,
+            filters=filters,
+            review_statuses=review_statuses,
+            label_states=label_states,
+            page=safe_page,
+            page_size=safe_page_size,
+        )
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
     result["items"] = await asyncio.to_thread(
         _public_case_items,
         result.get("items", []),
@@ -450,6 +453,30 @@ async def list_cases(
         "baseline_scopes": filters.get("baseline_scopes") or [],
     }
     return result
+
+
+@router.get("/api/review-task-context/{split_id}")
+async def review_task_context(split_id: str, request: Request) -> dict[str, Any]:
+    identity = await asyncio.to_thread(request_identity, request, settings)
+    role = await asyncio.to_thread(database.access_role, identity.username) if identity.verified else ""
+    if not identity.verified or not identity.username:
+        raise _detail(403, "任务上下文需要已验证账号。")
+    try:
+        context = await asyncio.to_thread(
+            database.review_task_context,
+            split_id=_as_text(split_id),
+            username=identity.username,
+            is_admin=role == "admin",
+        )
+    except PermissionError as exc:
+        raise _detail(403, str(exc)) from exc
+    if context is None:
+        raise _detail(404, "复核任务不存在。")
+    context["baseline_ids"] = [
+        baseline_registry.scope_to_id(scope) or scope
+        for scope in context.get("baseline_scopes") or []
+    ]
+    return {"task": context}
 
 
 
@@ -788,6 +815,11 @@ async def split_case_work(request: Request) -> dict[str, Any]:
     review_statuses = tuple(filters.pop("review_statuses", ()))
     label_states = tuple(filters.pop("label_states", ()))
     exclusion_filter = str(filters.pop("exclusion", "all"))
+    if not str(filters.get("model_run_id") or "").strip():
+        raise _detail(
+            400,
+            "新建判错复核任务必须先选择 Model Run；若只做 Case 标签，请前往 Case 标注 > 实验分配。",
+        )
     issue_ids = await asyncio.to_thread(
         _case_issue_ids_with_status_filter,
         filters=filters,

@@ -93,6 +93,12 @@ html[data-sidebar-pref="collapsed"] .sidebar-group-label, .app-shell.sidebar-col
   border: 1px solid transparent; border-radius: 8px; color: var(--muted); background: transparent; text-align: left;
 }
 .sidebar-item[hidden] { display: none !important; }
+.dashboard-native-ui-select { width: 100%; min-width: 0; }
+.dashboard-native-ui-select .ui-select-trigger { width: 100%; min-height: 38px; border-radius: 7px; }
+.dashboard-native-ui-select .ui-select-panel { z-index: 140; min-width: 100%; }
+.dashboard-native-ui-select .ui-select-option { align-items: flex-start; min-height: 36px; }
+.dashboard-native-ui-select .ui-select-option-label { white-space: normal; overflow-wrap: anywhere; text-align: left; }
+.dashboard-native-ui-select.is-disabled .ui-select-trigger { cursor: not-allowed; opacity: .62; }
 html[data-can-view-intent="true"] #intentLabelingNavButton[hidden],
 html[data-can-view-intent="true"] #intentExperimentsNavButton[hidden],
 html[data-can-view-intent="true"] #intentSummaryNavButton[hidden] { display: flex !important; }

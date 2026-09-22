@@ -79,7 +79,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-491`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-492`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -374,6 +374,17 @@
                   <span class="muted"><span class="ui-lang-zh">模型复核任务只影响当前 Run 的诊断和完成度。</span><span class="ui-lang-en">Review tasks affect only the selected Run diagnosis and completion.</span></span>
                 </div>
               </details>
+
+              <section class="review-task-context-banner" id="reviewTaskContextBanner" hidden>
+                <div><strong id="reviewTaskContextTitle">复核任务</strong><span id="reviewTaskContextMeta"></span></div>
+                <button class="button button-quiet" id="reviewTaskContextExit" type="button">退出任务范围</button>
+              </section>
+              <section class="review-task-context-error" id="reviewTaskContextError" hidden>
+                <strong>任务范围加载失败</strong>
+                <span id="reviewTaskContextErrorMessage"></span>
+                <code id="reviewTaskContextErrorId"></code>
+                <div><button class="button button-quiet" id="reviewTaskContextRetry" type="button">重试</button><button class="button button-quiet" id="reviewTaskContextErrorExit" type="button">退出任务范围</button></div>
+              </section>
 
               <section class="gallery-panel">
                 <div class="gallery-heading">
@@ -2326,7 +2337,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-491`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-492`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

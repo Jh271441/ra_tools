@@ -71,6 +71,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
   renderSystemStatus();
   applySidebarState();
   renderSession();
+  enhanceDashboardSelects();
   // Dynamic filters / pickers rebuild option labels from the active catalog.
   const refreshers = [
     "renderReviewCatalogFilters",

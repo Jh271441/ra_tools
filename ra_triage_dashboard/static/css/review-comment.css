@@ -1255,6 +1255,19 @@ html[data-color-theme="light"] .review-mention-avatar { color: #075d6d; backgrou
 .combined-case-rationale textarea { min-height: 58px; }
 .review-exclude-toggle[hidden],
 .review-attachment-field[hidden] { display: none !important; }
+.review-task-context-banner,
+.review-task-context-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.review-task-context-banner[hidden],
+.review-task-context-error[hidden] { display: none !important; }
+.review-task-context-banner > div { display: grid; gap: 3px; }
+.review-task-context-banner span { color: var(--muted); font-size: 11px; }
+.review-task-context-error { align-items: flex-start; flex-direction: column; border-color: rgba(251,113,133,.42); }
+.review-task-context-error > div { display: flex; gap: 8px; }
+.issue-card-skeleton { pointer-events: none; }
+.issue-card-skeleton .issue-thumbnail,
+.issue-card-skeleton .issue-card-body > span { background: linear-gradient(90deg, var(--surface) 20%, var(--line-soft) 50%, var(--surface) 80%); background-size: 220% 100%; animation: task-skeleton 1.2s linear infinite; }
+.issue-card-skeleton .issue-card-body > span { display: block; width: 75%; height: 10px; border-radius: 999px; }
+@keyframes task-skeleton { to { background-position: -220% 0; } }
 .shared-label-state-dialog { height: min(82vh, 760px); }
 .shared-label-state-dialog .dialog-card { grid-template-rows: auto auto minmax(0, 1fr); }
 .shared-label-dialog-summary {

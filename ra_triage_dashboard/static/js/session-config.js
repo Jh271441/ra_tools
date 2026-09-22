@@ -626,11 +626,19 @@ function resolveSessionInBackground() {
 }
 
 async function settleInitialRequests(requests, scope) {
-  const results = await Promise.allSettled(requests);
-  const failures = results.filter((result) => result.status === "rejected");
+  const entries = requests.map((item, index) => (
+    item && typeof item === "object" && "promise" in item
+      ? { name: item.name || `${scope}请求${index + 1}`, promise: item.promise }
+      : { name: `${scope}请求${index + 1}`, promise: item }
+  ));
+  const results = await Promise.allSettled(entries.map((item) => item.promise));
+  const failures = results
+    .map((result, index) => ({ result, name: entries[index].name }))
+    .filter((item) => item.result.status === "rejected");
   if (failures.length) {
+    const names = failures.map((item) => item.name).join("、");
     showToast(
-      `${scope}有 ${failures.length} 项暂时未加载；可点击刷新重试。`,
+      `${scope}加载失败：${names}；可点击刷新重试。`,
       true
     );
   }

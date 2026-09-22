@@ -525,15 +525,22 @@ class DatabaseCasesMixin:
             where.append(f"({' OR '.join(assignee_clauses)})")
         normalized_work_split_id = str(work_split_id or "").strip()
         if normalized_work_split_id:
-            if not model_run_id:
-                raise ValueError("work_split_id requires model_run_id")
-            where.append(
-                "EXISTS (SELECT 1 FROM review_work_assignments wa_split "
-                "JOIN issue_work_splits ws_split ON ws_split.id = wa_split.split_id "
-                "WHERE wa_split.issue_id = i.issue_id AND ws_split.id = ? "
-                "AND ws_split.model_run_id = ?)"
-            )
-            params.extend((normalized_work_split_id, model_run_id))
+            if model_run_id:
+                where.append(
+                    "EXISTS (SELECT 1 FROM review_work_assignments wa_split "
+                    "JOIN issue_work_splits ws_split ON ws_split.id = wa_split.split_id "
+                    "WHERE wa_split.issue_id = i.issue_id AND ws_split.id = ? "
+                    "AND COALESCE(NULLIF(ws_split.evaluation_run_id, ''), ws_split.model_run_id, '') = ?)"
+                )
+                params.extend((normalized_work_split_id, model_run_id))
+            else:
+                where.append(
+                    "EXISTS (SELECT 1 FROM review_work_assignments wa_split "
+                    "JOIN issue_work_splits ws_split ON ws_split.id = wa_split.split_id "
+                    "WHERE wa_split.issue_id = i.issue_id AND ws_split.id = ? "
+                    "AND COALESCE(NULLIF(ws_split.evaluation_run_id, ''), ws_split.model_run_id, '') = '')"
+                )
+                params.append(normalized_work_split_id)
         if comparison_statuses and set(comparison_statuses) != {
             "match",
             "mismatch",
@@ -2282,6 +2289,66 @@ class DatabaseCasesMixin:
             "assigned": own is not None,
             "own_assignment": own,
             "members": members,
+        }
+
+    def review_task_context(
+        self, *, split_id: str, username: str, is_admin: bool = False
+    ) -> dict[str, Any] | None:
+        normalized = str(split_id or "").strip()
+        actor = str(username or "").strip().lower()
+        if not normalized:
+            return None
+        with self.connect() as conn:
+            split = conn.execute(
+                "SELECT * FROM issue_work_splits WHERE id=?", (normalized,)
+            ).fetchone()
+            if split is None:
+                return None
+            member = conn.execute(
+                "SELECT 1 FROM review_work_assignments WHERE split_id=? AND lower(assignee)=lower(?) LIMIT 1",
+                (normalized, actor),
+            ).fetchone() if actor else None
+            if not is_admin and member is None:
+                raise PermissionError("当前账号不是该任务成员。")
+            scope_rows = conn.execute(
+                """
+                SELECT DISTINCT issue.baseline_scope
+                FROM review_work_assignments assignment
+                JOIN issues issue ON issue.issue_id=assignment.issue_id
+                WHERE assignment.split_id=?
+                ORDER BY issue.baseline_scope
+                """,
+                (normalized,),
+            ).fetchall()
+            issue_count = int(conn.execute(
+                "SELECT COUNT(DISTINCT issue_id) n FROM review_work_assignments WHERE split_id=?",
+                (normalized,),
+            ).fetchone()["n"] or 0)
+        snapshot = _json_load(split["filter_json"], {})
+        scopes = [str(row["baseline_scope"] or "") for row in scope_rows if str(row["baseline_scope"] or "")]
+        if not scopes:
+            raw = snapshot.get("baseline_scopes") or snapshot.get("baselines") or []
+            scopes = [str(value or "").strip() for value in (raw if isinstance(raw, list) else str(raw).split(",")) if str(value or "").strip()]
+        run_id = str(split["evaluation_run_id"] or split["model_run_id"] or "")
+        created_at = str(split["created_at"] or "")
+        name = str(split["campaign_name"] or "").strip()
+        if not name:
+            name = f"历史任务 · {created_at[:10]}" if created_at else f"历史任务 · {normalized[:12]}"
+        return {
+            "id": normalized,
+            "name": name,
+            "purpose": str(split["purpose"] or "") or None,
+            "workflow_mode": str(split["workflow_mode"] or "model_review_only"),
+            "lifecycle": str(split["lifecycle"] or "active"),
+            "legacy_read_only": bool(split["legacy_read_only"]),
+            "baseline_scopes": list(dict.fromkeys(scopes)),
+            "model_run_id": run_id,
+            "issue_count": issue_count or int(split["total_count"] or 0),
+            "current_user_is_member": member is not None,
+            "legacy_no_run": not run_id,
+            "mode": str(split["mode"] or "single"),
+            "created_by": str(split["created_by"] or ""),
+            "created_at": created_at,
         }
 
     def review_multi_rows(

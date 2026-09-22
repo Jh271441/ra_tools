@@ -319,6 +319,35 @@ function bindUiSelect(root, { onChange, maxHeight = 320, maxWidth = 420 } = {}) 
     onChange?.(value, label);
   });
 
+  trigger.addEventListener("keydown", (event) => {
+    if (!["Enter", " ", "ArrowDown", "ArrowUp", "Escape"].includes(event.key)) return;
+    if (event.key === "Escape") {
+      closeAllUiSelects();
+      return;
+    }
+    event.preventDefault();
+    if (panel.hidden) trigger.click();
+    const options = [...panel.querySelectorAll("[data-ui-select-value]:not([disabled])")];
+    if (!options.length) return;
+    const active = panel.querySelector("[data-ui-select-value].is-active");
+    const index = Math.max(0, options.indexOf(active));
+    const target = event.key === "ArrowUp"
+      ? options[(index - 1 + options.length) % options.length]
+      : options[event.key === "ArrowDown" ? (index + 1) % options.length : index];
+    target?.focus();
+  });
+  panel.addEventListener("keydown", (event) => {
+    const options = [...panel.querySelectorAll("[data-ui-select-value]:not([disabled])")];
+    const current = event.target.closest?.("[data-ui-select-value]");
+    if (event.key === "Escape") {
+      event.preventDefault(); closeAllUiSelects(); trigger.focus(); return;
+    }
+    if (!["ArrowDown", "ArrowUp"].includes(event.key) || !current || !options.length) return;
+    event.preventDefault();
+    const index = Math.max(0, options.indexOf(current));
+    options[(index + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length]?.focus();
+  });
+
   if (document.documentElement.dataset.uiSelectDismissBound === "1") return;
   document.documentElement.dataset.uiSelectDismissBound = "1";
   document.addEventListener(
@@ -367,6 +396,46 @@ function bindUiSelect(root, { onChange, maxHeight = 320, maxWidth = 420 } = {}) 
     true
   );
   window.addEventListener("resize", () => closeAllUiSelects());
+}
+
+const DASHBOARD_NATIVE_SELECT_IDS = new Set([
+  "workSplitWorkflowMode", "reviewWorkflowMode", "campaignsSource",
+  "runCollectionSelect", "runCollectionRevisionSelect",
+  "runCollectionReferenceType", "runCollectionComparisonReference",
+  "runCollectionSelectionSourceRun", "modelReviewStatusInput",
+]);
+
+function enhanceNativeUiSelect(select, { maxWidth = 520 } = {}) {
+  if (!select) return null;
+  let root = select.closest(".ui-select");
+  if (!root || !root.classList.contains("dashboard-native-ui-select")) {
+    root = document.createElement("div");
+    root.className = "ui-select dashboard-native-ui-select";
+    select.before(root);
+    root.innerHTML = `<button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="ui-select-summary"></span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div>`;
+    root.append(select);
+    select.classList.add("ui-select-native");
+    select.setAttribute("aria-hidden", "true");
+    select.tabIndex = -1;
+  }
+  const options = [...select.options].map((option) => ({
+    value: option.value,
+    label: option.textContent?.trim() || option.value,
+    disabled: option.disabled,
+  }));
+  populateUiSelect(root, options, select.value);
+  bindUiSelect(root, { maxHeight: 320, maxWidth });
+  if (select.dataset.dashboardSelectBound !== "1") {
+    select.dataset.dashboardSelectBound = "1";
+    select.addEventListener("change", () => enhanceNativeUiSelect(select, { maxWidth }));
+  }
+  return root;
+}
+
+function enhanceDashboardSelects(root = document) {
+  root.querySelectorAll("select[id]").forEach((select) => {
+    if (DASHBOARD_NATIVE_SELECT_IDS.has(select.id)) enhanceNativeUiSelect(select);
+  });
 }
 
 /** Park a dropdown panel off-screen before first paint (no absolute-down flash). */
@@ -752,6 +821,10 @@ const state = {
   clusterKey: "",
   reviewQueueStale: false,
   reviewWorkSplitId: "",
+  reviewTaskContext: null,
+  reviewTaskContextLoading: false,
+  reviewTaskContextError: null,
+  reviewLegacyNoRunTask: false,
   reviewWorkflowMode: "model_review_only",
   combinedReviewContext: null,
   availableReviewWorkSplitId: "",

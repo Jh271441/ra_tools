@@ -220,6 +220,14 @@ async function setBaselineScopes(
     renderBaselinePicker();
     return;
   }
+  if (
+    state.reviewWorkSplitId
+    && state.reviewTaskContext
+    && nextValue !== normalizeBaselineIds(state.reviewTaskContext.baseline_ids || []).join(",")
+  ) {
+    clearReviewTaskContext({ clearRun: true });
+    showToast(uiText("已退出任务范围并切换数据集。", "Exited the task scope and switched dataset."));
+  }
   state.selectedBaselineIds = next;
   persistBaselineIds(next);
   // Workset-level hard reset (stronger than filter change).

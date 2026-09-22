@@ -577,6 +577,7 @@ function renderReview(caseData) {
       save.querySelector(".ui-lang-en").textContent = runBoundModelReview ? "Submit combined review" : "Submit Case label";
     }
   }
+  enhanceDashboardSelects($("#reviewPane"));
   bindSelectedReviewTagControls($("#reviewPane"));
   $("#reviewPane").querySelector("[data-review-comments]")?.addEventListener("click", () => {
     openCurrentReviewDiscussion(caseData);

@@ -208,6 +208,7 @@ async function loadCampaigns({
   const queryInput = document.getElementById("campaignsQuery");
   if (lifecycleSelect) lifecycleSelect.value = campaignPageState.lifecycle;
   if (sourceSelect) sourceSelect.value = campaignPageState.source;
+  if (sourceSelect) enhanceNativeUiSelect(sourceSelect);
   if (queryInput) queryInput.value = campaignPageState.query;
   const labelTab = document.getElementById("campaignsLabelAnalysisTab");
   const allTab = document.getElementById("campaignsAllTab");

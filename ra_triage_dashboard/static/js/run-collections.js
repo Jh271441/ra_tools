@@ -232,6 +232,7 @@ function renderRunCollectionSelectors() {
       selectionSource.value = selectedSource;
     }
   }
+  enhanceDashboardSelects($("#runCollectionsWorkbench") || document);
 }
 
 function renderRunCollectionMembers() {

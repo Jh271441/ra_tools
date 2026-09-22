@@ -20,6 +20,37 @@ from ra_triage_dashboard.app.work_split import distribute_issue_ids
 
 
 class WorkSplitTest(unittest.TestCase):
+    def test_legacy_no_run_task_context_and_gallery_membership_remain_readable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Database(Path(tmp) / "legacy-no-run.sqlite")
+            db.init()
+            db.upsert_issues(
+                [{"issue_id": "cn1", "gt_label": "误触发"}, {"issue_id": "cn2", "gt_label": "正确触发"}],
+                source="test", replace_gt=True, baseline_scope="scope",
+            )
+            split = db.apply_work_split(
+                assignments=[{"name": "alice", "issue_ids": ["cn1", "cn2"]}],
+                created_by="admin", seed=1, reviewers_per_issue=1,
+                filter_snapshot={"baselines": ["0508"], "baseline_scopes": ["scope"]},
+            )
+            context = db.review_task_context(
+                split_id=split["split_id"], username="alice", is_admin=False
+            )
+            self.assertTrue(context["legacy_no_run"])
+            self.assertEqual(context["baseline_scopes"], ["scope"])
+            self.assertEqual(context["issue_count"], 2)
+            with self.assertRaises(PermissionError):
+                db.review_task_context(
+                    split_id=split["split_id"], username="bob", is_admin=False
+                )
+            result = db.list_cases(
+                baseline_scopes=["scope"], work_split_id=split["split_id"],
+                page=1, page_size=10,
+            )
+            self.assertEqual(result["total"], 2)
+            self.assertEqual({item["issue_id"] for item in result["items"]}, {"cn1", "cn2"})
+            db.close()
+
     def test_run_based_work_split_creates_a_single_scope_frozen_workset(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Database(Path(tmp) / "campaign-workset.sqlite")

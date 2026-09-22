@@ -511,11 +511,16 @@ function updateFilteredPredictionButton() {
   updateWorkSplitAdminVisibility();
   const split = $("#splitFilteredButton");
   if (split && !split.hidden) {
-    split.disabled = total === 0;
+    split.disabled = total === 0 || !state.selectedRunId;
     split.innerHTML = total
       ? `<span class="ui-lang-zh">均分任务 · ${total}</span><span class="ui-lang-en">Split work · ${total}</span>`
       : `<span class="ui-lang-zh">均分任务</span><span class="ui-lang-en">Split work</span>`;
-    split.title = total
+    split.title = !state.selectedRunId
+      ? uiText(
+          "请先选择 Model Run；若只做 Case 标签，请前往 Case 标注 > 实验分配。",
+          "Select a Model Run first. For Case labels only, use Case labeling > Experiment assignment."
+        )
+      : total
       ? uiText(
           `管理员：把当前 ${total} 个筛选 Issue 写入任务负责人；可指定数量，剩余均分。`,
           `Admin: assign ${total} filtered issues to owners.`

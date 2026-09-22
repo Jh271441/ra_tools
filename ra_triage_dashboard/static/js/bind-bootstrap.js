@@ -169,6 +169,7 @@ function scheduleReviewFilterReload(delay = 0) {
 }
 
 function bindEvents() {
+  enhanceDashboardSelects();
   bindLayoutResizers();
   bindShortcutGuide();
   bindGlobalRefreshShortcut();
@@ -1087,6 +1088,16 @@ async function bootstrap() {
   const sessionRequest = resolveSessionInBackground();
   try {
     await settleInitialRequests([loadConfig()], "基础配置");
+    let reviewTaskContextFailed = false;
+    if (initialRoute.page === "review" && initialRoute.workSplitId) {
+      await sessionRequest;
+      try {
+        await loadReviewTaskContext(initialRoute.workSplitId, { route: initialRoute });
+      } catch (error) {
+        reviewTaskContextFailed = true;
+        showToast(`任务范围加载失败：${error.message}`, true);
+      }
+    }
     const intentAccessPages = ["users", "intent", "intent-experiments", "intent-summary"];
     if (
       intentAccessPages.includes(initialRoute.page)
@@ -1184,14 +1195,14 @@ async function bootstrap() {
     // Review home: paint cases first; cluster chips are secondary chrome.
     const initialPageRequests = ["labeling", "labeling-new-task"].includes(initialRoute.page)
       ? []
-      : [loadOverview()];
+      : [{ name: "概览", promise: loadOverview() }];
     let initialDetailRequest = null;
-    if (initialRoute.page === "review") {
+    if (initialRoute.page === "review" && !reviewTaskContextFailed) {
       initialPageRequests.push(
-        loadCases({
+        { name: "Issue 图库", promise: loadCases({
           keepSelection: Boolean(initialRoute.issue),
           page: initialRoute.casePage,
-        })
+        }) }
       );
       if (initialRoute.issue) {
         initialDetailRequest = selectCase(initialRoute.issue, { updateRoute: false });
@@ -1258,7 +1269,7 @@ async function bootstrap() {
     );
     // Wait only for the first review-critical payloads; shared Run metadata can
     // finish in the background without holding the case gallery blank.
-    if (initialRoute.page === "review") {
+    if (initialRoute.page === "review" && !reviewTaskContextFailed) {
       await Promise.all([sharedDataPromise, initialPageResults]);
     } else {
       await sharedDataPromise;
