@@ -571,6 +571,8 @@ function currentReviewRouteOptions(overrides = {}) {
         ? workAssigneeFilterSelection()
         : getMultiFilterValues($("#workAssigneeFilter")),
     workSplitId: state.reviewWorkSplitId || "",
+    baselines: state.reviewTaskContext?.baseline_ids || state.selectedBaselineIds,
+    forceBaselines: Boolean(state.reviewTaskContext),
     workflowMode: state.reviewWorkflowMode || "model_review_only",
     exclusion:
       typeof selectedReviewExclusionFilter === "function"
@@ -962,7 +964,9 @@ function pageUrl(page, options = {}) {
       ? normalizeBaselineIds(options.baselines).join(",")
       : selectedBaselineQueryValue();
   const defaults = defaultBaselineIdsFromConfig().join(",");
-  if (baselineValue && baselineValue !== defaults) {
+  if (baselineValue && options.forceBaselines) {
+    url.searchParams.set("baselines", baselineValue);
+  } else if (baselineValue && baselineValue !== defaults) {
     url.searchParams.set("baselines", baselineValue);
   } else if (baselineValue && baselineValue.split(",").length > 1) {
     url.searchParams.set("baselines", baselineValue);
