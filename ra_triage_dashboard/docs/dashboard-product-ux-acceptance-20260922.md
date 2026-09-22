@@ -5,7 +5,7 @@ Recorded: 2026-09-22 (Asia/Shanghai)
 ## Runtime
 
 - Branch: `codex/dashboard-product-ux`
-- Deployed UX source: `12ef95ed765f314db11eff84968469eab17bb927`
+- Deployed UX source: `00680ea65cced05873e195b54b68854006a0a603`
 - UX smoke root: `/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manual_dashboard_product_ux_20260922`
 - UX smoke database: `manual_dashboard_product_ux_20260922`, cloned logically from S6 v2.
 - UX endpoint: loopback `127.0.0.1:8786`, base path `/manual-s6`.
@@ -35,7 +35,11 @@ set either variable.
 | Read-only boundary | PASS: existing verified-admin gating remains. The temporary loopback smoke identity is verified, mapped to the explicit UX ACL row, and is not available to production or remote clients. |
 | Frontend contracts | PASS: 68 frontend contract tests, 4 base-path tests, and 13 identity/access tests. |
 | Syntax | PASS: shell launch/restore scripts and the changed JavaScript files parse successfully. |
-| Full cloud suite | PASS: 580 passed, 1 skipped in 61.58 seconds on source `12ef95e`, using schema `ux_suite_12ef95e` inside the dedicated UX suite database. |
+| Combined workflow compatibility | PASS: existing Campaigns remain `model_review_only`; new tasks explicitly persist `model_review_and_case_label`. Direct browsing still defaults to model Review only. |
+| Atomic combined submission | PASS: one API transaction wrote independent `label_revisions` and `model_review_revisions`, linked by `submission_group_id`; stale Case state returned 409 with no row-count change in either domain. |
+| Cross-Run Case vote | PASS: Run A created one Case vote; Run B acknowledged the same vote without a duplicate revision. Both Run-bound model Reviews remained independently completed. |
+| Combined progress | PASS: each task reported separate model-review and Case-label markers plus one overall completion. Shared-label conflict/GT review did not reduce model Review completion. |
+| Full cloud suite | PASS: 584 passed, 1 skipped in 75.39 seconds on source `00680ea`, using schema `ux_suite_00680ea` inside the dedicated UX suite database. |
 | Browser | PASS: the Codex in-app browser read the live accessibility tree and rendered DOM through the localhost tunnel. It verified the visible sidebar order and all routes listed above. |
 
 ## Browser evidence
@@ -70,6 +74,31 @@ conflicts/pending adjudications.
 The smoke database contains 172 imported reviewer vote rows, 197 provenance
 sources and 122 imported Case-state rows. All 172 generated label revisions have
 empty rationale, Tags and evidence gaps and `is_excluded=false`.
+
+## Combined Review smoke
+
+- Migration count: 52.
+- Case / Run fixture: `cn34006269`, Runs `ec1724da…` and `b9d192fe…`.
+- Combined Campaigns: `campaign-3be7739d…` and `campaign-a9eea9fc…`.
+- Run A submitted a new Case vote and completed its model Review.
+- Run B reused the same Case vote through acknowledgment and completed a separate
+  model Review; the Case revision count did not increase.
+- Changing the current user's vote appended a normal revision. The historical
+  reviewer source stayed intact, yielding a shared-label conflict while the Run B
+  model Review remained completed.
+- A deliberately stale Case token returned HTTP 409. Label and model revision
+  counts were identical before and after the rejected request.
+- Historical `annotations` stayed at 211 rows with SHA256
+  `d6209dd1e40db27def695b4f1e500ad37beef1e09d5bbed630c73cedc94ef0d1`;
+  `review_comments` stayed at 13 rows with SHA256
+  `a7845cef2a5aed281e2d1c81c3baab67f8c7417b500f2166d0847fcb941031b7`.
+
+The live browser verified cache `manual-triage-491`. Default Review mode hid the
+Case editor and disabled model save with no Run. Direct combined mode exposed a
+Case-only save with no Run. The combined Campaign deep link locked the workflow
+selector, showed the fixed GT snapshot, current shared conclusion, current vote,
+other-source count and cross-Run notice, and displayed independent `GT待复核` and
+`已完成` statuses above the atomic `提交联合复核` button.
 
 ## Recovery
 

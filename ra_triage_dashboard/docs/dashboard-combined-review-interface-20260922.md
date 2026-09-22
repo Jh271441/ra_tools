@@ -64,3 +64,24 @@ markers. It never creates or updates an `annotations` mixed record.
   acknowledged in a combined Campaign without creating a duplicate vote.
 - Case conflict may coexist with a completed model Review. Conflict and pending
   adjudication remain properties of the shared Case label projection.
+
+## 8786 acceptance result
+
+Applied on source `00680ea65cced05873e195b54b68854006a0a603`, cache
+`manual-triage-491`, migration count 52.
+
+- Existing tasks: 26 rows retained `model_review_only` after migration.
+- New combined tasks persisted one assignment each and locked Review to combined
+  mode through their deep links.
+- Run A created a Case vote; Run B acknowledged it with zero duplicate vote rows.
+- A later vote change appended a revision and left the historical reviewer vote
+  unchanged. The resulting shared conflict did not alter the completed model
+  Review status.
+- A stale concurrency token returned 409; label/model revision counts were
+  unchanged across the rejected request.
+- Direct combined browsing without a Run displayed the Case editor and disabled
+  the model section. Default browsing remained model-review-only.
+- Browser DOM showed independent `Case 标注 · GT待复核` and
+  `判错复核 · 已完成` statuses, fixed GT snapshot metadata, current vote,
+  other-source count and the `跨 Runs 共享` notice.
+- Full isolated PostgreSQL suite: 584 passed, 1 skipped in 75.39 seconds.
