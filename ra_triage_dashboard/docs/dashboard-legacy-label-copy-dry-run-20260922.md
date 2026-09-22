@@ -52,3 +52,23 @@ therefore report these dimensions separately.
 This report is the pre-write baseline. The applied migration must reproduce the
 same counts, return zero new rows on replay, and leave the legacy Review hashes
 and aggregates unchanged.
+
+## Applied smoke result
+
+Source `12ef95ed765f314db11eff84968469eab17bb927` applied the plan to the
+isolated 8786 UX database. Five batches completed with status `imported`. The
+second run reported all five as duplicates and inserted zero votes and sources.
+
+Legacy tables were hashed before and after the write:
+
+| Table | Rows | SHA256 unchanged |
+| --- | ---: | --- |
+| annotations | 211 | yes |
+| review_comments | 13 | yes |
+| model_review_revisions | 9 | yes |
+| model_review_heads | 9 | yes |
+
+Sample audit confirmed the seven scenarios above, including one vote with two
+sources for `cn29141385`, a same-reviewer conflict retaining three sources for
+`cn31974313`, and annotation 252 absent from import sources while remaining in
+the original Review table.
