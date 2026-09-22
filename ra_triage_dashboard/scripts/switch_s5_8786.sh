@@ -92,7 +92,7 @@ done
 [[ -n "$S5_HEALTH" ]] || fail "S5 did not become healthy; use the pinned S4 restore script."
 printf '%s' "$S5_HEALTH" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("build_commit")==sys.argv[1] and d.get("base_path")=="/manual-s5"' "$S5_APP_SHA" || fail "S5 build/base-path health mismatch."
 S5_STATUS="$(curl -fsS --max-time 5 "http://127.0.0.1:$PORT/manual-s5/api/status")"
-printf '%s' "$S5_STATUS" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert int(d.get("database",{}).get("migration_count",0))==47; assert not d.get("batch_prediction_enabled"); assert not d.get("autotriage_push_enabled"); assert not (d.get("review_notifications",{}).get("enabled"))'
+printf '%s' "$S5_STATUS" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert int(d.get("database",{}).get("migration_count",0))==48; assert not d.get("batch_prediction_enabled"); assert not d.get("autotriage_push_enabled"); assert not (d.get("review_notifications",{}).get("enabled"))'
 S5_SESSION="$(curl -fsS --max-time 5 "http://127.0.0.1:$PORT/manual-s5/api/session")"
 printf '%s' "$S5_SESSION" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("read_only") is True and d.get("can_write") is False' || fail "Unauthenticated S5 session is not read-only."
 printf 'S5 healthy on loopback 8786: %s\n' "$S5_APP_SHA"
