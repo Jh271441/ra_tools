@@ -870,7 +870,11 @@ async def split_case_work(request: Request) -> dict[str, Any]:
                 )
             by_issue: dict[str, list[dict[str, str]]] = {}
             for member in assignments:
-                for item in member.get("items") or []:
+                member_items = member.get("items") or [
+                    {"issue_id": issue_id, "assignment_kind": "base"}
+                    for issue_id in (member.get("issue_ids") or [])
+                ]
+                for item in member_items:
                     issue_id = _as_text(item.get("issue_id"))
                     by_issue.setdefault(issue_id, []).append({
                         "assignee": _as_text(member.get("name")).strip().lower(),

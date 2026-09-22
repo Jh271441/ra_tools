@@ -110,6 +110,7 @@ class WorkSplitTest(unittest.TestCase):
                 response = asyncio.run(cases_router.split_case_work(request))
 
             self.assertEqual(response["total"], 2)
+            self.assertEqual(response["assignment_count"], 2)
             detail = db.get_campaign(response["split_id"])
             workset_id = detail["campaign"]["workset_id"]
             self.assertTrue(workset_id)
