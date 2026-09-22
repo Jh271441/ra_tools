@@ -24,14 +24,13 @@ def _scopes(values: Sequence[str]) -> list[str]:
     return sorted({str(value or "").strip() for value in values if str(value or "").strip()})
 
 
-def _rows(database: Any, scopes: Sequence[str]) -> list[dict[str, Any]]:
+def _rows_on_connection(conn: Any, scopes: Sequence[str]) -> list[dict[str, Any]]:
     normalized = _scopes(scopes)
     if not normalized:
         return []
     placeholders = ", ".join("?" for _ in normalized)
-    with database.connect() as conn:
-        rows = conn.execute(
-            f"""
+    rows = conn.execute(
+        f"""
             SELECT issue.baseline_scope, annotation.*, issue.gt_label,
                    issue.gt_source, active.snapshot_id AS gt_snapshot_id,
                    snapshot_item.gt_label AS snapshot_gt_label
@@ -47,8 +46,8 @@ def _rows(database: Any, scopes: Sequence[str]) -> list[dict[str, Any]]:
             ORDER BY issue.baseline_scope, annotation.issue_id,
                      lower(annotation.author), annotation.created_at, annotation.id
             """,
-            normalized,
-        ).fetchall()
+        normalized,
+    ).fetchall()
     result: list[dict[str, Any]] = []
     for row in rows:
         item = {key: row[key] for key in row.keys()}
@@ -64,6 +63,11 @@ def _rows(database: Any, scopes: Sequence[str]) -> list[dict[str, Any]]:
         item["label_source"] = label_source
         result.append(item)
     return result
+
+
+def _rows(database: Any, scopes: Sequence[str]) -> list[dict[str, Any]]:
+    with database.connect() as conn:
+        return _rows_on_connection(conn, scopes)
 
 
 def _source_inventory(rows: Sequence[dict[str, Any]]) -> str:
@@ -386,3 +390,158 @@ def apply_legacy_label_copy(
             })
     planned.pop("plans", None)
     return {**planned, "applied": applied}
+
+
+def reconcile_legacy_label_copy_activation(
+    database: Any, *, baseline_scope: str
+) -> dict[str, Any]:
+    scope = str(baseline_scope or "").strip()
+    if not scope:
+        return {"passed": False, "errors": ["没有数据集范围。"]}
+    planned = plan_legacy_label_copy(database, scopes=[scope])
+    plan = planned.get("plans", {}).get(scope) or {}
+    errors: list[str] = []
+    with database.connect() as conn:
+        batch = conn.execute(
+            """
+            SELECT * FROM label_import_batches
+            WHERE baseline_scope=? AND source_type=? AND migration_version=?
+            """,
+            (scope, SOURCE_TYPE, MIGRATION_VERSION),
+        ).fetchone()
+        active = conn.execute(
+            """
+            SELECT active.snapshot_id, snapshot.content_sha256,
+                   snapshot.member_count, snapshot.valid_label_count
+            FROM gt_snapshot_active active
+            JOIN gt_snapshots snapshot ON snapshot.id=active.snapshot_id
+            WHERE active.baseline_scope=? AND snapshot.baseline_scope=?
+            """,
+            (scope, scope),
+        ).fetchone()
+        issue_count = int(conn.execute(
+            "SELECT COUNT(*) n FROM issues WHERE baseline_scope=?", (scope,)
+        ).fetchone()["n"])
+        snapshot_item_count = int(conn.execute(
+            """
+            SELECT COUNT(*) n FROM gt_snapshot_items item
+            JOIN gt_snapshot_active active ON active.snapshot_id=item.snapshot_id
+            WHERE active.baseline_scope=? AND item.baseline_scope=?
+            """,
+            (scope, scope),
+        ).fetchone()["n"])
+        counts = {"votes": 0, "sources": 0, "case_states": 0}
+        if batch is not None:
+            batch_id = str(batch["id"])
+            counts = {
+                "votes": int(conn.execute("SELECT COUNT(*) n FROM label_import_votes WHERE batch_id=?", (batch_id,)).fetchone()["n"]),
+                "sources": int(conn.execute("SELECT COUNT(*) n FROM label_import_sources WHERE batch_id=?", (batch_id,)).fetchone()["n"]),
+                "case_states": int(conn.execute("SELECT COUNT(*) n FROM label_import_case_states WHERE batch_id=?", (batch_id,)).fetchone()["n"]),
+            }
+    if batch is None:
+        errors.append("缺少 legacy-case-label-copy-v2 导入批次。")
+        batch_data: dict[str, Any] = {}
+    else:
+        batch_data = {key: batch[key] for key in batch.keys()}
+        if str(batch["status"] or "") != "imported":
+            errors.append("历史标签导入批次尚未完成。")
+        if str(batch["source_inventory_sha256"] or "") != str(plan.get("source_inventory_sha256") or ""):
+            errors.append("源 inventory fingerprint 与导入批次不一致。")
+    if active is None:
+        errors.append("缺少 active GT snapshot。")
+        active_data: dict[str, Any] = {}
+    else:
+        active_data = {key: active[key] for key in active.keys()}
+        if int(active["member_count"] or 0) != issue_count or snapshot_item_count != issue_count:
+            errors.append("GT snapshot membership 与数据集 Issue 数不一致。")
+    expected_counts = {
+        "votes": len(plan.get("votes") or []),
+        "sources": sum(
+            1 for row in plan.get("rows") or []
+            if row.get("derived_label") or str(row.get("review_status") or "") == "needs_gt_review"
+        ),
+        "case_states": len(plan.get("cases") or []),
+    }
+    if counts != expected_counts:
+        errors.append("imported vote/source/state 数量与 dry-run 不一致。")
+    stats = dict(plan.get("stats") or {})
+    if batch and _json_load(batch["stats_json"], {}) != stats:
+        errors.append("导入批次 stats 与当前 dry-run 不一致。")
+    return {
+        "passed": not errors,
+        "policy_version": MIGRATION_VERSION,
+        "baseline_scope": scope,
+        "source_inventory_sha256": str(plan.get("source_inventory_sha256") or ""),
+        "batch": batch_data,
+        "gt_snapshot": active_data,
+        "issue_count": issue_count,
+        "snapshot_item_count": snapshot_item_count,
+        "import_counts": counts,
+        "expected_import_counts": expected_counts,
+        "stats": stats,
+        "errors": errors,
+    }
+
+
+def activate_legacy_label_copy_scope(
+    database: Any, *, baseline_scope: str, actor: str
+) -> dict[str, Any]:
+    scope = str(baseline_scope or "").strip()
+    preflight = reconcile_legacy_label_copy_activation(database, baseline_scope=scope)
+    result: dict[str, Any] = {
+        "passed": False,
+        "preflight": preflight,
+        "shadow_state": None,
+        "reconciliation": None,
+        "activation": None,
+        "receipt": None,
+    }
+    if not preflight["passed"]:
+        return result
+    existing = database.labeling_scope_states([scope])
+    if existing and existing[0]["status"] == "active":
+        if (
+            existing[0]["policy_version"] == MIGRATION_VERSION
+            and existing[0]["source_inventory_sha256"] == preflight["source_inventory_sha256"]
+        ):
+            result.update(passed=True, shadow_state=existing[0], reconciliation=preflight, activation=existing[0])
+            return result
+        result["preflight"]["errors"].append("该 scope 已由其他 policy 激活。")
+        return result
+    expected_epoch = int(existing[0]["epoch"] if existing else 0)
+    shadow = database.set_labeling_scope_state(
+        baseline_scope=scope,
+        status="shadow",
+        policy_version=MIGRATION_VERSION,
+        source_inventory_sha256=preflight["source_inventory_sha256"],
+        updated_by=actor,
+        expected_epoch=expected_epoch,
+    )
+    result["shadow_state"] = shadow
+    reconciliation = reconcile_legacy_label_copy_activation(database, baseline_scope=scope)
+    result["reconciliation"] = reconciliation
+    if not reconciliation["passed"]:
+        return result
+
+    def verify_inventory(conn: Any) -> str:
+        return _source_inventory(_rows_on_connection(conn, [scope]))
+
+    activation = database.activate_labeling_scope(
+        baseline_scope=scope,
+        policy_version=MIGRATION_VERSION,
+        source_inventory_sha256=reconciliation["source_inventory_sha256"],
+        updated_by=actor,
+        expected_epoch=int(shadow["epoch"]),
+        verify_inventory=verify_inventory,
+    )
+    receipt = database.record_legacy_shadow_receipt(
+        baseline_scope=scope,
+        component="legacy_label_copy_activation",
+        policy_version=MIGRATION_VERSION,
+        inventory_sha256=reconciliation["source_inventory_sha256"],
+        legacy_count=int(reconciliation["stats"].get("scanned_reviews") or 0),
+        canonical_count=int(reconciliation["import_counts"].get("case_states") or 0),
+        actor=actor,
+    )
+    result.update(passed=True, activation=activation, receipt=receipt)
+    return result

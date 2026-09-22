@@ -6,7 +6,13 @@ import unittest
 from pathlib import Path
 
 from ra_triage_dashboard.app.db import Database
-from ra_triage_dashboard.app.legacy_label_copy import apply_legacy_label_copy, plan_legacy_label_copy
+from ra_triage_dashboard.app.legacy_label_copy import (
+    MIGRATION_VERSION,
+    activate_legacy_label_copy_scope,
+    apply_legacy_label_copy,
+    plan_legacy_label_copy,
+    reconcile_legacy_label_copy_activation,
+)
 
 
 class LegacyLabelCopyTest(unittest.TestCase):
@@ -121,3 +127,29 @@ class LegacyLabelCopyTest(unittest.TestCase):
             copied = conn.execute("SELECT * FROM label_revisions ORDER BY id").fetchall()
         self.assertEqual(json.dumps(before, sort_keys=True), json.dumps(after, sort_keys=True))
         self.assertTrue(all(not row["rationale"] and row["tags_json"] == "[]" and row["evidence_gaps_json"] == "[]" for row in copied))
+
+    def test_copy_only_scope_activation_reconciles_membership_counts_and_epoch(self) -> None:
+        self.add("cn1", 0, "误触发", "needs_gt_review", "alice")
+        apply_legacy_label_copy(self.db, scopes=["scope"], imported_by="tester")
+        reconciliation = reconcile_legacy_label_copy_activation(
+            self.db, baseline_scope="scope"
+        )
+        self.assertTrue(reconciliation["passed"], reconciliation["errors"])
+        self.assertEqual(reconciliation["issue_count"], 4)
+        self.assertEqual(reconciliation["snapshot_item_count"], 4)
+        self.assertEqual(reconciliation["import_counts"], reconciliation["expected_import_counts"])
+        activated = activate_legacy_label_copy_scope(
+            self.db, baseline_scope="scope", actor="tester"
+        )
+        self.assertTrue(activated["passed"])
+        self.assertEqual(activated["shadow_state"]["status"], "shadow")
+        self.assertEqual(activated["activation"]["status"], "active")
+        self.assertEqual(activated["activation"]["epoch"], 1)
+        self.assertEqual(activated["activation"]["policy_version"], MIGRATION_VERSION)
+        self.assertEqual(activated["receipt"]["status"], "pass")
+        self.assertEqual(self.db.active_labeling_scopes(), ("scope",))
+
+        self.add("cn2", 0, "正确触发", "pending", "bob")
+        drifted = reconcile_legacy_label_copy_activation(self.db, baseline_scope="scope")
+        self.assertFalse(drifted["passed"])
+        self.assertIn("源 inventory fingerprint", " ".join(drifted["errors"]))
