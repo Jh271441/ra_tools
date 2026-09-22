@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import time
 import uuid
 from typing import Any, Sequence
 
@@ -551,6 +552,73 @@ class DatabaseRunCollectionsMixin:
             yield values[start : start + size]
 
     def create_run_evaluation(
+        self,
+        *,
+        collection_id: str,
+        collection_revision: int | None = None,
+        workset_id: str = "",
+        workset_issue_ids: Sequence[str] = (),
+        baseline_scopes: Sequence[str] = (),
+        reference_type: str = "gt",
+        reference_id: str = "",
+        reference_ids: dict[str, str] | Sequence[dict[str, Any]] | None = None,
+        excluded_issue_ids: Sequence[str] | None = None,
+        scoring_policy: dict[str, Any] | None = None,
+        selection_source_run_id: str = "",
+        comparison_reference_run_id: str = "",
+        actor: str = "",
+        actor_source: str = "legacy",
+        actor_verified: bool = False,
+        idempotency_key: str = "",
+    ) -> dict[str, Any]:
+        """Create or reuse one frozen evaluation, retrying PG serialization races.
+
+        Separate ``Database`` instances have separate Python locks.  Two workers
+        can therefore race while materializing the same content-addressed
+        Workset before the unique Evaluation context is inserted.  PostgreSQL
+        correctly aborts one repeatable-read transaction with SQLSTATE 40001;
+        retry the complete transaction so it observes and reuses the committed
+        Workset and context.  Other database errors remain fail-closed.
+        """
+
+        attempts = 3 if self.backend == "postgresql" else 1
+        for attempt in range(attempts):
+            try:
+                return self._create_run_evaluation_once(
+                    collection_id=collection_id,
+                    collection_revision=collection_revision,
+                    workset_id=workset_id,
+                    workset_issue_ids=workset_issue_ids,
+                    baseline_scopes=baseline_scopes,
+                    reference_type=reference_type,
+                    reference_id=reference_id,
+                    reference_ids=reference_ids,
+                    excluded_issue_ids=excluded_issue_ids,
+                    scoring_policy=scoring_policy,
+                    selection_source_run_id=selection_source_run_id,
+                    comparison_reference_run_id=comparison_reference_run_id,
+                    actor=actor,
+                    actor_source=actor_source,
+                    actor_verified=actor_verified,
+                    idempotency_key=idempotency_key,
+                )
+            except BaseException as exc:
+                retryable = False
+                current: BaseException | None = exc
+                visited: set[int] = set()
+                while current is not None and id(current) not in visited:
+                    visited.add(id(current))
+                    sqlstate = str(getattr(current, "sqlstate", "") or "")
+                    if sqlstate in {"40001", "40P01"}:
+                        retryable = True
+                        break
+                    current = current.__cause__ or current.__context__
+                if not retryable or attempt + 1 >= attempts:
+                    raise
+                time.sleep(0.02 * (attempt + 1))
+        raise RuntimeError("unreachable evaluation retry state")
+
+    def _create_run_evaluation_once(
         self,
         *,
         collection_id: str,
