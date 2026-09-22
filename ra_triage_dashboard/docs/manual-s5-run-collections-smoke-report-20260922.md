@@ -1,71 +1,63 @@
-# Manual S5 Run Collections smoke report
+# Manual S5 Run Collections acceptance report
 
 Recorded: 2026-09-22 (Asia/Shanghai)
 
-## Scope and current state
+## Final deployment
 
-This is an isolated manual S5 experiment, not a production release. The feature branch is
-`codex/run-collections-s5`; the S5 source and current remote source receipt are
-`1f2b4e0cbc43fdb552ed375aa6e911759bdb35d`.
+- Branch: `codex/run-collections-s5`
+- Final pushed source: `3a72304a8fc999d47ea321cb8093b41bd0948b63`
+- Isolated S5 service: `127.0.0.1:8786/manual-s5`
+- Final `/health`: `ok=true`, exact build `3a72304a8fc999d47ea321cb8093b41bd0948b63`, base path `/manual-s5`.
+- S5 API status: PostgreSQL, migration 48, `persistent_data=false`; Batch, AutoTriage push and D-Chat notifications are disabled.
+- Anonymous session: `read_only=true`, `can_write=false`, `verified=false`, `is_admin=false`.
+- Production was not released, merged or modified. Port 8785 stayed PID 10634, build
+  `5fdc41ba8b0215170a8307237762e1ed50a9aaf2`.
 
-The S5 app is healthy on loopback `127.0.0.1:8786/manual-s5`. It uses the dedicated
-PostgreSQL database `manual_s5_smoke_20260922_runcollections`, with migration 47 and
-5,415 Issues after the full cloud test suite. The API status reports PostgreSQL with
-`persistent_data=false`. Anonymous session status is read-only (`can_write=false`);
-Batch prediction, AutoTriage push, and D-Chat notifications are disabled.
+## PASS/FAIL matrix
 
-Production remained on `0.0.0.0:8785`, PID 10634, build
-`5fdc41ba8b0215170a8307237762e1ed50a9aaf2`. A read-only database query found 4,046
-Issues and 43 migrations in `ra_triage_dashboard`. S5 uses its own database and did not
-run a production deployment, merge, or PR.
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Five-scope frozen Workset | PASS | Final PG acceptance used 4,039 Issues across 5 scopes; Workset `run-evaluation-workset-e68c1a4dc3f94a67bafa151399d5d9e5`, scope rows = 5. |
+| Shared Labeling Campaign | PASS | Campaign `campaign-c2f2c28b52f04c10902d2fd841280f90`; exact per-scope member sets and GT snapshot references validated. |
+| Per-Run Model Review Group | PASS | Group `campaign-group-4988c8331da14e7ea033b3586235b681`; 8 child Campaigns, one per frozen Run. |
+| Shared label projection | PASS | Every paged item contains the frozen shared label projection (state, expected output, GT relation, method, source and hash). Changing mutable GT after freeze left the old reference hash and shared projection unchanged. |
+| Official reference policy | PASS | GT uses five content-addressed snapshot IDs; resolved Label snapshot `label-result-63aa0b3355f91c2802d1107b987bd9a349b01ca2299a42ec76566453d39d04d0` was accepted as a formal reference. New `reference_type=run` requests are rejected; comparison Run remains only `comparison_reference_run_id`. |
+| Compact paged detail | PASS | 4,039 Issues × 8 Runs, page size 50: 111,312 bytes. Public Workset/reference omit full Issue IDs and reference items; only the current page is returned. |
+| Complete export | PASS | Export contains all 4,039 items and was 7,826,529 bytes. |
+| Content idempotency | PASS | Repeating the same frozen content returned the same Evaluation ID `evaluation-8cba84f8-2ea8-4529-951e-fea55808eeb4`. |
+| Metrics readability | PASS | Response exposes Workset count, valid reference count, pairwise-union denominator, per-Run supported coverage, absent/UNKNOWN counts and explicit union semantics. P2P/P2F/F2P/F2F transitions remained Run-comparison metadata. |
+| Provenance | PASS | `workset_sha256=e8088ffdceb2d7fab78ebf2676d5ecef31a94199b5698f964304d263838a3eee`; `reference_sha256=a60686dc6a89f4f250f7ec84158438b58a8a23cd4a41827a5e014cbc1427834f`; `scoring_policy_sha256=fa0b81d23fa6472c10c8dd9c8f2866e7064ad19cb48b78b6c83d06d7944e1494`; `exclusion_sha256=c4c8372078a13f81abeffd973e02fffa15bf1ae0031b9e951300e4afc3d7b082`; `context_sha256=f82623751540ac4d4a62b1c75395bc39d8d7ff8ee6eaf2d24cf89e7c179398cc`. Export provenance lists Workset, scope snapshot IDs/hashes/counts, policy and exclusion hashes. |
+| Read-only UI gating | PASS | Direct HTML/DOM contract check found the dedicated route, readonly note and hidden write controls; anonymous API session was read-only. |
+| Hidden/grid CSS contract | PASS | Explicit `[hidden] { display:none !important; }` rules cover the Evaluation and dedicated page. |
+| Dedicated route and URL restore | PASS | `/manual-s5/run-collections` serves `runCollectionsPage`, nav, manager, pairwise foldout and Label reference controls. Collection/revision/context/reference-run/page/query aliases are restored. |
+| Full cloud suite | PASS | Final source `3a72304`: **571 passed, 1 skipped** in 63.05 seconds. |
+| PostgreSQL query plan | PASS | `idx_predictions_issue_run` index scan; observed execution time 0.030 ms in final acceptance. |
+| Production/S3/S4 preservation | PASS | Final read-only counts: S3 `413/44`; original S4 `413/44`; S4 Campaign `413/46`; S5-owned S4 restore `413/46`; active S5 `5415/48`; production `4046/43`. Public table-count comparison between original S4 Campaign DB and S5-owned restore: **0 differences across 69 tables**. |
 
-## Product and performance checks
+## Final acceptance receipt
 
-- The full cloud pytest suite passed at `9883724`: 565 passed, 1 skipped, in 44.12 s.
-  Later commits through `1f2b4e0` only changed the S5 setup/recovery scripts.
-- The recovery path was exercised: exact frozen S4 source `bf745129e4e7359db3631c18ee60da3e20ab74f2`
-  was restored on loopback 8786 using an S5-owned copy of the pre-S5 S4 database, then
-  the S5 switch script returned the service to the pinned S5 SHA. Current health and
-  source receipt both report `1f2b4e0`.
-- Browser preflight covered the Run Comparison workbench with a 5,000-Issue context,
-  multi-run columns and paging, metrics/confusion controls, model-review state, the
-  pairwise-save control, and the export route under `/manual-s5`. This used a local SSH
-  tunnel to the S5 service, which remained bound to remote loopback 8786; no public
-  browser listener was opened.
-- The 5,000-Issue × 2-Run PostgreSQL benchmark completed in about 2,824.5 ms. The
-  prediction lookup plan used `Index Scan using idx_predictions_issue_run` (observed
-  index-node time 0.019 ms).
+The isolated PG acceptance script used token `93b472f36c`, 4,039 Issues, 5 scopes and 8 Runs.
+It completed in 53.025 seconds. It verified:
 
-## Database isolation and preservation
+- immutable GT snapshots, shared projections and historical stability after later GT updates;
+- exact Workset scope/member matching for shared Labeling and per-Run Model Review;
+- exact context reuse;
+- compact detail and full export;
+- EXPLAIN index use;
+- final collection, Evaluation, Campaign and Task Group IDs recorded above.
 
-Read-only counts taken during final verification:
+The separate Label snapshot acceptance used Workset
+`workset-3ac38e92a0d94907b609ade90cec3909`; its resolved shared projection was
+`state=resolved`, `method=single`, `gt_relation=matches_gt`.
 
-| Database | Issues | Migrations | Purpose |
-| --- | ---: | ---: | --- |
-| `manual_s3_smoke_20260921` | 413 | 44 | S3 fixture |
-| `manual_s4_smoke_20260921` | 413 | 44 | Earlier S4 fixture |
-| `manual_s4_smoke_20260921_campaign` | 413 | 46 | S4 Campaign fixture |
-| `manual_s5_s4_restore_20260922` | 413 | 46 | S5-owned S4 restore copy |
-| `manual_s5_smoke_20260922_runcollections` | 5,415 | 47 | Active S5 app database |
-| `manual_s5_acceptance_20260922` | 5,415 | 47 | S5 acceptance database |
-| `ra_triage_dashboard` | 4,046 | 43 | Production database |
+## Recovery and browser note
 
-The original S4 Campaign database was compared with its pre-S5 dump after recovery;
-there were zero differing public tables.
+The pinned recovery path was exercised after the final source update: exact frozen S4
+`bf745129e4e7359db3631c18ee60da3e20ab74f2` restored on 8786, then the guarded switch
+returned S5 at the exact final SHA. The first switch attempt exposed an obsolete migration-47
+script gate; that gate was corrected to migration 48 before the final successful switch.
 
-### Recovery incident and fix
-
-The first rollback rehearsal launched a mutable S4 source tree whose bootstrap changed
-the S4 fixture's `issues` and `dashboard_change_revision` tables. We detected this,
-restored the original S4 fixture from the pre-S5 dump, and verified that all public
-tables matched the snapshot. Production was not involved. The recovery scripts were
-then hardened to launch the exact frozen S4 commit and use the S5-owned
-`manual_s5_s4_restore_20260922` database copy. That corrected recovery path was
-exercised before leaving S5 on 8786.
-
-## Host observations
-
-During the read-only production health check, `/health` reported `ok=true` and the
-expected production build, while its `deployment_mode` field read `development`.
-The S5 API status also reported 98.3% volume use (about 131 GB free). No production
-configuration or storage change was made as part of this isolated S5 task.
+The CUA browser kernel was unavailable during the final pass, so the browser check used the
+documented HTTP/DOM contract against the loopback service. It verified the final build,
+dedicated route markers, read-only session and base-path-safe HTML; no public browser listener
+was opened.
