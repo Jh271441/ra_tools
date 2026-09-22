@@ -5,40 +5,48 @@ Recorded: 2026-09-22 (Asia/Shanghai)
 ## Runtime
 
 - Branch: `codex/dashboard-product-ux`
+- Deployed UX source: `571526c494603924fc0c7aad93598872ea47ac8a`
+- UX smoke root: `/volume/home/workspace/ra_triage_dashboard_deploy/experiments/manual_dashboard_product_ux_20260922`
 - UX smoke database: `manual_dashboard_product_ux_20260922`, cloned logically from S6 v2.
-- UX smoke source: `03b85a9ce728259297f7acf96bfa36bca869a688` (corrected stable sidebar source; final branch also contains report/docs commits).
-- 8786 health: `ok=true`, base path `/manual-s6`; writers, sync, Batch, AutoTriage and D-Chat disabled.
-- Production 8785 was not touched.
-- UX smoke alone enables `DASHBOARD_SMOKE_LOOPBACK_ADMIN_ENABLED=true` with
-  `DASHBOARD_SMOKE_LOOPBACK_ADMIN_USERNAME=ux-smoke-admin`. Startup rejects this
-  mode unless the process binds localhost on 8786/8787. Production 8785 does not
-  set either variable.
+- UX endpoint: loopback `127.0.0.1:8786`, base path `/manual-s6`.
+- Health: `ok=true`; writers, sync, Batch, AutoTriage, and D-Chat remain disabled.
+- Production `8785` was not restarted or changed.
 
-## Checks
+The UX smoke alone enables `DASHBOARD_SMOKE_LOOPBACK_ADMIN_ENABLED=true` with
+`DASHBOARD_SMOKE_LOOPBACK_ADMIN_USERNAME=ux-smoke-admin`. Startup rejects this
+mode unless the process binds loopback on port 8786 or 8787. Production does not
+set either variable.
+
+## Acceptance results
 
 | Check | Result |
 | --- | --- |
-| Sidebar groups | PASS: Case 标注, 判错复核, 模型评测, 系统管理; Campaign/Collection ordinary nav removed. |
-| Product routes | PASS: `/labeling-experiments`, `/labeling-summary`, `/multi-run-evaluation`; old `/campaigns` purpose and `/run-collections` aliases remain parseable. |
-| User terminology | PASS: ordinary multi-run page uses 多 Run 评测 / 评测项目, with internal IDs/hashes behind technical details. |
-| Review task separation | PASS: Review workspace has a task drawer; shared label is a read-only layer and no model-review completion is used for shared labels. |
-| Labeling flow | PASS: existing S4 purpose=labeling API is reused; UX guide presents dataset/range, people, overlap, preview and create steps. |
-| Read-only behavior | PASS: existing verified-admin gating remains; evaluation write controls are hidden or disabled for anonymous sessions. |
-| Frontend contracts | PASS: 68 frontend contract tests and 4 base-path tests. |
-| JavaScript syntax | PASS: routing, campaigns, run-collections and work-split modules. |
-| Cloud suite | PASS: 578 passed, 1 skipped in 56.50 seconds on disposable UX suite DB. |
-| Browser | HTTP/DOM PASS through localhost tunnel: UX route markers, multi-run page, experiment link and review task drawer present. CUA kernel timed out, so no screenshot was captured. |
+| Sidebar hierarchy | PASS: Case 标注 contains Case 标注、实验分配、标注汇总. 判错复核 contains 判错复核、任务分配、原因聚类、问题排除、模型结果、Run 对比、批次预测. 意图标注 and 系统管理 retain their stable items. |
+| Removed navigation | PASS: no independent 模型评测 group and no `runCollectionsNavButton` are present in the rendered DOM. |
+| Product routes | PASS: `/case-labeling`, `/labeling-experiments`, `/labeling-summary`, `/review-assignments`, and `/run-comparison` render their intended pages. |
+| Legacy route | PASS: `/run-collections?baseline=0508` renders the existing Run 对比 page and activates `runComparisonNavButton`; the query string remains intact. |
+| Review task separation | PASS: the Review workspace retains its task drawer; shared labels remain separate from model review completion. |
+| Read-only boundary | PASS: existing verified-admin gating remains. The temporary loopback smoke identity is verified, mapped to the explicit UX ACL row, and is not available to production or remote clients. |
+| Frontend contracts | PASS: 68 frontend contract tests, 4 base-path tests, and 13 identity/access tests. |
+| Syntax | PASS: shell launch/restore scripts and the changed JavaScript files parse successfully. |
+| Full cloud suite | PASS: 579 passed, 1 skipped in 61.84 seconds on source `571526c`, using schema `ux_suite_571526c` inside the dedicated UX suite database. |
+| Browser | PASS: the Codex in-app browser read the live accessibility tree and rendered DOM through the localhost tunnel. It verified the visible sidebar order and all routes listed above. |
 
-The UX worktree does not add a migration. The final cloud pytest and visual/DOM smoke result will be appended after the exact UX source is running on 8786.
+## Browser evidence
 
-## Final information-architecture correction
+The live browser session reported these visible groups in order:
 
-After review, the first UX pass's extra “模型评测” group and primary project manager were removed. The final sidebar restores the stable product grouping: Case 标注 (Case 标注/实验分配/标注汇总), 判错复核 (判错复核/任务分配/原因聚类/问题排除/模型结果/Run 对比/批次预测), 意图标注 unchanged, and the existing system section.
+1. Case 标注: Case 标注, 实验分配, 标注汇总
+2. 判错复核: 判错复核, 任务分配, 原因聚类, 问题排除, 模型结果, Run 对比, 批次预测
+3. 意图标注: 意图标注, 实验分配, 标注汇总
+4. 系统管理: 系统状态, 用户管理
 
-## Final HTTP/DOM smoke
+The old `/run-collections` deep link visibly showed title and heading `Run 对比`,
+rendered `runComparisonPage`, selected `runComparisonNavButton`, and contained no
+independent Run collection navigation item.
 
-`/manual-s6/health` returned `ok=true` with the UX source. HTML at `/manual-s6/multi-run-evaluation` contained `runCollectionsPage`, `runCollectionsNavButton`, `labelingExperimentsNavButton`, `reviewTaskDrawer` and the multi-run route. Production 8785 stayed unchanged.
+## Recovery
 
-## Information-architecture correction
-
-The first UX pass introduced an extra Model evaluation group and exposed the project manager as a primary navigation item. That was reverted after review. The final sidebar follows the stable product hierarchy: Case 标注 (with 实验分配 and 标注汇总), 判错复核 (including 任务分配、原因聚类、问题排除、模型结果、Run 对比、批次预测), 意图标注 unchanged, and the existing system section. The multi-run path is now a user-facing Run 对比 flow/alias; internal Collection/Workset/Revision terms remain in technical details and old deep links remain compatible.
+`scripts/restore_s6_8786.sh` restores the frozen S6 v2 source on loopback 8786.
+Before stopping the UX listener, it verifies the pinned production PID/build and
+that port 8786 belongs to the UX smoke root.
