@@ -28,7 +28,8 @@ class FrontendBootstrapTest(unittest.TestCase):
             'const initialPageRequests = ["labeling", "labeling-new-task"].includes(initialRoute.page)',
             APP_JS,
         )
-        self.assertIn(': [loadOverview()]', APP_JS)
+        self.assertIn(': [{ name: "概览", promise: loadOverview() }]', APP_JS)
+        self.assertIn('{ name: "Issue 图库", promise: loadCases({', APP_JS)
         self.assertIn(
             'if (!["labeling", "labeling-new-task"].includes(initialRoute.page))',
             APP_JS,
