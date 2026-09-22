@@ -114,6 +114,13 @@ async function loadReviewTaskContext(splitId, { route = null } = {}) {
   } catch (error) {
     state.reviewTaskContextLoading = false;
     state.reviewTaskContextError = error;
+    if ($("#issueList")) $("#issueList").innerHTML = "";
+    if ($("#galleryResultSummary")) $("#galleryResultSummary").textContent = "任务范围加载失败";
+    if ($("#caseCount")) $("#caseCount").textContent = "—";
+    ["#exportFilteredIssuesButton", "#splitFilteredButton", "#predictFilteredButton"].forEach((selector) => {
+      const button = $(selector);
+      if (button) { button.disabled = true; button.title = `任务范围加载失败：${error.message || "未知错误"}`; }
+    });
     renderReviewTaskContext();
     throw error;
   }
