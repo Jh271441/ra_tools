@@ -79,7 +79,7 @@
         stylesheetPaths.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-489`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-490`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -2326,7 +2326,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-489`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app.js?v=manual-triage-490`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
