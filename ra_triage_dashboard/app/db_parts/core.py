@@ -1462,6 +1462,78 @@ class DatabaseCoreMixin:
                     updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS legacy_review_classifications (
+                    source_annotation_id INTEGER NOT NULL,
+                    baseline_scope TEXT NOT NULL,
+                    classification TEXT NOT NULL CHECK(classification IN (
+                        'model_review_mapped', 'label_history_mapped', 'legacy_mixed',
+                        'legacy_unbound_history', 'legacy_task_history'
+                    )),
+                    target_domain_type TEXT NOT NULL DEFAULT '',
+                    target_domain_id TEXT NOT NULL DEFAULT '',
+                    policy_version TEXT NOT NULL,
+                    inventory_sha256 TEXT NOT NULL DEFAULT '',
+                    evidence_json TEXT NOT NULL DEFAULT '{}',
+                    created_by TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(source_annotation_id, policy_version)
+                );
+                CREATE INDEX IF NOT EXISTS idx_legacy_review_classifications_scope
+                    ON legacy_review_classifications(baseline_scope, classification, source_annotation_id);
+                CREATE TABLE IF NOT EXISTS legacy_read_policies (
+                    baseline_scope TEXT PRIMARY KEY,
+                    policy TEXT NOT NULL CHECK(policy IN ('legacy', 'shadow', 'canonical')),
+                    epoch INTEGER NOT NULL DEFAULT 0,
+                    policy_version TEXT NOT NULL DEFAULT '',
+                    inventory_sha256 TEXT NOT NULL DEFAULT '',
+                    updated_by TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL,
+                    last_receipt_json TEXT NOT NULL DEFAULT '{}'
+                );
+                CREATE TABLE IF NOT EXISTS legacy_shadow_receipts (
+                    id TEXT PRIMARY KEY,
+                    baseline_scope TEXT NOT NULL,
+                    component TEXT NOT NULL,
+                    policy_version TEXT NOT NULL,
+                    inventory_sha256 TEXT NOT NULL DEFAULT '',
+                    legacy_count INTEGER NOT NULL DEFAULT 0,
+                    canonical_count INTEGER NOT NULL DEFAULT 0,
+                    diff_count INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'pass' CHECK(status IN ('pass', 'expected_diff', 'fail')),
+                    expected_diff_json TEXT NOT NULL DEFAULT '[]',
+                    diff_json TEXT NOT NULL DEFAULT '[]',
+                    created_by TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_legacy_shadow_receipts_scope
+                    ON legacy_shadow_receipts(baseline_scope, component, created_at DESC);
+                CREATE TABLE IF NOT EXISTS legacy_exclusion_projection (
+                    baseline_scope TEXT NOT NULL,
+                    issue_id TEXT NOT NULL REFERENCES issues(issue_id) ON DELETE RESTRICT,
+                    state TEXT NOT NULL CHECK(state IN ('none', 'candidate', 'excluded', 'conflict', 'stale')),
+                    source_domain TEXT NOT NULL DEFAULT '',
+                    source_ids_json TEXT NOT NULL DEFAULT '[]',
+                    content_sha256 TEXT NOT NULL,
+                    policy_version TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(baseline_scope, issue_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_legacy_exclusion_projection_state
+                    ON legacy_exclusion_projection(baseline_scope, state, issue_id);
+                CREATE TRIGGER IF NOT EXISTS trg_legacy_review_classifications_no_update
+                BEFORE UPDATE ON legacy_review_classifications
+                BEGIN SELECT RAISE(ABORT, 'S6 legacy classifications are append-only'); END;
+                CREATE TRIGGER IF NOT EXISTS trg_legacy_review_classifications_no_delete
+                BEFORE DELETE ON legacy_review_classifications
+                BEGIN SELECT RAISE(ABORT, 'S6 legacy classifications are append-only'); END;
+                CREATE TRIGGER IF NOT EXISTS trg_legacy_shadow_receipts_no_update
+                BEFORE UPDATE ON legacy_shadow_receipts
+                BEGIN SELECT RAISE(ABORT, 'S6 shadow receipts are append-only'); END;
+                CREATE TRIGGER IF NOT EXISTS trg_legacy_shadow_receipts_no_delete
+                BEFORE DELETE ON legacy_shadow_receipts
+                BEGIN SELECT RAISE(ABORT, 'S6 shadow receipts are append-only'); END;
+
                 CREATE TABLE IF NOT EXISTS issue_work_assignments (
                     issue_id TEXT PRIMARY KEY REFERENCES issues(issue_id) ON DELETE CASCADE,
                     assignee TEXT NOT NULL DEFAULT '',
@@ -1991,6 +2063,10 @@ class DatabaseCoreMixin:
                 "label_gt_export_source_snapshots",
                 "label_comment_links",
                 "labeling_scope_state",
+                "legacy_review_classifications",
+                "legacy_read_policies",
+                "legacy_shadow_receipts",
+                "legacy_exclusion_projection",
                 "gt_snapshots",
                 "gt_snapshot_items",
                 "gt_snapshot_active",

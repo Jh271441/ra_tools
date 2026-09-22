@@ -630,6 +630,10 @@ async def status(response: Response) -> dict[str, Any]:
         )
         for item in (runtime_state.get("baselines") or [])
     ]
+    legacy_cutover_policies = await asyncio.to_thread(
+        database.legacy_read_policies,
+        [str(item.get("scope") or "") for item in baseline_states if str(item.get("scope") or "")],
+    )
     overall = overall_status(
         database=database_state,
         baseline=baseline_state,
@@ -663,6 +667,10 @@ async def status(response: Response) -> dict[str, Any]:
         "baseline": baseline_state,
         "baselines": baseline_states,
         "baseline_conflicts": runtime_state.get("baseline_conflicts") or [],
+        "legacy_cutover": {
+            "policy_version": "legacy-cutover-v1",
+            "policies": legacy_cutover_policies,
+        },
         "trail_sync": runtime_state["trail_sync"],
         "gt_sync": await asyncio.to_thread(gt_sync_status),
         "batch_prediction_enabled": settings.batch_prediction_enabled,

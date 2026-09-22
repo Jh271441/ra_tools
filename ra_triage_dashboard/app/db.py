@@ -38,6 +38,7 @@ from .db_parts.review import DatabaseReviewMixin
 from .db_parts.notifications import DatabaseNotificationsMixin
 from .db_parts.runs import DatabaseRunsMixin
 from .db_parts.run_collections import DatabaseRunCollectionsMixin
+from .db_parts.legacy_cutover import DatabaseLegacyCutoverMixin
 from .db_parts.intent import DatabaseIntentMixin
 from .db_parts.snapshots import DatabaseSnapshotMixin
 
@@ -57,6 +58,7 @@ class Database(
     DatabaseNotificationsMixin,
     DatabaseRunsMixin,
     DatabaseRunCollectionsMixin,
+    DatabaseLegacyCutoverMixin,
 ):
     """SQLite/PostgreSQL storage with versioned review history.
 

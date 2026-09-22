@@ -883,8 +883,21 @@ class DatabaseCasesMixin:
                 self._attachment_dict(row)
             )
         annotation_items = [self._annotation_dict(row) for row in annotations]
+        legacy_classes = {
+            int(item["source_annotation_id"]): item
+            for item in self.legacy_classifications(
+                [str(issue["baseline_scope"] or "")]
+            )
+            if str(item.get("source_annotation_id") or "").isdigit()
+            and int(item["source_annotation_id"]) in {int(item["id"]) for item in annotation_items}
+        }
         for annotation in annotation_items:
             annotation["attachments"] = attachments_by_annotation.get(int(annotation["id"]), [])
+            classification = legacy_classes.get(int(annotation["id"]))
+            if classification:
+                annotation["legacy_classification"] = str(classification.get("classification") or "")
+                annotation["legacy_read_only"] = True
+                annotation["legacy_history_label"] = "历史 Review（只读）"
         data["annotations"] = annotation_items
         data["predictions"] = [self._prediction_dict(row) for row in predictions]
         data["jobs"] = [self._job_dict(row) for row in jobs]

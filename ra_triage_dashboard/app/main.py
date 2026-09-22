@@ -51,6 +51,7 @@ from .routers import (
     run_collections,
     trail_update,
     intent_labeling,
+    legacy_cutover,
 )
 
 logger = logging.getLogger("ra_triage_dashboard")
@@ -414,3 +415,4 @@ app.include_router(inference.router)
 app.include_router(labeling.router)
 app.include_router(trail_update.router)
 app.include_router(intent_labeling.router)
+app.include_router(legacy_cutover.router)
