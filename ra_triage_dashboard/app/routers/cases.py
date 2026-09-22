@@ -854,7 +854,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
             or body.get("request_id")
         ).strip()[:160]
         if idempotency_key and seed is None:
-            seed = int.from_bytes(hashlib.sha256(idempotency_key.encode("utf-8")).digest()[:8], "big") % (2**63)
+            seed = int.from_bytes(hashlib.sha256(idempotency_key.encode("utf-8")).digest()[:8], "big") % (2**31)
             assignments = distribute_issue_ids(
                 issue_ids,
                 assignees,

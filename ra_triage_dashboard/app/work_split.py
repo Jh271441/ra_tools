@@ -205,7 +205,7 @@ def distribute_issue_ids(
                 seed,
                 resolved_overlap_ratio,
             )
-        resolved_seed = seed if seed is not None else random.SystemRandom().randrange(2**63)
+        resolved_seed = seed if seed is not None else random.SystemRandom().randrange(2**31)
         rows = build_balanced_assignments(
             cleaned_ids,
             [person["name"] for person in people],
