@@ -418,12 +418,36 @@ function enhanceNativeUiSelect(select, { maxWidth = 520 } = {}) {
     select.setAttribute("aria-hidden", "true");
     select.tabIndex = -1;
   }
+  const translated = {
+    workSplitWorkflowMode: {
+      model_review_only: ["仅判错复核", "Model review only"],
+      model_review_and_case_label: ["判错复核 + Case 标注", "Model review + Case label"],
+    },
+    reviewWorkflowMode: {
+      model_review_only: ["仅判错复核", "Model review only"],
+      model_review_and_case_label: ["判错复核 + Case 标注", "Model review + Case label"],
+    },
+    campaignsSource: {
+      all: ["全部来源", "All sources"], campaign: ["标注实验", "Labeling campaigns"],
+      legacy_model_review: ["历史判错复核", "Historical reviews"],
+    },
+    modelReviewStatusInput: {
+      pending: ["待开始", "Pending"], in_progress: ["复核中", "In progress"], completed: ["已完成", "Completed"],
+    },
+    runCollectionReferenceType: {
+      gt: ["GT 版本（创建时冻结）", "GT snapshot (frozen on create)"],
+      label_result: ["标注版本", "Label snapshot"],
+    },
+  };
   const options = [...select.options].map((option) => ({
     value: option.value,
-    label: option.textContent?.trim() || option.value,
+    label: translated[select.id]?.[option.value]?.[state.uiLanguage === "en" ? 1 : 0]
+      || option.textContent?.trim() || option.value,
     disabled: option.disabled,
   }));
   populateUiSelect(root, options, select.value);
+  const trigger = root.querySelector(".ui-select-trigger");
+  if (trigger) trigger.title = select.title || "";
   bindUiSelect(root, { maxHeight: 320, maxWidth });
   if (select.dataset.dashboardSelectBound !== "1") {
     select.dataset.dashboardSelectBound = "1";

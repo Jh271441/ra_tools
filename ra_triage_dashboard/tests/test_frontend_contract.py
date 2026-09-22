@@ -397,7 +397,7 @@ class FrontendContractTest(unittest.TestCase):
             self.assertTrue((JS_DIR / name).is_file(), name)
             self.assertIn(f'"{name}"', APP_ENTRY_JS)
         self.assertIn("CACHE_VERSION", APP_ENTRY_JS)
-        self.assertIn("manual-triage-494", APP_ENTRY_JS)
+        self.assertIn("manual-triage-495", APP_ENTRY_JS)
         self.assertIn("function setBaselineScopes", APP_JS)
         self.assertIn("function applyInferredBaselinesFromRun", APP_JS)
         self.assertIn("clearIncompatible: true", APP_JS)
@@ -454,7 +454,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("baselines", APP_JS)
         self.assertIn("/static/js/", APP_ENTRY_JS)
         self.assertIn("script.async = false", APP_ENTRY_JS)
-        self.assertIn("app.js?v=manual-triage-494", INDEX_HTML)
+        self.assertIn("app.js?v=manual-triage-495", INDEX_HTML)
         self.assertIn('"work-split.js"', APP_ENTRY_JS)
         self.assertIn('"review-assignments.js"', APP_ENTRY_JS)
         # Product logic must live in domain modules, not the entry loader.
@@ -602,6 +602,24 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('localStorage.setItem(SIDEBAR_NAV_GROUP_PREFS_KEY', APP_JS)
         self.assertIn("sidebar-mobile-open .sidebar-nav-group", STYLES_CSS)
 
+    def test_task_context_and_native_selects_use_product_components(self) -> None:
+        self.assertIn("/api/review-task-context/", APP_JS)
+        self.assertIn("历史无 Run 任务", APP_JS)
+        self.assertIn("renderReviewTaskLoading", APP_JS)
+        self.assertIn("reviewTaskContextError", INDEX_HTML)
+        self.assertIn("enhanceNativeUiSelect", APP_JS)
+        self.assertIn("enhanceDashboardSelects", APP_JS)
+        for select_id in (
+            "workSplitWorkflowMode", "reviewWorkflowMode", "campaignsSource",
+            "runCollectionSelect", "runCollectionRevisionSelect",
+            "runCollectionReferenceType", "runCollectionComparisonReference",
+            "runCollectionSelectionSourceRun", "modelReviewStatusInput",
+        ):
+            self.assertIn(f'"{select_id}"', APP_JS)
+        self.assertIn("dashboard-native-ui-select", STYLES_CSS)
+        self.assertIn('event.key === "ArrowDown"', APP_JS)
+        self.assertIn('event.key === "Escape"', APP_JS)
+
     def test_case_labeling_is_a_separate_model_free_workspace(self) -> None:
         self.assertIn('data-page-target="labeling" data-app-path="/case-labeling"', INDEX_HTML)
         self.assertIn('id="caseLabelingNavButton"', INDEX_HTML)
@@ -666,7 +684,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-494`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-495`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -1765,7 +1783,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-494", APP_ENTRY_JS)
+        self.assertIn("manual-triage-495", APP_ENTRY_JS)
     def test_desktop_layout_panels_are_mouse_and_keyboard_resizable(self) -> None:
         self.assertIn('id="sidebarResizer" role="separator"', INDEX_HTML)
         self.assertIn('id="reviewPaneResizer" role="separator"', INDEX_HTML)
