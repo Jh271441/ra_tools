@@ -239,7 +239,7 @@ class PostgresDatabaseIntegrationTest(unittest.TestCase):
                 migration_count = conn.execute(
                     "SELECT COUNT(*) AS count FROM dashboard_schema_migrations"
                 ).fetchone()["count"]
-            self.assertEqual(int(migration_count), 49)
+            self.assertEqual(int(migration_count), 50)
         finally:
             database.close()
             other.close()
