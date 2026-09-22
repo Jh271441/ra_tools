@@ -4,129 +4,61 @@ Recorded: 2026-09-22 (Asia/Shanghai)
 
 ## Final runtime
 
-- Branch: `codex/legacy-cutover-s6`
-- Final pushed source: `c48835e9692c3b86757769fd82a7d8ed70d0e6ab`
-- S6 service: `127.0.0.1:8786/manual-s6`
-- S6 database: `manual_s6_smoke_20260922_legacycutover`
-- S6 database migration count: 50
-- Final health: `ok=true`, exact build `c48835e9692c3b86757769fd82a7d8ed70d0e6ab`, base path `/manual-s6`.
-- S6 status: PostgreSQL, `persistent_data=false`; Batch, AutoTriage push and D-Chat notifications disabled.
-- Anonymous session: `read_only=true`, `can_write=false`.
-- Production remained untouched on 8785, PID 10634, build
-  `5fdc41ba8b0215170a8307237762e1ed50a9aaf2`, base path `/manual`.
+- Branch: codex/legacy-cutover-s6
+- Running application source: c78aa6cedc90095639edea29e5fd4959ca3859a3
+- Active S6 v2 root: manual_s6_v2_legacy_cutover_20260922
+- Active S6 database: manual_s6_smoke_v2_20260922
+- 8786: 127.0.0.1:8786/manual-s6, migration 50, anonymous read-only.
+- Production 8785 remained PID 10634, build 5fdc41ba8b0215170a8307237762e1ed50a9aaf2; no production deployment or merge.
 
-S6 was rebuilt from the S5 smoke-v3 logical state. S5 v3 remains retained as
-`manual_s5_smoke_v3_20260922`; S3/S4/S5 databases were not modified.
+S6 v2 was rebuilt from the retained S5 v3 logical state. S6 v1 remains preserved separately.
 
-## Inventory and mapping
+## Inventory and determinate mapping
 
-The read-only S6 inventory covered five scopes:
-
-| Scope | Legacy annotations | Issues represented |
-| --- | ---: | ---: |
-| 0206 | 50 | 39 |
-| 0508 | 45 | 29 |
-| 0522 | 1 | 1 |
-| 0626 | 12 | 8 |
-| 0821 | 103 | 52 |
-
-Inventory SHA: `c7dc63fd4d250cbeedbbfe6916df15110f1fbf5a97a09e65f62edcdea6aad062`.
-
-Append-only classification apply produced:
+Inventory SHA: c7dc63fd4d250cbeedbbfe6916df15110f1fbf5a97a09e65f62edcdea6aad062.
 
 | Classification | Count | Treatment |
 | --- | ---: | --- |
-| `label_history_mapped` | 15 | Canonical Label history target when a source label revision exists. |
-| `legacy_mixed` | 196 | Kept as historical evidence; model Run plus label/tag/exclusion/note axes are not automatically split. |
-| `model_review_mapped` | 0 | No determinate pure model-review-only rows in this fixture; all such rows carried mixed legacy axes. |
-| `legacy_task_history` | 0 | No pure task-only row in this fixture. |
-| `legacy_unbound_history` | 0 | No empty-axis row in this fixture. |
+| model_review_mapped | 1 | Real S3 Model Review target exists. |
+| label_history_mapped | 1 | Real source Label revision target exists. |
+| legacy_mixed | 209 | Mixed model/label/tag/exclusion history retained read-only. |
+| legacy_task_history | 0 | No pure task-only row in this fixture. |
+| legacy_unbound_history | 0 | No empty-axis row in this fixture. |
 
-Classification rows are keyed by source annotation ID and policy version. Re-running
-the apply is idempotent; source annotations, comments and attachments are unchanged.
+Apply is append-only and idempotent. It checks expected inventory SHA in the same transaction. Source annotations, comments and attachments remain unchanged.
 
-## Read policy and shadow
+## Policy and shadow
 
-All five scopes have `legacy-cutover-v1` policies. Final policy is `shadow` for
-each scope. The 0522 scope was explicitly switched `shadow → canonical → shadow`
-using epochs 1, 2 and 3; rollback only changed the policy row and retained all
-classification/history rows.
+All five v2 scopes ended canonical after component receipt validation. The 40 receipts are 25 pass and 15 expected_diff, with no unexpected defect. Required components were gallery, overview, reviewers, reason_analysis, reason_export, run_metadata, campaign_progress and trail_exclusion. Expected differences are issue-level legacy_mixed, legacy_unbound_history or legacy_task_history.
 
-Five append-only gallery shadow receipts were recorded. Each is
-`expected_diff`, with `legacy_mixed`, `legacy_unbound_history` and
-`legacy_task_history` as the allowed difference kinds. No raw total-only comparison
-was accepted; each receipt carries source inventory SHA and bounded Issue-level diff
-evidence. Examples include 0508: legacy 45 / canonical 1 / expected diff 44, and
-0206: legacy 50 / canonical 13 / expected diff 37.
+0508 canonical-to-shadow rollback was exercised with CAS epochs and then restored to canonical. Public endpoint hashes:
 
-## Canonical read and compatibility checks
+| Endpoint | Canonical | Shadow rollback |
+| --- | --- | --- |
+| /api/cases?page_size=20 | ed080e204f355c2d0bd87f3b24fca33c36d9d2ae5ec04505ea97a2ca795a7b11 | 8aeb6d8c7974dca493fa7ac1103ae5c6ef1fd998bdb34d12d3eb237 |
+| /api/reviewers | e66e2692c7ac0b69d261a295b613cf7c17c2e5da9c36c417d64135086ba21f65 | same |
+| /api/review-reason-analysis | b1089b9625de356a986cadf64a38d9c84b209a6a8b50f1ebc0c0f4ad51048509 | same |
+| /api/model-runs | 262180f14e37ec253804fd0ae6e17f471b6c2ed2ddf0670727ea546b831dfac4 | same |
 
-- Canonical Issue projection combines Issue, S1 shared Label state, exact selected
-  Run prediction and exact Model Review head by Run/Campaign/reference/reviewer.
-  It does not use unbound or prior-Run annotation fallback.
-- `GET /api/legacy/{kind}/{id}` resolves legacy annotation/comment/task evidence
-  without rewriting it and returns the canonical target/projection where available.
-- `GET /api/issues/{issue_id}/canonical-projection` returns exact shared label and
-  exact Model Review context.
-- Legacy annotations returned in Case history carry `legacy_read_only` and
-  classification metadata; the UI labels them “历史 Review（只读）” and disables
-  delete for those rows.
-- `/api/status` exposes the five scope read policies and epochs.
-- Exclusion projection is bulk per scope and marks pending/conflict/stale Label
-  states non-writable; legacy exclusion is retained as historical evidence.
-  The 0206 smoke projection returned 133 Issues and no writable conflict rows.
+The cases response changed as expected when legacy fallback was removed; equal hashes on the other components reflect no determinate canonical delta in this fixture.
 
-## S5 evaluation compatibility and performance
+## Canonical projection and exclusion
 
-Final S6 acceptance token: `6abf7e2ce3`.
+Canonical Issue projection combines S1 shared Label state, selected Run prediction and exact Model Review heads by Run/Campaign/reference/reviewer. Without a reviewer filter it returns all heads plus an effective aggregate; it never fills from an unbound or prior Run. Legacy resolver endpoints retain annotation/comment/task evidence and expose canonical targets. Classified/canonical annotation deletion returns 409. Canonical scopes do not inherit legacy/prior Run draft tags. Exclusion projection is bulk per scope; pending/conflict/stale states are non-writable and only explicit resolved excluded state can become a Trail candidate. External Trail writers remained disabled.
 
-- 4,039 synthetic acceptance Issues across 5 scopes and 8 Runs.
-- Workset: `run-evaluation-workset-82d3f8d2b4664fe1b933ca9334fe2d44`.
-- Evaluation: `evaluation-49330832-5c0e-43ec-9cf9-b271bfd00c12`.
-- Five GT snapshot IDs were frozen and recorded in the Evaluation reference.
-- Compact page (50 Issues × 8 Runs): 105,729 bytes.
-- Full export: 7,375,509 bytes, 4,039 items.
-- Same frozen content reused the same Evaluation ID.
-- Shared Labeling Campaign: `campaign-863a8dcc3be34529a8c182778450f4d2`.
-- Model Review Group: `campaign-group-10fe1da5930d4efc8b6f6176d9d0b12b`, 8 child Campaigns.
-- EXPLAIN used `idx_predictions_issue_run`; observed execution time was 0.068 ms.
-- A formal Label snapshot context also passed:
-  `evaluation-c6f40ae5-24a3-49ee-94db-c4423f52f900`, snapshot
-  `label-result-a14ecb7f35b333c3b9030695af82eee77902da5248640d50739c064ebb506abe`.
-- Divergent GT/shared-label acceptance passed:
-  `evaluation-a0ae1530-0b69-4879-99f4-5943dc8b3d89`,
-  Issue `s6-divergent-unique`: frozen GT reference `无需协助`, frozen shared
-  human label `误触发`, `gt_relation=differs_from_gt`.
+## S5 regression and performance
 
-The full final cloud suite ran on disposable database
-`manual_s6_suite_20260922`:
+Final v2 acceptance: 4,039 Issues, 5 scopes, 8 Runs; Evaluation evaluation-9cd6fce5-81de-41f6-88ec-220463c26e2f; Workset run-evaluation-workset-59f38d9292bc4639aaace7d312c02e78; compact detail 105,729 bytes; export 7,375,509 bytes / 4,039 items; Campaign campaign-30c830cba3614e3180a26c7ecc66fc56; Model Review Group campaign-group-8bd8533c35674a48a7b5846c3023515a with 8 child Campaigns; index plan idx_predictions_issue_run, execution 0.058 ms. Label snapshot Evaluation evaluation-0d26d157-77f6-48b9-a38f-c699ddc07264 uses snapshot label-result-78e143ec29a33c11bc021cc72a0648e7175e846609e54185cea16fed5adb00e8.
 
-**578 passed, 1 skipped in 54.62 seconds.**
+Clean disposable S6 suite database manual_s6_suite_v2_20260922: 578 passed, 1 skipped in 59.95 seconds.
 
-The final source includes S5 regression coverage plus S6 SQLite/PostgreSQL mapping,
-policy CAS, compatibility, exclusion, shadow and canonical read checks.
+## Preservation
 
-## Database preservation
+| Database | Issues | Migrations |
+| --- | ---: | ---: |
+| manual_s5_smoke_v3_20260922 | 4,452 | 49 |
+| manual_s6_smoke_v2_20260922 | 8,491 | 50 |
+| manual_s6_suite_v2_20260922 | 9,458 | 50 |
+| ra_triage_dashboard | 4,046 | 43 |
 
-Final read-only counts:
-
-| Database | Issues | Migrations | State |
-| --- | ---: | ---: | --- |
-| `manual_s3_smoke_20260921` | 413 | 44 | retained |
-| `manual_s4_smoke_20260921_campaign` | 413 | 46 | retained |
-| `manual_s5_smoke_v3_20260922` | 4,452 | 49 | retained S5 source |
-| `manual_s6_smoke_20260922_legacycutover` | 17,536 | 50 | active S6 smoke |
-| `ra_triage_dashboard` | 4,046 | 43 | production |
-
-The S6 database includes the retained S5-v3 data plus unique S6 acceptance fixtures.
-No production writer, Trail sync, Batch, AutoTriage publish or D-Chat path was enabled.
-
-## Browser and recovery
-
-CUA remained unavailable in the final pass. HTTP/DOM checks against loopback verified
-the exact S6 health/build/base path, read-only session, policy/status endpoint and
-legacy inventory endpoint. No public browser listener was opened.
-
-`restore_s5_8786.sh` remains in the S6 source and restores the S5 v3 loopback
-service from its retained database. The guarded S6 switch was exercised after each
-source update and leaves S6 running on 8786. 8785 was never stopped or modified.
+S3/S4 databases remain retained and unchanged. No production, Trail, Batch, AutoTriage or D-Chat writer was enabled. CUA was unavailable; HTTP/DOM and API checks were used.
