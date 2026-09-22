@@ -9,6 +9,10 @@ Recorded: 2026-09-22 (Asia/Shanghai)
 - UX smoke source: `03b85a9ce728259297f7acf96bfa36bca869a688` (corrected stable sidebar source; final branch also contains report/docs commits).
 - 8786 health: `ok=true`, base path `/manual-s6`; writers, sync, Batch, AutoTriage and D-Chat disabled.
 - Production 8785 was not touched.
+- UX smoke alone enables `DASHBOARD_SMOKE_LOOPBACK_ADMIN_ENABLED=true` with
+  `DASHBOARD_SMOKE_LOOPBACK_ADMIN_USERNAME=ux-smoke-admin`. Startup rejects this
+  mode unless the process binds localhost on 8786/8787. Production 8785 does not
+  set either variable.
 
 ## Checks
 

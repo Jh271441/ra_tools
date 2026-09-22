@@ -190,6 +190,21 @@ def request_identity(request: Request, settings: Settings) -> SessionIdentity:
     the same username. Proxy headers require the separate trusted marker.
     """
 
+    if getattr(settings, "smoke_loopback_admin_enabled", False):
+        client_host = request.client.host if request.client else ""
+        if client_host in {"127.0.0.1", "::1", "localhost"}:
+            username = normalise_username(
+                getattr(settings, "smoke_loopback_admin_username", "")
+            )
+            if username:
+                return SessionIdentity(
+                    username=username,
+                    source="smoke_loopback_admin",
+                    authenticated=True,
+                    verified=True,
+                    trusted_ingress=False,
+                )
+
     if settings.trust_proxy_identity_headers:
         if not is_trusted_ingress(request, settings):
             return SessionIdentity(source="untrusted_ingress")

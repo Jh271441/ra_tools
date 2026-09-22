@@ -471,9 +471,9 @@ function parsePageRoute() {
   const uxAlias = legacyModelReviewCampaign
     ? "review"
     : pathname === "/run-collections"
-    ? "run-collections"
+    ? "comparison"
     : pathname === "/multi-run-evaluation"
-      ? "run-collections"
+      ? "comparison"
       : pathname === "/labeling-experiments"
         ? "labeling-new-task"
         : pathname === "/labeling-summary"

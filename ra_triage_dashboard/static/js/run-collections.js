@@ -753,7 +753,11 @@ function bindRunCollectionsEvents() {
       loadRunCollectionsWorkbench({ restoreRoute: true }).catch((error) => runCollectionSetStatus(error.message, true));
     }
   });
-  if (state.activePage === "run-collections" || window.location.pathname.includes("/run-collections")) {
+  if (
+    state.activePage === "run-collections"
+    || window.location.pathname.includes("/run-collections")
+    || window.location.pathname.includes("/multi-run-evaluation")
+  ) {
     loadRunCollectionsWorkbench({ restoreRoute: true }).catch((error) => runCollectionSetStatus(error.message, true));
   }
 }

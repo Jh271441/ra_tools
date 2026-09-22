@@ -175,6 +175,8 @@ class Settings:
     kylin_sso_cache_seconds: int
     sso_write_users: tuple[str, ...]
     team_default_managers: tuple[str, ...]
+    smoke_loopback_admin_enabled: bool
+    smoke_loopback_admin_username: str
     seed_examples_enabled: bool
     dchat_notifications_enabled: bool
     dchat_delivery_mode: str
@@ -297,6 +299,23 @@ class Settings:
         )
         if any(not IDENTITY_NAME_RE.fullmatch(username) for username in sso_write_users):
             raise RuntimeError("DASHBOARD_SSO_WRITE_USERS 包含非法用户名。")
+        smoke_loopback_admin_enabled = _bool(
+            "DASHBOARD_SMOKE_LOOPBACK_ADMIN_ENABLED", False
+        )
+        smoke_loopback_admin_username = os.getenv(
+            "DASHBOARD_SMOKE_LOOPBACK_ADMIN_USERNAME", ""
+        ).strip()
+        if smoke_loopback_admin_enabled:
+            smoke_host = os.getenv("DASHBOARD_HOST", "").strip()
+            smoke_port = os.getenv("DASHBOARD_PORT", "").strip()
+            if (
+                smoke_host not in {"127.0.0.1", "::1", "localhost"}
+                or smoke_port not in {"8786", "8787"}
+                or not IDENTITY_NAME_RE.fullmatch(smoke_loopback_admin_username)
+            ):
+                raise RuntimeError(
+                    "smoke loopback admin 仅允许绑定 localhost 的 8786/8787，并要求合法用户名。"
+                )
         try:
             dchat_timeout_seconds = float(
                 os.getenv("DASHBOARD_DCHAT_TIMEOUT_SECONDS", "3.0")
@@ -578,6 +597,8 @@ class Settings:
             ),
             sso_write_users=sso_write_users,
             team_default_managers=team_default_managers,
+            smoke_loopback_admin_enabled=smoke_loopback_admin_enabled,
+            smoke_loopback_admin_username=smoke_loopback_admin_username,
             seed_examples_enabled=_bool("DASHBOARD_SEED_EXAMPLES_ENABLED", True),
             dchat_notifications_enabled=_bool(
                 "DASHBOARD_DCHAT_NOTIFICATIONS_ENABLED", False
