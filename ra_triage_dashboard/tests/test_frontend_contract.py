@@ -349,6 +349,8 @@ class FrontendContractTest(unittest.TestCase):
     def test_run_collection_evaluation_contract_exposes_shared_label_and_provenance(self) -> None:
         self.assertIn("Shared label state", RUN_COLLECTION_JS)
         self.assertIn("scope_snapshots", RUN_COLLECTION_JS)
+        self.assertIn("reference_ids", RUN_COLLECTION_JS)
+        self.assertIn('id="runCollectionLabelReferenceSet"', INDEX_HTML)
         self.assertIn("supported_coverage", RUN_COLLECTION_JS)
         self.assertIn("pairwise_union_denominator", RUN_COLLECTION_JS)
         self.assertIn("reference-set:", APP_PY_RUN_COLLECTIONS_DB)

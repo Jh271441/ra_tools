@@ -34,6 +34,33 @@ class RunCollectionsDatabaseTest(unittest.TestCase):
         self.assertFalse(reused)
         return result
 
+    def _freeze_gt_snapshot(self, scope: str) -> str:
+        with self.database.connect() as conn:
+            rows = conn.execute(
+                "SELECT issue_id, gt_label FROM issues WHERE baseline_scope = ? ORDER BY issue_id",
+                (scope,),
+            ).fetchall()
+            snapshot = self.database._create_or_reuse_gt_snapshot_with_conn(
+                conn,
+                scope=scope,
+                gt_mode="strict",
+                source_name="test-fixture",
+                source_view_id=1,
+                source_field="gt_label",
+                rows={
+                    str(row["issue_id"]): {"gt_label": str(row["gt_label"] or "")}
+                    for row in rows
+                },
+                created_by="test",
+                created_by_source="fixture",
+                created_by_verified=True,
+                activate=True,
+                activation_reason="test_fixture",
+                mark_change=False,
+                scope_lock_held=True,
+            )
+        return str(snapshot["id"])
+
     def test_metadata_rename_does_not_create_revision_and_revision_is_append_only(self) -> None:
         first = self._make_run("first", [self.issue("one", "误触发")])
         second = self._make_run("second", [self.issue("one", "误触发")])
@@ -153,6 +180,7 @@ class RunCollectionsDatabaseTest(unittest.TestCase):
             [self.issue("rollback-a", "正确触发")],
             source="test", replace_gt=True, baseline_scope=scope,
         )
+        self._freeze_gt_snapshot(scope)
         run = self._make_run("rollback", [{"issue_id": "rollback-a", "model_label": "正确触发"}])
         collection = self.database.create_run_collection(name="Rollback", members=[run["id"]])
         with self.database.connect() as conn:
@@ -172,12 +200,30 @@ class RunCollectionsDatabaseTest(unittest.TestCase):
             }
         self.assertEqual(after, before)
 
+    def test_gt_reference_fails_closed_without_active_snapshot(self) -> None:
+        scope = "run-collections-no-snapshot"
+        self.database.upsert_issues(
+            [self.issue("no-snapshot", "正确触发")],
+            source="test", replace_gt=True, baseline_scope=scope,
+        )
+        run = self._make_run("no-snapshot-run", [
+            {"issue_id": "no-snapshot", "model_label": "正确触发"},
+        ])
+        collection = self.database.create_run_collection(
+            name="No snapshot", members=[run["id"]]
+        )
+        with self.assertRaisesRegex(ValueError, "active GT snapshot"):
+            self.database.create_run_evaluation(
+                collection_id=collection["id"], baseline_scopes=[scope],
+            )
+
     def test_evaluation_freezes_reference_collection_and_predictions(self) -> None:
         scope = "run-collections-history"
         self.database.upsert_issues(
             [self.issue("a", "误触发"), self.issue("b", "正确触发"), self.issue("c", "无需协助")],
             source="test", replace_gt=True, baseline_scope=scope,
         )
+        self._freeze_gt_snapshot(scope)
         baseline = self._make_run("baseline", [
             {"issue_id": "a", "model_label": "误触发"},
             {"issue_id": "b", "model_label": "误触发"},
@@ -261,6 +307,7 @@ class RunCollectionsDatabaseTest(unittest.TestCase):
             [self.issue(f"bias-{index}", "正确触发") for index in range(4)],
             source="test", replace_gt=True, baseline_scope=scope,
         )
+        self._freeze_gt_snapshot(scope)
         first = self._make_run("source", [{"issue_id": "bias-0", "model_label": "正确触发"}, {"issue_id": "bias-1", "model_label": "正确触发"}])
         second = self._make_run("other", [{"issue_id": f"bias-{index}", "model_label": "正确触发"} for index in range(4)])
         collection = self.database.create_run_collection(name="Bias", members=[first["id"], second["id"]])
@@ -338,6 +385,7 @@ class RunCollectionsDatabaseTest(unittest.TestCase):
         scope = "run-collections-5000"
         issue_rows = [self.issue(f"perf-{index:05d}", "正确触发") for index in range(5000)]
         self.database.upsert_issues(issue_rows, source="test", replace_gt=True, baseline_scope=scope)
+        self._freeze_gt_snapshot(scope)
         first = self._make_run("perf-first", [
             {"issue_id": f"perf-{index:05d}", "model_label": "正确触发"}
             for index in range(0, 5000, 2)
@@ -384,6 +432,7 @@ class RunCollectionsDatabaseTest(unittest.TestCase):
                 {"issue_id": f"{scope}-a", "gt_label": "正确触发"},
                 {"issue_id": f"{scope}-b", "gt_label": "误触发"},
             ])
+            self._freeze_gt_snapshot(scope)
         first = self._make_run("multi-first", [
             {"issue_id": item["issue_id"], "model_label": item["gt_label"]}
             for item in issue_rows
@@ -402,7 +451,11 @@ class RunCollectionsDatabaseTest(unittest.TestCase):
         self.assertEqual(evaluation["workset"]["scope_count"], 5)
         self.assertEqual(evaluation["workset"]["baseline_scopes"], scopes)
         self.assertEqual(evaluation["summary"]["workset_count"], 10)
-        self.assertTrue(evaluation["items"][0]["shared_label"]["source"]["snapshot_id"])
+        self.assertEqual(
+            evaluation["items"][0]["shared_label"]["source"]["reference_type"],
+            "shared_label_projection",
+        )
+        self.assertEqual(len(evaluation["items"][0]["shared_label"]["sha256"]), 64)
         self.assertIn("supported_coverage", evaluation["summary"]["runs"][0])
         self.assertLess(len(json.dumps(evaluation, ensure_ascii=False)), 250000)
         task_context = self.database.get_run_evaluation_task_context(evaluation["id"])
@@ -501,6 +554,96 @@ class RunCollectionsDatabaseTest(unittest.TestCase):
         self.assertEqual(evaluation["reference"]["type"], "label_result")
         self.assertEqual(evaluation["reference"]["id"], snapshot["id"])
         self.assertEqual(evaluation["items"][0]["shared_label"]["method"], "single")
+
+    def test_gt_reference_and_shared_human_label_are_distinct_and_frozen(self) -> None:
+        scope = "run-collections-divergent-label"
+        issue_id = "divergent-label-issue"
+        self.database.upsert_issues(
+            [{"issue_id": issue_id, "gt_label": "无需协助"}],
+            source="test", replace_gt=True, baseline_scope=scope,
+        )
+        self.database.ensure_label_case(issue_id=issue_id)
+        self.database.create_label_revision(
+            issue_id=issue_id, expected_output="误触发", tags=[],
+            evidence_gaps=[], rationale="human label differs from GT",
+            is_excluded=False, author="reviewer", author_source="test",
+            author_verified=True,
+        )
+        self._freeze_gt_snapshot(scope)
+        run = self._make_run("divergent-label-run", [
+            {"issue_id": issue_id, "model_label": "误触发"},
+        ])
+        collection = self.database.create_run_collection(
+            name="Divergent label", members=[run["id"]]
+        )
+        evaluation = self.database.create_run_evaluation(
+            collection_id=collection["id"], baseline_scopes=[scope],
+        )
+        item = evaluation["items"][0]
+        self.assertEqual(item["reference_label"], "无需协助")
+        self.assertEqual(item["shared_label"]["state"], "resolved")
+        self.assertEqual(item["shared_label"]["expected_output"], "误触发")
+        self.assertEqual(item["shared_label"]["gt_relation"], "differs_from_gt")
+        self.assertTrue(item["shared_label"]["source"]["source_revision_ids"])
+        before = self.database.get_run_evaluation(evaluation["id"])
+        self.database.create_label_revision(
+            issue_id=issue_id, expected_output="正确触发", tags=[],
+            evidence_gaps=[], rationale="later human update",
+            is_excluded=False, author="reviewer", author_source="test",
+            author_verified=True, expected_previous_revision_id=1,
+        )
+        self.database.upsert_issues(
+            [{"issue_id": issue_id, "gt_label": "正确触发"}],
+            source="later-gt", replace_gt=True, baseline_scope=scope,
+        )
+        after = self.database.get_run_evaluation(evaluation["id"])
+        self.assertEqual(after["reference"]["sha256"], before["reference"]["sha256"])
+        self.assertEqual(after["items"][0]["shared_label"], before["items"][0]["shared_label"])
+
+    def test_pairwise_shadow_reconciles_with_v1_evaluation_union(self) -> None:
+        scope = "run-collections-pairwise-shadow"
+        rows = [
+            self.issue("shadow-a", "正确触发"),
+            self.issue("shadow-b", "误触发"),
+            self.issue("shadow-c", "无需协助"),
+            self.issue("shadow-d", "正确触发"),
+        ]
+        self.database.upsert_issues(rows, source="test", replace_gt=True, baseline_scope=scope)
+        self._freeze_gt_snapshot(scope)
+        baseline = self._make_run("shadow-baseline", [
+            {"issue_id": "shadow-a", "model_label": "正确触发"},
+            {"issue_id": "shadow-b", "model_label": "正确触发"},
+        ])
+        candidate = self._make_run("shadow-candidate", [
+            {"issue_id": "shadow-a", "model_label": "正确触发"},
+            {"issue_id": "shadow-c", "model_label": "无需协助"},
+        ])
+        collection = self.database.create_run_collection(
+            name="Pairwise shadow", members=[
+                {"run_id": baseline["id"], "is_reference": True},
+                candidate["id"],
+            ]
+        )
+        evaluation = self.database.create_run_evaluation(
+            collection_id=collection["id"], baseline_scopes=[scope],
+            comparison_reference_run_id=baseline["id"],
+        )
+        legacy = self.database.compare_model_runs(
+            baseline_run_id=baseline["id"], candidate_run_id=candidate["id"],
+            baseline_scopes=[scope], page_size=100,
+        )
+        self.assertEqual(legacy["summary"]["total_count"], evaluation["summary"]["pairwise_union_denominator"])
+        for side, metric in zip(("baseline", "candidate"), evaluation["summary"]["runs"]):
+            shadow = legacy["summary"][side]
+            self.assertEqual(shadow["correct_count"], metric["correct_count"])
+            self.assertEqual(shadow["accuracy"], metric["accuracy"])
+            self.assertEqual(shadow["prediction_count"], metric["supported_count"])
+        self.assertEqual(
+            legacy["summary"]["transition_counts"],
+            evaluation["summary"]["runs"][1]["transitions_vs_reference"],
+        )
+        self.assertEqual(evaluation["summary"]["workset_count"], 4)
+        self.assertEqual(evaluation["summary"]["workset_missing_count"], 1)
 
 
 if __name__ == "__main__":

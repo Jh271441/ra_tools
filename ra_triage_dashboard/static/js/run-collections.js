@@ -149,10 +149,36 @@ function runCollectionUpdateUrl(mode = "replace") {
   );
 }
 
+function runCollectionSelectedScopes() {
+  const catalog = state.baselineCatalog || state.config?.baselines || [];
+  const selected = new Set(normalizeBaselineIds(state.selectedBaselineIds));
+  return catalog
+    .filter((item) => selected.has(String(item?.id || "")))
+    .map((item) => String(item.scope || "").trim())
+    .filter(Boolean);
+}
+
+function renderRunCollectionLabelReferenceSet(scopes = [], values = {}) {
+  const root = document.getElementById("runCollectionLabelReferenceSet");
+  if (!root) return;
+  const normalized = [...new Set((scopes || []).map(String).filter(Boolean))];
+  const labelType = String(document.getElementById("runCollectionReferenceType")?.value || "gt");
+  const multi = labelType === "label_result" && normalized.length > 1;
+  root.hidden = !multi;
+  if (!multi) {
+    root.innerHTML = "";
+    return;
+  }
+  root.innerHTML = normalized.map((scope) => `
+    <label><span>${escapeHtml(scope)} Label snapshot</span><input data-label-scope="${escapeHtml(scope)}" value="${escapeHtml(values[scope] || "")}" placeholder="label-result-…" autocomplete="off"></label>
+  `).join("");
+}
+
 function renderRunCollectionSelectors() {
   const collectionSelect = $("#runCollectionSelect");
   if (!collectionSelect) return;
   applyRunCollectionReadOnlyGating();
+  renderRunCollectionLabelReferenceSet(runCollectionUi.evaluation?.workset?.baseline_scopes || runCollectionSelectedScopes(), {});
   const selectedCollectionId = String(runCollectionUi.detail?.id || "");
   collectionSelect.innerHTML = [
     `<option value="">${escapeHtml(runCollectionText("选择 Collection", "Select a Collection"))}</option>`,
@@ -294,6 +320,10 @@ function renderRunCollectionEvaluation(payload) {
   }
   if (worksetId && payload.workset?.workset_id) worksetId.value = payload.workset.workset_id;
   if (selectionSource) selectionSource.value = payload.selection_source_run_id || "";
+  renderRunCollectionLabelReferenceSet(
+    payload.workset?.baseline_scopes || [],
+    Object.fromEntries((payload.reference?.snapshot?.scope_snapshots || []).map((item) => [item.baseline_scope, item.id]))
+  );
   const bias = payload.selection_bias_warning
     ? `<strong class="run-collection-bias-warning">${escapeHtml(payload.selection_bias_warning)}</strong>` : "";
   const scopeSnapshots = payload.reference?.snapshot?.scope_snapshots || [];
@@ -495,6 +525,15 @@ async function runCollectionEvaluate() {
     selection_source_run_id: String($("#runCollectionSelectionSourceRun")?.value || "").trim(),
   };
   if (!body.comparison_reference_run_id) delete body.comparison_reference_run_id;
+  if (referenceType === "label_result") {
+    const scopeInputs = [...document.querySelectorAll("#runCollectionLabelReferenceSet [data-label-scope]")];
+    if (scopeInputs.length) {
+      body.reference_ids = Object.fromEntries(
+        scopeInputs.map((input) => [String(input.dataset.labelScope || ""), String(input.value || "").trim()]).filter((item) => item[0] && item[1])
+      );
+      delete body.reference_id;
+    }
+  }
   const result = await api("/api/run-evaluations", {
     method: "POST",
     headers: runCollectionApiHeaders(crypto.randomUUID()),
@@ -703,6 +742,7 @@ function bindRunCollectionsEvents() {
   $("#runCollectionReferenceType")?.addEventListener("change", (event) => {
     $("#runCollectionReferenceId").disabled = event.target.value === "gt";
     $("#runCollectionReferenceId").placeholder = event.target.value === "label_result" ? "label-result-…" : "GT snapshot is selected by scope";
+    renderRunCollectionLabelReferenceSet(runCollectionUi.evaluation?.workset?.baseline_scopes || runCollectionSelectedScopes(), {});
   });
   window.addEventListener("popstate", () => {
     const params = new URLSearchParams(window.location.search);

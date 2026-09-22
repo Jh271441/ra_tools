@@ -25,6 +25,23 @@ class RunCollectionsApiTest(unittest.TestCase):
             [{"issue_id": "api-a", "gt_label": "正确触发"}],
             source="api-test", replace_gt=True, baseline_scope="api-scope",
         )
+        with self.database.connect() as conn:
+            self.database._create_or_reuse_gt_snapshot_with_conn(
+                conn,
+                scope="api-scope",
+                gt_mode="strict",
+                source_name="api-test",
+                source_view_id=1,
+                source_field="gt_label",
+                rows={"api-a": {"gt_label": "正确触发"}},
+                created_by="api-test",
+                created_by_source="fixture",
+                created_by_verified=True,
+                activate=True,
+                activation_reason="test_fixture",
+                mark_change=False,
+                scope_lock_held=True,
+            )
         self.run, _ = self.database.import_model_run(
             name="api-run", source_name="api-run.json", source_sha256="api-run-collections-test",
             metadata={}, rows=[{"issue_id": "api-a", "model_label": "正确触发"}],

@@ -1336,6 +1336,7 @@
               <div class="run-collection-evaluation-controls">
                 <label><span class="ui-lang-zh">评分参考</span><span class="ui-lang-en">Scoring reference</span><select id="runCollectionReferenceType"><option value="gt">GT snapshot（创建时冻结）</option><option value="label_result">Label result snapshot</option></select></label>
                 <label><span class="ui-lang-zh">参考 ID（Label snapshot 可选）</span><span class="ui-lang-en">Reference ID (optional for Label snapshot set)</span><input id="runCollectionReferenceId" placeholder="Label result snapshot ID"></label>
+                <div id="runCollectionLabelReferenceSet" class="run-collection-label-reference-set" hidden></div>
                 <label><span class="ui-lang-zh">比较基准 Run</span><span class="ui-lang-en">Transition reference Run</span><select id="runCollectionComparisonReference"><option value="">Use Collection reference mark</option></select></label>
                 <label><span class="ui-lang-zh">冻结 Workset ID（可选）</span><span class="ui-lang-en">Frozen Workset ID (optional)</span><input id="runCollectionWorksetId" placeholder="workset-…"></label>
                 <label><span class="ui-lang-zh">按来源 Run 筛选 Workset（可选）</span><span class="ui-lang-en">Filter Workset by source Run (optional)</span><select id="runCollectionSelectionSourceRun"><option value="">Do not filter by a Run</option></select></label>

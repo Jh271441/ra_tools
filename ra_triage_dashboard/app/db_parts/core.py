@@ -1925,10 +1925,23 @@ class DatabaseCoreMixin:
                     CREATE TRIGGER IF NOT EXISTS trg_review_workset_scopes_no_delete
                     BEFORE DELETE ON review_workset_scopes
                     BEGIN SELECT RAISE(ABORT, 'run workset scope snapshots are immutable'); END;
+                    CREATE TRIGGER IF NOT EXISTS trg_review_workset_scopes_no_extra_insert
+                    BEFORE INSERT ON review_workset_scopes
+                    WHEN NEW.ordinal > COALESCE((
+                        SELECT scope_count FROM review_worksets WHERE id = NEW.workset_id
+                    ), 0) OR (
+                        SELECT COUNT(*) FROM review_workset_scopes
+                        WHERE workset_id = NEW.workset_id
+                    ) >= COALESCE((
+                        SELECT scope_count FROM review_worksets WHERE id = NEW.workset_id
+                    ), 0)
+                    BEGIN SELECT RAISE(ABORT, 'run workset scope set is complete'); END;
                     CREATE INDEX IF NOT EXISTS idx_run_evaluation_items_scope
                         ON run_evaluation_items(context_id, baseline_scope, ordinal);
                     CREATE INDEX IF NOT EXISTS idx_run_evaluation_context_sha
                         ON run_evaluation_contexts(context_sha256, created_at, id);
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_run_evaluation_context_sha_unique
+                        ON run_evaluation_contexts(context_sha256);
                     """
                 )
             revision_tables = (

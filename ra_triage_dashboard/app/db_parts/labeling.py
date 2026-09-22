@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
+from contextlib import nullcontext
 from typing import Any, Iterable, Sequence
 from uuid import uuid4
 
@@ -907,6 +908,7 @@ class DatabaseLabelingMixin:
         task_id: str = "",
         baseline_scope: str = "",
         source_run_id: str = "",
+        connection: Any | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
         """Resolve current Label Case heads in bounded SQL batches.
 
@@ -927,7 +929,7 @@ class DatabaseLabelingMixin:
         result_revision_rows: list[Any] = []
         resolution_rows: list[Any] = []
         assignment_rows: list[Any] = []
-        with self.connect() as conn:
+        with (nullcontext(connection) if connection is not None else self.connect()) as conn:
             for offset in range(0, len(cleaned), 400):
                 batch = cleaned[offset : offset + 400]
                 clause = f"issue_id IN ({', '.join('?' for _ in batch)})"
@@ -1064,6 +1066,7 @@ class DatabaseLabelingMixin:
         issue_ids: Sequence[str],
         *,
         include_sources: bool = True,
+        connection: Any | None = None,
     ) -> dict[str, dict[str, Any]]:
         """Resolve shared Labeling state for a bounded set of baseline Issues.
 
@@ -1092,7 +1095,7 @@ class DatabaseLabelingMixin:
             return projected
 
         gt_by_issue: dict[str, str] = {}
-        with self.connect() as conn:
+        with (nullcontext(connection) if connection is not None else self.connect()) as conn:
             for offset in range(0, len(cleaned), 400):
                 batch = cleaned[offset : offset + 400]
                 rows = conn.execute(
@@ -1109,8 +1112,9 @@ class DatabaseLabelingMixin:
                         for row in rows
                     }
                 )
-
-        cases_by_issue = self._batch_label_cases(cleaned, baseline_scope=scope)
+            cases_by_issue = self._batch_label_cases(
+                cleaned, baseline_scope=scope, connection=conn
+            )
         for issue_id in cleaned:
             cases = cases_by_issue.get(issue_id, [])
             if not cases or issue_id not in gt_by_issue:

@@ -124,6 +124,13 @@ class PostgresDatabaseIntegrationTest(unittest.TestCase):
                 [{"issue_id": issue_id, "gt_label": "正确触发"}],
                 source="run_collection_pg_test", replace_gt=True, baseline_scope=scope,
             )
+            snapshot = database.apply_gt_sync_snapshot(
+                scope=scope,
+                rows=[{"issue_id": issue_id, "gt_label": "正确触发"}],
+                source_name="test", source_view_id=1000, source_field="gt",
+                trigger="test", requested_by="pg-test", requested_by_source="test",
+                requested_by_verified=True, expected_issue_ids=[issue_id],
+            )
             run_ids = []
             for name, label in (("first", "正确触发"), ("second", "误触发")):
                 run, reused = database.import_model_run(
@@ -155,13 +162,6 @@ class PostgresDatabaseIntegrationTest(unittest.TestCase):
                     for table in before_rollback
                 }
             self.assertEqual(after_rollback, before_rollback)
-            snapshot = database.apply_gt_sync_snapshot(
-                scope=scope,
-                rows=[{"issue_id": issue_id, "gt_label": "正确触发"}],
-                source_name="test", source_view_id=1000, source_field="gt",
-                trigger="test", requested_by="pg-test", requested_by_source="test",
-                requested_by_verified=True, expected_issue_ids=[issue_id],
-            )
             evaluation = database.create_run_evaluation(
                 collection_id=collection["id"], baseline_scopes=[scope],
                 actor="pg-test", actor_source="test", actor_verified=True,
@@ -239,7 +239,7 @@ class PostgresDatabaseIntegrationTest(unittest.TestCase):
                 migration_count = conn.execute(
                     "SELECT COUNT(*) AS count FROM dashboard_schema_migrations"
                 ).fetchone()["count"]
-            self.assertEqual(int(migration_count), 48)
+            self.assertEqual(int(migration_count), 49)
         finally:
             database.close()
             other.close()
@@ -260,6 +260,13 @@ class PostgresDatabaseIntegrationTest(unittest.TestCase):
             database.upsert_issues(
                 [{"issue_id": issue_id, "gt_label": "正确触发"} for issue_id in issue_ids],
                 source="run_collection_pg_perf", replace_gt=True, baseline_scope=scope,
+            )
+            database.apply_gt_sync_snapshot(
+                scope=scope,
+                rows=[{"issue_id": issue_id, "gt_label": "正确触发"} for issue_id in issue_ids],
+                source_name="test", source_view_id=1000, source_field="gt",
+                trigger="test", requested_by="pg-test", requested_by_source="test",
+                requested_by_verified=True, expected_issue_ids=issue_ids,
             )
             first, _ = database.import_model_run(
                 name=f"perf-first-{suffix}", source_name=f"perf-first-{suffix}.json",
@@ -299,6 +306,89 @@ class PostgresDatabaseIntegrationTest(unittest.TestCase):
             self.assertTrue("Index Scan" in plan_text or "Bitmap Index Scan" in plan_text, plan_text)
         finally:
             database.close()
+
+    def test_run_collection_pairwise_shadow_and_pg_context_reuse(self) -> None:
+        database = Database(
+            os.environ["DASHBOARD_TEST_POSTGRES_URL"],
+            postgres_migrations_dir=(
+                Path(__file__).resolve().parents[1] / "migrations" / "postgres"
+            ),
+            pool_size=6,
+        )
+        other = Database(
+            os.environ["DASHBOARD_TEST_POSTGRES_URL"],
+            postgres_migrations_dir=(
+                Path(__file__).resolve().parents[1] / "migrations" / "postgres"
+            ),
+            pool_size=6,
+        )
+        suffix = uuid4().hex
+        scope = f"pg_shadow_{suffix}"
+        issue_rows = [
+            {"issue_id": f"pg_shadow_{suffix}_{index}", "gt_label": label}
+            for index, label in enumerate(("正确触发", "误触发", "无需协助", "正确触发"))
+        ]
+        try:
+            database.init()
+            database.upsert_issues(issue_rows, source="pg-shadow", replace_gt=True, baseline_scope=scope)
+            snapshot = database.apply_gt_sync_snapshot(
+                scope=scope, rows=issue_rows, source_name="test",
+                source_view_id=1000, source_field="gt", trigger="test",
+                requested_by="pg-test", requested_by_source="test",
+                requested_by_verified=True,
+                expected_issue_ids=[item["issue_id"] for item in issue_rows],
+            )
+            baseline, _ = database.import_model_run(
+                name=f"shadow-baseline-{suffix}", source_name=f"shadow-b-{suffix}",
+                source_sha256=hashlib.sha256(f"shadow-b-{suffix}".encode()).hexdigest(),
+                metadata={}, rows=[
+                    {"issue_id": issue_rows[0]["issue_id"], "model_label": "正确触发"},
+                    {"issue_id": issue_rows[1]["issue_id"], "model_label": "正确触发"},
+                ],
+            )
+            candidate, _ = database.import_model_run(
+                name=f"shadow-candidate-{suffix}", source_name=f"shadow-c-{suffix}",
+                source_sha256=hashlib.sha256(f"shadow-c-{suffix}".encode()).hexdigest(),
+                metadata={}, rows=[
+                    {"issue_id": issue_rows[0]["issue_id"], "model_label": "正确触发"},
+                    {"issue_id": issue_rows[2]["issue_id"], "model_label": "无需协助"},
+                ],
+            )
+            collection = database.create_run_collection(
+                name=f"PG shadow {suffix}",
+                members=[{"run_id": baseline["id"], "is_reference": True}, candidate["id"]],
+            )
+            kwargs = dict(
+                collection_id=collection["id"], baseline_scopes=[scope],
+                comparison_reference_run_id=baseline["id"],
+                actor="pg-test", actor_source="test", actor_verified=True,
+            )
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(lambda db: db.create_run_evaluation(**kwargs), [database, other]))
+            self.assertEqual(results[0]["id"], results[1]["id"])
+            evaluation = results[0]
+            legacy = database.compare_model_runs(
+                baseline_run_id=baseline["id"], candidate_run_id=candidate["id"],
+                baseline_scopes=[scope], page_size=100,
+            )
+            self.assertEqual(
+                legacy["summary"]["total_count"],
+                evaluation["summary"]["pairwise_union_denominator"],
+            )
+            self.assertEqual(
+                legacy["summary"]["transition_counts"],
+                evaluation["summary"]["runs"][1]["transitions_vs_reference"],
+            )
+            with database.connect() as conn:
+                duplicate_count = conn.execute(
+                    "SELECT COUNT(*) AS count FROM run_evaluation_contexts WHERE context_sha256 = ?",
+                    (evaluation["context_sha256"],),
+                ).fetchone()["count"]
+            self.assertEqual(int(duplicate_count), 1)
+            self.assertEqual(snapshot["active_gt_snapshot"]["id"], evaluation["reference"]["id"])
+        finally:
+            database.close()
+            other.close()
 
 
 if __name__ == "__main__":

@@ -759,6 +759,16 @@ class DatabaseRunCollectionsMixin:
             scopes = sorted(scope_members)
             if not scopes:
                 raise ValueError("Workset 成员没有有效 baseline scope。")
+            shared_label_items: dict[str, dict[str, Any]] = {}
+            for scope in scopes:
+                shared_label_items.update(
+                    self.project_issue_label_states(
+                        scope,
+                        scope_members[scope],
+                        include_sources=True,
+                        connection=conn,
+                    )
+                )
             all_members_digest = hashlib.sha256("\n".join(issue_ids).encode("utf-8")).hexdigest()
             scopes_digest = self._content_sha256([
                 {"baseline_scope": scope, "issue_ids": scope_members[scope]}
@@ -868,77 +878,39 @@ class DatabaseRunCollectionsMixin:
                     active_gt_items = {
                         str(row["issue_id"]): str(row["gt_label"] or "") for row in rows
                     }
-                # Older fixtures may only have the mutable issue GT cache. Turn
-                # that cache into a content-addressed active snapshot before
-                # freezing the Evaluation, so every official reference is a
-                # real GT snapshot (and later GT syncs cannot rewrite history).
-                for scope in scopes:
-                    if scope in active_gt:
-                        continue
-                    scope_rows = conn.execute(
-                        "SELECT issue_id, gt_label FROM issues WHERE baseline_scope = ? ORDER BY issue_id",
-                        (scope,),
-                    ).fetchall()
-                    snapshot_rows = {
-                        str(row["issue_id"]): {"gt_label": str(row["gt_label"] or "")}
-                        for row in scope_rows
-                    }
-                    if not snapshot_rows:
-                        raise ValueError(f"数据集 {scope} 没有可冻结的 GT snapshot。")
-                    gt_mode = "strict" if all(item["gt_label"] in LABELS for item in snapshot_rows.values()) else "sparse"
-                    self._create_or_reuse_gt_snapshot_with_conn(
-                        conn,
-                        scope=scope,
-                        gt_mode=gt_mode,
-                        source_name="Dashboard issue GT cache",
-                        source_view_id=0,
-                        source_field="issues.gt_label",
-                        rows=snapshot_rows,
-                        source_metadata={"created_for": "run_evaluation"},
-                        created_by=actor,
-                        created_by_source=str(actor_source or "run_evaluation"),
-                        created_by_verified=bool(actor_verified),
-                        activate=True,
-                        activation_reason="run_evaluation_freeze",
-                        mark_change=False,
-                        scope_lock_held=True,
+                missing_snapshots = sorted(set(scopes) - set(active_gt))
+                if missing_snapshots:
+                    raise ValueError(
+                        "正式 Evaluation 要求每个 scope 存在 active GT snapshot；"
+                        "缺少：" + ", ".join(missing_snapshots) + "。"
                     )
-                rows = conn.execute(
-                    """
-                    SELECT snap.id, snap.baseline_scope, snap.gt_mode, snap.content_sha256,
-                           snap.membership_sha256, active.activated_at
-                    FROM gt_snapshot_active active
-                    JOIN gt_snapshots snap ON snap.id = active.snapshot_id
-                    WHERE active.baseline_scope IN (%s)
-                    """ % placeholders,
-                    tuple(scopes),
-                ).fetchall()
-                active_gt = {
-                    str(row["baseline_scope"]): {
-                        "baseline_scope": str(row["baseline_scope"]),
-                        "id": str(row["id"]), "gt_mode": str(row["gt_mode"]),
-                        "content_sha256": str(row["content_sha256"]),
-                        "membership_sha256": str(row["membership_sha256"]),
-                        "activated_at": str(row["activated_at"] or ""),
-                    }
-                    for row in rows
-                }
-                snapshot_ids = [item["id"] for item in active_gt.values()]
-                placeholders = ", ".join("?" for _ in snapshot_ids)
-                rows = conn.execute(
-                    f"SELECT issue_id, gt_label FROM gt_snapshot_items WHERE snapshot_id IN ({placeholders})",
-                    tuple(snapshot_ids),
-                ).fetchall()
-                active_gt_items = {
-                    str(row["issue_id"]): str(row["gt_label"] or "") for row in rows
-                }
+                for issue_id, projection in shared_label_items.items():
+                    if str(projection.get("state") or "") != "resolved":
+                        continue
+                    expected = str(projection.get("expected_output") or "")
+                    gt_label = str(active_gt_items.get(issue_id) or "")
+                    projection["gt_relation"] = (
+                        "fills_missing_gt" if expected and not gt_label
+                        else "matches_gt" if expected and expected == gt_label
+                        else "differs_from_gt" if expected and gt_label
+                        else "unknown"
+                    )
 
             # A Run Evaluation owns a real frozen Workset. Keep one immutable
             # scope row per dataset so S4 Campaign adapters can validate exact
             # membership and per-scope snapshot provenance without parsing a
             # public response body.
             if workset_id:
+                existing_scope_rows = conn.execute(
+                    "SELECT baseline_scope FROM review_workset_scopes WHERE workset_id = ?",
+                    (workset_id,),
+                ).fetchall()
+                existing_scopes = {
+                    str(row["baseline_scope"] or "") for row in existing_scope_rows
+                }
                 for ordinal, scope in enumerate(scopes, 1):
+                    if scope in existing_scopes:
+                        continue
                     members_for_scope = scope_members.get(scope, [])
                     scope_members_sha = hashlib.sha256(
                         "\n".join(members_for_scope).encode("utf-8")
@@ -1199,6 +1171,16 @@ class DatabaseRunCollectionsMixin:
                 ),
             )
             if cursor.rowcount != 1:
+                existing_content = conn.execute(
+                    "SELECT id FROM run_evaluation_contexts WHERE context_sha256 = ? "
+                    "ORDER BY created_at ASC, id ASC LIMIT 1",
+                    (context_sha,),
+                ).fetchone()
+                if existing_content is not None:
+                    return self._run_evaluation_payload_conn(
+                        conn, str(existing_content["id"]), page=1,
+                        page_size=100, search=""
+                    )
                 if key:
                     prior = conn.execute(
                         "SELECT id, idempotency_fingerprint FROM run_evaluation_contexts "
@@ -1212,31 +1194,22 @@ class DatabaseRunCollectionsMixin:
             item_rows = []
             for ordinal, issue_id in enumerate(issue_ids, 1):
                 issue = issue_map.get(issue_id) or {}
-                shared_source: dict[str, Any] = {}
-                if reference_type == "gt":
-                    snapshot = active_gt.get(str(issue.get("baseline_scope") or ""), {})
-                    shared_state = "resolved" if reference_items[issue_id]["valid"] else "none"
-                    shared_expected = reference_items[issue_id]["label"]
-                    shared_relation = "matches_gt" if shared_expected in LABELS else "unknown"
-                    shared_method = "gt_snapshot"
-                    shared_source = {
-                        "reference_type": "gt_snapshot",
-                        "baseline_scope": str(issue.get("baseline_scope") or ""),
-                        "snapshot_id": str(snapshot.get("id") or ""),
-                        "snapshot_sha256": str(snapshot.get("content_sha256") or ""),
-                    }
-                else:
-                    label_result_item = label_result_items.get(issue_id) or {}
-                    shared_state = str(label_result_item.get("state") or "none")
-                    shared_expected = str(label_result_item.get("label") or "")
-                    shared_relation = str(label_result_item.get("gt_relation") or "unknown")
-                    shared_method = str(label_result_item.get("method") or "")
-                    shared_source = {
-                        "reference_type": "label_result_snapshot",
-                        "baseline_scope": str(label_result_item.get("scope") or issue.get("baseline_scope") or ""),
-                        "snapshot_id": str(label_result_item.get("snapshot_id") or ""),
-                        "snapshot_sha256": str(label_result_item.get("snapshot_sha256") or ""),
-                    }
+                projection = shared_label_items.get(issue_id) or {
+                    "state": "none", "expected_output": "", "gt_relation": "unknown",
+                    "method": "single", "source_task_ids": [],
+                    "source_revision_ids": [], "sources": [],
+                }
+                shared_state = str(projection.get("state") or "none")
+                shared_expected = str(projection.get("expected_output") or "")
+                shared_relation = str(projection.get("gt_relation") or "unknown")
+                shared_method = str(projection.get("method") or "single")
+                shared_source = {
+                    "reference_type": "shared_label_projection",
+                    "baseline_scope": str(issue.get("baseline_scope") or ""),
+                    "source_task_ids": list(projection.get("source_task_ids") or []),
+                    "source_revision_ids": list(projection.get("source_revision_ids") or []),
+                    "sources": list(projection.get("sources") or []),
+                }
                 shared_payload = {
                     "state": shared_state,
                     "expected_output": shared_expected,
