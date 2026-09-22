@@ -507,6 +507,8 @@ class DatabaseReviewMixin:
         )
         if not scopes and isinstance(baseline_scope, (list, tuple)):
             scopes = self._normalize_baseline_scopes(baseline_scope)
+        if scopes and self.legacy_business_read_mode(scopes) == "canonical":
+            return self.canonical_reviewers(scopes, model_run_id=model_run_id)
         scope_filter = ""
         if scopes:
             clause, scope_params = self._scope_in_sql(scopes)

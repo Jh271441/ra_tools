@@ -143,6 +143,13 @@ async def delete_annotation(
     )
     if target and target.get("review_domain") == "model_review":
         raise _detail(409, "模型复核版本为追加式审计记录，不能通过旧 Review 删除接口移除。")
+    if target and target.get("legacy_read_only"):
+        raise _detail(409, "该版本属于历史 Review 证据，只读保留；请在 canonical Label/Model Review 域更正。")
+    if target:
+        scope = str((case or {}).get("baseline_scope") or "")
+        policy = await asyncio.to_thread(database.legacy_policy_for_scopes, [scope])
+        if policy.get(scope) == "canonical":
+            raise _detail(409, "canonical scope 的历史 Review 只读，不能通过旧接口删除。")
     if target and target.get("work_split_id"):
         identity = await asyncio.to_thread(request_identity, request, settings)
         role = (

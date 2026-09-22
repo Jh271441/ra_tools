@@ -208,6 +208,7 @@ class DatabaseCasesMixin:
         projection_authors: Sequence[str] = (),
         preferred_annotation_author: str = "",
         work_split_id: str = "",
+        strict_run: bool = False,
     ) -> tuple[str, list[Any]]:
         """Project the primary assignment Review without hiding old behavior.
 
@@ -282,7 +283,21 @@ class DatabaseCasesMixin:
                 LIMIT 1
             )
         """
-        if run_id:
+        if strict_run and not run_id:
+            ordinary_annotation = "(SELECT NULL WHERE FALSE)"
+            ordinary_params = []
+        elif run_id and strict_run:
+            ordinary_annotation = """
+                (
+                    SELECT a.id FROM review_records a
+                    WHERE a.issue_id = i.issue_id
+                      AND a.model_run_id = ?
+                      AND a.work_split_id = ''
+                    ORDER BY a.id DESC LIMIT 1
+                )
+            """
+            ordinary_params = [run_id]
+        elif run_id:
             ordinary_annotation = """
                 COALESCE(
                     (
@@ -553,6 +568,7 @@ class DatabaseCasesMixin:
             projection_authors=authors or tuple(named),
             preferred_annotation_author=preferred_annotation_author,
             work_split_id=normalized_work_split_id,
+            strict_run=bool(scopes and self.legacy_business_read_mode(scopes) == "canonical"),
         )
         common = f"""
             FROM issues i
@@ -921,6 +937,8 @@ class DatabaseCasesMixin:
         data["gt_snapshot"] = self.get_active_gt_snapshot(
             str(data.get("baseline_scope") or "")
         )
+        policies = self.legacy_read_policies([str(data.get("baseline_scope") or "")])
+        data["legacy_read_policy"] = policies[0] if policies else {"policy": "legacy", "epoch": 0}
         return data
 
     def get_issue(self, issue_id: str) -> dict[str, Any] | None:
@@ -955,6 +973,7 @@ class DatabaseCasesMixin:
         scopes = self._normalize_baseline_scopes(baseline_scopes, baseline_scope=baseline_scope)
         if not scopes:
             raise ValueError("baseline_scopes must not be empty")
+        canonical_mode = self.legacy_business_read_mode(scopes) == "canonical"
         scope_clause, scope_params = self._scope_in_sql(scopes)
         where = [scope_clause, "ann.id IS NOT NULL"]
         normalized_work_split_id = str(work_split_id or "").strip()
@@ -968,16 +987,20 @@ class DatabaseCasesMixin:
                 "WHERE wa_split.issue_id = i.issue_id AND wa_split.split_id = ?)"
             )
         else:
-            annotation_join = self._latest_annotation_join(
-                model_run_id,
-                include_unbound_fallback=True,
-                include_bound_history_fallback=True,
-            )
-            annotation_params = self._latest_annotation_join_params(
-                model_run_id,
-                include_unbound_fallback=True,
-                include_bound_history_fallback=True,
-            )
+            if canonical_mode and not model_run_id:
+                annotation_join = "LEFT JOIN review_records ann ON 1 = 0"
+                annotation_params = ()
+            else:
+                annotation_join = self._latest_annotation_join(
+                    model_run_id,
+                    include_unbound_fallback=not canonical_mode,
+                    include_bound_history_fallback=not canonical_mode,
+                )
+                annotation_params = self._latest_annotation_join_params(
+                    model_run_id,
+                    include_unbound_fallback=not canonical_mode,
+                    include_bound_history_fallback=not canonical_mode,
+                )
         params: list[Any] = [*annotation_params, model_run_id, *scope_params]
         if normalized_work_split_id:
             params.append(normalized_work_split_id)

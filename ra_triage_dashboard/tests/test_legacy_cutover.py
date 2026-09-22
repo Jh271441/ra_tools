@@ -27,13 +27,27 @@ class LegacyCutoverDatabaseTest(unittest.TestCase):
             name="s6-run", source_name="s6.json", source_sha256="s6-run-hash", metadata={},
             rows=[{"issue_id": "s6-model", "model_label": "正确触发"}],
         )
-        self.db.create_annotation(
+        model_annotation = self.db.create_annotation(
             issue_id="s6-model", model_run_id=run["id"], label="", review_status="reviewed",
             tags=[], missing_evidence=[], note="", author="reviewer",
         )
-        self.db.create_annotation(
+        self.db.create_model_review(
+            issue_id="s6-model", model_run_id=run["id"], status="completed",
+            reason="model diagnosis", missing_evidence=[], reviewer="reviewer",
+            legacy_annotation_id=int(model_annotation["id"]),
+        )
+        label_annotation = self.db.create_annotation(
             issue_id="s6-label", label="误触发", review_status="reviewed",
             tags=["legacy"], missing_evidence=[], note="label history", author="reviewer",
+        )
+        label_case = self.db.ensure_label_case(issue_id="s6-label")
+        self.db.migrate_legacy_label_revision(
+            label_case_id=label_case["id"], source_annotation_id=int(label_annotation["id"]),
+            expected_output="误触发", tags=["legacy"], evidence_gaps=[],
+            rationale="label history", is_excluded=False, author="reviewer",
+            author_source="legacy", author_verified=False,
+            supersedes_source_annotation_id=None, created_at=label_annotation["created_at"],
+            policy_version="s6-v1",
         )
         self.db.create_annotation(
             issue_id="s6-mixed", model_run_id=run["id"], label="误触发",

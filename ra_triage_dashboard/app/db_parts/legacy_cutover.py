@@ -108,13 +108,10 @@ class DatabaseLegacyCutoverMixin:
     def _classify_legacy_item(item: dict[str, Any]) -> str:
         has_model = bool(item.get("model_run_id"))
         has_task = bool(item.get("work_split_id"))
-        has_label_axis = bool(
-            item.get("label")
-            or item.get("tags")
-            or item.get("missing_evidence")
-            or item.get("is_excluded")
-            or item.get("note")
-        )
+        # Model diagnosis owns reason/note/missing-evidence. Label ownership is
+        # limited to an expected output, Label tags or an exclusion proposal;
+        # otherwise a Run-bound diagnosis is determinate model-review history.
+        has_label_axis = bool(item.get("label") or item.get("tags") or item.get("is_excluded"))
         if has_model and has_label_axis:
             return "legacy_mixed"
         if has_model:
@@ -132,8 +129,11 @@ class DatabaseLegacyCutoverMixin:
         policy_version: str = S6_POLICY_VERSION,
         actor: str = "s6-inventory",
         apply: bool = False,
+        expected_inventory_sha256: str = "",
     ) -> dict[str, Any]:
         inventory = self.legacy_scope_inventory(scopes)
+        if apply and expected_inventory_sha256 and str(expected_inventory_sha256) != str(inventory["inventory_sha256"]):
+            raise ValueError("legacy inventory SHA changed before apply; rerun dry-run")
         classified: list[dict[str, Any]] = []
         with self.connect() as conn:
             for item in inventory["items"]:
@@ -157,6 +157,7 @@ class DatabaseLegacyCutoverMixin:
                         evidence.update({"campaign_id": str(target["campaign_id"] or ""), "reference_id": str(target["reference_id"] or "")})
                     else:
                         evidence["mapping_status"] = "unresolved_model_review"
+                        classification = "legacy_mixed"
                 elif classification == "label_history_mapped":
                     target = conn.execute(
                         "SELECT id, label_case_id FROM label_revisions "
@@ -168,6 +169,7 @@ class DatabaseLegacyCutoverMixin:
                         evidence["label_case_id"] = str(target["label_case_id"] or "")
                     else:
                         evidence["mapping_status"] = "unresolved_label_history"
+                        classification = "legacy_mixed"
                 classified.append({
                     **item,
                     "classification": classification,
@@ -231,6 +233,20 @@ class DatabaseLegacyCutoverMixin:
             rows = conn.execute(f"SELECT * FROM legacy_read_policies {where} ORDER BY baseline_scope", normalized).fetchall()
         return [self._legacy_policy_row(row) for row in rows]
 
+    def legacy_policy_for_scopes(self, scopes: Sequence[str]) -> dict[str, str]:
+        """Return effective business-read policy; absent rows remain legacy."""
+        normalized = sorted({str(scope or "").strip() for scope in scopes if str(scope or "").strip()})
+        rows = {item["baseline_scope"]: item["policy"] for item in self.legacy_read_policies(normalized)}
+        return {scope: str(rows.get(scope) or "legacy") for scope in normalized}
+
+    def legacy_business_read_mode(self, scopes: Sequence[str]) -> str:
+        policies = set(self.legacy_policy_for_scopes(scopes).values())
+        if "canonical" in policies:
+            return "canonical"
+        if "shadow" in policies:
+            return "shadow"
+        return "legacy"
+
     def set_legacy_read_policy(
         self, *, baseline_scope: str, policy: str, policy_version: str,
         inventory_sha256: str, updated_by: str, expected_epoch: int | None = None,
@@ -241,6 +257,20 @@ class DatabaseLegacyCutoverMixin:
         if not scope or normalized not in LEGACY_POLICIES:
             raise ValueError("legacy read policy 不合法。")
         with self._write_lock, self.connect() as conn:
+            if normalized == "canonical":
+                latest = conn.execute(
+                    "SELECT component, policy_version, inventory_sha256, status FROM legacy_shadow_receipts "
+                    "WHERE baseline_scope = ? ORDER BY created_at DESC",
+                    (scope,),
+                ).fetchall()
+                required = {"gallery", "overview", "reviewers", "reason_analysis", "reason_export", "run_metadata", "campaign_progress", "trail_exclusion"}
+                seen = {str(row["component"] or "") for row in latest}
+                if not receipt or str(receipt.get("status") or "") not in {"pass", "expected_diff"}:
+                    raise ValueError("canonical policy requires a shadow receipt with an explicit status")
+                if required - seen:
+                    raise ValueError("canonical policy requires receipts for: " + ", ".join(sorted(required - seen)))
+                if any(str(row["policy_version"] or "") != str(policy_version) or str(row["inventory_sha256"] or "") != str(inventory_sha256) or str(row["status"] or "") not in {"pass", "expected_diff"} for row in latest):
+                    raise ValueError("canonical policy receipt inventory/policy/status mismatch")
             lock = " FOR UPDATE" if self.backend == "postgresql" else ""
             current = conn.execute(f"SELECT * FROM legacy_read_policies WHERE baseline_scope = ?{lock}", (scope,)).fetchone()
             epoch = int(current["epoch"] or 0) if current else 0
@@ -316,22 +346,39 @@ class DatabaseLegacyCutoverMixin:
         normalized = sorted({str(scope or "").strip() for scope in scopes if str(scope or "").strip()})
         inventory = self.legacy_scope_inventory(normalized)
         classifications = self.legacy_classifications(normalized)
-        canonical_count = sum(
-            1 for item in classifications
-            if str(item.get("classification") or "") in {"model_review_mapped", "label_history_mapped"}
-        )
         legacy_count = len(inventory.get("items") or [])
-        diffs = [
-            {"kind": "legacy_mixed", "source_annotation_id": item.get("source_annotation_id")}
-            for item in classifications if str(item.get("classification") or "") == "legacy_mixed"
-        ]
+        canonical_count = sum(1 for item in classifications if str(item.get("classification") or "") in {"model_review_mapped", "label_history_mapped"})
+        diffs = [{"kind": "legacy_mixed", "source_annotation_id": item.get("source_annotation_id")} for item in classifications if str(item.get("classification") or "") == "legacy_mixed"]
+        component_key = str(component or "gallery").strip().lower()
+        if normalized:
+            placeholders = ", ".join("?" for _ in normalized)
+            with self.connect() as conn:
+                legacy_rows = conn.execute(f"SELECT DISTINCT annotation.issue_id, annotation.author FROM annotations annotation JOIN issues issue ON issue.issue_id=annotation.issue_id WHERE issue.baseline_scope IN ({placeholders})", normalized).fetchall()
+                review_rows = conn.execute(f"SELECT DISTINCT revision.issue_id, revision.reviewer FROM model_review_heads head JOIN model_review_revisions revision ON revision.id=head.revision_id JOIN issues issue ON issue.issue_id=revision.issue_id WHERE issue.baseline_scope IN ({placeholders})", normalized).fetchall()
+            if component_key in {"reviewers", "reason_analysis", "reason_export"}:
+                legacy_keys = {(str(row["issue_id"]), str(row["author"] or "")) for row in legacy_rows}
+                canonical_keys = {(str(row["issue_id"]), str(row["reviewer"] or "")) for row in review_rows}
+                missing = sorted(legacy_keys - canonical_keys)
+                diffs = [{"kind": "legacy_mixed", "issue_id": issue_id, "reviewer": reviewer} for issue_id, reviewer in missing[:500]]
+                legacy_count, canonical_count = len(legacy_keys), len(canonical_keys)
+            elif component_key == "run_metadata":
+                legacy_count = len({str(item.get("model_run_id") or "") for item in inventory["items"] if str(item.get("model_run_id") or "")})
+                canonical_count = len({str(row["reviewer"] or "") for row in review_rows})
+            elif component_key == "campaign_progress":
+                legacy_count = len({str(item.get("work_split_id") or "") for item in inventory["items"] if str(item.get("work_split_id") or "")})
+                canonical_count = len({str(row["issue_id"]) for row in review_rows})
+            elif component_key == "trail_exclusion":
+                legacy_count = sum(1 for item in inventory["items"] if item.get("is_excluded"))
+                canonical_count = sum(1 for item in self.legacy_exclusion_projection(scopes=normalized) if item.get("state") == "excluded")
+            elif component_key == "overview":
+                legacy_count = len({str(item.get("issue_id")) for item in inventory["items"]})
+                canonical_count = len({str(row["issue_id"]) for row in review_rows})
         return {
-            "component": str(component or "all"),
-            "scopes": normalized,
-            "legacy_count": legacy_count,
-            "canonical_count": canonical_count,
-            "diff_count": len(diffs),
-            "diffs": diffs[:500],
+            "component": component_key, "scopes": normalized,
+            "legacy_count": legacy_count, "canonical_count": canonical_count,
+            "diff_count": len(diffs), "diffs": diffs[:500],
+            "diff_fields": ["presence", "status", "reviewer", "reason", "missing_evidence", "completion", "exclusion"],
+            "unexpected_defect_count": sum(1 for item in diffs if item.get("kind") == "unexpected_defect"),
             "expected_diff_kinds": ["legacy_mixed", "legacy_unbound_history", "legacy_task_history"],
         }
 
@@ -348,17 +395,23 @@ class DatabaseLegacyCutoverMixin:
             shared = self.project_issue_label_states(scope, [issue_key], include_sources=True, connection=conn).get(issue_key, {})
             review = None
             if model_run_id:
-                params = (str(model_run_id), issue_key, str(campaign_id or ""), str(reference_id or ""), str(reviewer or "").lower())
-                row = conn.execute(
-                    """
-                    SELECT revision.* FROM model_review_heads head
-                    JOIN model_review_revisions revision ON revision.id = head.revision_id
-                    WHERE head.model_run_id = ? AND head.issue_id = ?
-                      AND head.campaign_id = ? AND head.reference_id = ?
-                      AND lower(head.reviewer) = ?
-                    """, params,
-                ).fetchone()
-                review = self._model_review_dict(row) if row is not None else None
+                if reviewer:
+                    params = (str(model_run_id), issue_key, str(campaign_id or ""), str(reference_id or ""), str(reviewer).lower())
+                    row = conn.execute(
+                        """
+                        SELECT revision.* FROM model_review_heads head
+                        JOIN model_review_revisions revision ON revision.id = head.revision_id
+                        WHERE head.model_run_id = ? AND head.issue_id = ?
+                          AND head.campaign_id = ? AND head.reference_id = ?
+                          AND lower(head.reviewer) = ?
+                        """, params,
+                    ).fetchone()
+                    review = self._model_review_dict(row) if row is not None else None
+                else:
+                    review = self.project_model_review_heads(
+                        issue_ids=[issue_key], model_run_id=model_run_id,
+                        campaign_id=campaign_id, reference_id=reference_id,
+                    )
             classification = conn.execute(
                 "SELECT * FROM legacy_review_classifications WHERE source_annotation_id IN (SELECT id FROM annotations WHERE issue_id = ?) ORDER BY source_annotation_id DESC LIMIT 20",
                 (issue_key,),
@@ -370,6 +423,84 @@ class DatabaseLegacyCutoverMixin:
             "campaign_context": {"campaign_id": str(campaign_id or ""), "reference_id": str(reference_id or ""), "reviewer": str(reviewer or "")},
             "legacy_classifications": [{key: (_json_load(row[key], {}) if key.endswith("_json") else row[key]) for key in row.keys()} for row in classification],
         }
+
+    def canonical_reviewers(self, scopes: Sequence[str], model_run_id: str = "") -> list[dict[str, Any]]:
+        normalized = sorted({str(scope or "").strip() for scope in scopes if str(scope or "").strip()})
+        if not normalized:
+            return []
+        placeholders = ", ".join("?" for _ in normalized)
+        params: list[Any] = []
+        run_clause = ""
+        if model_run_id:
+            run_clause = "AND revision.model_run_id = ?"
+            params.append(str(model_run_id))
+        params.extend(normalized)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT revision.reviewer AS name,
+                       COUNT(*) AS review_count,
+                       SUM(CASE WHEN revision.reviewer_verified = TRUE THEN 1 ELSE 0 END) AS verified_count,
+                       SUM(CASE WHEN revision.reviewer_verified = TRUE THEN 0 ELSE 1 END) AS unverified_count
+                FROM model_review_heads head
+                JOIN model_review_revisions revision ON revision.id = head.revision_id
+                JOIN issues issue ON issue.issue_id = revision.issue_id
+                WHERE issue.baseline_scope IN ({placeholders}) {run_clause}
+                GROUP BY revision.reviewer
+                ORDER BY review_count DESC, revision.reviewer
+                """,
+                (*params,),
+            ).fetchall()
+        return [
+            {
+                "name": str(row["name"] or ""),
+                "review_count": int(row["review_count"] or 0),
+                "verified_count": int(row["verified_count"] or 0),
+                "unverified_count": int(row["unverified_count"] or 0),
+                "verified": bool(row["verified_count"]) and not bool(row["unverified_count"]),
+            }
+            for row in rows
+        ]
+
+    def project_model_review_heads(
+        self,
+        *,
+        issue_ids: Sequence[str],
+        model_run_id: str,
+        campaign_id: str = "",
+        reference_id: str = "",
+        reviewer: str = "",
+    ) -> dict[str, Any]:
+        cleaned = list(dict.fromkeys(str(item or "").strip() for item in issue_ids if str(item or "").strip()))
+        if not cleaned or not str(model_run_id or "").strip():
+            return {"items": {}, "reviewer": str(reviewer or ""), "effective": {}}
+        items: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        with self.connect() as conn:
+            for offset in range(0, len(cleaned), 400):
+                batch = cleaned[offset : offset + 400]
+                clauses = [
+                    "head.model_run_id = ?", "head.campaign_id = ?", "head.reference_id = ?",
+                    f"head.issue_id IN ({', '.join('?' for _ in batch)})",
+                ]
+                params: list[Any] = [str(model_run_id), str(campaign_id or ""), str(reference_id or ""), *batch]
+                if str(reviewer or "").strip():
+                    clauses.append("lower(head.reviewer) = lower(?)")
+                    params.append(str(reviewer).strip())
+                rows = conn.execute(
+                    f"""
+                    SELECT revision.* FROM model_review_heads head
+                    JOIN model_review_revisions revision ON revision.id = head.revision_id
+                    WHERE {' AND '.join(clauses)} ORDER BY revision.issue_id, revision.id DESC
+                    """,
+                    params,
+                ).fetchall()
+                for row in rows:
+                    items[str(row["issue_id"])].append(self._model_review_dict(row))
+        effective = {
+            issue_id: (values[0] if len(values) == 1 else next((item for item in values if item.get("model_review_status") == "completed"), values[0]))
+            for issue_id, values in items.items() if values
+        }
+        return {"items": dict(items), "reviewer": str(reviewer or ""), "effective": effective}
 
     def resolve_legacy_evidence(self, *, kind: str, value: str) -> dict[str, Any] | None:
         normalized_kind = str(kind or "").strip().lower()

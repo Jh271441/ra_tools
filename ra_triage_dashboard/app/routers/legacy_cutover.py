@@ -62,6 +62,7 @@ async def classify_legacy_cutover(request: Request) -> dict[str, Any]:
         policy_version=str(body.get("policy_version") or S6_POLICY_VERSION),
         actor=str(identity.username or "s6-admin"),
         apply=apply,
+        expected_inventory_sha256=str(body.get("expected_inventory_sha256") or ""),
     )
 
 

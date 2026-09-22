@@ -325,6 +325,7 @@ class DatabaseRunsMixin:
         scopes = self._normalize_baseline_scopes(baseline_scopes)
         if not scopes:
             raise ValueError("至少选择一个有效 GT 数据集。")
+        canonical_mode = self.legacy_business_read_mode(scopes) == "canonical"
         normalized_transition = str(transition or "all").strip().upper()
         if normalized_transition not in {"ALL", "P2P", "P2F", "F2P", "F2F"}:
             raise ValueError("不支持的 Run 变化类型。")
@@ -379,13 +380,13 @@ class DatabaseRunsMixin:
             ).fetchall()
             annotation_join = self._latest_annotation_join(
                 active_run_id,
-                include_unbound_fallback=True,
-                include_bound_history_fallback=True,
+                include_unbound_fallback=not canonical_mode,
+                include_bound_history_fallback=not canonical_mode,
             )
             annotation_params = self._latest_annotation_join_params(
                 active_run_id,
-                include_unbound_fallback=True,
-                include_bound_history_fallback=True,
+                include_unbound_fallback=not canonical_mode,
+                include_bound_history_fallback=not canonical_mode,
             )
             rows = conn.execute(
                 f"""
@@ -727,13 +728,13 @@ class DatabaseRunsMixin:
                 result[side] = detail
             active_run_id = selected_run_ids[1] or selected_run_ids[0]
             annotation_params = self._latest_annotation_join_params(
-                active_run_id, include_unbound_fallback=True,
-                include_bound_history_fallback=True,
+                active_run_id, include_unbound_fallback=False,
+                include_bound_history_fallback=False,
             )
             annotation = conn.execute(
                 f"""SELECT ann.id, ann.tags_json, ann.author, ann.created_at, ann.model_run_id
                     FROM issues i
-                    {self._latest_annotation_join(active_run_id, include_unbound_fallback=True, include_bound_history_fallback=True)}
+                    {self._latest_annotation_join(active_run_id, include_unbound_fallback=False, include_bound_history_fallback=False)}
                     WHERE i.issue_id = ?""",
                 (*annotation_params, issue_id),
             ).fetchone()

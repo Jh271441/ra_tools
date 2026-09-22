@@ -2992,6 +2992,9 @@ class DatabaseCoreMixin:
         scopes = self._normalize_baseline_scopes(baseline_scopes, baseline_scope=baseline_scope)
         if not scopes:
             raise ValueError("baseline_scopes must not be empty")
+        if self.legacy_business_read_mode(scopes) == "canonical":
+            include_unbound_fallback = False
+            include_bound_history_fallback = False
         scope_clause, scope_params = self._scope_in_sql(scopes)
         where = [scope_clause, "ann.id IS NOT NULL"]
         # A selected Run joins its prediction namespace explicitly.  With no

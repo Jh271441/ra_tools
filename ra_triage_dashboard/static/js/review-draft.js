@@ -104,6 +104,7 @@ function currentReviewAnnotation(caseData) {
 // We only use this for the initial checkbox values.  It never changes the
 // legacy record and a user can still deliberately clear a Tag before saving.
 function inheritedHistoricalTagsForCurrentRun(caseData) {
+  if (String(caseData?.legacy_read_policy?.policy || "legacy") === "canonical") return [];
   const runId = currentReviewRunId(caseData);
   if (!runId || reviewAnnotationsForCurrentRun(caseData).length) return [];
   const history = reviewAnnotationsForAllRuns(caseData);
