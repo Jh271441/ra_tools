@@ -62,7 +62,9 @@ async def submit_combined_review(issue_id: str, request: Request) -> dict[str, A
         raise _detail(400, "联合复核请求必须是 JSON 对象。")
     if not isinstance(body, dict):
         raise _detail(400, "联合复核请求必须是 JSON 对象。")
-    actor, source, verified = _action_actor(request, body.get("author"))
+    actor, source, verified = await asyncio.to_thread(
+        _action_actor, request, body.get("author")
+    )
     role = await asyncio.to_thread(database.access_role, actor) if verified else ""
     if role != "admin":
         raise _detail(403, "联合复核需要模型复核与 Case 标注双重写权限。")
@@ -73,7 +75,8 @@ async def submit_combined_review(issue_id: str, request: Request) -> dict[str, A
     tags = _normalise_review_tags(tags)
     evidence = _normalise_missing_evidence(evidence)
     try:
-        output = resolve_expected_output(body.get("expected_output"), tags, _review_tag_catalog())
+        tag_catalog = await asyncio.to_thread(_review_tag_catalog)
+        output = resolve_expected_output(body.get("expected_output"), tags, tag_catalog)
     except ValueError as exc:
         raise _detail(400, str(exc)) from exc
     key = _as_text(request.headers.get("idempotency-key") or body.get("idempotency_key"))
@@ -114,7 +117,9 @@ async def submit_case_label_from_review(issue_id: str, request: Request) -> dict
         raise _detail(400, "Case 标注请求必须是 JSON 对象。")
     if not isinstance(body, dict):
         raise _detail(400, "Case 标注请求必须是 JSON 对象。")
-    actor, source, verified = _action_actor(request, body.get("author"))
+    actor, source, verified = await asyncio.to_thread(
+        _action_actor, request, body.get("author")
+    )
     role = await asyncio.to_thread(database.access_role, actor) if verified else ""
     if role != "admin":
         raise _detail(403, "Review 页内 Case 标注需要管理员权限。")
@@ -123,7 +128,8 @@ async def submit_case_label_from_review(issue_id: str, request: Request) -> dict
         raise _detail(400, "tags 必须是数组。")
     tags = _normalise_review_tags(tags)
     try:
-        output = resolve_expected_output(body.get("expected_output"), tags, _review_tag_catalog())
+        tag_catalog = await asyncio.to_thread(_review_tag_catalog)
+        output = resolve_expected_output(body.get("expected_output"), tags, tag_catalog)
         result = await asyncio.to_thread(
             database.submit_review_case_label,
             issue_id=issue_id,

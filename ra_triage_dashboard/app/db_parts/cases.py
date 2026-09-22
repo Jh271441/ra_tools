@@ -2215,6 +2215,20 @@ class DatabaseCasesMixin:
                 """
                 SELECT assignment.assignee, assignment.assignment_kind,
                        assignment.ordinal,
+                       COALESCE((
+                           SELECT progress.model_review_submitted
+                           FROM combined_review_progress progress
+                           WHERE progress.campaign_id=assignment.split_id
+                             AND progress.issue_id=assignment.issue_id
+                             AND lower(progress.reviewer)=lower(assignment.assignee)
+                       ), false) AS model_review_submitted,
+                       COALESCE((
+                           SELECT progress.case_label_acknowledged
+                           FROM combined_review_progress progress
+                           WHERE progress.campaign_id=assignment.split_id
+                             AND progress.issue_id=assignment.issue_id
+                             AND lower(progress.reviewer)=lower(assignment.assignee)
+                       ), false) AS case_label_acknowledged,
                        (
                            SELECT revision.id FROM model_review_heads head
                            JOIN model_review_revisions revision ON revision.id = head.revision_id
