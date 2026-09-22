@@ -76,6 +76,7 @@ function renderSystemStatus() {
   const trail = data.trail_sync || {};
   const gateway = data.model_gateway || {};
   const application = data.application || {};
+  const legacyCutover = data.legacy_cutover || {};
   const overall = data.overall || { status: "degraded", problems: [] };
   const healthy = overall.status === "healthy";
   const problemLabels = {
@@ -201,6 +202,16 @@ function renderSystemStatus() {
         [t("system.trail_fields"), ["ready", "preview_ready"].includes(trail.status) ? t("status.available") : t("system.trail_unavailable")],
       ],
       extra: trail.message ? `<p class="system-status-note">${escapeHtml(trail.message)}</p>` : "",
+    }),
+    systemStatusCard({
+      title: uiText("Legacy Cutover", "Legacy Cutover"),
+      chip: uiText("只读策略", "Read policy"),
+      tone: "warn",
+      rows: (legacyCutover.policies || []).map((item) => [
+        item.baseline_scope || "—",
+        `${item.policy || "legacy"} · epoch ${Number(item.epoch || 0)} · ${String(item.inventory_sha256 || "").slice(0, 12)}`,
+      ]),
+      extra: `<p class="system-status-note">${escapeHtml(uiText("S6 legacy evidence 保持只读；切换需通过 inventory、shadow receipt 和 CAS epoch。", "S6 legacy evidence stays read-only; cutover requires inventory, shadow receipt and CAS epoch."))}</p>`,
     }),
     systemStatusCard({
       title: t("system.volume"),
