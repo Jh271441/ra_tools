@@ -21,7 +21,6 @@ const MODEL_REVIEW_STATUS_OPTIONS = [
   { value: "pending", labelZh: "待开始", labelEn: "Pending" },
   { value: "in_progress", labelZh: "复核中", labelEn: "In progress" },
   { value: "completed", labelZh: "已完成", labelEn: "Completed" },
-  { value: "blocked_by_label", labelZh: "标签阻塞", labelEn: "Blocked by label" },
 ];
 
 function annotationExpectedOutput(annotation) {

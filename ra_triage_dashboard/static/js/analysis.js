@@ -105,7 +105,7 @@ function reviewStatusLabel(status) {
       pending: uiText("待开始", "Pending"),
       in_progress: uiText("复核中", "In progress"),
       completed: uiText("已完成", "Completed"),
-      blocked_by_label: uiText("标签阻塞", "Blocked by label"),
+      blocked_by_label: uiText("待开始", "Pending"),
       reviewed: t("status.matches_gt"),
       needs_gt_review: t("status.needs_gt"),
     }[status] || status || t("status.recorded")
@@ -462,7 +462,7 @@ function renderAnalysisReviewStatus(data) {
     {
       key: "pending",
       label: reviewStatusLabel("pending"),
-      count: Number(counts.pending || 0),
+      count: Number(counts.pending || 0) + Number(counts.blocked_by_label || 0),
       description: uiText("尚未开始模型判错复核", "Model review has not started"),
     },
     {
@@ -476,12 +476,6 @@ function renderAnalysisReviewStatus(data) {
       label: reviewStatusLabel("completed"),
       count: Number(counts.completed || 0),
       description: uiText("模型判错复核已完成", "Model review is complete"),
-    },
-    {
-      key: "blocked_by_label",
-      label: reviewStatusLabel("blocked_by_label"),
-      count: Number(counts.blocked_by_label || 0),
-      description: uiText("共享标签冲突或过期，暂不能完成", "Shared labels conflict or are stale"),
     },
   ];
   const total = statuses.reduce((sum, item) => sum + item.count, 0);

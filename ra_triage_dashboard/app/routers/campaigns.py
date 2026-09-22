@@ -116,6 +116,11 @@ async def list_campaigns(
     except ValueError as exc:
         raise _detail(400, str(exc)) from exc
     result["change_revision"] = await asyncio.to_thread(database.change_revision)
+    result["historical_imports"] = await asyncio.to_thread(
+        database.list_label_import_batches,
+        scopes,
+        "legacy_model_review",
+    )
     return result
 
 

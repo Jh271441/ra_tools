@@ -375,7 +375,6 @@ function renderAnalysisCatalogFilters() {
       { value: "pending", label: t("status.pending") },
       { value: "in_progress", label: uiText("复核中", "In progress") },
       { value: "completed", label: uiText("已完成", "Completed") },
-      { value: "blocked_by_label", label: uiText("标签阻塞", "Blocked by label") },
     ],
     selected: getMultiFilterValues($("#analysisStatusFilter")),
     onChange,

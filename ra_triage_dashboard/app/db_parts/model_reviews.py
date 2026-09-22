@@ -15,6 +15,7 @@ MODEL_REVIEW_STATUSES = {
     "completed",
     "blocked_by_label",
 }
+MODEL_REVIEW_WRITE_STATUSES = {"pending", "in_progress", "completed"}
 MODEL_REVIEW_PUBLIC_ID_OFFSET = 4_000_000_000_000_000
 
 
@@ -133,7 +134,7 @@ class DatabaseModelReviewMixin:
         status = str(status or "pending").strip().lower()
         if not issue_id or not model_run_id:
             raise ValueError("Model Review requires issue_id and model_run_id")
-        if status not in MODEL_REVIEW_STATUSES:
+        if status not in MODEL_REVIEW_WRITE_STATUSES:
             raise ValueError("不支持的模型复核状态。")
         if not reviewer:
             raise ValueError("复核人不能为空。")
@@ -145,8 +146,8 @@ class DatabaseModelReviewMixin:
             )
         )
         label_state = dict(label_state or {})
-        if str(label_state.get("state") or "") in {"conflict", "stale"}:
-            status = "blocked_by_label"
+        if status == "completed" and str(label_state.get("state") or "") in {"conflict", "stale"}:
+            raise ValueError("共享 Case 标签冲突或需重新确认，暂不能完成模型判错复核。")
         label_fingerprint = model_review_label_fingerprint(label_state)
         attachments = list(attachments or [])
         now = utc_now()

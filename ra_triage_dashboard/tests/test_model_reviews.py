@@ -69,7 +69,7 @@ class ModelReviewStorageTest(unittest.TestCase):
 
     def test_run_isolation_and_compatibility_projection(self) -> None:
         run_a = self.create(self.run_a["id"], "completed", "run A reason")
-        run_b = self.create(self.run_b["id"], "blocked_by_label", "run B reason")
+        run_b = self.create(self.run_b["id"], "in_progress", "run B reason")
         row_a = self.db.list_cases(
             baseline_scopes=["scope"], model_run_id=self.run_a["id"], page_size=10
         )["items"][0]["annotation"]
@@ -81,7 +81,7 @@ class ModelReviewStorageTest(unittest.TestCase):
         self.assertEqual(row_a["model_review_status"], "completed")
         self.assertEqual(row_b["id"], run_b["id"])
         self.assertEqual(row_b["note"], "run B reason")
-        self.assertEqual(row_b["model_review_status"], "blocked_by_label")
+        self.assertEqual(row_b["model_review_status"], "in_progress")
 
     def test_new_head_wins_while_legacy_history_remains(self) -> None:
         legacy = self.db.create_annotation(
@@ -185,13 +185,18 @@ class ModelReviewStorageTest(unittest.TestCase):
         self.assertEqual(overview["model_review_status_counts"]["completed"], 1)
         self.assertEqual(overview["reviewed_failures"], 1)
 
-    def test_label_conflict_forces_blocked_state(self) -> None:
+    def test_label_conflict_remains_separate_and_blocks_completion(self) -> None:
+        with self.assertRaisesRegex(ValueError, "共享 Case 标签冲突"):
+            self.create(
+                self.run_a["id"], "completed", "diagnosis finished",
+                label_state={"state": "conflict", "expected_output": ""},
+            )
         review = self.create(
-            self.run_a["id"], "completed", "diagnosis finished",
+            self.run_a["id"], "in_progress", "diagnosis in progress",
             label_state={"state": "conflict", "expected_output": ""},
         )
-        self.assertEqual(review["model_review_status"], "blocked_by_label")
-        self.assertEqual(review["review_status"], "needs_gt_review")
+        self.assertEqual(review["model_review_status"], "in_progress")
+        self.assertEqual(review["label_state"]["state"], "conflict")
 
 
 if __name__ == "__main__":

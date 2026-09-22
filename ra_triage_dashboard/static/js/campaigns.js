@@ -5,6 +5,7 @@ const CAMPAIGN_ISSUE_PAGE_SIZE_DEFAULT = 50;
 const campaignPageState = {
   campaignId: "",
   purpose: "",
+  source: "all",
   lifecycle: "all",
   query: "",
   groupId: "",
@@ -203,8 +204,10 @@ async function loadCampaigns({
   campaignPageState.groupId = String(groupId || route.campaignGroupId || "").trim();
   document.getElementById("labelingExperimentGuide")?.toggleAttribute("hidden", campaignPageState.purpose !== "labeling");
   const lifecycleSelect = document.getElementById("campaignsLifecycle");
+  const sourceSelect = document.getElementById("campaignsSource");
   const queryInput = document.getElementById("campaignsQuery");
   if (lifecycleSelect) lifecycleSelect.value = campaignPageState.lifecycle;
+  if (sourceSelect) sourceSelect.value = campaignPageState.source;
   if (queryInput) queryInput.value = campaignPageState.query;
   const labelTab = document.getElementById("campaignsLabelAnalysisTab");
   const allTab = document.getElementById("campaignsAllTab");
@@ -255,21 +258,24 @@ async function loadCampaignList() {
   if (status) status.textContent = uiText("正在加载实验…", "Loading campaigns…");
   if (rowsRoot) rowsRoot.innerHTML = `<tr><td colspan="7" class="campaign-empty-state">${escapeHtml(uiText("正在加载…", "Loading…"))}</td></tr>`;
   const payload = await api(campaignListEndpoint());
-  const items = Array.isArray(payload.items) ? payload.items : [];
+  const campaignItems = Array.isArray(payload.items) ? payload.items : [];
+  const historicalItems = Array.isArray(payload.historical_imports) ? payload.historical_imports : [];
+  const items = campaignPageState.source === "legacy_model_review" ? [] : campaignItems;
+  const imports = campaignPageState.source === "campaign" ? [] : historicalItems;
   if (status) {
     const noun = campaignPageState.purpose === "labeling"
       ? uiText("个标注实验", "labeling experiments")
       : campaignPageState.purpose === "model_review"
         ? uiText("个复核任务", "review tasks")
         : uiText("个实验", "experiments");
-    status.textContent = `${campaignNumber(payload.total)} ${noun}`;
+    status.textContent = `${campaignNumber(items.length + imports.length)} ${noun}`;
   }
   if (!rowsRoot) return payload;
-  if (!items.length) {
+  if (!items.length && !imports.length) {
     rowsRoot.innerHTML = `<tr><td colspan="7" class="campaign-empty-state">${escapeHtml(uiText("当前筛选没有 Campaign。", "No campaigns match these filters."))}</td></tr>`;
     return payload;
   }
-  rowsRoot.innerHTML = items.map((item) => {
+  const campaignRows = items.map((item) => {
     const progress = item.progress || {};
     const memberCount = Number(progress.member_count ?? item.workset_member_count ?? 0);
     const assigned = Number(progress.assigned_issue_count || 0);
@@ -290,6 +296,19 @@ async function loadCampaignList() {
       <td>${escapeHtml(baseline)}<span class="campaign-reference-text">${escapeHtml(reference)}</span></td>
     </tr>`;
   }).join("");
+  const importRows = imports.map((item) => {
+    const stats = item.stats || {};
+    return `<tr data-label-import-batch="${escapeHtml(item.id)}">
+      <td><div class="campaign-row-identity"><span class="campaign-row-name">${escapeHtml(item.name || item.id)}</span><span class="campaign-row-id">${escapeHtml(item.migration_version || "")}</span></div></td>
+      <td><span class="campaign-purpose-badge">${escapeHtml(uiText("历史标签导入", "Historical label import"))}</span></td>
+      <td><span class="campaign-lifecycle-badge" data-lifecycle="closed">${escapeHtml(uiText("已导入", "Imported"))}</span></td>
+      <td>${campaignNumber(stats.scanned_reviews)} / ${campaignNumber(stats.effective_label_sources)}</td>
+      <td>${campaignNumber(stats.reviewer_dedup_votes)}</td>
+      <td class="campaign-progress-cell"><span>${escapeHtml(uiText("一致", "Resolved"))} ${campaignNumber(stats.resolved_cases)} · <span class="campaign-import-warning">${escapeHtml(uiText("GT待复核", "GT review"))} ${campaignNumber(stats.gt_review_pending_cases)} · ${escapeHtml(uiText("冲突", "Conflicts"))} ${campaignNumber(stats.conflict_cases)} · ${escapeHtml(uiText("待裁决", "Pending adjudication"))} ${campaignNumber(stats.pending_adjudication_cases)}</span></span></td>
+      <td>${escapeHtml(item.baseline_scope || "—")}<span class="campaign-reference-text">${escapeHtml(uiText("来源：历史判错复核", "Source: historical Review"))}</span></td>
+    </tr>`;
+  }).join("");
+  rowsRoot.innerHTML = importRows + campaignRows;
   return payload;
 }
 
@@ -642,6 +661,7 @@ function bindCampaignPageEvents() {
   document.getElementById("campaignsFilterForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
     campaignPageState.lifecycle = document.getElementById("campaignsLifecycle")?.value || "all";
+    campaignPageState.source = document.getElementById("campaignsSource")?.value || "all";
     campaignPageState.query = document.getElementById("campaignsQuery")?.value.trim().slice(0, 128) || "";
     campaignPageState.campaignId = "";
     campaignPageState.issuePage = 1;

@@ -86,7 +86,7 @@ body.is-layout-resizing .app-sidebar { transition: none !important; }
 .sidebar-item { order: 20; }
 #caseLabelingNavButton { order: 1; } #reviewNavButton { order: 2; } #reviewAssignmentsNavButton { order: 3; } #campaignsNavButton { order: 4; } #reviewAnalysisNavButton { order: 5; } #trailAttributeUpdateNavButton { order: 6; } #openRunManagerButton { order: 7; } #runComparisonNavButton { order: 7; } #openBatchPredictionButton { order: 7; } #intentLabelingNavButton { order: 10; } #intentExperimentsNavButton { order: 11; } #intentSummaryNavButton { order: 12; }
 .system-group-label { order: 12; } #systemStatusNavButton { order: 13; } #userManagementNavButton { order: 14; }
-#caseLabelingNavButton, #reviewNavButton, #reviewAssignmentsNavButton, #campaignsNavButton, #reviewAnalysisNavButton, #trailAttributeUpdateNavButton, #openRunManagerButton, #runComparisonNavButton, #openBatchPredictionButton, #intentLabelingNavButton, #intentExperimentsNavButton, #intentSummaryNavButton, #systemStatusNavButton, #userManagementNavButton { margin-left: 18px; width: calc(100% - 18px); }
+.sidebar-nav-group .sidebar-item { margin-left: 18px; width: calc(100% - 18px); }
 html[data-sidebar-pref="collapsed"] .sidebar-group-label, .app-shell.sidebar-collapsed .sidebar-group-label { display: none; }
 .sidebar-item, .sidebar-collapse {
   width: 100%; min-height: 40px; display: flex; align-items: center; gap: 9px; overflow: hidden; padding: 5px 6px;

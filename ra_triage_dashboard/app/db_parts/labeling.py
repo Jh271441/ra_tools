@@ -719,11 +719,19 @@ class DatabaseLabelingMixin:
             SELECT revision.* FROM label_revisions revision
             WHERE revision.label_case_id = ?
               AND revision.revision_kind IN ('submission', 'legacy')
+              AND NOT EXISTS (
+                  SELECT 1 FROM label_import_suppressed_revisions suppressed
+                  WHERE suppressed.revision_id = revision.id
+              )
               AND revision.id = (
                   SELECT MAX(candidate.id) FROM label_revisions candidate
                   WHERE candidate.label_case_id = revision.label_case_id
                     AND lower(candidate.author) = lower(revision.author)
                     AND candidate.revision_kind IN ('submission', 'legacy')
+                    AND NOT EXISTS (
+                        SELECT 1 FROM label_import_suppressed_revisions suppressed
+                        WHERE suppressed.revision_id = candidate.id
+                    )
               )
             ORDER BY lower(revision.author), revision.id
             """,
@@ -950,6 +958,34 @@ class DatabaseLabelingMixin:
                     ).fetchall()
                 )
             case_ids = [str(row["id"]) for row in case_rows]
+            if case_ids:
+                fully_suppressed: set[str] = set()
+                for offset in range(0, len(case_ids), 400):
+                    batch = case_ids[offset : offset + 400]
+                    placeholders = ", ".join("?" for _ in batch)
+                    rows = conn.execute(
+                        f"""
+                        SELECT revision.label_case_id,
+                               COUNT(*) AS revision_count,
+                               SUM(CASE WHEN suppressed.revision_id IS NOT NULL THEN 1 ELSE 0 END) AS suppressed_count
+                        FROM label_revisions revision
+                        LEFT JOIN label_import_suppressed_revisions suppressed
+                          ON suppressed.revision_id = revision.id
+                        WHERE revision.label_case_id IN ({placeholders})
+                          AND revision.revision_kind IN ('submission', 'legacy')
+                        GROUP BY revision.label_case_id
+                        """,
+                        batch,
+                    ).fetchall()
+                    fully_suppressed.update(
+                        str(row["label_case_id"])
+                        for row in rows
+                        if int(row["revision_count"] or 0) > 0
+                        and int(row["revision_count"] or 0) == int(row["suppressed_count"] or 0)
+                    )
+                if fully_suppressed:
+                    case_rows = [row for row in case_rows if str(row["id"]) not in fully_suppressed]
+                    case_ids = [str(row["id"]) for row in case_rows]
             for offset in range(0, len(case_ids), 400):
                 batch = case_ids[offset : offset + 400]
                 placeholders = ", ".join("?" for _ in batch)
@@ -959,11 +995,19 @@ class DatabaseLabelingMixin:
                         SELECT revision.* FROM label_revisions revision
                         WHERE revision.label_case_id IN ({placeholders})
                           AND revision.revision_kind IN ('submission', 'legacy')
+                          AND NOT EXISTS (
+                              SELECT 1 FROM label_import_suppressed_revisions suppressed
+                              WHERE suppressed.revision_id = revision.id
+                          )
                           AND revision.id = (
                               SELECT MAX(candidate.id) FROM label_revisions candidate
                               WHERE candidate.label_case_id = revision.label_case_id
                                 AND lower(candidate.author) = lower(revision.author)
                                 AND candidate.revision_kind IN ('submission', 'legacy')
+                                AND NOT EXISTS (
+                                    SELECT 1 FROM label_import_suppressed_revisions suppressed
+                                    WHERE suppressed.revision_id = candidate.id
+                                )
                           )
                         ORDER BY revision.label_case_id, lower(revision.author), revision.id
                         """,
@@ -1084,6 +1128,7 @@ class DatabaseLabelingMixin:
                 "state": "none",
                 "expected_output": "",
                 "gt_relation": "unknown",
+                "gt_review_pending": False,
                 "method": "single",
                 "source_task_ids": [],
                 "source_revision_ids": [],
@@ -1095,6 +1140,8 @@ class DatabaseLabelingMixin:
             return projected
 
         gt_by_issue: dict[str, str] = {}
+        imported_by_issue: dict[str, dict[str, Any]] = {}
+        imported_sources_by_case: dict[str, list[dict[str, Any]]] = defaultdict(list)
         with (nullcontext(connection) if connection is not None else self.connect()) as conn:
             for offset in range(0, len(cleaned), 400):
                 batch = cleaned[offset : offset + 400]
@@ -1112,6 +1159,49 @@ class DatabaseLabelingMixin:
                         for row in rows
                     }
                 )
+                imported_rows = conn.execute(
+                    f"""
+                    SELECT state.*, batch.name AS batch_name,
+                           batch.source_type, batch.migration_version,
+                           batch.status AS batch_status
+                    FROM label_import_case_states state
+                    JOIN label_import_batches batch ON batch.id = state.batch_id
+                    WHERE state.baseline_scope = ?
+                      AND state.issue_id IN ({', '.join('?' for _ in batch)})
+                      AND batch.status = 'imported'
+                    ORDER BY batch.imported_at DESC
+                    """,
+                    (scope, *batch),
+                ).fetchall()
+                for row in imported_rows:
+                    issue_key = str(row["issue_id"])
+                    imported_by_issue.setdefault(
+                        issue_key,
+                        {
+                            key: (_json_load(row[key], []) if key == "source_ids_json" else row[key])
+                            for key in row.keys()
+                        },
+                    )
+                source_rows = conn.execute(
+                    f"""
+                    SELECT source.*, label_case.issue_id,
+                           vote.state AS vote_state,
+                           vote.expected_output AS vote_expected_output
+                    FROM label_import_sources source
+                    JOIN label_cases label_case ON label_case.id = source.label_case_id
+                    LEFT JOIN label_import_votes vote ON vote.id = source.vote_id
+                    JOIN label_import_batches batch ON batch.id = source.batch_id
+                    WHERE label_case.baseline_scope = ?
+                      AND label_case.issue_id IN ({', '.join('?' for _ in batch)})
+                      AND batch.status = 'imported'
+                    ORDER BY label_case.issue_id, source.source_annotation_id
+                    """,
+                    (scope, *batch),
+                ).fetchall()
+                for row in source_rows:
+                    imported_sources_by_case[str(row["label_case_id"])].append(
+                        {key: row[key] for key in row.keys()}
+                    )
             cases_by_issue = self._batch_label_cases(
                 cleaned, baseline_scope=scope, connection=conn
             )
@@ -1148,6 +1238,10 @@ class DatabaseLabelingMixin:
                 aggregate_state = "pending"
             else:
                 aggregate_state = "resolved"
+
+            imported_state = imported_by_issue.get(issue_id) or {}
+            if str(imported_state.get("state") or "") == "conflict":
+                aggregate_state = "conflict"
 
             expected_output = (
                 next(iter(distinct_outputs)) if aggregate_state == "resolved" else ""
@@ -1231,19 +1325,62 @@ class DatabaseLabelingMixin:
                         "resolution_id": (
                             adjudication.get("id") if adjudication else None
                         ),
+                        "source_type": (
+                            "legacy_model_review"
+                            if imported_sources_by_case.get(str(case.get("id") or ""))
+                            else "case_labeling"
+                        ),
+                        "import_batch_id": (
+                            str(imported_state.get("batch_id") or "")
+                            if imported_sources_by_case.get(str(case.get("id") or ""))
+                            else ""
+                        ),
+                        "import_batch_name": (
+                            str(imported_state.get("batch_name") or "")
+                            if imported_sources_by_case.get(str(case.get("id") or ""))
+                            else ""
+                        ),
+                        "frozen_gt_snapshot_id": (
+                            str(imported_state.get("frozen_gt_snapshot_id") or "")
+                            if imported_sources_by_case.get(str(case.get("id") or ""))
+                            else ""
+                        ),
+                        "frozen_gt_label": (
+                            str(imported_state.get("frozen_gt_label") or "")
+                            if imported_sources_by_case.get(str(case.get("id") or ""))
+                            else ""
+                        ),
+                        "legacy_sources": [
+                            {
+                                "source_annotation_id": int(item["source_annotation_id"]),
+                                "source_run_id": str(item["source_run_id"] or ""),
+                                "source_work_split_id": str(item["source_work_split_id"] or ""),
+                                "source_label": str(item["source_label"] or ""),
+                                "source_review_status": str(item["source_review_status"] or ""),
+                                "source_reviewer": str(item["source_reviewer"] or ""),
+                                "source_created_at": str(item["source_created_at"] or ""),
+                                "migration_version": str(item["migration_version"] or ""),
+                            }
+                            for item in imported_sources_by_case.get(str(case.get("id") or ""), [])
+                        ],
                     }
                 )
 
             relation = (
-                _issue_label_gt_relation(expected_output, gt_by_issue[issue_id])
+                _issue_label_gt_relation(
+                    expected_output,
+                    str(imported_state.get("frozen_gt_label") or gt_by_issue[issue_id]),
+                )
                 if aggregate_state == "resolved"
                 else "unknown"
             )
+            gt_review_pending = bool(imported_state.get("gt_review_pending"))
             if not include_sources:
                 projected[issue_id] = {
                     "state": aggregate_state,
                     "expected_output": expected_output,
                     "gt_relation": relation,
+                    "gt_review_pending": gt_review_pending,
                     "method": method,
                     "source_task_ids": [],
                     "source_revision_ids": [],
@@ -1254,6 +1391,7 @@ class DatabaseLabelingMixin:
                 "state": aggregate_state,
                 "expected_output": expected_output,
                 "gt_relation": relation,
+                "gt_review_pending": gt_review_pending,
                 "method": method,
                 "source_task_ids": sorted(source_task_ids),
                 "source_revision_ids": sorted(source_revision_ids),
@@ -1335,6 +1473,41 @@ class DatabaseLabelingMixin:
             counts["differs_from_gt"] + counts["fills_missing_gt"]
         )
         return counts
+
+    def list_label_import_batches(
+        self, baseline_scopes: Sequence[str] = (), source_type: str = ""
+    ) -> list[dict[str, Any]]:
+        scopes = _clean_values(baseline_scopes)
+        clauses = ["status = 'imported'"]
+        params: list[Any] = []
+        if scopes:
+            clauses.append(f"baseline_scope IN ({', '.join('?' for _ in scopes)})")
+            params.extend(scopes)
+        normalized_source = str(source_type or "").strip()
+        if normalized_source:
+            clauses.append("source_type = ?")
+            params.append(normalized_source)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM label_import_batches WHERE {' AND '.join(clauses)} ORDER BY imported_at DESC, id",
+                params,
+            ).fetchall()
+        return [
+            {
+                "id": str(row["id"]),
+                "baseline_scope": str(row["baseline_scope"] or ""),
+                "name": str(row["name"] or ""),
+                "source_type": str(row["source_type"] or ""),
+                "migration_version": str(row["migration_version"] or ""),
+                "status": str(row["status"] or ""),
+                "source_inventory_sha256": str(row["source_inventory_sha256"] or ""),
+                "stats": _json_load(row["stats_json"], {}),
+                "imported_by": str(row["imported_by"] or ""),
+                "created_at": str(row["created_at"] or ""),
+                "imported_at": str(row["imported_at"] or ""),
+            }
+            for row in rows
+        ]
 
     def create_label_revision(
         self,

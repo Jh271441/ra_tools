@@ -149,6 +149,7 @@ def _empty_issue_label_state() -> dict[str, Any]:
         "state": "none",
         "expected_output": "",
         "gt_relation": "unknown",
+        "gt_review_pending": False,
         "method": "single",
         "source_task_ids": [],
         "source_revision_ids": [],
@@ -220,8 +221,13 @@ def _case_derived_issue_ids(
                         selected == state
                         or (
                             selected == "needs_gt_review"
-                            and state == "resolved"
-                            and relation in {"differs_from_gt", "fills_missing_gt"}
+                            and (
+                                bool(projection.get("gt_review_pending"))
+                                or (
+                                    state == "resolved"
+                                    and relation in {"differs_from_gt", "fills_missing_gt"}
+                                )
+                            )
                         )
                         or (
                             selected == "matches_gt"

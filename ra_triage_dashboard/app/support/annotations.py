@@ -68,9 +68,7 @@ def _create_model_review_record(
     label_state = dict(case.get("label_state") or {})
     requested_status = _as_text(body.get("model_review_status")).lower()
     if not requested_status:
-        if str(label_state.get("state") or "") in {"conflict", "stale"}:
-            requested_status = "blocked_by_label"
-        elif _as_text(body.get("note")) or missing_evidence:
+        if _as_text(body.get("note")) or missing_evidence:
             requested_status = "completed"
         else:
             requested_status = "pending"

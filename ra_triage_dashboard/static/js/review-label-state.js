@@ -3,6 +3,9 @@ function sharedLabelStateVisual(labelState = {}) {
   const state = String(labelState.state || "none");
   const relation = String(labelState.gt_relation || "unknown");
   if (state === "resolved") {
+    if (labelState.gt_review_pending) {
+      return { kind: "needs-review", zh: "GT 待复核", en: "Needs GT review" };
+    }
     if (relation === "matches_gt") {
       return { kind: "matches", zh: "与 GT 一致", en: "Matches GT" };
     }
@@ -87,6 +90,10 @@ function sharedLabelStateSourceMarkup(source, issueId) {
     ? `<ul class="shared-label-revision-list">${revisionSummaries.map((revision) => `<li><code>#${escapeHtml(String(revision.id || ""))}</code><span>${escapeHtml(String(revision.expected_output || uiText("待补充", "Pending")))}</span></li>`).join("")}</ul>`
     : `<p class="shared-label-source-empty">${uiText("暂无提交版本", "No submitted revisions")}</p>`;
   const adjudication = source?.adjudication;
+  const legacySources = Array.isArray(source?.legacy_sources) ? source.legacy_sources : [];
+  const legacySourceMarkup = legacySources.length
+    ? `<div class="shared-label-source-revisions"><strong><span class="ui-lang-zh">历史判错复核来源</span><span class="ui-lang-en">Historical Review sources</span></strong><ul class="shared-label-revision-list">${legacySources.map((item) => `<li><code>#${escapeHtml(String(item.source_annotation_id || ""))}</code><span>${escapeHtml(String(item.source_reviewer || "—"))} · ${escapeHtml(String(item.source_label || item.source_review_status || "—"))} · ${escapeHtml(String(item.source_run_id || "无 Run"))}</span></li>`).join("")}</ul></div>`
+    : "";
   const adjudicationMarkup = adjudication
     ? `<div class="shared-label-source-adjudication"><strong><span class="ui-lang-zh">裁决</span><span class="ui-lang-en">Adjudication</span> #${escapeHtml(String(adjudication.id || ""))}</strong><span>${adjudication.stale ? uiText("源版本已变化，需重新确认", "Source revisions changed; reconfirmation is needed") : uiText("来源版本有效", "Source revisions are current")}</span><small>${escapeHtml((adjudication.source_revision_ids || []).map((value) => `#${value}`).join(" · ") || "—")}</small></div>`
     : "";
@@ -116,8 +123,10 @@ function sharedLabelStateSourceMarkup(source, issueId) {
       <div><dt><span class="ui-lang-zh">Task</span><span class="ui-lang-en">Task</span></dt><dd><code>${escapeHtml(taskId || "—")}</code></dd></div>
       <div><dt><span class="ui-lang-zh">来源 Run</span><span class="ui-lang-en">Source Run</span></dt><dd><code>${escapeHtml(sourceRunId || "—")}</code></dd></div>
       <div><dt><span class="ui-lang-zh">结果</span><span class="ui-lang-en">Result</span></dt><dd>${escapeHtml(String(source?.expected_output || "—"))}</dd></div>
+      ${source?.source_type === "legacy_model_review" ? `<div><dt><span class="ui-lang-zh">来源</span><span class="ui-lang-en">Source</span></dt><dd>${escapeHtml(String(source?.import_batch_name || "历史判错复核"))}</dd></div><div><dt><span class="ui-lang-zh">冻结 GT</span><span class="ui-lang-en">Frozen GT</span></dt><dd>${escapeHtml(String(source?.frozen_gt_label || "—"))}</dd></div>` : ""}
     </dl>
     <div class="shared-label-source-revisions"><strong><span class="ui-lang-zh">来源版本</span><span class="ui-lang-en">Source revisions</span></strong>${revisionsMarkup}</div>
+    ${legacySourceMarkup}
     ${adjudicationMarkup}
     <div class="shared-label-source-actions">${editLink}</div>
   </article>`;
