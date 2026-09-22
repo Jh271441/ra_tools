@@ -1336,6 +1336,13 @@
                 <div><h2>Multi-run evaluation</h2><p class="muted"><span class="ui-lang-zh">选择多个 Run 和 Case 范围，生成可复现的模型评测。</span><span class="ui-lang-en">Choose multiple Runs and a Case range for a reproducible evaluation.</span></p></div>
                 <button class="button button-quiet" id="comparisonSaveCollectionButton" type="button"><span class="ui-lang-zh">将 Pairwise 保存为 评测项目</span><span class="ui-lang-en">Save pairwise as 评测项目</span></button>
               </div>
+              <ol class="multi-run-step-guide" aria-label="多 Run 评测步骤">
+                <li class="is-active"><span>1</span><b>新建评测</b></li>
+                <li><span>2</span><b>选择多个 Run</b></li>
+                <li><span>3</span><b>选择数据集和 Case 范围</b></li>
+                <li><span>4</span><b>选择 GT / 标注版本</b></li>
+                <li><span>5</span><b>生成并查看结果</b></li>
+              </ol>
               <div class="run-collection-toolbar">
                 <label><span class="ui-lang-zh">评测项目</span><span class="ui-lang-en">评测项目</span><select id="runCollectionSelect"><option value="">Loading…</option></select></label>
                 <label><span class="ui-lang-zh">项目版本</span><span class="ui-lang-en">Project version</span><select id="runCollectionRevisionSelect" disabled></select></label>

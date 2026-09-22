@@ -1066,6 +1066,11 @@ html[data-color-theme="light"] #comparisonReasonDialog [data-triage-label="æ— éœ
 .run-collection-workbench.is-pairwise-manager { margin-top:8px; }
 .run-collection-pairwise-details { margin:8px 0 0; }
 .run-collection-pairwise-details > summary { color:var(--accent); cursor:pointer; font-size:12px; }
+.multi-run-step-guide { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; margin:0; padding:0; list-style:none; }
+.multi-run-step-guide li { display:flex; align-items:center; gap:7px; color:var(--muted); font-size:11px; }
+.multi-run-step-guide li span { display:grid; place-items:center; width:24px; height:24px; border-radius:50%; background:var(--raised); color:var(--muted); font-weight:700; }
+.multi-run-step-guide li.is-active span { background:color-mix(in srgb,var(--accent) 22%,var(--raised)); color:var(--accent); }
+@media(max-width:760px){ .multi-run-step-guide { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 .run-collection-technical-details { display:grid; gap:4px; margin-top:6px; color:var(--muted); font-size:10px; }
 .run-collection-technical-details > summary { color:var(--accent); cursor:pointer; }
 .run-collection-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
