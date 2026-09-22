@@ -30,3 +30,7 @@ The UX worktree does not add a migration. The final cloud pytest and visual/DOM 
 ## Final HTTP/DOM smoke
 
 `/manual-s6/health` returned `ok=true` with the UX source. HTML at `/manual-s6/multi-run-evaluation` contained `runCollectionsPage`, `runCollectionsNavButton`, `labelingExperimentsNavButton`, `reviewTaskDrawer` and the multi-run route. Production 8785 stayed unchanged.
+
+## Information-architecture correction
+
+The first UX pass introduced an extra Model evaluation group and exposed the project manager as a primary navigation item. That was reverted after review. The final sidebar follows the stable product hierarchy: Case 标注 (with 实验分配 and 标注汇总), 判错复核 (including 任务分配、原因聚类、问题排除、模型结果、Run 对比、批次预测), 意图标注 unchanged, and the existing system section. The multi-run path is now a user-facing Run 对比 flow/alias; internal Collection/Workset/Revision terms remain in technical details and old deep links remain compatible.

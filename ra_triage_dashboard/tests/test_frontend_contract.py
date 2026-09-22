@@ -557,7 +557,7 @@ class FrontendContractTest(unittest.TestCase):
         self.assertIn('labeling-group-label"><span class="ui-lang-zh">Case 标注</span>', INDEX_HTML)
         self.assertIn('review-group-label"><span class="ui-lang-zh">判错复核</span>', INDEX_HTML)
         self.assertNotIn('<span class="ui-lang-zh">RA 标注与复核</span>', INDEX_HTML)
-        self.assertEqual(INDEX_HTML.count('class="sidebar-group-icon"'), 5)
+        self.assertEqual(INDEX_HTML.count('class="sidebar-group-icon"'), 4)
         self.assertIn(".sidebar-group-icon {", STYLES_CSS)
         self.assertIn(".sidebar-group-icon svg {", STYLES_CSS)
         self.assertIn("order: 0; color: #9aacbf;", STYLES_CSS)
@@ -584,11 +584,11 @@ class FrontendContractTest(unittest.TestCase):
             "reviewAssignmentsNavButton",
             "reviewAnalysisNavButton",
             "trailAttributeUpdateNavButton",
+            "openRunManagerButton",
+            "runComparisonNavButton",
+            "openBatchPredictionButton",
         ):
             self.assertIn(f'id="{nav_id}"', review_group)
-        model_group = INDEX_HTML.split('data-sidebar-nav-group="model-evaluation"', 1)[1].split('</section>', 1)[0]
-        for nav_id in ("openRunManagerButton", "runComparisonNavButton", "runCollectionsNavButton", "openBatchPredictionButton"):
-            self.assertIn(f'id="{nav_id}"', model_group)
         self.assertNotIn('id="caseLabelingNavButton"', review_group)
         self.assertIn('id="intentNavGroup"', INDEX_HTML)
         self.assertIn("overflow-y: auto", STYLES_CSS)
